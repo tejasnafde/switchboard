@@ -48,10 +48,7 @@ export function parseFaviconUrl(rawUrl: string): ParsedFaviconUrl | null {
  * a bug. Prefix matching is intentionally disallowed: a known project
  * at `/Users/me/foo` does NOT authorize requests for `/Users/me/foo/.env`.
  */
-export function isAuthorizedProjectPath(
-  projectPath: string,
-  knownProjectPaths: ReadonlyArray<string>,
-): boolean {
+export function isAuthorizedProjectPath(projectPath: string, knownProjectPaths: ReadonlyArray<string>): boolean {
   return knownProjectPaths.includes(projectPath)
 }
 

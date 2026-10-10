@@ -93,7 +93,9 @@ describe('DiagnosticsBody', () => {
   })
 
   it('names the fix in the Chip row on a translated build', () => {
-    const html = renderToStaticMarkup(createElement(DiagnosticsBody, { ...props, snapshot: snapshot({ translated: true }) }))
+    const html = renderToStaticMarkup(
+      createElement(DiagnosticsBody, { ...props, snapshot: snapshot({ translated: true }) }),
+    )
     expect(html).toContain('install the native build')
   })
 

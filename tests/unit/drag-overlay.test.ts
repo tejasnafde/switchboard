@@ -14,7 +14,10 @@ class FakeEl {
   dataset: Record<string, string> = {}
   style: Record<string, string> = {}
   private container: FakeEl[] | null = null
-  attachTo(children: FakeEl[]) { this.container = children; children.push(this) }
+  attachTo(children: FakeEl[]) {
+    this.container = children
+    children.push(this)
+  }
   remove() {
     if (!this.container) return
     const i = this.container.indexOf(this)
@@ -25,7 +28,9 @@ class FakeEl {
 
 const body = {
   children: [] as FakeEl[],
-  appendChild(el: FakeEl) { el.attachTo(this.children) },
+  appendChild(el: FakeEl) {
+    el.attachTo(this.children)
+  },
 }
 
 const fakeDoc = { createElement: () => new FakeEl(), body }

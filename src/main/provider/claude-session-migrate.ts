@@ -13,10 +13,7 @@ import { encodeClaudeProjectPath } from '../projects/session-scanner'
 import { listOauthDirsForAgent } from '../db/provider-instances'
 import { listRemoteClaudeConfigDirs } from './remote-gate'
 import { createMainLogger as createLogger } from '../logger'
-import {
-  synchronizeCompatibleTranscript,
-  type TranscriptSyncResult,
-} from './transcript-compatibility'
+import { synchronizeCompatibleTranscript, type TranscriptSyncResult } from './transcript-compatibility'
 
 const log = createLogger('provider:claude:migrate')
 
@@ -34,18 +31,21 @@ export function defaultClaudeDir(): string {
  * can use it without importing a module that imports them back.
  */
 export function claudeCandidateDirs(): string[] {
-  return Array.from(new Set([
-    ...listOauthDirsForAgent('claude-code'),
-    defaultClaudeDir(),
-    ...(process.env.SWITCHBOARD_REMOTE ? listRemoteClaudeConfigDirs() : []),
-  ]))
+  return Array.from(
+    new Set([
+      ...listOauthDirsForAgent('claude-code'),
+      defaultClaudeDir(),
+      ...(process.env.SWITCHBOARD_REMOTE ? listRemoteClaudeConfigDirs() : []),
+    ]),
+  )
 }
 
 export type MigrateResult =
   | { ok: true; copied: boolean; from?: string }
   | { ok: false; reason: 'source-missing' | 'io-error'; detail?: string }
 
-export type ProfileSwitchPreparationResult = TranscriptSyncResult
+export type ProfileSwitchPreparationResult =
+  | TranscriptSyncResult
   | { ok: false; reason: 'source-missing'; detail: string; sourcePath: string; targetPath: string }
 
 export interface SessionCopy {
@@ -132,9 +132,7 @@ export function ensureClaudeSessionResumable(opts: {
   candidates: string[]
 }): MigrateResult {
   const dirs = Array.from(new Set([opts.toDir, ...opts.candidates]))
-  const copies = dirs
-    .flatMap((dir) => listClaudeSessionCopies(dir, opts.sessionId))
-    .sort(compareSessionCopies)
+  const copies = dirs.flatMap((dir) => listClaudeSessionCopies(dir, opts.sessionId)).sort(compareSessionCopies)
   if (copies.length === 0) return { ok: false, reason: 'source-missing' }
 
   const dstPath = claudeSessionResumePath(opts.toDir, opts.sessionId, opts.cwd)

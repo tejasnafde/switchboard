@@ -14,7 +14,12 @@ export function EffortPicker({ control, onPick }: { control: EffortControl; onPi
       title="Thinking effort. A change applies from the next turn."
       triggerData={{ 'data-effort-picker': '' }}
       icon={<GaugeIcon />}
-      full={<><span className="font-normal text-[var(--text-secondary)]">Effort: </span>{value}</>}
+      full={
+        <>
+          <span className="font-normal text-[var(--text-secondary)]">Effort: </span>
+          {value}
+        </>
+      }
       short={value}
       options={effortOptions(control)}
       value={control.value}

@@ -20,12 +20,20 @@ export function PromptModal({ title, initialValue = '', submitLabel = 'OK', onSu
 
   const submit = () => {
     const trimmed = value.trim()
-    if (!trimmed) { onCancel(); return }
+    if (!trimmed) {
+      onCancel()
+      return
+    }
     onSubmit(trimmed)
   }
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onCancel() }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onCancel()
+      }}
+    >
       <DialogContent
         aria-describedby={undefined}
         onOpenAutoFocus={(e) => {
@@ -45,14 +53,19 @@ export function PromptModal({ title, initialValue = '', submitLabel = 'OK', onSu
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); submit() }
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                submit()
+              }
             }}
             className="flex-1 rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[9px] py-[6px] text-[12.5px] [font-family:var(--font-sans)] text-[var(--text-primary)] outline-none"
           />
           <button
             onClick={submit}
             className="cursor-pointer rounded-[4px] border-0 bg-[var(--accent)] px-[12px] py-[5px] text-[12px] text-[#fff]"
-          >{submitLabel}</button>
+          >
+            {submitLabel}
+          </button>
         </div>
       </DialogContent>
     </Dialog>

@@ -29,9 +29,7 @@ const TOKEN_RE = /\[\[pill:([a-zA-Z0-9_-]+)\]\]/g
  * substring; pill segments carry the opaque id (the renderer maps it to
  * a chip via `pillsBySession`).
  */
-export type BodySegment =
-  | { type: 'text'; text: string }
-  | { type: 'pill'; id: string }
+export type BodySegment = { type: 'text'; text: string } | { type: 'pill'; id: string }
 
 /**
  * Inverse of `serializeBodyWithPills` - turns a string with `[[pill:id]]`
@@ -73,11 +71,7 @@ export function parseBodyToSegments(body: string): BodySegment[] {
  * inserted run, so the caller can advance the contenteditable selection
  * and the user keeps typing inline.
  */
-export function insertPillAtCursor(
-  body: string,
-  caret: number,
-  pillId: string,
-): { body: string; caret: number } {
+export function insertPillAtCursor(body: string, caret: number, pillId: string): { body: string; caret: number } {
   const len = body.length
   const c = Math.max(0, Math.min(len, caret))
 
@@ -107,10 +101,7 @@ export function insertPillAtCursor(
  * is NOT re-expanded. This keeps the wire format predictable even when
  * users paste agent-formatted text into a pill.
  */
-export function serializeBodyWithPills(
-  body: string,
-  pillsById: Record<string, Pick<DraftPill, 'content'>>,
-): string {
+export function serializeBodyWithPills(body: string, pillsById: Record<string, Pick<DraftPill, 'content'>>): string {
   return body.replace(TOKEN_RE, (_match, id: string) => {
     const pill = pillsById[id]
     return pill ? pill.content : ''

@@ -10,12 +10,24 @@ import { sortLaunchConfigsByRecency, recordLaunchConfigUsage } from '../../src/r
 // Minimal localStorage shim so the helper runs under Node.
 class MemoryStorage {
   private map = new Map<string, string>()
-  getItem(k: string) { return this.map.has(k) ? this.map.get(k)! : null }
-  setItem(k: string, v: string) { this.map.set(k, v) }
-  removeItem(k: string) { this.map.delete(k) }
-  clear() { this.map.clear() }
-  key() { return null }
-  get length() { return this.map.size }
+  getItem(k: string) {
+    return this.map.has(k) ? this.map.get(k)! : null
+  }
+  setItem(k: string, v: string) {
+    this.map.set(k, v)
+  }
+  removeItem(k: string) {
+    this.map.delete(k)
+  }
+  clear() {
+    this.map.clear()
+  }
+  key() {
+    return null
+  }
+  get length() {
+    return this.map.size
+  }
 }
 
 beforeEach(() => {
@@ -30,8 +42,8 @@ describe('sortLaunchConfigsByRecency', () => {
 
   it('sorts most-recently-used first', async () => {
     recordLaunchConfigUsage('/proj', 'apple')
-    await new Promise((r) => setTimeout(r, 2))  // ensure distinct ms
-    recordLaunchConfigUsage('/proj', 'zebra')  // most recent
+    await new Promise((r) => setTimeout(r, 2)) // ensure distinct ms
+    recordLaunchConfigUsage('/proj', 'zebra') // most recent
     const out = sortLaunchConfigsByRecency(['default', 'apple', 'zebra', 'mango'], '/proj')
     expect(out.slice(0, 2)).toEqual(['zebra', 'apple'])
     // Unused names trail; `default` comes before `mango` in that bucket.

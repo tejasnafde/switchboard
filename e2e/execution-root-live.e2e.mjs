@@ -103,10 +103,13 @@ for (const { provider, agentType, home } of PROVIDERS) {
     // fall back to the default credential home and the agent answers "Not
     // logged in". Register the account explicitly - `oauth_dir` is the
     // supported way to point a session at a credential home.
-    const instance = await win.evaluate(
-      (i) => window.api.providerInstances.upsert(i),
-      { agentType, displayName: `live-${provider}`, authMode: 'oauth_dir', oauthDir: home, enabled: true },
-    )
+    const instance = await win.evaluate((i) => window.api.providerInstances.upsert(i), {
+      agentType,
+      displayName: `live-${provider}`,
+      authMode: 'oauth_dir',
+      oauthDir: home,
+      enabled: true,
+    })
     check(!!instance?.id, `registered a credential home (${instance?.effectiveOauthDir ?? instance?.oauthDir})`)
 
     const threadId = `agent_live_${Date.now()}`
@@ -131,14 +134,16 @@ for (const { provider, agentType, home } of PROVIDERS) {
         if (e.type === 'turn.completed') window.__turns++
         if (e.type === 'error') window.__errors.push(JSON.stringify(e).slice(0, 400))
         if (e.type === 'tool.started') window.__tools.push(e.toolName)
-
       })
     }, threadId)
 
-    const started = await win.evaluate(
-      (o) => window.api.provider.startSession(o),
-      { threadId, provider, cwd: project, runtimeMode: 'full-access', instanceId: instance.id },
-    )
+    const started = await win.evaluate((o) => window.api.provider.startSession(o), {
+      threadId,
+      provider,
+      cwd: project,
+      runtimeMode: 'full-access',
+      instanceId: instance.id,
+    })
     check(started?.ok !== false, `live ${provider} session started in the project checkout`)
 
     const waitForTurns = async (n, label) => {
@@ -151,12 +156,15 @@ for (const { provider, agentType, home } of PROVIDERS) {
         if ((await win.evaluate(() => window.__turns)) >= n) return true
         await win.waitForTimeout(1000)
       }
-      console.log(`  (timed out waiting for ${label}; errors: ${JSON.stringify(await win.evaluate(() => window.__errors))})`)
+      console.log(
+        `  (timed out waiting for ${label}; errors: ${JSON.stringify(await win.evaluate(() => window.__errors))})`,
+      )
       return false
     }
 
     await win.evaluate(
-      ({ tid }) => window.api.provider.sendTurn(tid, 'Reply with the single word READY. Do not use any tools.', 'full-access'),
+      ({ tid }) =>
+        window.api.provider.sendTurn(tid, 'Reply with the single word READY. Do not use any tools.', 'full-access'),
       { tid: threadId },
     )
     check(await waitForTurns(1, 'the first turn'), 'first turn completed in the project checkout')
@@ -164,17 +172,14 @@ for (const { provider, agentType, home } of PROVIDERS) {
     console.log(`  (native session before: ${sidBefore})`)
 
     // ── the thing under test ──────────────────────────────────────
-    const result = await win.evaluate(
-      (r) => window.api.provider.relocateExecutionRoot(r),
-      {
-        threadId,
-        expectedRevision: 0,
-        targetPath: worktreeReal,
-        targetBranch: 'live/exec-root',
-        machineId: 'local',
-        reason: 'drift-follow',
-      },
-    )
+    const result = await win.evaluate((r) => window.api.provider.relocateExecutionRoot(r), {
+      threadId,
+      expectedRevision: 0,
+      targetPath: worktreeReal,
+      targetBranch: 'live/exec-root',
+      machineId: 'local',
+      reason: 'drift-follow',
+    })
     console.log(`  (relocation: ${JSON.stringify(result)})`)
     check(result?.ok === true, `relocation succeeded (${result?.ok ? result.outcome : result?.code})`)
     check(result?.root?.path === worktreeReal, 'committed root is the worktree')
@@ -184,11 +189,12 @@ for (const { provider, agentType, home } of PROVIDERS) {
     // ── the proof ─────────────────────────────────────────────────
     // Only a process actually running in the worktree can put this file there.
     await win.evaluate(
-      ({ tid }) => window.api.provider.sendTurn(
-        tid,
-        'Using ONLY your shell tool, run exactly this one command and then stop: pwd > where.txt',
-        'full-access',
-      ),
+      ({ tid }) =>
+        window.api.provider.sendTurn(
+          tid,
+          'Using ONLY your shell tool, run exactly this one command and then stop: pwd > where.txt',
+          'full-access',
+        ),
       { tid: threadId },
     )
     check(await waitForTurns(2, 'the post-relocation turn'), 'second turn completed after the relocation')

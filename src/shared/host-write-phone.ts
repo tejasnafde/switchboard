@@ -31,7 +31,9 @@ export interface PhoneHostWriteButton {
 const VERDICT_ORDER: readonly ReviewEvent[] = ['comment', 'request_changes', 'approve']
 
 export function phoneHostWriteButtons(card: HostWriteCard): PhoneHostWriteButton[] {
-  const one = (id: PhoneHostWriteButton['id'], label: string): PhoneHostWriteButton[] => [{ id, label, primary: true, response: {}, problem: null }]
+  const one = (id: PhoneHostWriteButton['id'], label: string): PhoneHostWriteButton[] => [
+    { id, label, primary: true, response: {}, problem: null },
+  ]
   if (card.action === 'create') return one('create', card.create?.draft ? 'Open draft' : 'Open pull request')
   if (card.action === 'resolve') return one('resolve', 'Resolve')
   if (card.action === 'rerun') return one('rerun', 'Re-run')
@@ -50,7 +52,13 @@ export function phoneHostWriteButtons(card: HostWriteCard): PhoneHostWriteButton
   const resolveFirst = card.suggestResolve === true
   return [
     { id: 'post', label: 'Post reply', primary: !resolveFirst, response: { resolve: false }, problem: null },
-    { id: 'post-resolve', label: 'Post and resolve', primary: resolveFirst, response: { resolve: true }, problem: null },
+    {
+      id: 'post-resolve',
+      label: 'Post and resolve',
+      primary: resolveFirst,
+      response: { resolve: true },
+      problem: null,
+    },
   ]
 }
 
@@ -86,7 +94,8 @@ export function approvalChoiceOnly(response: HostWriteResponse): HostWriteRespon
 }
 
 /** Why a phone's approval without the digest of the draft it showed is refused. */
-export const HOST_WRITE_SHOWN_REQUIRED = 'Update the Switchboard app to approve this here, or approve it on the desktop.'
+export const HOST_WRITE_SHOWN_REQUIRED =
+  'Update the Switchboard app to approve this here, or approve it on the desktop.'
 
 /** One labelled block of a phone card: a title, a reply, one review comment. */
 export interface HostWritePreviewSection {
@@ -127,7 +136,11 @@ export function hostWritePreview(card: HostWriteCard): HostWritePreview | null {
     add('Title', c.title)
     if (!add('Description', c.description ?? '')) return null
     if (c.reviewers !== undefined) {
-      if (!Array.isArray(c.reviewers) || !c.reviewers.every((r) => r && typeof r.login === 'string' && typeof r.displayName === 'string')) return null
+      if (
+        !Array.isArray(c.reviewers) ||
+        !c.reviewers.every((r) => r && typeof r.login === 'string' && typeof r.displayName === 'string')
+      )
+        return null
       // One line each, so the approval (which requests all of them) shows every one.
       add('Reviewers', c.reviewers.map(reviewerLabel).join('\n'))
     }
@@ -168,10 +181,22 @@ export function hostWritePreview(card: HostWriteCard): HostWritePreview | null {
 export function hostWriteShownDigest(requestId: string, card: HostWriteCard): string | null {
   const preview = hostWritePreview(card)
   const target = card.target
-  if (!preview || !target || typeof target.repository !== 'string' || !(target.number === null || typeof target.number === 'number')) return null
+  if (
+    !preview ||
+    !target ||
+    typeof target.repository !== 'string' ||
+    !(target.number === null || typeof target.number === 'number')
+  )
+    return null
   const input = [
-    SHOWN_DIGEST_VERSION, requestId, card.host, target.repository, target.number === null ? '' : String(target.number),
-    card.create?.sourceBranch ?? '', card.create?.targetBranch ?? '', card.action,
+    SHOWN_DIGEST_VERSION,
+    requestId,
+    card.host,
+    target.repository,
+    target.number === null ? '' : String(target.number),
+    card.create?.sourceBranch ?? '',
+    card.create?.targetBranch ?? '',
+    card.action,
     ...preview.sections.flatMap((s) => [s.label, s.text]),
   ].join('\u0000')
   let hash = FNV_OFFSET

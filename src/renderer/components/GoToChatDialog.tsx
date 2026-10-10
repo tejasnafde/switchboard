@@ -54,11 +54,17 @@ export function GoToChatDialog({ open, onClose, onOpenChat }: GoToChatDialogProp
     // A failed load must not show the previous open's list as current.
     setLocalProjects([])
     setArchived([])
-    window.api.app.getProjects()
-      .then((projects: Project[]) => { if (ticket === loadTicket.current) setLocalProjects(projects ?? []) })
+    window.api.app
+      .getProjects()
+      .then((projects: Project[]) => {
+        if (ticket === loadTicket.current) setLocalProjects(projects ?? [])
+      })
       .catch((err: unknown) => log.warn('getProjects failed', err))
-    window.api.app.getArchivedConversations()
-      .then((rows: ArchivedChatRow[]) => { if (ticket === loadTicket.current) setArchived(rows ?? []) })
+    window.api.app
+      .getArchivedConversations()
+      .then((rows: ArchivedChatRow[]) => {
+        if (ticket === loadTicket.current) setArchived(rows ?? [])
+      })
       .catch((err: unknown) => log.warn('getArchivedConversations failed', err))
   }, [open])
 
@@ -70,7 +76,7 @@ export function GoToChatDialog({ open, onClose, onOpenChat }: GoToChatDialogProp
   const shown = sections.flatMap((s) => s.items)
 
   const machineName = (machineId: string) =>
-    machineId === 'local' ? null : remotes.find((m) => m.id === machineId)?.name ?? machineId
+    machineId === 'local' ? null : (remotes.find((m) => m.id === machineId)?.name ?? machineId)
 
   const pick = (item: GoToChatItem | undefined, placement: 'select' | 'beside') => {
     if (!item) return
@@ -81,14 +87,22 @@ export function GoToChatDialog({ open, onClose, onOpenChat }: GoToChatDialogProp
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && matchesBinding(e, 'Mod+Enter')) {
       e.preventDefault()
-      pick(shown.find((item) => item.key === selected), 'beside')
+      pick(
+        shown.find((item) => item.key === selected),
+        'beside',
+      )
     }
   }
 
   const keyHint = 'rounded-[4px] border border-[var(--border)] px-[4px] text-[10.5px] [font-family:var(--font-mono)]'
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+    >
       <DialogContent
         asChild
         aria-describedby={undefined}
@@ -99,7 +113,13 @@ export function GoToChatDialog({ open, onClose, onOpenChat }: GoToChatDialogProp
         }}
         className="palette-modal-content inset-x-0 top-[20vh] z-[1000] mx-auto flex max-h-[520px] w-[min(620px,92vw)] flex-col overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-secondary)] shadow-[0_16px_48px_rgba(0,0,0,0.3)]"
       >
-        <Command label="Go to chat" shouldFilter={false} value={selected} onValueChange={setSelected} onKeyDown={onKeyDown}>
+        <Command
+          label="Go to chat"
+          shouldFilter={false}
+          value={selected}
+          onValueChange={setSelected}
+          onKeyDown={onKeyDown}
+        >
           <DialogTitle className="sr-only">Go to chat</DialogTitle>
           <Command.Input
             ref={inputRef}
@@ -119,16 +139,28 @@ export function GoToChatDialog({ open, onClose, onOpenChat }: GoToChatDialogProp
                 className="[&_[cmdk-group-heading]]:px-[12px] [&_[cmdk-group-heading]]:pb-[2px] [&_[cmdk-group-heading]]:pt-[8px] [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-[600] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.07em] [&_[cmdk-group-heading]]:text-[var(--text-muted)]"
               >
                 {section.items.map((item) => (
-                  <ChatRow key={item.key} item={item} query={query} machine={machineName(item.machineId)} onSelect={() => pick(item, 'select')} />
+                  <ChatRow
+                    key={item.key}
+                    item={item}
+                    query={query}
+                    machine={machineName(item.machineId)}
+                    onSelect={() => pick(item, 'select')}
+                  />
                 ))}
               </Command.Group>
             ))}
           </Command.List>
           <div className="flex gap-[14px] border-t border-[var(--border)] px-[12px] py-[6px] text-[11px] text-[var(--text-muted)]">
             {query.trim() !== '' && <span>{shown.length === 1 ? '1 chat' : `${shown.length} chats`}</span>}
-            <span><span className={keyHint}>{formatBinding('Enter')}</span> open</span>
-            <span><span className={keyHint}>{formatBinding('Mod+Enter')}</span> open beside</span>
-            <span><span className={keyHint}>{formatBinding('Escape')}</span> close</span>
+            <span>
+              <span className={keyHint}>{formatBinding('Enter')}</span> open
+            </span>
+            <span>
+              <span className={keyHint}>{formatBinding('Mod+Enter')}</span> open beside
+            </span>
+            <span>
+              <span className={keyHint}>{formatBinding('Escape')}</span> close
+            </span>
           </div>
         </Command>
       </DialogContent>
@@ -136,7 +168,12 @@ export function GoToChatDialog({ open, onClose, onOpenChat }: GoToChatDialogProp
   )
 }
 
-function ChatRow({ item, query, machine, onSelect }: {
+function ChatRow({
+  item,
+  query,
+  machine,
+  onSelect,
+}: {
   item: GoToChatItem
   query: string
   machine: string | null
@@ -144,28 +181,45 @@ function ChatRow({ item, query, machine, onSelect }: {
 }) {
   const avatar = AVATARS[item.agent]
   const range = titleMatchRange(item.title, query)
-  const meta = [machine, item.projectName, agentShortLabel(item.agent), item.lastActivity ? formatRelativeTime(item.lastActivity) : null]
-    .filter(Boolean).join(' · ')
+  const meta = [
+    machine,
+    item.projectName,
+    agentShortLabel(item.agent),
+    item.lastActivity ? formatRelativeTime(item.lastActivity) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
   return (
     <Command.Item
       value={item.key}
       onSelect={onSelect}
       className="cmdk-item flex cursor-pointer items-center gap-[10px] px-[12px] py-[6px] text-[13px] text-[var(--text-primary)]"
     >
-      <span className={cn('inline-flex size-[16px] shrink-0 items-center justify-center rounded-full text-[8px] text-white', avatar.className)}>
+      <span
+        className={cn(
+          'inline-flex size-[16px] shrink-0 items-center justify-center rounded-full text-[8px] text-white',
+          avatar.className,
+        )}
+      >
         {avatar.initials}
       </span>
       <span className="min-w-0 flex-1 truncate font-[500]">
         {range ? (
           <>
             {item.title.slice(0, range[0])}
-            <mark className="bg-transparent font-[600] text-[var(--accent)]">{item.title.slice(range[0], range[1])}</mark>
+            <mark className="bg-transparent font-[600] text-[var(--accent)]">
+              {item.title.slice(range[0], range[1])}
+            </mark>
             {item.title.slice(range[1])}
           </>
-        ) : item.title}
+        ) : (
+          item.title
+        )}
       </span>
       {item.archived && (
-        <span className="shrink-0 rounded-[4px] border border-[var(--border)] px-[4px] text-[10.5px] text-[var(--text-muted)]">archived</span>
+        <span className="shrink-0 rounded-[4px] border border-[var(--border)] px-[4px] text-[10.5px] text-[var(--text-muted)]">
+          archived
+        </span>
       )}
       <span className="shrink-0 whitespace-nowrap text-[11.5px] text-[var(--text-muted)]">{meta}</span>
     </Command.Item>

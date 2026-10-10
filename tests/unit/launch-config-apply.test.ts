@@ -20,11 +20,7 @@ import type { LaunchConfigFile, LaunchConfig } from '../../src/shared/launch-con
 describe('planLaunchConfigSpawn - flat terminals', () => {
   it('first terminal becomes addWindow, rest become splitRow (same row)', () => {
     const tpl: LaunchConfig = {
-      terminals: [
-        { label: 'a', on_start: 'echo a' },
-        { label: 'b' },
-        { label: 'c' },
-      ],
+      terminals: [{ label: 'a', on_start: 'echo a' }, { label: 'b' }, { label: 'c' }],
     }
     const ops = planLaunchConfigSpawn(tpl, '/proj')
     expect(ops).toEqual([
@@ -60,10 +56,7 @@ describe('planLaunchConfigSpawn - rows layout', () => {
   it('first pane addWindow, additional panes in row 0 splitRow, new rows splitColumn', () => {
     const tpl: LaunchConfig = {
       terminals: [],
-      rows: [
-        { panes: [{ label: 'top-left' }, { label: 'top-right' }] },
-        { panes: [{ label: 'bottom-only' }] },
-      ],
+      rows: [{ panes: [{ label: 'top-left' }, { label: 'top-right' }] }, { panes: [{ label: 'bottom-only' }] }],
     }
     const ops = planLaunchConfigSpawn(tpl, '/proj')
     expect(ops.map((o) => o.kind)).toEqual(['addWindow', 'splitRow', 'splitColumn'])
@@ -73,11 +66,7 @@ describe('planLaunchConfigSpawn - rows layout', () => {
   it('skips empty row panes', () => {
     const tpl: LaunchConfig = {
       terminals: [],
-      rows: [
-        { panes: [{ label: 'a' }] },
-        { panes: [] },
-        { panes: [{ label: 'b' }] },
-      ],
+      rows: [{ panes: [{ label: 'a' }] }, { panes: [] }, { panes: [{ label: 'b' }] }],
     }
     const ops = planLaunchConfigSpawn(tpl, '/proj')
     expect(ops.map((o) => o.opts.label)).toEqual(['a', 'b'])

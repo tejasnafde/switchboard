@@ -8,10 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, utimesSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import {
-  resolveProjectFavicon,
-  __clearFaviconCacheForTests,
-} from '../../src/main/projects/favicon-resolver'
+import { resolveProjectFavicon, __clearFaviconCacheForTests } from '../../src/main/projects/favicon-resolver'
 
 let tmp: string
 

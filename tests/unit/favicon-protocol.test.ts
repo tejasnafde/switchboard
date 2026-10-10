@@ -14,10 +14,7 @@
  * locations the renderer asks for.
  */
 import { describe, expect, it } from 'vitest'
-import {
-  parseFaviconUrl,
-  isAuthorizedProjectPath,
-} from '../../src/main/protocol/sb-favicon'
+import { parseFaviconUrl, isAuthorizedProjectPath } from '../../src/main/protocol/sb-favicon'
 
 describe('parseFaviconUrl', () => {
   it('extracts an absolute path from a well-formed sb-favicon URL', () => {

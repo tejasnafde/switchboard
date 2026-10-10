@@ -10,7 +10,7 @@
 
 export const GENERIC_ACP_AGENTS = ['gemini', 'vibe', 'cline', 'copilot'] as const
 
-export type GenericAcpAgent = typeof GENERIC_ACP_AGENTS[number]
+export type GenericAcpAgent = (typeof GENERIC_ACP_AGENTS)[number]
 
 export function isGenericAcpAgent(value: unknown): value is GenericAcpAgent {
   return typeof value === 'string' && (GENERIC_ACP_AGENTS as readonly string[]).includes(value)

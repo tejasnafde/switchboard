@@ -35,7 +35,7 @@ vi.mock('../../src/main/runtime', () => ({
   appRootDir: () => '/tmp/switchboard-vitest',
   getSafeStorage: () => ({
     isEncryptionAvailable: () => true,
-    encryptString: (s: string) => Buffer.concat([Buffer.from([0xAA, 0xBB]), Buffer.from(s, 'utf-8')]),
+    encryptString: (s: string) => Buffer.concat([Buffer.from([0xaa, 0xbb]), Buffer.from(s, 'utf-8')]),
     decryptString: (buf: Buffer) => {
       decryptCalls.n += 1
       return buf.subarray(2).toString('utf-8')
@@ -79,10 +79,14 @@ function seedRow(over: Partial<Row> & { id: string; agent_type: string }): Row {
     updated_at: t,
     ...over,
   }
-  sqlite.prepare(
-    `INSERT OR REPLACE INTO provider_instances (${Object.keys(row).join(', ')})
-     VALUES (${Object.keys(row).map((k) => '@' + k).join(', ')})`,
-  ).run(row)
+  sqlite
+    .prepare(
+      `INSERT OR REPLACE INTO provider_instances (${Object.keys(row).join(', ')})
+     VALUES (${Object.keys(row)
+       .map((k) => '@' + k)
+       .join(', ')})`,
+    )
+    .run(row)
   return row
 }
 
@@ -90,7 +94,7 @@ function seedRow(over: Partial<Row> & { id: string; agent_type: string }): Row {
 function encrypted(env: Record<string, string>): Buffer {
   return Buffer.concat([
     Buffer.from([0x00, 0x53, 0x42, 0x45]),
-    Buffer.from([0xAA, 0xBB]),
+    Buffer.from([0xaa, 0xbb]),
     Buffer.from(JSON.stringify(env), 'utf-8'),
   ])
 }
@@ -113,12 +117,14 @@ describe('wire effectiveOauthDir - what the DB layer can say without decrypting'
     const byId = new Map(listProviderInstances().map((r) => [r.id, r]))
 
     expect(byId.get('codex-default')).toMatchObject({
-      effectiveOauthDir: CANONICAL_CODEX, effectiveOauthDirSource: 'default',
+      effectiveOauthDir: CANONICAL_CODEX,
+      effectiveOauthDirSource: 'default',
     })
     // Claude had no default at this layer at all (it reported null) even
     // though a Claude session with no oauth_dir now pins ~/.claude.
     expect(byId.get('claude-code-default')).toMatchObject({
-      effectiveOauthDir: CANONICAL_CLAUDE, effectiveOauthDirSource: 'default',
+      effectiveOauthDir: CANONICAL_CLAUDE,
+      effectiveOauthDirSource: 'default',
     })
   })
 
@@ -134,7 +140,8 @@ describe('wire effectiveOauthDir - what the DB layer can say without decrypting'
 
   it('marks an overlay-homed row unresolved instead of claiming the default', async () => {
     seedRow({
-      id: 'codex-legacy', agent_type: 'codex',
+      id: 'codex-legacy',
+      agent_type: 'codex',
       env_encrypted: encrypted({ CODEX_HOME: '/tmp/legacy-codex' }),
       env_keys: JSON.stringify(['CODEX_HOME']),
     })
@@ -148,7 +155,8 @@ describe('wire effectiveOauthDir - what the DB layer can say without decrypting'
 
   it('marks a legacy row with an unreadable env_keys column unresolved too', async () => {
     seedRow({
-      id: 'codex-ancient', agent_type: 'codex',
+      id: 'codex-ancient',
+      agent_type: 'codex',
       env_encrypted: encrypted({ OPENAI_API_KEY: 'sk-x' }),
       env_keys: null, // predates the env_keys column - could be anything
     })
@@ -165,25 +173,29 @@ describe('wire effectiveOauthDir - what the DB layer can say without decrypting'
     // an isolated legacy profile - the one row that most needs the isolation
     // warning is the row that would not get one.
     seedRow({
-      id: 'codex-blank', agent_type: 'codex',
+      id: 'codex-blank',
+      agent_type: 'codex',
       env_encrypted: Buffer.from(JSON.stringify({ CODEX_HOME: '  ' }), 'utf-8'),
       env_keys: JSON.stringify(['CODEX_HOME']),
     })
     const { listProviderInstances } = await import('../../src/main/db/provider-instances')
     expect(listProviderInstances()[0]).toMatchObject({
-      effectiveOauthDir: CANONICAL_CODEX, effectiveOauthDirSource: 'default',
+      effectiveOauthDir: CANONICAL_CODEX,
+      effectiveOauthDirSource: 'default',
     })
   })
 
   it('keeps a row whose keys are known and home-free on the default', async () => {
     seedRow({
-      id: 'codex-keyed', agent_type: 'codex',
+      id: 'codex-keyed',
+      agent_type: 'codex',
       env_encrypted: encrypted({ OPENAI_API_KEY: 'sk-x' }),
       env_keys: JSON.stringify(['OPENAI_API_KEY']),
     })
     const { listProviderInstances } = await import('../../src/main/db/provider-instances')
     expect(listProviderInstances()[0]).toMatchObject({
-      effectiveOauthDir: CANONICAL_CODEX, effectiveOauthDirSource: 'default',
+      effectiveOauthDir: CANONICAL_CODEX,
+      effectiveOauthDirSource: 'default',
     })
     expect(decryptCalls.n).toBe(0)
   })
@@ -192,7 +204,8 @@ describe('wire effectiveOauthDir - what the DB layer can say without decrypting'
 describe('resolveEffectiveOauthDir - the decrypting resolver behind the IPC layer', () => {
   it('reports the overlay home a legacy env-mode row really runs under', async () => {
     seedRow({
-      id: 'codex-legacy', agent_type: 'codex',
+      id: 'codex-legacy',
+      agent_type: 'codex',
       env_encrypted: encrypted({ CODEX_HOME: '~/.codex-legacy/' }),
       env_keys: JSON.stringify(['CODEX_HOME']),
     })
@@ -206,7 +219,8 @@ describe('resolveEffectiveOauthDir - the decrypting resolver behind the IPC laye
 
   it('reports the default when the decrypted overlay turns out to hold no home', async () => {
     seedRow({
-      id: 'codex-ancient', agent_type: 'codex',
+      id: 'codex-ancient',
+      agent_type: 'codex',
       env_encrypted: encrypted({ OPENAI_API_KEY: 'sk-x' }),
       env_keys: null,
     })
@@ -222,18 +236,24 @@ describe('resolveEffectiveOauthDir - the decrypting resolver behind the IPC laye
   // POSIX-literal string round-trip, which only holds on a POSIX host - skip
   // on win32 rather than assert a separator style no real Windows install
   // would produce either (see oauth-path.ts).
-  it.skipIf(process.platform === 'win32')('lets oauth_dir win over an overlay home, exactly as a spawn would', async () => {
-    seedRow({
-      id: 'codex-both', agent_type: 'codex', auth_mode: 'oauth_dir', oauth_dir: '/tmp/explicit',
-      env_encrypted: encrypted({ CODEX_HOME: '/tmp/overlay' }),
-      env_keys: JSON.stringify(['CODEX_HOME']),
-    })
-    const { resolveEffectiveOauthDir } = await import('../../src/main/db/provider-instances')
-    expect(resolveEffectiveOauthDir('codex-both')).toEqual({
-      effectiveOauthDir: '/tmp/explicit',
-      effectiveOauthDirSource: 'oauth_dir',
-    })
-  })
+  it.skipIf(process.platform === 'win32')(
+    'lets oauth_dir win over an overlay home, exactly as a spawn would',
+    async () => {
+      seedRow({
+        id: 'codex-both',
+        agent_type: 'codex',
+        auth_mode: 'oauth_dir',
+        oauth_dir: '/tmp/explicit',
+        env_encrypted: encrypted({ CODEX_HOME: '/tmp/overlay' }),
+        env_keys: JSON.stringify(['CODEX_HOME']),
+      })
+      const { resolveEffectiveOauthDir } = await import('../../src/main/db/provider-instances')
+      expect(resolveEffectiveOauthDir('codex-both')).toEqual({
+        effectiveOauthDir: '/tmp/explicit',
+        effectiveOauthDirSource: 'oauth_dir',
+      })
+    },
+  )
 
   it('returns null for an unknown id rather than inventing a directory', async () => {
     const { resolveEffectiveOauthDir } = await import('../../src/main/db/provider-instances')

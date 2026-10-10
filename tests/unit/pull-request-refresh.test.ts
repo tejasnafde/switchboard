@@ -3,14 +3,25 @@
  * faster) and the per-PR cache keyed by updated time.
  */
 import { describe, expect, it } from 'vitest'
-import { nextRefreshDelay, PR_FOCUS_MIN_GAP_MS, PR_REFRESH_INTERVAL_MS, pullRequestChanged, shouldRefreshPullRequests } from '../../src/shared/pull-request-refresh'
+import {
+  nextRefreshDelay,
+  PR_FOCUS_MIN_GAP_MS,
+  PR_REFRESH_INTERVAL_MS,
+  pullRequestChanged,
+  shouldRefreshPullRequests,
+} from '../../src/shared/pull-request-refresh'
 import { rollupChecks, type PrSummary } from '../../src/shared/pull-requests'
 import { VersionedCache } from '../../src/main/pull-requests/cache'
 
 const T = 1_000_000_000
 
 describe('shouldRefreshPullRequests', () => {
-  const state = (lastFetchAt: number | null, over: Partial<{ inFlight: boolean; visible: boolean }> = {}) => ({ lastFetchAt, inFlight: false, visible: true, ...over })
+  const state = (lastFetchAt: number | null, over: Partial<{ inFlight: boolean; visible: boolean }> = {}) => ({
+    lastFetchAt,
+    inFlight: false,
+    visible: true,
+    ...over,
+  })
 
   it('reads on first open', () => {
     expect(shouldRefreshPullRequests(state(null), 'open', T)).toBe(true)
@@ -60,8 +71,15 @@ describe('pullRequestChanged', () => {
   })
 
   it('sees a check finishing that did not bump the updated time', () => {
-    expect(pullRequestChanged(base, { ...base, checks: rollupChecks([{ state: 'failure' }, { state: 'success' }]) })).toBe(true)
-    expect(pullRequestChanged(base, { ...base, checks: rollupChecks([{ state: 'pending' }, { state: 'success' }, { state: 'pending' }]) })).toBe(true)
+    expect(
+      pullRequestChanged(base, { ...base, checks: rollupChecks([{ state: 'failure' }, { state: 'success' }]) }),
+    ).toBe(true)
+    expect(
+      pullRequestChanged(base, {
+        ...base,
+        checks: rollupChecks([{ state: 'pending' }, { state: 'success' }, { state: 'pending' }]),
+      }),
+    ).toBe(true)
   })
 
   it('sees a conversation resolved without a new comment', () => {

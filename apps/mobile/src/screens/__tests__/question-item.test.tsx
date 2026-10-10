@@ -6,11 +6,18 @@ import { QuestionItem } from '../ThreadFeedItems'
 import { renderComponent } from '../../test/render'
 
 const item = (multiSelect: boolean) => ({
-  kind: 'question' as const, id: 'q-1', requestId: 'req-1',
-  questions: [{
-    id: 'how', header: 'Images', question: 'How?', multiSelect,
-    options: [{ label: 'Resize on the server', description: 'A long description. '.repeat(10) }, { label: 'Keep' }],
-  }],
+  kind: 'question' as const,
+  id: 'q-1',
+  requestId: 'req-1',
+  questions: [
+    {
+      id: 'how',
+      header: 'Images',
+      question: 'How?',
+      multiSelect,
+      options: [{ label: 'Resize on the server', description: 'A long description. '.repeat(10) }, { label: 'Keep' }],
+    },
+  ],
 })
 
 describe('QuestionItem options', () => {

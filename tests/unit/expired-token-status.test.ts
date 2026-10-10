@@ -6,13 +6,15 @@ const HOUR = 60 * 60_000
 
 describe('providerAuthState', () => {
   it('treats an expired access token with a refresh token as signed in, pending refresh', () => {
-    expect(providerAuthState({ credential: { expiresAtMs: NOW - 16 * HOUR, hasRefreshToken: true }, nowMs: NOW }))
-      .toBe('refresh-pending')
+    expect(providerAuthState({ credential: { expiresAtMs: NOW - 16 * HOUR, hasRefreshToken: true }, nowMs: NOW })).toBe(
+      'refresh-pending',
+    )
   })
 
   it('treats an expired access token without a refresh token as logged out', () => {
-    expect(providerAuthState({ credential: { expiresAtMs: NOW - HOUR, hasRefreshToken: false }, nowMs: NOW }))
-      .toBe('logged-out')
+    expect(providerAuthState({ credential: { expiresAtMs: NOW - HOUR, hasRefreshToken: false }, nowMs: NOW })).toBe(
+      'logged-out',
+    )
   })
 
   it('treats a missing credential as logged out', () => {
@@ -20,11 +22,13 @@ describe('providerAuthState', () => {
   })
 
   it('lets the CLI saying loggedIn false win over a fresh-looking credential', () => {
-    expect(providerAuthState({
-      cliLoggedIn: false,
-      credential: { expiresAtMs: NOW + HOUR, hasRefreshToken: true },
-      nowMs: NOW,
-    })).toBe('logged-out')
+    expect(
+      providerAuthState({
+        cliLoggedIn: false,
+        credential: { expiresAtMs: NOW + HOUR, hasRefreshToken: true },
+        nowMs: NOW,
+      }),
+    ).toBe('logged-out')
   })
 
   it('trusts the CLI saying loggedIn true when no credential was read', () => {
@@ -32,8 +36,9 @@ describe('providerAuthState', () => {
   })
 
   it('treats a live token as signed in', () => {
-    expect(providerAuthState({ credential: { expiresAtMs: NOW + HOUR, hasRefreshToken: false }, nowMs: NOW }))
-      .toBe('signed-in')
+    expect(providerAuthState({ credential: { expiresAtMs: NOW + HOUR, hasRefreshToken: false }, nowMs: NOW })).toBe(
+      'signed-in',
+    )
   })
 })
 
@@ -58,7 +63,13 @@ function found(expiresAtMs: number, hasRefreshToken = true) {
   return {
     kind: 'found' as const,
     source: 'test',
-    credential: { accessToken: 'fixture', expiresAtMs, subscriptionType: 'max', scopes: ['user:profile'], hasRefreshToken },
+    credential: {
+      accessToken: 'fixture',
+      expiresAtMs,
+      subscriptionType: 'max',
+      scopes: ['user:profile'],
+      hasRefreshToken,
+    },
   }
 }
 
@@ -73,7 +84,9 @@ describe('fetchClaudeUsage with an expired token', () => {
     withoutTurn.mockReset().mockResolvedValue(true)
     withTurn.mockReset().mockResolvedValue(true)
   })
-  afterEach(() => { globalThis.fetch = originalFetch })
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
 
   it('asks the CLI to refresh without a turn, then reads usage with the new token', async () => {
     readClaudeCredential
@@ -129,7 +142,9 @@ describe('fetchClaudeUsage with an expired token', () => {
 
   it('treats a 403 as a scope problem, not a pending refresh', async () => {
     readClaudeCredential.mockResolvedValue(found(Date.now() + 8 * HOUR))
-    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 403, json: async () => ({}) }) as unknown as typeof fetch
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 403, json: async () => ({}) }) as unknown as typeof fetch
     expect((await fetchClaudeUsage('inst', env, '/tmp/x')).status).toBe('unauthenticated')
   })
 
@@ -143,7 +158,9 @@ describe('fetchClaudeUsage with an expired token', () => {
 
   it('treats a 401 with a refresh token as pending, not logged out', async () => {
     readClaudeCredential.mockResolvedValue(found(Date.now() + 8 * HOUR))
-    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) }) as unknown as typeof fetch
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 401, json: async () => ({}) }) as unknown as typeof fetch
     expect((await fetchClaudeUsage('inst', env, '/tmp/x')).status).toBe('refresh-pending')
     // Still rejected after a real refresh turn: that is a logout.
     expect((await fetchClaudeUsage('inst', env, '/tmp/x', { refreshWithTurn: true })).status).toBe('unauthenticated')

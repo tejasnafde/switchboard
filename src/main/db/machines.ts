@@ -50,9 +50,7 @@ function toRow(r: DbRow): Machine {
 }
 
 export function listMachines(): Machine[] {
-  const rows = getDb()
-    .prepare('SELECT * FROM machines ORDER BY sort_order, created_at')
-    .all() as DbRow[]
+  const rows = getDb().prepare('SELECT * FROM machines ORDER BY sort_order, created_at').all() as DbRow[]
   return rows.map(toRow)
 }
 
@@ -152,9 +150,11 @@ export function saveMachineSnapshot(machineId: string, snapshot: MachineSnapshot
 }
 
 export function getMachineSnapshots(): Record<string, MachineSnapshot> {
-  const rows = getDb()
-    .prepare('SELECT machine_id, data, synced_at FROM machine_snapshots')
-    .all() as Array<{ machine_id: string; data: string; synced_at: number }>
+  const rows = getDb().prepare('SELECT machine_id, data, synced_at FROM machine_snapshots').all() as Array<{
+    machine_id: string
+    data: string
+    synced_at: number
+  }>
   const out: Record<string, MachineSnapshot> = {}
   for (const r of rows) {
     try {

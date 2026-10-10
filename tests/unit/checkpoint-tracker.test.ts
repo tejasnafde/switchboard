@@ -4,7 +4,11 @@
  * one `file.edited` runtime event per changed file. Pure logic - git is faked.
  */
 import { describe, it, expect } from 'vitest'
-import { CheckpointTracker, type StoredTurnCheckpoint, type TurnCheckpointStore } from '../../src/main/provider/checkpoint-tracker'
+import {
+  CheckpointTracker,
+  type StoredTurnCheckpoint,
+  type TurnCheckpointStore,
+} from '../../src/main/provider/checkpoint-tracker'
 import { pathKey } from '../../src/main/provider/agent-written-paths'
 import type { CheckpointFileDiff } from '../../src/main/git/checkpoint'
 
@@ -23,8 +27,8 @@ function fakeDeps(over: {
     isGitRepo: async () => over.isGit ?? true,
     createCheckpoint: async () =>
       over.createOk === false
-        ? ({ ok: false as const, error: 'boom' })
-        : ({ ok: true as const, tree: over.trees?.[snapshots++] ?? 'START' }),
+        ? { ok: false as const, error: 'boom' }
+        : { ok: true as const, tree: over.trees?.[snapshots++] ?? 'START' },
     diffCheckpoint: async (_root: string, tree: string) => {
       over.diffedFrom?.push(tree)
       return { ok: true as const, files: over.files ?? [], endTree: `END-of-${tree}` }
@@ -36,8 +40,12 @@ function fakeDeps(over: {
 function memoryStore(earlier: Record<string, StoredTurnCheckpoint> = {}) {
   const rows = new Map<string, StoredTurnCheckpoint>()
   const store: TurnCheckpointStore = {
-    save: (threadId, cp) => { rows.set(threadId, cp) },
-    remove: (threadId) => { rows.delete(threadId) },
+    save: (threadId, cp) => {
+      rows.set(threadId, cp)
+    },
+    remove: (threadId) => {
+      rows.delete(threadId)
+    },
     takeEarlier: (threadId) => {
       const cp = earlier[threadId] ?? null
       delete earlier[threadId]
@@ -95,9 +103,7 @@ describe('CheckpointTracker', () => {
   })
 
   it('produces a unique turn id per turn even within the same millisecond (D11)', async () => {
-    const files: CheckpointFileDiff[] = [
-      { relPath: 'a.ts', changeKind: 'modify', oldContent: 'o', newContent: 'n' },
-    ]
+    const files: CheckpointFileDiff[] = [{ relPath: 'a.ts', changeKind: 'modify', oldContent: 'o', newContent: 'n' }]
     // now() is pinned to a constant - two back-to-back turns would collide if
     // the turn id were derived from the clock.
     const t = new CheckpointTracker(fakeDeps({ files }))
@@ -118,7 +124,9 @@ describe('CheckpointTracker', () => {
   })
 
   it('skips checkpointing entirely for a non-git directory', async () => {
-    const t = new CheckpointTracker(fakeDeps({ isGit: false, files: [{ relPath: 'a', changeKind: 'add', oldContent: '', newContent: 'x' }] }))
+    const t = new CheckpointTracker(
+      fakeDeps({ isGit: false, files: [{ relPath: 'a', changeKind: 'add', oldContent: '', newContent: 'x' }] }),
+    )
     await t.beginTurn('thread-2', '/not-a-repo')
     expect(await t.finishTurn('thread-2')).toEqual([])
   })
@@ -195,7 +203,9 @@ describe('CheckpointTracker', () => {
 
   it('a turn that ended with nothing queued leaves no baseline behind', async () => {
     const diffedFrom: string[] = []
-    const t = new CheckpointTracker(fakeDeps({ diffedFrom, files: [{ relPath: 'a', changeKind: 'modify', oldContent: 'o', newContent: 'n' }] }))
+    const t = new CheckpointTracker(
+      fakeDeps({ diffedFrom, files: [{ relPath: 'a', changeKind: 'modify', oldContent: 'o', newContent: 'n' }] }),
+    )
     await t.beginTurn('t', '/repo')
     await t.finishTurn('t')
     // A turn.completed with no turn of ours (a background notification).
@@ -219,12 +229,17 @@ describe('CheckpointTracker', () => {
       { relPath: 'b.ts', changeKind: 'modify', oldContent: 'o', newContent: 'n' },
     ]
     const diffedFrom: string[] = []
-    const { store } = memoryStore({ t: { turnId: 'old-7', tree: 'BEFORE', repoRoot: '/repo', written: ['/repo/a.ts'] } })
+    const { store } = memoryStore({
+      t: { turnId: 'old-7', tree: 'BEFORE', repoRoot: '/repo', written: ['/repo/a.ts'] },
+    })
     const t = new CheckpointTracker(fakeDeps({ files, diffedFrom, store }))
     expect(t.restoreEarlier('t')).toBe(true)
     const events = await t.finishTurn('t')
     expect(diffedFrom).toEqual(['BEFORE'])
-    expect(events.map((e) => [e.fileEditId, e.noRevert])).toEqual([['old-7:a.ts', undefined], ['old-7:b.ts', 'outside']])
+    expect(events.map((e) => [e.fileEditId, e.noRevert])).toEqual([
+      ['old-7:a.ts', undefined],
+      ['old-7:b.ts', 'outside'],
+    ])
     expect(t.restoreEarlier('t')).toBe(false)
   })
 })

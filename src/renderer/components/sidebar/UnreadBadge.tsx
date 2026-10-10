@@ -14,20 +14,22 @@ export function UnreadBadge({ sessionId }: { sessionId: string }) {
   const count = useUnreadCount(sessionId)
   if (count === 0) return null
   return (
-    <span style={{
-      minWidth: '16px',
-      height: '16px',
-      borderRadius: '8px',
-      background: 'var(--accent)',
-      color: '#fff',
-      fontSize: '10px',
-      fontWeight: 600,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '0 4px',
-      flexShrink: 0,
-    }}>
+    <span
+      style={{
+        minWidth: '16px',
+        height: '16px',
+        borderRadius: '8px',
+        background: 'var(--accent)',
+        color: '#fff',
+        fontSize: '10px',
+        fontWeight: 600,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '0 4px',
+        flexShrink: 0,
+      }}
+    >
       {count > 99 ? '99+' : count}
     </span>
   )

@@ -38,7 +38,12 @@ export async function deliverReviewContext(chat: PrLinkChat, ctx: ReviewContext)
   }
   const pillId = `review-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   const drafts = useDraftStore.getState()
-  drafts.addPill(sessionId, { id: pillId, kind: 'review', label: reviewContextLabel(ctx), content: expandReviewContext(ctx) })
+  drafts.addPill(sessionId, {
+    id: pillId,
+    kind: 'review',
+    label: reviewContextLabel(ctx),
+    content: expandReviewContext(ctx),
+  })
   // The composer hydrates chips from `[[pill:id]]` tokens in the draft, so this
   // works whether or not the chat's composer is mounted yet.
   drafts.appendDraft(sessionId, `[[pill:${pillId}]] `)

@@ -12,18 +12,12 @@ export interface ContextWindowUsage {
  * Modeled after T3 Code's ContextWindowMeter - renders as a small ring
  * with percentage in the center. Hover shows detailed tooltip.
  */
-export const ContextWindowMeter = memo(function ContextWindowMeter({
-  usage,
-}: {
-  usage: ContextWindowUsage
-}) {
+export const ContextWindowMeter = memo(function ContextWindowMeter({ usage }: { usage: ContextWindowUsage }) {
   const percentage = contextPercent(usage.usedTokens, usage.maxTokens)
 
   const radius = 9.75
   const circumference = 2 * Math.PI * radius
-  const dashOffset = percentage !== null
-    ? circumference - (percentage / 100) * circumference
-    : circumference
+  const dashOffset = percentage !== null ? circumference - (percentage / 100) * circumference : circumference
 
   // Color based on usage level
   const strokeColor =
@@ -42,14 +36,16 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
           : `${formatTokens(usage.usedTokens)} tokens used`
       }
     >
-      <span style={{
-        position: 'relative',
-        display: 'flex',
-        width: '24px',
-        height: '24px',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
+      <span
+        style={{
+          position: 'relative',
+          display: 'flex',
+          width: '24px',
+          height: '24px',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <svg
           viewBox="0 0 24 24"
           style={{
@@ -61,14 +57,7 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
           }}
         >
           {/* Background ring */}
-          <circle
-            cx="12"
-            cy="12"
-            r={radius}
-            fill="none"
-            stroke="var(--border)"
-            strokeWidth="3"
-          />
+          <circle cx="12" cy="12" r={radius} fill="none" stroke="var(--border)" strokeWidth="3" />
           {/* Progress ring */}
           <circle
             cx="12"
@@ -83,13 +72,15 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
             style={{ transition: 'stroke-dashoffset 0.5s ease-out' }}
           />
         </svg>
-        <span style={{
-          position: 'relative',
-          fontSize: '7px',
-          fontWeight: 600,
-          color: 'var(--text-muted)',
-          lineHeight: 1,
-        }}>
+        <span
+          style={{
+            position: 'relative',
+            fontSize: '7px',
+            fontWeight: 600,
+            color: 'var(--text-muted)',
+            lineHeight: 1,
+          }}
+        >
           {percentage !== null ? Math.round(percentage) : formatTokens(usage.usedTokens)}
         </span>
       </span>

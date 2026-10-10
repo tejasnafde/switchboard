@@ -21,9 +21,7 @@ export interface RetargetableWorktreeCreationProgressSink {
   registerHost(host: BackendHost): void
 }
 
-export function createWorktreeCreationProgressSink(
-  initialHost: BackendHost,
-): RetargetableWorktreeCreationProgressSink {
+export function createWorktreeCreationProgressSink(initialHost: BackendHost): RetargetableWorktreeCreationProgressSink {
   let host = initialHost
   return {
     publish(event): void {
@@ -43,14 +41,12 @@ function validatedCreateRequest(input: unknown): WorktreeCreationRequest {
   return authorizeWorktreeCreationRequest(parsed.value)
 }
 
-export function registerWorktreeCreationHandlers(
-  host: BackendHost,
-  service: WorktreeCreationApi,
-): void {
+export function registerWorktreeCreationHandlers(host: BackendHost, service: WorktreeCreationApi): void {
   host.handle(WorktreeCreationChannels.CREATE, async (input: unknown) =>
-    service.createWorktreeTransaction(validatedCreateRequest(input)))
-  host.handle(WorktreeCreationChannels.GET, (input: GetWorktreeCreationRequest) =>
-    service.getWorktreeCreation(input))
+    service.createWorktreeTransaction(validatedCreateRequest(input)),
+  )
+  host.handle(WorktreeCreationChannels.GET, (input: GetWorktreeCreationRequest) => service.getWorktreeCreation(input))
   host.handle(WorktreeCreationChannels.ACT, (input: WorktreeCreationActionRequest) =>
-    service.actOnWorktreeCreation(input))
+    service.actOnWorktreeCreation(input),
+  )
 }

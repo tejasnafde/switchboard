@@ -83,7 +83,10 @@ function plan(files) {
 /** Replaces `oldStem.ext` and `/oldStem` path fragments with the kebab stem. */
 export function rewriteMentions(text, stems, isCode) {
   if (stems.size === 0) return text
-  const alt = [...stems].sort((a, b) => b.length - a.length).map(escapeRe).join('|')
+  const alt = [...stems]
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRe)
+    .join('|')
   text = text.replace(
     new RegExp(`(?<![\\w@-])(${alt})((?:\\.[a-z0-9]+)*\\.(?:tsx?|jsx?|mjs|cjs))(?![\\w-])`, 'g'),
     (_, stem, ext) => toKebab(stem) + ext,
@@ -167,7 +170,9 @@ export function run({ dryRun = false } = {}) {
   }
   for (const f of edited) console.log(`${dryRun ? 'would edit' : 'edited'} ${oldPaths.get(f) ?? f}`)
   if (!dryRun && edited.length) git('add', '--', ...edited.map((f) => oldPaths.get(f) ?? f))
-  console.log(`naming convention: ${renames.length} renames, ${edited.length} files with rewritten references${dryRun ? ' (dry run)' : ''}`)
+  console.log(
+    `naming convention: ${renames.length} renames, ${edited.length} files with rewritten references${dryRun ? ' (dry run)' : ''}`,
+  )
   return { renames, edited }
 }
 

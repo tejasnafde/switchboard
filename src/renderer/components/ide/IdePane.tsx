@@ -51,22 +51,21 @@ export function IdePane(): React.ReactElement {
     return id && id !== 'local' ? id : null
   })
   const desiredBinding = useMemo<IdeWorkspaceBinding | null>(
-    () => companionSessionId && folder
-      ? { sessionId: companionSessionId, machineId: sessionMachineId ?? 'local', folder }
-      : null,
+    () =>
+      companionSessionId && folder
+        ? { sessionId: companionSessionId, machineId: sessionMachineId ?? 'local', folder }
+        : null,
     [companionSessionId, folder, sessionMachineId],
   )
   const visible = useLayoutStore((s) => s.rightPaneMode === 'files')
   const [navBinding, setNavBinding] = useState<IdeWorkspaceBinding | null>(desiredBinding)
   const navFolder = navBinding?.folder ?? null
-  const navMachineId = navBinding?.machineId && navBinding.machineId !== 'local'
-    ? navBinding.machineId
-    : null
+  const navMachineId = navBinding?.machineId && navBinding.machineId !== 'local' ? navBinding.machineId : null
   const navSessionLabel = useAgentStore((s) => {
     const session = s.sessions.find((x) => x.id === navBinding?.sessionId)
     return session?.title ?? navBinding?.sessionId.slice(0, 8) ?? 'No chat selected'
   })
-  const remoteIdePort = useMachineStore((s) => (navMachineId ? s.idePorts[navMachineId] ?? null : null))
+  const remoteIdePort = useMachineStore((s) => (navMachineId ? (s.idePorts[navMachineId] ?? null) : null))
   const [state, setState] = useState<PaneState>({ kind: 'idle' })
   const [retryNonce, setRetryNonce] = useState(0)
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -152,7 +151,7 @@ export function IdePane(): React.ReactElement {
         }
         // Local-server signal only - a remote workbench rides the tunnel.
         setState((prev) =>
-          prev.kind === 'ready' && !prev.remote ? { kind: 'error', message: 'IDE server stopped unexpectedly.' } : prev
+          prev.kind === 'ready' && !prev.remote ? { kind: 'error', message: 'IDE server stopped unexpectedly.' } : prev,
         )
       }
     })
@@ -252,9 +251,11 @@ export function IdePane(): React.ReactElement {
   // ?folder= switch), which is exactly the chat-switch case. dom-ready tells
   // us the guest is attached (loadURL throws before that).
   useEffect(() => {
-    const wv = webviewRef.current as (HTMLElement & {
-      loadURL?: (url: string) => Promise<void>
-    }) | null
+    const wv = webviewRef.current as
+      | (HTMLElement & {
+          loadURL?: (url: string) => Promise<void>
+        })
+      | null
     if (!wv?.loadURL) return
     let cancelled = false
     const navigationKey = `${navBinding?.machineId ?? 'none'}:${src}`
@@ -262,12 +263,14 @@ export function IdePane(): React.ReactElement {
       if (cancelled || lastNavRef.current === navigationKey) return
       lastNavRef.current = navigationKey
       try {
-        void wv.loadURL!(src).then(() => {
-          const desired = desiredBindingRef.current
-          if (desired && sameIdeWorkspaceTarget(desired, navBinding)) {
-            commitIdeWorkspaceBinding(desired)
-          }
-        }).catch((err) => log.warn('ide webview navigate failed', err))
+        void wv.loadURL!(src)
+          .then(() => {
+            const desired = desiredBindingRef.current
+            if (desired && sameIdeWorkspaceTarget(desired, navBinding)) {
+              commitIdeWorkspaceBinding(desired)
+            }
+          })
+          .catch((err) => log.warn('ide webview navigate failed', err))
       } catch (err) {
         // loadURL throws synchronously if the guest isn't attached yet; clear
         // the marker so the dom-ready firing below retries.
@@ -285,60 +288,76 @@ export function IdePane(): React.ReactElement {
   }, [src, navFolder, navBinding])
 
   return (
-    <div data-ide-pane data-session-id={navBinding?.sessionId ?? undefined} style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
-      <div style={{
-        height: 28,
-        flexShrink: 0,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '0 9px',
-        borderBottom: '1px solid var(--border)',
-        background: 'var(--bg-secondary)',
-        color: 'var(--text-muted)',
-        fontSize: 10.5,
-        minWidth: 0,
-      }}>
+    <div
+      data-ide-pane
+      data-session-id={navBinding?.sessionId ?? undefined}
+      style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}
+    >
+      <div
+        style={{
+          height: 28,
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '0 9px',
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--bg-secondary)',
+          color: 'var(--text-muted)',
+          fontSize: 10.5,
+          minWidth: 0,
+        }}
+      >
         <strong style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>IDE</strong>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={navFolder ?? undefined}>
-          {navSessionLabel}{navFolder ? ` · ${navFolder.split('/').pop()}` : ''}{navMachineId ? ` · ${navMachineId}` : ''}
+        <span
+          style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          title={navFolder ?? undefined}
+        >
+          {navSessionLabel}
+          {navFolder ? ` · ${navFolder.split('/').pop()}` : ''}
+          {navMachineId ? ` · ${navMachineId}` : ''}
         </span>
       </div>
       <div style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex' }}>
-      {state.kind !== 'ready' && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            fontSize: 12,
-            opacity: 0.75,
-            zIndex: 1,
-          }}
-        >
-          {!folder ? (
-            <span>Open a session to browse its project</span>
-          ) : state.kind === 'error' ? (
-            <>
-              <span style={{ color: 'var(--color-error, #e5534b)', maxWidth: 360, textAlign: 'center' }}>
-                {state.message}
-              </span>
-              <button onClick={() => setRetryNonce((n) => n + 1)}>Retry</button>
-            </>
-          ) : (
-            <span>{state.kind === 'booting' ? state.label : 'IDE stopped'}</span>
-          )}
-        </div>
-      )}
-      {/* Painted app-dark so the guest never flashes white while loading.
+        {state.kind !== 'ready' && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              fontSize: 12,
+              opacity: 0.75,
+              zIndex: 1,
+            }}
+          >
+            {!folder ? (
+              <span>Open a session to browse its project</span>
+            ) : state.kind === 'error' ? (
+              <>
+                <span style={{ color: 'var(--color-error, #e5534b)', maxWidth: 360, textAlign: 'center' }}>
+                  {state.message}
+                </span>
+                <button onClick={() => setRetryNonce((n) => n + 1)}>Retry</button>
+              </>
+            ) : (
+              <span>{state.kind === 'booting' ? state.label : 'IDE stopped'}</span>
+            )}
+          </div>
+        )}
+        {/* Painted app-dark so the guest never flashes white while loading.
           allowpopups is set via setWebviewRef (attribute, not property).
           src is a static bootstrap only; real navigation is driven by loadURL
           above (Electron webview won't re-navigate on attribute change). */}
-      <webview ref={setWebviewRef} src="about:blank" partition="persist:ide" style={{ flex: 1, border: 'none', background: 'var(--bg-primary)' }} />
+        <webview
+          ref={setWebviewRef}
+          src="about:blank"
+          partition="persist:ide"
+          style={{ flex: 1, border: 'none', background: 'var(--bg-primary)' }}
+        />
       </div>
     </div>
   )

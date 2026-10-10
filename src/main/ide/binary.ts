@@ -86,7 +86,11 @@ export async function ensureBinary(
     },
   })
   const tarPath = join(tmpdir(), assetName)
-  await pipeline(Readable.fromWeb(res.body as import('node:stream/web').ReadableStream), counter, createWriteStream(tarPath))
+  await pipeline(
+    Readable.fromWeb(res.body as import('node:stream/web').ReadableStream),
+    counter,
+    createWriteStream(tarPath),
+  )
 
   const dir = installDir(userDataRoot)
   mkdirSync(dir, { recursive: true })

@@ -54,9 +54,13 @@ describe('Cursor snapshot import', () => {
     const result = importCursorSnapshot(db, first)
 
     expect(result).toEqual({ conversationId: 'cursor:composer-1', refreshed: true })
-    expect(db.prepare(`SELECT id, project_path, agent_type, session_id, title,
+    expect(
+      db
+        .prepare(`SELECT id, project_path, agent_type, session_id, title,
       archived, sidebar_role, pending_handoff_from, origin_source
-      FROM conversations`).get()).toEqual({
+      FROM conversations`)
+        .get(),
+    ).toEqual({
       id: 'cursor:composer-1',
       project_path: '/repo',
       agent_type: 'claude-code',
@@ -67,8 +71,9 @@ describe('Cursor snapshot import', () => {
       pending_handoff_from: 'cursor',
       origin_source: 'cursor',
     })
-    expect(db.prepare('SELECT id, role, content, timestamp FROM messages ORDER BY timestamp').all())
-      .toEqual(first.messages)
+    expect(db.prepare('SELECT id, role, content, timestamp FROM messages ORDER BY timestamp').all()).toEqual(
+      first.messages,
+    )
     db.close()
   })
 
@@ -82,10 +87,13 @@ describe('Cursor snapshot import', () => {
     })
 
     expect(refreshed.refreshed).toBe(true)
-    expect(db.prepare('SELECT title, pending_handoff_from FROM conversations').get())
-      .toEqual({ title: 'Renamed in Cursor', pending_handoff_from: 'cursor' })
-    expect(db.prepare('SELECT id, content FROM messages').all())
-      .toEqual([{ id: 'cursor:composer-1:u2', content: 'new' }])
+    expect(db.prepare('SELECT title, pending_handoff_from FROM conversations').get()).toEqual({
+      title: 'Renamed in Cursor',
+      pending_handoff_from: 'cursor',
+    })
+    expect(db.prepare('SELECT id, content FROM messages').all()).toEqual([
+      { id: 'cursor:composer-1:u2', content: 'new' },
+    ])
     db.close()
   })
 
@@ -93,10 +101,12 @@ describe('Cursor snapshot import', () => {
     const db = database()
     importCursorSnapshot(db, first)
 
-    expect(() => importCursorSnapshot(db, {
-      ...first,
-      messages: [],
-    })).toThrow('could not be loaded')
+    expect(() =>
+      importCursorSnapshot(db, {
+        ...first,
+        messages: [],
+      }),
+    ).toThrow('could not be loaded')
     expect(db.prepare('SELECT id, content FROM messages ORDER BY timestamp').all()).toEqual([
       { id: 'cursor:composer-1:u1', content: 'question' },
       { id: 'cursor:composer-1:a1', content: 'answer' },
@@ -119,8 +129,12 @@ describe('Cursor snapshot import', () => {
     importCursorSnapshot(db, first)
     db.prepare("UPDATE conversations SET pending_handoff_from = NULL WHERE id = 'cursor:composer-1'").run()
     db.prepare(`INSERT INTO conversation_segments
-      (id, conversation_id, provider, provider_session_id) VALUES (?, ?, ?, ?)`)
-      .run('segment-1', 'cursor:composer-1', 'claude-code', 'native-1')
+      (id, conversation_id, provider, provider_session_id) VALUES (?, ?, ?, ?)`).run(
+      'segment-1',
+      'cursor:composer-1',
+      'claude-code',
+      'native-1',
+    )
 
     const result = importCursorSnapshot(db, {
       ...first,
@@ -133,16 +147,18 @@ describe('Cursor snapshot import', () => {
       { id: 'cursor:composer-1:u1', content: 'question' },
       { id: 'cursor:composer-1:a1', content: 'answer' },
     ])
-    expect(db.prepare('SELECT title, updated_at, pending_handoff_from FROM conversations').get())
-      .toEqual({ title: 'Imported from Cursor', updated_at: 120, pending_handoff_from: null })
+    expect(db.prepare('SELECT title, updated_at, pending_handoff_from FROM conversations').get()).toEqual({
+      title: 'Imported from Cursor',
+      updated_at: 120,
+      pending_handoff_from: null,
+    })
     db.close()
   })
 
   it('rejects a composer id already owned by another project', () => {
     const db = database()
     importCursorSnapshot(db, first)
-    expect(() => importCursorSnapshot(db, { ...first, projectPath: '/other' }))
-      .toThrow('another project')
+    expect(() => importCursorSnapshot(db, { ...first, projectPath: '/other' })).toThrow('another project')
     db.close()
   })
 
@@ -153,28 +169,34 @@ describe('Cursor snapshot import', () => {
       VALUES ('cursor:composer-1', '/repo', 'claude-code', 'Unrelated', 1, 1, 0, 'managed')`).run()
 
     expect(() => importCursorSnapshot(db, first)).toThrow('already used')
-    expect(db.prepare('SELECT title, origin_source FROM conversations').get())
-      .toEqual({ title: 'Unrelated', origin_source: null })
+    expect(db.prepare('SELECT title, origin_source FROM conversations').get()).toEqual({
+      title: 'Unrelated',
+      origin_source: null,
+    })
     db.close()
   })
 
   it('projects Cursor provenance separately from the runnable provider', () => {
-    const sessions = projectManagedRootSessions([{
-      id: 'cursor:composer-1',
-      project_path: '/repo',
-      agent_type: 'claude-code',
-      origin_source: 'cursor',
-      session_id: null,
-      title: 'Imported from Cursor',
-      created_at: 100,
-      updated_at: 120,
-      archived: 0,
-    } as ConversationRow])
+    const sessions = projectManagedRootSessions([
+      {
+        id: 'cursor:composer-1',
+        project_path: '/repo',
+        agent_type: 'claude-code',
+        origin_source: 'cursor',
+        session_id: null,
+        title: 'Imported from Cursor',
+        created_at: 100,
+        updated_at: 120,
+        archived: 0,
+      } as ConversationRow,
+    ])
 
-    expect(sessions).toEqual([expect.objectContaining({
-      id: 'cursor:composer-1',
-      source: 'cursor',
-      agentType: 'claude-code',
-    })])
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        id: 'cursor:composer-1',
+        source: 'cursor',
+        agentType: 'claude-code',
+      }),
+    ])
   })
 })

@@ -1,6 +1,11 @@
 /** Directory autocomplete for the remote add-project path field. */
 import { describe, it, expect } from 'vitest'
-import { splitPath, pathCompletions, moveSelection, acceptSuggestion } from '../../src/renderer/components/sidebar/path-complete'
+import {
+  splitPath,
+  pathCompletions,
+  moveSelection,
+  acceptSuggestion,
+} from '../../src/renderer/components/sidebar/path-complete'
 
 const entries = [
   { name: 'ubuntu', isDir: true },

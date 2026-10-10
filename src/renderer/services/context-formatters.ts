@@ -95,6 +95,8 @@ export function textWithPillLabels(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? ''
   if (node instanceof Element && node.hasAttribute(PILL_LABEL_ATTR)) return node.getAttribute(PILL_LABEL_ATTR) ?? ''
   let text = ''
-  node.childNodes.forEach((child) => { text += textWithPillLabels(child) })
+  node.childNodes.forEach((child) => {
+    text += textWithPillLabels(child)
+  })
   return text
 }

@@ -19,9 +19,7 @@ function getSessionCwd(sessionId: string | null): string | undefined {
  */
 export function TerminalStrip() {
   const activeSessionId = useTerminalStore((s) => s.activeSessionId)
-  const layout = useTerminalStore((s) =>
-    s.activeSessionId ? s.getLayout(s.activeSessionId) : null
-  )
+  const layout = useTerminalStore((s) => (s.activeSessionId ? s.getLayout(s.activeSessionId) : null))
   const { addWindow, splitActiveWindow, addPaneToActiveWindow, setActiveWindow } = useTerminalStore()
 
   // Flex ratios for rows (row resizing)
@@ -65,12 +63,15 @@ export function TerminalStrip() {
     if (pid) setTimeout(() => focusTerminal(pid), 80)
   }, [activeSessionId, addPaneToActiveWindow])
 
-  const handleFocusWindow = useCallback((windowId: string) => {
-    if (!activeSessionId) return
-    setActiveWindow(activeSessionId, windowId)
-    const pid = useTerminalStore.getState().getLayout(activeSessionId).windows[windowId]?.activePaneId
-    if (pid) focusTerminal(pid)
-  }, [activeSessionId, setActiveWindow])
+  const handleFocusWindow = useCallback(
+    (windowId: string) => {
+      if (!activeSessionId) return
+      setActiveWindow(activeSessionId, windowId)
+      const pid = useTerminalStore.getState().getLayout(activeSessionId).windows[windowId]?.activePaneId
+      if (pid) focusTerminal(pid)
+    },
+    [activeSessionId, setActiveWindow],
+  )
 
   // Row-to-row resize (vertical drag)
   const makeRowResizeHandler = useCallback((topRowId: string, bottomRowId: string) => {
@@ -123,7 +124,10 @@ export function TerminalStrip() {
   const panes = layout?.panes ?? {}
   const activeWindowId = layout?.activeWindowId ?? null
   const hasAny = rows.length > 0
-  const paneCount = rows.reduce((n, row) => n + row.windowIds.reduce((m, wid) => m + (windows[wid]?.paneIds.length ?? 0), 0), 0)
+  const paneCount = rows.reduce(
+    (n, row) => n + row.windowIds.reduce((m, wid) => m + (windows[wid]?.paneIds.length ?? 0), 0),
+    0,
+  )
 
   return (
     <div
@@ -133,9 +137,7 @@ export function TerminalStrip() {
     >
       {/* Toolbar */}
       <div className="flex shrink-0 items-center gap-[4px] border-b border-[var(--border)] bg-[var(--bg-secondary)] px-[8px] py-[3px]">
-        <span className="text-[11px] font-[600] text-[var(--text-muted)]">
-          TERMINAL
-        </span>
+        <span className="text-[11px] font-[600] text-[var(--text-muted)]">TERMINAL</span>
         <LaunchConfigPicker />
         <div className="flex-1" />
         {paneCount > 0 && (
@@ -146,12 +148,16 @@ export function TerminalStrip() {
         {activeSessionId && (
           <>
             <button
-              onClick={hasAny ? newWindowInRow : () => {
-                const ids = useTerminalStore.getState().getAllWindowIds(activeSessionId)
-                const cwd = getSessionCwd(activeSessionId)
-                const r = addWindow(activeSessionId, { label: `Terminal ${ids.length + 1}`, cwd })
-                setTimeout(() => focusTerminal(r.paneId), 80)
-              }}
+              onClick={
+                hasAny
+                  ? newWindowInRow
+                  : () => {
+                      const ids = useTerminalStore.getState().getAllWindowIds(activeSessionId)
+                      const cwd = getSessionCwd(activeSessionId)
+                      const r = addWindow(activeSessionId, { label: `Terminal ${ids.length + 1}`, cwd })
+                      setTimeout(() => focusTerminal(r.paneId), 80)
+                    }
+              }
               title="New window (⌘T)"
               className={toolbarBtn}
             >
@@ -167,7 +173,15 @@ export function TerminalStrip() {
               </svg>
             </button>
             <button onClick={newPaneInActiveWindow} title={'New tab in active window (⌘\\)'} className={toolbarBtn}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              >
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
@@ -180,9 +194,7 @@ export function TerminalStrip() {
       <div className="flex min-h-0 flex-[1_1_0%] flex-col overflow-hidden">
         {!hasAny && (
           <div className="flex flex-1 items-center justify-center text-[12px] text-[var(--text-muted)]">
-            {activeSessionId
-              ? 'No terminals open. Press ⌘T to create a window.'
-              : 'Select a chat to open terminals.'}
+            {activeSessionId ? 'No terminals open. Press ⌘T to create a window.' : 'Select a chat to open terminals.'}
           </div>
         )}
 
@@ -237,4 +249,5 @@ export function TerminalStrip() {
   )
 }
 
-const toolbarBtn = 'flex cursor-pointer items-center border-0 bg-transparent px-[4px] py-[2px] leading-none text-[var(--text-muted)]'
+const toolbarBtn =
+  'flex cursor-pointer items-center border-0 bg-transparent px-[4px] py-[2px] leading-none text-[var(--text-muted)]'

@@ -22,32 +22,38 @@ function source(markdown: string): CopyTableSource {
 }
 
 // The table from the user's screenshot.
-const bigQuery = source([
-  '| Check | Match rate |',
-  '| --- | --- |',
-  "| `roster_adherence_pct` = % of staff with `roster_adherence = 'Compliant'` | 39,426 / 39,459 (99.9%) |",
-  "| `roster_compliant` = count of staff with `roster_adherence = 'Compliant'` | 38,236 / 39,459 (97%) |",
-].join('\n'))
+const bigQuery = source(
+  [
+    '| Check | Match rate |',
+    '| --- | --- |',
+    "| `roster_adherence_pct` = % of staff with `roster_adherence = 'Compliant'` | 39,426 / 39,459 (99.9%) |",
+    "| `roster_compliant` = count of staff with `roster_adherence = 'Compliant'` | 38,236 / 39,459 (97%) |",
+  ].join('\n'),
+)
 
 describe('table copy serializations', () => {
   it('copies the screenshot table as a clean HTML table and TSV in one payload', () => {
     const { html, text } = tableClipboardPayload(bigQuery)
     expect(html).toBe(
       '<table><thead><tr><th>Check</th><th>Match rate</th></tr></thead><tbody>' +
-      "<tr><td><code>roster_adherence_pct</code> = % of staff with <code>roster_adherence = 'Compliant'</code></td><td>39,426 / 39,459 (99.9%)</td></tr>" +
-      "<tr><td><code>roster_compliant</code> = count of staff with <code>roster_adherence = 'Compliant'</code></td><td>38,236 / 39,459 (97%)</td></tr>" +
-      '</tbody></table>',
+        "<tr><td><code>roster_adherence_pct</code> = % of staff with <code>roster_adherence = 'Compliant'</code></td><td>39,426 / 39,459 (99.9%)</td></tr>" +
+        "<tr><td><code>roster_compliant</code> = count of staff with <code>roster_adherence = 'Compliant'</code></td><td>38,236 / 39,459 (97%)</td></tr>" +
+        '</tbody></table>',
     )
-    expect(text).toBe([
-      'Check\tMatch rate',
-      "roster_adherence_pct = % of staff with roster_adherence = 'Compliant'\t39,426 / 39,459 (99.9%)",
-      "roster_compliant = count of staff with roster_adherence = 'Compliant'\t38,236 / 39,459 (97%)",
-    ].join('\n'))
+    expect(text).toBe(
+      [
+        'Check\tMatch rate',
+        "roster_adherence_pct = % of staff with roster_adherence = 'Compliant'\t39,426 / 39,459 (99.9%)",
+        "roster_compliant = count of staff with roster_adherence = 'Compliant'\t38,236 / 39,459 (97%)",
+      ].join('\n'),
+    )
   })
 
   it('keeps bold, italics and code in HTML, drops links, and strips markers from text', () => {
     const table = source('| a | b |\n| --- | --- |\n| **Open** and *new* | [docs](https://x.dev) ~~old~~ `x` |')
-    expect(tableToHtml(table)).toContain('<td><strong>Open</strong> and <em>new</em></td><td>docs old <code>x</code></td>')
+    expect(tableToHtml(table)).toContain(
+      '<td><strong>Open</strong> and <em>new</em></td><td>docs old <code>x</code></td>',
+    )
     expect(tableToTsv(table).split('\n')[1]).toBe('Open and new\tdocs old x')
   })
 
@@ -73,11 +79,20 @@ describe('table copy serializations', () => {
   it('replaces tabs and line breaks inside cells with spaces', () => {
     const table: CopyTableSource = {
       header: [{ text: 'h', tokens: [{ type: 'text', raw: 'h', text: 'h' }], header: true, align: null }],
-      rows: [[{ text: 'a\tb<br>c', tokens: [
-        { type: 'text', raw: 'a\tb', text: 'a\tb' },
-        { type: 'br', raw: '<br>' },
-        { type: 'text', raw: 'c\nd', text: 'c\nd' },
-      ], header: false, align: null }]],
+      rows: [
+        [
+          {
+            text: 'a\tb<br>c',
+            tokens: [
+              { type: 'text', raw: 'a\tb', text: 'a\tb' },
+              { type: 'br', raw: '<br>' },
+              { type: 'text', raw: 'c\nd', text: 'c\nd' },
+            ],
+            header: false,
+            align: null,
+          },
+        ],
+      ],
       align: [null],
     }
     expect(tableToTsv(table)).toBe('h\na b c d')
@@ -98,14 +113,33 @@ describe('table copy serializations', () => {
   })
 
   it('neutralizes CSV cells a spreadsheet would run as formulas, and leaves numbers alone', () => {
-    const table = source([
-      '| cell |', '| --- |',
-      '| =HYPERLINK("http://x","y") |', '| +cmd |', '| -rm |', '| @SUM(A1) |',
-      '| -3.5 |', '| +2 |', '| 1,204 |', '| -42% |', '| - |', '| a=b |',
-    ].join('\n'))
+    const table = source(
+      [
+        '| cell |',
+        '| --- |',
+        '| =HYPERLINK("http://x","y") |',
+        '| +cmd |',
+        '| -rm |',
+        '| @SUM(A1) |',
+        '| -3.5 |',
+        '| +2 |',
+        '| 1,204 |',
+        '| -42% |',
+        '| - |',
+        '| a=b |',
+      ].join('\n'),
+    )
     expect(tableToCsv(table).split('\r\n').slice(1)).toEqual([
-      '"\'=HYPERLINK(""http://x"",""y"")"', "'+cmd", "'-rm", "'@SUM(A1)",
-      '-3.5', '+2', '"1,204"', '-42%', "'-", 'a=b',
+      '"\'=HYPERLINK(""http://x"",""y"")"',
+      "'+cmd",
+      "'-rm",
+      "'@SUM(A1)",
+      '-3.5',
+      '+2',
+      '"1,204"',
+      '-42%',
+      "'-",
+      'a=b',
     ])
     expect(tableToTsv(table).split('\n')[1]).toBe('=HYPERLINK("http://x","y")')
     expect(tableToHtml(table)).toContain('<td>+cmd</td>')
@@ -151,7 +185,10 @@ describe('table copy controls in rendered markdown', () => {
 
   it('picks the clipboard formats per menu choice', () => {
     const { tables } = renderMarkdownDocument(table)
-    expect(tableCopyWrite(tables[0], 'table')).toEqual({ html: expect.stringContaining('<table>'), text: 'State\tCount\nOpen\t18' })
+    expect(tableCopyWrite(tables[0], 'table')).toEqual({
+      html: expect.stringContaining('<table>'),
+      text: 'State\tCount\nOpen\t18',
+    })
     expect(tableCopyWrite(tables[0], 'csv')).toEqual({ text: 'State,Count\r\nOpen,18' })
     expect(tableCopyWrite(tables[0], 'markdown').html).toBeUndefined()
   })
@@ -159,7 +196,9 @@ describe('table copy controls in rendered markdown', () => {
   it('keeps a table the stream may still extend provisional until content follows or the message settles', () => {
     const streaming = `Intro\n\n${table}\n| Merged | 1`
     expect(renderMarkdownDocument(streaming, { mutable: true }).html).toContain('data-table-state="provisional"')
-    expect(renderMarkdownDocument(`${streaming} |\n\nDone.`, { mutable: true }).html).toContain('data-table-state="settled"')
+    expect(renderMarkdownDocument(`${streaming} |\n\nDone.`, { mutable: true }).html).toContain(
+      'data-table-state="settled"',
+    )
     expect(renderMarkdownDocument(streaming).html).toContain('data-table-state="settled"')
     const nested = renderMarkdownDocument(`- item\n\n  ${table.replaceAll('\n', '\n  ')}`, { mutable: true }).html
     expect(nested).toContain('data-table-state="provisional"')
@@ -179,7 +218,8 @@ describe('table copy controls in rendered markdown', () => {
     const button = { focus: (options?: FocusOptions) => focused.push(options) }
     const body = {}
     const root = {
-      querySelector: (selector: string) => selector === '[data-table-state="settled"] [data-table-menu-index="1"]' ? button : null,
+      querySelector: (selector: string) =>
+        selector === '[data-table-state="settled"] [data-table-menu-index="1"]' ? button : null,
       contains: (target: unknown) => target === button,
     }
     expect(restoreTableControlFocus(root, { kind: 'menu', index: 1 }, body, body)).toBe(true)

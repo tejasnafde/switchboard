@@ -59,7 +59,7 @@ describe('EventReplayBuffer', () => {
     expect(buf.since(0).frames).toHaveLength(1)
   })
 
-  it('applies the caller\'s channel filter, so a replay cannot outrank a live emit', () => {
+  it("applies the caller's channel filter, so a replay cannot outrank a live emit", () => {
     // emit() filters by scope on the way out. Without the same filter here a
     // scoped device would be handed, on reconnect, events it is not allowed to
     // receive live.

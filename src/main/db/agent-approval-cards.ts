@@ -1,5 +1,10 @@
 import Database from 'better-sqlite3'
-import { formatApprovalResultMarker, type ApprovalCardStore, type HeldApprovalResult, type StoredApprovalCard } from '@shared/agent-approval-cards'
+import {
+  formatApprovalResultMarker,
+  type ApprovalCardStore,
+  type HeldApprovalResult,
+  type StoredApprovalCard,
+} from '@shared/agent-approval-cards'
 import type { HostWriteCard } from '@shared/agent-host-writes'
 import { createMainLogger } from '../logger'
 import { getDb } from './database'
@@ -53,9 +58,13 @@ interface CardRow {
 function cardFromRow<Plan>(r: CardRow): StoredApprovalCard<Plan> | null {
   try {
     const plan = JSON.parse(r.plan_json) as unknown
-    const hostWrite = r.host_write_json ? JSON.parse(r.host_write_json) as unknown : null
+    const hostWrite = r.host_write_json ? (JSON.parse(r.host_write_json) as unknown) : null
     if (!plan || typeof plan !== 'object' || typeof (plan as { kind?: unknown }).kind !== 'string') return null
-    if (hostWrite !== null && (typeof hostWrite !== 'object' || typeof (hostWrite as { action?: unknown }).action !== 'string')) return null
+    if (
+      hostWrite !== null &&
+      (typeof hostWrite !== 'object' || typeof (hostWrite as { action?: unknown }).action !== 'string')
+    )
+      return null
     return {
       requestId: r.request_id,
       chatId: r.conversation_id,
@@ -77,9 +86,16 @@ export interface SqliteApprovalCardStoreOptions {
   tellChat?(chatId: string, messageId: string, content: string): void
 }
 
-export function sqliteApprovalCardStore<Plan>(open?: () => Database.Database, opts: SqliteApprovalCardStoreOptions = {}): ApprovalCardStore<Plan> {
+export function sqliteApprovalCardStore<Plan>(
+  open?: () => Database.Database,
+  opts: SqliteApprovalCardStoreOptions = {},
+): ApprovalCardStore<Plan> {
   const db = (): Database.Database => (open ?? getDb)()
-  const tellChat = opts.tellChat ?? ((chatId, messageId, content) => { saveMessageIfAbsent(messageId, chatId, 'system', content) })
+  const tellChat =
+    opts.tellChat ??
+    ((chatId, messageId, content) => {
+      saveMessageIfAbsent(messageId, chatId, 'system', content)
+    })
   return {
     /**
      * One row that cannot be read is dropped, not every card: it is deleted,
@@ -97,13 +113,17 @@ export function sqliteApprovalCardStore<Plan>(open?: () => Database.Database, op
         log.error(`dropping unreadable approval card ${r.request_id} of ${r.conversation_id}`)
         db().prepare('DELETE FROM agent_approval_cards WHERE request_id = ?').run(r.request_id)
         try {
-          tellChat(r.conversation_id, `apr_${r.request_id}`, formatApprovalResultMarker({
-            requestId: r.request_id,
-            title: 'Approval card',
-            outcome: 'failed',
-            text: `Switchboard could not read this approval card back after a restart, so it was closed. Nothing was sent. It asked for: ${r.detail}`,
-            delivery: 'none',
-          }))
+          tellChat(
+            r.conversation_id,
+            `apr_${r.request_id}`,
+            formatApprovalResultMarker({
+              requestId: r.request_id,
+              title: 'Approval card',
+              outcome: 'failed',
+              text: `Switchboard could not read this approval card back after a restart, so it was closed. Nothing was sent. It asked for: ${r.detail}`,
+              delivery: 'none',
+            }),
+          )
         } catch (err) {
           log.warn(`could not tell ${r.conversation_id} that card ${r.request_id} was dropped`, err)
         }
@@ -111,26 +131,40 @@ export function sqliteApprovalCardStore<Plan>(open?: () => Database.Database, op
       return cards
     },
     putCard(card) {
-      db().prepare(
-        `INSERT OR REPLACE INTO agent_approval_cards
+      db()
+        .prepare(
+          `INSERT OR REPLACE INTO agent_approval_cards
            (request_id, conversation_id, thread_id, tool_name, detail, host_write_json, plan_json, opened_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        card.requestId, card.chatId, card.threadId, card.toolName, card.detail,
-        card.hostWrite ? JSON.stringify(card.hostWrite) : null, JSON.stringify(card.plan), card.openedAt,
-      )
+        )
+        .run(
+          card.requestId,
+          card.chatId,
+          card.threadId,
+          card.toolName,
+          card.detail,
+          card.hostWrite ? JSON.stringify(card.hostWrite) : null,
+          JSON.stringify(card.plan),
+          card.openedAt,
+        )
     },
     removeCard(requestId) {
       db().prepare('DELETE FROM agent_approval_cards WHERE request_id = ?').run(requestId)
     },
     holdResult(result: HeldApprovalResult) {
-      db().prepare('INSERT OR REPLACE INTO agent_approval_results (id, conversation_id, body, created_at) VALUES (?, ?, ?, ?)')
+      db()
+        .prepare(
+          'INSERT OR REPLACE INTO agent_approval_results (id, conversation_id, body, created_at) VALUES (?, ?, ?, ?)',
+        )
         .run(result.id, result.chatId, result.body, result.at)
     },
     takeHeldResults(chatId) {
       const d = db()
       return d.transaction(() => {
-        const rows = d.prepare('SELECT id, conversation_id, body, created_at FROM agent_approval_results WHERE conversation_id = ? ORDER BY created_at')
+        const rows = d
+          .prepare(
+            'SELECT id, conversation_id, body, created_at FROM agent_approval_results WHERE conversation_id = ? ORDER BY created_at',
+          )
           .all(chatId) as Array<{ id: string; conversation_id: string; body: string; created_at: number }>
         d.prepare('DELETE FROM agent_approval_results WHERE conversation_id = ?').run(chatId)
         return rows.map((r) => ({ id: r.id, chatId: r.conversation_id, body: r.body, at: r.created_at }))

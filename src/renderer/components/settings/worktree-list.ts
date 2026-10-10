@@ -17,7 +17,11 @@ export function canBatchRemove(row: WorktreeRow): boolean {
   return classifyWorktree(row) === 'safe'
 }
 
-export function visibleRows(rows: readonly WorktreeRow[], filter: WorktreeFilter, showProtected: boolean): WorktreeRow[] {
+export function visibleRows(
+  rows: readonly WorktreeRow[],
+  filter: WorktreeFilter,
+  showProtected: boolean,
+): WorktreeRow[] {
   return rows.filter((row) => matchesFilter(row, filter) || (showProtected && classifyWorktree(row) === 'protected'))
 }
 
@@ -42,7 +46,9 @@ export function removeButtonLabel(selected: ReadonlySet<string>, sizes: Readonly
 export function protectedNote(rows: readonly WorktreeRow[]): string | null {
   const hidden = rows.filter((row) => classifyWorktree(row) === 'protected')
   if (hidden.length === 0) return null
-  const projects = [...new Set(hidden.filter((r) => r.protectedBy === 'project').map((r) => r.projectName || baseName(r.projectPath)))]
+  const projects = [
+    ...new Set(hidden.filter((r) => r.protectedBy === 'project').map((r) => r.projectName || baseName(r.projectPath))),
+  ]
   const count = `${hidden.length} worktree${hidden.length === 1 ? '' : 's'}`
   if (projects.length === 1 && hidden.every((r) => r.protectedBy === 'project')) {
     return `${projects[0]} is protected and hidden (${count}).`

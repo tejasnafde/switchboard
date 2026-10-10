@@ -151,6 +151,11 @@ jobs:
         if: needs.scope.outputs.code != 'false' && steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci --prefix apps/mobile
 
+      # Pinned oxfmt (.oxfmtrc.json). Fix locally with `npm run format`.
+      - name: Formatting
+        if: needs.scope.outputs.code != 'false' && matrix.os == 'ubuntu-latest'
+        run: npm run format:check
+
       # Unused files and dependencies, and imports of packages that are only
       # there transitively (knip.jsonc). Unused exports are left out on purpose.
       - name: Dead files and dependency drift

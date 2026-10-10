@@ -6,8 +6,23 @@
  * must name the candidates rather than pick one.
  */
 import { describe, it, expect } from 'vitest'
-import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage, detectSendToTrigger, detectPeerPickTrigger, peerPickReplacement, sendToPickerItems, sendToPickInsertion, pinSendToTarget, sendToPickAfterSend } from '../../src/renderer/components/chat/send-to-command'
-import { PEER_AGENT_SENT_MARKER_PREFIX, PEER_SENT_MARKER_PREFIX, wrapPeerMessage } from '../../src/shared/peer-messaging'
+import {
+  parseSendTo,
+  resolveSendToTarget,
+  peerMessageToChatMessage,
+  detectSendToTrigger,
+  detectPeerPickTrigger,
+  peerPickReplacement,
+  sendToPickerItems,
+  sendToPickInsertion,
+  pinSendToTarget,
+  sendToPickAfterSend,
+} from '../../src/renderer/components/chat/send-to-command'
+import {
+  PEER_AGENT_SENT_MARKER_PREFIX,
+  PEER_SENT_MARKER_PREFIX,
+  wrapPeerMessage,
+} from '../../src/shared/peer-messaging'
 
 const sessions = [
   { id: 't1', title: 'API refactor' },
@@ -18,7 +33,9 @@ const sessions = [
 describe('parseSendTo', () => {
   it('splits the target from the message on the first colon', () => {
     expect(parseSendTo('/send-to Docs pass: the migration landed')).toEqual({
-      ok: true, target: 'Docs pass', text: 'the migration landed',
+      ok: true,
+      target: 'Docs pass',
+      text: 'the migration landed',
     })
   })
 
@@ -29,19 +46,22 @@ describe('parseSendTo', () => {
 
   it('rejects a command with no colon', () => {
     expect(parseSendTo('/send-to Docs pass the migration landed')).toEqual({
-      ok: false, error: 'Use /send-to <session>: <message>',
+      ok: false,
+      error: 'Use /send-to <session>: <message>',
     })
   })
 
   it('rejects an empty message', () => {
     expect(parseSendTo('/send-to Docs pass:   ')).toEqual({
-      ok: false, error: 'Nothing to send. Use /send-to <session>: <message>',
+      ok: false,
+      error: 'Nothing to send. Use /send-to <session>: <message>',
     })
   })
 
   it('rejects an empty target', () => {
     expect(parseSendTo('/send-to : hello')).toEqual({
-      ok: false, error: 'Name a session. Use /send-to <session>: <message>',
+      ok: false,
+      error: 'Name a session. Use /send-to <session>: <message>',
     })
   })
 
@@ -64,19 +84,23 @@ describe('resolveSendToTarget', () => {
   // still refused - see the tie case below.
   it('picks the best match when several share a prefix', () => {
     expect(resolveSendToTarget('API refac', sessions, 't2')).toEqual({
-      ok: true, id: 't1', title: 'API refactor',
+      ok: true,
+      id: 't1',
+      title: 'API refactor',
     })
   })
 
   it('refuses when nothing matches', () => {
     expect(resolveSendToTarget('kanban', sessions, 't1')).toEqual({
-      ok: false, error: 'No open session matches "kanban".',
+      ok: false,
+      error: 'No open session matches "kanban".',
     })
   })
 
   it('never resolves to the sending session', () => {
     expect(resolveSendToTarget('Docs pass', sessions, 't2')).toEqual({
-      ok: false, error: 'No open session matches "Docs pass".',
+      ok: false,
+      error: 'No open session matches "Docs pass".',
     })
   })
 
@@ -98,10 +122,16 @@ describe('peerMessageToChatMessage', () => {
   // Ids must match what the backend persisted, or a reload renders the same
   // delivery twice: once from the live event, once from the stored row.
   it('renders the sender side as the persisted marker', () => {
-    const msg = peerMessageToChatMessage({
-      ...base, threadId: 'sender', direction: 'sent',
-      peerThreadId: 'target', peerLabel: 'API refactor',
-    }, 'Docs pass')
+    const msg = peerMessageToChatMessage(
+      {
+        ...base,
+        threadId: 'sender',
+        direction: 'sent',
+        peerThreadId: 'target',
+        peerLabel: 'API refactor',
+      },
+      'Docs pass',
+    )
     expect(msg).toEqual({
       id: 'peer_pm_abc123',
       role: 'system',
@@ -113,18 +143,31 @@ describe('peerMessageToChatMessage', () => {
   // "The agent messaged another chat on its own" is a different event to the
   // user typing /send-to, and reads as a bug when the two look identical.
   it('marks an agent-initiated send apart from a typed one', () => {
-    const msg = peerMessageToChatMessage({
-      ...base, initiator: 'agent', threadId: 'sender', direction: 'sent',
-      peerThreadId: 'target', peerLabel: 'API refactor',
-    }, 'Docs pass')
+    const msg = peerMessageToChatMessage(
+      {
+        ...base,
+        initiator: 'agent',
+        threadId: 'sender',
+        direction: 'sent',
+        peerThreadId: 'target',
+        peerLabel: 'API refactor',
+      },
+      'Docs pass',
+    )
     expect(msg.content).toBe(`${PEER_AGENT_SENT_MARKER_PREFIX} Docs pass → API refactor`)
   })
 
   it('renders the received side as the wrapped turn under the backend id', () => {
-    const msg = peerMessageToChatMessage({
-      ...base, threadId: 'target', direction: 'received',
-      peerThreadId: 'sender', peerLabel: 'Docs pass',
-    }, 'API refactor')
+    const msg = peerMessageToChatMessage(
+      {
+        ...base,
+        threadId: 'target',
+        direction: 'received',
+        peerThreadId: 'sender',
+        peerLabel: 'Docs pass',
+      },
+      'API refactor',
+    )
     expect(msg.id).toBe('pm_abc123')
     expect(msg.role).toBe('user')
     expect(msg.content).toBe(wrapPeerMessage('Docs pass', 'the auth migration landed'))
@@ -132,10 +175,16 @@ describe('peerMessageToChatMessage', () => {
 
   // The bubble must say where it came from, or it reads as the user's own turn.
   it('labels the received bubble with its origin', () => {
-    const msg = peerMessageToChatMessage({
-      ...base, threadId: 'target', direction: 'received',
-      peerThreadId: 'sender', peerLabel: 'Docs pass',
-    }, 'API refactor')
+    const msg = peerMessageToChatMessage(
+      {
+        ...base,
+        threadId: 'target',
+        direction: 'received',
+        peerThreadId: 'sender',
+        peerLabel: 'Docs pass',
+      },
+      'API refactor',
+    )
     expect(msg.displayBody).toBe('From "Docs pass": the auth migration landed')
   })
 })
@@ -260,9 +309,7 @@ describe('sendToPickerItems', () => {
       { id: 'sender', title: undefined, projectPath: '/p/one' },
       { id: 'agent_9', title: undefined, projectPath: '/p/two' },
     ]
-    expect(sendToPickerItems(untitled, 'sender')).toEqual([
-      { id: 'agent_9', label: 'agent_9 · two' },
-    ])
+    expect(sendToPickerItems(untitled, 'sender')).toEqual([{ id: 'agent_9', label: 'agent_9 · two' }])
   })
 
   it('keeps only chats on the sender machine', () => {
@@ -330,13 +377,15 @@ describe('resolveSendToTarget by id', () => {
 
   it('refuses an id that is not open, without falling back to fuzzy', () => {
     expect(resolveSendToTarget('#gone', sessions, 't1')).toEqual({
-      ok: false, error: 'That chat is no longer open. Pick another with /send-to.',
+      ok: false,
+      error: 'That chat is no longer open. Pick another with /send-to.',
     })
   })
 
   it('never resolves an id back to the sending chat', () => {
     expect(resolveSendToTarget('#t1', sessions, 't1')).toEqual({
-      ok: false, error: 'That chat is no longer open. Pick another with /send-to.',
+      ok: false,
+      error: 'That chat is no longer open. Pick another with /send-to.',
     })
   })
 })
@@ -349,9 +398,7 @@ describe('sendToPickerItems on Windows paths', () => {
       { id: 'sender', title: 'Sender', projectPath: 'C:\\Users\\tejas\\code\\switchboard' },
       { id: 't2', title: 'Docs', projectPath: 'C:\\Users\\tejas\\code\\watchwithmi' },
     ]
-    expect(sendToPickerItems(win, 'sender')).toEqual([
-      { id: 't2', label: 'Docs · watchwithmi' },
-    ])
+    expect(sendToPickerItems(win, 'sender')).toEqual([{ id: 't2', label: 'Docs · watchwithmi' }])
   })
 
   it('still handles a trailing separator', () => {
@@ -370,8 +417,17 @@ describe('pinSendToTarget', () => {
   // resolve by fuzzy match, possibly to another chat.
   it('sends a still-picked title as the picked id', () => {
     expect(pinSendToTarget('/send-to New chat: hello', pick)).toBe('/send-to #a: hello')
-    expect(resolveSendToTarget('#a', [{ id: 'me', title: 'Me' }, { id: 'a', title: 'Auth fix' }, { id: 'b', title: 'New chat 2' }], 'me'))
-      .toMatchObject({ ok: true, id: 'a' })
+    expect(
+      resolveSendToTarget(
+        '#a',
+        [
+          { id: 'me', title: 'Me' },
+          { id: 'a', title: 'Auth fix' },
+          { id: 'b', title: 'New chat 2' },
+        ],
+        'me',
+      ),
+    ).toMatchObject({ ok: true, id: 'a' })
   })
 
   it('leaves the body alone once the user retargets it', () => {
@@ -404,7 +460,12 @@ describe('sendToPickAfterSend', () => {
 
 describe('detectPeerPickTrigger', () => {
   it('serves /send-to as before', () => {
-    expect(detectPeerPickTrigger('/send-to doc', 12, null)).toEqual({ query: 'doc', start: 9, end: 12, command: 'send-to' })
+    expect(detectPeerPickTrigger('/send-to doc', 12, null)).toEqual({
+      query: 'doc',
+      start: 9,
+      end: 12,
+      command: 'send-to',
+    })
   })
 
   it('opens the picker for a /link target', () => {

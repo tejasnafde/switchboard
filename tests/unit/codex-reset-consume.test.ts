@@ -14,7 +14,10 @@ vi.mock('../../src/main/logger', () => ({
   createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }))
 vi.mock('../../src/main/db/provider-instances', () => ({
-  getProviderInstanceFull: (id: string) => (id.startsWith('codex') ? { id, agentType: 'codex', oauthDir: null, env: {} } : { id, agentType: 'claude-code', oauthDir: null, env: {} }),
+  getProviderInstanceFull: (id: string) =>
+    id.startsWith('codex')
+      ? { id, agentType: 'codex', oauthDir: null, env: {} }
+      : { id, agentType: 'claude-code', oauthDir: null, env: {} },
 }))
 vi.mock('../../src/main/provider/usage/claude-keychain', () => ({ forgetClaudeCredentialReads: vi.fn() }))
 vi.mock('../../src/main/provider/usage/claude-usage', () => ({ fetchClaudeUsage: vi.fn() }))
@@ -40,7 +43,9 @@ vi.mock('../../src/main/provider/instance-env', () => ({
 
 // Modes: an outcome name answers with it; `exit` dies on consume (no answer);
 // `hang-once` stays silent on the first consume and answers `reset` after.
-writeFileSync(script, `#!${process.execPath}
+writeFileSync(
+  script,
+  `#!${process.execPath}
 const fs = require('fs')
 const readline = require('readline')
 const mode = () => fs.readFileSync(process.env.FAKE_MODE_FILE, 'utf8').trim()
@@ -67,7 +72,8 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     return reply(msg.id, { outcome: m === 'hang-once' ? 'reset' : m })
   }
 })
-`)
+`,
+)
 chmodSync(script, 0o755)
 if (process.platform === 'win32') writeFileSync(bin, `@"${process.execPath}" "%~dp0codex.js" %*\r\n`)
 
@@ -76,9 +82,16 @@ const { consumeCodexReset, ResetKeyBook } = await import('../../src/main/provide
 
 function entries(): Array<{ method: string; params?: { idempotencyKey: string; creditId?: string } }> {
   if (!existsSync(logFile)) return []
-  return readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+  return readFileSync(logFile, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l))
 }
-const consumes = () => entries().filter((e) => e.method === 'consume').map((e) => e.params!)
+const consumes = () =>
+  entries()
+    .filter((e) => e.method === 'consume')
+    .map((e) => e.params!)
 
 beforeEach(() => {
   rmSync(logFile, { force: true })
@@ -110,7 +123,9 @@ describe('consumeCodexReset against a fake app-server', () => {
 
   it('sends the key and the credit id, and maps the answer', async () => {
     writeFileSync(modeFile, 'alreadyRedeemed')
-    await expect(consumeCodexReset(env(), bin, { idempotencyKey: 'k1', creditId: 'c1' })).resolves.toBe('alreadyRedeemed')
+    await expect(consumeCodexReset(env(), bin, { idempotencyKey: 'k1', creditId: 'c1' })).resolves.toBe(
+      'alreadyRedeemed',
+    )
     expect(consumes()).toEqual([{ idempotencyKey: 'k1', creditId: 'c1' }])
   })
 

@@ -42,9 +42,7 @@ function ready(request: WorktreeCreationRequest): WorktreeCreationSnapshot {
     startupReceipt: {
       status: 'succeeded',
       terminalIds: ['managed-terminal-1', 'managed-terminal-2'],
-      providerThreadId: request.owner.kind === 'conversation'
-        ? request.owner.conversationId
-        : undefined,
+      providerThreadId: request.owner.kind === 'conversation' ? request.owner.conversationId : undefined,
     },
     warnings: [],
     recoveryActions: [],
@@ -62,7 +60,9 @@ function fixture(createImpl?: (request: WorktreeCreationRequest) => Promise<Work
     }),
     onProgress: vi.fn((listener: (event: WorktreeCreationProgressEvent) => void) => {
       progress = listener
-      return () => { progress = null }
+      return () => {
+        progress = null
+      }
     }),
   }
   const sessions = { addAuthoritative: vi.fn() }
@@ -72,7 +72,9 @@ function fixture(createImpl?: (request: WorktreeCreationRequest) => Promise<Work
     save: vi.fn((entry: { intent: DesktopNewChatIntent; request: WorktreeCreationRequest }) => {
       journalEntries.set(entry.request.creationId, entry)
     }),
-    remove: vi.fn((creationId: string) => { journalEntries.delete(creationId) }),
+    remove: vi.fn((creationId: string) => {
+      journalEntries.delete(creationId)
+    }),
   }
   const stateChanges: string[] = []
   const coordinator = createDesktopNewChatCoordinator({
@@ -116,59 +118,79 @@ describe('Desktop new-chat worktree transaction', () => {
       updatedAt: 101,
     }
 
-    expect(shouldDismissDesktopWorktreeSnapshot({
-      ...base,
-      status: 'rolled_back',
-      cleanupDisposition: 'removed',
-      recoveryActions: [],
-    })).toBe(true)
-    expect(shouldDismissDesktopWorktreeSnapshot({
-      ...base,
-      status: 'cancelled',
-      recoveryActions: [],
-    })).toBe(true)
-    expect(shouldDismissDesktopWorktreeSnapshot({
-      ...base,
-      status: 'failed',
-      recoveryActions: [],
-    })).toBe(true)
-    expect(shouldDismissDesktopWorktreeSnapshot({
-      ...base,
-      status: 'cleanup_required',
-      cleanupDisposition: 'retained',
-      recoveryActions: ['remove'],
-    })).toBe(false)
-    expect(shouldDismissDesktopWorktreeSnapshot({
-      ...base,
-      status: 'pending',
-      recoveryActions: [],
-    })).toBe(false)
+    expect(
+      shouldDismissDesktopWorktreeSnapshot({
+        ...base,
+        status: 'rolled_back',
+        cleanupDisposition: 'removed',
+        recoveryActions: [],
+      }),
+    ).toBe(true)
+    expect(
+      shouldDismissDesktopWorktreeSnapshot({
+        ...base,
+        status: 'cancelled',
+        recoveryActions: [],
+      }),
+    ).toBe(true)
+    expect(
+      shouldDismissDesktopWorktreeSnapshot({
+        ...base,
+        status: 'failed',
+        recoveryActions: [],
+      }),
+    ).toBe(true)
+    expect(
+      shouldDismissDesktopWorktreeSnapshot({
+        ...base,
+        status: 'cleanup_required',
+        cleanupDisposition: 'retained',
+        recoveryActions: ['remove'],
+      }),
+    ).toBe(false)
+    expect(
+      shouldDismissDesktopWorktreeSnapshot({
+        ...base,
+        status: 'pending',
+        recoveryActions: [],
+      }),
+    ).toBe(false)
   })
 
   it('projects only retained worktree conversations into a recovery lookup', () => {
-    expect(retainedWorktreeCreationKey({
-      id: 'conversation-1',
-      source: 'claude-code',
-      title: 'Recover this workspace',
-      startedAt: 100,
-      messageCount: 0,
-      filePath: '',
-      worktreeCreationId: 'creation-1',
-      worktreeRecovery: {
-        status: 'cleanup_required',
-        cleanupDisposition: 'retained',
-      },
-    }, 'machine-1')).toEqual({ creationId: 'creation-1', machineId: 'machine-1' })
+    expect(
+      retainedWorktreeCreationKey(
+        {
+          id: 'conversation-1',
+          source: 'claude-code',
+          title: 'Recover this workspace',
+          startedAt: 100,
+          messageCount: 0,
+          filePath: '',
+          worktreeCreationId: 'creation-1',
+          worktreeRecovery: {
+            status: 'cleanup_required',
+            cleanupDisposition: 'retained',
+          },
+        },
+        'machine-1',
+      ),
+    ).toEqual({ creationId: 'creation-1', machineId: 'machine-1' })
 
-    expect(retainedWorktreeCreationKey({
-      id: 'conversation-2',
-      source: 'claude-code',
-      title: 'Ready',
-      startedAt: 100,
-      messageCount: 0,
-      filePath: '',
-      worktreeCreationId: 'creation-2',
-    }, 'machine-1')).toBeNull()
+    expect(
+      retainedWorktreeCreationKey(
+        {
+          id: 'conversation-2',
+          source: 'claude-code',
+          title: 'Ready',
+          startedAt: 100,
+          messageCount: 0,
+          filePath: '',
+          worktreeCreationId: 'creation-2',
+        },
+        'machine-1',
+      ),
+    ).toBeNull()
   })
 
   it('reconciles a local revision-zero retry instead of sending an action for a missing backend record', async () => {
@@ -176,25 +198,27 @@ describe('Desktop new-chat worktree transaction', () => {
     const reconcile = vi.fn(async () => ({ status: 'pending' as const }))
     const act = vi.fn()
 
-    await expect(retryDesktopWorktreeCreation({
-      snapshot: {
-        creationId: 'creation-local',
-        revision: 0,
-        phase: 'pending',
-        status: 'failed',
-        projectPath: '/repo',
-        baseRef: 'HEAD',
-        owner: { kind: 'conversation', conversationId: 'conversation-local', agentType: 'claude-code' },
-        purpose: 'new-chat',
-        provenance: { surface: 'desktop', machineId: 'machine-1', requestedAt: 100 },
-        warnings: [],
-        recoveryActions: ['retry'],
-        updatedAt: 100,
-      },
-      action: 'retry',
-      reconcile,
-      act,
-    })).resolves.toEqual({ status: 'pending' })
+    await expect(
+      retryDesktopWorktreeCreation({
+        snapshot: {
+          creationId: 'creation-local',
+          revision: 0,
+          phase: 'pending',
+          status: 'failed',
+          projectPath: '/repo',
+          baseRef: 'HEAD',
+          owner: { kind: 'conversation', conversationId: 'conversation-local', agentType: 'claude-code' },
+          purpose: 'new-chat',
+          provenance: { surface: 'desktop', machineId: 'machine-1', requestedAt: 100 },
+          warnings: [],
+          recoveryActions: ['retry'],
+          updatedAt: 100,
+        },
+        action: 'retry',
+        reconcile,
+        act,
+      }),
+    ).resolves.toEqual({ status: 'pending' })
 
     expect(reconcile).toHaveBeenCalledOnce()
     expect(act).not.toHaveBeenCalled()
@@ -205,25 +229,27 @@ describe('Desktop new-chat worktree transaction', () => {
     const reconcile = vi.fn()
     const act = vi.fn(async () => ({ status: 'ready' as const }))
 
-    await expect(retryDesktopWorktreeCreation({
-      snapshot: {
-        creationId: 'creation-durable',
-        revision: 4,
-        phase: 'materializing',
-        status: 'failed',
-        projectPath: '/repo',
-        baseRef: 'HEAD',
-        owner: { kind: 'conversation', conversationId: 'conversation-durable', agentType: 'claude-code' },
-        purpose: 'new-chat',
-        provenance: { surface: 'desktop', machineId: 'machine-1', requestedAt: 100 },
-        warnings: [],
-        recoveryActions: ['retry'],
-        updatedAt: 100,
-      },
-      action: 'retry',
-      reconcile,
-      act,
-    })).resolves.toEqual({ status: 'ready' })
+    await expect(
+      retryDesktopWorktreeCreation({
+        snapshot: {
+          creationId: 'creation-durable',
+          revision: 4,
+          phase: 'materializing',
+          status: 'failed',
+          projectPath: '/repo',
+          baseRef: 'HEAD',
+          owner: { kind: 'conversation', conversationId: 'conversation-durable', agentType: 'claude-code' },
+          purpose: 'new-chat',
+          provenance: { surface: 'desktop', machineId: 'machine-1', requestedAt: 100 },
+          warnings: [],
+          recoveryActions: ['retry'],
+          updatedAt: 100,
+        },
+        action: 'retry',
+        reconcile,
+        act,
+      }),
+    ).resolves.toEqual({ status: 'ready' })
 
     expect(reconcile).not.toHaveBeenCalled()
     expect(act).toHaveBeenCalledWith({
@@ -275,7 +301,9 @@ describe('Desktop new-chat worktree transaction', () => {
   })
 
   it('keeps the exact creation identity pending on ambiguous transport failure and reconciles with GET', async () => {
-    const harness = fixture(async () => { throw new Error('socket closed') })
+    const harness = fixture(async () => {
+      throw new Error('socket closed')
+    })
     harness.worktrees.get.mockRejectedValueOnce(new Error('socket closed'))
 
     await expect(harness.coordinator.start(intent)).resolves.toMatchObject({
@@ -297,7 +325,9 @@ describe('Desktop new-chat worktree transaction', () => {
   })
 
   it('persists before submission and restores the exact request after a crash before backend reservation', async () => {
-    const first = fixture(async () => { throw new Error('renderer closed') })
+    const first = fixture(async () => {
+      throw new Error('renderer closed')
+    })
     first.worktrees.get.mockRejectedValueOnce(new Error('Unknown worktree creation creation-1.'))
     const pending = await first.coordinator.start(intent)
     const entry = first.journalEntries.get(pending.creationId!)!
@@ -389,7 +419,9 @@ describe('Desktop new-chat worktree transaction', () => {
   })
 
   it('shows a definite pre-reservation rejection with explicit retry and parent fallback', async () => {
-    const harness = fixture(async () => { throw new Error('Invalid base ref.') })
+    const harness = fixture(async () => {
+      throw new Error('Invalid base ref.')
+    })
     harness.worktrees.get.mockRejectedValueOnce(new Error('Unknown worktree creation creation-1.'))
 
     const result = await harness.coordinator.start(intent)
@@ -427,12 +459,14 @@ describe('Desktop new-chat worktree transaction', () => {
     await harness.coordinator.startInProject()
 
     expect(harness.parent.create).toHaveBeenCalledOnce()
-    expect(harness.parent.create).toHaveBeenCalledWith(expect.objectContaining({
-      projectPath: '/repo',
-      machineId: 'machine-1',
-      agentType: 'claude-code',
-      runtimeMode: 'sandbox',
-      conversationId: 'parent-conversation-2',
-    }))
+    expect(harness.parent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectPath: '/repo',
+        machineId: 'machine-1',
+        agentType: 'claude-code',
+        runtimeMode: 'sandbox',
+        conversationId: 'parent-conversation-2',
+      }),
+    )
   })
 })

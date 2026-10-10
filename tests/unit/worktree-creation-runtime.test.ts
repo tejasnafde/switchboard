@@ -96,9 +96,11 @@ describe('worktree creation process runtime', () => {
     publishProgress?.(event)
 
     expect(initialHost.events).toEqual([])
-    expect(replacementHost.events).toEqual([{
-      channel: WorktreeCreationChannels.PROGRESS,
-      args: [event],
-    }])
+    expect(replacementHost.events).toEqual([
+      {
+        channel: WorktreeCreationChannels.PROGRESS,
+        args: [event],
+      },
+    ])
   })
 })

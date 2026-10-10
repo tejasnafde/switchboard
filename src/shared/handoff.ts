@@ -34,8 +34,7 @@ import { agentLabel, isAgentProvider, type AgentProvider } from './types'
 export const HANDOFF_PREAMBLE_HEADER = 'Conversation so far:'
 /** Header of a delta handoff: the target already holds what came before. */
 export const HANDOFF_DELTA_HEADER = 'Conversation since you last took part (you already have the earlier part):'
-export const HANDOFF_PREAMBLE_FOOTER =
-  'Respond to the latest user message, using the conversation above as context.'
+export const HANDOFF_PREAMBLE_FOOTER = 'Respond to the latest user message, using the conversation above as context.'
 const TRUNCATION_NOTICE_START = '(Earlier conversation truncated:'
 const CUT_MARK = '[start cut] '
 
@@ -83,10 +82,7 @@ export function handoffBudgetChars(contextWindowTokens?: number | null): number 
  * i.e. the first turn it has not seen. Null when it never took part, which
  * means it needs the whole conversation.
  */
-export function handoffDeltaStart(
-  messages: ReadonlyArray<HandoffSourceMessage>,
-  targetLabel: string,
-): number | null {
+export function handoffDeltaStart(messages: ReadonlyArray<HandoffSourceMessage>, targetLabel: string): number | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]
     if (m.role !== 'system' || !m.content.startsWith(AGENT_SWITCH_MARKER_PREFIX)) continue
@@ -141,9 +137,8 @@ export function buildHandoffPreamble(
   if (items.length === 0) return null
 
   const render = (omitted: number, kept: string[]): string => {
-    const notice = omitted > 0
-      ? `${TRUNCATION_NOTICE_START} ${omitted} older turn${omitted === 1 ? '' : 's'} omitted.)\n`
-      : ''
+    const notice =
+      omitted > 0 ? `${TRUNCATION_NOTICE_START} ${omitted} older turn${omitted === 1 ? '' : 's'} omitted.)\n` : ''
     return `${notice}${header}\n${kept.join('\n')}\n\n${HANDOFF_PREAMBLE_FOOTER}`
   }
 
@@ -153,7 +148,11 @@ export function buildHandoffPreamble(
   // Newest first: take whole turns while they fit, the pinned one reserved.
   const keep = new Set<number>()
   if (pinned >= 0) keep.add(pinned)
-  const fits = () => render(items.length - keep.size, texts.filter((_, i) => keep.has(i))).length <= maxChars
+  const fits = () =>
+    render(
+      items.length - keep.size,
+      texts.filter((_, i) => keep.has(i)),
+    ).length <= maxChars
   for (let i = items.length - 1; i >= 0; i--) {
     if (keep.has(i)) continue
     keep.add(i)
@@ -211,10 +210,13 @@ export function planTurnHandoff(input: {
   // its transcript holds every turn up to its last switch away, if any.
   const seenAll = pendingFrom === target && input.resumedNatively && since === null
   return {
-    preamble: seenAll ? null : buildHandoffPreamble(input.messages, { maxChars: input.maxChars, ...(since !== null ? { since } : {}) }),
-    markerText: pendingFrom === target
-      ? `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(target)} profile restarted with visible history`
-      : `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(pendingFrom)} → ${agentLabel(target)}`,
+    preamble: seenAll
+      ? null
+      : buildHandoffPreamble(input.messages, { maxChars: input.maxChars, ...(since !== null ? { since } : {}) }),
+    markerText:
+      pendingFrom === target
+        ? `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(target)} profile restarted with visible history`
+        : `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(pendingFrom)} → ${agentLabel(target)}`,
   }
 }
 
@@ -240,9 +242,9 @@ export function withHandoffPreamble(message: string, preamble: string): string {
  */
 export function stripHandoffPreamble(text: string): string {
   if (
-    !text.startsWith(HANDOFF_PREAMBLE_HEADER)
-    && !text.startsWith(HANDOFF_DELTA_HEADER)
-    && !text.startsWith(TRUNCATION_NOTICE_START)
+    !text.startsWith(HANDOFF_PREAMBLE_HEADER) &&
+    !text.startsWith(HANDOFF_DELTA_HEADER) &&
+    !text.startsWith(TRUNCATION_NOTICE_START)
   ) {
     return text
   }

@@ -72,16 +72,22 @@ function prepared(overrides: Partial<PreparedForkSnapshot['source']> = {}): Prep
   }
 }
 
-const fragmentA = [
-  { type: 'user', uuid: 'u1', sessionId: 'segment-a', cwd: '/old', message: { content: 'one' } },
-  { type: 'assistant', uuid: 'a1', sessionId: 'segment-a', cwd: '/old', message: { content: 'first' } },
-].map(JSON.stringify).join('\n') + '\n'
-const fragmentB = [
-  { type: 'summary', leafUuid: 'a1', sessionId: 'segment-b', cwd: '/old', summary: 'compact' },
-  { type: 'user', uuid: 'u2', sessionId: 'segment-b', cwd: '/old', message: { content: 'next' } },
-  { type: 'assistant', uuid: 'a2', sessionId: 'segment-b', cwd: '/old', message: { content: 'two' } },
-  { type: 'user', uuid: 'u3', sessionId: 'segment-b', cwd: '/old', message: { content: 'drop' } },
-].map(JSON.stringify).join('\n') + '\n'
+const fragmentA =
+  [
+    { type: 'user', uuid: 'u1', sessionId: 'segment-a', cwd: '/old', message: { content: 'one' } },
+    { type: 'assistant', uuid: 'a1', sessionId: 'segment-a', cwd: '/old', message: { content: 'first' } },
+  ]
+    .map(JSON.stringify)
+    .join('\n') + '\n'
+const fragmentB =
+  [
+    { type: 'summary', leafUuid: 'a1', sessionId: 'segment-b', cwd: '/old', summary: 'compact' },
+    { type: 'user', uuid: 'u2', sessionId: 'segment-b', cwd: '/old', message: { content: 'next' } },
+    { type: 'assistant', uuid: 'a2', sessionId: 'segment-b', cwd: '/old', message: { content: 'two' } },
+    { type: 'user', uuid: 'u3', sessionId: 'segment-b', cwd: '/old', message: { content: 'drop' } },
+  ]
+    .map(JSON.stringify)
+    .join('\n') + '\n'
 
 describe('provider fork artifacts', () => {
   it('writes a Claude native fork into the committed non-default profile at the target cwd', async () => {
@@ -107,7 +113,10 @@ describe('provider fork artifacts', () => {
     await artifacts.publish(result.stage)
 
     const target = join(profile, 'projects', encodeClaudeProjectPath(targetCwd), 'fork-session.jsonl')
-    const lines = (await readFile(target, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
+    const lines = (await readFile(target, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
     expect(lines.map((line) => line.uuid ?? line.leafUuid)).toEqual(['u1', 'a1', 'a1', 'u2', 'a2'])
     expect(lines.every((line) => line.sessionId === 'fork-session')).toBe(true)
     expect(lines.every((line) => line.cwd === targetCwd)).toBe(true)
@@ -118,20 +127,20 @@ describe('provider fork artifacts', () => {
       resolveInstance: () => null,
       listCompatibleSessionIds: () => [],
     })
-    await expect(missing.prepare({ request: request(), prepared: prepared(), targetCwd: '/repo' }))
-      .resolves.toMatchObject({
-        resumeMode: 'transcript-handoff',
-        pendingHandoffFrom: 'claude-code',
-        warnings: [{ code: 'source-profile-missing' }],
-      })
+    await expect(
+      missing.prepare({ request: request(), prepared: prepared(), targetCwd: '/repo' }),
+    ).resolves.toMatchObject({
+      resumeMode: 'transcript-handoff',
+      pendingHandoffFrom: 'claude-code',
+      warnings: [{ code: 'source-profile-missing' }],
+    })
 
     const mixed = prepared()
     mixed.anchor.provider = 'codex'
-    await expect(missing.prepare({ request: request(), prepared: mixed, targetCwd: '/repo' }))
-      .resolves.toMatchObject({
-        resumeMode: 'transcript-handoff',
-        warnings: [{ code: 'native-lineage-incompatible' }],
-      })
+    await expect(missing.prepare({ request: request(), prepared: mixed, targetCwd: '/repo' })).resolves.toMatchObject({
+      resumeMode: 'transcript-handoff',
+      warnings: [{ code: 'native-lineage-incompatible' }],
+    })
   })
 
   it('keeps Codex and OpenCode out of provider discovery trees and uses explicit handoff', async () => {

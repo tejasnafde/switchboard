@@ -25,12 +25,7 @@ export function createStreamingBuffer(): StreamingBuffer {
   return new Map()
 }
 
-export function bufferContent(
-  buffer: StreamingBuffer,
-  threadId: string,
-  messageId: string,
-  chunk: ContentChunk,
-): void {
+export function bufferContent(buffer: StreamingBuffer, threadId: string, messageId: string, chunk: ContentChunk): void {
   let perThread = buffer.get(threadId)
   if (!perThread) {
     perThread = new Map()

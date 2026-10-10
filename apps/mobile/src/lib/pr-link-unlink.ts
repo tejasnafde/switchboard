@@ -13,7 +13,11 @@ export interface PrUnlinkClient {
 }
 
 /** Resolves to `null` once unlinked, or to the message to show; never rejects. */
-export async function unlinkPrLink(client: PrUnlinkClient | null | undefined, threadId: string, ref: PrRef): Promise<string | null> {
+export async function unlinkPrLink(
+  client: PrUnlinkClient | null | undefined,
+  threadId: string,
+  ref: PrRef,
+): Promise<string | null> {
   if (!client) return 'This connection is not open. Reconnect, then try again.'
   try {
     const result = await client.unlinkPullRequest(threadId, ref)

@@ -38,9 +38,7 @@ function canonicalMimeType(value: string | null | undefined): string | null {
 }
 
 /** Picker-reported type, else a supported extension. Unknown bytes stay unknown. */
-export function inferMimeType(
-  asset: Pick<PickedAsset, 'uri' | 'mimeType' | 'fileName'>,
-): string | null {
+export function inferMimeType(asset: Pick<PickedAsset, 'uri' | 'mimeType' | 'fileName'>): string | null {
   const reported = canonicalMimeType(asset.mimeType)
   if (reported) return reported
   if (asset.mimeType?.trim().toLowerCase().startsWith('image/')) return null

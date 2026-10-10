@@ -19,7 +19,10 @@ async function fresh() {
   vi.stubGlobal('window', {
     api: {
       settings: {
-        get: async () => { onGet?.(); return db },
+        get: async () => {
+          onGet?.()
+          return db
+        },
         set: async (_key: string, value: string) => {
           inFlight += 1
           maxInFlight = Math.max(maxInFlight, inFlight)
@@ -116,7 +119,10 @@ describe('renderer shortcut overrides', () => {
     await s.loadKeyboardOverrides()
     // The write lands while the re-read is in flight, with the old value in hand.
     let write: Promise<void> | null = null
-    onGet = () => { onGet = null; write = s.setKeyboardOverride('chat.new', ['Mod+Shift+U']) }
+    onGet = () => {
+      onGet = null
+      write = s.setKeyboardOverride('chat.new', ['Mod+Shift+U'])
+    }
     await s.reloadKeyboardOverrides()
     await write
     expect(s.label('chat.new')).toBe('⌘⇧U')
@@ -132,7 +138,10 @@ describe('every desktop registration of the app handlers rebuilds the menu', () 
     // startup and the macOS reopen path
     expect(calls.length).toBeGreaterThanOrEqual(2)
     for (const args of calls) expect(args).toMatch(/^\w+, desktopAppHandlerDeps\(\)$/)
-    const factory = main.slice(main.indexOf('function desktopAppHandlerDeps'), main.indexOf('// Custom protocol for onboarding'))
+    const factory = main.slice(
+      main.indexOf('function desktopAppHandlerDeps'),
+      main.indexOf('// Custom protocol for onboarding'),
+    )
     expect(factory).toContain('applyKeyboardOverrides()')
   })
 })
@@ -143,7 +152,9 @@ describe('main applies overrides only after they are stored', () => {
     let fail = false
     vi.doMock('../../src/main/db/database', async (importOriginal) => ({
       ...(await importOriginal<typeof import('../../src/main/db/database')>()),
-      setSetting: () => { if (fail) throw new Error('locked') },
+      setSetting: () => {
+        if (fail) throw new Error('locked')
+      },
       removeSetting: () => {},
     }))
     const { registerAppHandlers } = await import('../../src/main/ipc/app')

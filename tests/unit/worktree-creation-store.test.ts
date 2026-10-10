@@ -49,9 +49,7 @@ function reservationInput(value: WorktreeCreationRequest, now = 1_000) {
     creationId: value.creationId,
     schemaVersion: value.schemaVersion,
     requestJson,
-    payloadHash: createHash('sha256')
-      .update(canonicalizeWorktreeCreationIdentity(value))
-      .digest('hex'),
+    payloadHash: createHash('sha256').update(canonicalizeWorktreeCreationIdentity(value)).digest('hex'),
     now,
   }
 }
@@ -120,30 +118,31 @@ describe('SqliteWorktreeCreationStore', () => {
     try {
       ensureWorktreeCreationSchema(db)
 
-      const tables = db.prepare(`
+      const tables = db
+        .prepare(`
         SELECT name FROM sqlite_master
          WHERE type = 'table' AND name IN ('managed_worktrees', 'worktree_creations')
          ORDER BY name
-      `).all() as Array<{ name: string }>
-      expect(tables.map((row) => row.name)).toEqual([
-        'managed_worktrees',
-        'worktree_creations',
-      ])
+      `)
+        .all() as Array<{ name: string }>
+      expect(tables.map((row) => row.name)).toEqual(['managed_worktrees', 'worktree_creations'])
 
       const creationColumns = db.prepare('PRAGMA table_info(worktree_creations)').all() as Array<{
         name: string
         pk: number
       }>
-      expect(creationColumns).toEqual(expect.arrayContaining([
-        expect.objectContaining({ name: 'machine_id', pk: 1 }),
-        expect.objectContaining({ name: 'creation_id', pk: 2 }),
-        expect.objectContaining({ name: 'schema_version' }),
-        expect.objectContaining({ name: 'request_json' }),
-        expect.objectContaining({ name: 'payload_hash' }),
-        expect.objectContaining({ name: 'phase' }),
-        expect.objectContaining({ name: 'status' }),
-        expect.objectContaining({ name: 'revision' }),
-      ]))
+      expect(creationColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'machine_id', pk: 1 }),
+          expect.objectContaining({ name: 'creation_id', pk: 2 }),
+          expect.objectContaining({ name: 'schema_version' }),
+          expect.objectContaining({ name: 'request_json' }),
+          expect.objectContaining({ name: 'payload_hash' }),
+          expect.objectContaining({ name: 'phase' }),
+          expect.objectContaining({ name: 'status' }),
+          expect.objectContaining({ name: 'revision' }),
+        ]),
+      )
     } finally {
       db.close()
     }
@@ -161,12 +160,14 @@ describe('SqliteWorktreeCreationStore', () => {
           name: string
           notnull: number
         }>
-        expect(columns).toEqual(expect.arrayContaining([
-          expect.objectContaining({ name: 'worktree_id', notnull: 0 }),
-          expect.objectContaining({ name: 'worktree_creation_id', notnull: 0 }),
-          expect.objectContaining({ name: 'worktree_path' }),
-          expect.objectContaining({ name: 'worktree_branch' }),
-        ]))
+        expect(columns).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: 'worktree_id', notnull: 0 }),
+            expect.objectContaining({ name: 'worktree_creation_id', notnull: 0 }),
+            expect.objectContaining({ name: 'worktree_path' }),
+            expect.objectContaining({ name: 'worktree_branch' }),
+          ]),
+        )
       }
     } finally {
       db.close()
@@ -367,8 +368,7 @@ describe('SqliteWorktreeCreationStore', () => {
         },
       })
       expect(stale).toEqual({ kind: 'stale', record: updated.record })
-      expect(store.get({ machineId: input.machineId, creationId: input.creationId }))
-        .toEqual(updated.record)
+      expect(store.get({ machineId: input.machineId, creationId: input.creationId })).toEqual(updated.record)
     })
   })
 
@@ -392,12 +392,16 @@ describe('SqliteWorktreeCreationStore', () => {
           revision: 2,
         },
       })
-      expect(db.prepare(`
+      expect(
+        db
+          .prepare(`
         SELECT id, machine_id, repository_id, project_path, worktree_path,
                branch, requested_base_ref, resolved_base_commit, lifecycle,
                initial_owner_kind, initial_owner_id, purpose
           FROM managed_worktrees WHERE id = 'worktree-1'
-      `).get()).toEqual({
+      `)
+          .get(),
+      ).toEqual({
         id: 'worktree-1',
         machine_id: 'machine-local',
         repository_id: '/Users/example/code/switchboard/.git',
@@ -411,11 +415,15 @@ describe('SqliteWorktreeCreationStore', () => {
         initial_owner_id: 'conversation-1',
         purpose: 'new-chat',
       })
-      expect(db.prepare(`
+      expect(
+        db
+          .prepare(`
         SELECT project_path, worktree_id, worktree_creation_id, sidebar_role,
                worktree_path, worktree_branch
           FROM conversations WHERE id = 'conversation-1'
-      `).get()).toEqual({
+      `)
+          .get(),
+      ).toEqual({
         project_path: '/Users/example/code/switchboard',
         worktree_id: 'worktree-1',
         worktree_creation_id: input.creationId,
@@ -473,10 +481,14 @@ describe('SqliteWorktreeCreationStore', () => {
       })
 
       expect(progressed.kind).toBe('updated')
-      expect(db.prepare(`
+      expect(
+        db
+          .prepare(`
         SELECT setup_receipt_json, startup_receipt_json, updated_at
           FROM managed_worktrees WHERE id = 'worktree-1'
-      `).get()).toEqual({
+      `)
+          .get(),
+      ).toEqual({
         setup_receipt_json: setupReceiptJson,
         startup_receipt_json: startupReceiptJson,
         updated_at: 3_000,
@@ -499,26 +511,20 @@ describe('SqliteWorktreeCreationStore', () => {
           id, project_path, agent_type, title, created_at, updated_at,
           worktree_path, worktree_branch, worktree_id, worktree_creation_id
         ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
-      `).run(
-        'conversation-1',
-        '/Users/example/code/switchboard',
-        'codex',
-        'Existing conflicting conversation',
-        10,
-        10,
-      )
+      `).run('conversation-1', '/Users/example/code/switchboard', 'codex', 'Existing conflicting conversation', 10, 10)
 
-      expect(() => store.commitConversationOwner(conversationCommitInput()))
-        .toThrow(/constraint/i)
+      expect(() => store.commitConversationOwner(conversationCommitInput())).toThrow(/constraint/i)
 
-      expect(db.prepare('SELECT count(*) AS count FROM managed_worktrees').get())
-        .toEqual({ count: 0 })
-      expect(store.get({ machineId: input.machineId, creationId: input.creationId }))
-        .toEqual(reserved.record)
-      expect(db.prepare(`
+      expect(db.prepare('SELECT count(*) AS count FROM managed_worktrees').get()).toEqual({ count: 0 })
+      expect(store.get({ machineId: input.machineId, creationId: input.creationId })).toEqual(reserved.record)
+      expect(
+        db
+          .prepare(`
         SELECT title, worktree_id, worktree_creation_id, worktree_path, worktree_branch
           FROM conversations WHERE id = 'conversation-1'
-      `).get()).toEqual({
+      `)
+          .get(),
+      ).toEqual({
         title: 'Existing conflicting conversation',
         worktree_id: null,
         worktree_creation_id: null,

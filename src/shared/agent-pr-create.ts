@@ -19,7 +19,8 @@ export type Checked<T> = { ok: true; value: T } | { ok: false; message: string }
 export function checkPrTitle(value: unknown): Checked<string> {
   if (typeof value !== 'string' || !value.trim()) return { ok: false, message: 'The title is empty.' }
   const title = value.trim().replace(/\s+/g, ' ')
-  if (title.length > PR_TITLE_MAX_CHARS) return { ok: false, message: `The title is ${title.length} characters; the limit is ${PR_TITLE_MAX_CHARS}.` }
+  if (title.length > PR_TITLE_MAX_CHARS)
+    return { ok: false, message: `The title is ${title.length} characters; the limit is ${PR_TITLE_MAX_CHARS}.` }
   if (title.includes('\u0000')) return { ok: false, message: 'The title contains a NUL character.' }
   return { ok: true, value: title }
 }
@@ -30,7 +31,10 @@ export function checkPrDescription(value: unknown): Checked<string> {
   if (typeof value !== 'string') return { ok: false, message: 'The description must be text.' }
   const text = value.trim()
   if (text.length > PR_DESCRIPTION_MAX_CHARS) {
-    return { ok: false, message: `The description is ${text.length} characters; the limit is ${PR_DESCRIPTION_MAX_CHARS}. Say it shorter.` }
+    return {
+      ok: false,
+      message: `The description is ${text.length} characters; the limit is ${PR_DESCRIPTION_MAX_CHARS}. Say it shorter.`,
+    }
   }
   if (text.includes('\u0000')) return { ok: false, message: 'The description contains a NUL character.' }
   return { ok: true, value: text }
@@ -42,7 +46,14 @@ export function checkPrDescription(value: unknown): Checked<string> {
  */
 export function isBranchName(value: unknown): value is string {
   if (typeof value !== 'string' || !value || value.length > 255) return false
-  if (value.startsWith('-') || value.startsWith('/') || value.endsWith('/') || value.endsWith('.') || value.endsWith('.lock')) return false
+  if (
+    value.startsWith('-') ||
+    value.startsWith('/') ||
+    value.endsWith('/') ||
+    value.endsWith('.') ||
+    value.endsWith('.lock')
+  )
+    return false
   if (value.includes('..') || value.includes('//') || value.includes('@{') || value === '@') return false
   // Control characters, space, DEL, and what git forbids in a ref name.
   if (/[\u0000-\u0020\u007f~^:?*[\\]/.test(value)) return false
@@ -61,7 +72,10 @@ export function parseRepoArg(value: string, host: PrHost): RepoRef | null {
   const text = value.trim()
   const short = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(text)
   if (short) return { host, owner: short[1], name: short[2] }
-  const url = /^https?:\/\/(?:www\.)?(github\.com|bitbucket\.org)\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?:\/.*)?$/i.exec(text)
+  const url =
+    /^https?:\/\/(?:www\.)?(github\.com|bitbucket\.org)\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?:\/.*)?$/i.exec(
+      text,
+    )
   if (url) return { host: url[1].toLowerCase() === 'github.com' ? 'github' : 'bitbucket', owner: url[2], name: url[3] }
   return parseRemoteUrl(text)
 }
@@ -104,11 +118,18 @@ export function checkCreatePrArgs(args: Record<string, unknown>): Checked<Create
   if (!source.ok) return source
   const target = checkBranch(args.targetBranch, 'targetBranch')
   if (!target.ok) return target
-  if (args.draft !== undefined && typeof args.draft !== 'boolean') return { ok: false, message: '"draft" is true or false.' }
-  if (args.repository !== undefined && typeof args.repository !== 'string') return { ok: false, message: '"repository" is "owner/name" or its URL.' }
+  if (args.draft !== undefined && typeof args.draft !== 'boolean')
+    return { ok: false, message: '"draft" is true or false.' }
+  if (args.repository !== undefined && typeof args.repository !== 'string')
+    return { ok: false, message: '"repository" is "owner/name" or its URL.' }
   const reviewers = checkReviewerNames(args.reviewers)
   if (!reviewers.ok) return reviewers
-  if (args.repoPath !== undefined && (typeof args.repoPath !== 'string' || args.repoPath.length > REPO_PATH_MAX_CHARS || args.repoPath.includes('\u0000'))) {
+  if (
+    args.repoPath !== undefined &&
+    (typeof args.repoPath !== 'string' ||
+      args.repoPath.length > REPO_PATH_MAX_CHARS ||
+      args.repoPath.includes('\u0000'))
+  ) {
     return { ok: false, message: '"repoPath" is the path of a git repository inside this chat\'s project folder.' }
   }
   const repoPath = typeof args.repoPath === 'string' && args.repoPath.trim() ? args.repoPath.trim() : null
@@ -132,8 +153,10 @@ export function repositoryProblem(named: string | null, chatRepo: RepoRef): stri
   if (!named) return null
   const ref = parseRepoArg(named, chatRepo.host)
   if (ref && repoKey(ref) === repoKey(chatRepo)) return null
-  return `This chat can only open pull requests on ${chatRepo.owner}/${chatRepo.name}, the repository its project points at. ` +
+  return (
+    `This chat can only open pull requests on ${chatRepo.owner}/${chatRepo.name}, the repository its project points at. ` +
     `"${named}" is not that repository. Nothing was created.`
+  )
 }
 
 /**
@@ -144,15 +167,19 @@ export function repoPathRepositoryProblem(named: string | null, found: RepoRef, 
   if (!named) return null
   const ref = parseRepoArg(named, found.host)
   if (ref && repoKey(ref) === repoKey(found)) return null
-  return `The git remote of ${relPath} points at ${found.owner}/${found.name}, not "${named}". ` +
+  return (
+    `The git remote of ${relPath} points at ${found.owner}/${found.name}, not "${named}". ` +
     'Call again with that repository, or with the repoPath of the one you meant. Nothing was created.'
+  )
 }
 
 /** A draft on Bitbucket is refused rather than silently opened ready for review. */
 export function draftProblem(host: PrHost, draft: boolean): string | null {
   if (!draft || host !== 'bitbucket') return null
-  return 'Switchboard opens Bitbucket pull requests ready for review only; it cannot open a draft there. ' +
+  return (
+    'Switchboard opens Bitbucket pull requests ready for review only; it cannot open a draft there. ' +
     'Call again without "draft", or tell the user. Nothing was created.'
+  )
 }
 
 /** What the service sends a host. The description already ends with the marker line. */
@@ -181,7 +208,10 @@ export interface OpenedPr extends CreatedPr {
 }
 
 /** The same rules again, in the service, for whatever reached it. */
-export function validateCreatePr(host: PrHost, input: unknown): { ok: true; value: CreatePrInput } | { ok: false; error: PrError } {
+export function validateCreatePr(
+  host: PrHost,
+  input: unknown,
+): { ok: true; value: CreatePrInput } | { ok: false; error: PrError } {
   const invalid = (message: string) => ({ ok: false as const, error: { kind: 'invalid' as const, host, message } })
   if (!input || typeof input !== 'object' || Array.isArray(input)) return invalid('The pull request is missing.')
   const r = input as Record<string, unknown>
@@ -189,16 +219,28 @@ export function validateCreatePr(host: PrHost, input: unknown): { ok: true; valu
   if (!title.ok) return invalid(title.message)
   if (typeof r.description !== 'string') return invalid('The description is missing.')
   // The marker line may take it a little past the agent's cap.
-  if (r.description.length > PR_DESCRIPTION_MAX_CHARS + 100 || r.description.includes('\u0000')) return invalid('The description is too long.')
+  if (r.description.length > PR_DESCRIPTION_MAX_CHARS + 100 || r.description.includes('\u0000'))
+    return invalid('The description is too long.')
   if (!isBranchName(r.sourceBranch) || !isBranchName(r.targetBranch)) return invalid('Not a branch name.')
   if (r.sourceBranch === r.targetBranch) return invalid('The source and target branch are the same.')
   const draft = r.draft === true
   const refused = draftProblem(host, draft)
   if (refused) return invalid(refused)
   const reviewers = r.reviewers ?? []
-  if (!Array.isArray(reviewers) || reviewers.length > AGENT_PR_MAX_REVIEWERS || !reviewers.every((id) => isReviewerId(host, id))) return invalid('Not a reviewer on this host.')
+  if (
+    !Array.isArray(reviewers) ||
+    reviewers.length > AGENT_PR_MAX_REVIEWERS ||
+    !reviewers.every((id) => isReviewerId(host, id))
+  )
+    return invalid('Not a reviewer on this host.')
   if (new Set(reviewers).size !== reviewers.length) return invalid('A reviewer is listed twice.')
-  const value: CreatePrInput = { title: title.value, description: r.description, sourceBranch: r.sourceBranch, targetBranch: r.targetBranch, draft }
+  const value: CreatePrInput = {
+    title: title.value,
+    description: r.description,
+    sourceBranch: r.sourceBranch,
+    targetBranch: r.targetBranch,
+    draft,
+  }
   if (reviewers.length > 0) value.reviewers = reviewers
   return { ok: true, value }
 }

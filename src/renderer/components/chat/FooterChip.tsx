@@ -7,7 +7,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
  * optional 12 px icon and a caret. Every footer control uses it, so the row
  * lines up and no native <select> sits among the popovers.
  */
-export const footerChipClass = 'inline-flex h-[24px] shrink-0 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] focus-visible:border-[var(--accent)] data-[state=open]:border-[var(--accent)]'
+export const footerChipClass =
+  'inline-flex h-[24px] shrink-0 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] focus-visible:border-[var(--accent)] data-[state=open]:border-[var(--accent)]'
 
 export const footerChipValueClass = 'font-[500] text-[var(--text-primary)]'
 
@@ -23,7 +24,11 @@ export function ChipLabel({ full, short }: { full: ReactNode; short?: ReactNode 
 }
 
 export function ChipCaret() {
-  return <span aria-hidden className="text-[9px] text-[var(--text-muted)]">▾</span>
+  return (
+    <span aria-hidden className="text-[9px] text-[var(--text-muted)]">
+      ▾
+    </span>
+  )
 }
 
 export interface ChipOption {
@@ -39,7 +44,14 @@ export interface ChipOption {
  * A listbox of buttons. It focuses the selected row when it mounts, the arrow
  * keys move between rows (Home and End jump), and Enter or Space picks.
  */
-export function OptionList({ label, options, value, onPick, className, autoFocus = true }: {
+export function OptionList({
+  label,
+  options,
+  value,
+  onPick,
+  className,
+  autoFocus = true,
+}: {
   label: string
   options: readonly ChipOption[]
   value: string
@@ -61,18 +73,29 @@ export function OptionList({ label, options, value, onPick, className, autoFocus
   const moveFocus = (e: KeyboardEvent<HTMLDivElement>) => {
     const rows = items()
     const at = rows.indexOf(document.activeElement as HTMLButtonElement)
-    const next = e.key === 'ArrowDown' ? Math.min(rows.length - 1, at + 1)
-      : e.key === 'ArrowUp' ? Math.max(0, at - 1)
-        : e.key === 'Home' ? 0
-          : e.key === 'End' ? rows.length - 1
-            : null
+    const next =
+      e.key === 'ArrowDown'
+        ? Math.min(rows.length - 1, at + 1)
+        : e.key === 'ArrowUp'
+          ? Math.max(0, at - 1)
+          : e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? rows.length - 1
+              : null
     if (next === null) return
     e.preventDefault()
     rows[next]?.focus()
   }
 
   return (
-    <div ref={listRef} role="listbox" aria-label={label} onKeyDown={moveFocus} className={cn('flex flex-col gap-[1px]', className)}>
+    <div
+      ref={listRef}
+      role="listbox"
+      aria-label={label}
+      onKeyDown={moveFocus}
+      className={cn('flex flex-col gap-[1px]', className)}
+    >
       {options.map((option) => {
         const selected = option.value === value
         return (
@@ -161,7 +184,9 @@ export function ChipSelect({
           className={cn(footerChipClass, className)}
         >
           {icon}
-          <span className={cn(footerChipValueClass, valueClassName)}><ChipLabel full={full} short={short} /></span>
+          <span className={cn(footerChipValueClass, valueClassName)}>
+            <ChipLabel full={full} short={short} />
+          </span>
           <ChipCaret />
         </button>
       </PopoverTrigger>
@@ -193,7 +218,17 @@ const iconClass = 'shrink-0 text-[var(--text-muted)]'
 
 export function GaugeIcon() {
   return (
-    <svg aria-hidden width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" className={iconClass}>
+    <svg
+      aria-hidden
+      width="12"
+      height="12"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      className={iconClass}
+    >
       <path d="M2.5 11a5.5 5.5 0 1 1 11 0" />
       <path d="M8 11l3-3.5" />
     </svg>
@@ -202,7 +237,18 @@ export function GaugeIcon() {
 
 export function BranchIcon() {
   return (
-    <svg aria-hidden width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={iconClass}>
+    <svg
+      aria-hidden
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={iconClass}
+    >
       <line x1="6" y1="3" x2="6" y2="15" />
       <circle cx="18" cy="6" r="3" />
       <circle cx="6" cy="18" r="3" />
@@ -213,7 +259,17 @@ export function BranchIcon() {
 
 export function ShieldIcon() {
   return (
-    <svg aria-hidden width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" className={iconClass}>
+    <svg
+      aria-hidden
+      width="12"
+      height="12"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinejoin="round"
+      className={iconClass}
+    >
       <path d="M8 1.8l5 2v4c0 3-2.2 5.2-5 6.4C5.2 13 3 10.8 3 7.8v-4z" />
     </svg>
   )

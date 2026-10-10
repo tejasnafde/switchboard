@@ -82,8 +82,20 @@ async function renderNow(source: string, theme: DiagramTheme): Promise<DiagramRe
       // An init directive or front matter in the message cannot change these:
       // themeCSS is raw CSS, and the rest would undo the settings below.
       secure: [
-        'secure', 'securityLevel', 'startOnLoad', 'maxTextSize', 'maxEdges', 'suppressErrorRendering',
-        'dompurifyConfig', 'htmlLabels', 'flowchart', 'theme', 'themeVariables', 'themeCSS', 'fontFamily', 'darkMode',
+        'secure',
+        'securityLevel',
+        'startOnLoad',
+        'maxTextSize',
+        'maxEdges',
+        'suppressErrorRendering',
+        'dompurifyConfig',
+        'htmlLabels',
+        'flowchart',
+        'theme',
+        'themeVariables',
+        'themeCSS',
+        'fontFamily',
+        'darkMode',
       ],
       suppressErrorRendering: true,
       htmlLabels: false,
@@ -109,7 +121,10 @@ async function renderNow(source: string, theme: DiagramTheme): Promise<DiagramRe
     return { ok: true, svg: sanitizeDiagramSvg(svg) }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return { ok: false, error: message.split('\n').slice(0, 4).join('\n').slice(0, 400) || 'The diagram could not be drawn.' }
+    return {
+      ok: false,
+      error: message.split('\n').slice(0, 4).join('\n').slice(0, 400) || 'The diagram could not be drawn.',
+    }
   } finally {
     // Mermaid measures text in a scratch node and can leave it behind on a parse error.
     document.getElementById(id)?.remove()

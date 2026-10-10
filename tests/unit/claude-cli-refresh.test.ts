@@ -9,7 +9,8 @@ vi.mock('../../src/main/logger', () => ({
   createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }))
 
-const { claudeLaunchPath, refreshClaudeTokenWithoutTurn } = await import('../../src/main/provider/usage/claude-cli-refresh')
+const { claudeLaunchPath, refreshClaudeTokenWithoutTurn } =
+  await import('../../src/main/provider/usage/claude-cli-refresh')
 
 const SHIM = 'C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd'
 const EXE = 'C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe'

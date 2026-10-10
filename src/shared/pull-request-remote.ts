@@ -23,7 +23,11 @@ const SEGMENT = /^[A-Za-z0-9_.-]+$/
 function toRef(hostName: string, path: string): RepoRef | null {
   const host = HOSTS[hostName.toLowerCase()]
   if (!host) return null
-  const parts = path.replace(/^\/+/, '').replace(/\/+$/, '').replace(/\.git$/i, '').split('/')
+  const parts = path
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    .replace(/\.git$/i, '')
+    .split('/')
   if (parts.length !== 2) return null
   const [owner, name] = parts
   if (!SEGMENT.test(owner) || !SEGMENT.test(name) || name === '.' || name === '..') return null
@@ -84,6 +88,15 @@ export function remotesForRepo(remoteVerbose: string, repo: RepoRef): string[] {
 /** "owner/name" as the host's API names a repository, or null. */
 export function parseFullName(host: PrHost, fullName: string): RepoRef | null {
   const [owner, name, ...rest] = fullName.trim().split('/')
-  if (rest.length > 0 || !owner || !name || !SEGMENT.test(owner) || !SEGMENT.test(name) || name === '.' || name === '..') return null
+  if (
+    rest.length > 0 ||
+    !owner ||
+    !name ||
+    !SEGMENT.test(owner) ||
+    !SEGMENT.test(name) ||
+    name === '.' ||
+    name === '..'
+  )
+    return null
   return { host, owner, name }
 }

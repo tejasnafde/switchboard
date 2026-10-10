@@ -95,7 +95,11 @@ interface MachineStore {
   reorderMachineProjects: (machineId: string, paths: string[]) => Promise<void>
   /** Optimistically add a just-created chat to a machine's snapshot so its row
    *  appears immediately (a rescan can't see an empty conversation yet). */
-  addSnapshotSession: (machineId: string, projectPath: string, session: { id: string; title: string; agentType?: string | null }) => void
+  addSnapshotSession: (
+    machineId: string,
+    projectPath: string,
+    session: { id: string; title: string; agentType?: string | null },
+  ) => void
   /** Patch a cached session's title in whichever snapshot holds it, so the
    *  sidebar row tracks renames (auto-title, manual) without a full re-sync. */
   renameSnapshotSession: (sessionId: string, title: string) => void
@@ -134,9 +138,7 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       return
     }
     try {
-      const stored = parseCollapsedMachines(
-        await window.api.settings.get(COLLAPSED_MACHINES_KEY),
-      )
+      const stored = parseCollapsedMachines(await window.api.settings.get(COLLAPSED_MACHINES_KEY))
       const knownIds = new Set(['local', ...remotes.map((machine) => machine.id)])
       const collapsed = new Set([...stored].filter((id) => knownIds.has(id)))
       set({ collapsed })
@@ -268,11 +270,7 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
     }))
     try {
       await window.api.machines.saveSnapshot(machineId, snapshot)
-      await window.api.routing.invokeOn(
-        machineId,
-        AppChannels.PROJECT_ORGANIZE,
-        projectOrganizationItems(next),
-      )
+      await window.api.routing.invokeOn(machineId, AppChannels.PROJECT_ORGANIZE, projectOrganizationItems(next))
     } catch (err) {
       log.warn('remote project reorder persist failed', err)
     }
@@ -284,7 +282,10 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       if (!snap) return {}
       const projects = snap.projects.map((p) =>
         p.path === projectPath && !p.sessions.some((x) => x.id === session.id)
-          ? { ...p, sessions: [{ id: session.id, title: session.title, agentType: session.agentType ?? null }, ...p.sessions] }
+          ? {
+              ...p,
+              sessions: [{ id: session.id, title: session.title, agentType: session.agentType ?? null }, ...p.sessions],
+            }
           : p,
       )
       // Mirror onto the live tree too - a connected machine renders
@@ -431,7 +432,13 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
         // waiting state, not render a webview at a dead port.
         if (status === 'connected' && idePort) idePorts[id] = idePort
         else delete idePorts[id]
-        return { connections: { ...s.connections, [id]: toMachineStatus(status) }, idePorts, lastError, progress, reconnecting }
+        return {
+          connections: { ...s.connections, [id]: toMachineStatus(status) },
+          idePorts,
+          lastError,
+          progress,
+          reconnecting,
+        }
       })
     }),
 

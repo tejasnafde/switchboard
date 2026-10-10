@@ -13,17 +13,34 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const threadSessions = new Map<string, string>() // claude_session_id -> thread_id
-const conversations = new Map<string, { title: string; agent_type: string; project_path: string; updated_at: number; archived: number }>()
-interface LinkRow { conversation_id: string; host: string; owner: string; repo: string; number: number; source: string; linked_at: number; unlinked_at: number | null; state?: string | null; state_at?: number | null }
+const conversations = new Map<
+  string,
+  { title: string; agent_type: string; project_path: string; updated_at: number; archived: number }
+>()
+interface LinkRow {
+  conversation_id: string
+  host: string
+  owner: string
+  repo: string
+  number: number
+  source: string
+  linked_at: number
+  unlinked_at: number | null
+  state?: string | null
+  state_at?: number | null
+}
 const links = new Map<string, LinkRow>()
 const historyScans = new Map<string, number>() // conversation_id -> scanned_at
-const key = (id: string, host: string, owner: string, repo: string, number: number) => `${id}|${host}|${owner}|${repo}|${number}`
+const key = (id: string, host: string, owner: string, repo: string, number: number) =>
+  `${id}|${host}|${owner}|${repo}|${number}`
 
 vi.mock('better-sqlite3', () => {
   class FakeDb {
     pragma() {}
     exec() {}
-    transaction<T extends unknown[], R>(fn: (...a: T) => R) { return (...a: T) => fn(...a) }
+    transaction<T extends unknown[], R>(fn: (...a: T) => R) {
+      return (...a: T) => fn(...a)
+    }
     prepare(sql: string) {
       return {
         get: (...args: unknown[]) => {
@@ -35,14 +52,30 @@ vi.mock('better-sqlite3', () => {
         },
         run: (...args: unknown[]) => {
           if (sql.includes('INSERT OR IGNORE INTO conversation_pull_requests')) {
-            const [id, host, owner, repo, number, source, at] = args as [string, string, string, string, number, string, number]
+            const [id, host, owner, repo, number, source, at] = args as [
+              string,
+              string,
+              string,
+              string,
+              number,
+              string,
+              number,
+            ]
             const k = key(id, host, owner, repo, number)
             if (links.has(k)) return { changes: 0 }
             links.set(k, { conversation_id: id, host, owner, repo, number, source, linked_at: at, unlinked_at: null })
             return { changes: 1 }
           }
           if (sql.includes('INSERT INTO conversation_pull_requests') && sql.includes('ON CONFLICT')) {
-            const [id, host, owner, repo, number, source, at] = args as [string, string, string, string, number, string, number]
+            const [id, host, owner, repo, number, source, at] = args as [
+              string,
+              string,
+              string,
+              string,
+              number,
+              string,
+              number,
+            ]
             const k = key(id, host, owner, repo, number)
             const row = links.get(k)
             if (!row) {
@@ -51,16 +84,39 @@ vi.mock('better-sqlite3', () => {
             }
             if (row.unlinked_at === null && !(row.source === 'auto' && source !== 'auto')) return { changes: 0 }
             const revived = row.unlinked_at !== null
-            const clearsState = revived && /state = CASE WHEN unlinked_at IS NOT NULL THEN NULL/.test(sql) && /state_at = CASE WHEN unlinked_at IS NOT NULL THEN NULL/.test(sql)
-            Object.assign(row, { source, linked_at: revived ? at : row.linked_at, unlinked_at: null, ...(clearsState ? { state: null, state_at: null } : {}) })
+            const clearsState =
+              revived &&
+              /state = CASE WHEN unlinked_at IS NOT NULL THEN NULL/.test(sql) &&
+              /state_at = CASE WHEN unlinked_at IS NOT NULL THEN NULL/.test(sql)
+            Object.assign(row, {
+              source,
+              linked_at: revived ? at : row.linked_at,
+              unlinked_at: null,
+              ...(clearsState ? { state: null, state_at: null } : {}),
+            })
             return { changes: 1 }
           }
           if (sql.includes('UPDATE conversation_pull_requests SET state = ?, state_at = ?')) {
-            const [state, at, host, owner, repo, number, observedAt] = args as [string, number, string, string, string, number, number]
+            const [state, at, host, owner, repo, number, observedAt] = args as [
+              string,
+              number,
+              string,
+              string,
+              string,
+              number,
+              number,
+            ]
             const guarded = sql.includes('MAX(linked_at, COALESCE(state_at, 0)) <= ?')
             for (const l of links.values()) {
-              if (l.host === host && l.owner === owner && l.repo === repo && l.number === number && l.unlinked_at === null
-                && !(guarded && Math.max(l.linked_at, l.state_at ?? 0) > observedAt)) Object.assign(l, { state, state_at: at })
+              if (
+                l.host === host &&
+                l.owner === owner &&
+                l.repo === repo &&
+                l.number === number &&
+                l.unlinked_at === null &&
+                !(guarded && Math.max(l.linked_at, l.state_at ?? 0) > observedAt)
+              )
+                Object.assign(l, { state, state_at: at })
             }
             return { changes: 1 }
           }
@@ -86,7 +142,10 @@ vi.mock('better-sqlite3', () => {
           if (sql.includes('LEFT JOIN conversation_pr_history_scans')) {
             return [...conversations.entries()]
               .filter(([id, c]) => !historyScans.has(id) && c.agent_type !== 'terminal')
-              .filter(([id]) => ![...threadSessions.entries()].some(([sessionId, threadId]) => sessionId === id && threadId !== id))
+              .filter(
+                ([id]) =>
+                  ![...threadSessions.entries()].some(([sessionId, threadId]) => sessionId === id && threadId !== id),
+              )
               .sort(([, a], [, b]) => b.updated_at - a.updated_at)
               .slice(0, args[0] as number)
               .map(([id, c]) => ({ id, projectPath: c.project_path, worktreePath: c.worktree_path ?? null }))
@@ -94,14 +153,26 @@ vi.mock('better-sqlite3', () => {
           if (sql.includes('SELECT conversation_id FROM conversation_pull_requests WHERE host = ?')) {
             const guarded = sql.includes('MAX(linked_at, COALESCE(state_at, 0)) <= ?')
             const [host, owner, repo, number] = args as [string, string, string, number]
-            const observedAt = guarded ? args[4] as number : Infinity
+            const observedAt = guarded ? (args[4] as number) : Infinity
             const state = args[guarded ? 5 : 4] as string
             return [...links.values()]
-              .filter((l) => l.host === host && l.owner === owner && l.repo === repo && l.number === number && l.unlinked_at === null && l.state !== state)
+              .filter(
+                (l) =>
+                  l.host === host &&
+                  l.owner === owner &&
+                  l.repo === repo &&
+                  l.number === number &&
+                  l.unlinked_at === null &&
+                  l.state !== state,
+              )
               .filter((l) => Math.max(l.linked_at, l.state_at ?? 0) <= observedAt)
               .map((l) => ({ conversation_id: l.conversation_id }))
           }
-          if (sql.includes('SELECT DISTINCT host, owner, repo, number FROM conversation_pull_requests WHERE unlinked_at IS NULL')) {
+          if (
+            sql.includes(
+              'SELECT DISTINCT host, owner, repo, number FROM conversation_pull_requests WHERE unlinked_at IS NULL',
+            )
+          ) {
             return [...links.values()].filter((l) => l.unlinked_at === null)
           }
           if (sql.includes('FROM conversation_pull_requests WHERE conversation_id = ?')) {
@@ -112,7 +183,14 @@ vi.mock('better-sqlite3', () => {
           if (sql.includes('FROM conversation_pull_requests l JOIN conversations c')) {
             const [host, owner, repo, number] = args as [string, string, string, number]
             return [...links.values()]
-              .filter((l) => l.host === host && l.owner === owner && l.repo === repo && l.number === number && l.unlinked_at === null)
+              .filter(
+                (l) =>
+                  l.host === host &&
+                  l.owner === owner &&
+                  l.repo === repo &&
+                  l.number === number &&
+                  l.unlinked_at === null,
+              )
               .flatMap((l) => {
                 const c = conversations.get(l.conversation_id)
                 return c && !c.archived ? [{ id: l.conversation_id, ...c, source: l.source }] : []
@@ -151,7 +229,15 @@ describe('PR links survive provider session rotation', () => {
     threadSessions.set('uuid-abc', 'agent_1')
     expect(linkConversationPullRequest('uuid-abc', PR, 'manual', 10)).toBe(true)
     expect([...links.values()].map((l) => l.conversation_id)).toEqual(['agent_1'])
-    const expected = [{ ref: { host: 'github', owner: 'tejasnafde', name: 'switchboard', number: 612 }, source: 'manual', linkedAt: 10, state: null, stateAt: null }]
+    const expected = [
+      {
+        ref: { host: 'github', owner: 'tejasnafde', name: 'switchboard', number: 612 },
+        source: 'manual',
+        linkedAt: 10,
+        state: null,
+        stateAt: null,
+      },
+    ]
     expect(listConversationPullRequests('agent_1')).toEqual(expected)
     expect(listConversationPullRequests('uuid-abc')).toEqual(expected)
   })
@@ -165,10 +251,24 @@ describe('PR links survive provider session rotation', () => {
 
   it('lists the chats of a PR with every id of their thread', () => {
     threadSessions.set('uuid-abc', 'agent_1')
-    conversations.set('agent_1', { title: 'Sync backoff', agent_type: 'codex', project_path: '/p', updated_at: 5, archived: 0 })
+    conversations.set('agent_1', {
+      title: 'Sync backoff',
+      agent_type: 'codex',
+      project_path: '/p',
+      updated_at: 5,
+      archived: 0,
+    })
     linkConversationPullRequest('uuid-abc', PR, 'manual', 10)
     expect(listPullRequestChats(PR)).toEqual([
-      { id: 'agent_1', familyIds: ['agent_1', 'uuid-abc'], title: 'Sync backoff', agentType: 'codex', projectPath: '/p', updatedAt: 5, linkSource: 'manual' },
+      {
+        id: 'agent_1',
+        familyIds: ['agent_1', 'uuid-abc'],
+        title: 'Sync backoff',
+        agentType: 'codex',
+        projectPath: '/p',
+        updatedAt: 5,
+        linkSource: 'manual',
+      },
     ])
   })
 })
@@ -187,7 +287,13 @@ describe('link once', () => {
     expect(listConversationPullRequests('agent_1')).toEqual([])
     expect(linkConversationPullRequest('agent_1', PR, 'manual', 40)).toBe(true)
     expect(listConversationPullRequests('agent_1')).toEqual([
-      { ref: { host: 'github', owner: 'tejasnafde', name: 'switchboard', number: 612 }, source: 'manual', linkedAt: 40, state: null, stateAt: null },
+      {
+        ref: { host: 'github', owner: 'tejasnafde', name: 'switchboard', number: 612 },
+        source: 'manual',
+        linkedAt: 40,
+        state: null,
+        stateAt: null,
+      },
     ])
   })
 })
@@ -269,10 +375,30 @@ describe('linked pull request keys', () => {
 describe('history scan bookkeeping', () => {
   it('marks the root chat through a rotated id, so the chat is not listed again', () => {
     threadSessions.set('uuid-abc', 'agent_1')
-    conversations.set('agent_1', { title: 'Review', agent_type: 'claude-code', project_path: '/p', updated_at: 5, archived: 0 })
-    conversations.set('uuid-abc', { title: 'Review', agent_type: 'claude-code', project_path: '/p', updated_at: 6, archived: 0 })
-    conversations.set('term_1', { title: 'Shell', agent_type: 'terminal', project_path: '/p', updated_at: 7, archived: 0 })
-    expect(listUnscannedPullRequestHistoryScanTargets(10)).toEqual([{ id: 'agent_1', projectPath: '/p', worktreePath: null }])
+    conversations.set('agent_1', {
+      title: 'Review',
+      agent_type: 'claude-code',
+      project_path: '/p',
+      updated_at: 5,
+      archived: 0,
+    })
+    conversations.set('uuid-abc', {
+      title: 'Review',
+      agent_type: 'claude-code',
+      project_path: '/p',
+      updated_at: 6,
+      archived: 0,
+    })
+    conversations.set('term_1', {
+      title: 'Shell',
+      agent_type: 'terminal',
+      project_path: '/p',
+      updated_at: 7,
+      archived: 0,
+    })
+    expect(listUnscannedPullRequestHistoryScanTargets(10)).toEqual([
+      { id: 'agent_1', projectPath: '/p', worktreePath: null },
+    ])
     markPullRequestHistoryScanned('uuid-abc', 10)
     expect([...historyScans.keys()]).toEqual(['agent_1'])
     expect(listUnscannedPullRequestHistoryScanTargets(10)).toEqual([])
@@ -285,7 +411,9 @@ describe('link state columns', () => {
   const fakeDb = (columns: string[]) => {
     const execs: string[] = []
     const db = {
-      exec: (sql: string) => { execs.push(sql) },
+      exec: (sql: string) => {
+        execs.push(sql)
+      },
       prepare: () => ({ all: () => columns.map((name) => ({ name })) }),
     }
     return { db: db as unknown as Parameters<typeof ensurePullRequestLinkSchema>[0], execs }

@@ -56,14 +56,8 @@ export function findSpendBlock(
 }
 
 /** Replaces the entry for this pair, and drops expired ones while it is here. */
-export function upsertSpendBlock(
-  blocks: SpendBlock[],
-  next: SpendBlock,
-  nowMs: number,
-): SpendBlock[] {
-  const kept = blocks.filter(
-    (b) => !isSamePair(b, next.instanceId, next.model) && isSpendBlockActive(b, nowMs),
-  )
+export function upsertSpendBlock(blocks: SpendBlock[], next: SpendBlock, nowMs: number): SpendBlock[] {
+  const kept = blocks.filter((b) => !isSamePair(b, next.instanceId, next.model) && isSpendBlockActive(b, nowMs))
   return [...kept, next]
 }
 
@@ -74,13 +68,16 @@ export function pruneSpendBlocks(blocks: SpendBlock[], nowMs: number): SpendBloc
 /** Composer warning. Names the model, which the picker can render as "Default". */
 export function describeSpendBlock(block: SpendBlock): string {
   const reason = block.reason ? ` (${block.reason})` : ''
-  const head = `${block.model} billed to extra usage here and was refused${reason}. `
-    + `Pick ${PLAN_COVERED_HINT.join(', ')} or another model your plan covers`
+  const head =
+    `${block.model} billed to extra usage here and was refused${reason}. ` +
+    `Pick ${PLAN_COVERED_HINT.join(', ')} or another model your plan covers`
   // Only an org-wide cap makes profile rotation pointless. Saying it for an
   // account-scoped block would contradict the chat error, which correctly
   // offers another instance in that case.
   if (block.scope === 'account') return `${head}, or switch to another profile.`
   if (block.scope === 'not-provisioned') return `${head}, or ask an org admin to enable extra usage.`
-  return `${head}, or ask an org admin to raise the spend limit. `
-    + `Switching profile inside the same organisation will not help.`
+  return (
+    `${head}, or ask an org admin to raise the spend limit. ` +
+    `Switching profile inside the same organisation will not help.`
+  )
 }

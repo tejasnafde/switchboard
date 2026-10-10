@@ -11,10 +11,24 @@ import { _resetShellEnvCacheForTests } from '../../src/main/shell-env'
 import type { Machine } from '@shared/machines'
 
 const machine: Machine = {
-  id: 'm1', name: 'prod', sshAlias: 'prod-vm', sshHost: 'h', sshUser: 'u',
-  sshPort: 22, remoteUser: null, sortOrder: 0, createdAt: 0, updatedAt: 0,
+  id: 'm1',
+  name: 'prod',
+  sshAlias: 'prod-vm',
+  sshHost: 'h',
+  sshUser: 'u',
+  sshPort: 22,
+  remoteUser: null,
+  sortOrder: 0,
+  createdAt: 0,
+  updatedAt: 0,
 }
-const inputs = { appVersion: '0.4.16', betterSqliteVersion: '12.9.0', claudeSdkVersion: '0.2.114', bundlePath: '/fake/out/server/index.cjs', bridgeFiles: [] }
+const inputs = {
+  appVersion: '0.4.16',
+  betterSqliteVersion: '12.9.0',
+  claudeSdkVersion: '0.2.114',
+  bundlePath: '/fake/out/server/index.cjs',
+  bridgeFiles: [],
+}
 
 // Every remote command (probe or step) is now wrapped through
 // `printf %s '<b64>' | base64 -d | bash`, since asUserScript wraps the
@@ -179,7 +193,9 @@ describe('provisionRemote', () => {
     // versions chased on the same connect.
     const r = runner({ ...full, server: null })
     await provisionRemote(machine, { ...inputs, codexVersion: '0.150.0' }, r)
-    const packageJsonCall = r.calls.find((c) => (c.stdin && typeof c.stdin === 'string') ? c.stdin.includes('"name": "switchboard-server"') : false)
+    const packageJsonCall = r.calls.find((c) =>
+      c.stdin && typeof c.stdin === 'string' ? c.stdin.includes('"name": "switchboard-server"') : false,
+    )
     expect(packageJsonCall?.stdin).toContain('"@openai/codex": "0.150.0"')
     const remotes = r.calls.map((c) => decode(c.args[c.args.length - 1]))
     expect(remotes.some((s) => s.includes('@openai/codex@0.150.0'))).toBe(true)
@@ -280,11 +296,7 @@ describe('provisionRemote', () => {
     // even on a ready server, so it still runs. Claude is not (see the
     // "leaves claude unconverged" test) - its link step and the tools marker
     // (which would otherwise falsely claim it) are both skipped.
-    expect(steps).toEqual([
-      'checking remote',
-      'ensure remote IDE (one-time download)',
-      'ensure Codex CLI',
-    ])
+    expect(steps).toEqual(['checking remote', 'ensure remote IDE (one-time download)', 'ensure Codex CLI'])
   })
 
   it('accepts node versions at or above the minimum', async () => {
@@ -299,35 +311,38 @@ describe('provisionRemote', () => {
 })
 
 describe('execProc (real child processes)', () => {
-  it.skipIf(process.platform === 'win32')('finds gcloud on the login-shell path when Finder supplied a minimal PATH', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'sb-gcloud-path-'))
-    const bin = join(root, 'bin')
-    const shell = join(root, 'login-shell')
-    const gcloud = join(bin, 'gcloud')
-    const previousPath = process.env.PATH
-    const previousShell = process.env.SHELL
-    try {
-      mkdirSync(bin)
-      writeFileSync(shell, `#!/bin/sh\nprintf 'PATH=${bin}:/usr/bin:/bin\\0'\n`)
-      writeFileSync(gcloud, '#!/bin/sh\nprintf fake-gcloud\n')
-      chmodSync(shell, 0o755)
-      chmodSync(gcloud, 0o755)
-      process.env.PATH = '/usr/bin:/bin'
-      process.env.SHELL = shell
-      _resetShellEnvCacheForTests()
+  it.skipIf(process.platform === 'win32')(
+    'finds gcloud on the login-shell path when Finder supplied a minimal PATH',
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), 'sb-gcloud-path-'))
+      const bin = join(root, 'bin')
+      const shell = join(root, 'login-shell')
+      const gcloud = join(bin, 'gcloud')
+      const previousPath = process.env.PATH
+      const previousShell = process.env.SHELL
+      try {
+        mkdirSync(bin)
+        writeFileSync(shell, `#!/bin/sh\nprintf 'PATH=${bin}:/usr/bin:/bin\\0'\n`)
+        writeFileSync(gcloud, '#!/bin/sh\nprintf fake-gcloud\n')
+        chmodSync(shell, 0o755)
+        chmodSync(gcloud, 0o755)
+        process.env.PATH = '/usr/bin:/bin'
+        process.env.SHELL = shell
+        _resetShellEnvCacheForTests()
 
-      const res = await execProc('gcloud', ['--version'])
+        const res = await execProc('gcloud', ['--version'])
 
-      expect(res).toEqual({ code: 0, stdout: 'fake-gcloud', stderr: '' })
-    } finally {
-      if (previousPath === undefined) delete process.env.PATH
-      else process.env.PATH = previousPath
-      if (previousShell === undefined) delete process.env.SHELL
-      else process.env.SHELL = previousShell
-      _resetShellEnvCacheForTests()
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
+        expect(res).toEqual({ code: 0, stdout: 'fake-gcloud', stderr: '' })
+      } finally {
+        if (previousPath === undefined) delete process.env.PATH
+        else process.env.PATH = previousPath
+        if (previousShell === undefined) delete process.env.SHELL
+        else process.env.SHELL = previousShell
+        _resetShellEnvCacheForTests()
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+  )
 
   it('resolves with code + captured output on normal completion', async () => {
     const res = await execProc(process.execPath, [
@@ -376,7 +391,9 @@ describe('provisionRemote bridge extension seeding', () => {
   it('marks the seed with a payload hash so an edited extension re-seeds', async () => {
     const r = runner(full)
     await provisionRemote(machine, withBridge, r)
-    expect(decode(r.calls[2].args[r.calls[2].args.length - 1])).toMatch(/\.sb-marker" 2>\/dev\/null\)" = "[a-f0-9]{16}"/)
+    expect(decode(r.calls[2].args[r.calls[2].args.length - 1])).toMatch(
+      /\.sb-marker" 2>\/dev\/null\)" = "[a-f0-9]{16}"/,
+    )
   })
 
   it('skips the step entirely when the build has no bundled extension', async () => {
@@ -414,7 +431,7 @@ describe('provisionRemote bridge extension seeding', () => {
     r.exec.mockImplementation(async (_cmd: string, args: string[]) => {
       const remote = decode(args[args.length - 1])
       if (remote.includes('node -e')) return { code: 0, stdout: JSON.stringify({ ...full, server: null }), stderr: '' }
-          if (remote.includes('base64 -d >')) return { code: 1, stdout: '', stderr: 'disk full' }
+      if (remote.includes('base64 -d >')) return { code: 1, stdout: '', stderr: 'disk full' }
       return { code: 0, stdout: '', stderr: '' }
     })
     const res = await provisionRemote(machine, { ...withBridge, appVersion: '0.4.16' }, r, (m) => logs.push(m))

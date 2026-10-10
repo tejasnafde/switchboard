@@ -25,7 +25,8 @@ describe('JsonlParser', () => {
       isMeta: true,
       message: { role: 'user', content: [{ type: 'text', text: 'Continue from where you left off.' }] },
     })
-    const notification = '<task-notification>\n<status>failed</status>\n<summary>Background command "x" failed with exit code 1</summary>\n</task-notification>'
+    const notification =
+      '<task-notification>\n<status>failed</status>\n<summary>Background command "x" failed with exit code 1</summary>\n</task-notification>'
     const task = JSON.stringify({ type: 'user', message: { role: 'user', content: notification } })
     const messages: Array<{ content: string }> = []
     const parser = new JsonlParser((message) => messages.push(message))
@@ -35,17 +36,33 @@ describe('JsonlParser', () => {
 
   it('merges a /compact record with the send Switchboard stored and folds its summary into one row', () => {
     const at = '2026-10-01T10:00:00.000Z'
-    const record = '<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>'
+    const record =
+      '<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>'
     const lines = [
       { type: 'user', uuid: 'u1', timestamp: at, message: { role: 'user', content: record } },
-      { type: 'user', uuid: 'u2', timestamp: at, isMeta: true, message: { role: 'user', content: '<local-command-caveat>Fake caveat.</local-command-caveat>' } },
-      { type: 'user', uuid: 'u3', timestamp: at, isCompactSummary: true, isVisibleInTranscriptOnly: true, message: { role: 'user', content: 'Fake summary of earlier work.' } },
+      {
+        type: 'user',
+        uuid: 'u2',
+        timestamp: at,
+        isMeta: true,
+        message: { role: 'user', content: '<local-command-caveat>Fake caveat.</local-command-caveat>' },
+      },
+      {
+        type: 'user',
+        uuid: 'u3',
+        timestamp: at,
+        isCompactSummary: true,
+        isVisibleInTranscriptOnly: true,
+        message: { role: 'user', content: 'Fake summary of earlier work.' },
+      },
     ]
     const disk: ChatMessage[] = []
     const parser = new JsonlParser((message) => disk.push(message))
     parser.feed(lines.map((line) => JSON.stringify(line)).join('\n') + '\n')
     expect(disk[0].content).toBe(record)
-    expect(splitSyntheticUserText(disk[1].content)?.parts).toEqual([{ kind: 'compacted', summary: 'Fake summary of earlier work.' }])
+    expect(splitSyntheticUserText(disk[1].content)?.parts).toEqual([
+      { kind: 'compacted', summary: 'Fake summary of earlier work.' },
+    ])
 
     const stored: ChatMessage = { id: 'sqlite-1', role: 'user', content: '/compact', timestamp: Date.parse(at) - 500 }
     const merged = mergeConversationMessages(disk, [stored])
@@ -54,10 +71,18 @@ describe('JsonlParser', () => {
 
   it('merges a command record that carries its output with the send Switchboard stored', () => {
     const at = '2026-10-01T10:00:00.000Z'
-    const record = '<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>fake-model</command-args>\n<local-command-stdout>Set model to fake-model</local-command-stdout>'
+    const record =
+      '<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>fake-model</command-args>\n<local-command-stdout>Set model to fake-model</local-command-stdout>'
     const disk: ChatMessage[] = []
-    new JsonlParser((m) => disk.push(m)).feed(JSON.stringify({ type: 'user', uuid: 'u1', timestamp: at, message: { role: 'user', content: record } }) + '\n')
-    const stored: ChatMessage = { id: 'sqlite-1', role: 'user', content: '/model fake-model', timestamp: Date.parse(at) - 500 }
+    new JsonlParser((m) => disk.push(m)).feed(
+      JSON.stringify({ type: 'user', uuid: 'u1', timestamp: at, message: { role: 'user', content: record } }) + '\n',
+    )
+    const stored: ChatMessage = {
+      id: 'sqlite-1',
+      role: 'user',
+      content: '/model fake-model',
+      timestamp: Date.parse(at) - 500,
+    }
     const merged = mergeConversationMessages(disk, [stored])
     expect(merged.map((m) => m.id)).toEqual(['u1'])
     expect(splitSyntheticUserText(merged[0].content)).toEqual({
@@ -68,9 +93,12 @@ describe('JsonlParser', () => {
 
   it('keeps pasted command tags followed by prose as the user typed them, and merges with its echo', () => {
     const at = '2026-10-01T10:00:00.000Z'
-    const text = '<command-name>/compact</command-name><command-message>compact</command-message><command-args></command-args>\nwhat does that do?'
+    const text =
+      '<command-name>/compact</command-name><command-message>compact</command-message><command-args></command-args>\nwhat does that do?'
     const disk: ChatMessage[] = []
-    new JsonlParser((m) => disk.push(m)).feed(JSON.stringify({ type: 'user', uuid: 'u1', timestamp: at, message: { role: 'user', content: text } }) + '\n')
+    new JsonlParser((m) => disk.push(m)).feed(
+      JSON.stringify({ type: 'user', uuid: 'u1', timestamp: at, message: { role: 'user', content: text } }) + '\n',
+    )
     expect(disk.map((m) => m.content)).toEqual([text])
     const stored: ChatMessage = { id: 'sqlite-1', role: 'user', content: text, timestamp: Date.parse(at) - 500 }
     expect(mergeConversationMessages(disk, [stored]).map((m) => m.id)).toEqual(['u1'])
@@ -79,7 +107,9 @@ describe('JsonlParser', () => {
   it('keeps a typed message that only mentions a command tag', () => {
     const text = 'why does <command-name>/compact</command-name> show up?'
     const messages: ChatMessage[] = []
-    new JsonlParser((m) => messages.push(m)).feed(JSON.stringify({ type: 'user', message: { role: 'user', content: text } }) + '\n')
+    new JsonlParser((m) => messages.push(m)).feed(
+      JSON.stringify({ type: 'user', message: { role: 'user', content: text } }) + '\n',
+    )
     expect(messages.map((m) => m.content)).toEqual([text])
   })
 
@@ -115,13 +145,15 @@ describe('JsonlParser', () => {
     const messages: unknown[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    parser.feed(JSON.stringify({
-      type: 'assistant',
-      id: 'msg_1',
-      message: {
-        content: [{ type: 'text', text: 'Hello, world!' }],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'assistant',
+        id: 'msg_1',
+        message: {
+          content: [{ type: 'text', text: 'Hello, world!' }],
+        },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0]).toMatchObject({
@@ -135,10 +167,12 @@ describe('JsonlParser', () => {
     const messages: unknown[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    parser.feed(JSON.stringify({
-      type: 'user',
-      message: { content: 'How do I fix this?' },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'user',
+        message: { content: 'How do I fix this?' },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0]).toMatchObject({
@@ -151,14 +185,16 @@ describe('JsonlParser', () => {
     const messages: unknown[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    parser.feed(JSON.stringify({
-      type: 'assistant',
-      isApiErrorMessage: true,
-      message: {
-        model: '<synthetic>',
-        content: [{ type: 'text', text: "You've hit your session limit · resets 5:10am (Asia/Calcutta)" }],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'assistant',
+        isApiErrorMessage: true,
+        message: {
+          model: '<synthetic>',
+          content: [{ type: 'text', text: "You've hit your session limit · resets 5:10am (Asia/Calcutta)" }],
+        },
+      }) + '\n',
+    )
 
     // The persisted system error card already covers this; rendering the
     // synthetic bubble too duplicated the error in chat.
@@ -169,20 +205,22 @@ describe('JsonlParser', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    parser.feed(JSON.stringify({
-      type: 'assistant',
-      message: {
-        content: [
-          { type: 'text', text: 'Let me read that file.' },
-          {
-            type: 'tool_use',
-            id: 'tool_1',
-            name: 'Read',
-            input: { file_path: '/src/index.ts' },
-          },
-        ],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'text', text: 'Let me read that file.' },
+            {
+              type: 'tool_use',
+              id: 'tool_1',
+              name: 'Read',
+              input: { file_path: '/src/index.ts' },
+            },
+          ],
+        },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0].content).toBe('Let me read that file.')
@@ -255,10 +293,12 @@ describe('JsonlParser', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    parser.feed(JSON.stringify({
-      type: 'assistant',
-      message: { content: 'plain string content' },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'assistant',
+        message: { content: 'plain string content' },
+      }) + '\n',
+    )
 
     expect(messages[0].content).toBe('plain string content')
   })
@@ -270,19 +310,21 @@ describe('JsonlParser', () => {
     const parser = new JsonlParser((msg) => messages.push(msg))
 
     // This is the actual format from ~/.claude/projects/*/session.jsonl
-    parser.feed(JSON.stringify({
-      parentUuid: null,
-      isSidechain: false,
-      promptId: 'cb2b7d28-0161-48ef-bcd1-1e4900f4f68d',
-      type: 'user',
-      message: {
-        role: 'user',
-        content: [{ type: 'text', text: 'explain this code' }],
-      },
-      uuid: '321ddcbf-dd99-485b-ade5-985619970183',
-      timestamp: '2026-04-11T18:38:58.516Z',
-      sessionId: '017eb80a-4f68-4132-affe-4629d124725b',
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        parentUuid: null,
+        isSidechain: false,
+        promptId: 'cb2b7d28-0161-48ef-bcd1-1e4900f4f68d',
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'explain this code' }],
+        },
+        uuid: '321ddcbf-dd99-485b-ade5-985619970183',
+        timestamp: '2026-04-11T18:38:58.516Z',
+        sessionId: '017eb80a-4f68-4132-affe-4629d124725b',
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0].role).toBe('user')
@@ -293,24 +335,24 @@ describe('JsonlParser', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    parser.feed(JSON.stringify({
-      parentUuid: '321ddcbf-dd99-485b-ade5-985619970183',
-      isSidechain: false,
-      type: 'assistant',
-      message: {
-        model: 'claude-opus-4-6',
-        id: 'msg_01ABC',
-        type: 'message',
-        role: 'assistant',
-        content: [
-          { type: 'text', text: 'Here is the explanation.' },
-        ],
-        stop_reason: 'end_turn',
-        usage: { input_tokens: 100, output_tokens: 50 },
-      },
-      uuid: '3edbb8e2-7c6d-4872-b0a6-0a668112fce2',
-      timestamp: '2026-04-11T18:39:02.568Z',
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        parentUuid: '321ddcbf-dd99-485b-ade5-985619970183',
+        isSidechain: false,
+        type: 'assistant',
+        message: {
+          model: 'claude-opus-4-6',
+          id: 'msg_01ABC',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Here is the explanation.' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 100, output_tokens: 50 },
+        },
+        uuid: '3edbb8e2-7c6d-4872-b0a6-0a668112fce2',
+        timestamp: '2026-04-11T18:39:02.568Z',
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0].role).toBe('assistant')
@@ -321,20 +363,20 @@ describe('JsonlParser', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    parser.feed(JSON.stringify({
-      type: 'assistant',
-      message: {
-        model: 'claude-opus-4-6',
-        id: 'msg_01XYZ',
-        type: 'message',
-        role: 'assistant',
-        content: [
-          { type: 'tool_use', id: 'toolu_01T1', name: 'Bash', input: { command: 'ls -la' } },
-        ],
-      },
-      uuid: 'abc-123',
-      timestamp: '2026-04-11T18:39:05.000Z',
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          model: 'claude-opus-4-6',
+          id: 'msg_01XYZ',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 'toolu_01T1', name: 'Bash', input: { command: 'ls -la' } }],
+        },
+        uuid: 'abc-123',
+        timestamp: '2026-04-11T18:39:05.000Z',
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0].toolCalls).toHaveLength(1)
@@ -368,12 +410,30 @@ describe('JsonlParser', () => {
     const lines = [
       { type: 'queue-operation', operation: 'enqueue' },
       { type: 'queue-operation', operation: 'dequeue' },
-      { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'hello' }] }, uuid: 'u1', timestamp: '2026-04-11T18:38:58.516Z' },
+      {
+        type: 'user',
+        message: { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+        uuid: 'u1',
+        timestamp: '2026-04-11T18:38:58.516Z',
+      },
       { type: 'file-history-snapshot', messageId: 'u1', snapshot: {} },
       { type: 'ai-title', sessionId: 'abc', aiTitle: 'Greeting' },
-      { type: 'assistant', message: { id: 'msg_01', type: 'message', role: 'assistant', content: [{ type: 'text', text: 'Hi there!' }] }, uuid: 'a1' },
+      {
+        type: 'assistant',
+        message: { id: 'msg_01', type: 'message', role: 'assistant', content: [{ type: 'text', text: 'Hi there!' }] },
+        uuid: 'a1',
+      },
       { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'thanks' }] }, uuid: 'u2' },
-      { type: 'assistant', message: { id: 'msg_02', type: 'message', role: 'assistant', content: [{ type: 'text', text: 'You are welcome.' }] }, uuid: 'a2' },
+      {
+        type: 'assistant',
+        message: {
+          id: 'msg_02',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'You are welcome.' }],
+        },
+        uuid: 'a2',
+      },
     ]
 
     const raw = lines.map((l) => JSON.stringify(l)).join('\n') + '\n'
@@ -395,16 +455,16 @@ describe('JsonlParser', () => {
     const parser = new JsonlParser((msg) => messages.push(msg))
 
     // This is how Claude Code sends tool results - as user messages with tool_result content
-    parser.feed(JSON.stringify({
-      type: 'user',
-      message: {
-        role: 'user',
-        content: [
-          { type: 'tool_result', tool_use_id: 'toolu_01ABC', content: 'file contents here...' },
-        ],
-      },
-      uuid: 'tool-result-1',
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 'toolu_01ABC', content: 'file contents here...' }],
+        },
+        uuid: 'tool-result-1',
+      }) + '\n',
+    )
 
     // Should be skipped - not a real user message
     expect(messages).toHaveLength(0)
@@ -414,16 +474,18 @@ describe('JsonlParser', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    parser.feed(JSON.stringify({
-      type: 'user',
-      message: {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'Here is the output:' },
-          { type: 'tool_result', tool_use_id: 'toolu_01ABC', content: 'some result' },
-        ],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Here is the output:' },
+            { type: 'tool_result', tool_use_id: 'toolu_01ABC', content: 'some result' },
+          ],
+        },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0].content).toBe('Here is the output:')
@@ -434,17 +496,17 @@ describe('JsonlParser', () => {
     const parser = new JsonlParser((msg) => messages.push(msg))
 
     // Assistant message with only a thinking block - no visible content
-    parser.feed(JSON.stringify({
-      type: 'assistant',
-      message: {
-        id: 'msg_01',
-        type: 'message',
-        role: 'assistant',
-        content: [
-          { type: 'thinking', thinking: 'Let me think...' },
-        ],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: 'msg_01',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'thinking', thinking: 'Let me think...' }],
+        },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(0)
   })
@@ -453,18 +515,20 @@ describe('JsonlParser', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    parser.feed(JSON.stringify({
-      type: 'assistant',
-      message: {
-        id: 'msg_01',
-        type: 'message',
-        role: 'assistant',
-        content: [
-          { type: 'thinking', thinking: 'Let me think about this...' },
-          { type: 'text', text: 'Here is my answer.' },
-        ],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: 'msg_01',
+          type: 'message',
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'Let me think about this...' },
+            { type: 'text', text: 'Here is my answer.' },
+          ],
+        },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     // Text content should only include text blocks, not thinking
@@ -486,19 +550,21 @@ describe('JsonlParser - image extraction', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    parser.feed(JSON.stringify({
-      type: 'user',
-      id: 'user_1',
-      message: {
-        content: [
-          { type: 'text', text: 'check this' },
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: 'image/png', data: 'iVBORw...' },
-          },
-        ],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'user',
+        id: 'user_1',
+        message: {
+          content: [
+            { type: 'text', text: 'check this' },
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: 'image/png', data: 'iVBORw...' },
+            },
+          ],
+        },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0].content).toBe('check this')
@@ -511,17 +577,19 @@ describe('JsonlParser - image extraction', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    parser.feed(JSON.stringify({
-      type: 'user',
-      message: {
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: 'image/jpeg', data: 'XXX' },
-          },
-        ],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: 'image/jpeg', data: 'XXX' },
+            },
+          ],
+        },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0].images).toHaveLength(1)
@@ -532,17 +600,19 @@ describe('JsonlParser - image extraction', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    parser.feed(JSON.stringify({
-      type: 'user',
-      message: {
-        content: [
-          {
-            type: 'image',
-            source: { type: 'url', url: 'https://example.com/pic.png' },
-          },
-        ],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'image',
+              source: { type: 'url', url: 'https://example.com/pic.png' },
+            },
+          ],
+        },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0].images?.[0].url).toBe('https://example.com/pic.png')
@@ -552,12 +622,14 @@ describe('JsonlParser - image extraction', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    parser.feed(JSON.stringify({
-      type: 'user',
-      message: {
-        content: [{ type: 'tool_result', tool_use_id: 't1', content: 'result' }],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'user',
+        message: {
+          content: [{ type: 'tool_result', tool_use_id: 't1', content: 'result' }],
+        },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(0)
   })
@@ -576,15 +648,17 @@ describe('JsonlParser - Codex source', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg), 'codex')
 
-    parser.feed(JSON.stringify({
-      timestamp: '2026-02-03T08:04:55.675Z',
-      type: 'response_item',
-      payload: {
-        type: 'message',
-        role: 'assistant',
-        content: [{ type: 'output_text', text: 'Got it - here is my plan.' }],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        timestamp: '2026-02-03T08:04:55.675Z',
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Got it - here is my plan.' }],
+        },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0].role).toBe('assistant')
@@ -597,14 +671,16 @@ describe('JsonlParser - Codex source', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg), 'codex')
 
-    parser.feed(JSON.stringify({
-      type: 'response_item',
-      payload: {
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_text', text: 'Help me refactor this.' }],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'Help me refactor this.' }],
+        },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0].role).toBe('user')
@@ -615,28 +691,34 @@ describe('JsonlParser - Codex source', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg), 'codex')
 
-    parser.feed(JSON.stringify({
-      timestamp: '2026-08-13T12:00:00.000Z',
-      type: 'response_item',
-      payload: {
-        type: 'message',
-        role: 'user',
-        content: [{
-          type: 'input_image',
-          image_url: 'data:image/png;base64,iVBORw0KGgo=',
-          detail: 'auto',
-        }],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        timestamp: '2026-08-13T12:00:00.000Z',
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [
+            {
+              type: 'input_image',
+              image_url: 'data:image/png;base64,iVBORw0KGgo=',
+              detail: 'auto',
+            },
+          ],
+        },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0]).toMatchObject({
       role: 'user',
       content: '',
-      images: [{
-        url: 'data:image/png;base64,iVBORw0KGgo=',
-        mimeType: 'image/png',
-      }],
+      images: [
+        {
+          url: 'data:image/png;base64,iVBORw0KGgo=',
+          mimeType: 'image/png',
+        },
+      ],
     })
   })
 
@@ -645,27 +727,29 @@ describe('JsonlParser - Codex source', () => {
     const parser = new JsonlParser((msg) => messages.push(msg), 'codex')
     const synthetic = '<environment_context>\n<cwd>/repo</cwd>\n</environment_context>'
 
-    parser.feed([
-      JSON.stringify({
-        type: 'response_item',
-        payload: {
-          type: 'message',
-          role: 'user',
-          content: [
-            { type: 'input_text', text: synthetic },
-            { type: 'input_image', image_url: 'https://example.com/screenshot.png' },
-          ],
-        },
-      }),
-      JSON.stringify({
-        type: 'response_item',
-        payload: {
-          type: 'message',
-          role: 'user',
-          content: [{ type: 'input_text', text: synthetic }],
-        },
-      }),
-    ].join('\n') + '\n')
+    parser.feed(
+      [
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [
+              { type: 'input_text', text: synthetic },
+              { type: 'input_image', image_url: 'https://example.com/screenshot.png' },
+            ],
+          },
+        }),
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: synthetic }],
+          },
+        }),
+      ].join('\n') + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0]).toMatchObject({
@@ -678,14 +762,16 @@ describe('JsonlParser - Codex source', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg), 'codex')
 
-    parser.feed(JSON.stringify({
-      type: 'response_item',
-      payload: {
-        type: 'message',
-        role: 'developer',
-        content: [{ type: 'input_text', text: '<permissions>...</permissions>' }],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'developer',
+          content: [{ type: 'input_text', text: '<permissions>...</permissions>' }],
+        },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(0)
   })
@@ -694,11 +780,13 @@ describe('JsonlParser - Codex source', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg), 'codex')
 
-    parser.feed([
-      JSON.stringify({ type: 'session_meta', payload: { id: 'abc' } }),
-      JSON.stringify({ type: 'turn_context', payload: {} }),
-      JSON.stringify({ type: 'event_msg', payload: { kind: 'task_started' } }),
-    ].join('\n') + '\n')
+    parser.feed(
+      [
+        JSON.stringify({ type: 'session_meta', payload: { id: 'abc' } }),
+        JSON.stringify({ type: 'turn_context', payload: {} }),
+        JSON.stringify({ type: 'event_msg', payload: { kind: 'task_started' } }),
+      ].join('\n') + '\n',
+    )
 
     expect(messages).toHaveLength(0)
   })
@@ -707,17 +795,19 @@ describe('JsonlParser - Codex source', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg), 'codex')
 
-    parser.feed(JSON.stringify({
-      type: 'response_item',
-      payload: {
-        type: 'message',
-        role: 'assistant',
-        content: [
-          { type: 'output_text', text: 'Part 1' },
-          { type: 'output_text', text: 'Part 2' },
-        ],
-      },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [
+            { type: 'output_text', text: 'Part 1' },
+            { type: 'output_text', text: 'Part 2' },
+          ],
+        },
+      }) + '\n',
+    )
 
     expect(messages).toHaveLength(1)
     expect(messages[0].content).toBe('Part 1\nPart 2')
@@ -727,35 +817,37 @@ describe('JsonlParser - Codex source', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg), 'codex')
 
-    parser.feed([
-      JSON.stringify({ type: 'session_meta', payload: { id: 's' } }),
-      JSON.stringify({ type: 'turn_context', payload: {} }),
-      JSON.stringify({
-        type: 'response_item',
-        payload: {
-          type: 'message',
-          role: 'developer',
-          content: [{ type: 'input_text', text: 'IGNORE ME' }],
-        },
-      }),
-      JSON.stringify({
-        type: 'response_item',
-        payload: {
-          type: 'message',
-          role: 'user',
-          content: [{ type: 'input_text', text: 'hi' }],
-        },
-      }),
-      JSON.stringify({
-        type: 'response_item',
-        payload: {
-          type: 'message',
-          role: 'assistant',
-          content: [{ type: 'output_text', text: 'hello' }],
-        },
-      }),
-      JSON.stringify({ type: 'event_msg', payload: { kind: 'turn_completed' } }),
-    ].join('\n') + '\n')
+    parser.feed(
+      [
+        JSON.stringify({ type: 'session_meta', payload: { id: 's' } }),
+        JSON.stringify({ type: 'turn_context', payload: {} }),
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'developer',
+            content: [{ type: 'input_text', text: 'IGNORE ME' }],
+          },
+        }),
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'hi' }],
+          },
+        }),
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'hello' }],
+          },
+        }),
+        JSON.stringify({ type: 'event_msg', payload: { kind: 'turn_completed' } }),
+      ].join('\n') + '\n',
+    )
 
     expect(messages).toHaveLength(2)
     expect(messages[0]).toMatchObject({ role: 'user', content: 'hi' })
@@ -765,10 +857,12 @@ describe('JsonlParser - Codex source', () => {
   it('ignores empty-content response_items', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg), 'codex')
-    parser.feed(JSON.stringify({
-      type: 'response_item',
-      payload: { type: 'message', role: 'user', content: [] },
-    }) + '\n')
+    parser.feed(
+      JSON.stringify({
+        type: 'response_item',
+        payload: { type: 'message', role: 'user', content: [] },
+      }) + '\n',
+    )
     expect(messages).toHaveLength(0)
   })
 
@@ -875,7 +969,9 @@ describe('JsonlParser: stable message ids', () => {
   })
 
   it('prefers uuid over a top-level id when both are present', () => {
-    const out = parse([{ type: 'user', uuid: 'uuid-wins', id: 'legacy', message: { content: [{ type: 'text', text: 'x' }] } }])
+    const out = parse([
+      { type: 'user', uuid: 'uuid-wins', id: 'legacy', message: { content: [{ type: 'text', text: 'x' }] } },
+    ])
     expect(out[0].id).toBe('uuid-wins')
   })
 })

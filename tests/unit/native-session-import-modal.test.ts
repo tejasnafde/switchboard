@@ -6,7 +6,10 @@ import * as recoveryModal from '../../src/renderer/components/sidebar/NativeSess
 import type { SessionSummary } from '../../src/shared/types'
 
 const css = readFileSync(new URL('../../src/renderer/styles/global.css', import.meta.url), 'utf8')
-const modalSource = readFileSync(new URL('../../src/renderer/components/sidebar/NativeSessionImportModal.tsx', import.meta.url), 'utf8')
+const modalSource = readFileSync(
+  new URL('../../src/renderer/components/sidebar/NativeSessionImportModal.tsx', import.meta.url),
+  'utf8',
+)
 
 const candidates: SessionSummary[] = [
   {
@@ -32,14 +35,16 @@ const candidates: SessionSummary[] = [
 
 describe('NativeSessionImportModal', () => {
   it('renders as a bounded, searchable and dismissible modal', () => {
-    const markup = renderToStaticMarkup(createElement(recoveryModal.NativeSessionImportModal, {
-      projectName: 'GEOIQ-LK-PANEL-AGENT-IN',
-      candidates,
-      importingId: null,
-      error: null,
-      onImport: () => {},
-      onClose: () => {},
-    }))
+    const markup = renderToStaticMarkup(
+      createElement(recoveryModal.NativeSessionImportModal, {
+        projectName: 'GEOIQ-LK-PANEL-AGENT-IN',
+        candidates,
+        importingId: null,
+        error: null,
+        onImport: () => {},
+        onClose: () => {},
+      }),
+    )
 
     expect(markup).toContain('class="recovery-modal-overlay"')
     expect(markup).toContain('class="recovery-modal-content')
@@ -59,19 +64,23 @@ describe('NativeSessionImportModal', () => {
 
   it('has viewport and result-list overflow contracts', () => {
     expect(css).toMatch(/\.recovery-modal-overlay\s*\{[^}]*position:\s*fixed[^}]*inset:\s*0/s)
-    expect(css).toMatch(/\.recovery-modal-content\s*\{[^}]*max-height:[^}]*display:\s*flex[^}]*flex-direction:\s*column/s)
+    expect(css).toMatch(
+      /\.recovery-modal-content\s*\{[^}]*max-height:[^}]*display:\s*flex[^}]*flex-direction:\s*column/s,
+    )
     expect(css).toMatch(/\.recovery-modal-results\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/s)
   })
 
   it('styles row actions without falling back to a native browser button', () => {
-    const markup = renderToStaticMarkup(createElement(recoveryModal.NativeSessionImportModal, {
-      projectName: 'GEOIQ-LK-PANEL-AGENT-IN',
-      candidates,
-      importingId: null,
-      error: null,
-      onImport: () => {},
-      onClose: () => {},
-    }))
+    const markup = renderToStaticMarkup(
+      createElement(recoveryModal.NativeSessionImportModal, {
+        projectName: 'GEOIQ-LK-PANEL-AGENT-IN',
+        candidates,
+        importingId: null,
+        error: null,
+        onImport: () => {},
+        onClose: () => {},
+      }),
+    )
 
     expect(markup).toContain('class="recovery-modal-action"')
     expect(markup).not.toContain('class="settings-button"')
@@ -92,14 +101,16 @@ describe('NativeSessionImportModal', () => {
       filePath: '/Cursor/User/globalStorage/state.vscdb',
       nativeRole: 'foreground',
     }
-    const markup = renderToStaticMarkup(createElement(recoveryModal.NativeSessionImportModal, {
-      projectName: 'Switchboard',
-      candidates: [cursor],
-      importingId: null,
-      error: null,
-      onImport: () => {},
-      onClose: () => {},
-    }))
+    const markup = renderToStaticMarkup(
+      createElement(recoveryModal.NativeSessionImportModal, {
+        projectName: 'Switchboard',
+        candidates: [cursor],
+        importingId: null,
+        error: null,
+        onImport: () => {},
+        onClose: () => {},
+      }),
+    )
 
     expect(markup).toContain('CURSOR')
     expect(markup).toContain('Imported chat')

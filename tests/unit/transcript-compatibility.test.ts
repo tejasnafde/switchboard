@@ -143,7 +143,9 @@ describe('synchronizeCompatibleTranscript', () => {
       copied: false,
       compatibility: 'source-prefix',
     })
-    await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'source-prefix' })
+    await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({
+      kind: 'source-prefix',
+    })
   })
 
   it('preserves both sides when records diverge', async () => {
@@ -153,7 +155,9 @@ describe('synchronizeCompatibleTranscript', () => {
       ok: false,
       reason: 'context-conflict',
     })
-    await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'divergent' })
+    await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({
+      kind: 'divergent',
+    })
   })
 
   it('aborts when the target changes after comparison instead of overwriting it', async () => {
@@ -164,7 +168,9 @@ describe('synchronizeCompatibleTranscript', () => {
     })
 
     expect(result).toMatchObject({ ok: false, reason: 'concurrent-modification' })
-    await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'divergent' })
+    await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({
+      kind: 'divergent',
+    })
   })
 
   it('compares again when only the stopping source appends a late record', async () => {
@@ -215,10 +221,11 @@ describe('synchronizeCompatibleTranscript', () => {
 
     expect(result).toMatchObject({ ok: false, reason: 'concurrent-modification' })
     expect(calls).toBe(1)
-    await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'target-prefix' })
+    await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({
+      kind: 'target-prefix',
+    })
   })
 })
-
 
 describe('validated transcript evidence cache', () => {
   it('reads a same-size rewrite again even when every stat field matches', async () => {
@@ -234,8 +241,12 @@ describe('validated transcript evidence cache', () => {
       return handle
     })
     try {
-      await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'divergent' })
-    } finally { spy.mockImplementation(realOpen) }
+      await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({
+        kind: 'divergent',
+      })
+    } finally {
+      spy.mockImplementation(realOpen)
+    }
   })
 
   it('parses again when the file changes while a cache hit is being hashed', async () => {
@@ -254,7 +265,9 @@ describe('validated transcript evidence cache', () => {
     })
     const parse = vi.spyOn(JSON, 'parse')
     try {
-      await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'equal' })
+      await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({
+        kind: 'equal',
+      })
       expect(parse).toHaveBeenCalled()
     } finally {
       parse.mockRestore()
@@ -267,26 +280,42 @@ describe('validated transcript evidence cache', () => {
     await compareJsonlTranscripts(paths.sourcePath, paths.targetPath)
     const parse = vi.spyOn(JSON, 'parse')
     try {
-      await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'equal' })
+      await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({
+        kind: 'equal',
+      })
       expect(parse).not.toHaveBeenCalled()
-    } finally { parse.mockRestore() }
+    } finally {
+      parse.mockRestore()
+    }
   })
 
-  it.each(['append', 'truncate', 'rewrite', 'replace', 'delete'] as const)('invalidates on %s, even with restored mtime', async (change) => {
-    const first = '{"text":"one"}\n'
-    const paths = await fixture(first, first)
-    await compareJsonlTranscripts(paths.sourcePath, paths.targetPath)
-    const before = await stat(paths.targetPath)
-    if (change === 'append') await writeFile(paths.targetPath, first + '{"text":"two"}\n')
-    if (change === 'truncate') await writeFile(paths.targetPath, '')
-    if (change === 'rewrite') await writeFile(paths.targetPath, '{"text":"two"}\n')
-    if (change === 'replace') {
-      await writeFile(paths.targetPath + '.new', '{"text":"two"}\n')
-      await rename(paths.targetPath + '.new', paths.targetPath)
-    }
-    if (change === 'delete') await rm(paths.targetPath)
-    else await utimes(paths.targetPath, before.atime, before.mtime)
-    const expected = change === 'append' ? 'source-prefix' : change === 'truncate' ? 'target-prefix' : change === 'delete' ? 'target-missing' : 'divergent'
-    await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: expected })
-  })
+  it.each(['append', 'truncate', 'rewrite', 'replace', 'delete'] as const)(
+    'invalidates on %s, even with restored mtime',
+    async (change) => {
+      const first = '{"text":"one"}\n'
+      const paths = await fixture(first, first)
+      await compareJsonlTranscripts(paths.sourcePath, paths.targetPath)
+      const before = await stat(paths.targetPath)
+      if (change === 'append') await writeFile(paths.targetPath, first + '{"text":"two"}\n')
+      if (change === 'truncate') await writeFile(paths.targetPath, '')
+      if (change === 'rewrite') await writeFile(paths.targetPath, '{"text":"two"}\n')
+      if (change === 'replace') {
+        await writeFile(paths.targetPath + '.new', '{"text":"two"}\n')
+        await rename(paths.targetPath + '.new', paths.targetPath)
+      }
+      if (change === 'delete') await rm(paths.targetPath)
+      else await utimes(paths.targetPath, before.atime, before.mtime)
+      const expected =
+        change === 'append'
+          ? 'source-prefix'
+          : change === 'truncate'
+            ? 'target-prefix'
+            : change === 'delete'
+              ? 'target-missing'
+              : 'divergent'
+      await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({
+        kind: expected,
+      })
+    },
+  )
 })

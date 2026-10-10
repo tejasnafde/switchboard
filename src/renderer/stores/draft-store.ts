@@ -46,8 +46,12 @@ export interface DraftPayload {
 }
 
 export function draftPayloadEquals(left: DraftPayload, right: DraftPayload): boolean {
-  if (left.text !== right.text || left.pills.length !== right.pills.length
-    || left.images.length !== right.images.length) return false
+  if (
+    left.text !== right.text ||
+    left.pills.length !== right.pills.length ||
+    left.images.length !== right.images.length
+  )
+    return false
 
   for (let index = 0; index < left.pills.length; index += 1) {
     const a = left.pills[index]
@@ -60,23 +64,21 @@ export function draftPayloadEquals(left: DraftPayload, right: DraftPayload): boo
   for (let index = 0; index < left.images.length; index += 1) {
     const a = left.images[index]
     const b = right.images[index]
-    if (a.id !== b.id
-      || a.file.name !== b.file.name
-      || a.file.size !== b.file.size
-      || a.file.type !== b.file.type
-      || a.file.lastModified !== b.file.lastModified) return false
+    if (
+      a.id !== b.id ||
+      a.file.name !== b.file.name ||
+      a.file.size !== b.file.size ||
+      a.file.type !== b.file.type ||
+      a.file.lastModified !== b.file.lastModified
+    )
+      return false
   }
 
   return true
 }
 
-export function discardDetachedDraftPayload(
-  payload: DraftPayload,
-  retainedPayloads: DraftPayload[] = [],
-): void {
-  const retainedUrls = new Set(
-    retainedPayloads.flatMap((retained) => retained.images.map((image) => image.previewUrl)),
-  )
+export function discardDetachedDraftPayload(payload: DraftPayload, retainedPayloads: DraftPayload[] = []): void {
+  const retainedUrls = new Set(retainedPayloads.flatMap((retained) => retained.images.map((image) => image.previewUrl)))
   for (const image of payload.images) {
     if (!retainedUrls.has(image.previewUrl)) URL.revokeObjectURL(image.previewUrl)
   }
@@ -145,10 +147,7 @@ interface DraftStore {
   addImages: (sessionId: string, images: ImageAttachment[]) => void
   removeImage: (sessionId: string, imageId: string) => void
   clearImages: (sessionId: string) => void
-  replaceDraftPayload: (
-    sessionId: string,
-    payload: DraftPayload,
-  ) => void
+  replaceDraftPayload: (sessionId: string, payload: DraftPayload) => void
   detachDraftPayload: (sessionId: string) => DraftPayload | undefined
   restoreDraftPayloadIfEmpty: (sessionId: string, payload: DraftPayload) => boolean
 }
@@ -293,9 +292,12 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   restoreDraftPayloadIfEmpty: (sessionId, payload) => {
     let restored = false
     set((state) => {
-      if (state.drafts[sessionId]
-        || state.pillsBySession[sessionId]?.length
-        || state.imagesBySession[sessionId]?.length) return state
+      if (
+        state.drafts[sessionId] ||
+        state.pillsBySession[sessionId]?.length ||
+        state.imagesBySession[sessionId]?.length
+      )
+        return state
 
       restored = true
       const drafts = { ...state.drafts }

@@ -23,7 +23,11 @@ import { useEffect, useState } from 'react'
 import { parseLaunchConfigFile } from '@shared/launch-config'
 import { useTerminalStore } from '../../stores/terminal-store'
 import { useAgentStore } from '../../stores/agent-store'
-import { applyLaunchConfig, clearLaunchConfigPin, saveCurrentLayoutAsLaunchConfig } from '../../hooks/useTerminalLifecycle'
+import {
+  applyLaunchConfig,
+  clearLaunchConfigPin,
+  saveCurrentLayoutAsLaunchConfig,
+} from '../../hooks/useTerminalLifecycle'
 import { sortLaunchConfigsByRecency } from '../../services/launch-config-usage'
 
 /** Outline star - fills only when "active" (currently-pinned). */
@@ -43,13 +47,9 @@ function StarIcon({ filled }: { filled: boolean }) {
 
 export function LaunchConfigPicker() {
   const activeSessionId = useTerminalStore((s) => s.activeSessionId)
-  const session = useAgentStore((s) =>
-    activeSessionId ? s.sessions.find((x) => x.id === activeSessionId) : undefined,
-  )
+  const session = useAgentStore((s) => (activeSessionId ? s.sessions.find((x) => x.id === activeSessionId) : undefined))
   const projectPath = session?.projectPath
-  const currentName = useTerminalStore((s) =>
-    activeSessionId ? s.launchConfigNames[activeSessionId] ?? null : null,
-  )
+  const currentName = useTerminalStore((s) => (activeSessionId ? (s.launchConfigNames[activeSessionId] ?? null) : null))
 
   const [launchConfigNames, setLaunchConfigNames] = useState<string[]>([])
   const [open, setOpen] = useState(false)
@@ -62,13 +62,19 @@ export function LaunchConfigPicker() {
   // the YAML - `applyLaunchConfig` is what actually mutates state.
   useEffect(() => {
     let cancelled = false
-    if (!projectPath) { setLaunchConfigNames([]); return }
+    if (!projectPath) {
+      setLaunchConfigNames([])
+      return
+    }
 
     const refresh = async () => {
       try {
         const yaml = await window.api.app.getLaunchConfig(projectPath)
         if (cancelled) return
-        if (!yaml) { setLaunchConfigNames([]); return }
+        if (!yaml) {
+          setLaunchConfigNames([])
+          return
+        }
         const config = parseLaunchConfigFile(yaml)
         setLaunchConfigNames(Object.keys(config.configs ?? {}))
       } catch {
@@ -173,7 +179,9 @@ export function LaunchConfigPicker() {
       {open && (
         <div
           className="sb-floating-surface"
-          onMouseLeave={() => { if (!savingName) setOpen(false) }}
+          onMouseLeave={() => {
+            if (!savingName) setOpen(false)
+          }}
           style={{
             position: 'absolute',
             top: '100%',
@@ -209,16 +217,18 @@ export function LaunchConfigPicker() {
                   cursor: 'pointer',
                   textAlign: 'left',
                 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                onMouseEnter={(e) => {
+                  ;(e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'
+                }}
+                onMouseLeave={(e) => {
+                  ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                }}
               >
                 <span style={{ width: 12, display: 'inline-flex', justifyContent: 'center' }}>
                   {isPinned ? <StarIcon filled /> : null}
                 </span>
                 <span style={{ flex: 1 }}>{name}</span>
-                {isImplicit && (
-                  <span style={{ color: 'var(--text-muted)', fontSize: '9.5px' }}>implicit</span>
-                )}
+                {isImplicit && <span style={{ color: 'var(--text-muted)', fontSize: '9.5px' }}>implicit</span>}
               </button>
             )
           })}
@@ -240,8 +250,12 @@ export function LaunchConfigPicker() {
                 cursor: 'pointer',
                 textAlign: 'left',
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+              onMouseEnter={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+              }}
             >
               Clear pin
             </button>
@@ -249,7 +263,10 @@ export function LaunchConfigPicker() {
 
           {savingName === null ? (
             <button
-              onClick={() => { setSavingName(''); setFeedback(null) }}
+              onClick={() => {
+                setSavingName('')
+                setFeedback(null)
+              }}
               style={{
                 display: 'block',
                 width: '100%',
@@ -262,8 +279,12 @@ export function LaunchConfigPicker() {
                 cursor: 'pointer',
                 textAlign: 'left',
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+              onMouseEnter={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+              }}
             >
               + Save current layout…
             </button>
@@ -275,8 +296,13 @@ export function LaunchConfigPicker() {
                 placeholder="launch config name"
                 onChange={(e) => setSavingName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); void onSubmitSave() }
-                  if (e.key === 'Escape') { setSavingName(null) }
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    void onSubmitSave()
+                  }
+                  if (e.key === 'Escape') {
+                    setSavingName(null)
+                  }
                 }}
                 style={{
                   fontSize: '11.5px',
@@ -324,21 +350,22 @@ export function LaunchConfigPicker() {
                 </button>
               </div>
               <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', lineHeight: 1.3 }}>
-                Captures pane layout + cwd + label. Startup commands
-                (<code>on_start</code>) need to be added by hand.
+                Captures pane layout + cwd + label. Startup commands (<code>on_start</code>) need to be added by hand.
               </div>
             </div>
           )}
 
           {feedback && (
-            <div style={{
-              padding: '4px 10px',
-              fontSize: '10.5px',
-              color: feedback.kind === 'err' ? 'var(--error)' : 'var(--success)',
-              fontFamily: 'var(--font-mono)',
-              borderTop: '1px solid var(--border)',
-              marginTop: 4,
-            }}>
+            <div
+              style={{
+                padding: '4px 10px',
+                fontSize: '10.5px',
+                color: feedback.kind === 'err' ? 'var(--error)' : 'var(--success)',
+                fontFamily: 'var(--font-mono)',
+                borderTop: '1px solid var(--border)',
+                marginTop: 4,
+              }}
+            >
               {feedback.text}
             </div>
           )}

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { filterComboboxOptions, groupComboboxOptions, type ComboboxOption } from '../../src/renderer/components/ui/combobox-options'
+import {
+  filterComboboxOptions,
+  groupComboboxOptions,
+  type ComboboxOption,
+} from '../../src/renderer/components/ui/combobox-options'
 
 const options: ComboboxOption[] = [
   { value: '/p/switchboard', label: 'switchboard', group: 'Recent', keywords: ['/p/switchboard'] },
@@ -14,7 +18,11 @@ describe('filterComboboxOptions', () => {
   })
 
   it('matches the label case-insensitively and keeps the given order', () => {
-    expect(filterComboboxOptions(options, 'S').map((o) => o.value)).toEqual(['/p/switchboard', '/p/ssg-api', '/p/scout'])
+    expect(filterComboboxOptions(options, 'S').map((o) => o.value)).toEqual([
+      '/p/switchboard',
+      '/p/ssg-api',
+      '/p/scout',
+    ])
     expect(filterComboboxOptions(options, 'scOUT').map((o) => o.value)).toEqual(['/p/scout'])
   })
 
@@ -53,8 +61,19 @@ describe('groupComboboxOptions', () => {
   })
 
   it('keeps ungrouped options under an undefined heading', () => {
-    expect(groupComboboxOptions([{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }])).toEqual([
-      { heading: undefined, options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] },
+    expect(
+      groupComboboxOptions([
+        { value: 'a', label: 'A' },
+        { value: 'b', label: 'B' },
+      ]),
+    ).toEqual([
+      {
+        heading: undefined,
+        options: [
+          { value: 'a', label: 'A' },
+          { value: 'b', label: 'B' },
+        ],
+      },
     ])
   })
 })

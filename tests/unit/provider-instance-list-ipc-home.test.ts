@@ -49,7 +49,9 @@ import type { BackendHost } from '../../src/main/backend/host'
 
 class FakeHost implements BackendHost {
   private readonly handlers = new Map<string, (...args: unknown[]) => unknown>()
-  handle(channel: string, fn: (...args: unknown[]) => unknown): void { this.handlers.set(channel, fn) }
+  handle(channel: string, fn: (...args: unknown[]) => unknown): void {
+    this.handlers.set(channel, fn)
+  }
   on(): void {}
   emit(): void {}
   async invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -137,17 +139,19 @@ describe('provider-instance LIST - authoritative effective home (behavior 2)', (
   })
 
   it('leaves a row visibly unresolved when the overlay cannot be read at all', async () => {
-    listMock.mockReturnValue([
-      wire({ id: 'c', effectiveOauthDir: null, effectiveOauthDirSource: 'unresolved' }),
-    ])
-    resolveMock.mockImplementation(() => { throw new Error('keychain unavailable') })
+    listMock.mockReturnValue([wire({ id: 'c', effectiveOauthDir: null, effectiveOauthDirSource: 'unresolved' })])
+    resolveMock.mockImplementation(() => {
+      throw new Error('keychain unavailable')
+    })
 
     const rows = await (await host()).invoke<WireLike[]>(ProviderInstanceChannels.LIST)
     expect(rows[0]).toMatchObject({ effectiveOauthDir: null, effectiveOauthDirSource: 'unresolved' })
   })
 
   it('still degrades to an empty list when the DB read itself fails', async () => {
-    listMock.mockImplementation(() => { throw new Error('db gone') })
+    listMock.mockImplementation(() => {
+      throw new Error('db gone')
+    })
     expect(await (await host()).invoke(ProviderInstanceChannels.LIST)).toEqual([])
   })
 })

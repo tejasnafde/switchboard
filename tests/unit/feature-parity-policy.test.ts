@@ -43,9 +43,7 @@ describe('feature parity policy', () => {
     const manifest = structuredClone(completeManifest)
     delete (manifest.surfaces as Partial<typeof manifest.surfaces>).nativeAndroid
 
-    expect(validateFeatureParityManifest(manifest)).toContain(
-      'surfaces.nativeAndroid is required',
-    )
+    expect(validateFeatureParityManifest(manifest)).toContain('surfaces.nativeAndroid is required')
   })
 
   it('requires a reason when a surface is not applicable', () => {
@@ -116,9 +114,7 @@ describe('feature parity policy', () => {
     }
     manifest.surfaces.nativeAndroid = {
       status: 'implemented',
-      evidence: [
-        'apps/android/app/src/test/java/app/switchboard/mobile/data/outbox/OutboxCoordinatorTest.kt',
-      ],
+      evidence: ['apps/android/app/src/test/java/app/switchboard/mobile/data/outbox/OutboxCoordinatorTest.kt'],
     }
     manifest.surfaces.sharedBackendApi = {
       status: 'implemented',
@@ -140,9 +136,7 @@ describe('feature parity policy', () => {
     expect(requiresFeatureParityManifest(['src/renderer/components/chat/ChatInput.tsx'])).toBe(true)
     expect(requiresFeatureParityManifest(['apps/mobile/src/screens/Thread.tsx'])).toBe(true)
     expect(requiresFeatureParityManifest(['apps/android/app/src/main/AndroidManifest.xml'])).toBe(true)
-    expect(requiresFeatureParityManifest(['tests/unit/mobile-images.test.ts', 'docs/notes.md'])).toBe(
-      false,
-    )
+    expect(requiresFeatureParityManifest(['tests/unit/mobile-images.test.ts', 'docs/notes.md'])).toBe(false)
   })
 })
 
@@ -158,32 +152,49 @@ describe('version-only release bumps', () => {
   const diff = (body: string) => () => body
 
   it('exempts a bump that changes only the version lines', () => {
-    expect(isVersionOnlyBump('/repo', 'main', ['package.json', 'package-lock.json'], diff(
-      '--- a/package.json\n+++ b/package.json\n-  "version": "0.8.58",\n+  "version": "0.8.59",',
-    ))).toBe(true)
+    expect(
+      isVersionOnlyBump(
+        '/repo',
+        'main',
+        ['package.json', 'package-lock.json'],
+        diff('--- a/package.json\n+++ b/package.json\n-  "version": "0.8.58",\n+  "version": "0.8.59",'),
+      ),
+    ).toBe(true)
   })
 
   it('does not exempt a bump that also changes a dependency', () => {
-    expect(isVersionOnlyBump('/repo', 'main', ['package.json'], diff(
-      '-  "version": "0.8.58",\n+  "version": "0.8.59",\n-    "ws": "8.18.0",\n+    "ws": "8.19.0",',
-    ))).toBe(false)
+    expect(
+      isVersionOnlyBump(
+        '/repo',
+        'main',
+        ['package.json'],
+        diff('-  "version": "0.8.58",\n+  "version": "0.8.59",\n-    "ws": "8.18.0",\n+    "ws": "8.19.0",'),
+      ),
+    ).toBe(false)
   })
 
   it('does not exempt when any other file changed', () => {
-    expect(isVersionOnlyBump('/repo', 'main', ['package.json', 'src/main/index.ts'], diff(
-      '-  "version": "0.8.58",\n+  "version": "0.8.59",',
-    ))).toBe(false)
+    expect(
+      isVersionOnlyBump(
+        '/repo',
+        'main',
+        ['package.json', 'src/main/index.ts'],
+        diff('-  "version": "0.8.58",\n+  "version": "0.8.59",'),
+      ),
+    ).toBe(false)
   })
 
   it('does not exempt an empty or unreadable diff', () => {
     expect(isVersionOnlyBump('/repo', 'main', ['package.json'], diff(''))).toBe(false)
-    expect(isVersionOnlyBump('/repo', 'main', ['package.json'], () => { throw new Error('no git') }))
-      .toBe(false)
+    expect(
+      isVersionOnlyBump('/repo', 'main', ['package.json'], () => {
+        throw new Error('no git')
+      }),
+    ).toBe(false)
   })
 
   it('does not exempt without a base to compare against', () => {
-    expect(isVersionOnlyBump('/repo', '', ['package.json'], diff('-  "version": "1"\n+  "version": "2"')))
-      .toBe(false)
+    expect(isVersionOnlyBump('/repo', '', ['package.json'], diff('-  "version": "1"\n+  "version": "2"'))).toBe(false)
   })
 })
 
@@ -198,8 +209,7 @@ describe('deletions are behaviour-bearing', () => {
       return 'src/main/gone.ts\n'
     })
     expect(args).toBe('main')
-    expect(changedFilesSince('/repo', 'main', () => 'src/main/gone.ts\n'))
-      .toEqual(['src/main/gone.ts'])
+    expect(changedFilesSince('/repo', 'main', () => 'src/main/gone.ts\n')).toEqual(['src/main/gone.ts'])
   })
 
   it('requires a manifest for a deleted product file', () => {

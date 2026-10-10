@@ -133,12 +133,16 @@ export class AgentApprovalBroker {
         return { ok: false, message: 'This device cannot post to a pull request. Approve it on the desktop.' }
       }
       if (approver.mustProveShown && response.shown !== hostWriteShownDigest(requestId, card.hostWrite)) {
-        log.warn(`refused a host write approval from ${approver.label}, which did not show the whole draft: ${requestId}`)
+        log.warn(
+          `refused a host write approval from ${approver.label}, which did not show the whole draft: ${requestId}`,
+        )
         return { ok: false, message: HOST_WRITE_SHOWN_REQUIRED }
       }
       const problem = hostWriteApprovalProblem(card.hostWrite, response)
       if (problem) return { ok: false, message: problem }
-      log.info(`host write ${card.hostWrite.action} on ${card.hostWrite.prLabel} approved by ${approver.label}: ${requestId}`)
+      log.info(
+        `host write ${card.hostWrite.action} on ${card.hostWrite.prLabel} approved by ${approver.label}: ${requestId}`,
+      )
     }
     this.close(requestId, closeFromAnswer(decision, response.quiet === true), response, threadId)
     return { ok: true }
@@ -147,7 +151,8 @@ export class AgentApprovalBroker {
   /** The agent took a card back (`withdraw_approval`). Only one of its own chat's. */
   withdraw(chatId: string, requestId: string): AgentApprovalAnswer {
     const card = this.book.get(requestId)
-    if (!card || card.chatId !== chatId) return { ok: false, message: `No open approval card ${requestId} in this chat.` }
+    if (!card || card.chatId !== chatId)
+      return { ok: false, message: `No open approval card ${requestId} in this chat.` }
     this.close(requestId, { kind: 'withdrawn' }, {})
     return { ok: true }
   }
@@ -160,7 +165,8 @@ export class AgentApprovalBroker {
   private close(requestId: string, close: ApprovalCardClose, response: HostWriteResponse, answeredOn?: string): void {
     const card = this.book.take(requestId)
     if (!card) return
-    if (close.kind === 'stopped' || close.kind === 'withdrawn') log.info(`card ${requestId} closed without an answer: ${close.kind}`)
+    if (close.kind === 'stopped' || close.kind === 'withdrawn')
+      log.info(`card ${requestId} closed without an answer: ${close.kind}`)
     const decision: ApprovalDecision = close.kind === 'approve' ? 'approve' : 'deny'
     this.deps.publish({ type: 'request.closed', threadId: card.threadId, requestId, decision })
     // A card restored after a restart was recovered under whatever id the

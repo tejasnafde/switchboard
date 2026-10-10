@@ -32,9 +32,10 @@ function candidateHint(c: PrReviewerCandidate, owner: string): string {
 export function ReviewersCard({ pr }: { pr: PrDetail }) {
   const manage = pr.state === 'open' && pr.viewerCanManage
   const write = useWriteAction(pr.ref)
-  const approvals = pr.approvals.required !== null && pr.approvals.required > 0
-    ? `${pr.approvals.given} of ${pr.approvals.required}`
-    : `${pr.approvals.given} approved`
+  const approvals =
+    pr.approvals.required !== null && pr.approvals.required > 0
+      ? `${pr.approvals.given} of ${pr.approvals.required}`
+      : `${pr.approvals.given} approved`
   // Who the write in flight is for: the card shows them as pending until it and the re-read are done.
   const [adding, setAdding] = useState<PrReviewerCandidate | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
@@ -53,25 +54,47 @@ export function ReviewersCard({ pr }: { pr: PrDetail }) {
 
   return (
     <SideCard title="Reviewers" right={pr.reviewers.length > 0 ? approvals : undefined}>
-      {pr.reviewers.length === 0 && <CardRow><span className="text-[var(--text-muted)]">No reviewers yet.</span></CardRow>}
+      {pr.reviewers.length === 0 && (
+        <CardRow>
+          <span className="text-[var(--text-muted)]">No reviewers yet.</span>
+        </CardRow>
+      )}
       {pr.reviewers.map((r) => (
         <div key={r.id ?? r.person.login} data-pr-reviewer={r.person.login} className="group">
           <CardRow>
-            <Avatar person={r.person} />{r.person.displayName}
-            {removing !== null && r.id === removing
-              ? <PendingLabel text="Removing…" />
-              : <span className="ml-auto text-[12px]" style={{ color: REVIEW_LABEL[r.state].color ?? 'var(--text-secondary)' }}>{REVIEW_LABEL[r.state].text}</span>}
-            {manage && canRemoveReviewer(pr.ref.host, r) && <ReviewerMenu name={r.person.displayName} disabled={write.pending} onRemove={() => void remove(r)} />}
+            <Avatar person={r.person} />
+            {r.person.displayName}
+            {removing !== null && r.id === removing ? (
+              <PendingLabel text="Removing…" />
+            ) : (
+              <span
+                className="ml-auto text-[12px]"
+                style={{ color: REVIEW_LABEL[r.state].color ?? 'var(--text-secondary)' }}
+              >
+                {REVIEW_LABEL[r.state].text}
+              </span>
+            )}
+            {manage && canRemoveReviewer(pr.ref.host, r) && (
+              <ReviewerMenu name={r.person.displayName} disabled={write.pending} onRemove={() => void remove(r)} />
+            )}
           </CardRow>
         </div>
       ))}
       {adding && !pr.reviewers.some((r) => r.id === adding.id) && (
         <div data-pr-reviewer-pending={adding.person.login}>
-          <CardRow><Avatar person={adding.person} />{adding.person.displayName}<PendingLabel text="Adding…" /></CardRow>
+          <CardRow>
+            <Avatar person={adding.person} />
+            {adding.person.displayName}
+            <PendingLabel text="Adding…" />
+          </CardRow>
         </div>
       )}
       {manage && <AddReviewer pr={pr} disabled={write.pending} onAdd={(c) => void add(c)} />}
-      {write.error && <div className="px-3 pb-2"><WriteError error={write.error} /></div>}
+      {write.error && (
+        <div className="px-3 pb-2">
+          <WriteError error={write.error} />
+        </div>
+      )}
     </SideCard>
   )
 }
@@ -79,7 +102,10 @@ export function ReviewersCard({ pr }: { pr: PrDetail }) {
 function PendingLabel({ text }: { text: string }) {
   return (
     <span role="status" className="ml-auto inline-flex items-center gap-[6px] text-[12px] text-[var(--text-muted)]">
-      <span aria-hidden="true" className="size-[10px] rounded-full border-[1.5px] border-solid border-[var(--border)] border-t-[var(--accent)] animate-[sb-spin_720ms_linear_infinite]" />
+      <span
+        aria-hidden="true"
+        className="size-[10px] rounded-full border-[1.5px] border-solid border-[var(--border)] border-t-[var(--accent)] animate-[sb-spin_720ms_linear_infinite]"
+      />
       {text}
     </span>
   )
@@ -101,7 +127,10 @@ function ReviewerMenu({ name, disabled, onRemove }: { name: string; disabled: bo
           <Icon name="more" size={12} />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="sb-floating-surface z-[1200] min-w-[180px] rounded-[10px] border border-[var(--border-strong,var(--border))] p-1 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
+      <PopoverContent
+        align="end"
+        className="sb-floating-surface z-[1200] min-w-[180px] rounded-[10px] border border-[var(--border-strong,var(--border))] p-1 shadow-[0_12px_30px_rgba(0,0,0,0.35)]"
+      >
         <div role="menu" aria-label={`Actions for ${name}`}>
           <button
             type="button"
@@ -120,18 +149,40 @@ function ReviewerMenu({ name, disabled, onRemove }: { name: string; disabled: bo
   )
 }
 
-function AddReviewer({ pr, disabled, onAdd }: { pr: PrDetail; disabled: boolean; onAdd: (c: PrReviewerCandidate) => void }) {
+function AddReviewer({
+  pr,
+  disabled,
+  onAdd,
+}: {
+  pr: PrDetail
+  disabled: boolean
+  onAdd: (c: PrReviewerCandidate) => void
+}) {
   const loaded = useReviewStore((s) => s.candidates[repoKey(pr.ref)])
   useEffect(() => {
     void useReviewStore.getState().loadCandidates(pr.ref)
   }, [pr.ref.host, pr.ref.owner, pr.ref.name])
   const listed = useReviewStore((s) => s.list?.prs)
-  const offered = useMemo(() => offeredReviewers(loaded?.status === 'ok' ? loaded.data : null, listed ?? [], pr), [loaded, listed, pr])
+  const offered = useMemo(
+    () => offeredReviewers(loaded?.status === 'ok' ? loaded.data : null, listed ?? [], pr),
+    [loaded, listed, pr],
+  )
   const options = useMemo<ComboboxOption[]>(
-    () => offered.map((c) => ({ value: c.id, label: c.person.displayName, hint: candidateHint(c, pr.ref.owner), keywords: [c.person.login] })),
+    () =>
+      offered.map((c) => ({
+        value: c.id,
+        label: c.person.displayName,
+        hint: candidateHint(c, pr.ref.owner),
+        keywords: [c.person.login],
+      })),
     [offered, pr.ref.owner],
   )
-  const emptyText = !loaded || loaded.status === 'loading' ? 'Loading…' : loaded.status === 'error' ? writeErrorText(loaded.error) : 'Nobody else to add.'
+  const emptyText =
+    !loaded || loaded.status === 'loading'
+      ? 'Loading…'
+      : loaded.status === 'error'
+        ? writeErrorText(loaded.error)
+        : 'Nobody else to add.'
   return (
     <CardRow>
       <Combobox

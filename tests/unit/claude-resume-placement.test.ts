@@ -34,12 +34,20 @@ describe('resolveResumePlacement', () => {
   })
 
   it('keeps the held id when no sibling has a transcript either', () => {
-    const result = resolveResumePlacement(HELD, () => gone, () => undefined)
+    const result = resolveResumePlacement(
+      HELD,
+      () => gone,
+      () => undefined,
+    )
     expect(result).toEqual({ sessionId: HELD, placed: gone, alternateIoErrorStreak: 0 })
   })
 
   it('keeps the held id when the sibling is also missing its transcript', () => {
-    const result = resolveResumePlacement(HELD, () => gone, () => SIBLING)
+    const result = resolveResumePlacement(
+      HELD,
+      () => gone,
+      () => SIBLING,
+    )
     expect(result).toEqual({ sessionId: HELD, placed: gone, alternateIoErrorStreak: 0 })
   })
 
@@ -47,7 +55,10 @@ describe('resolveResumePlacement', () => {
     const probed: string[] = []
     const result = resolveResumePlacement(
       HELD,
-      (id) => { probed.push(id); return gone },
+      (id) => {
+        probed.push(id)
+        return gone
+      },
       () => HELD,
     )
     expect(result).toEqual({ sessionId: HELD, placed: gone, alternateIoErrorStreak: 0 })

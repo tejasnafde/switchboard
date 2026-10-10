@@ -7,7 +7,13 @@
  * the phone cannot show in full (`hostWritePreview` is null): approving it
  * would post text the user never saw.
  */
-import { hostWritePreview, hostWriteShownDigest, phoneHostWriteButtons, type HostWritePreview, type PhoneHostWriteButton } from '@shared/host-write-phone'
+import {
+  hostWritePreview,
+  hostWriteShownDigest,
+  phoneHostWriteButtons,
+  type HostWritePreview,
+  type PhoneHostWriteButton,
+} from '@shared/host-write-phone'
 import { isAgentApprovalCardId } from '@shared/agent-approval-cards'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import type { FeedItem } from '../stores/chat'

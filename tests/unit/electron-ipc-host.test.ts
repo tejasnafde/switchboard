@@ -50,14 +50,17 @@ describe('ElectronIpcHost emit safety', () => {
       output: 'done',
       at: '2026-08-19T17:17:20.000Z',
     })
-    expect(breadcrumb).toHaveBeenCalledWith('backend:electron-ipc', expect.objectContaining({
-      action: 'send',
-      channel: 'provider:event',
-      eventType: 'tool.completed',
-      threadId: 'thread-1',
-      eventId: 'tool-1',
-      bytes: expect.any(Number),
-    }))
+    expect(breadcrumb).toHaveBeenCalledWith(
+      'backend:electron-ipc',
+      expect.objectContaining({
+        action: 'send',
+        channel: 'provider:event',
+        eventType: 'tool.completed',
+        threadId: 'thread-1',
+        eventId: 'tool-1',
+        bytes: expect.any(Number),
+      }),
+    )
   })
 
   it('drops a non-JSON payload before webContents.send', () => {
@@ -74,10 +77,13 @@ describe('ElectronIpcHost emit safety', () => {
 
     expect(send).not.toHaveBeenCalled()
     expect(error).toHaveBeenCalledWith('dropped unsafe IPC emit', expect.objectContaining({ ok: false }))
-    expect(breadcrumb).toHaveBeenCalledWith('backend:electron-ipc', expect.objectContaining({
-      action: 'dropped',
-      eventType: 'tool.completed',
-      threadId: 'thread-1',
-    }))
+    expect(breadcrumb).toHaveBeenCalledWith(
+      'backend:electron-ipc',
+      expect.objectContaining({
+        action: 'dropped',
+        eventType: 'tool.completed',
+        threadId: 'thread-1',
+      }),
+    )
   })
 })

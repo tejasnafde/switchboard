@@ -55,7 +55,10 @@ export function findAgentBinary(name: string, now = Date.now()): string | null {
     const PATH = peekShellEnv()?.PATH ?? process.env.PATH ?? ''
     try {
       const which = process.platform === 'win32' ? 'where' : '/usr/bin/which'
-      path = execFileSync(which, [name], { encoding: 'utf-8', timeout: 5000, env: { ...process.env, PATH } }).trim().split(/\r?\n/)[0] || null
+      path =
+        execFileSync(which, [name], { encoding: 'utf-8', timeout: 5000, env: { ...process.env, PATH } })
+          .trim()
+          .split(/\r?\n/)[0] || null
     } catch (err) {
       log.debug(`${name} not found on PATH`, err)
     }

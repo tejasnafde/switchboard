@@ -36,7 +36,8 @@ describe('mobile atomic turn wire compatibility', () => {
   })
 
   it('falls back to the old positional call only for a missing typed handler', async () => {
-    const invoke = vi.fn()
+    const invoke = vi
+      .fn()
       .mockRejectedValueOnce(new Error('no handler: provider:submit-user-turn'))
       .mockResolvedValueOnce(undefined)
     const client = new SwitchboardClient(transport(invoke))

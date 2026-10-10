@@ -1,12 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import {
-  mkdtempSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  utimesSync,
-  writeFileSync,
-} from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { prepareCodexProfileSwitch } from '../../src/main/provider/codex-session-migrate'
@@ -27,14 +20,7 @@ function seedRollout(
 ): string {
   const sessionId = options.sessionId ?? SESSION_ID
   const day = options.day ?? '20'
-  const path = join(
-    codexHome,
-    'sessions',
-    '2026',
-    '08',
-    day,
-    `rollout-2026-08-${day}T10-00-00-${sessionId}.jsonl`,
-  )
+  const path = join(codexHome, 'sessions', '2026', '08', day, `rollout-2026-08-${day}T10-00-00-${sessionId}.jsonl`)
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(
     path,
@@ -61,7 +47,9 @@ describe('prepareCodexProfileSwitch', () => {
     const root = tempRoot()
     const sourceHome = join(root, 'source')
     seedRollout(sourceHome, `${JSON.stringify({ type: 'response_item', payload: { role: 'user' } })}\n`, { day: '20' })
-    seedRollout(sourceHome, `${JSON.stringify({ type: 'response_item', payload: { role: 'assistant' } })}\n`, { day: '21' })
+    seedRollout(sourceHome, `${JSON.stringify({ type: 'response_item', payload: { role: 'assistant' } })}\n`, {
+      day: '21',
+    })
 
     const result = await prepareCodexProfileSwitch({
       sessionId: SESSION_ID,

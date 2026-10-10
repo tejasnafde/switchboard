@@ -2,13 +2,7 @@ import { appendFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
 const REQUIRED = {
-  mac: [
-    'CSC_LINK',
-    'CSC_KEY_PASSWORD',
-    'APPLE_ID',
-    'APPLE_APP_SPECIFIC_PASSWORD',
-    'APPLE_TEAM_ID',
-  ],
+  mac: ['CSC_LINK', 'CSC_KEY_PASSWORD', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID'],
   windows: ['WIN_CSC_LINK', 'WIN_CSC_KEY_PASSWORD'],
 }
 
@@ -21,9 +15,7 @@ export function classifySigningEnvironment(platform, environment) {
   })
   if (present.length === 0) return { mode: 'unsigned', missing: [] }
   const missing = required.filter((name) => !present.includes(name))
-  return missing.length > 0
-    ? { mode: 'invalid', missing }
-    : { mode: 'signed', missing: [] }
+  return missing.length > 0 ? { mode: 'invalid', missing } : { mode: 'signed', missing: [] }
 }
 
 function run() {

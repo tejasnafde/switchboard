@@ -3,14 +3,20 @@ const { end, perfSpan } = vi.hoisted(() => ({ end: vi.fn(), perfSpan: vi.fn() })
 vi.mock('../../src/main/perf', () => ({ perfSpan }))
 import { LONG_RUNNING_CHANNELS, timeBackendHandler } from '../../src/main/backend/perf-handler'
 
-afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks() })
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.clearAllMocks()
+})
 
 describe('backend handler timings', () => {
   it('preserves synchronous results and logs only slow calls', () => {
     perfSpan.mockReturnValue({ end })
     let now = 0
     vi.spyOn(performance, 'now').mockImplementation(() => now)
-    const handler = timeBackendHandler('app:read', (duration: number) => { now += duration; return 42 })
+    const handler = timeBackendHandler('app:read', (duration: number) => {
+      now += duration
+      return 42
+    })
     expect(handler(200)).toBe(42)
     expect(end).not.toHaveBeenCalled()
     expect(handler(201)).toBe(42)
@@ -22,7 +28,10 @@ describe('backend handler timings', () => {
     let now = 0
     vi.spyOn(performance, 'now').mockImplementation(() => now)
     const failure = new Error('failure')
-    const handler = timeBackendHandler('app:read', async () => { now = 201; throw failure })
+    const handler = timeBackendHandler('app:read', async () => {
+      now = 201
+      throw failure
+    })
     await expect(handler()).rejects.toBe(failure)
     expect(end).toHaveBeenCalledOnce()
   })

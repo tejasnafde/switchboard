@@ -11,10 +11,7 @@ import {
 } from '../../shared/conversation-fork'
 import type { ChatMessage } from '../../shared/types'
 import type { SqliteConversationForkStore } from '../db/conversation-fork'
-import {
-  resolveCanonicalForkAnchor,
-  type CanonicalForkMessage,
-} from './fork-anchor'
+import { resolveCanonicalForkAnchor, type CanonicalForkMessage } from './fork-anchor'
 import { cloneForkMessages } from './fork-message-codec'
 import type { ForkSourceExecution } from './fork-source'
 
@@ -67,14 +64,8 @@ export interface ProviderForkArtifactPort {
 }
 
 export interface ConversationForkWorktreePort {
-  prepare(input: {
-    request: ForkConversationRequest
-    prepared: PreparedForkSnapshot
-  }): Promise<PreparedForkSnapshot>
-  create(input: {
-    request: ForkConversationRequest
-    prepared: PreparedForkSnapshot
-  }): Promise<ForkConversationOutcome>
+  prepare(input: { request: ForkConversationRequest; prepared: PreparedForkSnapshot }): Promise<PreparedForkSnapshot>
+  create(input: { request: ForkConversationRequest; prepared: PreparedForkSnapshot }): Promise<ForkConversationOutcome>
 }
 
 export interface ConversationForkCoordinatorDependencies {
@@ -211,12 +202,7 @@ export class ConversationForkCoordinator {
     if (request.checkout.kind !== 'shared-checkout') {
       return this.deps.worktrees
         ? this.deps.worktrees.create({ request, prepared })
-        : failure(
-            request.requestId,
-            'git-failed',
-            'Worktree creation is unavailable on this backend.',
-            true,
-          )
+        : failure(request.requestId, 'git-failed', 'Worktree creation is unavailable on this backend.', true)
     }
 
     return this.commitPlainFork(request, operation.revision, prepared)
@@ -266,10 +252,8 @@ export class ConversationForkCoordinator {
         resumeMode: provider.resumeMode,
         createdAt,
       }
-      const cloned = cloneForkMessages(
-        conversation.id,
-        prepared.prefix,
-        (index, source) => this.ids.message(conversation.id, index, source),
+      const cloned = cloneForkMessages(conversation.id, prepared.prefix, (index, source) =>
+        this.ids.message(conversation.id, index, source),
       )
       const result: ForkConversationResult = {
         requestId: request.requestId,

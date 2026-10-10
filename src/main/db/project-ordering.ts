@@ -10,10 +10,7 @@ export interface ProjectPosition {
   sortOrder: number
 }
 
-export function deriveProjectPositions(
-  rows: ProjectOrderRow[],
-  savedOrder: string[] | null,
-): ProjectPosition[] {
+export function deriveProjectPositions(rows: ProjectOrderRow[], savedOrder: string[] | null): ProjectPosition[] {
   const preferred = Array.isArray(savedOrder)
     ? [...new Set(savedOrder.filter((path): path is string => typeof path === 'string'))]
     : []

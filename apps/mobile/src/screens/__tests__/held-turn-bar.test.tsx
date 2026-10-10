@@ -10,7 +10,9 @@ import { renderComponent } from '../../test/render'
 
 describe('HeldTurnBar', () => {
   it('shows the Queued chip with Send now and Cancel', () => {
-    const v = renderComponent(<HeldTurnBar actions={heldTurnActions('claude')} onPromote={() => {}} onCancel={() => {}} />)
+    const v = renderComponent(
+      <HeldTurnBar actions={heldTurnActions('claude')} onPromote={() => {}} onCancel={() => {}} />,
+    )
     expect(v.texts().join(' ')).toContain('Queued')
     expect(v.texts().join(' ')).toContain('Runs after this turn')
     expect(v.iconNames()).toEqual(expect.arrayContaining(['time-outline', 'arrow-up', 'close']))
@@ -20,31 +22,48 @@ describe('HeldTurnBar', () => {
 
   it('disables Send now on OpenCode and says why', () => {
     const onPromote = jest.fn()
-    const v = renderComponent(<HeldTurnBar actions={heldTurnActions('opencode')} onPromote={onPromote} onCancel={() => {}} />)
+    const v = renderComponent(
+      <HeldTurnBar actions={heldTurnActions('opencode')} onPromote={onPromote} onCancel={() => {}} />,
+    )
     expect(v.root.findByProps({ testID: 'held-send-now' }).props.disabled).toBe(true)
     expect(v.texts().join(' ')).toMatch(/OpenCode cannot take a message mid-turn/)
   })
 
   it('calls Cancel when tapped', () => {
     const onCancel = jest.fn()
-    const v = renderComponent(<HeldTurnBar actions={heldTurnActions('codex')} onPromote={() => {}} onCancel={onCancel} />)
-    act(() => { v.root.findByProps({ testID: 'held-cancel' }).props.onPress() })
+    const v = renderComponent(
+      <HeldTurnBar actions={heldTurnActions('codex')} onPromote={() => {}} onCancel={onCancel} />,
+    )
+    act(() => {
+      v.root.findByProps({ testID: 'held-cancel' }).props.onPress()
+    })
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
   it('a held queue shows Resume instead of Send now', () => {
     const onResume = jest.fn()
     const turn = { threadId: 't', messageId: 'm', text: 'x', queuedAt: 1, held: true }
-    const v = renderComponent(<HeldTurnBar actions={heldTurnActions('claude', turn)} onPromote={() => {}} onResume={onResume} onCancel={() => {}} />)
+    const v = renderComponent(
+      <HeldTurnBar
+        actions={heldTurnActions('claude', turn)}
+        onPromote={() => {}}
+        onResume={onResume}
+        onCancel={() => {}}
+      />,
+    )
     expect(v.texts().join(' ')).toContain('Held')
     expect(v.root.findAllByProps({ testID: 'held-send-now' })).toHaveLength(0)
-    act(() => { v.root.findByProps({ testID: 'held-resume' }).props.onPress() })
+    act(() => {
+      v.root.findByProps({ testID: 'held-resume' }).props.onPress()
+    })
     expect(onResume).toHaveBeenCalledTimes(1)
   })
 
   it('a message that could not start says why and offers only Cancel', () => {
     const turn = { threadId: 't', messageId: 'm', text: 'x', queuedAt: 1, failed: 'Usage limit reached' }
-    const v = renderComponent(<HeldTurnBar actions={heldTurnActions('claude', turn)} onPromote={() => {}} onCancel={() => {}} />)
+    const v = renderComponent(
+      <HeldTurnBar actions={heldTurnActions('claude', turn)} onPromote={() => {}} onCancel={() => {}} />,
+    )
     const text = v.texts().join(' ')
     expect(text).toContain('Not sent')
     expect(text).toContain('Usage limit reached')
@@ -55,7 +74,12 @@ describe('HeldTurnBar', () => {
 
   it('shows a refused action on the row, in place of the hint', () => {
     const v = renderComponent(
-      <HeldTurnBar actions={heldTurnActions('claude')} error="This message already started." onPromote={() => {}} onCancel={() => {}} />,
+      <HeldTurnBar
+        actions={heldTurnActions('claude')}
+        error="This message already started."
+        onPromote={() => {}}
+        onCancel={() => {}}
+      />,
     )
     const text = v.texts().join(' ')
     expect(text).toContain('This message already started.')

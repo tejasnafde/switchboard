@@ -35,7 +35,10 @@ function isCovered(file: string, source: string, path: PathApi): boolean {
 
 describe('isCovered', () => {
   // CI runs on Windows too, where node:path joins with backslashes.
-  for (const [name, path, root] of [['posix', posix, '/repo/src/renderer'], ['win32', win32, 'C:\\repo\\src\\renderer']] as const) {
+  for (const [name, path, root] of [
+    ['posix', posix, '/repo/src/renderer'],
+    ['win32', win32, 'C:\\repo\\src\\renderer'],
+  ] as const) {
     it(`matches listed files and directories with ${name} paths`, () => {
       const ui = path.join(root, 'components', 'ui')
       const picker = path.join(root, 'components', 'chat', 'Picker.tsx')
@@ -66,7 +69,11 @@ describe('animation utilities', () => {
   it('defines a theme animation for every animate-* utility the renderer uses', () => {
     // With no default theme, animate-spin compiles to nothing unless --animate-spin exists,
     // which left the loading spinner frozen.
-    const used = new Set(walk(renderer).flatMap((file) => [...readFileSync(file, 'utf8').matchAll(/\banimate-([a-z][a-z-]*)\b/g)].map((m) => m[1])))
+    const used = new Set(
+      walk(renderer).flatMap((file) =>
+        [...readFileSync(file, 'utf8').matchAll(/\banimate-([a-z][a-z-]*)\b/g)].map((m) => m[1]),
+      ),
+    )
     used.delete('none')
     const missing = [...used].filter((name) => !tailwindCss.includes(`--animate-${name}:`))
     expect(missing).toEqual([])

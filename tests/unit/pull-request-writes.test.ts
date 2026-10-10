@@ -35,17 +35,48 @@ import {
   validateResolve,
   validateSubmitReview,
 } from '../../src/shared/pull-request-writes'
-import { rollupChecks, type PrChangedFile, type PrDetail, type PrReviewer, type PrReviewerCandidate } from '../../src/shared/pull-requests'
+import {
+  rollupChecks,
+  type PrChangedFile,
+  type PrDetail,
+  type PrReviewer,
+  type PrReviewerCandidate,
+} from '../../src/shared/pull-requests'
 import { parseHunks } from '../../src/shared/unified-diff'
 
 function detail(over: Partial<PrDetail> = {}): PrDetail {
   return {
-    ref: { host: 'github', owner: 'o', name: 'r', number: 7 }, title: 't', url: '', author: { login: 'me', displayName: 'me', avatarUrl: null }, authorId: 'me',
-    state: 'open', draft: false, sourceBranch: 'f', targetBranch: 'main', createdAt: 0, updatedAt: 0, mergedAt: null,
-    additions: null, deletions: null, changedFiles: null, unresolvedConversations: 0, mergeConflicts: false, conflictedFiles: [], checks: rollupChecks([]),
-    reviewers: [], approvals: { given: 1, required: 1 }, viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false, hasCommented: false },
-    projectPaths: [], description: '', headSha: 'abc1234', mergeBlockers: [], mergeStrategies: ['merge_commit', 'squash'],
-    activity: [], checkList: [], viewerCanManage: true, ...over,
+    ref: { host: 'github', owner: 'o', name: 'r', number: 7 },
+    title: 't',
+    url: '',
+    author: { login: 'me', displayName: 'me', avatarUrl: null },
+    authorId: 'me',
+    state: 'open',
+    draft: false,
+    sourceBranch: 'f',
+    targetBranch: 'main',
+    createdAt: 0,
+    updatedAt: 0,
+    mergedAt: null,
+    additions: null,
+    deletions: null,
+    changedFiles: null,
+    unresolvedConversations: 0,
+    mergeConflicts: false,
+    conflictedFiles: [],
+    checks: rollupChecks([]),
+    reviewers: [],
+    approvals: { given: 1, required: 1 },
+    viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false, hasCommented: false },
+    projectPaths: [],
+    description: '',
+    headSha: 'abc1234',
+    mergeBlockers: [],
+    mergeStrategies: ['merge_commit', 'squash'],
+    activity: [],
+    checkList: [],
+    viewerCanManage: true,
+    ...over,
   }
 }
 
@@ -87,7 +118,10 @@ describe('mergePrecheck', () => {
   })
 
   it('refuses a PR that is no longer open', () => {
-    expect(mergePrecheck(detail({ state: 'merged' }), input)).toMatchObject({ kind: 'stale', message: 'This pull request is merged now.' })
+    expect(mergePrecheck(detail({ state: 'merged' }), input)).toMatchObject({
+      kind: 'stale',
+      message: 'This pull request is merged now.',
+    })
   })
 
   it('refuses a strategy the repository does not allow', () => {
@@ -131,7 +165,10 @@ describe('input validation', () => {
   it('checks line comment paths, sides and line numbers', () => {
     const ok = { path: 'src/a.ts', side: 'new', line: 10, body: 'b' }
     expect(validateInlineComment('github', ok)).toEqual({ ok: true, value: ok })
-    expect(validateInlineComment('github', { ...ok, startLine: 8 })).toEqual({ ok: true, value: { ...ok, startLine: 8 } })
+    expect(validateInlineComment('github', { ...ok, startLine: 8 })).toEqual({
+      ok: true,
+      value: { ...ok, startLine: 8 },
+    })
     // A one-line range is the line itself.
     expect(validateInlineComment('github', { ...ok, startLine: 10 })).toEqual({ ok: true, value: ok })
     for (const bad of [
@@ -153,9 +190,17 @@ describe('input validation', () => {
     expect(validateSubmitReview('github', { event: 'merge', body: '', comments: [] }).ok).toBe(false)
     expect(validateSubmitReview('github', { event: 'comment', body: '', comments: [] }).ok).toBe(false)
     expect(validateSubmitReview('github', { event: 'comment', body: '', comments: [c] }).ok).toBe(true)
-    expect(validateSubmitReview('github', { event: 'comment', body: '', comments: [{ ...c, line: -1 }] }).ok).toBe(false)
+    expect(validateSubmitReview('github', { event: 'comment', body: '', comments: [{ ...c, line: -1 }] }).ok).toBe(
+      false,
+    )
     expect(validateSubmitReview('github', { event: 'comment', body: 'x', comments: 'no' }).ok).toBe(false)
-    expect(validateSubmitReview('github', { event: 'comment', body: '', comments: Array(PR_REVIEW_MAX_COMMENTS + 1).fill(c) }).ok).toBe(false)
+    expect(
+      validateSubmitReview('github', {
+        event: 'comment',
+        body: '',
+        comments: Array(PR_REVIEW_MAX_COMMENTS + 1).fill(c),
+      }).ok,
+    ).toBe(false)
   })
 
   it('accepts only the merge strategy enum and a commit sha', () => {
@@ -173,10 +218,18 @@ describe('input validation', () => {
 })
 
 describe('lineInDiff', () => {
-  const files: PrChangedFile[] = [{
-    path: 'a.py', oldPath: null, status: 'modified', additions: 2, deletions: 1, binary: false, truncated: false,
-    hunks: parseHunks('@@ -10,3 +10,4 @@\n ctx\n-old\n+new1\n+new2\n ctx2').hunks,
-  }]
+  const files: PrChangedFile[] = [
+    {
+      path: 'a.py',
+      oldPath: null,
+      status: 'modified',
+      additions: 2,
+      deletions: 1,
+      binary: false,
+      truncated: false,
+      hunks: parseHunks('@@ -10,3 +10,4 @@\n ctx\n-old\n+new1\n+new2\n ctx2').hunks,
+    },
+  ]
 
   it('finds a shown line on its side', () => {
     expect(lineInDiff(files, { path: 'a.py', side: 'new', line: 11 })).toBe(true)
@@ -193,10 +246,19 @@ describe('lineInDiff', () => {
 })
 
 describe('lineTargetFit', () => {
-  const files: PrChangedFile[] = [{
-    path: 'a.py', oldPath: null, status: 'modified', additions: 3, deletions: 1, binary: false, truncated: false,
-    hunks: parseHunks('@@ -10,3 +10,4 @@\n ctx\n-old\n+new1\n+new2\n ctx2\n@@ -40,2 +41,3 @@\n far\n+added\n far2').hunks,
-  }]
+  const files: PrChangedFile[] = [
+    {
+      path: 'a.py',
+      oldPath: null,
+      status: 'modified',
+      additions: 3,
+      deletions: 1,
+      binary: false,
+      truncated: false,
+      hunks: parseHunks('@@ -10,3 +10,4 @@\n ctx\n-old\n+new1\n+new2\n ctx2\n@@ -40,2 +41,3 @@\n far\n+added\n far2')
+        .hunks,
+    },
+  ]
 
   it('takes a range inside one hunk on either side', () => {
     expect(lineTargetFit(files, { path: 'a.py', side: 'new', line: 13, startLine: 10 })).toBe('ok')
@@ -234,8 +296,19 @@ describe('sameCommit', () => {
 
 const UUID = '{3f2a8b10-1c2d-4e5f-8a9b-0c1d2e3f4a5b}'
 const person = (login: string) => ({ login, displayName: login, avatarUrl: null })
-const rv = (id: string, state: PrReviewer['state'], requested = true): PrReviewer => ({ id, person: person(id), state, requested })
-const cand = (id: string, over: Partial<PrReviewerCandidate> = {}): PrReviewerCandidate => ({ id, person: person(id), kind: 'user', reviewed: 0, ...over })
+const rv = (id: string, state: PrReviewer['state'], requested = true): PrReviewer => ({
+  id,
+  person: person(id),
+  state,
+  requested,
+})
+const cand = (id: string, over: Partial<PrReviewerCandidate> = {}): PrReviewerCandidate => ({
+  id,
+  person: person(id),
+  kind: 'user',
+  reviewed: 0,
+  ...over,
+})
 
 describe('reviewer validation', () => {
   it('takes GitHub logins and team slugs, and Bitbucket account uuids only', () => {
@@ -251,7 +324,10 @@ describe('reviewer validation', () => {
       ['bitbucket', 'team:core'],
       ['bitbucket', '{not-a-uuid}'],
     ] as const) {
-      expect(validateReviewer(host, { reviewer }), `${host} ${reviewer}`).toMatchObject({ ok: false, error: { kind: 'invalid' } })
+      expect(validateReviewer(host, { reviewer }), `${host} ${reviewer}`).toMatchObject({
+        ok: false,
+        error: { kind: 'invalid' },
+      })
     }
     expect(validateReviewer('github', null)).toMatchObject({ ok: false, error: { kind: 'invalid' } })
   })
@@ -260,7 +336,10 @@ describe('reviewer validation', () => {
 describe('reviewer and decline pre-checks', () => {
   it('refuses a closed PR as stale and a viewer the host does not allow as forbidden', () => {
     expect(managePrecheck(detail({ state: 'closed' }), 'close it')).toMatchObject({ kind: 'stale' })
-    expect(managePrecheck(detail({ viewerCanManage: false }), 'close it')).toMatchObject({ kind: 'forbidden', message: expect.stringContaining('write access') })
+    expect(managePrecheck(detail({ viewerCanManage: false }), 'close it')).toMatchObject({
+      kind: 'forbidden',
+      message: expect.stringContaining('write access'),
+    })
     expect(managePrecheck(detail(), 'close it')).toBeNull()
   })
 
@@ -273,13 +352,22 @@ describe('reviewer and decline pre-checks', () => {
   })
 
   it('refuses the Bitbucket author by account uuid, which is what the write sends', () => {
-    const bb = detail({ ref: { host: 'bitbucket', owner: 'o', name: 'r', number: 7 }, author: person('tejas'), authorId: UUID })
-    expect(addReviewerPrecheck(bb, { reviewer: UUID })).toMatchObject({ kind: 'invalid', message: 'The author cannot review their own pull request.' })
+    const bb = detail({
+      ref: { host: 'bitbucket', owner: 'o', name: 'r', number: 7 },
+      author: person('tejas'),
+      authorId: UUID,
+    })
+    expect(addReviewerPrecheck(bb, { reviewer: UUID })).toMatchObject({
+      kind: 'invalid',
+      message: 'The author cannot review their own pull request.',
+    })
     expect(addReviewerPrecheck(bb, { reviewer: '{00000000-0000-4000-8000-00000000000b}' })).toBeNull()
   })
 
   it('removes only a reviewer still on the PR, and on GitHub only a pending request', () => {
-    const pr = detail({ reviewers: [rv('pankaj', 'pending'), rv('akshaya', 'approved'), rv('backend', 'commented', false)] })
+    const pr = detail({
+      reviewers: [rv('pankaj', 'pending'), rv('akshaya', 'approved'), rv('backend', 'commented', false)],
+    })
     expect(removeReviewerPrecheck(pr, { reviewer: 'pankaj' })).toBeNull()
     expect(removeReviewerPrecheck(pr, { reviewer: 'akshaya' })).toMatchObject({ kind: 'invalid' })
     expect(removeReviewerPrecheck(pr, { reviewer: 'backend' })).toMatchObject({ kind: 'stale' })
@@ -295,21 +383,48 @@ describe('reviewer candidates', () => {
       { reviewers: [rv('backend', 'approved'), rv('pankaj', 'commented'), rv('akshaya', 'pending')] },
       { reviewers: [rv('backend', 'changes_requested')] },
     ])
-    expect(recent.map((c) => [c.id, c.reviewed])).toEqual([['backend', 2], ['pankaj', 1]])
+    expect(recent.map((c) => [c.id, c.reviewed])).toEqual([
+      ['backend', 2],
+      ['pankaj', 1],
+    ])
     const members = [cand('team:core', { kind: 'team' }), cand('zed'), cand('backend'), cand('barath')]
-    expect(orderReviewerCandidates(recent, members).map((c) => c.id)).toEqual(['backend', 'pankaj', 'barath', 'zed', 'team:core'])
+    expect(orderReviewerCandidates(recent, members).map((c) => c.id)).toEqual([
+      'backend',
+      'pankaj',
+      'barath',
+      'zed',
+      'team:core',
+    ])
   })
 
   it('leaves out the author and anyone already asked', () => {
-    const pr = { author: person('me'), authorId: 'me', reviewers: [rv('pankaj', 'pending'), rv('backend', 'commented', false)] }
-    expect(candidatesFor([cand('me'), cand('pankaj'), cand('backend'), cand('barath')], pr).map((c) => c.id)).toEqual(['backend', 'barath'])
+    const pr = {
+      author: person('me'),
+      authorId: 'me',
+      reviewers: [rv('pankaj', 'pending'), rv('backend', 'commented', false)],
+    }
+    expect(candidatesFor([cand('me'), cand('pankaj'), cand('backend'), cand('barath')], pr).map((c) => c.id)).toEqual([
+      'backend',
+      'barath',
+    ])
     // Bitbucket: the candidate id is the uuid, not the nickname.
-    expect(candidatesFor([cand(UUID, { person: person('Tejas Nafde') })], { author: person('tejas'), authorId: UUID, reviewers: [] })).toEqual([])
+    expect(
+      candidatesFor([cand(UUID, { person: person('Tejas Nafde') })], {
+        author: person('tejas'),
+        authorId: UUID,
+        reviewers: [],
+      }),
+    ).toEqual([])
   })
 
   it('offers the recent reviewers of the listed PRs until the read answers, then the read', () => {
     const repo = { host: 'github' as const, owner: 'o', name: 'r' }
-    const pr = { ref: { ...repo, number: 7 }, author: person('me'), authorId: 'me', reviewers: [rv('pankaj', 'pending')] }
+    const pr = {
+      ref: { ...repo, number: 7 },
+      author: person('me'),
+      authorId: 'me',
+      reviewers: [rv('pankaj', 'pending')],
+    }
     const listed = [
       { ref: { ...repo, number: 1 }, reviewers: [rv('backend', 'approved'), rv('pankaj', 'approved')] },
       { ref: { ...repo, name: 'other', number: 2 }, reviewers: [rv('zed', 'approved')] },

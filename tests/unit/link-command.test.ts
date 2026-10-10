@@ -10,7 +10,10 @@ describe('parseLinkCommand', () => {
 
   it('reads a trailing number as a possible budget', () => {
     expect(parseLinkCommand('/link Worker A 50')).toEqual({
-      ok: true, kind: 'link', target: 'Worker A 50', splits: [{ target: 'Worker A', messages: 50, tail: '50' }],
+      ok: true,
+      kind: 'link',
+      target: 'Worker A 50',
+      splits: [{ target: 'Worker A', messages: 50, tail: '50' }],
     })
   })
 
@@ -77,7 +80,13 @@ describe('resolveLinkTarget', () => {
   it('takes a time in minutes or hours, with or without a budget', () => {
     expect(resolve('/link Worker A 45m')).toEqual({ ok: true, id: 'w', title: 'Worker A', windowMs: 45 * 60_000 })
     expect(resolve('/link Worker A 4h')).toEqual({ ok: true, id: 'w', title: 'Worker A', windowMs: 4 * HOUR })
-    expect(resolve('/link Worker A 100 4h')).toEqual({ ok: true, id: 'w', title: 'Worker A', messages: 100, windowMs: 4 * HOUR })
+    expect(resolve('/link Worker A 100 4h')).toEqual({
+      ok: true,
+      id: 'w',
+      title: 'Worker A',
+      messages: 100,
+      windowMs: 4 * HOUR,
+    })
   })
 
   it('refuses a time outside 10 minutes to 24 hours, naming the range', () => {
@@ -97,7 +106,13 @@ describe('resolveLinkTarget', () => {
     expect(parse('/link Sprint 2h')).toEqual({ ok: true, id: 's', title: 'Sprint 2h' })
     expect(parse('/link Sprint 2h 4h')).toEqual({ ok: true, id: 's', title: 'Sprint 2h', windowMs: 4 * HOUR })
     expect(parse('/link Issue 172 4h')).toEqual({ ok: true, id: 'i', title: 'Issue 172', windowMs: 4 * HOUR })
-    expect(parse('/link Issue 172 50 4h')).toEqual({ ok: true, id: 'i', title: 'Issue 172', messages: 50, windowMs: 4 * HOUR })
+    expect(parse('/link Issue 172 50 4h')).toEqual({
+      ok: true,
+      id: 'i',
+      title: 'Issue 172',
+      messages: 50,
+      windowMs: 4 * HOUR,
+    })
   })
 })
 

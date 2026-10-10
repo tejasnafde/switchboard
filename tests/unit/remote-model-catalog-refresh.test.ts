@@ -207,7 +207,9 @@ describe('reconcileSelectedModel against a live Claude alias catalog', () => {
       models: [{ id: 'sonnet', label: 'Sonnet', tier: 'balanced', resolvedModel: 'claude-sonnet-5-20260215' }],
       identity: 'x',
     }
-    expect(reconcileSelectedModel('claude-sonnet-5-20260215', withResolved, claudeRowCovers)).toBe('claude-sonnet-5-20260215')
+    expect(reconcileSelectedModel('claude-sonnet-5-20260215', withResolved, claudeRowCovers)).toBe(
+      'claude-sonnet-5-20260215',
+    )
   })
 })
 

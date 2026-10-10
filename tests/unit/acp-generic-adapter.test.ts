@@ -105,7 +105,10 @@ function fakeAgent(conn: AgentSideConnection, state: FakeAgentState): Agent {
       })
       await conn.sessionUpdate({
         sessionId: params.sessionId,
-        update: { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'review', description: 'Review' }] },
+        update: {
+          sessionUpdate: 'available_commands_update',
+          availableCommands: [{ name: 'review', description: 'Review' }],
+        },
       })
       const answer = await conn.requestPermission({
         sessionId: params.sessionId,
@@ -128,13 +131,16 @@ async function startGemini(events: RuntimeEvent[], extra: Record<string, unknown
   const { AcpAdapter } = await import('../../src/main/provider/adapters/acp/acp-adapter')
   const { genericAcpLaunchConfig } = await import('../../src/main/provider/adapters/acp/agents')
   const adapter = new AcpAdapter(genericAcpLaunchConfig('gemini'))
-  await adapter.startSession({
-    threadId: 'chat-1',
-    provider: 'gemini',
-    cwd: '/tmp/project',
-    runtimeMode: 'sandbox',
-    ...extra,
-  }, (event) => events.push(event))
+  await adapter.startSession(
+    {
+      threadId: 'chat-1',
+      provider: 'gemini',
+      cwd: '/tmp/project',
+      runtimeMode: 'sandbox',
+      ...extra,
+    },
+    (event) => events.push(event),
+  )
   return adapter
 }
 
@@ -146,16 +152,25 @@ beforeEach(() => {
     newSession: {
       modes: {
         currentModeId: 'default',
-        availableModes: [{ id: 'default', name: 'Default' }, { id: 'plan', name: 'Plan' }, { id: 'yolo', name: 'YOLO' }],
+        availableModes: [
+          { id: 'default', name: 'Default' },
+          { id: 'plan', name: 'Plan' },
+          { id: 'yolo', name: 'YOLO' },
+        ],
       },
-      configOptions: [{
-        id: 'model',
-        name: 'Model',
-        category: 'model',
-        type: 'select',
-        currentValue: 'gemini-pro',
-        options: [{ value: 'gemini-pro', name: 'Gemini Pro' }, { value: 'gemini-flash', name: 'Gemini Flash' }],
-      }],
+      configOptions: [
+        {
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          type: 'select',
+          currentValue: 'gemini-pro',
+          options: [
+            { value: 'gemini-pro', name: 'Gemini Pro' },
+            { value: 'gemini-flash', name: 'Gemini Flash' },
+          ],
+        },
+      ],
     },
     authRequired: false,
     permission: null,
@@ -187,15 +202,20 @@ describe('generic ACP adapter over the protocol', () => {
     const { genericAcpLaunchConfig } = await import('../../src/main/provider/adapters/acp/agents')
     const adapter = new AcpAdapter({
       ...genericAcpLaunchConfig('gemini'),
-      onFirstPrompt: async ({ message }) => { firstPrompts.push(message) },
+      onFirstPrompt: async ({ message }) => {
+        firstPrompts.push(message)
+      },
     })
-    await adapter.startSession({
-      threadId: 'chat-1',
-      provider: 'gemini',
-      cwd: '/tmp/project',
-      runtimeMode: 'full-access',
-      portableHistory: async () => 'EARLIER CONVERSATION',
-    }, () => {})
+    await adapter.startSession(
+      {
+        threadId: 'chat-1',
+        provider: 'gemini',
+        cwd: '/tmp/project',
+        runtimeMode: 'full-access',
+        portableHistory: async () => 'EARLIER CONVERSATION',
+      },
+      () => {},
+    )
     await adapter.sendTurn('chat-1', 'fix the bug')
     expect(firstPrompts).toEqual(['fix the bug'])
   })
@@ -215,7 +235,9 @@ describe('generic ACP adapter over the protocol', () => {
   })
 
   it('leaves the mode alone when the agent advertises no plan mode', async () => {
-    fake.state!.newSession = { modes: { currentModeId: 'default', availableModes: [{ id: 'default', name: 'Default' }] } }
+    fake.state!.newSession = {
+      modes: { currentModeId: 'default', availableModes: [{ id: 'default', name: 'Default' }] },
+    }
     const adapter = await startGemini([])
     await adapter.setRuntimeMode('chat-1', 'plan')
     expect(fake.state!.calls).toEqual(['initialize', 'newSession'])
@@ -238,7 +260,9 @@ describe('generic ACP adapter over the protocol', () => {
     await vi.waitFor(() => expect(events.some((e) => e.type === 'turn.completed')).toBe(true))
     expect(fake.state!.permission).toEqual({ outcome: { outcome: 'selected', optionId: 'yes' } })
     expect(events).toContainEqual(expect.objectContaining({ type: 'content', text: 'hello', streamKind: 'assistant' }))
-    await expect(adapter.listSkills('chat-1')).resolves.toEqual([{ name: 'review', description: 'Review', source: 'gemini' }])
+    await expect(adapter.listSkills('chat-1')).resolves.toEqual([
+      { name: 'review', description: 'Review', source: 'gemini' },
+    ])
   })
 
   it('denies an edit in plan mode without asking', async () => {
@@ -247,7 +271,9 @@ describe('generic ACP adapter over the protocol', () => {
     await adapter.sendTurn('chat-1', 'hi')
     await vi.waitFor(() => expect(events.some((e) => e.type === 'turn.completed')).toBe(true))
     expect(fake.state!.permission).toEqual({ outcome: { outcome: 'selected', optionId: 'no' } })
-    expect(events).toContainEqual(expect.objectContaining({ type: 'tool.denied', toolName: 'write_file', mode: 'plan' }))
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'tool.denied', toolName: 'write_file', mode: 'plan' }),
+    )
     expect(events.some((e) => e.type === 'request.opened')).toBe(false)
   })
 
@@ -258,14 +284,25 @@ describe('generic ACP adapter over the protocol', () => {
   })
 
   it('registers the Switchboard MCP server on session/new', async () => {
-    await startGemini([], { switchboardMcp: { command: '/node', args: ['bridge.cjs'], env: { SWITCHBOARD_MCP_TOKEN_FILE: '/t' } } })
-    expect(fake.state!.mcpServers).toEqual([{ name: 'switchboard', command: '/node', args: ['bridge.cjs'], env: [{ name: 'SWITCHBOARD_MCP_TOKEN_FILE', value: '/t' }] }])
+    await startGemini([], {
+      switchboardMcp: { command: '/node', args: ['bridge.cjs'], env: { SWITCHBOARD_MCP_TOKEN_FILE: '/t' } },
+    })
+    expect(fake.state!.mcpServers).toEqual([
+      {
+        name: 'switchboard',
+        command: '/node',
+        args: ['bridge.cjs'],
+        env: [{ name: 'SWITCHBOARD_MCP_TOKEN_FILE', value: '/t' }],
+      },
+    ])
   })
 
   it('names the sign-in step when the agent answers authentication required', async () => {
     fake.state!.authRequired = true
     const events: RuntimeEvent[] = []
-    await expect(startGemini(events)).rejects.toThrow(/Gemini CLI ACP init failed: .*Authentication required.*Run `gemini` in a terminal once and sign in/)
+    await expect(startGemini(events)).rejects.toThrow(
+      /Gemini CLI ACP init failed: .*Authentication required.*Run `gemini` in a terminal once and sign in/,
+    )
     expect(events).toContainEqual({ type: 'status', threadId: 'chat-1', status: 'error' })
   })
 
@@ -275,7 +312,12 @@ describe('generic ACP adapter over the protocol', () => {
       const { AcpAdapter, ACP_HANDSHAKE_TIMEOUT_MS } = await import('../../src/main/provider/adapters/acp/acp-adapter')
       const { genericAcpLaunchConfig } = await import('../../src/main/provider/adapters/acp/agents')
       const adapter = new AcpAdapter(genericAcpLaunchConfig('gemini'))
-      const startOpts = { threadId: 'chat-1', provider: 'gemini' as const, cwd: '/tmp/project', runtimeMode: 'sandbox' as const }
+      const startOpts = {
+        threadId: 'chat-1',
+        provider: 'gemini' as const,
+        cwd: '/tmp/project',
+        runtimeMode: 'sandbox' as const,
+      }
 
       fake.state!.hangOnInitialize = true
       const events: RuntimeEvent[] = []

@@ -32,7 +32,11 @@ export const AlertDialogTitle = forwardRef<
   ElementRef<typeof AlertDialogPrimitive.Title>,
   ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Title>
 >(({ className, ...props }, ref) => (
-  <AlertDialogPrimitive.Title ref={ref} className={cn('whitespace-pre-line text-[14px] font-[600]', className)} {...props} />
+  <AlertDialogPrimitive.Title
+    ref={ref}
+    className={cn('whitespace-pre-line text-[14px] font-[600]', className)}
+    {...props}
+  />
 ))
 AlertDialogTitle.displayName = 'AlertDialogTitle'
 

@@ -29,11 +29,9 @@ describe('SqliteTurnAcceptanceStore', () => {
     ensureTurnAcceptanceSchema(db)
 
     const columns = db.prepare('PRAGMA table_info(mobile_turn_acceptances)').all() as Array<{ name: string }>
-    expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining([
-      'envelope_json',
-      'message_id',
-      'event_at',
-    ]))
+    expect(columns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(['envelope_json', 'message_id', 'event_at']),
+    )
     db.close()
   })
 
@@ -106,10 +104,14 @@ describe('SqliteTurnAcceptanceStore', () => {
       state: 'abandoned',
       changed: false,
     })
-    expect(store.reserveEnvelope(second, 'hash-b', '{"turn":2}', 'remote_next', 101))
-      .toEqual({ kind: 'reserved', state: 'reserved' })
-    expect(store.reserveEnvelope(first, 'hash-a', '{"turn":1}', 'remote_uncertain', 102))
-      .toMatchObject({ kind: 'duplicate', state: 'abandoned' })
+    expect(store.reserveEnvelope(second, 'hash-b', '{"turn":2}', 'remote_next', 101)).toEqual({
+      kind: 'reserved',
+      state: 'reserved',
+    })
+    expect(store.reserveEnvelope(first, 'hash-a', '{"turn":1}', 'remote_uncertain', 102)).toMatchObject({
+      kind: 'duplicate',
+      state: 'abandoned',
+    })
     db.close()
   })
 
@@ -122,10 +124,11 @@ describe('SqliteTurnAcceptanceStore', () => {
     store.beginDispatch(completed, 'hash')
     store.complete(completed, 'hash')
 
-    expect(store.resolveAmbiguous(completed, 'abandon'))
-      .toEqual({ state: 'completed', changed: false })
-    expect(store.resolveAmbiguous({ ...completed, origin: 'missing' }, 'abandon'))
-      .toEqual({ state: 'not_found', changed: false })
+    expect(store.resolveAmbiguous(completed, 'abandon')).toEqual({ state: 'completed', changed: false })
+    expect(store.resolveAmbiguous({ ...completed, origin: 'missing' }, 'abandon')).toEqual({
+      state: 'not_found',
+      changed: false,
+    })
     db.close()
   })
 
@@ -141,16 +144,20 @@ describe('SqliteTurnAcceptanceStore', () => {
     store.beginDispatch(scopeB, 'payload-b')
 
     expect(store.resolveAmbiguous(scopeA, 'abandon')).toEqual({ state: 'abandoned', changed: true })
-    expect(db.prepare(`
+    expect(
+      db
+        .prepare(`
       SELECT client_scope, state FROM mobile_turn_acceptances ORDER BY client_scope
-    `).all()).toEqual([
+    `)
+        .all(),
+    ).toEqual([
       { client_scope: 'scope-a', state: 'abandoned' },
       { client_scope: 'scope-b', state: 'dispatching' },
     ])
     db.close()
   })
 
-  it('keeps an accepted turn accepted when the dispatcher\'s afterCommit hook throws', async () => {
+  it("keeps an accepted turn accepted when the dispatcher's afterCommit hook throws", async () => {
     const db = atomicTurnDb()
     const backend = new AtomicUserTurnSubmission({ store: new SqliteTurnAcceptanceStore(() => db), publish: () => {} })
     const result = await backend.submit(
@@ -159,7 +166,11 @@ describe('SqliteTurnAcceptanceStore', () => {
         clientScope: 'scope-a',
         conversationId: 'thread-a',
         prepare: async () => {},
-        dispatch: async () => ({ afterCommit: () => { throw new Error('hook failed') } }),
+        dispatch: async () => ({
+          afterCommit: () => {
+            throw new Error('hook failed')
+          },
+        }),
       },
     )
     expect(result).toMatchObject({ status: 'accepted', accepted: true })
@@ -174,8 +185,12 @@ describe('SqliteTurnAcceptanceStore', () => {
     })
     let rejectDispatch!: (error: Error) => void
     let dispatchEntered!: () => void
-    const entered = new Promise<void>((resolve) => { dispatchEntered = resolve })
-    const dispatch = new Promise<void>((_resolve, reject) => { rejectDispatch = reject })
+    const entered = new Promise<void>((resolve) => {
+      dispatchEntered = resolve
+    })
+    const dispatch = new Promise<void>((_resolve, reject) => {
+      rejectDispatch = reject
+    })
     const turn = {
       version: 1 as const,
       threadId: 'thread-a',
@@ -193,12 +208,17 @@ describe('SqliteTurnAcceptanceStore', () => {
     })
     await entered
 
-    expect(backend.resolve({
-      version: 1,
-      threadId: 'thread-a',
-      origin: 'live-dispatch',
-      action: 'abandon',
-    }, { clientScope: 'scope-a', conversationId: 'thread-a' })).toEqual({
+    expect(
+      backend.resolve(
+        {
+          version: 1,
+          threadId: 'thread-a',
+          origin: 'live-dispatch',
+          action: 'abandon',
+        },
+        { clientScope: 'scope-a', conversationId: 'thread-a' },
+      ),
+    ).toEqual({
       status: 'pending',
       changed: false,
       reason: 'Provider dispatch is still in progress',
@@ -206,12 +226,17 @@ describe('SqliteTurnAcceptanceStore', () => {
 
     rejectDispatch(new Error('connection outcome unknown'))
     await expect(submission).resolves.toMatchObject({ status: 'ambiguous' })
-    expect(backend.resolve({
-      version: 1,
-      threadId: 'thread-a',
-      origin: 'live-dispatch',
-      action: 'abandon',
-    }, { clientScope: 'scope-a', conversationId: 'thread-a' })).toEqual({
+    expect(
+      backend.resolve(
+        {
+          version: 1,
+          threadId: 'thread-a',
+          origin: 'live-dispatch',
+          action: 'abandon',
+        },
+        { clientScope: 'scope-a', conversationId: 'thread-a' },
+      ),
+    ).toEqual({
       status: 'abandoned',
       changed: true,
     })
@@ -293,12 +318,18 @@ describe('SqliteTurnAcceptanceStore', () => {
     const first = acceptanceKey({ clientScope: 'desktop' })
     const pairedAgain = acceptanceKey({ clientScope: 'phone' })
 
-    expect(store.reserveEnvelope(first, 'same-hash', '{"turn":true}', 'remote_origin-a', 100))
-      .toMatchObject({ kind: 'reserved' })
-    expect(store.reserveEnvelope(pairedAgain, 'same-hash', '{"turn":true}', 'remote_origin-a', 101))
-      .toEqual({ kind: 'duplicate', state: 'reserved', clientScope: 'desktop' })
-    expect(store.reserveEnvelope(pairedAgain, 'changed-hash', '{"turn":false}', 'remote_origin-a', 102))
-      .toEqual({ kind: 'conflict', state: 'reserved' })
+    expect(store.reserveEnvelope(first, 'same-hash', '{"turn":true}', 'remote_origin-a', 100)).toMatchObject({
+      kind: 'reserved',
+    })
+    expect(store.reserveEnvelope(pairedAgain, 'same-hash', '{"turn":true}', 'remote_origin-a', 101)).toEqual({
+      kind: 'duplicate',
+      state: 'reserved',
+      clientScope: 'desktop',
+    })
+    expect(store.reserveEnvelope(pairedAgain, 'changed-hash', '{"turn":false}', 'remote_origin-a', 102)).toEqual({
+      kind: 'conflict',
+      state: 'reserved',
+    })
     db.close()
   })
 
@@ -322,25 +353,31 @@ describe('SqliteTurnAcceptanceStore', () => {
     store.reserveEnvelope(key, 'hash', '{"turn":true}', 'remote_origin-a', 100)
     expect(store.beginDispatch(key, 'hash')).toBe(true)
 
-    expect(store.completeUserTurn(key, 'hash', {
-      messageId: 'remote_origin-a',
-      providerText: 'expanded provider text',
-      imagesJson: '[{"url":"data:image/png;base64,AA"}]',
-      displayBody: '[[pill:file-1]] explain this',
-      pillsMetaJson: '{"file-1":{"label":"src/main.ts","kind":"file"}}',
-      acceptedAt: 200,
-      autoTitle: 'Explain this',
-      handoff: {
-        expectedFrom: 'codex',
-        markerId: 'handoff-1',
-        markerText: '[[sb:context-handoff]] Codex → Claude',
-      },
-    })).toEqual({ completed: true, conversationTitle: 'Explain this' })
+    expect(
+      store.completeUserTurn(key, 'hash', {
+        messageId: 'remote_origin-a',
+        providerText: 'expanded provider text',
+        imagesJson: '[{"url":"data:image/png;base64,AA"}]',
+        displayBody: '[[pill:file-1]] explain this',
+        pillsMetaJson: '{"file-1":{"label":"src/main.ts","kind":"file"}}',
+        acceptedAt: 200,
+        autoTitle: 'Explain this',
+        handoff: {
+          expectedFrom: 'codex',
+          markerId: 'handoff-1',
+          markerText: '[[sb:context-handoff]] Codex → Claude',
+        },
+      }),
+    ).toEqual({ completed: true, conversationTitle: 'Explain this' })
 
-    expect(db.prepare(`
+    expect(
+      db
+        .prepare(`
       SELECT role, content, images, display_body, pills_meta, timestamp
         FROM messages WHERE id = 'remote_origin-a'
-    `).get()).toEqual({
+    `)
+        .get(),
+    ).toEqual({
       role: 'user',
       content: 'expanded provider text',
       images: '[{"url":"data:image/png;base64,AA"}]',
@@ -351,7 +388,9 @@ describe('SqliteTurnAcceptanceStore', () => {
     expect(db.prepare(`SELECT content FROM messages WHERE id = 'handoff-1'`).get()).toEqual({
       content: '[[sb:context-handoff]] Codex → Claude',
     })
-    expect(db.prepare(`SELECT title, pending_handoff_from, updated_at FROM conversations WHERE id = 'thread-a'`).get()).toEqual({
+    expect(
+      db.prepare(`SELECT title, pending_handoff_from, updated_at FROM conversations WHERE id = 'thread-a'`).get(),
+    ).toEqual({
       title: 'Explain this',
       pending_handoff_from: null,
       updated_at: 200,
@@ -362,18 +401,34 @@ describe('SqliteTurnAcceptanceStore', () => {
 
   it('still titles a chat whose only user row is a stored task notice', () => {
     const db = atomicTurnDb()
-    db.prepare(`INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, 'thread-a', 'user', ?, 50)`)
-      .run(storedTaskNoticeId('thread-a', 'b1'), '<task-notification>\n<task-id>b1</task-id>\n</task-notification>')
+    db.prepare(
+      `INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, 'thread-a', 'user', ?, 50)`,
+    ).run(storedTaskNoticeId('thread-a', 'b1'), '<task-notification>\n<task-id>b1</task-id>\n</task-notification>')
     const store = new SqliteTurnAcceptanceStore(() => db) as SqliteTurnAcceptanceStore & {
-      reserveEnvelope(key: TurnAcceptanceKey, payloadHash: string, envelopeJson: string, messageId: string, eventAt: number): { kind: string }
-      completeUserTurn(key: TurnAcceptanceKey, payloadHash: string, turn: Record<string, unknown>): { completed: boolean; conversationTitle?: string }
+      reserveEnvelope(
+        key: TurnAcceptanceKey,
+        payloadHash: string,
+        envelopeJson: string,
+        messageId: string,
+        eventAt: number,
+      ): { kind: string }
+      completeUserTurn(
+        key: TurnAcceptanceKey,
+        payloadHash: string,
+        turn: Record<string, unknown>,
+      ): { completed: boolean; conversationTitle?: string }
     }
     const key = acceptanceKey()
     store.reserveEnvelope(key, 'hash', '{"turn":true}', 'remote_origin-a', 100)
     expect(store.beginDispatch(key, 'hash')).toBe(true)
-    expect(store.completeUserTurn(key, 'hash', {
-      messageId: 'remote_origin-a', providerText: 'hi', acceptedAt: 200, autoTitle: 'Hi',
-    })).toEqual({ completed: true, conversationTitle: 'Hi' })
+    expect(
+      store.completeUserTurn(key, 'hash', {
+        messageId: 'remote_origin-a',
+        providerText: 'hi',
+        acceptedAt: 200,
+        autoTitle: 'Hi',
+      }),
+    ).toEqual({ completed: true, conversationTitle: 'Hi' })
     db.close()
   })
 
@@ -390,15 +445,20 @@ describe('SqliteTurnAcceptanceStore', () => {
     store.reserveEnvelope(key, 'hash', '{"turn":true}', 'remote_origin-a', 100)
     store.beginDispatch(key, 'hash')
 
-    expect(() => store.completeUserTurn(key, 'hash', {
-      messageId: 'remote_origin-a',
-      providerText: 'must not overwrite',
-      acceptedAt: 200,
-    })).toThrow('belongs to another turn')
-    expect(db.prepare("SELECT state FROM mobile_turn_acceptances WHERE origin = 'origin-a'").get())
-      .toEqual({ state: 'dispatching' })
-    expect(db.prepare("SELECT conversation_id, content FROM messages WHERE id = 'remote_origin-a'").get())
-      .toEqual({ conversation_id: 'thread-b', content: 'other turn' })
+    expect(() =>
+      store.completeUserTurn(key, 'hash', {
+        messageId: 'remote_origin-a',
+        providerText: 'must not overwrite',
+        acceptedAt: 200,
+      }),
+    ).toThrow('belongs to another turn')
+    expect(db.prepare("SELECT state FROM mobile_turn_acceptances WHERE origin = 'origin-a'").get()).toEqual({
+      state: 'dispatching',
+    })
+    expect(db.prepare("SELECT conversation_id, content FROM messages WHERE id = 'remote_origin-a'").get()).toEqual({
+      conversation_id: 'thread-b',
+      content: 'other turn',
+    })
     db.close()
   })
 })
@@ -446,17 +506,23 @@ describe('commitConversationProfileSwitch', () => {
       now: 20,
     })
 
-    expect(db.prepare('SELECT provider_instance_id, session_id FROM conversations WHERE id = ?')
-      .get('root')).toEqual({ provider_instance_id: 'personal', session_id: 'native-new' })
-    expect(db.prepare('SELECT provider, provider_session_id, provider_instance_id, ordinal FROM conversation_segments')
-      .get()).toEqual({
-        provider: 'claude-code',
-        provider_session_id: 'native-new',
-        provider_instance_id: 'personal',
-        ordinal: 0,
-      })
-    expect(db.prepare('SELECT thread_id FROM thread_sessions WHERE claude_session_id = ?')
-      .get('native-new')).toEqual({ thread_id: 'root' })
+    expect(db.prepare('SELECT provider_instance_id, session_id FROM conversations WHERE id = ?').get('root')).toEqual({
+      provider_instance_id: 'personal',
+      session_id: 'native-new',
+    })
+    expect(
+      db
+        .prepare('SELECT provider, provider_session_id, provider_instance_id, ordinal FROM conversation_segments')
+        .get(),
+    ).toEqual({
+      provider: 'claude-code',
+      provider_session_id: 'native-new',
+      provider_instance_id: 'personal',
+      ordinal: 0,
+    })
+    expect(db.prepare('SELECT thread_id FROM thread_sessions WHERE claude_session_id = ?').get('native-new')).toEqual({
+      thread_id: 'root',
+    })
     db.close()
   })
 
@@ -470,16 +536,20 @@ describe('commitConversationProfileSwitch', () => {
       END;
     `)
 
-    expect(() => commitConversationProfileSwitch(db, {
-      conversationId: 'root',
-      provider: 'codex',
-      providerInstanceId: 'personal',
-      providerSessionId: 'native-new',
-      now: 20,
-    })).toThrow(/segment failed/)
+    expect(() =>
+      commitConversationProfileSwitch(db, {
+        conversationId: 'root',
+        provider: 'codex',
+        providerInstanceId: 'personal',
+        providerSessionId: 'native-new',
+        now: 20,
+      }),
+    ).toThrow(/segment failed/)
 
-    expect(db.prepare('SELECT provider_instance_id, session_id FROM conversations WHERE id = ?')
-      .get('root')).toEqual({ provider_instance_id: 'work', session_id: 'native-old' })
+    expect(db.prepare('SELECT provider_instance_id, session_id FROM conversations WHERE id = ?').get('root')).toEqual({
+      provider_instance_id: 'work',
+      session_id: 'native-old',
+    })
     expect(db.prepare('SELECT count(*) AS count FROM conversation_segments').get()).toEqual({ count: 0 })
     db.close()
   })
@@ -496,12 +566,15 @@ describe('commitConversationProfileSwitch', () => {
       now: 20,
     })
 
-    expect(db.prepare('SELECT provider_instance_id, session_id, pending_handoff_from FROM conversations WHERE id = ?')
-      .get('root')).toEqual({
-        provider_instance_id: 'personal',
-        session_id: null,
-        pending_handoff_from: 'claude-code',
-      })
+    expect(
+      db
+        .prepare('SELECT provider_instance_id, session_id, pending_handoff_from FROM conversations WHERE id = ?')
+        .get('root'),
+    ).toEqual({
+      provider_instance_id: 'personal',
+      session_id: null,
+      pending_handoff_from: 'claude-code',
+    })
     expect(db.prepare('SELECT count(*) AS count FROM conversation_segments').get()).toEqual({ count: 0 })
     expect(db.prepare('SELECT count(*) AS count FROM thread_sessions').get()).toEqual({ count: 0 })
     db.close()

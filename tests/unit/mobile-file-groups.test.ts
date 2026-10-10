@@ -2,14 +2,25 @@ import { describe, expect, it } from 'vitest'
 import { changedFilesLabel, collapseFileEdits } from '../../apps/mobile/src/lib/file-groups'
 import type { FeedItem } from '../../apps/mobile/src/stores/chat'
 
-const file = (id: string, oldContent: string, newContent: string): FeedItem =>
-  ({ kind: 'fileEdit', id, relPath: `${id}.ts`, changeKind: oldContent ? 'modify' : 'add', oldContent, newContent })
+const file = (id: string, oldContent: string, newContent: string): FeedItem => ({
+  kind: 'fileEdit',
+  id,
+  relPath: `${id}.ts`,
+  changeKind: oldContent ? 'modify' : 'add',
+  oldContent,
+  newContent,
+})
 const user = (id: string): FeedItem => ({ kind: 'user', id, text: id }) as FeedItem
 const text = (id: string): FeedItem => ({ kind: 'text', id, text: id, stream: 'assistant' }) as FeedItem
 
 const items: FeedItem[] = [
-  user('u1'), text('t1'), file('f-a', 'x', 'y'), file('f-b', '', 'one\ntwo'),
-  user('u2'), file('f-c', 'x', 'z'), text('t2'),
+  user('u1'),
+  text('t1'),
+  file('f-a', 'x', 'y'),
+  file('f-b', '', 'one\ntwo'),
+  user('u2'),
+  file('f-c', 'x', 'z'),
+  text('t2'),
 ]
 
 describe('phone file groups', () => {

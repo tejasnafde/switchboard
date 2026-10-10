@@ -31,7 +31,8 @@ export function relativeLabel(folder: string, target: string): string {
  */
 export async function scanChildRepoDirs(projectPath: string): Promise<{ dirs: string[]; complete: boolean }> {
   const resolved = path.resolve(projectPath)
-  if (resolved === path.resolve(homedir()) || resolved === path.parse(resolved).root) return { dirs: [], complete: true }
+  if (resolved === path.resolve(homedir()) || resolved === path.parse(resolved).root)
+    return { dirs: [], complete: true }
   let complete = true
   const listDir = async (rel: string): Promise<ScanEntry[]> => {
     const entries = await readdir(path.join(projectPath, ...rel.split('/').filter(Boolean)), { withFileTypes: true })
@@ -61,7 +62,11 @@ export type RepoDir = { ok: true; dir: string; relPath: string } | { ok: false; 
  * of a git work tree inside it. Both sides are resolved with realpath first,
  * so neither `..` nor a symlink can point outside the folder.
  */
-export async function resolveRepoDir(projectPath: string, repoPath: string, deps: RepoDirDeps = defaultRepoDirDeps): Promise<RepoDir> {
+export async function resolveRepoDir(
+  projectPath: string,
+  repoPath: string,
+  deps: RepoDirDeps = defaultRepoDirDeps,
+): Promise<RepoDir> {
   let root: string
   let dir: string
   try {
@@ -77,7 +82,10 @@ export async function resolveRepoDir(projectPath: string, repoPath: string, deps
     return { ok: false, message: `repoPath "${repoPath}" does not exist under ${projectPath}.` }
   }
   if (!isWithinFolder(root, dir)) {
-    return { ok: false, message: `repoPath "${repoPath}" is outside this chat's project folder ${projectPath}; only a repository inside it can be used.` }
+    return {
+      ok: false,
+      message: `repoPath "${repoPath}" is outside this chat's project folder ${projectPath}; only a repository inside it can be used.`,
+    }
   }
   const tree = await deps.run(dir, ['rev-parse', '--is-inside-work-tree'])
   if (tree.code !== 0 || tree.stdout.trim() !== 'true') {

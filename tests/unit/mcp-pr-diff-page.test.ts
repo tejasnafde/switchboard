@@ -1,14 +1,36 @@
 import { describe, expect, it } from 'vitest'
-import { clipBytes, diffPage, matchesPathFilter, PR_DIFF_LINE_CHARS, PR_DIFF_PAGE_BYTES } from '../../src/main/mcp/pr-diff-page'
+import {
+  clipBytes,
+  diffPage,
+  matchesPathFilter,
+  PR_DIFF_LINE_CHARS,
+  PR_DIFF_PAGE_BYTES,
+} from '../../src/main/mcp/pr-diff-page'
 import type { DiffLine, PrChangedFile } from '../../src/shared/pull-requests'
 
 const heading = 'Diff of GitHub acme/app #612.'
 const bytes = (s: string) => new TextEncoder().encode(s).length
 
-function file(path: string, lines: number, opts: Partial<PrChangedFile> = {}, text = (i: number) => `line ${i} ${'x'.repeat(60)}`): PrChangedFile {
-  const diff: DiffLine[] = Array.from({ length: lines }, (_, i) => ({ kind: 'add', text: text(i + 1), oldLine: null, newLine: i + 1 }))
+function file(
+  path: string,
+  lines: number,
+  opts: Partial<PrChangedFile> = {},
+  text = (i: number) => `line ${i} ${'x'.repeat(60)}`,
+): PrChangedFile {
+  const diff: DiffLine[] = Array.from({ length: lines }, (_, i) => ({
+    kind: 'add',
+    text: text(i + 1),
+    oldLine: null,
+    newLine: i + 1,
+  }))
   return {
-    path, oldPath: null, status: 'added', additions: lines, deletions: 0, binary: false, truncated: false,
+    path,
+    oldPath: null,
+    status: 'added',
+    additions: lines,
+    deletions: 0,
+    binary: false,
+    truncated: false,
     hunks: lines > 0 ? [{ header: `@@ -0,0 +1,${lines} @@`, oldStart: 0, newStart: 1, lines: diff }] : [],
     ...opts,
   }
@@ -61,11 +83,17 @@ describe('diffPage', () => {
     const second = pageOf(files, { page: 2 }).text
     expect(second).toContain('=== huge.ts (added, +3000 -0) (continued)')
     expect(second).toContain('@@ -0,0 +1,3000 @@ (continued)')
-    for (let page = 1; page <= first.pages; page++) expect(bytes(pageOf(files, { page }).text)).toBeLessThanOrEqual(PR_DIFF_PAGE_BYTES)
+    for (let page = 1; page <= first.pages; page++)
+      expect(bytes(pageOf(files, { page }).text)).toBeLessThanOrEqual(PR_DIFF_PAGE_BYTES)
   })
 
   it('filters to a file or a directory, and says what the filter left out', () => {
-    const files = [file('src/a.ts', 1), file('src/deep/b.ts', 1), file('srcx/c.ts', 1), file('new.ts', 1, { oldPath: 'src/old.ts', status: 'renamed' })]
+    const files = [
+      file('src/a.ts', 1),
+      file('src/deep/b.ts', 1),
+      file('srcx/c.ts', 1),
+      file('new.ts', 1, { oldPath: 'src/old.ts', status: 'renamed' }),
+    ]
     const dir = pageOf(files, { path: 'src/' }).text
     expect(dir).toContain('=== src/a.ts')
     expect(dir).toContain('=== src/deep/b.ts')
@@ -111,7 +139,9 @@ describe('diffPage', () => {
     const out = pageOf([file('emoji.txt', 1, {}, () => `${'a'.repeat(PR_DIFF_LINE_CHARS - 1)}\u{1F600}tail`)]).text
     expect(out).toContain(`${'a'.repeat(PR_DIFF_LINE_CHARS - 1)}\u{1F600}… (line cut)`)
     // Counted in code points: 400 emoji are 800 UTF-16 units but not a long line.
-    expect(pageOf([file('wide.txt', 1, {}, () => '\u{1F600}'.repeat(PR_DIFF_LINE_CHARS))]).text).not.toContain('(line cut)')
+    expect(pageOf([file('wide.txt', 1, {}, () => '\u{1F600}'.repeat(PR_DIFF_LINE_CHARS))]).text).not.toContain(
+      '(line cut)',
+    )
     expect(out).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/)
   })
 
@@ -128,12 +158,25 @@ describe('diffPage', () => {
 
   it('shows both line numbers for context and deleted lines', () => {
     const f: PrChangedFile = {
-      path: 'w.py', oldPath: null, status: 'modified', additions: 1, deletions: 1, binary: false, truncated: false,
-      hunks: [{ header: '@@ -9,2 +9,2 @@', oldStart: 9, newStart: 9, lines: [
-        { kind: 'context', text: 'a', oldLine: 9, newLine: 9 },
-        { kind: 'del', text: 'b', oldLine: 10, newLine: null },
-        { kind: 'add', text: 'c', oldLine: null, newLine: 10 },
-      ] }],
+      path: 'w.py',
+      oldPath: null,
+      status: 'modified',
+      additions: 1,
+      deletions: 1,
+      binary: false,
+      truncated: false,
+      hunks: [
+        {
+          header: '@@ -9,2 +9,2 @@',
+          oldStart: 9,
+          newStart: 9,
+          lines: [
+            { kind: 'context', text: 'a', oldLine: 9, newLine: 9 },
+            { kind: 'del', text: 'b', oldLine: 10, newLine: null },
+            { kind: 'add', text: 'c', oldLine: null, newLine: 10 },
+          ],
+        },
+      ],
     }
     const out = pageOf([f]).text
     expect(out).toContain('  9  9 | a\n-10    | b\n+   10 | c\n')
@@ -142,12 +185,14 @@ describe('diffPage', () => {
   it('keeps every page within the byte cap with long multi-byte paths, headers and many files', () => {
     // Multi-byte paths far past what a page shows: every path is over 1.5 KiB in UTF-8.
     const longDir = `docs/${'文'.repeat(300)}`
-    const files: PrChangedFile[] = Array.from({ length: 30 }, (_, i) => file(
-      `${longDir}/${'🙂'.repeat(200)}-${i}.md`,
-      i % 10 === 0 ? 300 : 20,
-      { oldPath: `${longDir}/old-${'é'.repeat(900)}-${i}.md`, status: 'renamed' },
-      (n) => `${'ß'.repeat(399)} ${n}`,
-    ))
+    const files: PrChangedFile[] = Array.from({ length: 30 }, (_, i) =>
+      file(
+        `${longDir}/${'🙂'.repeat(200)}-${i}.md`,
+        i % 10 === 0 ? 300 : 20,
+        { oldPath: `${longDir}/old-${'é'.repeat(900)}-${i}.md`, status: 'renamed' },
+        (n) => `${'ß'.repeat(399)} ${n}`,
+      ),
+    )
     for (const f of files) f.hunks = f.hunks.map((h) => ({ ...h, header: `${h.header} ${'函数'.repeat(800)}` }))
     // Files the filter leaves out, with paths as long, so the footer carries two full lists.
     const unmatched = Array.from({ length: 20 }, (_, i) => file(`other/${'語'.repeat(1_000)}-${i}.ts`, 3))

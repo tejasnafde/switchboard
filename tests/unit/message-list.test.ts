@@ -2,9 +2,18 @@ import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import type { ChatMessage } from '../../src/shared/types'
 import { groupIntoTurns, roleLabel } from '../../src/renderer/components/chat/MessageList'
-import { activitySummaryLabel, changedFilesLabel, findCollapsedFilesGroupKey, isFilesGroupExpanded, projectTurnPresentation } from '../../src/renderer/components/chat/turn-presentation'
+import {
+  activitySummaryLabel,
+  changedFilesLabel,
+  findCollapsedFilesGroupKey,
+  isFilesGroupExpanded,
+  projectTurnPresentation,
+} from '../../src/renderer/components/chat/turn-presentation'
 
-const messageListSource = readFileSync(new URL('../../src/renderer/components/chat/MessageList.tsx', import.meta.url), 'utf8')
+const messageListSource = readFileSync(
+  new URL('../../src/renderer/components/chat/MessageList.tsx', import.meta.url),
+  'utf8',
+)
 
 /**
  * Regression tests for MessageList.groupIntoTurns.
@@ -177,10 +186,12 @@ describe('groupIntoTurns', () => {
   })
 
   it('keeps assistant messages that only have a todo list', () => {
-    const messages = [msg({
-      id: 'todos',
-      todos: { id: 'list', items: [{ text: 'Ship it', status: 'in_progress' }] },
-    })]
+    const messages = [
+      msg({
+        id: 'todos',
+        todos: { id: 'list', items: [{ text: 'Ship it', status: 'in_progress' }] },
+      }),
+    ]
 
     expect(groupIntoTurns(messages)[0]?.[0]).toBe(messages[0])
   })
@@ -209,10 +220,7 @@ describe('groupIntoTurns', () => {
   })
 
   it('handles all-empty messages and returns empty groups', () => {
-    const messages: ChatMessage[] = [
-      msg({ role: 'assistant', content: '' }),
-      msg({ role: 'assistant', content: '' }),
-    ]
+    const messages: ChatMessage[] = [msg({ role: 'assistant', content: '' }), msg({ role: 'assistant', content: '' })]
     expect(groupIntoTurns(messages)).toEqual([])
   })
 })
@@ -264,19 +272,35 @@ describe('projectTurnPresentation', () => {
   })
 
   it('groups changed files and preserves every renderable message object exactly once', () => {
-    const fileA = msg({ id: 'diff-a', fileDiff: {
-      fileEditId: 'turn:a.ts', repoRoot: '/repo', relPath: 'a.ts', changeKind: 'modify',
-      oldContent: 'a', newContent: 'b', status: 'pending',
-    } })
-    const fileB = msg({ id: 'diff-b', fileDiff: {
-      fileEditId: 'turn:b.ts', repoRoot: '/repo', relPath: 'b.ts', changeKind: 'add',
-      oldContent: '', newContent: 'b', status: 'pending',
-    } })
+    const fileA = msg({
+      id: 'diff-a',
+      fileDiff: {
+        fileEditId: 'turn:a.ts',
+        repoRoot: '/repo',
+        relPath: 'a.ts',
+        changeKind: 'modify',
+        oldContent: 'a',
+        newContent: 'b',
+        status: 'pending',
+      },
+    })
+    const fileB = msg({
+      id: 'diff-b',
+      fileDiff: {
+        fileEditId: 'turn:b.ts',
+        repoRoot: '/repo',
+        relPath: 'b.ts',
+        changeKind: 'add',
+        oldContent: '',
+        newContent: 'b',
+        status: 'pending',
+      },
+    })
     const approval = msg({ id: 'approval', approval: { toolName: 'Bash', detail: 'npm test', status: 'pending' } })
     const input = [fileA, fileB, approval]
 
     const projected = projectTurnPresentation(input)
-    const output = projected.flatMap((item) => item.kind === 'message' ? [item.message] : item.messages)
+    const output = projected.flatMap((item) => (item.kind === 'message' ? [item.message] : item.messages))
 
     expect(projected[0]).toEqual({ kind: 'files', messages: [fileA, fileB] })
     expect(output).toEqual(input)
@@ -287,14 +311,30 @@ describe('projectTurnPresentation', () => {
 })
 
 describe('findCollapsedFilesGroupKey', () => {
-  const fileA = msg({ id: 'diff-a', fileDiff: {
-    fileEditId: 'turn:a.ts', repoRoot: '/repo', relPath: 'a.ts', changeKind: 'modify',
-    oldContent: 'a', newContent: 'b', status: 'pending',
-  } })
-  const fileB = msg({ id: 'diff-b', fileDiff: {
-    fileEditId: 'turn:b.ts', repoRoot: '/repo', relPath: 'b.ts', changeKind: 'add',
-    oldContent: '', newContent: 'b', status: 'pending',
-  } })
+  const fileA = msg({
+    id: 'diff-a',
+    fileDiff: {
+      fileEditId: 'turn:a.ts',
+      repoRoot: '/repo',
+      relPath: 'a.ts',
+      changeKind: 'modify',
+      oldContent: 'a',
+      newContent: 'b',
+      status: 'pending',
+    },
+  })
+  const fileB = msg({
+    id: 'diff-b',
+    fileDiff: {
+      fileEditId: 'turn:b.ts',
+      repoRoot: '/repo',
+      relPath: 'b.ts',
+      changeKind: 'add',
+      oldContent: '',
+      newContent: 'b',
+      status: 'pending',
+    },
+  })
   const prose = msg({ id: 'prose', content: 'done' })
   const isTargetB = (m: ChatMessage) => m.id === 'diff-b'
 

@@ -7,7 +7,7 @@ import type { ChatLoadTiming } from '../../src/shared/perf-chat'
 const root = mkdtempSync(join(tmpdir(), 'sb-history-memo-'))
 const codexHomes = [join(root, 'codex-a'), join(root, 'codex-b')]
 vi.mock('../../src/main/provider/claude-session-migrate', async (importOriginal) => ({
-  ...await importOriginal<object>(),
+  ...(await importOriginal<object>()),
   claudeCandidateDirs: () => [join(root, 'claude')],
 }))
 vi.mock('../../src/main/provider/codex-session-dirs', () => ({ codexCandidateDirs: () => codexHomes }))
@@ -18,12 +18,18 @@ const db = await import('../../src/main/db/database')
 
 const line = (record: unknown) => `${JSON.stringify(record)}\n`
 const claudeLine = (uuid: string, role: 'user' | 'assistant', text: string, at: number) =>
-  line({ type: role, uuid, timestamp: new Date(at).toISOString(), message: { role, content: [{ type: 'text', text }] } })
-const codexLine = (role: 'user' | 'assistant', text: string, at: number) => line({
-  timestamp: new Date(at).toISOString(),
-  type: 'response_item',
-  payload: { type: 'message', role, content: [{ type: role === 'user' ? 'input_text' : 'output_text', text }] },
-})
+  line({
+    type: role,
+    uuid,
+    timestamp: new Date(at).toISOString(),
+    message: { role, content: [{ type: 'text', text }] },
+  })
+const codexLine = (role: 'user' | 'assistant', text: string, at: number) =>
+  line({
+    timestamp: new Date(at).toISOString(),
+    type: 'response_item',
+    payload: { type: 'message', role, content: [{ type: role === 'user' ? 'input_text' : 'output_text', text }] },
+  })
 
 let n = 0
 function conversation(): string {
@@ -86,7 +92,9 @@ describe('Codex rollout copies', () => {
     db.recordThreadSession(session, id)
     const meta = line({ type: 'session_meta', payload: { id: session, cwd: '/memo' } })
     const prefix = meta + codexLine('user', 'run it', 1_000) + codexLine('assistant', 'done', 2_000)
-    const rollouts = codexHomes.map((home) => join(home, 'sessions', '2026', '10', '08', `rollout-2026-10-08T10-00-00-${session}.jsonl`))
+    const rollouts = codexHomes.map((home) =>
+      join(home, 'sessions', '2026', '10', '08', `rollout-2026-10-08T10-00-00-${session}.jsonl`),
+    )
     for (const path of rollouts) mkdirSync(join(path, '..'), { recursive: true })
     writeFileSync(rollouts[0], prefix)
     writeFileSync(rollouts[1], prefix + codexLine('user', 'again', 3_000))

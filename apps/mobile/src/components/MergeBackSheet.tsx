@@ -33,10 +33,18 @@ type Load =
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
-export function MergeBackSheet({ mode, api, onClose }: { mode: MergeBackSheetMode; api: MergeBackSheetApi; onClose: () => void }) {
-  const [load, setLoad] = useState<Load>(() => mode.kind === 'edit'
-    ? { kind: 'ready', token: null, replacesPending: false, note: null }
-    : { kind: 'loading' })
+export function MergeBackSheet({
+  mode,
+  api,
+  onClose,
+}: {
+  mode: MergeBackSheetMode
+  api: MergeBackSheetApi
+  onClose: () => void
+}) {
+  const [load, setLoad] = useState<Load>(() =>
+    mode.kind === 'edit' ? { kind: 'ready', token: null, replacesPending: false, note: null } : { kind: 'loading' },
+  )
   const [text, setText] = useState(mode.kind === 'edit' ? mode.text : '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -46,19 +54,29 @@ export function MergeBackSheet({ mode, api, onClose }: { mode: MergeBackSheetMod
     if (!forkThreadId) return
     // The sheet can close (or open for another fork) before the preview lands.
     let current = true
-    api.preview(forkThreadId).then((preview) => {
-      if (!current) return
-      if (preview.status !== 'ready') {
-        setLoad({ kind: 'blocked', message: preview.message })
-        return
-      }
-      setText(preview.text)
-      setLoad({ kind: 'ready', token: preview.token, replacesPending: preview.replacesPending, note: mergeBackPreviewNote(preview) })
-    }).catch((err: unknown) => {
-      log.warn('merge-back preview failed', err)
-      if (current) setLoad({ kind: 'blocked', message: errorText(err) })
-    })
-    return () => { current = false }
+    api
+      .preview(forkThreadId)
+      .then((preview) => {
+        if (!current) return
+        if (preview.status !== 'ready') {
+          setLoad({ kind: 'blocked', message: preview.message })
+          return
+        }
+        setText(preview.text)
+        setLoad({
+          kind: 'ready',
+          token: preview.token,
+          replacesPending: preview.replacesPending,
+          note: mergeBackPreviewNote(preview),
+        })
+      })
+      .catch((err: unknown) => {
+        log.warn('merge-back preview failed', err)
+        if (current) setLoad({ kind: 'blocked', message: errorText(err) })
+      })
+    return () => {
+      current = false
+    }
   }, [api, forkThreadId])
 
   const submit = async () => {
@@ -84,10 +102,11 @@ export function MergeBackSheet({ mode, api, onClose }: { mode: MergeBackSheetMod
   }
 
   // A send in flight cannot be called back, so the sheet stays until it settles.
-  const close = () => { if (!saving) onClose() }
-  const title = mode.kind === 'send'
-    ? `Send back to "${mode.parentTitle}"`
-    : `Edit the summary from fork "${mode.forkTitle}"`
+  const close = () => {
+    if (!saving) onClose()
+  }
+  const title =
+    mode.kind === 'send' ? `Send back to "${mode.parentTitle}"` : `Edit the summary from fork "${mode.forkTitle}"`
   const canSubmit = load.kind === 'ready' && !saving && text.trim().length > 0
 
   return (
@@ -102,12 +121,18 @@ export function MergeBackSheet({ mode, api, onClose }: { mode: MergeBackSheetMod
                 : 'This goes to the agent with your next message in this chat.'}
             </Text>
             {load.kind === 'loading' && <Text style={styles.note}>Building the summary…</Text>}
-            {load.kind === 'blocked' && <Text style={styles.body} accessibilityLiveRegion="polite">{load.message}</Text>}
+            {load.kind === 'blocked' && (
+              <Text style={styles.body} accessibilityLiveRegion="polite">
+                {load.message}
+              </Text>
+            )}
             {load.kind === 'ready' && (
               <>
                 {load.note && <Text style={styles.note}>{load.note}</Text>}
                 {load.replacesPending && (
-                  <Text style={styles.body}>A summary from this fork is already waiting in the parent. Sending replaces it.</Text>
+                  <Text style={styles.body}>
+                    A summary from this fork is already waiting in the parent. Sending replaces it.
+                  </Text>
                 )}
                 <TextInput
                   value={text}
@@ -118,11 +143,20 @@ export function MergeBackSheet({ mode, api, onClose }: { mode: MergeBackSheetMod
                   testID="merge-back-text"
                   style={styles.input}
                 />
-                {error && <Text style={styles.error} accessibilityLiveRegion="polite">{error}</Text>}
+                {error && (
+                  <Text style={styles.error} accessibilityLiveRegion="polite">
+                    {error}
+                  </Text>
+                )}
               </>
             )}
             <View style={styles.buttons}>
-              <Pressable onPress={close} disabled={saving} accessibilityRole="button" style={[styles.button, saving && styles.disabled]}>
+              <Pressable
+                onPress={close}
+                disabled={saving}
+                accessibilityRole="button"
+                style={[styles.button, saving && styles.disabled]}
+              >
                 <Text style={styles.buttonText}>Cancel</Text>
               </Pressable>
               {load.kind === 'ready' && (
@@ -135,7 +169,7 @@ export function MergeBackSheet({ mode, api, onClose }: { mode: MergeBackSheetMod
                   style={[styles.button, styles.primary, !canSubmit && styles.disabled]}
                 >
                   <Text style={[styles.buttonText, styles.primaryText]}>
-                    {mode.kind === 'send' ? (saving ? 'Sending…' : 'Send back') : (saving ? 'Saving…' : 'Save')}
+                    {mode.kind === 'send' ? (saving ? 'Sending…' : 'Send back') : saving ? 'Saving…' : 'Save'}
                   </Text>
                 </Pressable>
               )}

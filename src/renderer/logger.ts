@@ -17,8 +17,8 @@ export function createRendererLogger(scope: string) {
   const tag = `[SB:${scope}]`
   return {
     debug: (...args: unknown[]) => console.debug(tag, ...args),
-    info:  (...args: unknown[]) => console.log(tag, ...args),
-    warn:  (...args: unknown[]) => console.warn(tag, ...args),
+    info: (...args: unknown[]) => console.log(tag, ...args),
+    warn: (...args: unknown[]) => console.warn(tag, ...args),
     error: (...args: unknown[]) => console.error(tag, ...args),
   }
 }

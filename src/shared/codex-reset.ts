@@ -26,7 +26,7 @@ const WIRE_OUTCOMES: ReadonlySet<string> = new Set(['reset', 'alreadyRedeemed', 
 export function parseConsumeOutcome(result: unknown): CodexResetOutcome {
   if (typeof result !== 'object' || result === null) return 'unknown'
   const outcome = (result as Record<string, unknown>).outcome
-  return typeof outcome === 'string' && WIRE_OUTCOMES.has(outcome) ? outcome as CodexResetOutcome : 'unknown'
+  return typeof outcome === 'string' && WIRE_OUTCOMES.has(outcome) ? (outcome as CodexResetOutcome) : 'unknown'
 }
 
 /** Every outcome but `unknown` is terminal: the idempotency key is dropped. */
@@ -102,7 +102,8 @@ export function resetConfirmRows(usage: ProviderUsage | undefined): ResetConfirm
     { key: 'Remaining', value: String(Math.max(0, count - 1)) },
   ]
   const first = spendableCredits(usage)[0]
-  if (first?.expiresAtMs != null) rows.push({ key: 'Uses', value: `The reset expiring ${fmtExpiryDate(first.expiresAtMs)}` })
+  if (first?.expiresAtMs != null)
+    rows.push({ key: 'Uses', value: `The reset expiring ${fmtExpiryDate(first.expiresAtMs)}` })
   return rows
 }
 
@@ -148,7 +149,8 @@ export function resetResultBanner(outcome: CodexResetOutcome, usage: ProviderUsa
       return {
         tone: 'bad',
         retry: false,
-        text: w && phrase ? `No resets available. The ${sentenceLabel(w.label)} limit ${phrase}.` : 'No resets available.',
+        text:
+          w && phrase ? `No resets available. The ${sentenceLabel(w.label)} limit ${phrase}.` : 'No resets available.',
       }
     }
     case 'unknown':

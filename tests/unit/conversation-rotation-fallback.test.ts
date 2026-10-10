@@ -19,25 +19,29 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-const savedMessages: Array<{ id: string; conversationId: string; content: string; timestamp: number; role?: string }> = []
+const savedMessages: Array<{ id: string; conversationId: string; content: string; timestamp: number; role?: string }> =
+  []
 const threadSessions = new Map<string, string>() // claude_session_id -> thread_id
-const conversations = new Map<string, {
-  agent_type?: string
-  session_id?: string | null
-  provider_instance_id?: string | null
-  runtime_mode?: string | null
-  model?: string | null
-  reasoning_effort?: string | null
-  archived?: number
-  last_read_at?: number | null
-  pending_handoff_from?: string | null
-  title?: string | null
-  follow_suggestions?: string | null
-  follow_notice_dismissed?: number | null
-  worked_worktrees?: string | null
-  status_line?: string | null
-  provider_options_json?: string | null
-}>()
+const conversations = new Map<
+  string,
+  {
+    agent_type?: string
+    session_id?: string | null
+    provider_instance_id?: string | null
+    runtime_mode?: string | null
+    model?: string | null
+    reasoning_effort?: string | null
+    archived?: number
+    last_read_at?: number | null
+    pending_handoff_from?: string | null
+    title?: string | null
+    follow_suggestions?: string | null
+    follow_notice_dismissed?: number | null
+    worked_worktrees?: string | null
+    status_line?: string | null
+    provider_options_json?: string | null
+  }
+>()
 
 vi.mock('better-sqlite3', () => {
   class FakeDb {
@@ -51,7 +55,9 @@ vi.mock('better-sqlite3', () => {
         get: (...args: unknown[]) => {
           if (/SELECT agent_type, pending_handoff_from FROM conversations WHERE id = \?/.test(sql)) {
             const row = conversations.get(args[0] as string)
-            return row ? { agent_type: row.agent_type ?? null, pending_handoff_from: row.pending_handoff_from ?? null } : undefined
+            return row
+              ? { agent_type: row.agent_type ?? null, pending_handoff_from: row.pending_handoff_from ?? null }
+              : undefined
           }
           if (/SELECT \* FROM conversations WHERE id = \?/.test(sql)) {
             return conversations.get(args[0] as string)
@@ -88,7 +94,11 @@ vi.mock('better-sqlite3', () => {
             const row = conversations.get(args[0] as string)
             return row ? { pending_handoff_from: row.pending_handoff_from ?? null } : undefined
           }
-          if (/SELECT follow_suggestions, follow_notice_dismissed, worked_worktrees FROM conversations WHERE id = \?/.test(sql)) {
+          if (
+            /SELECT follow_suggestions, follow_notice_dismissed, worked_worktrees FROM conversations WHERE id = \?/.test(
+              sql,
+            )
+          ) {
             const row = conversations.get(args[0] as string)
             return row
               ? {
@@ -98,7 +108,11 @@ vi.mock('better-sqlite3', () => {
                 }
               : undefined
           }
-          if (/SELECT agent_type, model, reasoning_effort, provider_options_json FROM conversations WHERE id = \?/.test(sql)) {
+          if (
+            /SELECT agent_type, model, reasoning_effort, provider_options_json FROM conversations WHERE id = \?/.test(
+              sql,
+            )
+          ) {
             const row = conversations.get(args[0] as string)
             return row
               ? {
@@ -111,7 +125,9 @@ vi.mock('better-sqlite3', () => {
           }
           if (/SELECT 1 FROM messages WHERE conversation_id IN \(/.test(sql)) {
             const ids = args as string[]
-            return savedMessages.some((m) => ids.includes(m.conversationId) && (m.role === 'user' || m.role === 'assistant'))
+            return savedMessages.some(
+              (m) => ids.includes(m.conversationId) && (m.role === 'user' || m.role === 'assistant'),
+            )
               ? { 1: 1 }
               : undefined
           }
@@ -193,7 +209,9 @@ vi.mock('better-sqlite3', () => {
             row.status_line = line
             return { changes: 1 }
           }
-          if (/UPDATE conversations SET follow_suggestions = \?, follow_notice_dismissed = NULL WHERE id = \?/.test(sql)) {
+          if (
+            /UPDATE conversations SET follow_suggestions = \?, follow_notice_dismissed = NULL WHERE id = \?/.test(sql)
+          ) {
             const [mode, id] = args as [string | null, string]
             const row = conversations.get(id)
             if (!row) return { changes: 0 }
@@ -221,8 +239,20 @@ vi.mock('better-sqlite3', () => {
             row.pending_handoff_from = from
             return { changes: 1 }
           }
-          if (sql.includes('UPDATE conversations SET agent_type = ?, model = ?, reasoning_effort = ?, provider_options_json = ?, provider_instance_id = ?')) {
-            const [agentType, model, effort, options, instanceId, , id] = args as [string, string | null, string | null, string, string, number, string]
+          if (
+            sql.includes(
+              'UPDATE conversations SET agent_type = ?, model = ?, reasoning_effort = ?, provider_options_json = ?, provider_instance_id = ?',
+            )
+          ) {
+            const [agentType, model, effort, options, instanceId, , id] = args as [
+              string,
+              string | null,
+              string | null,
+              string,
+              string,
+              number,
+              string,
+            ]
             const row = conversations.get(id)
             if (!row) return { changes: 0 }
             Object.assign(row, {
@@ -339,12 +369,25 @@ describe('atomic conversation provider selection', () => {
     })
     threadSessions.set('uuid-abc', 'agent_123')
 
-    expect(setConversationProviderSelection('uuid-abc', 'claude-code', 'claude-work')).toEqual({ model: null, reasoningEffort: 'high' })
+    expect(setConversationProviderSelection('uuid-abc', 'claude-code', 'claude-work')).toEqual({
+      model: null,
+      reasoningEffort: 'high',
+    })
     setConversationModel('agent_123', 'claude-opus-4')
     setConversationReasoningEffort('agent_123', 'low')
-    expect(setConversationProviderSelection('agent_123', 'codex', 'codex-default')).toEqual({ model: 'gpt-5.5', reasoningEffort: 'high' })
-    expect(conversations.get('agent_123')).toMatchObject({ agent_type: 'codex', model: 'gpt-5.5', reasoning_effort: 'high' })
-    expect(setConversationProviderSelection('agent_123', 'claude-code', 'claude-work')).toEqual({ model: 'claude-opus-4', reasoningEffort: 'low' })
+    expect(setConversationProviderSelection('agent_123', 'codex', 'codex-default')).toEqual({
+      model: 'gpt-5.5',
+      reasoningEffort: 'high',
+    })
+    expect(conversations.get('agent_123')).toMatchObject({
+      agent_type: 'codex',
+      model: 'gpt-5.5',
+      reasoning_effort: 'high',
+    })
+    expect(setConversationProviderSelection('agent_123', 'claude-code', 'claude-work')).toEqual({
+      model: 'claude-opus-4',
+      reasoningEffort: 'low',
+    })
   })
 })
 
@@ -353,9 +396,15 @@ describe('agent switch commits selection, marker and pending handoff together', 
     conversations.set('agent_123', { agent_type: 'claude-code', provider_instance_id: 'claude-work' })
     threadSessions.set('uuid-abc', 'agent_123')
 
-    const result = switchConversationAgent('uuid-abc', 'codex', 'codex-default', { hasHistory: true, markerId: 'agentswap_1' })
+    const result = switchConversationAgent('uuid-abc', 'codex', 'codex-default', {
+      hasHistory: true,
+      markerId: 'agentswap_1',
+    })
 
-    expect(result).toMatchObject({ pendingHandoffFrom: 'claude-code', marker: { id: 'agentswap_1', content: '[[sb:agent-switched]] Claude Code → Codex' } })
+    expect(result).toMatchObject({
+      pendingHandoffFrom: 'claude-code',
+      marker: { id: 'agentswap_1', content: '[[sb:agent-switched]] Claude Code → Codex' },
+    })
     expect(conversations.get('agent_123')).toMatchObject({ agent_type: 'codex', pending_handoff_from: 'claude-code' })
     expect(savedMessages).toEqual([expect.objectContaining({ id: 'agentswap_1', conversationId: 'agent_123' })])
   })
@@ -363,7 +412,10 @@ describe('agent switch commits selection, marker and pending handoff together', 
   it('switching back to the pending source clears the handoff', () => {
     conversations.set('agent_123', { agent_type: 'codex', pending_handoff_from: 'claude-code' })
 
-    const result = switchConversationAgent('agent_123', 'claude-code', 'claude-work', { hasHistory: true, markerId: 'agentswap_2' })
+    const result = switchConversationAgent('agent_123', 'claude-code', 'claude-work', {
+      hasHistory: true,
+      markerId: 'agentswap_2',
+    })
 
     expect(result.pendingHandoffFrom).toBeNull()
     expect(conversations.get('agent_123')).toMatchObject({ agent_type: 'claude-code', pending_handoff_from: null })
@@ -374,7 +426,10 @@ describe('agent switch commits selection, marker and pending handoff together', 
     threadSessions.set('uuid-abc', 'agent_123')
     savedMessages.push({ id: 'm1', conversationId: 'uuid-abc', content: 'hello', timestamp: 1, role: 'user' })
 
-    const result = switchConversationAgent('agent_123', 'codex', 'codex-default', { hasHistory: false, markerId: 'agentswap_4' })
+    const result = switchConversationAgent('agent_123', 'codex', 'codex-default', {
+      hasHistory: false,
+      markerId: 'agentswap_4',
+    })
 
     expect(result).toMatchObject({ pendingHandoffFrom: 'claude-code', marker: { id: 'agentswap_4' } })
     expect(conversations.get('agent_123')).toMatchObject({ agent_type: 'codex', pending_handoff_from: 'claude-code' })
@@ -384,7 +439,10 @@ describe('agent switch commits selection, marker and pending handoff together', 
     conversations.set('agent_123', { agent_type: 'claude-code' })
     savedMessages.push({ id: 's1', conversationId: 'agent_123', content: 'notice', timestamp: 1, role: 'system' })
 
-    const result = switchConversationAgent('agent_123', 'codex', 'codex-default', { hasHistory: false, markerId: 'agentswap_5' })
+    const result = switchConversationAgent('agent_123', 'codex', 'codex-default', {
+      hasHistory: false,
+      markerId: 'agentswap_5',
+    })
 
     expect(result.marker).toBeUndefined()
     expect(result.pendingHandoffFrom).toBeNull()
@@ -393,7 +451,10 @@ describe('agent switch commits selection, marker and pending handoff together', 
   it('writes no marker and schedules nothing without history', () => {
     conversations.set('agent_123', { agent_type: 'claude-code' })
 
-    const result = switchConversationAgent('agent_123', 'codex', 'codex-default', { hasHistory: false, markerId: 'agentswap_3' })
+    const result = switchConversationAgent('agent_123', 'codex', 'codex-default', {
+      hasHistory: false,
+      markerId: 'agentswap_3',
+    })
 
     expect(result.marker).toBeUndefined()
     expect(result.pendingHandoffFrom).toBeNull()

@@ -3,7 +3,11 @@ import { historyToItems, splitLegacyCachedItems } from '../../apps/mobile/src/li
 import type { ChatMessage } from '../../src/shared/types'
 
 const message = (over: Partial<ChatMessage>): ChatMessage => ({
-  id: 'user-1', role: 'user', content: '', timestamp: 1, ...over,
+  id: 'user-1',
+  role: 'user',
+  content: '',
+  timestamp: 1,
+  ...over,
 })
 
 describe('mobile thread history', () => {
@@ -21,7 +25,10 @@ describe('mobile thread history', () => {
     ])
     expect(items).toEqual([
       {
-        kind: 'user', id: 'h-user-1', text: 'visible', at: 1,
+        kind: 'user',
+        id: 'h-user-1',
+        text: 'visible',
+        at: 1,
         images: ['data:image/png;base64,AAA'],
       },
     ])
@@ -30,20 +37,34 @@ describe('mobile thread history', () => {
   it('rebuilds tool rows and changed-file rows from mirrored history', () => {
     const items = historyToItems([
       message({
-        id: 'tool_call_1', role: 'assistant',
+        id: 'tool_call_1',
+        role: 'assistant',
         toolCalls: [{ id: 'call_1', name: 'Bash', input: '{}', output: 'ok' }],
       }),
       message({
-        id: 'filediff_ab-1:src/a.ts', role: 'assistant',
+        id: 'filediff_ab-1:src/a.ts',
+        role: 'assistant',
         fileDiff: {
-          fileEditId: 'ab-1:src/a.ts', repoRoot: '/repo', relPath: 'src/a.ts',
-          changeKind: 'modify', oldContent: 'a', newContent: 'b', status: 'pending',
+          fileEditId: 'ab-1:src/a.ts',
+          repoRoot: '/repo',
+          relPath: 'src/a.ts',
+          changeKind: 'modify',
+          oldContent: 'a',
+          newContent: 'b',
+          status: 'pending',
         },
       }),
     ])
     expect(items).toEqual([
       { kind: 'tool', id: 'h-tool_call_1-t-call_1', toolName: 'Bash', input: '{}', output: 'ok', state: 'done' },
-      { kind: 'fileEdit', id: 'f-ab-1:src/a.ts', relPath: 'src/a.ts', changeKind: 'modify', oldContent: 'a', newContent: 'b' },
+      {
+        kind: 'fileEdit',
+        id: 'f-ab-1:src/a.ts',
+        relPath: 'src/a.ts',
+        changeKind: 'modify',
+        oldContent: 'a',
+        newContent: 'b',
+      },
     ])
   })
 
@@ -51,14 +72,21 @@ describe('mobile thread history', () => {
     const items = historyToItems([
       message({
         id: 'n',
-        content: '<task-notification>\n<task-id>b1</task-id>\n<status>failed</status>\n<summary>Background command "Build" failed with exit code 2</summary>\n</task-notification>\nkeep going',
+        content:
+          '<task-notification>\n<task-id>b1</task-id>\n<status>failed</status>\n<summary>Background command "Build" failed with exit code 2</summary>\n</task-notification>\nkeep going',
       }),
     ])
     expect(items).toEqual([
       {
         kind: 'synthetic',
         id: 'h-n-s0',
-        part: { kind: 'task-notification', status: 'failed', summary: 'Background command "Build" failed with exit code 2', taskId: 'b1', outputFile: undefined },
+        part: {
+          kind: 'task-notification',
+          status: 'failed',
+          summary: 'Background command "Build" failed with exit code 2',
+          taskId: 'b1',
+          outputFile: undefined,
+        },
         at: 1,
       },
       { kind: 'user', id: 'h-n', text: 'keep going', at: 1, images: undefined },
@@ -74,13 +102,9 @@ describe('mobile thread history', () => {
 
   it('splits history rows from a cache written before synthetic rows, and nothing else', () => {
     const live = { kind: 'user' as const, id: 'remote_1', text: '[Request interrupted by user] typed live', at: 2 }
-    expect(splitLegacyCachedItems([
-      { kind: 'user', id: 'h-old', text: '[Request interrupted by user]', at: 1 },
-      live,
-    ])).toEqual([
-      { kind: 'synthetic', id: 'h-old-s0', part: { kind: 'interrupted', duringToolUse: false }, at: 1 },
-      live,
-    ])
+    expect(
+      splitLegacyCachedItems([{ kind: 'user', id: 'h-old', text: '[Request interrupted by user]', at: 1 }, live]),
+    ).toEqual([{ kind: 'synthetic', id: 'h-old-s0', part: { kind: 'interrupted', duringToolUse: false }, at: 1 }, live])
   })
 
   it('keeps the images of a context-only record, with empty text', () => {
@@ -90,22 +114,29 @@ describe('mobile thread history', () => {
         images: [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }],
       }),
     ])
-    expect(items).toEqual([
-      { kind: 'user', id: 'h-user-1', text: '', at: 1, images: ['data:image/png;base64,AAA'] },
-    ])
+    expect(items).toEqual([{ kind: 'user', id: 'h-user-1', text: '', at: 1, images: ['data:image/png;base64,AAA'] }])
   })
 })
 
 describe('stored system rows', () => {
   it('render as their own rows, never as the raw marker', () => {
     const items = historyToItems([
-      message({ id: 'pu_1', role: 'system', content: '[[sb:peer-undelivered]] {"to":"agent_2","toLabel":"Roadmap","reason":"link-budget","text":"hi"}' }),
+      message({
+        id: 'pu_1',
+        role: 'system',
+        content: '[[sb:peer-undelivered]] {"to":"agent_2","toLabel":"Roadmap","reason":"link-budget","text":"hi"}',
+      }),
       message({ id: 'r1', role: 'system', content: '[[sb:instance-rotated]] Default → Work' }),
       message({ id: 'x1', role: 'system', content: '[[sb:from-the-future]] {"a":1}' }),
       message({ id: 'e1', role: 'system', content: 'Error: boom' }),
     ])
     expect(items).toEqual([
-      { kind: 'undelivered', id: 'h-pu_1', messageId: 'pu_1', row: { to: 'agent_2', toLabel: 'Roadmap', reason: 'link-budget', text: 'hi', sent: false } },
+      {
+        kind: 'undelivered',
+        id: 'h-pu_1',
+        messageId: 'pu_1',
+        row: { to: 'agent_2', toLabel: 'Roadmap', reason: 'link-budget', text: 'hi', sent: false },
+      },
       { kind: 'notice', id: 'h-r1', text: 'Switched profile: Default → Work' },
       { kind: 'notice', id: 'h-x1', text: 'Switchboard notice' },
       { kind: 'error', id: 'h-e1', message: 'Error: boom' },

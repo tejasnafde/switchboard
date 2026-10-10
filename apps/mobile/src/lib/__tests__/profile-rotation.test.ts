@@ -95,7 +95,10 @@ describe('rotateWithinAgent', () => {
     const result = await rotateWithinAgent('thread-1', 'claude-personal', 'claude-work', d)
     expect(result).toEqual({ applied: true })
     expect(d.confirmStartFresh).toHaveBeenCalledWith('histories differ')
-    expect(switchInstance).toHaveBeenLastCalledWith('thread-1', expect.objectContaining({ onContextConflict: 'start-fresh' }))
+    expect(switchInstance).toHaveBeenLastCalledWith(
+      'thread-1',
+      expect.objectContaining({ onContextConflict: 'start-fresh' }),
+    )
   })
 
   it('leaves the current profile in place when the user declines the conflict prompt', async () => {

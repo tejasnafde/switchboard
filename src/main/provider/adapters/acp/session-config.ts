@@ -39,7 +39,9 @@ export interface AcpConfigModels {
  * The model catalog from `configOptions`, for agents that report models
  * there instead of in `models`. Grouped options are flattened.
  */
-export function modelsFromConfigOptions(options: readonly SessionConfigOption[] | null | undefined): AcpConfigModels | null {
+export function modelsFromConfigOptions(
+  options: readonly SessionConfigOption[] | null | undefined,
+): AcpConfigModels | null {
   const option = options?.find((o) => o.category === 'model' && o.type === 'select')
   if (!option || option.type !== 'select') return null
   const models: ModelInfo[] = []

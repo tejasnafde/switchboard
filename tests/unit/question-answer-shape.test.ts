@@ -73,12 +73,8 @@ describe('shapeQuestionAnswers', () => {
       ['how difficult would ssh agents be?'], // free-text
     ]
     const out = shapeQuestionAnswers(questions, userAnswers)
-    expect(out.answers['Which features should ship?']).toBe(
-      'Per-turn duration, Inline file pills, File tree',
-    )
-    expect(out.answers['Which renderer?']).toBe(
-      'react-shiki - i dont want read-only necessarily',
-    )
+    expect(out.answers['Which features should ship?']).toBe('Per-turn duration, Inline file pills, File tree')
+    expect(out.answers['Which renderer?']).toBe('react-shiki - i dont want read-only necessarily')
     expect(out.answers['Add a launcher?']).toBe('how difficult would ssh agents be?')
   })
 

@@ -22,11 +22,15 @@ function snapshot(overrides: Partial<WorktreeCreationSnapshot>): WorktreeCreatio
 
 describe('Kanban worktree creation presentation', () => {
   it('surfaces a retryable materialization error on the preserved card', () => {
-    expect(describeKanbanWorktreeCreation(snapshot({
-      status: 'failed',
-      error: { code: 'git', phase: 'materializing', message: 'Branch exists.', retryable: true },
-      recoveryActions: ['retry'],
-    }))).toEqual({
+    expect(
+      describeKanbanWorktreeCreation(
+        snapshot({
+          status: 'failed',
+          error: { code: 'git', phase: 'materializing', message: 'Branch exists.', retryable: true },
+          recoveryActions: ['retry'],
+        }),
+      ),
+    ).toEqual({
       label: 'Worktree failed',
       detail: 'Branch exists.',
       tone: 'error',
@@ -35,10 +39,14 @@ describe('Kanban worktree creation presentation', () => {
   })
 
   it('makes the current Kanban owner launch gap explicit', () => {
-    expect(describeKanbanWorktreeCreation(snapshot({
-      phase: 'provisioning',
-      status: 'pending',
-    }))).toEqual({
+    expect(
+      describeKanbanWorktreeCreation(
+        snapshot({
+          phase: 'provisioning',
+          status: 'pending',
+        }),
+      ),
+    ).toEqual({
       label: 'Agent launch pending',
       detail: 'The worktree is ready; backend agent launch is still pending.',
       tone: 'pending',

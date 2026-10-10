@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { holdsWholeHistory, olderThan, prependOlder, rebaseOnNewest, shouldLoadOlder, turnIndexHolding, PREFETCH_OLDER_PX } from '../../src/renderer/services/history-window'
+import {
+  holdsWholeHistory,
+  olderThan,
+  prependOlder,
+  rebaseOnNewest,
+  shouldLoadOlder,
+  turnIndexHolding,
+  PREFETCH_OLDER_PX,
+} from '../../src/renderer/services/history-window'
 import { historyWindow } from '../../src/shared/phone-history-window'
 import type { ChatMessage } from '../../src/shared/types'
 
-const rows = Array.from({ length: 500 }, (_, i) => ({ id: `m${i}`, role: i % 2 ? 'assistant' : 'user', content: `${i}`, timestamp: i })) as ChatMessage[]
+const rows = Array.from({ length: 500 }, (_, i) => ({
+  id: `m${i}`,
+  role: i % 2 ? 'assistant' : 'user',
+  content: `${i}`,
+  timestamp: i,
+})) as ChatMessage[]
 
 describe('desktop history window', () => {
   it('pages from the newest window back to the first row with no gap or repeat', () => {

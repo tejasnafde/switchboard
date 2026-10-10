@@ -7,10 +7,7 @@ import type {
   WorktreeCreationSnapshot,
   WorktreeSetupPolicy,
 } from '@shared/worktree-creation'
-import type {
-  MobileNewSessionCreationStorage,
-  PersistedMobileNewSessionCreation,
-} from './new-session-creation-storage'
+import type { MobileNewSessionCreationStorage, PersistedMobileNewSessionCreation } from './new-session-creation-storage'
 
 export interface NewSessionProviderIntent {
   kind?: ProviderKind
@@ -112,36 +109,43 @@ export interface MobileNewSessionCreationActions {
   progressLabel: string
 }
 
-export function newSessionCreationActions(
-  state: MobileNewSessionCreationState,
-): MobileNewSessionCreationActions {
+export function newSessionCreationActions(state: MobileNewSessionCreationState): MobileNewSessionCreationActions {
   const recovery = state.snapshot?.recoveryActions ?? state.progress?.recoveryActions ?? []
   const canRetry = state.status === 'ambiguous' || recovery.includes('retry')
-  const canStartInProject = state.intent?.checkout.kind === 'worktree' &&
+  const canStartInProject =
+    state.intent?.checkout.kind === 'worktree' &&
     (recovery.includes('start_in_project') || (!state.snapshot && state.status === 'failed'))
   const canChooseSetupRun = recovery.includes('choose_setup_run')
   const canChooseSetupSkip = recovery.includes('choose_setup_skip')
-  const progressLabel = state.status === 'failed'
-    ? 'Worktree creation failed'
-    : state.status === 'rolled_back'
-      ? 'Worktree creation rolled back'
-      : state.status === 'cleanup_required'
-        ? 'Worktree needs attention'
-        : state.status === 'ambiguous'
-          ? 'Checking whether the worktree was created'
-          : state.progress?.detail ?? phaseLabel(state.progress?.phase ?? state.snapshot?.phase)
+  const progressLabel =
+    state.status === 'failed'
+      ? 'Worktree creation failed'
+      : state.status === 'rolled_back'
+        ? 'Worktree creation rolled back'
+        : state.status === 'cleanup_required'
+          ? 'Worktree needs attention'
+          : state.status === 'ambiguous'
+            ? 'Checking whether the worktree was created'
+            : (state.progress?.detail ?? phaseLabel(state.progress?.phase ?? state.snapshot?.phase))
   return { canRetry, canStartInProject, canChooseSetupRun, canChooseSetupSkip, progressLabel }
 }
 
 function phaseLabel(phase: WorktreeCreationSnapshot['phase'] | undefined): string {
   switch (phase) {
-    case 'materializing': return 'Creating worktree'
-    case 'configuring': return 'Configuring worktree'
-    case 'linking': return 'Linking conversation'
-    case 'awaiting_setup_decision': return 'Waiting for setup choice'
-    case 'provisioning': return 'Starting session'
-    case 'ready': return 'Session ready'
-    default: return 'Preparing worktree'
+    case 'materializing':
+      return 'Creating worktree'
+    case 'configuring':
+      return 'Configuring worktree'
+    case 'linking':
+      return 'Linking conversation'
+    case 'awaiting_setup_decision':
+      return 'Waiting for setup choice'
+    case 'provisioning':
+      return 'Starting session'
+    case 'ready':
+      return 'Session ready'
+    default:
+      return 'Preparing worktree'
   }
 }
 
@@ -182,9 +186,7 @@ function isDefiniteWorktreeRejection(error: unknown): boolean {
   return DEFINITE_WORKTREE_MESSAGE_PATTERNS.some((pattern) => pattern.test(error.message))
 }
 
-export function createNewSessionCreationCoordinator(
-  options: MobileNewSessionCreationCoordinatorOptions,
-) {
+export function createNewSessionCreationCoordinator(options: MobileNewSessionCreationCoordinatorOptions) {
   let state: MobileNewSessionCreationState = { status: 'idle' }
   let worktreeRequest: WorktreeCreationRequest | null = null
   let submissionPhase: PersistedMobileNewSessionCreation['submissionPhase'] | null = null
@@ -233,13 +235,7 @@ export function createNewSessionCreationCoordinator(
       return snapshot
     }
     publish(nextState)
-    if (
-      snapshot.status === 'ready' &&
-      snapshot.worktreeId &&
-      snapshot.worktreePath &&
-      snapshot.branch &&
-      intent
-    ) {
+    if (snapshot.status === 'ready' && snapshot.worktreeId && snapshot.worktreePath && snapshot.branch && intent) {
       options.onReady({
         connectionId: intent.connectionId,
         threadId: snapshot.startupReceipt?.providerThreadId ?? intent.conversation.id,
@@ -265,7 +261,9 @@ export function createNewSessionCreationCoordinator(
       status: disposition === 'definite_rejection' ? 'failed' : 'ambiguous',
       error: missingHandler
         ? 'This backend does not support worktree creation yet. Update it or start explicitly in the project.'
-        : error instanceof Error ? error.message : String(error),
+        : error instanceof Error
+          ? error.message
+          : String(error),
     })
     await persist().catch(() => undefined)
     return disposition
@@ -295,10 +293,7 @@ export function createNewSessionCreationCoordinator(
     }
   }
 
-  const submitParentCheckout = async (
-    intent: MobileNewSessionIntent,
-    creationId: string,
-  ): Promise<void> => {
+  const submitParentCheckout = async (intent: MobileNewSessionIntent, creationId: string): Promise<void> => {
     publish({ creationId, intent, status: 'submitting' })
     try {
       const result = await options.parentCheckout.create({
@@ -337,10 +332,12 @@ export function createNewSessionCreationCoordinator(
     }
     if (createDisposition === 'definite_rejection' && !state.snapshot) return
     try {
-      await acceptSnapshot(await options.worktrees.get({
-        creationId: state.creationId,
-        machineId: state.intent.machineId,
-      }))
+      await acceptSnapshot(
+        await options.worktrees.get({
+          creationId: state.creationId,
+          machineId: state.intent.machineId,
+        }),
+      )
     } catch (error) {
       if (isMissingWorktreeCreation(error)) {
         await submitWorktree()
@@ -387,9 +384,7 @@ export function createNewSessionCreationCoordinator(
         setup: { policy: intent.checkout.setupPolicy },
         launch: {
           initialAgent: {
-            provider: intent.conversation.agentType === 'terminal'
-              ? 'claude-code'
-              : intent.conversation.agentType,
+            provider: intent.conversation.agentType === 'terminal' ? 'claude-code' : intent.conversation.agentType,
             ...(intent.provider.instanceId ? { instanceId: intent.provider.instanceId } : {}),
             ...(intent.provider.model ? { model: intent.provider.model } : {}),
             ...(intent.provider.runtimeMode ? { runtimeMode: intent.provider.runtimeMode } : {}),
@@ -450,12 +445,14 @@ export function createNewSessionCreationCoordinator(
       if (snapshot?.recoveryActions.includes('retry') && options.worktrees.act) {
         publish({ ...state, status: 'submitting', error: undefined })
         try {
-          await acceptSnapshot(await options.worktrees.act({
-            creationId: snapshot.creationId,
-            machineId: state.intent.machineId,
-            expectedRevision: snapshot.revision,
-            action: 'retry',
-          }))
+          await acceptSnapshot(
+            await options.worktrees.act({
+              creationId: snapshot.creationId,
+              machineId: state.intent.machineId,
+              expectedRevision: snapshot.revision,
+              action: 'retry',
+            }),
+          )
         } catch (error) {
           await classifyFailure(error)
         }
@@ -475,12 +472,14 @@ export function createNewSessionCreationCoordinator(
       }
       publish({ ...state, status: 'submitting', error: undefined })
       try {
-        await acceptSnapshot(await options.worktrees.act({
-          creationId: snapshot.creationId,
-          machineId: intent.machineId,
-          expectedRevision: snapshot.revision,
-          action,
-        }))
+        await acceptSnapshot(
+          await options.worktrees.act({
+            creationId: snapshot.creationId,
+            machineId: intent.machineId,
+            expectedRevision: snapshot.revision,
+            action,
+          }),
+        )
       } catch (error) {
         await classifyFailure(error)
       }

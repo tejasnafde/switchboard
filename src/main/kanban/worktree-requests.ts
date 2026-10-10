@@ -1,15 +1,7 @@
-import type {
-  KanbanCard,
-  KanbanCardCreate,
-  KanbanWorktreeCreationIntent,
-} from '../../shared/kanban'
+import type { KanbanCard, KanbanCardCreate, KanbanWorktreeCreationIntent } from '../../shared/kanban'
 import type { WorktreeCreationRequest } from '../../shared/worktree-creation'
 
-function identity(
-  intent: KanbanWorktreeCreationIntent | undefined,
-  createId: () => string,
-  now: () => number,
-) {
+function identity(intent: KanbanWorktreeCreationIntent | undefined, createId: () => string, now: () => number) {
   return {
     creationId: intent?.creationId ?? createId(),
     machineId: intent?.machineId ?? 'local',

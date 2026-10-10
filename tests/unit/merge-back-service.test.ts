@@ -57,13 +57,23 @@ function harness(db = testDb(), forkMessages: ChatMessage[] = initialForkMessage
   const service = new MergeBackService({
     store: new SqliteMergeBackStore(() => db),
     rootId: (id) => (id === 'fork-rotated' ? 'fork' : id),
-    fork: (id) => (id === 'fork'
-      ? { id: 'fork', title: 'try sqlite paging', parentId: 'parent', createdAt: FORK_AT, worktreePath: null, worktreeBranch: null }
-      : null),
+    fork: (id) =>
+      id === 'fork'
+        ? {
+            id: 'fork',
+            title: 'try sqlite paging',
+            parentId: 'parent',
+            createdAt: FORK_AT,
+            worktreePath: null,
+            worktreeBranch: null,
+          }
+        : null,
     parent: (id) => (id === 'parent' ? { id: 'parent', title: 'improvements', archived: parentArchived.value } : null),
     loadMessages: async () => forkMessages,
     forkBusy: () => busy.fork,
-    publishRow: (_parentId, messageId, content) => { published.push({ messageId, content }) },
+    publishRow: (_parentId, messageId, content) => {
+      published.push({ messageId, content })
+    },
     now: () => ++clock,
     newId: () => `mb${++ids}`,
   })
@@ -86,7 +96,10 @@ async function sendFromFork(h: Harness, edit?: (text: string) => string): Promis
 }
 
 function parentRows(db: Database.Database) {
-  return db.prepare("SELECT id, role, content, timestamp FROM messages WHERE conversation_id = 'parent' ORDER BY timestamp, id")
+  return db
+    .prepare(
+      "SELECT id, role, content, timestamp FROM messages WHERE conversation_id = 'parent' ORDER BY timestamp, id",
+    )
     .all() as Array<{ id: string; role: string; content: string; timestamp: number }>
 }
 
@@ -97,25 +110,34 @@ async function parentTurn(
   text: string,
   opts: { reject?: boolean; handoffPreamble?: string } = {},
 ): Promise<{ sent: string; status: string }> {
-  const submission = new AtomicUserTurnSubmission({ store: new SqliteTurnAcceptanceStore(() => h.db), publish: () => {} })
-  let sent = ''
-  const result = await submission.submit({ version: 1, threadId: 'parent', origin, providerText: text }, {
-    clientScope: 'scope',
-    conversationId: 'parent',
-    prepare: async () => {},
-    // The registry adds a pending provider handoff here, before dispatch.
-    finalize: async (turn) => (opts.handoffPreamble ? { ...turn, providerText: withHandoffPreamble(turn.providerText, opts.handoffPreamble) } : turn),
-    dispatch: async (turn) => {
-      const claim = h.service.claimForTurn('parent')
-      const providerText = claim ? claim.apply(turn.providerText) : turn.providerText
-      if (opts.reject) {
-        claim?.release()
-        throw new TurnNotAcceptedError('provider refused')
-      }
-      sent = providerText
-      return claim?.dispatched(providerText)
-    },
+  const submission = new AtomicUserTurnSubmission({
+    store: new SqliteTurnAcceptanceStore(() => h.db),
+    publish: () => {},
   })
+  let sent = ''
+  const result = await submission.submit(
+    { version: 1, threadId: 'parent', origin, providerText: text },
+    {
+      clientScope: 'scope',
+      conversationId: 'parent',
+      prepare: async () => {},
+      // The registry adds a pending provider handoff here, before dispatch.
+      finalize: async (turn) =>
+        opts.handoffPreamble
+          ? { ...turn, providerText: withHandoffPreamble(turn.providerText, opts.handoffPreamble) }
+          : turn,
+      dispatch: async (turn) => {
+        const claim = h.service.claimForTurn('parent')
+        const providerText = claim ? claim.apply(turn.providerText) : turn.providerText
+        if (opts.reject) {
+          claim?.release()
+          throw new TurnNotAcceptedError('provider refused')
+        }
+        sent = providerText
+        return claim?.dispatched(providerText)
+      },
+    },
+  )
   return { sent, status: result.status }
 }
 
@@ -148,7 +170,10 @@ describe('MergeBackService', () => {
   it('puts a fork summary after the handoff preamble when both ride on one turn', async () => {
     const h = harness()
     await sendFromFork(h)
-    const preamble = buildHandoffPreamble([{ role: 'user', content: 'start the parser' }, { role: 'assistant', content: 'parser started' }])!
+    const preamble = buildHandoffPreamble([
+      { role: 'user', content: 'start the parser' },
+      { role: 'assistant', content: 'parser started' },
+    ])!
     const turn = await parentTurn(h, 'o-handoff', 'carry on', { handoffPreamble: preamble })
     expect(turn.status).toBe('accepted')
     const handoffAt = turn.sent.indexOf(preamble)
@@ -158,7 +183,7 @@ describe('MergeBackService', () => {
     expect(turn.sent).toContain('carry on')
   })
 
-  it('delivers a pending summary with the parent\'s next user turn exactly once', async () => {
+  it("delivers a pending summary with the parent's next user turn exactly once", async () => {
     const h = harness()
     await sendFromFork(h)
 
@@ -215,7 +240,10 @@ describe('MergeBackService', () => {
     await sendFromFork(h)
     await parentTurn(h, 'o1', 'thanks')
 
-    expect(await h.service.preview('fork')).toMatchObject({ status: 'empty', message: 'Nothing new in this fork since the last send.' })
+    expect(await h.service.preview('fork')).toMatchObject({
+      status: 'empty',
+      message: 'Nothing new in this fork since the last send.',
+    })
 
     h.forkMessages.push(
       { id: 'g1', role: 'user', content: 'add a fallback', timestamp: 3_000 },
@@ -260,14 +288,19 @@ describe('MergeBackService', () => {
     await parentTurn(h, 'o1', 'ok')
     if (stale.status !== 'ready') throw new Error('not ready')
     expect(await h.service.send('fork', stale.text, stale.token)).toMatchObject({ ok: false })
-    expect(await h.service.send('fork', stale.text, { from: 1 } as unknown as MergeBackToken)).toMatchObject({ ok: false })
+    expect(await h.service.send('fork', stale.text, { from: 1 } as unknown as MergeBackToken)).toMatchObject({
+      ok: false,
+    })
   })
 
   it('refuses a chat that is not a fork, a busy fork, an archived parent and empty text', async () => {
     const h = harness()
     expect(await h.service.preview('parent')).toMatchObject({ status: 'refused' })
     h.busy.fork = true
-    expect(await h.service.preview('fork-rotated')).toMatchObject({ status: 'refused', message: 'The fork is still working. Send back once its turn ends.' })
+    expect(await h.service.preview('fork-rotated')).toMatchObject({
+      status: 'refused',
+      message: 'The fork is still working. Send back once its turn ends.',
+    })
     h.busy.fork = false
     h.parentArchived.value = true
     expect(await h.service.preview('fork')).toMatchObject({ status: 'refused' })

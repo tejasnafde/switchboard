@@ -12,7 +12,9 @@ export class QuitCoordinator {
   constructor(
     private readonly teardown: () => Promise<void>,
     private readonly requestQuit: () => void,
-    private readonly schedule: (callback: () => void) => void = (callback) => { setImmediate(callback) },
+    private readonly schedule: (callback: () => void) => void = (callback) => {
+      setImmediate(callback)
+    },
   ) {}
 
   get isQuitting(): boolean {
@@ -30,7 +32,9 @@ export class QuitCoordinator {
       } catch {
         run = Promise.resolve()
       }
-      const onDone = (): void => { this.done = true }
+      const onDone = (): void => {
+        this.done = true
+      }
       this.drain = run.then(onDone, onDone)
     }
     return this.drain

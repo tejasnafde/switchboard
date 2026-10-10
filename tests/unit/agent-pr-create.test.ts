@@ -7,7 +7,9 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
+vi.mock('../../src/main/logger', () => ({
+  createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}))
 vi.mock('../../src/main/shell-env', () => ({ childProcessEnv: () => ({}) }))
 
 import {
@@ -20,11 +22,22 @@ import {
   repoPathRepositoryProblem,
   repositoryProblem,
 } from '../../src/shared/agent-pr-create'
-import { hostWriteDetail, hostWriteTitle, parseHostWriteResponse, type HostWriteCard } from '../../src/shared/agent-host-writes'
+import {
+  hostWriteDetail,
+  hostWriteTitle,
+  parseHostWriteResponse,
+  type HostWriteCard,
+} from '../../src/shared/agent-host-writes'
 import { remotesForRepo } from '../../src/shared/pull-request-remote'
 import { shouldRefreshPullRequests } from '../../src/shared/pull-request-refresh'
 import { pushForEvent } from '../../src/shared/push-policy'
-import { createDraftProblem, hostWriteButtons, hostWriteResponse, initialCreateDraft, initialReviewDraft } from '../../src/renderer/components/chat/host-write-card'
+import {
+  createDraftProblem,
+  hostWriteButtons,
+  hostWriteResponse,
+  initialCreateDraft,
+  initialReviewDraft,
+} from '../../src/renderer/components/chat/host-write-card'
 import { currentBranch, remoteHasBranch, type GitRun } from '../../src/main/pull-requests/branch-check'
 import { SWITCHBOARD_OPENCODE_TOOLS } from '../../src/main/mcp/agent-registration'
 import { bbprTargets, bbprTargetsForInput, toolInputCwd } from '../../src/shared/bbpr-command'
@@ -37,7 +50,16 @@ describe('arguments', () => {
   it('trims the title, keeps an empty description, and leaves the defaults to the tool', () => {
     expect(checkCreatePrArgs({ title: '  Add  jitter\n' })).toEqual({
       ok: true,
-      value: { title: 'Add jitter', description: '', sourceBranch: null, targetBranch: null, draft: false, repository: null, reviewers: [], repoPath: null },
+      value: {
+        title: 'Add jitter',
+        description: '',
+        sourceBranch: null,
+        targetBranch: null,
+        draft: false,
+        repository: null,
+        reviewers: [],
+        repoPath: null,
+      },
     })
   })
 
@@ -47,11 +69,38 @@ describe('arguments', () => {
   })
 
   it('takes git branch names and refuses anything git or a command line would misread', () => {
-    for (const ok of ['main', 'feat/x', 'fix/redis-timeout_2', 'release/1.2', 'kanban/card-abc123']) expect(isBranchName(ok)).toBe(true)
-    for (const bad of ['', '-x', '--upload-pack=x', 'a..b', 'a b', 'a~1', 'a^', 'a:b', 'a?', 'a*', 'a[b', 'a\\b', '/a', 'a/', 'a.lock', 'a/.hidden', 'a//b', 'a@{1}', '@', 'a.', 'x'.repeat(256), 'a\u0000b']) {
+    for (const ok of ['main', 'feat/x', 'fix/redis-timeout_2', 'release/1.2', 'kanban/card-abc123'])
+      expect(isBranchName(ok)).toBe(true)
+    for (const bad of [
+      '',
+      '-x',
+      '--upload-pack=x',
+      'a..b',
+      'a b',
+      'a~1',
+      'a^',
+      'a:b',
+      'a?',
+      'a*',
+      'a[b',
+      'a\\b',
+      '/a',
+      'a/',
+      'a.lock',
+      'a/.hidden',
+      'a//b',
+      'a@{1}',
+      '@',
+      'a.',
+      'x'.repeat(256),
+      'a\u0000b',
+    ]) {
       expect(isBranchName(bad)).toBe(false)
     }
-    expect(checkCreatePrArgs({ title: 'T', sourceBranch: 'refs/heads/feat/x' })).toMatchObject({ ok: true, value: { sourceBranch: 'feat/x' } })
+    expect(checkCreatePrArgs({ title: 'T', sourceBranch: 'refs/heads/feat/x' })).toMatchObject({
+      ok: true,
+      value: { sourceBranch: 'feat/x' },
+    })
   })
 })
 
@@ -104,7 +153,14 @@ const card: HostWriteCard = {
   url: null,
   location: null,
   quote: null,
-  create: { repoLabel: 'acme/app', sourceBranch: 'feat/x', targetBranch: 'main', title: 'Add jitter', description: 'Adds jitter.', draft: false },
+  create: {
+    repoLabel: 'acme/app',
+    sourceBranch: 'feat/x',
+    targetBranch: 'main',
+    title: 'Add jitter',
+    description: 'Adds jitter.',
+    draft: false,
+  },
   maxChars: 16_000,
 }
 
@@ -112,21 +168,44 @@ describe('the card', () => {
   it('says what it opens, in plain text for a client that does not render it', () => {
     expect(hostWriteTitle(card)).toBe('Open a pull request')
     expect(hostWriteTitle({ ...card, create: { ...card.create!, draft: true } })).toBe('Open a draft pull request')
-    expect(hostWriteDetail(card)).toBe([
-      'Open a pull request on acme/app: feat/x -> main', '', 'Add jitter', '', 'Adds jitter.',
-    ].join('\n'))
-    const push = pushForEvent({ type: 'request.opened', threadId: 't', requestId: 'sbmcp_1', requestType: 'tool', toolName: 'x', detail: '', hostWrite: card }, { title: 'Chat' })
+    expect(hostWriteDetail(card)).toBe(
+      ['Open a pull request on acme/app: feat/x -> main', '', 'Add jitter', '', 'Adds jitter.'].join('\n'),
+    )
+    const push = pushForEvent(
+      {
+        type: 'request.opened',
+        threadId: 't',
+        requestId: 'sbmcp_1',
+        requestType: 'tool',
+        toolName: 'x',
+        detail: '',
+        hostWrite: card,
+      },
+      { title: 'Chat' },
+    )
     expect(push?.body).toBe('Needs approval: Open a pull request on acme/app')
   })
 
   it('offers Deny and Open pull request, and sends back the title and description as edited', () => {
     const buttons = hostWriteButtons(card)
-    expect(buttons.map((b) => [b.id, b.label, b.primary])).toEqual([['deny', 'Deny', false], ['create', 'Open pull request', true]])
+    expect(buttons.map((b) => [b.id, b.label, b.primary])).toEqual([
+      ['deny', 'Deny', false],
+      ['create', 'Open pull request', true],
+    ])
     expect(hostWriteButtons({ ...card, create: { ...card.create!, draft: true } })[1].label).toBe('Open draft')
     const draft = initialCreateDraft(card)
     expect(draft).toEqual({ title: 'Add jitter', description: 'Adds jitter.', removedReviewers: [] })
-    expect(hostWriteResponse(card, buttons[1], '', initialReviewDraft(undefined), { title: 'Mine', description: 'Body', removedReviewers: [] })).toEqual({ title: 'Mine', description: 'Body' })
-    expect(parseHostWriteResponse({ title: 'Mine', description: 'Body', extra: 1 })).toEqual({ title: 'Mine', description: 'Body' })
+    expect(
+      hostWriteResponse(card, buttons[1], '', initialReviewDraft(undefined), {
+        title: 'Mine',
+        description: 'Body',
+        removedReviewers: [],
+      }),
+    ).toEqual({ title: 'Mine', description: 'Body' })
+    expect(parseHostWriteResponse({ title: 'Mine', description: 'Body', extra: 1 })).toEqual({
+      title: 'Mine',
+      description: 'Body',
+    })
   })
 
   it('will not open an emptied title', () => {
@@ -136,7 +215,9 @@ describe('the card', () => {
 })
 
 describe('git in the checkout', () => {
-  const git = (answers: Record<string, { code: number; stdout: string; stderr?: string }>): { run: GitRun; calls: string[][] } => {
+  const git = (
+    answers: Record<string, { code: number; stdout: string; stderr?: string }>,
+  ): { run: GitRun; calls: string[][] } => {
     const calls: string[][] = []
     const run: GitRun = async (cwd, args) => {
       calls.push([cwd, ...args])
@@ -163,10 +244,23 @@ describe('git in the checkout', () => {
 
   it('says why when there is no remote for the repository, or the remote cannot be read', async () => {
     const none = git({ remote: { code: 0, stdout: 'origin\tgit@github.com:someone/else.git (fetch)\n' } })
-    expect(await remoteHasBranch('/w', APP, 'feat/x', none.run)).toEqual({ ok: false, message: 'This checkout has no git remote for acme/app.' })
-    const denied = git({ remote: { code: 0, stdout: 'origin\tgit@github.com:acme/app.git (fetch)\n' }, 'ls-remote': { code: 128, stdout: '', stderr: 'git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.' } })
+    expect(await remoteHasBranch('/w', APP, 'feat/x', none.run)).toEqual({
+      ok: false,
+      message: 'This checkout has no git remote for acme/app.',
+    })
+    const denied = git({
+      remote: { code: 0, stdout: 'origin\tgit@github.com:acme/app.git (fetch)\n' },
+      'ls-remote': {
+        code: 128,
+        stdout: '',
+        stderr: 'git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.',
+      },
+    })
     const result = await remoteHasBranch('/w', APP, 'feat/x', denied.run)
-    expect(result).toEqual({ ok: false, message: 'git could not read the branches of origin: git@github.com: Permission denied (publickey).' })
+    expect(result).toEqual({
+      ok: false,
+      message: 'git could not read the branches of origin: git@github.com: Permission denied (publickey).',
+    })
   })
 })
 
@@ -186,7 +280,9 @@ describe('registration and Reviews', () => {
 describe('where a bare bbpr runs', () => {
   it('is the cwd with no cd, the resolved directory after cds, and unknown when only a shell could tell', () => {
     expect(bbprTargets('bbpr 605 diff', '/p')).toEqual([{ number: 605, runsIn: 'cwd' }])
-    expect(bbprTargets('cd /other/repo && bbpr 605', '/p')).toEqual([{ number: 605, runsIn: 'dir', dir: '/other/repo' }])
+    expect(bbprTargets('cd /other/repo && bbpr 605', '/p')).toEqual([
+      { number: 605, runsIn: 'dir', dir: '/other/repo' },
+    ])
     expect(bbprTargets('cd src && cd ../lib/ && bbpr 1; cd "/a b" && bbpr 2', '/p')).toEqual([
       { number: 1, runsIn: 'dir', dir: '/p/lib' },
       { number: 2, runsIn: 'dir', dir: '/a b' },
@@ -204,28 +300,40 @@ describe('where a bare bbpr runs', () => {
     expect(bbprTargets('cd ~ && cd rel && bbpr 7', '/p')).toEqual([{ number: 7, runsIn: 'unknown' }])
   })
 
-  it("reads the working directory a Codex tool input records, only when absolute", () => {
-    expect(toolInputCwd(JSON.stringify({ command: ['bash', '-lc', 'bbpr 605'], cwd: '/other/repo' }))).toBe('/other/repo')
+  it('reads the working directory a Codex tool input records, only when absolute', () => {
+    expect(toolInputCwd(JSON.stringify({ command: ['bash', '-lc', 'bbpr 605'], cwd: '/other/repo' }))).toBe(
+      '/other/repo',
+    )
     expect(toolInputCwd(JSON.stringify({ command: 'bbpr 605', workdir: '/w' }))).toBe('/w')
     expect(toolInputCwd(JSON.stringify({ command: 'bbpr 605', cwd: 'rel' }))).toBeNull()
     expect(toolInputCwd('bbpr 605')).toBeNull()
     // A recorded directory is checked like a cd, never taken for the chat's own.
-    expect(bbprTargetsForInput('bbpr 605', '/p', '/other/repo')).toEqual([{ number: 605, runsIn: 'dir', dir: '/other/repo' }])
-    expect(bbprTargetsForInput('cd sub && bbpr 8', '/p', '/other/repo')).toEqual([{ number: 8, runsIn: 'dir', dir: '/other/repo/sub' }])
+    expect(bbprTargetsForInput('bbpr 605', '/p', '/other/repo')).toEqual([
+      { number: 605, runsIn: 'dir', dir: '/other/repo' },
+    ])
+    expect(bbprTargetsForInput('cd sub && bbpr 8', '/p', '/other/repo')).toEqual([
+      { number: 8, runsIn: 'dir', dir: '/other/repo/sub' },
+    ])
     expect(bbprTargetsForInput('bbpr 9', '/p', null)).toEqual([{ number: 9, runsIn: 'cwd' }])
   })
 
   it('keeps a number only when its directory is the chat repository, asking each directory once', async () => {
     const BOT: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'ssg-bot-v2' }
-    const repoForDir = vi.fn(async (dir: string): Promise<RepoRef | null> => (dir === '/p/sub' ? BOT : dir === '/boom' ? Promise.reject(new Error('x')) : { ...BOT, name: 'retailiq' }))
-    const numbers = await bbprNumbersInRepo([
-      { number: 1, runsIn: 'cwd' },
-      { number: 2, runsIn: 'dir', dir: '/p/sub' },
-      { number: 3, runsIn: 'dir', dir: '/other' },
-      { number: 4, runsIn: 'unknown' },
-      { number: 5, runsIn: 'dir', dir: '/boom' },
-      { number: 6, runsIn: 'dir', dir: '/p/sub' },
-    ], BOT, repoForDir)
+    const repoForDir = vi.fn(async (dir: string): Promise<RepoRef | null> =>
+      dir === '/p/sub' ? BOT : dir === '/boom' ? Promise.reject(new Error('x')) : { ...BOT, name: 'retailiq' },
+    )
+    const numbers = await bbprNumbersInRepo(
+      [
+        { number: 1, runsIn: 'cwd' },
+        { number: 2, runsIn: 'dir', dir: '/p/sub' },
+        { number: 3, runsIn: 'dir', dir: '/other' },
+        { number: 4, runsIn: 'unknown' },
+        { number: 5, runsIn: 'dir', dir: '/boom' },
+        { number: 6, runsIn: 'dir', dir: '/p/sub' },
+      ],
+      BOT,
+      repoForDir,
+    )
     expect(numbers).toEqual([1, 2, 6])
     expect(repoForDir).toHaveBeenCalledTimes(3)
     expect(await bbprNumbersInRepo([{ number: 1, runsIn: 'cwd' }], APP, repoForDir)).toEqual([])
@@ -240,20 +348,30 @@ describe('repoPath and the repository it names', () => {
     expect(ok.ok && ok.value.repoPath).toBe('core')
     const empty = checkCreatePrArgs({ title: 'T', repoPath: '' })
     expect(empty.ok && empty.value.repoPath).toBeNull()
-    for (const repoPath of [3, 'a\u0000b', 'x'.repeat(1025)]) expect(checkCreatePrArgs({ title: 'T', repoPath }).ok).toBe(false)
+    for (const repoPath of [3, 'a\u0000b', 'x'.repeat(1025)])
+      expect(checkCreatePrArgs({ title: 'T', repoPath }).ok).toBe(false)
   })
 
   it('requires a named repository to be exactly the remote of repoPath', () => {
     expect(repoPathRepositoryProblem(null, CORE, 'core')).toBeNull()
     expect(repoPathRepositoryProblem('GEOIQ/geoiq-ssg-core-v1', CORE, 'core')).toBeNull()
     expect(repoPathRepositoryProblem('https://bitbucket.org/geoiq/geoiq-ssg-core-v1', CORE, 'core')).toBeNull()
-    expect(repoPathRepositoryProblem('https://github.com/geoiq/geoiq-ssg-core-v1', CORE, 'core')).toContain('points at geoiq/geoiq-ssg-core-v1, not')
-    expect(repoPathRepositoryProblem('geoiq/studio', CORE, 'core')).toContain('The git remote of core points at geoiq/geoiq-ssg-core-v1, not "geoiq/studio"')
+    expect(repoPathRepositoryProblem('https://github.com/geoiq/geoiq-ssg-core-v1', CORE, 'core')).toContain(
+      'points at geoiq/geoiq-ssg-core-v1, not',
+    )
+    expect(repoPathRepositoryProblem('geoiq/studio', CORE, 'core')).toContain(
+      'The git remote of core points at geoiq/geoiq-ssg-core-v1, not "geoiq/studio"',
+    )
   })
 
   it('reads "owner/name" as either host, and a URL as its own', () => {
-    expect(repoArgCandidates('geoiq/core')).toEqual([{ host: 'github', owner: 'geoiq', name: 'core' }, { host: 'bitbucket', owner: 'geoiq', name: 'core' }])
-    expect(repoArgCandidates('git@bitbucket.org:geoiq/core.git')).toEqual([{ host: 'bitbucket', owner: 'geoiq', name: 'core' }])
+    expect(repoArgCandidates('geoiq/core')).toEqual([
+      { host: 'github', owner: 'geoiq', name: 'core' },
+      { host: 'bitbucket', owner: 'geoiq', name: 'core' },
+    ])
+    expect(repoArgCandidates('git@bitbucket.org:geoiq/core.git')).toEqual([
+      { host: 'bitbucket', owner: 'geoiq', name: 'core' },
+    ])
     expect(repoArgCandidates('not a repo')).toEqual([])
   })
 })

@@ -14,19 +14,31 @@ interface MessageMarkdownProps {
   style?: CSSProperties
 }
 
-export const MessageMarkdown = forwardRef<HTMLDivElement, MessageMarkdownProps>(
-  function MessageMarkdown({ markdown, mutable, className, style }, ref) {
-    const segments = useMemo(() => splitVisualBlocks(markdown), [markdown])
-    if (segments.length === 1 && segments[0].kind === 'markdown') {
-      return <MarkdownWithCopyControls ref={ref} markdown={markdown} mutable={mutable} className={className} style={style} />
-    }
+export const MessageMarkdown = forwardRef<HTMLDivElement, MessageMarkdownProps>(function MessageMarkdown(
+  { markdown, mutable, className, style },
+  ref,
+) {
+  const segments = useMemo(() => splitVisualBlocks(markdown), [markdown])
+  if (segments.length === 1 && segments[0].kind === 'markdown') {
     return (
-      <div ref={ref} className={className} style={style}>
-        {segments.map((segment, i) => segment.kind === 'markdown'
-          // Only the last piece can still be streaming.
-          ? <MarkdownWithCopyControls key={`markdown-${i}`} markdown={segment.text} mutable={mutable && i === segments.length - 1} className="" />
-          : <ChatVisual key={`${i}:${segment.source}`} kind={segment.kind} source={segment.source} />)}
-      </div>
+      <MarkdownWithCopyControls ref={ref} markdown={markdown} mutable={mutable} className={className} style={style} />
     )
-  },
-)
+  }
+  return (
+    <div ref={ref} className={className} style={style}>
+      {segments.map((segment, i) =>
+        segment.kind === 'markdown' ? (
+          // Only the last piece can still be streaming.
+          <MarkdownWithCopyControls
+            key={`markdown-${i}`}
+            markdown={segment.text}
+            mutable={mutable && i === segments.length - 1}
+            className=""
+          />
+        ) : (
+          <ChatVisual key={`${i}:${segment.source}`} kind={segment.kind} source={segment.source} />
+        ),
+      )}
+    </div>
+  )
+})

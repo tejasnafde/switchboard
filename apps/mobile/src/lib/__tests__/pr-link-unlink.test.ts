@@ -15,6 +15,10 @@ it("passes on the backend's refusal", async () => {
 
 it('names a missing connection and a failed request instead of doing nothing', async () => {
   await expect(unlinkPrLink(undefined, 't1', REF)).resolves.toMatch(/not open/)
-  const client = { unlinkPullRequest: async () => { throw new Error('socket closed') } }
+  const client = {
+    unlinkPullRequest: async () => {
+      throw new Error('socket closed')
+    },
+  }
   await expect(unlinkPrLink(client, 't1', REF)).resolves.toMatch(/did not reach the backend/)
 })

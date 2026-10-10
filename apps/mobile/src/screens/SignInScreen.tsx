@@ -129,10 +129,10 @@ export default function SignInScreen() {
         </Pressable>
         {showWhy ? (
           <Text style={styles.bodyDim}>
-            Work VMs are reached through Google Cloud IAP, a relay needing no VPN and no inbound port.
-            IAP only forwards for a signed-in Google identity, so the app asks Google directly for an
-            access token with cloud-platform scope. The token lives in the device keychain, never in app
-            storage, and refreshes silently. Signing out revokes it at Google.
+            Work VMs are reached through Google Cloud IAP, a relay needing no VPN and no inbound port. IAP only forwards
+            for a signed-in Google identity, so the app asks Google directly for an access token with cloud-platform
+            scope. The token lives in the device keychain, never in app storage, and refreshes silently. Signing out
+            revokes it at Google.
           </Text>
         ) : null}
 
@@ -163,8 +163,8 @@ export default function SignInScreen() {
             <Text style={styles.stepTitle}>Connect your Google account</Text>
             <Text style={styles.stepBody}>Needed only to reach work VMs over IAP.</Text>
             <Text style={styles.stepBody}>
-              On the desktop app, open Settings, then Devices & machines, then select Connect Google account. Sign
-              in when the browser opens. Scan the QR it shows you.
+              On the desktop app, open Settings, then Devices & machines, then select Connect Google account. Sign in
+              when the browser opens. Scan the QR it shows you.
             </Text>
 
             {scanning ? (
@@ -216,7 +216,6 @@ export default function SignInScreen() {
             <Text style={styles.redirectHint}>Stored in the device keychain. Treat it like a password.</Text>
           </View>
         )}
-
       </ScrollView>
     </KeyboardAvoidingView>
   )

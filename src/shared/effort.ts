@@ -40,9 +40,11 @@ export function effortLabel(level: string): string {
  */
 export function parseEffortLevels(raw: unknown): ReasoningEffort[] {
   if (!Array.isArray(raw)) return []
-  const named = new Set<unknown>(raw.map((entry) =>
-    entry && typeof entry === 'object' ? (entry as { reasoningEffort?: unknown }).reasoningEffort : entry,
-  ))
+  const named = new Set<unknown>(
+    raw.map((entry) =>
+      entry && typeof entry === 'object' ? (entry as { reasoningEffort?: unknown }).reasoningEffort : entry,
+    ),
+  )
   return EFFORT_LEVELS.filter((level) => named.has(level))
 }
 
@@ -149,9 +151,7 @@ export function splitModelVariant(id: string, variants: readonly string[]): { ba
   return { base: id, variant: '' }
 }
 
-export type EffortPick =
-  | { kind: 'effort'; effort: ReasoningEffort }
-  | { kind: 'model'; model: string }
+export type EffortPick = { kind: 'effort'; effort: ReasoningEffort } | { kind: 'model'; model: string }
 
 /**
  * What picking `value` changes: the effort, or for OpenCode the model id.

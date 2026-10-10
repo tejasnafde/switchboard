@@ -37,7 +37,13 @@ describe('formatBuildStamp', () => {
     // No update id and nothing embedded means Metro is serving. Calling that
     // "embedded" was wrong in the one environment a developer sees most.
     expect(
-      formatBuildStamp({ version: '0.3.0', channel: null, updateId: null, isEmbedded: false, isEmergencyLaunch: false }),
+      formatBuildStamp({
+        version: '0.3.0',
+        channel: null,
+        updateId: null,
+        isEmbedded: false,
+        isEmergencyLaunch: false,
+      }),
     ).toBe('v0.3.0 · dev bundle')
   })
 

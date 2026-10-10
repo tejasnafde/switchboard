@@ -32,7 +32,7 @@ describe('Claude query crash', () => {
     await adapter.startSession({ threadId: 't1', provider: 'claude', cwd: '/tmp', runtimeMode: 'sandbox' }, onEvent)
     await adapter.sendTurn('t1', 'do the thing', 'sandbox')
     await vi.waitFor(() => expect(onEvent).toHaveBeenCalledWith({ type: 'status', threadId: 't1', status: 'error' }))
-    const types = onEvent.mock.calls.map(([e]) => e.type === 'status' ? `status:${e.status}` : e.type)
+    const types = onEvent.mock.calls.map(([e]) => (e.type === 'status' ? `status:${e.status}` : e.type))
     expect(types.filter((t) => t === 'turn.completed')).toHaveLength(1)
     expect(types.indexOf('turn.completed')).toBeLessThan(types.lastIndexOf('status:error'))
     await adapter.stopSession('t1')

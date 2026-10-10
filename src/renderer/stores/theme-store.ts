@@ -51,18 +51,21 @@ export const useThemeStore = create<ThemeStore>((set) => ({
   },
 
   loadSavedTheme: () => {
-    window.api?.settings?.get('theme').then((saved: string | null) => {
-      if (saved && SAVED.has(saved as ThemeName)) {
-        apply(saved as ThemeName)
-        set({ theme: saved as ThemeName })
-      }
-    }).catch((err) => {
-      log.warn('failed to load saved theme setting - keeping default', err)
-    })
+    window.api?.settings
+      ?.get('theme')
+      .then((saved: string | null) => {
+        if (saved && SAVED.has(saved as ThemeName)) {
+          apply(saved as ThemeName)
+          set({ theme: saved as ThemeName })
+        }
+      })
+      .catch((err) => {
+        log.warn('failed to load saved theme setting - keeping default', err)
+      })
   },
 
   adoptStoredTheme: (saved) => {
-    const theme: ThemeName = saved && SAVED.has(saved as ThemeName) ? saved as ThemeName : 'dark'
+    const theme: ThemeName = saved && SAVED.has(saved as ThemeName) ? (saved as ThemeName) : 'dark'
     apply(theme)
     set({ theme })
   },

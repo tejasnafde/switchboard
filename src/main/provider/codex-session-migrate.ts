@@ -1,11 +1,9 @@
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { scanCodexSessionCopies } from '../projects/session-scanner'
-import {
-  synchronizeCompatibleTranscript,
-  type TranscriptSyncResult,
-} from './transcript-compatibility'
+import { synchronizeCompatibleTranscript, type TranscriptSyncResult } from './transcript-compatibility'
 
-export type CodexProfileSwitchPreparationResult = TranscriptSyncResult
+export type CodexProfileSwitchPreparationResult =
+  | TranscriptSyncResult
   | { ok: false; reason: 'source-missing'; detail: string; sourcePath: string; targetPath: string }
 
 export async function prepareCodexProfileSwitch(options: {
@@ -26,9 +24,10 @@ export async function prepareCodexProfileSwitch(options: {
     return {
       ok: false,
       reason: sourcePaths.length === 0 ? 'source-missing' : 'context-conflict',
-      detail: sourcePaths.length === 0
-        ? 'The active Codex home has no rollout for this native session'
-        : 'The active Codex home has multiple rollouts for this native session',
+      detail:
+        sourcePaths.length === 0
+          ? 'The active Codex home has no rollout for this native session'
+          : 'The active Codex home has multiple rollouts for this native session',
       sourcePath: sourcePaths[0] ?? join(sourceRoot, 'sessions', `${options.sessionId}.jsonl`),
       targetPath,
     }

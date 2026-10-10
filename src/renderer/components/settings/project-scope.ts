@@ -29,11 +29,14 @@ export function scopeOptions(
   byProject: Readonly<Record<string, ProjectOverrides>>,
 ): ComboboxOption[] {
   const all: ComboboxOption = { value: ALL_PROJECTS_SCOPE, label: 'All projects' }
-  return [all, ...projectPickerOptions(projects, workspaces).map((option) => {
-    const count = overrideCount(byProject[option.value])
-    const hint = [option.hint, count > 0 ? plural(count, 'override') : undefined].filter(Boolean).join(' · ')
-    return { ...option, hint: hint || undefined }
-  })]
+  return [
+    all,
+    ...projectPickerOptions(projects, workspaces).map((option) => {
+      const count = overrideCount(byProject[option.value])
+      const hint = [option.hint, count > 0 ? plural(count, 'override') : undefined].filter(Boolean).join(' · ')
+      return { ...option, hint: hint || undefined }
+    }),
+  ]
 }
 
 export interface ScopedRow {
@@ -59,9 +62,7 @@ export function scopedRow(
   if (!scope || row.page !== 'chat') return { value: globalValue, overridden: false }
   if (!row.scopeKey) return { value: globalValue, overridden: false, disabledReason: NOT_SCOPABLE_REASON }
   const override = overrides?.[row.scopeKey]
-  return override === undefined
-    ? { value: globalValue, overridden: false }
-    : { value: override, overridden: true }
+  return override === undefined ? { value: globalValue, overridden: false } : { value: override, overridden: true }
 }
 
 /** How a value reads: its option label, On/Off for a switch, else the raw value. */

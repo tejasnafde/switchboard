@@ -55,8 +55,15 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     const contentExcerpt = content.slice(0, 280)
     const savedAt = Date.now()
     const bookmark: Bookmark = {
-      id, sessionId, projectPath, sessionTitle, agentType,
-      messageRole, contentExcerpt, messageTimestamp, savedAt,
+      id,
+      sessionId,
+      projectPath,
+      sessionTitle,
+      agentType,
+      messageRole,
+      contentExcerpt,
+      messageTimestamp,
+      savedAt,
     }
     // Optimistic update
     set((s) => ({
@@ -65,8 +72,14 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     }))
     try {
       await api.bookmarks.save({
-        id, sessionId, projectPath, sessionTitle, agentType,
-        messageRole, contentExcerpt, messageTimestamp,
+        id,
+        sessionId,
+        projectPath,
+        sessionTitle,
+        agentType,
+        messageRole,
+        contentExcerpt,
+        messageTimestamp,
       })
     } catch (err) {
       log.warn('save failed, rolling back:', err)
@@ -94,16 +107,12 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
       log.warn('remove failed, rolling back:', err)
       set((s) => ({
         bookmarks: [bookmark, ...s.bookmarks],
-        keyToId: new Map(s.keyToId).set(
-          bookmarkKey(bookmark.sessionId, bookmark.messageTimestamp), id,
-        ),
+        keyToId: new Map(s.keyToId).set(bookmarkKey(bookmark.sessionId, bookmark.messageTimestamp), id),
       }))
     }
   },
 
-  isBookmarked: (sessionId, messageTimestamp) =>
-    get().keyToId.has(bookmarkKey(sessionId, messageTimestamp)),
+  isBookmarked: (sessionId, messageTimestamp) => get().keyToId.has(bookmarkKey(sessionId, messageTimestamp)),
 
-  idFor: (sessionId, messageTimestamp) =>
-    get().keyToId.get(bookmarkKey(sessionId, messageTimestamp)),
+  idFor: (sessionId, messageTimestamp) => get().keyToId.get(bookmarkKey(sessionId, messageTimestamp)),
 }))

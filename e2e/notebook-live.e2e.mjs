@@ -74,8 +74,8 @@ writeFileSync(
       nbformat_minor: 5,
     },
     null,
-    1
-  ) + '\n'
+    1,
+  ) + '\n',
 )
 git(['add', '-A'])
 git(['commit', '-qm', 'init'])
@@ -112,22 +112,21 @@ try {
     })
   }, threadId)
 
-  const started = await win.evaluate(
-    (opts) => window.api.provider.startSession(opts),
-    { threadId, provider: 'claude', cwd: project, runtimeMode: 'full-access' }
-  )
+  const started = await win.evaluate((opts) => window.api.provider.startSession(opts), {
+    threadId,
+    provider: 'claude',
+    cwd: project,
+    runtimeMode: 'full-access',
+  })
   check(started?.ok !== false, 'live claude session started')
 
   const mirrorAbs = join(project, '.switchboard/notebooks/analysis.py')
   check(existsSync(mirrorAbs), 'mirror was created at session attach')
 
-  await win.evaluate(
-    ({ tid, msg }) => window.api.provider.sendTurn(tid, msg, 'full-access'),
-    {
-      tid: threadId,
-      msg: 'Change THRESHOLD from 10 to 42 in analysis.ipynb. Make the edit, then stop - no summary needed.',
-    }
-  )
+  await win.evaluate(({ tid, msg }) => window.api.provider.sendTurn(tid, msg, 'full-access'), {
+    tid: threadId,
+    msg: 'Change THRESHOLD from 10 to 42 in analysis.ipynb. Make the edit, then stop - no summary needed.',
+  })
 
   let done = false
   for (let i = 0; i < 180 && !done; i++) {
@@ -165,7 +164,7 @@ try {
   const fileEdits = events.filter((e) => e.type === 'file.edited')
   check(
     fileEdits.some((e) => e.relPath === '.switchboard/notebooks/analysis.py'),
-    'synthetic file.edited fired for the mirror'
+    'synthetic file.edited fired for the mirror',
   )
   check(!fileEdits.some((e) => e.relPath === 'analysis.ipynb'), 'no raw .ipynb diff card event')
 } finally {

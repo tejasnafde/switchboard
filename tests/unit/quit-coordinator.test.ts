@@ -16,7 +16,10 @@ import { QuitCoordinator } from '../../src/main/quit-coordinator'
 function deferred(): { promise: Promise<void>; resolve: () => void; reject: (e: Error) => void } {
   let resolve!: () => void
   let reject!: (e: Error) => void
-  const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej })
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
   return { promise, resolve, reject }
 }
 

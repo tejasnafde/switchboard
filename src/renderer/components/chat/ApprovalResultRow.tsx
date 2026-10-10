@@ -15,7 +15,9 @@ export function ApprovalResultRow({ row, messageId }: { row: Row; messageId: str
       data-outcome={row.outcome}
       className="mx-4 my-2 rounded-[8px] border border-[var(--border)] px-3 py-2 text-[12px] text-[var(--text-secondary)]"
     >
-      <div className={cn('font-[600]', failed ? 'text-[var(--error)]' : 'text-[var(--text-primary)]')}>{approvalResultLabel(row)}</div>
+      <div className={cn('font-[600]', failed ? 'text-[var(--error)]' : 'text-[var(--text-primary)]')}>
+        {approvalResultLabel(row)}
+      </div>
       <div className="mt-1 max-h-[160px] overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">{row.text}</div>
     </div>
   )

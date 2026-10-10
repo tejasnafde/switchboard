@@ -18,11 +18,7 @@ import { loadJsonlCopies } from '../agent/jsonl-cache'
 import { createMainLogger } from '../logger'
 import { mergeConversationMessages } from '../agent/dedupe-messages'
 import { enrichMessagesWithDisplayBody } from '../ipc/enrich-display-body'
-import {
-  isForkableCanonicalMessage,
-  type CanonicalForkMessage,
-  type ForkMessageProvenance,
-} from './fork-anchor'
+import { isForkableCanonicalMessage, type CanonicalForkMessage, type ForkMessageProvenance } from './fork-anchor'
 
 const log = createMainLogger('conversations:history')
 
@@ -39,7 +35,18 @@ export async function loadConversationHistory(
   conversationId: string,
   _projectPath: string,
 ): Promise<ConversationHistory> {
-  const timing: ChatLoadTiming = { readMs: 0, parseMs: 0, diskMs: 0, dbMs: 0, mergeMs: 0, enrichMs: 0, diskBytes: 0, diskLines: 0, cacheHits: 0, prefixSkips: 0 }
+  const timing: ChatLoadTiming = {
+    readMs: 0,
+    parseMs: 0,
+    diskMs: 0,
+    dbMs: 0,
+    mergeMs: 0,
+    enrichMs: 0,
+    diskBytes: 0,
+    diskLines: 0,
+    cacheHits: 0,
+    prefixSkips: 0,
+  }
   const metadataStart = performance.now()
   const familyIds = threadFamilyIds(conversationId)
   const legacySessionHints = conversationSessionHints(conversationId)
@@ -57,9 +64,7 @@ export async function loadConversationHistory(
   const claudeIds = new Set([
     ...familyIds,
     ...legacySessionHints,
-    ...segments
-      .filter((segment) => segment.provider === 'claude-code')
-      .map((segment) => segment.provider_session_id),
+    ...segments.filter((segment) => segment.provider === 'claude-code').map((segment) => segment.provider_session_id),
   ])
   timing.dbMs += performance.now() - metadataStart
   const diskStart = performance.now()
@@ -69,7 +74,11 @@ export async function loadConversationHistory(
     const copies = claudeCandidateDirs()
       .flatMap((baseDir) => listClaudeSessionCopies(baseDir, sessionId))
       .sort(compareSessionCopies)
-    for (const { messages } of await loadJsonlCopies(copies.map((copy) => copy.path), 'claude-code', timing)) {
+    for (const { messages } of await loadJsonlCopies(
+      copies.map((copy) => copy.path),
+      'claude-code',
+      timing,
+    )) {
       sources.push(messages)
       diskMessages.push(...messages)
       for (const message of messages) {
@@ -85,15 +94,14 @@ export async function loadConversationHistory(
   const codexSessions = await scanCodexSessionCopies(knownSessionIds, codexCandidateDirs())
   // A native Codex fork's rollout starts with a copy of the parent's prefix,
   // stamped with the fork time; the fork's stored messages already hold it.
-  const forkReceipt = codexSessions.length > 0
-    ? getNativeForkResume(conversationId)
-    : undefined
+  const forkReceipt = codexSessions.length > 0 ? getNativeForkResume(conversationId) : undefined
   for (const [sessionId, paths] of codexCopiesById(codexSessions, knownSessionIds)) {
     // A profile switch copies the rollout to the new CODEX_HOME, so the older
     // copies are byte prefixes of the largest, proven by hash like Claude's.
-    const skip = forkReceipt?.provider === 'codex' && forkReceipt.sessionId === sessionId
-      ? forkReceipt.copiedMessageCount ?? 0
-      : 0
+    const skip =
+      forkReceipt?.provider === 'codex' && forkReceipt.sessionId === sessionId
+        ? (forkReceipt.copiedMessageCount ?? 0)
+        : 0
     for (const { messages: loaded } of await loadJsonlCopies(await largestFirst(paths), 'codex', timing)) {
       sources.push(loaded, skip)
       const messages = skip > 0 ? loaded.slice(skip) : loaded
@@ -122,9 +130,7 @@ export async function loadConversationHistory(
     mergedHistories.set(conversationId, memo)
     return { ...memo.history, timing }
   }
-  const databaseMessages = familyIds.flatMap((id) =>
-    messageRowsToChatMessages(getMessagesForConversation(id))
-  )
+  const databaseMessages = familyIds.flatMap((id) => messageRowsToChatMessages(getMessagesForConversation(id)))
   const enrichments = new Map()
   for (const id of familyIds) {
     for (const [content, enrichment] of getDisplayBodyEnrichments(id)) {
@@ -144,9 +150,7 @@ export async function loadConversationHistory(
     forkMessages: messages.map((message) => ({
       message,
       forkable: isForkableCanonicalMessage(message),
-      ...(provenanceByMessageId.has(message.id)
-        ? { provenance: provenanceByMessageId.get(message.id) }
-        : {}),
+      ...(provenanceByMessageId.has(message.id) ? { provenance: provenanceByMessageId.get(message.id) } : {}),
     })),
     familyIds,
     diskMessageCount: diskMessages.length,
@@ -202,14 +206,16 @@ function codexCopiesById(sessions: SessionSummary[], known: ReadonlySet<string>)
 
 /** Most complete copy first; an unreadable copy goes last and is reported by the loader. */
 async function largestFirst(paths: string[]): Promise<string[]> {
-  const sized = await Promise.all(paths.map(async (path) => {
-    try {
-      const st = await stat(path)
-      return { path, size: st.size, mtimeMs: st.mtimeMs }
-    } catch (err) {
-      log.warn('codex rollout stat failed', { path, code: (err as NodeJS.ErrnoException).code })
-      return { path, size: -1, mtimeMs: 0 }
-    }
-  }))
+  const sized = await Promise.all(
+    paths.map(async (path) => {
+      try {
+        const st = await stat(path)
+        return { path, size: st.size, mtimeMs: st.mtimeMs }
+      } catch (err) {
+        log.warn('codex rollout stat failed', { path, code: (err as NodeJS.ErrnoException).code })
+        return { path, size: -1, mtimeMs: 0 }
+      }
+    }),
+  )
   return sized.sort((a, b) => b.size - a.size || b.mtimeMs - a.mtimeMs).map((copy) => copy.path)
 }

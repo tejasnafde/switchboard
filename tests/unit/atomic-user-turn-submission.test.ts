@@ -8,20 +8,25 @@ import type {
   UserTurnSubmissionV1,
 } from '../../src/shared/provider-events'
 
-const AtomicUserTurnSubmission = (durable as unknown as {
-  AtomicUserTurnSubmission: new (options: {
-    store: SqliteTurnAcceptanceStore
-    publish: (event: RuntimeUserMessageEvent) => void
-    now?: () => number
-  }) => {
-    submit(input: UserTurnSubmissionV1, context: {
-      clientScope: string
-      prepare: () => Promise<void>
-      finalize?: (turn: UserTurnSubmissionV1) => Promise<UserTurnSubmissionV1>
-      dispatch: (turn: UserTurnSubmissionV1) => Promise<void>
-    }): Promise<UserTurnSubmissionResult>
+const AtomicUserTurnSubmission = (
+  durable as unknown as {
+    AtomicUserTurnSubmission: new (options: {
+      store: SqliteTurnAcceptanceStore
+      publish: (event: RuntimeUserMessageEvent) => void
+      now?: () => number
+    }) => {
+      submit(
+        input: UserTurnSubmissionV1,
+        context: {
+          clientScope: string
+          prepare: () => Promise<void>
+          finalize?: (turn: UserTurnSubmissionV1) => Promise<UserTurnSubmissionV1>
+          dispatch: (turn: UserTurnSubmissionV1) => Promise<void>
+        },
+      ): Promise<UserTurnSubmissionResult>
+    }
   }
-}).AtomicUserTurnSubmission
+).AtomicUserTurnSubmission
 
 describe('AtomicUserTurnSubmission', () => {
   it('commits one seven-image turn with complete display metadata', async () => {
@@ -70,8 +75,10 @@ describe('AtomicUserTurnSubmission', () => {
     expect(harness.acceptanceRows()).toHaveLength(0)
     expect(harness.userRows()).toHaveLength(0)
     expect(harness.events).toHaveLength(0)
-    expect(harness.db.prepare("SELECT title, updated_at FROM conversations WHERE id = 'thread-1'").get())
-      .toEqual({ title: 'New conversation', updated_at: 1 })
+    expect(harness.db.prepare("SELECT title, updated_at FROM conversations WHERE id = 'thread-1'").get()).toEqual({
+      title: 'New conversation',
+      updated_at: 1,
+    })
     harness.close()
   })
 
@@ -90,8 +97,11 @@ describe('AtomicUserTurnSubmission', () => {
     })
     expect(harness.acceptanceRows()).toHaveLength(0)
     expect(harness.userRows()).toHaveLength(0)
-    expect(harness.db.prepare("SELECT title, pending_handoff_from, updated_at FROM conversations WHERE id = 'thread-1'").get())
-      .toEqual({ title: 'New conversation', pending_handoff_from: 'codex', updated_at: 1 })
+    expect(
+      harness.db
+        .prepare("SELECT title, pending_handoff_from, updated_at FROM conversations WHERE id = 'thread-1'")
+        .get(),
+    ).toEqual({ title: 'New conversation', pending_handoff_from: 'codex', updated_at: 1 })
 
     rejectPreparation = false
     await expect(harness.service.submit(submission(), context)).resolves.toMatchObject({
@@ -119,11 +129,12 @@ describe('AtomicUserTurnSubmission', () => {
       status: 'ambiguous',
       duplicate: true,
     })
-    await expect(harness.service.submit(submission({ origin: 'later-question', providerText: '?' }), harness.context()))
-      .resolves.toMatchObject({
-        status: 'rejected',
-        reason: expect.stringContaining('Earlier turn delivery is unresolved'),
-      })
+    await expect(
+      harness.service.submit(submission({ origin: 'later-question', providerText: '?' }), harness.context()),
+    ).resolves.toMatchObject({
+      status: 'rejected',
+      reason: expect.stringContaining('Earlier turn delivery is unresolved'),
+    })
     expect(harness.dispatches).toBe(1)
     expect(harness.userRows()).toHaveLength(0)
     harness.close()
@@ -196,12 +207,15 @@ describe('AtomicUserTurnSubmission', () => {
     const harness = fixture()
     await harness.service.submit(submission(), harness.context())
 
-    await expect(harness.service.submit(submission({ providerText: 'changed' }), harness.context()))
-      .resolves.toMatchObject({ status: 'conflict' })
+    await expect(
+      harness.service.submit(submission({ providerText: 'changed' }), harness.context()),
+    ).resolves.toMatchObject({ status: 'conflict' })
     const changedImages = submission().images?.map((image, index) =>
-      index === 0 ? { ...image, url: 'data:image/png;base64,BBBB' } : image)
-    await expect(harness.service.submit(submission({ images: changedImages }), harness.context()))
-      .resolves.toMatchObject({ status: 'conflict' })
+      index === 0 ? { ...image, url: 'data:image/png;base64,BBBB' } : image,
+    )
+    await expect(
+      harness.service.submit(submission({ images: changedImages }), harness.context()),
+    ).resolves.toMatchObject({ status: 'conflict' })
     expect(harness.dispatches).toBe(1)
     harness.close()
   })
@@ -228,8 +242,9 @@ describe('AtomicUserTurnSubmission', () => {
     expect(harness.db.prepare(`SELECT content FROM messages WHERE id = 'handoff-marker'`).get()).toEqual({
       content: '[[sb:context-handoff]] Codex → Claude',
     })
-    expect(harness.db.prepare(`SELECT pending_handoff_from FROM conversations WHERE id = 'thread-1'`).get())
-      .toEqual({ pending_handoff_from: null })
+    expect(harness.db.prepare(`SELECT pending_handoff_from FROM conversations WHERE id = 'thread-1'`).get()).toEqual({
+      pending_handoff_from: null,
+    })
     expect(result).toMatchObject({ conversationTitle: 'Explain these screenshots' })
     expect(harness.events[0]).toMatchObject({
       conversationTitle: 'Explain these screenshots',
@@ -253,16 +268,23 @@ describe('backend-finalized handoff', () => {
         ...turn,
         providerText: `Conversation so far:\nuser: q\n\n${turn.providerText}`,
         displayBody: turn.providerText,
-        handoff: { expectedFrom: 'codex' as const, markerId: 'handoff_origin-1', markerText: '[[sb:context-handoff]] Codex → Claude Code' },
+        handoff: {
+          expectedFrom: 'codex' as const,
+          markerId: 'handoff_origin-1',
+          markerText: '[[sb:context-handoff]] Codex → Claude Code',
+        },
       }),
-      dispatch: async (turn: UserTurnSubmissionV1) => { sent.push(turn.providerText) },
+      dispatch: async (turn: UserTurnSubmissionV1) => {
+        sent.push(turn.providerText)
+      },
     }
 
     await expect(harness.service.submit(input, context)).resolves.toMatchObject({ status: 'accepted' })
     expect(sent).toEqual(['Conversation so far:\nuser: q\n\ntyped'])
     expect(harness.userRows()[0]).toMatchObject({ content: sent[0], display_body: 'typed' })
-    expect(harness.db.prepare(`SELECT pending_handoff_from FROM conversations WHERE id = 'thread-1'`).get())
-      .toEqual({ pending_handoff_from: null })
+    expect(harness.db.prepare(`SELECT pending_handoff_from FROM conversations WHERE id = 'thread-1'`).get()).toEqual({
+      pending_handoff_from: null,
+    })
     const marker = { id: 'handoff_origin-1', text: '[[sb:context-handoff]] Codex → Claude Code' }
     expect(harness.events[0]).toMatchObject({ handoffMarker: marker })
 
@@ -329,15 +351,27 @@ function fixture() {
     db,
     service,
     events,
-    get dispatches() { return dispatches },
-    set dispatches(value: number) { dispatches = value },
-    get now() { return now },
-    set now(value: number) { now = value },
+    get dispatches() {
+      return dispatches
+    },
+    set dispatches(value: number) {
+      dispatches = value
+    },
+    get now() {
+      return now
+    },
+    set now(value: number) {
+      now = value
+    },
     context(overrides: Partial<{ prepare: () => Promise<void>; dispatch: () => Promise<void> }> = {}) {
       return {
         clientScope: 'desktop-scope',
         prepare: overrides.prepare ?? (async () => {}),
-        dispatch: overrides.dispatch ?? (async () => { dispatches++ }),
+        dispatch:
+          overrides.dispatch ??
+          (async () => {
+            dispatches++
+          }),
       }
     },
     acceptanceRows: () => db.prepare('SELECT * FROM mobile_turn_acceptances').all(),

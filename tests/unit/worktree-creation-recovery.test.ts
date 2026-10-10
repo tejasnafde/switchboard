@@ -7,10 +7,7 @@ import {
   type WorktreeCreationProgressEvent,
   type WorktreeCreationRequest,
 } from '../../src/shared/worktree-creation'
-import {
-  ensureWorktreeCreationSchema,
-  SqliteWorktreeCreationStore,
-} from '../../src/main/db/worktree-creation'
+import { ensureWorktreeCreationSchema, SqliteWorktreeCreationStore } from '../../src/main/db/worktree-creation'
 import type {
   ResolvedGitRepository,
   WorktreeMaterializationInspection,
@@ -293,10 +290,12 @@ function count(db: Database.Database, table: string): number {
 }
 
 function expectPersistedPlan(store: SqliteWorktreeCreationStore): void {
-  expect(store.get({
-    machineId: 'machine-local',
-    creationId: request().creationId,
-  })).toMatchObject({
+  expect(
+    store.get({
+      machineId: 'machine-local',
+      creationId: request().creationId,
+    }),
+  ).toMatchObject({
     reservedPath: WORKTREE_PATH,
     reservedBranch: WORKTREE_BRANCH,
     requestedBaseRef: 'HEAD',
@@ -323,9 +322,7 @@ function expectRecoveredPlan(plan: WorktreeMaterializationPlan): void {
 
 function reservePending(store: SqliteWorktreeCreationStore) {
   const value = request()
-  const payloadHash = createHash('sha256')
-    .update(canonicalizeWorktreeCreationIdentity(value))
-    .digest('hex')
+  const payloadHash = createHash('sha256').update(canonicalizeWorktreeCreationIdentity(value)).digest('hex')
   return store.reserve({
     machineId: value.repository.machineId,
     creationId: value.creationId,
@@ -365,9 +362,7 @@ describe('worktree creation restart recovery', () => {
         creationId: value.creationId,
         schemaVersion: value.schemaVersion,
         requestJson: canonicalizeWorktreeCreationRequest(value),
-        payloadHash: createHash('sha256')
-          .update(canonicalizeWorktreeCreationIdentity(value))
-          .digest('hex'),
+        payloadHash: createHash('sha256').update(canonicalizeWorktreeCreationIdentity(value)).digest('hex'),
         reservedPath: WORKTREE_PATH,
         reservedBranch: WORKTREE_BRANCH,
         requestedBaseRef: 'HEAD',
@@ -375,11 +370,13 @@ describe('worktree creation restart recovery', () => {
         materializationPlanJson: JSON.stringify(plan),
         now: 900,
       })
-      harness.db.prepare(`
+      harness.db
+        .prepare(`
         UPDATE worktree_creations
            SET phase = 'linking', status = 'pending', external_boundary = 'rollback_started'
          WHERE machine_id = 'machine-local' AND creation_id = ?
-      `).run(value.creationId)
+      `)
+        .run(value.creationId)
 
       const git = new RecoveryGitPort(world)
       const restarted = await createWorktreeCreationService(harness.options(git))
@@ -443,10 +440,12 @@ describe('worktree creation restart recovery', () => {
         },
       })
 
-      await expect(restarted.getWorktreeCreation({
-        machineId: 'machine-local',
-        creationId: request().creationId,
-      })).resolves.toMatchObject({ phase: 'linking', status: 'pending' })
+      await expect(
+        restarted.getWorktreeCreation({
+          machineId: 'machine-local',
+          creationId: request().creationId,
+        }),
+      ).resolves.toMatchObject({ phase: 'linking', status: 'pending' })
       await restartSetupEntered.promise
 
       const sameIdRetry = restarted.createWorktreeTransaction(request({ setup: { policy: 'run' } }))
@@ -562,7 +561,11 @@ describe('worktree creation restart recovery', () => {
 
       const restarted = await createWorktreeCreationService({
         ...harness.options(new RecoveryGitPort(world)),
-        setupConfig: { load: async () => { throw new Error('invalid launch config') } },
+        setupConfig: {
+          load: async () => {
+            throw new Error('invalid launch config')
+          },
+        },
       })
       const recovered = await restarted.getWorktreeCreation({
         machineId: 'machine-local',
@@ -746,17 +749,21 @@ describe('worktree creation restart recovery', () => {
       const reservation = reservePending(harness.store)
       expect(reservation.kind).toBe('reserved')
 
-      await expect(service.actOnWorktreeCreation({
-        machineId: 'machine-local',
-        creationId: request().creationId,
-        expectedRevision: 0,
-        action: 'cancel',
-      })).rejects.toMatchObject({ name: 'WorktreeCreationRevisionConflictError' })
+      await expect(
+        service.actOnWorktreeCreation({
+          machineId: 'machine-local',
+          creationId: request().creationId,
+          expectedRevision: 0,
+          action: 'cancel',
+        }),
+      ).rejects.toMatchObject({ name: 'WorktreeCreationRevisionConflictError' })
 
-      expect(harness.store.get({
-        machineId: 'machine-local',
-        creationId: request().creationId,
-      })).toMatchObject({ revision: 1, phase: 'pending', status: 'pending' })
+      expect(
+        harness.store.get({
+          machineId: 'machine-local',
+          creationId: request().creationId,
+        }),
+      ).toMatchObject({ revision: 1, phase: 'pending', status: 'pending' })
       expect(git.calls).toEqual([])
 
       const cancelled = await service.actOnWorktreeCreation({
@@ -793,17 +800,21 @@ describe('worktree creation restart recovery', () => {
       })
       expect(materializing.kind).toBe('updated')
 
-      await expect(service.actOnWorktreeCreation({
-        machineId: 'machine-local',
-        creationId: request().creationId,
-        expectedRevision: 2,
-        action: 'cancel',
-      })).rejects.toMatchObject({ name: 'WorktreeCreationUnsafeActionError' })
+      await expect(
+        service.actOnWorktreeCreation({
+          machineId: 'machine-local',
+          creationId: request().creationId,
+          expectedRevision: 2,
+          action: 'cancel',
+        }),
+      ).rejects.toMatchObject({ name: 'WorktreeCreationUnsafeActionError' })
 
-      expect(harness.store.get({
-        machineId: 'machine-local',
-        creationId: request().creationId,
-      })).toMatchObject({ revision: 2, phase: 'materializing', status: 'pending' })
+      expect(
+        harness.store.get({
+          machineId: 'machine-local',
+          creationId: request().creationId,
+        }),
+      ).toMatchObject({ revision: 2, phase: 'materializing', status: 'pending' })
       expect(git.calls).toEqual([])
       expect(git.rollbackCalls).toBe(0)
     } finally {

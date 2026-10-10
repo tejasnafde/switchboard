@@ -14,7 +14,10 @@ const log = createRendererLogger('chat:pill-open')
 
 function findPane(sessionId: string | null, paneLabel: string): { sessionId: string; paneId: string } | null {
   const { layouts } = useTerminalStore.getState()
-  const order = sessionId && layouts[sessionId] ? [sessionId, ...Object.keys(layouts).filter((id) => id !== sessionId)] : Object.keys(layouts)
+  const order =
+    sessionId && layouts[sessionId]
+      ? [sessionId, ...Object.keys(layouts).filter((id) => id !== sessionId)]
+      : Object.keys(layouts)
   for (const sid of order) {
     const pane = Object.values(layouts[sid]?.panes ?? {}).find((p) => p.label === paneLabel)
     if (pane) return { sessionId: sid, paneId: pane.id }
@@ -40,7 +43,8 @@ function findMessageElement(sessionId: string | null, role: 'user' | 'assistant'
 /** Open the chip's source. `sessionId` is the chat the chip sits in. Returns whether anything opened. */
 export function openPillTarget(target: PillChipTarget, sessionId: string | null): boolean {
   if (target.type === 'file') {
-    const range = target.startLine !== null ? { start: target.startLine, end: target.endLine ?? target.startLine } : null
+    const range =
+      target.startLine !== null ? { start: target.startLine, end: target.endLine ?? target.startLine } : null
     useLayoutStore.getState().openInViewer(target.path, range, sessionId)
     return true
   }

@@ -32,14 +32,9 @@ export function decodeCursorFileUri(value: string): string | null {
   }
 }
 
-export function cursorPathsEqual(
-  left: string,
-  right: string,
-  platform: NodeJS.Platform = process.platform,
-): boolean {
+export function cursorPathsEqual(left: string, right: string, platform: NodeJS.Platform = process.platform): boolean {
   if (platform === 'win32') {
-    return win32.resolve(left).toLocaleLowerCase('en-US')
-      === win32.resolve(right).toLocaleLowerCase('en-US')
+    return win32.resolve(left).toLocaleLowerCase('en-US') === win32.resolve(right).toLocaleLowerCase('en-US')
   }
   return posix.resolve(left) === posix.resolve(right)
 }

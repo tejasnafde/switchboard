@@ -73,9 +73,7 @@ export const ProfilePicker = memo(function ProfilePicker({
                       >
                         {/* The accent the desktop assigns this profile, so the
                             same credentials look the same on both clients. */}
-                        <View
-                          style={[styles.dot, { backgroundColor: p.accentColor || colors.textFaint }]}
-                        />
+                        <View style={[styles.dot, { backgroundColor: p.accentColor || colors.textFaint }]} />
                         <Text style={[styles.rowText, active && styles.rowTextActive]} numberOfLines={1}>
                           {p.displayName}
                         </Text>

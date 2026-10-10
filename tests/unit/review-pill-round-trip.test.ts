@@ -21,7 +21,12 @@ const ctx: ReviewContext = {
 }
 
 describe('review pill round trip', () => {
-  const pill = { id: 'review-1', kind: 'review' as const, label: reviewContextLabel(ctx), content: expandReviewContext(ctx) }
+  const pill = {
+    id: 'review-1',
+    kind: 'review' as const,
+    label: reviewContextLabel(ctx),
+    content: expandReviewContext(ctx),
+  }
   const displayBody = 'Fix this [[pill:review-1]] please'
   const pillsMeta = { [pill.id]: { label: pill.label, kind: pill.kind } }
 
@@ -29,7 +34,10 @@ describe('review pill round trip', () => {
     const providerText = serializeBodyWithPills(displayBody, { [pill.id]: pill })
     expect(providerText).toBe(`Fix this ${pill.content} please`)
     expect(providerText).toContain('Failed check: integration')
-    expect(validateUserTurnSubmission({ version: 1, threadId: 't', origin: 'o', providerText, displayBody, pillsMeta }).pillsMeta).toEqual(pillsMeta)
+    expect(
+      validateUserTurnSubmission({ version: 1, threadId: 't', origin: 'o', providerText, displayBody, pillsMeta })
+        .pillsMeta,
+    ).toEqual(pillsMeta)
   })
 
   it('survives the stored reload with its kind', () => {
@@ -37,7 +45,9 @@ describe('review pill round trip', () => {
   })
 
   it('renders as one chip on the desktop and as its label on the phone', () => {
-    const chips = renderPillBody(displayBody, pillsMeta).filter((n) => isValidElement(n) && (n as ReactElement).type === PillChipVisual)
+    const chips = renderPillBody(displayBody, pillsMeta).filter(
+      (n) => isValidElement(n) && (n as ReactElement).type === PillChipVisual,
+    )
     expect(chips).toHaveLength(1)
     expect(((chips[0] as ReactElement).props as { kind: string }).kind).toBe('review')
     expect(pillBodyText(displayBody, pillsMeta)).toBe('Fix this [1 failed check · #612 · integration] please')

@@ -158,14 +158,16 @@ describe('transactional worktree mutations', () => {
       withWorktree: true,
     })
 
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({
-      withWorktree: true,
-      worktreeCreation: expect.objectContaining({
-        cardId: expect.any(String),
-        creationId: expect.any(String),
-        machineId: 'local',
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        withWorktree: true,
+        worktreeCreation: expect.objectContaining({
+          cardId: expect.any(String),
+          creationId: expect.any(String),
+          machineId: 'local',
+        }),
       }),
-    }))
+    )
     expect(result?.worktreeCreation).toEqual(failed)
     expect(useKanbanStore.getState().byProject['/p'][0].worktreeCreation).toEqual(failed)
   })
@@ -191,21 +193,31 @@ describe('transactional worktree mutations', () => {
 
     const updated = await useKanbanStore.getState().attachWorktree('card_a')
 
-    expect(createWorktree).toHaveBeenCalledWith('card_a', expect.objectContaining({
-      creationId: expect.any(String),
-      machineId: 'local',
-    }))
+    expect(createWorktree).toHaveBeenCalledWith(
+      'card_a',
+      expect.objectContaining({
+        creationId: expect.any(String),
+        machineId: 'local',
+      }),
+    )
     expect(updated?.worktreeCreation).toEqual(pending)
     expect(useKanbanStore.getState().byProject['/p'][0].worktreeCreation).toEqual(pending)
   })
 
   it('retries a failed creation with the journal revision and keeps the returned snapshot', async () => {
     const failed = {
-      creationId: 'creation-1', revision: 3, phase: 'materializing', status: 'failed',
-      projectPath: '/p', baseRef: 'HEAD',
-      owner: { kind: 'kanban-card', cardId: 'card_a' }, purpose: 'kanban',
+      creationId: 'creation-1',
+      revision: 3,
+      phase: 'materializing',
+      status: 'failed',
+      projectPath: '/p',
+      baseRef: 'HEAD',
+      owner: { kind: 'kanban-card', cardId: 'card_a' },
+      purpose: 'kanban',
       provenance: { surface: 'desktop', machineId: 'local', requestedAt: 1 },
-      warnings: [], recoveryActions: ['retry'], updatedAt: 2,
+      warnings: [],
+      recoveryActions: ['retry'],
+      updatedAt: 2,
     } satisfies WorktreeCreationSnapshot
     const ready = {
       ...failed,
@@ -225,7 +237,10 @@ describe('transactional worktree mutations', () => {
     await useKanbanStore.getState().retryWorktree('card_a')
 
     expect(act).toHaveBeenCalledWith({
-      creationId: 'creation-1', machineId: 'local', expectedRevision: 3, action: 'retry',
+      creationId: 'creation-1',
+      machineId: 'local',
+      expectedRevision: 3,
+      action: 'retry',
     })
     expect(useKanbanStore.getState().byProject['/p'][0]).toMatchObject({
       worktreePath: '/p/.switchboard/worktrees/card-a',
@@ -236,11 +251,18 @@ describe('transactional worktree mutations', () => {
 
   it('reconciles journal progress into the cached card by creation id', async () => {
     const pending = {
-      creationId: 'creation-1', revision: 2, phase: 'materializing', status: 'pending',
-      projectPath: '/p', baseRef: 'HEAD',
-      owner: { kind: 'kanban-card', cardId: 'card_a' }, purpose: 'kanban',
+      creationId: 'creation-1',
+      revision: 2,
+      phase: 'materializing',
+      status: 'pending',
+      projectPath: '/p',
+      baseRef: 'HEAD',
+      owner: { kind: 'kanban-card', cardId: 'card_a' },
+      purpose: 'kanban',
       provenance: { surface: 'desktop', machineId: 'local', requestedAt: 1 },
-      warnings: [], recoveryActions: [], updatedAt: 2,
+      warnings: [],
+      recoveryActions: [],
+      updatedAt: 2,
     } satisfies WorktreeCreationSnapshot
     const failed = {
       ...pending,

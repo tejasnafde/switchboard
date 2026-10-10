@@ -46,7 +46,10 @@ export function registerWorktreeManagerHandlers(
 
   host.handle(WorktreeManagerChannels.SET_PROTECTION, async (raw: unknown) => {
     const patch = parseProtectionPatch(raw)
-    if (!patch) throw new Error('Invalid worktree protection change: needs target project|worktree, an absolute path and protected true|false.')
+    if (!patch)
+      throw new Error(
+        'Invalid worktree protection change: needs target project|worktree, an absolute path and protected true|false.',
+      )
     return updateWorktreeProtection(patch, deps)
   })
 }

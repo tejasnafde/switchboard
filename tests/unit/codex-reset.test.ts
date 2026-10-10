@@ -23,8 +23,25 @@ function usage(percents: [number, number], resetCredits?: UsageResetCredits, rea
     plan: null,
     account: null,
     windows: [
-      { ...buildWindow({ id: 's', label: '5-hour', kind: 'session', percent: percents[0], resetsAtMs: NOW + 232 * 60_000, windowMinutes: 300 }), ...(reached ? { reached: true, severity: 'critical' as const } : {}) },
-      buildWindow({ id: 'w', label: 'Weekly', kind: 'weekly', percent: percents[1], resetsAtMs: NOW + 3 * DAY, windowMinutes: 10080 }),
+      {
+        ...buildWindow({
+          id: 's',
+          label: '5-hour',
+          kind: 'session',
+          percent: percents[0],
+          resetsAtMs: NOW + 232 * 60_000,
+          windowMinutes: 300,
+        }),
+        ...(reached ? { reached: true, severity: 'critical' as const } : {}),
+      },
+      buildWindow({
+        id: 'w',
+        label: 'Weekly',
+        kind: 'weekly',
+        percent: percents[1],
+        resetsAtMs: NOW + 3 * DAY,
+        windowMinutes: 10080,
+      }),
     ],
     overage: [],
     ...(resetCredits ? { resetCredits } : {}),
@@ -85,19 +102,24 @@ describe('credits', () => {
   it('names the soonest-expiring available credit, or none without a list', () => {
     expect(soonestCreditId(usage([100, 0], TWO))).toBe('soon')
     expect(soonestCreditId(usage([100, 0], { availableCount: 2, credits: null }))).toBeNull()
-    expect(soonestCreditId(usage([100, 0], {
-      availableCount: 2,
-      credits: [
-        { id: 'never', expiresAtMs: null, status: 'available', title: null },
-        { id: 'dated', expiresAtMs: NOW + DAY, status: 'available', title: null },
-      ],
-    }))).toBe('dated')
+    expect(
+      soonestCreditId(
+        usage([100, 0], {
+          availableCount: 2,
+          credits: [
+            { id: 'never', expiresAtMs: null, status: 'available', title: null },
+            { id: 'dated', expiresAtMs: NOW + DAY, status: 'available', title: null },
+          ],
+        }),
+      ),
+    ).toBe('dated')
   })
 
   it('writes the expiry note as the mock does', () => {
     expect(resetsExpiryNote(usage([0, 0], TWO))).toBe(`next expires ${fmtExpiryDate(NOW + 19 * DAY)}`)
-    expect(resetsExpiryNote(usage([0, 0], { availableCount: 1, credits: [TWO.credits![0]] })))
-      .toBe(`expires ${fmtExpiryDate(NOW + 34 * DAY)}`)
+    expect(resetsExpiryNote(usage([0, 0], { availableCount: 1, credits: [TWO.credits![0]] }))).toBe(
+      `expires ${fmtExpiryDate(NOW + 34 * DAY)}`,
+    )
     expect(resetsExpiryNote(usage([0, 0], { availableCount: 2, credits: null }))).toBeNull()
     expect(fmtExpiryDate(Date.UTC(2026, 9, 30, 12))).toBe('Oct 30')
   })
@@ -120,23 +142,50 @@ describe('resetConfirmRows', () => {
   })
 
   it('leaves out Uses when only the count is known', () => {
-    expect(resetConfirmRows(usage([100, 72], { availableCount: 2, credits: null })).map((r) => r.key)).toEqual(['Clears', 'Remaining'])
+    expect(resetConfirmRows(usage([100, 72], { availableCount: 2, credits: null })).map((r) => r.key)).toEqual([
+      'Clears',
+      'Remaining',
+    ])
   })
 })
 
 describe('resetResultBanner', () => {
   it('uses the approved copy for every outcome', () => {
     const after = usage([0, 0], { availableCount: 1, credits: null })
-    expect(resetResultBanner('reset', after, NOW)).toEqual({ tone: 'good', retry: false, text: 'Limits reset. 1 reset remaining.' })
-    expect(resetResultBanner('reset', usage([0, 0], { availableCount: 0, credits: null }), NOW).text).toBe('Limits reset. 0 resets remaining.')
-    expect(resetResultBanner('alreadyRedeemed', after, NOW)).toEqual({ tone: 'good', retry: false, text: 'This reset was already applied. No additional reset was used.' })
-    expect(resetResultBanner('nothingToReset', after, NOW)).toEqual({ tone: 'info', retry: false, text: 'No limit is eligible for a reset yet. Nothing was used.' })
-    expect(resetResultBanner('unknown', after, NOW)).toEqual({ tone: 'bad', retry: true, text: 'Codex did not respond, so the result is unknown. Retrying will not use a second reset.' })
+    expect(resetResultBanner('reset', after, NOW)).toEqual({
+      tone: 'good',
+      retry: false,
+      text: 'Limits reset. 1 reset remaining.',
+    })
+    expect(resetResultBanner('reset', usage([0, 0], { availableCount: 0, credits: null }), NOW).text).toBe(
+      'Limits reset. 0 resets remaining.',
+    )
+    expect(resetResultBanner('alreadyRedeemed', after, NOW)).toEqual({
+      tone: 'good',
+      retry: false,
+      text: 'This reset was already applied. No additional reset was used.',
+    })
+    expect(resetResultBanner('nothingToReset', after, NOW)).toEqual({
+      tone: 'info',
+      retry: false,
+      text: 'No limit is eligible for a reset yet. Nothing was used.',
+    })
+    expect(resetResultBanner('unknown', after, NOW)).toEqual({
+      tone: 'bad',
+      retry: true,
+      text: 'Codex did not respond, so the result is unknown. Retrying will not use a second reset.',
+    })
   })
 
   it('names the critical window that frees up first on noCredit', () => {
     const at = usage([100, 72], { availableCount: 0, credits: null })
-    expect(resetResultBanner('noCredit', at, NOW)).toEqual({ tone: 'bad', retry: false, text: 'No resets available. The 5-hour limit resets in 3h 52m.' })
-    expect(resetResultBanner('noCredit', usage([10, 10], { availableCount: 0, credits: null }), NOW).text).toBe('No resets available.')
+    expect(resetResultBanner('noCredit', at, NOW)).toEqual({
+      tone: 'bad',
+      retry: false,
+      text: 'No resets available. The 5-hour limit resets in 3h 52m.',
+    })
+    expect(resetResultBanner('noCredit', usage([10, 10], { availableCount: 0, credits: null }), NOW).text).toBe(
+      'No resets available.',
+    )
   })
 })

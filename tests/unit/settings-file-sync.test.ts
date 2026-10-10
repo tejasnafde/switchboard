@@ -8,7 +8,11 @@ import type { SettingsFileOp, SettingsFileStatus, SettingsSnapshot } from '@shar
 
 /** An in-memory settings DB behind the sync, applying ops the way the desktop glue does. */
 function fakeDb(initial: SettingsSnapshot = { settings: {}, projects: {}, keyboard: {} }) {
-  const db = structuredClone(initial) as { settings: Record<string, string>; projects: Record<string, Record<string, string>>; keyboard: Record<string, unknown> }
+  const db = structuredClone(initial) as {
+    settings: Record<string, string>
+    projects: Record<string, Record<string, string>>
+    keyboard: Record<string, unknown>
+  }
   const applied: SettingsFileOp[][] = []
   return {
     db,
@@ -32,7 +36,12 @@ let dir: string
 let sync: SettingsFileSync
 /** The persisted sync marker; survives a new SettingsFileSync the way the settings row survives a restart. */
 let savedHash: string | null
-const syncedHash = { load: () => savedHash, save: (hash: string) => { savedHash = hash } }
+const syncedHash = {
+  load: () => savedHash,
+  save: (hash: string) => {
+    savedHash = hash
+  },
+}
 let statuses: SettingsFileStatus[]
 let store: ReturnType<typeof fakeDb>
 const log = { info: vi.fn(), warn: vi.fn() }
@@ -96,7 +105,12 @@ describe('SettingsFileSync', () => {
     make({ settings: { theme: 'light' }, projects: {}, keyboard: {} })
     const path = await sync.open()
     expect(path).toBe(file())
-    expect(readJson()).toEqual({ $schema: './settings.schema.json', settings: { theme: 'light' }, projects: {}, keyboard: {} })
+    expect(readJson()).toEqual({
+      $schema: './settings.schema.json',
+      settings: { theme: 'light' },
+      projects: {},
+      keyboard: {},
+    })
     expect(JSON.parse(readFileSync(join(dir, 'settings.schema.json'), 'utf8')).title).toBe('Switchboard settings')
   })
 
@@ -123,11 +137,18 @@ describe('SettingsFileSync', () => {
       return keys
     }
     sync = new SettingsFileSync({
-      dir, readSnapshot: store.readSnapshot, projectLabel: (k) => k, projectKey: (p) => p,
-      applyOps: (ops) => store.applyOps(ops), onStatus: () => {}, syncedHash, log, debounceMs: 5,
+      dir,
+      readSnapshot: store.readSnapshot,
+      projectLabel: (k) => k,
+      projectKey: (p) => p,
+      applyOps: (ops) => store.applyOps(ops),
+      onStatus: () => {},
+      syncedHash,
+      log,
+      debounceMs: 5,
     })
     await sync.open()
-    const content = JSON.stringify({ settings: { theme: 'light', 'defaultSessionEnvMode': 'local' } })
+    const content = JSON.stringify({ settings: { theme: 'light', defaultSessionEnvMode: 'local' } })
     userWrite(content)
     await sync.applyFile()
     await sync.flush()
@@ -156,28 +177,34 @@ describe('SettingsFileSync', () => {
     expect(readFileSync(file(), 'utf8')).toBe('{ "settings": { "theme": ')
   })
 
-  it.each(['MacIntel', 'Linux x86_64', 'Win32'])('reports skipped entries and applies the rest (%s)', async (platform) => {
-    // Every rule applyShortcutOverrides uses reads this; "A" alone types text on every platform.
-    vi.stubGlobal('navigator', { platform })
-    try {
-      make()
-      await sync.open()
-      const edit = JSON.stringify({ settings: { theme: 'neon', notificationsEnabled: false }, keyboard: { 'app.search': ['A'] } })
-      userWrite(edit)
-      expect(await sync.applyFile()).toBe(false)
-      expect(store.db.settings).toEqual({ notificationsEnabled: 'false' })
-      expect(statuses.at(-1)?.skipped.map((s) => s.entry)).toEqual(['settings.theme', 'keyboard.app.search'])
-      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('settings.json skipped settings.theme'))
+  it.each(['MacIntel', 'Linux x86_64', 'Win32'])(
+    'reports skipped entries and applies the rest (%s)',
+    async (platform) => {
+      // Every rule applyShortcutOverrides uses reads this; "A" alone types text on every platform.
+      vi.stubGlobal('navigator', { platform })
+      try {
+        make()
+        await sync.open()
+        const edit = JSON.stringify({
+          settings: { theme: 'neon', notificationsEnabled: false },
+          keyboard: { 'app.search': ['A'] },
+        })
+        userWrite(edit)
+        expect(await sync.applyFile()).toBe(false)
+        expect(store.db.settings).toEqual({ notificationsEnabled: 'false' })
+        expect(statuses.at(-1)?.skipped.map((s) => s.entry)).toEqual(['settings.theme', 'keyboard.app.search'])
+        expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('settings.json skipped settings.theme'))
 
-      // Not in sync while it asks for what it did not get, so a UI change does not erase the refused entries.
-      store.db.settings['chat.showFileDiffs'] = 'true'
-      await sync.writeIfUnedited()
-      expect(readFileSync(file(), 'utf8')).toBe(edit)
-      expect(statuses.at(-1)?.writeSkipped).toBe(true)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
+        // Not in sync while it asks for what it did not get, so a UI change does not erase the refused entries.
+        store.db.settings['chat.showFileDiffs'] = 'true'
+        await sync.writeIfUnedited()
+        expect(readFileSync(file(), 'utf8')).toBe(edit)
+        expect(statuses.at(-1)?.writeSkipped).toBe(true)
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    },
+  )
 
   it('a write that fails keeps the file out of sync', async () => {
     make()
@@ -187,13 +214,22 @@ describe('SettingsFileSync', () => {
     store.applyOps = (ops) => applyOps(ops).slice(1)
     sync.dispose()
     sync = new SettingsFileSync({
-      dir, readSnapshot: store.readSnapshot, projectLabel: (k) => k, projectKey: (p) => p,
-      applyOps: (ops) => store.applyOps(ops), onStatus: (status) => statuses.push(status), syncedHash, log, debounceMs: 5,
+      dir,
+      readSnapshot: store.readSnapshot,
+      projectLabel: (k) => k,
+      projectKey: (p) => p,
+      applyOps: (ops) => store.applyOps(ops),
+      onStatus: (status) => statuses.push(status),
+      syncedHash,
+      log,
+      debounceMs: 5,
     })
     const edit = JSON.stringify({ settings: { theme: 'light', notificationsEnabled: false } })
     userWrite(edit)
     expect(await sync.applyFile()).toBe(false)
-    expect(statuses.at(-1)?.skipped).toEqual([{ entry: '1 of 2 writes', reason: 'could not be saved; the log has the error' }])
+    expect(statuses.at(-1)?.skipped).toEqual([
+      { entry: '1 of 2 writes', reason: 'could not be saved; the log has the error' },
+    ])
     await sync.writeIfUnedited()
     expect(readFileSync(file(), 'utf8')).toBe(edit)
   })
@@ -221,8 +257,15 @@ describe('SettingsFileSync', () => {
     }
     sync.dispose()
     sync = new SettingsFileSync({
-      dir, readSnapshot: store.readSnapshot, projectLabel: (k) => k, projectKey: (p) => p,
-      applyOps: (ops) => store.applyOps(ops), onStatus: (status) => statuses.push(status), syncedHash, log, debounceMs: 5,
+      dir,
+      readSnapshot: store.readSnapshot,
+      projectLabel: (k) => k,
+      projectKey: (p) => p,
+      applyOps: (ops) => store.applyOps(ops),
+      onStatus: (status) => statuses.push(status),
+      syncedHash,
+      log,
+      debounceMs: 5,
     })
     await sync.open()
     const openedHash = savedHash
@@ -231,7 +274,9 @@ describe('SettingsFileSync', () => {
     userWrite(edit)
     expect(await sync.applyFile()).toBe(false)
     expect(store.db.settings).toEqual({ theme: 'light' })
-    expect(statuses.at(-1)?.skipped).toEqual([{ entry: '1 of 2 writes', reason: 'could not be saved; the log has the error' }])
+    expect(statuses.at(-1)?.skipped).toEqual([
+      { entry: '1 of 2 writes', reason: 'could not be saved; the log has the error' },
+    ])
     expect(savedHash).toBe(openedHash)
     expect(savedHash).not.toBe(hash(edit))
 

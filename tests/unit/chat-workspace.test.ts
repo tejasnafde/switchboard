@@ -60,7 +60,9 @@ describe('chat workspace reconciliation', () => {
   })
 
   it('replaces the focused slot when selecting a third session', () => {
-    expect(reconcileChatWorkspace(dual({ focusedSlot: 'secondary' }), { type: 'select', sessionId: 'c' })).toMatchObject({
+    expect(
+      reconcileChatWorkspace(dual({ focusedSlot: 'secondary' }), { type: 'select', sessionId: 'c' }),
+    ).toMatchObject({
       primarySessionId: 'a',
       secondarySessionId: 'c',
       focusedSlot: 'secondary',
@@ -73,7 +75,9 @@ describe('chat workspace reconciliation', () => {
   })
 
   it('closes secondary without changing primary', () => {
-    expect(reconcileChatWorkspace(dual({ focusedSlot: 'secondary' }), { type: 'close', slot: 'secondary' })).toMatchObject({
+    expect(
+      reconcileChatWorkspace(dual({ focusedSlot: 'secondary' }), { type: 'close', slot: 'secondary' }),
+    ).toMatchObject({
       primarySessionId: 'a',
       secondarySessionId: null,
       focusedSlot: 'primary',
@@ -127,7 +131,7 @@ describe('chat workspace reconciliation', () => {
   })
 
   it('focuses a canonical alias without replacing the loaded slot id', () => {
-    const canonical = (id: string) => id === 'live-id' || id === 'stored-id' ? 'root-id' : id
+    const canonical = (id: string) => (id === 'live-id' || id === 'stored-id' ? 'root-id' : id)
     const state = dual({ primarySessionId: 'live-id', secondarySessionId: 'other', focusedSlot: 'secondary' })
 
     expect(reconcileChatWorkspace(state, { type: 'select', sessionId: 'stored-id' }, canonical)).toEqual({
@@ -150,12 +154,16 @@ describe('chat workspace reconciliation', () => {
   })
 
   it('keeps the source visible when forwarding to an undisplayed target', () => {
-    expect(reconcileChatWorkspace(dual(), { type: 'forward-target', sourceSessionId: 'a', targetSessionId: 'c' })).toMatchObject({
+    expect(
+      reconcileChatWorkspace(dual(), { type: 'forward-target', sourceSessionId: 'a', targetSessionId: 'c' }),
+    ).toMatchObject({
       primarySessionId: 'a',
       secondarySessionId: 'c',
       focusedSlot: 'secondary',
     })
-    expect(reconcileChatWorkspace(dual(), { type: 'forward-target', sourceSessionId: 'b', targetSessionId: 'c' })).toMatchObject({
+    expect(
+      reconcileChatWorkspace(dual(), { type: 'forward-target', sourceSessionId: 'b', targetSessionId: 'c' }),
+    ).toMatchObject({
       primarySessionId: 'c',
       secondarySessionId: 'b',
       focusedSlot: 'primary',
@@ -163,11 +171,13 @@ describe('chat workspace reconciliation', () => {
   })
 
   it('never forwards back to the source session', () => {
-    expect(reconcileChatWorkspace(dual({ focusedSlot: 'secondary' }), {
-      type: 'forward-target',
-      sourceSessionId: 'b',
-      targetSessionId: 'b',
-    })).toEqual(dual({ focusedSlot: 'secondary' }))
+    expect(
+      reconcileChatWorkspace(dual({ focusedSlot: 'secondary' }), {
+        type: 'forward-target',
+        sourceSessionId: 'b',
+        targetSessionId: 'b',
+      }),
+    ).toEqual(dual({ focusedSlot: 'secondary' }))
   })
 
   it('clamps the split ratio without changing slot identity', () => {
@@ -200,12 +210,15 @@ describe('chat workspace reconciliation', () => {
 
 describe('landing screen in the workspace', () => {
   it('takes the primary slot only and keeps the chat beside it', () => {
-    expect(reconcileChatWorkspace(dual({ focusedSlot: 'secondary' }), { type: 'show-landing', sessionId: 'draft:local:/p' }))
-      .toEqual(dual({ primarySessionId: 'draft:local:/p', focusedSlot: 'primary' }))
+    expect(
+      reconcileChatWorkspace(dual({ focusedSlot: 'secondary' }), { type: 'show-landing', sessionId: 'draft:local:/p' }),
+    ).toEqual(dual({ primarySessionId: 'draft:local:/p', focusedSlot: 'primary' }))
   })
   it('fills an empty workspace', () => {
-    expect(reconcileChatWorkspace(DEFAULT_CHAT_WORKSPACE, { type: 'show-landing', sessionId: 'draft:local:/p' }).primarySessionId)
-      .toBe('draft:local:/p')
+    expect(
+      reconcileChatWorkspace(DEFAULT_CHAT_WORKSPACE, { type: 'show-landing', sessionId: 'draft:local:/p' })
+        .primarySessionId,
+    ).toBe('draft:local:/p')
   })
   it('lets the landing draft stand in as the companion only while no chat is open', () => {
     expect(companionWithLanding(DEFAULT_CHAT_WORKSPACE, 'draft:local:/p')).toBe('draft:local:/p')

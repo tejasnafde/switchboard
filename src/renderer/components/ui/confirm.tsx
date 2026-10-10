@@ -121,13 +121,21 @@ export function unlessConfirmOpen<A extends unknown[]>(handler: (...args: A) => 
 export function ConfirmHost() {
   const request = useSyncExternalStore(subscribe, current)
   return (
-    <AlertDialog open={!!request} onOpenChange={(open) => { if (!open && request) settle(request, false) }}>
+    <AlertDialog
+      open={!!request}
+      onOpenChange={(open) => {
+        if (!open && request) settle(request, false)
+      }}
+    >
       {request && (
         // Radix wires aria-describedby to the description; with no body there is none to point at.
         <AlertDialogContent
           {...(request.body ? {} : { 'aria-describedby': undefined })}
           // Fires only when the dialog closes, i.e. after the last queued request.
-          onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus() }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            restoreFocus()
+          }}
         >
           <AlertDialogTitle>{request.title}</AlertDialogTitle>
           {request.body && <AlertDialogDescription>{request.body}</AlertDialogDescription>}

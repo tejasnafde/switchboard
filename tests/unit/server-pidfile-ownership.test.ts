@@ -29,10 +29,16 @@ function fakeIo(initial: Record<string, string> = {}) {
   const files = new Map(Object.entries(initial))
   const dirs: string[] = []
   const io: PidFileIo = {
-    ensureDir: (dir) => { dirs.push(dir) },
+    ensureDir: (dir) => {
+      dirs.push(dir)
+    },
     read: (path) => files.get(path) ?? null,
-    write: (path, contents) => { files.set(path, contents) },
-    remove: (path) => { files.delete(path) },
+    write: (path, contents) => {
+      files.set(path, contents)
+    },
+    remove: (path) => {
+      files.delete(path)
+    },
   }
   return { io, files, dirs }
 }

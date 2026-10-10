@@ -70,7 +70,9 @@ export function searchMessagesInDatabase(
   type Row = Omit<SearchResult, 'archived' | 'phraseMatch'> & { archived: number | null }
   let rows: Row[]
   try {
-    const ftsRows = (expression: string) => database.prepare(`
+    const ftsRows = (expression: string) =>
+      database
+        .prepare(`
       SELECT ${columns},
         bm25(messages_fts) as rank,
         snippet(messages_fts, 0, '**', '**', '...', 40) as snippet,
@@ -82,7 +84,8 @@ export function searchMessagesInDatabase(
         ${rowFilters}
       ORDER BY rank
       LIMIT ?
-    `).all(SNIPPET_MARK_OPEN, SNIPPET_MARK_CLOSE, expression, boundedLimit * CANDIDATE_FACTOR) as Row[]
+    `)
+        .all(SNIPPET_MARK_OPEN, SNIPPET_MARK_CLOSE, expression, boundedLimit * CANDIDATE_FACTOR) as Row[]
     rows = ftsRows(match)
     // Words matched apart can fill the candidates before an adjacent match,
     // which ranks first, so phrase candidates are read on their own too.

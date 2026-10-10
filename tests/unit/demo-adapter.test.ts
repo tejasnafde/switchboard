@@ -14,9 +14,12 @@ async function runTurn(mode: 'plan' | 'sandbox', message: string, cwd: string): 
   const events: RuntimeEvent[] = []
   await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: mode }, (e) => events.push(e))
   await adapter.sendTurn('t1', message, mode)
-  await vi.waitFor(() => {
-    if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
-  }, { timeout: 15_000, interval: 50 })
+  await vi.waitFor(
+    () => {
+      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
+    },
+    { timeout: 15_000, interval: 50 },
+  )
   return events
 }
 
@@ -48,7 +51,11 @@ describe('DemoAdapter (tour recorder script)', () => {
 
   it('streams assistant text as appended deltas under one messageId', async () => {
     const events = await runTurn('sandbox', 'What do the tests cover?', cwd)
-    const content = events.filter((e) => e.type === 'content') as Array<{ messageId: string; append?: boolean; text: string }>
+    const content = events.filter((e) => e.type === 'content') as Array<{
+      messageId: string
+      append?: boolean
+      text: string
+    }>
     expect(content.length).toBeGreaterThan(3)
     expect(new Set(content.map((c) => c.messageId)).size).toBe(1)
     expect(content[0].append).toBe(false)
@@ -69,19 +76,27 @@ describe('DemoAdapter (tour recorder script)', () => {
   it('a run request holds the turn on an approval until it is answered', async () => {
     const adapter = new DemoAdapter('claude')
     const events: RuntimeEvent[] = []
-    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) =>
+      events.push(e),
+    )
     await adapter.sendTurn('t1', 'Run the auth tests', 'sandbox')
-    const opened = await vi.waitFor(() => {
-      const event = events.find((e) => e.type === 'request.opened')
-      if (!event || event.type !== 'request.opened') throw new Error('no approval yet')
-      return event
-    }, { timeout: 5_000, interval: 50 })
+    const opened = await vi.waitFor(
+      () => {
+        const event = events.find((e) => e.type === 'request.opened')
+        if (!event || event.type !== 'request.opened') throw new Error('no approval yet')
+        return event
+      },
+      { timeout: 5_000, interval: 50 },
+    )
     expect(opened).toMatchObject({ requestType: 'command', toolName: 'Bash', detail: 'npm test' })
     expect(events.some((e) => e.type === 'turn.completed')).toBe(false)
     await adapter.respondToRequest('t1', opened.requestId, 'approve')
-    await vi.waitFor(() => {
-      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
-    }, { timeout: 10_000, interval: 50 })
+    await vi.waitFor(
+      () => {
+        if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
+      },
+      { timeout: 10_000, interval: 50 },
+    )
     expect(events.some((e) => e.type === 'request.closed' && e.decision === 'approve')).toBe(true)
     expect(events.some((e) => e.type === 'tool.started' && e.toolName === 'Bash')).toBe(true)
   }, 20_000)
@@ -89,48 +104,88 @@ describe('DemoAdapter (tour recorder script)', () => {
   it('a review reply opens a pull request write card and posts nothing on approval', async () => {
     const adapter = new DemoAdapter('claude')
     const events: RuntimeEvent[] = []
-    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) =>
+      events.push(e),
+    )
     await adapter.sendTurn('t1', 'Reply to the review conversations.', 'sandbox')
-    await vi.waitFor(() => {
-      if (!events.some((e) => e.type === 'request.opened')) throw new Error('no card yet')
-    }, { timeout: 5_000, interval: 50 })
+    await vi.waitFor(
+      () => {
+        if (!events.some((e) => e.type === 'request.opened')) throw new Error('no card yet')
+      },
+      { timeout: 5_000, interval: 50 },
+    )
     const card = events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
-    expect(card.hostWrite).toMatchObject({ action: 'reply', prLabel: 'ssg-bot-v2 #612', location: 'sync/worker.py:86', suggestResolve: true })
+    expect(card.hostWrite).toMatchObject({
+      action: 'reply',
+      prLabel: 'ssg-bot-v2 #612',
+      location: 'sync/worker.py:86',
+      suggestResolve: true,
+    })
     expect(card.detail).toContain('Reply on ssg-bot-v2 #612')
     await adapter.respondToRequest('t1', card.requestId, 'approve')
-    await vi.waitFor(() => {
-      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
-    }, { timeout: 5_000, interval: 50 })
-    expect(events).toContainEqual({ type: 'request.closed', threadId: 't1', requestId: card.requestId, decision: 'approve' })
+    await vi.waitFor(
+      () => {
+        if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
+      },
+      { timeout: 5_000, interval: 50 },
+    )
+    expect(events).toContainEqual({
+      type: 'request.closed',
+      threadId: 't1',
+      requestId: card.requestId,
+      decision: 'approve',
+    })
   }, 20_000)
 
   it('raising a pull request opens a create card with the branches and an editable draft, and opens nothing', async () => {
     const adapter = new DemoAdapter('claude')
     const events: RuntimeEvent[] = []
-    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) =>
+      events.push(e),
+    )
     await adapter.sendTurn('t1', 'Raise a pull request for this.', 'sandbox')
-    await vi.waitFor(() => {
-      if (!events.some((e) => e.type === 'request.opened')) throw new Error('no card yet')
-    }, { timeout: 5_000, interval: 50 })
+    await vi.waitFor(
+      () => {
+        if (!events.some((e) => e.type === 'request.opened')) throw new Error('no card yet')
+      },
+      { timeout: 5_000, interval: 50 },
+    )
     const card = events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
     expect(card.toolName).toBe('mcp__switchboard__create_pull_request')
-    expect(card.hostWrite).toMatchObject({ action: 'create', host: 'bitbucket', create: { sourceBranch: 'feat/sync-jitter', targetBranch: 'main', draft: false } })
+    expect(card.hostWrite).toMatchObject({
+      action: 'create',
+      host: 'bitbucket',
+      create: { sourceBranch: 'feat/sync-jitter', targetBranch: 'main', draft: false },
+    })
     expect(card.detail).toContain('Open a pull request on geoiq/ssg-bot-v2: feat/sync-jitter -> main')
     await adapter.respondToRequest('t1', card.requestId, 'deny')
-    await vi.waitFor(() => {
-      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
-    }, { timeout: 5_000, interval: 50 })
-    expect(events).toContainEqual({ type: 'request.closed', threadId: 't1', requestId: card.requestId, decision: 'deny' })
+    await vi.waitFor(
+      () => {
+        if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
+      },
+      { timeout: 5_000, interval: 50 },
+    )
+    expect(events).toContainEqual({
+      type: 'request.closed',
+      threadId: 't1',
+      requestId: card.requestId,
+      decision: 'deny',
+    })
   }, 20_000)
 
   it('a draft review opens one review card with every verdict offered and none chosen, and posts nothing', async () => {
     const adapter = new DemoAdapter('claude')
     const events: RuntimeEvent[] = []
-    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) =>
+      events.push(e),
+    )
     await adapter.sendTurn('t1', 'Draft a review of the pull request.', 'sandbox')
-    await vi.waitFor(() => {
-      if (!events.some((e) => e.type === 'request.opened')) throw new Error('no card yet')
-    }, { timeout: 5_000, interval: 50 })
+    await vi.waitFor(
+      () => {
+        if (!events.some((e) => e.type === 'request.opened')) throw new Error('no card yet')
+      },
+      { timeout: 5_000, interval: 50 },
+    )
     const card = events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
     expect(card.toolName).toBe('mcp__switchboard__draft_review')
     expect(card.hostWrite).toMatchObject({ action: 'review', prLabel: 'switchboard #161' })
@@ -138,20 +193,33 @@ describe('DemoAdapter (tour recorder script)', () => {
     expect(card.hostWrite?.review?.verdicts).toEqual(['comment', 'approve', 'request_changes'])
     expect(card.detail).toContain('Review switchboard #161 with 3 line comments')
     await adapter.respondToRequest('t1', card.requestId, 'deny')
-    await vi.waitFor(() => {
-      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
-    }, { timeout: 5_000, interval: 50 })
-    expect(events).toContainEqual({ type: 'request.closed', threadId: 't1', requestId: card.requestId, decision: 'deny' })
+    await vi.waitFor(
+      () => {
+        if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
+      },
+      { timeout: 5_000, interval: 50 },
+    )
+    expect(events).toContainEqual({
+      type: 'request.closed',
+      threadId: 't1',
+      requestId: card.requestId,
+      decision: 'deny',
+    })
   }, 20_000)
 
   it('interrupting a turn blocked on an approval closes the approval without completing', async () => {
     const adapter = new DemoAdapter('claude')
     const events: RuntimeEvent[] = []
-    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) =>
+      events.push(e),
+    )
     await adapter.sendTurn('t1', 'Run the auth tests', 'sandbox')
-    await vi.waitFor(() => {
-      if (!events.some((e) => e.type === 'request.opened')) throw new Error('no approval yet')
-    }, { timeout: 5_000, interval: 50 })
+    await vi.waitFor(
+      () => {
+        if (!events.some((e) => e.type === 'request.opened')) throw new Error('no approval yet')
+      },
+      { timeout: 5_000, interval: 50 },
+    )
     await adapter.interruptTurn('t1')
     await new Promise((resolve) => setTimeout(resolve, 200))
     expect(events.some((e) => e.type === 'turn.completed')).toBe(false)
@@ -161,34 +229,57 @@ describe('DemoAdapter (tour recorder script)', () => {
   it('a steer that opens a second approval leaves the first one answerable', async () => {
     const adapter = new DemoAdapter('claude')
     const events: RuntimeEvent[] = []
-    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) =>
+      events.push(e),
+    )
     const opened = (): string[] => events.flatMap((e) => (e.type === 'request.opened' ? [e.requestId] : []))
     await adapter.sendTurn('t1', 'Run the auth tests', 'sandbox')
-    await vi.waitFor(() => { if (opened().length < 1) throw new Error('no approval yet') }, { timeout: 5_000, interval: 50 })
+    await vi.waitFor(
+      () => {
+        if (opened().length < 1) throw new Error('no approval yet')
+      },
+      { timeout: 5_000, interval: 50 },
+    )
     await adapter.sendTurn('t1', 'Run them again', 'sandbox', undefined, 'steer')
-    await vi.waitFor(() => { if (opened().length < 2) throw new Error('no second approval yet') }, { timeout: 5_000, interval: 50 })
+    await vi.waitFor(
+      () => {
+        if (opened().length < 2) throw new Error('no second approval yet')
+      },
+      { timeout: 5_000, interval: 50 },
+    )
     await adapter.respondToRequest('t1', opened()[0], 'approve')
-    await vi.waitFor(() => {
-      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('first turn still running')
-    }, { timeout: 10_000, interval: 50 })
+    await vi.waitFor(
+      () => {
+        if (!events.some((e) => e.type === 'turn.completed')) throw new Error('first turn still running')
+      },
+      { timeout: 10_000, interval: 50 },
+    )
     // The second approval is still open, so the session must not read idle.
     const lastStatus = (): string | undefined => events.filter((e) => e.type === 'status').at(-1)?.status
     expect(lastStatus()).toBe('running')
     await adapter.respondToRequest('t1', opened()[1], 'deny')
-    await vi.waitFor(() => {
-      if (events.filter((e) => e.type === 'turn.completed').length < 2) throw new Error('second turn still running')
-    }, { timeout: 10_000, interval: 50 })
+    await vi.waitFor(
+      () => {
+        if (events.filter((e) => e.type === 'turn.completed').length < 2) throw new Error('second turn still running')
+      },
+      { timeout: 10_000, interval: 50 },
+    )
     expect(lastStatus()).toBe('idle')
   }, 30_000)
 
   it('an explicit run request wins over edit keywords in the same message', async () => {
     const adapter = new DemoAdapter('claude')
     const events: RuntimeEvent[] = []
-    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) =>
+      events.push(e),
+    )
     await adapter.sendTurn('t1', 'Run the tests to validate the state fix', 'sandbox')
-    await vi.waitFor(() => {
-      if (!events.some((e) => e.type === 'request.opened')) throw new Error('no approval yet')
-    }, { timeout: 5_000, interval: 50 })
+    await vi.waitFor(
+      () => {
+        if (!events.some((e) => e.type === 'request.opened')) throw new Error('no approval yet')
+      },
+      { timeout: 5_000, interval: 50 },
+    )
     expect(events.some((e) => e.type === 'tool.started' && e.toolName === 'Edit')).toBe(false)
     expect(readFileSync(join(cwd, 'src', 'api', 'auth.ts'), 'utf8')).toContain('exchangeCode() {}')
     await adapter.interruptTurn('t1')
@@ -197,14 +288,19 @@ describe('DemoAdapter (tour recorder script)', () => {
   it('an interrupt before the approval opens never registers it, so a queued turn still runs', async () => {
     const adapter = new DemoAdapter('claude')
     const events: RuntimeEvent[] = []
-    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) =>
+      events.push(e),
+    )
     await adapter.sendTurn('t1', 'Run the auth tests', 'sandbox')
     // Still inside the opening pause, before the approval exists.
     await adapter.interruptTurn('t1')
     await adapter.sendTurn('t1', 'What do the tests cover?', 'sandbox', undefined, 'queue')
-    await vi.waitFor(() => {
-      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('queued turn never ran')
-    }, { timeout: 15_000, interval: 50 })
+    await vi.waitFor(
+      () => {
+        if (!events.some((e) => e.type === 'turn.completed')) throw new Error('queued turn never ran')
+      },
+      { timeout: 15_000, interval: 50 },
+    )
     expect(events.some((e) => e.type === 'request.opened')).toBe(false)
     expect(events.filter((e) => e.type === 'turn.completed')).toHaveLength(1)
   }, 20_000)
@@ -212,16 +308,24 @@ describe('DemoAdapter (tour recorder script)', () => {
   it('a tool interrupted mid-wait does not resume once the next turn starts', async () => {
     const adapter = new DemoAdapter('claude')
     const events: RuntimeEvent[] = []
-    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) =>
+      events.push(e),
+    )
     await adapter.sendTurn('t1', 'Move the state check ahead of the exchange.', 'sandbox')
-    await vi.waitFor(() => {
-      if (!events.some((e) => e.type === 'tool.started' && e.toolName === 'Edit')) throw new Error('no tool yet')
-    }, { timeout: 15_000, interval: 10 })
+    await vi.waitFor(
+      () => {
+        if (!events.some((e) => e.type === 'tool.started' && e.toolName === 'Edit')) throw new Error('no tool yet')
+      },
+      { timeout: 15_000, interval: 10 },
+    )
     await adapter.interruptTurn('t1')
     await adapter.sendTurn('t1', 'What do the tests cover?', 'sandbox')
-    await vi.waitFor(() => {
-      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
-    }, { timeout: 15_000, interval: 50 })
+    await vi.waitFor(
+      () => {
+        if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
+      },
+      { timeout: 15_000, interval: 50 },
+    )
     await new Promise((resolve) => setTimeout(resolve, 1_500))
 
     expect(events.some((e) => e.type === 'tool.completed')).toBe(false)

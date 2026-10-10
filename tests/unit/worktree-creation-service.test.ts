@@ -1,14 +1,8 @@
 import { createHash } from 'node:crypto'
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
-import type {
-  WorktreeCreationProgressEvent,
-  WorktreeCreationRequest,
-} from '../../src/shared/worktree-creation'
-import {
-  ensureWorktreeCreationSchema,
-  SqliteWorktreeCreationStore,
-} from '../../src/main/db/worktree-creation'
+import type { WorktreeCreationProgressEvent, WorktreeCreationRequest } from '../../src/shared/worktree-creation'
+import { ensureWorktreeCreationSchema, SqliteWorktreeCreationStore } from '../../src/main/db/worktree-creation'
 import type {
   ResolvedGitRepository,
   WorktreeMaterializationInspection,
@@ -227,8 +221,7 @@ describe('WorktreeCreationService', () => {
         repository: { projectPath: 'relative/repo', machineId: 'machine-local' },
       } as WorktreeCreationRequest
 
-      await expect(harness.service.createWorktreeTransaction(invalid))
-        .rejects.toThrow(/project path must be absolute/i)
+      await expect(harness.service.createWorktreeTransaction(invalid)).rejects.toThrow(/project path must be absolute/i)
 
       expect(count(harness.db, 'worktree_creations')).toBe(0)
       expect(count(harness.db, 'managed_worktrees')).toBe(0)
@@ -243,10 +236,12 @@ describe('WorktreeCreationService', () => {
     const harness = fixture()
     try {
       harness.git.beforeMaterialize = () => {
-        expect(harness.store.get({
-          machineId: 'machine-local',
-          creationId: request().creationId,
-        })).toMatchObject({
+        expect(
+          harness.store.get({
+            machineId: 'machine-local',
+            creationId: request().creationId,
+          }),
+        ).toMatchObject({
           phase: 'materializing',
           status: 'pending',
         })
@@ -257,9 +252,7 @@ describe('WorktreeCreationService', () => {
       expect(harness.git.calls.indexOf('resolveRepository')).toBeLessThan(
         harness.git.calls.indexOf('planMaterialization'),
       )
-      expect(harness.git.calls.indexOf('planMaterialization')).toBeLessThan(
-        harness.git.calls.indexOf('materialize'),
-      )
+      expect(harness.git.calls.indexOf('planMaterialization')).toBeLessThan(harness.git.calls.indexOf('materialize'))
       expect(harness.git.calls.filter((call) => call === 'materialize')).toHaveLength(1)
       expect(snapshot).toMatchObject({
         creationId: request().creationId,
@@ -272,21 +265,27 @@ describe('WorktreeCreationService', () => {
       })
       expect(count(harness.db, 'managed_worktrees')).toBe(1)
       expect(count(harness.db, 'conversations')).toBe(1)
-      expect(harness.db.prepare(`
+      expect(
+        harness.db
+          .prepare(`
         SELECT project_path, worktree_id, worktree_creation_id,
                worktree_path, worktree_branch
           FROM conversations WHERE id = 'conversation-1'
-      `).get()).toEqual({
+      `)
+          .get(),
+      ).toEqual({
         project_path: '/repo',
         worktree_id: 'worktree-1',
         worktree_creation_id: request().creationId,
         worktree_path: '/repo/.switchboard/worktrees/transactional-worktree-ddb6658ef4',
         worktree_branch: 'sb/transactional-worktree-ddb6658ef4',
       })
-      expect(harness.store.get({
-        machineId: 'machine-local',
-        creationId: request().creationId,
-      })).toMatchObject({ phase: 'ready', status: 'ready', worktreeId: 'worktree-1' })
+      expect(
+        harness.store.get({
+          machineId: 'machine-local',
+          creationId: request().creationId,
+        }),
+      ).toMatchObject({ phase: 'ready', status: 'ready', worktreeId: 'worktree-1' })
       expect(harness.progressSink.events.at(-1)).toMatchObject({ phase: 'ready', status: 'ready' })
     } finally {
       harness.close()
@@ -313,21 +312,24 @@ describe('WorktreeCreationService', () => {
     try {
       const ready = await harness.service.createWorktreeTransaction(request())
 
-      await expect(withBackendRequestContext(
-        { clientScope: 'phone:one', transport: 'remote', deviceScopes: ['chat'] },
-        () => harness.service.actOnWorktreeCreation({
-          machineId: 'machine-local',
-          creationId: ready.creationId,
-          expectedRevision: ready.revision,
-          action: 'remove',
-        }),
-      )).rejects.toThrow(/remov.*terminal.*scope/i)
+      await expect(
+        withBackendRequestContext({ clientScope: 'phone:one', transport: 'remote', deviceScopes: ['chat'] }, () =>
+          harness.service.actOnWorktreeCreation({
+            machineId: 'machine-local',
+            creationId: ready.creationId,
+            expectedRevision: ready.revision,
+            action: 'remove',
+          }),
+        ),
+      ).rejects.toThrow(/remov.*terminal.*scope/i)
 
       expect(harness.git.rollbackModes).toEqual([])
-      expect(harness.store.get({
-        machineId: 'machine-local',
-        creationId: ready.creationId,
-      })).toMatchObject({ phase: 'ready', status: 'ready' })
+      expect(
+        harness.store.get({
+          machineId: 'machine-local',
+          creationId: ready.creationId,
+        }),
+      ).toMatchObject({ phase: 'ready', status: 'ready' })
     } finally {
       harness.close()
     }
@@ -356,10 +358,14 @@ describe('WorktreeCreationService', () => {
 
       expect(duplicate).toEqual(first)
       expect(launchCalls).toHaveLength(1)
-      expect(JSON.parse(harness.store.get({
-        machineId: 'machine-local',
-        creationId: original.creationId,
-      })!.requestJson)).toMatchObject({ launch: { terminalPolicy: 'skip' } })
+      expect(
+        JSON.parse(
+          harness.store.get({
+            machineId: 'machine-local',
+            creationId: original.creationId,
+          })!.requestJson,
+        ),
+      ).toMatchObject({ launch: { terminalPolicy: 'skip' } })
     } finally {
       harness.close()
     }
@@ -378,8 +384,9 @@ describe('WorktreeCreationService', () => {
         },
       })
 
-      await expect(harness.service.createWorktreeTransaction(changed))
-        .rejects.toMatchObject({ name: 'WorktreeCreationConflictError' })
+      await expect(harness.service.createWorktreeTransaction(changed)).rejects.toMatchObject({
+        name: 'WorktreeCreationConflictError',
+      })
 
       expect(harness.git.calls.filter((call) => call === 'materialize')).toHaveLength(1)
       expect(count(harness.db, 'managed_worktrees')).toBe(1)
@@ -418,20 +425,24 @@ describe('WorktreeCreationService', () => {
     const harness = fixture()
     try {
       const base = request()
-      const result = await harness.service.createWorktreeTransaction(request({
-        checkout: {
-          ...base.checkout,
-          sparseCheckout: {
-            mode: 'cone',
-            directories: ['packages/app', 'src'],
-            presetId: 'app-only',
+      const result = await harness.service.createWorktreeTransaction(
+        request({
+          checkout: {
+            ...base.checkout,
+            sparseCheckout: {
+              mode: 'cone',
+              directories: ['packages/app', 'src'],
+              presetId: 'app-only',
+            },
           },
-        },
-      }))
+        }),
+      )
 
-      expect(harness.git.calls.indexOf('configureSparse')).toBeLessThan(harness.git.calls.indexOf('rollbackMaterialization') === -1
-        ? Number.MAX_SAFE_INTEGER
-        : harness.git.calls.indexOf('rollbackMaterialization'))
+      expect(harness.git.calls.indexOf('configureSparse')).toBeLessThan(
+        harness.git.calls.indexOf('rollbackMaterialization') === -1
+          ? Number.MAX_SAFE_INTEGER
+          : harness.git.calls.indexOf('rollbackMaterialization'),
+      )
       expect(result.sparseCheckoutReceipt).toEqual({
         mode: 'cone',
         directories: ['packages/app', 'src'],
@@ -448,12 +459,14 @@ describe('WorktreeCreationService', () => {
     harness.git.configureFailure = new Error('sparse checkout rejected directory src')
     try {
       const base = request()
-      const result = await harness.service.createWorktreeTransaction(request({
-        checkout: {
-          ...base.checkout,
-          sparseCheckout: { mode: 'cone', directories: ['src'] },
-        },
-      }))
+      const result = await harness.service.createWorktreeTransaction(
+        request({
+          checkout: {
+            ...base.checkout,
+            sparseCheckout: { mode: 'cone', directories: ['src'] },
+          },
+        }),
+      )
 
       expect(result).toMatchObject({
         status: 'rolled_back',
@@ -473,12 +486,14 @@ describe('WorktreeCreationService', () => {
     harness.git.rollbackFailure = new Error('git worktree remove failed')
     try {
       const base = request()
-      const result = await harness.service.createWorktreeTransaction(request({
-        checkout: {
-          ...base.checkout,
-          sparseCheckout: { mode: 'cone', directories: ['src'] },
-        },
-      }))
+      const result = await harness.service.createWorktreeTransaction(
+        request({
+          checkout: {
+            ...base.checkout,
+            sparseCheckout: { mode: 'cone', directories: ['src'] },
+          },
+        }),
+      )
 
       expect(result).toMatchObject({
         status: 'cleanup_required',
@@ -519,15 +534,19 @@ describe('WorktreeCreationService', () => {
       },
     })
     try {
-      const result = await harness.service.createWorktreeTransaction(request({
-        setup: { policy: 'run' },
-      }))
+      const result = await harness.service.createWorktreeTransaction(
+        request({
+          setup: { policy: 'run' },
+        }),
+      )
 
-      expect(setupCalls).toEqual([{
-        cwd: '/repo/.switchboard/worktrees/transactional-worktree-ddb6658ef4',
-        command: 'npm ci',
-        ownerCommitted: true,
-      }])
+      expect(setupCalls).toEqual([
+        {
+          cwd: '/repo/.switchboard/worktrees/transactional-worktree-ddb6658ef4',
+          command: 'npm ci',
+          ownerCommitted: true,
+        },
+      ])
       expect(result).toMatchObject({
         phase: 'ready',
         status: 'ready',
@@ -539,10 +558,14 @@ describe('WorktreeCreationService', () => {
           exitCode: 0,
         },
       })
-      expect(JSON.parse(harness.store.get({
-        machineId: 'machine-local',
-        creationId: request().creationId,
-      })!.setupReceiptJson!)).toMatchObject({ status: 'succeeded', exitCode: 0 })
+      expect(
+        JSON.parse(
+          harness.store.get({
+            machineId: 'machine-local',
+            creationId: request().creationId,
+          })!.setupReceiptJson!,
+        ),
+      ).toMatchObject({ status: 'succeeded', exitCode: 0 })
     } finally {
       harness.close()
     }
@@ -610,12 +633,19 @@ describe('WorktreeCreationService', () => {
     const runCalls: unknown[] = []
     const harness = fixture({
       setupConfig: { load: async () => undefined },
-      setupRunner: { run: async (input: unknown) => { runCalls.push(input); return { kind: 'succeeded' } } },
+      setupRunner: {
+        run: async (input: unknown) => {
+          runCalls.push(input)
+          return { kind: 'succeeded' }
+        },
+      },
     })
     try {
-      const result = await harness.service.createWorktreeTransaction(request({
-        setup: { policy: 'run' },
-      }))
+      const result = await harness.service.createWorktreeTransaction(
+        request({
+          setup: { policy: 'run' },
+        }),
+      )
 
       expect(result).toMatchObject({
         status: 'ready',
@@ -643,9 +673,11 @@ describe('WorktreeCreationService', () => {
       setupRunner: { run: async () => ({ kind: 'failed', exitCode: 12 }) },
     })
     try {
-      const result = await harness.service.createWorktreeTransaction(request({
-        setup: { policy: 'inherit' },
-      }))
+      const result = await harness.service.createWorktreeTransaction(
+        request({
+          setup: { policy: 'inherit' },
+        }),
+      )
 
       expect(result).toMatchObject({
         phase: 'provisioning',
@@ -670,7 +702,11 @@ describe('WorktreeCreationService', () => {
           startupPolicy: 'wait-for-setup',
         }),
       },
-      setupRunner: { run: async () => { throw new Error('setup transport closed') } },
+      setupRunner: {
+        run: async () => {
+          throw new Error('setup transport closed')
+        },
+      },
     })
     try {
       const result = await harness.service.createWorktreeTransaction(request({ setup: { policy: 'run' } }))
@@ -683,10 +719,12 @@ describe('WorktreeCreationService', () => {
       })
       expect(result.recoveryActions).toEqual(['retain'])
       expect(harness.git.calls).not.toContain('rollbackMaterialization')
-      expect(harness.store.get({
-        machineId: 'machine-local',
-        creationId: request().creationId,
-      })).toMatchObject({ phase: 'provisioning', status: 'cleanup_required' })
+      expect(
+        harness.store.get({
+          machineId: 'machine-local',
+          creationId: request().creationId,
+        }),
+      ).toMatchObject({ phase: 'provisioning', status: 'cleanup_required' })
     } finally {
       harness.close()
     }
@@ -701,12 +739,18 @@ describe('WorktreeCreationService', () => {
           startupPolicy: 'wait-for-setup',
         }),
       },
-      setupRunner: { run: async () => { throw new Error('must not run') } },
+      setupRunner: {
+        run: async () => {
+          throw new Error('must not run')
+        },
+      },
     })
     try {
-      const paused = await harness.service.createWorktreeTransaction(request({
-        setup: { policy: 'inherit' },
-      }))
+      const paused = await harness.service.createWorktreeTransaction(
+        request({
+          setup: { policy: 'inherit' },
+        }),
+      )
 
       expect(paused).toMatchObject({
         phase: 'awaiting_setup_decision',
@@ -751,9 +795,11 @@ describe('WorktreeCreationService', () => {
       },
     })
     try {
-      const paused = await harness.service.createWorktreeTransaction(request({
-        setup: { policy: 'inherit' },
-      }))
+      const paused = await harness.service.createWorktreeTransaction(
+        request({
+          setup: { policy: 'inherit' },
+        }),
+      )
       expect(paused.setupReceipt).toMatchObject({
         status: 'awaiting_decision',
         commandFingerprint: createHash('sha256').update('npm ci').digest('hex'),
@@ -805,19 +851,22 @@ describe('WorktreeCreationService', () => {
     try {
       const paused = await harness.service.createWorktreeTransaction(request({ setup: { policy: 'inherit' } }))
 
-      await expect(withBackendRequestContext(
-        { clientScope: 'phone:one', transport: 'remote', deviceScopes: ['chat'] },
-        () => harness.service.actOnWorktreeCreation({
+      await expect(
+        withBackendRequestContext({ clientScope: 'phone:one', transport: 'remote', deviceScopes: ['chat'] }, () =>
+          harness.service.actOnWorktreeCreation({
+            machineId: 'machine-local',
+            creationId: request().creationId,
+            expectedRevision: paused.revision,
+            action: 'choose_setup_run',
+          }),
+        ),
+      ).rejects.toThrow(/setup.*terminal.*scope/i)
+      expect(
+        harness.store.get({
           machineId: 'machine-local',
           creationId: request().creationId,
-          expectedRevision: paused.revision,
-          action: 'choose_setup_run',
         }),
-      )).rejects.toThrow(/setup.*terminal.*scope/i)
-      expect(harness.store.get({
-        machineId: 'machine-local',
-        creationId: request().creationId,
-      })).toMatchObject({ phase: 'awaiting_setup_decision', status: 'pending' })
+      ).toMatchObject({ phase: 'awaiting_setup_decision', status: 'pending' })
     } finally {
       harness.close()
     }
@@ -896,9 +945,11 @@ describe('WorktreeCreationService', () => {
       },
     })
     try {
-      const result = await harness.service.createWorktreeTransaction(request({
-        launch: { initialAgent: { provider: 'claude-code' } },
-      }))
+      const result = await harness.service.createWorktreeTransaction(
+        request({
+          launch: { initialAgent: { provider: 'claude-code' } },
+        }),
+      )
 
       expect(result).toMatchObject({
         phase: 'provisioning',
@@ -926,10 +977,12 @@ describe('WorktreeCreationService', () => {
       },
       setupRunner: {
         run: async () => {
-          harness.db.prepare(`
+          harness.db
+            .prepare(`
             UPDATE worktree_creations
                SET reserved_path = NULL, reserved_branch = NULL
-          `).run()
+          `)
+            .run()
           return { kind: 'succeeded' as const }
         },
       },
@@ -941,12 +994,14 @@ describe('WorktreeCreationService', () => {
       },
     })
     try {
-      const result = await harness.service.createWorktreeTransaction(request({
-        setup: { policy: 'run' },
-        launch: {
-          initialAgent: { provider: 'claude-code' },
-        },
-      }))
+      const result = await harness.service.createWorktreeTransaction(
+        request({
+          setup: { policy: 'run' },
+          launch: {
+            initialAgent: { provider: 'claude-code' },
+          },
+        }),
+      )
 
       expect(launchCount).toBe(0)
       expect(result).toMatchObject({
@@ -961,7 +1016,9 @@ describe('WorktreeCreationService', () => {
   it('immediately records a throwing startup port as ambiguous and retryable', async () => {
     const harness = fixture({
       startupLauncher: {
-        launch: async () => { throw new Error('startup acknowledgement lost') },
+        launch: async () => {
+          throw new Error('startup acknowledgement lost')
+        },
       },
     })
     const launchedRequest = request({
@@ -981,10 +1038,12 @@ describe('WorktreeCreationService', () => {
         error: { code: 'startup_outcome_unknown', retryable: true },
       })
       expect(result.recoveryActions).toContain('retry')
-      expect(harness.store.get({
-        machineId: 'machine-local',
-        creationId: launchedRequest.creationId,
-      })).toMatchObject({ phase: 'provisioning', status: 'cleanup_required' })
+      expect(
+        harness.store.get({
+          machineId: 'machine-local',
+          creationId: launchedRequest.creationId,
+        }),
+      ).toMatchObject({ phase: 'provisioning', status: 'cleanup_required' })
     } finally {
       harness.close()
     }
@@ -999,14 +1058,24 @@ describe('WorktreeCreationService', () => {
           startupPolicy: 'start-immediately',
         }),
       },
-      setupRunner: { run: async () => { throw new Error('setup port threw') } },
-      startupLauncher: { launch: async () => { throw new Error('startup port threw') } },
+      setupRunner: {
+        run: async () => {
+          throw new Error('setup port threw')
+        },
+      },
+      startupLauncher: {
+        launch: async () => {
+          throw new Error('startup port threw')
+        },
+      },
     })
     try {
-      const result = await harness.service.createWorktreeTransaction(request({
-        setup: { policy: 'inherit' },
-        launch: { initialAgent: { provider: 'claude-code' } },
-      }))
+      const result = await harness.service.createWorktreeTransaction(
+        request({
+          setup: { policy: 'inherit' },
+          launch: { initialAgent: { provider: 'claude-code' } },
+        }),
+      )
 
       expect(result).toMatchObject({
         phase: 'provisioning',
@@ -1102,15 +1171,16 @@ describe('WorktreeCreationService', () => {
     const launched = request({ launch: { initialAgent: { provider: 'claude-code' } } })
     try {
       const ambiguous = await harness.service.createWorktreeTransaction(launched)
-      await expect(withBackendRequestContext(
-        { clientScope: 'phone:one', transport: 'remote', deviceScopes: ['chat'] },
-        () => harness.service.actOnWorktreeCreation({
-          machineId: 'machine-local',
-          creationId: launched.creationId,
-          expectedRevision: ambiguous.revision,
-          action: 'retry',
-        }),
-      )).rejects.toThrow(/terminal.*scope/i)
+      await expect(
+        withBackendRequestContext({ clientScope: 'phone:one', transport: 'remote', deviceScopes: ['chat'] }, () =>
+          harness.service.actOnWorktreeCreation({
+            machineId: 'machine-local',
+            creationId: launched.creationId,
+            expectedRevision: ambiguous.revision,
+            action: 'retry',
+          }),
+        ),
+      ).rejects.toThrow(/terminal.*scope/i)
       expect(launchCount).toBe(1)
     } finally {
       harness.close()
@@ -1134,12 +1204,13 @@ describe('WorktreeCreationService', () => {
       )
       const ready = await withBackendRequestContext(
         { clientScope: 'phone:one', transport: 'remote', deviceScopes: ['chat'] },
-        () => remoteHarness.service.actOnWorktreeCreation({
-          machineId: 'machine-local',
-          creationId: launched.creationId,
-          expectedRevision: ambiguous.revision,
-          action: 'retry',
-        }),
+        () =>
+          remoteHarness.service.actOnWorktreeCreation({
+            machineId: 'machine-local',
+            creationId: launched.creationId,
+            expectedRevision: ambiguous.revision,
+            action: 'retry',
+          }),
       )
       expect(ready).toMatchObject({ status: 'ready' })
       expect(launchCount).toBe(2)
@@ -1173,8 +1244,7 @@ describe('WorktreeCreationService', () => {
         cleanupDisposition: 'retained',
         recoveryActions: ['remove'],
       })
-      expect(harness.db.prepare(`SELECT lifecycle FROM managed_worktrees`).get())
-        .toEqual({ lifecycle: 'retained' })
+      expect(harness.db.prepare(`SELECT lifecycle FROM managed_worktrees`).get()).toEqual({ lifecycle: 'retained' })
       expect(harness.git.calls).not.toContain('rollbackMaterialization')
     } finally {
       harness.close()
@@ -1209,14 +1279,17 @@ describe('WorktreeCreationService', () => {
       })
       expect(harness.git.calls.at(-1)).toBe('rollbackMaterialization')
       expect(harness.git.rollbackModes).toEqual(['explicit_remove'])
-      expect(harness.db.prepare(`SELECT lifecycle FROM managed_worktrees`).get())
-        .toEqual({ lifecycle: 'removed' })
+      expect(harness.db.prepare(`SELECT lifecycle FROM managed_worktrees`).get()).toEqual({ lifecycle: 'removed' })
       expect(count(harness.db, 'conversations')).toBe(1)
       expect(count(harness.db, 'messages')).toBe(1)
-      expect(harness.db.prepare(`
+      expect(
+        harness.db
+          .prepare(`
         SELECT worktree_path, worktree_branch, worktree_id, worktree_creation_id
           FROM conversations
-      `).get()).toEqual({
+      `)
+          .get(),
+      ).toEqual({
         worktree_path: null,
         worktree_branch: null,
         worktree_id: null,
@@ -1246,10 +1319,10 @@ describe('WorktreeCreationService', () => {
         cleanupDisposition: 'removal_refused',
         error: { code: 'removal_refused' },
       })
-      expect(harness.db.prepare(`SELECT lifecycle FROM managed_worktrees`).get())
-        .toEqual({ lifecycle: 'active' })
-      expect(harness.db.prepare(`SELECT worktree_path FROM conversations`).get())
-        .toEqual({ worktree_path: refused.worktreePath })
+      expect(harness.db.prepare(`SELECT lifecycle FROM managed_worktrees`).get()).toEqual({ lifecycle: 'active' })
+      expect(harness.db.prepare(`SELECT worktree_path FROM conversations`).get()).toEqual({
+        worktree_path: refused.worktreePath,
+      })
     } finally {
       harness.close()
     }

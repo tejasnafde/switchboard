@@ -24,17 +24,18 @@ export function SyntheticRow({ part }: { part: SyntheticUserPart }) {
   // Command output can run to many lines; the clamp lifts on tap.
   const expandable = !!detail || part.kind === 'command-output'
   return (
-    <Pressable
-      disabled={!expandable}
-      onPress={() => setOpen((v) => !v)}
-      accessibilityLabel={label}
-      style={styles.row}
-    >
+    <Pressable disabled={!expandable} onPress={() => setOpen((v) => !v)} accessibilityLabel={label} style={styles.row}>
       <View style={styles.line}>
         <View style={[styles.dot, { backgroundColor: TONE_COLOR[syntheticPartTone(part)] }]} />
-        <Text style={styles.label} numberOfLines={open ? undefined : 2}>{label}</Text>
+        <Text style={styles.label} numberOfLines={open ? undefined : 2}>
+          {label}
+        </Text>
       </View>
-      {open && detail && <Text style={styles.detail} selectable>{detail}</Text>}
+      {open && detail && (
+        <Text style={styles.detail} selectable>
+          {detail}
+        </Text>
+      )}
     </Pressable>
   )
 }

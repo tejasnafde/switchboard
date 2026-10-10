@@ -167,7 +167,12 @@ export async function diffCheckpoint(
  * UTF-8, so a binary side (a NUL, or bytes that are not UTF-8) would be
  * written back mangled; it ships empty and the card offers no Reject.
  */
-function checkedFileDiff(relPath: string, changeKind: ChangeKind, oldContent: string | null, newContent: string | null): CheckpointFileDiff {
+function checkedFileDiff(
+  relPath: string,
+  changeKind: ChangeKind,
+  oldContent: string | null,
+  newContent: string | null,
+): CheckpointFileDiff {
   if (oldContent === null || newContent === null) {
     return { relPath, changeKind, oldContent: oldContent ?? '', newContent: newContent ?? '', noRevert: 'unknown' }
   }
@@ -218,9 +223,7 @@ async function writeWorkingTree(repoRoot: string, runner: CheckpointGitRunner): 
     log.warn('write-tree snapshot failed', { repoRoot, err })
     return null
   } finally {
-    await rm(indexPath, { force: true }).catch((err) =>
-      log.warn('failed to remove temp index', { indexPath, err }),
-    )
+    await rm(indexPath, { force: true }).catch((err) => log.warn('failed to remove temp index', { indexPath, err }))
   }
 }
 

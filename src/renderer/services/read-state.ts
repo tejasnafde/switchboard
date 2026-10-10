@@ -61,11 +61,7 @@ export function initSharedReadState(): () => void {
   const sync = (): void => {
     const layout = useLayoutStore.getState()
     const appVisible = document.hasFocus() && document.visibilityState === 'visible'
-    const targets = readStateTargets(
-      layout.displayedChatSessionIds(),
-      layout.focusedChatSessionId(),
-      appVisible,
-    )
+    const targets = readStateTargets(layout.displayedChatSessionIds(), layout.focusedChatSessionId(), appVisible)
     const displayedKey = targets.markReadSessionIds.join('\u0000')
     if (displayedKey !== lastDisplayedKey) {
       lastDisplayedKey = displayedKey
@@ -91,10 +87,10 @@ export function initSharedReadState(): () => void {
       return
     }
     if (
-      event.type === 'turn.completed'
-      && document.hasFocus()
-      && document.visibilityState === 'visible'
-      && useLayoutStore.getState().displayedChatSessionIds().includes(event.threadId)
+      event.type === 'turn.completed' &&
+      document.hasFocus() &&
+      document.visibilityState === 'visible' &&
+      useLayoutStore.getState().displayedChatSessionIds().includes(event.threadId)
     ) {
       markRead(event.threadId)
       useAgentStore.getState().markSessionRead(event.threadId)

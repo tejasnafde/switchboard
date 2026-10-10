@@ -11,9 +11,7 @@ describe('extractDigest', () => {
   })
 
   it('extracts a single complete tag, trimmed', () => {
-    expect(extractDigest('<agent_digest>  Reading config files  </agent_digest>')).toBe(
-      'Reading config files',
-    )
+    expect(extractDigest('<agent_digest>  Reading config files  </agent_digest>')).toBe('Reading config files')
   })
 
   it('extracts the tag from surrounding prose', () => {
@@ -77,30 +75,24 @@ describe('stripDigest - complete-tag removal (both modes)', () => {
   })
 
   it.each([true, false])('removes a single complete tag (streaming: %s)', (streaming) => {
-    expect(stripDigest('Hello <agent_digest>Working</agent_digest> world', { streaming })).toBe(
-      'Hello  world',
-    )
+    expect(stripDigest('Hello <agent_digest>Working</agent_digest> world', { streaming })).toBe('Hello  world')
   })
 
   it.each([true, false])('removes multiple complete tags (streaming: %s)', (streaming) => {
-    const text =
-      '<agent_digest>Step one</agent_digest>body one' +
-      '<agent_digest>Step two</agent_digest>body two'
+    const text = '<agent_digest>Step one</agent_digest>body one' + '<agent_digest>Step two</agent_digest>body two'
     expect(stripDigest(text, { streaming })).toBe('body onebody two')
   })
 })
 
 describe('stripDigest - streaming: true (still typing in)', () => {
   it('hides a fully unclosed trailing tag and its partial body', () => {
-    expect(stripDigest('Working on it. <agent_digest>Writing te', { streaming: true })).toBe(
-      'Working on it. ',
-    )
+    expect(stripDigest('Working on it. <agent_digest>Writing te', { streaming: true })).toBe('Working on it. ')
   })
 
   it('hides an unclosed tag with a partial close tag in progress', () => {
-    expect(
-      stripDigest('Working on it. <agent_digest>Writing tests</agent_dig', { streaming: true }),
-    ).toBe('Working on it. ')
+    expect(stripDigest('Working on it. <agent_digest>Writing tests</agent_dig', { streaming: true })).toBe(
+      'Working on it. ',
+    )
   })
 
   it('hides a bare partial prefix of the open tag at the end of the text', () => {
@@ -163,9 +155,7 @@ describe('stripDigest - streaming: false (finished message)', () => {
   })
 
   it('leaves a bare partial prefix of the open tag alone', () => {
-    expect(stripDigest('Working on it. <agent_di', { streaming: false })).toBe(
-      'Working on it. <agent_di',
-    )
+    expect(stripDigest('Working on it. <agent_di', { streaming: false })).toBe('Working on it. <agent_di')
   })
 
   it('leaves a trailing "<" alone', () => {

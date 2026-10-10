@@ -58,7 +58,10 @@ async function closeApp() {
   const closing = app
   app = undefined
   const closed = await Promise.race([
-    closing.close().then(() => true, () => true),
+    closing.close().then(
+      () => true,
+      () => true,
+    ),
     new Promise((resolve) => setTimeout(() => resolve(false), 5_000)),
   ])
   if (!closed) closing.process().kill('SIGKILL')
@@ -133,13 +136,16 @@ try {
   const historical = win.locator('.markdown-content').filter({ hasText: 'historical_sql_marker' })
   await historical.waitFor({ state: 'visible', timeout: 15_000 })
   const historicalButtons = historical.locator('.code-copy-btn')
-  check(await historicalButtons.count() === 2, 'historical tagged and untagged blocks have one control each')
+  check((await historicalButtons.count()) === 2, 'historical tagged and untagged blocks have one control each')
   check(await historicalButtons.first().isVisible(), 'historical controls are settled on initial render')
   const restingStyle = await historicalButtons.first().evaluate((button) => {
     const style = getComputedStyle(button)
     return { opacity: style.opacity, visibility: style.visibility }
   })
-  check(restingStyle.opacity === '1' && restingStyle.visibility === 'visible', 'resting desktop affordance is visibly discoverable')
+  check(
+    restingStyle.opacity === '1' && restingStyle.visibility === 'visible',
+    'resting desktop affordance is visibly discoverable',
+  )
   await historical.locator('.file-chip').waitFor({ state: 'visible', timeout: 5_000 })
   check(true, 'inline file-pill enhancement remains active beside Markdown code blocks')
 
@@ -167,18 +173,27 @@ try {
   })
 
   await historicalButtons.first().click()
-  check(await historicalButtons.first().textContent() === 'Copied', 'copy feedback becomes Copied')
+  check((await historicalButtons.first().textContent()) === 'Copied', 'copy feedback becomes Copied')
   const firstWrite = await win.evaluate(() => window.__codeCopyE2E.writes[0])
   check(firstWrite === "select 'historical_sql_marker';\n", 'clipboard receives exact code text only')
   await win.waitForTimeout(1_650)
-  check(await historicalButtons.first().textContent() === 'Copy', 'copy feedback resets cleanly')
+  check((await historicalButtons.first().textContent()) === 'Copy', 'copy feedback resets cleanly')
 
   const firstSnapshot = "```sql\nselect 'stream_marker'"
-  await emit({ type: 'content', threadId: conversationId, messageId: 'stream-1', text: firstSnapshot, streamKind: 'assistant' })
+  await emit({
+    type: 'content',
+    threadId: conversationId,
+    messageId: 'stream-1',
+    text: firstSnapshot,
+    streamKind: 'assistant',
+  })
   const streaming = win.locator('.markdown-content').filter({ hasText: 'stream_marker' })
   await streaming.waitFor({ state: 'attached', timeout: 5_000 })
   let streamingButton = streaming.locator('.code-copy-btn')
-  check(await streamingButton.count() === 1 && !(await streamingButton.isVisible()), 'unfinished fenced block keeps one hidden provisional control')
+  check(
+    (await streamingButton.count()) === 1 && !(await streamingButton.isVisible()),
+    'unfinished fenced block keeps one hidden provisional control',
+  )
 
   await emit({
     type: 'content',
@@ -191,7 +206,13 @@ try {
   check(!(await streamingButton.isVisible()), 'additional cumulative chunks do not flash the provisional control')
 
   const closedSnapshot = `${firstSnapshot}\nfrom generated_rows\n\`\`\``
-  await emit({ type: 'content', threadId: conversationId, messageId: 'stream-1', text: closedSnapshot, streamKind: 'assistant' })
+  await emit({
+    type: 'content',
+    threadId: conversationId,
+    messageId: 'stream-1',
+    text: closedSnapshot,
+    streamKind: 'assistant',
+  })
   await streaming.locator('[data-code-state="settled"]').waitFor({ state: 'visible' })
   streamingButton = streaming.locator('.code-copy-btn')
   check(await streamingButton.isVisible(), 'closed code block becomes available once while later content may stream')
@@ -205,14 +226,31 @@ try {
     streamKind: 'assistant',
   })
   await streaming.getByText('Later streaming prose marker.', { exact: true }).waitFor({ state: 'visible' })
-  check(await streamingButton.evaluate((button) => document.activeElement === button), 'keyboard focus survives later prose commits')
-  check(await historicalButtons.first().isVisible(), 'completed historical blocks stay visible during another message update')
+  check(
+    await streamingButton.evaluate((button) => document.activeElement === button),
+    'keyboard focus survives later prose commits',
+  )
+  check(
+    await historicalButtons.first().isVisible(),
+    'completed historical blocks stay visible during another message update',
+  )
 
   await emit({ type: 'turn.completed', threadId: conversationId, durationMs: 200 })
-  check(await streaming.locator('.code-copy-btn').count() === 1, 'turn completion leaves exactly one control')
+  check((await streaming.locator('.code-copy-btn').count()) === 1, 'turn completion leaves exactly one control')
 
-  await emit({ type: 'tool.started', threadId: conversationId, toolId: 'tool-e2e', toolName: 'Bash', input: { command: 'printf fixture' } })
-  await emit({ type: 'tool.completed', threadId: conversationId, toolId: 'tool-e2e', output: Array.from({ length: 80 }, (_, index) => `tool output ${index}`).join('\n') })
+  await emit({
+    type: 'tool.started',
+    threadId: conversationId,
+    toolId: 'tool-e2e',
+    toolName: 'Bash',
+    input: { command: 'printf fixture' },
+  })
+  await emit({
+    type: 'tool.completed',
+    threadId: conversationId,
+    toolId: 'tool-e2e',
+    output: Array.from({ length: 80 }, (_, index) => `tool output ${index}`).join('\n'),
+  })
   const activity = win.locator('details.turn-activity').last()
   await activity.locator('summary').click()
   const toolTrigger = win.getByRole('button', { name: /printf fixture/ }).last()
@@ -223,12 +261,26 @@ try {
   await toolbar.waitFor({ state: 'visible' })
   const beforeScroll = await toolbar.boundingBox()
   const preBox = await toolPre.boundingBox()
-  check(!!beforeScroll && !!preBox && beforeScroll.y + beforeScroll.height <= preBox.y + 1, 'tool copy toolbar does not overlap code')
-  await toolPre.evaluate((pre) => { pre.scrollTop = pre.scrollHeight })
+  check(
+    !!beforeScroll && !!preBox && beforeScroll.y + beforeScroll.height <= preBox.y + 1,
+    'tool copy toolbar does not overlap code',
+  )
+  await toolPre.evaluate((pre) => {
+    pre.scrollTop = pre.scrollHeight
+  })
   const afterScroll = await toolbar.boundingBox()
-  check(!!beforeScroll && !!afterScroll && Math.abs(beforeScroll.y - afterScroll.y) < 1, 'tool copy control remains reachable while output scrolls')
+  check(
+    !!beforeScroll && !!afterScroll && Math.abs(beforeScroll.y - afterScroll.y) < 1,
+    'tool copy control remains reachable while output scrolls',
+  )
 
-  await emit({ type: 'content', threadId: conversationId, messageId: 'stream-2', text: '```\ninterrupted_marker', streamKind: 'assistant' })
+  await emit({
+    type: 'content',
+    threadId: conversationId,
+    messageId: 'stream-2',
+    text: '```\ninterrupted_marker',
+    streamKind: 'assistant',
+  })
   const interrupted = win.locator('.markdown-content').filter({ hasText: 'interrupted_marker' })
   await interrupted.waitFor({ state: 'attached' })
   check(!(await interrupted.locator('.code-copy-btn').isVisible()), 'new unfinished block is hidden while mutable')
@@ -236,17 +288,24 @@ try {
   await interrupted.locator('[data-code-state="settled"]').waitFor({ state: 'visible' })
   check(await interrupted.locator('.code-copy-btn').isVisible(), 'error path settles an unfinished visible block')
 
-  await win.evaluate(() => { window.__codeCopyE2E.reject = true })
+  await win.evaluate(() => {
+    window.__codeCopyE2E.reject = true
+  })
   await historicalButtons.first().click()
   await win.waitForTimeout(100)
   const rejected = await win.evaluate(() => ({
     unhandled: window.__codeCopyE2E.unhandled,
     flashes: window.__codeCopyE2E.flashes,
   }))
-  check(rejected.unhandled.length === 0 && pageErrors.length === 0, 'clipboard rejection produces no unhandled rejection')
+  check(
+    rejected.unhandled.length === 0 && pageErrors.length === 0,
+    'clipboard rejection produces no unhandled rejection',
+  )
   check(rejected.flashes === 0, 'no provisional copy control became visible during observed streaming mutations')
 
-  await win.evaluate(() => { window.__codeCopyE2E.reject = false })
+  await win.evaluate(() => {
+    window.__codeCopyE2E.reject = false
+  })
   await historicalButtons.first().focus()
   await historicalButtons.first().press('Enter')
   const keyboardWrite = await win.evaluate(() => window.__codeCopyE2E.writes.at(-1))

@@ -21,7 +21,12 @@ export function WorktreeManagerModal({ projectPath, onClose }: Props): React.Rea
   const projectPaths = useMemo(() => [projectPath], [projectPath])
   const worktrees = useWorktreeInventory(projectPaths)
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
       <DialogContent
         aria-describedby={undefined}
         overlayClassName="z-[1000] bg-[rgba(0,0,0,0.4)]"
@@ -29,7 +34,9 @@ export function WorktreeManagerModal({ projectPath, onClose }: Props): React.Rea
       >
         <div className={headerClass}>
           <DialogTitle className="text-[13px] font-[600]">Worktrees - {projectPath.split('/').pop()}</DialogTitle>
-          <button onClick={onClose} className={closeButtonClass} aria-label="Close">&times;</button>
+          <button onClick={onClose} className={closeButtonClass} aria-label="Close">
+            &times;
+          </button>
         </div>
         <div className="overflow-auto p-[12px]">
           <WorktreesPanel state={worktrees} />

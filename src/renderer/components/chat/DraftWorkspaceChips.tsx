@@ -32,7 +32,11 @@ const CHECKOUT_SHORT: Record<DraftChatOptions['checkout'], string> = {
  * branch, a draft picks the checkout: the project, a new worktree and its
  * base, or a worktree that already exists.
  */
-export function useDraftWorkspace(sessionId: string | null, cwd: string | null, draft: DraftChatOptions | undefined): DraftWorkspaceSection[] {
+export function useDraftWorkspace(
+  sessionId: string | null,
+  cwd: string | null,
+  draft: DraftChatOptions | undefined,
+): DraftWorkspaceSection[] {
   const setDraftOptions = useAgentStore((s) => s.setDraftOptions)
   const [refs, setRefs] = useState<Array<{ name: string; isRemote: boolean; worktreePath: string | null }>>([])
   const isDraft = !!sessionId && !!draft
@@ -43,38 +47,49 @@ export function useDraftWorkspace(sessionId: string | null, cwd: string | null, 
     setRefs([])
     if (!cwd || !isDraft) return
     let cancelled = false
-    window.api.git.listRefs(cwd)
-      .then((result) => { if (!cancelled && result.ok) setRefs(result.refs) })
+    window.api.git
+      .listRefs(cwd)
+      .then((result) => {
+        if (!cancelled && result.ok) setRefs(result.refs)
+      })
       .catch((err: unknown) => log.warn('listRefs failed', err))
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [cwd, isDraft])
 
   if (!sessionId || !draft) return []
 
   const branches = refs.filter((r) => !r.isRemote).map((r) => r.name)
   const worktrees = refs.flatMap((r) =>
-    !r.isRemote && r.worktreePath && r.worktreePath !== cwd ? [{ path: r.worktreePath, branch: r.name }] : [])
+    !r.isRemote && r.worktreePath && r.worktreePath !== cwd ? [{ path: r.worktreePath, branch: r.name }] : [],
+  )
 
-  const pickCheckout = (checkout: DraftChatOptions['checkout']) => setDraftOptions(sessionId, {
-    checkout,
-    ...(checkout === 'existing' && !draft.existing && worktrees[0] ? { existing: worktrees[0] } : {}),
-  })
+  const pickCheckout = (checkout: DraftChatOptions['checkout']) =>
+    setDraftOptions(sessionId, {
+      checkout,
+      ...(checkout === 'existing' && !draft.existing && worktrees[0] ? { existing: worktrees[0] } : {}),
+    })
 
   const checkoutOptions: ChipOption[] = [
     { value: 'project', label: 'Project checkout' },
     { value: 'worktree', label: 'New worktree' },
-    ...(worktrees.length > 0 || draft.checkout === 'existing' ? [{ value: 'existing', label: 'Existing worktree' }] : []),
+    ...(worktrees.length > 0 || draft.checkout === 'existing'
+      ? [{ value: 'existing', label: 'Existing worktree' }]
+      : []),
   ]
-  const sections: DraftWorkspaceSection[] = [{
-    key: 'checkout',
-    label: 'Workspace',
-    testId: 'draft-workspace',
-    options: checkoutOptions,
-    value: draft.checkout,
-    valueText: checkoutOptions.find((o) => o.value === draft.checkout)?.label ?? draft.checkout,
-    short: CHECKOUT_SHORT[draft.checkout],
-    pick: (value) => pickCheckout(value as DraftChatOptions['checkout']),
-  }]
+  const sections: DraftWorkspaceSection[] = [
+    {
+      key: 'checkout',
+      label: 'Workspace',
+      testId: 'draft-workspace',
+      options: checkoutOptions,
+      value: draft.checkout,
+      valueText: checkoutOptions.find((o) => o.value === draft.checkout)?.label ?? draft.checkout,
+      short: CHECKOUT_SHORT[draft.checkout],
+      pick: (value) => pickCheckout(value as DraftChatOptions['checkout']),
+    },
+  ]
 
   if (draft.checkout === 'worktree') {
     const options: ChipOption[] = [

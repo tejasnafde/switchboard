@@ -18,7 +18,14 @@ const T = 'thread-1'
 describe('pushForEvent', () => {
   it('notifies for an approval, which blocks the agent indefinitely', () => {
     const msg = pushForEvent(
-      { type: 'request.opened', threadId: T, requestId: 'r', toolName: 'Write', detail: 'src/a.ts', requestType: 'tool' } as RuntimeEvent,
+      {
+        type: 'request.opened',
+        threadId: T,
+        requestId: 'r',
+        toolName: 'Write',
+        detail: 'src/a.ts',
+        requestType: 'tool',
+      } as RuntimeEvent,
       { title: 'Fix the parser' },
     )
     expect(msg).toEqual({
@@ -30,7 +37,12 @@ describe('pushForEvent', () => {
 
   it('notifies for a question', () => {
     const msg = pushForEvent(
-      { type: 'question.asked', threadId: T, requestId: 'r', questions: [{ question: 'Which database?' }] } as RuntimeEvent,
+      {
+        type: 'question.asked',
+        threadId: T,
+        requestId: 'r',
+        questions: [{ question: 'Which database?' }],
+      } as RuntimeEvent,
       {},
     )
     expect(msg?.body).toBe('Asked: Which database?')
@@ -39,7 +51,8 @@ describe('pushForEvent', () => {
 
   it('notifies when a turn finishes, saying how long it took rather than what it cost', () => {
     expect(
-      pushForEvent({ type: 'turn.completed', threadId: T, costUsd: 0.42, durationMs: 65_000 } as RuntimeEvent, {})?.body,
+      pushForEvent({ type: 'turn.completed', threadId: T, costUsd: 0.42, durationMs: 65_000 } as RuntimeEvent, {})
+        ?.body,
     ).toBe('Done in 1m 5s')
     // No duration reported (a legacy adapter path) still says something useful.
     expect(pushForEvent({ type: 'turn.completed', threadId: T } as RuntimeEvent, {})?.body).toBe('Done')
@@ -79,8 +92,18 @@ describe('pushForEvent', () => {
 
 describe('pushForEvent for a session link running out', () => {
   const event = (over: Partial<Extract<RuntimeEvent, { type: 'peer.undelivered' }>> = {}): RuntimeEvent => ({
-    type: 'peer.undelivered', threadId: 'w1', messageId: 'pu_1', peerThreadId: 'hub', peerLabel: 'Lead',
-    fromLabel: 'Worker A', reason: 'link-budget', text: 'finding', sent: false, notify: true, at: 1, ...over,
+    type: 'peer.undelivered',
+    threadId: 'w1',
+    messageId: 'pu_1',
+    peerThreadId: 'hub',
+    peerLabel: 'Lead',
+    fromLabel: 'Worker A',
+    reason: 'link-budget',
+    text: 'finding',
+    sent: false,
+    notify: true,
+    at: 1,
+    ...over,
   })
 
   it('wakes the phone once, naming both sessions', () => {

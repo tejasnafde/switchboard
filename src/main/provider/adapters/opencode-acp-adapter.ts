@@ -21,7 +21,11 @@ import type { RuntimeMode } from '../types'
 import type { SessionSummary } from '@shared/types'
 import { findOpencodePath, buildOpencodeEnv } from './opencode/env'
 import { assertSupportedOpencode } from './opencode/version'
-import { isSwitchboardOpencodeReadTool, isSwitchboardOpencodeTool, SWITCHBOARD_OPENCODE_TOOLS } from '../../mcp/agent-registration'
+import {
+  isSwitchboardOpencodeReadTool,
+  isSwitchboardOpencodeTool,
+  SWITCHBOARD_OPENCODE_TOOLS,
+} from '../../mcp/agent-registration'
 import { AcpAdapter } from './acp/acp-adapter'
 import type { AcpLaunchConfig, AcpSessionPrep } from './acp/launch-config'
 
@@ -238,9 +242,8 @@ function collectMcpNamesFromConfig(config: Record<string, unknown>, out: Set<str
   const mcp = config.mcp
   if (!mcp || typeof mcp !== 'object' || Array.isArray(mcp)) return
   for (const [name, value] of Object.entries(mcp as Record<string, unknown>)) {
-    const enabled = value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as { enabled?: unknown }).enabled
-      : undefined
+    const enabled =
+      value && typeof value === 'object' && !Array.isArray(value) ? (value as { enabled?: unknown }).enabled : undefined
     if (enabled !== false) out.add(name)
   }
 }
@@ -354,8 +357,9 @@ const OPENCODE_PERMISSION_STRENGTH: Record<OpencodePermissionValue, number> = {
 }
 
 function permissionIsAtLeastAsProtective(value: unknown, baseline: OpencodePermissionValue): boolean {
-  return isOpencodePermissionValue(value)
-    && OPENCODE_PERMISSION_STRENGTH[value] >= OPENCODE_PERMISSION_STRENGTH[baseline]
+  return (
+    isOpencodePermissionValue(value) && OPENCODE_PERMISSION_STRENGTH[value] >= OPENCODE_PERMISSION_STRENGTH[baseline]
+  )
 }
 
 function generatedRulesForScalarDefault(
@@ -374,9 +378,10 @@ function mergeOpencodeInlineConfig(existing: string | undefined, injected: strin
   const base = parseOpencodeConfigObject(existing, 'existing OPENCODE_CONFIG_CONTENT')
   const extra = parseOpencodeConfigObject(injected, 'Switchboard OPENCODE_CONFIG_CONTENT')
   if (!base || !extra) return injected
-  const extraPermission = extra.permission && typeof extra.permission === 'object' && !Array.isArray(extra.permission)
-    ? extra.permission as Record<string, unknown>
-    : {}
+  const extraPermission =
+    extra.permission && typeof extra.permission === 'object' && !Array.isArray(extra.permission)
+      ? (extra.permission as Record<string, unknown>)
+      : {}
   if (isOpencodePermissionValue(base.permission)) {
     return JSON.stringify({
       ...base,
@@ -386,9 +391,10 @@ function mergeOpencodeInlineConfig(existing: string | undefined, injected: strin
       },
     })
   }
-  const basePermission = base.permission && typeof base.permission === 'object' && !Array.isArray(base.permission)
-    ? base.permission as Record<string, unknown>
-    : {}
+  const basePermission =
+    base.permission && typeof base.permission === 'object' && !Array.isArray(base.permission)
+      ? (base.permission as Record<string, unknown>)
+      : {}
   return JSON.stringify({
     ...base,
     permission: {
@@ -397,7 +403,6 @@ function mergeOpencodeInlineConfig(existing: string | undefined, injected: strin
     },
   })
 }
-
 
 function displayToolName(toolName: string, mcpServerNames: readonly string[]): string {
   for (const server of mcpServerNames) {
@@ -433,7 +438,10 @@ async function prepareOpencodeSession(input: {
     },
   )
   const env = mcpPermissionContent
-    ? { ...input.env, OPENCODE_CONFIG_CONTENT: mergeOpencodeInlineConfig(input.env.OPENCODE_CONFIG_CONTENT, mcpPermissionContent) }
+    ? {
+        ...input.env,
+        OPENCODE_CONFIG_CONTENT: mergeOpencodeInlineConfig(input.env.OPENCODE_CONFIG_CONTENT, mcpPermissionContent),
+      }
     : input.env
   return {
     env,
@@ -441,14 +449,23 @@ async function prepareOpencodeSession(input: {
     // OpenCode asks about MCP tools only when the user's config says so. In
     // plan mode only our read tools skip the prompt, so a write is denied here too.
     autoAllowSwitchboardTool: (toolName, mode) =>
-      (mode !== 'plan' || isSwitchboardOpencodeReadTool(toolName))
-      && canAutoAllowSwitchboardOpencodeTool(toolName, mcpServerNames, userConfig.permissionRules, userConfig.canTrustUserConfig),
+      (mode !== 'plan' || isSwitchboardOpencodeReadTool(toolName)) &&
+      canAutoAllowSwitchboardOpencodeTool(
+        toolName,
+        mcpServerNames,
+        userConfig.permissionRules,
+        userConfig.canTrustUserConfig,
+      ),
     displayToolName: (toolName) => displayToolName(toolName, mcpServerNames),
   }
 }
 
 /** Writes the summary that makes the session visible to the session scanner. */
-async function persistOpencodeSessionSummary(input: { sessionId: string; message: string; session: { cwd: string; createdAt: number } }): Promise<void> {
+async function persistOpencodeSessionSummary(input: {
+  sessionId: string
+  message: string
+  session: { cwd: string; createdAt: number }
+}): Promise<void> {
   try {
     const opencodeDir = join(homedir(), '.opencode', 'sessions')
     const projectSessionsDir = join(opencodeDir, encodeClaudeProjectPath(input.session.cwd))

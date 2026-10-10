@@ -23,10 +23,7 @@ export interface DesktopTurnSubmissionDependencies {
   submit: (turn: UserTurnSubmissionV1) => Promise<UserTurnSubmissionResult>
 }
 
-export function pendingDesktopUserMessage(
-  turn: UserTurnSubmissionV1,
-  timestamp: number = Date.now(),
-): ChatMessage {
+export function pendingDesktopUserMessage(turn: UserTurnSubmissionV1, timestamp: number = Date.now()): ChatMessage {
   return {
     id: echoMessageId(turn.origin),
     role: 'user',
@@ -147,9 +144,7 @@ export async function submitDesktopUserTurn(
     accepted: false,
     delivery: 'rejected',
     error: result.reason,
-    ...('blockingOrigin' in result && result.blockingOrigin
-      ? { recoveryOrigin: result.blockingOrigin }
-      : {}),
+    ...('blockingOrigin' in result && result.blockingOrigin ? { recoveryOrigin: result.blockingOrigin } : {}),
   }
 }
 

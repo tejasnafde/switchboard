@@ -111,7 +111,9 @@ for (let run = 1; run <= runs; run++) {
   const { code, signal } = await launch()
   if (code !== 0) {
     console.error(`[smoke-test] FAILED on launch ${run} of ${runs} (code=${code}, signal=${signal})`)
-    const dumps = existsSync(dumpDir) ? readdirSync(dumpDir, { recursive: true }).filter((f) => String(f).endsWith('.dmp')) : []
+    const dumps = existsSync(dumpDir)
+      ? readdirSync(dumpDir, { recursive: true }).filter((f) => String(f).endsWith('.dmp'))
+      : []
     if (dumps.length > 0) console.error(`[smoke-test] minidumps in ${dumpDir}: ${dumps.join(', ')}`)
     process.exit(code ?? 1)
   }

@@ -37,12 +37,22 @@ function lastUsedAt(project: Project): number {
 /** Local projects, then each connected machine's, in the sidebar's order. */
 export function buildProjectTargets(local: readonly Project[], remote: RemoteProjectsInput): ProjectTarget[] {
   const all: ProjectTarget[] = local.map((p) => ({
-    projectPath: p.path, machineId: 'local', name: p.name, where: 'local', lastUsedAt: lastUsedAt(p),
+    projectPath: p.path,
+    machineId: 'local',
+    name: p.name,
+    where: 'local',
+    lastUsedAt: lastUsedAt(p),
   }))
   for (const machine of remote.remotes) {
     if (remote.connections[machine.id] !== 'connected') continue
     for (const p of remote.projects[machine.id] ?? []) {
-      all.push({ projectPath: p.path, machineId: machine.id, name: p.name, where: machine.name, lastUsedAt: lastUsedAt(p) })
+      all.push({
+        projectPath: p.path,
+        machineId: machine.id,
+        name: p.name,
+        where: machine.name,
+        lastUsedAt: lastUsedAt(p),
+      })
     }
   }
   return all
@@ -181,11 +191,7 @@ export interface RecentChat {
  * and connected machines, newest first. A chat listed under two projects
  * appears once.
  */
-export function recentLandingChats(
-  local: readonly Project[],
-  remote: RemoteProjectsInput,
-  limit = 3,
-): RecentChat[] {
+export function recentLandingChats(local: readonly Project[], remote: RemoteProjectsInput, limit = 3): RecentChat[] {
   const sets: Array<{ machineId: string; projects: readonly Project[] }> = [{ machineId: 'local', projects: local }]
   for (const machine of remote.remotes) {
     if (remote.connections[machine.id] !== 'connected') continue
@@ -286,7 +292,9 @@ let projectPickerOpener: ProjectPickerOpener | null = null
 /** The landing screen registers its project chip so cmd+shift+O can open it. */
 export function registerLandingProjectPicker(open: ProjectPickerOpener): () => void {
   projectPickerOpener = open
-  return () => { if (projectPickerOpener === open) projectPickerOpener = null }
+  return () => {
+    if (projectPickerOpener === open) projectPickerOpener = null
+  }
 }
 
 /** False when no landing screen is mounted. */

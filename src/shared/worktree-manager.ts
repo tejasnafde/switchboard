@@ -112,7 +112,10 @@ function isAbsolutePath(path: string): boolean {
   return path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('\\\\')
 }
 
-export function applyProtectionPatch(protection: WorktreeProtection, patch: WorktreeProtectionPatch): WorktreeProtection {
+export function applyProtectionPatch(
+  protection: WorktreeProtection,
+  patch: WorktreeProtectionPatch,
+): WorktreeProtection {
   const key = patch.target === 'project' ? 'projects' : 'worktrees'
   const without = protection[key].filter((p) => p !== patch.path)
   return { ...protection, [key]: patch.protected ? [...without, patch.path] : without }
@@ -131,9 +134,28 @@ export type WorktreeCategory = 'in_use' | 'protected' | 'has_changes' | 'safe'
  * monorepo keeps one per package.
  */
 export const REGENERABLE_IGNORED_DIRS: readonly string[] = [
-  'node_modules', 'dist', 'out', 'build', '.next', '.nuxt', '.svelte-kit', 'coverage',
-  '.turbo', '.cache', '.parcel-cache', '.vite', 'target', '__pycache__', '.pytest_cache',
-  '.mypy_cache', '.ruff_cache', '.venv', 'venv', '.gradle', '.dart_tool', '.expo',
+  'node_modules',
+  'dist',
+  'out',
+  'build',
+  '.next',
+  '.nuxt',
+  '.svelte-kit',
+  'coverage',
+  '.turbo',
+  '.cache',
+  '.parcel-cache',
+  '.vite',
+  'target',
+  '__pycache__',
+  '.pytest_cache',
+  '.mypy_cache',
+  '.ruff_cache',
+  '.venv',
+  'venv',
+  '.gradle',
+  '.dart_tool',
+  '.expo',
 ]
 
 export function isRegenerableIgnored(entry: string): boolean {
@@ -151,9 +173,11 @@ export function isRegenerableIgnored(entry: string): boolean {
  */
 export function ignoredLosses(entries: readonly string[]): string[] {
   const clean = entries.map((e) => e.replace(/\\/g, '/')).filter((e) => e !== '')
-  return clean.filter((entry) =>
-    !isRegenerableIgnored(entry) &&
-    !(entry.endsWith('/') && clean.some((other) => other !== entry && other.startsWith(entry))))
+  return clean.filter(
+    (entry) =>
+      !isRegenerableIgnored(entry) &&
+      !(entry.endsWith('/') && clean.some((other) => other !== entry && other.startsWith(entry))),
+  )
 }
 
 export function classifyWorktree(row: WorktreeRow): WorktreeCategory {
@@ -203,7 +227,9 @@ const ACK_FIELDS = ['uncommittedFiles', 'unpushedCommits', 'ignoredFiles'] as co
  * the loss comparison (`undefined < 3` is false) and let a dirty worktree be
  * force-removed without a real confirm.
  */
-export function parseRemovalAck(value: unknown): { ok: true; ack: WorktreeRemovalAck | null } | { ok: false; error: string } {
+export function parseRemovalAck(
+  value: unknown,
+): { ok: true; ack: WorktreeRemovalAck | null } | { ok: false; error: string } {
   if (value === null || value === undefined) return { ok: true, ack: null }
   const invalid = (why: string) => ({ ok: false as const, error: `Invalid removal confirmation: ${why}.` })
   if (typeof value !== 'object' || Array.isArray(value)) return invalid('expected an object of counts')
@@ -213,11 +239,16 @@ export function parseRemovalAck(value: unknown): { ok: true; ack: WorktreeRemova
   const record = value as Record<string, unknown>
   for (const field of ACK_FIELDS) {
     const n = record[field]
-    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) return invalid(`${field} must be a whole number of 0 or more`)
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0)
+      return invalid(`${field} must be a whole number of 0 or more`)
   }
   return {
     ok: true,
-    ack: { uncommittedFiles: record.uncommittedFiles as number, unpushedCommits: record.unpushedCommits as number, ignoredFiles: record.ignoredFiles as number },
+    ack: {
+      uncommittedFiles: record.uncommittedFiles as number,
+      unpushedCommits: record.unpushedCommits as number,
+      ignoredFiles: record.ignoredFiles as number,
+    },
   }
 }
 
@@ -243,15 +274,25 @@ export function removalVerdict(row: WorktreeRow, rawAck: unknown): WorktreeRemov
   if (row.owned) {
     return { ok: false, reason: 'This worktree is in use. Remove it from the chat or card that owns it.' }
   }
-  if (row.protectedBy === 'project') return { ok: false, reason: 'This project is protected; its worktrees are never removed here.' }
+  if (row.protectedBy === 'project')
+    return { ok: false, reason: 'This project is protected; its worktrees are never removed here.' }
   if (row.protectedBy === 'worktree') return { ok: false, reason: 'This worktree is protected.' }
-  if (row.locked) return { ok: false, reason: 'Git has this worktree locked. Unlock it with `git worktree unlock` first.' }
+  if (row.locked)
+    return { ok: false, reason: 'Git has this worktree locked. Unlock it with `git worktree unlock` first.' }
   if (!row.git) return { ok: false, reason: 'Could not read the git state of this worktree, so it is not removed.' }
   const { uncommittedFiles, unpushedCommits, ignoredFiles } = row.git
   if (uncommittedFiles > 0 || unpushedCommits > 0 || ignoredFiles > 0) {
-    if (!ack) return { ok: false, reason: `Removing this worktree would lose ${lossSummary(row.git)}; it needs a confirm.` }
-    if (ack.uncommittedFiles < uncommittedFiles || ack.unpushedCommits < unpushedCommits || ack.ignoredFiles < ignoredFiles) {
-      return { ok: false, reason: `The worktree changed since you confirmed: it now has ${lossSummary(row.git)}. Review it again.` }
+    if (!ack)
+      return { ok: false, reason: `Removing this worktree would lose ${lossSummary(row.git)}; it needs a confirm.` }
+    if (
+      ack.uncommittedFiles < uncommittedFiles ||
+      ack.unpushedCommits < unpushedCommits ||
+      ack.ignoredFiles < ignoredFiles
+    ) {
+      return {
+        ok: false,
+        reason: `The worktree changed since you confirmed: it now has ${lossSummary(row.git)}. Review it again.`,
+      }
     }
   }
   return {
@@ -295,9 +336,11 @@ export function removalConfirmBody(row: WorktreeRow): string {
   if (git.unpushedCommits > 0) {
     const one = git.unpushedCommits === 1
     const commits = `${plural(git.unpushedCommits, 'unpushed commit')} ${one ? 'exists' : 'exist'} nowhere else`
-    lines.push(row.branch
-      ? `${commits}. ${one ? 'It stays' : 'They stay'} on branch ${row.branch}, which is not deleted.`
-      : `${commits} and, with a detached HEAD, will be lost.`)
+    lines.push(
+      row.branch
+        ? `${commits}. ${one ? 'It stays' : 'They stay'} on branch ${row.branch}, which is not deleted.`
+        : `${commits} and, with a detached HEAD, will be lost.`,
+    )
   }
   return lines.join(' ')
 }
@@ -310,9 +353,10 @@ export function gitStateLabel(row: WorktreeRow): { text: string; tone: WorktreeS
       return {
         text: 'In use',
         tone: 'lock',
-        title: row.chat && !row.chat.archived
-          ? 'Used by a live chat; it cannot be removed here'
-          : 'Owned by a chat or card; remove it from there',
+        title:
+          row.chat && !row.chat.archived
+            ? 'Used by a live chat; it cannot be removed here'
+            : 'Owned by a chat or card; remove it from there',
       }
     case 'protected':
       return { text: row.locked && !row.protectedBy ? 'Locked' : 'Protected', tone: 'lock' }
@@ -340,5 +384,10 @@ export function formatBytes(bytes: number): string {
 
 /** Last path segment, for a project's display name when the DB has none. */
 export function baseName(path: string): string {
-  return path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path
+  return (
+    path
+      .replace(/[\\/]+$/, '')
+      .split(/[\\/]/)
+      .pop() || path
+  )
 }

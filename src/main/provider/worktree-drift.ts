@@ -96,7 +96,8 @@ export function extractCommandPaths(toolName: string, input: unknown, baseCwd?: 
     // Quoted (may contain spaces), then bare tokens; both accept unix and
     // drive-letter absolutes plus ./ ../ relatives.
     for (const m of command.matchAll(/["']((?:\/|[A-Za-z]:[\\/]|\.{1,2}\/)[^"']+)["']/g)) out.push(m[1])
-    for (const m of command.matchAll(/(?:^|[\s=;|&(<>])((?:\/|[A-Za-z]:[\\/]|\.{1,2}\/)[A-Za-z0-9._~\\/-]+)/g)) out.push(m[1])
+    for (const m of command.matchAll(/(?:^|[\s=;|&(<>])((?:\/|[A-Za-z]:[\\/]|\.{1,2}\/)[A-Za-z0-9._~\\/-]+)/g))
+      out.push(m[1])
   }
   const resolved = out
     .map((p) => {
@@ -142,11 +143,7 @@ function worktreeOf(p: string, worktrees: WorktreeRef[]): WorktreeRef | null {
  * Longest-match matters throughout - .switchboard-style worktrees nest under
  * the repo root.
  */
-export function detectDrift(
-  sessionFolder: string,
-  paths: string[],
-  worktrees: WorktreeRef[]
-): WorktreeRef | null {
+export function detectDrift(sessionFolder: string, paths: string[], worktrees: WorktreeRef[]): WorktreeRef | null {
   const home = worktreeOf(sessionFolder, worktrees)
   for (const p of paths) {
     const target = worktreeOf(p, worktrees)
@@ -202,14 +199,14 @@ export class DriftWatcher {
 
   constructor(
     private readonly listWorktrees: (repoFolder: string, fresh?: boolean) => Promise<WorktreeRef[]>,
-    private readonly normalize: (p: string) => Promise<string>
+    private readonly normalize: (p: string) => Promise<string>,
   ) {}
 
   async onToolStarted(
     threadId: string,
     sessionFolder: string,
     toolName: string,
-    input: unknown
+    input: unknown,
   ): Promise<RuntimeWorktreeDriftEvent | null> {
     // A new tool starting means the previously stashed command (if any) has
     // finished - flush it first.
@@ -278,7 +275,7 @@ export class DriftWatcher {
     sessionFolder: string,
     paths: string[],
     fresh: boolean,
-    enterNames: string[]
+    enterNames: string[],
   ): Promise<RuntimeWorktreeDriftEvent | null> {
     if (paths.length === 0 && enterNames.length === 0) return null
     const listed = await this.listWorktrees(sessionFolder, fresh)

@@ -82,10 +82,13 @@ export function InPaneSearchBar({
         // Stop ALL keys from bubbling out of the search bar - otherwise
         // pressing arrow keys would also drive the chat textarea or the
         // terminal underneath.
-        const run = matchesShortcut(e, 'search.close') ? onClose
-          : matchesShortcut(e, 'search.next') ? onNext
-          : matchesShortcut(e, 'search.prev') ? onPrev
-          : null
+        const run = matchesShortcut(e, 'search.close')
+          ? onClose
+          : matchesShortcut(e, 'search.next')
+            ? onNext
+            : matchesShortcut(e, 'search.prev')
+              ? onPrev
+              : null
         if (run) {
           e.preventDefault()
           e.stopPropagation()
@@ -123,7 +126,10 @@ export function InPaneSearchBar({
         // mousedown.preventDefault keeps the input focused so subsequent
         // Enter / ↑ / ↓ continue navigating without re-clicking.
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => { onPrev(); inputRef.current?.focus() }}
+        onClick={() => {
+          onPrev()
+          inputRef.current?.focus()
+        }}
         title="Previous match (Shift+Enter / ↑)"
         className={ICON_BUTTON}
       >
@@ -132,7 +138,10 @@ export function InPaneSearchBar({
       <button
         type="button"
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => { onNext(); inputRef.current?.focus() }}
+        onClick={() => {
+          onNext()
+          inputRef.current?.focus()
+        }}
         title="Next match (Enter / ↓)"
         className={ICON_BUTTON}
       >
@@ -151,4 +160,5 @@ export function InPaneSearchBar({
   )
 }
 
-const ICON_BUTTON = 'cursor-pointer rounded-[3px] border border-transparent bg-transparent px-[6px] py-[2px] text-[12px] leading-[1] text-[var(--text-secondary)] [font-family:inherit]'
+const ICON_BUTTON =
+  'cursor-pointer rounded-[3px] border border-transparent bg-transparent px-[6px] py-[2px] text-[12px] leading-[1] text-[var(--text-secondary)] [font-family:inherit]'

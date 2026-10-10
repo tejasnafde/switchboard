@@ -2,10 +2,7 @@ import { isAgentProvider } from '@shared/types'
 import type { AgentStatus, AgentType, ChatMessage, SessionSource } from '@shared/types'
 
 /** Returns true when a session's messages should be cleared on switch-away. */
-export function shouldEvictMessages(session: {
-  status: AgentStatus
-  messages: ChatMessage[]
-}): boolean {
+export function shouldEvictMessages(session: { status: AgentStatus; messages: ChatMessage[] }): boolean {
   return session.status === 'idle' && session.messages.length > 0
 }
 
@@ -38,15 +35,10 @@ export function resolveSessionOpenAgentType(
   scannedAgentType: Exclude<AgentType, 'terminal'>,
   loadedAgentType?: string,
 ): Exclude<AgentType, 'terminal'> {
-  return isAgentProvider(loadedAgentType)
-    ? loadedAgentType
-    : scannedAgentType
+  return isAgentProvider(loadedAgentType) ? loadedAgentType : scannedAgentType
 }
 
-export function resolveSessionResumeId(
-  source: SessionSource,
-  sessionId: string,
-): string | undefined {
+export function resolveSessionResumeId(source: SessionSource, sessionId: string): string | undefined {
   return source === 'cursor' ? undefined : sessionId
 }
 

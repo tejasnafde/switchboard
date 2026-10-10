@@ -88,9 +88,7 @@ describe('buildTurn', () => {
   it('omits images entirely rather than queueing an empty list', () => {
     // `images: []` and `images: undefined` reach the adapter differently.
     expect(buildTurn({ connectionId: CONN, threadId: THREAD, text: 'hi' }).queued.images).toBeUndefined()
-    expect(
-      buildTurn({ connectionId: CONN, threadId: THREAD, text: 'hi', images: [] }).queued.images,
-    ).toBeUndefined()
+    expect(buildTurn({ connectionId: CONN, threadId: THREAD, text: 'hi', images: [] }).queued.images).toBeUndefined()
   })
 
   it('keeps images when there are some', () => {
@@ -99,12 +97,14 @@ describe('buildTurn', () => {
   })
 
   it('keeps a first-turn title candidate with the durable intent', () => {
-    expect(buildTurn({
-      connectionId: CONN,
-      threadId: THREAD,
-      text: 'investigate atomic delivery',
-      titleCandidate: 'investigate atomic delivery',
-    }).queued.titleCandidate).toBe('investigate atomic delivery')
+    expect(
+      buildTurn({
+        connectionId: CONN,
+        threadId: THREAD,
+        text: 'investigate atomic delivery',
+        titleCandidate: 'investigate atomic delivery',
+      }).queued.titleCandidate,
+    ).toBe('investigate atomic delivery')
   })
 })
 
@@ -173,11 +173,7 @@ describe('a built turn against the real echo', () => {
 
     useChatStore
       .getState()
-      .seedItems(
-        KEY,
-        [{ kind: 'user', id: `h-${turn.bubbleId}`, text: 'hello', at: 1 }],
-        [turn.bubbleId],
-      )
+      .seedItems(KEY, [{ kind: 'user', id: `h-${turn.bubbleId}`, text: 'hello', at: 1 }], [turn.bubbleId])
 
     expect(userItems()).toHaveLength(1)
   })

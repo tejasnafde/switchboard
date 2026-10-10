@@ -38,13 +38,17 @@ describe('atomic user-turn envelope', () => {
   })
 
   it('accepts Cursor as import-only handoff provenance', () => {
-    expect(() => contract.validateUserTurnSubmission(submission({
-      handoff: {
-        expectedFrom: 'cursor',
-        markerId: 'cursor-handoff-1',
-        markerText: '[[sb:context-handoff]] Cursor → Claude Code',
-      },
-    }))).not.toThrow()
+    expect(() =>
+      contract.validateUserTurnSubmission(
+        submission({
+          handoff: {
+            expectedFrom: 'cursor',
+            markerId: 'cursor-handoff-1',
+            markerText: '[[sb:context-handoff]] Cursor → Claude Code',
+          },
+        }),
+      ),
+    ).not.toThrow()
   })
 
   it('rejects aggregate image data above 3 MiB without adding a count cap', () => {
@@ -69,17 +73,29 @@ describe('atomic user-turn envelope', () => {
     expect(contract.canonicalUserTurnSubmission(submission({ autoTitleText: 'changed' }))).not.toBe(base)
     expect(contract.canonicalUserTurnSubmission(submission({ handoff: undefined }))).not.toBe(base)
     const changedImages = submission().images as Array<Record<string, unknown>>
-    expect(contract.canonicalUserTurnSubmission(submission({
-      images: changedImages.map((image, index) => index === 0 ? { ...image, name: 'changed.png' } : image),
-    }))).not.toBe(base)
+    expect(
+      contract.canonicalUserTurnSubmission(
+        submission({
+          images: changedImages.map((image, index) => (index === 0 ? { ...image, name: 'changed.png' } : image)),
+        }),
+      ),
+    ).not.toBe(base)
   })
 
   it('rejects malformed presentation and handoff metadata before mutation', () => {
-    expect(() => contract.validateUserTurnSubmission(submission({
-      pillsMeta: { private: { label: 'secret', kind: 'unknown' } },
-    }))).toThrow('pill metadata')
-    expect(() => contract.validateUserTurnSubmission(submission({
-      handoff: { expectedFrom: '', markerId: '', markerText: '' },
-    }))).toThrow('handoff metadata')
+    expect(() =>
+      contract.validateUserTurnSubmission(
+        submission({
+          pillsMeta: { private: { label: 'secret', kind: 'unknown' } },
+        }),
+      ),
+    ).toThrow('pill metadata')
+    expect(() =>
+      contract.validateUserTurnSubmission(
+        submission({
+          handoff: { expectedFrom: '', markerId: '', markerText: '' },
+        }),
+      ),
+    ).toThrow('handoff metadata')
   })
 })

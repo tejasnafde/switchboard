@@ -2,7 +2,12 @@
  * Which buttons a pull request write card shows, which one is primary, and
  * what each sends back. Pure, so the rules are tested without React.
  */
-import { checkReplyText, type HostWriteCard, type HostWriteResponse, type HostWriteReview } from '@shared/agent-host-writes'
+import {
+  checkReplyText,
+  type HostWriteCard,
+  type HostWriteResponse,
+  type HostWriteReview,
+} from '@shared/agent-host-writes'
 import { checkPrDescription, checkPrTitle } from '@shared/agent-pr-create'
 import { checkCommentText, reviewVerdictProblem } from '@shared/agent-pr-review'
 import { REVIEW_EVENT_LABEL, type ReviewEvent } from '@shared/pull-request-writes'
@@ -23,15 +28,33 @@ const VERDICT_ORDER: readonly ReviewEvent[] = ['comment', 'request_changes', 'ap
 export function hostWriteButtons(card: HostWriteCard): HostWriteButton[] {
   const deny: HostWriteButton = { id: 'deny', label: 'Deny', primary: false, decision: 'deny' }
   if (card.action === 'create') {
-    return [deny, { id: 'create', label: card.create?.draft ? 'Open draft' : 'Open pull request', primary: true, decision: 'approve' }]
+    return [
+      deny,
+      {
+        id: 'create',
+        label: card.create?.draft ? 'Open draft' : 'Open pull request',
+        primary: true,
+        decision: 'approve',
+      },
+    ]
   }
   if (card.action === 'resolve') return [deny, { id: 'resolve', label: 'Resolve', primary: true, decision: 'approve' }]
   if (card.action === 'rerun') return [deny, { id: 'rerun', label: 'Re-run', primary: true, decision: 'approve' }]
-  if (card.action === 'comment') return [deny, { id: 'comment', label: 'Post comment', primary: true, decision: 'approve' }]
+  if (card.action === 'comment')
+    return [deny, { id: 'comment', label: 'Post comment', primary: true, decision: 'approve' }]
   if (card.action === 'review') {
     // No verdict is primary: the user picks one, the agent never suggests it.
     const offered = card.review?.verdicts ?? []
-    return [deny, ...VERDICT_ORDER.filter((v) => offered.includes(v)).map((v) => ({ id: v, label: REVIEW_EVENT_LABEL[v], primary: false, decision: 'approve' as const, verdict: v }))]
+    return [
+      deny,
+      ...VERDICT_ORDER.filter((v) => offered.includes(v)).map((v) => ({
+        id: v,
+        label: REVIEW_EVENT_LABEL[v],
+        primary: false,
+        decision: 'approve' as const,
+        verdict: v,
+      })),
+    ]
   }
   const resolveFirst = card.suggestResolve === true
   return [
@@ -80,7 +103,10 @@ export function initialCreateDraft(card: HostWriteCard | undefined): CreateDraft
 /** Removes the reviewer, or restores one already removed. */
 export function toggleReviewer(draft: CreateDraftState, id: string): CreateDraftState {
   const removed = draft.removedReviewers.includes(id)
-  return { ...draft, removedReviewers: removed ? draft.removedReviewers.filter((r) => r !== id) : [...draft.removedReviewers, id] }
+  return {
+    ...draft,
+    removedReviewers: removed ? draft.removedReviewers.filter((r) => r !== id) : [...draft.removedReviewers, id],
+  }
 }
 
 /** Why the pull request cannot be opened as the user left it, or null. The rules the backend applies again. */
@@ -95,20 +121,32 @@ export function createDraftProblem(draft: CreateDraftState): string | null {
  * What an approval sends back. `text` is the card's textarea as the user left
  * it; `draft` the review and `create` the pull request as the user left them.
  */
-export function hostWriteResponse(card: HostWriteCard, button: HostWriteButton, text: string, draft: ReviewDraftState, create?: CreateDraftState): HostWriteResponse {
+export function hostWriteResponse(
+  card: HostWriteCard,
+  button: HostWriteButton,
+  text: string,
+  draft: ReviewDraftState,
+  create?: CreateDraftState,
+): HostWriteResponse {
   if (card.action === 'create') {
     if (!create) return {}
     const reviewers = card.create?.reviewers
     return {
       title: create.title,
       description: create.description,
-      ...(reviewers ? { reviewers: reviewers.filter((r) => !create.removedReviewers.includes(r.id)).map((r) => r.id) } : {}),
+      ...(reviewers
+        ? { reviewers: reviewers.filter((r) => !create.removedReviewers.includes(r.id)).map((r) => r.id) }
+        : {}),
     }
   }
   if (card.action === 'comment') return { text }
   if (card.action === 'review') {
     if (!button.verdict) return {}
-    return { verdict: button.verdict, summary: draft.summary, comments: keptComments(draft).map((c) => ({ id: c.id, text: c.text })) }
+    return {
+      verdict: button.verdict,
+      summary: draft.summary,
+      comments: keptComments(draft).map((c) => ({ id: c.id, text: c.text })),
+    }
   }
   if (card.action !== 'reply') return {}
   return { text, resolve: button.id === 'post-resolve' }

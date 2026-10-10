@@ -25,18 +25,30 @@ const project = (path: string, ...startedAt: number[]): Project => ({
   path,
   name: path.split('/').pop() ?? path,
   sessions: startedAt.map((at, i) => ({
-    id: `${path}-${i}`, source: 'switchboard', title: 't', startedAt: at, messageCount: 1, filePath: '',
+    id: `${path}-${i}`,
+    source: 'switchboard',
+    title: 't',
+    startedAt: at,
+    messageCount: 1,
+    filePath: '',
   })),
 })
 
 const target = (projectPath: string, lastUsedAt = 0, machineId = 'local'): ProjectTarget => ({
-  projectPath, machineId, name: projectPath.slice(1), where: machineId === 'local' ? 'local' : `vm ${machineId}`, lastUsedAt,
+  projectPath,
+  machineId,
+  name: projectPath.slice(1),
+  where: machineId === 'local' ? 'local' : `vm ${machineId}`,
+  lastUsedAt,
 })
 
 describe('landing project targets', () => {
   it('lists local projects, then connected machines only, with their latest activity', () => {
     const targets = buildProjectTargets([project('/a', 5, 9), project('/b')], {
-      remotes: [{ id: 'vm1', name: 'Builder' }, { id: 'vm2', name: 'Offline' }],
+      remotes: [
+        { id: 'vm1', name: 'Builder' },
+        { id: 'vm2', name: 'Offline' },
+      ],
       connections: { vm1: 'connected', vm2: 'disconnected' },
       projects: { vm1: [project('/srv/x', 3)], vm2: [project('/srv/y', 99)] },
     })
@@ -51,7 +63,9 @@ describe('landing project targets', () => {
 describe('default landing project', () => {
   const none = () => false
   it('is the most recently used project', () => {
-    expect(defaultLandingTarget([target('/a', 1), target('/b', 7), target('/c', 3)], null, none)?.projectPath).toBe('/b')
+    expect(defaultLandingTarget([target('/a', 1), target('/b', 7), target('/c', 3)], null, none)?.projectPath).toBe(
+      '/b',
+    )
   })
   it('keeps list order on a tie, so a project with no chats yet falls back to the first', () => {
     expect(defaultLandingTarget([target('/a'), target('/b')], null, none)?.projectPath).toBe('/a')
@@ -97,7 +111,12 @@ describe('landing chip and send state', () => {
 describe('remembered landing project', () => {
   it('round-trips through storage', () => {
     const map = new Map<string, string>()
-    const storage = { getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => { map.set(k, v) } }
+    const storage = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        map.set(k, v)
+      },
+    }
     expect(readRememberedPick(storage)).toBeNull()
     writeRememberedPick(storage, { projectPath: '/a', machineId: 'vm1' })
     expect(readRememberedPick(storage)).toEqual({ projectPath: '/a', machineId: 'vm1' })
@@ -111,16 +130,24 @@ describe('remembered landing project', () => {
 
 describe('moving a draft to another project', () => {
   it('carries text, pills and images over to an empty draft', () => {
-    expect(mergeMovedDraft(undefined, { text: 'fix [[pill:p1]]', pills: ['p1'], images: ['i1'] }))
-      .toEqual({ text: 'fix [[pill:p1]]', pills: ['p1'], images: ['i1'] })
+    expect(mergeMovedDraft(undefined, { text: 'fix [[pill:p1]]', pills: ['p1'], images: ['i1'] })).toEqual({
+      text: 'fix [[pill:p1]]',
+      pills: ['p1'],
+      images: ['i1'],
+    })
   })
   it('appends after text the target draft already had', () => {
-    expect(mergeMovedDraft({ text: 'older', pills: ['p0'], images: [] }, { text: 'newer', pills: ['p1'], images: ['i1'] }))
-      .toEqual({ text: 'older\n\nnewer', pills: ['p0', 'p1'], images: ['i1'] })
+    expect(
+      mergeMovedDraft({ text: 'older', pills: ['p0'], images: [] }, { text: 'newer', pills: ['p1'], images: ['i1'] }),
+    ).toEqual({ text: 'older\n\nnewer', pills: ['p0', 'p1'], images: ['i1'] })
   })
   it('does not add a blank line when either side has no text', () => {
-    expect(mergeMovedDraft({ text: '', pills: [], images: ['i0'] }, { text: 'newer', pills: [], images: [] }).text).toBe('newer')
-    expect(mergeMovedDraft({ text: 'older', pills: [], images: [] }, { text: '', pills: [], images: ['i1'] }).text).toBe('older')
+    expect(
+      mergeMovedDraft({ text: '', pills: [], images: ['i0'] }, { text: 'newer', pills: [], images: [] }).text,
+    ).toBe('newer')
+    expect(
+      mergeMovedDraft({ text: 'older', pills: [], images: [] }, { text: '', pills: [], images: ['i1'] }).text,
+    ).toBe('older')
   })
 })
 
@@ -139,14 +166,19 @@ describe('new chat shortcut', () => {
   })
   it('opens on the focused chat project, else the remembered pick', () => {
     const remembered = { projectPath: '/r', machineId: 'local' }
-    expect(landingPickFor({ projectPath: '/a', machineId: 'vm1' }, remembered)).toEqual({ projectPath: '/a', machineId: 'vm1' })
+    expect(landingPickFor({ projectPath: '/a', machineId: 'vm1' }, remembered)).toEqual({
+      projectPath: '/a',
+      machineId: 'vm1',
+    })
     expect(landingPickFor({ projectPath: '/a' }, remembered)).toEqual({ projectPath: '/a', machineId: 'local' })
     expect(landingPickFor(undefined, remembered)).toBe(remembered)
     expect(landingPickFor({}, null)).toBeNull()
   })
   it('reaches the registered project chip, and nothing once it unmounts', () => {
     let opened = 0
-    const unregister = registerLandingProjectPicker(() => { opened++ })
+    const unregister = registerLandingProjectPicker(() => {
+      opened++
+    })
     expect(openLandingProjectPicker()).toBe(true)
     unregister()
     expect(openLandingProjectPicker()).toBe(false)
@@ -155,7 +187,9 @@ describe('new chat shortcut', () => {
   it('keeps a newer registration when an older one unregisters late', () => {
     const older = registerLandingProjectPicker(() => {})
     let newer = 0
-    const unregister = registerLandingProjectPicker(() => { newer++ })
+    const unregister = registerLandingProjectPicker(() => {
+      newer++
+    })
     older()
     expect(openLandingProjectPicker()).toBe(true)
     expect(newer).toBe(1)
@@ -167,17 +201,25 @@ describe('recent chats on the landing screen', () => {
   it('takes the three newest across projects and connected machines', () => {
     const local = [project('/a', 10, 50), project('/b', 40)]
     const chats = recentLandingChats(local, {
-      remotes: [{ id: 'vm1', name: 'gpu' }, { id: 'vm2', name: 'off' }],
+      remotes: [
+        { id: 'vm1', name: 'gpu' },
+        { id: 'vm2', name: 'off' },
+      ],
       connections: { vm1: 'connected', vm2: 'disconnected' },
       projects: { vm1: [project('/c', 45)], vm2: [project('/d', 99)] },
     })
     expect(chats.map((c) => [c.session.id, c.machineId, c.projectName])).toEqual([
-      ['/a-1', 'local', 'a'], ['/c-0', 'vm1', 'c'], ['/b-0', 'local', 'b'],
+      ['/a-1', 'local', 'a'],
+      ['/c-0', 'vm1', 'c'],
+      ['/b-0', 'local', 'b'],
     ])
   })
   it('lists a chat shown under two projects once, and skips terminals', () => {
     const shared = project('/a', 30)
-    const twin: Project = { ...project('/b'), sessions: [...shared.sessions, { ...shared.sessions[0], id: 'term', agentType: 'terminal', startedAt: 99 }] }
+    const twin: Project = {
+      ...project('/b'),
+      sessions: [...shared.sessions, { ...shared.sessions[0], id: 'term', agentType: 'terminal', startedAt: 99 }],
+    }
     const chats = recentLandingChats([shared, twin], { remotes: [], connections: {}, projects: {} })
     expect(chats.map((c) => c.session.id)).toEqual(['/a-0'])
   })
@@ -187,8 +229,16 @@ describe('recent chats on the landing screen', () => {
 })
 
 describe('recent chat keys', () => {
-  const key = (k: string, mods: Partial<{ shiftKey: boolean; metaKey: boolean; ctrlKey: boolean; altKey: boolean; isComposing: boolean }> = {}) =>
-    ({ key: k, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false, ...mods })
+  const key = (
+    k: string,
+    mods: Partial<{
+      shiftKey: boolean
+      metaKey: boolean
+      ctrlKey: boolean
+      altKey: boolean
+      isComposing: boolean
+    }> = {},
+  ) => ({ key: k, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false, ...mods })
 
   it('walks the rows with the arrows from an empty composer', () => {
     expect(landingRecentKey(key('ArrowDown'), null, 3, true)).toEqual({ highlight: 0, consume: true })
@@ -222,7 +272,10 @@ describe('recent chat keys', () => {
   it('keeps the highlight through modifiers, shortcuts and IME composition', () => {
     expect(landingRecentKey(key('Shift', { shiftKey: true }), 1, 3, true)).toEqual({ highlight: 1, consume: false })
     expect(landingRecentKey(key('k', { metaKey: true }), 1, 3, true)).toEqual({ highlight: 1, consume: false })
-    expect(landingRecentKey(key('ArrowDown', { isComposing: true }), 1, 3, true)).toEqual({ highlight: 1, consume: false })
+    expect(landingRecentKey(key('ArrowDown', { isComposing: true }), 1, 3, true)).toEqual({
+      highlight: 1,
+      consume: false,
+    })
   })
   it('drops a highlight left past the end after the list shrank', () => {
     expect(landingRecentKey(key('Enter'), 4, 2, true)).toEqual({ highlight: null, consume: false })

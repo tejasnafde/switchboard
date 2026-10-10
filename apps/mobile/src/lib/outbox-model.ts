@@ -44,7 +44,9 @@ export interface QueuedMessage {
 
 /** Frozen (persisted just before the first send), tried or unconfirmed: the backend may hold its fingerprint. */
 function mayHaveBeenSent(message: Partial<QueuedMessage>): boolean {
-  return typeof message.providerText === 'string' || (message.attempts ?? 0) > 0 || message.deliveryState === 'ambiguous'
+  return (
+    typeof message.providerText === 'string' || (message.attempts ?? 0) > 0 || message.deliveryState === 'ambiguous'
+  )
 }
 
 /** Shape check for records restored from an older or current app build. */
@@ -65,20 +67,20 @@ export function parseQueuedMessage(value: unknown): QueuedMessage | null {
     messageId: message.messageId,
     text: message.text,
     images: Array.isArray(message.images)
-      ? message.images.filter((image): image is { url: string; mimeType?: string } =>
-          Boolean(image) && typeof (image as { url?: unknown }).url === 'string',
+      ? message.images.filter(
+          (image): image is { url: string; mimeType?: string } =>
+            Boolean(image) && typeof (image as { url?: unknown }).url === 'string',
         )
       : undefined,
-    runtimeMode: typeof message.runtimeMode === 'string'
-      && (message.modePicked === true || mayHaveBeenSent(message))
-      ? message.runtimeMode
-      : undefined,
+    runtimeMode:
+      typeof message.runtimeMode === 'string' && (message.modePicked === true || mayHaveBeenSent(message))
+        ? message.runtimeMode
+        : undefined,
     modePicked: message.modePicked === true ? true : undefined,
     createdAt: typeof message.createdAt === 'number' ? message.createdAt : Date.now(),
     attempts: typeof message.attempts === 'number' ? message.attempts : 0,
-    blockedReason: typeof message.blockedReason === 'string' && message.blockedReason
-      ? message.blockedReason
-      : undefined,
+    blockedReason:
+      typeof message.blockedReason === 'string' && message.blockedReason ? message.blockedReason : undefined,
     providerText: typeof message.providerText === 'string' ? message.providerText : undefined,
     pendingHandoff: typeof message.pendingHandoff === 'boolean' ? message.pendingHandoff : undefined,
     deliveryState: message.deliveryState === 'ambiguous' ? 'ambiguous' : undefined,
@@ -123,9 +125,7 @@ export function decodeTurnAcceptance(result: unknown): DecodedTurnAcceptance {
   return { disposition: 'ambiguous', retryable: true, reason }
 }
 
-export function resolvedAmbiguousBubbleAction(
-  status: 'abandoned' | 'completed',
-): 'remove' | 'keep' {
+export function resolvedAmbiguousBubbleAction(status: 'abandoned' | 'completed'): 'remove' | 'keep' {
   return status === 'abandoned' ? 'remove' : 'keep'
 }
 
@@ -148,10 +148,7 @@ export function removeAcceptedOrigin(
   origin: string,
 ): { accepted: QueuedMessage | undefined; remaining: QueuedMessage[] } {
   const accepted = messages.find(
-    (message) =>
-      message.connectionId === connectionId &&
-      message.threadId === threadId &&
-      message.messageId === origin,
+    (message) => message.connectionId === connectionId && message.threadId === threadId && message.messageId === origin,
   )
   if (!accepted) return { accepted: undefined, remaining: messages }
   return { accepted, remaining: messages.filter((message) => message !== accepted) }
@@ -190,13 +187,8 @@ export function recoverRejectedDraft(message: QueuedMessage): {
   }
 }
 
-export function selectRejectedForEdit(
-  messages: QueuedMessage[],
-  messageId: string,
-): QueuedMessage | null {
-  return messages.find(
-    (message) => message.messageId === messageId && Boolean(message.blockedReason),
-  ) ?? null
+export function selectRejectedForEdit(messages: QueuedMessage[], messageId: string): QueuedMessage | null {
+  return messages.find((message) => message.messageId === messageId && Boolean(message.blockedReason)) ?? null
 }
 
 /** Preserve the committed turn while recording why automatic delivery stopped. */
@@ -266,10 +258,7 @@ export function shouldRetry(error: unknown): boolean {
 
 export type DeliveryFailureDisposition = 'cleanup-retry' | 'retry' | 'reject'
 
-export function deliveryFailureDisposition(
-  providerAccepted: boolean,
-  error: unknown,
-): DeliveryFailureDisposition {
+export function deliveryFailureDisposition(providerAccepted: boolean, error: unknown): DeliveryFailureDisposition {
   if (providerAccepted) return 'cleanup-retry'
   return shouldRetry(error) ? 'retry' : 'reject'
 }

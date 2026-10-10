@@ -93,9 +93,7 @@ export function pushForEvent(event: RuntimeEvent, ctx: PushContext = {}): PushMe
       return {
         title,
         body: clampBody(
-          event.durationMs != null && event.durationMs > 0
-            ? `Done in ${fmtDuration(event.durationMs)}`
-            : 'Done',
+          event.durationMs != null && event.durationMs > 0 ? `Done in ${fmtDuration(event.durationMs)}` : 'Done',
         ),
         data: { threadId, kind: 'done' },
       }

@@ -33,7 +33,17 @@ const BANNER_CLASS: Record<ResetBannerTone, string> = {
 
 function Stroke({ d, size }: { d: string; size: number }) {
   return (
-    <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      aria-hidden="true"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d={d} />
     </svg>
   )
@@ -61,10 +71,12 @@ export function CodexResetControls({
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
-    return () => { mounted.current = false }
+    return () => {
+      mounted.current = false
+    }
   }, [])
 
-  const count = usage?.status === 'ok' ? usage.resetCredits?.availableCount ?? null : null
+  const count = usage?.status === 'ok' ? (usage.resetCredits?.availableCount ?? null) : null
   const offered = canOfferReset(usage, afterNothingToReset)
   const showing = phase.kind !== 'idle'
   if (count === null || (count === 0 && !showing)) return null
@@ -95,8 +107,12 @@ export function CodexResetControls({
         </ul>
         <div className="mb-[10px] text-[11.5px] text-[var(--warning)]">This cannot be undone.</div>
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setPhase({ kind: 'idle' })}>Cancel</Button>
-          <Button size="sm" autoFocus onClick={() => void spend()}>Use reset</Button>
+          <Button variant="ghost" size="sm" onClick={() => setPhase({ kind: 'idle' })}>
+            Cancel
+          </Button>
+          <Button size="sm" autoFocus onClick={() => void spend()}>
+            Use reset
+          </Button>
         </div>
       </div>
     )
@@ -110,19 +126,33 @@ export function CodexResetControls({
   if (phase.kind === 'applying') {
     action = (
       <Button variant="outline" size="sm" className="ml-auto" disabled>
-        <span aria-hidden="true" className="inline-block size-[11px] rounded-full border-[1.5px] border-current border-r-transparent motion-safe:animate-spin" />
+        <span
+          aria-hidden="true"
+          className="inline-block size-[11px] rounded-full border-[1.5px] border-current border-r-transparent motion-safe:animate-spin"
+        />
         Applying reset…
       </Button>
     )
   } else if (banner?.retry) {
-    action = <Button variant="outline" size="sm" className="ml-auto" onClick={() => void spend()}>Try again</Button>
+    action = (
+      <Button variant="outline" size="sm" className="ml-auto" onClick={() => void spend()}>
+        Try again
+      </Button>
+    )
   } else if (offered) {
-    action = <Button variant="outline" size="sm" className="ml-auto" onClick={() => setPhase({ kind: 'confirm' })}>Use reset</Button>
+    action = (
+      <Button variant="outline" size="sm" className="ml-auto" onClick={() => setPhase({ kind: 'confirm' })}>
+        Use reset
+      </Button>
+    )
   }
 
   return (
     <>
-      <div data-codex-resets className="mt-[10px] flex min-h-[26px] items-center gap-[10px] text-[12px] text-[var(--text-secondary)]">
+      <div
+        data-codex-resets
+        className="mt-[10px] flex min-h-[26px] items-center gap-[10px] text-[12px] text-[var(--text-secondary)]"
+      >
         <span title={lines.length > 0 ? lines.join('\n') : undefined}>
           Resets available: <span className="tabular-nums text-[var(--text-primary)]">{count}</span>
         </span>
@@ -137,9 +167,20 @@ export function CodexResetControls({
       {banner && (
         <div
           role={banner.tone === 'bad' ? 'alert' : 'status'}
-          className={cn('mt-[10px] flex items-start gap-2 rounded-[6px] border px-[10px] py-2 text-[12px] leading-[1.45]', BANNER_CLASS[banner.tone])}
+          className={cn(
+            'mt-[10px] flex items-start gap-2 rounded-[6px] border px-[10px] py-2 text-[12px] leading-[1.45]',
+            BANNER_CLASS[banner.tone],
+          )}
         >
-          <span aria-hidden="true" className={cn('flex h-[17px] w-[14px] shrink-0 items-center justify-center font-[700]', ICON[banner.tone].color)}>{ICON[banner.tone].glyph}</span>
+          <span
+            aria-hidden="true"
+            className={cn(
+              'flex h-[17px] w-[14px] shrink-0 items-center justify-center font-[700]',
+              ICON[banner.tone].color,
+            )}
+          >
+            {ICON[banner.tone].glyph}
+          </span>
           <span>{banner.text}</span>
           {!banner.retry && (
             <button

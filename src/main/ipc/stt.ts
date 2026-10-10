@@ -38,11 +38,7 @@ const INFERENCE_TIMEOUT_MS = 120_000
 export interface SttDeps {
   userDataRoot(): string
   ensureBinary(userDataRoot: string, onProgress?: (pct: number | null) => void): Promise<string | null>
-  ensureModel(
-    userDataRoot: string,
-    modelName: string,
-    onProgress?: (pct: number | null) => void,
-  ): Promise<string>
+  ensureModel(userDataRoot: string, modelName: string, onProgress?: (pct: number | null) => void): Promise<string>
   createManager(binaryPath: string, modelPath: string, onExit: () => void): WhisperServerManager
   listProjectFiles(projectPath: string): Promise<string[]>
   fetchImpl: typeof fetch

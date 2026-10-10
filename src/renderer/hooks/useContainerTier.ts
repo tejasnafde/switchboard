@@ -34,6 +34,10 @@ export function useContainerTier<T>(tierOf: (width: number) => T): [(element: HT
 
 function horizontalPadding(element: HTMLElement): number {
   const style = getComputedStyle(element)
-  return (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0)
-    + (parseFloat(style.borderLeftWidth) || 0) + (parseFloat(style.borderRightWidth) || 0)
+  return (
+    (parseFloat(style.paddingLeft) || 0) +
+    (parseFloat(style.paddingRight) || 0) +
+    (parseFloat(style.borderLeftWidth) || 0) +
+    (parseFloat(style.borderRightWidth) || 0)
+  )
 }

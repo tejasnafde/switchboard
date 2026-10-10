@@ -6,9 +6,17 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
+vi.mock('../../src/main/logger', () => ({
+  createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}))
 
-import { buildPrLinkTools, PR_LINK_TOOL, PR_LIST_LINKS_TOOL, PR_UNLINK_TOOL, type PrLinkToolContext } from '../../src/main/mcp/pr-link-tools'
+import {
+  buildPrLinkTools,
+  PR_LINK_TOOL,
+  PR_LIST_LINKS_TOOL,
+  PR_UNLINK_TOOL,
+  type PrLinkToolContext,
+} from '../../src/main/mcp/pr-link-tools'
 import type { McpToolResult } from '../../src/main/mcp/mcp-session'
 import { projectReposFrom } from '../../src/shared/project-repos'
 import type { PrLink } from '../../src/shared/pull-request-links'
@@ -45,7 +53,8 @@ function setup(mode: RuntimeMode = 'sandbox', opts: { problem?: { at: number; me
     },
   }
   const tools = Object.fromEntries(buildPrLinkTools(ctx).map((t) => [t.name, t]))
-  const call = (name: string, args: Record<string, unknown> = {}) => tools[name].call(args, {} as never) as Promise<McpToolResult>
+  const call = (name: string, args: Record<string, unknown> = {}) =>
+    tools[name].call(args, {} as never) as Promise<McpToolResult>
   return { call, links, events, access: ctx.pullRequests! }
 }
 
@@ -121,7 +130,9 @@ describe('list_thread_pull_requests', () => {
     const r = await call(PR_LIST_LINKS_TOOL)
     expect(r.isError).toBeFalsy()
     expect(JSON.parse(text(r))).toEqual({
-      pullRequests: [{ pr: 'GitHub acme/app #7', url: 'https://github.com/acme/app/pull/7', linkedBy: 'created', state: 'merged' }],
+      pullRequests: [
+        { pr: 'GitHub acme/app #7', url: 'https://github.com/acme/app/pull/7', linkedBy: 'created', state: 'merged' },
+      ],
     })
   })
 

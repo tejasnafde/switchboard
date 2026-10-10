@@ -68,11 +68,7 @@ function saveDevices(devices: PushDevice[]): void {
   setSetting(SETTING_KEY, JSON.stringify(devices))
 }
 
-export function registerDevice(
-  token: string,
-  label?: string,
-  clientRef?: string,
-): { ok: boolean; error?: string } {
+export function registerDevice(token: string, label?: string, clientRef?: string): { ok: boolean; error?: string } {
   if (!isExpoPushToken(token)) return { ok: false, error: 'not an Expo push token' }
   saveDevices(upsertDevice(listDevices(), { token, label, clientRef, registeredAt: Date.now() }))
   log.info(`registered push device${label ? ` (${label})` : ''}`)

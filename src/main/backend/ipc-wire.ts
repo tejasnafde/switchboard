@@ -30,11 +30,7 @@ function metadata(channel: string, args: unknown[]): IpcEmitMetadata {
  * emits on the same JSON contract as the WebSocket host and enforce a hard
  * frame ceiling before calling webContents.send.
  */
-export function prepareIpcEmit(
-  channel: string,
-  args: unknown[],
-  maxBytes = MAX_IPC_EMIT_BYTES,
-): PreparedIpcEmit {
+export function prepareIpcEmit(channel: string, args: unknown[], maxBytes = MAX_IPC_EMIT_BYTES): PreparedIpcEmit {
   const details = metadata(channel, args)
   let encoded: string
   try {

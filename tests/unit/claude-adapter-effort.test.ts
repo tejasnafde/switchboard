@@ -34,7 +34,10 @@ vi.mock('../../src/main/provider/managed-bin', async (importOriginal) => {
 async function startTurn(opts: { reasoningEffort?: 'low' | 'max'; model?: string; knownModels?: ModelOption[] }) {
   const { ClaudeAdapter } = await import('../../src/main/provider/adapters/claude-adapter')
   const adapter = new ClaudeAdapter()
-  await adapter.startSession({ threadId: 't1', provider: 'claude', cwd: '/tmp', runtimeMode: 'sandbox', ...opts }, vi.fn())
+  await adapter.startSession(
+    { threadId: 't1', provider: 'claude', cwd: '/tmp', runtimeMode: 'sandbox', ...opts },
+    vi.fn(),
+  )
   await adapter.sendTurn('t1', 'hello', 'sandbox')
   await vi.waitFor(() => expect(captured).not.toBeNull())
   return adapter
@@ -49,7 +52,7 @@ afterEach(() => {
 })
 
 describe('Claude effort', () => {
-  it('starts the query with the chat\'s effort', async () => {
+  it("starts the query with the chat's effort", async () => {
     const adapter = await startTurn({ reasoningEffort: 'low' })
     expect(captured!.effort).toBe('low')
     await adapter.stopSession('t1')

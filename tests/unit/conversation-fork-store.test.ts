@@ -6,11 +6,12 @@ import {
   type ForkConversationRequest,
   type ForkConversationResult,
 } from '../../src/shared/conversation-fork'
-import { cloneForkMessages, decodeForkMessageRow, type ForkMessageRow } from '../../src/main/conversations/fork-message-codec'
 import {
-  ensureConversationForkSchema,
-  SqliteConversationForkStore,
-} from '../../src/main/db/conversation-fork'
+  cloneForkMessages,
+  decodeForkMessageRow,
+  type ForkMessageRow,
+} from '../../src/main/conversations/fork-message-codec'
+import { ensureConversationForkSchema, SqliteConversationForkStore } from '../../src/main/db/conversation-fork'
 
 const databases: Database.Database[] = []
 
@@ -107,25 +108,29 @@ function reserve(store: SqliteConversationForkStore, input: ForkConversationRequ
 }
 
 function committedInput(store: SqliteConversationForkStore) {
-  const cloned = cloneForkMessages('fork-conversation', [
-    {
-      id: 'source-image',
-      role: 'user',
-      content: '',
-      timestamp: 10,
-      images: [{ url: 'data:image/png;base64,AAAA', name: 'screen.png' }],
-      displayBody: '[[pill:file-1]]',
-      pillsMeta: { 'file-1': { label: 'README.md', kind: 'file' } },
-    },
-    {
-      id: 'source-tool',
-      role: 'assistant',
-      content: 'Done',
-      timestamp: 20,
-      toolCalls: [{ id: 'tool-1', name: 'Read', input: 'README.md', output: 'contents', state: 'done' }],
-      todos: { id: 'todo-1', items: [{ text: 'Done', status: 'completed' }] },
-    },
-  ], (index) => `fork-conversation:message:${index}`)
+  const cloned = cloneForkMessages(
+    'fork-conversation',
+    [
+      {
+        id: 'source-image',
+        role: 'user',
+        content: '',
+        timestamp: 10,
+        images: [{ url: 'data:image/png;base64,AAAA', name: 'screen.png' }],
+        displayBody: '[[pill:file-1]]',
+        pillsMeta: { 'file-1': { label: 'README.md', kind: 'file' } },
+      },
+      {
+        id: 'source-tool',
+        role: 'assistant',
+        content: 'Done',
+        timestamp: 20,
+        toolCalls: [{ id: 'tool-1', name: 'Read', input: 'README.md', output: 'contents', state: 'done' }],
+        todos: { id: 'todo-1', items: [{ text: 'Done', status: 'completed' }] },
+      },
+    ],
+    (index) => `fork-conversation:message:${index}`,
+  )
   const conversation: ForkConversationResult['conversation'] = {
     id: 'fork-conversation',
     projectPath: '/repo',
@@ -184,18 +189,35 @@ function committedInput(store: SqliteConversationForkStore) {
 describe('conversation fork SQLite store', () => {
   it('installs an additive durable journal and fork metadata', () => {
     const db = database()
-    const operationColumns = db.prepare("PRAGMA table_info(conversation_fork_operations)").all() as Array<{ name: string }>
+    const operationColumns = db.prepare('PRAGMA table_info(conversation_fork_operations)').all() as Array<{
+      name: string
+    }>
     const conversationColumns = db.prepare('PRAGMA table_info(conversations)').all() as Array<{ name: string }>
     const messageColumns = db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
 
-    expect(operationColumns.map((column) => column.name)).toEqual(expect.arrayContaining([
-      'machine_id', 'request_id', 'request_hash', 'prepared_json', 'prepared_hash',
-      'status', 'revision', 'result_json', 'result_conversation_id',
-    ]))
-    expect(conversationColumns.map((column) => column.name)).toEqual(expect.arrayContaining([
-      'fork_anchor_digest', 'fork_anchor_role', 'fork_anchor_timestamp',
-      'fork_anchor_canonical_count', 'fork_resume_mode', 'reasoning_effort',
-    ]))
+    expect(operationColumns.map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        'machine_id',
+        'request_id',
+        'request_hash',
+        'prepared_json',
+        'prepared_hash',
+        'status',
+        'revision',
+        'result_json',
+        'result_conversation_id',
+      ]),
+    )
+    expect(conversationColumns.map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        'fork_anchor_digest',
+        'fork_anchor_role',
+        'fork_anchor_timestamp',
+        'fork_anchor_canonical_count',
+        'fork_resume_mode',
+        'reasoning_effort',
+      ]),
+    )
     expect(messageColumns.map((column) => column.name)).toContain('attachments_json')
   })
 
@@ -212,8 +234,10 @@ describe('conversation fork SQLite store', () => {
         preparedHash: 'c'.repeat(64),
       },
     })
-    expect(JSON.parse(store.get('machine-remote', 'fork-request-1')!.preparedJson))
-      .toMatchObject({ sourceHead: 'b'.repeat(40), prefix: [{ id: 'source-message' }] })
+    expect(JSON.parse(store.get('machine-remote', 'fork-request-1')!.preparedJson)).toMatchObject({
+      sourceHead: 'b'.repeat(40),
+      prefix: [{ id: 'source-message' }],
+    })
   })
 
   it('returns the existing operation for the same request and rejects a changed payload', () => {
@@ -235,12 +259,16 @@ describe('conversation fork SQLite store', () => {
       record: { status: 'completed', revision: 1, resultConversationId: 'fork-conversation' },
     })
 
-    expect(db.prepare(`
+    expect(
+      db
+        .prepare(`
       SELECT project_path, worktree_path, worktree_branch, parent_conversation_id,
              provider_instance_id, runtime_mode, model, reasoning_effort,
              fork_anchor_digest, fork_resume_mode, pending_handoff_from
         FROM conversations WHERE id = 'fork-conversation'
-    `).get()).toEqual({
+    `)
+        .get(),
+    ).toEqual({
       project_path: '/repo',
       worktree_path: '/repo/.switchboard/worktrees/fork-conversation',
       worktree_branch: 'fork/conversation',
@@ -254,14 +282,16 @@ describe('conversation fork SQLite store', () => {
       pending_handoff_from: 'codex',
     })
 
-    const rows = db.prepare(`
+    const rows = db
+      .prepare(`
       SELECT id, conversation_id AS conversationId, role, content,
              tool_calls AS toolCallsJson, images AS imagesJson, timestamp,
              display_body AS displayBody, pills_meta AS pillsMetaJson,
              attachments_json AS attachmentsJson
         FROM messages WHERE conversation_id = 'fork-conversation'
        ORDER BY rowid
-    `).all() as ForkMessageRow[]
+    `)
+      .all() as ForkMessageRow[]
     const result = store.getResult('machine-remote', 'fork-request-1')
     expect(rows.map(decodeForkMessageRow)).toEqual(result?.messages)
     expect(rows.map((row) => row.id)).toEqual(result?.messages.map((message) => message.id))

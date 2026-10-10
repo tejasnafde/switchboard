@@ -1,7 +1,4 @@
-import {
-  displayedChatSessionIds,
-  type ChatWorkspaceState,
-} from './chat-workspace'
+import { displayedChatSessionIds, type ChatWorkspaceState } from './chat-workspace'
 
 type WorkspaceController = {
   selectSession?: (sessionId: string) => void

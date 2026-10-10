@@ -121,9 +121,7 @@ describe('cloneDependencyDirs', () => {
 
       await cloneDependencyDirs(sourceRoot, worktreeRoot, { ...passingChecks, runner, platform: 'darwin' })
 
-      expect(calls).toEqual([
-        { cmd: 'cp', args: ['-c', '-R', join(sourceRoot, DEPENDENCY_DIR_NAME), staging] },
-      ])
+      expect(calls).toEqual([{ cmd: 'cp', args: ['-c', '-R', join(sourceRoot, DEPENDENCY_DIR_NAME), staging] }])
       expect(await exists(staging)).toBe(false)
       expect(await exists(dst)).toBe(true)
     } finally {
@@ -429,27 +427,30 @@ describe('cloneDependencyDirs', () => {
   // not hold - a Linux CI runner's temp filesystem is commonly ext4,
   // which does not support --reflink=always, and Windows has no clone
   // strategy at all.
-  it.skipIf(!realCloneReady)('clones for real using the default same-device / APFS checks on this machine', async () => {
-    const root = await makeTempRoot()
-    try {
-      const sourceRoot = join(root, 'source')
-      const worktreeRoot = join(root, 'worktree')
-      await mkdir(join(sourceRoot, DEPENDENCY_DIR_NAME), { recursive: true })
-      await writeFile(join(sourceRoot, DEPENDENCY_DIR_NAME, 'pkg.txt'), 'hello')
-      await mkdir(worktreeRoot, { recursive: true })
-      const dst = join(worktreeRoot, DEPENDENCY_DIR_NAME)
+  it.skipIf(!realCloneReady)(
+    'clones for real using the default same-device / APFS checks on this machine',
+    async () => {
+      const root = await makeTempRoot()
+      try {
+        const sourceRoot = join(root, 'source')
+        const worktreeRoot = join(root, 'worktree')
+        await mkdir(join(sourceRoot, DEPENDENCY_DIR_NAME), { recursive: true })
+        await writeFile(join(sourceRoot, DEPENDENCY_DIR_NAME, 'pkg.txt'), 'hello')
+        await mkdir(worktreeRoot, { recursive: true })
+        const dst = join(worktreeRoot, DEPENDENCY_DIR_NAME)
 
-      await cloneDependencyDirs(sourceRoot, worktreeRoot, {
-        isEnabled: () => true,
-        // No sameDevice/isApfs/runner override: exercises the real
-        // implementations end to end.
-      })
+        await cloneDependencyDirs(sourceRoot, worktreeRoot, {
+          isEnabled: () => true,
+          // No sameDevice/isApfs/runner override: exercises the real
+          // implementations end to end.
+        })
 
-      expect(await readFile(join(dst, 'pkg.txt'), 'utf8')).toBe('hello')
-    } finally {
-      await rm(root, { recursive: true, force: true })
-    }
-  })
+        expect(await readFile(join(dst, 'pkg.txt'), 'utf8')).toBe('hello')
+      } finally {
+        await rm(root, { recursive: true, force: true })
+      }
+    },
+  )
 })
 
 describe('cloneDependencyDirsInBackground', () => {
@@ -504,9 +505,7 @@ describe('isDependencyCloneEnabled', () => {
   })
 
   it('is disabled only when the setting is the literal string "false"', () => {
-    mocks.getSetting.mockImplementation((key: string) =>
-      key === WORKTREE_CLONE_DEPENDENCIES_SETTING ? 'false' : null,
-    )
+    mocks.getSetting.mockImplementation((key: string) => (key === WORKTREE_CLONE_DEPENDENCIES_SETTING ? 'false' : null))
     expect(isDependencyCloneEnabled()).toBe(false)
   })
 

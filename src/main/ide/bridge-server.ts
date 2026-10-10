@@ -101,7 +101,7 @@ export class BridgeServer {
   constructor(
     wss: BridgeWssLike,
     private readonly token: string,
-    private readonly callbacks: BridgeCallbacks
+    private readonly callbacks: BridgeCallbacks,
   ) {
     wss.on('connection', (socket, request) => this.onConnection(socket, request))
   }
@@ -129,7 +129,14 @@ export class BridgeServer {
   openFile(folder: string, path: string, line?: number, endLine?: number): boolean {
     const socket = this.byFolder.get(folder)
     if (!socket) return false
-    socket.send(JSON.stringify({ type: 'open', path, ...(line !== undefined && { line }), ...(endLine !== undefined && { endLine }) }))
+    socket.send(
+      JSON.stringify({
+        type: 'open',
+        path,
+        ...(line !== undefined && { line }),
+        ...(endLine !== undefined && { endLine }),
+      }),
+    )
     return true
   }
 

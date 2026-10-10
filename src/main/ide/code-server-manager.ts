@@ -132,7 +132,7 @@ export class CodeServerManager {
 
   constructor(
     private deps: ManagerDeps,
-    private cfg: ManagerConfig
+    private cfg: ManagerConfig,
   ) {}
 
   /** Spawn if not running; concurrent callers share one boot. */
@@ -159,13 +159,12 @@ export class CodeServerManager {
     for (let attempt = 0; attempt < SPAWN_ATTEMPTS; attempt++) {
       // First attempt honors the stable preferred port; the retry (its
       // early-exit means EADDRINUSE) falls back to a fresh dynamic port.
-      const port =
-        attempt === 0 && this.cfg.preferredPort ? this.cfg.preferredPort : await this.deps.allocatePort()
+      const port = attempt === 0 && this.cfg.preferredPort ? this.cfg.preferredPort : await this.deps.allocatePort()
       let exited = false
       const child = this.deps.spawn(
         this.cfg.binaryPath,
         buildSpawnArgs({ port, extensionsDir: this.cfg.extensionsDir, userDataDir: this.cfg.userDataDir }),
-        this.cfg.env
+        this.cfg.env,
       )
       child.on('exit', () => {
         exited = true

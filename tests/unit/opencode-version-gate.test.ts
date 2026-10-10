@@ -5,7 +5,18 @@
  * binary here is a fake script that records its arguments; no real opencode
  * runs.
  */
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({ bin: null as string | null, warn: [] as unknown[][] }))
 
 vi.mock('../../src/main/provider/adapters/opencode/env', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../../src/main/provider/adapters/opencode/env')>(),
+  ...(await importOriginal<typeof import('../../src/main/provider/adapters/opencode/env')>()),
   findOpencodePath: () => state.bin,
   buildOpencodeEnv: (overlay?: Record<string, string>) => ({ PATH: process.env.PATH ?? '', ...overlay }),
 }))
@@ -25,10 +36,19 @@ vi.mock('../../src/main/db/provider-instances', () => ({
   getProviderInstanceFull: vi.fn(() => ({ id: 'oc', agentType: 'opencode', env: {} })),
   resolveProviderInstance: vi.fn(() => ({ id: 'oc', agentType: 'opencode', env: {} })),
 }))
-vi.mock('../../src/main/provider/instance-env', () => ({ resolveInstanceEnv: () => ({ PATH: process.env.PATH ?? '' }) }))
+vi.mock('../../src/main/provider/instance-env', () => ({
+  resolveInstanceEnv: () => ({ PATH: process.env.PATH ?? '' }),
+}))
 vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '/tmp/switchboard-vitest') } }))
 vi.mock('../../src/main/logger', () => ({
-  createMainLogger: () => ({ info: vi.fn(), warn: (...args: unknown[]) => { state.warn.push(args) }, debug: vi.fn(), error: vi.fn() }),
+  createMainLogger: () => ({
+    info: vi.fn(),
+    warn: (...args: unknown[]) => {
+      state.warn.push(args)
+    },
+    debug: vi.fn(),
+    error: vi.fn(),
+  }),
 }))
 vi.mock('../../src/main/provider/usage', () => ({ fetchInstanceUsage: vi.fn(), invalidateUsage: vi.fn() }))
 
@@ -58,7 +78,9 @@ beforeEach(() => {
   state.bin = null
   state.warn = []
 })
-afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
 
 function scratch(): string {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sb-opencode-version-')))
@@ -74,7 +96,9 @@ function fakeOpencode(
   mkdirSync(dir, { recursive: true })
   const bin = join(dir, 'opencode')
   const log = join(dir, 'calls')
-  writeFileSync(bin, `#!${process.execPath}
+  writeFileSync(
+    bin,
+    `#!${process.execPath}
 require('fs').appendFileSync(${JSON.stringify(log)}, process.argv.slice(2).join(' ') + (${logCwd} ? ' @' + process.cwd() : '') + '\\n')
 if (process.argv[2] === '--version') {
   process.stdout.write(${JSON.stringify(versionOutput)})
@@ -85,11 +109,12 @@ if (process.argv[2] === 'models') {
   process.exit(0)
 }
 process.exit(3)
-`)
+`,
+  )
   chmodSync(bin, 0o755)
   return {
     bin,
-    calls: () => existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean) : [],
+    calls: () => (existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean) : []),
   }
 }
 
@@ -188,13 +213,16 @@ describe('readOpencodeVersion', () => {
 })
 
 describe('a 2.x install whose --version gives no answer', () => {
-  itWithPosixToolShims('is refused when an opencode2 shim sits beside it (v2 curl installer, @opencode/cli bin)', async () => {
-    const fake = fakeOpencode('', { versionExit: 1 })
-    writeFileSync(join(fake.bin, '..', 'opencode2'), '#!/bin/sh\n')
-    const failure = await assertSupportedOpencode(fake.bin, {}).catch((error: unknown) => error)
-    expect(failure).toBeInstanceOf(OpencodeUnsupportedVersionError)
-    expect((failure as Error).message).toContain('OpenCode 2.x is not supported yet')
-  })
+  itWithPosixToolShims(
+    'is refused when an opencode2 shim sits beside it (v2 curl installer, @opencode/cli bin)',
+    async () => {
+      const fake = fakeOpencode('', { versionExit: 1 })
+      writeFileSync(join(fake.bin, '..', 'opencode2'), '#!/bin/sh\n')
+      const failure = await assertSupportedOpencode(fake.bin, {}).catch((error: unknown) => error)
+      expect(failure).toBeInstanceOf(OpencodeUnsupportedVersionError)
+      expect((failure as Error).message).toContain('OpenCode 2.x is not supported yet')
+    },
+  )
 
   itWithPosixToolShims('is refused when it resolves into the @opencode/cli package', async () => {
     const root = scratch()
@@ -233,12 +261,17 @@ describe('refusing OpenCode 2.x on every spawn path', () => {
     state.bin = fake.bin
     const adapter = new OpencodeAcpAdapter()
     const onEvent = vi.fn()
-    const failure = await adapter.startSession({
-      threadId: 't-v2',
-      provider: 'opencode',
-      cwd: tmpdir(),
-      runtimeMode: 'sandbox',
-    }, onEvent).catch((error: unknown) => error)
+    const failure = await adapter
+      .startSession(
+        {
+          threadId: 't-v2',
+          provider: 'opencode',
+          cwd: tmpdir(),
+          runtimeMode: 'sandbox',
+        },
+        onEvent,
+      )
+      .catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(OpencodeUnsupportedVersionError)
     expect(fake.calls()).toEqual(['--version'])
     expect(onEvent).not.toHaveBeenCalled()
@@ -263,9 +296,15 @@ describe('refusing OpenCode 2.x on every spawn path', () => {
     const fake = fakeOpencode('2.0.19\n')
     state.bin = fake.bin
     const handlers = new Map<string, (...args: unknown[]) => unknown>()
-    const host = { handle: (channel: string, fn: (...args: unknown[]) => unknown) => { handlers.set(channel, fn) }, on() {}, emit() {} }
+    const host = {
+      handle: (channel: string, fn: (...args: unknown[]) => unknown) => {
+        handlers.set(channel, fn)
+      },
+      on() {},
+      emit() {},
+    }
     registerProviderInstanceHandlers(host as unknown as BackendHost)
-    const result = await handlers.get(ProviderInstanceChannels.TEST)!('oc') as { ok: boolean; message: string }
+    const result = (await handlers.get(ProviderInstanceChannels.TEST)!('oc')) as { ok: boolean; message: string }
     expect(result.ok).toBe(false)
     expect(result.message).toBe(new OpencodeUnsupportedVersionError('2.0.19', fake.bin).message)
     expect(fake.calls()).toEqual(['--version'])

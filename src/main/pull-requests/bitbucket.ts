@@ -64,7 +64,10 @@ const MEMBERS_TTL_MS = 10 * 60_000
 const BB_REJECTED = 'Bitbucket rejected the email and API token.'
 const BB_MISSING_SCOPE = `The API token is missing a scope this needs (${BITBUCKET_READ_SCOPES.join(', ')}).`
 
-export type FetchLike = (url: string, init: { method?: string; headers: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<{
+export type FetchLike = (
+  url: string,
+  init: { method?: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
+) => Promise<{
   ok: boolean
   status: number
   headers: { get(name: string): string | null }
@@ -88,9 +91,17 @@ export class BitbucketClient {
     return { Authorization: `Basic ${basic}`, Accept: accept }
   }
 
-  private async request(url: string, accept: string, write?: { method: WriteMethod; body?: object }): Promise<Awaited<ReturnType<FetchLike>>> {
+  private async request(
+    url: string,
+    accept: string,
+    write?: { method: WriteMethod; body?: object },
+  ): Promise<Awaited<ReturnType<FetchLike>>> {
     if (!url.startsWith(`${BITBUCKET_API}/`)) {
-      throw new PrHostError({ kind: 'unknown', host: 'bitbucket', message: 'Bitbucket pointed at another origin; not followed.' })
+      throw new PrHostError({
+        kind: 'unknown',
+        host: 'bitbucket',
+        message: 'Bitbucket pointed at another origin; not followed.',
+      })
     }
     const headers = this.headers(accept)
     if (write?.body) headers['Content-Type'] = 'application/json'
@@ -111,8 +122,14 @@ export class BitbucketClient {
     log.warn('Bitbucket answered with an error', { path, status: res.status, method: write?.method ?? 'GET' })
     if (write) throw new PrHostError(await bitbucketWriteError(res))
     if (res.status === 401) throw new PrHostError({ kind: 'token_rejected', host: 'bitbucket', message: BB_REJECTED })
-    if (res.status === 403) throw new PrHostError({ kind: 'token_rejected', host: 'bitbucket', message: BB_MISSING_SCOPE })
-    if (res.status === 404) throw new PrHostError({ kind: 'not_found', host: 'bitbucket', message: 'Bitbucket could not find it, or this account cannot see it.' })
+    if (res.status === 403)
+      throw new PrHostError({ kind: 'token_rejected', host: 'bitbucket', message: BB_MISSING_SCOPE })
+    if (res.status === 404)
+      throw new PrHostError({
+        kind: 'not_found',
+        host: 'bitbucket',
+        message: 'Bitbucket could not find it, or this account cannot see it.',
+      })
     if (res.status === 429) {
       const retryAfter = Number(res.headers.get('retry-after'))
       throw new PrHostError({
@@ -126,7 +143,11 @@ export class BitbucketClient {
   }
 
   /** A write. Returns the JSON answer, or `null` for an empty one (204). */
-  async send<T = unknown>(method: WriteMethod, path: string, body?: object): Promise<{ status: number; data: T | null }> {
+  async send<T = unknown>(
+    method: WriteMethod,
+    path: string,
+    body?: object,
+  ): Promise<{ status: number; data: T | null }> {
     const res = await this.request(`${BITBUCKET_API}${path}`, 'application/json', { method, body })
     const text = await res.text()
     if (!text.trim()) return { status: res.status, data: null }
@@ -164,7 +185,11 @@ export class BitbucketClient {
 type WriteMethod = 'POST' | 'PUT' | 'DELETE'
 
 /** A refused write -> the typed error, with Bitbucket's own reason when it gave one. */
-export async function bitbucketWriteError(res: { status: number; headers: { get(name: string): string | null }; text(): Promise<string> }): Promise<PrError> {
+export async function bitbucketWriteError(res: {
+  status: number
+  headers: { get(name: string): string | null }
+  text(): Promise<string>
+}): Promise<PrError> {
   let said = ''
   let missingScopes: string[] = []
   try {
@@ -175,16 +200,32 @@ export async function bitbucketWriteError(res: { status: number; headers: { get(
   } catch (err) {
     log.debug('Bitbucket error body is not JSON', { status: res.status, err: String(err) })
   }
-  const err = (kind: PrError['kind'], fallback: string): PrError => ({ kind, host: 'bitbucket', message: said || fallback })
+  const err = (kind: PrError['kind'], fallback: string): PrError => ({
+    kind,
+    host: 'bitbucket',
+    message: said || fallback,
+  })
   if (res.status === 403 && missingScopes.length > 0) {
-    return { kind: 'forbidden', host: 'bitbucket', message: `The Bitbucket API token is missing the ${missingScopes.join(', ')} scope. Create a token that has it and save it in Settings > Accounts & models > Source control.` }
+    return {
+      kind: 'forbidden',
+      host: 'bitbucket',
+      message: `The Bitbucket API token is missing the ${missingScopes.join(', ')} scope. Create a token that has it and save it in Settings > Accounts & models > Source control.`,
+    }
   }
   switch (res.status) {
-    case 400: return err('invalid', 'Bitbucket refused the input.')
-    case 401: return { kind: 'token_rejected', host: 'bitbucket', message: BB_REJECTED }
-    case 403: return err('forbidden', 'Bitbucket does not let this account do that. The API token needs the write:pullrequest:bitbucket scope.')
-    case 404: return err('stale', 'Bitbucket could not find it; it may have been deleted.')
-    case 409: return err('conflict', 'Bitbucket refused because of the pull request state.')
+    case 400:
+      return err('invalid', 'Bitbucket refused the input.')
+    case 401:
+      return { kind: 'token_rejected', host: 'bitbucket', message: BB_REJECTED }
+    case 403:
+      return err(
+        'forbidden',
+        'Bitbucket does not let this account do that. The API token needs the write:pullrequest:bitbucket scope.',
+      )
+    case 404:
+      return err('stale', 'Bitbucket could not find it; it may have been deleted.')
+    case 409:
+      return err('conflict', 'Bitbucket refused because of the pull request state.')
     case 429: {
       const retryAfter = Number(res.headers.get('retry-after'))
       return {
@@ -261,11 +302,17 @@ export class BitbucketProvider implements PullRequestProvider {
   private async fetchEnrichment(ref: PrRef, pr: BbPullRequest): Promise<BbEnrichment> {
     const hash = pr.source.commit?.hash
     const [statuses, comments, conflictedFiles] = await Promise.all([
-      hash ? this.client.paged<BbStatus>(`${repoPath(ref)}/commit/${hash}/statuses?pagelen=100`, 1) : Promise.resolve([]),
+      hash
+        ? this.client.paged<BbStatus>(`${repoPath(ref)}/commit/${hash}/statuses?pagelen=100`, 1)
+        : Promise.resolve([]),
       this.client.paged<BbComment>(`${prPath(ref)}/comments?pagelen=100`),
       pr.state === 'OPEN' ? this.conflicts(ref) : Promise.resolve([]),
     ])
-    return { checks: mapBbStatuses(statuses), unresolvedConversations: unresolvedCount(mapBbComments(comments)), conflictedFiles }
+    return {
+      checks: mapBbStatuses(statuses),
+      unresolvedConversations: unresolvedCount(mapBbComments(comments)),
+      conflictedFiles,
+    }
   }
 
   /**
@@ -279,7 +326,8 @@ export class BitbucketProvider implements PullRequestProvider {
     try {
       return conflictedPaths(await this.client.paged<BbFileConflict>(`${prPath(ref)}/conflicts?pagelen=100`))
     } catch (err) {
-      if (!(err instanceof PrHostError) || err.error.kind === 'token_rejected' || err.error.kind === 'offline') throw err
+      if (!(err instanceof PrHostError) || err.error.kind === 'token_rejected' || err.error.kind === 'offline')
+        throw err
       log.warn('reading pull request conflicts failed', { number: ref.number, kind: err.error.kind })
       return null
     }
@@ -324,8 +372,13 @@ export class BitbucketProvider implements PullRequestProvider {
     try {
       const q = encodeURIComponent(`repository.full_name="${repo.owner}/${repo.name}"`)
       const perms = await this.client.paged<{ permission?: string; repository?: { full_name?: string } }>(
-        `/user/workspaces/${encodeURIComponent(repo.owner)}/permissions/repositories?q=${q}`, 1)
-      write = perms.some((p) => p.repository?.full_name?.toLowerCase() === fullName && (p.permission === 'write' || p.permission === 'admin'))
+        `/user/workspaces/${encodeURIComponent(repo.owner)}/permissions/repositories?q=${q}`,
+        1,
+      )
+      write = perms.some(
+        (p) =>
+          p.repository?.full_name?.toLowerCase() === fullName && (p.permission === 'write' || p.permission === 'admin'),
+      )
     } catch (err) {
       if (!(err instanceof PrHostError)) throw err
       log.info('reading repository permission failed; treating as no write access', { repo: key, kind: err.error.kind })
@@ -344,27 +397,37 @@ export class BitbucketProvider implements PullRequestProvider {
     const viewer = await this.currentUser()
     const since = new Date(this.now() - MERGED_WINDOW_DAYS * 86_400_000).toISOString()
     const mergedQuery = encodeURIComponent(`state="MERGED" AND updated_on >= ${since}`)
-    return Promise.all(repos.map(async (repo): Promise<RepoListResult> => {
-      try {
-        const [open, merged] = await Promise.all([
-          this.client.paged<BbPullRequest>(`${repoPath(repo)}/pullrequests?state=OPEN&pagelen=50&fields=${LIST_FIELDS}`, 2),
-          this.client.paged<BbPullRequest>(`${repoPath(repo)}/pullrequests?state=MERGED&q=${mergedQuery}&pagelen=50&fields=${LIST_FIELDS}`, 1),
-        ])
-        const mine = [...open, ...merged].filter((pr) => this.involved(pr, viewer))
-        const prs: PrSummary[] = await Promise.all(mine.map(async (pr) => {
-          const ref = { ...repo, number: pr.id }
-          const extra = pr.state === 'OPEN' ? await this.enrich(ref, pr) : null
-          return mapBbSummary(repo, pr, viewer, extra)
-        }))
-        return { repo, prs, error: null }
-      } catch (err) {
-        if (!(err instanceof PrHostError)) throw err
-        // A bad token fails every repo the same way; let the service say it once.
-        if (err.error.kind === 'token_rejected' || err.error.kind === 'offline') throw err
-        log.warn('listing one repository failed', { repo: `${repo.owner}/${repo.name}`, kind: err.error.kind })
-        return { repo, prs: [], error: err.error }
-      }
-    }))
+    return Promise.all(
+      repos.map(async (repo): Promise<RepoListResult> => {
+        try {
+          const [open, merged] = await Promise.all([
+            this.client.paged<BbPullRequest>(
+              `${repoPath(repo)}/pullrequests?state=OPEN&pagelen=50&fields=${LIST_FIELDS}`,
+              2,
+            ),
+            this.client.paged<BbPullRequest>(
+              `${repoPath(repo)}/pullrequests?state=MERGED&q=${mergedQuery}&pagelen=50&fields=${LIST_FIELDS}`,
+              1,
+            ),
+          ])
+          const mine = [...open, ...merged].filter((pr) => this.involved(pr, viewer))
+          const prs: PrSummary[] = await Promise.all(
+            mine.map(async (pr) => {
+              const ref = { ...repo, number: pr.id }
+              const extra = pr.state === 'OPEN' ? await this.enrich(ref, pr) : null
+              return mapBbSummary(repo, pr, viewer, extra)
+            }),
+          )
+          return { repo, prs, error: null }
+        } catch (err) {
+          if (!(err instanceof PrHostError)) throw err
+          // A bad token fails every repo the same way; let the service say it once.
+          if (err.error.kind === 'token_rejected' || err.error.kind === 'offline') throw err
+          log.warn('listing one repository failed', { repo: `${repo.owner}/${repo.name}`, kind: err.error.kind })
+          return { repo, prs: [], error: err.error }
+        }
+      }),
+    )
   }
 
   async detail(ref: PrRef): Promise<PrDetail> {
@@ -402,7 +465,10 @@ export class BitbucketProvider implements PullRequestProvider {
   // ─── Writes ────────────────────────────────────────────────────
 
   async reply(ref: PrRef, conversationId: string, body: string): Promise<void> {
-    await this.client.send('POST', `${prPath(ref)}/comments`, { content: { raw: body }, parent: { id: Number(conversationId) } })
+    await this.client.send('POST', `${prPath(ref)}/comments`, {
+      content: { raw: body },
+      parent: { id: Number(conversationId) },
+    })
   }
 
   /** A conversation's id is its root comment's, which is what Bitbucket resolves. */
@@ -448,12 +514,19 @@ export class BitbucketProvider implements PullRequestProvider {
    * the host; the refresh after it shows the result.
    */
   async merge(ref: PrRef, strategy: MergeStrategy): Promise<void> {
-    const res = await this.client.send('POST', `${prPath(ref)}/merge`, { type: 'pullrequest', merge_strategy: BB_MERGE_STRATEGY[strategy] })
+    const res = await this.client.send('POST', `${prPath(ref)}/merge`, {
+      type: 'pullrequest',
+      merge_strategy: BB_MERGE_STRATEGY[strategy],
+    })
     if (res.status === 202) log.info('Bitbucket queued the merge', { number: ref.number })
   }
 
   async rerunCheck(): Promise<void> {
-    throw new PrHostError({ kind: 'forbidden', host: 'bitbucket', message: "Bitbucket's API cannot re-run a pipeline." })
+    throw new PrHostError({
+      kind: 'forbidden',
+      host: 'bitbucket',
+      message: "Bitbucket's API cannot re-run a pipeline.",
+    })
   }
 
   /**
@@ -478,8 +551,14 @@ export class BitbucketProvider implements PullRequestProvider {
   private async readMembers(workspace: string, key: string): Promise<PrReviewerCandidate[]> {
     const started = this.now()
     try {
-      const members = await this.client.paged<BbWorkspaceMember>(`/workspaces/${encodeURIComponent(workspace)}/members?pagelen=100`)
-      log.info('read workspace members', { ms: this.now() - started, pages: Math.max(1, Math.ceil(members.length / 100)), count: members.length })
+      const members = await this.client.paged<BbWorkspaceMember>(
+        `/workspaces/${encodeURIComponent(workspace)}/members?pagelen=100`,
+      )
+      log.info('read workspace members', {
+        ms: this.now() - started,
+        pages: Math.max(1, Math.ceil(members.length / 100)),
+        count: members.length,
+      })
       return mapBbCandidates(members)
     } catch (err) {
       if (!(err instanceof PrHostError) || err.error.kind === 'offline') throw err
@@ -514,14 +593,23 @@ export class BitbucketProvider implements PullRequestProvider {
   }
 
   async defaultBranch(repo: RepoRef): Promise<string> {
-    const body = await this.client.json<{ mainbranch?: { name?: string } | null }>(`${repoPath(repo)}?fields=mainbranch.name`)
+    const body = await this.client.json<{ mainbranch?: { name?: string } | null }>(
+      `${repoPath(repo)}?fields=mainbranch.name`,
+    )
     const name = body.mainbranch?.name
-    if (!name) throw new PrHostError({ kind: 'unknown', host: 'bitbucket', message: 'Bitbucket did not say which branch is the main branch.' })
+    if (!name)
+      throw new PrHostError({
+        kind: 'unknown',
+        host: 'bitbucket',
+        message: 'Bitbucket did not say which branch is the main branch.',
+      })
     return name
   }
 
   async forkParent(repo: RepoRef): Promise<RepoRef | null> {
-    const body = await this.client.json<{ parent?: { full_name?: string } | null }>(`${repoPath(repo)}?fields=parent.full_name`)
+    const body = await this.client.json<{ parent?: { full_name?: string } | null }>(
+      `${repoPath(repo)}?fields=parent.full_name`,
+    )
     return parseFullName('bitbucket', body.parent?.full_name ?? '')
   }
 
@@ -529,7 +617,9 @@ export class BitbucketProvider implements PullRequestProvider {
     const q = encodeURIComponent(`source.branch.name="${branch.replace(/"/g, '\\"')}" AND state="OPEN"`)
     const fields = encodeURIComponent('values.id,values.links.html.href,values.source.repository.full_name')
     const open = await this.client.paged<BbCreated & { source?: { repository?: { full_name?: string } } }>(
-      `${repoPath(repo)}/pullrequests?q=${q}&pagelen=10&fields=${fields}`, 1)
+      `${repoPath(repo)}/pullrequests?q=${q}&pagelen=10&fields=${fields}`,
+      1,
+    )
     // A fork's PR into this repository can share the branch name.
     const fullName = `${repo.owner}/${repo.name}`.toLowerCase()
     const own = open.find((pr) => (pr.source?.repository?.full_name?.toLowerCase() ?? fullName) === fullName)
@@ -551,7 +641,12 @@ export class BitbucketProvider implements PullRequestProvider {
       ...(reviewers.length > 0 ? { reviewers: reviewers.map((uuid) => ({ uuid })) } : {}),
     })
     const pr = res.data ? createdPr(res.data) : null
-    if (!pr) throw new PrHostError({ kind: 'unknown', host: 'bitbucket', message: 'Bitbucket did not return the new pull request.' })
+    if (!pr)
+      throw new PrHostError({
+        kind: 'unknown',
+        host: 'bitbucket',
+        message: 'Bitbucket did not return the new pull request.',
+      })
     return pr
   }
 }
@@ -567,7 +662,10 @@ function createdPr(pr: BbCreated): CreatedPr | null {
 }
 
 /** Bitbucket's PUT needs the title; fields left out (the description) are not touched. */
-export function bbReviewersBody(title: string, uuids: readonly string[]): { title: string; reviewers: Array<{ uuid: string }> } {
+export function bbReviewersBody(
+  title: string,
+  uuids: readonly string[],
+): { title: string; reviewers: Array<{ uuid: string }> } {
   return { title, reviewers: uuids.map((uuid) => ({ uuid })) }
 }
 
@@ -591,46 +689,81 @@ export async function testBitbucket(client: BitbucketClient, repos: RepoRef[]): 
   } catch (err) {
     if (err instanceof PrHostError) {
       log.warn('Bitbucket test failed', { kind: err.error.kind })
-      const message = err.error.message === BB_MISSING_SCOPE ? 'The API token is missing the read:user:bitbucket scope.' : err.error.message
+      const message =
+        err.error.message === BB_MISSING_SCOPE
+          ? 'The API token is missing the read:user:bitbucket scope.'
+          : err.error.message
       return { ok: false, message }
     }
     log.error('Bitbucket test failed unexpectedly', err)
     return { ok: false, message: 'The test failed; see the log.' }
   }
   const checked = repos.slice(0, TEST_MAX_REPOS)
-  if (checked.length === 0) return { ok: true, message: `${who}\nNone of your projects uses a Bitbucket repository yet.` }
+  if (checked.length === 0)
+    return { ok: true, message: `${who}\nNone of your projects uses a Bitbucket repository yet.` }
 
-  const failures: Array<{ owner: string; repo: string; step: 'repository' | 'pullrequests'; error: PrError | null }> = []
+  const failures: Array<{ owner: string; repo: string; step: 'repository' | 'pullrequests'; error: PrError | null }> =
+    []
   const queue = [...checked]
-  await Promise.all(Array.from({ length: Math.min(TEST_CONCURRENCY, queue.length) }, async () => {
-    for (let repo = queue.shift(); repo; repo = queue.shift()) {
-      let step: 'repository' | 'pullrequests' = 'repository'
-      try {
-        await client.json(`${repoPath(repo)}?fields=full_name`)
-        step = 'pullrequests'
-        await client.json(`${repoPath(repo)}/pullrequests?pagelen=1&fields=size`)
-      } catch (err) {
-        if (err instanceof PrHostError) log.warn('Bitbucket repository check failed', { repo: `${repo.owner}/${repo.name}`, step, kind: err.error.kind })
-        else log.error('Bitbucket repository check failed unexpectedly', err)
-        failures.push({ owner: repo.owner, repo: repo.name, step, error: err instanceof PrHostError ? err.error : null })
+  await Promise.all(
+    Array.from({ length: Math.min(TEST_CONCURRENCY, queue.length) }, async () => {
+      for (let repo = queue.shift(); repo; repo = queue.shift()) {
+        let step: 'repository' | 'pullrequests' = 'repository'
+        try {
+          await client.json(`${repoPath(repo)}?fields=full_name`)
+          step = 'pullrequests'
+          await client.json(`${repoPath(repo)}/pullrequests?pagelen=1&fields=size`)
+        } catch (err) {
+          if (err instanceof PrHostError)
+            log.warn('Bitbucket repository check failed', {
+              repo: `${repo.owner}/${repo.name}`,
+              step,
+              kind: err.error.kind,
+            })
+          else log.error('Bitbucket repository check failed unexpectedly', err)
+          failures.push({
+            owner: repo.owner,
+            repo: repo.name,
+            step,
+            error: err instanceof PrHostError ? err.error : null,
+          })
+        }
       }
-    }
-  }))
+    }),
+  )
   const works = checked.length - failures.length
   const lines = [who]
-  if (works === checked.length) lines.push(checked.length === 1 ? 'Your project repository is readable.' : `All ${checked.length} project repositories are readable.`)
+  if (works === checked.length)
+    lines.push(
+      checked.length === 1
+        ? 'Your project repository is readable.'
+        : `All ${checked.length} project repositories are readable.`,
+    )
   else {
-    lines.push(works > 0 ? `${works} of ${checked.length} project repositories are readable.` : checked.length === 1 ? 'Your project repository is not readable.' : `None of your ${checked.length} project repositories is readable.`)
+    lines.push(
+      works > 0
+        ? `${works} of ${checked.length} project repositories are readable.`
+        : checked.length === 1
+          ? 'Your project repository is not readable.'
+          : `None of your ${checked.length} project repositories is readable.`,
+    )
     const byOwner = new Map<string, string[]>()
     // The repository read worked but its pull requests did not: say so, the fix differs.
-    for (const f of failures) byOwner.set(f.owner, [...(byOwner.get(f.owner) ?? []), f.step === 'pullrequests' ? `${f.repo} (pull requests)` : f.repo])
-    for (const [owner, names] of [...byOwner].sort(([a], [b]) => a.localeCompare(b))) lines.push(`Cannot read in ${owner}: ${names.sort().join(', ')}`)
+    for (const f of failures)
+      byOwner.set(f.owner, [
+        ...(byOwner.get(f.owner) ?? []),
+        f.step === 'pullrequests' ? `${f.repo} (pull requests)` : f.repo,
+      ])
+    for (const [owner, names] of [...byOwner].sort(([a], [b]) => a.localeCompare(b)))
+      lines.push(`Cannot read in ${owner}: ${names.sort().join(', ')}`)
   }
-  const missing = (step: 'repository' | 'pullrequests') => failures.some((f) => f.step === step && f.error?.message === BB_MISSING_SCOPE)
+  const missing = (step: 'repository' | 'pullrequests') =>
+    failures.some((f) => f.step === step && f.error?.message === BB_MISSING_SCOPE)
   if (missing('repository')) lines.push('The API token may be missing read:repository:bitbucket.')
   if (missing('pullrequests')) lines.push('The API token may be missing read:pullrequest:bitbucket.')
   if (failures.some((f) => f.error?.kind === 'offline')) lines.push('Some checks could not reach bitbucket.org.')
-  if (failures.some((f) => f.error?.kind === 'rate_limited')) lines.push('Bitbucket rate-limited some checks. Try again in a minute.')
+  if (failures.some((f) => f.error?.kind === 'rate_limited'))
+    lines.push('Bitbucket rate-limited some checks. Try again in a minute.')
   if (repos.length > checked.length) lines.push(`Checked the first ${checked.length} of ${repos.length}.`)
   const message = lines.join('\n')
   return { ok: works > 0, message }

@@ -20,7 +20,15 @@ import {
   PAIRING_CODE_TTL_MS,
   type DeviceSession,
 } from '../../src/shared/device-auth'
-import { AppChannels, ProviderChannels, ProviderInstanceChannels, PullRequestChannels, PullRequestWriteChannels, SourceControlChannels, WorktreeManagerChannels } from '../../src/shared/ipc-channels'
+import {
+  AppChannels,
+  ProviderChannels,
+  ProviderInstanceChannels,
+  PullRequestChannels,
+  PullRequestWriteChannels,
+  SourceControlChannels,
+  WorktreeManagerChannels,
+} from '../../src/shared/ipc-channels'
 import { SETTING_DEFAULT_RUNTIME_MODE } from '../../src/shared/session-defaults'
 
 describe('isChannelAllowed', () => {
@@ -93,16 +101,20 @@ describe('isChannelAllowed', () => {
   })
 
   it('protects launch and workspace config through case aliases on default macOS and Windows filesystems', () => {
-    expect(isFileMutationAllowed(
-      PHONE_SCOPES,
-      '/Users/Tejas/Switchboard',
-      '/users/tejas/switchboard/.SwitchBoard/Launch-Config.YAML',
-    )).toBe(false)
-    expect(isFileMutationAllowed(
-      PHONE_SCOPES,
-      'C:\\Users\\Tejas\\Switchboard',
-      'c:\\users\\tejas\\switchboard\\.SWITCHBOARD\\WORKSPACE.yaml',
-    )).toBe(false)
+    expect(
+      isFileMutationAllowed(
+        PHONE_SCOPES,
+        '/Users/Tejas/Switchboard',
+        '/users/tejas/switchboard/.SwitchBoard/Launch-Config.YAML',
+      ),
+    ).toBe(false)
+    expect(
+      isFileMutationAllowed(
+        PHONE_SCOPES,
+        'C:\\Users\\Tejas\\Switchboard',
+        'c:\\users\\tejas\\switchboard\\.SWITCHBOARD\\WORKSPACE.yaml',
+      ),
+    ).toBe(false)
   })
 
   it('lets a phone read pull requests but never source control credentials', () => {

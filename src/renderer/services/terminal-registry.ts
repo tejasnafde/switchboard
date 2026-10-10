@@ -48,10 +48,7 @@ const RECENT_OUTPUT_WINDOW_MS = 30_000
  * 30 seconds. Used by `applyLaunchConfig` to confirm before tearing down a
  * session's panes.
  */
-export function getRecentOutputPaneLabels(
-  paneIds: string[],
-  panes: Record<string, { label?: string }>,
-): string[] {
+export function getRecentOutputPaneLabels(paneIds: string[], panes: Record<string, { label?: string }>): string[] {
   const cutoff = Date.now() - RECENT_OUTPUT_WINDOW_MS
   const out: string[] = []
   for (const id of paneIds) {
@@ -82,28 +79,52 @@ function getXtermTheme(): Record<string, string> {
 
   if (isLight) {
     return {
-      background: bg, foreground: fg,
+      background: bg,
+      foreground: fg,
       cursor: get('--terminal-cursor') || '#2563eb',
       cursorAccent: bg,
       selectionBackground: 'rgba(37, 99, 235, 0.15)',
-      black: '#1a1d21', red: '#d32f2f', green: '#2e7d32', yellow: '#f57f17',
-      blue: '#1565c0', magenta: '#7b1fa2', cyan: '#00838f', white: '#9ca3af',
-      brightBlack: '#5a6270', brightRed: '#ef5350', brightGreen: '#43a047',
-      brightYellow: '#fdd835', brightBlue: '#42a5f5', brightMagenta: '#ab47bc',
-      brightCyan: '#26c6da', brightWhite: '#1a1d21',
+      black: '#1a1d21',
+      red: '#d32f2f',
+      green: '#2e7d32',
+      yellow: '#f57f17',
+      blue: '#1565c0',
+      magenta: '#7b1fa2',
+      cyan: '#00838f',
+      white: '#9ca3af',
+      brightBlack: '#5a6270',
+      brightRed: '#ef5350',
+      brightGreen: '#43a047',
+      brightYellow: '#fdd835',
+      brightBlue: '#42a5f5',
+      brightMagenta: '#ab47bc',
+      brightCyan: '#26c6da',
+      brightWhite: '#1a1d21',
     }
   }
 
   return {
-    background: bg, foreground: fg,
+    background: bg,
+    foreground: fg,
     cursor: get('--terminal-cursor') || '#58a6ff',
     cursorAccent: bg,
     selectionBackground: 'rgba(88, 166, 255, 0.25)',
-    black: '#0d1117', red: '#f85149', green: '#3fb950', yellow: '#d29922',
-    blue: '#58a6ff', magenta: '#bc8cff', cyan: '#39d353', white: '#8b949e',
-    brightBlack: '#484f58', brightRed: '#ff7b72', brightGreen: '#56d364',
-    brightYellow: '#e3b341', brightBlue: '#79c0ff', brightMagenta: '#d2a8ff',
-    brightCyan: '#56d364', brightWhite: '#e6edf3',
+    black: '#0d1117',
+    red: '#f85149',
+    green: '#3fb950',
+    yellow: '#d29922',
+    blue: '#58a6ff',
+    magenta: '#bc8cff',
+    cyan: '#39d353',
+    white: '#8b949e',
+    brightBlack: '#484f58',
+    brightRed: '#ff7b72',
+    brightGreen: '#56d364',
+    brightYellow: '#e3b341',
+    brightBlue: '#79c0ff',
+    brightMagenta: '#d2a8ff',
+    brightCyan: '#56d364',
+    brightWhite: '#e6edf3',
   }
 }
 

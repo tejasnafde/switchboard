@@ -36,7 +36,9 @@ vi.mock('electron', () => ({
 }))
 
 vi.mock('child_process', () => ({
-  execSync: vi.fn(() => { throw new Error('not found') }),
+  execSync: vi.fn(() => {
+    throw new Error('not found')
+  }),
   // Simulates `which codex` finding nothing on the naive (Finder-truncated)
   // PATH that `buildCodexCliEnv()` builds today.
   spawnSync: vi.fn(() => ({ status: 1, stdout: '', stderr: '', error: undefined })),

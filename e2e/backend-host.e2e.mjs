@@ -55,7 +55,10 @@ const app = await electron.launch({
 
 async function closeApp() {
   const closed = await Promise.race([
-    app.close().then(() => true, () => true),
+    app.close().then(
+      () => true,
+      () => true,
+    ),
     new Promise((resolve) => setTimeout(() => resolve(false), 5_000)),
   ])
   if (!closed) app.process().kill('SIGKILL')
@@ -92,7 +95,10 @@ try {
   }, repoRoot)
 
   // files
-  check(r.listDir?.ok && Array.isArray(r.listDir.entries) && r.listDir.entries.length > 0, 'files:list-dir returns entries')
+  check(
+    r.listDir?.ok && Array.isArray(r.listDir.entries) && r.listDir.entries.length > 0,
+    'files:list-dir returns entries',
+  )
   check(r.listAll?.ok && r.listAll.files.includes('package.json'), 'files:list-all includes package.json')
   check(r.resolve?.ok && r.resolve.exists === true, 'files:resolve finds package.json')
   // git
@@ -125,7 +131,10 @@ try {
       }),
     repoRoot,
   )
-  check(typeof termOut === 'string' && termOut.includes('SBE2E_OK'), 'terminal create→write→onOutput streams (host.emit/on)')
+  check(
+    typeof termOut === 'string' && termOut.includes('SBE2E_OK'),
+    'terminal create→write→onOutput streams (host.emit/on)',
+  )
 
   // provider-registry - proves the provider channels route through the migrated
   // host.handle seam. (A live instance-switch assertion needs real provider auth
@@ -134,7 +143,10 @@ try {
     claude: await window.api.provider.isAvailable('claude'),
     codex: await window.api.provider.isAvailable('codex'),
   }))
-  check(typeof prov.claude === 'boolean' && typeof prov.codex === 'boolean', 'provider:is-available round-trips through the host seam')
+  check(
+    typeof prov.claude === 'boolean' && typeof prov.codex === 'boolean',
+    'provider:is-available round-trips through the host seam',
+  )
 
   // Worktree transaction - crosses the real preload/IPC/main/SQLite/Git seam.
   // The duplicate call uses the exact same creationId and payload so it must
@@ -170,7 +182,10 @@ try {
   if (worktree.first?.status !== 'ready') {
     console.error('worktree transaction snapshot:', JSON.stringify(worktree.first, null, 2))
   }
-  check(worktree.first?.status === 'ready' && !!worktree.first?.worktreeId, 'worktree transaction reaches ready through the real host')
+  check(
+    worktree.first?.status === 'ready' && !!worktree.first?.worktreeId,
+    'worktree transaction reaches ready through the real host',
+  )
   check(worktree.duplicate?.worktreeId === worktree.first?.worktreeId, 'same creationId returns the canonical worktree')
   check(worktree.fetched?.revision === worktree.first?.revision, 'durable creation is queryable after completion')
   check(

@@ -59,17 +59,21 @@ describe('shouldRetrySessionLoadAfterCreate', () => {
 describe('session eviction', () => {
   describe('shouldEvictMessages', () => {
     it('evicts an idle session that has messages loaded', () => {
-      expect(shouldEvictMessages({
-        status: 'idle',
-        messages: [{ id: 'm1', role: 'user', content: 'hi', timestamp: 1000 }],
-      })).toBe(true)
+      expect(
+        shouldEvictMessages({
+          status: 'idle',
+          messages: [{ id: 'm1', role: 'user', content: 'hi', timestamp: 1000 }],
+        }),
+      ).toBe(true)
     })
 
     it('does not evict a session that is actively running', () => {
-      expect(shouldEvictMessages({
-        status: 'running',
-        messages: [{ id: 'm1', role: 'user', content: 'hi', timestamp: 1000 }],
-      })).toBe(false)
+      expect(
+        shouldEvictMessages({
+          status: 'running',
+          messages: [{ id: 'm1', role: 'user', content: 'hi', timestamp: 1000 }],
+        }),
+      ).toBe(false)
     })
 
     it('does not evict an idle session that already has no messages', () => {
@@ -77,17 +81,21 @@ describe('session eviction', () => {
     })
 
     it('does not evict a session in error state with messages', () => {
-      expect(shouldEvictMessages({
-        status: 'error',
-        messages: [{ id: 'm1', role: 'system', content: 'oops', timestamp: 1000 }],
-      })).toBe(false)
+      expect(
+        shouldEvictMessages({
+          status: 'error',
+          messages: [{ id: 'm1', role: 'system', content: 'oops', timestamp: 1000 }],
+        }),
+      ).toBe(false)
     })
 
     it('does not evict a session that is waiting for user input', () => {
-      expect(shouldEvictMessages({
-        status: 'waiting-for-input',
-        messages: [{ id: 'm1', role: 'assistant', content: '?', timestamp: 1000 }],
-      })).toBe(false)
+      expect(
+        shouldEvictMessages({
+          status: 'waiting-for-input',
+          messages: [{ id: 'm1', role: 'assistant', content: '?', timestamp: 1000 }],
+        }),
+      ).toBe(false)
     })
   })
 
@@ -97,9 +105,11 @@ describe('session eviction', () => {
     })
 
     it('does not reload a session that still has messages in memory', () => {
-      expect(needsMessageReload({
-        messages: [{ id: 'm1', role: 'user', content: 'hi', timestamp: 1000 }],
-      })).toBe(false)
+      expect(
+        needsMessageReload({
+          messages: [{ id: 'm1', role: 'user', content: 'hi', timestamp: 1000 }],
+        }),
+      ).toBe(false)
     })
   })
 })

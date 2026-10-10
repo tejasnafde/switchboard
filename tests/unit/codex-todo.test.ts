@@ -13,13 +13,15 @@ import { parseCodexTodoItems, parseCodexTodoMarkdown } from '../../src/main/prov
 
 describe('parseCodexTodoItems', () => {
   it('reads step text and status', () => {
-    expect(parseCodexTodoItems({
-      plan: [
-        { step: 'Review the UI structure', status: 'completed' },
-        { step: 'Clarify the target user', status: 'in_progress' },
-        { step: 'Propose approaches', status: 'pending' },
-      ],
-    })).toEqual([
+    expect(
+      parseCodexTodoItems({
+        plan: [
+          { step: 'Review the UI structure', status: 'completed' },
+          { step: 'Clarify the target user', status: 'in_progress' },
+          { step: 'Propose approaches', status: 'pending' },
+        ],
+      }),
+    ).toEqual([
       { text: 'Review the UI structure', status: 'completed' },
       { text: 'Clarify the target user', status: 'in_progress' },
       { text: 'Propose approaches', status: 'pending' },
@@ -34,8 +36,9 @@ describe('parseCodexTodoItems', () => {
   })
 
   it('drops entries with no step text', () => {
-    expect(parseCodexTodoItems({ plan: [{ step: '' }, { status: 'completed' }, { step: 'keep' }] }))
-      .toEqual([{ text: 'keep', status: 'pending' }])
+    expect(parseCodexTodoItems({ plan: [{ step: '' }, { status: 'completed' }, { step: 'keep' }] })).toEqual([
+      { text: 'keep', status: 'pending' },
+    ])
   })
 
   it('returns an empty list for a malformed payload', () => {
@@ -71,9 +74,7 @@ describe('parseCodexTodoMarkdown', () => {
   })
 
   it('ignores blank and non-list lines', () => {
-    expect(parseCodexTodoMarkdown('Plan:\n\n- [ ] only this\n')).toEqual([
-      { text: 'only this', status: 'pending' },
-    ])
+    expect(parseCodexTodoMarkdown('Plan:\n\n- [ ] only this\n')).toEqual([{ text: 'only this', status: 'pending' }])
   })
 
   it('returns nothing for empty input', () => {

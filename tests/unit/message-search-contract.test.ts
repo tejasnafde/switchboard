@@ -16,8 +16,13 @@ let rowSeq = 0
 
 function insert(id: string, conversationId: string, content: string, timestamp = 1_000 + rowSeq, role = 'assistant') {
   rowSeq += 1
-  db.prepare('INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)')
-    .run(id, conversationId, role, content, timestamp)
+  db.prepare('INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)').run(
+    id,
+    conversationId,
+    role,
+    content,
+    timestamp,
+  )
 }
 
 const ids = (query: string) => searchMessagesInDatabase(db, query).map((r) => r.messageId)
@@ -107,15 +112,22 @@ describe('message search matching', () => {
 
   it('leaves stored task notices out of the results', () => {
     insert('a1', 't1', 'The build failed with exit code 2')
-    insert(storedTaskNoticeId('t1', 'task_u1'), 't1', '<task-notification>\n<status>failed</status>\n<summary>Build failed</summary>\n</task-notification>', 2_000, 'user')
+    insert(
+      storedTaskNoticeId('t1', 'task_u1'),
+      't1',
+      '<task-notification>\n<status>failed</status>\n<summary>Build failed</summary>\n</task-notification>',
+      2_000,
+      'user',
+    )
     expect(ids('failed')).toEqual(['a1'])
   })
 })
 
 describe('message search result fields', () => {
   it('names the chat, project, agent and time, routed to the root thread', () => {
-    db.prepare('INSERT INTO conversations (id, project_path, agent_type, title, sidebar_role) VALUES (?, ?, ?, ?, ?)')
-      .run('rotated', '/repo', 'claude-code', 'stale', 'recovery')
+    db.prepare(
+      'INSERT INTO conversations (id, project_path, agent_type, title, sidebar_role) VALUES (?, ?, ?, ?, ?)',
+    ).run('rotated', '/repo', 'claude-code', 'stale', 'recovery')
     db.prepare('INSERT INTO thread_sessions (thread_id, claude_session_id) VALUES (?, ?)').run('t1', 'rotated')
     insert('a1', 'rotated', 'the durable needle', 5_000)
     const [hit] = searchMessagesInDatabase(db, 'needle')

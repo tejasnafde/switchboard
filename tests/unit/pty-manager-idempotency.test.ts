@@ -10,8 +10,12 @@ describe('PtyManager stable-handle adoption', () => {
   it('does not replace an already-live PTY when the renderer adopts its stable id', async () => {
     const callbacks = { data: (_value: string) => {}, exit: (_value: { exitCode: number; signal?: number }) => {} }
     spawn.mockReturnValue({
-      onData: vi.fn((callback) => { callbacks.data = callback }),
-      onExit: vi.fn((callback) => { callbacks.exit = callback }),
+      onData: vi.fn((callback) => {
+        callbacks.data = callback
+      }),
+      onExit: vi.fn((callback) => {
+        callbacks.exit = callback
+      }),
       write: vi.fn(),
       resize: vi.fn(),
       kill: vi.fn(),

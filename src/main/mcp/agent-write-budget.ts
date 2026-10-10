@@ -23,7 +23,8 @@ export class AgentWriteBudget {
       this.stamps.set(chatId, recent)
       return {
         ok: false,
-        message: `This chat has asked for ${this.limit} pull request writes in the last ${Math.round(this.windowMs / 60_000)} minutes, which is the limit. ` +
+        message:
+          `This chat has asked for ${this.limit} pull request writes in the last ${Math.round(this.windowMs / 60_000)} minutes, which is the limit. ` +
           `Nothing was sent. Tell the user what is left to do, or try again in ${waitS} seconds.`,
       }
     }

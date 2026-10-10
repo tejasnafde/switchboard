@@ -45,15 +45,17 @@ export function activitySummaryLabel(toolCount: number, durationMs?: number): st
 }
 
 function isToolOnly(message: ChatMessage): boolean {
-  return !!message.toolCalls?.length
-    && !message.content
-    && !message.images?.length
-    && !message.approval
-    && !message.plan
-    && !message.todos?.items.length
-    && !message.question
-    && !message.fileDiff
-    && !message.denial
+  return (
+    !!message.toolCalls?.length &&
+    !message.content &&
+    !message.images?.length &&
+    !message.approval &&
+    !message.plan &&
+    !message.todos?.items.length &&
+    !message.question &&
+    !message.fileDiff &&
+    !message.denial
+  )
 }
 
 function itemKind(message: ChatMessage): TurnPresentationItem['kind'] {

@@ -33,16 +33,20 @@ describe('managed worktree liveness catalog', () => {
       `)
 
       ensureWorktreeCreationSchema(db)
-      const first = db.prepare(`
+      const first = db
+        .prepare(`
         SELECT id, management_origin, lifecycle, provenance_json, lineage_json,
                initial_owner_kind, initial_owner_id
           FROM managed_worktrees
-      `).get() as Record<string, unknown>
-      const projections = db.prepare(`
+      `)
+        .get() as Record<string, unknown>
+      const projections = db
+        .prepare(`
         SELECT worktree_id, worktree_creation_id FROM conversations WHERE id = 'legacy-session'
         UNION ALL
         SELECT worktree_id, worktree_creation_id FROM kanban_cards WHERE id = 'legacy-card'
-      `).all() as Array<{ worktree_id: string; worktree_creation_id: string }>
+      `)
+        .all() as Array<{ worktree_id: string; worktree_creation_id: string }>
 
       expect(first).toMatchObject({
         management_origin: 'legacy_unknown',
@@ -82,10 +86,14 @@ describe('managed worktree liveness catalog', () => {
 
       ensureWorktreeCreationSchema(db)
 
-      expect(db.prepare(`
+      expect(
+        db
+          .prepare(`
         SELECT worktree_id, worktree_creation_id
           FROM conversations WHERE id = 'legacy-session'
-      `).get()).toMatchObject({
+      `)
+          .get(),
+      ).toMatchObject({
         worktree_id: expect.stringMatching(/^legacy_/),
         worktree_creation_id: null,
       })
@@ -123,9 +131,11 @@ describe('managed worktree liveness catalog', () => {
         )
       `).run(projectPath, worktreePath)
       ensureWorktreeCreationSchema(db)
-      const key = db.prepare(`
+      const key = db
+        .prepare(`
         SELECT worktree_creation_id AS creationId FROM conversations WHERE id = 'legacy-session'
-      `).get() as { creationId: string }
+      `)
+        .get() as { creationId: string }
       db.prepare(`
         UPDATE kanban_cards
            SET worktree_creation_id = 'different-creation'
@@ -135,27 +145,37 @@ describe('managed worktree liveness catalog', () => {
       const current = store.get({ machineId: 'local', creationId: key.creationId })
       expect(current).not.toBeNull()
 
-      expect(store.finalizeCleanup({
-        machineId: 'local',
-        creationId: key.creationId,
-        expectedRevision: current!.revision,
-        disposition: 'removed',
-        now: 10,
-      })).toMatchObject({ kind: 'updated', record: { status: 'rolled_back' } })
+      expect(
+        store.finalizeCleanup({
+          machineId: 'local',
+          creationId: key.creationId,
+          expectedRevision: current!.revision,
+          disposition: 'removed',
+          now: 10,
+        }),
+      ).toMatchObject({ kind: 'updated', record: { status: 'rolled_back' } })
 
-      expect(db.prepare(`
+      expect(
+        db
+          .prepare(`
         SELECT worktree_path, worktree_branch, worktree_id, worktree_creation_id
           FROM conversations WHERE id = 'legacy-session'
-      `).get()).toEqual({
+      `)
+          .get(),
+      ).toEqual({
         worktree_path: null,
         worktree_branch: null,
         worktree_id: null,
         worktree_creation_id: null,
       })
-      expect(db.prepare(`
+      expect(
+        db
+          .prepare(`
         SELECT worktree_path, worktree_branch, worktree_id, worktree_creation_id
           FROM kanban_cards WHERE id = 'legacy-card'
-      `).get()).toEqual({
+      `)
+          .get(),
+      ).toEqual({
         worktree_path: null,
         worktree_branch: null,
         worktree_id: null,
@@ -198,9 +218,13 @@ describe('managed worktree liveness catalog', () => {
       `).run()
 
       ensureWorktreeCreationSchema(db)
-      expect(db.prepare(`
+      expect(
+        db
+          .prepare(`
         SELECT worktree_creation_id FROM conversations WHERE id = 'already-linked'
-      `).get()).toEqual({ worktree_creation_id: null })
+      `)
+          .get(),
+      ).toEqual({ worktree_creation_id: null })
       expect(db.prepare('SELECT count(*) AS count FROM worktree_creations').get()).toEqual({ count: 0 })
 
       db.prepare(`
@@ -211,10 +235,14 @@ describe('managed worktree liveness catalog', () => {
       `).run(projectPath, laterWorktreePath)
       ensureWorktreeCreationSchema(db)
 
-      expect(db.prepare(`
+      expect(
+        db
+          .prepare(`
         SELECT worktree_id, worktree_creation_id
           FROM conversations WHERE id = 'later-legacy'
-      `).get()).toMatchObject({
+      `)
+          .get(),
+      ).toMatchObject({
         worktree_id: expect.stringMatching(/^legacy_/),
         worktree_creation_id: expect.stringMatching(/^legacy_cleanup_/),
       })
@@ -247,10 +275,12 @@ describe('managed worktree liveness catalog', () => {
         )
       `).run(projectPath, worktreePath)
       ensureWorktreeCreationSchema(db)
-      const original = db.prepare(`
+      const original = db
+        .prepare(`
         SELECT worktree_id, worktree_creation_id
           FROM conversations WHERE id = 'legacy-session'
-      `).get() as { worktree_id: string; worktree_creation_id: string }
+      `)
+        .get() as { worktree_id: string; worktree_creation_id: string }
       expect(original.worktree_creation_id).toMatch(/^legacy_cleanup_/)
 
       db.prepare(`
@@ -260,18 +290,26 @@ describe('managed worktree liveness catalog', () => {
       `).run(projectPath, worktreePath)
       ensureWorktreeCreationSchema(db)
 
-      expect(db.prepare(`
+      expect(
+        db
+          .prepare(`
         SELECT worktree_id, worktree_creation_id FROM conversations WHERE id = 'legacy-session'
         UNION ALL
         SELECT worktree_id, worktree_creation_id FROM kanban_cards WHERE id = 'later-card'
-      `).all()).toEqual([
+      `)
+          .all(),
+      ).toEqual([
         { worktree_id: original.worktree_id, worktree_creation_id: null },
         { worktree_id: original.worktree_id, worktree_creation_id: null },
       ])
-      expect(db.prepare(`
+      expect(
+        db
+          .prepare(`
         SELECT status, materialization_plan_json
           FROM worktree_creations WHERE creation_id = ?
-      `).get(original.worktree_creation_id)).toEqual({
+      `)
+          .get(original.worktree_creation_id),
+      ).toEqual({
         status: 'cancelled',
         materialization_plan_json: null,
       })
@@ -323,12 +361,9 @@ describe('managed worktree liveness catalog', () => {
         ) VALUES ('card-owner', '/repo', 'Card', '/managed/card', 'kanban/card', 1, 1)
       `).run()
 
-      expect(listOwnedWorktreePaths(db, '/repo')).toEqual(new Set([
-        '/managed/catalog',
-        '/managed/session',
-        '/managed/fork',
-        '/managed/card',
-      ]))
+      expect(listOwnedWorktreePaths(db, '/repo')).toEqual(
+        new Set(['/managed/catalog', '/managed/session', '/managed/fork', '/managed/card']),
+      )
     } finally {
       db.close()
     }

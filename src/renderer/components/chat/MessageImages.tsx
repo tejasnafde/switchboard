@@ -16,7 +16,10 @@ function remember(key: string, url: string): void {
 }
 
 /** An image sent by reference loads its bytes once it scrolls into view. */
-function useImageUrl(image: MessageImage, sessionId: string | undefined): [string, React.RefObject<HTMLDivElement | null>] {
+function useImageUrl(
+  image: MessageImage,
+  sessionId: string | undefined,
+): [string, React.RefObject<HTMLDivElement | null>] {
   const ref = image.ref
   const key = ref && sessionId ? `${sessionId}\0${ref.messageId}\0${ref.index}` : ''
   const [url, setUrl] = useState(() => image.url || loaded.get(key) || '')
@@ -38,7 +41,8 @@ function useImageUrl(image: MessageImage, sessionId: string | undefined): [strin
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return
       observer.disconnect()
-      window.api.app.loadHistoryImage(sessionId, ref.messageId, ref.index)
+      window.api.app
+        .loadHistoryImage(sessionId, ref.messageId, ref.index)
         .then((result) => {
           if (!result?.url) {
             log.warn('history image not found', { sessionId, messageId: ref.messageId, index: ref.index })
@@ -59,12 +63,22 @@ function useImageUrl(image: MessageImage, sessionId: string | undefined): [strin
   return [url, boxRef]
 }
 
-function Thumbnail({ image, sessionId, onOpen }: { image: MessageImage; sessionId?: string; onOpen: (url: string) => void }) {
+function Thumbnail({
+  image,
+  sessionId,
+  onOpen,
+}: {
+  image: MessageImage
+  sessionId?: string
+  onOpen: (url: string) => void
+}) {
   const [url, boxRef] = useImageUrl(image, sessionId)
   return (
     <div
       ref={boxRef}
-      onClick={() => { if (url) onOpen(url) }}
+      onClick={() => {
+        if (url) onOpen(url)
+      }}
       className="h-[90px] w-[120px] cursor-pointer overflow-hidden rounded-[6px] border border-[var(--border)] transition-opacity duration-[120ms] hover:opacity-[0.85]"
     >
       {url && <img src={url} alt={image.name || 'attachment'} className="h-full w-full object-cover" />}
@@ -72,7 +86,12 @@ function Thumbnail({ image, sessionId, onOpen }: { image: MessageImage; sessionI
   )
 }
 
-export function MessageImages({ images, sessionId, spaced, onOpen }: {
+export function MessageImages({
+  images,
+  sessionId,
+  spaced,
+  onOpen,
+}: {
   images: MessageImage[]
   sessionId?: string
   /** Text sits above the images. */
@@ -81,7 +100,9 @@ export function MessageImages({ images, sessionId, spaced, onOpen }: {
 }) {
   return (
     <div className={`flex flex-wrap gap-[6px] ${spaced ? 'mt-[8px]' : 'mt-0'}`}>
-      {images.map((image, i) => <Thumbnail key={i} image={image} sessionId={sessionId} onOpen={onOpen} />)}
+      {images.map((image, i) => (
+        <Thumbnail key={i} image={image} sessionId={sessionId} onOpen={onOpen} />
+      ))}
     </div>
   )
 }

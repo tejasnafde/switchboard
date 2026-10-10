@@ -63,7 +63,7 @@ export class PullRequestAutoLinker {
       const { urls, creates } = prCommandLinks(command)
       if (creates) {
         let ids = this.creating.get(event.threadId)
-        if (!ids) this.creating.set(event.threadId, ids = new Set())
+        if (!ids) this.creating.set(event.threadId, (ids = new Set()))
         ids.add(event.toolId)
       }
       return this.scan(event.threadId, urls.join('\n'), command, toolInputCwd(input))
@@ -79,14 +79,23 @@ export class PullRequestAutoLinker {
   }
 
   /** `command`: the shell command of a tool input, whose bare `bbpr <n>` numbers count when it runs in the chat's repository. */
-  private async scan(threadId: string, text: string, command: string | null = null, commandCwd: string | null = null): Promise<void> {
+  private async scan(
+    threadId: string,
+    text: string,
+    command: string | null = null,
+    commandCwd: string | null = null,
+  ): Promise<void> {
     const mayHaveBbpr = command !== null && command.includes('bbpr')
     if (!mayHaveBbpr && !text) return
     try {
       const chat = this.deps.conversationFor(threadId)
       if (!chat) return
       const project = await this.deps.projectRepos(chat.projectPath)
-      const bbprNumbers = mayHaveBbpr ? await bbprNumbersInRepo(bbprTargetsForInput(command, chat.cwd, commandCwd), project.own, (dir) => this.deps.repoForProject(dir)) : []
+      const bbprNumbers = mayHaveBbpr
+        ? await bbprNumbersInRepo(bbprTargetsForInput(command, chat.cwd, commandCwd), project.own, (dir) =>
+            this.deps.repoForProject(dir),
+          )
+        : []
       let added = false
       for (const ref of projectPrRefs(text, bbprNumbers, project)) {
         if (this.deps.link(chat.id, ref)) added = true

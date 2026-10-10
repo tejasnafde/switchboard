@@ -7,7 +7,8 @@ describe('generateTitle', () => {
   })
 
   it('truncates long message at word boundary', () => {
-    const long = 'Please refactor the authentication middleware to use JWT tokens instead of session cookies for better scalability'
+    const long =
+      'Please refactor the authentication middleware to use JWT tokens instead of session cookies for better scalability'
     const title = generateTitle(long)
     expect(title.length).toBeLessThanOrEqual(51) // 50 + ellipsis
     expect(title).toContain('\u2026')

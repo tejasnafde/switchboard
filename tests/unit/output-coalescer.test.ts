@@ -13,7 +13,10 @@ describe('OutputCoalescer', () => {
     c.push('t2', 'x')
     expect(emitted).toEqual([])
     vi.advanceTimersByTime(8)
-    expect(emitted).toEqual([['t1', 'ab'], ['t2', 'x']])
+    expect(emitted).toEqual([
+      ['t1', 'ab'],
+      ['t2', 'x'],
+    ])
   })
 
   it('flush(id) emits pending output immediately (EXIT ordering)', () => {

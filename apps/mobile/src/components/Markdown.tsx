@@ -145,14 +145,19 @@ const BlockView = memo(function BlockView({ block }: { block: Block }): React.Re
  */
 export const Markdown = memo(function Markdown({ text }: { text: string }): React.ReactElement {
   const segments = useMemo(
-    () => splitVisualBlocks(text).map((segment) => (segment.kind === 'markdown' ? parseMarkdown(segment.text) : segment)),
+    () =>
+      splitVisualBlocks(text).map((segment) => (segment.kind === 'markdown' ? parseMarkdown(segment.text) : segment)),
     [text],
   )
   return (
     <View style={styles.root}>
-      {segments.map((segment, s) => Array.isArray(segment)
-        ? segment.map((block, i) => <BlockView key={`${s}.${i}`} block={block} />)
-        : <ChatVisual key={`${s}:${segment.source}`} kind={segment.kind} source={segment.source} />)}
+      {segments.map((segment, s) =>
+        Array.isArray(segment) ? (
+          segment.map((block, i) => <BlockView key={`${s}.${i}`} block={block} />)
+        ) : (
+          <ChatVisual key={`${s}:${segment.source}`} kind={segment.kind} source={segment.source} />
+        ),
+      )}
     </View>
   )
 })

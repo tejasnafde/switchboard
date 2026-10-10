@@ -1,12 +1,27 @@
 /** Windowed history shortens long tool calls only when asked, and serves them back whole. */
 import { describe, expect, it, vi } from 'vitest'
-import { TOOL_INPUT_PREVIEW_CHARS, TOOL_OUTPUT_PREVIEW_CHARS, toolCallPreview, toolCallsByPreview } from '../../src/shared/history-tool-previews'
+import {
+  TOOL_INPUT_PREVIEW_CHARS,
+  TOOL_OUTPUT_PREVIEW_CHARS,
+  toolCallPreview,
+  toolCallsByPreview,
+} from '../../src/shared/history-tool-previews'
 import { summarizeTool } from '../../src/shared/tool-summary'
 import { holdsWholeHistory } from '../../src/renderer/services/history-window'
 import type { ChatMessage, ToolCall } from '../../src/shared/types'
 
-const bash: ToolCall = { id: 't1', name: 'Bash', input: JSON.stringify({ command: 'npm test', description: 'run' }), output: 'x'.repeat(50_000) }
-const write: ToolCall = { id: 't2', name: 'Write', input: JSON.stringify({ file_path: 'src/a.ts', content: 'y'.repeat(20_000) }), output: 'ok' }
+const bash: ToolCall = {
+  id: 't1',
+  name: 'Bash',
+  input: JSON.stringify({ command: 'npm test', description: 'run' }),
+  output: 'x'.repeat(50_000),
+}
+const write: ToolCall = {
+  id: 't2',
+  name: 'Write',
+  input: JSON.stringify({ file_path: 'src/a.ts', content: 'y'.repeat(20_000) }),
+  output: 'ok',
+}
 const small: ToolCall = { id: 't3', name: 'Read', input: JSON.stringify({ file_path: 'src/b.ts' }), output: 'short' }
 const history: ChatMessage[] = [
   { id: 'a1', role: 'assistant', content: '', timestamp: 1, toolCalls: [bash, write, small] },
@@ -17,7 +32,10 @@ const memo = vi.hoisted(() => ({ messages: undefined as ChatMessage[] | undefine
 vi.mock('../../src/main/perf', () => ({ perfSpan: () => ({ end: () => {} }) }))
 vi.mock('../../src/main/db/database', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/main/db/database')>()),
-  getConversationById: (id: string) => id === 'gone' ? undefined : ({ id, project_path: '/repo', agent_type: 'claude-code', title: 'Chat', status_line: 'x' }),
+  getConversationById: (id: string) =>
+    id === 'gone'
+      ? undefined
+      : { id, project_path: '/repo', agent_type: 'claude-code', title: 'Chat', status_line: 'x' },
   resolveRootThreadId: () => 'root',
   getSessionLayout: () => null,
   getConversationForkMetadata: () => null,
@@ -35,7 +53,10 @@ const { AppChannels } = await import('../../src/shared/ipc-channels')
 
 function handlers() {
   const map = new Map<string, (...args: unknown[]) => Promise<any>>()
-  registerAppHandlers({ handle: (c: string, h: (...args: unknown[]) => Promise<any>) => map.set(c, h), emit: () => {} } as never, {})
+  registerAppHandlers(
+    { handle: (c: string, h: (...args: unknown[]) => Promise<any>) => map.set(c, h), emit: () => {} } as never,
+    {},
+  )
   return map
 }
 

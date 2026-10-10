@@ -123,8 +123,7 @@ export async function resolveProjectFavicon(projectPath: string): Promise<Favico
 
   // Static probe first - fast, no I/O beyond a stat per candidate path.
   // If nothing matches, fall through to the HTML link-tag scan.
-  const result =
-    (await probeStaticPaths(projectPath)) ?? (await resolveFaviconViaHtml(projectPath))
+  const result = (await probeStaticPaths(projectPath)) ?? (await resolveFaviconViaHtml(projectPath))
   cache.set(projectPath, { rootMtimeMs, result })
   return result
 }

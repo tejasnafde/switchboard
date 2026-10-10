@@ -9,14 +9,24 @@ import { checkReviewerNames, keptReviewers, resolveReviewers, reviewerLabel } fr
 import { checkCreatePrArgs } from '../../src/shared/agent-pr-create'
 import type { PrReviewerCandidate } from '../../src/shared/pull-requests'
 
-const user = (id: string, login: string, displayName: string, email?: string): PrReviewerCandidate =>
-  ({ id, person: { login, displayName, avatarUrl: null }, kind: 'user', reviewed: 0, ...(email ? { email } : {}) })
+const user = (id: string, login: string, displayName: string, email?: string): PrReviewerCandidate => ({
+  id,
+  person: { login, displayName, avatarUrl: null },
+  kind: 'user',
+  reviewed: 0,
+  ...(email ? { email } : {}),
+})
 const GH = [
   user('jdoe', 'jdoe', 'Jane Doe', 'jane@acme.dev'),
   user('jsmith', 'jsmith', 'Jane Smith'),
   user('rahul', 'rahul', 'rahul'),
   user('me', 'me', 'Me Myself'),
-  { id: 'team:platform', person: { login: 'platform', displayName: 'Platform', avatarUrl: null }, kind: 'team' as const, reviewed: 0 },
+  {
+    id: 'team:platform',
+    person: { login: 'platform', displayName: 'Platform', avatarUrl: null },
+    kind: 'team' as const,
+    reviewed: 0,
+  },
 ]
 const ME = { id: 'me', login: 'me' }
 
@@ -31,7 +41,10 @@ describe('checkReviewerNames', () => {
     expect(checkReviewerNames(['jdoe', ' ']).ok).toBe(false)
     expect(checkReviewerNames([1]).ok).toBe(false)
     expect(checkReviewerNames(Array.from({ length: 10 }, (_, i) => `r${i}`)).ok).toBe(true)
-    expect(checkReviewerNames(Array.from({ length: 11 }, (_, i) => `r${i}`))).toEqual({ ok: false, message: 'That is 11 reviewers; a pull request opened here asks for at most 10.' })
+    expect(checkReviewerNames(Array.from({ length: 11 }, (_, i) => `r${i}`))).toEqual({
+      ok: false,
+      message: 'That is 11 reviewers; a pull request opened here asks for at most 10.',
+    })
   })
 
   it('rides on checkCreatePrArgs', () => {
@@ -43,7 +56,9 @@ describe('checkReviewerNames', () => {
 
 describe('resolveReviewers', () => {
   it('matches exactly on login, display name, email or team slug, ignoring case and a leading @', () => {
-    expect(resolveReviewers('github', ['@JDOE', 'jane smith', 'Platform', 'team:platform', 'JANE@acme.dev'], GH, ME)).toEqual({
+    expect(
+      resolveReviewers('github', ['@JDOE', 'jane smith', 'Platform', 'team:platform', 'JANE@acme.dev'], GH, ME),
+    ).toEqual({
       ok: true,
       value: [
         { id: 'jdoe', login: 'jdoe', displayName: 'Jane Doe', kind: 'user' },
@@ -55,7 +70,12 @@ describe('resolveReviewers', () => {
 
   it('refuses a name that matches nobody, with the close candidates, never a guess', () => {
     const r = resolveReviewers('github', ['jane'], GH, ME)
-    expect(r).toEqual({ ok: false, message: expect.stringContaining('"jane" is not someone who can review here; close: Jane Doe (jdoe), Jane Smith (jsmith).') })
+    expect(r).toEqual({
+      ok: false,
+      message: expect.stringContaining(
+        '"jane" is not someone who can review here; close: Jane Doe (jdoe), Jane Smith (jsmith).',
+      ),
+    })
     const email = resolveReviewers('github', ['rahul@acme.dev'], GH, ME)
     expect(email.ok ? null : email.message).toContain('close: rahul')
     const nobody = resolveReviewers('github', ['zzz'], GH, ME)
@@ -74,7 +94,9 @@ describe('resolveReviewers', () => {
     const uuid = '{00000000-0000-4000-8000-000000000001}'
     const bb = resolveReviewers('bitbucket', ['Tejas'], [user(uuid, 'tejas', 'Tejas')], { id: uuid, login: null })
     expect(bb.ok).toBe(false)
-    expect(resolveReviewers('bitbucket', ['Tejas'], [user(uuid, 'tejas', 'Tejas')], { id: '{other}', login: null }).ok).toBe(true)
+    expect(
+      resolveReviewers('bitbucket', ['Tejas'], [user(uuid, 'tejas', 'Tejas')], { id: '{other}', login: null }).ok,
+    ).toBe(true)
   })
 
   it('names every name that failed at once', () => {
@@ -84,12 +106,18 @@ describe('resolveReviewers', () => {
   })
 
   it('keeps one entry when two names are the same person', () => {
-    expect(resolveReviewers('github', ['jdoe', 'Jane Doe'], GH, ME)).toMatchObject({ ok: true, value: [{ id: 'jdoe' }] })
+    expect(resolveReviewers('github', ['jdoe', 'Jane Doe'], GH, ME)).toMatchObject({
+      ok: true,
+      value: [{ id: 'jdoe' }],
+    })
   })
 })
 
 describe('keptReviewers and reviewerLabel', () => {
-  const card = [{ id: 'a', login: 'a', displayName: 'A', kind: 'user' as const }, { id: 'b', login: 'b', displayName: 'b', kind: 'user' as const }]
+  const card = [
+    { id: 'a', login: 'a', displayName: 'A', kind: 'user' as const },
+    { id: 'b', login: 'b', displayName: 'b', kind: 'user' as const },
+  ]
   it('keeps all when the approval says nothing, else only the listed ids of the card, in its order', () => {
     expect(keptReviewers(card, undefined)).toEqual(card)
     expect(keptReviewers(card, ['b', 'x', 'a'])).toEqual(card)

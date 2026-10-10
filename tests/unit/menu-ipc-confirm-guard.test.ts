@@ -14,7 +14,7 @@ describe('menu IPC while a confirm is open', () => {
     const receivers = ['onOpenSettings', 'onOpenChatBeside', 'onClosePaneOrWindow']
     for (const name of receivers) {
       expect(preload).toContain(`${name}: (callback`)
-      expect(app).toMatch(new RegExp(`window\\.api\\.${name}\\(unlessConfirmOpen\\(`))
+      expect(app).toMatch(new RegExp(`window\\.api\\.${name}\\(\\s*unlessConfirmOpen\\(`))
     }
   })
 
@@ -25,7 +25,8 @@ describe('menu IPC while a confirm is open', () => {
     // the stored shortcut rebinds, which must happen even under a confirm.
     const notActions = ['app:fullscreen-changed', 'app:keyboard-overrides-changed']
     // A new menu channel needs a guarded receiver above before it joins this list.
-    expect(new Set(sent.filter((channel) => !notActions.includes(channel))))
-      .toEqual(new Set(['app:open-settings', 'app:open-chat-beside', 'app:close-pane-or-window']))
+    expect(new Set(sent.filter((channel) => !notActions.includes(channel)))).toEqual(
+      new Set(['app:open-settings', 'app:open-chat-beside', 'app:close-pane-or-window']),
+    )
   })
 })

@@ -7,8 +7,16 @@ import { MergeBackSheet, type MergeBackSheetApi } from '../MergeBackSheet'
 
 const token = { from: { at: 0, ids: [] }, through: { at: 5, ids: ['m5'] } }
 const ready: MergeBackPreview = {
-  status: 'ready', parentId: 'p', parentTitle: 'improvements', text: 'From the fork', turns: 2, omittedTurns: 0,
-  files: ['a.ts'], moreFiles: 0, replacesPending: true, token,
+  status: 'ready',
+  parentId: 'p',
+  parentTitle: 'improvements',
+  text: 'From the fork',
+  turns: 2,
+  omittedTurns: 0,
+  files: ['a.ts'],
+  moreFiles: 0,
+  replacesPending: true,
+  token,
 }
 
 function api(over: Partial<MergeBackSheetApi> = {}): MergeBackSheetApi {
@@ -20,7 +28,10 @@ function api(over: Partial<MergeBackSheetApi> = {}): MergeBackSheetApi {
   }
 }
 
-const flush = () => act(async () => { await Promise.resolve() })
+const flush = () =>
+  act(async () => {
+    await Promise.resolve()
+  })
 const sendMode = { kind: 'send' as const, forkThreadId: 'fork-1', parentTitle: 'improvements' }
 
 describe('MergeBackSheet', () => {
@@ -31,16 +42,20 @@ describe('MergeBackSheet', () => {
     expect(v.texts()).toContain('Building the summary…')
     await flush()
     expect(a.preview).toHaveBeenCalledWith('fork-1')
-    expect(v.texts()).toEqual(expect.arrayContaining([
-      'Send back to "improvements"',
-      '2 turns · 1 file changed',
-      'A summary from this fork is already waiting in the parent. Sending replaces it.',
-      'Send back',
-    ]))
+    expect(v.texts()).toEqual(
+      expect.arrayContaining([
+        'Send back to "improvements"',
+        '2 turns · 1 file changed',
+        'A summary from this fork is already waiting in the parent. Sending replaces it.',
+        'Send back',
+      ]),
+    )
     const input = v.root.findByProps({ testID: 'merge-back-text' })
     expect(input.props.value).toBe('From the fork')
     act(() => input.props.onChangeText('From the fork, trimmed'))
-    await act(async () => { v.root.findByProps({ testID: 'merge-back-submit' }).props.onPress() })
+    await act(async () => {
+      v.root.findByProps({ testID: 'merge-back-submit' }).props.onPress()
+    })
     expect(a.send).toHaveBeenCalledWith('fork-1', 'From the fork, trimmed', token)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -50,13 +65,21 @@ describe('MergeBackSheet', () => {
     const onClose = jest.fn()
     const v = renderComponent(<MergeBackSheet mode={sendMode} api={a} onClose={onClose} />)
     await flush()
-    await act(async () => { v.root.findByProps({ testID: 'merge-back-submit' }).props.onPress() })
+    await act(async () => {
+      v.root.findByProps({ testID: 'merge-back-submit' }).props.onPress()
+    })
     expect(v.texts()).toContain('The parent chat is archived.')
     expect(onClose).not.toHaveBeenCalled()
   })
 
   it('says why nothing can be sent, with no Send button', async () => {
-    const a = api({ preview: jest.fn(async (): Promise<MergeBackPreview> => ({ status: 'empty', parentTitle: 'improvements', message: 'Nothing new since the last send.' })) })
+    const a = api({
+      preview: jest.fn(async (): Promise<MergeBackPreview> => ({
+        status: 'empty',
+        parentTitle: 'improvements',
+        message: 'Nothing new since the last send.',
+      })),
+    })
     const v = renderComponent(<MergeBackSheet mode={sendMode} api={a} onClose={() => {}} />)
     await flush()
     expect(v.texts()).toContain('Nothing new since the last send.')
@@ -67,7 +90,11 @@ describe('MergeBackSheet', () => {
     const a = api()
     const onClose = jest.fn()
     const v = renderComponent(
-      <MergeBackSheet mode={{ kind: 'edit', parentThreadId: 'parent-1', mergeBackId: 'mb1', forkTitle: 'paging', text: 'old' }} api={a} onClose={onClose} />,
+      <MergeBackSheet
+        mode={{ kind: 'edit', parentThreadId: 'parent-1', mergeBackId: 'mb1', forkTitle: 'paging', text: 'old' }}
+        api={a}
+        onClose={onClose}
+      />,
     )
     expect(a.preview).not.toHaveBeenCalled()
     expect(v.texts()).toEqual(expect.arrayContaining(['Edit the summary from fork "paging"', 'Save']))
@@ -75,7 +102,9 @@ describe('MergeBackSheet', () => {
     act(() => input().props.onChangeText('  '))
     expect(v.root.findByProps({ testID: 'merge-back-submit' }).props.disabled).toBe(true)
     act(() => input().props.onChangeText('new'))
-    await act(async () => { v.root.findByProps({ testID: 'merge-back-submit' }).props.onPress() })
+    await act(async () => {
+      v.root.findByProps({ testID: 'merge-back-submit' }).props.onPress()
+    })
     expect(a.edit).toHaveBeenCalledWith('parent-1', 'mb1', 'new')
     expect(onClose).toHaveBeenCalledTimes(1)
   })

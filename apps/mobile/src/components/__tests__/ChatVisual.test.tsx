@@ -8,7 +8,9 @@ import { Markdown } from '../Markdown'
 const CHART = '{"type":"bar","labels":["a","b"],"series":[{"name":"s","values":[1,2]}]}'
 
 async function flush(): Promise<void> {
-  await act(async () => { await Promise.resolve() })
+  await act(async () => {
+    await Promise.resolve()
+  })
 }
 
 it('shows an invalid chart as its error and its source, with no WebView', () => {
@@ -21,7 +23,8 @@ it('shows an invalid chart as its error and its source, with no WebView', () => 
 it('toggles between the drawing and its source', async () => {
   const root = renderComponent(<ChatVisual kind="chart" source={CHART} />)
   await flush()
-  const webviews = (): number => root.root.findAll((n) => n.props.testID === 'webview' && typeof n.type === 'string').length
+  const webviews = (): number =>
+    root.root.findAll((n) => n.props.testID === 'webview' && typeof n.type === 'string').length
   expect(webviews()).toBe(1)
   expect(root.texts()).not.toContain(CHART)
   act(() => root.byLabel('Show source').props.onPress())
@@ -34,7 +37,9 @@ it('toggles between the drawing and its source', async () => {
 it('copies a chart as tab-separated data', async () => {
   const root = renderComponent(<ChatVisual kind="chart" source={CHART} />)
   await flush()
-  await act(async () => { root.byLabel('Copy data').props.onPress() })
+  await act(async () => {
+    root.byLabel('Copy data').props.onPress()
+  })
   expect(Clipboard.setStringAsync).toHaveBeenCalledWith('\ts\na\t1\nb\t2')
 })
 
@@ -42,7 +47,11 @@ it('falls back to the source when the diagram does not draw', async () => {
   const root = renderComponent(<ChatVisual kind="mermaid" source={'flowchart LR\n A -->'} />)
   await flush()
   const webview = root.root.find((n) => n.props.testID === 'webview' && typeof n.type === 'string')
-  act(() => webview.props.onMessage({ nativeEvent: { data: JSON.stringify({ type: 'error', error: 'Parse error on line 2' }) } }))
+  act(() =>
+    webview.props.onMessage({
+      nativeEvent: { data: JSON.stringify({ type: 'error', error: 'Parse error on line 2' }) },
+    }),
+  )
   expect(root.texts().join('|')).toContain('This diagram could not be drawn: Parse error on line 2')
   expect(root.texts()).toContain('flowchart LR\n A -->')
 })

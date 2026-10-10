@@ -127,14 +127,16 @@ export function createPeerToolHandlers(host: PeerToolHost, fromThreadId: string)
       if (sessions.length === 0) {
         return say(
           'No other agent session is open on this backend, so there is nobody to message. ' +
-          'Carry on here and tell the user what you would have sent.',
+            'Carry on here and tell the user what you would have sent.',
         )
       }
-      return say([
-        `${sessions.length} other session${sessions.length === 1 ? '' : 's'} open on this backend. ` +
-        `Pass one sessionId to ${PEER_SEND_TOOL_NAME}.`,
-        JSON.stringify(sessions, null, 2),
-      ].join('\n'))
+      return say(
+        [
+          `${sessions.length} other session${sessions.length === 1 ? '' : 's'} open on this backend. ` +
+            `Pass one sessionId to ${PEER_SEND_TOOL_NAME}.`,
+          JSON.stringify(sessions, null, 2),
+        ].join('\n'),
+      )
     },
 
     async sendMessage(args: PeerSendArgs): Promise<PeerToolResult> {
@@ -159,12 +161,12 @@ export function createPeerToolHandlers(host: PeerToolHost, fromThreadId: string)
         if (host.isLinkedPeer(fromThreadId, sessionId)) {
           return say(
             `Delivered to linked session ${sessionId} as message ${id}. If it replies, the reply arrives ` +
-            'as a new message in this session; end your turn rather than waiting inside it.',
+              'as a new message in this session; end your turn rather than waiting inside it.',
           )
         }
         return say(
           `Delivered to session ${sessionId} as message ${id}. That session acts on it in its own ` +
-          'transcript and no reply comes back here, so continue without waiting.',
+            'transcript and no reply comes back here, so continue without waiting.',
         )
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err)

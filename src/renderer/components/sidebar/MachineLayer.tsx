@@ -128,8 +128,18 @@ function RemoteProject({
             }}
             title="New thread in this project"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
             </svg>
           </button>
         )}
@@ -201,9 +211,7 @@ export function MachineLayer({
   const offlineExpanded = useLayoutStore((s) => s.sidebarOfflineMachinesExpanded)
   const toggleOfflineMachines = useLayoutStore((s) => s.toggleSidebarOfflineMachines)
   const activeSessionId = useLayoutStore((s) =>
-    s.focusedChatSlot === 'secondary' && s.secondarySessionId
-      ? s.secondarySessionId
-      : s.primarySessionId,
+    s.focusedChatSlot === 'secondary' && s.secondarySessionId ? s.secondarySessionId : s.primarySessionId,
   )
   const [addProjectFor, setAddProjectFor] = useState<string | null>(null)
   // Per-remote-project collapse, keyed `${machineId}\0${path}`. Session-local
@@ -347,12 +355,7 @@ export function MachineLayer({
                 const summary: SessionSummary = {
                   id: s.id,
                   title: s.title,
-                  source:
-                    s.agentType === 'codex'
-                      ? 'codex'
-                      : s.agentType === 'opencode'
-                        ? 'opencode'
-                        : 'claude-code',
+                  source: s.agentType === 'codex' ? 'codex' : s.agentType === 'opencode' ? 'opencode' : 'claude-code',
                   agentType: s.agentType ?? null,
                   startedAt: 0,
                   messageCount: 0,
@@ -423,7 +426,11 @@ export function MachineLayer({
           >
             <span className="sidebar-chevron">{isCollapsed ? '▶' : '▼'}</span>
             <span className="sidebar-machine-name">{node.name}</span>
-            {isLocal && localSummary && <span className="machine-summary" title={localSummary}>{localSummary}</span>}
+            {isLocal && localSummary && (
+              <span className="machine-summary" title={localSummary}>
+                {localSummary}
+              </span>
+            )}
             {node.kind === 'remote' && (
               <span className="machine-host">
                 {node.sshUser ? `${node.sshUser}@` : ''}
@@ -431,7 +438,9 @@ export function MachineLayer({
               </span>
             )}
             {machineState && (
-              <span className="machine-state" data-state={node.status}>{machineState}</span>
+              <span className="machine-state" data-state={node.status}>
+                {machineState}
+              </span>
             )}
           </button>
           {node.kind === 'remote' && onEditMachine && (
@@ -454,7 +463,10 @@ export function MachineLayer({
               onClick={async (e) => {
                 e.stopPropagation()
                 // Deleting also drops the offline snapshot; not undoable.
-                if (await confirm({ title: `Remove machine "${node.name}"?`, confirmLabel: 'Remove', destructive: true })) void remove(node.id)
+                if (
+                  await confirm({ title: `Remove machine "${node.name}"?`, confirmLabel: 'Remove', destructive: true })
+                )
+                  void remove(node.id)
               }}
             >
               ×
@@ -462,9 +474,7 @@ export function MachineLayer({
           )}
         </header>
         {!isCollapsed && (
-          <div className="sidebar-machine-body">
-            {node.kind === 'local' ? children : renderRemoteBody(node)}
-          </div>
+          <div className="sidebar-machine-body">{node.kind === 'local' ? children : renderRemoteBody(node)}</div>
         )}
       </section>
     )
@@ -503,9 +513,7 @@ export function MachineLayer({
         )}
         {offlineExpanded && renderSortable(offlineNodes)}
       </DndContext>
-      {addProjectFor && (
-        <AddRemoteProjectModal machineId={addProjectFor} onClose={() => setAddProjectFor(null)} />
-      )}
+      {addProjectFor && <AddRemoteProjectModal machineId={addProjectFor} onClose={() => setAddProjectFor(null)} />}
     </>
   )
 }

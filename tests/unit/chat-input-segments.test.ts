@@ -15,9 +15,7 @@ import { parseBodyToSegments } from '../../src/renderer/services/chat-input-body
 
 describe('parseBodyToSegments', () => {
   it('returns a single text segment when the body contains no tokens', () => {
-    expect(parseBodyToSegments('hello world')).toEqual([
-      { type: 'text', text: 'hello world' },
-    ])
+    expect(parseBodyToSegments('hello world')).toEqual([{ type: 'text', text: 'hello world' }])
   })
 
   it('returns an empty array when the body is empty', () => {
@@ -65,12 +63,8 @@ describe('parseBodyToSegments', () => {
 
   it('treats malformed tokens as plain text (regression - the parser must not eat brackets)', () => {
     // Single bracket, no closing - leave alone.
-    expect(parseBodyToSegments('[pill:a]')).toEqual([
-      { type: 'text', text: '[pill:a]' },
-    ])
+    expect(parseBodyToSegments('[pill:a]')).toEqual([{ type: 'text', text: '[pill:a]' }])
     // Mismatched id chars (whitespace) - not a token.
-    expect(parseBodyToSegments('[[pill:a b]]')).toEqual([
-      { type: 'text', text: '[[pill:a b]]' },
-    ])
+    expect(parseBodyToSegments('[[pill:a b]]')).toEqual([{ type: 'text', text: '[[pill:a b]]' }])
   })
 })

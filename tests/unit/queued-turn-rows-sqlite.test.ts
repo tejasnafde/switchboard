@@ -20,7 +20,8 @@ function setup() {
   return { db, store: sqliteQueuedTurnRowStore(() => db) }
 }
 
-const rows = (db: Database.Database) => db.prepare('SELECT id, role, content FROM messages ORDER BY timestamp, id').all()
+const rows = (db: Database.Database) =>
+  db.prepare('SELECT id, role, content FROM messages ORDER BY timestamp, id').all()
 
 describe('sqliteQueuedTurnRowStore', () => {
   it('replaces a dropped message with an error row that keeps its text', () => {
@@ -43,7 +44,9 @@ describe('sqliteQueuedTurnRowStore', () => {
     db.prepare("UPDATE messages SET images = ? WHERE id = 'remote_q1'").run('["data:image/png;base64,AAAA"]')
     store.record({ messageId: 'remote_q1', conversationId: 'chat', text: 'run the tests', queuedAt: 10 })
     store.markNotSent('remote_q1', 'stopped')
-    expect(db.prepare("SELECT images FROM messages WHERE id = 'queued_not_sent_remote_q1'").get()).toEqual({ images: '["data:image/png;base64,AAAA"]' })
+    expect(db.prepare("SELECT images FROM messages WHERE id = 'queued_not_sent_remote_q1'").get()).toEqual({
+      images: '["data:image/png;base64,AAAA"]',
+    })
   })
 
   it('leaves a message that ran alone', () => {

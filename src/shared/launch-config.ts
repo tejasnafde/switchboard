@@ -142,7 +142,7 @@ export function parseLaunchConfigFile(input: string): LaunchConfigFile {
 
   // 2. Merge in the named map - `configs:` (modern) or `templates:`
   //    (pre-rename alias). `configs:` wins if both are somehow present.
-  const namedMap = (doc.configs ?? doc.templates)
+  const namedMap = doc.configs ?? doc.templates
   if (namedMap && typeof namedMap === 'object' && !Array.isArray(namedMap)) {
     for (const [name, body] of Object.entries(namedMap as Record<string, unknown>)) {
       const cfg = parseLaunchConfigBody(body)
@@ -194,9 +194,7 @@ export function serializeLaunchConfigFile(config: LaunchConfigFile): string {
       if (b === 'default') return 1
       return a.localeCompare(b)
     })
-    obj.configs = Object.fromEntries(
-      sorted.map((name) => [name, serializeConfigBody(configs[name])]),
-    )
+    obj.configs = Object.fromEntries(sorted.map((name) => [name, serializeConfigBody(configs[name])]))
   } else {
     // Legacy shape - preserve the original top-level layout.
     const cfg = configs.default ?? { terminals: config.terminals, rows: config.rows }

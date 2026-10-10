@@ -21,12 +21,7 @@ import { GENERIC_ACP_AGENTS, type GenericAcpAgent } from './acp-agents'
 import type { QueuedTurnExit } from './turn-delivery'
 import type { FollowSuggestionMode } from './follow-suggestions'
 
-export type ProviderSessionStatus =
-  | 'connecting'
-  | 'idle'
-  | 'running'
-  | 'error'
-  | 'stopped'
+export type ProviderSessionStatus = 'connecting' | 'idle' | 'running' | 'error' | 'stopped'
 
 export type ApprovalDecision = 'approve' | 'deny'
 
@@ -435,7 +430,13 @@ export function validateUserMessageImages<T extends { url: string; mimeType?: st
   return images
 }
 
-const USER_TURN_HANDOFF_PROVIDERS = new Set<string>(['claude-code', 'codex', 'opencode', ...GENERIC_ACP_AGENTS, 'cursor'])
+const USER_TURN_HANDOFF_PROVIDERS = new Set<string>([
+  'claude-code',
+  'codex',
+  'opencode',
+  ...GENERIC_ACP_AGENTS,
+  'cursor',
+])
 const USER_TURN_PILL_KINDS = new Set<UserMessagePillKind>(['file', 'terminal', 'chat-message', 'review'])
 
 /** Validate the complete commit-bearing turn before any submission mutation. */
@@ -471,7 +472,13 @@ export function validateUserTurnSubmission(input: unknown): UserTurnSubmissionV1
       throw new Error('User turn pill metadata is invalid')
     }
     for (const [id, pill] of Object.entries(value.pillsMeta)) {
-      if (!id || !pill || typeof pill !== 'object' || typeof pill.label !== 'string' || !USER_TURN_PILL_KINDS.has(pill.kind)) {
+      if (
+        !id ||
+        !pill ||
+        typeof pill !== 'object' ||
+        typeof pill.label !== 'string' ||
+        !USER_TURN_PILL_KINDS.has(pill.kind)
+      ) {
         throw new Error('User turn pill metadata is invalid')
       }
     }
@@ -482,8 +489,10 @@ export function validateUserTurnSubmission(input: unknown): UserTurnSubmissionV1
       !handoff ||
       typeof handoff !== 'object' ||
       !USER_TURN_HANDOFF_PROVIDERS.has(handoff.expectedFrom) ||
-      typeof handoff.markerId !== 'string' || !handoff.markerId ||
-      typeof handoff.markerText !== 'string' || !handoff.markerText
+      typeof handoff.markerId !== 'string' ||
+      !handoff.markerId ||
+      typeof handoff.markerText !== 'string' ||
+      !handoff.markerText
     ) {
       throw new Error('User turn handoff metadata is invalid')
     }
@@ -505,11 +514,12 @@ export function canonicalUserTurnSubmission(input: unknown): string {
     providerText: value.providerText,
     displayBody: value.displayBody ?? null,
     pillsMeta,
-    images: value.images?.map((image) => ({
-      url: image.url,
-      mimeType: image.mimeType ?? null,
-      name: image.name ?? null,
-    })) ?? null,
+    images:
+      value.images?.map((image) => ({
+        url: image.url,
+        mimeType: image.mimeType ?? null,
+        name: image.name ?? null,
+      })) ?? null,
     runtimeMode: value.runtimeMode ?? null,
     handoff: value.handoff
       ? {

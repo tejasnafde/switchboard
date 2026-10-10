@@ -117,10 +117,7 @@ export interface ProviderAdapter {
    * Start a new session. The adapter should begin listening for events
    * and emit RuntimeEvents via the onEvent callback.
    */
-  startSession(
-    opts: SessionStartOpts,
-    onEvent: (event: RuntimeEvent) => void,
-  ): Promise<ProviderSession>
+  startSession(opts: SessionStartOpts, onEvent: (event: RuntimeEvent) => void): Promise<ProviderSession>
 
   /**
    * Send a user message to an active session.
@@ -169,11 +166,7 @@ export interface ProviderAdapter {
   /**
    * Respond to an approval request (tool permission prompt).
    */
-  respondToRequest(
-    threadId: string,
-    requestId: string,
-    decision: ApprovalDecision,
-  ): Promise<void>
+  respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision): Promise<void>
 
   /**
    * Stop and clean up a session.

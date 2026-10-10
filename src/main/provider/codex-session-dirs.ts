@@ -3,8 +3,5 @@ import { join } from 'node:path'
 import { listOauthDirsForAgent } from '../db/provider-instances'
 
 export function codexCandidateDirs(): string[] {
-  return Array.from(new Set([
-    ...listOauthDirsForAgent('codex'),
-    join(homedir(), '.codex'),
-  ]))
+  return Array.from(new Set([...listOauthDirsForAgent('codex'), join(homedir(), '.codex')]))
 }

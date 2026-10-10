@@ -80,7 +80,9 @@ export async function consumeCodexReset(
   try {
     probe = new CodexProbeSession(bin, env)
   } catch (err) {
-    log.warn(`could not start codex app-server for a reset: ${redactSecrets(err instanceof Error ? err.message : String(err))}`)
+    log.warn(
+      `could not start codex app-server for a reset: ${redactSecrets(err instanceof Error ? err.message : String(err))}`,
+    )
     return 'unknown'
   }
   const params = {
@@ -103,7 +105,9 @@ export async function consumeCodexReset(
     return outcome
   } catch (err) {
     const stderr = probe.stderr
-    log.warn(`reset consume failed: ${redactSecrets(err instanceof Error ? err.message : String(err))}${stderr ? ` (stderr ${Buffer.byteLength(stderr)} bytes)` : ''}`)
+    log.warn(
+      `reset consume failed: ${redactSecrets(err instanceof Error ? err.message : String(err))}${stderr ? ` (stderr ${Buffer.byteLength(stderr)} bytes)` : ''}`,
+    )
     return 'unknown'
   } finally {
     probe.dispose()

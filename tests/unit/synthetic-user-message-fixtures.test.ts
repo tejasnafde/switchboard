@@ -7,7 +7,12 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { resolve, dirname } from 'node:path'
-import { splitSyntheticUserText, syntheticPartDetail, syntheticPartLabel, syntheticPartTone } from '../../src/shared/synthetic-message'
+import {
+  splitSyntheticUserText,
+  syntheticPartDetail,
+  syntheticPartLabel,
+  syntheticPartTone,
+} from '../../src/shared/synthetic-message'
 
 interface Case {
   id: string
@@ -21,12 +26,18 @@ const cases: Case[] = JSON.parse(readFileSync(resolve(here, '../fixtures/synthet
 describe('synthetic-user-message-cases fixture', () => {
   it.each(cases.map((c) => [c.id, c] as const))('%s', (_id, c) => {
     const split = splitSyntheticUserText(c.text)
-    expect(split && {
-      rows: split.parts.map((part) => {
-        const detail = syntheticPartDetail(part)
-        return { label: syntheticPartLabel(part), tone: syntheticPartTone(part), ...(detail === undefined ? {} : { detail }) }
-      }),
-      userText: split.userText,
-    }).toEqual(c.expected)
+    expect(
+      split && {
+        rows: split.parts.map((part) => {
+          const detail = syntheticPartDetail(part)
+          return {
+            label: syntheticPartLabel(part),
+            tone: syntheticPartTone(part),
+            ...(detail === undefined ? {} : { detail }),
+          }
+        }),
+        userText: split.userText,
+      },
+    ).toEqual(c.expected)
   })
 })

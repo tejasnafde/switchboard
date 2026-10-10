@@ -7,9 +7,7 @@ import { parseMarkdown, parseInline, type Inline } from '../../apps/mobile/src/l
 
 /** Plain-text projection, so a test can assert no text was lost. */
 function inlinesToText(inlines: Inline[]): string {
-  return inlines
-    .map((n) => (n.kind === 'text' || n.kind === 'code' ? n.text : inlinesToText(n.children)))
-    .join('')
+  return inlines.map((n) => (n.kind === 'text' || n.kind === 'code' ? n.text : inlinesToText(n.children))).join('')
 }
 
 describe('parseInline', () => {
@@ -125,9 +123,10 @@ describe('parseMarkdown blocks', () => {
 })
 
 describe('tables', () => {
-  const t = (md: string) => parseMarkdown(md).find((b) => b.kind === 'table') as
-    | Extract<ReturnType<typeof parseMarkdown>[number], { kind: 'table' }>
-    | undefined
+  const t = (md: string) =>
+    parseMarkdown(md).find((b) => b.kind === 'table') as
+      | Extract<ReturnType<typeof parseMarkdown>[number], { kind: 'table' }>
+      | undefined
 
   it('parses a header, a delimiter row and body rows', () => {
     const table = t('| source | finding |\n|---|---|\n| A | best |\n| B | usable |')

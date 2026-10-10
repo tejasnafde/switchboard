@@ -12,16 +12,7 @@
  * instance names) sits in the mono face; names sit in the display face.
  */
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  LayoutAnimation,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native'
+import { ActivityIndicator, Alert, FlatList, LayoutAnimation, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useFocusEffect, useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import type { RootStackParamList } from '../../App'
@@ -38,9 +29,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Connections'>
 
 /** One-line target summary for either connection kind, in the mono face. */
 function describeTarget(config: ConnectionConfig): string {
-  return config.kind === 'iap'
-    ? `${config.instance}  ${config.zone}`
-    : config.url.replace(/^wss?:\/\//, '')
+  return config.kind === 'iap' ? `${config.instance}  ${config.zone}` : config.url.replace(/^wss?:\/\//, '')
 }
 
 const STATUS_COPY: Record<ConnectionStatus, string> = {
@@ -89,9 +78,7 @@ function ConnectionRow({
           ) : (
             <View style={[styles.dot, { backgroundColor: tint }]} />
           )}
-          <Text style={[styles.statusText, live && { color: colors.textDim }]}>
-            {STATUS_COPY[status]}
-          </Text>
+          <Text style={[styles.statusText, live && { color: colors.textDim }]}>{STATUS_COPY[status]}</Text>
           {/* Says WHY when it is not live: a socket that opens and is dropped
               reads the same as one that never opens without this. */}
           {!live && detail ? <Text style={styles.statusDetail}>{detail}</Text> : null}
@@ -240,9 +227,7 @@ export default function ConnectionsScreen() {
       ListHeaderComponent={
         <View style={styles.listHeader}>
           <Text style={styles.overline}>MACHINES</Text>
-          <Text style={styles.count}>
-            {ready ? `${liveCount} of ${configs.length} live` : 'connecting'}
-          </Text>
+          <Text style={styles.count}>{ready ? `${liveCount} of ${configs.length} live` : 'connecting'}</Text>
         </View>
       }
       ListFooterComponent={

@@ -11,9 +11,18 @@ import {
 
 describe('messageSearchTerms', () => {
   it('splits on anything that is not a letter or a digit', () => {
-    expect(messageSearchTerms('fix-jitter "foo.ts" C:\\path (a*) ^b c:d')).toEqual(
-      ['fix', 'jitter', 'foo', 'ts', 'C', 'path', 'a', 'b', 'c', 'd'],
-    )
+    expect(messageSearchTerms('fix-jitter "foo.ts" C:\\path (a*) ^b c:d')).toEqual([
+      'fix',
+      'jitter',
+      'foo',
+      'ts',
+      'C',
+      'path',
+      'a',
+      'b',
+      'c',
+      'd',
+    ])
   })
 
   it('keeps letters outside ASCII', () => {

@@ -7,10 +7,7 @@
  * DB calls live in `database.ts`.
  */
 import { describe, it, expect } from 'vitest'
-import {
-  archiveActionForStatusChange,
-  applyKanbanArchiveSideEffect,
-} from '../../src/shared/kanban-archive'
+import { archiveActionForStatusChange, applyKanbanArchiveSideEffect } from '../../src/shared/kanban-archive'
 import { vi } from 'vitest'
 
 describe('archiveActionForStatusChange', () => {
@@ -48,55 +45,35 @@ describe('applyKanbanArchiveSideEffect', () => {
 
   it('archives the linked conversation when moving into done', () => {
     const hooks = makeHooks()
-    applyKanbanArchiveSideEffect(
-      { status: 'in_progress', conversationId: 'conv_1' },
-      { status: 'done' },
-      hooks,
-    )
+    applyKanbanArchiveSideEffect({ status: 'in_progress', conversationId: 'conv_1' }, { status: 'done' }, hooks)
     expect(hooks.archive).toHaveBeenCalledWith('conv_1')
     expect(hooks.unarchive).not.toHaveBeenCalled()
   })
 
   it('unarchives the linked conversation when moving out of done', () => {
     const hooks = makeHooks()
-    applyKanbanArchiveSideEffect(
-      { status: 'done', conversationId: 'conv_1' },
-      { status: 'in_progress' },
-      hooks,
-    )
+    applyKanbanArchiveSideEffect({ status: 'done', conversationId: 'conv_1' }, { status: 'in_progress' }, hooks)
     expect(hooks.unarchive).toHaveBeenCalledWith('conv_1')
     expect(hooks.archive).not.toHaveBeenCalled()
   })
 
   it('does nothing when the card has no linked conversation', () => {
     const hooks = makeHooks()
-    applyKanbanArchiveSideEffect(
-      { status: 'in_progress', conversationId: null },
-      { status: 'done' },
-      hooks,
-    )
+    applyKanbanArchiveSideEffect({ status: 'in_progress', conversationId: null }, { status: 'done' }, hooks)
     expect(hooks.archive).not.toHaveBeenCalled()
     expect(hooks.unarchive).not.toHaveBeenCalled()
   })
 
   it('does nothing when the patch does not change status', () => {
     const hooks = makeHooks()
-    applyKanbanArchiveSideEffect(
-      { status: 'done', conversationId: 'conv_1' },
-      { status: undefined },
-      hooks,
-    )
+    applyKanbanArchiveSideEffect({ status: 'done', conversationId: 'conv_1' }, { status: undefined }, hooks)
     expect(hooks.archive).not.toHaveBeenCalled()
     expect(hooks.unarchive).not.toHaveBeenCalled()
   })
 
   it('does nothing for transitions that do not cross the done boundary', () => {
     const hooks = makeHooks()
-    applyKanbanArchiveSideEffect(
-      { status: 'backlog', conversationId: 'conv_1' },
-      { status: 'in_progress' },
-      hooks,
-    )
+    applyKanbanArchiveSideEffect({ status: 'backlog', conversationId: 'conv_1' }, { status: 'in_progress' }, hooks)
     expect(hooks.archive).not.toHaveBeenCalled()
     expect(hooks.unarchive).not.toHaveBeenCalled()
   })

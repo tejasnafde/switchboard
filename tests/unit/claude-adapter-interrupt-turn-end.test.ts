@@ -11,7 +11,9 @@ const ending = vi.hoisted(() => ({ kind: 'abort' as 'abort' | 'finish', streamin
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn((args: { prompt: AsyncIterable<unknown> }) => {
     let release: () => void = () => {}
-    const interrupted = new Promise<void>((resolve) => { release = resolve })
+    const interrupted = new Promise<void>((resolve) => {
+      release = resolve
+    })
     return {
       async *[Symbol.asyncIterator]() {
         await args.prompt[Symbol.asyncIterator]().next()
@@ -47,9 +49,11 @@ async function stopRunningTurn(kind: 'abort' | 'finish'): Promise<string[]> {
   await adapter.sendTurn('t1', 'edit some files', 'sandbox')
   await vi.waitFor(() => expect(ending.streaming).toBe(true))
   await adapter.interruptTurn('t1')
-  await vi.waitFor(() => expect(onEvent.mock.calls.at(-1)?.[0]).toEqual({ type: 'status', threadId: 't1', status: 'idle' }))
+  await vi.waitFor(() =>
+    expect(onEvent.mock.calls.at(-1)?.[0]).toEqual({ type: 'status', threadId: 't1', status: 'idle' }),
+  )
   await adapter.stopSession('t1')
-  return onEvent.mock.calls.map(([e]) => e.type === 'status' ? `status:${e.status}` : e.type)
+  return onEvent.mock.calls.map(([e]) => (e.type === 'status' ? `status:${e.status}` : e.type))
 }
 
 describe('Claude Stop ends the turn', () => {

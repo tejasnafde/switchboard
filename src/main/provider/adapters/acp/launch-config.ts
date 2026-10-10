@@ -22,9 +22,7 @@ export type AcpExpectedCapability = 'loadSession' | 'resume' | 'fork' | 'image' 
  *   back to the mode the session started in. Without a plan mode, plan is
  *   enforced by the permission policy alone.
  */
-export type AcpModeStrategy =
-  | { kind: 'fixed'; plan: string; other: string }
-  | { kind: 'advertised' }
+export type AcpModeStrategy = { kind: 'fixed'; plan: string; other: string } | { kind: 'advertised' }
 
 /** Per-session result of `prepareSession`. */
 export interface AcpSessionPrep {
@@ -62,7 +60,12 @@ export interface AcpLaunchConfig {
   /** Runs before any session state exists; throws to refuse the binary. */
   preflight?(binPath: string, env: Record<string, string>, cwd: string): Promise<void>
   /** Reads the agent's own config to finish the env and permission rules. */
-  prepareSession?(input: { cwd: string; env: Record<string, string>; runtimeMode: RuntimeMode; switchboardMcp: boolean }): Promise<AcpSessionPrep>
+  prepareSession?(input: {
+    cwd: string
+    env: Record<string, string>
+    runtimeMode: RuntimeMode
+    switchboardMcp: boolean
+  }): Promise<AcpSessionPrep>
   /** Label for a catalog model in the picker. */
   modelLabel(model: ModelInfo): string
   /**

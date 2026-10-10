@@ -16,11 +16,7 @@ import { downscaleImage } from '../../services/image-downscale'
 import { insertSnippetWithNewlineGuards } from '../../services/insert-snippet'
 import { buildKanbanCardCreateSubmission } from './kanban-create-intent'
 import { describeKanbanWorktreeCreation } from './kanban-worktree-presentation'
-import {
-  KANBAN_COLUMNS,
-  type KanbanCard,
-  type KanbanStatus,
-} from '@shared/kanban'
+import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
 import type { RuntimeMode } from '@shared/provider-events'
 import { confirm } from '../ui/confirm'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
@@ -81,9 +77,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
   const [description, setDescription] = useState(card?.description ?? '')
   const [tagsInput, setTagsInput] = useState((card?.tags ?? []).join(', '))
   const [status, setStatus] = useState<KanbanStatus>(card?.status ?? 'backlog')
-  const [costCapInput, setCostCapInput] = useState(
-    card?.costCapUsd != null ? String(card.costCapUsd) : ''
-  )
+  const [costCapInput, setCostCapInput] = useState(card?.costCapUsd != null ? String(card.costCapUsd) : '')
   const [withWorktree, setWithWorktree] = useState(false)
   // Initial mode only - once the card has a session, the chat panel's
   // runtime selector is the source of truth, so we render a read-only
@@ -127,21 +121,27 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
     })
   }, [])
 
-  const handleDescriptionPaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = Array.from(e.clipboardData?.files ?? [])
-    if (files.some((f) => f.type.startsWith('image/'))) {
-      e.preventDefault()
-      void insertImagesAsMarkdown(files)
-    }
-  }, [insertImagesAsMarkdown])
+  const handleDescriptionPaste = useCallback(
+    (e: ClipboardEvent<HTMLTextAreaElement>) => {
+      const files = Array.from(e.clipboardData?.files ?? [])
+      if (files.some((f) => f.type.startsWith('image/'))) {
+        e.preventDefault()
+        void insertImagesAsMarkdown(files)
+      }
+    },
+    [insertImagesAsMarkdown],
+  )
 
-  const handleDescriptionDrop = useCallback((e: DragEvent<HTMLTextAreaElement>) => {
-    const files = Array.from(e.dataTransfer?.files ?? [])
-    if (files.some((f) => f.type.startsWith('image/'))) {
-      e.preventDefault()
-      void insertImagesAsMarkdown(files)
-    }
-  }, [insertImagesAsMarkdown])
+  const handleDescriptionDrop = useCallback(
+    (e: DragEvent<HTMLTextAreaElement>) => {
+      const files = Array.from(e.dataTransfer?.files ?? [])
+      if (files.some((f) => f.type.startsWith('image/'))) {
+        e.preventDefault()
+        void insertImagesAsMarkdown(files)
+      }
+    },
+    [insertImagesAsMarkdown],
+  )
   const handleDescriptionDragOver = useCallback((e: DragEvent<HTMLTextAreaElement>) => {
     if (Array.from(e.dataTransfer?.types ?? []).includes('Files')) {
       e.preventDefault()
@@ -149,9 +149,9 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
     }
   }, [])
   const projectLabel =
-    availableProjects?.find((p) => p.path === selectedProjectPath)?.name
-    ?? selectedProjectPath.split('/').pop()
-    ?? selectedProjectPath
+    availableProjects?.find((p) => p.path === selectedProjectPath)?.name ??
+    selectedProjectPath.split('/').pop() ??
+    selectedProjectPath
 
   const handleSubmit = async () => {
     if (submittingRef.current) return
@@ -163,23 +163,28 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
     setSubmitting(true)
     setError(null)
     try {
-      const tags = tagsInput.split(',').map((t) => t.trim()).filter(Boolean)
+      const tags = tagsInput
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
       const costCapUsd = costCapInput.trim() === '' ? null : Number(costCapInput)
       if (costCapUsd != null && (Number.isNaN(costCapUsd) || costCapUsd < 0)) {
         setError('Cost cap must be a non-negative number')
         return
       }
       if (mode === 'create') {
-        await create(buildKanbanCardCreateSubmission({
-          projectPath: selectedProjectPath,
-          title: title.trim(),
-          description,
-          tags,
-          status,
-          costCapUsd,
-          runtimeMode,
-          withWorktree,
-        }))
+        await create(
+          buildKanbanCardCreateSubmission({
+            projectPath: selectedProjectPath,
+            title: title.trim(),
+            description,
+            tags,
+            status,
+            costCapUsd,
+            runtimeMode,
+            withWorktree,
+          }),
+        )
       } else if (card) {
         await update(card.id, {
           title: title.trim(),
@@ -201,12 +206,14 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
   const handleDelete = async () => {
     if (submittingRef.current) return
     if (!card) return
-    const removeWt = !!card.worktreePath && await confirm({
-      title: 'Also delete the linked git worktree?',
-      confirmLabel: 'Delete worktree',
-      cancelLabel: 'Keep worktree',
-      destructive: true,
-    })
+    const removeWt =
+      !!card.worktreePath &&
+      (await confirm({
+        title: 'Also delete the linked git worktree?',
+        confirmLabel: 'Delete worktree',
+        cancelLabel: 'Keep worktree',
+        destructive: true,
+      }))
     submittingRef.current = true
     setSubmitting(true)
     try {
@@ -237,12 +244,15 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
 
   const handleDetachWorktree = async () => {
     if (!card) return
-    if (!(await confirm({
-      title: 'Delete this worktree?',
-      body: 'Uncommitted files will be lost. The conversation and its history will remain in the project checkout.',
-      confirmLabel: 'Delete',
-      destructive: true,
-    }))) return
+    if (
+      !(await confirm({
+        title: 'Delete this worktree?',
+        body: 'Uncommitted files will be lost. The conversation and its history will remain in the project checkout.',
+        confirmLabel: 'Delete',
+        destructive: true,
+      }))
+    )
+      return
     setWorktreeBusy('detach')
     setError(null)
     try {
@@ -264,7 +274,12 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
   }
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
       <DialogContent
         aria-describedby={undefined}
         onKeyDown={onKeyDown}
@@ -277,7 +292,9 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
       >
         <div className={headerClass}>
           <DialogTitle className="text-[13px] font-[600]">{mode === 'create' ? 'New card' : 'Edit card'}</DialogTitle>
-          <button onClick={onClose} className={closeButtonClass} aria-label="Close">&times;</button>
+          <button onClick={onClose} className={closeButtonClass} aria-label="Close">
+            &times;
+          </button>
         </div>
         <div className="flex flex-col gap-[10px] overflow-auto p-[14px]">
           {/* Project association - visible up front so the user always
@@ -292,7 +309,9 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
                 className={inputClass}
               >
                 {availableProjects!.map((p) => (
-                  <option key={p.path} value={p.path}>{p.name}</option>
+                  <option key={p.path} value={p.path}>
+                    {p.name}
+                  </option>
                 ))}
               </select>
             ) : (
@@ -348,7 +367,9 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
                   className={inputClass}
                 >
                   {KANBAN_COLUMNS.map((col) => (
-                    <option key={col.id} value={col.id}>{col.label}</option>
+                    <option key={col.id} value={col.id}>
+                      {col.label}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -374,12 +395,16 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
               <>
                 <select
                   value={runtimeMode ?? PROJECT_DEFAULT_MODE}
-                  onChange={(e) => setRuntimeMode(e.target.value === PROJECT_DEFAULT_MODE ? null : e.target.value as RuntimeMode)}
+                  onChange={(e) =>
+                    setRuntimeMode(e.target.value === PROJECT_DEFAULT_MODE ? null : (e.target.value as RuntimeMode))
+                  }
                   className={inputClass}
                 >
                   <option value={PROJECT_DEFAULT_MODE}>Project default</option>
                   {RUNTIME_MODE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
                   ))}
                 </select>
                 <span className={hintClass}>
@@ -390,18 +415,16 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
               </>
             ) : (
               <div className={chipClass} title="Change the live mode from the chat panel's runtime selector">
-                {runtimeMode ? RUNTIME_MODE_OPTIONS.find((o) => o.value === runtimeMode)?.label ?? runtimeMode : 'Project default'}
+                {runtimeMode
+                  ? (RUNTIME_MODE_OPTIONS.find((o) => o.value === runtimeMode)?.label ?? runtimeMode)
+                  : 'Project default'}
               </div>
             )}
           </label>
 
           {mode === 'create' && (
             <label className={cn(labelClass, 'flex-row items-center gap-[6px]')}>
-              <input
-                type="checkbox"
-                checked={withWorktree}
-                onChange={(e) => setWithWorktree(e.target.checked)}
-              />
+              <input type="checkbox" checked={withWorktree} onChange={(e) => setWithWorktree(e.target.checked)} />
               Create isolated git worktree for this card
             </label>
           )}
@@ -410,23 +433,35 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
             <div className="flex items-center gap-[8px] rounded-[4px] bg-[rgba(0,0,0,0.03)] px-[8px] py-[6px] text-[11px]">
               {card.worktreePath ? (
                 <>
-                  <span>Worktree: <code className="text-[11px] [font-family:monospace] opacity-[0.85]">{card.worktreePath}</code></span>
+                  <span>
+                    Worktree:{' '}
+                    <code className="text-[11px] [font-family:monospace] opacity-[0.85]">{card.worktreePath}</code>
+                  </span>
                   <button
-                    onClick={() => { void handleDetachWorktree() }}
+                    onClick={() => {
+                      void handleDetachWorktree()
+                    }}
                     disabled={worktreeBusy !== null || submitting}
                     className={dangerButtonClass}
-                  >{worktreeBusy === 'detach' ? 'Detaching…' : 'Detach'}</button>
+                  >
+                    {worktreeBusy === 'detach' ? 'Detaching…' : 'Detach'}
+                  </button>
                 </>
               ) : card.conversationId ? (
                 <span className={hintClass}>
-                  This card already has a conversation. Continue there; attaching a worktree would replace its execution context.
+                  This card already has a conversation. Continue there; attaching a worktree would replace its execution
+                  context.
                 </span>
               ) : (
                 <button
-                  onClick={() => { void handleAttachWorktree() }}
+                  onClick={() => {
+                    void handleAttachWorktree()
+                  }}
                   disabled={worktreeBusy !== null || submitting}
                   className={secondaryButtonClass}
-                >{worktreeBusy === 'attach' ? 'Attaching…' : 'Attach worktree'}</button>
+                >
+                  {worktreeBusy === 'attach' ? 'Attaching…' : 'Attach worktree'}
+                </button>
               )}
             </div>
           )}
@@ -436,10 +471,14 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
 
         <div className={footerClass}>
           {mode === 'edit' && (
-            <button onClick={handleDelete} disabled={submitting || worktreeBusy !== null} className={dangerButtonClass}>Delete</button>
+            <button onClick={handleDelete} disabled={submitting || worktreeBusy !== null} className={dangerButtonClass}>
+              Delete
+            </button>
           )}
           <div className="flex-1" />
-          <button onClick={onClose} disabled={submitting} className={secondaryButtonClass}>Cancel</button>
+          <button onClick={onClose} disabled={submitting} className={secondaryButtonClass}>
+            Cancel
+          </button>
           <button onClick={handleSubmit} disabled={submitting || worktreeBusy !== null} className={primaryButtonClass}>
             {mode === 'create' ? 'Create' : 'Save'} {submitting && '…'}
           </button>
@@ -450,6 +489,8 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
 }
 
 const labelClass = 'flex flex-col gap-[4px] text-[11px] opacity-[0.85]'
-const inputClass = 'rounded-[4px] border border-[var(--border)] bg-transparent px-[8px] py-[6px] text-[13px] text-inherit'
-const chipClass = 'self-start rounded-[4px] border border-[rgba(37,99,235,0.25)] bg-[rgba(37,99,235,0.10)] px-[10px] py-[5px] text-[12px] [font-family:monospace] text-[var(--accent,#2563eb)]'
+const inputClass =
+  'rounded-[4px] border border-[var(--border)] bg-transparent px-[8px] py-[6px] text-[13px] text-inherit'
+const chipClass =
+  'self-start rounded-[4px] border border-[rgba(37,99,235,0.25)] bg-[rgba(37,99,235,0.10)] px-[10px] py-[5px] text-[12px] [font-family:monospace] text-[var(--accent,#2563eb)]'
 const hintClass = 'mt-[2px] text-[10px] opacity-[0.65]'

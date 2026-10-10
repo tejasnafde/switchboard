@@ -76,7 +76,7 @@ export class PullRequestLinkSync {
     if (event.type === 'tool.started') {
       let input: string
       try {
-        input = typeof event.input === 'string' ? event.input : JSON.stringify(event.input) ?? ''
+        input = typeof event.input === 'string' ? event.input : (JSON.stringify(event.input) ?? '')
       } catch (err) {
         log.debug('tool input is not serialisable', { err: String(err) })
         return
@@ -151,7 +151,10 @@ export class PullRequestLinkSync {
     if (!read.ok) {
       this.failedAt.set(key, this.now())
       log.warn('looking up the pull request of a branch failed', { host: repo.host, kind: read.error.kind })
-      this.deps.problem(chatId, `Could not look up the pull request of branch ${branch} on ${repo.owner}/${repo.name}: ${read.error.message}`)
+      this.deps.problem(
+        chatId,
+        `Could not look up the pull request of branch ${branch} on ${repo.owner}/${repo.name}: ${read.error.message}`,
+      )
       return null
     }
     const number = read.data?.number ?? null
@@ -162,15 +165,25 @@ export class PullRequestLinkSync {
 
   private async refreshStates(chat: Chat, force: boolean, changed: Set<string>): Promise<void> {
     const now = this.now()
-    const due = this.deps.linkedPrs(chat.id).filter((link) => !(link.state && TERMINAL.has(link.state)) && (force || (
-      now - (link.stateAt ?? 0) >= STATE_TTL_MS && now - (this.failedAt.get(prKey(link.ref)) ?? -Infinity) >= RETRY_AFTER_MS)))
+    const due = this.deps
+      .linkedPrs(chat.id)
+      .filter(
+        (link) =>
+          !(link.state && TERMINAL.has(link.state)) &&
+          (force ||
+            (now - (link.stateAt ?? 0) >= STATE_TTL_MS &&
+              now - (this.failedAt.get(prKey(link.ref)) ?? -Infinity) >= RETRY_AFTER_MS)),
+      )
     for (const { ref } of due) {
       const observedAt = this.now()
       const read = await this.deps.prState(ref)
       if (!read.ok) {
         this.failedAt.set(prKey(ref), this.now())
         log.warn('reading a linked pull request state failed', { host: ref.host, kind: read.error.kind })
-        this.deps.problem(chat.id, `Could not read the state of ${ref.owner}/${ref.name} #${ref.number}: ${read.error.message}`)
+        this.deps.problem(
+          chat.id,
+          `Could not read the state of ${ref.owner}/${ref.name} #${ref.number}: ${read.error.message}`,
+        )
         continue
       }
       this.failedAt.delete(prKey(ref))

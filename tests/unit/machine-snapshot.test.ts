@@ -3,7 +3,11 @@
  * stored snapshot into the read-only display list.
  */
 import { describe, it, expect } from 'vitest'
-import { syncedAgoLabel, cachedProjects, projectsToSnapshot } from '../../src/renderer/components/sidebar/machine-snapshot'
+import {
+  syncedAgoLabel,
+  cachedProjects,
+  projectsToSnapshot,
+} from '../../src/renderer/components/sidebar/machine-snapshot'
 import type { MachineSnapshot } from '@shared/machines'
 import type { Project } from '@shared/types'
 
@@ -31,7 +35,9 @@ describe('projectsToSnapshot', () => {
   it('trims a live project list to the cached path/name/session shape', () => {
     const projects = [
       {
-        path: '/r/api', name: 'api', workspaceId: null,
+        path: '/r/api',
+        name: 'api',
+        workspaceId: null,
         sessions: [
           { id: 's1', source: 'claude-code', title: 'fix bug', startedAt: 0, messageCount: 3, filePath: '/x' },
           { id: 's2', source: 'codex', title: 'refactor', startedAt: 0, messageCount: 1, filePath: '/y' },
@@ -42,7 +48,8 @@ describe('projectsToSnapshot', () => {
     expect(snap.syncedAt).toBe(1234)
     expect(snap.projects).toEqual([
       {
-        path: '/r/api', name: 'api',
+        path: '/r/api',
+        name: 'api',
         sessions: [
           { id: 's1', title: 'fix bug', agentType: 'claude-code' },
           { id: 's2', title: 'refactor', agentType: 'codex' },

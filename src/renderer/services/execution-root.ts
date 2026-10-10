@@ -25,9 +25,7 @@ export interface ExecutionRootBearingSession {
  * which is the one case where there is genuinely no root to report - callers
  * then fall back to their own default rather than inventing a path.
  */
-export function executionRootForSession(
-  session: ExecutionRootBearingSession | null | undefined,
-): ExecutionRoot | null {
+export function executionRootForSession(session: ExecutionRootBearingSession | null | undefined): ExecutionRoot | null {
   if (!session?.projectPath) return null
   return resolveExecutionRoot({
     projectPath: session.projectPath,
@@ -41,9 +39,7 @@ export function executionRootForSession(
 /** Store-bound form. Reads the CURRENT root, so it tracks a relocation. */
 export function sessionExecutionRoot(sessionId: string | null | undefined): ExecutionRoot | null {
   if (!sessionId) return null
-  return executionRootForSession(
-    useAgentStore.getState().sessions.find((s) => s.id === sessionId),
-  )
+  return executionRootForSession(useAgentStore.getState().sessions.find((s) => s.id === sessionId))
 }
 
 /**

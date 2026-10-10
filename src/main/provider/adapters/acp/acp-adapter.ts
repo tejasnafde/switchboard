@@ -74,9 +74,7 @@ const LOG_PAYLOAD_LIMIT = 4000
 const ACP_AUTH_REQUIRED = -32000
 
 function truncate(v: string): string {
-  return v.length > LOG_PAYLOAD_LIMIT
-    ? `${v.slice(0, LOG_PAYLOAD_LIMIT)}…<truncated>`
-    : v
+  return v.length > LOG_PAYLOAD_LIMIT ? `${v.slice(0, LOG_PAYLOAD_LIMIT)}…<truncated>` : v
 }
 
 /** The expected capabilities `initialize` did not advertise. */
@@ -136,7 +134,12 @@ interface ActiveSession extends VisibleHistoryState {
   /** True while a send applies its mode, before its prompt is in flight. */
   startingPrompt: boolean
   /** Messages sent with delivery 'queue' while a prompt ran, oldest first. */
-  queuedTurns: Array<{ id?: string; message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
+  queuedTurns: Array<{
+    id?: string
+    message: string
+    runtimeMode?: RuntimeMode
+    images?: Array<{ url: string; mimeType?: string }>
+  }>
   /** Nothing queued starts until the user resumes: a turn failed (see holdQueue). */
   queueHeld: boolean
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
@@ -175,7 +178,7 @@ export function mapSessionUpdate(
           assistantMessageText.set(fallbackIdKey, messageId)
         }
       }
-      
+
       // The accumulated copy is kept for the fallback message id bookkeeping
       // below; only the wire carries the increment, which is what keeps a long
       // reply from costing O(n^2) bytes.
@@ -269,7 +272,10 @@ export function mapSessionUpdate(
 /** Files an ACP edit tool call wrote: its locations, plus the path its input names. */
 function acpEditPaths(update: SessionUpdate & { sessionUpdate: 'tool_call_update' }): string[] {
   if (update.kind !== 'edit') return []
-  const input = (typeof update.rawInput === 'object' && update.rawInput !== null ? update.rawInput : {}) as Record<string, unknown>
+  const input = (typeof update.rawInput === 'object' && update.rawInput !== null ? update.rawInput : {}) as Record<
+    string,
+    unknown
+  >
   return [
     ...(update.locations ?? []).map((l) => l.path),
     ...(typeof input.filePath === 'string' ? [input.filePath] : []),
@@ -315,7 +321,10 @@ function stringifyOutput(update: SessionUpdate & { sessionUpdate: 'tool_call_upd
  * Convert an `available_commands_update` payload into Switchboard skills.
  * Exported pure for unit tests.
  */
-export function mapAvailableCommands(commands: AvailableCommand[], source: AcpProviderKind = 'opencode'): ProviderSkill[] {
+export function mapAvailableCommands(
+  commands: AvailableCommand[],
+  source: AcpProviderKind = 'opencode',
+): ProviderSkill[] {
   const out: ProviderSkill[] = []
   const seen = new Set<string>()
   for (const cmd of commands) {
@@ -336,15 +345,16 @@ export function mapAvailableCommands(commands: AvailableCommand[], source: AcpPr
  * ACP describes options via `kind` ("allow_once" | "allow_always" |
  * "reject_once") so the client can render labels itself.
  */
-export function pickPermissionOptions(
-  options: RequestPermissionRequest['options'],
-): { allow: string | null; reject: string | null } {
+export function pickPermissionOptions(options: RequestPermissionRequest['options']): {
+  allow: string | null
+  reject: string | null
+} {
   // Once-only first: an "always" grant persists in the agent and would skip
   // Switchboard's runtime mode on later calls.
   let allow: string | null =
-    options.find((o) => o.kind === 'allow_once')?.optionId
-    ?? options.find((o) => o.kind === 'allow_always')?.optionId
-    ?? null
+    options.find((o) => o.kind === 'allow_once')?.optionId ??
+    options.find((o) => o.kind === 'allow_always')?.optionId ??
+    null
   let reject: string | null = options.find((o) => o.kind === 'reject_once')?.optionId ?? null
   // Fall back to first/last when kinds aren't tagged as expected.
   if (!allow && options.length > 0) allow = options[0].optionId
@@ -405,10 +415,7 @@ export class AcpAdapter implements ProviderAdapter {
     return this.config.findBinary() !== null
   }
 
-  async startSession(
-    opts: SessionStartOpts,
-    onEvent: (event: RuntimeEvent) => void,
-  ): Promise<ProviderSession> {
+  async startSession(opts: SessionStartOpts, onEvent: (event: RuntimeEvent) => void): Promise<ProviderSession> {
     const { config } = this
     const binPath = config.findBinary()
     if (!binPath) throw new Error(config.notFoundMessage)
@@ -533,9 +540,12 @@ export class AcpAdapter implements ProviderAdapter {
               fs: { readTextFile: true, writeTextFile: true },
             },
           })
-          log.info(`acp initialize: protocolVersion=${init.protocolVersion} agent=${init.agentInfo?.name ?? 'unknown'} ${init.agentInfo?.version ?? ''}`)
+          log.info(
+            `acp initialize: protocolVersion=${init.protocolVersion} agent=${init.agentInfo?.name ?? 'unknown'} ${init.agentInfo?.version ?? ''}`,
+          )
           const missing = missingCapabilities(init.agentCapabilities, config.expectedCapabilities)
-          if (missing.length > 0) log.warn(`${this.provider} acp does not advertise expected capabilities: ${missing.join(', ')}`)
+          if (missing.length > 0)
+            log.warn(`${this.provider} acp does not advertise expected capabilities: ${missing.join(', ')}`)
 
           // No agent-digest prompt rule here: ACP's `NewSessionRequest` carries
           // only `cwd`/`mcpServers`/`additionalDirectories` (checked against
@@ -557,7 +567,12 @@ export class AcpAdapter implements ProviderAdapter {
           if (resumeId) {
             try {
               const resumed = await connection.resumeSession({ sessionId: resumeId, cwd: opts.cwd, mcpServers })
-              newSession = { sessionId: resumeId, models: resumed?.models, modes: resumed?.modes, configOptions: resumed?.configOptions }
+              newSession = {
+                sessionId: resumeId,
+                models: resumed?.models,
+                modes: resumed?.modes,
+                configOptions: resumed?.configOptions,
+              }
               active.resumed = true
             } catch (err) {
               const reason = errorText(err)
@@ -643,7 +658,10 @@ export class AcpAdapter implements ProviderAdapter {
       if (!segment || segment.provider_instance_id !== (opts.instanceId ?? null)) return null
       return segment.provider_session_id
     } catch (err) {
-      log.warn(`resolveResumeSegment failed - starting a new ${this.config.label} session`, { threadId: opts.threadId, err })
+      log.warn(`resolveResumeSegment failed - starting a new ${this.config.label} session`, {
+        threadId: opts.threadId,
+        err,
+      })
       return null
     }
   }
@@ -662,12 +680,15 @@ export class AcpAdapter implements ProviderAdapter {
     active.drainingQueue = true
     if (next.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'started' })
     this.deliverTurn(threadId, next.message, next.runtimeMode, next.images, undefined, undefined, true)
-      .then(() => { active.drainingQueue = false })
+      .then(() => {
+        active.drainingQueue = false
+      })
       .catch((err: unknown) => {
         const reason = err instanceof Error ? err.message : String(err)
         log.warn(`queued ${this.provider} turn failed to start for ${threadId}: ${reason}`)
         active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${reason}` })
-        if (next.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'failed', error: reason })
+        if (next.id)
+          active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'failed', error: reason })
         active.onEvent({ type: 'turn.completed', threadId })
         // The next one would most likely fail the same way.
         this.holdQueue(threadId, active, 'A queued message could not be sent.')
@@ -691,7 +712,8 @@ export class AcpAdapter implements ProviderAdapter {
     if (!active?.queueHeld) return false
     active.queueHeld = false
     active.onEvent({ type: 'turn.queue-held', threadId, held: false })
-    if (active.inFlightPrompt === null && !active.startingPrompt && !active.drainingQueue) this.drainQueued(threadId, active)
+    if (active.inFlightPrompt === null && !active.startingPrompt && !active.drainingQueue)
+      this.drainQueued(threadId, active)
     return true
   }
 
@@ -833,11 +855,8 @@ export class AcpAdapter implements ProviderAdapter {
       .catch((err: unknown) => {
         // Cancellation surfaces as `cancelled` stopReason - the SDK still
         // resolves cleanly, so this catch is for hard transport errors.
-        const msg = err instanceof RequestError
-          ? `${err.code}: ${err.message}`
-          : err instanceof Error
-            ? err.message
-            : String(err)
+        const msg =
+          err instanceof RequestError ? `${err.code}: ${err.message}` : err instanceof Error ? err.message : String(err)
         log.error(`acp prompt failed: ${msg}`)
         active.session.status = 'error'
         active.onEvent({ type: 'error', threadId, message: msg })
@@ -880,11 +899,7 @@ export class AcpAdapter implements ProviderAdapter {
     }
   }
 
-  async respondToRequest(
-    threadId: string,
-    requestId: string,
-    decision: ApprovalDecision,
-  ): Promise<void> {
+  async respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) return
     const pending = active.pendingPermissions.get(requestId)
@@ -913,7 +928,7 @@ export class AcpAdapter implements ProviderAdapter {
     if (!active) return
     active.session.runtimeMode = mode
     const modeId = acpModeFor(this.modeIds(active), mode)
-    if (modeId && await this.applyMode(active, modeId)) log.info(`acp setSessionMode → ${mode} (${modeId})`)
+    if (modeId && (await this.applyMode(active, modeId))) log.info(`acp setSessionMode → ${mode} (${modeId})`)
   }
 
   async setModel(threadId: string, model: string): Promise<void> {
@@ -963,9 +978,10 @@ export class AcpAdapter implements ProviderAdapter {
    */
   async listModels(threadId: string): Promise<ModelOption[]> {
     const own = this.sessions.get(threadId)?.availableModels ?? []
-    const catalog = own.length > 0
-      ? own
-      : [...this.sessions.values()].find((s) => s.availableModels.length > 0)?.availableModels ?? []
+    const catalog =
+      own.length > 0
+        ? own
+        : ([...this.sessions.values()].find((s) => s.availableModels.length > 0)?.availableModels ?? [])
     return catalog.map((m) => ({
       id: m.modelId,
       label: this.config.modelLabel(m),
@@ -1067,7 +1083,11 @@ export class AcpAdapter implements ProviderAdapter {
         const { allow, reject } = pickPermissionOptions(params.options)
         // For our own MCP tools the server already enforces plan mode and
         // shows the card; the launch config decides which names are ours.
-        if (active.switchboardMcp && allow && active.prep.autoAllowSwitchboardTool(toolName, active.session.runtimeMode)) {
+        if (
+          active.switchboardMcp &&
+          allow &&
+          active.prep.autoAllowSwitchboardTool(toolName, active.session.runtimeMode)
+        ) {
           return { outcome: { outcome: 'selected', optionId: allow } }
         }
         const policy = decidePermission(active.session.runtimeMode, toolName)
@@ -1093,8 +1113,12 @@ export class AcpAdapter implements ProviderAdapter {
         // policy === 'prompt' - bubble up to the user via approval card.
         const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
         const detail = JSON.stringify(
-          { tool: params.toolCall, options: params.options.map((o) => ({ id: o.optionId, name: o.name, kind: o.kind })) },
-          null, 2,
+          {
+            tool: params.toolCall,
+            options: params.options.map((o) => ({ id: o.optionId, name: o.name, kind: o.kind })),
+          },
+          null,
+          2,
         ).slice(0, 2000)
 
         return new Promise<RequestPermissionResponse>((resolve) => {
@@ -1153,9 +1177,10 @@ export class AcpAdapter implements ProviderAdapter {
  *
  * Exported for unit tests.
  */
-export function parseImageInput(
-  img: { url: string; mimeType?: string },
-): { mimeType: string | undefined; data: string | null } {
+export function parseImageInput(img: { url: string; mimeType?: string }): {
+  mimeType: string | undefined
+  data: string | null
+} {
   const parsed = img.url ? parseImageDataUrl(img.url) : null
   return parsed ?? { mimeType: img.mimeType, data: null }
 }

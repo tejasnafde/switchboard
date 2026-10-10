@@ -21,7 +21,7 @@ class FakeWatcher {
   readonly dirExistedAtWatchTime: boolean
   constructor(
     readonly paths: string[],
-    private readonly onEvent: (absPath: string, event: NotebookWatchEvent) => void
+    private readonly onEvent: (absPath: string, event: NotebookWatchEvent) => void,
   ) {
     this.dirExistedAtWatchTime = paths.every((p) => existsSync(p))
   }

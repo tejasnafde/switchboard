@@ -25,18 +25,30 @@ let most = 0
 vi.mock('../../src/main/provider/usage/claude-usage', () => ({
   fetchClaudeUsage: (id: string, _env: unknown, _dir: unknown, opts: Probe['opts']) => {
     most = Math.max(most, ++running)
-    return new Promise<ProviderUsage>((resolve) => probes.push({
-      opts,
-      resolve: (u) => { running--; resolve(u) },
-    }))
+    return new Promise<ProviderUsage>((resolve) =>
+      probes.push({
+        opts,
+        resolve: (u) => {
+          running--
+          resolve(u)
+        },
+      }),
+    )
   },
 }))
 
 const { fetchInstanceUsage, invalidateUsage } = await import('../../src/main/provider/usage')
 
 const reading = (message: string): ProviderUsage => ({
-  instanceId: 'a', agentType: 'claude-code', status: 'ok', plan: null, account: null,
-  windows: [], overage: [], message, fetchedAtMs: Date.now(),
+  instanceId: 'a',
+  agentType: 'claude-code',
+  status: 'ok',
+  plan: null,
+  account: null,
+  windows: [],
+  overage: [],
+  message,
+  fetchedAtMs: Date.now(),
 })
 const flush = () => new Promise((r) => setTimeout(r, 0))
 

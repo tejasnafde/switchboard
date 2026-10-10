@@ -55,9 +55,7 @@ export interface ChartSpec {
 
 export type ChartParse = { ok: true; spec: ChartSpec } | { ok: false; error: string }
 
-export type MessageSegment =
-  | { kind: 'markdown'; text: string }
-  | { kind: VisualKind; source: string }
+export type MessageSegment = { kind: 'markdown'; text: string } | { kind: VisualKind; source: string }
 
 /** The fence info string's first word, when it names a visual kind. */
 export function visualKindOfInfo(info: string): VisualKind | null {
@@ -287,13 +285,17 @@ export function renderChart(spec: ChartSpec, palette: ChartPalette, width = 560)
 
   for (const t of ticks) {
     parts.push(`<line x1="${left}" x2="${right}" y1="${n(y(t))}" y2="${n(y(t))}" style="stroke:${palette.grid}"/>`)
-    parts.push(`<text x="${left - 6}" y="${n(y(t) + 4)}" text-anchor="end" style="fill:${palette.muted}">${escapeXml(formatChartNumber(t))}</text>`)
+    parts.push(
+      `<text x="${left - 6}" y="${n(y(t) + 4)}" text-anchor="end" style="fill:${palette.muted}">${escapeXml(formatChartNumber(t))}</text>`,
+    )
   }
   const labelChars = Math.max(3, Math.floor(band / 6.5))
   const labelEvery = Math.max(1, Math.ceil(28 / band))
   spec.labels.forEach((label, i) => {
     if (i % labelEvery !== 0) return
-    parts.push(`<text x="${n(left + band * (i + 0.5))}" y="${bottom + 16}" text-anchor="middle" style="fill:${palette.text}"><title>${escapeXml(label)}</title>${escapeXml(truncate(label, labelChars * labelEvery))}</text>`)
+    parts.push(
+      `<text x="${n(left + band * (i + 0.5))}" y="${bottom + 16}" text-anchor="middle" style="fill:${palette.text}"><title>${escapeXml(label)}</title>${escapeXml(truncate(label, labelChars * labelEvery))}</text>`,
+    )
   })
 
   if (spec.type === 'bar') {
@@ -304,7 +306,9 @@ export function renderChart(spec: ChartSpec, palette: ChartPalette, width = 560)
         const x = left + band * i + (band - groupWidth) / 2 + barWidth * s
         const y0 = y(Math.max(0, value))
         const height = Math.abs(y(value) - y(0))
-        parts.push(`<rect x="${n(x)}" y="${n(y0)}" width="${n(Math.max(1, barWidth - 2))}" height="${n(height)}" style="fill:${color(s)}"><title>${escapeXml(`${series.name}, ${spec.labels[i]}: ${series.values[i]}`)}</title></rect>`)
+        parts.push(
+          `<rect x="${n(x)}" y="${n(y0)}" width="${n(Math.max(1, barWidth - 2))}" height="${n(height)}" style="fill:${color(s)}"><title>${escapeXml(`${series.name}, ${spec.labels[i]}: ${series.values[i]}`)}</title></rect>`,
+        )
       })
     })
   } else {
@@ -312,7 +316,9 @@ export function renderChart(spec: ChartSpec, palette: ChartPalette, width = 560)
       const points = series.values.map((value, i) => `${n(left + band * (i + 0.5))},${n(y(value))}`)
       parts.push(`<polyline points="${points.join(' ')}" style="fill:none;stroke:${color(s)};stroke-width:2"/>`)
       series.values.forEach((value, i) => {
-        parts.push(`<circle cx="${n(left + band * (i + 0.5))}" cy="${n(y(value))}" r="3" style="fill:${color(s)}"><title>${escapeXml(`${series.name}, ${spec.labels[i]}: ${value}`)}</title></circle>`)
+        parts.push(
+          `<circle cx="${n(left + band * (i + 0.5))}" cy="${n(y(value))}" r="3" style="fill:${color(s)}"><title>${escapeXml(`${series.name}, ${spec.labels[i]}: ${value}`)}</title></circle>`,
+        )
       })
     })
   }
@@ -326,10 +332,14 @@ export function renderChart(spec: ChartSpec, palette: ChartPalette, width = 560)
     parts.push(`<text x="${lx + 12}" y="16" style="fill:${palette.muted};font-size:10px">${escapeXml(name)}</text>`)
   }
   if (spec.xTitle) {
-    parts.push(`<text x="${n((left + right) / 2)}" y="${H - 8}" text-anchor="middle" style="fill:${palette.muted}">${escapeXml(spec.xTitle)}</text>`)
+    parts.push(
+      `<text x="${n((left + right) / 2)}" y="${H - 8}" text-anchor="middle" style="fill:${palette.muted}">${escapeXml(spec.xTitle)}</text>`,
+    )
   }
   if (spec.yTitle) {
-    parts.push(`<text transform="translate(14 ${n((top + bottom) / 2)}) rotate(-90)" text-anchor="middle" style="fill:${palette.muted}">${escapeXml(spec.yTitle)}</text>`)
+    parts.push(
+      `<text transform="translate(14 ${n((top + bottom) / 2)}) rotate(-90)" text-anchor="middle" style="fill:${palette.muted}">${escapeXml(spec.yTitle)}</text>`,
+    )
   }
   const label = escapeXml(spec.title ?? `${spec.type} chart`)
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${label}" style="${style}">${parts.join('')}</svg>`
@@ -337,10 +347,16 @@ export function renderChart(spec: ChartSpec, palette: ChartPalette, width = 560)
 
 function renderTable(spec: ChartSpec, palette: ChartPalette): string {
   const cell = 'padding:4px 10px;border-bottom:1px solid'
-  const head = [`<th style="${cell} ${palette.grid};text-align:left;color:${palette.muted}">${escapeXml(spec.xTitle ?? '')}</th>`]
-  for (const s of spec.series) head.push(`<th style="${cell} ${palette.grid};text-align:right;color:${palette.muted}">${escapeXml(s.name)}</th>`)
+  const head = [
+    `<th style="${cell} ${palette.grid};text-align:left;color:${palette.muted}">${escapeXml(spec.xTitle ?? '')}</th>`,
+  ]
+  for (const s of spec.series)
+    head.push(`<th style="${cell} ${palette.grid};text-align:right;color:${palette.muted}">${escapeXml(s.name)}</th>`)
   const rows = spec.labels.map((label, i) => {
-    const cells = spec.series.map((s) => `<td style="${cell} ${palette.grid};text-align:right;font-variant-numeric:tabular-nums">${escapeXml(String(s.values[i]))}</td>`)
+    const cells = spec.series.map(
+      (s) =>
+        `<td style="${cell} ${palette.grid};text-align:right;font-variant-numeric:tabular-nums">${escapeXml(String(s.values[i]))}</td>`,
+    )
     return `<tr><td style="${cell} ${palette.grid}">${escapeXml(label)}</td>${cells.join('')}</tr>`
   })
   return `<table style="border-collapse:collapse;font-family:${palette.font};font-size:12px;color:${palette.text}"><thead><tr>${head.join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`

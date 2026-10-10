@@ -3,7 +3,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-vi.mock('electron', () => ({ app: { getPath: () => tmpdir() }, ipcMain: { removeHandler: vi.fn(), handle: vi.fn() }, shell: {} }))
+vi.mock('electron', () => ({
+  app: { getPath: () => tmpdir() },
+  ipcMain: { removeHandler: vi.fn(), handle: vi.fn() },
+  shell: {},
+}))
 
 import { closeAllLaunchConfigWatchers, watchLaunchConfig } from '../../src/main/launch-config/launch-config-store'
 import { closeAllHeadWatchers } from '../../src/main/git/head-watcher'
@@ -23,7 +27,10 @@ describe('quit-time watcher closes', () => {
   })
 
   it('closes head watchers idempotently', () => {
-    expect(() => { closeAllHeadWatchers(); closeAllHeadWatchers() }).not.toThrow()
+    expect(() => {
+      closeAllHeadWatchers()
+      closeAllHeadWatchers()
+    }).not.toThrow()
   })
 
   it('disposes settings.json sync idempotently', () => {

@@ -39,12 +39,17 @@ function loadHostHtml(): Promise<string> {
       if (!asset.localUri) throw new Error('visual host asset has no local file')
       return FileSystem.readAsStringAsync(asset.localUri)
     })()
-    hostHtml.catch(() => { hostHtml = null })
+    hostHtml.catch(() => {
+      hostHtml = null
+    })
   }
   return hostHtml
 }
 
-interface Drawn { height: number; svg: string }
+interface Drawn {
+  height: number
+  svg: string
+}
 type State = { status: 'drawing' } | ({ status: 'drawn' } & Drawn) | { status: 'error'; error: string }
 
 /** Drawn heights by source, so a recycled row does not jump while it redraws. */
@@ -72,11 +77,18 @@ export function ChatVisual({ kind, source }: { kind: VisualKind; source: string 
   useEffect(() => {
     if (invalid !== null || html !== null) return
     let current = true
-    loadHostHtml().then((page) => { if (current) setHtml(page) }, (error: unknown) => {
-      log.warn('visual host did not load', error)
-      if (current) setState({ status: 'error', error: 'This app version cannot draw it.' })
-    })
-    return () => { current = false }
+    loadHostHtml().then(
+      (page) => {
+        if (current) setHtml(page)
+      },
+      (error: unknown) => {
+        log.warn('visual host did not load', error)
+        if (current) setState({ status: 'error', error: 'This app version cannot draw it.' })
+      },
+    )
+    return () => {
+      current = false
+    }
   }, [invalid, html])
 
   useEffect(() => {
@@ -106,7 +118,10 @@ export function ChatVisual({ kind, source }: { kind: VisualKind; source: string 
   const copy = (): void => {
     const text = chart?.ok ? chartDataText(chart.spec) : state.status === 'drawn' ? state.svg : null
     if (text === null) return
-    Clipboard.setStringAsync(text).then(() => setCopied(true), (error: unknown) => log.warn('visual copy failed', error))
+    Clipboard.setStringAsync(text).then(
+      () => setCopied(true),
+      (error: unknown) => log.warn('visual copy failed', error),
+    )
   }
 
   const canCopy = invalid === null && (chart?.ok === true || state.status === 'drawn')
@@ -115,17 +130,29 @@ export function ChatVisual({ kind, source }: { kind: VisualKind; source: string 
       <View style={styles.header}>
         <Text style={styles.title}>{noun}</Text>
         {invalid === null && (
-          <Pressable accessibilityRole="button" accessibilityLabel={showSource ? `Show ${noun.toLowerCase()}` : 'Show source'} onPress={() => setShowSource((s) => !s)} style={styles.button}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={showSource ? `Show ${noun.toLowerCase()}` : 'Show source'}
+            onPress={() => setShowSource((s) => !s)}
+            style={styles.button}
+          >
             <Text style={styles.buttonText}>Source</Text>
           </Pressable>
         )}
         {canCopy && (
-          <Pressable accessibilityRole="button" accessibilityLabel={kind === 'mermaid' ? 'Copy SVG' : 'Copy data'} onPress={copy} style={styles.button}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={kind === 'mermaid' ? 'Copy SVG' : 'Copy data'}
+            onPress={copy}
+            style={styles.button}
+          >
             <Text style={styles.buttonText}>{copied ? 'Copied' : kind === 'mermaid' ? 'Copy SVG' : 'Copy data'}</Text>
           </Pressable>
         )}
       </View>
-      {invalid !== null && <Text style={styles.error}>{`This ${noun.toLowerCase()} could not be drawn: ${invalid}`}</Text>}
+      {invalid !== null && (
+        <Text style={styles.error}>{`This ${noun.toLowerCase()} could not be drawn: ${invalid}`}</Text>
+      )}
       {invalid !== null || showSource ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <Text style={styles.source}>{source}</Text>
@@ -177,7 +204,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   title: { ...type.bodySm, color: colors.textDim, flex: 1 },
-  button: { paddingHorizontal: space.sm, paddingVertical: space.xs, borderRadius: radius.sm, backgroundColor: colors.wash },
+  button: {
+    paddingHorizontal: space.sm,
+    paddingVertical: space.xs,
+    borderRadius: radius.sm,
+    backgroundColor: colors.wash,
+  },
   buttonText: { ...type.bodySm, color: colors.textDim },
   error: { ...type.bodySm, color: colors.red, paddingHorizontal: space.md, paddingTop: space.sm },
   source: { ...type.mono, color: colors.text, padding: space.md },

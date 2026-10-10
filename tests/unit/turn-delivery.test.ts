@@ -57,10 +57,16 @@ describe('follow-up default', () => {
 
 describe('send button', () => {
   it('just sends while idle', () => {
-    expect(sendAction('claude-code', false, 'queue')).toEqual({ label: 'Send', tooltip: 'Send (Enter) · Newline (Shift+Enter)' })
+    expect(sendAction('claude-code', false, 'queue')).toEqual({
+      label: 'Send',
+      tooltip: 'Send (Enter) · Newline (Shift+Enter)',
+    })
   })
   it('does the default mid-turn and names both keys', () => {
-    expect(sendAction('claude-code', true, 'steer')).toEqual({ label: 'Steer', tooltip: 'Steer (Enter) · Queue (⌥Enter)' })
+    expect(sendAction('claude-code', true, 'steer')).toEqual({
+      label: 'Steer',
+      tooltip: 'Steer (Enter) · Queue (⌥Enter)',
+    })
     expect(sendAction('codex', true, 'queue')).toEqual({ label: 'Queue', tooltip: 'Queue (Enter) · Steer (⌥Enter)' })
   })
   it('always queues on OpenCode, and says why', () => {
@@ -95,8 +101,12 @@ describe('queued turn accounting', () => {
     for (const agent of ['gemini', 'vibe', 'cline', 'copilot']) {
       expect(sendAction(agent, true, 'steer').label).toBe('Queue')
     }
-    expect(promoteUnavailableReason('gemini')).toBe('Gemini CLI cannot take a message mid-turn, so this waits for the turn to end.')
-    expect(sendAction('copilot', true, 'steer').tooltip).toMatch(/^Queue \(Enter\): GitHub Copilot cannot take a message mid-turn/)
+    expect(promoteUnavailableReason('gemini')).toBe(
+      'Gemini CLI cannot take a message mid-turn, so this waits for the turn to end.',
+    )
+    expect(sendAction('copilot', true, 'steer').tooltip).toMatch(
+      /^Queue \(Enter\): GitHub Copilot cannot take a message mid-turn/,
+    )
   })
 })
 

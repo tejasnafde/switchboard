@@ -19,10 +19,7 @@ export function currentBackendRequestContext(): BackendRequestContext | undefine
   return requestContext.getStore()
 }
 
-export function withBackendRequestContext<T>(
-  context: BackendRequestContext,
-  fn: () => T,
-): T {
+export function withBackendRequestContext<T>(context: BackendRequestContext, fn: () => T): T {
   return requestContext.run(context, fn)
 }
 

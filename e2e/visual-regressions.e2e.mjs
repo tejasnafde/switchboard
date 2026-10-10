@@ -134,11 +134,7 @@ function meanPixelDelta(left, right) {
 
 function captureNative(bounds, path) {
   try {
-    execFileSync('/usr/sbin/screencapture', [
-      '-x',
-      `-R${bounds.x},${bounds.y},${bounds.width},${bounds.height}`,
-      path,
-    ])
+    execFileSync('/usr/sbin/screencapture', ['-x', `-R${bounds.x},${bounds.y},${bounds.width},${bounds.height}`, path])
   } catch (error) {
     throw new Error(`native capture failed; grant Screen Recording access to the terminal running Playwright: ${error}`)
   }
@@ -158,7 +154,8 @@ async function assertNativeGlassTransmitsColor(win, suffix = '') {
       show: false,
       skipTaskbar: true,
     })
-    const html = '<body style="margin:0;width:100vw;height:100vh;background:linear-gradient(90deg,#ff165d 0 50%,#00d9ff 50%)"></body>'
+    const html =
+      '<body style="margin:0;width:100vw;height:100vh;background:linear-gradient(90deg,#ff165d 0 50%,#00d9ff 50%)"></body>'
     await background.loadURL(`data:text/html,${encodeURIComponent(html)}`)
     background.showInactive()
     background.setAlwaysOnTop(true, 'floating', 1)
@@ -175,7 +172,10 @@ async function assertNativeGlassTransmitsColor(win, suffix = '') {
   })
 
   await win.waitForTimeout(500)
-  const glassCapture = captureNative(bounds, suffix ? join(artifactDir, `native-glass-${suffix}.png`) : nativeScreenshotPath)
+  const glassCapture = captureNative(
+    bounds,
+    suffix ? join(artifactDir, `native-glass-${suffix}.png`) : nativeScreenshotPath,
+  )
   const backing = colorDelta(glassCapture)
 
   await app.evaluate(({ BrowserWindow }) => {
@@ -198,21 +198,28 @@ async function assertNativeGlassTransmitsColor(win, suffix = '') {
   await win.getByRole('button', { name: /Dark/ }).click()
   await win.keyboard.press('Escape')
   await win.waitForTimeout(300)
-  const dark = colorDelta(captureNative(bounds, suffix ? join(artifactDir, `native-dark-${suffix}.png`) : nativeDarkScreenshotPath))
+  const dark = colorDelta(
+    captureNative(bounds, suffix ? join(artifactDir, `native-dark-${suffix}.png`) : nativeDarkScreenshotPath),
+  )
 
   await win.getByTitle('Settings').click()
   await win.getByRole('button', { name: /^Appearance(?: \d+ changed)?$/ }).click()
   await win.getByRole('button', { name: /Translucent/ }).click()
   await win.keyboard.press('Escape')
   await win.waitForTimeout(300)
-  const workspace = colorDelta(captureNative(bounds, suffix ? join(artifactDir, `native-workspace-${suffix}.png`) : nativeWorkspaceScreenshotPath))
+  const workspace = colorDelta(
+    captureNative(bounds, suffix ? join(artifactDir, `native-workspace-${suffix}.png`) : nativeWorkspaceScreenshotPath),
+  )
   const surfaceStack = await win.evaluate(() => {
     const x = window.innerWidth * 0.7
     const y = window.innerHeight * 0.5
-    return document.elementsFromPoint(x, y).slice(0, 8).map((element) => ({
-      element: `${element.tagName.toLowerCase()}.${element.className}`,
-      background: getComputedStyle(element).backgroundColor,
-    }))
+    return document
+      .elementsFromPoint(x, y)
+      .slice(0, 8)
+      .map((element) => ({
+        element: `${element.tagName.toLowerCase()}.${element.className}`,
+        background: getComputedStyle(element).backgroundColor,
+      }))
   })
 
   await app.evaluate(({ BrowserWindow }) => {
@@ -224,13 +231,19 @@ async function assertNativeGlassTransmitsColor(win, suffix = '') {
   })
 
   if (backing.delta < 45) {
-    throw new Error(`${checkpoint}: native glass did not transmit the background colors: left=${backing.left.map(Math.round)} right=${backing.right.map(Math.round)} state=${JSON.stringify(nativeState)}`)
+    throw new Error(
+      `${checkpoint}: native glass did not transmit the background colors: left=${backing.left.map(Math.round)} right=${backing.right.map(Math.round)} state=${JSON.stringify(nativeState)}`,
+    )
   }
   if (materialDelta < 8) {
-    throw new Error(`${checkpoint}: native glass was indistinguishable from plain transparency: mean pixel delta=${materialDelta.toFixed(2)}`)
+    throw new Error(
+      `${checkpoint}: native glass was indistinguishable from plain transparency: mean pixel delta=${materialDelta.toFixed(2)}`,
+    )
   }
   if (workspace.delta - dark.delta < 45) {
-    throw new Error(`${checkpoint}: theme switch did not change background transmission: dark=${dark.delta.toFixed(1)} translucent=${workspace.delta.toFixed(1)} surfaces=${JSON.stringify(surfaceStack)}`)
+    throw new Error(
+      `${checkpoint}: theme switch did not change background transmission: dark=${dark.delta.toFixed(1)} translucent=${workspace.delta.toFixed(1)} surfaces=${JSON.stringify(surfaceStack)}`,
+    )
   }
 }
 
@@ -293,7 +306,7 @@ async function assertWorkspaceOrganizer(win) {
   const createMenu = win.getByRole('menu')
   await createMenu.waitFor({ state: 'visible' })
   for (const label of ['New project', 'New workspace', 'New machine']) {
-    if (!await win.getByRole('menuitem', { name: new RegExp(label) }).isVisible()) {
+    if (!(await win.getByRole('menuitem', { name: new RegExp(label) }).isVisible())) {
       throw new Error(`Create menu is missing ${label}`)
     }
   }
@@ -329,7 +342,11 @@ async function assertWorkspaceOrganizer(win) {
     if (!metrics || metrics.navWidth < 150 || metrics.detailWidth < 280) {
       throw new Error(`${themeName} organizer panes collapsed: ${JSON.stringify(metrics)}`)
     }
-    if (Math.abs(metrics.navRight - metrics.detailLeft) > 1 || metrics.dialogRight > metrics.viewportWidth || metrics.overflow > 1) {
+    if (
+      Math.abs(metrics.navRight - metrics.detailLeft) > 1 ||
+      metrics.dialogRight > metrics.viewportWidth ||
+      metrics.overflow > 1
+    ) {
       throw new Error(`${themeName} organizer alignment overflowed: ${JSON.stringify(metrics)}`)
     }
     if (themeName === 'Translucent' && metrics.rootBackground !== 'rgba(0, 0, 0, 0)') {
@@ -382,7 +399,10 @@ async function closeApp() {
   const closing = app
   app = undefined
   const closed = await Promise.race([
-    closing.close().then(() => true, () => true),
+    closing.close().then(
+      () => true,
+      () => true,
+    ),
     new Promise((resolve) => setTimeout(() => resolve(false), 5_000)),
   ])
   if (!closed) closing.process().kill('SIGKILL')
@@ -421,28 +441,36 @@ async function settle(win) {
   // Park the pointer where nothing has a hover state, then wait for fonts
   // and two frames so layout and paint have caught up.
   await win.mouse.move(SCREEN_SIZE.width / 2, 2)
-  await win.evaluate(() => document.fonts.ready.then(() => new Promise((done) => {
-    requestAnimationFrame(() => requestAnimationFrame(done))
-  })))
+  await win.evaluate(() =>
+    document.fonts.ready.then(
+      () =>
+        new Promise((done) => {
+          requestAnimationFrame(() => requestAnimationFrame(done))
+        }),
+    ),
+  )
   await win.waitForTimeout(250)
   // A new row (for example the Queued bubble) makes the message list scroll to
   // the bottom over several frames; a capture mid-scroll shifts every row. Wait
   // until each list keeps the same scroll position for 5 frames (at most 3 s).
-  await win.evaluate(() => new Promise((done) => {
-    const lists = [...document.querySelectorAll('[data-message-list-scroll]')]
-    const read = () => lists.map((el) => `${el.scrollTop}/${el.scrollHeight}`).join(',')
-    let last = read()
-    let stableFrames = 0
-    const deadline = performance.now() + 3000
-    const tick = () => {
-      const now = read()
-      stableFrames = now === last ? stableFrames + 1 : 0
-      last = now
-      if (stableFrames >= 5 || performance.now() > deadline) done()
-      else requestAnimationFrame(tick)
-    }
-    requestAnimationFrame(tick)
-  }))
+  await win.evaluate(
+    () =>
+      new Promise((done) => {
+        const lists = [...document.querySelectorAll('[data-message-list-scroll]')]
+        const read = () => lists.map((el) => `${el.scrollTop}/${el.scrollHeight}`).join(',')
+        let last = read()
+        let stableFrames = 0
+        const deadline = performance.now() + 3000
+        const tick = () => {
+          const now = read()
+          stableFrames = now === last ? stableFrames + 1 : 0
+          last = now
+          if (stableFrames >= 5 || performance.now() > deadline) done()
+          else requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      }),
+  )
 }
 
 async function snapScreen(win, screen, theme, target, mask = []) {
@@ -452,7 +480,13 @@ async function snapScreen(win, screen, theme, target, mask = []) {
 
 /** Compare `target` as it is now, without parking the pointer (a hover state). */
 async function snapAsIs(screen, theme, target, mask = []) {
-  const shot = await target.screenshot({ animations: 'disabled', caret: 'hide', scale: 'css', mask, maskColor: '#808080' })
+  const shot = await target.screenshot({
+    animations: 'disabled',
+    caret: 'hide',
+    scale: 'css',
+    mask,
+    maskColor: '#808080',
+  })
   const error = checkBaseline({
     name: `${screen}-${theme.toLowerCase()}-${process.platform}`,
     actual: flattenOverBackdrop(shot),
@@ -477,7 +511,12 @@ async function prepareScreensFixture() {
   makeSideRepo(sidePath)
   await launchSwitchboard({ userData: live.userData, demo: true })
   await closeApp()
-  seedDatabase(join(live.userData, 'data', 'switchboard.db'), projectPath, sidePath, { now: FROZEN_NOW, showFileDiffs: false, expandLocalTree: false, linkPullRequest: true })
+  seedDatabase(join(live.userData, 'data', 'switchboard.db'), projectPath, sidePath, {
+    now: FROZEN_NOW,
+    showFileDiffs: false,
+    expandLocalTree: false,
+    linkPullRequest: true,
+  })
   const pristine = makeTemp('sb-visual-screens-pristine-')
   for (const [key, path] of Object.entries(live)) cpSync(path, join(pristine, key), { recursive: true })
   return {
@@ -517,8 +556,10 @@ async function footerRowProblem(composer, label) {
       return `children sit on ${new Set(tops).size} rows (offsetTop ${tops.join(', ')})`
     }
     const track = footer.querySelector('[data-composer-footer-track]')
-    if (track && track.scrollWidth > track.clientWidth) return `the chips overflow by ${track.scrollWidth - track.clientWidth}px`
-    if (footer.scrollWidth > footer.clientWidth) return `the footer overflows by ${footer.scrollWidth - footer.clientWidth}px`
+    if (track && track.scrollWidth > track.clientWidth)
+      return `the chips overflow by ${track.scrollWidth - track.clientWidth}px`
+    if (footer.scrollWidth > footer.clientWidth)
+      return `the footer overflows by ${footer.scrollWidth - footer.clientWidth}px`
     if (root.scrollWidth > root.clientWidth) return `the composer overflows by ${root.scrollWidth - root.clientWidth}px`
     return null
   })
@@ -551,7 +592,8 @@ async function captureFooterWidths(win, theme, composer) {
       await composer.locator('[data-composer-overflow]').click()
       const menu = win.getByRole('dialog', { name: 'More options' })
       await menu.waitFor({ state: 'visible' })
-      if (await menu.getByRole('menuitem').count() !== 3) screenFailures.push(`composer-overflow-${theme.toLowerCase()}: expected effort, branch and mode in the menu`)
+      if ((await menu.getByRole('menuitem').count()) !== 3)
+        screenFailures.push(`composer-overflow-${theme.toLowerCase()}: expected effort, branch and mode in the menu`)
       await snapScreen(win, 'composer-overflow-menu', theme, menu)
       await win.keyboard.press('Escape')
       await menu.waitFor({ state: 'hidden' })
@@ -575,7 +617,9 @@ async function captureThemeScreens(win, theme) {
   // heading, the project chip (most recently used project) and the composer.
   await win.getByTestId('chat-landing').waitFor({ state: 'visible', timeout: 20_000 })
   // Editable once the project's draft is open behind the composer.
-  await win.locator('.chat-landing .chat-composer [contenteditable="true"]').waitFor({ state: 'visible', timeout: 20_000 })
+  await win
+    .locator('.chat-landing .chat-composer [contenteditable="true"]')
+    .waitFor({ state: 'visible', timeout: 20_000 })
   // Choosing the theme leaves focus (and its ring) on the settings button.
   await editor.click()
   await snapScreen(win, 'landing', theme, win, [win.locator('.sidebar-root')])
@@ -658,12 +702,25 @@ async function captureThemeScreens(win, theme) {
   // prewarm lists them and Accounts paints every card at once. The main
   // process answers usage from demoUsage (SB_DEMO_ADAPTER): no real
   // credential is read.
-  await win.evaluate(() => Promise.all([
-    ['claude-code-work', 'akshaya', '#b0833a'],
-    ['claude-code-personal', 'aditya', '#8a4a4a'],
-  ].map(([id, displayName, accentColor]) => window.api.providerInstances.upsert({
-    id, agentType: 'claude-code', displayName, accentColor, authMode: 'env', env: null, oauthDir: null, enabled: true,
-  }))))
+  await win.evaluate(() =>
+    Promise.all(
+      [
+        ['claude-code-work', 'akshaya', '#b0833a'],
+        ['claude-code-personal', 'aditya', '#8a4a4a'],
+      ].map(([id, displayName, accentColor]) =>
+        window.api.providerInstances.upsert({
+          id,
+          agentType: 'claude-code',
+          displayName,
+          accentColor,
+          authMode: 'env',
+          env: null,
+          oauthDir: null,
+          enabled: true,
+        }),
+      ),
+    ),
+  )
   await win.getByTitle('Settings').click()
   const settings = win.locator('.settings-page')
   await settings.waitFor({ state: 'visible' })
@@ -674,15 +731,27 @@ async function captureThemeScreens(win, theme) {
   // The credential line names this machine's home directory, so its length
   // differs by host (/Users/runner on CI). A fixed box keeps the mask and the
   // text after it in place.
-  await win.addStyleTag({ content: '[data-credential] { display: inline-block; width: 260px; overflow: hidden; white-space: nowrap; vertical-align: bottom }' })
+  await win.addStyleTag({
+    content:
+      '[data-credential] { display: inline-block; width: 260px; overflow: hidden; white-space: nowrap; vertical-align: bottom }',
+  })
   await snapScreen(win, 'settings-accounts', theme, settings, [settings.locator('[data-credential]')])
   // A Codex account at its 5-hour limit with two banked resets (demoUsage
   // answers `-limit` ids so), added after the page shot so that baseline
   // keeps its cards. The card offers "Use reset"; its confirm is shot too
   // and cancelled, so nothing is spent (the demo spend is fake anyway).
-  await win.evaluate(() => window.api.providerInstances.upsert({
-    id: 'codex-limit', agentType: 'codex', displayName: 'Personal', accentColor: '#10a37f', authMode: 'env', env: null, oauthDir: null, enabled: true,
-  }))
+  await win.evaluate(() =>
+    window.api.providerInstances.upsert({
+      id: 'codex-limit',
+      agentType: 'codex',
+      displayName: 'Personal',
+      accentColor: '#10a37f',
+      authMode: 'env',
+      env: null,
+      oauthDir: null,
+      enabled: true,
+    }),
+  )
   // The page lists accounts when it opens, so leave it and come back.
   await settings.getByRole('button', { name: /^Appearance/ }).click()
   await settings.getByRole('button', { name: /^Accounts & models/ }).click()
@@ -699,7 +768,10 @@ async function captureThemeScreens(win, theme) {
   for (const name of ['akshaya', 'aditya', 'Personal']) {
     await settings.getByRole('button', { name: `Actions for ${name}` }).click()
     await win.getByRole('button', { name: 'Delete', exact: true }).click()
-    await win.getByRole('alertdialog', { name: `Delete "${name}"?` }).getByRole('button', { name: 'Delete' }).click()
+    await win
+      .getByRole('alertdialog', { name: `Delete "${name}"?` })
+      .getByRole('button', { name: 'Delete' })
+      .click()
     await settings.locator('[data-account]').filter({ hasText: name }).waitFor({ state: 'detached' })
   }
   await win.keyboard.press('Escape')
@@ -733,7 +805,9 @@ async function captureThemeScreens(win, theme) {
   // no host, no credentials. The first row (#612, a failed build) opens.
   await win.getByRole('button', { name: 'Reviews', exact: true }).click()
   const reviews = win.locator('[data-reviews-view]')
-  await reviews.getByText('Replaces the fixed 30 s retry', { exact: false }).waitFor({ state: 'visible', timeout: 20_000 })
+  await reviews
+    .getByText('Replaces the fixed 30 s retry', { exact: false })
+    .waitFor({ state: 'visible', timeout: 20_000 })
   await snapScreen(win, 'reviews', theme, win, [sidebar])
   // #612 conflicts with main: the Overview callout naming the files.
   await snapScreen(win, 'reviews-conflict', theme, reviews.locator('[data-pr-conflict-callout]'))
@@ -762,14 +836,20 @@ async function captureThemeScreens(win, theme) {
   // The chat held on that approval heads the sidebar under "Needs you".
   await sidebar.locator('.sidebar-recent-group[data-group="needs-you"]').waitFor({ state: 'visible' })
   await snapScreen(win, 'sidebar-needs-you', theme, sidebar)
-  const runningProblem = await footerRowProblem(win.locator('.chat-composer').first(), `composer-running-${theme.toLowerCase()}`)
+  const runningProblem = await footerRowProblem(
+    win.locator('.chat-composer').first(),
+    `composer-running-${theme.toLowerCase()}`,
+  )
   if (runningProblem) screenFailures.push(runningProblem)
   await snapScreen(win, 'composer-running', theme, win.locator('.chat-composer').first())
   // The draft queued behind that approval: the dashed Queued bubble.
   await editor.click()
   await win.keyboard.press('Alt+Enter')
   await win.locator('[data-queued-turn]').waitFor({ state: 'visible', timeout: 10_000 })
-  const queuedProblem = await footerRowProblem(win.locator('.chat-composer').first(), `queued-message-${theme.toLowerCase()}`)
+  const queuedProblem = await footerRowProblem(
+    win.locator('.chat-composer').first(),
+    `queued-message-${theme.toLowerCase()}`,
+  )
   if (queuedProblem) screenFailures.push(queuedProblem)
   await snapScreen(win, 'queued-message', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
 
@@ -786,10 +866,17 @@ async function captureThemeScreens(win, theme) {
   // The seeded user message carries pill chips, the reply long inline code.
   const list = win.locator('[data-message-list-scroll]').first()
   const sideways = await list.evaluate((el) => el.scrollWidth - el.clientWidth)
-  if (sideways > 0) screenFailures.push(`chat-narrow-${theme.toLowerCase()}: the message list scrolls ${sideways}px sideways`)
-  const narrowProblem = await footerRowProblem(win.locator('.chat-composer').first(), `chat-narrow-${theme.toLowerCase()}`)
+  if (sideways > 0)
+    screenFailures.push(`chat-narrow-${theme.toLowerCase()}: the message list scrolls ${sideways}px sideways`)
+  const narrowProblem = await footerRowProblem(
+    win.locator('.chat-composer').first(),
+    `chat-narrow-${theme.toLowerCase()}`,
+  )
   if (narrowProblem) screenFailures.push(narrowProblem)
-  await win.locator('.markdown-content ol').last().evaluate((ol) => ol.scrollIntoView({ block: 'start' }))
+  await win
+    .locator('.markdown-content ol')
+    .last()
+    .evaluate((ol) => ol.scrollIntoView({ block: 'start' }))
   await snapScreen(win, 'chat-narrow', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
 
   // An agent's pull request write held on its Switchboard card (the demo
@@ -803,13 +890,18 @@ async function captureThemeScreens(win, theme) {
   await hostWriteCard.waitFor({ state: 'visible', timeout: 20_000 })
   await hostWriteCard.scrollIntoViewIfNeeded()
   const cardOverflow = await hostWriteCard.evaluate((el) => el.scrollWidth - el.clientWidth)
-  if (cardOverflow > 0) screenFailures.push(`host-write-narrow-${theme.toLowerCase()}: the card overflows ${cardOverflow}px`)
+  if (cardOverflow > 0)
+    screenFailures.push(`host-write-narrow-${theme.toLowerCase()}: the card overflows ${cardOverflow}px`)
   const listOverflow = await list.evaluate((el) => el.scrollWidth - el.clientWidth)
-  if (listOverflow > 0) screenFailures.push(`host-write-narrow-${theme.toLowerCase()}: the message list scrolls ${listOverflow}px sideways`)
+  if (listOverflow > 0)
+    screenFailures.push(`host-write-narrow-${theme.toLowerCase()}: the message list scrolls ${listOverflow}px sideways`)
   // The card is taller than this window, so show its end, where the buttons wrap.
   await hostWriteCard.locator('[data-host-write-actions]').evaluate((el) => el.scrollIntoView({ block: 'end' }))
   await snapScreen(win, 'host-write-narrow', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
-  await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }), SCREEN_SIZE)
+  await app.evaluate(
+    ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }),
+    SCREEN_SIZE,
+  )
   await settle(win)
   await hostWriteCard.scrollIntoViewIfNeeded()
   await snapScreen(win, 'host-write-approval', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
@@ -831,10 +923,17 @@ async function captureThemeScreens(win, theme) {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(800, 720))
   await settle(win)
   const reviewOverflow = await reviewCard.evaluate((el) => el.scrollWidth - el.clientWidth)
-  if (reviewOverflow > 0) screenFailures.push(`host-review-draft-narrow-${theme.toLowerCase()}: the card overflows ${reviewOverflow}px`)
+  if (reviewOverflow > 0)
+    screenFailures.push(`host-review-draft-narrow-${theme.toLowerCase()}: the card overflows ${reviewOverflow}px`)
   const reviewListOverflow = await list.evaluate((el) => el.scrollWidth - el.clientWidth)
-  if (reviewListOverflow > 0) screenFailures.push(`host-review-draft-narrow-${theme.toLowerCase()}: the message list scrolls ${reviewListOverflow}px sideways`)
-  await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }), SCREEN_SIZE)
+  if (reviewListOverflow > 0)
+    screenFailures.push(
+      `host-review-draft-narrow-${theme.toLowerCase()}: the message list scrolls ${reviewListOverflow}px sideways`,
+    )
+  await app.evaluate(
+    ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }),
+    SCREEN_SIZE,
+  )
   await settle(win)
 
   // An agent asked to raise a pull request, held on its create card: the
@@ -854,10 +953,17 @@ async function captureThemeScreens(win, theme) {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(800, 720))
   await settle(win)
   const createOverflow = await createCard.evaluate((el) => el.scrollWidth - el.clientWidth)
-  if (createOverflow > 0) screenFailures.push(`host-create-pr-narrow-${theme.toLowerCase()}: the card overflows ${createOverflow}px`)
+  if (createOverflow > 0)
+    screenFailures.push(`host-create-pr-narrow-${theme.toLowerCase()}: the card overflows ${createOverflow}px`)
   const createListOverflow = await list.evaluate((el) => el.scrollWidth - el.clientWidth)
-  if (createListOverflow > 0) screenFailures.push(`host-create-pr-narrow-${theme.toLowerCase()}: the message list scrolls ${createListOverflow}px sideways`)
-  await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }), SCREEN_SIZE)
+  if (createListOverflow > 0)
+    screenFailures.push(
+      `host-create-pr-narrow-${theme.toLowerCase()}: the message list scrolls ${createListOverflow}px sideways`,
+    )
+  await app.evaluate(
+    ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }),
+    SCREEN_SIZE,
+  )
   await settle(win)
 
   // A reply with a ```mermaid diagram and a ```chart block, drawn in the chat
@@ -890,7 +996,9 @@ async function holdChatCall(channel) {
     const original = ipcMain._invokeHandlers.get(name)
     if (!original) throw new Error(`No IPC handler for ${name}`)
     let release
-    const wait = new Promise((resolve) => { release = resolve })
+    const wait = new Promise((resolve) => {
+      release = resolve
+    })
     ipcMain.removeHandler(name)
     ipcMain.handle(name, async (event, ...args) => {
       const failure = await wait
@@ -908,10 +1016,18 @@ async function holdChatCall(channel) {
 }
 
 async function captureChatWaitScreens(win, theme) {
-  await win.evaluate(() => window.api.providerInstances.upsert({
-    id: 'claude-code-work', agentType: 'claude-code', displayName: 'akshaya',
-    accentColor: '#b0833a', authMode: 'env', env: null, oauthDir: null, enabled: true,
-  }))
+  await win.evaluate(() =>
+    window.api.providerInstances.upsert({
+      id: 'claude-code-work',
+      agentType: 'claude-code',
+      displayName: 'akshaya',
+      accentColor: '#b0833a',
+      authMode: 'env',
+      env: null,
+      oauthDir: null,
+      enabled: true,
+    }),
+  )
   await win.reload()
   await win.locator('.sidebar-recent-row').filter({ hasText: 'Prepare release notes' }).waitFor({ state: 'visible' })
   await win.addStyleTag({ content: `${FREEZE_CSS} .turn-timestamp { visibility: hidden !important; }` })
@@ -919,7 +1035,10 @@ async function captureChatWaitScreens(win, theme) {
   let release = await holdChatCall('app:load-session-by-id')
   try {
     await openConversation(win, 'Prepare release notes')
-    await panel.getByRole('status').filter({ hasText: 'Loading conversation...' }).waitFor({ state: 'visible', timeout: 5_000 })
+    await panel
+      .getByRole('status')
+      .filter({ hasText: 'Loading conversation...' })
+      .waitFor({ state: 'visible', timeout: 5_000 })
     if (await panel.locator('.message-list').count()) throw new Error('Previous messages remained during chat open')
     const input = panel.locator('[contenteditable="true"]')
     await input.click()
@@ -927,7 +1046,9 @@ async function captureChatWaitScreens(win, theme) {
     await win.keyboard.press('Enter')
     if (!(await input.textContent()).includes('Keep this draft')) throw new Error('Loading cleared the composer draft')
     await snapScreen(win, 'chat-loading', theme, panel)
-  } finally { await release() }
+  } finally {
+    await release()
+  }
   await panel.getByRole('status').filter({ hasText: 'Loading conversation...' }).waitFor({ state: 'hidden' })
   const input = panel.locator('[contenteditable="true"]')
   await input.click()
@@ -941,7 +1062,9 @@ async function captureChatWaitScreens(win, theme) {
     await picker.getByRole('button', { name: 'Claude Code', exact: true }).click()
     await panel.getByRole('status').filter({ hasText: 'Switching to Claude Code...' }).waitFor({ state: 'visible' })
     await snapScreen(win, 'chat-provider-switch', theme, panel)
-  } finally { await release() }
+  } finally {
+    await release()
+  }
   await panel.getByRole('status').filter({ hasText: 'Switching to Claude Code...' }).waitFor({ state: 'hidden' })
   await picker.getByRole('radio', { name: /akshaya/ }).waitFor({ state: 'visible' })
   release = await holdChatCall('provider:switch-instance')
@@ -951,7 +1074,9 @@ async function captureChatWaitScreens(win, theme) {
     // The picker closes on a profile click; the switch shows on its trigger and the composer.
     await picker.waitFor({ state: 'hidden' })
     await snapScreen(win, 'chat-profile-switch', theme, panel)
-  } finally { await release() }
+  } finally {
+    await release()
+  }
   await panel.getByRole('status').filter({ hasText: 'Switching to akshaya...' }).waitFor({ state: 'hidden' })
   await panel.locator('.chat-composer button[title*="Claude"]').first().click()
   await picker.getByRole('radio', { name: 'Default', exact: true }).waitFor({ state: 'visible' })
@@ -962,7 +1087,9 @@ async function captureChatWaitScreens(win, theme) {
     await release('Synthetic profile switch failure')
     await panel.getByRole('alert').filter({ hasText: 'Could not switch profile:' }).waitFor({ state: 'visible' })
     await snapScreen(win, 'chat-switch-error', theme, panel)
-  } finally { await release() }
+  } finally {
+    await release()
+  }
   await win.keyboard.press('Escape')
 
   release = await holdChatCall('provider:start-session')
@@ -972,7 +1099,9 @@ async function captureChatWaitScreens(win, theme) {
     await win.keyboard.press('Enter')
     await panel.getByRole('status').filter({ hasText: 'Starting Claude Code...' }).waitFor({ state: 'visible' })
     await snapScreen(win, 'chat-starting', theme, panel)
-  } finally { await release() }
+  } finally {
+    await release()
+  }
 }
 
 /**
@@ -983,22 +1112,56 @@ async function captureChatWaitScreens(win, theme) {
  */
 const CHIP_CHAT = { id: 'side-notes', title: 'Add markdown export' }
 const CHIP_PILLS = [
-  { id: 'chip_file', kind: 'file', label: 'auth.ts (1-7)', content: '@src/api/auth.ts:1-7\n```\nexport async function handleCallback(req) {\n  const state = req.query.state\n```\n' },
-  { id: 'chip_term', kind: 'terminal', label: 'api (12 lines)', content: '[from: api @ 10:29 · npm run dev]\n```\nError: state token expired\n    at handleCallback (src/api/oauth/callback.ts:41:11)\n    at processTicksAndRejections\nPOST /api/oauth/callback 500 in 38ms\n' + Array.from({ length: 8 }, (_, i) => `GET /health 200 in ${i + 2}ms\n`).join('') + '```\n' },
-  { id: 'chip_chat', kind: 'chat-message', label: 'Claude: "The exchange should happen only after the"', content: '> from Claude: "The exchange should happen only after the state token passes validation."\n> Right now it runs first.\n' },
-  { id: 'chip_you', kind: 'chat-message', label: 'you: "Keep the old cookie name, the phone app st…"', content: '> from you: "Keep the old cookie name, the phone app still reads it."\n' },
-  { id: 'chip_review', kind: 'review', label: '3 review conversations · #612 · sync/worker.py:84, sync/worker.py:91, api/retry.py:12', content: 'Review conversation on sync/worker.py:84\nReview conversation on sync/worker.py:91\nReview conversation on api/retry.py:12\n' },
+  {
+    id: 'chip_file',
+    kind: 'file',
+    label: 'auth.ts (1-7)',
+    content:
+      '@src/api/auth.ts:1-7\n```\nexport async function handleCallback(req) {\n  const state = req.query.state\n```\n',
+  },
+  {
+    id: 'chip_term',
+    kind: 'terminal',
+    label: 'api (12 lines)',
+    content:
+      '[from: api @ 10:29 · npm run dev]\n```\nError: state token expired\n    at handleCallback (src/api/oauth/callback.ts:41:11)\n    at processTicksAndRejections\nPOST /api/oauth/callback 500 in 38ms\n' +
+      Array.from({ length: 8 }, (_, i) => `GET /health 200 in ${i + 2}ms\n`).join('') +
+      '```\n',
+  },
+  {
+    id: 'chip_chat',
+    kind: 'chat-message',
+    label: 'Claude: "The exchange should happen only after the"',
+    content:
+      '> from Claude: "The exchange should happen only after the state token passes validation."\n> Right now it runs first.\n',
+  },
+  {
+    id: 'chip_you',
+    kind: 'chat-message',
+    label: 'you: "Keep the old cookie name, the phone app st…"',
+    content: '> from you: "Keep the old cookie name, the phone app still reads it."\n',
+  },
+  {
+    id: 'chip_review',
+    kind: 'review',
+    label: '3 review conversations · #612 · sync/worker.py:84, sync/worker.py:91, api/retry.py:12',
+    content:
+      'Review conversation on sync/worker.py:84\nReview conversation on sync/worker.py:91\nReview conversation on api/retry.py:12\n',
+  },
   { id: 'chip_long', kind: 'file', label: 'provider-registry-handoff-preamble.ts (1840-1912)', content: '' },
 ]
 const CHIP_DRAFT = `Compare ${CHIP_PILLS.map((pill) => `[[pill:${pill.id}]]`).join(' ')} and tell me which one is wrong.`
 
 async function captureComposerChips(win, theme) {
-  await win.evaluate(({ id, pills, draft }) => {
-    const drafts = JSON.parse(localStorage.getItem('switchboard.drafts') ?? '{}')
-    const pillsBySession = JSON.parse(localStorage.getItem('switchboard.draftPills') ?? '{}')
-    localStorage.setItem('switchboard.drafts', JSON.stringify({ ...drafts, [id]: draft }))
-    localStorage.setItem('switchboard.draftPills', JSON.stringify({ ...pillsBySession, [id]: pills }))
-  }, { id: CHIP_CHAT.id, pills: CHIP_PILLS, draft: CHIP_DRAFT })
+  await win.evaluate(
+    ({ id, pills, draft }) => {
+      const drafts = JSON.parse(localStorage.getItem('switchboard.drafts') ?? '{}')
+      const pillsBySession = JSON.parse(localStorage.getItem('switchboard.draftPills') ?? '{}')
+      localStorage.setItem('switchboard.drafts', JSON.stringify({ ...drafts, [id]: draft }))
+      localStorage.setItem('switchboard.draftPills', JSON.stringify({ ...pillsBySession, [id]: pills }))
+    },
+    { id: CHIP_CHAT.id, pills: CHIP_PILLS, draft: CHIP_DRAFT },
+  )
   await win.reload()
   await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
   await win.addStyleTag({ content: `${FREEZE_CSS} .turn-timestamp { visibility: hidden !important; }` })
@@ -1006,7 +1169,10 @@ async function captureComposerChips(win, theme) {
   const composer = win.locator('.chat-composer').first()
   const chips = composer.locator('[data-pill-chip]')
   await chips.nth(CHIP_PILLS.length - 1).waitFor({ state: 'visible', timeout: 20_000 })
-  if (await chips.count() !== CHIP_PILLS.length) screenFailures.push(`composer-chips-${theme.toLowerCase()}: expected ${CHIP_PILLS.length} chips, found ${await chips.count()}`)
+  if ((await chips.count()) !== CHIP_PILLS.length)
+    screenFailures.push(
+      `composer-chips-${theme.toLowerCase()}: expected ${CHIP_PILLS.length} chips, found ${await chips.count()}`,
+    )
   await snapScreen(win, 'composer-chips', theme, composer)
   // The hover card: settle() parks the pointer, so hover after it and wait for the card.
   await settle(win)
@@ -1059,7 +1225,16 @@ async function launchSwitchboard({ userData = userDataDir, demo = false } = {}) 
   // scale (Retina or not), sRGB output whatever the display's colour profile,
   // the window size, the terminal's shell prompt and the time zone.
   const demoEnv = demo
-    ? { SB_DEMO_ADAPTER: '1', SB_DEMO_NOW: String(FROZEN_NOW), TZ: 'UTC', SHELL: '/bin/sh', PS1: 'demo@acme:$ ', ENV: '/dev/null', USER: 'developer', LOGNAME: 'developer' }
+    ? {
+        SB_DEMO_ADAPTER: '1',
+        SB_DEMO_NOW: String(FROZEN_NOW),
+        TZ: 'UTC',
+        SHELL: '/bin/sh',
+        PS1: 'demo@acme:$ ',
+        ENV: '/dev/null',
+        USER: 'developer',
+        LOGNAME: 'developer',
+      }
     : {}
   const args = demo ? ['--force-device-scale-factor=1', '--force-color-profile=srgb'] : []
   const instance = await electron.launch({
@@ -1087,11 +1262,13 @@ async function launchSwitchboard({ userData = userDataDir, demo = false } = {}) 
   await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
   // The first-launch analytics notice sits over the bottom of the sidebar and
   // swallows clicks meant for it.
-  await win.evaluate(() => Promise.all([
-    window.api.settings.set('tour.autoplay', 'false'),
-    window.api.settings.set('analytics.enabled', 'false'),
-    window.api.settings.set('analytics.noticeSeen', 'true'),
-  ]))
+  await win.evaluate(() =>
+    Promise.all([
+      window.api.settings.set('tour.autoplay', 'false'),
+      window.api.settings.set('analytics.enabled', 'false'),
+      window.api.settings.set('analytics.noticeSeen', 'true'),
+    ]),
+  )
   return { instance, win }
 }
 
@@ -1113,9 +1290,13 @@ function seedRecentConversations() {
     `INSERT INTO projects (path, name, added_at, workspace_id) VALUES (${quote(betaPath)}, 'Visual Beta Project', ${now - 2}, 'visual-beta');`,
   ]
   for (let index = 0; index < 18; index++) {
-    statements.push(`INSERT INTO conversations (id, project_path, agent_type, title, created_at, updated_at, sidebar_role) VALUES ('visual-recent-${index}', ${quote(projectPath)}, 'claude-code', 'Visual Recent ${index + 1}', ${now - index}, ${now - index}, 'managed');`)
+    statements.push(
+      `INSERT INTO conversations (id, project_path, agent_type, title, created_at, updated_at, sidebar_role) VALUES ('visual-recent-${index}', ${quote(projectPath)}, 'claude-code', 'Visual Recent ${index + 1}', ${now - index}, ${now - index}, 'managed');`,
+    )
   }
-  statements.push(`INSERT INTO bookmarks (id, session_id, project_path, session_title, agent_type, message_role, content_excerpt, message_timestamp, saved_at) VALUES ('visual-bookmark', 'visual-recent-0', ${quote(projectPath)}, 'Visual Recent 1', 'claude-code', 'assistant', 'Saved visual regression message', ${now - 5}, ${now});`)
+  statements.push(
+    `INSERT INTO bookmarks (id, session_id, project_path, session_title, agent_type, message_role, content_excerpt, message_timestamp, saved_at) VALUES ('visual-bookmark', 'visual-recent-0', ${quote(projectPath)}, 'Visual Recent 1', 'claude-code', 'assistant', 'Saved visual regression message', ${now - 5}, ${now});`,
+  )
   execFileSync('sqlite3', [join(userDataDir, 'data', 'switchboard.db'), statements.join('\n')])
   return true
 }
@@ -1146,23 +1327,29 @@ async function runBehaviourChecks() {
   await win.waitForTimeout(300)
 
   if (hasSeededRecents) {
-    await win.waitForFunction(
-      () => document.querySelectorAll('.sidebar-recent-row').length === 6,
-      null,
-      { timeout: 10_000 },
-    )
+    await win.waitForFunction(() => document.querySelectorAll('.sidebar-recent-row').length === 6, null, {
+      timeout: 10_000,
+    })
     const recentRows = win.locator('.sidebar-recent-row')
-    if (await recentRows.count() !== 6) throw new Error(`configured Recents baseline rendered ${await recentRows.count()} rows`)
+    if ((await recentRows.count()) !== 6)
+      throw new Error(`configured Recents baseline rendered ${await recentRows.count()} rows`)
     const showFiveMore = win.getByRole('button', { name: 'Show 5 more' })
     await showFiveMore.click()
-    if (await recentRows.count() !== 11) throw new Error(`first Recents page rendered ${await recentRows.count()} rows`)
+    if ((await recentRows.count()) !== 11)
+      throw new Error(`first Recents page rendered ${await recentRows.count()} rows`)
     await showFiveMore.click()
-    if (await recentRows.count() !== 16) throw new Error(`second Recents page rendered ${await recentRows.count()} rows`)
+    if ((await recentRows.count()) !== 16)
+      throw new Error(`second Recents page rendered ${await recentRows.count()} rows`)
     await win.getByRole('button', { name: 'Show 2 more' }).click()
-    if (await recentRows.count() !== 18) throw new Error(`final Recents page rendered ${await recentRows.count()} rows`)
+    if ((await recentRows.count()) !== 18)
+      throw new Error(`final Recents page rendered ${await recentRows.count()} rows`)
     await win.getByRole('button', { name: 'Show less' }).click()
-    if (await recentRows.count() !== 6) throw new Error(`collapsed Recents rendered ${await recentRows.count()} rows`)
-    if (await win.locator('.sidebar-recents .pulse, .sidebar-recents .blink, .sidebar-recents .sidebar-thread-dot').count() !== 0) {
+    if ((await recentRows.count()) !== 6) throw new Error(`collapsed Recents rendered ${await recentRows.count()} rows`)
+    if (
+      (await win
+        .locator('.sidebar-recents .pulse, .sidebar-recents .blink, .sidebar-recents .sidebar-thread-dot')
+        .count()) !== 0
+    ) {
       throw new Error('Recents rendered a generic blinking status dot')
     }
     await win.locator('.sidebar-recent-row').filter({ hasText: 'Visual Recent 1' }).click()
@@ -1170,15 +1357,15 @@ async function runBehaviourChecks() {
 
     await win.getByRole('button', { name: 'Open saved messages' }).click()
     await win.getByRole('button', { name: 'Back to threads' }).waitFor({ state: 'visible' })
-    if (await win.locator('.sidebar-saved-item').count() !== 1) {
+    if ((await win.locator('.sidebar-saved-item').count()) !== 1) {
       throw new Error(`Saved view rendered ${await win.locator('.sidebar-saved-item').count()} rows`)
     }
-    if (await win.locator('.sidebar-recent-row').count() !== 0) {
+    if ((await win.locator('.sidebar-recent-row').count()) !== 0) {
       throw new Error('Saved view left Recents mounted in the sidebar body')
     }
     await win.locator('.sidebar-root').screenshot({ path: savedScreenshotPath })
     await win.locator('.sidebar-saved-main').filter({ hasText: 'Saved visual regression message' }).click()
-    if (!await win.getByRole('button', { name: 'Back to threads' }).isVisible()) {
+    if (!(await win.getByRole('button', { name: 'Back to threads' }).isVisible())) {
       throw new Error('opening a saved message left the Saved view')
     }
     await win.getByRole('button', { name: 'Back to threads' }).click()
@@ -1191,7 +1378,9 @@ async function runBehaviourChecks() {
   await assertFullscreenFallback(win)
 
   const runtimeMode = win.locator('.runtime-mode-select').first()
-  await runtimeMode.evaluate((element) => { element.dataset.runtimeMode = 'full-access' })
+  await runtimeMode.evaluate((element) => {
+    element.dataset.runtimeMode = 'full-access'
+  })
 
   const theme = await win.evaluate(() => {
     const root = document.querySelector('#root')
@@ -1213,7 +1402,8 @@ async function runBehaviourChecks() {
     fixture.className = 'turn-activity'
     fixture.open = true
     fixture.dataset.visualFixture = 'tool-summary'
-    fixture.style.cssText = 'position:fixed;left:20px;top:20px;width:440px;height:104px;margin:0;padding:12px;background:rgb(8,10,14);z-index:99999'
+    fixture.style.cssText =
+      'position:fixed;left:20px;top:20px;width:440px;height:104px;margin:0;padding:12px;background:rgb(8,10,14);z-index:99999'
     fixture.innerHTML = `
       <summary><span data-summary-label>Used 3 tools</span></summary>
       <div class="turn-activity-body">
@@ -1271,18 +1461,26 @@ async function runBehaviourChecks() {
   await tooltip.waitFor({ state: 'visible' })
   const tooltipBox = await tooltip.boundingBox()
   const modalBox = await win.locator('.settings-page').boundingBox()
-  if (!tooltipBox || !modalBox || tooltipBox.y < modalBox.y || tooltipBox.y + tooltipBox.height > modalBox.y + modalBox.height) {
+  if (
+    !tooltipBox ||
+    !modalBox ||
+    tooltipBox.y < modalBox.y ||
+    tooltipBox.y + tooltipBox.height > modalBox.y + modalBox.height
+  ) {
     throw new Error(`update tooltip clipped: tooltip=${JSON.stringify(tooltipBox)} modal=${JSON.stringify(modalBox)}`)
   }
   const checkButtonBox = await win.getByRole('button', { name: 'Check for updates' }).boundingBox()
-  const overlaps = (a, b) => a && b && a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
+  const overlaps = (a, b) =>
+    a && b && a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
   if (overlaps(tooltipBox, checkButtonBox)) {
-    throw new Error(`update tooltip overlaps controls: tooltip=${JSON.stringify(tooltipBox)} check=${JSON.stringify(checkButtonBox)}`)
+    throw new Error(
+      `update tooltip overlaps controls: tooltip=${JSON.stringify(tooltipBox)} check=${JSON.stringify(checkButtonBox)}`,
+    )
   }
   await win.screenshot({ path: settingsScreenshotPath })
   await win.keyboard.press('Escape')
   await tooltip.waitFor({ state: 'hidden' })
-  if (!await win.locator('.settings-page').isVisible()) {
+  if (!(await win.locator('.settings-page').isVisible())) {
     throw new Error('Escape closed Settings instead of only dismissing update help')
   }
   await win.keyboard.press('Escape')
@@ -1290,11 +1488,11 @@ async function runBehaviourChecks() {
 
   // This Mac starts folded behind its summary row; expanding it must stick.
   const localMachine = win.locator('.sidebar-machine-toggle').filter({ hasText: 'This Mac' })
-  if (await localMachine.getAttribute('aria-expanded') !== 'false') {
+  if ((await localMachine.getAttribute('aria-expanded')) !== 'false') {
     throw new Error('This Mac did not start collapsed')
   }
   await localMachine.click()
-  if (await localMachine.getAttribute('aria-expanded') !== 'true') {
+  if ((await localMachine.getAttribute('aria-expanded')) !== 'true') {
     throw new Error('This Mac did not expand before relaunch')
   }
 
@@ -1303,16 +1501,17 @@ async function runBehaviourChecks() {
   const relaunchedLocalMachine = relaunched.win.locator('.sidebar-machine-toggle').filter({ hasText: 'This Mac' })
   // hydrateSidebarCollapse restores the saved state after first paint, so
   // the button can be visible and still collapsed for a moment.
-  await relaunchedLocalMachine.and(relaunched.win.locator('[aria-expanded="true"]'))
+  await relaunchedLocalMachine
+    .and(relaunched.win.locator('[aria-expanded="true"]'))
     .waitFor({ state: 'visible', timeout: 10_000 })
-    .catch(() => { throw new Error('machine disclosure did not persist across relaunch') })
+    .catch(() => {
+      throw new Error('machine disclosure did not persist across relaunch')
+    })
   if (hasSeededRecents) {
-    await relaunched.win.waitForFunction(
-      () => document.querySelectorAll('.sidebar-recent-row').length === 6,
-      null,
-      { timeout: 10_000 },
-    )
-    if (await relaunched.win.locator('.sidebar-recent-row').count() !== 6) {
+    await relaunched.win.waitForFunction(() => document.querySelectorAll('.sidebar-recent-row').length === 6, null, {
+      timeout: 10_000,
+    })
+    if ((await relaunched.win.locator('.sidebar-recent-row').count()) !== 6) {
       throw new Error('Recents baseline did not persist across relaunch')
     }
     await assertWorkspaceOrderPersisted(relaunched.win)
@@ -1354,17 +1553,24 @@ try {
   if (scope !== 'screens') await runBehaviourChecks()
   if (scope !== 'behaviour') await runThemeScreens()
   if (screenFailures.length) {
-    throw new Error(`${screenFailures.length} screen(s) changed; actual + diff PNGs in ${artifactDir}\n  ${screenFailures.join('\n  ')}`)
+    throw new Error(
+      `${screenFailures.length} screen(s) changed; actual + diff PNGs in ${artifactDir}\n  ${screenFailures.join('\n  ')}`,
+    )
   }
-  console.log(`E2E PASSED${packagedExecutable ? ' (packaged)' : ''}${updateSnapshots ? ' (baselines rewritten)' : ''} - visual artifacts: ${artifactDir}`)
+  console.log(
+    `E2E PASSED${packagedExecutable ? ' (packaged)' : ''}${updateSnapshots ? ' (baselines rewritten)' : ''} - visual artifacts: ${artifactDir}`,
+  )
 } catch (error) {
   console.error(`E2E FAILED - ${error instanceof Error ? error.message : String(error)}`)
   process.exitCode = 1
   const failurePath = join(artifactDir, 'failure.png')
-  await app?.windows()[0]?.screenshot({ path: failurePath, timeout: 3_000 }).then(
-    () => console.error(`window at failure: ${failurePath}`),
-    (shotError) => console.error(`could not capture the window at failure: ${shotError}`),
-  )
+  await app
+    ?.windows()[0]
+    ?.screenshot({ path: failurePath, timeout: 3_000 })
+    .then(
+      () => console.error(`window at failure: ${failurePath}`),
+      (shotError) => console.error(`could not capture the window at failure: ${shotError}`),
+    )
   keepFailureArtifacts()
 } finally {
   await closeApp()

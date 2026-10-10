@@ -20,7 +20,7 @@ export interface ArchivedChatRow {
 }
 
 // A machine snapshot row can lack a time; it sorts last and shows none.
-const timeOf = (ms: number | undefined) => (Number.isFinite(ms) ? ms as number : 0)
+const timeOf = (ms: number | undefined) => (Number.isFinite(ms) ? (ms as number) : 0)
 
 const agentOf = (session: SessionSummary): AgentType =>
   session.agentType === 'terminal' ? 'terminal' : toAgentProvider(session.agentType ?? session.source)
@@ -48,8 +48,13 @@ export function goToChatItems(input: {
     for (const project of projects) {
       for (const session of project.sessions) {
         push({
-          session, projectPath: project.path, machineId, agent: agentOf(session),
-          title: session.title, projectName: project.name, lastActivity: timeOf(session.startedAt),
+          session,
+          projectPath: project.path,
+          machineId,
+          agent: agentOf(session),
+          title: session.title,
+          projectName: project.name,
+          lastActivity: timeOf(session.startedAt),
         })
       }
     }
@@ -58,7 +63,8 @@ export function goToChatItems(input: {
   for (const row of input.archived) {
     const session: SessionSummary = {
       id: row.id,
-      source: (row.origin_source ?? (row.agent_type === 'terminal' ? 'switchboard' : toAgentProvider(row.agent_type))) as SessionSource,
+      source: (row.origin_source ??
+        (row.agent_type === 'terminal' ? 'switchboard' : toAgentProvider(row.agent_type))) as SessionSource,
       title: row.title,
       startedAt: row.updated_at,
       messageCount: 0,
@@ -66,9 +72,13 @@ export function goToChatItems(input: {
       agentType: row.agent_type ?? null,
     }
     push({
-      session, projectPath: row.project_path, machineId: 'local', agent: agentOf(session),
+      session,
+      projectPath: row.project_path,
+      machineId: 'local',
+      agent: agentOf(session),
       title: row.title,
-      projectName: localNames.get(row.project_path) ?? row.project_path.split(/[\\/]/).filter(Boolean).pop() ?? row.project_path,
+      projectName:
+        localNames.get(row.project_path) ?? row.project_path.split(/[\\/]/).filter(Boolean).pop() ?? row.project_path,
       lastActivity: row.updated_at,
       archived: true,
     })

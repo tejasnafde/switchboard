@@ -14,7 +14,11 @@ export interface VisibleHistoryState {
  * `message` with the visible conversation in front, once, after a failed
  * native resume; otherwise unchanged. A failed read sends it without.
  */
-export async function withVisibleHistory(state: VisibleHistoryState, threadId: string, message: string): Promise<string> {
+export async function withVisibleHistory(
+  state: VisibleHistoryState,
+  threadId: string,
+  message: string,
+): Promise<string> {
   if (!state.needsVisibleHistory || !state.portableHistory) return message
   state.needsVisibleHistory = false
   try {

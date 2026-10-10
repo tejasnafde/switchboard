@@ -33,7 +33,9 @@ describe('startUpdateScheduler', () => {
     vi.useRealTimers()
   })
 
-  function fakeState(overrides: Partial<{ checkInFlight: boolean; downloadInFlight: boolean; downloaded: boolean }> = {}) {
+  function fakeState(
+    overrides: Partial<{ checkInFlight: boolean; downloadInFlight: boolean; downloaded: boolean }> = {},
+  ) {
     return { checkInFlight: false, downloadInFlight: false, downloaded: false, ...overrides }
   }
 

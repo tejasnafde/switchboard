@@ -17,10 +17,12 @@ const FIXTURE = join(__dirname, '../fixtures/model-catalog.json')
 
 describe('model catalog fixture', () => {
   it('matches src/shared/models.ts', () => {
-    const catalog = Object.fromEntries((['claude-code', 'codex', 'opencode'] as const).map((agent) => [
-      agent,
-      modelsForAgent(agent).map(({ id, label, tier }) => ({ id, label, tier })),
-    ]))
+    const catalog = Object.fromEntries(
+      (['claude-code', 'codex', 'opencode'] as const).map((agent) => [
+        agent,
+        modelsForAgent(agent).map(({ id, label, tier }) => ({ id, label, tier })),
+      ]),
+    )
     const expected = `${JSON.stringify(catalog, null, 2)}\n`
     if (process.env.SB_UPDATE_FIXTURES === '1') writeFileSync(FIXTURE, expected)
     expect(

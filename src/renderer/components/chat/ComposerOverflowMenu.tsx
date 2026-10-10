@@ -47,7 +47,13 @@ export function ComposerOverflowMenu({ entries }: { entries: OverflowEntry[] }) 
   }
 
   return (
-    <Popover open={open} onOpenChange={(next) => { if (next) setOpen(true); else close() }}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (next) setOpen(true)
+        else close()
+      }}
+    >
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -97,7 +103,9 @@ function OverflowRows({ entries, onOpenEntry }: { entries: OverflowEntry[]; onOp
   const rows = () => Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
 
   // On open, and on the way back from a list.
-  useEffect(() => { rows()[0]?.focus() }, [])
+  useEffect(() => {
+    rows()[0]?.focus()
+  }, [])
 
   const moveFocus = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
@@ -122,7 +130,9 @@ function OverflowRows({ entries, onOpenEntry }: { entries: OverflowEntry[]; onOp
           {entry.icon}
           <span className="shrink-0">{entry.name}</span>
           <span className="ml-auto min-w-0 truncate font-[500] text-[var(--text-primary)]">{entry.valueText}</span>
-          <span aria-hidden className="shrink-0 text-[11px] text-[var(--text-muted)]">›</span>
+          <span aria-hidden className="shrink-0 text-[11px] text-[var(--text-muted)]">
+            ›
+          </span>
         </button>
       ))}
     </div>

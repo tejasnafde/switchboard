@@ -83,7 +83,7 @@ describe('BridgeServer', () => {
     const socket = connectAndHello('/p')
     socket.emit(
       'message',
-      Buffer.from(JSON.stringify({ type: 'selection', path: '/p/a.ts', startLine: 1, endLine: 3, text: 'x' }))
+      Buffer.from(JSON.stringify({ type: 'selection', path: '/p/a.ts', startLine: 1, endLine: 3, text: 'x' })),
     )
     expect(selections).toEqual([{ type: 'selection', path: '/p/a.ts', startLine: 1, endLine: 3, text: 'x' }])
   })

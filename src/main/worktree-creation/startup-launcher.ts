@@ -37,7 +37,11 @@ function rootedCwd(worktreePath: string, cwd: string | undefined): string {
   const root = resolve(worktreePath)
   const candidate = resolve(root, cwd ?? '.')
   const fromRoot = relative(root, candidate)
-  if (fromRoot === '..' || fromRoot.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) || isAbsolute(fromRoot)) {
+  if (
+    fromRoot === '..' ||
+    fromRoot.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) ||
+    isAbsolute(fromRoot)
+  ) {
     throw new Error('Launch config terminal cwd escapes the worktree.')
   }
   return candidate
@@ -47,9 +51,10 @@ function selectedConfig(yaml: string | null, requestedName: string | undefined):
   if (!yaml) return { terminals: [] }
   const file = parseLaunchConfigFile(yaml)
   const configs = file.configs ?? {}
-  return (requestedName ? configs[requestedName] : undefined) ??
-    configs.default ??
-    { terminals: file.terminals, ...(file.rows ? { rows: file.rows } : {}) }
+  return (
+    (requestedName ? configs[requestedName] : undefined) ??
+    configs.default ?? { terminals: file.terminals, ...(file.rows ? { rows: file.rows } : {}) }
+  )
 }
 
 function configTerminals(config: LaunchConfig): Array<{
@@ -84,10 +89,7 @@ export class WorktreeLaunchConfigTerminalProvisioner implements WorktreeTerminal
   }): Promise<ManagedTerminalProvisioningResult> {
     let terminals: ManagedTerminalSpec[]
     try {
-      const config = selectedConfig(
-        this.readConfig(input.projectPath),
-        input.launch.launchConfigName,
-      )
+      const config = selectedConfig(this.readConfig(input.projectPath), input.launch.launchConfigName)
       terminals = configTerminals(config).map(({ terminal, position }) => ({
         id: stableTerminalId(input.creationId, position),
         cwd: rootedCwd(input.worktreePath, terminal.cwd),
@@ -169,11 +171,12 @@ export class ProviderWorktreeStartupLauncher implements WorktreeStartupLauncherP
         ...(initialAgent.runtimeMode ? { runtimeMode: initialAgent.runtimeMode } : {}),
       })
       return {
-        status: result.status === 'accepted'
-          ? 'succeeded' as const
-          : result.status === 'pending' || result.status === 'ambiguous'
-            ? 'ambiguous' as const
-            : 'failed' as const,
+        status:
+          result.status === 'accepted'
+            ? ('succeeded' as const)
+            : result.status === 'pending' || result.status === 'ambiguous'
+              ? ('ambiguous' as const)
+              : ('failed' as const),
         terminalIds,
         providerThreadId: session.threadId,
         initialPromptOrigin: input.initialPromptOrigin,

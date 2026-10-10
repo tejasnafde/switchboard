@@ -4,7 +4,12 @@
  * rules that show them.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
-import { useAgentStore, setStoreDefaultRuntimeMode, defaultRuntimeModeFor, projectRuntimeModeOverride } from '../../src/renderer/stores/agent-store'
+import {
+  useAgentStore,
+  setStoreDefaultRuntimeMode,
+  defaultRuntimeModeFor,
+  projectRuntimeModeOverride,
+} from '../../src/renderer/stores/agent-store'
 import { useProjectSettingsStore, effectiveLocalSetting } from '../../src/renderer/stores/project-settings-store'
 import { resolveCardRuntimeMode } from '../../src/renderer/components/kanban/card-launch'
 import {
@@ -25,7 +30,9 @@ const OTHER = '/work/other'
 beforeEach(() => {
   useAgentStore.setState({ sessions: [], activeSessionId: null })
   setStoreDefaultRuntimeMode('accept-edits')
-  useProjectSettingsStore.setState({ byProject: { [APP]: { 'chat.defaultRuntimeMode': 'plan', 'chat.followUpDefault': 'queue' }, [OTHER]: {} } })
+  useProjectSettingsStore.setState({
+    byProject: { [APP]: { 'chat.defaultRuntimeMode': 'plan', 'chat.followUpDefault': 'queue' }, [OTHER]: {} },
+  })
 })
 
 describe('runtime mode for new chats', () => {
@@ -46,7 +53,7 @@ describe('runtime mode for new chats', () => {
     expect(defaultRuntimeModeFor(null)).toBe('accept-edits')
   })
 
-  it('gives a kanban card with no mode of its own no mode, so the backend picks the project\'s', async () => {
+  it("gives a kanban card with no mode of its own no mode, so the backend picks the project's", async () => {
     expect(await resolveCardRuntimeMode(null, null)).toBeUndefined()
   })
 
@@ -72,11 +79,13 @@ describe('Settings project scope', () => {
     ])
   })
 
-  it('shows a scopable row\'s effective value and marks an override; disables the rest of the page', () => {
+  it("shows a scopable row's effective value and marks an override; disables the rest of the page", () => {
     const overrides = useProjectSettingsStore.getState().byProject[APP]
     expect(scopedRow(SETTING_ROW.followUp, APP, 'steer', overrides)).toEqual({ value: 'queue', overridden: true })
     expect(scopedRow(SETTING_ROW.fileDiffs, APP, 'false', overrides)).toEqual({ value: 'false', overridden: false })
-    expect(scopedRow(SETTING_ROW.streaming, APP, 'true', overrides)).toMatchObject({ disabledReason: NOT_SCOPABLE_REASON })
+    expect(scopedRow(SETTING_ROW.streaming, APP, 'true', overrides)).toMatchObject({
+      disabledReason: NOT_SCOPABLE_REASON,
+    })
     expect(scopedRow(SETTING_ROW.streaming, null, 'true', overrides)).toEqual({ value: 'true', overridden: false })
     // Rows off Chat & agents are never scoped.
     expect(scopedRow(SETTING_ROW.theme, APP, 'dark', overrides)).toEqual({ value: 'dark', overridden: false })

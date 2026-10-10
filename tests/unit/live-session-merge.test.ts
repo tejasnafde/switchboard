@@ -124,12 +124,14 @@ describe('mergeLiveSessions', () => {
 
   it('is a no-op when nothing is running', () => {
     const existing = [{ id: 'a', status: 'idle', messages: [] }]
-    expect(mergeLiveSessions<Existing>({
-      existing,
-      live: [],
-      create: (s) => ({ id: s.threadId, status: s.status, messages: [] }),
-      applyStatus: (row, status) => ({ ...row, status }),
-    })).toEqual(existing)
+    expect(
+      mergeLiveSessions<Existing>({
+        existing,
+        live: [],
+        create: (s) => ({ id: s.threadId, status: s.status, messages: [] }),
+        applyStatus: (row, status) => ({ ...row, status }),
+      }),
+    ).toEqual(existing)
   })
 
   it('does not duplicate a session the backend reports twice', () => {
@@ -155,7 +157,9 @@ describe('settleSessionsNotLive (after a resume gap)', () => {
 
   it('leaves rows the backend still has to the live merge', () => {
     const rows = [row('a', 'running')]
-    const live = [{ threadId: 'a', provider: 'claude', status: 'running', runtimeMode: 'sandbox', cwd: '/', createdAt: 0 }]
+    const live = [
+      { threadId: 'a', provider: 'claude', status: 'running', runtimeMode: 'sandbox', cwd: '/', createdAt: 0 },
+    ]
     expect(settleSessionsNotLive(rows, live, inLocal)).toBe(rows)
   })
 })

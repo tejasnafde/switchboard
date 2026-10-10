@@ -10,33 +10,41 @@ describe('release signing mode', () => {
   })
 
   it('enables signed and notarized macOS packaging only for a complete set', () => {
-    expect(classifySigningEnvironment('mac', {
-      CSC_LINK: 'certificate',
-      CSC_KEY_PASSWORD: 'password',
-      APPLE_ID: 'developer@example.test',
-      APPLE_APP_SPECIFIC_PASSWORD: 'app-password',
-      APPLE_TEAM_ID: 'TEAMID',
-    })).toEqual({ mode: 'signed', missing: [] })
+    expect(
+      classifySigningEnvironment('mac', {
+        CSC_LINK: 'certificate',
+        CSC_KEY_PASSWORD: 'password',
+        APPLE_ID: 'developer@example.test',
+        APPLE_APP_SPECIFIC_PASSWORD: 'app-password',
+        APPLE_TEAM_ID: 'TEAMID',
+      }),
+    ).toEqual({ mode: 'signed', missing: [] })
   })
 
   it('enables Windows Authenticode only for a complete set', () => {
-    expect(classifySigningEnvironment('windows', {
-      WIN_CSC_LINK: 'certificate',
-      WIN_CSC_KEY_PASSWORD: 'password',
-    })).toEqual({ mode: 'signed', missing: [] })
+    expect(
+      classifySigningEnvironment('windows', {
+        WIN_CSC_LINK: 'certificate',
+        WIN_CSC_KEY_PASSWORD: 'password',
+      }),
+    ).toEqual({ mode: 'signed', missing: [] })
   })
 
   it('fails closed and reports names, never values, for partial configuration', () => {
-    expect(classifySigningEnvironment('mac', {
-      CSC_LINK: 'do-not-print-this',
-      APPLE_ID: 'developer@example.test',
-    })).toEqual({
+    expect(
+      classifySigningEnvironment('mac', {
+        CSC_LINK: 'do-not-print-this',
+        APPLE_ID: 'developer@example.test',
+      }),
+    ).toEqual({
       mode: 'invalid',
       missing: ['CSC_KEY_PASSWORD', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID'],
     })
-    expect(classifySigningEnvironment('windows', {
-      WIN_CSC_KEY_PASSWORD: 'do-not-print-this',
-    })).toEqual({ mode: 'invalid', missing: ['WIN_CSC_LINK'] })
+    expect(
+      classifySigningEnvironment('windows', {
+        WIN_CSC_KEY_PASSWORD: 'do-not-print-this',
+      }),
+    ).toEqual({ mode: 'invalid', missing: ['WIN_CSC_LINK'] })
   })
 
   it('keeps signing requirements in the production overlay', () => {

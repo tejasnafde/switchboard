@@ -73,9 +73,7 @@ function userHasContent(message: unknown): boolean {
     // parser hides them from the user-facing transcript. An image block
     // with no surrounding text is still "visible" because Switchboard
     // keeps image-only user messages.
-    const onlyToolResults = m.content.every((b: Record<string, unknown>) =>
-      b.type === 'tool_result',
-    )
+    const onlyToolResults = m.content.every((b: Record<string, unknown>) => b.type === 'tool_result')
     if (onlyToolResults) return false
     return true
   }
@@ -94,17 +92,20 @@ export function assembleClaudeForkAtEvent(
   anchorEventId: string,
   opts: TruncateClaudeOptions = {},
 ): TruncateClaudeAtEventResult {
-  const parsedFragments = fragments.map((content) => content.split('\n').flatMap((raw) => {
-    const trimmed = raw.trim()
-    if (!trimmed) return []
-    try {
-      return [{ parsed: JSON.parse(trimmed) as Record<string, unknown> }]
-    } catch {
-      return []
-    }
-  }))
-  const matches = parsedFragments.flat().filter(({ parsed }) =>
-    isClaudeVisible(parsed) && parsed.uuid === anchorEventId)
+  const parsedFragments = fragments.map((content) =>
+    content.split('\n').flatMap((raw) => {
+      const trimmed = raw.trim()
+      if (!trimmed) return []
+      try {
+        return [{ parsed: JSON.parse(trimmed) as Record<string, unknown> }]
+      } catch {
+        return []
+      }
+    }),
+  )
+  const matches = parsedFragments
+    .flat()
+    .filter(({ parsed }) => isClaudeVisible(parsed) && parsed.uuid === anchorEventId)
   if (matches.length !== 1) {
     return {
       newContent: '',

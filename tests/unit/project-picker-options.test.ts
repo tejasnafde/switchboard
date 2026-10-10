@@ -3,10 +3,24 @@ import type { SessionSummary, Workspace } from '@shared/types'
 import { projectPickerOptions, type PickerProject } from '../../src/renderer/components/settings/project-picker-options'
 
 const session = (startedAt: number) => ({ startedAt }) as SessionSummary
-const project = (name: string, workspaceId: string | null, starts: number[] = [], path = `/p/${name}`): PickerProject => ({
-  path, name, workspaceId, sessions: starts.map(session),
+const project = (
+  name: string,
+  workspaceId: string | null,
+  starts: number[] = [],
+  path = `/p/${name}`,
+): PickerProject => ({
+  path,
+  name,
+  workspaceId,
+  sessions: starts.map(session),
 })
-const workspace = (id: string, name: string, sortOrder: number): Workspace => ({ id, name, sortOrder, color: null, createdAt: 0 })
+const workspace = (id: string, name: string, sortOrder: number): Workspace => ({
+  id,
+  name,
+  sortOrder,
+  color: null,
+  createdAt: 0,
+})
 
 const rows = (options: ReturnType<typeof projectPickerOptions>) => options.map((o) => `${o.group}:${o.label}`)
 
@@ -37,20 +51,29 @@ describe('projectPickerOptions', () => {
   })
 
   it('names the only group "Projects" when there is nothing recent and no workspace', () => {
-    expect(rows(projectPickerOptions([project('a', null), project('b', null)], []))).toEqual(['Projects:a', 'Projects:b'])
+    expect(rows(projectPickerOptions([project('a', null), project('b', null)], []))).toEqual([
+      'Projects:a',
+      'Projects:b',
+    ])
   })
 
   it('treats a project in a deleted workspace as ungrouped', () => {
     const workspaces = [workspace('w', 'Work', 0)]
-    expect(rows(projectPickerOptions([project('a', 'w'), project('b', 'gone')], workspaces))).toEqual(['Work:a', 'Ungrouped:b'])
+    expect(rows(projectPickerOptions([project('a', 'w'), project('b', 'gone')], workspaces))).toEqual([
+      'Work:a',
+      'Ungrouped:b',
+    ])
   })
 
   it('uses the path as the value and a search keyword, and tells same-named projects apart', () => {
-    const options = projectPickerOptions([
-      project('api', null, [], '/work/acme/api'),
-      project('api', null, [], '/home/side/api'),
-      project('web', null, [], '/work/acme/web'),
-    ], [])
+    const options = projectPickerOptions(
+      [
+        project('api', null, [], '/work/acme/api'),
+        project('api', null, [], '/home/side/api'),
+        project('web', null, [], '/work/acme/web'),
+      ],
+      [],
+    )
     expect(options.map((o) => [o.value, o.hint, o.keywords])).toEqual([
       ['/work/acme/api', 'acme', ['/work/acme/api']],
       ['/home/side/api', 'side', ['/home/side/api']],

@@ -179,22 +179,28 @@ describe('synthetic API-error assistant messages', () => {
     const send = (m: object) => (adapter as any).handleSDKMessage('thread-1', active, m)
     send(apiError("You've hit your org's monthly spend limit", 'rate_limit'))
     send({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour' } })
-    const errors = active.onEvent.mock.calls
-      .map((c) => c[0] as RuntimeEvent)
-      .filter((e) => e.type === 'error')
+    const errors = active.onEvent.mock.calls.map((c) => c[0] as RuntimeEvent).filter((e) => e.type === 'error')
     // Exactly one card, from rate_limit_event, which knows the window and reset.
     expect(errors).toHaveLength(1)
     expect((errors[0] as { message: string }).message).toMatch(/rate limit/i)
   })
 
   it('ignores a subagent API error - the parent turn often recovers', () => {
-    expect(dispatch(apiError('API Error: 529 Overloaded', 'server_error', {
-      parent_tool_use_id: 'toolu_123',
-    }))).toEqual([])
+    expect(
+      dispatch(
+        apiError('API Error: 529 Overloaded', 'server_error', {
+          parent_tool_use_id: 'toolu_123',
+        }),
+      ),
+    ).toEqual([])
   })
 
   it('falls back to a named message when the error block carries no text', () => {
-    const events = dispatch({ type: 'assistant', error: 'overloaded_error', message: { role: 'assistant', content: [] } })
+    const events = dispatch({
+      type: 'assistant',
+      error: 'overloaded_error',
+      message: { role: 'assistant', content: [] },
+    })
     expect((events[0] as { message: string }).message).toContain('overloaded_error')
   })
 

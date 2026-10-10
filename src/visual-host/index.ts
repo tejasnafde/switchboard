@@ -44,7 +44,8 @@ function parseRequest(data: unknown): VisualHostRequest {
   const theme = raw.theme as Record<string, unknown>
   if (raw.kind !== 'mermaid' && raw.kind !== 'chart') throw new Error('bad kind')
   if (typeof raw.source !== 'string' || raw.source.length > MAX_VISUAL_SOURCE_CHARS) throw new Error('bad source')
-  if (!Array.isArray(theme?.series) || theme.series.length === 0 || theme.series.length > 8) throw new Error('bad theme')
+  if (!Array.isArray(theme?.series) || theme.series.length === 0 || theme.series.length > 8)
+    throw new Error('bad theme')
   return {
     kind: raw.kind,
     source: raw.source,
@@ -70,7 +71,11 @@ async function draw(request: VisualHostRequest): Promise<string> {
     const parsed = parseChartSpec(request.source)
     if (!parsed.ok) throw new Error(parsed.error)
     // The page is as wide as the WebView; #root has 8px padding.
-    return renderChart(parsed.spec, { text: theme.text, muted: theme.muted, grid: theme.border, font: theme.font, series: theme.series }, window.innerWidth - 16)
+    return renderChart(
+      parsed.spec,
+      { text: theme.text, muted: theme.muted, grid: theme.border, font: theme.font, series: theme.series },
+      window.innerWidth - 16,
+    )
   }
   const result = await renderDiagram(request.source, theme)
   if (!result.ok) throw new Error(result.error)
@@ -87,7 +92,10 @@ async function onMessage(event: MessageEvent): Promise<void> {
   const reply = (answer: object): void => {
     const text = JSON.stringify(answer)
     if (port) port.postMessage(text)
-    else (window as unknown as { ReactNativeWebView?: { postMessage(m: string): void } }).ReactNativeWebView?.postMessage(text)
+    else
+      (window as unknown as { ReactNativeWebView?: { postMessage(m: string): void } }).ReactNativeWebView?.postMessage(
+        text,
+      )
   }
   try {
     const markup = await draw(parseRequest(event.data))
@@ -96,10 +104,17 @@ async function onMessage(event: MessageEvent): Promise<void> {
     await new Promise((resolve) => requestAnimationFrame(resolve))
     reply({ type: 'drawn', height: Math.ceil(root.getBoundingClientRect().height), svg: markup })
   } catch (error) {
-    reply({ type: 'error', error: error instanceof Error ? error.message.slice(0, 400) : 'The visual could not be drawn.' })
+    reply({
+      type: 'error',
+      error: error instanceof Error ? error.message.slice(0, 400) : 'The visual could not be drawn.',
+    })
   }
 }
 
-window.addEventListener('message', (event) => { void onMessage(event) })
+window.addEventListener('message', (event) => {
+  void onMessage(event)
+})
 // react-native-webview delivers to document on Android.
-document.addEventListener('message', (event) => { void onMessage(event as MessageEvent) })
+document.addEventListener('message', (event) => {
+  void onMessage(event as MessageEvent)
+})

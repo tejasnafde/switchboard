@@ -22,7 +22,8 @@ export interface ForkSourceExecution {
   title: string
 }
 
-type ForkSourceRow = Pick<ConversationRow,
+type ForkSourceRow = Pick<
+  ConversationRow,
   | 'id'
   | 'project_path'
   | 'agent_type'
@@ -38,10 +39,7 @@ type ForkSourceRow = Pick<ConversationRow,
   | 'launch_config_name'
 >
 
-export function projectForkSourceExecution(
-  row: ForkSourceRow,
-  context: { machineId: string },
-): ForkSourceExecution {
+export function projectForkSourceExecution(row: ForkSourceRow, context: { machineId: string }): ForkSourceExecution {
   if (!isAgentProvider(row.agent_type)) {
     throw new Error(`fork: unsupported provider ${row.agent_type}`)
   }

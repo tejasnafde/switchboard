@@ -1,9 +1,5 @@
 import type Database from 'better-sqlite3'
-import {
-  formatMergeBackMarker,
-  type MergeBackCursor,
-  type MergeBackRow,
-} from '../../shared/merge-back'
+import { formatMergeBackMarker, type MergeBackCursor, type MergeBackRow } from '../../shared/merge-back'
 
 /**
  * A fork's merge-back to its parent (shared/merge-back.ts), stored so it
@@ -107,21 +103,28 @@ export class SqliteMergeBackStore {
 
   /** The end of the fork's last delivered merge-back, or null before the first. */
   cursorFor(forkId: string): MergeBackCursor | null {
-    const row = this.database().prepare('SELECT cursor_json FROM fork_merge_back_cursors WHERE fork_id = ?')
+    const row = this.database()
+      .prepare('SELECT cursor_json FROM fork_merge_back_cursors WHERE fork_id = ?')
       .get(forkId) as { cursor_json: string } | undefined
-    return row ? JSON.parse(row.cursor_json) as MergeBackCursor : null
+    return row ? (JSON.parse(row.cursor_json) as MergeBackCursor) : null
   }
 
   pendingFor(parentId: string): StoredMergeBack[] {
-    return (this.database().prepare(`
+    return (
+      this.database()
+        .prepare(`
       SELECT * FROM fork_merge_backs WHERE parent_id = ? AND state = 'pending' ORDER BY created_at, id
-    `).all(parentId) as DbRow[]).map(fromDb)
+    `)
+        .all(parentId) as DbRow[]
+    ).map(fromDb)
   }
 
   pendingFromFork(forkId: string, parentId: string): StoredMergeBack | null {
-    const row = this.database().prepare(`
+    const row = this.database()
+      .prepare(`
       SELECT * FROM fork_merge_backs WHERE fork_id = ? AND parent_id = ? AND state = 'pending'
-    `).get(forkId, parentId) as DbRow | undefined
+    `)
+      .get(forkId, parentId) as DbRow | undefined
     return row ? fromDb(row) : null
   }
 
@@ -142,15 +145,30 @@ export class SqliteMergeBackStore {
     return db.transaction(() => {
       const replaced = this.pendingFromFork(input.forkId, input.parentId)
       if (replaced) {
-        db.prepare("UPDATE fork_merge_backs SET state = 'discarded', updated_at = ? WHERE id = ?").run(input.now, replaced.id)
-        db.prepare('DELETE FROM messages WHERE id = ? AND conversation_id = ?').run(replaced.messageId, replaced.parentId)
+        db.prepare("UPDATE fork_merge_backs SET state = 'discarded', updated_at = ? WHERE id = ?").run(
+          input.now,
+          replaced.id,
+        )
+        db.prepare('DELETE FROM messages WHERE id = ? AND conversation_id = ?').run(
+          replaced.messageId,
+          replaced.parentId,
+        )
       }
       const messageId = mergeBackMessageId(input.id)
       db.prepare(`
         INSERT INTO fork_merge_backs
           (id, parent_id, fork_id, state, revision, row_json, through_json, message_id, created_at, updated_at)
         VALUES (?, ?, ?, 'pending', 0, ?, ?, ?, ?, ?)
-      `).run(input.id, input.parentId, input.forkId, JSON.stringify(input.row), JSON.stringify(input.through), messageId, input.now, input.now)
+      `).run(
+        input.id,
+        input.parentId,
+        input.forkId,
+        JSON.stringify(input.row),
+        JSON.stringify(input.through),
+        messageId,
+        input.now,
+        input.now,
+      )
       db.prepare(`
         INSERT INTO messages (id, conversation_id, role, content, tool_calls, images, timestamp)
         VALUES (?, ?, 'system', ?, NULL, NULL, ?)
@@ -172,8 +190,11 @@ export class SqliteMergeBackStore {
         UPDATE fork_merge_backs SET row_json = ?, revision = revision + 1, updated_at = ?
          WHERE id = ? AND state = 'pending'
       `).run(JSON.stringify(row), now, id)
-      db.prepare('UPDATE messages SET content = ? WHERE id = ? AND conversation_id = ?')
-        .run(formatMergeBackMarker(row), current.messageId, current.parentId)
+      db.prepare('UPDATE messages SET content = ? WHERE id = ? AND conversation_id = ?').run(
+        formatMergeBackMarker(row),
+        current.messageId,
+        current.parentId,
+      )
       return this.get(id)
     })()
   }
@@ -184,7 +205,9 @@ export class SqliteMergeBackStore {
     return db.transaction(() => {
       const current = this.get(id)
       if (!current || current.state !== 'pending') return null
-      db.prepare("UPDATE fork_merge_backs SET state = 'discarded', updated_at = ? WHERE id = ? AND state = 'pending'").run(now, id)
+      db.prepare(
+        "UPDATE fork_merge_backs SET state = 'discarded', updated_at = ? WHERE id = ? AND state = 'pending'",
+      ).run(now, id)
       db.prepare('DELETE FROM messages WHERE id = ? AND conversation_id = ?').run(current.messageId, current.parentId)
       return current
     })()
@@ -204,20 +227,29 @@ export class SqliteMergeBackStore {
   ): DeliveredMergeBack[] {
     const delivered: DeliveredMergeBack[] = []
     for (const { id, revision } of sent) {
-      const changed = db.prepare(`
+      const changed = db
+        .prepare(`
         UPDATE fork_merge_backs SET state = 'delivered', updated_at = ?
          WHERE id = ? AND state = 'pending' AND revision = ?
-      `).run(acceptedAt, id, revision).changes
+      `)
+        .run(acceptedAt, id, revision).changes
       if (changed !== 1) continue
       const row = db.prepare('SELECT * FROM fork_merge_backs WHERE id = ?').get(id) as DbRow
       const stored = fromDb(row)
       const content = formatMergeBackMarker({ ...stored.row, state: 'delivered' })
       const at = acceptedAt - 1
-      db.prepare('UPDATE fork_merge_backs SET row_json = ? WHERE id = ?')
-        .run(JSON.stringify({ ...stored.row, state: 'delivered' }), id)
-      db.prepare('UPDATE messages SET content = ?, timestamp = ? WHERE id = ? AND conversation_id = ?')
-        .run(content, at, stored.messageId, stored.parentId)
-      const previous = db.prepare('SELECT cursor_json FROM fork_merge_back_cursors WHERE fork_id = ?')
+      db.prepare('UPDATE fork_merge_backs SET row_json = ? WHERE id = ?').run(
+        JSON.stringify({ ...stored.row, state: 'delivered' }),
+        id,
+      )
+      db.prepare('UPDATE messages SET content = ?, timestamp = ? WHERE id = ? AND conversation_id = ?').run(
+        content,
+        at,
+        stored.messageId,
+        stored.parentId,
+      )
+      const previous = db
+        .prepare('SELECT cursor_json FROM fork_merge_back_cursors WHERE fork_id = ?')
         .get(stored.forkId) as { cursor_json: string } | undefined
       const previousAt = previous ? (JSON.parse(previous.cursor_json) as MergeBackCursor).at : -Infinity
       // Never backwards, whatever order deliveries commit in.

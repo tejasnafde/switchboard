@@ -21,27 +21,42 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const scratch = []
-const mk = (p) => { const d = mkdtempSync(join(tmpdir(), p)); scratch.push(d); return d }
-process.on('exit', () => { for (const d of scratch) rmSync(d, { recursive: true, force: true }) })
+const mk = (p) => {
+  const d = mkdtempSync(join(tmpdir(), p))
+  scratch.push(d)
+  return d
+}
+process.on('exit', () => {
+  for (const d of scratch) rmSync(d, { recursive: true, force: true })
+})
 
 const results = []
-const check = (name, ok, detail = '') => { results.push({ ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`) }
+const check = (name, ok, detail = '') => {
+  results.push({ ok })
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`)
+}
 
 const userData = mk('sb-prepend-ud-')
 const project = realpathSync(mk('sb-prepend-proj-'))
 const db = join(userData, 'data', 'switchboard.db')
 
 async function launch() {
-  const app = await electron.launch({ args: ['.'], cwd: repoRoot, timeout: 30_000,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '', SB_USER_DATA: userData, SB_DEMO_ADAPTER: '1', SHELL: '/bin/sh' } })
+  const app = await electron.launch({
+    args: ['.'],
+    cwd: repoRoot,
+    timeout: 30_000,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '', SB_USER_DATA: userData, SB_DEMO_ADAPTER: '1', SHELL: '/bin/sh' },
+  })
   const win = await app.firstWindow({ timeout: 20_000 })
   win.on('pageerror', (e) => console.error('pageerror', e.message))
   await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
-  await win.evaluate(() => Promise.all([
-    window.api.settings.set('tour.autoplay', 'false'),
-    window.api.settings.set('analytics.enabled', 'false'),
-    window.api.settings.set('analytics.noticeSeen', 'true'),
-  ]))
+  await win.evaluate(() =>
+    Promise.all([
+      window.api.settings.set('tour.autoplay', 'false'),
+      window.api.settings.set('analytics.enabled', 'false'),
+      window.api.settings.set('analytics.noticeSeen', 'true'),
+    ]),
+  )
   const skip = win.getByRole('button', { name: 'Skip tour' })
   if (await skip.isVisible().catch(() => false)) await skip.click()
   return { app, win }
@@ -61,9 +76,14 @@ for (let i = 0; i < ROWS; i++) {
   const user = i % 2 === 0
   // Uneven heights, far from the virtualizer's 120 px estimate either way.
   const paragraphs = user ? 1 : 1 + ((i * 7) % 11)
-  const content = Array.from({ length: paragraphs }, (_, p) =>
-    `Row ${i} paragraph ${p}. ${'The retry path keeps the state token until the exchange settles. '.repeat(1 + (i % 3))}`).join('\n\n')
-  statements.push(`INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES ('row-${i}', 'long-chat', '${user ? 'user' : 'assistant'}', ${sql(content)}, ${now - (ROWS - i) * 1000});`)
+  const content = Array.from(
+    { length: paragraphs },
+    (_, p) =>
+      `Row ${i} paragraph ${p}. ${'The retry path keeps the state token until the exchange settles. '.repeat(1 + (i % 3))}`,
+  ).join('\n\n')
+  statements.push(
+    `INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES ('row-${i}', 'long-chat', '${user ? 'user' : 'assistant'}', ${sql(content)}, ${now - (ROWS - i) * 1000});`,
+  )
 }
 const seedFile = join(userData, 'seed.sql')
 writeFileSync(seedFile, statements.join('\n'))
@@ -106,7 +126,8 @@ try {
       for (const el of list.querySelectorAll('[data-message-id]')) {
         const top = offsetOf(el)
         if (top > list.clientHeight || top + el.getBoundingClientRect().height < 0) continue
-        if (!best || Math.abs(top - target) < Math.abs(best.top - target)) best = { id: el.getAttribute('data-message-id'), top }
+        if (!best || Math.abs(top - target) < Math.abs(best.top - target))
+          best = { id: el.getAttribute('data-message-id'), top }
       }
       return best
     }
@@ -130,11 +151,19 @@ try {
     const onScroll = () => sample('scroll')
     list.addEventListener('scroll', onScroll, true)
     let sampling = true
-    const loop = () => { if (!sampling) return; sample('frame'); requestAnimationFrame(loop) }
+    const loop = () => {
+      if (!sampling) return
+      sample('frame')
+      requestAnimationFrame(loop)
+    }
     requestAnimationFrame(loop)
 
     // A prepend shifts every turn's index by the number of turns added.
-    const turnIndexOf = (id) => Number(list.querySelector(`[data-message-id="${id}"]`)?.closest('[data-virtual-turn]')?.getAttribute('data-index') ?? NaN)
+    const turnIndexOf = (id) =>
+      Number(
+        list.querySelector(`[data-message-id="${id}"]`)?.closest('[data-virtual-turn]')?.getAttribute('data-index') ??
+          NaN,
+      )
     let prependedAtScrollTop = null
     for (let step = 0; step < 400 && prependedAtScrollTop === null; step++) {
       baseline = null
@@ -154,13 +183,25 @@ try {
     resize.disconnect()
     mutations.disconnect()
     list.removeEventListener('scroll', onScroll, true)
-    return { failures: failures.slice(0, 10), failureCount: failures.length, strays: strays.slice(0, 3), samples, prependedAtScrollTop }
+    return {
+      failures: failures.slice(0, 10),
+      failureCount: failures.length,
+      strays: strays.slice(0, 3),
+      samples,
+      prependedAtScrollTop,
+    }
   })
 
-  check('the previous window loads before the user reaches the top', report.prependedAtScrollTop !== null && report.prependedAtScrollTop > 1000,
-    `scrollTop when it landed: ${report.prependedAtScrollTop}`)
-  check('the row in view never moves or unmounts while rows are prepended and measured', report.failureCount === 0,
-    `${report.failureCount} of ${report.samples} samples: ${JSON.stringify(report.failures)}`)
+  check(
+    'the previous window loads before the user reaches the top',
+    report.prependedAtScrollTop !== null && report.prependedAtScrollTop > 1000,
+    `scrollTop when it landed: ${report.prependedAtScrollTop}`,
+  )
+  check(
+    'the row in view never moves or unmounts while rows are prepended and measured',
+    report.failureCount === 0,
+    `${report.failureCount} of ${report.samples} samples: ${JSON.stringify(report.failures)}`,
+  )
   check('no loading row appears in the list', report.strays.length === 0, JSON.stringify(report.strays))
 } catch (e) {
   check('unexpected error', false, e.message.split('\n').slice(0, 3).join(' / '))

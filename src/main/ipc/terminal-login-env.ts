@@ -44,9 +44,7 @@ export function withResolvedLoginEnv(opts: TerminalCreateOptions): TerminalCreat
     throw new TerminalLoginInstanceError(err instanceof Error ? err.message : String(err))
   }
   if (!instance) {
-    throw new TerminalLoginInstanceError(
-      `No enabled ${identity.agentType} instance available to log in with.`,
-    )
+    throw new TerminalLoginInstanceError(`No enabled ${identity.agentType} instance available to log in with.`)
   }
 
   const loginEnv = resolveInstanceEnv(instance)

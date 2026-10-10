@@ -67,7 +67,7 @@ try {
 
   const created = await win.evaluate(
     (a) => window.api.machines.create({ name: 'e2e-remote', sshAlias: a, sshHost: a }),
-    alias
+    alias,
   )
   check(!!created?.id, `machine created (${created?.id})`)
 
@@ -117,9 +117,20 @@ try {
   check(healthy, 'remote code-server answers /healthz through the tunnel')
 
   // Extension stack landed on the VM.
-  const remoteExts = execFileSync('ssh', ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', alias, 'ls ~/.switchboard-server/ide-extensions 2>/dev/null'], {
-    timeout: 60_000,
-  }).toString()
+  const remoteExts = execFileSync(
+    'ssh',
+    [
+      '-o',
+      'BatchMode=yes',
+      '-o',
+      'StrictHostKeyChecking=accept-new',
+      alias,
+      'ls ~/.switchboard-server/ide-extensions 2>/dev/null',
+    ],
+    {
+      timeout: 60_000,
+    },
+  ).toString()
   check(remoteExts.includes('ms-toolsai.jupyter-'), 'jupyter extension installed on the remote')
   check(remoteExts.includes('ms-python.python-'), 'python extension installed on the remote')
 

@@ -1,18 +1,12 @@
 import { createHash } from 'node:crypto'
 import Database from 'better-sqlite3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  canonicalizeForkMessage,
-  type ForkConversationRequest,
-} from '../../src/shared/conversation-fork'
+import { canonicalizeForkMessage, type ForkConversationRequest } from '../../src/shared/conversation-fork'
 import type { ChatMessage } from '../../src/shared/types'
 import { ConversationForkCoordinator } from '../../src/main/conversations/conversation-fork-coordinator'
 import type { CanonicalForkMessage } from '../../src/main/conversations/fork-anchor'
 import type { ForkSourceExecution } from '../../src/main/conversations/fork-source'
-import {
-  ensureConversationForkSchema,
-  SqliteConversationForkStore,
-} from '../../src/main/db/conversation-fork'
+import { ensureConversationForkSchema, SqliteConversationForkStore } from '../../src/main/db/conversation-fork'
 
 const databases: Database.Database[] = []
 
@@ -137,8 +131,12 @@ function harness(options: { messageId?: string } = {}) {
         warnings: [{ code: 'transcript-handoff', message: 'Codex uses a one-time transcript handoff.' }],
         stage: { id: 'stage-1' },
       }),
-      publish: async (stage) => { published.push(stage.id) },
-      compensate: async (stage) => { compensated.push(stage.id) },
+      publish: async (stage) => {
+        published.push(stage.id)
+      },
+      compensate: async (stage) => {
+        compensated.push(stage.id)
+      },
     },
   })
   return { db, store, coordinator, loadSource, published, compensated }
@@ -171,9 +169,7 @@ describe('ConversationForkCoordinator', () => {
       },
     })
     if (outcome.kind !== 'completed') throw new Error('expected completed fork')
-    expect(outcome.result.messages.map((message) => message.id)).toEqual([
-      'fork-1:message:0', 'fork-1:message:1',
-    ])
+    expect(outcome.result.messages.map((message) => message.id)).toEqual(['fork-1:message:0', 'fork-1:message:1'])
     expect(outcome.result.messages[1].toolCalls).toEqual(assistant.toolCalls)
     expect(h.published).toEqual(['stage-1'])
   })
@@ -181,9 +177,11 @@ describe('ConversationForkCoordinator', () => {
   it('returns the durable result after response loss without reloading mutable source history', async () => {
     const h = harness()
     const first = await h.coordinator.createOrGet(request())
-    const second = await h.coordinator.createOrGet(request({
-      provenance: { surface: 'desktop', requestedAt: 999 },
-    }))
+    const second = await h.coordinator.createOrGet(
+      request({
+        provenance: { surface: 'desktop', requestedAt: 999 },
+      }),
+    )
 
     expect(second).toEqual(first)
     expect(h.loadSource).toHaveBeenCalledTimes(1)
@@ -216,10 +214,12 @@ describe('ConversationForkCoordinator', () => {
 
   it('compensates a published provider artifact when the SQLite fork commit fails', async () => {
     const h = harness({ messageId: 'existing-message' })
-    h.db.prepare(`
+    h.db
+      .prepare(`
       INSERT INTO messages (id, conversation_id, role, content, timestamp)
       VALUES ('existing-message', 'source', 'user', 'collision', 1)
-    `).run()
+    `)
+      .run()
 
     await expect(h.coordinator.createOrGet(request())).resolves.toMatchObject({
       kind: 'failed',

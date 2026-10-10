@@ -14,29 +14,59 @@ describe('runShutdownSequence', () => {
     const steps: ShutdownStep[] = [
       {
         name: 'terminals',
-        run: () => new Promise<void>((resolve) => {
-          events.push('terminals:start')
-          releaseFirst = () => { events.push('terminals:end'); resolve() }
-        }),
+        run: () =>
+          new Promise<void>((resolve) => {
+            events.push('terminals:start')
+            releaseFirst = () => {
+              events.push('terminals:end')
+              resolve()
+            }
+          }),
       },
-      { name: 'database', run: () => { events.push('database') } },
+      {
+        name: 'database',
+        run: () => {
+          events.push('database')
+        },
+      },
     ]
     const done = runShutdownSequence(steps, { log: quietLog() })
     await vi.waitFor(() => expect(events).toEqual(['terminals:start']))
     releaseFirst()
     const reports = await done
     expect(events).toEqual(['terminals:start', 'terminals:end', 'database'])
-    expect(reports.map((r) => [r.name, r.outcome])).toEqual([['terminals', 'ok'], ['database', 'ok']])
+    expect(reports.map((r) => [r.name, r.outcome])).toEqual([
+      ['terminals', 'ok'],
+      ['database', 'ok'],
+    ])
   })
 
   it('carries on past a step that throws or rejects, and logs it', async () => {
     const log = quietLog()
     const ran: string[] = []
-    const reports = await runShutdownSequence([
-      { name: 'sync-throw', run: () => { throw new Error('boom') } },
-      { name: 'async-reject', run: async () => { throw new Error('bang') } },
-      { name: 'database', run: () => { ran.push('database') } },
-    ], { log })
+    const reports = await runShutdownSequence(
+      [
+        {
+          name: 'sync-throw',
+          run: () => {
+            throw new Error('boom')
+          },
+        },
+        {
+          name: 'async-reject',
+          run: async () => {
+            throw new Error('bang')
+          },
+        },
+        {
+          name: 'database',
+          run: () => {
+            ran.push('database')
+          },
+        },
+      ],
+      { log },
+    )
     expect(ran).toEqual(['database'])
     expect(reports.map((r) => r.outcome)).toEqual(['failed', 'failed', 'ok'])
     expect(log.warn).toHaveBeenCalledTimes(2)
@@ -47,10 +77,25 @@ describe('runShutdownSequence', () => {
     const log = quietLog()
     let rejectHung!: (err: Error) => void
     const ran: string[] = []
-    const done = runShutdownSequence([
-      { name: 'providers', run: () => new Promise<void>((_, reject) => { rejectHung = reject }), timeoutMs: 5_000 },
-      { name: 'database', run: () => { ran.push('database') } },
-    ], { log })
+    const done = runShutdownSequence(
+      [
+        {
+          name: 'providers',
+          run: () =>
+            new Promise<void>((_, reject) => {
+              rejectHung = reject
+            }),
+          timeoutMs: 5_000,
+        },
+        {
+          name: 'database',
+          run: () => {
+            ran.push('database')
+          },
+        },
+      ],
+      { log },
+    )
     await vi.advanceTimersByTimeAsync(4_999)
     expect(ran).toEqual([])
     await vi.advanceTimersByTimeAsync(1)

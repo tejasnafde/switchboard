@@ -33,7 +33,16 @@ export function renderPillBody(body: string, pillsMeta: PillsMeta, messageText =
     const meta = pillsMeta[m[1]]
     if (meta) {
       const content = pillContentInMessage(meta.kind, meta.label, messageText)
-      out.push(<PillChipVisual key={key++} label={meta.label} kind={meta.kind} content={content} selectable rootProps={{ [PILL_LABEL_ATTR]: meta.label }} />)
+      out.push(
+        <PillChipVisual
+          key={key++}
+          label={meta.label}
+          kind={meta.kind}
+          content={content}
+          selectable
+          rootProps={{ [PILL_LABEL_ATTR]: meta.label }}
+        />,
+      )
     }
     cursor = m.index + m[0].length
   }

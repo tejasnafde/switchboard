@@ -12,9 +12,11 @@ import type {
 export function shouldDismissDesktopWorktreeSnapshot(snapshot: WorktreeCreationSnapshot): boolean {
   if (snapshot.cleanupDisposition === 'removed') return true
   if (snapshot.status === 'cancelled' || snapshot.status === 'rolled_back') return true
-  return snapshot.recoveryActions.length === 0
-    && (snapshot.status === 'failed' || snapshot.status === 'cleanup_required')
-    && snapshot.cleanupDisposition !== 'retained'
+  return (
+    snapshot.recoveryActions.length === 0 &&
+    (snapshot.status === 'failed' || snapshot.status === 'cleanup_required') &&
+    snapshot.cleanupDisposition !== 'retained'
+  )
 }
 
 export function retainedWorktreeCreationKey(
@@ -22,10 +24,11 @@ export function retainedWorktreeCreationKey(
   machineId: string,
 ): GetWorktreeCreationRequest | null {
   if (
-    !session.worktreeCreationId
-    || session.worktreeRecovery?.status !== 'cleanup_required'
-    || session.worktreeRecovery.cleanupDisposition !== 'retained'
-  ) return null
+    !session.worktreeCreationId ||
+    session.worktreeRecovery?.status !== 'cleanup_required' ||
+    session.worktreeRecovery.cleanupDisposition !== 'retained'
+  )
+    return null
   return { creationId: session.worktreeCreationId, machineId }
 }
 
@@ -144,9 +147,7 @@ export interface DesktopNewChatCoordinator {
   dispose(): void
 }
 
-export function createDesktopNewChatCoordinator(
-  options: DesktopNewChatCoordinatorOptions,
-): DesktopNewChatCoordinator {
+export function createDesktopNewChatCoordinator(options: DesktopNewChatCoordinatorOptions): DesktopNewChatCoordinator {
   let current: DesktopNewChatState = { status: 'idle' }
   let activeIntent: DesktopNewChatIntent | null = null
   let activeRequest: WorktreeCreationRequest | null = null
@@ -187,9 +188,7 @@ export function createDesktopNewChatCoordinator(
     if (shouldDismissDesktopWorktreeSnapshot(snapshot)) options.journal?.remove(snapshot.creationId)
     const base = {
       creationId: activeRequest.creationId,
-      conversationId: activeRequest.owner.kind === 'conversation'
-        ? activeRequest.owner.conversationId
-        : undefined,
+      conversationId: activeRequest.owner.kind === 'conversation' ? activeRequest.owner.conversationId : undefined,
       snapshot,
     }
     if (snapshot.status === 'ready') {
@@ -247,18 +246,20 @@ export function createDesktopNewChatCoordinator(
         activeIntent = intent
         const creationId = options.createId()
         const conversationId = intent.conversationId ?? options.createId()
-        return options.parent.create({
-          creationId,
-          conversationId,
-          projectPath: intent.projectPath,
-          machineId: intent.machineId,
-          agentType: intent.agentType,
-          runtimeMode: intent.runtimeMode,
-          title: 'New conversation',
-          ...(intent.existingWorktree ? { existingWorktree: intent.existingWorktree } : {}),
-        }).then((result) => {
-          return replaceState({ status: 'ready', creationId, conversationId: result.conversationId })
-        })
+        return options.parent
+          .create({
+            creationId,
+            conversationId,
+            projectPath: intent.projectPath,
+            machineId: intent.machineId,
+            agentType: intent.agentType,
+            runtimeMode: intent.runtimeMode,
+            title: 'New conversation',
+            ...(intent.existingWorktree ? { existingWorktree: intent.existingWorktree } : {}),
+          })
+          .then((result) => {
+            return replaceState({ status: 'ready', creationId, conversationId: result.conversationId })
+          })
       }
       activeIntent = intent
       const creationId = options.createId()
@@ -305,8 +306,7 @@ export function createDesktopNewChatCoordinator(
         try {
           return acceptSnapshot(await options.worktrees.get({ creationId, machineId: intent.machineId }))
         } catch (reconcileError) {
-          const definite = reconcileError instanceof Error
-            && /unknown worktree creation/i.test(reconcileError.message)
+          const definite = reconcileError instanceof Error && /unknown worktree creation/i.test(reconcileError.message)
           const snapshot = localFailureSnapshot(activeRequest, error, definite)
           return replaceState({
             status: definite ? 'failed' : 'reconciling',
@@ -326,9 +326,7 @@ export function createDesktopNewChatCoordinator(
       replaceState({
         status: 'reconciling',
         creationId: entry.request.creationId,
-        conversationId: entry.request.owner.kind === 'conversation'
-          ? entry.request.owner.conversationId
-          : undefined,
+        conversationId: entry.request.owner.kind === 'conversation' ? entry.request.owner.conversationId : undefined,
         detail: 'Reconnecting to confirm workspace creation.',
       })
       return this.reconcile()
@@ -338,10 +336,12 @@ export function createDesktopNewChatCoordinator(
       if (!activeRequest) throw new Error('No worktree creation is available to reconcile.')
       replaceState({ ...current, status: 'reconciling' })
       try {
-        return acceptSnapshot(await options.worktrees.get({
-          creationId: activeRequest.creationId,
-          machineId: activeRequest.repository.machineId,
-        }))
+        return acceptSnapshot(
+          await options.worktrees.get({
+            creationId: activeRequest.creationId,
+            machineId: activeRequest.repository.machineId,
+          }),
+        )
       } catch (error) {
         if (error instanceof Error && /unknown worktree creation/i.test(error.message)) {
           return acceptSnapshot(await options.worktrees.create(activeRequest))

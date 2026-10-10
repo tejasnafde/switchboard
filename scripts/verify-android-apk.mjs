@@ -41,9 +41,7 @@ export function parseAaptBadging(output) {
 }
 
 export function parseApkSignerOutput(output) {
-  const matches = output.matchAll(
-    /(?:Signer #\d+|V\d+(?:\.\d+)? Signer:)\s*certificate SHA-256 digest:\s*([^\s]+)/gi,
-  )
+  const matches = output.matchAll(/(?:Signer #\d+|V\d+(?:\.\d+)? Signer:)\s*certificate SHA-256 digest:\s*([^\s]+)/gi)
   const signers = [...new Set([...matches].map((match) => fingerprint(match[1])))]
   if (signers.length === 0) throw new Error('apksigner output contains no signer SHA-256 digest')
   return signers
@@ -244,9 +242,7 @@ function runCli(argv) {
   }
 
   const apksigner = process.env.APKSIGNER || 'apksigner'
-  const signerSha256 = parseApkSignerOutput(
-    runTool(apksigner, ['verify', '--verbose', '--print-certs', apkPath]),
-  )
+  const signerSha256 = parseApkSignerOutput(runTool(apksigner, ['verify', '--verbose', '--print-certs', apkPath]))
 
   if (options.identityOnly) {
     const identity = verifyApkIdentity({ ...metadata, signerSha256 })

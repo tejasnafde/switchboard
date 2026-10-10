@@ -26,7 +26,10 @@ export function rebaseOnNewest(current: ChatMessage[], newest: ChatMessage[]): C
   const inWindow = new Set(newest.map((message) => message.id))
   let lastShared = -1
   for (let i = current.length - 1; i >= 0; i--) {
-    if (inWindow.has(current[i].id)) { lastShared = i; break }
+    if (inWindow.has(current[i].id)) {
+      lastShared = i
+      break
+    }
   }
   return lastShared < 0 ? null : [...newest, ...current.slice(lastShared + 1)]
 }
@@ -60,6 +63,10 @@ export function turnIndexHolding(turns: ChatMessage[][], messageId: string): num
 
 /** Whether the store holds every row with its image bytes and whole tool calls, as an export needs. */
 export function holdsWholeHistory(session: { messages: ChatMessage[]; olderHistoryCursor?: string | null }): boolean {
-  return !session.olderHistoryCursor && !session.messages.some((message) =>
-    message.images?.some((image) => image.ref) || message.toolCalls?.some((call) => call.preview))
+  return (
+    !session.olderHistoryCursor &&
+    !session.messages.some(
+      (message) => message.images?.some((image) => image.ref) || message.toolCalls?.some((call) => call.preview),
+    )
+  )
 }

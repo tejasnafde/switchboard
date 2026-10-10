@@ -7,7 +7,7 @@ export function dataUrlBytes(url: string): number {
   const comma = url.indexOf(',')
   const b64 = comma < 0 ? '' : url.slice(comma + 1)
   const padding = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0
-  return Math.max(0, Math.floor(b64.length * 3 / 4) - padding)
+  return Math.max(0, Math.floor((b64.length * 3) / 4) - padding)
 }
 
 /**

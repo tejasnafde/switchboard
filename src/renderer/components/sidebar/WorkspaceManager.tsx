@@ -1,16 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
+import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import type { Project, Workspace } from '@shared/types'
@@ -24,9 +14,7 @@ import { colorTokenForWorkspace } from './sidebar-helpers'
 import { confirm } from '../ui/confirm'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
 
-const WORKSPACE_COLORS = [1, 2, 3, 4, 5, 6].map(
-  (index) => `var(--workspace-color-${index})`,
-)
+const WORKSPACE_COLORS = [1, 2, 3, 4, 5, 6].map((index) => `var(--workspace-color-${index})`)
 
 interface WorkspaceManagerProps {
   workspaces: Workspace[]
@@ -54,7 +42,15 @@ function GripIcon() {
 
 function CloseIcon() {
   return (
-    <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M18 6 6 18M6 6l12 12" />
     </svg>
   )
@@ -62,7 +58,15 @@ function CloseIcon() {
 
 function FolderIcon() {
   return (
-    <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+    <svg
+      aria-hidden="true"
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
       <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
     </svg>
   )
@@ -103,8 +107,14 @@ function SortableWorkspaceRow({
         aria-label={`Reorder ${workspace.name}`}
         onKeyDown={(event) => {
           if (!event.altKey) return
-          if (event.key === 'ArrowUp') { event.preventDefault(); onKeyboardMove(-1) }
-          if (event.key === 'ArrowDown') { event.preventDefault(); onKeyboardMove(1) }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            onKeyboardMove(-1)
+          }
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            onKeyboardMove(1)
+          }
         }}
         {...attributes}
         {...listeners}
@@ -156,15 +166,23 @@ function SortableProjectRow({
         aria-label={`Reorder ${project.name}`}
         onKeyDown={(event) => {
           if (!event.altKey) return
-          if (event.key === 'ArrowUp') { event.preventDefault(); onKeyboardMove(-1) }
-          if (event.key === 'ArrowDown') { event.preventDefault(); onKeyboardMove(1) }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            onKeyboardMove(-1)
+          }
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            onKeyboardMove(1)
+          }
         }}
         {...attributes}
         {...listeners}
       >
         <GripIcon />
       </button>
-      <span className="workspace-organizer-project-icon"><FolderIcon /></span>
+      <span className="workspace-organizer-project-icon">
+        <FolderIcon />
+      </span>
       <span className="workspace-organizer-project-copy">
         <span className="workspace-organizer-project-name">{project.name}</span>
         <span className="workspace-organizer-project-path">{project.path}</span>
@@ -177,7 +195,9 @@ function SortableProjectRow({
       >
         <option value="">Ungrouped</option>
         {workspaces.map((workspace) => (
-          <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
+          <option key={workspace.id} value={workspace.id}>
+            {workspace.name}
+          </option>
         ))}
       </select>
     </div>
@@ -217,9 +237,7 @@ export function WorkspaceManager({
 
   const selectedWorkspace = localWorkspaces.find((workspace) => workspace.id === selectedId) ?? null
   const detailStyle = {
-    '--workspace-detail-color': selectedWorkspace
-      ? colorTokenForWorkspace(selectedWorkspace)
-      : 'var(--text-muted)',
+    '--workspace-detail-color': selectedWorkspace ? colorTokenForWorkspace(selectedWorkspace) : 'var(--text-muted)',
   } as React.CSSProperties
   const visibleProjects = useMemo(
     () => localProjects.filter((project) => (project.workspaceId ?? null) === selectedId),
@@ -257,20 +275,20 @@ export function WorkspaceManager({
     const active = String(event.active.id)
     const over = String(event.over.id)
     if (active.startsWith('workspace:') && over.startsWith('workspace:')) {
-      persistWorkspaceOrder(reorderWorkspacesById(
-        localWorkspaces,
-        active.slice('workspace:'.length),
-        over.slice('workspace:'.length),
-      ))
+      persistWorkspaceOrder(
+        reorderWorkspacesById(localWorkspaces, active.slice('workspace:'.length), over.slice('workspace:'.length)),
+      )
       return
     }
     if (active.startsWith('project:') && over.startsWith('project:')) {
-      persistProjectOrder(reorderProjectsWithinWorkspace(
-        localProjects,
-        selectedId,
-        active.slice('project:'.length),
-        over.slice('project:'.length),
-      ))
+      persistProjectOrder(
+        reorderProjectsWithinWorkspace(
+          localProjects,
+          selectedId,
+          active.slice('project:'.length),
+          over.slice('project:'.length),
+        ),
+      )
     }
   }
 
@@ -292,34 +310,37 @@ export function WorkspaceManager({
     setRenaming(false)
     if (!name || name === selectedWorkspace.name) return
     await window.api.app.workspaces.rename(selectedWorkspace.id, name)
-    setLocalWorkspaces((current) => current.map((workspace) => (
-      workspace.id === selectedWorkspace.id ? { ...workspace, name } : workspace
-    )))
+    setLocalWorkspaces((current) =>
+      current.map((workspace) => (workspace.id === selectedWorkspace.id ? { ...workspace, name } : workspace)),
+    )
     onMutated()
   }
 
   const handleColor = async (color: string | null) => {
     if (!selectedWorkspace) return
     await window.api.app.workspaces.recolor(selectedWorkspace.id, color)
-    setLocalWorkspaces((current) => current.map((workspace) => (
-      workspace.id === selectedWorkspace.id ? { ...workspace, color } : workspace
-    )))
+    setLocalWorkspaces((current) =>
+      current.map((workspace) => (workspace.id === selectedWorkspace.id ? { ...workspace, color } : workspace)),
+    )
     onMutated()
   }
 
   const handleDelete = async () => {
     if (!selectedWorkspace) return
-    if (!(await confirm({
-      title: `Delete workspace "${selectedWorkspace.name}"?`,
-      body: 'Its projects will move to Ungrouped.',
-      confirmLabel: 'Delete',
-      destructive: true,
-    }))) return
+    if (
+      !(await confirm({
+        title: `Delete workspace "${selectedWorkspace.name}"?`,
+        body: 'Its projects will move to Ungrouped.',
+        confirmLabel: 'Delete',
+        destructive: true,
+      }))
+    )
+      return
     await window.api.app.workspaces.delete(selectedWorkspace.id)
     const nextWorkspaces = localWorkspaces.filter((workspace) => workspace.id !== selectedWorkspace.id)
-    const nextProjects = localProjects.map((project) => (
-      project.workspaceId === selectedWorkspace.id ? { ...project, workspaceId: null } : project
-    ))
+    const nextProjects = localProjects.map((project) =>
+      project.workspaceId === selectedWorkspace.id ? { ...project, workspaceId: null } : project,
+    )
     setLocalWorkspaces(nextWorkspaces)
     persistProjectOrder(nextProjects)
     setSelectedId(nextWorkspaces[0]?.id ?? null)
@@ -332,7 +353,12 @@ export function WorkspaceManager({
   }
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
       <DialogContent
         ref={dialogRef}
         overlayClassName="workspace-organizer-overlay"
@@ -344,7 +370,9 @@ export function WorkspaceManager({
             return
           }
           dialogRef.current
-            ?.querySelector<HTMLButtonElement>('.workspace-organizer-nav-row[data-selected] .workspace-organizer-nav-main, .workspace-organizer-ungrouped[data-selected]')
+            ?.querySelector<HTMLButtonElement>(
+              '.workspace-organizer-nav-row[data-selected] .workspace-organizer-nav-main, .workspace-organizer-ungrouped[data-selected]',
+            )
             ?.focus()
         }}
         // Escape backs out of an open name field before it closes the organizer.
@@ -374,13 +402,18 @@ export function WorkspaceManager({
             <aside className="workspace-organizer-nav" aria-label="Workspaces">
               <div className="workspace-organizer-nav-head">
                 <span>Workspaces</span>
-                <button type="button" onClick={() => setCreating(true)}>New</button>
+                <button type="button" onClick={() => setCreating(true)}>
+                  New
+                </button>
               </div>
               {creating && (
-                <form className="workspace-organizer-create" onSubmit={(event) => {
-                  event.preventDefault()
-                  void handleCreate()
-                }}>
+                <form
+                  className="workspace-organizer-create"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void handleCreate()
+                  }}
+                >
                   <input
                     ref={createInputRef}
                     aria-label="Workspace name"
@@ -390,7 +423,9 @@ export function WorkspaceManager({
                     onChange={(event) => setNewName(event.target.value)}
                     placeholder="Workspace name"
                   />
-                  <button type="submit" disabled={!newName.trim()}>Add</button>
+                  <button type="submit" disabled={!newName.trim()}>
+                    Add
+                  </button>
                 </form>
               )}
               <SortableContext
@@ -438,22 +473,31 @@ export function WorkspaceManager({
                       onChange={(event) => setRenameValue(event.target.value)}
                       onBlur={() => void commitRename()}
                       onKeyDown={(event) => {
-                        if (event.key === 'Enter') { event.preventDefault(); void commitRename() }
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          void commitRename()
+                        }
                       }}
                     />
                   ) : (
                     <h3>{selectedWorkspace?.name ?? 'Ungrouped'}</h3>
                   )}
                   {selectedWorkspace && !renaming && (
-                    <button type="button" className="workspace-organizer-rename" onClick={() => {
-                      setRenameValue(selectedWorkspace.name)
-                      setRenaming(true)
-                    }}>
+                    <button
+                      type="button"
+                      className="workspace-organizer-rename"
+                      onClick={() => {
+                        setRenameValue(selectedWorkspace.name)
+                        setRenaming(true)
+                      }}
+                    >
                       Rename
                     </button>
                   )}
                 </div>
-                <span>{visibleProjects.length} project{visibleProjects.length === 1 ? '' : 's'}</span>
+                <span>
+                  {visibleProjects.length} project{visibleProjects.length === 1 ? '' : 's'}
+                </span>
               </div>
 
               {selectedWorkspace && (
@@ -519,7 +563,9 @@ export function WorkspaceManager({
 
         <footer className="workspace-organizer-footer">
           <span>Drag to reorder · Option + ↑/↓ also works</span>
-          <button type="button" onClick={onClose}>Done</button>
+          <button type="button" onClick={onClose}>
+            Done
+          </button>
         </footer>
       </DialogContent>
     </Dialog>

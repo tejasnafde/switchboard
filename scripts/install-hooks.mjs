@@ -26,7 +26,10 @@ if (!existsSync(resolve(repoRoot, '.git'))) {
 // checkout's hooks, so ask git where they live instead of assuming `.git/hooks`.
 let hooksDir
 try {
-  hooksDir = resolve(repoRoot, execFileSync('git', ['rev-parse', '--git-path', 'hooks'], { cwd: repoRoot, encoding: 'utf8' }).trim())
+  hooksDir = resolve(
+    repoRoot,
+    execFileSync('git', ['rev-parse', '--git-path', 'hooks'], { cwd: repoRoot, encoding: 'utf8' }).trim(),
+  )
 } catch (err) {
   console.error(`[install-hooks] could not locate the hooks directory: ${err}`)
   process.exit(1)

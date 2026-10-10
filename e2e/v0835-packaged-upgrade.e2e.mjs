@@ -8,8 +8,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const repoRoot = process.cwd()
-const packagedExecutable = process.env.SB_PACKAGED_EXECUTABLE
-  ?? join(repoRoot, 'release/mac-arm64/Switchboard.app/Contents/MacOS/Switchboard')
+const packagedExecutable =
+  process.env.SB_PACKAGED_EXECUTABLE ?? join(repoRoot, 'release/mac-arm64/Switchboard.app/Contents/MacOS/Switchboard')
 const previousPackagedExecutable = process.env.SB_PREVIOUS_PACKAGED_EXECUTABLE
 
 if (!existsSync(packagedExecutable)) {
@@ -69,7 +69,10 @@ async function closeApp() {
   const closing = app
   app = undefined
   const closed = await Promise.race([
-    closing.close().then(() => true, () => true),
+    closing.close().then(
+      () => true,
+      () => true,
+    ),
     new Promise((resolve) => setTimeout(() => resolve(false), 5_000)),
   ])
   if (!closed) closing.process().kill('SIGKILL')
@@ -89,18 +92,16 @@ async function launch(executablePath = packagedExecutable) {
 }
 
 async function seedWithPublishedInitializer() {
-  const archive = execFileSync('/usr/bin/git', [
-    '-C',
-    repoRoot,
-    'archive',
-    '--format=tar',
-    'v0.8.35',
-  ], { maxBuffer: 100 * 1024 * 1024 })
+  const archive = execFileSync('/usr/bin/git', ['-C', repoRoot, 'archive', '--format=tar', 'v0.8.35'], {
+    maxBuffer: 100 * 1024 * 1024,
+  })
   execFileSync('tar', ['-x', '-C', extractedRoot], { input: archive })
 
   const fixtureEntry = join(extractedRoot, 'seed-v0835.ts')
   const fixtureBundle = join(tempRoot, 'seed-v0835.cjs')
-  writeFileSync(fixtureEntry, `
+  writeFileSync(
+    fixtureEntry,
+    `
     import { getDb, closeDb } from './src/main/db/database'
     const db = getDb()
     db.prepare('INSERT INTO projects(path, name, added_at, sort_order) VALUES (?, ?, ?, ?)')
@@ -126,7 +127,8 @@ async function seedWithPublishedInitializer() {
     db.prepare('INSERT INTO settings(key, value) VALUES (?, ?)')
       .run('fixture-setting', 'preserved')
     closeDb()
-  `)
+  `,
+  )
 
   await build({
     entryPoints: [fixtureEntry],
@@ -160,8 +162,10 @@ async function assertFixture(win, phase) {
   const serializedProjects = JSON.stringify(result.projects)
   check(result.setting === 'preserved', `${phase}: v0.8.35 setting survived`)
   check(serializedProjects.includes('Fixture project'), `${phase}: v0.8.35 project survived`)
-  check(result.messages.some((row) => row.conversationId === 'fixture-thread' && row.content === 'provider text'),
-    `${phase}: v0.8.35 conversation and message survived`)
+  check(
+    result.messages.some((row) => row.conversationId === 'fixture-thread' && row.content === 'provider text'),
+    `${phase}: v0.8.35 conversation and message survived`,
+  )
 }
 
 try {

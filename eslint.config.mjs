@@ -28,7 +28,7 @@ export default tseslint.config(
       'node_modules/**',
       'build/**',
       'videos/**',
-      'tests/**',          // tests legitimately use `as any` for fixtures
+      'tests/**', // tests legitimately use `as any` for fixtures
       '**/*.config.*',
       'scripts/**',
     ],

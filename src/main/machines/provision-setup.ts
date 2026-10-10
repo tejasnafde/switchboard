@@ -63,10 +63,7 @@ export function remotePackageJson(
 }
 
 export function remoteInstallScript(): string {
-  return [
-    `cd ${REMOTE_SERVER_DIR}`,
-    'npm install --omit=dev --no-audit --no-fund',
-  ].join(' && ')
+  return [`cd ${REMOTE_SERVER_DIR}`, 'npm install --omit=dev --no-audit --no-fund'].join(' && ')
 }
 
 /** Idempotent remote code-server install: tarball once, trust-off settings,
@@ -161,7 +158,7 @@ export function bridgeSeedScript(files: BridgeFile[]): string {
 export function claudeSymlinkScript(): string {
   const sdkDir = `${REMOTE_SERVER_DIR}/node_modules/@anthropic-ai`
   return [
-    "ARCH=\"$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')\"",
+    'ARCH="$(uname -m | sed \'s/aarch64/arm64/;s/x86_64/x64/\')"',
     `GLIBC="${sdkDir}/claude-agent-sdk-linux-$ARCH/claude"`,
     `MUSL="${sdkDir}/claude-agent-sdk-linux-$ARCH-musl/claude"`,
     'if [ -f "$GLIBC" ]; then BIN="$GLIBC"; elif [ -f "$MUSL" ]; then BIN="$MUSL"; else echo "no bundled claude CLI for linux-$ARCH" >&2; exit 1; fi',

@@ -9,12 +9,7 @@ import { mkdtemp, rm, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import {
-  parseWorktreeList,
-  removeWorktree,
-  findStaleWorktrees,
-  WORKTREE_DIR_REL,
-} from '../../src/main/worktree'
+import { parseWorktreeList, removeWorktree, findStaleWorktrees, WORKTREE_DIR_REL } from '../../src/main/worktree'
 
 describe('parseWorktreeList', () => {
   const main = '/repo'
@@ -59,8 +54,17 @@ describe('parseWorktreeList', () => {
 describe('removeWorktree', () => {
   it('passes --force when requested and deletes only kanban/* branches', async () => {
     const runner = vi.fn(async () => ({ stdout: '', stderr: '' }))
-    await removeWorktree('/repo', '/repo/.switchboard/worktrees/foo', { force: true, deleteBranch: 'kanban/foo' }, runner)
-    expect(runner).toHaveBeenNthCalledWith(1, ['worktree', 'remove', '--force', '/repo/.switchboard/worktrees/foo'], '/repo')
+    await removeWorktree(
+      '/repo',
+      '/repo/.switchboard/worktrees/foo',
+      { force: true, deleteBranch: 'kanban/foo' },
+      runner,
+    )
+    expect(runner).toHaveBeenNthCalledWith(
+      1,
+      ['worktree', 'remove', '--force', '/repo/.switchboard/worktrees/foo'],
+      '/repo',
+    )
     expect(runner).toHaveBeenNthCalledWith(2, ['branch', '-d', 'kanban/foo'], '/repo')
   })
 

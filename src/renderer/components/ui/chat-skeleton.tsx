@@ -22,20 +22,30 @@ export function skeletonSets(height: number): number {
   return Math.ceil(Math.max(height, 0) / SET_PX) + 1
 }
 
-const SHIMMER = 'animate-shimmer bg-[linear-gradient(90deg,var(--bg-hover)_0%,var(--bg-tertiary)_40%,var(--bg-hover)_80%)] bg-[length:300%_100%] motion-reduce:animate-none'
+const SHIMMER =
+  'animate-shimmer bg-[linear-gradient(90deg,var(--bg-hover)_0%,var(--bg-tertiary)_40%,var(--bg-hover)_80%)] bg-[length:300%_100%] motion-reduce:animate-none'
 
 export function ChatSkeleton({ label }: { label: string }) {
   const fill = Array.from({ length: skeletonSets(window.screen.height) }, () => ROWS).flat()
   return (
-    <div role="status" aria-live="polite" aria-busy="true" className="flex min-h-0 flex-1 flex-col justify-end gap-4 overflow-hidden px-6 py-5">
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      className="flex min-h-0 flex-1 flex-col justify-end gap-4 overflow-hidden px-6 py-5"
+    >
       <span className="sr-only">{label}</span>
-      {fill.map((row, i) => row.side === 'user'
-        ? <div key={i} aria-hidden className={`h-9 shrink-0 self-end rounded-[10px] ${row.widths[0]} ${SHIMMER}`} />
-        : (
+      {fill.map((row, i) =>
+        row.side === 'user' ? (
+          <div key={i} aria-hidden className={`h-9 shrink-0 self-end rounded-[10px] ${row.widths[0]} ${SHIMMER}`} />
+        ) : (
           <div key={i} aria-hidden className="flex w-[78%] shrink-0 flex-col gap-2">
-            {row.widths.map((w) => <div key={w} className={`h-3 rounded-[6px] ${w} ${SHIMMER}`} />)}
+            {row.widths.map((w) => (
+              <div key={w} className={`h-3 rounded-[6px] ${w} ${SHIMMER}`} />
+            ))}
           </div>
-        ))}
+        ),
+      )}
     </div>
   )
 }

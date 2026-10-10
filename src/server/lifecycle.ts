@@ -67,8 +67,8 @@ export function createBindLifecycle(deps: BindLifecycleDeps): BindLifecycle {
     if (isAddressInUse(err)) {
       log.error(
         `address already in use${where} - another switchboard server still owns this port. ` +
-        `Refusing to start; the pid file is left pointing at the real owner so the next ` +
-        `bootstrap can reclaim it. (${message})`,
+          `Refusing to start; the pid file is left pointing at the real owner so the next ` +
+          `bootstrap can reclaim it. (${message})`,
       )
     } else {
       log.error(`failed to bind${where}: ${message}`)

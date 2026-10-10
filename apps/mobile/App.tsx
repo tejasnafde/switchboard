@@ -9,10 +9,7 @@ import DevGalleryScreen from './src/screens/DevGalleryScreen'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { StatusBar } from 'expo-status-bar'
 import { useFonts } from 'expo-font'
-import {
-  InstrumentSans_600SemiBold,
-  InstrumentSans_700Bold,
-} from '@expo-google-fonts/instrument-sans'
+import { InstrumentSans_600SemiBold, InstrumentSans_700Bold } from '@expo-google-fonts/instrument-sans'
 import { GeistMono_400Regular, GeistMono_500Medium } from '@expo-google-fonts/geist-mono'
 import { createLogger } from '@shared/logger'
 import { colors, fonts } from './src/theme'
@@ -193,18 +190,18 @@ export default function App() {
             component={ConversationsScreen}
             options={({ route }) => ({ title: route.params.projectName })}
           />
-          <Stack.Screen name="Thread" component={ThreadScreen} options={({ route }) => ({ title: route.params.title })} />
+          <Stack.Screen
+            name="Thread"
+            component={ThreadScreen}
+            options={({ route }) => ({ title: route.params.title })}
+          />
           <Stack.Screen
             name="NewSession"
             component={NewSessionScreen}
             options={{ title: 'New session', presentation: 'modal' }}
           />
           {__DEV__ && (
-            <Stack.Screen
-              name="DevGallery"
-              component={DevGalleryScreen}
-              options={{ title: 'Component gallery' }}
-            />
+            <Stack.Screen name="DevGallery" component={DevGalleryScreen} options={{ title: 'Component gallery' }} />
           )}
         </Stack.Navigator>
       </NavigationContainer>

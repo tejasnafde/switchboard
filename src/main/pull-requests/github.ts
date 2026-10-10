@@ -11,7 +11,17 @@ import { execFile } from 'node:child_process'
 import type { CreatedPr, CreatePrInput, OpenedPr } from '@shared/agent-pr-create'
 import type { ReviewerViewer } from '@shared/agent-pr-reviewers'
 import type { InlineCommentInput, ReviewEvent, SubmitReviewInput } from '@shared/pull-request-writes'
-import type { MergeStrategy, PrChangedFile, PrCheck, PrConversation, PrDetail, PrError, PrRef, PrReviewerCandidate, RepoRef } from '@shared/pull-requests'
+import type {
+  MergeStrategy,
+  PrChangedFile,
+  PrCheck,
+  PrConversation,
+  PrDetail,
+  PrError,
+  PrRef,
+  PrReviewerCandidate,
+  RepoRef,
+} from '@shared/pull-requests'
 import { repoKey } from '@shared/pull-requests'
 import { parseFullName } from '@shared/pull-request-remote'
 import { childProcessEnv } from '../shell-env'
@@ -63,23 +73,40 @@ const READ_RETRY_DELAY_MS = 1_000
 
 export const defaultGhRunner: GhRunner = (args, opts = {}) =>
   new Promise((resolve) => {
-    const child = execFile('gh', args, { env: childProcessEnv(), timeout: GH_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
-      // Killed for the timeout; a body over maxBuffer is killed too, but says so in its code.
-      if (err?.killed && (err as NodeJS.ErrnoException).code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
-        resolve({ stdout: String(stdout), stderr: `${String(stderr)}\ngh did not answer within ${GH_TIMEOUT_MS / 1000}s`, code: GH_TIMED_OUT })
-        return
-      }
-      const code = err ? ((err as NodeJS.ErrnoException).code ?? (err as { code?: number }).code ?? 1) : 0
-      resolve({ stdout: String(stdout), stderr: String(stderr), code })
-    })
+    const child = execFile(
+      'gh',
+      args,
+      { env: childProcessEnv(), timeout: GH_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        // Killed for the timeout; a body over maxBuffer is killed too, but says so in its code.
+        if (err?.killed && (err as NodeJS.ErrnoException).code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+          resolve({
+            stdout: String(stdout),
+            stderr: `${String(stderr)}\ngh did not answer within ${GH_TIMEOUT_MS / 1000}s`,
+            code: GH_TIMED_OUT,
+          })
+          return
+        }
+        const code = err ? ((err as NodeJS.ErrnoException).code ?? (err as { code?: number }).code ?? 1) : 0
+        resolve({ stdout: String(stdout), stderr: String(stderr), code })
+      },
+    )
     if (opts.input !== undefined) {
       child.stdin?.on('error', (err) => log.warn('writing to gh stdin failed', { err: String(err) }))
       child.stdin?.end(opts.input)
     }
   })
 
-const MERGE_METHOD: Partial<Record<MergeStrategy, string>> = { merge_commit: 'merge', squash: 'squash', rebase: 'rebase' }
-const REVIEW_EVENT: Record<ReviewEvent, string> = { comment: 'COMMENT', approve: 'APPROVE', request_changes: 'REQUEST_CHANGES' }
+const MERGE_METHOD: Partial<Record<MergeStrategy, string>> = {
+  merge_commit: 'merge',
+  squash: 'squash',
+  rebase: 'rebase',
+}
+const REVIEW_EVENT: Record<ReviewEvent, string> = {
+  comment: 'COMMENT',
+  approve: 'APPROVE',
+  request_changes: 'REQUEST_CHANGES',
+}
 
 /** A line comment in the REST shape both `pulls/:n/comments` and `pulls/:n/reviews` take. */
 export function ghLineComment(c: InlineCommentInput): Record<string, string | number> {
@@ -128,11 +155,15 @@ const MERGED_PR_FIELDS = `
 `
 
 export function buildListQuery(repos: readonly RepoRef[]): string {
-  const blocks = repos.map((r, i) => `
+  const blocks = repos
+    .map(
+      (r, i) => `
   r${i}: repository(owner: ${JSON.stringify(r.owner)}, name: ${JSON.stringify(r.name)}) {
     open: pullRequests(states: OPEN, first: ${OPEN_PER_REPO}, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ...Pr } }
     merged: pullRequests(states: MERGED, first: ${MERGED_PER_REPO}, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ...MergedPr } }
-  }`).join('')
+  }`,
+    )
+    .join('')
   return `query {\n  viewer { login }${blocks}\n}\nfragment Pr on PullRequest {${PR_FIELDS}}\nfragment MergedPr on PullRequest {${MERGED_PR_FIELDS}}`
 }
 
@@ -201,10 +232,17 @@ function graphqlAnswer<T>(res: GhRunResult): { body: GraphqlResponse<T> } | { er
   const body = parseJson<GraphqlResponse<T>>(res.stdout)
   if (res.code !== 0 && !body?.data) {
     const message = body?.errors?.map((e) => e.message).join('; ')
-    return { error: classifyGhError({ ...res, stderr: `${res.stderr}\n${message ?? ''}` }), transient: isTransientGhFailure(res) }
+    return {
+      error: classifyGhError({ ...res, stderr: `${res.stderr}\n${message ?? ''}` }),
+      transient: isTransientGhFailure(res),
+    }
   }
   // Exit 0 with no JSON is a body cut off in transit.
-  if (!body) return { error: { kind: 'unknown', host: 'github', message: 'gh returned no data.' }, transient: res.code === 0 && res.stdout.trim() !== '' }
+  if (!body)
+    return {
+      error: { kind: 'unknown', host: 'github', message: 'gh returned no data.' },
+      transient: res.code === 0 && res.stdout.trim() !== '',
+    }
   return { body }
 }
 
@@ -220,7 +258,10 @@ export class GitHubProvider implements PullRequestProvider {
   private async read(args: string[]): Promise<GhRunResult> {
     const res = await this.run(args)
     if (!isTransientGhFailure(res)) return res
-    log.warn('GitHub read failed with a server error, retrying once', { endpoint: args[1], stderr: res.stderr.trim().slice(0, 200) })
+    log.warn('GitHub read failed with a server error, retrying once', {
+      endpoint: args[1],
+      stderr: res.stderr.trim().slice(0, 200),
+    })
     await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs))
     return this.run(args)
   }
@@ -241,16 +282,25 @@ export class GitHubProvider implements PullRequestProvider {
   }
 
   private async pullRequestQuery<T>(query: string, ref: PrRef): Promise<T> {
-    const body = await this.graphql<{ repository: { pullRequest: T | null } | null }>(query, { owner: ref.owner, name: ref.name, number: ref.number })
+    const body = await this.graphql<{ repository: { pullRequest: T | null } | null }>(query, {
+      owner: ref.owner,
+      name: ref.name,
+      number: ref.number,
+    })
     const pr = body.data?.repository?.pullRequest
-    if (!pr) throw new PrHostError({ kind: 'not_found', host: 'github', message: `Pull request #${ref.number} was not found.` })
+    if (!pr)
+      throw new PrHostError({
+        kind: 'not_found',
+        host: 'github',
+        message: `Pull request #${ref.number} was not found.`,
+      })
     return pr
   }
 
   async list(repos: RepoRef[]): Promise<RepoListResult[]> {
     const out: RepoListResult[] = []
     for (let start = 0; start < repos.length; start += REPOS_PER_QUERY) {
-      out.push(...await this.listBatch(repos.slice(start, start + REPOS_PER_QUERY)))
+      out.push(...(await this.listBatch(repos.slice(start, start + REPOS_PER_QUERY))))
     }
     return out
   }
@@ -285,7 +335,11 @@ export class GitHubProvider implements PullRequestProvider {
     chunk.forEach((repo, i) => {
       const row = body.data?.[`r${i}`] as Row | undefined
       if (row) {
-        out.push({ repo, prs: [...row.open.nodes, ...row.merged.nodes].map((pr) => mapGhSummary(repo, pr, viewer)), error: null })
+        out.push({
+          repo,
+          prs: [...row.open.nodes, ...row.merged.nodes].map((pr) => mapGhSummary(repo, pr, viewer)),
+          error: null,
+        })
         return
       }
       const reason = body.errors?.find((e) => e.path?.[0] === `r${i}`)
@@ -297,25 +351,36 @@ export class GitHubProvider implements PullRequestProvider {
       }
       // FORBIDDEN is an organisation that refuses the token (SAML SSO, an IP allow list).
       const kind = reason?.type === 'FORBIDDEN' ? 'forbidden' : 'not_found'
-      out.push({ repo, prs: [], error: { kind, host: 'github', message: reason?.message ?? 'GitHub could not find this repository.' } })
+      out.push({
+        repo,
+        prs: [],
+        error: { kind, host: 'github', message: reason?.message ?? 'GitHub could not find this repository.' },
+      })
     })
     if (timedOut.length === 0) return out
     log.warn('GitHub timed out on part of a list batch, asking again', { repos: timedOut.length })
-    const all = [...out, ...await this.listHalves(timedOut)]
+    const all = [...out, ...(await this.listHalves(timedOut))]
     return chunk.flatMap((repo) => all.filter((r) => r.repo === repo))
   }
 
   private async listHalves(repos: RepoRef[]): Promise<RepoListResult[]> {
     const half = Math.ceil(repos.length / 2)
-    return [...await this.listBatch(repos.slice(0, half)), ...await this.listBatch(repos.slice(half))]
+    return [...(await this.listBatch(repos.slice(0, half))), ...(await this.listBatch(repos.slice(half)))]
   }
 
   async detail(ref: PrRef): Promise<PrDetail> {
-    const body = await this.graphql<{ viewer: { login: string }; repository: (GhRepoMergeSettings & { pullRequest: GhPullRequestDetail | null }) | null }>(
-      DETAIL_QUERY, { owner: ref.owner, name: ref.name, number: ref.number })
+    const body = await this.graphql<{
+      viewer: { login: string }
+      repository: (GhRepoMergeSettings & { pullRequest: GhPullRequestDetail | null }) | null
+    }>(DETAIL_QUERY, { owner: ref.owner, name: ref.name, number: ref.number })
     const repo = body.data?.repository
     const pr = repo?.pullRequest
-    if (!repo || !pr) throw new PrHostError({ kind: 'not_found', host: 'github', message: `Pull request #${ref.number} was not found.` })
+    if (!repo || !pr)
+      throw new PrHostError({
+        kind: 'not_found',
+        host: 'github',
+        message: `Pull request #${ref.number} was not found.`,
+      })
     return mapGhDetail(ref, pr, body.data?.viewer.login ?? '', repo)
   }
 
@@ -332,7 +397,10 @@ export class GitHubProvider implements PullRequestProvider {
   async files(ref: PrRef): Promise<PrChangedFile[]> {
     const all: GhPullFile[] = []
     for (let page = 1; page <= MAX_FILE_PAGES; page++) {
-      const res = await this.read(['api', `repos/${ref.owner}/${ref.name}/pulls/${ref.number}/files?per_page=100&page=${page}`])
+      const res = await this.read([
+        'api',
+        `repos/${ref.owner}/${ref.name}/pulls/${ref.number}/files?per_page=100&page=${page}`,
+      ])
       if (res.code !== 0) throw new PrHostError(classifyGhError(res))
       const files = parseJson<GhPullFile[]>(res.stdout) ?? []
       all.push(...files)
@@ -346,7 +414,8 @@ export class GitHubProvider implements PullRequestProvider {
     const res = await this.read(['api', `${path}?per_page=100`])
     if (res.code === 0) return parseJson<T[]>(res.stdout) ?? []
     const error = classifyGhError(res)
-    if (error.kind === 'token_rejected' || error.kind === 'gh_missing' || error.kind === 'offline') throw new PrHostError(error)
+    if (error.kind === 'token_rejected' || error.kind === 'gh_missing' || error.kind === 'offline')
+      throw new PrHostError(error)
     log.info('GitHub did not list reviewer candidates', { path, kind: error.kind })
     return []
   }
@@ -363,7 +432,11 @@ export class GitHubProvider implements PullRequestProvider {
   // ─── Writes ────────────────────────────────────────────────────
 
   /** One REST write with a JSON body. Returns the parsed answer (may be `null` for 204). */
-  private async rest<T = unknown>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: object): Promise<T | null> {
+  private async rest<T = unknown>(
+    method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    path: string,
+    body?: object,
+  ): Promise<T | null> {
     const args = ['api', '--method', method, path]
     if (body) args.push('--input', '-')
     const res = await this.run(args, body ? { input: JSON.stringify(body) } : {})
@@ -403,7 +476,10 @@ export class GitHubProvider implements PullRequestProvider {
 
   async inlineComment(ref: PrRef, comment: InlineCommentInput): Promise<void> {
     const pr = await this.pullRequestQuery<{ headRefOid: string }>(HEAD_QUERY, ref)
-    await this.rest('POST', `${this.repoPath(ref)}/pulls/${ref.number}/comments`, { commit_id: pr.headRefOid, ...ghLineComment(comment) })
+    await this.rest('POST', `${this.repoPath(ref)}/pulls/${ref.number}/comments`, {
+      commit_id: pr.headRefOid,
+      ...ghLineComment(comment),
+    })
   }
 
   /**
@@ -421,7 +497,8 @@ export class GitHubProvider implements PullRequestProvider {
     }
     const pending = await this.rest<{ id?: number }>('POST', reviews, { comments: review.comments.map(ghLineComment) })
     const id = pending?.id
-    if (!Number.isInteger(id)) throw new PrHostError({ kind: 'unknown', host: 'github', message: 'GitHub did not return the pending review.' })
+    if (!Number.isInteger(id))
+      throw new PrHostError({ kind: 'unknown', host: 'github', message: 'GitHub did not return the pending review.' })
     try {
       await this.rest('POST', `${reviews}/${id}/events`, { event, body: review.body })
     } catch (err) {
@@ -437,7 +514,8 @@ export class GitHubProvider implements PullRequestProvider {
   /** `sha` makes GitHub refuse (409) when the head moved after the service's pre-check. */
   async merge(ref: PrRef, strategy: MergeStrategy, headSha: string): Promise<void> {
     const method = MERGE_METHOD[strategy]
-    if (!method) throw new PrHostError({ kind: 'invalid', host: 'github', message: 'GitHub has no such merge strategy.' })
+    if (!method)
+      throw new PrHostError({ kind: 'invalid', host: 'github', message: 'GitHub has no such merge strategy.' })
     await this.rest('PUT', `${this.repoPath(ref)}/pulls/${ref.number}/merge`, { merge_method: method, sha: headSha })
   }
 
@@ -464,7 +542,12 @@ export class GitHubProvider implements PullRequestProvider {
     const res = await this.read(['api', `repos/${repo.owner}/${repo.name}`, '--jq', '.default_branch'])
     if (res.code !== 0) throw new PrHostError(classifyGhError(res))
     const branch = res.stdout.trim()
-    if (!branch || branch === 'null') throw new PrHostError({ kind: 'unknown', host: 'github', message: 'GitHub did not say which branch is the default.' })
+    if (!branch || branch === 'null')
+      throw new PrHostError({
+        kind: 'unknown',
+        host: 'github',
+        message: 'GitHub did not say which branch is the default.',
+      })
     return branch
   }
 
@@ -484,8 +567,11 @@ export class GitHubProvider implements PullRequestProvider {
     const res = await this.read(['api', `repos/${repo.owner}/${repo.name}/pulls?state=open&per_page=30&head=${head}`])
     if (res.code !== 0) throw new PrHostError(classifyGhError(res))
     const fullName = `${repo.owner}/${repo.name}`.toLowerCase()
-    const pr = (parseJson<Array<{ number?: number; html_url?: string; head?: { repo?: { full_name?: string } | null } }>>(res.stdout) ?? [])
-      .find((candidate) => candidate.head?.repo?.full_name?.toLowerCase() === fullName)
+    const pr = (
+      parseJson<Array<{ number?: number; html_url?: string; head?: { repo?: { full_name?: string } | null } }>>(
+        res.stdout,
+      ) ?? []
+    ).find((candidate) => candidate.head?.repo?.full_name?.toLowerCase() === fullName)
     return pr && Number.isInteger(pr.number) && pr.html_url ? { number: pr.number as number, url: pr.html_url } : null
   }
 
@@ -519,10 +605,17 @@ export class GitHubProvider implements PullRequestProvider {
     if (reviewers.length === 0) return opened
     // The pull request exists now: a failure here is reported, and the create is never sent again.
     try {
-      await this.rest('POST', `repos/${repo.owner}/${repo.name}/pulls/${opened.number}/requested_reviewers`, ghReviewersBody(reviewers))
+      await this.rest(
+        'POST',
+        `repos/${repo.owner}/${repo.name}/pulls/${opened.number}/requested_reviewers`,
+        ghReviewersBody(reviewers),
+      )
       return opened
     } catch (err) {
-      const error = err instanceof PrHostError ? err.error : { kind: 'unknown' as const, host: 'github' as const, message: String(err) }
+      const error =
+        err instanceof PrHostError
+          ? err.error
+          : { kind: 'unknown' as const, host: 'github' as const, message: String(err) }
       log.warn('GitHub opened the pull request but refused its reviewers', { number: opened.number, kind: error.kind })
       return { ...opened, reviewerFailure: { reviewers, error } }
     }

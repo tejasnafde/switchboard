@@ -24,20 +24,37 @@ const userData = mkdtempSync(join(tmpdir(), 'sb-accounts-shift-'))
 process.on('exit', () => rmSync(userData, { recursive: true, force: true }))
 
 const app = await electron.launch({
-  args: ['.'], cwd: repoRoot, timeout: 30_000,
-  env: { ...process.env, ELECTRON_RUN_AS_NODE: '', SB_USER_DATA: userData, SB_DEMO_ADAPTER: '1', SB_DEMO_USAGE_DELAY_MS: '350', SHELL: '/bin/sh' },
+  args: ['.'],
+  cwd: repoRoot,
+  timeout: 30_000,
+  env: {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '',
+    SB_USER_DATA: userData,
+    SB_DEMO_ADAPTER: '1',
+    SB_DEMO_USAGE_DELAY_MS: '350',
+    SHELL: '/bin/sh',
+  },
 })
 const win = await app.firstWindow({ timeout: 20_000 })
 await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
-await win.evaluate(() => Promise.all([
-  window.api.settings.set('tour.autoplay', 'false'),
-  window.api.settings.set('analytics.enabled', 'false'),
-  window.api.settings.set('analytics.noticeSeen', 'true'),
-  window.api.providerInstances.upsert({
-    id: 'claude-code-work', agentType: 'claude-code', displayName: 'akshaya', accentColor: '#b0833a',
-    authMode: 'env', env: null, oauthDir: null, enabled: true,
-  }),
-]))
+await win.evaluate(() =>
+  Promise.all([
+    window.api.settings.set('tour.autoplay', 'false'),
+    window.api.settings.set('analytics.enabled', 'false'),
+    window.api.settings.set('analytics.noticeSeen', 'true'),
+    window.api.providerInstances.upsert({
+      id: 'claude-code-work',
+      agentType: 'claude-code',
+      displayName: 'akshaya',
+      accentColor: '#b0833a',
+      authMode: 'env',
+      env: null,
+      oauthDir: null,
+      enabled: true,
+    }),
+  ]),
+)
 // Reload so the renderer lists the new account at start-up, like one made on
 // an earlier run: an account created mid-test would add a card mid-test.
 await win.reload()
@@ -70,22 +87,34 @@ function startRecording() {
 }
 
 async function settled() {
-  await win.waitForFunction(() => {
-    const page = document.querySelector('.settings-page')
-    return !!page && page.querySelectorAll('[data-account]').length === 4
-      && page.querySelectorAll('[aria-busy="true"]').length === 0
-      && !page.textContent.includes('Reading usage')
-  }, null, { timeout: 15_000 })
+  await win.waitForFunction(
+    () => {
+      const page = document.querySelector('.settings-page')
+      return (
+        !!page &&
+        page.querySelectorAll('[data-account]').length === 4 &&
+        page.querySelectorAll('[aria-busy="true"]').length === 0 &&
+        !page.textContent.includes('Reading usage')
+      )
+    },
+    null,
+    { timeout: 15_000 },
+  )
   await win.waitForTimeout(300)
 }
 
 async function checkNoShift(label) {
-  const boxes = await win.evaluate(() => { window.__stopBoxes = true; return window.__boxes })
+  const boxes = await win.evaluate(() => {
+    window.__stopBoxes = true
+    return window.__boxes
+  })
   const moved = Object.entries(boxes).filter(([, seen]) => seen.length > 1)
   const cards = Object.keys(boxes).filter((k) => !k.startsWith('tile:')).length
   const ok = cards === 4 && moved.length === 0
   if (!ok) failures.push(label)
-  console.log(`${ok ? 'PASS' : 'FAIL'} ${label}: ${cards} cards tracked${moved.map(([k, seen]) => `\n  ${k}: ${seen.join(' -> ')}`).join('')}`)
+  console.log(
+    `${ok ? 'PASS' : 'FAIL'} ${label}: ${cards} cards tracked${moved.map(([k, seen]) => `\n  ${k}: ${seen.join(' -> ')}`).join('')}`,
+  )
 }
 
 try {
@@ -97,7 +126,9 @@ try {
   await settings.getByRole('button', { name: /^Accounts & models/ }).click()
   await settings.locator('[data-account]').first().waitFor({ state: 'visible' })
   const skeletons = await settings.locator('[data-account] [aria-busy="true"]').count()
-  console.log(`${skeletons > 0 ? 'PASS' : 'FAIL'} readings were still outstanding on first paint (${skeletons} skeletons)`)
+  console.log(
+    `${skeletons > 0 ? 'PASS' : 'FAIL'} readings were still outstanding on first paint (${skeletons} skeletons)`,
+  )
   if (skeletons === 0) failures.push('the test did not catch the load in flight')
   await settled()
   await checkNoShift('load')
@@ -107,7 +138,9 @@ try {
   await settings.getByRole('button', { name: 'Actions for akshaya' }).click()
   await win.getByRole('button', { name: 'Refresh usage' }).click()
   const card = settings.locator('[data-account="claude-code-work"]')
-  await settings.locator('[data-account="claude-code-work"][aria-busy="true"]').waitFor({ state: 'visible', timeout: 5000 })
+  await settings
+    .locator('[data-account="claude-code-work"][aria-busy="true"]')
+    .waitFor({ state: 'visible', timeout: 5000 })
   const bars = await card.getByRole('progressbar').count()
   console.log(`${bars === 2 ? 'PASS' : 'FAIL'} refreshing card keeps its ${bars} bars`)
   if (bars !== 2) failures.push('refresh blanked the bars')

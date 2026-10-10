@@ -113,9 +113,7 @@ describe('splitSkillMentions', () => {
   })
 
   it('returns a single text segment when no known skills are present', () => {
-    expect(splitSkillMentions('hi there', known)).toEqual([
-      { type: 'text', value: 'hi there' },
-    ])
+    expect(splitSkillMentions('hi there', known)).toEqual([{ type: 'text', value: 'hi there' }])
   })
 
   it('does not chipify path-y slashes', () => {

@@ -18,21 +18,29 @@ let probeSeq = 0
  * ACP agent only when it is installed or is in `keep` (the chat's own agent,
  * or one the user already made an account for).
  */
-export function offeredAgentTypes<T extends AgentType>(all: readonly T[], installedAgents: ReadonlySet<string>, keep: ReadonlySet<string> = new Set()): T[] {
+export function offeredAgentTypes<T extends AgentType>(
+  all: readonly T[],
+  installedAgents: ReadonlySet<string>,
+  keep: ReadonlySet<string> = new Set(),
+): T[] {
   return all.filter((type) => !isGenericAcpAgent(type) || installedAgents.has(type) || keep.has(type))
 }
 
 /** Asks the backend about every generic ACP agent; a failed answer counts as not installed. */
-export async function probeInstalledAcpAgents(isAvailable: (agent: GenericAcpAgent) => Promise<boolean>): Promise<ReadonlySet<string>> {
+export async function probeInstalledAcpAgents(
+  isAvailable: (agent: GenericAcpAgent) => Promise<boolean>,
+): Promise<ReadonlySet<string>> {
   const seq = ++probeSeq
-  const answers = await Promise.all(GENERIC_ACP_AGENTS.map(async (agent) => {
-    try {
-      return (await isAvailable(agent)) ? agent : null
-    } catch (err) {
-      log.warn(`availability check for ${agent} failed`, err)
-      return null
-    }
-  }))
+  const answers = await Promise.all(
+    GENERIC_ACP_AGENTS.map(async (agent) => {
+      try {
+        return (await isAvailable(agent)) ? agent : null
+      } catch (err) {
+        log.warn(`availability check for ${agent} failed`, err)
+        return null
+      }
+    }),
+  )
   const result = new Set(answers.filter((agent): agent is GenericAcpAgent => agent !== null))
   // An older probe finishing late must not replace a newer answer.
   if (seq === probeSeq) installed = result
@@ -48,7 +56,9 @@ export function useInstalledAcpAgents(active = true): ReadonlySet<string> {
     void probeInstalledAcpAgents((agent) => window.api.provider.isAvailable(agent)).then((result) => {
       if (current) setAgents(result)
     })
-    return () => { current = false }
+    return () => {
+      current = false
+    }
   }, [active])
   return agents
 }

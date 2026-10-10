@@ -14,10 +14,7 @@ import {
   type ChatWorkspaceEvent,
   type ChatWorkspaceState,
 } from '../services/chat-workspace'
-import {
-  publishChatWorkspace,
-  registerChatWorkspaceController,
-} from '../services/chat-workspace-runtime'
+import { publishChatWorkspace, registerChatWorkspaceController } from '../services/chat-workspace-runtime'
 
 const log = createRendererLogger('store:layout')
 
@@ -47,7 +44,8 @@ const MIN_CHAT_WIDTH = 240
 /** Largest width a pane may take: viewport minus the other pane and the chat's
  *  minimum. Falls back to a huge value when `window` is unavailable (tests). */
 export function paneMaxWidth(min: number, otherPaneWidth: number, viewportWidth?: number): number {
-  const vw = viewportWidth ?? (typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : Number.MAX_SAFE_INTEGER)
+  const vw =
+    viewportWidth ?? (typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : Number.MAX_SAFE_INTEGER)
   return Math.max(min, vw - otherPaneWidth - MIN_CHAT_WIDTH)
 }
 
@@ -111,11 +109,7 @@ interface LayoutStore {
   setKanbanProjectFilter: (path: string | null) => void
 
   /** Open a file in the embedded IDE workbench, flipping the right pane to it. */
-  openInViewer: (
-    path: string,
-    lineRange?: { start: number; end: number } | null,
-    sessionId?: string | null,
-  ) => void
+  openInViewer: (path: string, lineRange?: { start: number; end: number } | null, sessionId?: string | null) => void
 
   // `chatSplitRatio` is the fraction of the combined chat space given to
   // the primary panel (0.5 = 50/50).
@@ -236,9 +230,7 @@ function applyChatWorkspaceEvent(event: ChatWorkspaceEvent): void {
   useAgentStore.setState((state) => ({
     activeSessionId: next.primarySessionId,
     sessions: state.sessions.map((session) =>
-      session.id === next.primarySessionId && session.unreadCount !== 0
-        ? { ...session, unreadCount: 0 }
-        : session
+      session.id === next.primarySessionId && session.unreadCount !== 0 ? { ...session, unreadCount: 0 } : session,
     ),
   }))
 }
@@ -260,14 +252,20 @@ function persistList(key: string, list: string[]): void {
 
 /** `companionSessionId()` as a selector, for components that re-render on it. */
 export function selectCompanionSessionId(
-  s: Pick<LayoutStore, 'primarySessionId' | 'secondarySessionId' | 'focusedChatSlot' | 'chatSplitRatio' | 'landingDraftSessionId'>,
+  s: Pick<
+    LayoutStore,
+    'primarySessionId' | 'secondarySessionId' | 'focusedChatSlot' | 'chatSplitRatio' | 'landingDraftSessionId'
+  >,
 ): string | null {
-  return companionWithLanding({
-    primarySessionId: s.primarySessionId,
-    secondarySessionId: s.secondarySessionId,
-    focusedSlot: s.focusedChatSlot,
-    splitRatio: s.chatSplitRatio,
-  }, s.landingDraftSessionId)
+  return companionWithLanding(
+    {
+      primarySessionId: s.primarySessionId,
+      secondarySessionId: s.secondarySessionId,
+      focusedSlot: s.focusedChatSlot,
+      splitRatio: s.chatSplitRatio,
+    },
+    s.landingDraftSessionId,
+  )
 }
 
 export const useLayoutStore = create<LayoutStore>((set, get) => ({
@@ -285,8 +283,10 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   focusChatSlot: (slot) => applyChatWorkspaceEvent({ type: 'focus', slot }),
   closeChatSlot: (slot) => applyChatWorkspaceEvent({ type: 'close', slot }),
   reconcileChatSessions: (availableSessionIds) => applyChatWorkspaceEvent({ type: 'restore', availableSessionIds }),
-  rotateChatSessionId: (fromSessionId, toSessionId) => applyChatWorkspaceEvent({ type: 'rotate', fromSessionId, toSessionId }),
-  forwardToChat: (sourceSessionId, targetSessionId) => applyChatWorkspaceEvent({ type: 'forward-target', sourceSessionId, targetSessionId }),
+  rotateChatSessionId: (fromSessionId, toSessionId) =>
+    applyChatWorkspaceEvent({ type: 'rotate', fromSessionId, toSessionId }),
+  forwardToChat: (sourceSessionId, targetSessionId) =>
+    applyChatWorkspaceEvent({ type: 'forward-target', sourceSessionId, targetSessionId }),
   focusedChatSessionId: () => companionWithLanding(currentChatWorkspace(), get().landingDraftSessionId),
   displayedChatSessionIds: () => displayedChatSessionIds(currentChatWorkspace()),
   sessionForChatSlot: (slot) => sessionForSlot(currentChatWorkspace(), slot),
@@ -524,7 +524,19 @@ registerChatWorkspaceController({
 export async function hydrateSidebarCollapse(): Promise<void> {
   if (typeof window === 'undefined' || !window.api?.settings) return
   try {
-    const [projJson, wsJson, modeStr, appViewStr, kanbanWsStr, kanbanProjStr, dsModeStr, showFileDiffsStr, localTreeStr, offlineMachinesStr, followUpStr] = await Promise.all([
+    const [
+      projJson,
+      wsJson,
+      modeStr,
+      appViewStr,
+      kanbanWsStr,
+      kanbanProjStr,
+      dsModeStr,
+      showFileDiffsStr,
+      localTreeStr,
+      offlineMachinesStr,
+      followUpStr,
+    ] = await Promise.all([
       window.api.settings.get(COLLAPSE_PROJECTS_KEY),
       window.api.settings.get(COLLAPSE_WORKSPACES_KEY),
       window.api.settings.get(RIGHT_PANE_MODE_KEY),
@@ -539,8 +551,12 @@ export async function hydrateSidebarCollapse(): Promise<void> {
     ])
     const parse = (s: string | null): string[] => {
       if (!s) return []
-      try { const v = JSON.parse(s); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [] }
-      catch { return [] }
+      try {
+        const v = JSON.parse(s)
+        return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []
+      } catch {
+        return []
+      }
     }
     const mode: RightPaneMode = modeStr === 'files' ? 'files' : 'terminal'
     const appView: AppView = appViewStr === 'kanban' || appViewStr === 'reviews' ? appViewStr : 'chats'

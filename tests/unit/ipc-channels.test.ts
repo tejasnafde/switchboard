@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  AppChannels,
-  TerminalChannels,
-  WorktreeCreationChannels,
-} from '@shared/ipc-channels'
+import { AppChannels, TerminalChannels, WorktreeCreationChannels } from '@shared/ipc-channels'
 
 describe('IPC channel constants', () => {
   it('should have all conversation CRUD channels', () => {

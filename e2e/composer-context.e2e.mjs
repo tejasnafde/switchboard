@@ -16,8 +16,14 @@ import { makeDemoRepo, makeSideRepo, seedDatabase } from './fixtures/demo-worksp
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const scratch = []
-const mk = (prefix) => { const dir = mkdtempSync(join(tmpdir(), prefix)); scratch.push(dir); return dir }
-process.on('exit', () => { for (const dir of scratch) rmSync(dir, { recursive: true, force: true }) })
+const mk = (prefix) => {
+  const dir = mkdtempSync(join(tmpdir(), prefix))
+  scratch.push(dir)
+  return dir
+}
+process.on('exit', () => {
+  for (const dir of scratch) rmSync(dir, { recursive: true, force: true })
+})
 
 const userData = mk('sb-ctx-ud-')
 const projectRoot = mk('sb-ctx-proj-')
@@ -28,17 +34,21 @@ makeSideRepo(sidePath)
 
 async function launch() {
   const app = await electron.launch({
-    args: ['.'], cwd: repoRoot, timeout: 30_000,
+    args: ['.'],
+    cwd: repoRoot,
+    timeout: 30_000,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '', SB_USER_DATA: userData, SB_DEMO_ADAPTER: '1', SHELL: '/bin/sh' },
   })
   const win = await app.firstWindow({ timeout: 20_000 })
   win.on('pageerror', (e) => console.error('pageerror', e.message))
   await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
-  await win.evaluate(() => Promise.all([
-    window.api.settings.set('tour.autoplay', 'false'),
-    window.api.settings.set('analytics.enabled', 'false'),
-    window.api.settings.set('analytics.noticeSeen', 'true'),
-  ]))
+  await win.evaluate(() =>
+    Promise.all([
+      window.api.settings.set('tour.autoplay', 'false'),
+      window.api.settings.set('analytics.enabled', 'false'),
+      window.api.settings.set('analytics.noticeSeen', 'true'),
+    ]),
+  )
   return { app, win }
 }
 
@@ -48,7 +58,10 @@ seedDatabase(join(userData, 'data', 'switchboard.db'), projectPath, sidePath)
 ;({ app, win } = await launch())
 
 const results = []
-const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`) }
+const check = (name, ok, detail = '') => {
+  results.push(ok)
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`)
+}
 
 const editor = win.locator('.chat-composer [aria-label="Chat message"]').first()
 const chips = editor.locator('[data-pill-chip]')
@@ -58,16 +71,23 @@ const clearComposer = async () => {
   await win.keyboard.press('Backspace')
 }
 // What the composer shows, with each chip as <chip>.
-const composerText = () => editor.evaluate((root) => {
-  const parts = []
-  const walk = (node) => {
-    if (node.nodeType === Node.TEXT_NODE) { parts.push(node.textContent); return }
-    if (node instanceof HTMLElement && node.hasAttribute('data-pill-chip')) { parts.push('<chip>'); return }
-    node.childNodes.forEach(walk)
-  }
-  walk(root)
-  return parts.join('').replace(/ /g, ' ')
-})
+const composerText = () =>
+  editor.evaluate((root) => {
+    const parts = []
+    const walk = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        parts.push(node.textContent)
+        return
+      }
+      if (node instanceof HTMLElement && node.hasAttribute('data-pill-chip')) {
+        parts.push('<chip>')
+        return
+      }
+      node.childNodes.forEach(walk)
+    }
+    walk(root)
+    return parts.join('').replace(/ /g, ' ')
+  })
 // A click in the bubble takes focus from the composer, as a drag would; then
 // the bubble's whole text is selected.
 const selectBubble = async (messageId) => {
@@ -85,9 +105,15 @@ const quoteBubble = async (messageId) => {
   const before = await chips.count()
   await selectBubble(messageId)
   await win.keyboard.press('ControlOrMeta+L')
-  await win.waitForFunction(([n]) => document.querySelectorAll('.chat-composer [data-pill-chip]').length > n, [before], { timeout: 5000 })
+  await win.waitForFunction(
+    ([n]) => document.querySelectorAll('.chat-composer [data-pill-chip]').length > n,
+    [before],
+    { timeout: 5000 },
+  )
   // The context bridge focuses the composer on the next frame.
-  await win.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Chat message', null, { timeout: 2000 })
+  await win.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Chat message', null, {
+    timeout: 2000,
+  })
 }
 
 try {
@@ -100,7 +126,11 @@ try {
   await quoteBubble('promo-m4')
   await win.keyboard.type('Z')
   let text = await composerText()
-  check('Cmd+L after text: typing continues after the chip', /^hello world\s*<chip>\s*Z$/.test(text), JSON.stringify(text))
+  check(
+    'Cmd+L after text: typing continues after the chip',
+    /^hello world\s*<chip>\s*Z$/.test(text),
+    JSON.stringify(text),
+  )
 
   // Caret inside the text.
   await clearComposer()
@@ -109,13 +139,21 @@ try {
   await quoteBubble('promo-m4')
   await win.keyboard.type('Z')
   text = await composerText()
-  check('Cmd+L mid-text: typing continues right after the chip', /^hello\s*<chip>\s*Z\s*world$/.test(text), JSON.stringify(text))
+  check(
+    'Cmd+L mid-text: typing continues right after the chip',
+    /^hello\s*<chip>\s*Z\s*world$/.test(text),
+    JSON.stringify(text),
+  )
 
   // A second Cmd+L goes after the first chip.
   await quoteBubble('promo-m1')
   await win.keyboard.type('Y')
   text = await composerText()
-  check('a second Cmd+L lands after the first chip', /^hello\s*<chip>\s*Z\s*<chip>\s*Y\s*world$/.test(text), JSON.stringify(text))
+  check(
+    'a second Cmd+L lands after the first chip',
+    /^hello\s*<chip>\s*Z\s*<chip>\s*Y\s*world$/.test(text),
+    JSON.stringify(text),
+  )
 
   // The user's own message, which holds two pills.
   await clearComposer()
@@ -124,10 +162,19 @@ try {
     const all = Object.values(JSON.parse(localStorage.getItem('switchboard.draftPills') ?? '{}')).flat()
     return all.filter((p) => p.kind === 'chat-message').pop() ?? null
   })
-  check('Cmd+L quotes the user\'s own message', !!pill, JSON.stringify(pill))
-  check('the quote is attributed to "you"', !!pill && pill.label.startsWith('you: "') && pill.content.startsWith('> from you: "'), JSON.stringify(pill))
-  check('the quote shows its pills as their labels, not tokens',
-    !!pill && pill.content.includes('Compare src/api/auth.ts:1-7 with api · oauth callback.') && !pill.content.includes('[[pill:'), JSON.stringify(pill?.content))
+  check("Cmd+L quotes the user's own message", !!pill, JSON.stringify(pill))
+  check(
+    'the quote is attributed to "you"',
+    !!pill && pill.label.startsWith('you: "') && pill.content.startsWith('> from you: "'),
+    JSON.stringify(pill),
+  )
+  check(
+    'the quote shows its pills as their labels, not tokens',
+    !!pill &&
+      pill.content.includes('Compare src/api/auth.ts:1-7 with api · oauth callback.') &&
+      !pill.content.includes('[[pill:'),
+    JSON.stringify(pill?.content),
+  )
   await clearComposer()
 } catch (e) {
   check('unexpected error', false, e.message.split('\n').slice(0, 3).join(' / '))

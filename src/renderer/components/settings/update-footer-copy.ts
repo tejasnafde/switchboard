@@ -15,13 +15,15 @@ export function updateFooterCopy(platform: NodeJS.Platform | string): UpdateFoot
   if (platform === 'darwin') {
     return {
       line: LINE,
-      tooltip: 'Gatekeeper may re-quarantine each new version. Right-click the app and choose Open, or run: xattr -dr com.apple.quarantine /Applications/Switchboard.app',
+      tooltip:
+        'Gatekeeper may re-quarantine each new version. Right-click the app and choose Open, or run: xattr -dr com.apple.quarantine /Applications/Switchboard.app',
     }
   }
   if (platform === 'win32') {
     return {
       line: LINE,
-      tooltip: 'SmartScreen may warn on the first run of a new version. Click "More info", then "Run anyway". First run only.',
+      tooltip:
+        'SmartScreen may warn on the first run of a new version. Click "More info", then "Run anyway". First run only.',
     }
   }
   return { line: LINE, tooltip: null }

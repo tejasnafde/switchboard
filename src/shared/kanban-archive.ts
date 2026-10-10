@@ -7,10 +7,7 @@ import type { KanbanStatus } from './kanban'
 
 export type ArchiveAction = 'archive' | 'unarchive' | 'none'
 
-export function archiveActionForStatusChange(
-  prev: KanbanStatus,
-  next: KanbanStatus | undefined,
-): ArchiveAction {
+export function archiveActionForStatusChange(prev: KanbanStatus, next: KanbanStatus | undefined): ArchiveAction {
   if (!next || next === prev) return 'none'
   if (next === 'done') return 'archive'
   if (prev === 'done') return 'unarchive'

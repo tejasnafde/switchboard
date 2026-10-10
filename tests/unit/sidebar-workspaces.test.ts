@@ -29,7 +29,11 @@ const proj = (path: string, workspaceId: string | null, sessions: SessionSummary
 })
 
 const ws = (id: string, name: string, sortOrder = 0, color: string | null = null): Workspace => ({
-  id, name, sortOrder, color, createdAt: 0,
+  id,
+  name,
+  sortOrder,
+  color,
+  createdAt: 0,
 })
 
 describe('groupProjectsByWorkspace', () => {

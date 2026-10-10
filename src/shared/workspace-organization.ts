@@ -14,11 +14,7 @@ export function projectOrganizationItems(projects: Project[]): ProjectOrganizati
   }))
 }
 
-export function reorderWorkspacesById(
-  workspaces: Workspace[],
-  activeId: string,
-  overId: string,
-): Workspace[] {
+export function reorderWorkspacesById(workspaces: Workspace[], activeId: string, overId: string): Workspace[] {
   const from = workspaces.findIndex((workspace) => workspace.id === activeId)
   const to = workspaces.findIndex((workspace) => workspace.id === overId)
   if (from === -1 || to === -1 || from === to) return workspaces

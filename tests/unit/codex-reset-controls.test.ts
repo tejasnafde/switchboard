@@ -30,8 +30,22 @@ function usage(session: number, resetCredits: UsageResetCredits | null = CREDITS
     plan: null,
     account: null,
     windows: [
-      buildWindow({ id: 's', label: '5-hour', kind: 'session', percent: session, resetsAtMs: NOW + 3 * 3_600_000, windowMinutes: 300 }),
-      buildWindow({ id: 'w', label: 'Weekly', kind: 'weekly', percent: 40, resetsAtMs: NOW + 3 * DAY, windowMinutes: 10080 }),
+      buildWindow({
+        id: 's',
+        label: '5-hour',
+        kind: 'session',
+        percent: session,
+        resetsAtMs: NOW + 3 * 3_600_000,
+        windowMinutes: 300,
+      }),
+      buildWindow({
+        id: 'w',
+        label: 'Weekly',
+        kind: 'weekly',
+        percent: 40,
+        resetsAtMs: NOW + 3 * DAY,
+        windowMinutes: 10080,
+      }),
     ],
     overage: [],
     ...(resetCredits ? { resetCredits } : {}),
@@ -57,7 +71,8 @@ function render(u: ProviderUsage | undefined, onConsume: (creditId: string | nul
   act(() => root.render(createElement(CodexResetControls, { usage: u, onConsume })))
 }
 
-const buttonNamed = (name: string) => [...container.querySelectorAll('button')].find((b) => b.textContent === name) ?? null
+const buttonNamed = (name: string) =>
+  [...container.querySelectorAll('button')].find((b) => b.textContent === name) ?? null
 const text = () => container.textContent ?? ''
 
 describe('CodexResetControls', () => {
@@ -98,7 +113,12 @@ describe('CodexResetControls', () => {
 
   it('locks the button while applying, then shows the result', async () => {
     let finish!: (outcome: CodexResetOutcome) => void
-    const onConsume = vi.fn(() => new Promise<CodexResetOutcome>((resolve) => { finish = resolve }))
+    const onConsume = vi.fn(
+      () =>
+        new Promise<CodexResetOutcome>((resolve) => {
+          finish = resolve
+        }),
+    )
     render(usage(100), onConsume)
     act(() => buttonNamed('Use reset')!.click())
     await act(async () => buttonNamed('Use reset')!.click())

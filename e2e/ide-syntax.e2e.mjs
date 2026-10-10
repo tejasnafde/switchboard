@@ -86,7 +86,9 @@ try {
     routed = res?.ok === true
   }
   check(routed, 'sample.ts routed to the workbench')
-  await workbench.waitForSelector('.monaco-editor .view-lines .mtk1, .monaco-editor .view-lines span', { timeout: 30_000 })
+  await workbench.waitForSelector('.monaco-editor .view-lines .mtk1, .monaco-editor .view-lines span', {
+    timeout: 30_000,
+  })
 
   // TextMate colors render as inline `color:` on token spans (Monaco emits
   // per-token <span class="mtkN"> with colors from a generated stylesheet).
@@ -99,7 +101,10 @@ try {
     return [...colors]
   })
   console.log(`  (distinct token colors: ${distinctColors.length})`)
-  check(distinctColors.length >= 4, `syntax highlighting active: ${distinctColors.length} distinct token colors (bug = 1)`)
+  check(
+    distinctColors.length >= 4,
+    `syntax highlighting active: ${distinctColors.length} distinct token colors (bug = 1)`,
+  )
 
   // The comment should be the muted grey we set, distinct from code.
   const commentColored = await workbench.evaluate(() => {

@@ -21,10 +21,12 @@ const TONE_COLOR: Record<SyntheticTone, string> = {
  * images still render as a user bubble, so such a message does not count.
  */
 export function isSyntheticOnlyMessage(message: ChatMessage): boolean {
-  return message.role === 'user'
-    && message.displayBody === undefined
-    && !message.images?.length
-    && isSyntheticOnlyUserText(message.content)
+  return (
+    message.role === 'user' &&
+    message.displayBody === undefined &&
+    !message.images?.length &&
+    isSyntheticOnlyUserText(message.content)
+  )
 }
 
 /** Compact, muted row for a provider-generated user-role block. */
@@ -57,13 +59,35 @@ export function SyntheticUserRow({ part }: { part: SyntheticUserPart }) {
     fontFamily: mono ? 'var(--font-mono)' : undefined,
   }
   if (!detail) {
-    return <div data-synthetic-kind={part.kind} style={style}><div style={line}>{dot}{label}</div></div>
+    return (
+      <div data-synthetic-kind={part.kind} style={style}>
+        <div style={line}>
+          {dot}
+          {label}
+        </div>
+      </div>
+    )
   }
   return (
     <details data-synthetic-kind={part.kind} style={style}>
       {/* A compact summary runs to pages, too long for a tooltip. */}
-      <summary style={{ ...line, cursor: 'pointer', listStyle: 'none' }} title={part.kind === 'compacted' ? undefined : detail}>{dot}{label}</summary>
-      <div style={{ padding: '4px 0 0 12px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: 'var(--font-mono)', maxHeight: 400, overflowY: 'auto' }}>
+      <summary
+        style={{ ...line, cursor: 'pointer', listStyle: 'none' }}
+        title={part.kind === 'compacted' ? undefined : detail}
+      >
+        {dot}
+        {label}
+      </summary>
+      <div
+        style={{
+          padding: '4px 0 0 12px',
+          whiteSpace: 'pre-wrap',
+          overflowWrap: 'anywhere',
+          fontFamily: 'var(--font-mono)',
+          maxHeight: 400,
+          overflowY: 'auto',
+        }}
+      >
         {detail}
       </div>
     </details>

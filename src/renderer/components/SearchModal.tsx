@@ -81,9 +81,12 @@ export function SearchModal({ open, onClose, onOpenChat }: SearchModalProps) {
     }
   }, [open])
 
-  useEffect(() => () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-  }, [])
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    },
+    [],
+  )
 
   useEffect(() => {
     listRef.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: 'nearest' })
@@ -110,20 +113,23 @@ export function SearchModal({ open, onClose, onOpenChat }: SearchModalProps) {
     }, 200)
   }, [])
 
-  const handleSelect = useCallback(async (hit: MachineSearchHit) => {
-    const findQuery = parseArchiveIntent(query).query.trim()
-    // Close first: the dialog hands focus back as it closes, and the chat's
-    // find bar has to take it after that.
-    onClose()
-    let shownId: string | null = null
-    try {
-      shownId = await onOpenChat(hit)
-    } catch (err) {
-      log.warn('opening a search hit failed', { machineId: hit.machineId, err })
-    }
-    if (!shownId || !findQuery) return
-    requestChatFind(shownId, findQuery, hit.messageId)
-  }, [query, onClose, onOpenChat, requestChatFind])
+  const handleSelect = useCallback(
+    async (hit: MachineSearchHit) => {
+      const findQuery = parseArchiveIntent(query).query.trim()
+      // Close first: the dialog hands focus back as it closes, and the chat's
+      // find bar has to take it after that.
+      onClose()
+      let shownId: string | null = null
+      try {
+        shownId = await onOpenChat(hit)
+      } catch (err) {
+        log.warn('opening a search hit failed', { machineId: hit.machineId, err })
+      }
+      if (!shownId || !findQuery) return
+      requestChatFind(shownId, findQuery, hit.messageId)
+    },
+    [query, onClose, onOpenChat, requestChatFind],
+  )
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -144,7 +150,12 @@ export function SearchModal({ open, onClose, onOpenChat }: SearchModalProps) {
   const chatCount = new Set(results.map((r) => `${r.machineId}:${r.conversationId}`)).size
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+    >
       <DialogContent
         aria-describedby={undefined}
         onOpenAutoFocus={(e) => {
@@ -160,8 +171,18 @@ export function SearchModal({ open, onClose, onOpenChat }: SearchModalProps) {
         <DialogTitle className="sr-only">Search across all conversations</DialogTitle>
         {/* Search input */}
         <div className="flex items-center gap-[8px] border-b border-[var(--border)] px-[16px] py-[12px]">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--text-muted)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.35-4.35" />
           </svg>
           <input
             ref={inputRef}
@@ -170,42 +191,48 @@ export function SearchModal({ open, onClose, onOpenChat }: SearchModalProps) {
             placeholder="Search across all conversations..."
             className="flex-1 border-0 bg-transparent text-[14px] text-[var(--text-primary)] outline-none"
           />
-          {searching && (
-            <span className="text-[11px] text-[var(--text-muted)]">Searching...</span>
-          )}
+          {searching && <span className="text-[11px] text-[var(--text-muted)]">Searching...</span>}
         </div>
 
         {/* Results */}
         <div ref={listRef} className="flex-1 overflow-y-auto p-[4px]">
           {results.length === 0 && query.trim().length >= 2 && !searching && (
-            <div className="p-[24px] text-center text-[13px] text-[var(--text-muted)]">
-              No results found
-            </div>
+            <div className="p-[24px] text-center text-[13px] text-[var(--text-muted)]">No results found</div>
           )}
 
           {results.map((r, i) => {
             const avatar = AGENT_AVATAR[providerKindFor(r.agentType)]
-            const machine = r.machineId === 'local' ? null : remotes.find((m) => m.id === r.machineId)?.name ?? r.machineId
+            const machine =
+              r.machineId === 'local' ? null : (remotes.find((m) => m.id === r.machineId)?.name ?? r.machineId)
             const meta = [
               machine,
               projectName(r.projectPath),
               agentName(r.agentType),
               r.timestamp ? formatRelativeTime(r.timestamp) : null,
-            ].filter(Boolean).join(' · ')
+            ]
+              .filter(Boolean)
+              .join(' · ')
             const selected = i === activeIdx
             return (
               <button
                 key={`${r.machineId}:${r.messageId}`}
                 type="button"
                 data-selected={selected}
-                onClick={() => { void handleSelect(r) }}
-                onMouseMove={() => { if (!selected) setActiveIdx(i) }}
+                onClick={() => {
+                  void handleSelect(r)
+                }}
+                onMouseMove={() => {
+                  if (!selected) setActiveIdx(i)
+                }}
                 className="cmdk-item block w-full cursor-pointer rounded-[6px] border-0 bg-transparent px-[12px] py-[8px] text-left text-[13px] text-[var(--text-primary)]"
               >
                 <div className="flex min-w-0 items-center gap-[8px]">
                   <span
                     aria-hidden
-                    className={cn('inline-flex size-[16px] shrink-0 items-center justify-center rounded-full text-[8px] text-white', avatar.className)}
+                    className={cn(
+                      'inline-flex size-[16px] shrink-0 items-center justify-center rounded-full text-[8px] text-white',
+                      avatar.className,
+                    )}
                   >
                     {avatar.initials}
                   </span>
@@ -218,10 +245,14 @@ export function SearchModal({ open, onClose, onOpenChat }: SearchModalProps) {
                   <span className="ml-auto shrink-0 text-[11.5px] text-[var(--text-muted)]">{meta}</span>
                 </div>
                 <div className="mt-[3px] line-clamp-2 text-[12px] leading-[1.5] text-[var(--text-secondary)]">
-                  <span className={cn(
-                    'mr-[6px] rounded-[3px] px-[5px] py-[1px] text-[10px] font-[500]',
-                    r.role === 'user' ? 'bg-[var(--accent-subtle)] text-[var(--accent)]' : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)]',
-                  )}>
+                  <span
+                    className={cn(
+                      'mr-[6px] rounded-[3px] px-[5px] py-[1px] text-[10px] font-[500]',
+                      r.role === 'user'
+                        ? 'bg-[var(--accent-subtle)] text-[var(--accent)]'
+                        : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)]',
+                    )}
+                  >
                     {r.role === 'user' ? 'you' : agentName(r.agentType)}
                   </span>
                   <span dangerouslySetInnerHTML={{ __html: renderSearchResultSnippetHtml(r) }} />
@@ -233,7 +264,8 @@ export function SearchModal({ open, onClose, onOpenChat }: SearchModalProps) {
         {results.length > 0 && (
           <div className="flex gap-[14px] border-t border-[var(--border)] px-[12px] py-[6px] text-[11px] text-[var(--text-muted)]">
             <span>
-              {chatCount} {chatCount === 1 ? 'chat' : 'chats'}, {results.length} {results.length === 1 ? 'match' : 'matches'}
+              {chatCount} {chatCount === 1 ? 'chat' : 'chats'}, {results.length}{' '}
+              {results.length === 1 ? 'match' : 'matches'}
             </span>
             <span>↑↓ navigate</span>
             <span>Enter open at the message</span>

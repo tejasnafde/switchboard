@@ -11,7 +11,12 @@ const log = createRendererLogger('chat:history')
  * long tool calls as previews. A backend without `history_window_v1`,
  * `history_image_refs_v1` or `history_tool_previews_v1` ignores these and
  * answers in full, which renders as before. */
-export const NEWEST_HISTORY_WINDOW: HistoryLoadOptions = { window: true, limit: DESKTOP_HISTORY_WINDOW, imageRefs: true, toolPreviews: true }
+export const NEWEST_HISTORY_WINDOW: HistoryLoadOptions = {
+  window: true,
+  limit: DESKTOP_HISTORY_WINDOW,
+  imageRefs: true,
+  toolPreviews: true,
+}
 
 interface HistoryResponse {
   messages?: ChatMessage[]
@@ -46,7 +51,10 @@ export function loadOlderHistory(sessionId: string): Promise<void> {
     if (!cursor) return
     const span = perfSpan('chat.load-older', { thread: sessionId })
     try {
-      const resp = await window.api.app.loadSessionById(sessionId, { ...NEWEST_HISTORY_WINDOW, beforeId: cursor }) as HistoryResponse
+      const resp = (await window.api.app.loadSessionById(sessionId, {
+        ...NEWEST_HISTORY_WINDOW,
+        beforeId: cursor,
+      })) as HistoryResponse
       if (resp?.cursorReset) {
         // The oldest shown row is gone from the backend's history, and the
         // answer is its newest window. Start over from that window (keeping
@@ -61,7 +69,9 @@ export function loadOlderHistory(sessionId: string): Promise<void> {
         return
       }
       const older = resp?.messages ?? []
-      const applied = useAgentStore.getState().prependOlderMessages(sessionId, cursor, older, resp?.nextBeforeId ?? null)
+      const applied = useAgentStore
+        .getState()
+        .prependOlderMessages(sessionId, cursor, older, resp?.nextBeforeId ?? null)
       span.end({ outcome: applied ? 'loaded' : 'stale', messages: older.length })
     } catch (err) {
       span.end({ outcome: 'error' })
@@ -81,7 +91,10 @@ export function ensureFullHistory(sessionId: string): Promise<boolean> {
     if (!cursor) return holdsAllRows(sessionId)
     const span = perfSpan('chat.load-full', { thread: sessionId })
     try {
-      const resp = await window.api.app.loadSessionById(sessionId, { imageRefs: true, toolPreviews: true }) as HistoryResponse
+      const resp = (await window.api.app.loadSessionById(sessionId, {
+        imageRefs: true,
+        toolPreviews: true,
+      })) as HistoryResponse
       // An older window may have landed meanwhile; cut at the row shown now.
       const current = cursorOf(sessionId)
       if (!current) {

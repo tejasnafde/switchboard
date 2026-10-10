@@ -66,9 +66,11 @@ describe('dedupeMessagesById', () => {
 
 describe('mergeConversationMessages', () => {
   const merge = (disk: ChatMessage[], database: ChatMessage[]): ChatMessage[] => {
-    const candidate = (messagesModule as unknown as {
-      mergeConversationMessages?: (diskMessages: ChatMessage[], databaseMessages: ChatMessage[]) => ChatMessage[]
-    }).mergeConversationMessages
+    const candidate = (
+      messagesModule as unknown as {
+        mergeConversationMessages?: (diskMessages: ChatMessage[], databaseMessages: ChatMessage[]) => ChatMessage[]
+      }
+    ).mergeConversationMessages
     return candidate?.(disk, database) ?? []
   }
 
@@ -77,11 +79,13 @@ describe('mergeConversationMessages', () => {
       msg('db-old', { role: 'user', content: 'old turn', timestamp: 100 }),
       msg('same-tail', { content: 'new turn', timestamp: 200 }),
     ]
-    const disk = [msg('same-tail', {
-      content: 'new turn',
-      timestamp: 200,
-      toolCalls: [{ id: 't', name: 'Read', input: '{}' }],
-    })]
+    const disk = [
+      msg('same-tail', {
+        content: 'new turn',
+        timestamp: 200,
+        toolCalls: [{ id: 't', name: 'Read', input: '{}' }],
+      }),
+    ]
 
     const merged = merge(disk, database)
 
@@ -100,23 +104,27 @@ describe('mergeConversationMessages', () => {
   })
 
   it('enriches a semantic disk match with images and display metadata from SQLite', () => {
-    const disk = [msg('codex_stable', {
-      role: 'user',
-      content: 'look at this',
-      timestamp: 10_000,
-      images: [{ url: 'data:image/png;base64,AAA' }],
-    })]
-    const database = [msg('msg_legacy_random', {
-      role: 'user',
-      content: 'look at this',
-      timestamp: 10_500,
-      images: [
-        { url: 'data:image/png;base64,AAA', mimeType: 'image/png', name: 'screen.png' },
-        { url: 'data:image/jpeg;base64,BBB', mimeType: 'image/jpeg' },
-      ],
-      displayBody: 'look at [[pill:screen]]',
-      pillsMeta: { screen: { label: 'screen.png', kind: 'file' } },
-    })]
+    const disk = [
+      msg('codex_stable', {
+        role: 'user',
+        content: 'look at this',
+        timestamp: 10_000,
+        images: [{ url: 'data:image/png;base64,AAA' }],
+      }),
+    ]
+    const database = [
+      msg('msg_legacy_random', {
+        role: 'user',
+        content: 'look at this',
+        timestamp: 10_500,
+        images: [
+          { url: 'data:image/png;base64,AAA', mimeType: 'image/png', name: 'screen.png' },
+          { url: 'data:image/jpeg;base64,BBB', mimeType: 'image/jpeg' },
+        ],
+        displayBody: 'look at [[pill:screen]]',
+        pillsMeta: { screen: { label: 'screen.png', kind: 'file' } },
+      }),
+    ]
 
     const merged = merge(disk, database)
 
@@ -134,11 +142,13 @@ describe('mergeConversationMessages', () => {
 
   it('enriches an exact-id disk match instead of discarding SQLite images', () => {
     const disk = [msg('same', { role: 'user', content: '', images: undefined })]
-    const database = [msg('same', {
-      role: 'user',
-      content: '',
-      images: [{ url: 'data:image/webp;base64,CCC', mimeType: 'image/webp' }],
-    })]
+    const database = [
+      msg('same', {
+        role: 'user',
+        content: '',
+        images: [{ url: 'data:image/webp;base64,CCC', mimeType: 'image/webp' }],
+      }),
+    ]
 
     expect(merge(disk, database)).toEqual([
       expect.objectContaining({
@@ -199,7 +209,7 @@ describe('mergeConversationMessages', () => {
     expect(merge(disk, database).map((m) => m.id)).toEqual(['u1', 'd1', 'turn_2', 'msg_b'])
   })
 
-  it('keeps a new turn\'s reply when the previous turn gave the same reply under 60s earlier', () => {
+  it("keeps a new turn's reply when the previous turn gave the same reply under 60s earlier", () => {
     const disk = [
       msg('u1', { role: 'user', content: 'first', timestamp: 0 }),
       msg('d1', { content: 'ok', timestamp: 1_000 }),
@@ -210,7 +220,7 @@ describe('mergeConversationMessages', () => {
     expect(merge(disk, database).map((m) => m.id)).toEqual(['u1', 'd1', 'u2', 'msg_b'])
   })
 
-  it('keeps a new turn\'s reply when the previous turn\'s equal reply ended just before it', () => {
+  it("keeps a new turn's reply when the previous turn's equal reply ended just before it", () => {
     const disk = [
       msg('u1', { role: 'user', content: 'first', timestamp: 0 }),
       msg('d1', { content: 'ok', timestamp: 9_000 }),
@@ -221,7 +231,7 @@ describe('mergeConversationMessages', () => {
     expect(merge(disk, database).map((m) => m.id)).toEqual(['u1', 'd1', 'u2', 'msg_b'])
   })
 
-  it('keeps a turn\'s reply when only the next turn\'s equal reply is on disk, under 60s later', () => {
+  it("keeps a turn's reply when only the next turn's equal reply is on disk, under 60s later", () => {
     const disk = [
       msg('u1', { role: 'user', content: 'first', timestamp: 0 }),
       msg('u2', { role: 'user', content: 'second', timestamp: 10_000 }),
@@ -259,7 +269,8 @@ describe('mergeConversationMessages', () => {
 
   it('reconciles a large legacy transcript without scanning the full disk list per row', () => {
     const disk = Array.from({ length: 20_000 }, (_, index) =>
-      msg(`disk-${index}`, { content: `turn-${index}`, timestamp: index * 100_000 }))
+      msg(`disk-${index}`, { content: `turn-${index}`, timestamp: index * 100_000 }),
+    )
     const database = disk.map((message, index) => ({ ...message, id: `legacy-${index}` }))
 
     const startedAt = performance.now()
@@ -276,9 +287,14 @@ describe('mergeConversationMessages', () => {
 describe('mergeConversationMessages with many task notices', () => {
   it('pairs thousands of stored notices with their transcript lines quickly', () => {
     const count = 4_000
-    const notice = (i: number) => taskNotificationText({ taskId: `task-${i}`, status: 'completed', summary: `done ${i}` })
-    const disk = Array.from({ length: count }, (_, i) => msg(`line-${i}`, { role: 'user', content: notice(i), timestamp: i * 10_000 }))
-    const stored = Array.from({ length: count }, (_, i) => msg(`${STORED_TASK_NOTICE_PREFIX}c:${i}`, { role: 'user', content: notice(i), timestamp: i * 10_000 + 50 }))
+    const notice = (i: number) =>
+      taskNotificationText({ taskId: `task-${i}`, status: 'completed', summary: `done ${i}` })
+    const disk = Array.from({ length: count }, (_, i) =>
+      msg(`line-${i}`, { role: 'user', content: notice(i), timestamp: i * 10_000 }),
+    )
+    const stored = Array.from({ length: count }, (_, i) =>
+      msg(`${STORED_TASK_NOTICE_PREFIX}c:${i}`, { role: 'user', content: notice(i), timestamp: i * 10_000 + 50 }),
+    )
     const start = performance.now()
     const merged = messagesModule.mergeConversationMessages(disk, stored)
     // Comparing every notice with every line took about 5 s here.

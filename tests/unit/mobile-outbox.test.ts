@@ -128,21 +128,25 @@ describe('atomic acceptance results', () => {
   it('preserves typed definite rejections and conflicts for editing', () => {
     expect(acceptanceDisposition({ status: 'rejected', retryable: false, reason: 'too large' })).toBe('rejected')
     expect(acceptanceDisposition({ status: 'conflict', reason: 'origin changed' })).toBe('conflict')
-    expect(decodeTurnAcceptance({
-      status: 'rejected',
-      accepted: false,
-      state: 'rejected',
-      duplicate: false,
-      retryable: true,
-      reason: 'provider starting',
-    })).toEqual({ disposition: 'rejected', retryable: true, reason: 'provider starting' })
-    expect(decodeTurnAcceptance({
-      status: 'conflict',
-      accepted: false,
-      state: 'conflict',
-      duplicate: true,
-      reason: 'origin changed',
-    })).toEqual({ disposition: 'conflict', retryable: false, reason: 'origin changed' })
+    expect(
+      decodeTurnAcceptance({
+        status: 'rejected',
+        accepted: false,
+        state: 'rejected',
+        duplicate: false,
+        retryable: true,
+        reason: 'provider starting',
+      }),
+    ).toEqual({ disposition: 'rejected', retryable: true, reason: 'provider starting' })
+    expect(
+      decodeTurnAcceptance({
+        status: 'conflict',
+        accepted: false,
+        state: 'conflict',
+        duplicate: true,
+        reason: 'origin changed',
+      }),
+    ).toEqual({ disposition: 'conflict', retryable: false, reason: 'origin changed' })
   })
 })
 
@@ -283,12 +287,14 @@ describe('deterministic rejection recovery', () => {
     const blocked = markRejected(message, new Error('Unsupported image type'))
     expect(recoverRejectedDraft(blocked)).toEqual({
       text: 'inspect this',
-      images: [{
-        id: 'recovered-turn-1-0',
-        previewUri: image.url,
-        url: image.url,
-        mimeType: 'image/png',
-      }],
+      images: [
+        {
+          id: 'recovered-turn-1-0',
+          previewUri: image.url,
+          url: image.url,
+          mimeType: 'image/png',
+        },
+      ],
     })
     expect(recoverRejectedDraft(message)).toBeNull()
   })

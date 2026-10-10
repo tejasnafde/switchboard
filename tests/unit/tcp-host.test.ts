@@ -157,8 +157,10 @@ describe('TcpHost framing', () => {
     host.handle('echo', (v: unknown) => v)
     const { socket, r } = await dial(port)
     socket.write(
-      JSON.stringify({ k: 'req', id: 1, ch: 'echo', args: ['a'] }) + '\n' +
-        JSON.stringify({ k: 'req', id: 2, ch: 'echo', args: ['b'] }) + '\n',
+      JSON.stringify({ k: 'req', id: 1, ch: 'echo', args: ['a'] }) +
+        '\n' +
+        JSON.stringify({ k: 'req', id: 2, ch: 'echo', args: ['b'] }) +
+        '\n',
     )
     expect(await r.next()).toMatchObject({ id: 1, result: 'a' })
     expect(await r.next()).toMatchObject({ id: 2, result: 'b' })
@@ -298,7 +300,7 @@ it('answers a heartbeat probe after authenticating', async () => {
   const { socket, r } = await dial(port)
   socket.write(JSON.stringify({ k: 'auth', token: 'secret' }) + '\n')
   expect(await r.next()).toMatchObject({ k: 'res', id: 0, ok: true, result: 'authed' })
-  const ready = await r.next() as { capabilities: string[] }
+  const ready = (await r.next()) as { capabilities: string[] }
   expect(ready.capabilities).toContain('heartbeat_v1')
   socket.write(JSON.stringify({ k: 'ping', t: 7 }) + '\n')
   expect(await r.next()).toEqual({ k: 'pong', t: 7 })

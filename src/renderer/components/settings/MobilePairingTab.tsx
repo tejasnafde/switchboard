@@ -115,24 +115,28 @@ export function MobilePairingTab() {
       window.api.settings.get(SETTINGS_KEYS.port),
       window.api.settings.get(SETTINGS_KEYS.token),
       window.api.settings.get(SETTINGS_KEYS.enabled),
-    ]).then(([addrs, savedHost, savedPort, savedToken, savedEnabled]) => {
-      if (cancelled) return
-      setLanAddrs(addrs)
-      const initialHost = savedHost ?? addrs[0]?.address ?? ''
-      setHost(initialHost)
-      setCustomHost(initialHost !== '' && !addrs.some((a) => a.address === initialHost))
-      if (savedPort) setPort(savedPort)
-      // Do NOT mint a token here. Generating one on mount and persisting it
-      // below meant merely LOOKING at this tab opened a LAN listener with a
-      // static credential, on every future launch, with no way to turn it off.
-      setToken(savedToken ?? '')
-      setEnabled(savedEnabled === 'true')
-      setLoaded(true)
-    }).catch((err) => {
-      log.warn('failed to load pairing settings', err)
-      if (!cancelled) setLoaded(true)
-    })
-    return () => { cancelled = true }
+    ])
+      .then(([addrs, savedHost, savedPort, savedToken, savedEnabled]) => {
+        if (cancelled) return
+        setLanAddrs(addrs)
+        const initialHost = savedHost ?? addrs[0]?.address ?? ''
+        setHost(initialHost)
+        setCustomHost(initialHost !== '' && !addrs.some((a) => a.address === initialHost))
+        if (savedPort) setPort(savedPort)
+        // Do NOT mint a token here. Generating one on mount and persisting it
+        // below meant merely LOOKING at this tab opened a LAN listener with a
+        // static credential, on every future launch, with no way to turn it off.
+        setToken(savedToken ?? '')
+        setEnabled(savedEnabled === 'true')
+        setLoaded(true)
+      })
+      .catch((err) => {
+        log.warn('failed to load pairing settings', err)
+        if (!cancelled) setLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // Persist on change (post-load only, so defaults don't clobber saved values),
@@ -152,7 +156,9 @@ export function MobilePairingTab() {
         if (!cancelled) setEndpoint(status)
       })
       .catch((err) => log.warn('failed to persist/apply pairing settings', err))
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [loaded, host, port, token, enabled])
 
   const refreshDevices = useCallback(() => {
@@ -223,27 +229,33 @@ export function MobilePairingTab() {
     }
     let cancelled = false
     QRCode.toDataURL(pairingUrl, { margin: 1, width: 220 })
-      .then((dataUrl) => { if (!cancelled) setQrDataUrl(dataUrl) })
+      .then((dataUrl) => {
+        if (!cancelled) setQrDataUrl(dataUrl)
+      })
       .catch((err) => {
         log.warn('QR generation failed', err)
         if (!cancelled) setQrDataUrl(null)
       })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [pairingUrl])
 
   // The download QR encodes a static URL, so render it once per mount.
   useEffect(() => {
     let cancelled = false
     QRCode.toDataURL(APK_DOWNLOAD_URL, { margin: 1, width: 160 })
-      .then((dataUrl) => { if (!cancelled) setApkQrDataUrl(dataUrl) })
+      .then((dataUrl) => {
+        if (!cancelled) setApkQrDataUrl(dataUrl)
+      })
       .catch((err) => log.warn('APK QR generation failed', err))
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // HOST serves the `ws` kind, TCP_PORT the `iap` one. Both, so neither silently fails.
-  const serverCommand = token
-    ? `SWITCHBOARD_TOKEN=${token} HOST=0.0.0.0 TCP_PORT=8766 npm run server`
-    : null
+  const serverCommand = token ? `SWITCHBOARD_TOKEN=${token} HOST=0.0.0.0 TCP_PORT=8766 npm run server` : null
 
   const copyCommand = useCallback(async () => {
     if (!serverCommand) return
@@ -272,12 +284,15 @@ export function MobilePairingTab() {
 
   const selectValue = customHost ? CUSTOM_HOST : host
   // One row per address: the same one on two interfaces would be two rows with one value.
-  const hostOptions = useMemo(() => [
-    ...lanAddrs
-      .filter((a, i) => lanAddrs.findIndex((b) => b.address === a.address) === i)
-      .map((a) => ({ value: a.address, label: `${a.address} (${a.iface})` })),
-    { value: CUSTOM_HOST, label: 'Custom hostname…' },
-  ], [lanAddrs])
+  const hostOptions = useMemo(
+    () => [
+      ...lanAddrs
+        .filter((a, i) => lanAddrs.findIndex((b) => b.address === a.address) === i)
+        .map((a) => ({ value: a.address, label: `${a.address} (${a.iface})` })),
+      { value: CUSTOM_HOST, label: 'Custom hostname…' },
+    ],
+    [lanAddrs],
+  )
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
@@ -389,16 +404,18 @@ export function MobilePairingTab() {
       </div>
 
       {/* QR + pairing URL preview */}
-      <div style={{
-        display: 'flex',
-        gap: '14px',
-        alignItems: 'center',
-        padding: '12px 14px',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius)',
-        background: 'var(--bg-tertiary)',
-        marginBottom: '14px',
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: '14px',
+          alignItems: 'center',
+          padding: '12px 14px',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius)',
+          background: 'var(--bg-tertiary)',
+          marginBottom: '14px',
+        }}
+      >
         {qrDataUrl ? (
           <img
             src={qrDataUrl}
@@ -408,20 +425,22 @@ export function MobilePairingTab() {
             style={{ borderRadius: '4px', background: '#fff', flexShrink: 0 }}
           />
         ) : (
-          <div style={{
-            width: '140px',
-            height: '140px',
-            flexShrink: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '1px dashed var(--border)',
-            borderRadius: '4px',
-            fontSize: '10.5px',
-            color: 'var(--text-muted)',
-            textAlign: 'center',
-            padding: '8px',
-          }}>
+          <div
+            style={{
+              width: '140px',
+              height: '140px',
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px dashed var(--border)',
+              borderRadius: '4px',
+              fontSize: '10.5px',
+              color: 'var(--text-muted)',
+              textAlign: 'center',
+              padding: '8px',
+            }}
+          >
             {!enabled
               ? 'Turn the endpoint on to pair'
               : !isValidPort(port)
@@ -433,9 +452,7 @@ export function MobilePairingTab() {
         )}
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)' }}>
-              Pairing URL
-            </div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)' }}>Pairing URL</div>
             <button
               onClick={startPairing}
               disabled={!enabled || !host || !isValidPort(port)}
@@ -452,39 +469,43 @@ export function MobilePairingTab() {
               {pairing ? 'New code' : 'Show pairing QR'}
             </button>
             {pairing && (
-              <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
-                expires in {secondsLeft}s
-              </span>
+              <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>expires in {secondsLeft}s</span>
             )}
           </div>
-          <div style={{
-            fontSize: '11px',
-            fontFamily: 'var(--font-mono)',
-            color: 'var(--text-primary)',
-            wordBreak: 'break-all',
-            lineHeight: 1.5,
-          }}>
+          <div
+            style={{
+              fontSize: '11px',
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--text-primary)',
+              wordBreak: 'break-all',
+              lineHeight: 1.5,
+            }}
+          >
             {pairingUrl ?? '·'}
           </div>
           <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.5 }}>
             Scan from the mobile app. The QR re-renders on every field change.
           </div>
           {endpoint && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              marginTop: '8px',
-              fontSize: '10.5px',
-              color: endpoint.listening ? 'var(--text-secondary)' : 'var(--error, #e5544a)',
-            }}>
-              <span style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '3px',
-                flexShrink: 0,
-                background: endpoint.listening ? 'var(--success, #3dd17a)' : 'var(--error, #e5544a)',
-              }} />
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginTop: '8px',
+                fontSize: '10.5px',
+                color: endpoint.listening ? 'var(--text-secondary)' : 'var(--error, #e5544a)',
+              }}
+            >
+              <span
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '3px',
+                  flexShrink: 0,
+                  background: endpoint.listening ? 'var(--success, #3dd17a)' : 'var(--error, #e5544a)',
+                }}
+              />
               {endpoint.listening
                 ? `Serving this QR on port ${endpoint.port}`
                 : `Not serving: ${endpoint.reason ?? 'unknown'}`}
@@ -547,23 +568,27 @@ export function MobilePairingTab() {
 
       {/* Server command */}
       <div style={fieldLabelStyle}>Run on the target machine</div>
-      <div style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '8px',
-        padding: '10px 12px',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius)',
-        background: 'var(--bg-primary)',
-      }}>
-        <code style={{
-          flex: 1,
-          fontSize: '11px',
-          fontFamily: 'var(--font-mono)',
-          color: 'var(--text-primary)',
-          wordBreak: 'break-all',
-          lineHeight: 1.6,
-        }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '8px',
+          padding: '10px 12px',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius)',
+          background: 'var(--bg-primary)',
+        }}
+      >
+        <code
+          style={{
+            flex: 1,
+            fontSize: '11px',
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--text-primary)',
+            wordBreak: 'break-all',
+            lineHeight: 1.6,
+          }}
+        >
           {serverCommand ?? 'Generate a token first.'}
         </code>
         <button
@@ -584,22 +609,24 @@ export function MobilePairingTab() {
         </button>
       </div>
       <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.6 }}>
-        Only for a machine with no Switchboard app running, such as a VM. Runs in the
-        foreground, so start it under tmux, and pair from the QR it prints.
+        Only for a machine with no Switchboard app running, such as a VM. Runs in the foreground, so start it under
+        tmux, and pair from the QR it prints.
         <InfoHint text="This computer needs no command: it serves the endpoint itself. On a VM, the server bundle (out/server/index.cjs) must be present first, and binding beyond loopback without SWITCHBOARD_TOKEN mints one and saves it to ~/.switchboard-server/token. TCP_PORT starts a second listener on 8766 speaking ndjson, which is what an IAP-tunnelled phone dials. Running it here as well would take the port and stop the app from serving." />
       </div>
 
       {/* APK download QR - static URL, resolved to the newest release by the Worker */}
-      <div style={{
-        display: 'flex',
-        gap: '14px',
-        alignItems: 'center',
-        padding: '12px 14px',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius)',
-        background: 'var(--bg-tertiary)',
-        marginTop: '14px',
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: '14px',
+          alignItems: 'center',
+          padding: '12px 14px',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius)',
+          background: 'var(--bg-tertiary)',
+          marginTop: '14px',
+        }}
+      >
         {apkQrDataUrl && (
           <img
             src={apkQrDataUrl}
@@ -616,13 +643,15 @@ export function MobilePairingTab() {
           <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
             Scan to download the Android app
           </div>
-          <div style={{
-            fontSize: '11px',
-            fontFamily: 'var(--font-mono)',
-            color: 'var(--text-primary)',
-            wordBreak: 'break-all',
-            marginTop: '6px',
-          }}>
+          <div
+            style={{
+              fontSize: '11px',
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--text-primary)',
+              wordBreak: 'break-all',
+              marginTop: '6px',
+            }}
+          >
             {APK_DOWNLOAD_URL}
           </div>
         </div>

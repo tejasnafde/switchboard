@@ -29,7 +29,10 @@ function boot(): Promise<number> {
 }
 
 /** The history over a socket, and the bytes the socket read for it. */
-function fetchHistory(port: number, perMessageDeflate: boolean): Promise<{ extensions: string; bytes: number; messages: unknown }> {
+function fetchHistory(
+  port: number,
+  perMessageDeflate: boolean,
+): Promise<{ extensions: string; bytes: number; messages: unknown }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/`, { perMessageDeflate })
     cleanups.push(() => ws.close())

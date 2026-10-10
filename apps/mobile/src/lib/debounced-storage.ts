@@ -17,10 +17,7 @@ export interface DebouncedStorage extends StateStorage {
   flush: () => Promise<void>
 }
 
-export function createDebouncedStorage(
-  inner: StateStorage,
-  debounceMs = DEFAULT_WRITE_DEBOUNCE_MS,
-): DebouncedStorage {
+export function createDebouncedStorage(inner: StateStorage, debounceMs = DEFAULT_WRITE_DEBOUNCE_MS): DebouncedStorage {
   const pending = new Map<string, string>()
   let timer: ReturnType<typeof setTimeout> | null = null
 

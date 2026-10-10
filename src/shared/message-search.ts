@@ -46,9 +46,7 @@ const FTS_OPERATORS = new Set(['AND', 'OR', 'NOT', 'NEAR'])
  * (`*`, `:`, `^`, `-`) separate words, so no query can be a syntax error.
  */
 export function messageSearchTerms(query: string): string[] {
-  return query
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((word) => word && !FTS_OPERATORS.has(word))
+  return query.split(/[^\p{L}\p{N}]+/u).filter((word) => word && !FTS_OPERATORS.has(word))
 }
 
 /**
@@ -72,12 +70,17 @@ export function ftsPhraseExpression(terms: readonly string[]): string | null {
  * folds text, so `cafe` matches `café` here too.
  */
 export function foldForSearch(text: string): string {
-  return text.normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase()
+  return text
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '')
+    .toLowerCase()
 }
 
 /** The words of text, folded, split the way the unicode61 tokenizer splits it. */
 function wordsOf(text: string): string[] {
-  return foldForSearch(text).split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+  return foldForSearch(text)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
 }
 
 function normalizedWords(text: string): string {
@@ -133,12 +136,14 @@ export function orderMessageSearchResults<T extends Rankable>(results: readonly 
     phrase: result.phraseMatch ? 1 : 0,
     bucket: relevanceBucket(result.rank, best),
   }))
-  keyed.sort((a, b) =>
-    b.phrase - a.phrase
-    || b.bucket - a.bucket
-    || (b.result.timestamp ?? 0) - (a.result.timestamp ?? 0)
-    || (a.result.rank ?? 0) - (b.result.rank ?? 0)
-    || a.index - b.index)
+  keyed.sort(
+    (a, b) =>
+      b.phrase - a.phrase ||
+      b.bucket - a.bucket ||
+      (b.result.timestamp ?? 0) - (a.result.timestamp ?? 0) ||
+      (a.result.rank ?? 0) - (b.result.rank ?? 0) ||
+      a.index - b.index,
+  )
   return keyed.map((k) => k.result)
 }
 

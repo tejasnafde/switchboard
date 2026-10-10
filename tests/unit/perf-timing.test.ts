@@ -29,13 +29,20 @@ describe('performance spans', () => {
 describe('performance summary', () => {
   it('parses scoped file and renderer lines, ignoring damaged and unrelated lines', () => {
     const warn = vi.fn()
-    const entries = parsePerfLogs('[INF] [perf] chat.open 812ms {"messages":3}\n[DBG] [perf] ipc 12.5ms {"channel":"x"}\n[SB:perf] chat.open 4ms {}\n[perf] bad 3ms {bad}\n[perf] truncated 3ms {\n[other] chat.open 5ms {}\n[perf] bad NaNms {}', warn)
+    const entries = parsePerfLogs(
+      '[INF] [perf] chat.open 812ms {"messages":3}\n[DBG] [perf] ipc 12.5ms {"channel":"x"}\n[SB:perf] chat.open 4ms {}\n[perf] bad 3ms {bad}\n[perf] truncated 3ms {\n[other] chat.open 5ms {}\n[perf] bad NaNms {}',
+      warn,
+    )
     expect(entries).toHaveLength(3)
     expect(warn).toHaveBeenCalledOnce()
     expect(entries[0]).toEqual({ name: 'chat.open', durationMs: 812, fields: { messages: 3 } })
   })
   it('calculates nearest-rank percentiles and the worst five per span', () => {
-    const entries = Array.from({ length: 10 }, (_, i) => ({ name: 'chat.open', durationMs: i + 1, fields: { thread: String(i) } }))
+    const entries = Array.from({ length: 10 }, (_, i) => ({
+      name: 'chat.open',
+      durationMs: i + 1,
+      fields: { thread: String(i) },
+    }))
     expect(summarizePerf(entries)[0]).toMatchObject({ name: 'chat.open', count: 10, p50: 5, p90: 9, max: 10 })
     expect(summarizePerf(entries)[0].worst.map((e) => e.durationMs)).toEqual([10, 9, 8, 7, 6])
     expect(summarizePerf([])).toEqual([])

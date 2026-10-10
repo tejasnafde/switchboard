@@ -94,11 +94,7 @@ export function findFaviconHrefInHtml(html: string): string | null {
  * Returns the absolute path only if it lives inside projectRoot. `null`
  * for traversal attempts or anything outside the project.
  */
-function resolveHrefToAbs(
-  href: string,
-  htmlFileAbs: string,
-  projectRoot: string,
-): string | null {
+function resolveHrefToAbs(href: string, htmlFileAbs: string, projectRoot: string): string | null {
   // Strip any URL fragment / query that snuck in
   const cleaned = href.split('#')[0].split('?')[0]
   if (!cleaned) return null

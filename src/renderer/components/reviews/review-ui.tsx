@@ -11,22 +11,81 @@ import { Button } from '../ui/button'
 import type { ReviewNotice } from './review-states'
 
 const PATHS = {
-  pr: <><circle cx="6" cy="6" r="2.5" /><circle cx="6" cy="18" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="M6 8.5v7M18 15.5V9a3 3 0 0 0-3-3h-4M13 3l-2 3 2 3" /></>,
-  merge: <><circle cx="6" cy="6" r="2.5" /><circle cx="6" cy="18" r="2.5" /><circle cx="18" cy="12" r="2.5" /><path d="M6 8.5v7M8 7.5c4 1 7 2 7.5 4.5" /></>,
-  ok: <><circle cx="12" cy="12" r="9" /><path d="M8 12.5l2.5 2.5L16 9.5" /></>,
-  x: <><circle cx="12" cy="12" r="9" /><path d="M9 9l6 6M15 9l-6 6" /></>,
-  clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  pr: (
+    <>
+      <circle cx="6" cy="6" r="2.5" />
+      <circle cx="6" cy="18" r="2.5" />
+      <circle cx="18" cy="18" r="2.5" />
+      <path d="M6 8.5v7M18 15.5V9a3 3 0 0 0-3-3h-4M13 3l-2 3 2 3" />
+    </>
+  ),
+  merge: (
+    <>
+      <circle cx="6" cy="6" r="2.5" />
+      <circle cx="6" cy="18" r="2.5" />
+      <circle cx="18" cy="12" r="2.5" />
+      <path d="M6 8.5v7M8 7.5c4 1 7 2 7.5 4.5" />
+    </>
+  ),
+  ok: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8 12.5l2.5 2.5L16 9.5" />
+    </>
+  ),
+  x: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9 9l6 6M15 9l-6 6" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
   msg: <path d="M4 5h16v11H9l-5 4z" />,
   ext: <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />,
-  search: <><circle cx="11" cy="11" r="6" /><path d="M20 20l-4-4" /></>,
-  file: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4" /></>,
+  search: (
+    <>
+      <circle cx="11" cy="11" r="6" />
+      <path d="M20 20l-4-4" />
+    </>
+  ),
+  file: (
+    <>
+      <path d="M6 3h8l4 4v14H6z" />
+      <path d="M14 3v4h4" />
+    </>
+  ),
   rerun: <path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" />,
-  skip: <><circle cx="12" cy="12" r="9" /><path d="M8 12h8" /></>,
-  draft: <><circle cx="12" cy="12" r="9" strokeDasharray="3 3" /></>,
+  skip: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8 12h8" />
+    </>
+  ),
+  draft: (
+    <>
+      <circle cx="12" cy="12" r="9" strokeDasharray="3 3" />
+    </>
+  ),
   spark: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />,
   chev: <path d="M6 9l6 6 6-6" />,
-  conflict: <><path d="M12 4l9 16H3z" /><path d="M12 10v4M12 17v.01" /></>,
-  more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,
+  conflict: (
+    <>
+      <path d="M12 4l9 16H3z" />
+      <path d="M12 10v4M12 17v.01" />
+    </>
+  ),
+  more: (
+    <>
+      <circle cx="5" cy="12" r="1" />
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="19" cy="12" r="1" />
+    </>
+  ),
   plus: <path d="M12 5v14M5 12h14" />,
 } as const
 
@@ -41,7 +100,17 @@ const TONE: Record<IconTone, string> = {
   plain: '',
 }
 
-export function Icon({ name, tone = 'plain', size = 14, className }: { name: IconName; tone?: IconTone; size?: number; className?: string }) {
+export function Icon({
+  name,
+  tone = 'plain',
+  size = 14,
+  className,
+}: {
+  name: IconName
+  tone?: IconTone
+  size?: number
+  className?: string
+}) {
   return (
     <svg
       aria-hidden="true"
@@ -96,7 +165,12 @@ export function Avatar({ person, size = 20 }: { person: PrPerson; size?: number 
       aria-hidden="true"
       title={person.displayName}
       className="inline-flex shrink-0 items-center justify-center rounded-full font-[600] text-white"
-      style={{ width: size, height: size, fontSize: Math.round(size / 2), background: AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length] }}
+      style={{
+        width: size,
+        height: size,
+        fontSize: Math.round(size / 2),
+        background: AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length],
+      }}
     >
       {initials(person)}
     </span>
@@ -108,7 +182,15 @@ export function openExternal(url: string): void {
   window.open(url, '_blank', 'noopener')
 }
 
-export function NoticeView({ notice, onAction, compact = false }: { notice: ReviewNotice; onAction: (action: ReviewNotice['action'], notice: ReviewNotice) => void; compact?: boolean }) {
+export function NoticeView({
+  notice,
+  onAction,
+  compact = false,
+}: {
+  notice: ReviewNotice
+  onAction: (action: ReviewNotice['action'], notice: ReviewNotice) => void
+  compact?: boolean
+}) {
   return (
     <div
       role="status"
@@ -125,7 +207,9 @@ export function NoticeView({ notice, onAction, compact = false }: { notice: Revi
         <div className="text-[var(--text-secondary)]">{notice.fix}</div>
       </div>
       {notice.action && (
-        <Button variant="outline" size="sm" onClick={() => onAction(notice.action, notice)}>{notice.actionLabel}</Button>
+        <Button variant="outline" size="sm" onClick={() => onAction(notice.action, notice)}>
+          {notice.actionLabel}
+        </Button>
       )}
     </div>
   )
@@ -136,7 +220,9 @@ export function SideCard({ title, right, children }: { title: string; right?: Re
     <section className="mb-[14px] rounded-[8px] border border-[var(--border)] bg-[var(--bg-surface)]">
       <h3 className="m-0 flex items-center border-b border-[var(--border)] px-3 py-[10px] text-[12.5px] font-[600] text-[var(--text-primary)]">
         {title}
-        {right !== undefined && <span className="ml-auto text-[12px] font-[400] text-[var(--text-secondary)] tabular-nums">{right}</span>}
+        {right !== undefined && (
+          <span className="ml-auto text-[12px] font-[400] text-[var(--text-secondary)] tabular-nums">{right}</span>
+        )}
       </h3>
       {children}
     </section>
@@ -144,5 +230,9 @@ export function SideCard({ title, right, children }: { title: string; right?: Re
 }
 
 export function CardRow({ children }: { children: ReactNode }) {
-  return <div className="flex items-center gap-2 px-3 py-[7px] text-[12.5px] [&+&]:border-t [&+&]:border-[var(--border)]">{children}</div>
+  return (
+    <div className="flex items-center gap-2 px-3 py-[7px] text-[12.5px] [&+&]:border-t [&+&]:border-[var(--border)]">
+      {children}
+    </div>
+  )
 }

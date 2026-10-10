@@ -46,20 +46,24 @@ export function AtMentionMenu({
   if (matches.length === 0) {
     return (
       <div className="sb-floating-surface" style={popoverStyle}>
-        <div style={{
-          padding: '8px 12px',
-          fontSize: '12px',
-          color: 'var(--text-muted)',
-          fontStyle: 'italic',
-        }}>
+        <div
+          style={{
+            padding: '8px 12px',
+            fontSize: '12px',
+            color: 'var(--text-muted)',
+            fontStyle: 'italic',
+          }}
+        >
           {loading ? 'Loading files…' : `No files match "@${query}"`}
         </div>
-        <div style={{
-          padding: '6px 12px',
-          borderTop: '1px solid var(--border)',
-          fontSize: '10.5px',
-          color: 'var(--text-muted)',
-        }}>
+        <div
+          style={{
+            padding: '6px 12px',
+            borderTop: '1px solid var(--border)',
+            fontSize: '10.5px',
+            color: 'var(--text-muted)',
+          }}
+        >
           <kbd style={kbdStyle}>Esc</kbd> to dismiss
         </div>
       </div>
@@ -68,15 +72,17 @@ export function AtMentionMenu({
 
   return (
     <div className="sb-floating-surface" style={popoverStyle} role="listbox" aria-label="File mentions">
-      <div style={{
-        padding: '6px 10px 4px',
-        fontSize: '10px',
-        color: 'var(--text-muted)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.7px',
-        fontWeight: 600,
-        borderBottom: '1px solid var(--border)',
-      }}>
+      <div
+        style={{
+          padding: '6px 10px 4px',
+          fontSize: '10px',
+          color: 'var(--text-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.7px',
+          fontWeight: 600,
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
         {heading}
       </div>
       <div style={{ maxHeight: '240px', overflowY: 'auto', padding: '4px' }}>
@@ -89,7 +95,9 @@ export function AtMentionMenu({
             <button
               key={path}
               type="button"
-              ref={(el) => { itemRefs.current[i] = el }}
+              ref={(el) => {
+                itemRefs.current[i] = el
+              }}
               onMouseDown={(e) => {
                 e.preventDefault()
                 onSelect(path)
@@ -114,21 +122,25 @@ export function AtMentionMenu({
                 overflow: 'hidden',
               }}
             >
-              <span style={{
-                fontFamily: 'var(--font-mono)',
-                fontWeight: 500,
-                color: selected ? 'var(--accent)' : 'var(--text-primary)',
-                flexShrink: 0,
-              }}>
+              <span
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 500,
+                  color: selected ? 'var(--accent)' : 'var(--text-primary)',
+                  flexShrink: 0,
+                }}
+              >
                 {base}
               </span>
               {dir && (
-                <span style={{
-                  color: 'var(--text-muted)',
-                  fontSize: '11px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}>
+                <span
+                  style={{
+                    color: 'var(--text-muted)',
+                    fontSize: '11px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
                   {dir}
                 </span>
               )}
@@ -136,22 +148,27 @@ export function AtMentionMenu({
           )
         })}
       </div>
-      <div style={{
-        padding: '5px 10px',
-        borderTop: '1px solid var(--border)',
-        fontSize: '10px',
-        color: 'var(--text-muted)',
-        display: 'flex',
-        gap: '10px',
-        justifyContent: 'space-between',
-      }}>
+      <div
+        style={{
+          padding: '5px 10px',
+          borderTop: '1px solid var(--border)',
+          fontSize: '10px',
+          color: 'var(--text-muted)',
+          display: 'flex',
+          gap: '10px',
+          justifyContent: 'space-between',
+        }}
+      >
         <span>
           <kbd style={kbdStyle}>↑</kbd>
           <kbd style={kbdStyle}>↓</kbd>
           navigate · <kbd style={kbdStyle}>Enter</kbd> insert
         </span>
         <span>
-          <kbd style={kbdStyle} onClick={onDismiss}>Esc</kbd> dismiss
+          <kbd style={kbdStyle} onClick={onDismiss}>
+            Esc
+          </kbd>{' '}
+          dismiss
         </span>
       </div>
     </div>

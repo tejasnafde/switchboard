@@ -65,7 +65,9 @@ describe('flattenOverBackdrop', () => {
 
 describe('checkBaseline', () => {
   let dir: string
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'sb-visual-compare-')) })
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'sb-visual-compare-'))
+  })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
   it('writes the baseline in update mode, then passes against it', () => {
@@ -80,14 +82,25 @@ describe('checkBaseline', () => {
   it('writes the actual capture and the diff for a mismatch', () => {
     const paths = { snapshotDir: dir, artifactDir: join(dir, 'art') }
     writeFileSync(join(dir, 'sidebar-light-darwin.png'), solid(10, 10, [0, 0, 0, 255]))
-    const error = checkBaseline({ name: 'sidebar-light-darwin', actual: solid(10, 10, [255, 255, 255, 255]), update: false, ...paths })
+    const error = checkBaseline({
+      name: 'sidebar-light-darwin',
+      actual: solid(10, 10, [255, 255, 255, 255]),
+      update: false,
+      ...paths,
+    })
     expect(error).toMatch(/^sidebar-light-darwin: 100\.00% of pixels changed/)
     expect(existsSync(join(dir, 'art', 'sidebar-light-darwin-actual.png'))).toBe(true)
     expect(existsSync(join(dir, 'art', 'sidebar-light-darwin-diff.png'))).toBe(true)
   })
 
   it('names the update flag when a baseline is missing', () => {
-    const error = checkBaseline({ name: 'kanban-translucent-darwin', actual: solid(2, 2, [0, 0, 0, 255]), update: false, snapshotDir: dir, artifactDir: join(dir, 'art') })
+    const error = checkBaseline({
+      name: 'kanban-translucent-darwin',
+      actual: solid(2, 2, [0, 0, 0, 255]),
+      update: false,
+      snapshotDir: dir,
+      artifactDir: join(dir, 'art'),
+    })
     expect(error).toContain('SB_UPDATE_SNAPSHOTS=1')
   })
 })

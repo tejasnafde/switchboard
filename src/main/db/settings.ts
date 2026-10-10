@@ -8,9 +8,7 @@ export function getSetting(key: string): string | null {
 }
 
 export function setSetting(key: string, value: string): void {
-  getDb().prepare(
-    'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'
-  ).run(key, value)
+  getDb().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value)
 }
 
 export function removeSetting(key: string): void {
@@ -25,20 +23,18 @@ export interface StoredSessionLayout {
   launchConfigName: string | null
 }
 
-export function saveSessionLayout(
-  sessionId: string,
-  layoutJson: string,
-  launchConfigName?: string | null,
-): void {
-  getDb().prepare(
-    'INSERT OR REPLACE INTO session_layouts (session_id, layout_json, launch_config_name, updated_at) VALUES (?, ?, ?, ?)'
-  ).run(sessionId, layoutJson, launchConfigName ?? null, Date.now())
+export function saveSessionLayout(sessionId: string, layoutJson: string, launchConfigName?: string | null): void {
+  getDb()
+    .prepare(
+      'INSERT OR REPLACE INTO session_layouts (session_id, layout_json, launch_config_name, updated_at) VALUES (?, ?, ?, ?)',
+    )
+    .run(sessionId, layoutJson, launchConfigName ?? null, Date.now())
 }
 
 export function getSessionLayout(sessionId: string): StoredSessionLayout | null {
-  const row = getDb().prepare(
-    'SELECT layout_json, launch_config_name FROM session_layouts WHERE session_id = ?'
-  ).get(sessionId) as { layout_json: string; launch_config_name: string | null } | undefined
+  const row = getDb()
+    .prepare('SELECT layout_json, launch_config_name FROM session_layouts WHERE session_id = ?')
+    .get(sessionId) as { layout_json: string; launch_config_name: string | null } | undefined
   if (!row) return null
   return { layoutJson: row.layout_json, launchConfigName: row.launch_config_name }
 }
@@ -46,5 +42,8 @@ export function getSessionLayout(sessionId: string): StoredSessionLayout | null 
 /** Every row whose key starts with `prefix`, for families of keys such as project overrides. */
 export function listSettingsWithPrefix(prefix: string): Array<{ key: string; value: string }> {
   const escaped = prefix.replace(/[\\%_]/g, (c) => `\\${c}`)
-  return getDb().prepare("SELECT key, value FROM settings WHERE key LIKE ? ESCAPE '\\'").all(`${escaped}%`) as Array<{ key: string; value: string }>
+  return getDb().prepare("SELECT key, value FROM settings WHERE key LIKE ? ESCAPE '\\'").all(`${escaped}%`) as Array<{
+    key: string
+    value: string
+  }>
 }

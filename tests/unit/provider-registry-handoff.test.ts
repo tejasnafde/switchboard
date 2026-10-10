@@ -11,10 +11,20 @@ vi.mock('../../src/main/perf', () => ({ perfSpan: () => ({ end: () => {} }) }))
 
 vi.mock('../../src/main/db/provider-instances', () => ({
   resolveProviderInstance: (agentType: string, id?: string) => ({
-    id: id ?? 'work', agentType, displayName: 'Work', enabled: true, env: {}, oauthDir: null,
+    id: id ?? 'work',
+    agentType,
+    displayName: 'Work',
+    enabled: true,
+    env: {},
+    oauthDir: null,
   }),
   getProviderInstanceFull: (id: string) => ({
-    id, agentType: 'claude-code', displayName: 'Work', enabled: true, env: {}, oauthDir: null,
+    id,
+    agentType: 'claude-code',
+    displayName: 'Work',
+    enabled: true,
+    env: {},
+    oauthDir: null,
   }),
   listOauthDirsForAgent: () => [],
 }))
@@ -54,7 +64,9 @@ vi.mock('../../src/main/db/database', () => ({
   getConversationAgentType: () => null,
   getConversationProviderInstanceId: () => null,
   getConversationPendingHandoff: () => state.pending,
-  clearConversationPendingHandoff: (id: string, expected: string) => { state.cleared.push([id, expected]) },
+  clearConversationPendingHandoff: (id: string, expected: string) => {
+    state.cleared.push([id, expected])
+  },
   getSetting: () => null,
   getConversationExecutionRoot: () => null,
   commitConversationExecutionRoot: () => {},
@@ -90,7 +102,14 @@ class FakeAdapter implements ProviderAdapter {
   startOpts: SessionStartOpts | null = null
   async startSession(opts: SessionStartOpts, _onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
     this.startOpts = opts
-    return { threadId: opts.threadId, provider: 'claude', status: 'idle', runtimeMode: 'sandbox', cwd: opts.cwd, createdAt: 0 }
+    return {
+      threadId: opts.threadId,
+      provider: 'claude',
+      status: 'idle',
+      runtimeMode: 'sandbox',
+      cwd: opts.cwd,
+      createdAt: 0,
+    }
   }
   async sendTurn(_threadId: string, message: string): Promise<void> {
     this.sent.push(message)
@@ -114,7 +133,13 @@ const submission = {
     const turn = context.finalize ? await context.finalize(input) : input
     finalized.push(turn)
     await context.dispatch(turn)
-    return { status: 'accepted' as const, accepted: true as const, duplicate: false, state: 'completed' as const, acceptedAt: 1 }
+    return {
+      status: 'accepted' as const,
+      accepted: true as const,
+      duplicate: false,
+      state: 'completed' as const,
+      acceptedAt: 1,
+    }
   },
 }
 
@@ -126,9 +151,13 @@ async function setup() {
   const registry = new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, submission)
   registry.registerIpcHandlers()
   await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
-  const submit = (providerText: string) => host.invoke(ProviderChannels.SUBMIT_USER_TURN, {
-    version: 1, threadId: 't1', origin: 'o1', providerText,
-  })
+  const submit = (providerText: string) =>
+    host.invoke(ProviderChannels.SUBMIT_USER_TURN, {
+      version: 1,
+      threadId: 't1',
+      origin: 'o1',
+      providerText,
+    })
   return { adapter, submit }
 }
 
@@ -161,7 +190,11 @@ describe('backend-built context handoff', () => {
     expect(t.adapter.sent[0].endsWith('\n\nnext')).toBe(true)
     expect(finalized[0]).toMatchObject({
       displayBody: 'next',
-      handoff: { expectedFrom: 'codex', markerId: 'handoff_o1', markerText: '[[sb:context-handoff]] Codex → Claude Code' },
+      handoff: {
+        expectedFrom: 'codex',
+        markerId: 'handoff_o1',
+        markerText: '[[sb:context-handoff]] Codex → Claude Code',
+      },
     })
   })
 
@@ -176,7 +209,8 @@ describe('backend-built context handoff', () => {
   it('leaves a turn alone when the client already injected a preamble', async () => {
     const t = await setup()
     state.pending = 'codex'
-    const injected = 'Conversation so far:\nuser: q\n\nRespond to the latest user message, using the conversation above as context.\n\nnext'
+    const injected =
+      'Conversation so far:\nuser: q\n\nRespond to the latest user message, using the conversation above as context.\n\nnext'
     await t.submit(injected)
     expect(t.adapter.sent).toEqual([injected])
     expect(state.historyLoads).toBe(0)
@@ -187,7 +221,12 @@ describe('backend-built context handoff', () => {
     const t = await setup()
     t.adapter.resumed = true
     state.pending = 'codex'
-    state.history = [{ role: 'user', content: 'q1' }, { role: 'assistant', content: 'a1' }, marker('Claude Code', 'Codex'), marker('Codex', 'Claude Code')]
+    state.history = [
+      { role: 'user', content: 'q1' },
+      { role: 'assistant', content: 'a1' },
+      marker('Claude Code', 'Codex'),
+      marker('Codex', 'Claude Code'),
+    ]
     await t.submit('next')
     expect(t.adapter.sent).toEqual(['next'])
     expect(state.cleared).toEqual([['t1', 'codex']])

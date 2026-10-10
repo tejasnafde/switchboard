@@ -12,7 +12,13 @@ import {
   type ChartSpec,
 } from '../../src/shared/chat-visuals'
 
-const palette = { text: 'var(--text-primary)', muted: 'var(--text-secondary)', grid: 'var(--border)', font: 'sans-serif', series: ['red', 'blue'] }
+const palette = {
+  text: 'var(--text-primary)',
+  muted: 'var(--text-secondary)',
+  grid: 'var(--border)',
+  font: 'sans-serif',
+  series: ['red', 'blue'],
+}
 
 describe('parseChartSpec (shared fixtures, also run by Android)', () => {
   for (const c of fixtures) {

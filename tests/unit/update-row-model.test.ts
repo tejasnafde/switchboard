@@ -53,7 +53,9 @@ describe('updateRowView', () => {
 
   it('disables the check button while a check or download is in flight', () => {
     expect(updateRowView({ kind: 'checking' }, { checking: false, restarting: false }).checkDisabled).toBe(true)
-    expect(updateRowView({ kind: 'downloading', percent: 10 }, { checking: false, restarting: false }).checkDisabled).toBe(true)
+    expect(
+      updateRowView({ kind: 'downloading', percent: 10 }, { checking: false, restarting: false }).checkDisabled,
+    ).toBe(true)
     expect(updateRowView({ kind: 'idle' }, { checking: true, restarting: false }).checkDisabled).toBe(true)
     expect(updateRowView({ kind: 'idle' }, { checking: false, restarting: false }).checkDisabled).toBe(false)
   })
@@ -94,8 +96,9 @@ describe('slow check', () => {
   // A check past the deadline is still running, so the row must not say
   // "Couldn't check" or render in the error colour. It reports the wait.
   it('reports the wait verbatim rather than prefixing it as a failure', () => {
-    expect(updateStatusLabel({ kind: 'slow', message: 'Still checking. Slow network.' }))
-      .toBe('Still checking. Slow network.')
+    expect(updateStatusLabel({ kind: 'slow', message: 'Still checking. Slow network.' })).toBe(
+      'Still checking. Slow network.',
+    )
   })
 
   it('keeps the check button busy while the request is still in flight', () => {

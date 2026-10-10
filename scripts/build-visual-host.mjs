@@ -39,7 +39,8 @@ export function visualHostInputHash() {
 }
 
 // The page may run its own inline script and nothing else: no network, no frames, no forms.
-const CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'"
+const CSP =
+  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'"
 
 async function build() {
   const { build: esbuild } = await import('esbuild')

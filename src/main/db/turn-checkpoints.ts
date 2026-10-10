@@ -38,7 +38,10 @@ export function sqliteTurnCheckpointStore(
   type Row = { turn_id: string; tree: string; repo_root: string; written: string }
   return {
     save(threadId, cp) {
-      db().prepare('INSERT OR REPLACE INTO turn_checkpoints (thread_id, turn_id, tree, repo_root, written, launch) VALUES (?, ?, ?, ?, ?, ?)')
+      db()
+        .prepare(
+          'INSERT OR REPLACE INTO turn_checkpoints (thread_id, turn_id, tree, repo_root, written, launch) VALUES (?, ?, ?, ?, ?, ?)',
+        )
         .run(root(threadId), cp.turnId, cp.tree, cp.repoRoot, JSON.stringify(cp.written), LAUNCH)
     },
     remove(threadId) {
@@ -48,7 +51,8 @@ export function sqliteTurnCheckpointStore(
       const d = db()
       const key = root(threadId)
       return d.transaction((): StoredTurnCheckpoint | null => {
-        const row = d.prepare('SELECT turn_id, tree, repo_root, written FROM turn_checkpoints WHERE thread_id = ? AND launch != ?')
+        const row = d
+          .prepare('SELECT turn_id, tree, repo_root, written FROM turn_checkpoints WHERE thread_id = ? AND launch != ?')
           .get(key, LAUNCH) as Row | undefined
         if (!row) return null
         d.prepare('DELETE FROM turn_checkpoints WHERE thread_id = ?').run(key)

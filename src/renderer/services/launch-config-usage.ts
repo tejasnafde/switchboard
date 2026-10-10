@@ -59,10 +59,7 @@ export function getLaunchConfigUsage(projectPath: string): Record<string, number
  * with no recorded use. `default` is pinned to the top of the
  * "no recorded use" bucket so first-time users see it first.
  */
-export function sortLaunchConfigsByRecency(
-  names: string[],
-  projectPath: string,
-): string[] {
+export function sortLaunchConfigsByRecency(names: string[], projectPath: string): string[] {
   const usage = getLaunchConfigUsage(projectPath)
   return [...names].sort((a, b) => {
     const ua = usage[a] ?? 0

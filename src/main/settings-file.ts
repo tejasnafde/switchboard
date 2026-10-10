@@ -107,14 +107,23 @@ export class SettingsFileSync {
   open(): Promise<string> {
     return this.enqueue(async () => {
       await mkdir(this.deps.dir, { recursive: true })
-      await writeFile(join(this.deps.dir, SETTINGS_SCHEMA_FILE_NAME), `${JSON.stringify(settingsFileSchema(), null, 2)}\n`)
+      await writeFile(
+        join(this.deps.dir, SETTINGS_SCHEMA_FILE_NAME),
+        `${JSON.stringify(settingsFileSchema(), null, 2)}\n`,
+      )
       const current = await this.readCurrent()
       const kept = current !== null && this.isEdited(current) && !(await this.applyFile())
       if (kept) {
         this.deps.log.warn('settings.json left as it is on open: it holds edits that were not fully applied')
       } else {
         const result = await this.writeFromDb(current)
-        this.setStatus({ path: this.path, parseError: null, skipped: [], writeSkipped: result === 'changed', writeFailed: result === 'failed' })
+        this.setStatus({
+          path: this.path,
+          parseError: null,
+          skipped: [],
+          writeSkipped: result === 'changed',
+          writeFailed: result === 'failed',
+        })
       }
       this.active = true
       this.startWatching()
@@ -137,7 +146,9 @@ export class SettingsFileSync {
     if (this.fileTimer) clearTimeout(this.fileTimer)
     this.fileTimer = setTimeout(() => {
       this.fileTimer = null
-      void this.enqueue(async () => { await this.applyFile() })
+      void this.enqueue(async () => {
+        await this.applyFile()
+      })
     }, this.deps.debounceMs ?? 150)
   }
 
@@ -146,7 +157,9 @@ export class SettingsFileSync {
     if (this.fileTimer) {
       clearTimeout(this.fileTimer)
       this.fileTimer = null
-      void this.enqueue(async () => { await this.applyFile() })
+      void this.enqueue(async () => {
+        await this.applyFile()
+      })
     }
     if (this.dbTimer) {
       clearTimeout(this.dbTimer)
@@ -186,7 +199,11 @@ export class SettingsFileSync {
       const changed = this.deps.applyOps(plan.ops)
       if (changed.length > 0) this.deps.log.info('applied settings.json', changed)
       const failed = plan.ops.length - changed.length
-      if (failed > 0) skipped.push({ entry: `${failed} of ${plan.ops.length} writes`, reason: 'could not be saved; the log has the error' })
+      if (failed > 0)
+        skipped.push({
+          entry: `${failed} of ${plan.ops.length} writes`,
+          reason: 'could not be saved; the log has the error',
+        })
     } finally {
       this.applying = false
     }
@@ -209,7 +226,8 @@ export class SettingsFileSync {
     const result = await this.writeFromDb(current)
     const writeSkipped = result === 'changed'
     const writeFailed = result === 'failed'
-    if (this.status.writeSkipped !== writeSkipped || this.status.writeFailed !== writeFailed) this.setStatus({ ...this.status, writeSkipped, writeFailed })
+    if (this.status.writeSkipped !== writeSkipped || this.status.writeFailed !== writeFailed)
+      this.setStatus({ ...this.status, writeSkipped, writeFailed })
   }
 
   /** Differs, by content, from what Switchboard last wrote or fully applied. mtime is not trusted: it can be coarse or unchanged. */
@@ -293,7 +311,10 @@ export class SettingsFileSync {
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
     const run = this.queue.then(task)
-    this.queue = run.then(() => undefined, (err) => this.deps.log.warn('settings.json sync failed', err))
+    this.queue = run.then(
+      () => undefined,
+      (err) => this.deps.log.warn('settings.json sync failed', err),
+    )
     return run
   }
 }

@@ -18,7 +18,11 @@ import { invalidateStreamingCache } from './streaming-pref'
 import { invalidateAnalyticsCache } from './analytics-pref'
 import { invalidateSessionEnvModeCache } from './session-env-mode'
 import { reloadKeyboardOverrides } from './keyboard-overrides'
-import { RECENT_SESSION_LIMIT_CHANGED, RECENT_SESSION_LIMIT_SETTING, parseRecentSessionLimit } from '../components/sidebar/recent-session-limit'
+import {
+  RECENT_SESSION_LIMIT_CHANGED,
+  RECENT_SESSION_LIMIT_SETTING,
+  parseRecentSessionLimit,
+} from '../components/sidebar/recent-session-limit'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('service:settings-file')
@@ -30,8 +34,10 @@ const get = (key: string): Promise<string | null> => window.api.settings.get(key
 
 const ADOPT: Record<string, () => Promise<void> | void> = {
   theme: async () => useThemeStore.getState().adoptStoredTheme(await get('theme')),
-  [FOLLOW_UP_DEFAULT_KEY]: async () => useLayoutStore.setState({ followUpDefault: parseFollowUpDefault(await get(FOLLOW_UP_DEFAULT_KEY)) }),
-  [SETTING_SHOW_FILE_DIFFS]: async () => useLayoutStore.setState({ showFileDiffCards: (await get(SETTING_SHOW_FILE_DIFFS)) === 'true' }),
+  [FOLLOW_UP_DEFAULT_KEY]: async () =>
+    useLayoutStore.setState({ followUpDefault: parseFollowUpDefault(await get(FOLLOW_UP_DEFAULT_KEY)) }),
+  [SETTING_SHOW_FILE_DIFFS]: async () =>
+    useLayoutStore.setState({ showFileDiffCards: (await get(SETTING_SHOW_FILE_DIFFS)) === 'true' }),
   [SETTING_DEFAULT_RUNTIME_MODE]: async () => {
     const mode = await get(SETTING_DEFAULT_RUNTIME_MODE)
     setStoreDefaultRuntimeMode(isRuntimeMode(mode) ? mode : FALLBACK_RUNTIME_MODE)
@@ -44,7 +50,9 @@ const ADOPT: Record<string, () => Promise<void> | void> = {
     const limit = parseRecentSessionLimit(await get(RECENT_SESSION_LIMIT_SETTING))
     window.dispatchEvent(new CustomEvent(RECENT_SESSION_LIMIT_CHANGED, { detail: limit }))
   },
-  'ide.idleTtlMinutes': () => { window.dispatchEvent(new Event('sb-ide-settings-changed')) },
+  'ide.idleTtlMinutes': () => {
+    window.dispatchEvent(new Event('sb-ide-settings-changed'))
+  },
   [KEYBOARD_OVERRIDES_SETTING]: reloadKeyboardOverrides,
 }
 
@@ -64,5 +72,7 @@ export async function adoptChangedSettings(keys: readonly string[]): Promise<voi
 /** Subscribe for the window's lifetime; answers the unsubscribe. */
 export function attachSettingsFileSync(): () => void {
   if (typeof window.api?.settingsFile?.onApplied !== 'function') return () => {}
-  return window.api.settingsFile.onApplied((keys) => { void adoptChangedSettings(keys) })
+  return window.api.settingsFile.onApplied((keys) => {
+    void adoptChangedSettings(keys)
+  })
 }

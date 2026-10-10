@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { acpModeFor, modelsFromConfigOptions, resolveAcpModeIds } from '../../src/main/provider/adapters/acp/session-config'
+import {
+  acpModeFor,
+  modelsFromConfigOptions,
+  resolveAcpModeIds,
+} from '../../src/main/provider/adapters/acp/session-config'
 import { missingCapabilities } from '../../src/main/provider/adapters/acp/acp-adapter'
 
-const modes = (current: string, ids: string[]) => ({ currentModeId: current, availableModes: ids.map((id) => ({ id, name: id })) })
+const modes = (current: string, ids: string[]) => ({
+  currentModeId: current,
+  availableModes: ids.map((id) => ({ id, name: id })),
+})
 
 describe('resolveAcpModeIds', () => {
   it('uses fixed ids as given', () => {
@@ -22,19 +29,45 @@ describe('resolveAcpModeIds', () => {
   })
 
   it('has no mode to leave plan for when the session started in plan', () => {
-    expect(resolveAcpModeIds({ kind: 'advertised' }, modes('plan', ['plan', 'act']))).toEqual({ plan: 'plan', other: null })
+    expect(resolveAcpModeIds({ kind: 'advertised' }, modes('plan', ['plan', 'act']))).toEqual({
+      plan: 'plan',
+      other: null,
+    })
   })
 })
 
 describe('modelsFromConfigOptions', () => {
   it('flattens grouped model options', () => {
-    expect(modelsFromConfigOptions([
-      { id: 'effort', name: 'Effort', category: 'thought_level', type: 'select', currentValue: 'low', options: [{ value: 'low', name: 'Low' }] },
-      {
-        id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'b',
-        options: [{ group: 'g1', name: 'G1', options: [{ value: 'a', name: 'A' }] }, { group: 'g2', name: 'G2', options: [{ value: 'b', name: 'B' }] }],
-      },
-    ])).toEqual({ configId: 'model', current: 'b', models: [{ modelId: 'a', name: 'A' }, { modelId: 'b', name: 'B' }] })
+    expect(
+      modelsFromConfigOptions([
+        {
+          id: 'effort',
+          name: 'Effort',
+          category: 'thought_level',
+          type: 'select',
+          currentValue: 'low',
+          options: [{ value: 'low', name: 'Low' }],
+        },
+        {
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          type: 'select',
+          currentValue: 'b',
+          options: [
+            { group: 'g1', name: 'G1', options: [{ value: 'a', name: 'A' }] },
+            { group: 'g2', name: 'G2', options: [{ value: 'b', name: 'B' }] },
+          ],
+        },
+      ]),
+    ).toEqual({
+      configId: 'model',
+      current: 'b',
+      models: [
+        { modelId: 'a', name: 'A' },
+        { modelId: 'b', name: 'B' },
+      ],
+    })
   })
 
   it('is null without a model option', () => {
@@ -45,8 +78,13 @@ describe('modelsFromConfigOptions', () => {
 
 describe('missingCapabilities', () => {
   it('lists the expected capabilities initialize did not advertise', () => {
-    expect(missingCapabilities({ sessionCapabilities: { resume: {} }, promptCapabilities: { image: false } }, ['resume', 'image', 'fork']))
-      .toEqual(['image', 'fork'])
+    expect(
+      missingCapabilities({ sessionCapabilities: { resume: {} }, promptCapabilities: { image: false } }, [
+        'resume',
+        'image',
+        'fork',
+      ]),
+    ).toEqual(['image', 'fork'])
     expect(missingCapabilities(undefined, [])).toEqual([])
   })
 })

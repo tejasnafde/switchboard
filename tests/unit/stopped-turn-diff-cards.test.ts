@@ -53,19 +53,31 @@ type Internals = {
 
 describe.each([
   { provider: 'claude', toolName: 'Write', input: (file: string) => ({ file_path: file, content: 'two\n' }) },
-  { provider: 'codex', toolName: 'apply_patch', input: (file: string) => ({ input: `*** Begin Patch\n*** Update File: ${file}\n*** End Patch` }) },
+  {
+    provider: 'codex',
+    toolName: 'apply_patch',
+    input: (file: string) => ({ input: `*** Begin Patch\n*** Update File: ${file}\n*** End Patch` }),
+  },
   { provider: 'opencode', toolName: 'write', input: (file: string) => ({ filePath: file, content: 'two\n' }) },
 ])('diff cards after Stop ($provider)', ({ toolName, input }) => {
-  it('sends a card for every file the stopped turn changed, Reject only for the agent\'s', async () => {
+  it("sends a card for every file the stopped turn changed, Reject only for the agent's", async () => {
     const cwd = await repo()
     const host = { handle: () => {}, emit: () => {}, on: () => {} }
     const registry = new ProviderRegistry(host as never, new Map())
     const internals = registry as unknown as Internals
     const cards: RuntimeFileEditedEvent[] = []
-    registry.bus.subscribe((e) => { if (e.type === 'file.edited') cards.push(e) })
+    registry.bus.subscribe((e) => {
+      if (e.type === 'file.edited') cards.push(e)
+    })
 
     await internals.checkpoints.beginTurn('t1', cwd)
-    internals.publish({ type: 'tool.started', threadId: 't1', toolId: 'tool-1', toolName, input: input(join(cwd, 'agent.txt')) } as RuntimeEvent)
+    internals.publish({
+      type: 'tool.started',
+      threadId: 't1',
+      toolId: 'tool-1',
+      toolName,
+      input: input(join(cwd, 'agent.txt')),
+    } as RuntimeEvent)
     await writeFile(join(cwd, 'agent.txt'), 'two\n')
     internals.publish({ type: 'tool.completed', threadId: 't1', toolId: 'tool-1', output: '' } as RuntimeEvent)
     // Something else in the shared checkout changed during the turn.

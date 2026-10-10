@@ -153,9 +153,7 @@ describe('createExecutableCache', () => {
     // codex. Caching that miss forever meant the provider stayed unavailable
     // until someone restarted the 41h-old process.
     let clock = 0
-    const resolve = vi.fn<[], string | null>()
-      .mockReturnValueOnce(null)
-      .mockReturnValue('/home/u/.local/bin/codex')
+    const resolve = vi.fn<[], string | null>().mockReturnValueOnce(null).mockReturnValue('/home/u/.local/bin/codex')
     const cache = createExecutableCache({ resolve, identify: () => 'id-1', now: () => clock })
     expect(cache.refresh()).toBeNull()
     clock += 5_000 // past the negative-cache TTL
@@ -187,9 +185,7 @@ describe('createExecutableCache', () => {
 
   it('re-resolves when an upgrade repoints the executable', () => {
     const resolve = vi.fn(() => '/home/u/.local/bin/codex')
-    const identify = vi.fn<[string], string | null>()
-      .mockReturnValueOnce('id-old')
-      .mockReturnValue('id-new')
+    const identify = vi.fn<[string], string | null>().mockReturnValueOnce('id-old').mockReturnValue('id-new')
     const cache = createExecutableCache({ resolve, identify })
     expect(cache.refresh()?.identity).toBe('id-old')
     expect(cache.refresh()?.identity).toBe('id-new')
@@ -197,9 +193,7 @@ describe('createExecutableCache', () => {
   })
 
   it('drops the cached hit when the executable disappears', () => {
-    const resolve = vi.fn<[], string | null>()
-      .mockReturnValueOnce('/home/u/.local/bin/codex')
-      .mockReturnValue(null)
+    const resolve = vi.fn<[], string | null>().mockReturnValueOnce('/home/u/.local/bin/codex').mockReturnValue(null)
     const cache = createExecutableCache({ resolve, identify: () => null })
     expect(cache.refresh()).not.toBeNull()
     expect(cache.refresh()).toBeNull()

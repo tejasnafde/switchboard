@@ -34,24 +34,22 @@ function copyControls(markup: string): string[] {
 }
 
 function renderAssistant(content: string): string {
-  return renderToStaticMarkup(createElement(MessageBubble, {
-    message: {
-      id: 'historical-message',
-      role: 'assistant',
-      content,
-      timestamp: 1,
-    },
-    sessionId: 'historical-thread',
-  }))
+  return renderToStaticMarkup(
+    createElement(MessageBubble, {
+      message: {
+        id: 'historical-message',
+        role: 'assistant',
+        content,
+        timestamp: 1,
+      },
+      sessionId: 'historical-thread',
+    }),
+  )
 }
 
 describe('Markdown code-block copy controls', () => {
   it('keeps one hidden control mounted through provisional fenced-code snapshots', () => {
-    const snapshots = [
-      '```sql',
-      '```sql\nselect id',
-      '```sql\nselect id\nfrom users',
-    ]
+    const snapshots = ['```sql', '```sql\nselect id', '```sql\nselect id\nfrom users']
 
     for (const snapshot of snapshots) {
       const markup = renderMarkdownWithCopyControls(snapshot, { mutable: true })
@@ -59,29 +57,24 @@ describe('Markdown code-block copy controls', () => {
       expect(markup).toContain('data-code-state="provisional"')
     }
 
-    const closed = renderMarkdownWithCopyControls(
-      '```sql\nselect id\nfrom users\n```',
-      { mutable: true },
-    )
+    const closed = renderMarkdownWithCopyControls('```sql\nselect id\nfrom users\n```', { mutable: true })
     expect(copyControls(closed)).toHaveLength(1)
     expect(closed).toContain('data-code-state="settled"')
   })
 
   it('does not mistake an over-indented fence inside mutable code for the closing fence', () => {
-    const markup = renderMarkdownWithCopyControls(
-      '```md\nA nested example:\n    ```\nstill changing',
-      { mutable: true },
-    )
+    const markup = renderMarkdownWithCopyControls('```md\nA nested example:\n    ```\nstill changing', {
+      mutable: true,
+    })
 
     expect(copyControls(markup)).toHaveLength(1)
     expect(markup).toContain('data-code-state="provisional"')
   })
 
   it('keeps a closed earlier block settled while later prose is mutable', () => {
-    const markup = renderMarkdownWithCopyControls(
-      '```sql\nselect 1;\n```\n\nStill explaining the result',
-      { mutable: true },
-    )
+    const markup = renderMarkdownWithCopyControls('```sql\nselect 1;\n```\n\nStill explaining the result', {
+      mutable: true,
+    })
 
     expect(copyControls(markup)).toHaveLength(1)
     expect(markup).toContain('data-code-state="settled"')
@@ -107,15 +100,7 @@ describe('Markdown code-block copy controls', () => {
   })
 
   it('renders exactly one accessible control for tagged and untagged blocks', () => {
-    const markup = renderAssistant([
-      '```sql',
-      'select 1;',
-      '```',
-      '',
-      '```',
-      'plain text',
-      '```',
-    ].join('\n'))
+    const markup = renderAssistant(['```sql', 'select 1;', '```', '', '```', 'plain text', '```'].join('\n'))
 
     expect(copyControls(markup)).toHaveLength(2)
     expect(markup).toContain('aria-label="Copy code block 1"')
@@ -133,9 +118,7 @@ describe('Markdown code-block copy controls', () => {
   })
 
   it('escapes code and generated language classes without widening the HTML boundary', () => {
-    const markup = renderMarkdownWithCopyControls(
-      '```sql&quot; onclick=&quot;alert(1)\n<script>bad()</script>\n```',
-    )
+    const markup = renderMarkdownWithCopyControls('```sql&quot; onclick=&quot;alert(1)\n<script>bad()</script>\n```')
 
     expect(markup).toContain('&lt;script&gt;bad()&lt;/script&gt;')
     expect(markup).not.toContain('<script>')
@@ -144,12 +127,14 @@ describe('Markdown code-block copy controls', () => {
   })
 
   it('treats raw HTML as text instead of executable renderer markup', () => {
-    const markup = renderMarkdownWithCopyControls([
-      '<script>window.api.files.deleteFile("/repo", "important")</script>',
-      '<img src=x onerror="window.api.app.quit()">',
-      '<svg><foreignObject><iframe srcdoc="<script>bad()</script>"></iframe></foreignObject></svg>',
-      '<form action="https://evil.invalid"><button>Send</button></form>',
-    ].join('\n'))
+    const markup = renderMarkdownWithCopyControls(
+      [
+        '<script>window.api.files.deleteFile("/repo", "important")</script>',
+        '<img src=x onerror="window.api.app.quit()">',
+        '<svg><foreignObject><iframe srcdoc="<script>bad()</script>"></iframe></foreignObject></svg>',
+        '<form action="https://evil.invalid"><button>Send</button></form>',
+      ].join('\n'),
+    )
 
     expect(markup).not.toMatch(/<(?:script|img|svg|foreignObject|iframe|form|button)\b/i)
     expect(markup).not.toMatch(/<[^>]+\sonerror=/i)
@@ -157,14 +142,16 @@ describe('Markdown code-block copy controls', () => {
   })
 
   it('drops executable Markdown link and image destinations', () => {
-    const markup = renderMarkdownWithCopyControls([
-      '[script](javascript:window.api.app.quit())',
-      '[encoded](jav&#x61;script:alert(1))',
-      '[data](data:text/html,<script>alert(1)</script>)',
-      '![image](javascript:alert(1))',
-      '[safe](https://example.com/docs?q=1&x=2)',
-      '[relative](./docs/readme.md)',
-    ].join('\n\n'))
+    const markup = renderMarkdownWithCopyControls(
+      [
+        '[script](javascript:window.api.app.quit())',
+        '[encoded](jav&#x61;script:alert(1))',
+        '[data](data:text/html,<script>alert(1)</script>)',
+        '![image](javascript:alert(1))',
+        '[safe](https://example.com/docs?q=1&x=2)',
+        '[relative](./docs/readme.md)',
+      ].join('\n\n'),
+    )
 
     expect(markup).not.toMatch(/(?:href|src)="(?:javascript|data):/i)
     expect(markup).not.toMatch(/href="jav&#x61;script:/i)
@@ -179,9 +166,11 @@ describe('Markdown code-block copy controls', () => {
   })
 
   it('uses the same atomic renderer in PlanCard', () => {
-    const markup = renderToStaticMarkup(createElement(PlanCard, {
-      plan: { id: 'plan-1', markdown: '```\necho plan\n```' },
-    }))
+    const markup = renderToStaticMarkup(
+      createElement(PlanCard, {
+        plan: { id: 'plan-1', markdown: '```\necho plan\n```' },
+      }),
+    )
 
     expect(copyControls(markup)).toHaveLength(1)
     expect(markup).toContain('aria-label="Copy code block 1"')
@@ -190,18 +179,20 @@ describe('Markdown code-block copy controls', () => {
   it('copies only the exact descendant code text through the delegated seam', async () => {
     const writes: string[] = []
     const code = { textContent: 'select 1;\n-- Copy must not be included\n' }
-    const pre = { querySelector: (selector: string) => selector === 'code' ? code : null }
+    const pre = { querySelector: (selector: string) => (selector === 'code' ? code : null) }
     let button: { dataset: { codeCopyIndex: string }; closest: (selector: string) => unknown }
     button = {
       dataset: { codeCopyIndex: '3' },
-      closest: (selector: string) => selector === 'pre' ? pre : selector === '.code-copy-btn' ? button : null,
+      closest: (selector: string) => (selector === 'pre' ? pre : selector === '.code-copy-btn' ? button : null),
     }
-    const child = { closest: (selector: string) => selector === '.code-copy-btn' ? button : null }
+    const child = { closest: (selector: string) => (selector === '.code-copy-btn' ? button : null) }
 
-    await expect(copyCodeFromTarget(child, (text) => {
-      writes.push(text)
-      return Promise.resolve()
-    })).resolves.toBe(3)
+    await expect(
+      copyCodeFromTarget(child, (text) => {
+        writes.push(text)
+        return Promise.resolve()
+      }),
+    ).resolves.toBe(3)
     expect(writes).toEqual(['select 1;\n-- Copy must not be included\n'])
   })
 
@@ -212,16 +203,17 @@ describe('Markdown code-block copy controls', () => {
     let button: { dataset: { codeCopyIndex: string }; closest: (selector: string) => unknown }
     button = {
       dataset: { codeCopyIndex: '0' },
-      closest: (selector: string) => selector === 'pre' ? pre : selector === '.code-copy-btn' ? button : null,
+      closest: (selector: string) => (selector === 'pre' ? pre : selector === '.code-copy-btn' ? button : null),
     }
 
     const denied = new Error('clipboard denied')
-    await expect(copyCodeFromTarget(
-      button,
-      () => Promise.reject(denied),
-      (error) => errors.push(error),
-    ))
-      .resolves.toBeNull()
+    await expect(
+      copyCodeFromTarget(
+        button,
+        () => Promise.reject(denied),
+        (error) => errors.push(error),
+      ),
+    ).resolves.toBeNull()
     expect(errors).toEqual([denied])
   })
 
@@ -229,7 +221,7 @@ describe('Markdown code-block copy controls', () => {
     let button: { dataset: { codeCopyIndex: string }; closest: (selector: string) => unknown }
     button = {
       dataset: { codeCopyIndex: '2' },
-      closest: (selector: string) => selector === '.code-copy-btn' ? button : null,
+      closest: (selector: string) => (selector === '.code-copy-btn' ? button : null),
     }
     const outside = {}
     const root = { contains: (target: unknown) => target === button }
@@ -266,8 +258,14 @@ describe('Markdown code-block copy controls', () => {
     const attributes = new Map<string, string>()
     const button: FeedbackButton = {
       textContent: 'Copy',
-      classList: { toggle: (name, force) => { classes.set(name, force) } },
-      setAttribute: (name, value) => { attributes.set(name, value) },
+      classList: {
+        toggle: (name, force) => {
+          classes.set(name, force)
+        },
+      },
+      setAttribute: (name, value) => {
+        attributes.set(name, value)
+      },
     }
 
     applyCopyButtonFeedback(button, 2, true)
@@ -287,7 +285,8 @@ describe('Markdown code-block copy controls', () => {
     const body = {}
     const composer = {}
     const root = {
-      querySelector: (selector: string) => selector === '[data-code-state="settled"] [data-code-copy-index="1"]' ? button : null,
+      querySelector: (selector: string) =>
+        selector === '[data-code-state="settled"] [data-code-copy-index="1"]' ? button : null,
       contains: (target: unknown) => target === button,
     }
 
@@ -302,7 +301,9 @@ describe('Markdown code-block copy controls', () => {
     expect(css).toMatch(/\.code-copy-btn\s*\{[^}]*color:\s*var\(--text-secondary\)[^}]*opacity:\s*1/s)
     expect(css).toMatch(/\.code-copy-btn:focus-visible\s*\{/)
     expect(css).toMatch(/@media\s*\(hover:\s*none\),\s*\(pointer:\s*coarse\)/)
-    expect(css).toMatch(/\.markdown-code-block\[data-code-state=['"]provisional['"]\][^{]*\.code-copy-btn\s*\{[^}]*visibility:\s*hidden/s)
+    expect(css).toMatch(
+      /\.markdown-code-block\[data-code-state=['"]provisional['"]\][^{]*\.code-copy-btn\s*\{[^}]*visibility:\s*hidden/s,
+    )
     expect(css).toMatch(/pre\.markdown-code-block\s*\{[^}]*padding-top:\s*(?:2[8-9]|[3-9]\d)px/s)
   })
 })

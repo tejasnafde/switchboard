@@ -83,14 +83,17 @@ export async function replaceFile(target: string, content: string, opts: Replace
       } catch (err) {
         if (!isLocked(err) || attempt >= RENAME_RETRY_DELAYS_MS.length) throw err
         const delay = RENAME_RETRY_DELAYS_MS[attempt]
-        log.warn(`rename over ${target} failed (${(err as NodeJS.ErrnoException).code}), retry ${attempt + 1} of ${RENAME_RETRY_DELAYS_MS.length} in ${delay}ms`)
+        log.warn(
+          `rename over ${target} failed (${(err as NodeJS.ErrnoException).code}), retry ${attempt + 1} of ${RENAME_RETRY_DELAYS_MS.length} in ${delay}ms`,
+        )
         await sleep(delay)
         await ensureSafe()
       }
     }
   } catch (err) {
     await removeTmp(tmp, ops, log)
-    if (isLocked(err)) log.warn(`rename over ${target} still failing (${(err as NodeJS.ErrnoException).code}); left as it was`)
+    if (isLocked(err))
+      log.warn(`rename over ${target} still failing (${(err as NodeJS.ErrnoException).code}); left as it was`)
     throw err
   }
 }

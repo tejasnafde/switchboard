@@ -44,15 +44,11 @@ const NOTICES: Partial<Record<string, string>> = {
   'wrong-machine': 'That directory belongs to a different machine.',
   'continuity-unsupported':
     'This agent cannot carry the conversation into another directory. Restarting it there would lose the thread.',
-  'rollback-failed':
-    'The move failed and the agent could not be restarted where it was. Restart the chat to continue.',
-  'source-stop-failed':
-    'The agent could not be stopped, so nothing moved. Stop the chat and try again.',
+  'rollback-failed': 'The move failed and the agent could not be restarted where it was. Restart the chat to continue.',
+  'source-stop-failed': 'The agent could not be stopped, so nothing moved. Stop the chat and try again.',
 }
 
-export function describeRelocationOutcome(
-  result: RelocateExecutionRootResult,
-): RelocationOutcomeView {
+export function describeRelocationOutcome(result: RelocateExecutionRootResult): RelocationOutcomeView {
   if (result.ok) {
     if (result.outcome === 'queued') {
       return {
@@ -86,9 +82,10 @@ export function describeRelocationOutcome(
   }
 
   const known = NOTICES[result.code]
-  const notice = result.rolledBack && !known
-    ? `${result.message} The chat is still in its original directory.`
-    : known ?? result.message
+  const notice =
+    result.rolledBack && !known
+      ? `${result.message} The chat is still in its original directory.`
+      : (known ?? result.message)
 
   return {
     applyRoot: null,

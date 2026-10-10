@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  clearComposerRegistry,
-  focusComposer,
-  registerComposer,
-} from '../../src/renderer/services/composer-registry'
+import { clearComposerRegistry, focusComposer, registerComposer } from '../../src/renderer/services/composer-registry'
 import {
   cloneDraftPayload,
   withDraftProvenance,
@@ -47,20 +43,24 @@ describe('session composer registry', () => {
 describe('copy prompt to another chat', () => {
   it('remaps pill tokens and clones image identity without sharing preview URLs', () => {
     const file = { name: 'diagram.png' } as File
-    const result = cloneDraftPayload({
-      text: 'Compare [[pill:file-1]] and [[pill:terminal-1]]',
-      pills: [
-        { id: 'file-1', kind: 'file', label: 'a.ts', content: '@src/a.ts' },
-        { id: 'terminal-1', kind: 'terminal', label: 'Terminal', content: 'output' },
-      ],
-      images: [{ id: 'image-1', file, previewUrl: 'blob:source' }],
-    }, {
-      nextId: vi.fn()
-        .mockReturnValueOnce('copy-file')
-        .mockReturnValueOnce('copy-terminal')
-        .mockReturnValueOnce('copy-image'),
-      createPreviewUrl: () => 'blob:copy',
-    })
+    const result = cloneDraftPayload(
+      {
+        text: 'Compare [[pill:file-1]] and [[pill:terminal-1]]',
+        pills: [
+          { id: 'file-1', kind: 'file', label: 'a.ts', content: '@src/a.ts' },
+          { id: 'terminal-1', kind: 'terminal', label: 'Terminal', content: 'output' },
+        ],
+        images: [{ id: 'image-1', file, previewUrl: 'blob:source' }],
+      },
+      {
+        nextId: vi
+          .fn()
+          .mockReturnValueOnce('copy-file')
+          .mockReturnValueOnce('copy-terminal')
+          .mockReturnValueOnce('copy-image'),
+        createPreviewUrl: () => 'blob:copy',
+      },
+    )
 
     expect(result.text).toBe('Compare [[pill:copy-file]] and [[pill:copy-terminal]]')
     expect(result.pills.map((pill) => pill.id)).toEqual(['copy-file', 'copy-terminal'])
@@ -82,18 +82,24 @@ describe('copy prompt to another chat', () => {
   })
 
   it('requires confirmation across machines or provider profiles', () => {
-    expect(requiresDraftTransferConfirmation(
-      { machineId: 'local', instanceId: 'work' },
-      { machineId: 'remote', instanceId: 'work' },
-    )).toBe(true)
-    expect(requiresDraftTransferConfirmation(
-      { machineId: 'local', instanceId: 'work' },
-      { machineId: 'local', instanceId: 'personal' },
-    )).toBe(true)
-    expect(requiresDraftTransferConfirmation(
-      { machineId: 'local', instanceId: 'work' },
-      { machineId: 'local', instanceId: 'work' },
-    )).toBe(false)
+    expect(
+      requiresDraftTransferConfirmation(
+        { machineId: 'local', instanceId: 'work' },
+        { machineId: 'remote', instanceId: 'work' },
+      ),
+    ).toBe(true)
+    expect(
+      requiresDraftTransferConfirmation(
+        { machineId: 'local', instanceId: 'work' },
+        { machineId: 'local', instanceId: 'personal' },
+      ),
+    ).toBe(true)
+    expect(
+      requiresDraftTransferConfirmation(
+        { machineId: 'local', instanceId: 'work' },
+        { machineId: 'local', instanceId: 'work' },
+      ),
+    ).toBe(false)
   })
 
   it('adds visible source provenance to the copied prompt', () => {

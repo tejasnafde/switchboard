@@ -107,22 +107,22 @@ export interface TerminalReconciliationSummary {
 
 export type RelocateExecutionRootResult =
   | {
-    ok: true
-    /** `queued` means it commits at the next turn boundary. */
-    outcome: 'relocated' | 'already-at-target' | 'queued'
-    root: ExecutionRoot
-    continuity: RelocationContinuity
-    terminals?: TerminalReconciliationSummary
-  }
+      ok: true
+      /** `queued` means it commits at the next turn boundary. */
+      outcome: 'relocated' | 'already-at-target' | 'queued'
+      root: ExecutionRoot
+      continuity: RelocationContinuity
+      terminals?: TerminalReconciliationSummary
+    }
   | {
-    ok: false
-    code: RelocationFailureCode
-    message: string
-    /** True when a failed start was undone and the source provider is live again. */
-    rolledBack?: boolean
-    /** The root as it stands after the failure. Unchanged unless `rollback-failed`. */
-    root: ExecutionRoot
-  }
+      ok: false
+      code: RelocationFailureCode
+      message: string
+      /** True when a failed start was undone and the source provider is live again. */
+      rolledBack?: boolean
+      /** The root as it stands after the failure. Unchanged unless `rollback-failed`. */
+      root: ExecutionRoot
+    }
 
 /** Providers that can carry a live thread into a different working directory. */
 const CONTINUITY_CAPABLE_PROVIDERS = new Set(['claude', 'codex'])
@@ -166,9 +166,7 @@ const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/]|\\\\)/
  *     a turn, and killing that turn to satisfy a UI click is worse than
  *     waiting a few seconds for it to finish.
  */
-export function classifyRelocationPreconditions(
-  state: RelocationPreconditionState,
-): RelocationPreconditionVerdict {
+export function classifyRelocationPreconditions(state: RelocationPreconditionState): RelocationPreconditionVerdict {
   const { request, currentRoot } = state
 
   const target = request.targetPath?.trim() ?? ''
@@ -226,7 +224,8 @@ export function classifyRelocationPreconditions(
     return {
       verdict: 'reject',
       code: 'continuity-unsupported',
-      message: 'This provider cannot carry the conversation into another directory. Restarting it here would lose the thread.',
+      message:
+        'This provider cannot carry the conversation into another directory. Restarting it here would lose the thread.',
     }
   }
 

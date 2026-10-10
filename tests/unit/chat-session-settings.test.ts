@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { applyProviderSelection, changeModel, changeReasoningEffort, changeRuntimeMode } from '../../src/renderer/components/chat/chat-session-settings'
+import {
+  applyProviderSelection,
+  changeModel,
+  changeReasoningEffort,
+  changeRuntimeMode,
+} from '../../src/renderer/components/chat/chat-session-settings'
 import { useAgentStore, getStoreDefaultRuntimeMode } from '../../src/renderer/stores/agent-store'
 import { defaultModelSettingKey, SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
 

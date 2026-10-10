@@ -19,11 +19,11 @@ import { SwitchboardClient } from '../api'
 
 function fakeTransport(handlers: Record<string, (...args: unknown[]) => unknown>): Transport {
   return {
-    invoke: (jest.fn((channel: string, ...args: unknown[]) => {
+    invoke: jest.fn((channel: string, ...args: unknown[]) => {
       const handler = handlers[channel]
       if (!handler) throw new Error(`unmocked channel: ${channel}`)
       return Promise.resolve(handler(...args))
-    }) as unknown) as Transport['invoke'],
+    }) as unknown as Transport['invoke'],
     send: jest.fn(),
     on: jest.fn(() => () => {}),
   }
@@ -37,7 +37,19 @@ describe('SwitchboardClient.getSessionDefaults - instance id is agent-scoped', (
         return null
       },
       [ProviderInstanceChannels.LIST]: () => [
-        { id: 'codex-personal', agentType: 'codex', displayName: 'Personal', accentColor: null, authMode: 'env', envKeys: [], oauthDir: null, effectiveOauthDir: null, enabled: true, createdAt: 0, updatedAt: 0 },
+        {
+          id: 'codex-personal',
+          agentType: 'codex',
+          displayName: 'Personal',
+          accentColor: null,
+          authMode: 'env',
+          envKeys: [],
+          oauthDir: null,
+          effectiveOauthDir: null,
+          enabled: true,
+          createdAt: 0,
+          updatedAt: 0,
+        },
       ],
     })
     const client = new SwitchboardClient(transport)
@@ -52,7 +64,19 @@ describe('SwitchboardClient.getSessionDefaults - instance id is agent-scoped', (
         return null
       },
       [ProviderInstanceChannels.LIST]: () => [
-        { id: 'codex-personal', agentType: 'codex', displayName: 'Personal', accentColor: null, authMode: 'env', envKeys: [], oauthDir: null, effectiveOauthDir: null, enabled: true, createdAt: 0, updatedAt: 0 },
+        {
+          id: 'codex-personal',
+          agentType: 'codex',
+          displayName: 'Personal',
+          accentColor: null,
+          authMode: 'env',
+          envKeys: [],
+          oauthDir: null,
+          effectiveOauthDir: null,
+          enabled: true,
+          createdAt: 0,
+          updatedAt: 0,
+        },
       ],
     })
     const client = new SwitchboardClient(transport)
@@ -109,12 +133,19 @@ describe('SwitchboardClient.getSessionDefaults - project scope', () => {
 it('waits for the ready capability before choosing the initial phone history contract', async () => {
   let known = false
   const transport = fakeTransport({
-    'settings:get': () => { known = true; return null },
+    'settings:get': () => {
+      known = true
+      return null
+    },
     [AppChannels.LOAD_SESSION_BY_ID]: () => ({ messages: [], meta: null }),
   })
-  transport.supportsCapability = () => known ? true : undefined
+  transport.supportsCapability = () => (known ? true : undefined)
   await new SwitchboardClient(transport).loadPhoneHistory('thread')
-  expect(transport.invoke).toHaveBeenCalledWith(AppChannels.LOAD_SESSION_BY_ID, 'thread', { window: true, limit: 200, beforeId: undefined })
+  expect(transport.invoke).toHaveBeenCalledWith(AppChannels.LOAD_SESSION_BY_ID, 'thread', {
+    window: true,
+    limit: 200,
+    beforeId: undefined,
+  })
 })
 
 it('uses the legacy tail contract on an older desktop', async () => {

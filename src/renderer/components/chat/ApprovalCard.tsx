@@ -9,7 +9,12 @@ const log = createRendererLogger('chat:approval-card')
 
 interface ApprovalCardProps {
   message: ChatMessage
-  onDecide: (requestId: string, decision: 'approve' | 'deny', note?: string, response?: HostWriteResponse) => void | Promise<void>
+  onDecide: (
+    requestId: string,
+    decision: 'approve' | 'deny',
+    note?: string,
+    response?: HostWriteResponse,
+  ) => void | Promise<void>
 }
 
 /**
@@ -46,11 +51,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
   const title = pending ? 'Approval needed' : accepted ? 'Approved' : 'Rejected'
   const accentColor = pending ? 'var(--warning)' : accepted ? 'var(--success)' : 'var(--error)'
   const borderColor = pending ? 'var(--warning)' : 'var(--border)'
-  const bgTint = pending
-    ? 'rgba(210, 153, 34, 0.06)'
-    : accepted
-      ? 'rgba(63, 185, 80, 0.05)'
-      : 'rgba(248, 81, 73, 0.05)'
+  const bgTint = pending ? 'rgba(210, 153, 34, 0.06)' : accepted ? 'rgba(63, 185, 80, 0.05)' : 'rgba(248, 81, 73, 0.05)'
 
   const commit = (decision: 'approve' | 'deny', quiet = false) => {
     if (submitRef.current) return
@@ -81,32 +82,39 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
       }}
     >
       {/* Header row */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        padding: '8px 12px',
-        borderBottom: pending ? `1px solid ${borderColor}` : 'none',
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '8px 12px',
+          borderBottom: pending ? `1px solid ${borderColor}` : 'none',
+        }}
+      >
         <ShieldIcon />
-        <span style={{
-          fontSize: '11px',
-          fontWeight: 600,
-          color: accentColor,
-          textTransform: 'uppercase',
-          letterSpacing: '0.4px',
-        }}>
+        <span
+          style={{
+            fontSize: '11px',
+            fontWeight: 600,
+            color: accentColor,
+            textTransform: 'uppercase',
+            letterSpacing: '0.4px',
+          }}
+        >
           {title}
         </span>
-        <span style={{
-          fontSize: '11px',
-          color: 'var(--text-muted)',
-          fontFamily: 'var(--font-mono)',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          flex: 1,
-        }} title={message.approval.toolName}>
+        <span
+          style={{
+            fontSize: '11px',
+            color: 'var(--text-muted)',
+            fontFamily: 'var(--font-mono)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flex: 1,
+          }}
+          title={message.approval.toolName}
+        >
           {message.approval.toolName}
         </span>
       </div>
@@ -115,16 +123,17 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
           160px box silently; now default-collapsed with a summary line. */}
       <ApprovalDetail detail={message.approval.detail} />
 
-
       {/* Action bar */}
       {pending && (
-        <div style={{
-          padding: '8px 12px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-          borderTop: `1px solid ${borderColor}`,
-        }}>
+        <div
+          style={{
+            padding: '8px 12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            borderTop: `1px solid ${borderColor}`,
+          }}
+        >
           {noteMode ? (
             <>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -144,7 +153,11 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
                     setNote('')
                   }
                 }}
-                placeholder={noteMode === 'approve' ? 'e.g. "and also update the tests"' : 'e.g. "don\'t touch the config file, do X instead"'}
+                placeholder={
+                  noteMode === 'approve'
+                    ? 'e.g. "and also update the tests"'
+                    : 'e.g. "don\'t touch the config file, do X instead"'
+                }
                 rows={2}
                 style={{
                   width: '100%',
@@ -161,7 +174,10 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
               />
               <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                 <button
-                  onClick={() => { setNoteMode(null); setNote('') }}
+                  onClick={() => {
+                    setNoteMode(null)
+                    setNote('')
+                  }}
                   disabled={submitting !== null}
                   style={withDisabled(btnStyles.ghost, submitting !== null)}
                 >
@@ -170,11 +186,18 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
                 <button
                   onClick={() => commit(noteMode)}
                   disabled={submitting !== null}
-                  style={withDisabled(noteMode === 'approve' ? btnStyles.primary : btnStyles.danger, submitting !== null)}
+                  style={withDisabled(
+                    noteMode === 'approve' ? btnStyles.primary : btnStyles.danger,
+                    submitting !== null,
+                  )}
                 >
                   {submitting
-                    ? submitting === 'approve' ? 'Approving…' : 'Denying…'
-                    : noteMode === 'approve' ? 'Approve with note' : 'Deny with note'}
+                    ? submitting === 'approve'
+                      ? 'Approving…'
+                      : 'Denying…'
+                    : noteMode === 'approve'
+                      ? 'Approve with note'
+                      : 'Deny with note'}
                 </button>
               </div>
             </>
@@ -185,7 +208,13 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
                 disabled={submitting !== null}
                 style={withDisabled(btnStyles.primary, submitting !== null)}
               >
-                {submitting === 'approve' ? 'Approving…' : (<><CheckIcon /> Approve</>)}
+                {submitting === 'approve' ? (
+                  'Approving…'
+                ) : (
+                  <>
+                    <CheckIcon /> Approve
+                  </>
+                )}
               </button>
               <button
                 onClick={() => setNoteMode('approve')}
@@ -229,7 +258,13 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
                 disabled={submitting !== null}
                 style={withDisabled(btnStyles.danger, submitting !== null)}
               >
-                {submitting === 'deny' ? 'Denying…' : <><XIcon /> Deny</>}
+                {submitting === 'deny' ? (
+                  'Denying…'
+                ) : (
+                  <>
+                    <XIcon /> Deny
+                  </>
+                )}
               </button>
             </div>
           )}
@@ -243,7 +278,17 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
 
 function ShieldIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--warning)', flexShrink: 0 }}>
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ color: 'var(--warning)', flexShrink: 0 }}
+    >
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
     </svg>
   )
@@ -251,7 +296,17 @@ function ShieldIcon() {
 
 function CheckIcon() {
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '2px' }}>
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ marginRight: '2px' }}
+    >
       <polyline points="20 6 9 17 4 12" />
     </svg>
   )
@@ -259,8 +314,19 @@ function CheckIcon() {
 
 function XIcon() {
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '2px' }}>
-      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ marginRight: '2px' }}
+    >
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
     </svg>
   )
 }
@@ -328,14 +394,16 @@ function ApprovalDetail({ detail }: { detail: string }) {
 
   if (!isLong) {
     return (
-      <div style={{
-        padding: '8px 12px',
-        fontSize: '11.5px',
-        color: 'var(--text-secondary)',
-        fontFamily: 'var(--font-mono)',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-      }}>
+      <div
+        style={{
+          padding: '8px 12px',
+          fontSize: '11.5px',
+          color: 'var(--text-secondary)',
+          fontFamily: 'var(--font-mono)',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      >
         {detail}
       </div>
     )
@@ -343,33 +411,37 @@ function ApprovalDetail({ detail }: { detail: string }) {
 
   return (
     <details style={{ padding: '6px 10px 8px' }}>
-      <summary style={{
-        cursor: 'pointer',
-        fontSize: '11.5px',
-        color: 'var(--text-secondary)',
-        fontFamily: 'var(--font-mono)',
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        padding: '2px 2px',
-        userSelect: 'none',
-      }}>
+      <summary
+        style={{
+          cursor: 'pointer',
+          fontSize: '11.5px',
+          color: 'var(--text-secondary)',
+          fontFamily: 'var(--font-mono)',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          padding: '2px 2px',
+          userSelect: 'none',
+        }}
+      >
         {summary}
       </summary>
-      <pre style={{
-        marginTop: '6px',
-        padding: '6px 8px',
-        fontSize: '11px',
-        color: 'var(--text-secondary)',
-        fontFamily: 'var(--font-mono)',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-        maxHeight: '260px',
-        overflow: 'auto',
-        background: 'rgba(0,0,0,0.1)',
-        borderRadius: '4px',
-        border: '1px solid var(--border)',
-      }}>
+      <pre
+        style={{
+          marginTop: '6px',
+          padding: '6px 8px',
+          fontSize: '11px',
+          color: 'var(--text-secondary)',
+          fontFamily: 'var(--font-mono)',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          maxHeight: '260px',
+          overflow: 'auto',
+          background: 'rgba(0,0,0,0.1)',
+          borderRadius: '4px',
+          border: '1px solid var(--border)',
+        }}
+      >
         {detail}
       </pre>
     </details>
@@ -413,7 +485,10 @@ function extractSummary(detail: string): string {
   }
 
   // Last resort: first non-brace line (skip the opening `{`).
-  const lines = detail.split('\n').map((l) => l.trim()).filter((l) => l && l !== '{' && l !== '}')
+  const lines = detail
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && l !== '{' && l !== '}')
   if (lines[0]) return truncLine(lines[0])
 
   return truncLine(detail)

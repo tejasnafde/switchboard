@@ -32,7 +32,8 @@ export function filterComboboxOptions(options: ComboboxOption[], query: string):
     if (label === needle) tiers[0].push(option)
     else if (label.startsWith(needle)) tiers[1].push(option)
     else if (label.includes(needle)) tiers[2].push(option)
-    else if ([option.hint, ...(option.keywords ?? [])].some((text) => text?.toLowerCase().includes(needle))) tiers[3].push(option)
+    else if ([option.hint, ...(option.keywords ?? [])].some((text) => text?.toLowerCase().includes(needle)))
+      tiers[3].push(option)
   }
   return tiers.flat()
 }

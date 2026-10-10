@@ -5,7 +5,16 @@
  */
 import { MERGE_STRATEGY_LABEL } from '@shared/pull-request-writes'
 import { groupRepoFailures, isHideableRepoError, type RepoFailureGroup } from '@shared/pull-request-hidden-repos'
-import { HOST_CAPABILITIES, PR_HOST_LABEL, type MergeStrategy, type PrCheck, type PrError, type PrListData, type PrSummary, type RepoRef } from '@shared/pull-requests'
+import {
+  HOST_CAPABILITIES,
+  PR_HOST_LABEL,
+  type MergeStrategy,
+  type PrCheck,
+  type PrError,
+  type PrListData,
+  type PrSummary,
+  type RepoRef,
+} from '@shared/pull-requests'
 
 export type ReviewFixAction = 'settings' | 'retry' | 'hide-repos' | null
 
@@ -29,33 +38,103 @@ export function describePrError(error: PrError): ReviewNotice {
   const id = `${error.host ?? 'any'}:${error.kind}`
   switch (error.kind) {
     case 'no_account':
-      return { id, line: `${host} pull requests need a source control account.`, fix: 'Add your Atlassian email and API token in Settings.', action: 'settings', actionLabel: 'Open Settings' }
+      return {
+        id,
+        line: `${host} pull requests need a source control account.`,
+        fix: 'Add your Atlassian email and API token in Settings.',
+        action: 'settings',
+        actionLabel: 'Open Settings',
+      }
     case 'needs_desktop':
-      return { id, line: 'Bitbucket needs the desktop app in this release.', fix: 'Connect to this backend from the desktop app, which keeps the token in the keychain.', action: null }
+      return {
+        id,
+        line: 'Bitbucket needs the desktop app in this release.',
+        fix: 'Connect to this backend from the desktop app, which keeps the token in the keychain.',
+        action: null,
+      }
     case 'token_rejected':
       return error.host === 'github'
-        ? { id, line: 'gh is signed out, or GitHub rejected its token.', fix: 'Run gh auth login in a terminal, then retry.', action: 'retry', actionLabel: 'Retry' }
-        : { id, line: `${host} rejected the API token.`, fix: error.message.includes('scope') ? error.message : 'Create a new API token and save it in Settings.', action: 'settings', actionLabel: 'Open Settings' }
+        ? {
+            id,
+            line: 'gh is signed out, or GitHub rejected its token.',
+            fix: 'Run gh auth login in a terminal, then retry.',
+            action: 'retry',
+            actionLabel: 'Retry',
+          }
+        : {
+            id,
+            line: `${host} rejected the API token.`,
+            fix: error.message.includes('scope') ? error.message : 'Create a new API token and save it in Settings.',
+            action: 'settings',
+            actionLabel: 'Open Settings',
+          }
     case 'gh_missing':
-      return { id, line: 'GitHub pull requests need the gh CLI where the backend runs.', fix: 'Install it (brew install gh), run gh auth login, then retry.', action: 'retry', actionLabel: 'Retry' }
+      return {
+        id,
+        line: 'GitHub pull requests need the gh CLI where the backend runs.',
+        fix: 'Install it (brew install gh), run gh auth login, then retry.',
+        action: 'retry',
+        actionLabel: 'Retry',
+      }
     case 'rate_limited':
-      return { id, line: `${host} is rate limiting requests${error.retryAt ? ` until ${clock(error.retryAt)}` : ''}.`, fix: 'Reviews tries again on its next refresh.', action: 'retry', actionLabel: 'Retry' }
+      return {
+        id,
+        line: `${host} is rate limiting requests${error.retryAt ? ` until ${clock(error.retryAt)}` : ''}.`,
+        fix: 'Reviews tries again on its next refresh.',
+        action: 'retry',
+        actionLabel: 'Retry',
+      }
     case 'offline':
-      return { id, line: `Could not reach ${error.host === 'bitbucket' ? 'bitbucket.org' : error.host === 'github' ? 'github.com' : 'the host'}.`, fix: 'Check the connection, then retry.', action: 'retry', actionLabel: 'Retry' }
+      return {
+        id,
+        line: `Could not reach ${error.host === 'bitbucket' ? 'bitbucket.org' : error.host === 'github' ? 'github.com' : 'the host'}.`,
+        fix: 'Check the connection, then retry.',
+        action: 'retry',
+        actionLabel: 'Retry',
+      }
     case 'unsupported_repo':
-      return { id, line: 'This repository is not on GitHub or Bitbucket Cloud.', fix: 'Reviews reads pull requests from github.com and bitbucket.org remotes.', action: null }
+      return {
+        id,
+        line: 'This repository is not on GitHub or Bitbucket Cloud.',
+        fix: 'Reviews reads pull requests from github.com and bitbucket.org remotes.',
+        action: null,
+      }
     case 'not_found':
-      return { id, line: error.message, fix: 'Check that this account can see the repository.', action: 'retry', actionLabel: 'Retry' }
+      return {
+        id,
+        line: error.message,
+        fix: 'Check that this account can see the repository.',
+        action: 'retry',
+        actionLabel: 'Retry',
+      }
     case 'forbidden':
       return { id, line: error.message, fix: `${host} did not allow it for this account.`, action: null }
     case 'conflict':
-      return { id, line: error.message, fix: `Open the pull request in ${host} to see what blocks it.`, action: 'retry', actionLabel: 'Retry' }
+      return {
+        id,
+        line: error.message,
+        fix: `Open the pull request in ${host} to see what blocks it.`,
+        action: 'retry',
+        actionLabel: 'Retry',
+      }
     case 'stale':
-      return { id, line: error.message, fix: 'Reviews refreshed the pull request; check it and try again.', action: 'retry', actionLabel: 'Retry' }
+      return {
+        id,
+        line: error.message,
+        fix: 'Reviews refreshed the pull request; check it and try again.',
+        action: 'retry',
+        actionLabel: 'Retry',
+      }
     case 'invalid':
       return { id, line: error.message, fix: 'Nothing was sent.', action: null }
     case 'unknown':
-      return { id, line: error.message, fix: 'Retry, or check the log for details.', action: 'retry', actionLabel: 'Retry' }
+      return {
+        id,
+        line: error.message,
+        fix: 'Retry, or check the log for details.',
+        action: 'retry',
+        actionLabel: 'Retry',
+      }
   }
 }
 
@@ -83,9 +162,10 @@ export function describeRepoFailures(group: RepoFailureGroup): ReviewNotice {
   const that = group.owners.length === 1 ? `that ${place}` : `those ${place}s`
   const these = group.repos.length === 1 ? 'this repository' : 'these repositories'
   const account = group.host === 'bitbucket' ? "The API token's account" : 'The gh account'
-  const fix = group.kind === 'forbidden'
-    ? `${PR_HOST_LABEL[group.host]} refused this account for ${that} (SSO or an IP allow list); authorize it, or hide ${these}.`
-    : `${account} needs access to ${that}, or hide ${these}.`
+  const fix =
+    group.kind === 'forbidden'
+      ? `${PR_HOST_LABEL[group.host]} refused this account for ${that} (SSO or an IP allow list); authorize it, or hide ${these}.`
+      : `${account} needs access to ${that}, or hide ${these}.`
   return {
     id: `${group.host}:${group.kind}`,
     line: `${verb} ${owners.join('; ')}.`,
@@ -101,7 +181,8 @@ export function hideReposConfirmCopy(repos: readonly RepoRef[]): { title: string
   const names = repos.map((r) => `${r.owner}/${r.name}`).join(', ')
   const hosts = [...new Set(repos.map((r) => PR_HOST_LABEL[r.host]))].join(' or ')
   return {
-    title: repos.length === 1 ? 'Hide this repository from Reviews?' : `Hide ${repos.length} repositories from Reviews?`,
+    title:
+      repos.length === 1 ? 'Hide this repository from Reviews?' : `Hide ${repos.length} repositories from Reviews?`,
     body: `Reviews stops reading ${names}. Nothing changes on ${hosts}. Show ${repos.length === 1 ? 'it' : 'them'} again from the hidden line under the list.`,
     confirmLabel: 'Hide',
   }
@@ -126,14 +207,23 @@ export function restorableHiddenRepos(state: ReviewListState, list: PrListData |
 /** One line under a write control that failed: the reason, and for account or network trouble, the fix. */
 export function writeErrorText(error: PrError): string {
   const notice = describePrError(error)
-  if (error.kind === 'forbidden' || error.kind === 'conflict' || error.kind === 'stale' || error.kind === 'invalid' || error.kind === 'unknown') {
+  if (
+    error.kind === 'forbidden' ||
+    error.kind === 'conflict' ||
+    error.kind === 'stale' ||
+    error.kind === 'invalid' ||
+    error.kind === 'unknown'
+  ) {
     return notice.line
   }
   return `${notice.line} ${notice.fix}`
 }
 
 /** The merge confirm names the target branch and the strategy, which is what cannot be undone. */
-export function mergeConfirmCopy(pr: Pick<PrSummary, 'ref' | 'sourceBranch' | 'targetBranch' | 'title'>, strategy: MergeStrategy): { title: string; body: string; confirmLabel: string } {
+export function mergeConfirmCopy(
+  pr: Pick<PrSummary, 'ref' | 'sourceBranch' | 'targetBranch' | 'title'>,
+  strategy: MergeStrategy,
+): { title: string; body: string; confirmLabel: string } {
   return {
     title: `Merge #${pr.ref.number} into ${pr.targetBranch}?`,
     body: `"${pr.title}" merges ${pr.sourceBranch} into ${pr.targetBranch} on ${PR_HOST_LABEL[pr.ref.host]}. Strategy: ${MERGE_STRATEGY_LABEL[strategy].toLowerCase()}. This cannot be undone from Switchboard.`,
@@ -144,11 +234,18 @@ export function mergeConfirmCopy(pr: Pick<PrSummary, 'ref' | 'sourceBranch' | 't
 /** "Conflicts with main in 2 files"; GitHub does not name the files, so there it stops at the branch. */
 export function conflictPhrase(pr: Pick<PrSummary, 'targetBranch' | 'conflictedFiles'>): string {
   const n = pr.conflictedFiles.length
-  return n > 0 ? `Conflicts with ${pr.targetBranch} in ${n} ${n === 1 ? 'file' : 'files'}` : `Conflicts with ${pr.targetBranch}`
+  return n > 0
+    ? `Conflicts with ${pr.targetBranch} in ${n} ${n === 1 ? 'file' : 'files'}`
+    : `Conflicts with ${pr.targetBranch}`
 }
 
 /** The decline / close confirm names the PR and says it changes it for everyone. */
-export function declineConfirmCopy(pr: Pick<PrSummary, 'ref' | 'title'>): { title: string; body: string; confirmLabel: string; destructive: true } {
+export function declineConfirmCopy(pr: Pick<PrSummary, 'ref' | 'title'>): {
+  title: string
+  body: string
+  confirmLabel: string
+  destructive: true
+} {
   const host = PR_HOST_LABEL[pr.ref.host]
   const verb = HOST_CAPABILITIES[pr.ref.host].declineLabel
   return {
@@ -173,9 +270,21 @@ export function reviewListState(data: PrListData | null, error: PrError | null):
     if ((data.hiddenRepos?.length ?? 0) > 0) return { kind: 'ready', notices: [] }
     return {
       kind: 'blocked',
-      notice: data.unsupportedProjects.length === 0
-        ? { id: 'no-projects', line: 'No projects yet.', fix: 'Add a project whose git remote is on GitHub or Bitbucket.', action: null }
-        : { id: 'unsupported', line: 'None of your projects has a GitHub or Bitbucket remote.', fix: 'Add one with git remote add origin <url>, then retry.', action: 'retry', actionLabel: 'Retry' },
+      notice:
+        data.unsupportedProjects.length === 0
+          ? {
+              id: 'no-projects',
+              line: 'No projects yet.',
+              fix: 'Add a project whose git remote is on GitHub or Bitbucket.',
+              action: null,
+            }
+          : {
+              id: 'unsupported',
+              line: 'None of your projects has a GitHub or Bitbucket remote.',
+              fix: 'Add one with git remote add origin <url>, then retry.',
+              action: 'retry',
+              actionLabel: 'Retry',
+            },
     }
   }
   // One notice per host and reason, however many repositories share it. A
@@ -191,7 +300,8 @@ export function reviewListState(data: PrListData | null, error: PrError | null):
     notices.set(notice.id, notice)
   }
   const failedAll = data.sources.every((s) => s.error)
-  if (failedAll && notices.size === 1 && data.prs.length === 0) return { kind: 'blocked', notice: [...notices.values()][0] }
+  if (failedAll && notices.size === 1 && data.prs.length === 0)
+    return { kind: 'blocked', notice: [...notices.values()][0] }
   return { kind: 'ready', notices: [...notices.values()] }
 }
 

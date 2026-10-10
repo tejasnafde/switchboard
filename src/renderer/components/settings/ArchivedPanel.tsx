@@ -26,7 +26,9 @@ export function ArchivedPanel() {
     }
   }, [])
 
-  useEffect(() => { void loadArchived() }, [loadArchived])
+  useEffect(() => {
+    void loadArchived()
+  }, [loadArchived])
 
   const archivedView = useMemo(
     () => selectArchivedPage(archived, archivedQuery, archivedPageNum),
@@ -61,7 +63,10 @@ export function ArchivedPanel() {
         <>
           <input
             value={archivedQuery}
-            onChange={(e) => { setArchivedQuery(e.target.value); setArchivedPageNum(1) }}
+            onChange={(e) => {
+              setArchivedQuery(e.target.value)
+              setArchivedPageNum(1)
+            }}
             placeholder={`Search ${archived.length} archived chat${archived.length === 1 ? '' : 's'} by title or project...`}
             style={{
               width: '100%',
@@ -79,13 +84,15 @@ export function ArchivedPanel() {
               than the window, so a pager underneath them sits below the
               fold and has to be scrolled to. */}
           {archivedView.total > 0 && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '8px',
-              marginBottom: '8px',
-            }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                marginBottom: '8px',
+              }}
+            >
               <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
                 Showing {archivedView.from} to {archivedView.to} of {archivedView.total}
               </span>
@@ -119,64 +126,69 @@ export function ArchivedPanel() {
               No matches for "{archivedQuery.trim()}".
             </div>
           ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {archivedView.items.map((c) => (
-              <div
-                key={c.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '8px 10px',
-                  borderRadius: 'var(--radius)',
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border)',
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: '12px',
-                    color: 'var(--text-primary)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    fontWeight: 500,
-                  }}>
-                    {c.title}
-                  </div>
-                  <div style={{
-                    fontSize: '10px',
-                    color: 'var(--text-muted)',
-                    fontFamily: 'var(--font-mono)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }} title={c.project_path}>
-                    {c.project_path.split('/').slice(-2).join('/')}
-                  </div>
-                </div>
-                <button
-                  onClick={() => handleUnarchive(c)}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {archivedView.items.map((c) => (
+                <div
+                  key={c.id}
                   style={{
-                    padding: '4px 10px',
-                    borderRadius: '4px',
-                    border: '1px solid var(--accent)',
-                    background: 'var(--accent-subtle)',
-                    color: 'var(--accent)',
-                    cursor: 'pointer',
-                    fontSize: '11px',
-                    fontWeight: 500,
-                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 10px',
+                    borderRadius: 'var(--radius)',
+                    background: 'var(--bg-tertiary)',
+                    border: '1px solid var(--border)',
                   }}
                 >
-                  Unarchive
-                </button>
-              </div>
-            ))}
-          </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        color: 'var(--text-primary)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        fontWeight: 500,
+                      }}
+                    >
+                      {c.title}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '10px',
+                        color: 'var(--text-muted)',
+                        fontFamily: 'var(--font-mono)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={c.project_path}
+                    >
+                      {c.project_path.split('/').slice(-2).join('/')}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleUnarchive(c)}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--accent)',
+                      background: 'var(--accent-subtle)',
+                      color: 'var(--accent)',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      fontWeight: 500,
+                      flexShrink: 0,
+                    }}
+                  >
+                    Unarchive
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
-                  </>
-                )}
+        </>
+      )}
     </>
   )
 }

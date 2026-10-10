@@ -37,7 +37,9 @@ describe('DriftWatcher against a real repo', () => {
       listCalls.push(fresh)
       const { stdout } = await execFileP('git', ['worktree', 'list', '--porcelain'], { cwd: folder, env: gitEnv })
       // Normalization happens at the registry cache boundary in production.
-      return Promise.all(parseWorktreeList(stdout).map(async (wt) => ({ ...wt, path: await realpathOrAncestor(wt.path) })))
+      return Promise.all(
+        parseWorktreeList(stdout).map(async (wt) => ({ ...wt, path: await realpathOrAncestor(wt.path) })),
+      )
     }, realpathOrAncestor)
 
   beforeAll(() => {
@@ -140,7 +142,7 @@ describe('DriftWatcher against a real repo', () => {
     const lateWt2 = mkdtempSync(join(tmpdir(), 'sb-drift-late2-'))
     rmSync(lateWt2, { recursive: true, force: true })
     expect(
-      await watcher.onToolStarted('t9', repo, 'Bash', { command: `git worktree add "${lateWt2}" -b test/late2` })
+      await watcher.onToolStarted('t9', repo, 'Bash', { command: `git worktree add "${lateWt2}" -b test/late2` }),
     ).toBeNull()
     execFileSync('git', ['worktree', 'add', '-q', '-b', 'test/late2', lateWt2], { cwd: repo, env: gitEnv })
     try {

@@ -43,7 +43,9 @@ function enrichmentUpdates(hit: DisplayBodyEnrichment): Partial<ChatMessage> {
       parsed = JSON.parse(hit.pillsMeta ?? '{}') as PillsMetaParsed
     } catch {
       // The parse error quotes the text, so only its size is logged.
-      log.warn('corrupt pill metadata for enriched message - skipping', { bytes: Buffer.byteLength(hit.pillsMeta ?? '') })
+      log.warn('corrupt pill metadata for enriched message - skipping', {
+        bytes: Buffer.byteLength(hit.pillsMeta ?? ''),
+      })
       parsed = null
     }
     if (parsed) {

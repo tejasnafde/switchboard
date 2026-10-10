@@ -36,7 +36,10 @@ describe('TransportRouter', () => {
     const router = new TransportRouter(local)
     expect(await router.invoke('app:x')).toBe('local')
     router.send('app:y', 1)
-    expect(local.invoked).toEqual([['app:x', []], ['app:y', [1]]])
+    expect(local.invoked).toEqual([
+      ['app:x', []],
+      ['app:y', [1]],
+    ])
   })
 
   it('routes to the machine the resolver names', async () => {
@@ -127,7 +130,10 @@ describe('TransportRouter', () => {
     router.onWithSource<[string]>('provider:event', (machineId, e) => seen.push([machineId, e]))
     local.emit('provider:event', 'from-local')
     remote.emit('provider:event', 'from-remote')
-    expect(seen).toEqual([['local', 'from-local'], ['m1', 'from-remote']])
+    expect(seen).toEqual([
+      ['local', 'from-local'],
+      ['m1', 'from-remote'],
+    ])
   })
 
   it('onWithSource tags events from a transport registered after subscribing', () => {

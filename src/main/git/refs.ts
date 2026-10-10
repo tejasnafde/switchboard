@@ -42,10 +42,7 @@ export interface Ref {
 }
 
 /** Test seam - same shape as the worktree.ts GitRunner. */
-export type GitRunner = (
-  args: string[],
-  cwd: string,
-) => Promise<{ stdout: string; stderr: string }>
+export type GitRunner = (args: string[], cwd: string) => Promise<{ stdout: string; stderr: string }>
 
 const defaultRunner: GitRunner = async (args, cwd) => {
   const res = await execFileP('git', args, { cwd, timeout: 10_000, maxBuffer: 4 * 1024 * 1024 })
@@ -116,7 +113,7 @@ export function parseForEachRef(stdout: string, worktreeMap: Map<string, string>
       sha,
       current: headMarker === '*',
       isRemote,
-      worktreePath: isRemote ? null : worktreeMap.get(name) ?? null,
+      worktreePath: isRemote ? null : (worktreeMap.get(name) ?? null),
     })
   }
   return out
@@ -162,32 +159,20 @@ export async function listRefs(cwd: string, runner: GitRunner = defaultRunner): 
   // Tab-delimited - branch names can't contain whitespace so this is safe,
   // and unlike NUL, tab survives Node.js execFile's argument validation.
   const { stdout } = await runner(
-    [
-      'for-each-ref',
-      '--format=%(refname)\t%(objectname)\t%(HEAD)',
-      'refs/heads',
-      'refs/remotes',
-    ],
+    ['for-each-ref', '--format=%(refname)\t%(objectname)\t%(HEAD)', 'refs/heads', 'refs/remotes'],
     cwd,
   )
   return parseForEachRef(stdout, worktreeMap)
 }
 
-export async function switchRef(
-  cwd: string,
-  refName: string,
-  runner: GitRunner = defaultRunner,
-): Promise<void> {
+export async function switchRef(cwd: string, refName: string, runner: GitRunner = defaultRunner): Promise<void> {
   if (!isValidRefName(refName)) {
     throw new Error(`invalid ref name: ${JSON.stringify(refName)}`)
   }
   await runner(['checkout', refName], cwd)
 }
 
-export async function getCurrentBranch(
-  cwd: string,
-  runner: GitRunner = defaultRunner,
-): Promise<string | null> {
+export async function getCurrentBranch(cwd: string, runner: GitRunner = defaultRunner): Promise<string | null> {
   const { stdout } = await runner(['rev-parse', '--abbrev-ref', 'HEAD'], cwd)
   const branch = stdout.trim()
   // Detached HEAD prints the literal string 'HEAD' - surface that as null

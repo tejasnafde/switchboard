@@ -64,7 +64,15 @@ const REPOS: Record<string, RepoRef> = {
 
 function check(name: string, state: PrCheck['state'], durationMs: number | null): PrCheck {
   // Failed demo checks re-run on GitHub (an Actions run); Bitbucket's never do.
-  return { id: name, name, state, description: null, url: null, durationMs, rerunId: state === 'failure' ? '9001' : null }
+  return {
+    id: name,
+    name,
+    state,
+    description: null,
+    url: null,
+    durationMs,
+    rerunId: state === 'failure' ? '9001' : null,
+  }
 }
 
 interface Scripted {
@@ -78,7 +86,16 @@ interface Scripted {
 
 function file(path: string, additions: number, deletions: number, patch = '', conflicted = false): PrChangedFile {
   const status = conflicted ? 'conflicted' : deletions === 0 && !patch ? 'added' : 'modified'
-  return { path, oldPath: null, status, additions, deletions, binary: false, truncated: false, hunks: parseHunks(patch).hunks }
+  return {
+    path,
+    oldPath: null,
+    status,
+    additions,
+    deletions,
+    binary: false,
+    truncated: false,
+    hunks: parseHunks(patch).hunks,
+  }
 }
 
 const WORKER_PATCH = [
@@ -102,9 +119,10 @@ function scripted(now: number): Scripted[] {
   const base = (ref: PrRef, over: Partial<PrSummary>): PrSummary => ({
     ref,
     title: '',
-    url: ref.host === 'github'
-      ? `https://github.com/${ref.owner}/${ref.name}/pull/${ref.number}`
-      : `https://bitbucket.org/${ref.owner}/${ref.name}/pull-requests/${ref.number}`,
+    url:
+      ref.host === 'github'
+        ? `https://github.com/${ref.owner}/${ref.name}/pull/${ref.number}`
+        : `https://bitbucket.org/${ref.owner}/${ref.name}/pull-requests/${ref.number}`,
     author: ME,
     state: 'open',
     draft: false,
@@ -127,121 +145,306 @@ function scripted(now: number): Scripted[] {
     ...over,
     authorId: reviewerId(ref.host, over.author ?? ME) ?? null,
   })
-  const reviewer = (host: RepoRef['host'], p: PrPerson, state: PrReviewer['state'], requested = true): PrReviewer => ({ id: reviewerId(host, p), person: p, state, requested })
+  const reviewer = (host: RepoRef['host'], p: PrPerson, state: PrReviewer['state'], requested = true): PrReviewer => ({
+    id: reviewerId(host, p),
+    person: p,
+    state,
+    requested,
+  })
   const bb = (p: PrPerson, state: PrReviewer['state'], requested = true) => reviewer('bitbucket', p, state, requested)
   const gh = (p: PrPerson, state: PrReviewer['state'], requested = true) => reviewer('github', p, state, requested)
 
-  const botChecks = [check('lint', 'success', 62_000), check('unit', 'success', 220_000), check('integration', 'failure', null), check('build image', 'success', 131_000)]
+  const botChecks = [
+    check('lint', 'success', 62_000),
+    check('unit', 'success', 220_000),
+    check('integration', 'failure', null),
+    check('build image', 'success', 131_000),
+  ]
   // Bitbucket comment ids are numbers; the write validation refuses anything else.
   const botConversations: PrConversation[] = [
     {
-      id: '101', path: 'sync/worker.py', line: 86, side: 'new', resolved: false, outdated: false,
+      id: '101',
+      path: 'sync/worker.py',
+      line: 86,
+      side: 'new',
+      resolved: false,
+      outdated: false,
       comments: [
-        { id: '1011', author: PANKAJ, body: 'Cap the jitter too. With 20 % on top of a 300 s cap, two workers can still meet at the ceiling.', createdAt: now - 2 * HOUR, url: null },
+        {
+          id: '1011',
+          author: PANKAJ,
+          body: 'Cap the jitter too. With 20 % on top of a 300 s cap, two workers can still meet at the ceiling.',
+          createdAt: now - 2 * HOUR,
+          url: null,
+        },
       ],
     },
     {
-      id: '102', path: 'sync/worker.py', line: 111, side: 'new', resolved: false, outdated: false,
-      comments: [{ id: '1021', author: PANKAJ, body: 'Log the delay as well, or the retry line says nothing about the backoff.', createdAt: now - 2 * HOUR, url: null }],
+      id: '102',
+      path: 'sync/worker.py',
+      line: 111,
+      side: 'new',
+      resolved: false,
+      outdated: false,
+      comments: [
+        {
+          id: '1021',
+          author: PANKAJ,
+          body: 'Log the delay as well, or the retry line says nothing about the backoff.',
+          createdAt: now - 2 * HOUR,
+          url: null,
+        },
+      ],
     },
     {
-      id: '103', path: 'tests/test_worker.py', line: 14, side: 'new', resolved: false, outdated: false,
-      comments: [{ id: '1031', author: BACKEND, body: 'This test sleeps for real; use the fake clock.', createdAt: now - 40 * MIN, url: null }],
+      id: '103',
+      path: 'tests/test_worker.py',
+      line: 14,
+      side: 'new',
+      resolved: false,
+      outdated: false,
+      comments: [
+        {
+          id: '1031',
+          author: BACKEND,
+          body: 'This test sleeps for real; use the fake clock.',
+          createdAt: now - 40 * MIN,
+          url: null,
+        },
+      ],
     },
   ]
-  const bot = base({ ...REPOS.bot, number: 612 }, {
-    title: 'Jittered backoff for the SSG sync worker',
-    sourceBranch: 'feat/sync-backoff',
-    createdAt: now - 3 * HOUR,
-    updatedAt: now - 20 * MIN,
-    additions: 151,
-    deletions: 16,
-    changedFiles: 7,
-    unresolvedConversations: 3,
-    mergeConflicts: true,
-    conflictedFiles: ['sync/worker.py', 'sync/config.py'],
-    checks: rollupChecks(botChecks),
-    reviewers: [bb(AKSHAYA, 'approved'), bb(PANKAJ, 'changes_requested'), bb(BACKEND, 'commented', false)],
-    approvals: { given: 1, required: 2 },
-  })
+  const bot = base(
+    { ...REPOS.bot, number: 612 },
+    {
+      title: 'Jittered backoff for the SSG sync worker',
+      sourceBranch: 'feat/sync-backoff',
+      createdAt: now - 3 * HOUR,
+      updatedAt: now - 20 * MIN,
+      additions: 151,
+      deletions: 16,
+      changedFiles: 7,
+      unresolvedConversations: 3,
+      mergeConflicts: true,
+      conflictedFiles: ['sync/worker.py', 'sync/config.py'],
+      checks: rollupChecks(botChecks),
+      reviewers: [bb(AKSHAYA, 'approved'), bb(PANKAJ, 'changes_requested'), bb(BACKEND, 'commented', false)],
+      approvals: { given: 1, required: 2 },
+    },
+  )
 
   const sbConversations: PrConversation[] = [
     {
-      id: 's1', path: 'src/main/db/kanban.ts', line: 88, side: 'new', resolved: false, outdated: false,
-      comments: [{ id: 's1a', author: PANKAJ, body: 'A cap of 0 reads as "no cap" here. Is that on purpose?', createdAt: now - 50 * MIN, url: null }],
+      id: 's1',
+      path: 'src/main/db/kanban.ts',
+      line: 88,
+      side: 'new',
+      resolved: false,
+      outdated: false,
+      comments: [
+        {
+          id: 's1a',
+          author: PANKAJ,
+          body: 'A cap of 0 reads as "no cap" here. Is that on purpose?',
+          createdAt: now - 50 * MIN,
+          url: null,
+        },
+      ],
     },
     {
-      id: 's2', path: 'src/renderer/components/kanban/CardModal.tsx', line: 141, side: 'new', resolved: false, outdated: false,
-      comments: [{ id: 's2a', author: AKSHAYA, body: 'The input accepts negative numbers.', createdAt: now - 30 * MIN, url: null }],
+      id: 's2',
+      path: 'src/renderer/components/kanban/CardModal.tsx',
+      line: 141,
+      side: 'new',
+      resolved: false,
+      outdated: false,
+      comments: [
+        {
+          id: 's2a',
+          author: AKSHAYA,
+          body: 'The input accepts negative numbers.',
+          createdAt: now - 30 * MIN,
+          url: null,
+        },
+      ],
     },
     {
-      id: 's3', path: 'src/shared/kanban.ts', line: 12, side: 'new', resolved: true, outdated: false,
-      comments: [{ id: 's3a', author: PANKAJ, body: 'Name it costCapUsd to match the column.', createdAt: now - 55 * MIN, url: null }],
+      id: 's3',
+      path: 'src/shared/kanban.ts',
+      line: 12,
+      side: 'new',
+      resolved: true,
+      outdated: false,
+      comments: [
+        {
+          id: 's3a',
+          author: PANKAJ,
+          body: 'Name it costCapUsd to match the column.',
+          createdAt: now - 55 * MIN,
+          url: null,
+        },
+      ],
     },
   ]
-  const sbChecks = [check('Test (ubuntu-latest)', 'success', 206_000), check('Test (macos-14)', 'success', 153_000), check('Visual regressions (macOS)', 'success', 158_000)]
-  const sb = base({ ...REPOS.switchboard, number: 161 }, {
-    title: 'Kanban card cost cap',
-    author: BACKEND,
-    sourceBranch: 'feat/card-cost-cap',
-    createdAt: now - HOUR,
-    updatedAt: now - 30 * MIN,
-    additions: 212,
-    deletions: 34,
-    changedFiles: 9,
-    unresolvedConversations: 2,
-    checks: rollupChecks(sbChecks),
-    reviewers: [gh(ME, 'pending'), gh(PANKAJ, 'commented')],
-    approvals: { given: 0, required: 1 },
-    viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: false, hasCommented: false },
-  })
+  const sbChecks = [
+    check('Test (ubuntu-latest)', 'success', 206_000),
+    check('Test (macos-14)', 'success', 153_000),
+    check('Visual regressions (macOS)', 'success', 158_000),
+  ]
+  const sb = base(
+    { ...REPOS.switchboard, number: 161 },
+    {
+      title: 'Kanban card cost cap',
+      author: BACKEND,
+      sourceBranch: 'feat/card-cost-cap',
+      createdAt: now - HOUR,
+      updatedAt: now - 30 * MIN,
+      additions: 212,
+      deletions: 34,
+      changedFiles: 9,
+      unresolvedConversations: 2,
+      checks: rollupChecks(sbChecks),
+      reviewers: [gh(ME, 'pending'), gh(PANKAJ, 'commented')],
+      approvals: { given: 0, required: 1 },
+      viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: false, hasCommented: false },
+    },
+  )
 
   const retailChecks = [check('lint', 'success', 48_000), check('export tests', 'pending', null)]
-  const retail = base({ ...REPOS.retail, number: 88 }, {
-    title: 'PowerBI recon export', sourceBranch: 'feat/powerbi-recon', updatedAt: now - 2 * HOUR,
-    additions: 96, deletions: 12, changedFiles: 4, checks: rollupChecks(retailChecks),
-    reviewers: [bb(AKSHAYA, 'pending')], approvals: { given: 0, required: null },
-  })
+  const retail = base(
+    { ...REPOS.retail, number: 88 },
+    {
+      title: 'PowerBI recon export',
+      sourceBranch: 'feat/powerbi-recon',
+      updatedAt: now - 2 * HOUR,
+      additions: 96,
+      deletions: 12,
+      changedFiles: 4,
+      checks: rollupChecks(retailChecks),
+      reviewers: [bb(AKSHAYA, 'pending')],
+      approvals: { given: 0, required: null },
+    },
+  )
   const doctorChecks = [check('lint', 'success', 51_000), check('unit', 'success', 97_000)]
-  const doctor = base({ ...REPOS.doctor, number: 40 }, {
-    title: 'Doctor alert dedupe', sourceBranch: 'fix/alert-dedupe', updatedAt: now - 5 * HOUR,
-    additions: 38, deletions: 9, changedFiles: 3, checks: rollupChecks(doctorChecks),
-    reviewers: [bb(PANKAJ, 'pending'), bb(BACKEND, 'pending')], approvals: { given: 0, required: 2 },
-  })
+  const doctor = base(
+    { ...REPOS.doctor, number: 40 },
+    {
+      title: 'Doctor alert dedupe',
+      sourceBranch: 'fix/alert-dedupe',
+      updatedAt: now - 5 * HOUR,
+      additions: 38,
+      deletions: 9,
+      changedFiles: 3,
+      checks: rollupChecks(doctorChecks),
+      reviewers: [bb(PANKAJ, 'pending'), bb(BACKEND, 'pending')],
+      approvals: { given: 0, required: 2 },
+    },
+  )
   const alertsChecks = [check('lint', 'success', 44_000), check('unit', 'success', 88_000)]
-  const alerts = base({ ...REPOS.doctor, number: 42 }, {
-    title: 'Alert digest for quiet hours', author: PANKAJ, sourceBranch: 'feat/alert-digest', updatedAt: now - 3 * HOUR,
-    additions: 64, deletions: 5, changedFiles: 3, checks: rollupChecks(alertsChecks),
-    reviewers: [bb(AKSHAYA, 'pending'), bb(ME, 'commented', false)], approvals: { given: 0, required: 1 },
-    viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: true },
-  })
-  const readyChecks = [check('Test (ubuntu-latest)', 'success', 211_000), check('Test (windows-latest)', 'success', 294_000)]
-  const ready = base({ ...REPOS.switchboard, number: 159 }, {
-    title: 'Retry settings.json on Windows', sourceBranch: 'fix/settings-file-windows-rename', updatedAt: now - 6 * HOUR,
-    additions: 475, deletions: 44, changedFiles: 10, checks: rollupChecks(readyChecks),
-    reviewers: [gh(AKSHAYA, 'approved')], approvals: { given: 1, required: 1 },
-  })
-  const merged = (number: number, title: string, ago: number): PrSummary => base({ ...REPOS.switchboard, number }, {
-    title, state: 'merged', mergedAt: now - ago, updatedAt: now - ago, checks: rollupChecks(readyChecks),
-    reviewers: [gh(AKSHAYA, 'approved')], approvals: { given: 1, required: 1 },
-  })
+  const alerts = base(
+    { ...REPOS.doctor, number: 42 },
+    {
+      title: 'Alert digest for quiet hours',
+      author: PANKAJ,
+      sourceBranch: 'feat/alert-digest',
+      updatedAt: now - 3 * HOUR,
+      additions: 64,
+      deletions: 5,
+      changedFiles: 3,
+      checks: rollupChecks(alertsChecks),
+      reviewers: [bb(AKSHAYA, 'pending'), bb(ME, 'commented', false)],
+      approvals: { given: 0, required: 1 },
+      viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: true },
+    },
+  )
+  const readyChecks = [
+    check('Test (ubuntu-latest)', 'success', 211_000),
+    check('Test (windows-latest)', 'success', 294_000),
+  ]
+  const ready = base(
+    { ...REPOS.switchboard, number: 159 },
+    {
+      title: 'Retry settings.json on Windows',
+      sourceBranch: 'fix/settings-file-windows-rename',
+      updatedAt: now - 6 * HOUR,
+      additions: 475,
+      deletions: 44,
+      changedFiles: 10,
+      checks: rollupChecks(readyChecks),
+      reviewers: [gh(AKSHAYA, 'approved')],
+      approvals: { given: 1, required: 1 },
+    },
+  )
+  const merged = (number: number, title: string, ago: number): PrSummary =>
+    base(
+      { ...REPOS.switchboard, number },
+      {
+        title,
+        state: 'merged',
+        mergedAt: now - ago,
+        updatedAt: now - ago,
+        checks: rollupChecks(readyChecks),
+        reviewers: [gh(AKSHAYA, 'approved')],
+        approvals: { given: 1, required: 1 },
+      },
+    )
 
-  const plain = (summary: PrSummary, checkList: PrCheck[]): Scripted => ({ summary, description: '', activity: [], checkList, files: [], conversations: [] })
+  const plain = (summary: PrSummary, checkList: PrCheck[]): Scripted => ({
+    summary,
+    description: '',
+    activity: [],
+    checkList,
+    files: [],
+    conversations: [],
+  })
   return [
     {
       summary: bot,
-      description: 'Replaces the fixed 30 s retry in `SyncWorker.run_once` with jittered exponential backoff, capped at 5 minutes. During the 24 Sep outage, 40 workers retried in lock-step every 30 s and kept the upstream down.',
+      description:
+        'Replaces the fixed 30 s retry in `SyncWorker.run_once` with jittered exponential backoff, capped at 5 minutes. During the 24 Sep outage, 40 workers retried in lock-step every 30 s and kept the upstream down.',
       activity: [
-        { id: 'a1', kind: 'reviewed', actor: PANKAJ, summary: 'requested changes', detail: '2 comments on worker.py', at: now - 2 * HOUR },
+        {
+          id: 'a1',
+          kind: 'reviewed',
+          actor: PANKAJ,
+          summary: 'requested changes',
+          detail: '2 comments on worker.py',
+          at: now - 2 * HOUR,
+        },
         { id: 'a2', kind: 'reviewed', actor: AKSHAYA, summary: 'approved', detail: null, at: now - 2 * HOUR },
-        { id: 'a3', kind: 'pushed', actor: ME, summary: 'pushed a commit', detail: 'Cap the jitter before the ceiling', at: now - 45 * MIN },
-        { id: 'a4', kind: 'commented', actor: BACKEND, summary: 'commented', detail: 'test_worker.py: "This test sleeps for real; use the fake clock."', at: now - 40 * MIN },
+        {
+          id: 'a3',
+          kind: 'pushed',
+          actor: ME,
+          summary: 'pushed a commit',
+          detail: 'Cap the jitter before the ceiling',
+          at: now - 45 * MIN,
+        },
+        {
+          id: 'a4',
+          kind: 'commented',
+          actor: BACKEND,
+          summary: 'commented',
+          detail: 'test_worker.py: "This test sleeps for real; use the fake clock."',
+          at: now - 40 * MIN,
+        },
       ],
       checkList: botChecks,
       files: [
         file('sync/worker.py', 42, 9, WORKER_PATCH, true),
-        file('sync/backoff.py', 31, 0, '@@ -0,0 +1,3 @@\n+def next_delay(attempt: int, base: float, cap: float) -> float:\n+    """Exponential backoff, capped."""\n+    return min(cap, base * 2 ** attempt)'),
-        file('sync/config.py', 4, 1, '@@ -10,3 +10,6 @@\n RETRY = True\n-RETRY_SECONDS = 30\n+RETRY_BASE = 1.0\n+RETRY_CAP = 300.0\n+RETRY_JITTER = 0.2', true),
+        file(
+          'sync/backoff.py',
+          31,
+          0,
+          '@@ -0,0 +1,3 @@\n+def next_delay(attempt: int, base: float, cap: float) -> float:\n+    """Exponential backoff, capped."""\n+    return min(cap, base * 2 ** attempt)',
+        ),
+        file(
+          'sync/config.py',
+          4,
+          1,
+          '@@ -10,3 +10,6 @@\n RETRY = True\n-RETRY_SECONDS = 30\n+RETRY_BASE = 1.0\n+RETRY_CAP = 300.0\n+RETRY_JITTER = 0.2',
+          true,
+        ),
         file('tests/test_worker.py', 28, 0),
         file('tests/test_backoff.py', 40, 0),
         file('README.md', 5, 0),
@@ -251,14 +454,20 @@ function scripted(now: number): Scripted[] {
     },
     {
       summary: sb,
-      description: 'Adds a per-card cost cap. A card whose chat spends past its cap stops the agent and moves to Needs input.',
+      description:
+        'Adds a per-card cost cap. A card whose chat spends past its cap stops the agent and moves to Needs input.',
       activity: [
         { id: 'b1', kind: 'opened', actor: BACKEND, summary: 'opened the pull request', detail: null, at: now - HOUR },
         { id: 'b2', kind: 'reviewed', actor: PANKAJ, summary: 'reviewed', detail: '2 comments', at: now - 50 * MIN },
       ],
       checkList: sbChecks,
       files: [
-        file('src/main/db/kanban.ts', 44, 6, '@@ -84,6 +84,9 @@ export function updateCard(\n   const row = getCard(id)\n   if (!row) return null\n+  if (patch.costCapUsd !== undefined) {\n+    row.cost_cap_usd = patch.costCapUsd || null\n+  }\n   return saveCard(row)'),
+        file(
+          'src/main/db/kanban.ts',
+          44,
+          6,
+          '@@ -84,6 +84,9 @@ export function updateCard(\n   const row = getCard(id)\n   if (!row) return null\n+  if (patch.costCapUsd !== undefined) {\n+    row.cost_cap_usd = patch.costCapUsd || null\n+  }\n   return saveCard(row)',
+        ),
         file('src/renderer/components/kanban/CardModal.tsx', 61, 12),
         file('src/shared/kanban.ts', 8, 2),
       ],
@@ -312,12 +521,23 @@ interface Overlay {
 
 class DemoProvider implements PullRequestProvider {
   private readonly overlay: Overlay = {
-    replies: new Map(), resolved: new Map(), threads: new Map(), activity: new Map(), merged: new Set(), review: new Map(), rerun: new Set(),
-    added: new Map(), removed: new Map(), declined: new Set(),
+    replies: new Map(),
+    resolved: new Map(),
+    threads: new Map(),
+    activity: new Map(),
+    merged: new Set(),
+    review: new Map(),
+    rerun: new Set(),
+    added: new Map(),
+    removed: new Map(),
+    declined: new Set(),
   }
   private seq = 0
 
-  constructor(readonly host: 'github' | 'bitbucket', private readonly now: () => number) {}
+  constructor(
+    readonly host: 'github' | 'bitbucket',
+    private readonly now: () => number,
+  ) {}
 
   private apply(s: Scripted): Scripted {
     const o = this.overlay
@@ -327,32 +547,56 @@ class DemoProvider implements PullRequestProvider {
       resolved: o.resolved.get(c.id) ?? c.resolved,
       comments: [...c.comments, ...(o.replies.get(c.id) ?? [])],
     }))
-    const checkList = s.checkList.map((c) => (o.rerun.has(`${n}:${c.id}`) ? { ...c, state: 'pending' as const, durationMs: null } : c))
+    const checkList = s.checkList.map((c) =>
+      o.rerun.has(`${n}:${c.id}`) ? { ...c, state: 'pending' as const, durationMs: null } : c,
+    )
     const verdict = o.review.get(n)
     const host = s.summary.ref.host
-    const reviewers = (verdict
-      ? [...s.summary.reviewers.filter((r) => r.person.login !== ME.login), { id: reviewerId(host, ME), person: ME, state: verdict, requested: true }]
-      : s.summary.reviewers)
+    const reviewers = (
+      verdict
+        ? [
+            ...s.summary.reviewers.filter((r) => r.person.login !== ME.login),
+            { id: reviewerId(host, ME), person: ME, state: verdict, requested: true },
+          ]
+        : s.summary.reviewers
+    )
       .filter((r) => !(o.removed.get(n) ?? []).includes(r.id ?? ''))
-      .concat((o.added.get(n) ?? []).map((id) => ({ id, person: CANDIDATES.find((p) => reviewerId(host, p) === id) ?? person(id), state: 'pending' as const, requested: true })))
+      .concat(
+        (o.added.get(n) ?? []).map((id) => ({
+          id,
+          person: CANDIDATES.find((p) => reviewerId(host, p) === id) ?? person(id),
+          state: 'pending' as const,
+          requested: true,
+        })),
+      )
     const merged = o.merged.has(n)
     const summary: PrSummary = {
       ...s.summary,
       state: merged ? 'merged' : o.declined.has(n) ? 'closed' : s.summary.state,
       mergedAt: merged ? this.now() : s.summary.mergedAt,
-      unresolvedConversations: s.conversations.length > 0 || o.threads.has(n) ? conversations.filter((c) => !c.resolved).length : s.summary.unresolvedConversations,
+      unresolvedConversations:
+        s.conversations.length > 0 || o.threads.has(n)
+          ? conversations.filter((c) => !c.resolved).length
+          : s.summary.unresolvedConversations,
       checks: rollupChecks(checkList),
       reviewers,
       approvals: { ...s.summary.approvals, given: reviewers.filter((r) => r.state === 'approved').length },
       viewer: verdict
-        ? { ...s.summary.viewer, isRequestedReviewer: false, hasReviewed: verdict !== 'commented', hasCommented: verdict === 'commented' }
+        ? {
+            ...s.summary.viewer,
+            isRequestedReviewer: false,
+            hasReviewed: verdict !== 'commented',
+            hasCommented: verdict === 'commented',
+          }
         : s.summary.viewer,
     }
     return { ...s, summary, conversations, checkList, activity: [...s.activity, ...(o.activity.get(n) ?? [])] }
   }
 
   private all(): Scripted[] {
-    return scripted(this.now()).filter((s) => s.summary.ref.host === this.host).map((s) => this.apply(s))
+    return scripted(this.now())
+      .filter((s) => s.summary.ref.host === this.host)
+      .map((s) => this.apply(s))
   }
 
   private find(ref: PrRef): Scripted {
@@ -364,9 +608,19 @@ class DemoProvider implements PullRequestProvider {
   async list(repos: RepoRef[]): Promise<RepoListResult[]> {
     await hostDelay('list')
     const all = this.all()
-    return repos.map((repo) => repo.owner === UNSEEN_WORKSPACE
-      ? { repo, prs: [], error: { kind: 'not_found', host: this.host, message: 'Bitbucket could not find it, or this account cannot see it.' } }
-      : { repo, prs: all.filter((s) => s.summary.ref.name === repo.name).map((s) => s.summary), error: null })
+    return repos.map((repo) =>
+      repo.owner === UNSEEN_WORKSPACE
+        ? {
+            repo,
+            prs: [],
+            error: {
+              kind: 'not_found',
+              host: this.host,
+              message: 'Bitbucket could not find it, or this account cannot see it.',
+            },
+          }
+        : { repo, prs: all.filter((s) => s.summary.ref.name === repo.name).map((s) => s.summary), error: null },
+    )
   }
 
   async detail(ref: PrRef): Promise<PrDetail> {
@@ -407,7 +661,15 @@ class DemoProvider implements PullRequestProvider {
 
   private addThread(ref: PrRef, c: InlineCommentInput): void {
     const list = this.overlay.threads.get(ref.number) ?? []
-    list.push({ id: String(900_000 + ++this.seq), path: c.path, line: c.line, side: c.side, resolved: false, outdated: false, comments: [this.mine(c.body)] })
+    list.push({
+      id: String(900_000 + ++this.seq),
+      path: c.path,
+      line: c.line,
+      side: c.side,
+      resolved: false,
+      outdated: false,
+      comments: [this.mine(c.body)],
+    })
     this.overlay.threads.set(ref.number, list)
   }
 
@@ -440,9 +702,14 @@ class DemoProvider implements PullRequestProvider {
   async submitReview(ref: PrRef, review: SubmitReviewInput): Promise<void> {
     await this.record('submit-review', ref, review)
     for (const c of review.comments) this.addThread(ref, c)
-    const verdict = review.event === 'approve' ? 'approved' : review.event === 'request_changes' ? 'changes_requested' : 'commented'
+    const verdict =
+      review.event === 'approve' ? 'approved' : review.event === 'request_changes' ? 'changes_requested' : 'commented'
     this.overlay.review.set(ref.number, verdict)
-    this.addActivity(ref, verdict === 'approved' ? 'approved' : verdict === 'changes_requested' ? 'requested changes' : 'reviewed', review.body || null)
+    this.addActivity(
+      ref,
+      verdict === 'approved' ? 'approved' : verdict === 'changes_requested' ? 'requested changes' : 'reviewed',
+      review.body || null,
+    )
   }
 
   async merge(ref: PrRef, strategy: MergeStrategy, headSha: string): Promise<void> {
@@ -463,13 +730,19 @@ class DemoProvider implements PullRequestProvider {
   async addReviewer(ref: PrRef, reviewer: string): Promise<void> {
     await this.record('add-reviewer', ref, { reviewer })
     this.overlay.added.set(ref.number, [...(this.overlay.added.get(ref.number) ?? []), reviewer])
-    this.overlay.removed.set(ref.number, (this.overlay.removed.get(ref.number) ?? []).filter((id) => id !== reviewer))
+    this.overlay.removed.set(
+      ref.number,
+      (this.overlay.removed.get(ref.number) ?? []).filter((id) => id !== reviewer),
+    )
   }
 
   async removeReviewer(ref: PrRef, reviewer: string): Promise<void> {
     await this.record('remove-reviewer', ref, { reviewer })
     this.overlay.removed.set(ref.number, [...(this.overlay.removed.get(ref.number) ?? []), reviewer])
-    this.overlay.added.set(ref.number, (this.overlay.added.get(ref.number) ?? []).filter((id) => id !== reviewer))
+    this.overlay.added.set(
+      ref.number,
+      (this.overlay.added.get(ref.number) ?? []).filter((id) => id !== reviewer),
+    )
   }
 
   async decline(ref: PrRef): Promise<void> {
@@ -482,7 +755,9 @@ class DemoProvider implements PullRequestProvider {
   }
 
   async openPullRequestFor(repo: RepoRef, branch: string): Promise<CreatedPr | null> {
-    const hit = this.all().find((s) => s.summary.ref.name === repo.name && s.summary.state === 'open' && s.summary.sourceBranch === branch)
+    const hit = this.all().find(
+      (s) => s.summary.ref.name === repo.name && s.summary.state === 'open' && s.summary.sourceBranch === branch,
+    )
     return hit ? { number: hit.summary.ref.number, url: hit.summary.url } : null
   }
 
@@ -495,7 +770,10 @@ class DemoProvider implements PullRequestProvider {
     const number = 900 + ++this.seq
     await this.record('create', { ...repo, number }, input)
     const path = this.host === 'github' ? 'pull' : 'pull-requests'
-    return { number, url: `https://${this.host === 'github' ? 'github.com' : 'bitbucket.org'}/${repo.owner}/${repo.name}/${path}/${number}` }
+    return {
+      number,
+      url: `https://${this.host === 'github' ? 'github.com' : 'bitbucket.org'}/${repo.owner}/${repo.name}/${path}/${number}`,
+    }
   }
 }
 

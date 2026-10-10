@@ -41,12 +41,18 @@ function tomlString(value: string): string {
 
 export function codexSwitchboardMcpArgs(launch: SwitchboardMcpLaunch): string[] {
   const key = `mcp_servers.${SWITCHBOARD_MCP_SERVER_NAME}`
-  const env = Object.entries(launch.env).map(([k, v]) => `${k}=${tomlString(v)}`).join(',')
+  const env = Object.entries(launch.env)
+    .map(([k, v]) => `${k}=${tomlString(v)}`)
+    .join(',')
   return [
-    '-c', `${key}.command=${tomlString(launch.command)}`,
-    '-c', `${key}.args=[${launch.args.map(tomlString).join(',')}]`,
-    '-c', `${key}.env={${env}}`,
-    '-c', `${key}.tool_timeout_sec=${CODEX_SWITCHBOARD_TOOL_TIMEOUT_SEC}`,
+    '-c',
+    `${key}.command=${tomlString(launch.command)}`,
+    '-c',
+    `${key}.args=[${launch.args.map(tomlString).join(',')}]`,
+    '-c',
+    `${key}.env={${env}}`,
+    '-c',
+    `${key}.tool_timeout_sec=${CODEX_SWITCHBOARD_TOOL_TIMEOUT_SEC}`,
   ]
 }
 
@@ -78,16 +84,35 @@ export function acpSwitchboardMcpServer(launch: SwitchboardMcpLaunch): AcpStdioM
  * start with the same prefix and must still ask.
  */
 export const SWITCHBOARD_OPENCODE_TOOLS: readonly string[] = [
-  PR_STATUS_TOOL, PR_CONVERSATIONS_TOOL, PR_DIFF_TOOL, PR_REPLY_TOOL, PR_RESOLVE_TOOL, PR_RERUN_TOOL,
-  PR_COMMENT_TOOL, PR_REVIEW_TOOL, PR_CREATE_TOOL, PR_LINK_TOOL, PR_UNLINK_TOOL, PR_LIST_LINKS_TOOL,
-  PEER_LIST_TOOL_NAME, PEER_SEND_TOOL_NAME, WITHDRAW_APPROVAL_TOOL,
+  PR_STATUS_TOOL,
+  PR_CONVERSATIONS_TOOL,
+  PR_DIFF_TOOL,
+  PR_REPLY_TOOL,
+  PR_RESOLVE_TOOL,
+  PR_RERUN_TOOL,
+  PR_COMMENT_TOOL,
+  PR_REVIEW_TOOL,
+  PR_CREATE_TOOL,
+  PR_LINK_TOOL,
+  PR_UNLINK_TOOL,
+  PR_LIST_LINKS_TOOL,
+  PEER_LIST_TOOL_NAME,
+  PEER_SEND_TOOL_NAME,
+  WITHDRAW_APPROVAL_TOOL,
 ].map((tool) => `${SWITCHBOARD_MCP_SERVER_NAME}_${tool}`)
 
 const SWITCHBOARD_OPENCODE_TOOL_SET = new Set(SWITCHBOARD_OPENCODE_TOOLS)
 
 /** Our tools plan mode allows: the reads, and withdrawing a card, which only takes a write back. */
 const SWITCHBOARD_OPENCODE_READ_TOOLS = new Set(
-  [PR_STATUS_TOOL, PR_CONVERSATIONS_TOOL, PR_DIFF_TOOL, PR_LIST_LINKS_TOOL, PEER_LIST_TOOL_NAME, WITHDRAW_APPROVAL_TOOL].map((tool) => `${SWITCHBOARD_MCP_SERVER_NAME}_${tool}`),
+  [
+    PR_STATUS_TOOL,
+    PR_CONVERSATIONS_TOOL,
+    PR_DIFF_TOOL,
+    PR_LIST_LINKS_TOOL,
+    PEER_LIST_TOOL_NAME,
+    WITHDRAW_APPROVAL_TOOL,
+  ].map((tool) => `${SWITCHBOARD_MCP_SERVER_NAME}_${tool}`),
 )
 
 export function isSwitchboardOpencodeReadTool(toolName: string): boolean {

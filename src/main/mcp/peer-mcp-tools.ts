@@ -62,7 +62,10 @@ export async function runPeerSendPlan(ctx: PeerSendRunContext, plan: PeerSendPla
     ctx.publish({ type: 'tool.denied', threadId: ctx.threadId, toolName: PEER_SEND_TOOL, reason, mode: now })
     return toolText(`${reason} Nothing was sent.`, true)
   }
-  return createPeerToolHandlers(ctx.peers, ctx.threadId).sendMessage({ sessionId: plan.sessionId, message: plan.message })
+  return createPeerToolHandlers(ctx.peers, ctx.threadId).sendMessage({
+    sessionId: plan.sessionId,
+    message: plan.message,
+  })
 }
 
 export function buildPeerMcpTools(ctx: PeerMcpToolContext): McpTool[] {
@@ -83,17 +86,26 @@ export function buildPeerMcpTools(ctx: PeerMcpToolContext): McpTool[] {
       inputSchema: {
         type: 'object',
         properties: {
-          sessionId: { type: 'string', description: `Opaque id of the receiving session, exactly as ${PEER_LIST_TOOL_NAME} reported it.` },
+          sessionId: {
+            type: 'string',
+            description: `Opaque id of the receiving session, exactly as ${PEER_LIST_TOOL_NAME} reported it.`,
+          },
           message: {
             type: 'string',
-            description: 'The whole message. It has to stand on its own: the peer cannot see your transcript, '
-              + 'so name the files, commands and findings it needs.',
+            description:
+              'The whole message. It has to stand on its own: the peer cannot see your transcript, ' +
+              'so name the files, commands and findings it needs.',
           },
         },
         required: ['sessionId', 'message'],
         additionalProperties: false,
       },
-      annotations: { title: 'Message another agent session', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      annotations: {
+        title: 'Message another agent session',
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
       async call(args) {
         const input = {
           sessionId: typeof args.sessionId === 'string' ? args.sessionId : '',
@@ -101,7 +113,8 @@ export function buildPeerMcpTools(ctx: PeerMcpToolContext): McpTool[] {
         }
         const mode = ctx.runtimeMode()
         const decided = decidePermission(mode, PEER_SEND_TOOL)
-        const linkInsteadOfCard = decided === 'prompt' && mode === 'auto' && ctx.peers.isLinkedPeer(ctx.threadId, input.sessionId.trim())
+        const linkInsteadOfCard =
+          decided === 'prompt' && mode === 'auto' && ctx.peers.isLinkedPeer(ctx.threadId, input.sessionId.trim())
         const policy = linkInsteadOfCard ? 'allow' : decided
         if (policy === 'deny') {
           const reason = denialMessage(mode, PEER_SEND_TOOL)

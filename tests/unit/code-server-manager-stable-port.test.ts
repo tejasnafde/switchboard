@@ -17,7 +17,9 @@ class FakeChild implements ChildLike {
   kill(): void {}
 }
 
-const deps = (opts: { healthyPorts?: number[]; earlyExitPorts?: number[] } = {}): ManagerDeps & { spawnedPorts: number[] } => {
+const deps = (
+  opts: { healthyPorts?: number[]; earlyExitPorts?: number[] } = {},
+): ManagerDeps & { spawnedPorts: number[] } => {
   const spawnedPorts: number[] = []
   let next = 60000
   return {
@@ -32,7 +34,7 @@ const deps = (opts: { healthyPorts?: number[]; earlyExitPorts?: number[] } = {})
     allocatePort: async () => next++,
     probeHealth: async (url) => {
       const port = Number(new URL(url).port)
-      return !(opts.earlyExitPorts?.includes(port)) && (opts.healthyPorts?.includes(port) ?? true)
+      return !opts.earlyExitPorts?.includes(port) && (opts.healthyPorts?.includes(port) ?? true)
     },
     delay: async () => {},
   }

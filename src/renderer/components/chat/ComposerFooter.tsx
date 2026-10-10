@@ -58,35 +58,45 @@ export function ComposerFooter({
   const modeOptions = RUNTIME_MODE_OPTIONS.map((m) => ({ value: m.value, label: m.label, title: m.detail }))
 
   const entries: Record<3 | 4 | 5, OverflowEntry | null> = {
-    3: effort ? {
-      key: 'effort',
-      icon: <GaugeIcon />,
-      name: 'Effort',
-      valueText: effortLabel(effort.control.value),
-      body: (close) => (
-        <OptionList
-          label="Thinking effort"
-          options={effortOptions(effort.control)}
-          value={effort.control.value}
-          onPick={(value) => { close(); if (value !== effort.control.value) effort.onPick(value) }}
-        />
-      ),
-    } : null,
+    3: effort
+      ? {
+          key: 'effort',
+          icon: <GaugeIcon />,
+          name: 'Effort',
+          valueText: effortLabel(effort.control.value),
+          body: (close) => (
+            <OptionList
+              label="Thinking effort"
+              options={effortOptions(effort.control)}
+              value={effort.control.value}
+              onPick={(value) => {
+                close()
+                if (value !== effort.control.value) effort.onPick(value)
+              }}
+            />
+          ),
+        }
+      : null,
     4: isDraft ? draftCheckoutEntry(draftSections) : branchEntry(cwd, branch, branchProps),
-    5: mode ? {
-      key: 'mode',
-      icon: <ShieldIcon />,
-      name: 'Mode',
-      valueText: modeOption?.label ?? mode.value,
-      body: (close) => (
-        <OptionList
-          label="Runtime mode"
-          options={modeOptions}
-          value={mode.value}
-          onPick={(value) => { close(); if (value !== mode.value) mode.onChange(value as RuntimeMode) }}
-        />
-      ),
-    } : null,
+    5: mode
+      ? {
+          key: 'mode',
+          icon: <ShieldIcon />,
+          name: 'Mode',
+          valueText: modeOption?.label ?? mode.value,
+          body: (close) => (
+            <OptionList
+              label="Runtime mode"
+              options={modeOptions}
+              value={mode.value}
+              onPick={(value) => {
+                close()
+                if (value !== mode.value) mode.onChange(value as RuntimeMode)
+              }}
+            />
+          ),
+        }
+      : null,
   }
   const overflow = overflowedPriorities(tier).flatMap((p) => {
     const entry = entries[p as Exclude<FooterPriority, 1 | 2>]
@@ -156,13 +166,18 @@ function draftCheckoutEntry(sections: DraftWorkspaceSection[]): OverflowEntry | 
       <div className="flex max-h-[320px] flex-col gap-[4px] overflow-y-auto">
         {[checkout, ...rest].map((section, index) => (
           <div key={section.key} className="flex flex-col gap-[1px]">
-            {index > 0 && <div className="px-[8px] pt-[6px] pb-[2px] text-[10.5px] text-[var(--text-muted)]">{section.label}</div>}
+            {index > 0 && (
+              <div className="px-[8px] pt-[6px] pb-[2px] text-[10.5px] text-[var(--text-muted)]">{section.label}</div>
+            )}
             <OptionList
               label={section.label}
               options={section.options}
               value={section.value}
               autoFocus={index === 0}
-              onPick={(value) => { close(); if (value !== section.value) section.pick(value) }}
+              onPick={(value) => {
+                close()
+                if (value !== section.value) section.pick(value)
+              }}
             />
           </div>
         ))}
@@ -192,9 +207,19 @@ function branchEntry(cwd: string | null, branch: CurrentBranch, props: BranchPro
   }
 }
 
-function BranchMenuBody({ cwd, props, onClose }: { cwd: string; props: BranchProps; onClose: (changed: boolean) => void }) {
+function BranchMenuBody({
+  cwd,
+  props,
+  onClose,
+}: {
+  cwd: string
+  props: BranchProps
+  onClose: (changed: boolean) => void
+}) {
   const inputRef = useRef<HTMLInputElement | null>(null)
-  useEffect(() => { inputRef.current?.focus() }, [])
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
   return (
     <BranchPickerPopover
       cwd={cwd}

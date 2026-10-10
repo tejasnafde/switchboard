@@ -16,10 +16,8 @@ vi.mock('../../src/main/logger', () => ({
 const execFile = vi.fn()
 vi.mock('child_process', () => ({ execFile: (...args: unknown[]) => execFile(...args) }))
 
-const {
-  claudeKeychainServiceCandidates,
-  createClaudeCredentialReader,
-} = await import('../../src/main/provider/usage/claude-keychain')
+const { claudeKeychainServiceCandidates, createClaudeCredentialReader } =
+  await import('../../src/main/provider/usage/claude-keychain')
 
 // A home with no credentials files, so every read goes to the fake keychain.
 const home = mkdtempSync(join(tmpdir(), 'sb-keychain-read-'))
@@ -55,7 +53,13 @@ function setup(items: Record<string, Item>) {
     homeDir: home,
     now: () => clock,
   })
-  return { ...keychain, reader, advance: (ms: number) => { clock += ms } }
+  return {
+    ...keychain,
+    reader,
+    advance: (ms: number) => {
+      clock += ms
+    },
+  }
 }
 
 const dirA = join(home, '.claude-a')
@@ -68,10 +72,7 @@ describe('Claude keychain reads are shared by service', () => {
 
   it('reads each service once for one Accounts load', async () => {
     const { reader, prompts } = setup({ [serviceA]: { payload: credential }, [serviceB]: { payload: credential } })
-    const [a, b] = await Promise.all([
-      reader.read(dirA, { owner: 'a' }),
-      reader.read(dirB, { owner: 'b' }),
-    ])
+    const [a, b] = await Promise.all([reader.read(dirA, { owner: 'a' }), reader.read(dirB, { owner: 'b' })])
     expect(a.kind).toBe('found')
     expect(b.kind).toBe('found')
     expect(prompts(serviceA)).toBe(1)
@@ -81,10 +82,7 @@ describe('Claude keychain reads are shared by service', () => {
   it('reads a service once for two instances that resolve to it', async () => {
     const { reader, prompts } = setup({ [serviceA]: { payload: credential } })
     // The trailing slash hashes differently, so its candidates include dirA's.
-    const results = await Promise.all([
-      reader.read(dirA, { owner: 'a' }),
-      reader.read(`${dirA}/`, { owner: 'a2' }),
-    ])
+    const results = await Promise.all([reader.read(dirA, { owner: 'a' }), reader.read(`${dirA}/`, { owner: 'a2' })])
     expect(results.map((r) => r.kind)).toEqual(['found', 'found'])
     expect(prompts(serviceA)).toBe(1)
 
@@ -162,11 +160,16 @@ describe('Claude keychain reads are shared by service', () => {
   })
 
   it('neither keeps nor hands on a read in flight when its instance is edited', async () => {
-    for (const forget of [(r: { forget(o?: string): void }) => r.forget('a'), (r: { forget(o?: string): void }) => r.forget()]) {
+    for (const forget of [
+      (r: { forget(o?: string): void }) => r.forget('a'),
+      (r: { forget(o?: string): void }) => r.forget(),
+    ]) {
       const { reader, runSecurity, prompts } = setup({ [serviceA]: { payload: noPayload } })
       const inner = runSecurity.getMockImplementation()!
       let release!: () => void
-      const gate = new Promise<void>((r) => { release = r })
+      const gate = new Promise<void>((r) => {
+        release = r
+      })
       runSecurity.mockImplementationOnce(async (service: string, account: string | undefined) => {
         await gate
         return inner(service, account)

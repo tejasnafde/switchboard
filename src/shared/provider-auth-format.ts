@@ -115,9 +115,7 @@ export function formatClaudeAuthStatus(stdout: string, oauthDir?: string | null)
       const command = oauthLoginCommand('claude-code', oauthDir || '~/.claude')
       return {
         ok: false,
-        message: command
-          ? `Not logged in. Run: ${command}`
-          : 'Not logged in to Claude Code.',
+        message: command ? `Not logged in. Run: ${command}` : 'Not logged in to Claude Code.',
       }
     }
 

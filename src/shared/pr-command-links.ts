@@ -7,7 +7,18 @@
  */
 import { shellSegments } from './bbpr-command'
 
-const GH_PR_WORKS_ON = new Set(['create', 'checkout', 'co', 'merge', 'edit', 'comment', 'review', 'ready', 'close', 'reopen'])
+const GH_PR_WORKS_ON = new Set([
+  'create',
+  'checkout',
+  'co',
+  'merge',
+  'edit',
+  'comment',
+  'review',
+  'ready',
+  'close',
+  'reopen',
+])
 
 /** Words of one command segment, split on whitespace outside quotes; a quoted word keeps its quotes. */
 function words(segment: string): string[] {

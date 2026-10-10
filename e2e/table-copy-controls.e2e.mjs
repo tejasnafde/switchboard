@@ -56,7 +56,10 @@ async function closeApp() {
   const closing = app
   app = undefined
   const closed = await Promise.race([
-    closing.close().then(() => true, () => true),
+    closing.close().then(
+      () => true,
+      () => true,
+    ),
     new Promise((resolve) => setTimeout(() => resolve(false), 5_000)),
   ])
   if (!closed) closing.process().kill('SIGKILL')
@@ -88,7 +91,7 @@ const tableMarkdown = [
   '| Check | Match rate |',
   '| --- | --- |',
   "| `roster_adherence_pct` = % of staff with `roster_adherence = 'Compliant'` | 39,426 / 39,459 (99.9%) |",
-  "| **roster_compliant** = count, with a comma | 38,236 / 39,459 (97%) |",
+  '| **roster_compliant** = count, with a comma | 38,236 / 39,459 (97%) |',
 ].join('\n')
 
 function seedConversation() {
@@ -114,13 +117,17 @@ async function emit(event) {
 // The real system clipboard, read from the main process: this is what Slack,
 // Sheets or Docs would receive on paste.
 async function readClipboard() {
-  return app.evaluate(({ clipboard }) => ({ html: clipboard.readHTML(), text: clipboard.readText(), formats: clipboard.availableFormats() }))
+  return app.evaluate(({ clipboard }) => ({
+    html: clipboard.readHTML(),
+    text: clipboard.readText(),
+    formats: clipboard.availableFormats(),
+  }))
 }
 
 async function waitForText(locator, text) {
   const deadline = Date.now() + 3_000
   while (Date.now() < deadline) {
-    if (await locator.textContent() === text) return true
+    if ((await locator.textContent()) === text) return true
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
   return false
@@ -162,7 +169,9 @@ try {
   savedClipboard = await readClipboard()
   const pageErrors = []
   win.on('pageerror', (error) => pageErrors.push(error.message))
-  win.on('console', (msg) => { if (msg.type() === 'warning' || msg.type() === 'error') console.log(`  [renderer ${msg.type()}] ${msg.text()}`) })
+  win.on('console', (msg) => {
+    if (msg.type() === 'warning' || msg.type() === 'error') console.log(`  [renderer ${msg.type()}] ${msg.text()}`)
+  })
   await win.bringToFront()
 
   const recent = win.locator('.sidebar-recent-row').filter({ hasText: title })
@@ -175,25 +184,46 @@ try {
   const controls = box.locator('.table-copy-controls')
   const copyButton = box.locator('.table-copy-btn')
   const menuButton = box.locator('.table-copy-menu-btn')
-  check(await copyButton.count() === 1 && await menuButton.count() === 1, 'a settled table has one copy button and one menu button')
+  check(
+    (await copyButton.count()) === 1 && (await menuButton.count()) === 1,
+    'a settled table has one copy button and one menu button',
+  )
 
   await win.mouse.move(0, 0)
   await win.waitForTimeout(200)
-  check(await controls.evaluate((el) => getComputedStyle(el).opacity) === '0', 'controls stay out of the way until hover')
+  check(
+    (await controls.evaluate((el) => getComputedStyle(el).opacity)) === '0',
+    'controls stay out of the way until hover',
+  )
   await box.hover()
   await win.waitForTimeout(200)
-  check(await controls.evaluate((el) => getComputedStyle(el).opacity) === '1', 'hovering the table shows the controls')
+  check(
+    (await controls.evaluate((el) => getComputedStyle(el).opacity)) === '1',
+    'hovering the table shows the controls',
+  )
   const boxRect = await box.boundingBox()
   const controlsRect = await controls.boundingBox()
-  check(!!boxRect && !!controlsRect && Math.abs(boxRect.x + boxRect.width - (controlsRect.x + controlsRect.width)) < 2, 'controls line up with the table box right edge')
-  check(controlsRect.y + controlsRect.height <= boxRect.y + 4, 'controls float above the table, not inside its header row')
-  const headerText = await box.locator('th').last().evaluate((th) => {
-    const range = document.createRange()
-    range.selectNodeContents(th)
-    const r = range.getBoundingClientRect()
-    return { x: r.x, y: r.y, right: r.right, bottom: r.bottom }
-  })
-  check(controlsRect.y + controlsRect.height <= headerText.y || controlsRect.x >= headerText.right, 'controls cover no header text')
+  check(
+    !!boxRect && !!controlsRect && Math.abs(boxRect.x + boxRect.width - (controlsRect.x + controlsRect.width)) < 2,
+    'controls line up with the table box right edge',
+  )
+  check(
+    controlsRect.y + controlsRect.height <= boxRect.y + 4,
+    'controls float above the table, not inside its header row',
+  )
+  const headerText = await box
+    .locator('th')
+    .last()
+    .evaluate((th) => {
+      const range = document.createRange()
+      range.selectNodeContents(th)
+      const r = range.getBoundingClientRect()
+      return { x: r.x, y: r.y, right: r.right, bottom: r.bottom }
+    })
+  check(
+    controlsRect.y + controlsRect.height <= headerText.y || controlsRect.x >= headerText.right,
+    'controls cover no header text',
+  )
   const leading = win.locator('.markdown-content').filter({ hasText: 'first_table_marker' })
   await leading.locator('.markdown-table').hover()
   await win.waitForTimeout(200)
@@ -208,29 +238,47 @@ try {
   await copyButton.click()
   check(await waitForText(copyButton, 'Copied'), 'copy feedback becomes Copied')
   const copied = await clipboardWhen((c) => c.html.includes('<table>'))
-  check(copied.html.includes('<table><thead><tr><th>Check</th><th>Match rate</th></tr></thead>'), 'clipboard HTML is a clean table with a header')
-  check(copied.html.includes('<code>roster_adherence_pct</code>') && copied.html.includes('<strong>roster_compliant</strong>'), 'clipboard HTML keeps code and bold')
-  check(!/class=|style=/.test(copied.html.replace(/^[\s\S]*?<table>/, '<table>')), 'clipboard HTML table has no classes or styles')
-  check(copied.text === [
-    'Check\tMatch rate',
-    "roster_adherence_pct = % of staff with roster_adherence = 'Compliant'\t39,426 / 39,459 (99.9%)",
-    'roster_compliant = count, with a comma\t38,236 / 39,459 (97%)',
-  ].join('\n'), 'clipboard plain text is TSV of the same item')
+  check(
+    copied.html.includes('<table><thead><tr><th>Check</th><th>Match rate</th></tr></thead>'),
+    'clipboard HTML is a clean table with a header',
+  )
+  check(
+    copied.html.includes('<code>roster_adherence_pct</code>') &&
+      copied.html.includes('<strong>roster_compliant</strong>'),
+    'clipboard HTML keeps code and bold',
+  )
+  check(
+    !/class=|style=/.test(copied.html.replace(/^[\s\S]*?<table>/, '<table>')),
+    'clipboard HTML table has no classes or styles',
+  )
+  check(
+    copied.text ===
+      [
+        'Check\tMatch rate',
+        "roster_adherence_pct = % of staff with roster_adherence = 'Compliant'\t39,426 / 39,459 (99.9%)",
+        'roster_compliant = count, with a comma\t38,236 / 39,459 (97%)',
+      ].join('\n'),
+    'clipboard plain text is TSV of the same item',
+  )
   await win.waitForTimeout(1_650)
   check(await waitForText(copyButton, 'Copy'), 'copy feedback resets')
 
   await menuButton.click()
   const menu = win.getByRole('dialog', { name: 'Copy table as' })
   await menu.waitFor({ state: 'visible', timeout: 3_000 })
-  check(await menuButton.getAttribute('aria-expanded') === 'true', 'menu button reports expanded')
+  check((await menuButton.getAttribute('aria-expanded')) === 'true', 'menu button reports expanded')
   await menu.getByRole('button', { name: /Copy as CSV/ }).click()
   await menu.waitFor({ state: 'hidden', timeout: 3_000 })
   const csv = await clipboardWhen((c) => c.text.startsWith('Check,'))
-  check(csv.text.startsWith('Check,Match rate\r\n') && csv.text.includes('"roster_compliant = count, with a comma","38,236 / 39,459 (97%)"'), 'Copy as CSV writes RFC 4180 CSV')
+  check(
+    csv.text.startsWith('Check,Match rate\r\n') &&
+      csv.text.includes('"roster_compliant = count, with a comma","38,236 / 39,459 (97%)"'),
+    'Copy as CSV writes RFC 4180 CSV',
+  )
   check(!csv.formats.includes('text/html'), 'Copy as CSV writes plain text only')
   check(await waitForText(copyButton, 'Copied'), 'menu choices show the same Copied feedback')
   check(await waitForFocus(menuButton), 'focus returns to the menu button after a choice')
-  check(await menuButton.getAttribute('aria-expanded') === 'false', 'menu button reports collapsed')
+  check((await menuButton.getAttribute('aria-expanded')) === 'false', 'menu button reports collapsed')
 
   await menuButton.press('Enter')
   await menu.waitFor({ state: 'visible', timeout: 3_000 })
@@ -238,7 +286,10 @@ try {
   await win.keyboard.press('Enter')
   await menu.waitFor({ state: 'hidden', timeout: 3_000 })
   const md = await clipboardWhen((c) => c.text.startsWith('| Check'))
-  check(md.text.startsWith('| Check | Match rate |\n| --- | --- |\n'), 'keyboard reaches Copy as Markdown and writes a pipe table')
+  check(
+    md.text.startsWith('| Check | Match rate |\n| --- | --- |\n'),
+    'keyboard reaches Copy as Markdown and writes a pipe table',
+  )
 
   await menuButton.press('Enter')
   await menu.waitFor({ state: 'visible', timeout: 3_000 })
@@ -253,21 +304,45 @@ try {
   check(true, 'the menu button toggles the menu closed')
 
   const partial = 'Streaming table:\n\n| Name | Rows |\n| --- | --- |\n| alpha | 1 |\n| beta | 2'
-  await emit({ type: 'content', threadId: conversationId, messageId: 'stream-1', text: partial, streamKind: 'assistant' })
+  await emit({
+    type: 'content',
+    threadId: conversationId,
+    messageId: 'stream-1',
+    text: partial,
+    streamKind: 'assistant',
+  })
   const streaming = win.locator('.markdown-content').filter({ hasText: 'Streaming table:' })
   await streaming.locator('.markdown-table').waitFor({ state: 'attached', timeout: 5_000 })
   await streaming.locator('.markdown-table').hover()
-  check(await streaming.locator('.markdown-table[data-table-state="provisional"]').count() === 1, 'a table that may still grow is provisional')
+  check(
+    (await streaming.locator('.markdown-table[data-table-state="provisional"]').count()) === 1,
+    'a table that may still grow is provisional',
+  )
   check(!(await streaming.locator('.table-copy-btn').isVisible()), 'a provisional table offers no copy')
-  await emit({ type: 'content', threadId: conversationId, messageId: 'stream-1', text: `${partial} |\n\nAfter the table.`, streamKind: 'assistant' })
+  await emit({
+    type: 'content',
+    threadId: conversationId,
+    messageId: 'stream-1',
+    text: `${partial} |\n\nAfter the table.`,
+    streamKind: 'assistant',
+  })
   await streaming.locator('.markdown-table[data-table-state="settled"]').waitFor({ state: 'attached', timeout: 5_000 })
   await streaming.locator('.markdown-table').hover()
   check(await streaming.locator('.table-copy-btn').isVisible(), 'the table settles once content follows it')
 
   await streaming.locator('.table-copy-btn').focus()
-  await emit({ type: 'content', threadId: conversationId, messageId: 'stream-1', text: `${partial} |\n\nAfter the table. More prose.`, streamKind: 'assistant' })
+  await emit({
+    type: 'content',
+    threadId: conversationId,
+    messageId: 'stream-1',
+    text: `${partial} |\n\nAfter the table. More prose.`,
+    streamKind: 'assistant',
+  })
   await streaming.getByText('More prose.', { exact: false }).waitFor({ state: 'visible' })
-  check(await streaming.locator('.table-copy-btn').evaluate((el) => document.activeElement === el), 'keyboard focus survives later streaming commits')
+  check(
+    await streaming.locator('.table-copy-btn').evaluate((el) => document.activeElement === el),
+    'keyboard focus survives later streaming commits',
+  )
 
   await emit({ type: 'turn.completed', threadId: conversationId, durationMs: 200 })
 
@@ -299,9 +374,11 @@ try {
   process.exitCode = 1
 } finally {
   if (app && savedClipboard) {
-    await app.evaluate(({ clipboard }, saved) => {
-      clipboard.write({ text: saved.text, ...(saved.html ? { html: saved.html } : {}) })
-    }, savedClipboard).catch((error) => console.error('could not restore the clipboard', error))
+    await app
+      .evaluate(({ clipboard }, saved) => {
+        clipboard.write({ text: saved.text, ...(saved.html ? { html: saved.html } : {}) })
+      }, savedClipboard)
+      .catch((error) => console.error('could not restore the clipboard', error))
   }
   await closeApp()
 }

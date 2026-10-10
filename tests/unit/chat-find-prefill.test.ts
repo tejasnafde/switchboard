@@ -86,7 +86,9 @@ describe('chat find prefill from message search', () => {
     expect(useAgentStore.getState().pendingScrollToMessage?.query).toBe('sync jitter')
     expect(useAgentStore.getState().pendingChatFind).toBeNull()
 
-    await act(async () => { button('Next').click() })
+    await act(async () => {
+      button('Next').click()
+    })
     expect(scrolledTo()).toBe('m1')
     expect(counter()).toBe('1/2')
   })

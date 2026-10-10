@@ -25,7 +25,12 @@ describe('claude prompt too long rules', () => {
 
   it('reads text from string and block content', () => {
     expect(userMessageText('hi')).toBe('hi')
-    expect(userMessageText([{ type: 'image', source: {} }, { type: 'text', text: 'look' }])).toBe('look')
+    expect(
+      userMessageText([
+        { type: 'image', source: {} },
+        { type: 'text', text: 'look' },
+      ]),
+    ).toBe('look')
     expect(userMessageText(undefined)).toBe('')
   })
 

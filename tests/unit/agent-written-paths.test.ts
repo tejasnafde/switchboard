@@ -10,11 +10,14 @@ describe('agentWrittenPaths', () => {
     expect(agentWrittenPaths('Write', { file_path: 'src/b.ts' }, '/repo')).toEqual(keys('/repo/src/b.ts'))
     expect(agentWrittenPaths('NotebookEdit', { notebook_path: 'n.ipynb' }, '/repo')).toEqual(keys('/repo/n.ipynb'))
     expect(agentWrittenPaths('edit', { filePath: '/repo/c.ts' }, '/repo')).toEqual(keys('/repo/c.ts'))
-    expect(agentWrittenPaths('Edit', { file_path: '/repo/old.ts', move_path: '/repo/new.ts' }, '/repo')).toEqual(keys('/repo/old.ts', '/repo/new.ts'))
+    expect(agentWrittenPaths('Edit', { file_path: '/repo/old.ts', move_path: '/repo/new.ts' }, '/repo')).toEqual(
+      keys('/repo/old.ts', '/repo/new.ts'),
+    )
   })
 
   it('reads every file an apply_patch body names', () => {
-    const patchText = '*** Begin Patch\n*** Update File: a.ts\n@@\n-x\n+y\n*** Add File: b.ts\n+z\n*** Delete File: c.ts\n*** End Patch'
+    const patchText =
+      '*** Begin Patch\n*** Update File: a.ts\n@@\n-x\n+y\n*** Add File: b.ts\n+z\n*** Delete File: c.ts\n*** End Patch'
     expect(agentWrittenPaths('patch', { patchText }, '/repo')).toEqual(keys('/repo/a.ts', '/repo/b.ts', '/repo/c.ts'))
   })
 

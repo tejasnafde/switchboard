@@ -86,7 +86,9 @@ describe('fetchClaudeUsage never leaks the access token', () => {
   })
 
   it('keeps it out of a 401 result', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) }) as unknown as typeof fetch
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 401, json: async () => ({}) }) as unknown as typeof fetch
     const usage = await fetchClaudeUsage('inst', {}, null)
     expect(usage.status).toBe('unauthenticated')
     expectNoToken(usage)
@@ -95,7 +97,9 @@ describe('fetchClaudeUsage never leaks the access token', () => {
   it('keeps it out of a network-error result, even when the error text contains it', async () => {
     // A rejection message is interpolated into the user-facing message, so a
     // library that echoed the request would be the leak path.
-    globalThis.fetch = vi.fn().mockRejectedValue(new Error(`connect failed for Bearer ${TOKEN}`)) as unknown as typeof fetch
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(new Error(`connect failed for Bearer ${TOKEN}`)) as unknown as typeof fetch
     const usage = await fetchClaudeUsage('inst', {}, null)
     expect(usage.status).toBe('error')
     expect(usage.message).toBeDefined()
@@ -106,7 +110,9 @@ describe('fetchClaudeUsage never leaks the access token', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => { throw new Error(`bad body ${TOKEN}`) },
+      json: async () => {
+        throw new Error(`bad body ${TOKEN}`)
+      },
     }) as unknown as typeof fetch
     const usage = await fetchClaudeUsage('inst', {}, null)
     expect(usage.status).toBe('error')
@@ -138,7 +144,9 @@ describe('fetchClaudeUsage network diagnostics', () => {
     readClaudeCredential.mockReset()
     readClaudeCredential.mockResolvedValue(liveCredential)
   })
-  afterEach(() => { globalThis.fetch = originalFetch })
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
 
   function undiciStyle(code: string): Error {
     // undici reports every transport failure as the bare string "fetch failed"
@@ -157,10 +165,15 @@ describe('fetchClaudeUsage network diagnostics', () => {
 
   it('unwraps a happy-eyeballs AggregateError to its per-address codes', async () => {
     const err = new Error('fetch failed')
-    ;(err as Error & { cause?: unknown }).cause = Object.assign(new AggregateError(
-      [Object.assign(new Error('v6'), { code: 'ENETUNREACH' }), Object.assign(new Error('v4'), { code: 'ECONNREFUSED' })],
-      'all attempts failed',
-    ))
+    ;(err as Error & { cause?: unknown }).cause = Object.assign(
+      new AggregateError(
+        [
+          Object.assign(new Error('v6'), { code: 'ENETUNREACH' }),
+          Object.assign(new Error('v4'), { code: 'ECONNREFUSED' }),
+        ],
+        'all attempts failed',
+      ),
+    )
     globalThis.fetch = vi.fn().mockRejectedValue(err) as unknown as typeof fetch
     const usage = await fetchClaudeUsage('inst', {}, null)
     expect(usage.message).toContain('ENETUNREACH')
@@ -177,7 +190,8 @@ describe('fetchClaudeUsage network diagnostics', () => {
 
   it('retries once on a transient failure and uses the second result', async () => {
     // A stale keep-alive socket after the machine sleeps fails on first use.
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockRejectedValueOnce(undiciStyle('ECONNRESET'))
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ five_hour: { utilization: 7 } }) })
     globalThis.fetch = fetchMock as unknown as typeof fetch

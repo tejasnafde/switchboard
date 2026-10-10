@@ -124,7 +124,12 @@ export function attachAnalyticsCrashHooks(electronApp: App): void {
   electronApp.on('child-process-gone', (_event, details) => {
     // A clean exit of a utility process is lifecycle, not a crash.
     if (details.reason === 'clean-exit') return
-    log.error('child process gone', { type: details.type, reason: details.reason, exitCode: details.exitCode, name: details.name })
+    log.error('child process gone', {
+      type: details.type,
+      reason: details.reason,
+      exitCode: details.exitCode,
+      name: details.name,
+    })
     trackAnalyticsEvent('crash_reported', { kind: 'child_process_gone' })
   })
   process.on('uncaughtException', (err) => {
@@ -145,9 +150,10 @@ export function registerAnalyticsHandlers(host: BackendHost): void {
       log.warn('renderer tried to track a non-whitelisted event', { event: String(event) })
       return false
     }
-    const props = properties && typeof properties === 'object' && !Array.isArray(properties)
-      ? (properties as Record<string, unknown>)
-      : {}
+    const props =
+      properties && typeof properties === 'object' && !Array.isArray(properties)
+        ? (properties as Record<string, unknown>)
+        : {}
     trackAnalyticsEvent(event, props)
     return true
   })

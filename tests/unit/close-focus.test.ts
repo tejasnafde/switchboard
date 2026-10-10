@@ -38,9 +38,9 @@ describe('classifyCloseFocus', () => {
   })
 
   it('prefers editor over chat when both match (files pane never closes a terminal)', () => {
-    expect(
-      classifyCloseFocus(fakeEl({ '[data-ide-pane]': {}, '[data-chat-slot]': { side: 'primary' } })),
-    ).toBe('editor')
+    expect(classifyCloseFocus(fakeEl({ '[data-ide-pane]': {}, '[data-chat-slot]': { side: 'primary' } }))).toBe(
+      'editor',
+    )
   })
 
   it('falls back to other (terminal / app window) when nothing matches', () => {

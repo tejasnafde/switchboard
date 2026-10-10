@@ -1,8 +1,4 @@
-import {
-  MESSAGE_SEARCH_LIMIT,
-  orderMessageSearchResults,
-  type MessageSearchResult,
-} from '@shared/message-search'
+import { MESSAGE_SEARCH_LIMIT, orderMessageSearchResults, type MessageSearchResult } from '@shared/message-search'
 import { withTimeout } from '@shared/promise-timeout'
 import { createRendererLogger } from '../logger'
 
@@ -30,19 +26,21 @@ export async function searchMessagesOnMachines(
   query: string,
   targets: readonly SearchTarget[],
 ): Promise<MachineSearchHit[]> {
-  const answers = await Promise.all(targets.map(async (target) => {
-    try {
-      const hits = await withTimeout(
-        target.search(query),
-        SEARCH_TARGET_TIMEOUT_MS,
-        `message search on ${target.machineId}`,
-      )
-      return (hits ?? []).map((hit): MachineSearchHit => ({ ...hit, machineId: target.machineId }))
-    } catch (err) {
-      log.warn('message search failed on a machine', { machineId: target.machineId, err })
-      return []
-    }
-  }))
+  const answers = await Promise.all(
+    targets.map(async (target) => {
+      try {
+        const hits = await withTimeout(
+          target.search(query),
+          SEARCH_TARGET_TIMEOUT_MS,
+          `message search on ${target.machineId}`,
+        )
+        return (hits ?? []).map((hit): MachineSearchHit => ({ ...hit, machineId: target.machineId }))
+      } catch (err) {
+        log.warn('message search failed on a machine', { machineId: target.machineId, err })
+        return []
+      }
+    }),
+  )
   return orderMessageSearchResults(answers.flat()).slice(0, MESSAGE_SEARCH_LIMIT)
 }
 
@@ -51,7 +49,10 @@ export async function searchMessagesOnMachines(
  * the one now focused, else null (the open failed or another open replaced
  * it), so the find never lands in an unrelated chat.
  */
-export function searchHitShownId(hit: Pick<MessageSearchResult, 'conversationId'>, focusedId: string | null): string | null {
+export function searchHitShownId(
+  hit: Pick<MessageSearchResult, 'conversationId'>,
+  focusedId: string | null,
+): string | null {
   return focusedId === hit.conversationId ? focusedId : null
 }
 

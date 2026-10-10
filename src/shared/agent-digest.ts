@@ -40,9 +40,7 @@ export function extractDigest(text: string): string | undefined {
     if (inner) last = inner
   }
   if (last === undefined) return undefined
-  return last.length > MAX_DIGEST_LENGTH
-    ? `${last.slice(0, MAX_DIGEST_LENGTH - 1)}…`
-    : last
+  return last.length > MAX_DIGEST_LENGTH ? `${last.slice(0, MAX_DIGEST_LENGTH - 1)}…` : last
 }
 
 /**

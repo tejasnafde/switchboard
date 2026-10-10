@@ -4,7 +4,13 @@ import type { PrLink } from '@shared/pull-request-links'
 import { renderComponent } from '../../test/render'
 import { PrLinksBanner } from '../PrLinksBanner'
 
-const merged: PrLink = { ref: { host: 'github', owner: 'acme', name: 'app', number: 612 }, source: 'created', linkedAt: 1, state: 'merged', stateAt: 2 }
+const merged: PrLink = {
+  ref: { host: 'github', owner: 'acme', name: 'app', number: 612 },
+  source: 'created',
+  linkedAt: 1,
+  state: 'merged',
+  stateAt: 2,
+}
 
 it('shows each link with its state and how it was linked', () => {
   const root = renderComponent(<PrLinksBanner links={[merged]} onUnlink={() => {}} />)

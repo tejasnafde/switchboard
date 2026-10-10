@@ -72,13 +72,7 @@ function resolveShell(requested?: string): string {
     return process.env.COMSPEC || 'powershell.exe'
   }
 
-  const candidates = [
-    requested,
-    process.env.SHELL,
-    '/bin/zsh',
-    '/bin/bash',
-    '/bin/sh',
-  ]
+  const candidates = [requested, process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh']
   for (const c of candidates) {
     if (c && existsSync(c)) return c
   }
@@ -124,10 +118,7 @@ export class PtyManager {
     // and tools like `carapace`/`starship` referenced from ~/.zshrc fail
     // with "command not found." Terminal.app and iTerm both default to
     // login shells for this exact reason.
-    const loginArgs =
-      !isWin && (shell.endsWith('/zsh') || shell.endsWith('/bash'))
-        ? ['-l']
-        : []
+    const loginArgs = !isWin && (shell.endsWith('/zsh') || shell.endsWith('/bash')) ? ['-l'] : []
     const instance = pty.spawn(shell, loginArgs, {
       name: 'xterm-256color',
       cols: opts.cols ?? 80,
@@ -140,7 +131,12 @@ export class PtyManager {
       ...(isWin ? { useConpty: true } : {}),
     })
 
-    const managed: ManagedPty = { pty: instance, id: opts.id, waitFor: opts.waitFor, initialCommand: opts.initialCommand }
+    const managed: ManagedPty = {
+      pty: instance,
+      id: opts.id,
+      waitFor: opts.waitFor,
+      initialCommand: opts.initialCommand,
+    }
     this.ptys.set(opts.id, managed)
     this.exitDrain.track(opts.id)
 

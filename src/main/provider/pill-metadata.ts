@@ -18,7 +18,10 @@ export function parsePersistedPillsMeta(raw: unknown): UserMessagePillsMeta | un
     parsed = JSON.parse(raw)
   } catch (error) {
     // The stored value is the user's text: log its size, never its content.
-    log.warn('stored pill metadata is not JSON', { bytes: Buffer.byteLength(raw, 'utf8'), error: error instanceof Error ? error.name : 'unknown' })
+    log.warn('stored pill metadata is not JSON', {
+      bytes: Buffer.byteLength(raw, 'utf8'),
+      error: error instanceof Error ? error.name : 'unknown',
+    })
     return undefined
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined

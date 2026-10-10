@@ -4,11 +4,7 @@ import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { rmSync } from 'fs'
-import {
-  decodeCursorFileUri,
-  cursorPathsEqual,
-  workspaceStorageMatchesProject,
-} from '../../src/main/cursor/workspace'
+import { decodeCursorFileUri, cursorPathsEqual, workspaceStorageMatchesProject } from '../../src/main/cursor/workspace'
 
 const roots: string[] = []
 
@@ -33,9 +29,12 @@ describe('Cursor workspace matching', () => {
   it('matches a folder workspace by exact normalized path', () => {
     const storage = fixture()
     const project = join(storage, 'projects', 'switchboard')
-    writeFileSync(join(storage, 'workspace.json'), JSON.stringify({
-      folder: pathToFileURL(project).href,
-    }))
+    writeFileSync(
+      join(storage, 'workspace.json'),
+      JSON.stringify({
+        folder: pathToFileURL(project).href,
+      }),
+    )
 
     expect(workspaceStorageMatchesProject(storage, project)).toBe(true)
     expect(workspaceStorageMatchesProject(storage, `${project}-child`)).toBe(false)
@@ -54,16 +53,22 @@ describe('Cursor workspace matching', () => {
     const workspaceFile = join(root, 'team.code-workspace')
     mkdirSync(storage)
     mkdirSync(project, { recursive: true })
-    writeFileSync(workspaceFile, `{
+    writeFileSync(
+      workspaceFile,
+      `{
       // Cursor and VS Code permit JSON comments here.
       "folders": [
         { "path": "apps/web" },
         { "uri": ${JSON.stringify(pathToFileURL(shared).href)} }
       ]
-    }`)
-    writeFileSync(join(storage, 'workspace.json'), JSON.stringify({
-      workspace: pathToFileURL(workspaceFile).href,
-    }))
+    }`,
+    )
+    writeFileSync(
+      join(storage, 'workspace.json'),
+      JSON.stringify({
+        workspace: pathToFileURL(workspaceFile).href,
+      }),
+    )
 
     expect(workspaceStorageMatchesProject(storage, project)).toBe(true)
     expect(workspaceStorageMatchesProject(storage, join(root, 'apps'))).toBe(false)

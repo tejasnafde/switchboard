@@ -130,7 +130,6 @@ describe('decideMachineTransition', () => {
     expect(decideMachineTransition('connecting', 'connected', false)).toBe(null)
     expect(decideMachineTransition(undefined, 'connected', false)).toBe(null)
   })
-
 })
 
 describe('initMachineReconnectResync', () => {
@@ -201,7 +200,7 @@ describe('initMachineReconnectResync', () => {
     expect(writeMachineNotice).not.toHaveBeenCalled()
   })
 
-  it('rebinds this machine\'s session ids on every connected (disconnect wiped them via forgetMachine)', () => {
+  it("rebinds this machine's session ids on every connected (disconnect wiped them via forgetMachine)", () => {
     useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'idle', machineId: 'm1' })
     useAgentStore.getState().addSession({ id: 't2', type: 'claude-code', status: 'idle', machineId: 'm2' })
     useAgentStore.getState().addSession({ id: 't3', type: 'claude-code', status: 'idle' })

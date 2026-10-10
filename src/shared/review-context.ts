@@ -7,7 +7,14 @@
  * `reviewContextLabel`; the agent receives `expandReviewContext`, a plain
  * text block, so Claude, Codex and OpenCode all read it the same way.
  */
-import { PR_HOST_LABEL, type DiffHunk, type PrChangedFile, type PrCheck, type PrConversation, type PrRef } from './pull-requests'
+import {
+  PR_HOST_LABEL,
+  type DiffHunk,
+  type PrChangedFile,
+  type PrCheck,
+  type PrConversation,
+  type PrRef,
+} from './pull-requests'
 
 export const REVIEW_CONTEXT_MAX_BYTES = 12 * 1024
 /** Stored pill labels longer than this are dropped on reload (`pill-metadata.ts`, Android). */
@@ -16,17 +23,17 @@ const DIFF_RADIUS = 3
 
 export type ReviewContextItem =
   | {
-    kind: 'conversation'
-    path: string | null
-    line: number | null
-    /** The first line when the conversation covers several. */
-    startLine?: number
-    side: 'new' | 'old' | null
-    outdated: boolean
-    comments: Array<{ author: string; body: string }>
-    /** Diff lines around the anchor, `null` when the file's diff is not available. */
-    diff: string | null
-  }
+      kind: 'conversation'
+      path: string | null
+      line: number | null
+      /** The first line when the conversation covers several. */
+      startLine?: number
+      side: 'new' | 'old' | null
+      outdated: boolean
+      comments: Array<{ author: string; body: string }>
+      /** Diff lines around the anchor, `null` when the file's diff is not available. */
+      diff: string | null
+    }
   | { kind: 'check'; name: string; description: string | null; url: string | null }
   | { kind: 'lines'; path: string; side: 'new' | 'old'; startLine: number; endLine: number; diff: string }
   /** `files` is empty when the host does not name them (GitHub). */
@@ -45,9 +52,13 @@ function baseName(path: string): string {
 
 function where(item: ReviewContextItem, short = false): string {
   if (item.kind === 'check') return item.name
-  if (item.kind === 'conflicts') return item.files.length > 0 ? item.files.map((f) => (short ? baseName(f) : f)).join(', ') : `${item.head} into ${item.base}`
+  if (item.kind === 'conflicts')
+    return item.files.length > 0
+      ? item.files.map((f) => (short ? baseName(f) : f)).join(', ')
+      : `${item.head} into ${item.base}`
   const path = short ? baseName(item.path ?? '') : item.path
-  if (item.kind === 'lines') return item.startLine === item.endLine ? `${path}:${item.startLine}` : `${path}:${item.startLine}-${item.endLine}`
+  if (item.kind === 'lines')
+    return item.startLine === item.endLine ? `${path}:${item.startLine}` : `${path}:${item.startLine}-${item.endLine}`
   if (!item.path) return 'the whole pull request'
   if (item.line === null) return path ?? ''
   return item.startLine !== undefined ? `${path}:${item.startLine}-${item.line}` : `${path}:${item.line}`
@@ -81,7 +92,9 @@ function block(item: ReviewContextItem, index: number): string {
       `${n} Failed check: ${item.name}`,
       item.description && `Description: ${item.description}`,
       item.url && `Log: ${item.url}`,
-    ].filter(Boolean).join('\n')
+    ]
+      .filter(Boolean)
+      .join('\n')
   }
   if (item.kind === 'lines') {
     return `${n} Selected lines ${where(item)} (${item.side} side)\n${item.diff}`
@@ -89,7 +102,9 @@ function block(item: ReviewContextItem, index: number): string {
   if (item.kind === 'conflicts') {
     return [
       `${n} Merge conflicts: ${item.head} conflicts with ${item.base}.`,
-      item.files.length > 0 ? `Conflicted files: ${item.files.join(', ')}` : 'The host does not name the conflicted files; find them with git.',
+      item.files.length > 0
+        ? `Conflicted files: ${item.files.join(', ')}`
+        : 'The host does not name the conflicted files; find them with git.',
       conflictInstruction(item.base, item.head),
     ].join('\n')
   }
@@ -150,7 +165,10 @@ export function expandReviewContext(ctx: ReviewContext, maxBytes = REVIEW_CONTEX
     }
   })
   if (omitted.length > 0) {
-    const names = omitted.slice(0, 8).map((item) => where(item)).join(', ')
+    const names = omitted
+      .slice(0, 8)
+      .map((item) => where(item))
+      .join(', ')
     const more = omitted.length > 8 ? ` and ${omitted.length - 8} more` : ''
     const note = `\n\n(${plural(omitted.length, 'more item')} left out to stay under ${Math.round(maxBytes / 1024)} KiB: ${names}${more}. Read them on the host.)`
     out += cutToBytes(note, reserve)
@@ -172,15 +190,28 @@ function hunkLine(line: DiffHunk['lines'][number]): string {
  * lines of context, from every hunk the range touches (a range can span
  * several), or `null` when none of it is in the file's hunks.
  */
-export function diffAround(file: PrChangedFile | undefined, side: 'new' | 'old', start: number, end = start, radius = DIFF_RADIUS): string | null {
+export function diffAround(
+  file: PrChangedFile | undefined,
+  side: 'new' | 'old',
+  start: number,
+  end = start,
+  radius = DIFF_RADIUS,
+): string | null {
   if (!file) return null
   const parts: string[] = []
   for (const hunk of file.hunks) {
-    const at = (l: DiffHunk['lines'][number]) => (side === 'old' ? (l.kind !== 'add' ? l.oldLine : null) : (l.kind !== 'del' ? l.newLine : null))
-    const first = hunk.lines.findIndex((l) => { const n = at(l); return n !== null && n >= start && n <= end })
+    const at = (l: DiffHunk['lines'][number]) =>
+      side === 'old' ? (l.kind !== 'add' ? l.oldLine : null) : l.kind !== 'del' ? l.newLine : null
+    const first = hunk.lines.findIndex((l) => {
+      const n = at(l)
+      return n !== null && n >= start && n <= end
+    })
     if (first < 0) continue
     let last = first
-    hunk.lines.forEach((l, i) => { const n = at(l); if (n !== null && n >= start && n <= end) last = i })
+    hunk.lines.forEach((l, i) => {
+      const n = at(l)
+      if (n !== null && n >= start && n <= end) last = i
+    })
     const from = Math.max(0, first - radius)
     const to = Math.min(hunk.lines.length, last + radius + 1)
     parts.push([hunk.header, ...hunk.lines.slice(from, to).map(hunkLine)].join('\n'))
@@ -206,7 +237,11 @@ export function conflictInstruction(base: string, head: string): string {
   return `Merge the base branch (${base}) into this branch (${head}) and resolve the conflicts, then push. Never rebase or force-push.`
 }
 
-export function conflictsItem(pr: { targetBranch: string; sourceBranch: string; conflictedFiles: string[] }): ReviewContextItem {
+export function conflictsItem(pr: {
+  targetBranch: string
+  sourceBranch: string
+  conflictedFiles: string[]
+}): ReviewContextItem {
   return { kind: 'conflicts', base: pr.targetBranch, head: pr.sourceBranch, files: [...pr.conflictedFiles] }
 }
 

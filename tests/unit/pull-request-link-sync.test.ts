@@ -6,7 +6,9 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
+vi.mock('../../src/main/logger', () => ({
+  createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}))
 
 import { PullRequestLinkSync, type LinkSyncDeps } from '../../src/main/pull-requests/link-sync'
 import { projectReposFrom } from '../../src/shared/project-repos'
@@ -28,14 +30,17 @@ function setup(over: Partial<LinkSyncDeps> = {}) {
     projectRepos: async () => projectReposFrom(APP, []),
     reposFor: async () => [APP],
     currentBranch: vi.fn(async () => 'feat/x'),
-    openPullRequestFor: vi.fn(async () => ({ ok: true as const, data: { number: 7, url: 'https://github.com/acme/app/pull/7' } })),
+    openPullRequestFor: vi.fn(async () => ({
+      ok: true as const,
+      data: { number: 7, url: 'https://github.com/acme/app/pull/7' },
+    })),
     linkedPrs: () => links,
     link: vi.fn((_chat: string, ref: PrRef) => {
       if (links.some((l) => l.ref.number === ref.number)) return false
       links.push({ ref, source: 'auto', linkedAt: now })
       return true
     }),
-    prState: vi.fn(async (ref: PrRef) => ({ ok: true as const, data: states.get(ref.number) ?? 'open' as PrState })),
+    prState: vi.fn(async (ref: PrRef) => ({ ok: true as const, data: states.get(ref.number) ?? ('open' as PrState) })),
     setState: vi.fn((ref: PrRef, state: PrState, _observedAt: number) => {
       const hit = links.find((l) => l.ref.number === ref.number)
       if (!hit) return []
@@ -48,12 +53,29 @@ function setup(over: Partial<LinkSyncDeps> = {}) {
     now: () => now,
     ...over,
   }
-  return { sync: new PullRequestLinkSync(deps), deps, links, notified, problems, states, tick: (ms: number) => { now += ms } }
+  return {
+    sync: new PullRequestLinkSync(deps),
+    deps,
+    links,
+    notified,
+    problems,
+    states,
+    tick: (ms: number) => {
+      now += ms
+    },
+  }
 }
 
 const turnDone = { type: 'turn.completed', threadId: 't1' } as RuntimeEvent
-const started = { type: 'session.provider', threadId: 't1', provider: 'codex', instanceId: null, instanceName: null } as RuntimeEvent
-const tool = (command: string): RuntimeEvent => ({ type: 'tool.started', threadId: 't1', toolCallId: 'c1', toolName: 'Bash', input: { command } }) as RuntimeEvent
+const started = {
+  type: 'session.provider',
+  threadId: 't1',
+  provider: 'codex',
+  instanceId: null,
+  instanceName: null,
+} as RuntimeEvent
+const tool = (command: string): RuntimeEvent =>
+  ({ type: 'tool.started', threadId: 't1', toolCallId: 'c1', toolName: 'Bash', input: { command } }) as RuntimeEvent
 const toolDone = { type: 'tool.completed', threadId: 't1', toolCallId: 'c1', output: 'done' } as RuntimeEvent
 
 describe('branch detection', () => {
@@ -101,7 +123,10 @@ describe('branch detection', () => {
   })
 
   it('reports a host failure as a problem the agent can read, and retries it a minute later, not every turn', async () => {
-    const openPullRequestFor = vi.fn(async () => ({ ok: false as const, error: { kind: 'offline' as const, host: 'github' as const, message: 'GitHub is unreachable.' } }))
+    const openPullRequestFor = vi.fn(async () => ({
+      ok: false as const,
+      error: { kind: 'offline' as const, host: 'github' as const, message: 'GitHub is unreachable.' },
+    }))
     const { sync, problems, tick } = setup({ openPullRequestFor })
     await sync.onEvent(turnDone)
     await sync.onEvent(turnDone)
@@ -128,8 +153,15 @@ describe('link state', () => {
 
   it('a merge that completes during a running sync is re-read once that sync ends', async () => {
     let release!: () => void
-    const gate = new Promise<void>((resolve) => { release = resolve })
-    const { sync, deps, links, states, notified } = setup({ currentBranch: vi.fn(async () => { await gate; return null }) })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const { sync, deps, links, states, notified } = setup({
+      currentBranch: vi.fn(async () => {
+        await gate
+        return null
+      }),
+    })
     links.push({ ref: { ...APP, number: 9 }, source: 'manual', linkedAt: 0, state: 'open', stateAt: 999_999 })
     const turnSync = sync.onEvent(turnDone)
     await sync.onEvent(tool('gh pr merge 9 --merge'))
@@ -159,7 +191,10 @@ describe('link state', () => {
   it('a failed state read is a problem, not a crash', async () => {
     const { sync, links, problems } = setup({
       currentBranch: vi.fn(async () => null),
-      prState: vi.fn(async () => ({ ok: false as const, error: { kind: 'unknown' as const, host: 'github' as const, message: 'boom' } })),
+      prState: vi.fn(async () => ({
+        ok: false as const,
+        error: { kind: 'unknown' as const, host: 'github' as const, message: 'boom' },
+      })),
     })
     links.push({ ref: { ...APP, number: 1 }, source: 'auto', linkedAt: 0 })
     await sync.onEvent(turnDone)

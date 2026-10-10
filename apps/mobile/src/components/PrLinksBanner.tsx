@@ -17,8 +17,15 @@ export function PrLinksBanner({ links, onUnlink }: { links: PrLink[]; onUnlink: 
     <ScrollView style={[styles.forkBanner, styles.prLinksBanner]} accessibilityRole="summary" testID="pr-links-banner">
       {links.map((link) => (
         <View key={prKey(link.ref)} style={styles.compactBanner}>
-          <Text style={[styles.forkBannerText, styles.compactBannerText]} numberOfLines={1}>{phoneLinkRowText(link)}</Text>
-          <Pressable onPress={() => onUnlink(link)} accessibilityRole="button" accessibilityLabel={unlinkPrLabel(link.ref)} hitSlop={8}>
+          <Text style={[styles.forkBannerText, styles.compactBannerText]} numberOfLines={1}>
+            {phoneLinkRowText(link)}
+          </Text>
+          <Pressable
+            onPress={() => onUnlink(link)}
+            accessibilityRole="button"
+            accessibilityLabel={unlinkPrLabel(link.ref)}
+            hitSlop={8}
+          >
             <Text style={styles.forkBannerText}>Unlink</Text>
           </Pressable>
         </View>

@@ -75,11 +75,13 @@ describe('ManagedTerminalRuntime', () => {
 
   it('adopts stable live handles instead of spawning duplicates', async () => {
     const h = fixture()
-    const terminals = [{
-      id: 'worktree-a-r0-p0',
-      cwd: '/managed/repo',
-      initialCommand: 'npm run dev',
-    }]
+    const terminals = [
+      {
+        id: 'worktree-a-r0-p0',
+        cwd: '/managed/repo',
+        initialCommand: 'npm run dev',
+      },
+    ]
 
     await expect(h.runtime.provision(terminals)).resolves.toEqual({
       status: 'succeeded',
@@ -97,14 +99,18 @@ describe('ManagedTerminalRuntime', () => {
     const h = fixture()
     let release!: () => void
     h.backend.create = vi.fn(async (options) => {
-      await new Promise<void>((resolve) => { release = resolve })
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
       h.live.add(options.id)
     })
-    const terminals = [{
-      id: 'worktree-a-r0-p0',
-      cwd: '/managed/repo',
-      initialCommand: 'npm run dev',
-    }]
+    const terminals = [
+      {
+        id: 'worktree-a-r0-p0',
+        cwd: '/managed/repo',
+        initialCommand: 'npm run dev',
+      },
+    ]
 
     const first = h.runtime.provision(terminals)
     const second = h.runtime.provision(terminals)
@@ -145,7 +151,11 @@ describe('ManagedTerminalRuntime', () => {
       claim: vi.fn(async (id) => {
         if (claimed.has(id)) return null
         claimed.add(id)
-        return { release: vi.fn(async () => { claimed.delete(id) }) }
+        return {
+          release: vi.fn(async () => {
+            claimed.delete(id)
+          }),
+        }
       }),
     }
     const terminal = {
@@ -173,10 +183,12 @@ describe('ManagedTerminalRuntime', () => {
       h.live.add(options.id)
     })
 
-    await expect(h.runtime.provision([
-      { id: 'worktree-a-r0-p0', cwd: '/managed/repo' },
-      { id: 'worktree-a-r0-p1', cwd: '/managed/repo' },
-    ])).resolves.toEqual({
+    await expect(
+      h.runtime.provision([
+        { id: 'worktree-a-r0-p0', cwd: '/managed/repo' },
+        { id: 'worktree-a-r0-p1', cwd: '/managed/repo' },
+      ]),
+    ).resolves.toEqual({
       status: 'failed',
       terminalIds: ['worktree-a-r0-p0'],
     })

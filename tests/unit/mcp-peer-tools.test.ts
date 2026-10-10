@@ -16,27 +16,53 @@ function setup(mode: RuntimeMode, decision?: 'approve' | 'deny', linked = false)
   const events: RuntimeEvent[] = []
   const delivered: PeerMessageInput[] = []
   const peers: PeerToolHost = {
-    listPeerSessions: vi.fn(() => [{ sessionId: 's2', title: 'Other', folder: '/p', provider: 'codex' as const, midTurn: false, linked }]),
+    listPeerSessions: vi.fn(() => [
+      { sessionId: 's2', title: 'Other', folder: '/p', provider: 'codex' as const, midTurn: false, linked },
+    ]),
     isLinkedPeer: vi.fn(() => linked),
-    deliverPeerMessage: vi.fn(async (input: PeerMessageInput) => { delivered.push(input); return { id: 'pm_0123456789abcdef' } }),
+    deliverPeerMessage: vi.fn(async (input: PeerMessageInput) => {
+      delivered.push(input)
+      return { id: 'pm_0123456789abcdef' }
+    }),
   }
   const approvals = new AgentApprovalBroker({
     publish: (e) => {
       events.push(e)
-      if (e.type === 'request.opened' && decision) queueMicrotask(() => approvals.respond('t1', e.requestId, decision, {}, { mayApproveHostWrite: false, label: 'test' }))
+      if (e.type === 'request.opened' && decision)
+        queueMicrotask(() =>
+          approvals.respond('t1', e.requestId, decision, {}, { mayApproveHostWrite: false, label: 'test' }),
+        )
     },
     onClosed: (card, close) => {
-      if (close.kind === 'approve') void runPeerSendPlan({ threadId: 't1', runtimeMode: () => mode, publish: (e) => events.push(e), peers }, card.plan as PeerSendPlan)
+      if (close.kind === 'approve')
+        void runPeerSendPlan(
+          { threadId: 't1', runtimeMode: () => mode, publish: (e) => events.push(e), peers },
+          card.plan as PeerSendPlan,
+        )
     },
   })
-  const [list, rawSend] = buildPeerMcpTools({ threadId: 't1', chatId: 'root-1', runtimeMode: () => mode, publish: (e) => events.push(e), approvals, peers })
+  const [list, rawSend] = buildPeerMcpTools({
+    threadId: 't1',
+    chatId: 'root-1',
+    runtimeMode: () => mode,
+    publish: (e) => events.push(e),
+    approvals,
+    peers,
+  })
   const signal = new AbortController().signal
   return { list, send: settled(rawSend), events, delivered, peers, signal }
 }
 
 /** The tool, plus a tick for a card answered as it opened to run its send. */
 function settled(tool: McpTool): McpTool {
-  return { ...tool, call: async (args, ctx) => { const r = await tool.call(args, ctx); await new Promise((resolve) => setTimeout(resolve, 0)); return r } }
+  return {
+    ...tool,
+    call: async (args, ctx) => {
+      const r = await tool.call(args, ctx)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      return r
+    },
+  }
 }
 
 const args = { sessionId: 's2', message: 'the migration landed' }
@@ -65,14 +91,18 @@ describe('send_agent_message', () => {
     const { send, events, delivered, signal } = setup('full-access')
     await send.call(args, { signal })
     expect(events).toEqual([])
-    expect(delivered).toEqual([{ fromThreadId: 't1', targetThreadId: 's2', text: 'the migration landed', initiator: 'agent' }])
+    expect(delivered).toEqual([
+      { fromThreadId: 't1', targetThreadId: 's2', text: 'the migration landed', initiator: 'agent' },
+    ])
   })
 
   it('asks first in sandbox and accept-edits, and sends once approved (a phone may approve this one)', async () => {
     for (const mode of ['sandbox', 'accept-edits'] as const) {
       const { send, events, delivered, signal } = setup(mode, 'approve')
       await send.call(args, { signal })
-      expect(events.find((e) => e.type === 'request.opened')).toMatchObject({ toolName: 'mcp__switchboard__send_agent_message' })
+      expect(events.find((e) => e.type === 'request.opened')).toMatchObject({
+        toolName: 'mcp__switchboard__send_agent_message',
+      })
       expect(delivered).toHaveLength(1)
     }
   })
@@ -84,7 +114,10 @@ describe('send_agent_message', () => {
     const peers: PeerToolHost = {
       listPeerSessions: vi.fn(() => []),
       isLinkedPeer: vi.fn(() => false),
-      deliverPeerMessage: vi.fn(async (input: PeerMessageInput) => { delivered.push(input); return { id: 'pm_0123456789abcdef' } }),
+      deliverPeerMessage: vi.fn(async (input: PeerMessageInput) => {
+        delivered.push(input)
+        return { id: 'pm_0123456789abcdef' }
+      }),
     }
     const results: Array<Promise<{ isError?: boolean }>> = []
     const approvals = new AgentApprovalBroker({
@@ -92,12 +125,28 @@ describe('send_agent_message', () => {
         events.push(e)
         if (e.type === 'request.opened') {
           mode = 'plan'
-          queueMicrotask(() => approvals.respond('t1', e.requestId, 'approve', {}, { mayApproveHostWrite: false, label: 'test' }))
+          queueMicrotask(() =>
+            approvals.respond('t1', e.requestId, 'approve', {}, { mayApproveHostWrite: false, label: 'test' }),
+          )
         }
       },
-      onClosed: (card) => { results.push(runPeerSendPlan({ threadId: 't1', runtimeMode: () => mode, publish: (e) => events.push(e), peers }, card.plan as PeerSendPlan)) },
+      onClosed: (card) => {
+        results.push(
+          runPeerSendPlan(
+            { threadId: 't1', runtimeMode: () => mode, publish: (e) => events.push(e), peers },
+            card.plan as PeerSendPlan,
+          ),
+        )
+      },
     })
-    const [, send] = buildPeerMcpTools({ threadId: 't1', chatId: 'root-1', runtimeMode: () => mode, publish: (e) => events.push(e), approvals, peers })
+    const [, send] = buildPeerMcpTools({
+      threadId: 't1',
+      chatId: 'root-1',
+      runtimeMode: () => mode,
+      publish: (e) => events.push(e),
+      approvals,
+      peers,
+    })
     await send.call(args, { signal: new AbortController().signal })
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect((await results[0]).isError).toBe(true)
@@ -131,7 +180,9 @@ describe('send_agent_message along a session link', () => {
     expect(result.isError).toBeFalsy()
     expect(events).toEqual([])
     // Delivery re-checks the link, so an unlink in flight cannot pass uncarded.
-    expect(delivered).toEqual([{ fromThreadId: 't1', targetThreadId: 's2', text: 'the migration landed', initiator: 'agent', requireLink: true }])
+    expect(delivered).toEqual([
+      { fromThreadId: 't1', targetThreadId: 's2', text: 'the migration landed', initiator: 'agent', requireLink: true },
+    ])
   })
 
   it('still asks in auto mode when the target is not linked', async () => {
@@ -158,7 +209,14 @@ describe('send_agent_message along a session link', () => {
   // No tool can create or extend a link: the server offers the two session tools and nothing else.
   it('offers the agent no way to link', () => {
     const { list, send } = setup('full-access')
-    const tools = buildPeerMcpTools({ threadId: 't1', chatId: 'root-1', runtimeMode: () => 'full-access', publish: () => {}, approvals: { open: vi.fn() }, peers: setup('full-access').peers })
+    const tools = buildPeerMcpTools({
+      threadId: 't1',
+      chatId: 'root-1',
+      runtimeMode: () => 'full-access',
+      publish: () => {},
+      approvals: { open: vi.fn() },
+      peers: setup('full-access').peers,
+    })
     expect(tools.map((t) => t.name)).toEqual([list.name, send.name])
     expect(tools.map((t) => t.name)).toEqual(['list_agent_sessions', 'send_agent_message'])
   })

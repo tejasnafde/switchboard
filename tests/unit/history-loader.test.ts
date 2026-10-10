@@ -6,11 +6,17 @@ import { openConversationAtAnchor } from '../../src/renderer/services/open-conve
 import { historyWindow, type HistoryLoadOptions } from '../../src/shared/phone-history-window'
 import type { ChatMessage } from '../../src/shared/types'
 
-const rows = Array.from({ length: 450 }, (_, i) => ({ id: `m${i}`, role: 'user', content: `${i}`, timestamp: i })) as ChatMessage[]
+const rows = Array.from({ length: 450 }, (_, i) => ({
+  id: `m${i}`,
+  role: 'user',
+  content: `${i}`,
+  timestamp: i,
+})) as ChatMessage[]
 /** What the backend holds; a test may drop rows from it. */
 let backend = rows
 const load = vi.fn(async (_id: string, opts?: HistoryLoadOptions) =>
-  opts?.window ? historyWindow(backend, opts) : { messages: backend })
+  opts?.window ? historyWindow(backend, opts) : { messages: backend },
+)
 ;(globalThis as { window?: unknown }).window = { api: { app: { loadSessionById: load } } }
 
 function open() {
@@ -40,7 +46,9 @@ describe('history loader', () => {
   it('drops an older window whose cursor was replaced by a reload', async () => {
     let release!: () => void
     load.mockImplementationOnce(async (_id, opts) => {
-      await new Promise<void>((resolve) => { release = resolve })
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
       return historyWindow(rows, opts!)
     })
     const pending = loadOlderHistory('s')
@@ -54,7 +62,9 @@ describe('history loader', () => {
   it('completes the history even when an older window lands during the full load', async () => {
     let release!: () => void
     load.mockImplementationOnce(async () => {
-      await new Promise<void>((resolve) => { release = resolve })
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
       return { messages: rows }
     })
     const full = ensureFullHistory('s')

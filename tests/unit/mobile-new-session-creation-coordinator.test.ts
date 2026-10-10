@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type {
-  WorktreeCreationRequest,
-  WorktreeCreationSnapshot,
-} from '../../src/shared/worktree-creation'
+import type { WorktreeCreationRequest, WorktreeCreationSnapshot } from '../../src/shared/worktree-creation'
 import { createNewSessionCreationCoordinator } from '../../apps/mobile/src/lib/new-session-creation'
 
 const worktreeIntent = {
@@ -28,9 +25,7 @@ const worktreeIntent = {
   firstMessage: 'Fix the launch transaction.',
 }
 
-function snapshot(
-  overrides: Partial<WorktreeCreationSnapshot> = {},
-): WorktreeCreationSnapshot {
+function snapshot(overrides: Partial<WorktreeCreationSnapshot> = {}): WorktreeCreationSnapshot {
   return {
     creationId: 'create-mobile-1',
     revision: 1,
@@ -68,24 +63,23 @@ function readySnapshot(): WorktreeCreationSnapshot {
   })
 }
 
-function harness(options: {
-  createResult?: WorktreeCreationSnapshot
-  getResult?: WorktreeCreationSnapshot
-} = {}) {
+function harness(
+  options: {
+    createResult?: WorktreeCreationSnapshot
+    getResult?: WorktreeCreationSnapshot
+  } = {},
+) {
   const creationIds = ['create-mobile-1', 'create-parent-2']
-  const createWorktree = vi.fn<(
-    request: WorktreeCreationRequest,
-  ) => Promise<WorktreeCreationSnapshot>>()
+  const createWorktree = vi
+    .fn<(request: WorktreeCreationRequest) => Promise<WorktreeCreationSnapshot>>()
     .mockResolvedValue(options.createResult ?? snapshot())
-  const getWorktree = vi.fn()
-    .mockResolvedValue(options.getResult ?? snapshot())
-  const createParentCheckout = vi.fn()
-    .mockResolvedValue({
-      creationId: 'create-parent-2',
-      threadId: 'mob-thread-1',
-      projectPath: '/canonical/switchboard',
-      title: 'Switchboard',
-    })
+  const getWorktree = vi.fn().mockResolvedValue(options.getResult ?? snapshot())
+  const createParentCheckout = vi.fn().mockResolvedValue({
+    creationId: 'create-parent-2',
+    threadId: 'mob-thread-1',
+    projectPath: '/canonical/switchboard',
+    title: 'Switchboard',
+  })
   const onReady = vi.fn()
 
   const coordinator = createNewSessionCreationCoordinator({
@@ -165,13 +159,15 @@ describe('React Native new-session creation coordinator', () => {
 
     expect(h.createWorktree).not.toHaveBeenCalled()
     expect(h.createParentCheckout).toHaveBeenCalledOnce()
-    expect(h.createParentCheckout).toHaveBeenCalledWith(expect.objectContaining({
-      creationId: 'create-mobile-1',
-      projectPath: '/projects/switchboard',
-      conversation: worktreeIntent.conversation,
-      provider: worktreeIntent.provider,
-      firstMessage: worktreeIntent.firstMessage,
-    }))
+    expect(h.createParentCheckout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        creationId: 'create-mobile-1',
+        projectPath: '/projects/switchboard',
+        conversation: worktreeIntent.conversation,
+        provider: worktreeIntent.provider,
+        firstMessage: worktreeIntent.firstMessage,
+      }),
+    )
   })
 
   it('queries the durable snapshot with the same creationId after an ambiguous disconnect', async () => {
@@ -251,11 +247,13 @@ describe('React Native new-session creation coordinator', () => {
     await h.coordinator.startInProject()
 
     expect(h.createParentCheckout).toHaveBeenCalledOnce()
-    expect(h.createParentCheckout).toHaveBeenCalledWith(expect.objectContaining({
-      creationId: 'create-parent-2',
-      projectPath: '/projects/switchboard',
-      firstMessage: 'Fix the launch transaction.',
-    }))
+    expect(h.createParentCheckout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        creationId: 'create-parent-2',
+        projectPath: '/projects/switchboard',
+        firstMessage: 'Fix the launch transaction.',
+      }),
+    )
     expect(h.coordinator.getState()).toMatchObject({
       creationId: 'create-parent-2',
       status: 'ready',

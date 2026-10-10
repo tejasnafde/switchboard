@@ -22,8 +22,12 @@ describe('RuntimeEventBus', () => {
     const seenA: string[] = []
     const seenB: string[] = []
 
-    bus.subscribe((e) => { if (e.type === 'content') seenA.push(`A:${e.text}`) })
-    bus.subscribe((e) => { if (e.type === 'content') seenB.push(`B:${e.text}`) })
+    bus.subscribe((e) => {
+      if (e.type === 'content') seenA.push(`A:${e.text}`)
+    })
+    bus.subscribe((e) => {
+      if (e.type === 'content') seenB.push(`B:${e.text}`)
+    })
 
     bus.publish(fakeContent('t1', 'hello'))
     bus.publish(fakeContent('t1', 'world'))
@@ -37,8 +41,12 @@ describe('RuntimeEventBus', () => {
     const a: string[] = []
     const b: string[] = []
 
-    const unsubA = bus.subscribe((e) => { if (e.type === 'content') a.push(e.text) })
-    bus.subscribe((e) => { if (e.type === 'content') b.push(e.text) })
+    const unsubA = bus.subscribe((e) => {
+      if (e.type === 'content') a.push(e.text)
+    })
+    bus.subscribe((e) => {
+      if (e.type === 'content') b.push(e.text)
+    })
 
     bus.publish(fakeContent('t1', 'first'))
     unsubA()
@@ -51,8 +59,12 @@ describe('RuntimeEventBus', () => {
   it('survives a subscriber that throws - siblings still receive', () => {
     const bus = new RuntimeEventBus()
     const seen: string[] = []
-    bus.subscribe(() => { throw new Error('boom') })
-    bus.subscribe((e) => { if (e.type === 'content') seen.push(e.text) })
+    bus.subscribe(() => {
+      throw new Error('boom')
+    })
+    bus.subscribe((e) => {
+      if (e.type === 'content') seen.push(e.text)
+    })
 
     // EventEmitter rethrows synchronously, so swallow at the publish site
     // for the test. The registry doesn't currently isolate failures - that
@@ -79,8 +91,12 @@ describe('RuntimeEventBus', () => {
   it('clear() removes every subscriber', () => {
     const bus = new RuntimeEventBus()
     const seen: string[] = []
-    bus.subscribe((e) => { if (e.type === 'content') seen.push(e.text) })
-    bus.subscribe((e) => { if (e.type === 'content') seen.push(e.text) })
+    bus.subscribe((e) => {
+      if (e.type === 'content') seen.push(e.text)
+    })
+    bus.subscribe((e) => {
+      if (e.type === 'content') seen.push(e.text)
+    })
     expect(bus.listenerCount()).toBe(2)
 
     bus.clear()

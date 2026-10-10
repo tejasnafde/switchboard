@@ -20,9 +20,7 @@ function initialPrompt(title: string, description: string): string {
   return cleanTitle || cleanDescription || 'Start working on this card.'
 }
 
-export function buildKanbanCardCreateSubmission(
-  fields: KanbanCardCreateFields,
-): KanbanCardCreate {
+export function buildKanbanCardCreateSubmission(fields: KanbanCardCreateFields): KanbanCardCreate {
   return {
     projectPath: fields.projectPath,
     title: fields.title,

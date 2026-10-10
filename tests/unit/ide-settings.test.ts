@@ -37,7 +37,9 @@ describe('mergeUserSettings', () => {
   })
 
   it('returns null (do not write) when the existing file is unparseable - VS Code settings are JSONC and users hand-edit comments in; clobbering them with defaults is data loss', () => {
-    expect(mergeUserSettings('// work laptop\n{ "editor.fontSize": 18 }', { 'workbench.colorTheme': 'Default Dark Modern' })).toBeNull()
+    expect(
+      mergeUserSettings('// work laptop\n{ "editor.fontSize": 18 }', { 'workbench.colorTheme': 'Default Dark Modern' }),
+    ).toBeNull()
     expect(mergeUserSettings('{nope', {})).toBeNull()
   })
 })

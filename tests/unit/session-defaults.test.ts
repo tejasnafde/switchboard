@@ -20,12 +20,13 @@ import {
 } from '../../src/shared/session-defaults'
 
 describe('resolveSessionDefaults', () => {
-  it('takes the requested effort, else the conversation\'s, and never a level it does not know', () => {
-    const tiers = (requested?: string, conversation?: string) => resolveSessionDefaults({
-      requested: { reasoningEffort: requested },
-      conversation: { reasoningEffort: conversation },
-      machine: {},
-    }).reasoningEffort
+  it("takes the requested effort, else the conversation's, and never a level it does not know", () => {
+    const tiers = (requested?: string, conversation?: string) =>
+      resolveSessionDefaults({
+        requested: { reasoningEffort: requested },
+        conversation: { reasoningEffort: conversation },
+        machine: {},
+      }).reasoningEffort
     expect(tiers('low', 'max')).toBe('low')
     expect(tiers(undefined, 'xhigh')).toBe('xhigh')
     expect(tiers('ultra', 'high')).toBe('high')

@@ -14,13 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as FileSystem from 'expo-file-system/legacy'
 import { createLogger } from '@shared/logger'
 import { base64DecodedBytes } from '@shared/stt'
-import {
-  ensureVoicePermission,
-  isVoiceAvailable,
-  joinDraft,
-  startListening,
-  type VoiceSession,
-} from '../lib/voice'
+import { ensureVoicePermission, isVoiceAvailable, joinDraft, startListening, type VoiceSession } from '../lib/voice'
 import { audioMimeType, refineSkipReason, resolveTranscriptSwap } from '../lib/transcript'
 import { getClient } from '../stores/connections'
 
@@ -174,10 +168,7 @@ export function useDictation({
         // surface as an unhandled rejection; the race path reports the live one.
         call.catch((err) => log.debug('transcribe settled late', err))
         const timeout = new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error('backend did not answer in time')),
-            REFINE_TIMEOUT_MS,
-          )
+          timer = setTimeout(() => reject(new Error('backend did not answer in time')), REFINE_TIMEOUT_MS)
         })
         const result = await Promise.race([call, timeout])
         if (!result.ok) {

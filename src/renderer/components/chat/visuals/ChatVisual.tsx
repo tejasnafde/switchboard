@@ -7,13 +7,7 @@
  * theme and source, so re-renders and streaming never redraw one.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent, type RefObject } from 'react'
-import {
-  chartDataText,
-  parseChartSpec,
-  renderChart,
-  type ChartPalette,
-  type VisualKind,
-} from '@shared/chat-visuals'
+import { chartDataText, parseChartSpec, renderChart, type ChartPalette, type VisualKind } from '@shared/chat-visuals'
 import { createRendererLogger } from '../../../logger'
 import { useLayoutStore } from '../../../stores/layout-store'
 import { renderDiagram, type DiagramResult, type DiagramTheme } from './diagram-render'
@@ -25,7 +19,16 @@ const CHART_PALETTE: ChartPalette = {
   muted: 'var(--text-secondary)',
   grid: 'var(--border)',
   font: 'var(--font-sans)',
-  series: ['var(--accent)', 'var(--success)', 'var(--warning)', '#a371f7', '#39c5cf', '#db61a2', 'var(--error)', 'var(--text-muted)'],
+  series: [
+    'var(--accent)',
+    'var(--success)',
+    'var(--warning)',
+    '#a371f7',
+    '#39c5cf',
+    '#db61a2',
+    'var(--error)',
+    'var(--text-muted)',
+  ],
 }
 
 const CACHE_LIMIT = 64
@@ -74,16 +77,22 @@ function useInView(enabled: boolean): [RefObject<HTMLDivElement | null>, boolean
   useEffect(() => {
     const el = ref.current
     if (seen || !el) return
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) setSeen(true)
-    }, { rootMargin: '200px' })
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setSeen(true)
+      },
+      { rootMargin: '200px' },
+    )
     observer.observe(el)
     return () => observer.disconnect()
   }, [seen])
   return [ref, seen]
 }
 
-type Drawn = { status: 'pending' } | { status: 'ok'; markup: string; copyText: string } | { status: 'error'; error: string }
+type Drawn =
+  | { status: 'pending' }
+  | { status: 'ok'; markup: string; copyText: string }
+  | { status: 'error'; error: string }
 
 function useDrawn(kind: VisualKind, source: string, visible: boolean): Drawn {
   const themeKey = useThemeClass()
@@ -100,15 +109,25 @@ function useDrawn(kind: VisualKind, source: string, visible: boolean): Drawn {
   useEffect(() => {
     if (kind !== 'mermaid' || !visible) return
     let current = true
-    cachedDiagram(source, themeKey).then((result) => {
-      if (!current) return
-      if (!result.ok) log.debug('diagram did not draw', { bytes: new TextEncoder().encode(source).length })
-      setDiagram({ key, drawn: result.ok ? { status: 'ok', markup: result.svg, copyText: result.svg } : { status: 'error', error: result.error } })
-    }, (error: unknown) => {
-      log.warn('diagram render failed', error)
-      if (current) setDiagram({ key, drawn: { status: 'error', error: 'The diagram could not be drawn.' } })
-    })
-    return () => { current = false }
+    cachedDiagram(source, themeKey).then(
+      (result) => {
+        if (!current) return
+        if (!result.ok) log.debug('diagram did not draw', { bytes: new TextEncoder().encode(source).length })
+        setDiagram({
+          key,
+          drawn: result.ok
+            ? { status: 'ok', markup: result.svg, copyText: result.svg }
+            : { status: 'error', error: result.error },
+        })
+      },
+      (error: unknown) => {
+        log.warn('diagram render failed', error)
+        if (current) setDiagram({ key, drawn: { status: 'error', error: 'The diagram could not be drawn.' } })
+      },
+    )
+    return () => {
+      current = false
+    }
   }, [kind, source, themeKey, visible, key])
 
   if (chart) return chart
@@ -120,9 +139,14 @@ function blockNavigation(event: MouseEvent): void {
   if ((event.target as Element).closest?.('a')) event.preventDefault()
 }
 
-const headerButton = 'rounded-[5px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[7px] py-[1px] text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+const headerButton =
+  'rounded-[5px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[7px] py-[1px] text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
 
-export function ChatVisual({ kind, source, variant = 'inline' }: {
+export function ChatVisual({
+  kind,
+  source,
+  variant = 'inline',
+}: {
   kind: VisualKind
   source: string
   variant?: 'inline' | 'pane'
@@ -142,9 +166,12 @@ export function ChatVisual({ kind, source, variant = 'inline' }: {
 
   const copy = (): void => {
     if (drawn.status !== 'ok') return
-    navigator.clipboard.writeText(drawn.copyText).then(() => setCopied(true), (error: unknown) => {
-      log.warn('visual copy failed', error)
-    })
+    navigator.clipboard.writeText(drawn.copyText).then(
+      () => setCopied(true),
+      (error: unknown) => {
+        log.warn('visual copy failed', error)
+      },
+    )
   }
 
   const sourceView = showSource || drawn.status === 'error'
@@ -155,38 +182,62 @@ export function ChatVisual({ kind, source, variant = 'inline' }: {
     <div
       ref={ref}
       data-chat-visual={kind}
-      className={pane
-        ? 'flex h-full w-full flex-col overflow-hidden bg-[var(--bg-primary)]'
-        : 'my-[10px] w-[640px] max-w-full overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--bg-secondary)]'}
+      className={
+        pane
+          ? 'flex h-full w-full flex-col overflow-hidden bg-[var(--bg-primary)]'
+          : 'my-[10px] w-[640px] max-w-full overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--bg-secondary)]'
+      }
     >
       <div className="flex items-center gap-[8px] border-b border-[var(--border)] px-[10px] py-[6px] text-[12px] text-[var(--text-secondary)]">
         <span className="flex-1">{noun}</span>
         {drawn.status === 'ok' && (
           <>
-            <button type="button" className={headerButton} aria-pressed={showSource} onClick={() => setShowSource((s) => !s)}>Source</button>
+            <button
+              type="button"
+              className={headerButton}
+              aria-pressed={showSource}
+              onClick={() => setShowSource((s) => !s)}
+            >
+              Source
+            </button>
             <button type="button" className={headerButton} aria-live="polite" onClick={copy}>
               {copied ? 'Copied' : kind === 'mermaid' ? 'Copy SVG' : 'Copy data'}
             </button>
           </>
         )}
-        {pane
-          ? <button type="button" className={headerButton} onClick={() => useLayoutStore.getState().closePaneVisual()}>Close</button>
-          : <button type="button" className={headerButton} onClick={() => useLayoutStore.getState().openPaneVisual({ kind, source })}>Open in pane</button>}
+        {pane ? (
+          <button type="button" className={headerButton} onClick={() => useLayoutStore.getState().closePaneVisual()}>
+            Close
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={headerButton}
+            onClick={() => useLayoutStore.getState().openPaneVisual({ kind, source })}
+          >
+            Open in pane
+          </button>
+        )}
       </div>
       {drawn.status === 'error' && (
         <div role="alert" className="whitespace-pre-wrap px-[10px] pt-[8px] text-[12px] text-[var(--error)]">
-          {kind === 'mermaid' ? 'This diagram could not be drawn: ' : 'This chart could not be drawn: '}{drawn.error}
+          {kind === 'mermaid' ? 'This diagram could not be drawn: ' : 'This chart could not be drawn: '}
+          {drawn.error}
         </div>
       )}
       {sourceView ? (
-        <pre className="m-0 overflow-auto p-[10px] font-[family-name:var(--font-mono)] text-[12px] text-[var(--text-primary)]">{source}</pre>
+        <pre className="m-0 overflow-auto p-[10px] font-[family-name:var(--font-mono)] text-[12px] text-[var(--text-primary)]">
+          {source}
+        </pre>
       ) : drawn.status === 'pending' ? (
         <div className="p-[10px] text-[12px] text-[var(--text-muted)]">Drawing {noun.toLowerCase()}...</div>
       ) : (
         <div
-          className={pane
-            ? 'flex-1 overflow-auto p-[16px] [&_svg]:h-auto [&_svg]:max-w-none'
-            : 'max-h-[480px] overflow-auto p-[10px] [&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:max-h-[460px]'}
+          className={
+            pane
+              ? 'flex-1 overflow-auto p-[16px] [&_svg]:h-auto [&_svg]:max-w-none'
+              : 'max-h-[480px] overflow-auto p-[10px] [&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:max-h-[460px]'
+          }
           onClick={blockNavigation}
           dangerouslySetInnerHTML={innerHtml}
         />

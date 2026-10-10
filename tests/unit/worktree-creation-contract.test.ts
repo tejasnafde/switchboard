@@ -55,9 +55,7 @@ function expectInvalid(value: unknown, code: string, path?: string): void {
   const parsed = parseWorktreeCreationRequest(value)
   expect(parsed.ok).toBe(false)
   if (parsed.ok) return
-  expect(parsed.issues).toEqual(expect.arrayContaining([
-    expect.objectContaining({ code, ...(path ? { path } : {}) }),
-  ]))
+  expect(parsed.issues).toEqual(expect.arrayContaining([expect.objectContaining({ code, ...(path ? { path } : {}) })]))
 }
 
 describe('worktree creation request contract', () => {
@@ -182,10 +180,14 @@ describe('worktree creation request contract', () => {
     ['main\nother', 'checkout.baseRef'],
   ])('rejects unsafe base ref %j', (baseRef, path) => {
     const request = conversationRequest()
-    expectInvalid({
-      ...request,
-      checkout: { ...request.checkout, baseRef },
-    }, 'invalid_git_ref', path)
+    expectInvalid(
+      {
+        ...request,
+        checkout: { ...request.checkout, baseRef },
+      },
+      'invalid_git_ref',
+      path,
+    )
   })
 
   it.each([
@@ -197,31 +199,43 @@ describe('worktree creation request contract', () => {
     ['src\\main', 'backslash'],
   ])('rejects unsafe sparse directory %j (%s)', (directory) => {
     const request = conversationRequest()
-    expectInvalid({
-      ...request,
-      checkout: {
-        ...request.checkout,
-        sparseCheckout: { mode: 'cone', directories: [directory] },
+    expectInvalid(
+      {
+        ...request,
+        checkout: {
+          ...request.checkout,
+          sparseCheckout: { mode: 'cone', directories: [directory] },
+        },
       },
-    }, 'invalid_sparse_path', 'checkout.sparseCheckout.directories[0]')
+      'invalid_sparse_path',
+      'checkout.sparseCheckout.directories[0]',
+    )
   })
 
   it('rejects unsupported sparse modes and an empty normalized directory set', () => {
     const request = conversationRequest()
-    expectInvalid({
-      ...request,
-      checkout: {
-        ...request.checkout,
-        sparseCheckout: { mode: 'non-cone', directories: ['src'] },
+    expectInvalid(
+      {
+        ...request,
+        checkout: {
+          ...request.checkout,
+          sparseCheckout: { mode: 'non-cone', directories: ['src'] },
+        },
       },
-    }, 'invalid_value', 'checkout.sparseCheckout.mode')
-    expectInvalid({
-      ...request,
-      checkout: {
-        ...request.checkout,
-        sparseCheckout: { mode: 'cone', directories: [] },
+      'invalid_value',
+      'checkout.sparseCheckout.mode',
+    )
+    expectInvalid(
+      {
+        ...request,
+        checkout: {
+          ...request.checkout,
+          sparseCheckout: { mode: 'cone', directories: [] },
+        },
       },
-    }, 'required', 'checkout.sparseCheckout.directories')
+      'required',
+      'checkout.sparseCheckout.directories',
+    )
   })
 
   it.each([
@@ -230,25 +244,30 @@ describe('worktree creation request contract', () => {
     ['fork', 'kanban'],
   ] as const)('rejects %s ownership for %s purpose', (ownerKind, purpose) => {
     const request = conversationRequest()
-    const owner = ownerKind === 'conversation'
-      ? request.owner
-      : ownerKind === 'kanban-card'
-        ? { kind: 'kanban-card', cardId: 'card-1' }
-        : {
-            kind: 'fork',
-            conversationId: 'fork-1',
-            parentConversationId: 'conversation-1',
-            upToIndex: 2,
-          }
+    const owner =
+      ownerKind === 'conversation'
+        ? request.owner
+        : ownerKind === 'kanban-card'
+          ? { kind: 'kanban-card', cardId: 'card-1' }
+          : {
+              kind: 'fork',
+              conversationId: 'fork-1',
+              parentConversationId: 'conversation-1',
+              upToIndex: 2,
+            }
     expectInvalid({ ...request, owner, purpose }, 'owner_purpose_mismatch', 'owner.kind')
   })
 
   it('rejects mismatched repository and provenance machine bindings', () => {
     const request = conversationRequest()
-    expectInvalid({
-      ...request,
-      provenance: { ...request.provenance, machineId: 'another-machine' },
-    }, 'machine_mismatch', 'provenance.machineId')
+    expectInvalid(
+      {
+        ...request,
+        provenance: { ...request.provenance, machineId: 'another-machine' },
+      },
+      'machine_mismatch',
+      'provenance.machineId',
+    )
   })
 
   it('canonicalizes equivalent parsed requests identically regardless of object key order', () => {
@@ -271,8 +290,7 @@ describe('worktree creation request contract', () => {
     expect(first.ok).toBe(true)
     expect(second.ok).toBe(true)
     if (!first.ok || !second.ok) return
-    expect(canonicalizeWorktreeCreationRequest(first.value))
-      .toBe(canonicalizeWorktreeCreationRequest(second.value))
+    expect(canonicalizeWorktreeCreationRequest(first.value)).toBe(canonicalizeWorktreeCreationRequest(second.value))
   })
 
   it('keeps request time for audit but excludes it from idempotency identity', () => {
@@ -284,10 +302,8 @@ describe('worktree creation request contract', () => {
     expect(second.ok).toBe(true)
     if (!first.ok || !second.ok) return
 
-    expect(canonicalizeWorktreeCreationRequest(first.value))
-      .not.toBe(canonicalizeWorktreeCreationRequest(second.value))
-    expect(canonicalizeWorktreeCreationIdentity(first.value))
-      .toBe(canonicalizeWorktreeCreationIdentity(second.value))
+    expect(canonicalizeWorktreeCreationRequest(first.value)).not.toBe(canonicalizeWorktreeCreationRequest(second.value))
+    expect(canonicalizeWorktreeCreationIdentity(first.value)).toBe(canonicalizeWorktreeCreationIdentity(second.value))
   })
 
   it('persists backend terminal authority without changing the client intent identity', () => {
@@ -303,17 +319,21 @@ describe('worktree creation request contract', () => {
     expect(skip.ok).toBe(true)
     if (!provision.ok || !skip.ok) return
 
-    expect(canonicalizeWorktreeCreationRequest(provision.value))
-      .not.toBe(canonicalizeWorktreeCreationRequest(skip.value))
-    expect(canonicalizeWorktreeCreationIdentity(provision.value))
-      .toBe(canonicalizeWorktreeCreationIdentity(skip.value))
+    expect(canonicalizeWorktreeCreationRequest(provision.value)).not.toBe(
+      canonicalizeWorktreeCreationRequest(skip.value),
+    )
+    expect(canonicalizeWorktreeCreationIdentity(provision.value)).toBe(canonicalizeWorktreeCreationIdentity(skip.value))
   })
 
   it('rejects an unknown persisted terminal policy', () => {
-    expectInvalid({
-      ...conversationRequest(),
-      launch: { ...conversationRequest().launch, terminalPolicy: 'force' },
-    }, 'invalid_value', 'launch.terminalPolicy')
+    expectInvalid(
+      {
+        ...conversationRequest(),
+        launch: { ...conversationRequest().launch, terminalPolicy: 'force' },
+      },
+      'invalid_value',
+      'launch.terminalPolicy',
+    )
   })
 
   it('changes idempotency identity when a behavior-bearing field changes', () => {
@@ -325,7 +345,8 @@ describe('worktree creation request contract', () => {
     expect(second.ok).toBe(true)
     if (!first.ok || !second.ok) return
 
-    expect(canonicalizeWorktreeCreationIdentity(first.value))
-      .not.toBe(canonicalizeWorktreeCreationIdentity(second.value))
+    expect(canonicalizeWorktreeCreationIdentity(first.value)).not.toBe(
+      canonicalizeWorktreeCreationIdentity(second.value),
+    )
   })
 })

@@ -78,11 +78,21 @@ export interface FileSetting {
 }
 
 const flagSetting = (key: string, label: string, defaultValue: 'true' | 'false'): FileSetting => ({
-  key, label, defaultValue, type: 'boolean', accepts: (v) => v === 'true' || v === 'false', expected: 'true or false',
+  key,
+  label,
+  defaultValue,
+  type: 'boolean',
+  accepts: (v) => v === 'true' || v === 'false',
+  expected: 'true or false',
 })
 
 const choiceSetting = (key: string, label: string, defaultValue: string, choices: readonly string[]): FileSetting => ({
-  key, label, defaultValue, type: 'string', choices, accepts: (v) => choices.includes(v),
+  key,
+  label,
+  defaultValue,
+  type: 'string',
+  choices,
+  accepts: (v) => choices.includes(v),
   expected: `one of ${choices.map((c) => `"${c}"`).join(', ')}`,
 })
 
@@ -100,21 +110,45 @@ const THEMES = ['dark', 'light', 'translucent', 'system'] as const
 export const FILE_SETTINGS: readonly FileSetting[] = [
   flagSetting('notificationsEnabled', 'Notify when an agent finishes a turn', 'true'),
   {
-    key: 'sidebar.recentSessionLimit', label: 'Recent conversations', defaultValue: '4', type: 'number',
-    choices: RECENT_LIMITS, accepts: (v) => RECENT_LIMITS.some((n) => String(n) === v), expected: `one of ${RECENT_LIMITS.join(', ')}`,
+    key: 'sidebar.recentSessionLimit',
+    label: 'Recent conversations',
+    defaultValue: '4',
+    type: 'number',
+    choices: RECENT_LIMITS,
+    accepts: (v) => RECENT_LIMITS.some((n) => String(n) === v),
+    expected: `one of ${RECENT_LIMITS.join(', ')}`,
   },
   {
-    key: 'ide.idleTtlMinutes', label: 'Shut down the embedded IDE when hidden after (minutes)', defaultValue: '5', type: 'number',
-    accepts: (v) => /^\d+(\.\d+)?$/.test(v) && Number(v) > 0, expected: 'a number of minutes above 0',
+    key: 'ide.idleTtlMinutes',
+    label: 'Shut down the embedded IDE when hidden after (minutes)',
+    defaultValue: '5',
+    type: 'number',
+    accepts: (v) => /^\d+(\.\d+)?$/.test(v) && Number(v) > 0,
+    expected: 'a number of minutes above 0',
   },
   flagSetting('analytics.enabled', 'Share anonymous usage counts', 'true'),
   choiceSetting('theme', 'Theme', 'dark', THEMES),
-  choiceSetting(FOLLOW_UP_DEFAULT_KEY, 'Follow-up while the agent works', scopable(FOLLOW_UP_DEFAULT_KEY), ['steer', 'queue']),
+  choiceSetting(FOLLOW_UP_DEFAULT_KEY, 'Follow-up while the agent works', scopable(FOLLOW_UP_DEFAULT_KEY), [
+    'steer',
+    'queue',
+  ]),
   flagSetting('assistantStreamingEnabled', 'Stream assistant messages', 'true'),
   choiceSetting(PEER_LINK_DURATION_SETTING, 'Link duration', '30m', PEER_LINK_DURATION_CHOICES),
-  choiceSetting(SETTING_SESSION_ENV_MODE, 'Recommended workspace', scopable(SETTING_SESSION_ENV_MODE), ['local', 'worktree']),
-  choiceSetting(SETTING_DEFAULT_RUNTIME_MODE, 'Runtime mode for new chats', scopable(SETTING_DEFAULT_RUNTIME_MODE), RUNTIME_MODES),
-  flagSetting(SETTING_SHOW_FILE_DIFFS, 'Show file diff cards in chat', scopable(SETTING_SHOW_FILE_DIFFS) as 'true' | 'false'),
+  choiceSetting(SETTING_SESSION_ENV_MODE, 'Recommended workspace', scopable(SETTING_SESSION_ENV_MODE), [
+    'local',
+    'worktree',
+  ]),
+  choiceSetting(
+    SETTING_DEFAULT_RUNTIME_MODE,
+    'Runtime mode for new chats',
+    scopable(SETTING_DEFAULT_RUNTIME_MODE),
+    RUNTIME_MODES,
+  ),
+  flagSetting(
+    SETTING_SHOW_FILE_DIFFS,
+    'Show file diff cards in chat',
+    scopable(SETTING_SHOW_FILE_DIFFS) as 'true' | 'false',
+  ),
   flagSetting('tour.autoplay', 'Auto-open the tour after a release adds new features', 'true'),
 ]
 
@@ -232,7 +266,8 @@ function shortcutRefusal(
   const command = byId.get(id)
   if (!command) return 'not a command in this version of Switchboard'
   if (!isRebindable(command)) return 'this shortcut cannot be rebound'
-  if (!Array.isArray(value) || !value.every((b) => typeof b === 'string')) return 'expected a list of keys, like ["Mod+Shift+P"]'
+  if (!Array.isArray(value) || !value.every((b) => typeof b === 'string'))
+    return 'expected a list of keys, like ["Mod+Shift+P"]'
   for (const binding of value as string[]) {
     if (!parseBinding(binding)) return `"${binding}" is not a key combination`
     const reserved = reservedShortcutReason(binding, platform)
@@ -276,7 +311,8 @@ export function planSettingsFileApply(
     return null
   }
   for (const key of Object.keys(parsed)) {
-    if (!['$schema', 'settings', 'projects', 'keyboard'].includes(key)) skipped.push({ entry: key, reason: 'not a section of this file' })
+    if (!['$schema', 'settings', 'projects', 'keyboard'].includes(key))
+      skipped.push({ entry: key, reason: 'not a section of this file' })
   }
 
   // Global settings.
@@ -332,12 +368,14 @@ export function planSettingsFileApply(
           skipped.push({ entry: `projects.${projectPath}.${key}`, reason: `expected ${setting.expected}` })
           continue
         }
-        if (current.projects[projectKey]?.[key] !== stored) ops.push({ kind: 'project-set', projectPath, key, value: stored })
+        if (current.projects[projectKey]?.[key] !== stored)
+          ops.push({ kind: 'project-set', projectPath, key, value: stored })
       }
     }
     for (const [projectKey, overrides] of Object.entries(current.projects)) {
       for (const key of Object.keys(overrides)) {
-        if (isScopableSetting(key) && !kept.get(projectKey)?.has(key)) ops.push({ kind: 'project-remove', projectKey, key })
+        if (isScopableSetting(key) && !kept.get(projectKey)?.has(key))
+          ops.push({ kind: 'project-remove', projectKey, key })
       }
     }
   }
@@ -372,13 +410,20 @@ export function planSettingsFileApply(
 }
 
 function sortKeys(obj: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.keys(obj).sort().map((k) => [k, obj[k]]))
+  return Object.fromEntries(
+    Object.keys(obj)
+      .sort()
+      .map((k) => [k, obj[k]]),
+  )
 }
 
 /** One line for the banner: the first few refusals, and how many more. */
 export function describeSkipped(skipped: readonly SkippedEntry[], limit = 2): string {
   if (skipped.length === 0) return ''
-  const shown = skipped.slice(0, limit).map((s) => `${s.entry} (${s.reason})`).join('; ')
+  const shown = skipped
+    .slice(0, limit)
+    .map((s) => `${s.entry} (${s.reason})`)
+    .join('; ')
   const more = skipped.length - limit
   return more > 0 ? `${shown}; and ${more} more` : shown
 }
@@ -419,14 +464,20 @@ export function settingsFileSchema(platform: ShortcutPlatform = currentPlatform(
         },
       },
       keyboard: {
-        description: 'Rebinds, by command id. Keys are written Mod+Shift+Alt+Key (Mod is Cmd on macOS, Ctrl elsewhere); [] unbinds.',
+        description:
+          'Rebinds, by command id. Keys are written Mod+Shift+Alt+Key (Mod is Cmd on macOS, Ctrl elsewhere); [] unbinds.',
         type: 'object',
         additionalProperties: false,
-        properties: Object.fromEntries(rebindable.map((c) => [c.id, {
-          description: `${c.label}. Default: ${c.bindings.join(', ')}.`,
-          type: 'array',
-          items: { type: 'string' },
-        }])),
+        properties: Object.fromEntries(
+          rebindable.map((c) => [
+            c.id,
+            {
+              description: `${c.label}. Default: ${c.bindings.join(', ')}.`,
+              type: 'array',
+              items: { type: 'string' },
+            },
+          ]),
+        ),
       },
     },
   }
@@ -446,15 +497,25 @@ export interface SettingsFileStatus {
   writeFailed: boolean
 }
 
-export const IDLE_SETTINGS_FILE_STATUS: SettingsFileStatus = { path: null, parseError: null, skipped: [], writeSkipped: false, writeFailed: false }
+export const IDLE_SETTINGS_FILE_STATUS: SettingsFileStatus = {
+  path: null,
+  parseError: null,
+  skipped: [],
+  writeSkipped: false,
+  writeFailed: false,
+}
 
 /** The banner's one line, or null when there is nothing to say. */
 export function settingsFileBanner(status: SettingsFileStatus): string | null {
   const parts: string[] = []
   if (status.parseError) parts.push(`settings.json was not applied: ${status.parseError}. Fix it and save again.`)
   else if (status.skipped.length > 0) parts.push(`settings.json skipped ${describeSkipped(status.skipped)}.`)
-  if (status.writeSkipped) parts.push('A change made here was not written to settings.json, because it has edits that were not applied.')
-  else if (status.writeFailed) parts.push('A change made here could not be written to settings.json; the log has the error. The next change or Open tries again.')
+  if (status.writeSkipped)
+    parts.push('A change made here was not written to settings.json, because it has edits that were not applied.')
+  else if (status.writeFailed)
+    parts.push(
+      'A change made here could not be written to settings.json; the log has the error. The next change or Open tries again.',
+    )
   return parts.length > 0 ? parts.join(' ') : null
 }
 

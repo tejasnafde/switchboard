@@ -19,8 +19,7 @@ export function createWorktreeManagerApi(transport: Transport) {
       acknowledged: WorktreeRemovalAck | null
     }): Promise<{ ok: true; warning?: string } | { ok: false; error: string }> =>
       transport.invoke(WorktreeManagerChannels.REMOVE, request),
-    getProtection: (): Promise<WorktreeProtection> =>
-      transport.invoke(WorktreeManagerChannels.GET_PROTECTION),
+    getProtection: (): Promise<WorktreeProtection> => transport.invoke(WorktreeManagerChannels.GET_PROTECTION),
     setProtection: (patch: WorktreeProtectionPatch): Promise<WorktreeProtection> =>
       transport.invoke(WorktreeManagerChannels.SET_PROTECTION, patch),
   }

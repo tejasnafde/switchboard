@@ -51,7 +51,7 @@ describe('ensureMirror', () => {
   it('persists freshly assigned cell ids back into the notebook', () => {
     writeFileSync(
       join(repo, 'nb.ipynb'),
-      nbJson([{ cell_type: 'code', source: ['x = 1'], metadata: {}, outputs: [], execution_count: null }])
+      nbJson([{ cell_type: 'code', source: ['x = 1'], metadata: {}, outputs: [], execution_count: null }]),
     )
 
     sync.ensureMirror('nb.ipynb')
@@ -88,7 +88,10 @@ describe('onNotebookChanged', () => {
   it('ignores the echo of its own notebook write', () => {
     writeFileSync(join(repo, 'nb.ipynb'), nbJson([codeCell('a', 'x = 1')]))
     sync.ensureMirror('nb.ipynb')
-    writeFileSync(join(repo, '.switchboard/notebooks/nb.py'), readFileSync(join(repo, '.switchboard/notebooks/nb.py'), 'utf-8').replace('x = 1', 'x = 2'))
+    writeFileSync(
+      join(repo, '.switchboard/notebooks/nb.py'),
+      readFileSync(join(repo, '.switchboard/notebooks/nb.py'), 'utf-8').replace('x = 1', 'x = 2'),
+    )
     sync.onMirrorChanged('.switchboard/notebooks/nb.py') // writes nb.ipynb -> own content on disk
 
     const res = sync.onNotebookChanged('nb.ipynb')
@@ -142,7 +145,7 @@ describe('onMirrorChanged', () => {
     const notebookBefore = readFileSync(join(repo, 'nb.ipynb'), 'utf-8')
     writeFileSync(
       join(repo, '.switchboard/notebooks/nb.py'),
-      '# %% [cellbridge_id=rogue] [type=code] [lang=python]\nprint("rewrite")\n'
+      '# %% [cellbridge_id=rogue] [type=code] [lang=python]\nprint("rewrite")\n',
     )
 
     const res = sync.onMirrorChanged('.switchboard/notebooks/nb.py')
@@ -211,7 +214,7 @@ describe('onMirrorUnlinked', () => {
     mkdirSync(join(repo, '.switchboard/notebooks'), { recursive: true })
     writeFileSync(
       join(repo, '.switchboard/notebooks/fresh.py'),
-      '# %% [cellbridge_id=n1] [type=code] [lang=python]\nprint("hi")\n'
+      '# %% [cellbridge_id=n1] [type=code] [lang=python]\nprint("hi")\n',
     )
     sync.onMirrorChanged('.switchboard/notebooks/fresh.py')
     expect(existsSync(join(repo, 'fresh.ipynb'))).toBe(true)
@@ -239,7 +242,10 @@ describe('explainsNotebookContent', () => {
   it('recognizes notebook content this engine wrote, and nothing else', () => {
     writeFileSync(join(repo, 'nb.ipynb'), nbJson([codeCell('a', 'x = 1')]))
     sync.ensureMirror('nb.ipynb')
-    writeFileSync(join(repo, '.switchboard/notebooks/nb.py'), readFileSync(join(repo, '.switchboard/notebooks/nb.py'), 'utf-8').replace('x = 1', 'x = 2'))
+    writeFileSync(
+      join(repo, '.switchboard/notebooks/nb.py'),
+      readFileSync(join(repo, '.switchboard/notebooks/nb.py'), 'utf-8').replace('x = 1', 'x = 2'),
+    )
     sync.onMirrorChanged('.switchboard/notebooks/nb.py')
     const written = readFileSync(join(repo, 'nb.ipynb'), 'utf-8')
 
@@ -253,7 +259,7 @@ describe('onMirrorChanged for a brand-new notebook', () => {
     mkdirSync(join(repo, '.switchboard/notebooks'), { recursive: true })
     writeFileSync(
       join(repo, '.switchboard/notebooks/fresh.py'),
-      '# %% [cellbridge_id=n1] [type=code] [lang=python]\nprint("hi")\n'
+      '# %% [cellbridge_id=n1] [type=code] [lang=python]\nprint("hi")\n',
     )
 
     const res = sync.onMirrorChanged('.switchboard/notebooks/fresh.py')

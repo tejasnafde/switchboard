@@ -25,14 +25,17 @@ vi.mock('../../src/main/db/provider-instances', () => ({
     env: {},
     oauthDir: null,
   }),
-  getProviderInstanceFull: (id: string) => id === 'desktop-only' ? null : ({
-    id,
-    agentType: id.startsWith('codex-') ? 'codex' : id.startsWith('opencode-') ? 'opencode' : 'claude-code',
-    displayName: id === 'claude-personal' ? 'Personal' : 'Work',
-    enabled: true,
-    env: {},
-    oauthDir: null,
-  }),
+  getProviderInstanceFull: (id: string) =>
+    id === 'desktop-only'
+      ? null
+      : {
+          id,
+          agentType: id.startsWith('codex-') ? 'codex' : id.startsWith('opencode-') ? 'opencode' : 'claude-code',
+          displayName: id === 'claude-personal' ? 'Personal' : 'Work',
+          enabled: true,
+          env: {},
+          oauthDir: null,
+        },
   listOauthDirsForAgent: () => [],
 }))
 vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
@@ -40,7 +43,14 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
   return { ...actual, remoteProviderLoginPrompt: () => null }
 })
 /** Records what the registry persists, so a missing method cannot pass as a log line. */
-const saved: Array<{ id: string; conversationId: string; role: string; content: string; images?: string; displayBody?: string }> = []
+const saved: Array<{
+  id: string
+  conversationId: string
+  role: string
+  content: string
+  images?: string
+  displayBody?: string
+}> = []
 let allowUserTurnPersistence = true
 let conversationExists = true
 let resolvedRootThreadId: string | null = null
@@ -66,15 +76,26 @@ let claudePreparationResult: { ok: true; copied: boolean } | { ok: false; reason
 let allowInstancePersistence = true
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
-  recordConversationSegment: (segment: typeof recordedSegments[number]) => {
-    if (!recordedSegments.some((existing) =>
-      existing.conversationId === segment.conversationId &&
-      existing.provider === segment.provider &&
-      existing.providerSessionId === segment.providerSessionId
-    )) recordedSegments.push(segment)
+  recordConversationSegment: (segment: (typeof recordedSegments)[number]) => {
+    if (
+      !recordedSegments.some(
+        (existing) =>
+          existing.conversationId === segment.conversationId &&
+          existing.provider === segment.provider &&
+          existing.providerSessionId === segment.providerSessionId,
+      )
+    )
+      recordedSegments.push(segment)
   },
   updateConversationSessionId: () => {},
-  saveMessageIfAbsent: (id: string, conversationId: string, role: string, content: string, images?: string, displayBody?: string) => {
+  saveMessageIfAbsent: (
+    id: string,
+    conversationId: string,
+    role: string,
+    content: string,
+    images?: string,
+    displayBody?: string,
+  ) => {
     if (role === 'user' && !allowUserTurnPersistence) return false
     saved.push({ id, conversationId, role, content, images, displayBody })
     return true
@@ -89,14 +110,14 @@ vi.mock('../../src/main/db/database', () => ({
   getConversationExecutionRoot: () => null,
   getConversationProviderInstanceId: () => null,
   getConversationTitle: () => null,
-  getConversationById: (id: string) => conversationExists ? { id } : undefined,
+  getConversationById: (id: string) => (conversationExists ? { id } : undefined),
   resolveRootThreadId: (id: string) => resolvedRootThreadId ?? id,
   getSetting: () => null,
   setConversationProviderInstanceId: (threadId: string, instanceId: string) => {
     if (!allowInstancePersistence) throw new Error('database is read-only')
     persistedInstanceSelections.push({ threadId, instanceId })
   },
-  commitConversationProviderSwitch: (input: typeof profileSwitchCommits[number]) => {
+  commitConversationProviderSwitch: (input: (typeof profileSwitchCommits)[number]) => {
     if (!allowInstancePersistence) throw new Error('database is read-only')
     profileSwitchCommits.push(input)
     persistedInstanceSelections.push({ threadId: input.conversationId, instanceId: input.providerInstanceId })
@@ -107,11 +128,15 @@ vi.mock('../../src/main/db/database', () => ({
         providerSessionId: input.providerSessionId,
         providerInstanceId: input.providerInstanceId,
       }
-      if (!recordedSegments.some((existing) =>
-        existing.conversationId === segment.conversationId &&
-        existing.provider === segment.provider &&
-        existing.providerSessionId === segment.providerSessionId
-      )) recordedSegments.push(segment)
+      if (
+        !recordedSegments.some(
+          (existing) =>
+            existing.conversationId === segment.conversationId &&
+            existing.provider === segment.provider &&
+            existing.providerSessionId === segment.providerSessionId,
+        )
+      )
+        recordedSegments.push(segment)
     }
   },
 }))
@@ -119,8 +144,12 @@ vi.mock('../../src/main/provider/claude-session-migrate', async (importOriginal)
   const actual = await importOriginal<typeof import('../../src/main/provider/claude-session-migrate')>()
   return {
     ...actual,
-    ensureClaudeSessionResumable: () => ({ ok: true as const, sourcePath: '/tmp/source.jsonl', targetPath: '/tmp/target.jsonl' }),
-    prepareClaudeProfileSwitch: (input: typeof claudePreparations[number]) => {
+    ensureClaudeSessionResumable: () => ({
+      ok: true as const,
+      sourcePath: '/tmp/source.jsonl',
+      targetPath: '/tmp/target.jsonl',
+    }),
+    prepareClaudeProfileSwitch: (input: (typeof claudePreparations)[number]) => {
       claudePreparations.push(input)
       return claudePreparationResult
     },
@@ -141,7 +170,11 @@ import { ProviderChannels } from '../../src/shared/ipc-channels'
 import { hashClientScope } from '../../src/main/backend/request-context'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent, UserTurnSubmissionV1 } from '../../src/shared/provider-events'
-import { AtomicUserTurnSubmission, DurableTurnAcceptance, type AtomicUserTurnContext } from '../../src/main/provider/durable-turn-acceptance'
+import {
+  AtomicUserTurnSubmission,
+  DurableTurnAcceptance,
+  type AtomicUserTurnContext,
+} from '../../src/main/provider/durable-turn-acceptance'
 import { SqliteTurnAcceptanceStore, ensureTurnAcceptanceSchema } from '../../src/main/db/turn-acceptance'
 import type {
   ReserveTurnResult,
@@ -308,7 +341,10 @@ class DeferredStopAdapter extends MockEchoAdapter {
 }
 
 class StopRotatingSessionAdapter extends MockEchoAdapter {
-  override async startSession(opts: SessionStartOpts, onEvent: (event: RuntimeEvent) => void): Promise<ProviderSession> {
+  override async startSession(
+    opts: SessionStartOpts,
+    onEvent: (event: RuntimeEvent) => void,
+  ): Promise<ProviderSession> {
     const session = await super.startSession(opts, onEvent)
     onEvent({ type: 'session', threadId: opts.threadId, sessionId: 'provider-session-1' })
     return session
@@ -323,7 +359,10 @@ class StopRotatingSessionAdapter extends MockEchoAdapter {
 class RetainedCallbackAdapter extends MockEchoAdapter {
   private firstCallback: ((event: RuntimeEvent) => void) | null = null
 
-  override async startSession(opts: SessionStartOpts, onEvent: (event: RuntimeEvent) => void): Promise<ProviderSession> {
+  override async startSession(
+    opts: SessionStartOpts,
+    onEvent: (event: RuntimeEvent) => void,
+  ): Promise<ProviderSession> {
     if (!this.firstCallback) this.firstCallback = onEvent
     const session = await super.startSession(opts, onEvent)
     onEvent({ type: 'session', threadId: opts.threadId, sessionId: 'provider-session-1' })
@@ -398,9 +437,13 @@ class CodexSteeringAdapter implements ProviderAdapter {
   async sendTurn(): Promise<void> {}
   async interruptTurn(): Promise<void> {}
   async respondToRequest(): Promise<void> {}
-  async stopSession(threadId: string): Promise<void> { this.emit.delete(threadId) }
+  async stopSession(threadId: string): Promise<void> {
+    this.emit.delete(threadId)
+  }
   async setRuntimeMode(): Promise<void> {}
-  async isAvailable(): Promise<boolean> { return true }
+  async isAvailable(): Promise<boolean> {
+    return true
+  }
 
   complete(threadId: string): void {
     this.emit.get(threadId)?.({ type: 'turn.completed', threadId })
@@ -410,7 +453,10 @@ class CodexSteeringAdapter implements ProviderAdapter {
 class FailingTargetAndRollbackAdapter extends MockEchoAdapter {
   private workStarts = 0
 
-  override async startSession(opts: SessionStartOpts, onEvent: (event: RuntimeEvent) => void): Promise<ProviderSession> {
+  override async startSession(
+    opts: SessionStartOpts,
+    onEvent: (event: RuntimeEvent) => void,
+  ): Promise<ProviderSession> {
     if (opts.instanceId === 'claude-work') this.workStarts += 1
     if (opts.instanceId === 'claude-personal' || this.workStarts > 1) {
       this.starts.push({ ...opts })
@@ -449,7 +495,9 @@ class BusyOpenCodeAdapter implements ProviderAdapter {
   async respondToRequest(): Promise<void> {}
   async stopSession(): Promise<void> {}
   async setRuntimeMode(): Promise<void> {}
-  async isAvailable(): Promise<boolean> { return true }
+  async isAvailable(): Promise<boolean> {
+    return true
+  }
 }
 
 let wss: WebSocketServer | null = null
@@ -464,7 +512,10 @@ async function setup(
   adapter: ProviderAdapter = new MockEchoAdapter(),
   providerKey: 'claude' | 'codex' | 'opencode' = 'claude',
   atomicSubmission?: {
-    submit(input: unknown, context: { clientScope: string; prepare: () => Promise<void>; dispatch: () => Promise<void> }): Promise<unknown>
+    submit(
+      input: unknown,
+      context: { clientScope: string; prepare: () => Promise<void>; dispatch: () => Promise<void> },
+    ): Promise<unknown>
   },
 ) {
   const cwd = mkdtempSync(join(tmpdir(), 'sb-prov-'))
@@ -556,12 +607,14 @@ describe('provider switching over the WebSocket boundary', () => {
       instanceId: 'claude-work',
     })
 
-    expect(recordedSegments).toEqual([{
-      conversationId: 't1',
-      provider: 'claude-code',
-      providerSessionId: 'provider-session-1',
-      providerInstanceId: 'claude-work',
-    }])
+    expect(recordedSegments).toEqual([
+      {
+        conversationId: 't1',
+        provider: 'claude-code',
+        providerSessionId: 'provider-session-1',
+        providerInstanceId: 'claude-work',
+      },
+    ])
   })
 
   it('waits for an in-flight provider start before accepting a rapid follow-up', async () => {
@@ -587,10 +640,11 @@ describe('provider switching over the WebSocket boundary', () => {
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
     adapter.publishStatus('t1', 'running')
 
-    const session = await client!.invoke<ProviderSession>(
-      ProviderChannels.START_SESSION,
-      { threadId: 't1', provider: 'claude', cwd },
-    )
+    const session = await client!.invoke<ProviderSession>(ProviderChannels.START_SESSION, {
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+    })
 
     expect(session.status).toBe('running')
   })
@@ -600,10 +654,12 @@ describe('provider switching over the WebSocket boundary', () => {
 
     expect(await client!.invoke(ProviderChannels.IS_AVAILABLE, 'claude')).toBe(true)
 
-    const session = await client!.invoke<{ threadId: string; instanceId?: string }>(
-      ProviderChannels.START_SESSION,
-      { threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work' },
-    )
+    const session = await client!.invoke<{ threadId: string; instanceId?: string }>(ProviderChannels.START_SESSION, {
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
+    })
     expect(session.threadId).toBe('t1')
     expect(session.instanceId).toBe('claude-work')
 
@@ -624,7 +680,11 @@ describe('provider switching over the WebSocket boundary', () => {
         await context.prepare()
         await context.dispatch(context.finalize ? await context.finalize(input) : input)
         return {
-          status: 'accepted', accepted: true, duplicate: false, state: 'completed', acceptedAt: 100,
+          status: 'accepted',
+          accepted: true,
+          duplicate: false,
+          state: 'completed',
+          acceptedAt: 100,
         }
       },
     }
@@ -655,16 +715,16 @@ describe('provider switching over the WebSocket boundary', () => {
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
     conversationExists = false
 
-    await expect(client!.invoke(ProviderChannels.SUBMIT_USER_TURN, {
-      version: 1,
-      threadId: 't1',
-      origin: 'missing-conversation',
-      providerText: 'must not dispatch',
-    })).resolves.toMatchObject({ status: 'rejected', state: 'rejected' })
-    expect(atomicDb!.prepare('SELECT count(*) AS count FROM mobile_turn_acceptances').get())
-      .toEqual({ count: 0 })
-    expect(atomicDb!.prepare('SELECT count(*) AS count FROM messages').get())
-      .toEqual({ count: 0 })
+    await expect(
+      client!.invoke(ProviderChannels.SUBMIT_USER_TURN, {
+        version: 1,
+        threadId: 't1',
+        origin: 'missing-conversation',
+        providerText: 'must not dispatch',
+      }),
+    ).resolves.toMatchObject({ status: 'rejected', state: 'rejected' })
+    expect(atomicDb!.prepare('SELECT count(*) AS count FROM mobile_turn_acceptances').get()).toEqual({ count: 0 })
+    expect(atomicDb!.prepare('SELECT count(*) AS count FROM messages').get()).toEqual({ count: 0 })
   })
 
   it('releases a local adapter precondition failure so the same origin can retry', async () => {
@@ -678,12 +738,9 @@ describe('provider switching over the WebSocket boundary', () => {
       providerText: 'retry me exactly',
     }
 
-    await expect(client!.invoke(ProviderChannels.SUBMIT_USER_TURN, turn))
-      .resolves.toMatchObject({ status: 'rejected' })
-    expect(atomicDb!.prepare('SELECT count(*) AS count FROM mobile_turn_acceptances').get())
-      .toEqual({ count: 0 })
-    await expect(client!.invoke(ProviderChannels.SUBMIT_USER_TURN, turn))
-      .resolves.toMatchObject({ status: 'accepted' })
+    await expect(client!.invoke(ProviderChannels.SUBMIT_USER_TURN, turn)).resolves.toMatchObject({ status: 'rejected' })
+    expect(atomicDb!.prepare('SELECT count(*) AS count FROM mobile_turn_acceptances').get()).toEqual({ count: 0 })
+    await expect(client!.invoke(ProviderChannels.SUBMIT_USER_TURN, turn)).resolves.toMatchObject({ status: 'accepted' })
     expect(adapter.attempts).toBe(2)
   })
 
@@ -691,19 +748,24 @@ describe('provider switching over the WebSocket boundary', () => {
     resolvedRootThreadId = 't1'
     const { cwd, atomicDb, events } = await setup()
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 'provider-leaf', provider: 'claude', cwd,
+      threadId: 'provider-leaf',
+      provider: 'claude',
+      cwd,
     })
 
-    await expect(client!.invoke(ProviderChannels.SUBMIT_USER_TURN, {
-      version: 1,
-      threadId: 'provider-leaf',
-      origin: 'rotated-origin',
-      providerText: 'continue after rotation',
-    })).resolves.toMatchObject({ status: 'accepted' })
+    await expect(
+      client!.invoke(ProviderChannels.SUBMIT_USER_TURN, {
+        version: 1,
+        threadId: 'provider-leaf',
+        origin: 'rotated-origin',
+        providerText: 'continue after rotation',
+      }),
+    ).resolves.toMatchObject({ status: 'accepted' })
     await flush()
 
-    expect(atomicDb!.prepare("SELECT conversation_id FROM messages WHERE role = 'user'").get())
-      .toEqual({ conversation_id: 't1' })
+    expect(atomicDb!.prepare("SELECT conversation_id FROM messages WHERE role = 'user'").get()).toEqual({
+      conversation_id: 't1',
+    })
     expect(events.find((event) => event.type === 'user.message')).toMatchObject({ threadId: 't1' })
   })
 
@@ -714,23 +776,31 @@ describe('provider switching over the WebSocket boundary', () => {
     const { cwd, atomicDb } = await setup()
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
     const accepted = await client!.invoke(
-      ProviderChannels.SEND_TURN, 't1', 'from the phone', undefined, undefined, 'o-1',
+      ProviderChannels.SEND_TURN,
+      't1',
+      'from the phone',
+      undefined,
+      undefined,
+      'o-1',
     )
     await flush()
 
-    const turn = atomicDb!.prepare(`
+    const turn = atomicDb!
+      .prepare(`
       SELECT id, conversation_id AS conversationId, role, content
         FROM messages
        WHERE role = 'user'
-    `).get() as typeof saved[number] | undefined
+    `)
+      .get() as (typeof saved)[number] | undefined
     expect(turn).toBeDefined()
     expect(turn?.content).toBe('from the phone')
     expect(turn?.conversationId).toBe('t1')
     // echoMessageId(origin) - the id the optimistic bubble already uses, so the
     // renderer's own richer write targets this row instead of adding a second.
     expect(turn?.id).toBe('remote_o-1')
-    expect(atomicDb!.prepare("SELECT title FROM conversations WHERE id = 't1'").get())
-      .toEqual({ title: 'from the phone' })
+    expect(atomicDb!.prepare("SELECT title FROM conversations WHERE id = 't1'").get()).toEqual({
+      title: 'from the phone',
+    })
     expect(accepted).toEqual({ accepted: true, duplicate: false, state: 'completed' })
   })
 
@@ -751,71 +821,86 @@ describe('provider switching over the WebSocket boundary', () => {
     // regardless of its body. The compatibility endpoint must reject with a
     // retry-classified transport-shaped error or that released client drops
     // this ambiguous turn permanently.
-    await expect(client!.invoke(
-      ProviderChannels.SEND_TURN,
-      't1',
-      'must survive a restart',
-      undefined,
-      [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }],
-      'durable-origin',
-    )).rejects.toThrow(/network.*unconfirmed/i)
+    await expect(
+      client!.invoke(
+        ProviderChannels.SEND_TURN,
+        't1',
+        'must survive a restart',
+        undefined,
+        [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }],
+        'durable-origin',
+      ),
+    ).rejects.toThrow(/network.*unconfirmed/i)
 
     expect(events.filter((event) => event.type === 'turn.completed')).toHaveLength(1)
     expect(events.some((event) => event.type === 'user.message')).toBe(false)
     expect(adapter.starts).toHaveLength(1)
-    expect(atomicDb!.prepare("SELECT COUNT(*) AS count FROM messages WHERE role = 'user'").get())
-      .toEqual({ count: 0 })
-    expect(atomicDb!.prepare(`
+    expect(atomicDb!.prepare("SELECT COUNT(*) AS count FROM messages WHERE role = 'user'").get()).toEqual({ count: 0 })
+    expect(
+      atomicDb!
+        .prepare(`
       SELECT state FROM mobile_turn_acceptances WHERE origin = 'durable-origin'
-    `).get()).toEqual({ state: 'dispatching' })
+    `)
+        .get(),
+    ).toEqual({ state: 'dispatching' })
   })
 
   it('explicitly abandons an unconfirmed delivery before allowing the next origin', async () => {
     const { cwd, atomicDb } = await setup()
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
-    atomicDb!.prepare(`
+    atomicDb!
+      .prepare(`
       INSERT INTO mobile_turn_acceptances
         (client_scope, thread_id, origin, payload_hash, state, accepted_at)
       VALUES (?, 't1', 'uncertain-origin', 'hash', 'dispatching', 1)
-    `).run(hashClientScope('trusted-ws', 'local-trust-boundary'))
+    `)
+      .run(hashClientScope('trusted-ws', 'local-trust-boundary'))
 
-    await expect(client!.invoke(ProviderChannels.RESOLVE_USER_TURN, {
-      version: 1,
-      threadId: 't1',
-      origin: 'uncertain-origin',
-      action: 'abandon',
-    })).resolves.toEqual({ status: 'abandoned', changed: true })
-    expect(atomicDb!.prepare(`
+    await expect(
+      client!.invoke(ProviderChannels.RESOLVE_USER_TURN, {
+        version: 1,
+        threadId: 't1',
+        origin: 'uncertain-origin',
+        action: 'abandon',
+      }),
+    ).resolves.toEqual({ status: 'abandoned', changed: true })
+    expect(
+      atomicDb!
+        .prepare(`
       SELECT state FROM mobile_turn_acceptances WHERE origin = 'uncertain-origin'
-    `).get()).toEqual({ state: 'abandoned' })
+    `)
+        .get(),
+    ).toEqual({ state: 'abandoned' })
 
-    await expect(client!.invoke(ProviderChannels.SUBMIT_USER_TURN, {
-      version: 1,
-      threadId: 't1',
-      origin: 'next-origin',
-      providerText: 'next message',
-    })).resolves.toMatchObject({ status: 'accepted' })
+    await expect(
+      client!.invoke(ProviderChannels.SUBMIT_USER_TURN, {
+        version: 1,
+        threadId: 't1',
+        origin: 'next-origin',
+        providerText: 'next message',
+      }),
+    ).resolves.toMatchObject({ status: 'accepted' })
   })
 
   it('broadcasts images and available persisted pill presentation with the user echo', async () => {
     const { cwd, events, atomicDb } = await setup()
-    atomicDb!.prepare(`
+    atomicDb!
+      .prepare(`
       INSERT INTO messages
         (id, conversation_id, role, content, timestamp, display_body, pills_meta)
       VALUES (?, 't1', 'user', ?, 1, ?, ?)
-    `).run(
-      'remote_o-image',
-      'context wrapper\n\nshow this',
-      '[[pill:selection-1]] show this',
-      JSON.stringify({
-        'selection-1': { label: 'Admin panel', kind: 'chat-message' },
-      }),
-    )
+    `)
+      .run(
+        'remote_o-image',
+        'context wrapper\n\nshow this',
+        '[[pill:selection-1]] show this',
+        JSON.stringify({
+          'selection-1': { label: 'Admin panel', kind: 'chat-message' },
+        }),
+      )
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
     const images = [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }]
-    await client!.invoke(
-      ProviderChannels.SEND_TURN, 't1', 'context wrapper\n\nshow this', undefined, images, 'o-image',
-    )
+    await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'context wrapper\n\nshow this', undefined, images, 'o-image')
     await flush()
 
     expect(events.find((event) => event.type === 'user.message')).toMatchObject({
@@ -832,16 +917,16 @@ describe('provider switching over the WebSocket boundary', () => {
 
   it('does not broadcast corrupt persisted pill metadata', async () => {
     const { cwd, events, atomicDb } = await setup()
-    atomicDb!.prepare(`
+    atomicDb!
+      .prepare(`
       INSERT INTO messages
         (id, conversation_id, role, content, timestamp, display_body, pills_meta)
       VALUES ('remote_o-corrupt-pill', 't1', 'user', 'expanded content', 1,
               'show [[pill:private]]', '{not-json')
-    `).run()
+    `)
+      .run()
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
-    await client!.invoke(
-      ProviderChannels.SEND_TURN, 't1', 'expanded content', undefined, undefined, 'o-corrupt-pill',
-    )
+    await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'expanded content', undefined, undefined, 'o-corrupt-pill')
 
     expect(events.find((event) => event.type === 'user.message')).toMatchObject({
       type: 'user.message',
@@ -855,12 +940,8 @@ describe('provider switching over the WebSocket boundary', () => {
     const { cwd, events } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
 
-    const first = await client!.invoke(
-      ProviderChannels.SEND_TURN, 't1', 'once', undefined, undefined, 'origin-once',
-    )
-    const retry = await client!.invoke(
-      ProviderChannels.SEND_TURN, 't1', 'once', undefined, undefined, 'origin-once',
-    )
+    const first = await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'once', undefined, undefined, 'origin-once')
+    const retry = await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'once', undefined, undefined, 'origin-once')
 
     expect(first).toEqual({ accepted: true, duplicate: false, state: 'completed' })
     expect(retry).toEqual({ accepted: true, duplicate: true, state: 'completed' })
@@ -873,40 +954,45 @@ describe('provider switching over the WebSocket boundary', () => {
     const { cwd, events, atomicDb } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
 
-    await expect(client!.invoke(
-      ProviderChannels.SEND_TURN, 't1', 'first', undefined, undefined, 'opencode-first',
-    )).resolves.toMatchObject({ accepted: true })
-    await expect(client!.invoke(
-      ProviderChannels.SEND_TURN, 't1', 'second', undefined, undefined, 'opencode-second',
-    )).rejects.toThrow('mid-turn')
+    await expect(
+      client!.invoke(ProviderChannels.SEND_TURN, 't1', 'first', undefined, undefined, 'opencode-first'),
+    ).resolves.toMatchObject({ accepted: true })
+    await expect(
+      client!.invoke(ProviderChannels.SEND_TURN, 't1', 'second', undefined, undefined, 'opencode-second'),
+    ).rejects.toThrow('mid-turn')
 
     expect(adapter.sendCount).toBe(1)
     expect(events.filter((event) => event.type === 'user.message')).toHaveLength(1)
-    expect(atomicDb!.prepare("SELECT COUNT(*) AS count FROM messages WHERE content = 'second'").get())
-      .toEqual({ count: 0 })
+    expect(atomicDb!.prepare("SELECT COUNT(*) AS count FROM messages WHERE content = 'second'").get()).toEqual({
+      count: 0,
+    })
   })
 
   it('does not persist a legacy-origin row when checkpoint preparation rejects', async () => {
     const { cwd, events, atomicDb } = await setup()
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
     Reflect.set(registry!, 'checkpoints', {
-      beginTurn: async () => { throw new Error('checkpoint failed') },
+      beginTurn: async () => {
+        throw new Error('checkpoint failed')
+      },
       finishTurn: async () => [],
       clear: () => {},
     })
 
-    await expect(client!.invoke(
-      ProviderChannels.SEND_TURN, 't1', 'must not look sent', undefined, undefined, 'legacy-rejected',
-    )).rejects.toThrow('turn preparation failed')
+    await expect(
+      client!.invoke(ProviderChannels.SEND_TURN, 't1', 'must not look sent', undefined, undefined, 'legacy-rejected'),
+    ).rejects.toThrow('turn preparation failed')
 
-    expect(atomicDb!.prepare("SELECT COUNT(*) AS count FROM messages WHERE content = 'must not look sent'").get())
-      .toEqual({ count: 0 })
-    expect(atomicDb!.prepare("SELECT COUNT(*) AS count FROM mobile_turn_acceptances WHERE origin = 'legacy-rejected'").get())
-      .toEqual({ count: 0 })
+    expect(
+      atomicDb!.prepare("SELECT COUNT(*) AS count FROM messages WHERE content = 'must not look sent'").get(),
+    ).toEqual({ count: 0 })
+    expect(
+      atomicDb!.prepare("SELECT COUNT(*) AS count FROM mobile_turn_acceptances WHERE origin = 'legacy-rejected'").get(),
+    ).toEqual({ count: 0 })
     expect(events.some((event) => event.type === 'user.message')).toBe(false)
   })
 
-  it('persists a turn even when the client sends no origin (the phone\'s first message)', async () => {
+  it("persists a turn even when the client sends no origin (the phone's first message)", async () => {
     const { cwd } = await setup()
     saved.length = 0
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
@@ -932,14 +1018,18 @@ describe('provider switching over the WebSocket boundary', () => {
 
   it('separate sessions resolve to the instance each requested', async () => {
     const { cwd } = await setup()
-    const work = await client!.invoke<{ instanceId?: string }>(
-      ProviderChannels.START_SESSION,
-      { threadId: 'work', provider: 'claude', cwd, instanceId: 'claude-work' },
-    )
-    const personal = await client!.invoke<{ instanceId?: string }>(
-      ProviderChannels.START_SESSION,
-      { threadId: 'personal', provider: 'claude', cwd, instanceId: 'claude-personal' },
-    )
+    const work = await client!.invoke<{ instanceId?: string }>(ProviderChannels.START_SESSION, {
+      threadId: 'work',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
+    })
+    const personal = await client!.invoke<{ instanceId?: string }>(ProviderChannels.START_SESSION, {
+      threadId: 'personal',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-personal',
+    })
     expect(work.instanceId).toBe('claude-work')
     expect(personal.instanceId).toBe('claude-personal')
   })
@@ -948,7 +1038,10 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new MockEchoAdapter()
     const { cwd, events } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
     events.length = 0
 
@@ -976,17 +1069,22 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new MockEchoAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
     const previousRemote = process.env.SWITCHBOARD_REMOTE
     process.env.SWITCHBOARD_REMOTE = '1'
     try {
-      await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-        targetInstanceId: 'desktop-only',
-        targetInstanceName: 'Tech Team',
-        targetRemoteConfigDir: '.claude-tech-team',
-        expectedCurrentInstanceId: 'claude-work',
-      })).resolves.toMatchObject({
+      await expect(
+        client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+          targetInstanceId: 'desktop-only',
+          targetInstanceName: 'Tech Team',
+          targetRemoteConfigDir: '.claude-tech-team',
+          expectedCurrentInstanceId: 'claude-work',
+        }),
+      ).resolves.toMatchObject({
         ok: true,
         instanceId: 'desktop-only',
         instanceName: 'Tech Team',
@@ -997,12 +1095,14 @@ describe('provider switching over the WebSocket boundary', () => {
         resolvedOauthDir: expect.stringMatching(/\.claude-tech-team$/),
       })
 
-      await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-        targetInstanceId: 'claude-work',
-        targetInstanceName: 'Work',
-        targetRemoteConfigDir: '.claude-work',
-        expectedCurrentInstanceId: 'desktop-only',
-      })).resolves.toMatchObject({ ok: true, previousInstanceId: 'desktop-only' })
+      await expect(
+        client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+          targetInstanceId: 'claude-work',
+          targetInstanceName: 'Work',
+          targetRemoteConfigDir: '.claude-work',
+          expectedCurrentInstanceId: 'desktop-only',
+        }),
+      ).resolves.toMatchObject({ ok: true, previousInstanceId: 'desktop-only' })
     } finally {
       if (previousRemote === undefined) delete process.env.SWITCHBOARD_REMOTE
       else process.env.SWITCHBOARD_REMOTE = previousRemote
@@ -1013,13 +1113,19 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new SessionPublishingAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
     adapter.publishSession('t1', 'provider-session-after-compaction')
 
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
-    })).resolves.toMatchObject({ ok: true, continuity: 'preserved' })
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'claude-personal',
+        expectedCurrentInstanceId: 'claude-work',
+      }),
+    ).resolves.toMatchObject({ ok: true, continuity: 'preserved' })
 
     expect(adapter.starts[1]?.resumeSessionId).toBe('provider-session-after-compaction')
   })
@@ -1028,12 +1134,18 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new StopRotatingSessionAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
 
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
-    })).resolves.toMatchObject({ ok: true, continuity: 'preserved' })
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'claude-personal',
+        expectedCurrentInstanceId: 'claude-work',
+      }),
+    ).resolves.toMatchObject({ ok: true, continuity: 'preserved' })
 
     expect(claudePreparations).toHaveLength(1)
     expect(claudePreparations[0]).toMatchObject({
@@ -1052,12 +1164,18 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new SessionPublishingAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
 
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
-    })).resolves.toMatchObject({
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'claude-personal',
+        expectedCurrentInstanceId: 'claude-work',
+      }),
+    ).resolves.toMatchObject({
       ok: false,
       code: 'context-conflict',
       rolledBack: true,
@@ -1076,12 +1194,18 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new SessionPublishingAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
 
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
-    })).resolves.toMatchObject({
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'claude-personal',
+        expectedCurrentInstanceId: 'claude-work',
+      }),
+    ).resolves.toMatchObject({
       ok: false,
       code: 'context-preparation-failed',
       rolledBack: true,
@@ -1100,14 +1224,19 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new SessionPublishingAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
 
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal',
-      expectedCurrentInstanceId: 'claude-work',
-      onContextConflict: 'start-fresh',
-    })).resolves.toMatchObject({ ok: true, continuity: 'degraded' })
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'claude-personal',
+        expectedCurrentInstanceId: 'claude-work',
+        onContextConflict: 'start-fresh',
+      }),
+    ).resolves.toMatchObject({ ok: true, continuity: 'degraded' })
 
     expect(claudePreparations).toEqual([])
     expect(adapter.starts[1]).toMatchObject({ instanceId: 'claude-personal' })
@@ -1122,12 +1251,16 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new RetainedCallbackAdapter()
     const { cwd, events } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
     events.length = 0
 
     await client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
+      targetInstanceId: 'claude-personal',
+      expectedCurrentInstanceId: 'claude-work',
     })
     adapter.publishFromRetiredExecution('t1')
     await flush()
@@ -1139,19 +1272,28 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new MockEchoAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
     adapter.publishStatus('t1', 'running')
 
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
-    })).resolves.toMatchObject({ ok: false, code: 'busy' })
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'claude-personal',
+        expectedCurrentInstanceId: 'claude-work',
+      }),
+    ).resolves.toMatchObject({ ok: false, code: 'busy' })
     expect(adapter.stops).toEqual([])
 
     adapter.publishStatus('t1', 'idle')
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-stale',
-    })).resolves.toMatchObject({ ok: false, code: 'stale-selection' })
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'claude-personal',
+        expectedCurrentInstanceId: 'claude-stale',
+      }),
+    ).resolves.toMatchObject({ ok: false, code: 'stale-selection' })
     expect(adapter.stops).toEqual([])
   })
 
@@ -1159,22 +1301,21 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new DeferredStopAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
 
     const switching = client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
+      targetInstanceId: 'claude-personal',
+      expectedCurrentInstanceId: 'claude-work',
     })
     await adapter.stopEntered
 
-    await expect(client!.invoke(
-      ProviderChannels.SEND_TURN,
-      't1',
-      'wait for the switch',
-      'sandbox',
-      undefined,
-      'phone-turn-1',
-    )).rejects.toThrow(/queue full.*profile switch/i)
+    await expect(
+      client!.invoke(ProviderChannels.SEND_TURN, 't1', 'wait for the switch', 'sandbox', undefined, 'phone-turn-1'),
+    ).rejects.toThrow(/queue full.*profile switch/i)
 
     adapter.finishStop()
     await expect(switching).resolves.toMatchObject({ ok: true, instanceId: 'claude-personal' })
@@ -1185,12 +1326,19 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new MockEchoAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
     let markCheckpointEntered!: () => void
-    const checkpointEntered = new Promise<void>((resolve) => { markCheckpointEntered = resolve })
+    const checkpointEntered = new Promise<void>((resolve) => {
+      markCheckpointEntered = resolve
+    })
     let continueCheckpoint!: () => void
-    const checkpointGate = new Promise<void>((resolve) => { continueCheckpoint = resolve })
+    const checkpointGate = new Promise<void>((resolve) => {
+      continueCheckpoint = resolve
+    })
     Reflect.set(registry!, 'checkpoints', {
       beginTurn: async () => {
         markCheckpointEntered()
@@ -1207,9 +1355,12 @@ describe('provider switching over the WebSocket boundary', () => {
       initiator: 'user',
     })
     await checkpointEntered
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
-    })).resolves.toMatchObject({ ok: false, code: 'busy' })
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'claude-personal',
+        expectedCurrentInstanceId: 'claude-work',
+      }),
+    ).resolves.toMatchObject({ ok: false, code: 'busy' })
 
     continueCheckpoint()
     await expect(delivery).resolves.toMatchObject({ id: expect.any(String) })
@@ -1220,82 +1371,111 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new QueueingAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
     await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'first')
     await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'steer one')
     await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'steer two')
 
     adapter.complete('t1')
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
-    })).resolves.toMatchObject({ ok: true, instanceId: 'claude-personal' })
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'claude-personal',
+        expectedCurrentInstanceId: 'claude-work',
+      }),
+    ).resolves.toMatchObject({ ok: true, instanceId: 'claude-personal' })
   })
 
   it('stays busy while a late steer runs as a turn of its own', async () => {
     const adapter = new QueueingAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
     await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'first')
     await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'steer after the last tool step')
 
     adapter.complete('t1')
     adapter.toolStarted('t1')
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
-    })).resolves.toMatchObject({ ok: false, code: 'busy' })
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'claude-personal',
+        expectedCurrentInstanceId: 'claude-work',
+      }),
+    ).resolves.toMatchObject({ ok: false, code: 'busy' })
 
     adapter.complete('t1')
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
-    })).resolves.toMatchObject({ ok: true, instanceId: 'claude-personal' })
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'claude-personal',
+        expectedCurrentInstanceId: 'claude-work',
+      }),
+    ).resolves.toMatchObject({ ok: true, instanceId: 'claude-personal' })
   })
 
   it('does not count a Codex steer as a second provider turn', async () => {
     const adapter = new CodexSteeringAdapter()
     const { cwd } = await setup(adapter, 'codex')
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'codex', cwd, instanceId: 'codex-work',
+      threadId: 't1',
+      provider: 'codex',
+      cwd,
+      instanceId: 'codex-work',
     })
     await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'first')
     await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'steer the active turn')
 
     adapter.complete('t1')
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'codex-personal', expectedCurrentInstanceId: 'codex-work',
-    })).resolves.toMatchObject({ ok: true, instanceId: 'codex-personal' })
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'codex-personal',
+        expectedCurrentInstanceId: 'codex-work',
+      }),
+    ).resolves.toMatchObject({ ok: true, instanceId: 'codex-personal' })
   })
 
   it('rolls back to the previous profile when the target cannot start', async () => {
     const adapter = new FailingTargetAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
 
     const result = await client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
+      targetInstanceId: 'claude-personal',
+      expectedCurrentInstanceId: 'claude-work',
     })
 
     expect(result).toMatchObject({ ok: false, code: 'target-start-failed', rolledBack: true })
     expect(persistedInstanceSelections).toEqual([])
-    expect(adapter.starts.map((start) => start.instanceId)).toEqual([
-      'claude-work', 'claude-personal', 'claude-work',
-    ])
+    expect(adapter.starts.map((start) => start.instanceId)).toEqual(['claude-work', 'claude-personal', 'claude-work'])
   })
 
   it('rejects an instance belonging to another provider without touching the live session', async () => {
     const adapter = new MockEchoAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
 
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'codex-personal', expectedCurrentInstanceId: 'claude-work',
-    })).resolves.toMatchObject({ ok: false, code: 'invalid-instance' })
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'codex-personal',
+        expectedCurrentInstanceId: 'claude-work',
+      }),
+    ).resolves.toMatchObject({ ok: false, code: 'invalid-instance' })
     expect(adapter.stops).toEqual([])
     expect(persistedInstanceSelections).toEqual([])
   })
@@ -1304,20 +1484,22 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new MockEchoAdapter()
     const { cwd, events } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
     events.length = 0
     allowInstancePersistence = false
 
     const result = await client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
+      targetInstanceId: 'claude-personal',
+      expectedCurrentInstanceId: 'claude-work',
     })
 
     expect(result).toMatchObject({ ok: false, code: 'target-start-failed', rolledBack: true })
     expect(persistedInstanceSelections).toEqual([])
-    expect(adapter.starts.map((start) => start.instanceId)).toEqual([
-      'claude-work', 'claude-personal', 'claude-work',
-    ])
+    expect(adapter.starts.map((start) => start.instanceId)).toEqual(['claude-work', 'claude-personal', 'claude-work'])
     expect(events.filter((event) => event.type === 'session.provider').at(-1)).toMatchObject({
       instanceId: 'claude-work',
     })
@@ -1328,13 +1510,19 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new RotatingSessionAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
     allowInstancePersistence = false
 
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
-    })).resolves.toMatchObject({ ok: false, rolledBack: true })
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'claude-personal',
+        expectedCurrentInstanceId: 'claude-work',
+      }),
+    ).resolves.toMatchObject({ ok: false, rolledBack: true })
 
     expect(recordedSegments.map((segment) => segment.providerSessionId)).toEqual([
       'claude-work-session-1',
@@ -1346,35 +1534,51 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new FailingTargetAndRollbackAdapter()
     const { cwd, events } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
     events.length = 0
 
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
-    })).resolves.toMatchObject({
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'claude-personal',
+        expectedCurrentInstanceId: 'claude-work',
+      }),
+    ).resolves.toMatchObject({
       ok: false,
       code: 'rollback-failed',
       rolledBack: false,
       currentInstanceId: null,
     })
     expect(events).toContainEqual(expect.objectContaining({ type: 'status', status: 'error' }))
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'session.provider', instanceId: null, instanceName: null,
-    }))
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'session.provider',
+        instanceId: null,
+        instanceName: null,
+      }),
+    )
   })
 
   it('does not claim a successful rollback when stopping the old adapter fails', async () => {
     const adapter = new ThrowingStopAdapter()
     const { cwd, events } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
-      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
     })
     events.length = 0
 
-    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
-    })).resolves.toMatchObject({
+    await expect(
+      client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+        targetInstanceId: 'claude-personal',
+        expectedCurrentInstanceId: 'claude-work',
+      }),
+    ).resolves.toMatchObject({
       ok: false,
       code: 'target-start-failed',
       rolledBack: false,

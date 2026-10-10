@@ -13,9 +13,7 @@ describe('image attachment count is budget-driven on every composer', () => {
   })
 
   it('does not cap the native Android picker at four', () => {
-    const contents = source(
-      'apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt',
-    )
+    const contents = source('apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt')
     expect(contents).not.toContain('(4 - state.attachments.size)')
     expect(contents).not.toContain('state.attachments.size < 4')
   })

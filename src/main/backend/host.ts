@@ -29,13 +29,19 @@ export class ElectronIpcHost implements BackendHost {
     const timed = timeBackendHandler(channel, fn)
     ipcMain.removeHandler(channel) // idempotent re-registration (StrictMode / reloads)
     ipcMain.handle(channel, (_event, ...args) =>
-      withBackendRequestContext({ clientScope: ELECTRON_CLIENT_SCOPE, transport: 'electron' }, () => timed(...(args as A))))
+      withBackendRequestContext({ clientScope: ELECTRON_CLIENT_SCOPE, transport: 'electron' }, () =>
+        timed(...(args as A)),
+      ),
+    )
   }
 
   on<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => void): void {
     ipcMain.removeAllListeners(channel)
     ipcMain.on(channel, (_event, ...args) =>
-      withBackendRequestContext({ clientScope: ELECTRON_CLIENT_SCOPE, transport: 'electron' }, () => fn(...(args as A))))
+      withBackendRequestContext({ clientScope: ELECTRON_CLIENT_SCOPE, transport: 'electron' }, () =>
+        fn(...(args as A)),
+      ),
+    )
   }
 
   emit(channel: string, ...args: unknown[]): void {

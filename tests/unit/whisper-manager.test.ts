@@ -49,7 +49,14 @@ const cfg = { binaryPath: '/bin/whisper-server', modelPath: '/models/m.bin', env
 describe('buildWhisperServerArgs', () => {
   it('binds loopback with the model and auto language detection', () => {
     expect(buildWhisperServerArgs({ port: 9001, modelPath: '/m.bin' })).toEqual([
-      '--host', '127.0.0.1', '--port', '9001', '--model', '/m.bin', '--language', 'auto',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '9001',
+      '--model',
+      '/m.bin',
+      '--language',
+      'auto',
     ])
   })
 })

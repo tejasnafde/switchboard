@@ -42,11 +42,7 @@ export function MicButton({
       hitSlop={8}
       style={({ pressed }) => [styles.plainMic, pressed && styles.pressed]}
     >
-      <Ionicons
-        name="mic"
-        size={18}
-        color={dictation.listening ? colors.accent : colors.textDim}
-      />
+      <Ionicons name="mic" size={18} color={dictation.listening ? colors.accent : colors.textDim} />
     </Pressable>
   )
 }

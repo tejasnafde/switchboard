@@ -138,11 +138,15 @@ export class PullRequestService {
     if (hit && (hit.ok || this.now() - hit.at < REMOTES_TTL_MS)) return hit.parent
     const provider = this.accountError(repo.host) ? null : this.provider(repo.host)
     if (!provider?.forkParent) return Promise.resolve(null)
-    const entry = { at: this.now(), ok: true, parent: provider.forkParent(repo).catch((err: unknown) => {
-      entry.ok = false
-      log.warn('reading a fork parent failed', { host: repo.host, err: String(err) })
-      return null
-    }) }
+    const entry = {
+      at: this.now(),
+      ok: true,
+      parent: provider.forkParent(repo).catch((err: unknown) => {
+        entry.ok = false
+        log.warn('reading a fork parent failed', { host: repo.host, err: String(err) })
+        return null
+      }),
+    }
     this.parents.set(key, entry)
     return entry.parent
   }
@@ -155,12 +159,15 @@ export class PullRequestService {
   projectRepos(projectPath: string, opts: { fresh?: boolean } = {}): Promise<ProjectRepos> {
     const hit = this.projects.get(projectPath)
     if (!opts.fresh && hit && this.now() - hit.at < CHILD_REPOS_TTL_MS) return hit.repos
-    const entry = { at: this.now(), repos: this.readProjectRepos(projectPath).then(({ repos, complete }) => {
-      // A scan that could not read every directory may have missed a child the
-      // last complete scan found; keep that one for the next caller instead.
-      if (!complete && hit && this.projects.get(projectPath) === entry) this.projects.set(projectPath, hit)
-      return repos
-    }) }
+    const entry = {
+      at: this.now(),
+      repos: this.readProjectRepos(projectPath).then(({ repos, complete }) => {
+        // A scan that could not read every directory may have missed a child the
+        // last complete scan found; keep that one for the next caller instead.
+        if (!complete && hit && this.projects.get(projectPath) === entry) this.projects.set(projectPath, hit)
+        return repos
+      }),
+    }
     this.projects.set(projectPath, entry)
     return entry.repos
   }
@@ -183,7 +190,9 @@ export class PullRequestService {
       log.warn('scanning a project folder for repositories failed', { projectPath, err: String(err) })
     }
     const found = await Promise.all(dirs.map(async (dir) => ({ dir, repo: await this.repoFor(dir) })))
-    const children: ChildRepo[] = found.flatMap(({ dir, repo }) => (repo ? [{ path: dir, relPath: relativeLabel(projectPath, dir), repo }] : []))
+    const children: ChildRepo[] = found.flatMap(({ dir, repo }) =>
+      repo ? [{ path: dir, relPath: relativeLabel(projectPath, dir), repo }] : [],
+    )
     return { repos: projectReposFrom(null, children), complete }
   }
 
@@ -191,7 +200,9 @@ export class PullRequestService {
     const repos = new Map<string, { repo: RepoRef; projectPaths: string[] }>()
     const unsupportedProjects: string[] = []
     const projects = this.deps.listProjects()
-    const found = await Promise.all(projects.map(async (path) => [path, coveredRepos(await this.projectRepos(path))] as const))
+    const found = await Promise.all(
+      projects.map(async (path) => [path, coveredRepos(await this.projectRepos(path))] as const),
+    )
     for (const [path, covered] of found) {
       if (covered.length === 0) {
         unsupportedProjects.push(path)
@@ -273,15 +284,26 @@ export class PullRequestService {
   }
 
   /** Only repositories one of the user's projects points at are read, so a client cannot aim the token anywhere else. */
-  private async resolve(ref: unknown): Promise<{ ref: PrRef; provider: PullRequestProvider; projectPaths: string[] } | { error: PrError }> {
+  private async resolve(
+    ref: unknown,
+  ): Promise<{ ref: PrRef; provider: PullRequestProvider; projectPaths: string[] } | { error: PrError }> {
     const r = ref as Partial<PrRef> | null
-    if (!r || (r.host !== 'github' && r.host !== 'bitbucket') || typeof r.owner !== 'string' || typeof r.name !== 'string' || !Number.isInteger(r.number) || (r.number ?? 0) <= 0) {
+    if (
+      !r ||
+      (r.host !== 'github' && r.host !== 'bitbucket') ||
+      typeof r.owner !== 'string' ||
+      typeof r.name !== 'string' ||
+      !Number.isInteger(r.number) ||
+      (r.number ?? 0) <= 0
+    ) {
       return { error: { kind: 'unknown', host: null, message: 'Not a pull request reference.' } }
     }
     const clean: PrRef = { host: r.host, owner: r.owner, name: r.name, number: r.number as number }
     const entry = (await this.detect()).repos.get(repoKey(clean))
     if (!entry) {
-      return { error: { kind: 'unsupported_repo', host: clean.host, message: 'This repository is not one of your projects.' } }
+      return {
+        error: { kind: 'unsupported_repo', host: clean.host, message: 'This repository is not one of your projects.' },
+      }
     }
     const blocked = this.accountError(clean.host)
     if (blocked) return { error: blocked }
@@ -291,14 +313,23 @@ export class PullRequestService {
   }
 
   /** A repository one of the user's projects points at, with its host's provider. */
-  private async resolveRepo(repo: unknown): Promise<{ repo: RepoRef; provider: PullRequestProvider } | { error: PrError }> {
+  private async resolveRepo(
+    repo: unknown,
+  ): Promise<{ repo: RepoRef; provider: PullRequestProvider } | { error: PrError }> {
     const r = repo as Partial<RepoRef> | null
-    if (!r || (r.host !== 'github' && r.host !== 'bitbucket') || typeof r.owner !== 'string' || typeof r.name !== 'string') {
+    if (
+      !r ||
+      (r.host !== 'github' && r.host !== 'bitbucket') ||
+      typeof r.owner !== 'string' ||
+      typeof r.name !== 'string'
+    ) {
       return { error: { kind: 'unknown', host: null, message: 'Not a repository.' } }
     }
     const clean: RepoRef = { host: r.host, owner: r.owner, name: r.name }
     if (!(await this.detect()).repos.has(repoKey(clean))) {
-      return { error: { kind: 'unsupported_repo', host: clean.host, message: 'This repository is not one of your projects.' } }
+      return {
+        error: { kind: 'unsupported_repo', host: clean.host, message: 'This repository is not one of your projects.' },
+      }
     }
     const blocked = this.accountError(clean.host)
     if (blocked) return { error: blocked }
@@ -307,7 +338,11 @@ export class PullRequestService {
     return { repo: clean, provider }
   }
 
-  private async onRepo<T>(repo: unknown, what: string, fn: (p: PullRequestProvider, repo: RepoRef) => Promise<T>): Promise<PrResult<T>> {
+  private async onRepo<T>(
+    repo: unknown,
+    what: string,
+    fn: (p: PullRequestProvider, repo: RepoRef) => Promise<T>,
+  ): Promise<PrResult<T>> {
     const target = await this.resolveRepo(repo)
     if ('error' in target) return { ok: false, error: target.error }
     try {
@@ -337,7 +372,11 @@ export class PullRequestService {
       const open = await p.openPullRequestFor(r, create.sourceBranch)
       if (open) return { ...open, existing: true }
       const created = await p.createPullRequest(r, create)
-      log.info('pull request opened', { host: r.host, number: created.number, reviewers: create.reviewers?.length ?? 0 })
+      log.info('pull request opened', {
+        host: r.host,
+        number: created.number,
+        reviewers: create.reviewers?.length ?? 0,
+      })
       return { ...created, existing: false }
     })
   }
@@ -364,7 +403,11 @@ export class PullRequestService {
       return { ok: true, data: await fn(target.provider, target.ref, target.projectPaths) }
     } catch (err) {
       const error = toPrError(err, target.ref.host)
-      log.warn(`reading pull request ${what} failed`, { host: target.ref.host, number: target.ref.number, kind: error.kind })
+      log.warn(`reading pull request ${what} failed`, {
+        host: target.ref.host,
+        number: target.ref.number,
+        kind: error.kind,
+      })
       return { ok: false, error }
     }
   }
@@ -425,7 +468,12 @@ export class PullRequestService {
 
   private async conversationOf(p: PullRequestProvider, ref: PrRef, id: string) {
     const conversation = findConversation(await p.conversations(ref), id)
-    if (!conversation) throw new PrHostError({ kind: 'stale', host: ref.host, message: 'That conversation is no longer on the pull request.' })
+    if (!conversation)
+      throw new PrHostError({
+        kind: 'stale',
+        host: ref.host,
+        message: 'That conversation is no longer on the pull request.',
+      })
     return conversation
   }
 
@@ -464,15 +512,28 @@ export class PullRequestService {
   submitReview(ref: unknown, input: unknown): Promise<PrResult<PrWriteDone>> {
     return this.write(ref, 'review', ['conversations', 'detail'], async (p, r) => {
       const review = PullRequestService.unwrap(validateSubmitReview(r.host, input))
-      const [detail, files] = await Promise.all([p.detail(r), review.comments.length > 0 ? p.files(r) : Promise.resolve([])])
+      const [detail, files] = await Promise.all([
+        p.detail(r),
+        review.comments.length > 0 ? p.files(r) : Promise.resolve([]),
+      ])
       if (review.event !== 'comment') {
         if (detail.viewer.isAuthor) {
-          throw new PrHostError({ kind: 'forbidden', host: r.host, message: 'You cannot approve or request changes on your own pull request.' })
+          throw new PrHostError({
+            kind: 'forbidden',
+            host: r.host,
+            message: 'You cannot approve or request changes on your own pull request.',
+          })
         }
-        if (detail.state !== 'open') throw new PrHostError({ kind: 'stale', host: r.host, message: `This pull request is ${detail.state} now.` })
+        if (detail.state !== 'open')
+          throw new PrHostError({ kind: 'stale', host: r.host, message: `This pull request is ${detail.state} now.` })
       }
       const problem = review.comments.map((c) => lineTargetProblem(files, c)).find(Boolean)
-      if (problem) throw new PrHostError({ kind: 'stale', host: r.host, message: `${problem} Remove that comment and submit again.` })
+      if (problem)
+        throw new PrHostError({
+          kind: 'stale',
+          host: r.host,
+          message: `${problem} Remove that comment and submit again.`,
+        })
       await p.submitReview(r, review)
     })
   }
@@ -490,11 +551,23 @@ export class PullRequestService {
     return this.write(ref, 'rerun', ['checks', 'detail'], async (p, r) => {
       const { checkId } = PullRequestService.unwrap(validateRerun(r.host, input))
       const caps = HOST_CAPABILITIES[r.host]
-      if (!caps.rerunChecks) throw new PrHostError({ kind: 'forbidden', host: r.host, message: caps.rerunUnavailable ?? 'This host cannot re-run checks.' })
+      if (!caps.rerunChecks)
+        throw new PrHostError({
+          kind: 'forbidden',
+          host: r.host,
+          message: caps.rerunUnavailable ?? 'This host cannot re-run checks.',
+        })
       const check = (await p.checks(r)).find((c) => c.id === checkId)
-      if (!check) throw new PrHostError({ kind: 'stale', host: r.host, message: 'That check is no longer on the head commit.' })
-      if (check.state !== 'failure') throw new PrHostError({ kind: 'stale', host: r.host, message: `${check.name} is not failed any more.` })
-      if (!check.rerunId) throw new PrHostError({ kind: 'invalid', host: r.host, message: `${check.name} is not a GitHub Actions run; re-run it where it ran.` })
+      if (!check)
+        throw new PrHostError({ kind: 'stale', host: r.host, message: 'That check is no longer on the head commit.' })
+      if (check.state !== 'failure')
+        throw new PrHostError({ kind: 'stale', host: r.host, message: `${check.name} is not failed any more.` })
+      if (!check.rerunId)
+        throw new PrHostError({
+          kind: 'invalid',
+          host: r.host,
+          message: `${check.name} is not a GitHub Actions run; re-run it where it ran.`,
+        })
       await p.rerunCheck(r, check)
     })
   }

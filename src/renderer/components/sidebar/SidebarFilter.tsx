@@ -31,7 +31,9 @@ export function SidebarFilter({ onChange, placeholder }: SidebarFilterProps) {
 
   return (
     <div className="sidebar-filter">
-      <span className="sidebar-filter-glyph" aria-hidden>{'⌕'}</span>
+      <span className="sidebar-filter-glyph" aria-hidden>
+        {'⌕'}
+      </span>
       <input
         type="text"
         value={value}

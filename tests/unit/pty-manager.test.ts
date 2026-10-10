@@ -8,13 +8,7 @@ import { existsSync } from 'fs'
  */
 
 function resolveShell(requested?: string): string {
-  const candidates = [
-    requested,
-    process.env.SHELL,
-    '/bin/zsh',
-    '/bin/bash',
-    '/bin/sh',
-  ]
+  const candidates = [requested, process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh']
   for (const c of candidates) {
     if (c && existsSync(c)) return c
   }

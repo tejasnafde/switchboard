@@ -38,7 +38,9 @@ function lockedWhileEdited(target: string, edit: string) {
 }
 
 let dir: string
-beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'sb-replace-callers-test-')) })
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'sb-replace-callers-test-'))
+})
 afterEach(() => {
   hook.onRename = null
   rmSync(dir, { recursive: true, force: true })
@@ -55,7 +57,12 @@ function makeSync() {
     projectKey: (path) => path,
     applyOps: () => [],
     onStatus: (status) => statuses.push(status),
-    syncedHash: { load: () => savedHash, save: (hash) => { savedHash = hash } },
+    syncedHash: {
+      load: () => savedHash,
+      save: (hash) => {
+        savedHash = hash
+      },
+    },
     log: { info: vi.fn(), warn: vi.fn() },
     debounceMs: 60_000,
   })
@@ -82,7 +89,9 @@ describe('a replacement waiting on a Windows lock', () => {
     await sync.open()
     const file = join(dir, 'settings.json')
     const before = readFileSync(file, 'utf8')
-    hook.onRename = () => { throw eperm() }
+    hook.onRename = () => {
+      throw eperm()
+    }
     db.settings.theme = 'light'
     await sync.writeIfUnedited()
     expect(readFileSync(file, 'utf8')).toBe(before)
@@ -100,7 +109,9 @@ describe('a replacement waiting on a Windows lock', () => {
   it('writeFileSafe: a lock that outlasts the retries is an ordinary failed save', async () => {
     const file = join(dir, 'a.ts')
     writeFileSync(file, 'old\n')
-    hook.onRename = () => { throw eperm() }
+    hook.onRename = () => {
+      throw eperm()
+    }
     const result = await writeFileSafe(file, 'new\n')
     expect(result).toEqual({ ok: false, error: expect.stringContaining('EPERM') })
     expect(readFileSync(file, 'utf8')).toBe('old\n')
@@ -138,7 +149,9 @@ describe('a replacement waiting on a Windows lock', () => {
     const file = join(dir, 'a.ts')
     writeFileSync(file, 'old\n')
     let failures = 2
-    hook.onRename = () => { if (failures-- > 0) throw eperm() }
+    hook.onRename = () => {
+      if (failures-- > 0) throw eperm()
+    }
     const result = await writeFileSafe(file, 'new\n', { expectedContent: 'old\n' })
     expect(result.ok).toBe(true)
     expect(readFileSync(file, 'utf8')).toBe('new\n')

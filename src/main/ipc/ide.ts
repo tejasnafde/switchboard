@@ -12,7 +12,13 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { WebSocketServer } from 'ws'
 import type { BackendHost } from '../backend/host'
 import { IdeChannels } from '@shared/ipc-channels'
-import { CodeServerManager, seedBridgeExtension, needsJupyterSeed, JUPYTER_EXTENSION_IDS, type IdeStatus } from '../ide/code-server-manager'
+import {
+  CodeServerManager,
+  seedBridgeExtension,
+  needsJupyterSeed,
+  JUPYTER_EXTENSION_IDS,
+  type IdeStatus,
+} from '../ide/code-server-manager'
 import { patchWorkbenchSettings, themeToColorTheme } from '../ide/settings'
 import { ensureBinary } from '../ide/binary'
 import { bundledExtensionDir } from '../ide/bundled'
@@ -111,8 +117,7 @@ export function registerIdeHandlers(host: BackendHost): void {
     host.emit(IdeChannels.STATUS, { status, port, pct })
   }
 
-  const settingsPath = (): string =>
-    join(app.getPath('userData'), 'code-server', 'data', 'User', 'settings.json')
+  const settingsPath = (): string => join(app.getPath('userData'), 'code-server', 'data', 'User', 'settings.json')
 
   /** Merge a patch into the workbench user settings - code-server applies it live. */
   const patchUserSettings = (patch: Record<string, unknown>): void => {
@@ -128,7 +133,7 @@ export function registerIdeHandlers(host: BackendHost): void {
     const binaryPath = await ensureBinary(
       userDataRoot,
       (pct) => pushStatus('downloading', undefined, pct ?? undefined),
-      { skipDownload }
+      { skipDownload },
     )
     if (!binaryPath) return null
     // First-run defaults (autosave, no welcome tab, no trust popup). A merge
@@ -181,7 +186,7 @@ export function registerIdeHandlers(host: BackendHost): void {
         // Crash after ready must reach the renderer - a webview pointed at a
         // dead port with no retry affordance is the worst failure mode.
         onExit: () => pushStatus('stopped'),
-      }
+      },
     )
     return { manager }
   }
@@ -238,7 +243,7 @@ export function registerIdeHandlers(host: BackendHost): void {
         pushStatus('error')
         return { ok: false as const, error: message }
       }
-    }
+    },
   )
 
   host.handle(IdeChannels.STOP, async () => {

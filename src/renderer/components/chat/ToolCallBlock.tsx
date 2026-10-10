@@ -28,18 +28,81 @@ function classifyTool(name: string): ToolKind {
 }
 
 function Icon({ kind }: { kind: ToolKind }) {
-  const props = { width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  const props = {
+    width: 12,
+    height: 12,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+  }
   switch (kind) {
-    case 'bash':  return <svg {...props}><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></svg>
-    case 'read':  return <svg {...props}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+    case 'bash':
+      return (
+        <svg {...props}>
+          <polyline points="4 17 10 11 4 5" />
+          <line x1="12" y1="19" x2="20" y2="19" />
+        </svg>
+      )
+    case 'read':
+      return (
+        <svg {...props}>
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      )
     case 'edit':
-    case 'write': return <svg {...props}><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
-    case 'glob':  return <svg {...props}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
-    case 'grep':  return <svg {...props}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
-    case 'agent': return <svg {...props}><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
-    case 'web':   return <svg {...props}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
-    case 'todo':  return <svg {...props}><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
-    default:      return <svg {...props}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+    case 'write':
+      return (
+        <svg {...props}>
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+        </svg>
+      )
+    case 'glob':
+      return (
+        <svg {...props}>
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+        </svg>
+      )
+    case 'grep':
+      return (
+        <svg {...props}>
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.35-4.35" />
+        </svg>
+      )
+    case 'agent':
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 6v6l4 2" />
+        </svg>
+      )
+    case 'web':
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="10" />
+          <path d="M2 12h20" />
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+        </svg>
+      )
+    case 'todo':
+      return (
+        <svg {...props}>
+          <polyline points="9 11 12 14 22 4" />
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+        </svg>
+      )
+    default:
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      )
   }
 }
 
@@ -72,16 +135,18 @@ function summarizeTool(name: string, input: string): ToolSummary {
 
 function ExpandedBody({ kind, toolCall }: { kind: ToolKind; toolCall: ToolCall }) {
   const parsed = useMemo(() => {
-    try { return JSON.parse(toolCall.input) } catch { return null }
+    try {
+      return JSON.parse(toolCall.input)
+    } catch {
+      return null
+    }
   }, [toolCall.input])
 
   if (kind === 'bash' && parsed) {
     return (
       <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
         <CodeBlock variant="command">$ {parsed.command}</CodeBlock>
-        {parsed.description && (
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{parsed.description}</div>
-        )}
+        {parsed.description && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{parsed.description}</div>}
         {toolCall.output && <CodeBlock variant="output">{toolCall.output}</CodeBlock>}
       </div>
     )
@@ -115,7 +180,9 @@ function ExpandedBody({ kind, toolCall }: { kind: ToolKind; toolCall: ToolCall }
         <FileLabel path={parsed.file_path} />
         {(parsed.offset || parsed.limit) && (
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            {parsed.offset && `offset=${parsed.offset}`}{parsed.offset && parsed.limit && ' · '}{parsed.limit && `limit=${parsed.limit}`}
+            {parsed.offset && `offset=${parsed.offset}`}
+            {parsed.offset && parsed.limit && ' · '}
+            {parsed.limit && `limit=${parsed.limit}`}
           </div>
         )}
         {toolCall.output && <CodeBlock variant="code">{toolCall.output}</CodeBlock>}
@@ -127,25 +194,37 @@ function ExpandedBody({ kind, toolCall }: { kind: ToolKind; toolCall: ToolCall }
     return (
       <div style={{ padding: '8px 12px' }}>
         {(parsed.todos as Array<{ status?: string; content?: string; text?: string }>).map((t, i) => (
-          <div key={i} style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '6px',
-            padding: '3px 0',
-            fontSize: '12px',
-          }}>
-            <span style={{
-              fontSize: '10px',
-              color: t.status === 'completed' ? 'var(--success)' : t.status === 'in_progress' ? 'var(--warning)' : 'var(--text-muted)',
-              marginTop: '2px',
-            }}>
+          <div
+            key={i}
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '6px',
+              padding: '3px 0',
+              fontSize: '12px',
+            }}
+          >
+            <span
+              style={{
+                fontSize: '10px',
+                color:
+                  t.status === 'completed'
+                    ? 'var(--success)'
+                    : t.status === 'in_progress'
+                      ? 'var(--warning)'
+                      : 'var(--text-muted)',
+                marginTop: '2px',
+              }}
+            >
               {t.status === 'completed' ? '●' : t.status === 'in_progress' ? '◐' : '○'}
             </span>
-            <span style={{
-              color: t.status === 'completed' ? 'var(--text-muted)' : 'var(--text-secondary)',
-              textDecoration: t.status === 'completed' ? 'line-through' : 'none',
-              flex: 1,
-            }}>
+            <span
+              style={{
+                color: t.status === 'completed' ? 'var(--text-muted)' : 'var(--text-secondary)',
+                textDecoration: t.status === 'completed' ? 'line-through' : 'none',
+                flex: 1,
+              }}
+            >
               {t.content || t.text}
             </span>
           </div>
@@ -167,16 +246,18 @@ function ExpandedBody({ kind, toolCall }: { kind: ToolKind; toolCall: ToolCall }
 
 function FileLabel({ path }: { path: string }) {
   return (
-    <div style={{
-      fontSize: '11px',
-      fontFamily: 'var(--font-mono)',
-      color: 'var(--accent)',
-      padding: '3px 6px',
-      background: 'var(--accent-subtle)',
-      borderRadius: '3px',
-      display: 'inline-block',
-      alignSelf: 'flex-start',
-    }}>
+    <div
+      style={{
+        fontSize: '11px',
+        fontFamily: 'var(--font-mono)',
+        color: 'var(--accent)',
+        padding: '3px 6px',
+        background: 'var(--accent-subtle)',
+        borderRadius: '3px',
+        display: 'inline-block',
+        alignSelf: 'flex-start',
+      }}
+    >
       {path}
     </div>
   )
@@ -190,12 +271,15 @@ function CodeBlock({ variant, children }: { variant: 'command' | 'output' | 'cod
     e.stopPropagation()
     const text = codeRef.current?.textContent ?? ''
     if (typeof navigator.clipboard?.writeText !== 'function') return
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    }).catch((error: unknown) => {
-      log.warn('clipboard write failed', error)
-    })
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+      .catch((error: unknown) => {
+        log.warn('clipboard write failed', error)
+      })
   }
 
   const variantStyles: Record<string, React.CSSProperties> = {
@@ -228,18 +312,20 @@ function CodeBlock({ variant, children }: { variant: 'command' | 'output' | 'cod
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
-      <pre style={{
-        margin: 0,
-        padding: '6px 10px',
-        fontFamily: 'var(--font-mono)',
-        fontSize: '11px',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-        overflow: 'auto',
-        maxHeight: '240px',
-        borderRadius: '3px',
-        ...variantStyles[variant],
-      }}>
+      <pre
+        style={{
+          margin: 0,
+          padding: '6px 10px',
+          fontFamily: 'var(--font-mono)',
+          fontSize: '11px',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          overflow: 'auto',
+          maxHeight: '240px',
+          borderRadius: '3px',
+          ...variantStyles[variant],
+        }}
+      >
         <span ref={codeRef}>{children}</span>
       </pre>
     </div>
@@ -249,27 +335,31 @@ function CodeBlock({ variant, children }: { variant: 'command' | 'output' | 'cod
 function DiffChunk({ type, content }: { type: 'add' | 'remove'; content: string }) {
   const isAdd = type === 'add'
   return (
-    <pre style={{
-      margin: 0,
-      padding: '6px 10px',
-      fontFamily: 'var(--font-mono)',
-      fontSize: '11px',
-      whiteSpace: 'pre-wrap',
-      wordBreak: 'break-word',
-      overflow: 'auto',
-      maxHeight: '200px',
-      borderRadius: '3px',
-      background: isAdd ? 'rgba(63, 185, 80, 0.08)' : 'rgba(248, 81, 73, 0.08)',
-      color: 'var(--text-primary)',
-      borderLeft: `2px solid ${isAdd ? 'var(--success)' : 'var(--error)'}`,
-    }}>
+    <pre
+      style={{
+        margin: 0,
+        padding: '6px 10px',
+        fontFamily: 'var(--font-mono)',
+        fontSize: '11px',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        overflow: 'auto',
+        maxHeight: '200px',
+        borderRadius: '3px',
+        background: isAdd ? 'rgba(63, 185, 80, 0.08)' : 'rgba(248, 81, 73, 0.08)',
+        color: 'var(--text-primary)',
+        borderLeft: `2px solid ${isAdd ? 'var(--success)' : 'var(--error)'}`,
+      }}
+    >
       {content.split('\n').map((line, i) => (
         <div key={i}>
-          <span style={{
-            color: isAdd ? 'var(--success)' : 'var(--error)',
-            marginRight: '6px',
-            userSelect: 'none',
-          }}>
+          <span
+            style={{
+              color: isAdd ? 'var(--success)' : 'var(--error)',
+              marginRight: '6px',
+              userSelect: 'none',
+            }}
+          >
             {isAdd ? '+' : '-'}
           </span>
           {line}
@@ -296,66 +386,73 @@ export function ToolCallBlock({ toolCall }: ToolCallBlockProps) {
         onClick={() => setExpanded(!expanded)}
       >
         {/* Neutral glyph: tool type is useful; decorative category color is not. */}
-        <span style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: '16px',
-          height: '16px',
-          color: 'var(--text-muted)',
-          flexShrink: 0,
-        }}>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '16px',
+            height: '16px',
+            color: 'var(--text-muted)',
+            flexShrink: 0,
+          }}
+        >
           <Icon kind={kind} />
         </span>
 
         {/* Label */}
-        <span style={{
-          color: 'var(--text-primary)',
-          fontWeight: 500,
-          fontSize: '12px',
-          flexShrink: 0,
-        }}>
+        <span
+          style={{
+            color: 'var(--text-primary)',
+            fontWeight: 500,
+            fontSize: '12px',
+            flexShrink: 0,
+          }}
+        >
           {summary.label}
         </span>
 
         {/* Detail - monospace, truncated */}
         {summary.detail && (
-          <span style={{
-            flex: 1,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            fontFamily: summary.mono ? 'var(--font-mono)' : 'inherit',
-            fontSize: '11px',
-            color: 'var(--text-muted)',
-          }} title={summary.detail}>
+          <span
+            style={{
+              flex: 1,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontFamily: summary.mono ? 'var(--font-mono)' : 'inherit',
+              fontSize: '11px',
+              color: 'var(--text-muted)',
+            }}
+            title={summary.detail}
+          >
             {summary.detail}
           </span>
         )}
 
         {!summary.detail && <span style={{ flex: 1 }} />}
 
-        {hasRunning && (
-          <span style={{ color: 'var(--text-muted)', fontSize: '10px', flexShrink: 0 }}>
-            Running
-          </span>
-        )}
+        {hasRunning && <span style={{ color: 'var(--text-muted)', fontSize: '10px', flexShrink: 0 }}>Running</span>}
 
         {/* Chevron */}
-        <span style={{
-          fontSize: '9px',
-          color: 'var(--text-muted)',
-          flexShrink: 0,
-        }}>
+        <span
+          style={{
+            fontSize: '9px',
+            color: 'var(--text-muted)',
+            flexShrink: 0,
+          }}
+        >
           {expanded ? '▾' : '▸'}
         </span>
       </button>
 
       {expanded && (
-        <div style={{
-          borderTop: '1px solid var(--border)',
-          background: 'var(--bg-surface)',
-        }}>
+        <div
+          style={{
+            borderTop: '1px solid var(--border)',
+            background: 'var(--bg-surface)',
+          }}
+        >
           <ExpandedBody kind={kind} toolCall={toolCall} />
         </div>
       )}

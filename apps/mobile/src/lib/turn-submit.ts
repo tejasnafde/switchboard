@@ -70,6 +70,10 @@ export async function enqueueTurn(
  * (history, then session.provider): pushing one remembered here would undo a
  * change made on the desktop since.
  */
-export function modeToRestore<M extends string>(isNew: boolean | undefined, remembered: M | undefined, defaultMode: M | undefined): M | undefined {
-  return isNew ? remembered ?? defaultMode : undefined
+export function modeToRestore<M extends string>(
+  isNew: boolean | undefined,
+  remembered: M | undefined,
+  defaultMode: M | undefined,
+): M | undefined {
+  return isNew ? (remembered ?? defaultMode) : undefined
 }

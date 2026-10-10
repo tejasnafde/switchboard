@@ -74,11 +74,13 @@ describe('draft payload transaction', () => {
     ;(discard as (payload: { text: string; pills: DraftPill[]; images: ImageAttachment[] }) => void)({
       text: 'sent',
       pills: [],
-      images: [{
-        id: 'image-1',
-        file: { name: 'image.png' } as File,
-        previewUrl: 'blob:image-1',
-      }],
+      images: [
+        {
+          id: 'image-1',
+          file: { name: 'image.png' } as File,
+          previewUrl: 'blob:image-1',
+        },
+      ],
     })
 
     expect(revokeObjectURL).toHaveBeenCalledOnce()
@@ -91,10 +93,9 @@ describe('draft payload transaction', () => {
       file: { name: 'image.png' } as File,
       previewUrl: 'blob:shared-image',
     }
-    draftStoreModule.discardDetachedDraftPayload(
-      { text: 'old', pills: [], images: [image] },
-      [{ text: 'new', pills: [], images: [{ ...image }] }],
-    )
+    draftStoreModule.discardDetachedDraftPayload({ text: 'old', pills: [], images: [image] }, [
+      { text: 'new', pills: [], images: [{ ...image }] },
+    ])
 
     expect(revokeObjectURL).not.toHaveBeenCalled()
   })
@@ -113,10 +114,12 @@ describe('draft payload transaction', () => {
       images: [image],
     }
 
-    expect((equals as (left: typeof payload, right: typeof payload) => boolean)(payload, {
-      text: payload.text,
-      pills: [...payload.pills],
-      images: [{ ...image }],
-    })).toBe(true)
+    expect(
+      (equals as (left: typeof payload, right: typeof payload) => boolean)(payload, {
+        text: payload.text,
+        pills: [...payload.pills],
+        images: [{ ...image }],
+      }),
+    ).toBe(true)
   })
 })

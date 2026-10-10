@@ -73,10 +73,14 @@ export interface GhPullRequest {
   changedFiles?: number | null
   author: GhActor | null
   baseRef?: { branchProtectionRule: { requiredApprovingReviewCount: number | null } | null } | null
-  reviewRequests?: { nodes: Array<{ requestedReviewer: ({ __typename: string; slug?: string } & Partial<GhActor>) | null }> }
+  reviewRequests?: {
+    nodes: Array<{ requestedReviewer: ({ __typename: string; slug?: string } & Partial<GhActor>) | null }>
+  }
   latestReviews?: { nodes: Array<{ state: string; author: GhActor | null; submittedAt?: string | null }> }
   reviewThreads?: { totalCount: number; nodes: Array<{ isResolved: boolean }> }
-  commits?: { nodes: Array<{ commit: { statusCheckRollup: { state: string; contexts: { nodes: GhCheckContext[] } } | null } }> }
+  commits?: {
+    nodes: Array<{ commit: { statusCheckRollup: { state: string; contexts: { nodes: GhCheckContext[] } } | null } }>
+  }
   /** GitHub works it out in the background after a push: `UNKNOWN` until it has. */
   mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
 }
@@ -117,7 +121,9 @@ export interface GhReviewThread {
   /** Set on a multi-line thread. */
   startLine?: number | null
   startDiffSide?: 'LEFT' | 'RIGHT' | null
-  comments: { nodes: Array<{ id: string; body: string; url: string | null; createdAt: string; author: GhActor | null }> }
+  comments: {
+    nodes: Array<{ id: string; body: string; url: string | null; createdAt: string; author: GhActor | null }>
+  }
 }
 
 export interface GhPullFile {
@@ -174,7 +180,15 @@ export function mapGhCheck(ctx: GhCheckContext, index: number): PrCheck {
   }
   const state: CheckState =
     ctx.state === 'SUCCESS' ? 'success' : ctx.state === 'FAILURE' || ctx.state === 'ERROR' ? 'failure' : 'pending'
-  return { id: `status:${index}:${ctx.context}`, name: ctx.context, state, description: ctx.description, url: ctx.targetUrl, durationMs: null, rerunId: null }
+  return {
+    id: `status:${index}:${ctx.context}`,
+    name: ctx.context,
+    state,
+    description: ctx.description,
+    url: ctx.targetUrl,
+    durationMs: null,
+    rerunId: null,
+  }
 }
 
 export function mapGhChecks(pr: Pick<GhPullRequest, 'commits'>): PrCheck[] {
@@ -198,7 +212,12 @@ function mapReviewers(pr: GhPullRequest): PrReviewer[] {
     const r = request.requestedReviewer
     if (r?.__typename === 'Team' && r.slug) {
       const id = `team:${r.slug}`
-      byLogin.set(id, { id, person: { login: r.slug, displayName: r.name || r.slug, avatarUrl: null }, state: 'pending', requested: true })
+      byLogin.set(id, {
+        id,
+        person: { login: r.slug, displayName: r.name || r.slug, avatarUrl: null },
+        state: 'pending',
+        requested: true,
+      })
       continue
     }
     if (!r || r.__typename !== 'User' || !r.login) continue
@@ -232,7 +251,8 @@ export function mapGhSummary(repo: RepoRef, pr: GhPullRequest, viewerLogin: stri
     deletions: pr.deletions ?? null,
     changedFiles: pr.changedFiles ?? null,
     unresolvedConversations: threads ? threads.filter((t) => !t.isResolved).length : null,
-    mergeConflicts: pr.state !== 'OPEN' ? false : pr.mergeable === 'CONFLICTING' ? true : pr.mergeable === 'MERGEABLE' ? false : null,
+    mergeConflicts:
+      pr.state !== 'OPEN' ? false : pr.mergeable === 'CONFLICTING' ? true : pr.mergeable === 'MERGEABLE' ? false : null,
     // GitHub's API says that a PR conflicts, never where.
     conflictedFiles: [],
     checks: rollupChecks(mapGhChecks(pr)),
@@ -279,7 +299,14 @@ export function mapGhActivity(items: readonly GhTimelineItem[]): PrActivity[] {
         pushRun.row.at = at
         return
       }
-      const row: PrActivity = { id: `commit:${item.commit.oid}`, kind: 'pushed', actor, summary: 'pushed a commit', detail: item.commit.messageHeadline, at }
+      const row: PrActivity = {
+        id: `commit:${item.commit.oid}`,
+        kind: 'pushed',
+        actor,
+        summary: 'pushed a commit',
+        detail: item.commit.messageHeadline,
+        at,
+      }
       pushRun = { row, count: 1 }
       out.push(row)
       return
@@ -296,9 +323,23 @@ export function mapGhActivity(items: readonly GhTimelineItem[]): PrActivity[] {
         at: parseTime(item.submittedAt) ?? 0,
       })
     } else if (item.__typename === 'IssueComment') {
-      out.push({ id: `comment:${i}`, kind: 'commented', actor: mapGhActor(item.author), summary: 'commented', detail: excerpt(item.body ?? ''), at: parseTime(item.createdAt) ?? 0 })
+      out.push({
+        id: `comment:${i}`,
+        kind: 'commented',
+        actor: mapGhActor(item.author),
+        summary: 'commented',
+        detail: excerpt(item.body ?? ''),
+        at: parseTime(item.createdAt) ?? 0,
+      })
     } else if (item.__typename === 'MergedEvent') {
-      out.push({ id: `merged:${i}`, kind: 'merged', actor: mapGhActor(item.actor), summary: 'merged', detail: null, at: parseTime(item.createdAt) ?? 0 })
+      out.push({
+        id: `merged:${i}`,
+        kind: 'merged',
+        actor: mapGhActor(item.actor),
+        summary: 'merged',
+        detail: null,
+        at: parseTime(item.createdAt) ?? 0,
+      })
     }
   })
   return out
@@ -312,7 +353,12 @@ export function mapGhMergeStrategies(settings: GhRepoMergeSettings): MergeStrate
   return orderMergeStrategies(allowed)
 }
 
-export function mapGhDetail(repo: RepoRef, pr: GhPullRequestDetail, viewerLogin: string, settings: GhRepoMergeSettings): PrDetail {
+export function mapGhDetail(
+  repo: RepoRef,
+  pr: GhPullRequestDetail,
+  viewerLogin: string,
+  settings: GhRepoMergeSettings,
+): PrDetail {
   const summary = mapGhSummary(repo, pr, viewerLogin)
   return {
     ...summary,
@@ -323,7 +369,8 @@ export function mapGhDetail(repo: RepoRef, pr: GhPullRequestDetail, viewerLogin:
     activity: mapGhActivity(pr.timelineItems?.nodes ?? []),
     checkList: mapGhChecks(pr),
     // Closing and requesting reviewers both need write access, or authorship.
-    viewerCanManage: summary.viewer.isAuthor || ['ADMIN', 'MAINTAIN', 'WRITE'].includes(settings.viewerPermission ?? ''),
+    viewerCanManage:
+      summary.viewer.isAuthor || ['ADMIN', 'MAINTAIN', 'WRITE'].includes(settings.viewerPermission ?? ''),
   }
 }
 
@@ -365,10 +412,23 @@ export interface GhTeam {
   name?: string | null
 }
 
-export function mapGhCandidates(collaborators: readonly GhCollaborator[], teams: readonly GhTeam[]): PrReviewerCandidate[] {
+export function mapGhCandidates(
+  collaborators: readonly GhCollaborator[],
+  teams: readonly GhTeam[],
+): PrReviewerCandidate[] {
   return [
-    ...collaborators.map((c): PrReviewerCandidate => ({ id: c.login, person: { login: c.login, displayName: c.login, avatarUrl: c.avatar_url ?? null }, kind: 'user', reviewed: 0 })),
-    ...teams.map((t): PrReviewerCandidate => ({ id: `team:${t.slug}`, person: { login: t.slug, displayName: t.name || t.slug, avatarUrl: null }, kind: 'team', reviewed: 0 })),
+    ...collaborators.map((c): PrReviewerCandidate => ({
+      id: c.login,
+      person: { login: c.login, displayName: c.login, avatarUrl: c.avatar_url ?? null },
+      kind: 'user',
+      reviewed: 0,
+    })),
+    ...teams.map((t): PrReviewerCandidate => ({
+      id: `team:${t.slug}`,
+      person: { login: t.slug, displayName: t.name || t.slug, avatarUrl: null },
+      kind: 'team',
+      reviewed: 0,
+    })),
   ]
 }
 
@@ -415,7 +475,11 @@ export function classifyGhError(err: { code?: string | number | null; stderr?: s
   if (/Could not resolve to a Repository|HTTP 404|Not Found/i.test(text)) {
     return { kind: 'not_found', host: 'github', message: 'GitHub could not find it, or this account cannot see it.' }
   }
-  if (/error connecting|dial tcp|no such host|ENOTFOUND|ECONNRESET|ETIMEDOUT|i\/o timeout|network is unreachable/i.test(text)) {
+  if (
+    /error connecting|dial tcp|no such host|ENOTFOUND|ECONNRESET|ETIMEDOUT|i\/o timeout|network is unreachable/i.test(
+      text,
+    )
+  ) {
     return { kind: 'offline', host: 'github', message: 'Could not reach github.com.' }
   }
   const firstLine = (err.stderr ?? err.message ?? '').split('\n').find((l) => l.trim()) ?? 'gh failed'
@@ -437,9 +501,11 @@ export function isTransientGhFailure(res: { code?: string | number | null; stder
   if (res.code === GH_TIMED_OUT) return true
   if (res.code === 0 || res.code === 'ENOENT') return false
   const text = res.stderr ?? ''
-  return /HTTP 50[0234]\b/.test(text)
-    || /something went wrong while executing your query/i.test(text)
-    || /unexpected end of JSON input|unexpected EOF/i.test(text)
+  return (
+    /HTTP 50[0234]\b/.test(text) ||
+    /something went wrong while executing your query/i.test(text) ||
+    /unexpected end of JSON input|unexpected EOF/i.test(text)
+  )
 }
 
 interface GhErrorBody {
@@ -455,7 +521,10 @@ function ghErrorMessage(stdout: string | undefined): { message: string | null; g
     const graphqlType = typeof first === 'object' && first?.type ? first.type : null
     const detail = typeof first === 'string' ? first : first?.message
     // REST puts the reason in `message` and the specifics in `errors`; GraphQL has only `errors`.
-    const message = body.message && detail && body.message !== detail ? `${body.message}: ${detail}` : body.message ?? detail ?? null
+    const message =
+      body.message && detail && body.message !== detail
+        ? `${body.message}: ${detail}`
+        : (body.message ?? detail ?? null)
     return { message: message ? message.slice(0, 300) : null, graphqlType }
   } catch (err) {
     // Not JSON: gh printed only to stderr, which the caller reads instead.
@@ -476,23 +545,44 @@ const GRAPHQL_KIND: Record<string, PrError['kind']> = {
  * and the host's JSON answer on stdout; GraphQL mutations answer with a
  * typed `errors[]`.
  */
-export function classifyGhWriteError(res: { code?: string | number | null; stdout?: string; stderr?: string }): PrError {
+export function classifyGhWriteError(res: {
+  code?: string | number | null
+  stdout?: string
+  stderr?: string
+}): PrError {
   if (res.code === 'ENOENT') return classifyGhError(res)
   const stderr = res.stderr ?? ''
   const status = Number(/HTTP (\d{3})/.exec(stderr)?.[1] ?? 0)
   const { message, graphqlType } = ghErrorMessage(res.stdout)
-  const said = message ?? stderr.split('\n').find((l) => l.trim())?.replace(/^gh:\s*/, '').replace(/\s*\(HTTP \d{3}\)\s*$/, '').trim() ?? ''
-  const err = (kind: PrError['kind'], fallback: string): PrError => ({ kind, host: 'github', message: said || fallback })
+  const said =
+    message ??
+    stderr
+      .split('\n')
+      .find((l) => l.trim())
+      ?.replace(/^gh:\s*/, '')
+      .replace(/\s*\(HTTP \d{3}\)\s*$/, '')
+      .trim() ??
+    ''
+  const err = (kind: PrError['kind'], fallback: string): PrError => ({
+    kind,
+    host: 'github',
+    message: said || fallback,
+  })
   if (status === 429 || /rate limit/i.test(`${stderr}\n${message ?? ''}`) || graphqlType === 'RATE_LIMITED') {
     return { kind: 'rate_limited', host: 'github', message: 'GitHub rate limit reached.' }
   }
   if (graphqlType && GRAPHQL_KIND[graphqlType]) return err(GRAPHQL_KIND[graphqlType], 'GitHub refused the change.')
   switch (status) {
-    case 401: return { kind: 'token_rejected', host: 'github', message: 'gh is signed out or its token was rejected.' }
-    case 403: return err('forbidden', 'GitHub does not let this account do that.')
-    case 404: return err('not_found', 'GitHub could not find it, or this account cannot see it.')
-    case 405: return err('conflict', 'GitHub says the pull request cannot be merged.')
-    case 409: return err('stale', 'The pull request changed on GitHub. Refresh and try again.')
+    case 401:
+      return { kind: 'token_rejected', host: 'github', message: 'gh is signed out or its token was rejected.' }
+    case 403:
+      return err('forbidden', 'GitHub does not let this account do that.')
+    case 404:
+      return err('not_found', 'GitHub could not find it, or this account cannot see it.')
+    case 405:
+      return err('conflict', 'GitHub says the pull request cannot be merged.')
+    case 409:
+      return err('stale', 'The pull request changed on GitHub. Refresh and try again.')
     case 422:
       if (/pending review/i.test(said)) return err('conflict', 'You already have a pending review on GitHub.')
       if (/your own pull request/i.test(said)) return err('forbidden', 'You cannot approve your own pull request.')

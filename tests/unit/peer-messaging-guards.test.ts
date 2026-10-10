@@ -33,8 +33,9 @@ describe('peerMessageId', () => {
 
   // The separator is what stops ('ab','c') and ('a','bc') hashing the same.
   it('does not collide across a field boundary', () => {
-    expect(peerMessageId({ fromThreadId: 'ab', targetThreadId: 'c', text: 't' }))
-      .not.toBe(peerMessageId({ fromThreadId: 'a', targetThreadId: 'bc', text: 't' }))
+    expect(peerMessageId({ fromThreadId: 'ab', targetThreadId: 'c', text: 't' })).not.toBe(
+      peerMessageId({ fromThreadId: 'a', targetThreadId: 'bc', text: 't' }),
+    )
   })
 
   it('has a stable prefixed shape', () => {
@@ -190,7 +191,7 @@ describe('PeerAgentSendGuard hop depth', () => {
 })
 
 describe('PeerAgentSendGuard budget', () => {
-  const spend =(guard: PeerAgentSendGuard, count: number, from = 'a') => {
+  const spend = (guard: PeerAgentSendGuard, count: number, from = 'a') => {
     for (let i = 0; i < count; i++) {
       expect(guard.check({ fromThreadId: from, senderDepth: 0 }, 1_000 + i).ok).toBe(true)
     }

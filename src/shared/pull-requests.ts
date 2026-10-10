@@ -171,7 +171,13 @@ export interface PrDetail extends PrSummary {
 }
 
 /** Neutral names; each host maps its own. GitHub has the first three. */
-export type MergeStrategy = 'merge_commit' | 'squash' | 'rebase' | 'fast_forward' | 'squash_fast_forward' | 'rebase_merge'
+export type MergeStrategy =
+  | 'merge_commit'
+  | 'squash'
+  | 'rebase'
+  | 'fast_forward'
+  | 'squash_fast_forward'
+  | 'rebase_merge'
 
 export interface PrComment {
   id: string
@@ -245,7 +251,14 @@ export interface HostCapabilities {
  */
 export const HOST_CAPABILITIES: Record<PrHost, HostCapabilities> = {
   // Only GitHub Actions runs re-run; a check from another app has `rerunId: null`.
-  github: { requiredApprovals: true, exactCheckDurations: true, rerunChecks: true, rerunUnavailable: null, teamReviewers: true, declineLabel: 'Close' },
+  github: {
+    requiredApprovals: true,
+    exactCheckDurations: true,
+    rerunChecks: true,
+    rerunUnavailable: null,
+    teamReviewers: true,
+    declineLabel: 'Close',
+  },
   // Bitbucket branch restrictions need repository admin to read. Its REST API
   // can start a new pipeline but has no re-run of a failed one.
   bitbucket: {
@@ -345,7 +358,11 @@ export interface SourceControlTestResult {
  * needs no pipeline scope. read:workspace is optional: without it Add
  * reviewer offers recent reviewers only, not workspace members.
  */
-export const BITBUCKET_READ_SCOPES = ['read:user:bitbucket', 'read:repository:bitbucket', 'read:pullrequest:bitbucket'] as const
+export const BITBUCKET_READ_SCOPES = [
+  'read:user:bitbucket',
+  'read:repository:bitbucket',
+  'read:pullrequest:bitbucket',
+] as const
 export const BITBUCKET_TOKEN_SCOPES = [...BITBUCKET_READ_SCOPES, 'write:pullrequest:bitbucket'] as const
 export const BITBUCKET_OPTIONAL_SCOPES = ['read:workspace:bitbucket'] as const
 
@@ -376,12 +393,18 @@ export function mergeBlockers(pr: PrSummary): MergeBlocker[] {
   if (pr.draft) out.push({ kind: 'draft', label: 'Draft' })
   if (pr.mergeConflicts) out.push({ kind: 'conflicts', label: `Conflicts with ${pr.targetBranch}` })
   if (pr.checks.state === 'failure') {
-    out.push({ kind: 'checks_failed', label: pr.checks.failed === 1 ? '1 check failed' : `${pr.checks.failed} checks failed` })
+    out.push({
+      kind: 'checks_failed',
+      label: pr.checks.failed === 1 ? '1 check failed' : `${pr.checks.failed} checks failed`,
+    })
   } else if (pr.checks.state === 'pending') {
     out.push({ kind: 'checks_pending', label: 'Checks running' })
   }
   if ((pr.unresolvedConversations ?? 0) > 0) {
-    out.push({ kind: 'unresolved_conversations', label: `${plural(pr.unresolvedConversations ?? 0, 'unresolved conversation')}` })
+    out.push({
+      kind: 'unresolved_conversations',
+      label: `${plural(pr.unresolvedConversations ?? 0, 'unresolved conversation')}`,
+    })
   }
   if (pr.reviewers.some((r) => r.state === 'changes_requested')) {
     out.push({ kind: 'changes_requested', label: 'Changes requested' })
@@ -395,5 +418,8 @@ export function mergeBlockers(pr: PrSummary): MergeBlocker[] {
 
 /** Strip HTML comments (bot fingerprints, templates), which the markdown renderer would show escaped. */
 export function stripHtmlComments(text: string): string {
-  return text.replace(/<!--[\s\S]*?-->/g, '').replace(/\n{3,}/g, '\n\n').trim()
+  return text
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }

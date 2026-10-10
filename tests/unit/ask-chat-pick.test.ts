@@ -8,21 +8,40 @@ import { linkThenDeliver, pickNeedsLink } from '../../src/renderer/components/re
 describe('linkThenDeliver', () => {
   it('links, then delivers', async () => {
     const order: string[] = []
-    const failed = await linkThenDeliver(true, async () => { order.push('link'); return { ok: true } }, async () => { order.push('deliver') })
+    const failed = await linkThenDeliver(
+      true,
+      async () => {
+        order.push('link')
+        return { ok: true }
+      },
+      async () => {
+        order.push('deliver')
+      },
+    )
     expect(failed).toBeNull()
     expect(order).toEqual(['link', 'deliver'])
   })
 
   it('stops with the reason when the backend refuses the link', async () => {
     const deliver = vi.fn(async () => {})
-    const failed = await linkThenDeliver(true, async () => ({ ok: false, message: "This pull request is not on the repository of that chat's project." }), deliver)
+    const failed = await linkThenDeliver(
+      true,
+      async () => ({ ok: false, message: "This pull request is not on the repository of that chat's project." }),
+      deliver,
+    )
     expect(failed).toBe("This pull request is not on the repository of that chat's project.")
     expect(deliver).not.toHaveBeenCalled()
   })
 
   it('stops when the link call rejects', async () => {
     const deliver = vi.fn(async () => {})
-    const failed = await linkThenDeliver(true, async () => { throw new Error('unknown channel') }, deliver)
+    const failed = await linkThenDeliver(
+      true,
+      async () => {
+        throw new Error('unknown channel')
+      },
+      deliver,
+    )
     expect(failed).toBe('Could not link that chat; see the log.')
     expect(deliver).not.toHaveBeenCalled()
   })

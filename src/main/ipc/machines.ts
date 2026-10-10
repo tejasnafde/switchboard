@@ -9,11 +9,27 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { MachineChannels } from '@shared/ipc-channels'
 import { createMainLogger } from '../logger'
-import { listMachines, createMachine, updateMachine, deleteMachine, reorderMachines, getMachineSnapshots, saveMachineSnapshot, type MachineInput } from '../db/machines'
+import {
+  listMachines,
+  createMachine,
+  updateMachine,
+  deleteMachine,
+  reorderMachines,
+  getMachineSnapshots,
+  saveMachineSnapshot,
+  type MachineInput,
+} from '../db/machines'
 import type { MachineSnapshot } from '@shared/machines'
 import { iapTransportForMachine, parseSshConfig, parseIapTargets } from '../machines/ssh-config'
 import { ConnectionManager } from '../machines/connection-manager'
-import { allocatePort, spawnTunnel, waitForHealth, REMOTE_PORT, REMOTE_COMMAND, REMOTE_IDE_PORT } from '../machines/connect-deps'
+import {
+  allocatePort,
+  spawnTunnel,
+  waitForHealth,
+  REMOTE_PORT,
+  REMOTE_COMMAND,
+  REMOTE_IDE_PORT,
+} from '../machines/connect-deps'
 import { makeProvision } from '../machines/provision-deps'
 import { getSetting, setSetting } from '../db/database'
 import { createServer } from 'node:net'
@@ -59,7 +75,9 @@ async function enrichIapTransport(machine: ReturnType<typeof listMachines>[numbe
     const patch = iapTransportForMachine(machine, parseIapTargets(await readSshConfig()))
     if (!patch) return machine
     const updated = updateMachine(machine.id, patch, Date.now()) ?? machine
-    log.info(`resolved ${machine.name} through gcloud IAP (${updated.iapProject}/${updated.iapZone}/${updated.iapInstance})`)
+    log.info(
+      `resolved ${machine.name} through gcloud IAP (${updated.iapProject}/${updated.iapZone}/${updated.iapInstance})`,
+    )
     return updated
   } catch (err) {
     log.info(`could not inspect ssh config for IAP transport: ${err instanceof Error ? err.message : String(err)}`)
@@ -82,7 +100,9 @@ export function registerMachineHandlers(host: BackendHost): void {
       maxReconnects: 5,
       onLog: (msg) => log.error(msg),
       onStatus: (machineId, status, url, reason, willRetry, idePort) => {
-        log.info(`status ${machineId}: ${status}${url ? ` (${url})` : ''}${reason ? ` - ${reason}` : ''}${willRetry ? ' (will retry)' : ''}${idePort ? ` idePort=${idePort}` : ''}`)
+        log.info(
+          `status ${machineId}: ${status}${url ? ` (${url})` : ''}${reason ? ` - ${reason}` : ''}${willRetry ? ' (will retry)' : ''}${idePort ? ` idePort=${idePort}` : ''}`,
+        )
         currentHost?.emit(MachineChannels.STATUS, machineId, status, url, reason, willRetry, idePort)
       },
     })
@@ -128,7 +148,6 @@ export function registerMachineHandlers(host: BackendHost): void {
     saveMachineSnapshot(id, snapshot)
     return { ok: true as const }
   })
-
 
   host.handle(MachineChannels.DISCONNECT, async (id: string) => {
     await mgr.disconnect(id)

@@ -50,9 +50,7 @@ const retryNotBefore = new Map<string, number>()
 
 /** Messages the user is still waiting on for a given thread, oldest first. */
 export function queuedFor(connectionId: string, threadId: string): QueuedMessage[] {
-  return useOutboxStore
-    .getState()
-    .messages.filter((m) => m.connectionId === connectionId && m.threadId === threadId)
+  return useOutboxStore.getState().messages.filter((m) => m.connectionId === connectionId && m.threadId === threadId)
 }
 
 /** Resolves once durable. The store updates synchronously so the composer can
@@ -88,12 +86,7 @@ export async function acknowledgeAcceptedOrigin(
   threadId: string,
   origin: string,
 ): Promise<boolean> {
-  const reconciled = removeAcceptedOrigin(
-    useOutboxStore.getState().messages,
-    connectionId,
-    threadId,
-    origin,
-  )
+  const reconciled = removeAcceptedOrigin(useOutboxStore.getState().messages, connectionId, threadId, origin)
   if (!reconciled.accepted) return false
   await finishAccepted(reconciled.accepted)
   return true
@@ -105,9 +98,9 @@ export async function acknowledgeAcceptedOrigin(
 export async function abandonAmbiguous(
   messageId: string,
 ): Promise<{ message: QueuedMessage; status: 'abandoned' | 'completed' }> {
-  const message = useOutboxStore.getState().messages.find(
-    (candidate) => candidate.messageId === messageId && candidate.deliveryState === 'ambiguous',
-  )
+  const message = useOutboxStore
+    .getState()
+    .messages.find((candidate) => candidate.messageId === messageId && candidate.deliveryState === 'ambiguous')
   if (!message) throw new Error('Unconfirmed message is no longer queued')
   const client = getClient(message.connectionId)
   if (!client) throw new Error('Backend not connected')
@@ -260,17 +253,18 @@ async function deliver(message: QueuedMessage): Promise<void> {
         }))
         await saveQueued(prepared)
       },
-      send: (prepared) => client.submitTurn({
-        version: 1,
-        threadId: prepared.threadId,
-        origin: prepared.messageId,
-        providerText: prepared.providerText ?? prepared.text,
-        displayBody: prepared.text,
-        images: prepared.images,
-        runtimeMode: prepared.runtimeMode as RuntimeMode | undefined,
-        autoTitleText: prepared.titleCandidate,
-        ...(wantsQueue && backendQueues(client) ? { delivery: 'queue' as const } : {}),
-      }),
+      send: (prepared) =>
+        client.submitTurn({
+          version: 1,
+          threadId: prepared.threadId,
+          origin: prepared.messageId,
+          providerText: prepared.providerText ?? prepared.text,
+          displayBody: prepared.text,
+          images: prepared.images,
+          runtimeMode: prepared.runtimeMode as RuntimeMode | undefined,
+          autoTitleText: prepared.titleCandidate,
+          ...(wantsQueue && backendQueues(client) ? { delivery: 'queue' as const } : {}),
+        }),
     })
     const prepared = delivered.message
     if (delivered.disposition === 'accepted') {
@@ -278,10 +272,7 @@ async function deliver(message: QueuedMessage): Promise<void> {
       await finishAccepted(prepared)
       return
     }
-    if (
-      (delivered.disposition === 'rejected' && !delivered.retryable) ||
-      delivered.disposition === 'conflict'
-    ) {
+    if ((delivered.disposition === 'rejected' && !delivered.retryable) || delivered.disposition === 'conflict') {
       await preserveRejected(prepared, delivered.reason ?? 'Backend refused the message', chat)
       return
     }
@@ -301,12 +292,14 @@ async function deliver(message: QueuedMessage): Promise<void> {
 }
 
 function currentQueued(message: QueuedMessage): QueuedMessage | undefined {
-  return useOutboxStore.getState().messages.find(
-    (candidate) =>
-      candidate.connectionId === message.connectionId &&
-      candidate.threadId === message.threadId &&
-      candidate.messageId === message.messageId,
-  )
+  return useOutboxStore
+    .getState()
+    .messages.find(
+      (candidate) =>
+        candidate.connectionId === message.connectionId &&
+        candidate.threadId === message.threadId &&
+        candidate.messageId === message.messageId,
+    )
 }
 
 async function preserveForRetry(message: QueuedMessage, ambiguous: boolean): Promise<void> {
@@ -318,9 +311,7 @@ async function preserveForRetry(message: QueuedMessage, ambiguous: boolean): Pro
     deliveryState: ambiguous ? 'ambiguous' : undefined,
   }
   useOutboxStore.setState((state) => ({
-    messages: state.messages.map((candidate) =>
-      candidate.messageId === message.messageId ? updated : candidate,
-    ),
+    messages: state.messages.map((candidate) => (candidate.messageId === message.messageId ? updated : candidate)),
   }))
   await saveQueued(updated).catch((error: unknown) => log.warn('could not persist a retry count', error))
 }
@@ -333,9 +324,7 @@ async function preserveRejected(
   const blocked = markRejected(message, new Error(reason))
   retryNotBefore.delete(message.messageId)
   useOutboxStore.setState((state) => ({
-    messages: state.messages.map((candidate) =>
-      candidate.messageId === message.messageId ? blocked : candidate,
-    ),
+    messages: state.messages.map((candidate) => (candidate.messageId === message.messageId ? blocked : candidate)),
   }))
   await saveQueued(blocked).catch((storageError: unknown) =>
     log.warn('could not persist a rejected queued message', storageError),

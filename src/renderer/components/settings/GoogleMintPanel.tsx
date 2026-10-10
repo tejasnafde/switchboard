@@ -77,9 +77,7 @@ export function GoogleMintPanel(): React.JSX.Element {
     try {
       // The secret is omitted when left blank rather than sent as '': absent
       // means "keep what is stored", and the field always renders empty.
-      setStatus(
-        await window.api.app.googleSetClient(googleClientUpdate(clientId, clientSecret)),
-      )
+      setStatus(await window.api.app.googleSetClient(googleClientUpdate(clientId, clientSecret)))
       setEditing(false)
       setClientSecret('')
     } catch (err) {
@@ -111,18 +109,14 @@ export function GoogleMintPanel(): React.JSX.Element {
     <div style={CARD}>
       <div style={LABEL}>Google account for work VMs</div>
       <div style={HINT}>
-        Needed only to reach work VMs over IAP with your laptop closed. Consent happens here because
-        Google does not allow the phone to complete this sign-in itself.
+        Needed only to reach work VMs over IAP with your laptop closed. Consent happens here because Google does not
+        allow the phone to complete this sign-in itself.
       </div>
 
       {!configured && !editing && (
         <div style={{ ...HINT, marginTop: '8px', color: 'var(--text-secondary)' }}>
           No OAuth client configured yet.{' '}
-          <button
-            type="button"
-            onClick={openEditor}
-            className={googleMintActionClass('secondary')}
-          >
+          <button type="button" onClick={openEditor} className={googleMintActionClass('secondary')}>
             Add one
           </button>
         </div>
@@ -130,17 +124,10 @@ export function GoogleMintPanel(): React.JSX.Element {
 
       {configured && !editing && (
         <div style={{ ...HINT, marginTop: '8px' }}>
-          Using{' '}
-          <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-            {status?.clientId}
-          </span>{' '}
+          Using <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{status?.clientId}</span>{' '}
           {status?.source === 'env' ? '(from the environment)' : ''}
           {status?.source === 'settings' && (
-            <button
-              type="button"
-              onClick={openEditor}
-              className={googleMintActionClass('secondary')}
-            >
+            <button type="button" onClick={openEditor} className={googleMintActionClass('secondary')}>
               change
             </button>
           )}
@@ -150,35 +137,21 @@ export function GoogleMintPanel(): React.JSX.Element {
       {editing && (
         <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <div style={HINT}>
-            A Desktop-type OAuth client from Google Cloud. The secret is not a real secret for this
-            client type - PKCE is what protects the exchange - but the token it mints is, so treat
-            the QR below like a password.
+            A Desktop-type OAuth client from Google Cloud. The secret is not a real secret for this client type - PKCE
+            is what protects the exchange - but the token it mints is, so treat the QR below like a password.
           </div>
+          <input style={INPUT} placeholder="Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} />
           <input
             style={INPUT}
-            placeholder="Client ID"
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-          />
-          <input
-            style={INPUT}
-            placeholder={status?.configured ? "Client secret (unchanged if blank)" : "Client secret (optional)"}
+            placeholder={status?.configured ? 'Client secret (unchanged if blank)' : 'Client secret (optional)'}
             value={clientSecret}
             onChange={(e) => setClientSecret(e.target.value)}
           />
           <div style={{ display: 'flex', gap: '6px' }}>
-            <button
-              type="button"
-              className={googleMintActionClass('primary')}
-              onClick={() => void save()}
-            >
+            <button type="button" className={googleMintActionClass('primary')} onClick={() => void save()}>
               Save
             </button>
-            <button
-              type="button"
-              className={googleMintActionClass('secondary')}
-              onClick={() => setEditing(false)}
-            >
+            <button type="button" className={googleMintActionClass('secondary')} onClick={() => setEditing(false)}>
               Cancel
             </button>
           </div>
@@ -197,9 +170,7 @@ export function GoogleMintPanel(): React.JSX.Element {
         </button>
       )}
 
-      {error && (
-        <div style={{ ...HINT, marginTop: '8px', color: 'var(--error, #f87171)' }}>{error}</div>
-      )}
+      {error && <div style={{ ...HINT, marginTop: '8px', color: 'var(--error, #f87171)' }}>{error}</div>}
 
       {qrDataUrl && (
         <div style={{ display: 'flex', gap: '14px', alignItems: 'center', marginTop: '12px' }}>
@@ -213,8 +184,8 @@ export function GoogleMintPanel(): React.JSX.Element {
           <div style={{ minWidth: 0 }}>
             <div style={LABEL}>Scan on the phone</div>
             <div style={HINT}>
-              Account &gt; Scan QR from desktop. This grants cloud-platform access as you, so do not
-              share it or leave it on screen.
+              Account &gt; Scan QR from desktop. This grants cloud-platform access as you, so do not share it or leave
+              it on screen.
             </div>
             <button
               type="button"

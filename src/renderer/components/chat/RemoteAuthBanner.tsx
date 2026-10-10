@@ -99,8 +99,11 @@ export function RemoteAuthBanner({ sessionId, machineId, agentType, instanceId }
   const successTimerRef = useRef<number | null>(null)
 
   const authAgentType = agentType === 'codex' ? 'codex' : 'claude-code'
-  const isRemoteProvider = Boolean(sessionId) && Boolean(machineId) && machineId !== 'local'
-    && (agentType === 'claude-code' || agentType === 'codex')
+  const isRemoteProvider =
+    Boolean(sessionId) &&
+    Boolean(machineId) &&
+    machineId !== 'local' &&
+    (agentType === 'claude-code' || agentType === 'codex')
   // While the machine is disconnected its session-id bindings are wiped, so a
   // probe would silently route to the LOCAL backend and cache a false
   // "logged in". Only probe while connected.
@@ -138,10 +141,13 @@ export function RemoteAuthBanner({ sessionId, machineId, agentType, instanceId }
   }, [sessionId, machineId, instanceId, isRemoteProvider, machineConnected, authAgentType])
 
   // Clear feedback timers on unmount so a dead component never sets state.
-  useEffect(() => () => {
-    if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
-    if (successTimerRef.current !== null) window.clearTimeout(successTimerRef.current)
-  }, [])
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+      if (successTimerRef.current !== null) window.clearTimeout(successTimerRef.current)
+    },
+    [],
+  )
 
   const handleCopy = useCallback(async () => {
     const cmd = result?.loginCommand
@@ -201,7 +207,9 @@ export function RemoteAuthBanner({ sessionId, machineId, agentType, instanceId }
         flexShrink: 0,
       }}
     >
-      <span aria-hidden="true" style={{ color: '#f59e0b', fontSize: '13px', lineHeight: 1 }}>⚠</span>
+      <span aria-hidden="true" style={{ color: '#f59e0b', fontSize: '13px', lineHeight: 1 }}>
+        ⚠
+      </span>
       <span>This machine isn't logged in to {agentType === 'codex' ? 'Codex' : 'Claude'}</span>
       {result?.loginCommand && (
         <button

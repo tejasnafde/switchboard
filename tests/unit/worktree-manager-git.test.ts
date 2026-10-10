@@ -22,14 +22,21 @@ import {
 // every git command here, the code under test's included, at the repository
 // being committed to, so they are cleared for this file's run.
 const hookGitEnv = Object.entries(process.env).filter(([key]) => key.startsWith('GIT_'))
-beforeAll(() => { for (const [key] of hookGitEnv) delete process.env[key] })
-afterAll(() => { for (const [key, value] of hookGitEnv) process.env[key] = value })
+beforeAll(() => {
+  for (const [key] of hookGitEnv) delete process.env[key]
+})
+afterAll(() => {
+  for (const [key, value] of hookGitEnv) process.env[key] = value
+})
 
 const GIT_ENV = {
   ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
-  GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 't@example.com',
-  GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 't@example.com',
-  GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_AUTHOR_NAME: 'Test',
+  GIT_AUTHOR_EMAIL: 't@example.com',
+  GIT_COMMITTER_NAME: 'Test',
+  GIT_COMMITTER_EMAIL: 't@example.com',
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_CONFIG_GLOBAL: '/dev/null',
 }
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', args, { cwd, env: GIT_ENV, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -91,9 +98,21 @@ describe('worktree inventory', () => {
     const byPath = new Map(rows.map((r) => [pathKey(r.path), r]))
     expect(rows).toHaveLength(3)
     expect(byPath.has(pathKey(repo))).toBe(false)
-    expect(byPath.get(pathKey(clean))?.git).toEqual({ uncommittedFiles: 0, ignoredFiles: 0, ignoredSample: [], unpushedCommits: 0, merged: true })
+    expect(byPath.get(pathKey(clean))?.git).toEqual({
+      uncommittedFiles: 0,
+      ignoredFiles: 0,
+      ignoredSample: [],
+      unpushedCommits: 0,
+      merged: true,
+    })
     expect(byPath.get(pathKey(dirty))?.git).toMatchObject({ uncommittedFiles: 2, unpushedCommits: 0 })
-    expect(byPath.get(pathKey(ahead))?.git).toEqual({ uncommittedFiles: 0, ignoredFiles: 0, ignoredSample: [], unpushedCommits: 1, merged: false })
+    expect(byPath.get(pathKey(ahead))?.git).toEqual({
+      uncommittedFiles: 0,
+      ignoredFiles: 0,
+      ignoredSample: [],
+      unpushedCommits: 1,
+      merged: false,
+    })
   })
 
   it('marks owned and protected worktrees, and skips a project that is not a git repo', async () => {
@@ -103,7 +122,13 @@ describe('worktree inventory', () => {
     protection = { projects: [], worktrees: [kept] }
     const plain = join(root, 'plain')
     mkdirSync(plain)
-    const withPlain = { ...deps(), listProjects: () => [{ path: repo, name: 'repo' }, { path: plain, name: 'plain' }] }
+    const withPlain = {
+      ...deps(),
+      listProjects: () => [
+        { path: repo, name: 'repo' },
+        { path: plain, name: 'plain' },
+      ],
+    }
     const { rows, errors } = await buildWorktreeInventory([repo, plain], withPlain)
     expect(errors).toEqual([])
     expect(rows).toHaveLength(2)
@@ -137,7 +162,9 @@ describe('worktree inventory', () => {
 describe('removeManagedWorktree', () => {
   it('removes a clean worktree with git worktree remove, and deletes its empty kanban branch', async () => {
     const path = addWorktree('clean')
-    expect(await removeManagedWorktree({ projectPath: repo, worktreePath: path, acknowledged: null }, deps())).toEqual({ ok: true })
+    expect(await removeManagedWorktree({ projectPath: repo, worktreePath: path, acknowledged: null }, deps())).toEqual({
+      ok: true,
+    })
     expect(existsSync(path)).toBe(false)
     expect(branches()).toEqual(['main'])
   })
@@ -146,10 +173,14 @@ describe('removeManagedWorktree', () => {
     const path = addWorktree('busy')
     const ack = { uncommittedFiles: 10, unpushedCommits: 10, ignoredFiles: 10 }
     owned = new Set([path])
-    expect(await removeManagedWorktree({ projectPath: repo, worktreePath: path, acknowledged: ack }, deps())).toMatchObject({ ok: false })
+    expect(
+      await removeManagedWorktree({ projectPath: repo, worktreePath: path, acknowledged: ack }, deps()),
+    ).toMatchObject({ ok: false })
     owned = new Set()
     protection = { projects: [repo], worktrees: [] }
-    expect(await removeManagedWorktree({ projectPath: repo, worktreePath: path, acknowledged: ack }, deps())).toMatchObject({ ok: false })
+    expect(
+      await removeManagedWorktree({ projectPath: repo, worktreePath: path, acknowledged: ack }, deps()),
+    ).toMatchObject({ ok: false })
     expect(existsSync(path)).toBe(true)
   })
 
@@ -166,15 +197,22 @@ describe('removeManagedWorktree', () => {
     expect(stale).toMatchObject({ ok: false, error: expect.stringMatching(/changed since you confirmed/) })
     expect(existsSync(path)).toBe(true)
 
-    expect(await removeManagedWorktree({ ...request, acknowledged: { uncommittedFiles: 2, unpushedCommits: 0, ignoredFiles: 0 } }, deps()))
-      .toEqual({ ok: true })
+    expect(
+      await removeManagedWorktree(
+        { ...request, acknowledged: { uncommittedFiles: 2, unpushedCommits: 0, ignoredFiles: 0 } },
+        deps(),
+      ),
+    ).toEqual({ ok: true })
     expect(existsSync(path)).toBe(false)
   })
 
   it('refuses a truthy acknowledgement with missing counts, keeping the uncommitted files', async () => {
     const path = addWorktree('dirty')
     writeFileSync(join(path, 'work.txt'), 'draft\n')
-    const result = await removeManagedWorktree({ projectPath: repo, worktreePath: path, acknowledged: {} as never }, deps())
+    const result = await removeManagedWorktree(
+      { projectPath: repo, worktreePath: path, acknowledged: {} as never },
+      deps(),
+    )
     expect(result).toMatchObject({ ok: false, error: expect.stringMatching(/invalid removal confirmation/i) })
     expect(existsSync(join(path, 'work.txt'))).toBe(true)
   })
@@ -188,7 +226,10 @@ describe('removeManagedWorktree', () => {
     // not merged it, so `git branch -d` refuses.
     git(repo, 'branch', 'keep', 'kanban/shared')
     const result = await removeManagedWorktree({ projectPath: repo, worktreePath: path, acknowledged: null }, deps())
-    expect(result).toEqual({ ok: true, warning: expect.stringMatching(/branch kanban\/shared was kept: .*not fully merged/) })
+    expect(result).toEqual({
+      ok: true,
+      warning: expect.stringMatching(/branch kanban\/shared was kept: .*not fully merged/),
+    })
     expect(existsSync(path)).toBe(false)
     expect(branches()).toContain('kanban/shared')
   })
@@ -199,7 +240,11 @@ describe('removeManagedWorktree', () => {
     git(path, 'add', '.')
     git(path, 'commit', '-q', '-m', 'ahead')
     const result = await removeManagedWorktree(
-      { projectPath: repo, worktreePath: path, acknowledged: { uncommittedFiles: 0, unpushedCommits: 1, ignoredFiles: 0 } },
+      {
+        projectPath: repo,
+        worktreePath: path,
+        acknowledged: { uncommittedFiles: 0, unpushedCommits: 1, ignoredFiles: 0 },
+      },
       deps(),
     )
     expect(result).toEqual({ ok: true })
@@ -207,8 +252,11 @@ describe('removeManagedWorktree', () => {
     expect(branches()).toContain('kanban/ahead')
   })
 
-  it('refuses a path that is not one of the repo\'s worktrees', async () => {
-    const result = await removeManagedWorktree({ projectPath: repo, worktreePath: join(root, 'elsewhere'), acknowledged: null }, deps())
+  it("refuses a path that is not one of the repo's worktrees", async () => {
+    const result = await removeManagedWorktree(
+      { projectPath: repo, worktreePath: join(root, 'elsewhere'), acknowledged: null },
+      deps(),
+    )
     expect(result).toMatchObject({ ok: false, error: expect.stringMatching(/not a worktree/i) })
   })
 })
@@ -226,7 +274,11 @@ describe('ignored files', () => {
     const { rows } = await buildWorktreeInventory(undefined, deps())
     const byPath = new Map(rows.map((r) => [pathKey(r.path), r]))
     expect(byPath.get(pathKey(regen))?.git).toMatchObject({ uncommittedFiles: 0, ignoredFiles: 0 })
-    expect(byPath.get(pathKey(secret))?.git).toMatchObject({ uncommittedFiles: 0, ignoredFiles: 1, ignoredSample: ['.env'] })
+    expect(byPath.get(pathKey(secret))?.git).toMatchObject({
+      uncommittedFiles: 0,
+      ignoredFiles: 1,
+      ignoredSample: ['.env'],
+    })
   })
 
   it('keeps an ignored .env until it is acknowledged, and refuses a stale acknowledgement', async () => {
@@ -239,7 +291,10 @@ describe('ignored files', () => {
     mkdirSync(join(path, 'more'))
     writeFileSync(join(path, 'more', 'notes.txt'), 'draft\n')
     writeFileSync(join(repo, '.git', 'info', 'exclude'), 'more/\n')
-    const stale = await removeManagedWorktree({ ...request, acknowledged: { uncommittedFiles: 0, unpushedCommits: 0, ignoredFiles: 1 } }, deps())
+    const stale = await removeManagedWorktree(
+      { ...request, acknowledged: { uncommittedFiles: 0, unpushedCommits: 0, ignoredFiles: 1 } },
+      deps(),
+    )
     expect(stale).toMatchObject({ ok: false, error: expect.stringMatching(/changed since you confirmed/) })
     expect(existsSync(join(path, '.env'))).toBe(true)
   })
@@ -248,7 +303,9 @@ describe('ignored files', () => {
     const path = addWorktree('regen')
     mkdirSync(join(path, 'node_modules'))
     writeFileSync(join(path, 'node_modules', 'i.js'), '')
-    expect(await removeManagedWorktree({ projectPath: repo, worktreePath: path, acknowledged: null }, deps())).toEqual({ ok: true })
+    expect(await removeManagedWorktree({ projectPath: repo, worktreePath: path, acknowledged: null }, deps())).toEqual({
+      ok: true,
+    })
     expect(existsSync(path)).toBe(false)
   })
 })
@@ -300,7 +357,9 @@ describe('only configured projects', () => {
     const path = addWorktree('clean')
     const alias = join(root, 'alias')
     symlinkSync(repo, alias, 'junction')
-    expect(await removeManagedWorktree({ projectPath: alias, worktreePath: path, acknowledged: null }, deps())).toEqual({ ok: true })
+    expect(await removeManagedWorktree({ projectPath: alias, worktreePath: path, acknowledged: null }, deps())).toEqual(
+      { ok: true },
+    )
     expect(existsSync(path)).toBe(false)
   })
 
@@ -313,9 +372,15 @@ describe('only configured projects', () => {
 
   it('protects only a configured project or a worktree of one, and unprotects only what is listed', async () => {
     const { other, wt: otherWorktree } = otherRepoWithWorktree()
-    await expect(updateWorktreeProtection({ target: 'project', path: other, protected: true }, deps())).rejects.toThrow(/not a project/i)
-    await expect(updateWorktreeProtection({ target: 'worktree', path: otherWorktree, protected: true }, deps())).rejects.toThrow(/not a worktree of a project/i)
-    await expect(updateWorktreeProtection({ target: 'project', path: other, protected: false }, deps())).rejects.toThrow(/not protected/i)
+    await expect(updateWorktreeProtection({ target: 'project', path: other, protected: true }, deps())).rejects.toThrow(
+      /not a project/i,
+    )
+    await expect(
+      updateWorktreeProtection({ target: 'worktree', path: otherWorktree, protected: true }, deps()),
+    ).rejects.toThrow(/not a worktree of a project/i)
+    await expect(
+      updateWorktreeProtection({ target: 'project', path: other, protected: false }, deps()),
+    ).rejects.toThrow(/not protected/i)
     expect(protection).toEqual({ projects: [], worktrees: [] })
 
     const mine = addWorktree('mine')
@@ -369,7 +434,9 @@ describe('WorktreeSizeCache', () => {
   })
 
   it('answers null when the probe fails', async () => {
-    const cache = new WorktreeSizeCache(async () => { throw new Error('du: no such file') })
+    const cache = new WorktreeSizeCache(async () => {
+      throw new Error('du: no such file')
+    })
     expect(await cache.get('/missing')).toBeNull()
   })
 

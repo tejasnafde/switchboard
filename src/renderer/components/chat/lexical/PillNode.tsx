@@ -95,15 +95,17 @@ function PillChip({ pillId, label, kind, nodeKey }: PillChipProps): JSX.Element 
       const selection = $getSelection()
       return $isNodeSelection(selection) && selection.getNodes().length === 1 && selection.has(nodeKey)
     }
-    const leave = (backward: boolean) => (event: KeyboardEvent | null): boolean => {
-      if (!onlyThis() || event?.shiftKey) return false
-      event?.preventDefault()
-      const node = $getNodeByKey(nodeKey)
-      if (!node) return false
-      if (backward) node.selectPrevious()
-      else node.selectNext(0, 0)
-      return true
-    }
+    const leave =
+      (backward: boolean) =>
+      (event: KeyboardEvent | null): boolean => {
+        if (!onlyThis() || event?.shiftKey) return false
+        event?.preventDefault()
+        const node = $getNodeByKey(nodeKey)
+        if (!node) return false
+        if (backward) node.selectPrevious()
+        else node.selectNext(0, 0)
+        return true
+      }
     const remove = (event: KeyboardEvent | null): boolean => {
       if (!onlyThis()) return false
       event?.preventDefault()
@@ -115,36 +117,61 @@ function PillChip({ pillId, label, kind, nodeKey }: PillChipProps): JSX.Element 
       editor.registerCommand(KEY_DELETE_COMMAND, remove, COMMAND_PRIORITY_HIGH),
       editor.registerCommand(KEY_ARROW_LEFT_COMMAND, leave(true), COMMAND_PRIORITY_HIGH),
       editor.registerCommand(KEY_ARROW_RIGHT_COMMAND, leave(false), COMMAND_PRIORITY_HIGH),
-      editor.registerCommand(KEY_SPACE_COMMAND, (event) => {
-        if (!onlyThis()) return false
-        event.preventDefault()
-        setCardOpen((open) => !open)
-        return true
-      }, COMMAND_PRIORITY_HIGH),
-      editor.registerCommand(KEY_ESCAPE_COMMAND, (event) => {
-        if (!onlyThis() || !cardOpen) return false
-        event.preventDefault()
-        setCardOpen(false)
-        return true
-      }, COMMAND_PRIORITY_HIGH),
-      editor.registerCommand(KEY_ENTER_COMMAND, (event) => {
-        if (!onlyThis() || event?.shiftKey) return false
-        const model = pillChipModel({ kind, label, content })
-        if (!model.target) return false
-        event?.preventDefault()
-        setCardOpen(false)
-        openPillFromElement(model, editor.getElementByKey(nodeKey))
-        return true
-      }, COMMAND_PRIORITY_HIGH),
-      editor.registerCommand(KEY_DOWN_COMMAND, (event) => {
-        if (!onlyThis() || event.key.length !== 1 || event.key === ' ' || event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return false
-        event.preventDefault()
-        const node = $getNodeByKey(nodeKey)
-        if (!node) return false
-        const after = node.selectNext(0, 0)
-        after.insertText(event.key)
-        return true
-      }, COMMAND_PRIORITY_HIGH),
+      editor.registerCommand(
+        KEY_SPACE_COMMAND,
+        (event) => {
+          if (!onlyThis()) return false
+          event.preventDefault()
+          setCardOpen((open) => !open)
+          return true
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+      editor.registerCommand(
+        KEY_ESCAPE_COMMAND,
+        (event) => {
+          if (!onlyThis() || !cardOpen) return false
+          event.preventDefault()
+          setCardOpen(false)
+          return true
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+      editor.registerCommand(
+        KEY_ENTER_COMMAND,
+        (event) => {
+          if (!onlyThis() || event?.shiftKey) return false
+          const model = pillChipModel({ kind, label, content })
+          if (!model.target) return false
+          event?.preventDefault()
+          setCardOpen(false)
+          openPillFromElement(model, editor.getElementByKey(nodeKey))
+          return true
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+      editor.registerCommand(
+        KEY_DOWN_COMMAND,
+        (event) => {
+          if (
+            !onlyThis() ||
+            event.key.length !== 1 ||
+            event.key === ' ' ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.altKey ||
+            event.isComposing
+          )
+            return false
+          event.preventDefault()
+          const node = $getNodeByKey(nodeKey)
+          if (!node) return false
+          const after = node.selectNext(0, 0)
+          after.insertText(event.key)
+          return true
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
     ]
     return () => unregister.forEach((off) => off())
   }, [editor, isSelected, cardOpen, nodeKey, pillId, kind, label, content])
@@ -190,9 +217,15 @@ export class PillNode extends DecoratorNode<JSX.Element> {
   }
 
   /** Pill id is what survives serialization - label + kind are looked up at render time. */
-  getPillId(): string { return this.__pillId }
-  getLabel(): string { return this.__label }
-  getKindValue(): DraftPillKind { return this.__kind }
+  getPillId(): string {
+    return this.__pillId
+  }
+  getLabel(): string {
+    return this.__label
+  }
+  getKindValue(): DraftPillKind {
+    return this.__kind
+  }
 
   /**
    * `getTextContent` is what `$getRoot().getTextContent()` walks, and it's
@@ -203,12 +236,18 @@ export class PillNode extends DecoratorNode<JSX.Element> {
     return `[[pill:${this.__pillId}]]`
   }
 
-  isInline(): boolean { return true }
-  isKeyboardSelectable(): boolean { return true }
+  isInline(): boolean {
+    return true
+  }
+  isKeyboardSelectable(): boolean {
+    return true
+  }
   // Treat the chip as one indivisible unit - Backspace deletes the whole
   // pill, arrow keys jump past it. Without this, users could caret-into
   // the empty chip and get stuck.
-  isIsolated(): boolean { return true }
+  isIsolated(): boolean {
+    return true
+  }
 
   createDOM(_config: EditorConfig): HTMLElement {
     // Span so the chip flows inline with surrounding text.
@@ -217,17 +256,12 @@ export class PillNode extends DecoratorNode<JSX.Element> {
     return span
   }
 
-  updateDOM(): false { return false }
+  updateDOM(): false {
+    return false
+  }
 
   decorate(): JSX.Element {
-    return (
-      <PillChip
-        pillId={this.__pillId}
-        label={this.__label}
-        kind={this.__kind}
-        nodeKey={this.__key}
-      />
-    )
+    return <PillChip pillId={this.__pillId} label={this.__label} kind={this.__kind} nodeKey={this.__key} />
   }
 
   static importJSON(serialized: SerializedPillNode): PillNode {

@@ -2,15 +2,31 @@ import { describe, expect, it } from 'vitest'
 import { goToChatItems } from '../../src/renderer/components/go-to-chat-items'
 import type { Project, SessionSummary } from '@shared/types'
 
-const session = (id: string, extra: Partial<SessionSummary> = {}): SessionSummary =>
-  ({ id, source: 'claude-code', title: id, startedAt: 1, messageCount: 0, filePath: '', ...extra })
+const session = (id: string, extra: Partial<SessionSummary> = {}): SessionSummary => ({
+  id,
+  source: 'claude-code',
+  title: id,
+  startedAt: 1,
+  messageCount: 0,
+  filePath: '',
+  ...extra,
+})
 
-const project = (path: string, sessions: SessionSummary[]): Project => ({ path, name: path.split('/').pop()!, sessions })
+const project = (path: string, sessions: SessionSummary[]): Project => ({
+  path,
+  name: path.split('/').pop()!,
+  sessions,
+})
 
 describe('goToChatItems', () => {
   it('lists local, remote and archived chats once each, with their agent', () => {
     const items = goToChatItems({
-      localProjects: [project('/r/app', [session('a', { agentType: 'codex' }), session('t', { agentType: 'terminal', source: 'switchboard' })])],
+      localProjects: [
+        project('/r/app', [
+          session('a', { agentType: 'codex' }),
+          session('t', { agentType: 'terminal', source: 'switchboard' }),
+        ]),
+      ],
       remoteProjects: { vm: [project('/srv/api', [session('b')])] },
       archived: [
         { id: 'z', project_path: '/r/app', title: 'Old', updated_at: 5, agent_type: 'opencode', origin_source: null },

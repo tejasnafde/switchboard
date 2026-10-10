@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { FOOTER_STEPS, footerTier, overflowedPriorities } from '../../src/renderer/components/chat/composer-footer-tiers'
+import {
+  FOOTER_STEPS,
+  footerTier,
+  overflowedPriorities,
+} from '../../src/renderer/components/chat/composer-footer-tiers'
 
 const chatDir = resolve(__dirname, '../../src/renderer/components/chat')
 const read = (name: string) => readFileSync(join(chatDir, name), 'utf8')
@@ -47,8 +51,15 @@ describe('overflowedPriorities', () => {
 // a step without the other, a control would show in both places or neither.
 describe('footer container queries', () => {
   const footer = read('ComposerFooter.tsx')
-  const sources = ['ComposerFooter.tsx', 'ComposerOverflowMenu.tsx', 'FooterChip.tsx', 'UnifiedProviderPicker.tsx', 'ChatLanding.tsx']
-    .map(read).join('\n')
+  const sources = [
+    'ComposerFooter.tsx',
+    'ComposerOverflowMenu.tsx',
+    'FooterChip.tsx',
+    'UnifiedProviderPicker.tsx',
+    'ChatLanding.tsx',
+  ]
+    .map(read)
+    .join('\n')
 
   it('use only the steps in FOOTER_STEPS', () => {
     const used = new Set([...sources.matchAll(/@max-\[(\d+)px\]\/footer:/g)].map((m) => Number(m[1])))
@@ -58,7 +69,9 @@ describe('footer container queries', () => {
   it('hide each control at the step that moves it into the menu', () => {
     expect(footer).toMatch(new RegExp(`@max-\\[${FOOTER_STEPS.overflowEffort}px\\]/footer:hidden">\\s*<EffortPicker`))
     expect(footer).toMatch(new RegExp(`@max-\\[${FOOTER_STEPS.overflowCheckout}px\\]/footer:hidden">\\s*\\{isDraft`))
-    expect(footer).toMatch(new RegExp(`@max-\\[${FOOTER_STEPS.overflowMode}px\\]/footer:hidden">\\s*<ChipSelect\\s+label="Runtime mode"`))
+    expect(footer).toMatch(
+      new RegExp(`@max-\\[${FOOTER_STEPS.overflowMode}px\\]/footer:hidden">\\s*<ChipSelect\\s+label="Runtime mode"`),
+    )
     expect(read('ComposerOverflowMenu.tsx')).toContain(`@max-[${FOOTER_STEPS.overflowMode}px]/footer:inline-flex`)
   })
 

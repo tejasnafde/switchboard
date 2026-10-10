@@ -5,11 +5,7 @@
  * shown again (`analytics.noticeSeen`).
  */
 import { useEffect, useState, useCallback } from 'react'
-import {
-  markAnalyticsNoticeSeen,
-  setAnalyticsEnabled,
-  shouldShowAnalyticsNotice,
-} from '../services/analytics-pref'
+import { markAnalyticsNoticeSeen, setAnalyticsEnabled, shouldShowAnalyticsNotice } from '../services/analytics-pref'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('component:analytics-notice')
@@ -18,7 +14,9 @@ export function AnalyticsNotice() {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
-    shouldShowAnalyticsNotice().then(setVisible).catch((err) => log.warn('notice check failed', err))
+    shouldShowAnalyticsNotice()
+      .then(setVisible)
+      .catch((err) => log.warn('notice check failed', err))
   }, [])
 
   const dismiss = useCallback(async (turnOff: boolean) => {
@@ -46,7 +44,8 @@ export function AnalyticsNotice() {
       }}
     >
       <span style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.4 }}>
-        Switchboard sends anonymous usage counts (launches, sessions, crashes) with a random install id and nothing else.
+        Switchboard sends anonymous usage counts (launches, sessions, crashes) with a random install id and nothing
+        else.
       </span>
       <button
         type="button"

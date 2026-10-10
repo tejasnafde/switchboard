@@ -9,7 +9,7 @@ export const TOOL_OUTPUT_PREVIEW_CHARS = 2_000
  *  (a command, a file path) still reads the same. */
 const INPUT_STRING_PREVIEW_CHARS = 200
 
-const cut = (text: string, chars: number) => text.length > chars ? `${text.slice(0, chars)}…` : text
+const cut = (text: string, chars: number) => (text.length > chars ? `${text.slice(0, chars)}…` : text)
 
 function previewValue(value: unknown): unknown {
   if (typeof value === 'string') return cut(value, INPUT_STRING_PREVIEW_CHARS)

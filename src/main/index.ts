@@ -19,7 +19,20 @@ process.on('unhandledRejection', (reason) => {
   crashLog.error('unhandled rejection', msg)
 })
 
-import { app, BrowserWindow, crashReporter, dialog, shell, nativeImage, ipcMain, Menu, powerMonitor, protocol, net, screen } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  crashReporter,
+  dialog,
+  shell,
+  nativeImage,
+  ipcMain,
+  Menu,
+  powerMonitor,
+  protocol,
+  net,
+  screen,
+} from 'electron'
 import { join, basename } from 'path'
 import { registerTerminalHandlers, shutdownTerminals, livePtyCount } from './ipc/terminal'
 import { registerDiagnosticsHandlers } from './ipc/diagnostics'
@@ -46,7 +59,11 @@ import { registerIdeHandlers, resumeIdeAfterAbortedQuit, shutdownIde } from './i
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerWorktreeManagerHandlers } from './ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from './ipc/provider-instances'
-import { attachPullRequestAutoLink, registerPullRequestHandlers, startPullRequestHistoryScan } from './ipc/pull-requests'
+import {
+  attachPullRequestAutoLink,
+  registerPullRequestHandlers,
+  startPullRequestHistoryScan,
+} from './ipc/pull-requests'
 import { tryResolveProviderInstance } from './db/provider-instances'
 import {
   registerAutoUpdater,
@@ -70,16 +87,17 @@ import { getDb, closeDb, getSetting, setSetting, getProjects, reopenDbAfterAbort
 import { registerFaviconProtocol } from './protocol/sb-favicon'
 import { createMainLogger } from './logger'
 import { warmShellEnv } from './shell-env'
-import {
-  createDefaultWorktreeCreationRuntime,
-  type WorktreeCreationRuntime,
-} from './worktree-creation/runtime'
+import { createDefaultWorktreeCreationRuntime, type WorktreeCreationRuntime } from './worktree-creation/runtime'
 
 const log = createMainLogger('tour')
 import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { AgentType } from '@shared/types'
 import {
-  KEYBOARD_OVERRIDES_SETTING, matchesShortcut, setActiveShortcutOverrides, shortcutAccelerator, type ShortcutKeyInput,
+  KEYBOARD_OVERRIDES_SETTING,
+  matchesShortcut,
+  setActiveShortcutOverrides,
+  shortcutAccelerator,
+  type ShortcutKeyInput,
 } from '@shared/shortcuts'
 
 /** Unpackaged means a dev run, where a stale instance is the usual lock holder. */
@@ -102,27 +120,43 @@ let mobileEndpoint: MobileEndpoint | null = null
 const shutdownLog = createMainLogger('app:shutdown')
 const quitCoordinator = new QuitCoordinator(
   async () => {
-    const reports = await runShutdownSequence([
-      { name: 'window-bounds', run: () => { if (mainWindow) saveWindowBounds(mainWindow) } },
-      { name: 'updater', run: stopAutoUpdaterScheduler },
-      { name: 'terminals', run: shutdownTerminals },
-      { name: 'providers', run: () => providerRegistry?.stopAll(), timeoutMs: 5_000 },
-      { name: 'push', run: () => { detachPush?.(); detachPush = null; detachAutoLink?.(); detachAutoLink = null } },
-      { name: 'switchboard-mcp', run: stopSwitchboardMcpServer },
-      { name: 'ide', run: shutdownIde },
-      { name: 'usage-probes', run: disposeUsageProbes },
-      { name: 'machines', run: stopAllMachineConnections },
-      { name: 'mobile-endpoint', run: () => mobileEndpoint?.close() },
-      {
-        name: 'file-watchers',
-        run: () => {
-          disposeSettingsFileSync()
-          closeAllLaunchConfigWatchers()
-          closeAllHeadWatchers()
+    const reports = await runShutdownSequence(
+      [
+        {
+          name: 'window-bounds',
+          run: () => {
+            if (mainWindow) saveWindowBounds(mainWindow)
+          },
         },
-      },
-      { name: 'database', run: () => closeDb({ forQuit: true }) },
-    ], { log: shutdownLog })
+        { name: 'updater', run: stopAutoUpdaterScheduler },
+        { name: 'terminals', run: shutdownTerminals },
+        { name: 'providers', run: () => providerRegistry?.stopAll(), timeoutMs: 5_000 },
+        {
+          name: 'push',
+          run: () => {
+            detachPush?.()
+            detachPush = null
+            detachAutoLink?.()
+            detachAutoLink = null
+          },
+        },
+        { name: 'switchboard-mcp', run: stopSwitchboardMcpServer },
+        { name: 'ide', run: shutdownIde },
+        { name: 'usage-probes', run: disposeUsageProbes },
+        { name: 'machines', run: stopAllMachineConnections },
+        { name: 'mobile-endpoint', run: () => mobileEndpoint?.close() },
+        {
+          name: 'file-watchers',
+          run: () => {
+            disposeSettingsFileSync()
+            closeAllLaunchConfigWatchers()
+            closeAllHeadWatchers()
+          },
+        },
+        { name: 'database', run: () => closeDb({ forQuit: true }) },
+      ],
+      { log: shutdownLog },
+    )
     if (isQuitSmoke()) reportQuitSmoke(reports)
   },
   () => app.quit(),
@@ -192,8 +226,13 @@ function buildAppMenu(): void {
     {
       label: 'Edit',
       submenu: [
-        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
-        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
       ],
     },
     {
@@ -214,17 +253,24 @@ function buildAppMenu(): void {
         {
           label: 'Reload',
           accelerator: shortcutAccelerator('app.reload'),
-          click: unlessCapturing(() => { void confirmReload(false) }),
+          click: unlessCapturing(() => {
+            void confirmReload(false)
+          }),
         },
         {
           label: 'Force Reload',
           accelerator: shortcutAccelerator('app.force-reload'),
-          click: unlessCapturing(() => { void confirmReload(true) }),
+          click: unlessCapturing(() => {
+            void confirmReload(true)
+          }),
         },
         { role: 'toggleDevTools' },
         { type: 'separator' },
-        { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
-        { type: 'separator' }, { role: 'togglefullscreen' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
       ],
     },
     { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }] },
@@ -334,7 +380,7 @@ if (!gotTheLock) {
     log.error(
       'another Switchboard holds the single-instance lock - probably an earlier `npm run dev`. ' +
         'It is being asked to quit; re-run `npm run dev`. To check: ' +
-        "lsof -nP -iTCP:8765 -sTCP:LISTEN",
+        'lsof -nP -iTCP:8765 -sTCP:LISTEN',
     )
   }
   noteQuitSource('single-instance-lock', 'another Switchboard holds the lock')
@@ -367,7 +413,13 @@ if (!gotTheLock) {
   })
 }
 
-interface SavedBounds { x?: number; y?: number; width: number; height: number; maximized?: boolean }
+interface SavedBounds {
+  x?: number
+  y?: number
+  width: number
+  height: number
+  maximized?: boolean
+}
 
 function loadWindowBounds(): SavedBounds | null {
   try {
@@ -377,10 +429,19 @@ function loadWindowBounds(): SavedBounds | null {
     if (typeof b.width !== 'number' || typeof b.height !== 'number') return null
     // Drop the position if it is no longer on any display (monitor unplugged).
     if (typeof b.x === 'number' && typeof b.y === 'number') {
-      const visible = screen.getAllDisplays().some((d) =>
-        b.x! >= d.bounds.x && b.x! < d.bounds.x + d.bounds.width &&
-        b.y! >= d.bounds.y && b.y! < d.bounds.y + d.bounds.height)
-      if (!visible) { delete b.x; delete b.y }
+      const visible = screen
+        .getAllDisplays()
+        .some(
+          (d) =>
+            b.x! >= d.bounds.x &&
+            b.x! < d.bounds.x + d.bounds.width &&
+            b.y! >= d.bounds.y &&
+            b.y! < d.bounds.y + d.bounds.height,
+        )
+      if (!visible) {
+        delete b.x
+        delete b.y
+      }
     }
     return b
   } catch (err) {
@@ -510,7 +571,14 @@ function createWindow(): BrowserWindow {
   window.webContents.on('before-input-event', (event, input) => {
     // While Settings records a shortcut, ⌘W is a key to record, not a close.
     if (input.type !== 'keyDown' || isMenuCaptureActive()) return
-    const key: ShortcutKeyInput = { key: input.key, code: input.code, metaKey: input.meta, ctrlKey: input.control, shiftKey: input.shift, altKey: input.alt }
+    const key: ShortcutKeyInput = {
+      key: input.key,
+      code: input.code,
+      metaKey: input.meta,
+      ctrlKey: input.control,
+      shiftKey: input.shift,
+      altKey: input.alt,
+    }
     const shift = matchesShortcut(key, 'terminal.close-window')
     if (shift || matchesShortcut(key, 'terminal.close-tab')) {
       event.preventDefault()
@@ -577,7 +645,9 @@ function createWindow(): BrowserWindow {
       // EPIPE if stdout is closed; the scoped logger also writes to console,
       // so logging here risks the same throw.
       // eslint-disable-next-line no-restricted-syntax -- see comment above
-    } catch { /* stdout write failed, most likely EPIPE - nothing else to do */ }
+    } catch {
+      /* stdout write failed, most likely EPIPE - nothing else to do */
+    }
   })
 
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
@@ -613,7 +683,10 @@ function registerTourProtocol(): void {
   ]
   let videosRoot: string | null = null
   for (const r of roots) {
-    if (fs.existsSync(r)) { videosRoot = r; break }
+    if (fs.existsSync(r)) {
+      videosRoot = r
+      break
+    }
   }
   log.info(`[tour] videosRoot = ${videosRoot ?? '(none found)'} - searched: ${roots.join(' | ')}`)
 
@@ -760,9 +833,7 @@ app.whenReady().then(() => {
   // so newly added projects become servable without an app restart.
   registerFaviconProtocol(() => getProjects().map((p) => p.path))
   if (process.platform === 'darwin') {
-    const dockIcon = nativeImage.createFromPath(
-      join(app.getAppPath(), 'resources/icons/switchboard-logo-512.png')
-    )
+    const dockIcon = nativeImage.createFromPath(join(app.getAppPath(), 'resources/icons/switchboard-logo-512.png'))
     if (!dockIcon.isEmpty()) {
       app.dock?.setIcon(dockIcon)
     }
@@ -788,9 +859,7 @@ app.whenReady().then(() => {
   // Same scope, for a sharper reason: this one opens a browser on the desktop
   // and hands back a credential that grants cloud-platform access as the user.
   backendHost.handle(AppChannels.GOOGLE_CLIENT_STATUS, () => googleClientStatus())
-  backendHost.handle(AppChannels.GOOGLE_CLIENT_SET, (config: PartialClientConfig) =>
-    setGoogleClient(config),
-  )
+  backendHost.handle(AppChannels.GOOGLE_CLIENT_SET, (config: PartialClientConfig) => setGoogleClient(config))
   backendHost.handle(AppChannels.GOOGLE_MINT, async () => {
     const client = currentGoogleClient()
     if (!client) throw new Error('No Google OAuth client is configured yet.')
@@ -921,10 +990,10 @@ app.whenReady().then(() => {
       // after the window has been closed and reopened once.
       detachPush?.()
       detachPush = attachPushNotifier(providerRegistry.bus, {
-    // OS-level idle, so it is true whatever window is in front. The headless
-    // server passes nothing and therefore never suppresses.
-    idleMs: () => powerMonitor.getSystemIdleTime() * 1000,
-  })
+        // OS-level idle, so it is true whatever window is in front. The headless
+        // server passes nothing and therefore never suppresses.
+        idleMs: () => powerMonitor.getSystemIdleTime() * 1000,
+      })
       detachAutoLink?.()
       detachAutoLink = attachPullRequestAutoLink(providerRegistry.bus, reactivatedHost)
       providerRegistry.registerIpcHandlers()
@@ -939,9 +1008,12 @@ for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
     app.quit()
   })
 }
-app.whenReady().then(() => {
-  powerMonitor.on('shutdown', () => noteQuitSource('os-shutdown', 'macOS shutdown or logout'))
-}).catch((err) => log.warn('powerMonitor shutdown hook failed', err))
+app
+  .whenReady()
+  .then(() => {
+    powerMonitor.on('shutdown', () => noteQuitSource('os-shutdown', 'macOS shutdown or logout'))
+  })
+  .catch((err) => log.warn('powerMonitor shutdown hook failed', err))
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

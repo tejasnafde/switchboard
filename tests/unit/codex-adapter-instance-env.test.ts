@@ -29,11 +29,13 @@ function makeChild(): MockChild {
       const message = JSON.parse(chunk)
       if (message.method === 'initialize') {
         queueMicrotask(() => {
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            id: message.id,
-            result: { sessionId: 'sess', model: 'gpt-5', capabilities: {} },
-          }) + '\n')
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              result: { sessionId: 'sess', model: 'gpt-5', capabilities: {} },
+            }) + '\n',
+          )
         })
       }
     }),
@@ -88,12 +90,15 @@ describe('CodexAdapter - provider-instance env overlay', () => {
     const adapter = new CodexAdapter()
 
     process.env.PRE_EXISTING_PROBE = 'keep-me'
-    await adapter.startSession({
-      threadId: 't1',
-      provider: 'codex',
-      cwd: '/tmp/p',
-      resolvedEnv: { OPENAI_API_KEY: 'sk-instance-xyz' },
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 't1',
+        provider: 'codex',
+        cwd: '/tmp/p',
+        resolvedEnv: { OPENAI_API_KEY: 'sk-instance-xyz' },
+      },
+      vi.fn(),
+    )
 
     expect(spawnCalls.length).toBe(1)
     const env = spawnCalls[0].opts.env!
@@ -107,20 +112,26 @@ describe('CodexAdapter - provider-instance env overlay', () => {
   // POSIX-literal string round-trip, which only holds on a POSIX host - skip
   // on win32 rather than assert a separator style no real Windows install
   // would produce either (see oauth-path.ts).
-  it.skipIf(process.platform === 'win32')('sets CODEX_HOME from resolvedOauthDir for oauth-dir multi-account', async () => {
-    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
-    const adapter = new CodexAdapter()
+  it.skipIf(process.platform === 'win32')(
+    'sets CODEX_HOME from resolvedOauthDir for oauth-dir multi-account',
+    async () => {
+      const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+      const adapter = new CodexAdapter()
 
-    await adapter.startSession({
-      threadId: 't2',
-      provider: 'codex',
-      cwd: '/tmp/p',
-      resolvedOauthDir: '/tmp/codex-work',
-    }, vi.fn())
+      await adapter.startSession(
+        {
+          threadId: 't2',
+          provider: 'codex',
+          cwd: '/tmp/p',
+          resolvedOauthDir: '/tmp/codex-work',
+        },
+        vi.fn(),
+      )
 
-    const env = spawnCalls[0].opts.env!
-    expect(env.CODEX_HOME).toBe('/tmp/codex-work')
-  })
+      const env = spawnCalls[0].opts.env!
+      expect(env.CODEX_HOME).toBe('/tmp/codex-work')
+    },
+  )
 
   // Was: "does not override CODEX_HOME when oauthDir is empty/null", asserting
   // the ambient process CODEX_HOME reached the spawn env untouched. That is the
@@ -134,12 +145,15 @@ describe('CodexAdapter - provider-instance env overlay', () => {
     const adapter = new CodexAdapter()
 
     process.env.CODEX_HOME = '/users/me/.codex-ambient-leftover'
-    await adapter.startSession({
-      threadId: 't3',
-      provider: 'codex',
-      cwd: '/tmp/p',
-      resolvedOauthDir: null,
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 't3',
+        provider: 'codex',
+        cwd: '/tmp/p',
+        resolvedOauthDir: null,
+      },
+      vi.fn(),
+    )
 
     const env = spawnCalls[0].opts.env!
     expect(env.CODEX_HOME).toBe(join(homedir(), '.codex'))
@@ -150,12 +164,15 @@ describe('CodexAdapter - provider-instance env overlay', () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
 
-    await adapter.startSession({
-      threadId: 't4',
-      provider: 'codex',
-      cwd: '/tmp/p',
-      resolvedEnv: { OPENAI_API_KEY: '' },
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 't4',
+        provider: 'codex',
+        cwd: '/tmp/p',
+        resolvedEnv: { OPENAI_API_KEY: '' },
+      },
+      vi.fn(),
+    )
 
     const env = spawnCalls[0].opts.env!
     expect(env.OPENAI_API_KEY).toBeUndefined()

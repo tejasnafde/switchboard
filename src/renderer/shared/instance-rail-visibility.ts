@@ -9,10 +9,7 @@
  * happened. The rail must stay visible for that repair, even down to a
  * single remaining enabled instance.
  */
-export function shouldShowInstanceRail(
-  instances: Array<{ id: string }>,
-  instanceId: string | undefined,
-): boolean {
+export function shouldShowInstanceRail(instances: Array<{ id: string }>, instanceId: string | undefined): boolean {
   if (instances.length >= 2) return true
   if (!instanceId) return false
   return !instances.some((i) => i.id === instanceId)

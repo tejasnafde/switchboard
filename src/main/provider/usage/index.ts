@@ -90,10 +90,14 @@ export interface UsageRequestOptions {
 export function usageInstance(id: string): ProviderInstanceRow | null {
   const meta = getProviderInstanceFull(id, { withEnv: false })
   if (!meta) return null
-  return meta.agentType === 'claude-code' || meta.agentType === 'codex' ? getProviderInstanceFull(id) ?? meta : meta
+  return meta.agentType === 'claude-code' || meta.agentType === 'codex' ? (getProviderInstanceFull(id) ?? meta) : meta
 }
 
-async function probe(id: string, agentType: ProviderUsage['agentType'], opts: UsageRequestOptions): Promise<ProviderUsage> {
+async function probe(
+  id: string,
+  agentType: ProviderUsage['agentType'],
+  opts: UsageRequestOptions,
+): Promise<ProviderUsage> {
   const instance = usageInstance(id)
   if (!instance) return flat(id, agentType, 'unsupported', 'Instance not found.')
 
@@ -112,12 +116,20 @@ async function probe(id: string, agentType: ProviderUsage['agentType'], opts: Us
   }
 
   if (instance.agentType === 'opencode') {
-    return flat(id, 'opencode', 'not-applicable',
-      'OpenCode runs on your own provider API keys, so there is no subscription quota to report.')
+    return flat(
+      id,
+      'opencode',
+      'not-applicable',
+      'OpenCode runs on your own provider API keys, so there is no subscription quota to report.',
+    )
   }
   if (isGenericAcpAgent(instance.agentType)) {
-    return flat(id, instance.agentType, 'not-applicable',
-      `${agentLabel(instance.agentType)} does not report a quota over the Agent Client Protocol.`)
+    return flat(
+      id,
+      instance.agentType,
+      'not-applicable',
+      `${agentLabel(instance.agentType)} does not report a quota over the Agent Client Protocol.`,
+    )
   }
 
   return flat(id, instance.agentType, 'unsupported', `Usage reporting is not available for ${instance.agentType}.`)
@@ -189,7 +201,6 @@ export async function fetchInstanceUsage(id: string, opts: UsageRequestOptions =
   inFlight.set(id, active)
   return task
 }
-
 
 async function spendReset(id: string, creditId: string | null): Promise<CodexResetOutcome> {
   const instance = usageInstance(id)

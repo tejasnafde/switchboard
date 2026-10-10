@@ -26,9 +26,33 @@ const REAL_RESPONSE = {
   seven_day_opus: null,
   seven_day_sonnet: null,
   limits: [
-    { kind: 'session', group: 'session', percent: 12, severity: 'normal', resets_at: '2026-07-28T00:39:59.922303+00:00', scope: null, is_active: false },
-    { kind: 'weekly_all', group: 'weekly', percent: 40, severity: 'normal', resets_at: '2026-07-29T21:59:59.922321+00:00', scope: null, is_active: true },
-    { kind: 'weekly_scoped', group: 'weekly', percent: 21, severity: 'normal', resets_at: '2026-07-29T21:59:59.922321+00:00', is_active: false, scope: { model: { id: null, display_name: 'Fable' }, surface: null } },
+    {
+      kind: 'session',
+      group: 'session',
+      percent: 12,
+      severity: 'normal',
+      resets_at: '2026-07-28T00:39:59.922303+00:00',
+      scope: null,
+      is_active: false,
+    },
+    {
+      kind: 'weekly_all',
+      group: 'weekly',
+      percent: 40,
+      severity: 'normal',
+      resets_at: '2026-07-29T21:59:59.922321+00:00',
+      scope: null,
+      is_active: true,
+    },
+    {
+      kind: 'weekly_scoped',
+      group: 'weekly',
+      percent: 21,
+      severity: 'normal',
+      resets_at: '2026-07-29T21:59:59.922321+00:00',
+      is_active: false,
+      scope: { model: { id: null, display_name: 'Fable' }, surface: null },
+    },
   ],
   extra_usage: {
     is_enabled: true,
@@ -73,11 +97,7 @@ describe('parseClaudeUsage - windows', () => {
   it('extracts all three windows from a real response', () => {
     const out = parseClaudeUsage(REAL_RESPONSE)
     expect(out.ok).toBe(true)
-    expect(out.windows.map((w) => w.label)).toEqual([
-      '5-hour session',
-      'Weekly',
-      'Weekly (Fable)',
-    ])
+    expect(out.windows.map((w) => w.label)).toEqual(['5-hour session', 'Weekly', 'Weekly (Fable)'])
     expect(out.windows.map((w) => w.usedPercent)).toEqual([12, 40, 21])
   })
 
@@ -145,8 +165,20 @@ describe('parseClaudeUsage - windows', () => {
   it('handles several scoped models', () => {
     const out = parseClaudeUsage({
       limits: [
-        { kind: 'weekly_scoped', group: 'weekly', percent: 21, resets_at: null, scope: { model: { display_name: 'Fable' } } },
-        { kind: 'weekly_scoped', group: 'weekly', percent: 4, resets_at: null, scope: { model: { display_name: 'Opus' } } },
+        {
+          kind: 'weekly_scoped',
+          group: 'weekly',
+          percent: 21,
+          resets_at: null,
+          scope: { model: { display_name: 'Fable' } },
+        },
+        {
+          kind: 'weekly_scoped',
+          group: 'weekly',
+          percent: 4,
+          resets_at: null,
+          scope: { model: { display_name: 'Opus' } },
+        },
       ],
     })
     expect(out.windows.map((w) => w.label)).toEqual(['Weekly (Fable)', 'Weekly (Opus)'])
@@ -186,7 +218,10 @@ describe('parseClaudeUsage - overage', () => {
   it('handles an exponent of zero', () => {
     const out = parseClaudeUsage({
       extra_usage: { is_enabled: true, utilization: 10 },
-      spend: { used: { amount_minor: 7, currency: 'USD', exponent: 0 }, limit: { amount_minor: 10, currency: 'USD', exponent: 0 } },
+      spend: {
+        used: { amount_minor: 7, currency: 'USD', exponent: 0 },
+        limit: { amount_minor: 10, currency: 'USD', exponent: 0 },
+      },
     })
     expect(out.overage[0]?.detail).toBe('$7 of $10')
   })
@@ -219,7 +254,11 @@ describe('parseClaudeUsage - regressions', () => {
     for (const exponent of [-1, 101, 1e9, NaN]) {
       const body = {
         limits: [],
-        spend: { enabled: true, used: { amount_minor: 500, currency: 'USD', exponent }, limit: { amount_minor: 1000, currency: 'USD', exponent } },
+        spend: {
+          enabled: true,
+          used: { amount_minor: 500, currency: 'USD', exponent },
+          limit: { amount_minor: 1000, currency: 'USD', exponent },
+        },
       }
       expect(() => parseClaudeUsage(body)).not.toThrow()
       expect(parseClaudeUsage(body).ok).toBe(true)

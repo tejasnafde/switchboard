@@ -16,11 +16,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { sep, join } from 'node:path'
-import {
-  slugForBranch,
-  slugForRepo,
-  resolveSessionWorktreePath,
-} from '../../src/main/git/worktree-paths'
+import { slugForBranch, slugForRepo, resolveSessionWorktreePath } from '../../src/main/git/worktree-paths'
 
 describe('slugForBranch', () => {
   it('lowercases, replaces non-alnum with dashes, trims', () => {

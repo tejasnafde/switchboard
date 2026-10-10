@@ -14,13 +14,25 @@ import type { ModelOption } from '../../src/shared/models'
 
 const claudeCatalog: ModelOption[] = [
   { id: 'default', label: 'Default', tier: 'balanced', effortLevels: ['low', 'medium', 'high', 'xhigh'] },
-  { id: 'opus[1m]', label: 'Opus', tier: 'max', resolvedModel: 'claude-opus-5', effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  {
+    id: 'opus[1m]',
+    label: 'Opus',
+    tier: 'max',
+    resolvedModel: 'claude-opus-5',
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+  },
   { id: 'haiku', label: 'Haiku', tier: 'fast', effortLevels: [] },
 ]
 
 describe('effortLabel', () => {
   it('names every level, an unknown variant by itself, and the base as Default', () => {
-    expect(['low', 'medium', 'high', 'xhigh', 'max'].map(effortLabel)).toEqual(['Low', 'Medium', 'High', 'Extra high', 'Max'])
+    expect(['low', 'medium', 'high', 'xhigh', 'max'].map(effortLabel)).toEqual([
+      'Low',
+      'Medium',
+      'High',
+      'Extra high',
+      'Max',
+    ])
     expect(effortLabel('thinking')).toBe('Thinking')
     expect(effortLabel('')).toBe('Default')
   })
@@ -36,17 +48,27 @@ describe('parseEffortLevels', () => {
 
 describe('claudeModelEffort and claudeModelOptions', () => {
   it('uses the reported list, an empty list for no effort, and nothing when unsaid', () => {
-    expect(claudeModelEffort({ supportsEffort: true, supportedEffortLevels: ['high', 'low'] })).toEqual({ effortLevels: ['low', 'high'] })
+    expect(claudeModelEffort({ supportsEffort: true, supportedEffortLevels: ['high', 'low'] })).toEqual({
+      effortLevels: ['low', 'high'],
+    })
     expect(claudeModelEffort({ supportsEffort: false })).toEqual({ effortLevels: [] })
     expect(claudeModelEffort({ supportsEffort: true })).toEqual({ effortLevels: ['low', 'medium', 'high'] })
     expect(claudeModelEffort({})).toEqual({})
   })
 
   it('maps SDK rows verbatim with their levels', () => {
-    expect(claudeModelOptions([
-      { value: 'opus[1m]', displayName: 'Opus', resolvedModel: 'claude-opus-5', supportsEffort: true, supportedEffortLevels: ['low', 'max'] },
-      { value: 'haiku', displayName: 'Haiku' },
-    ])).toEqual([
+    expect(
+      claudeModelOptions([
+        {
+          value: 'opus[1m]',
+          displayName: 'Opus',
+          resolvedModel: 'claude-opus-5',
+          supportsEffort: true,
+          supportedEffortLevels: ['low', 'max'],
+        },
+        { value: 'haiku', displayName: 'Haiku' },
+      ]),
+    ).toEqual([
       { id: 'opus[1m]', label: 'Opus', tier: 'max', resolvedModel: 'claude-opus-5', effortLevels: ['low', 'max'] },
       { id: 'haiku', label: 'Haiku', tier: 'fast' },
     ])
@@ -62,22 +84,42 @@ describe('effortControlFor', () => {
   })
 
   it('finds the alias row covering an explicit Claude id, and the default row when none is picked', () => {
-    expect(effortControlFor({ agentType: 'claude-code', model: 'claude-opus-5', models: claudeCatalog, reasoningEffort: 'max' })?.value).toBe('max')
+    expect(
+      effortControlFor({
+        agentType: 'claude-code',
+        model: 'claude-opus-5',
+        models: claudeCatalog,
+        reasoningEffort: 'max',
+      })?.value,
+    ).toBe('max')
     expect(effortControlFor({ agentType: 'claude-code', models: claudeCatalog })?.choices).toHaveLength(4)
   })
 
   it('is hidden for a Claude model without effort or a catalog that has not said', () => {
     expect(effortControlFor({ agentType: 'claude-code', model: 'haiku', models: claudeCatalog })).toBeNull()
-    expect(effortControlFor({ agentType: 'claude-code', model: 'claude-sonnet-5', models: [{ id: 'claude-sonnet-5', label: 'S', tier: 'balanced' }] })).toBeNull()
+    expect(
+      effortControlFor({
+        agentType: 'claude-code',
+        model: 'claude-sonnet-5',
+        models: [{ id: 'claude-sonnet-5', label: 'S', tier: 'balanced' }],
+      }),
+    ).toBeNull()
   })
 
   it('shows the default when the stored level is one this model does not take', () => {
-    const control = effortControlFor({ agentType: 'claude-code', model: 'default', models: claudeCatalog, reasoningEffort: 'max' })
+    const control = effortControlFor({
+      agentType: 'claude-code',
+      model: 'default',
+      models: claudeCatalog,
+      reasoningEffort: 'max',
+    })
     expect(control?.value).toBe('high')
   })
 
   it('gives Codex its reported levels and default, else Low to High on Medium', () => {
-    const codex: ModelOption[] = [{ id: 'gpt-6', label: 'GPT-6', tier: 'max', effortLevels: ['low', 'high', 'xhigh'], defaultEffort: 'xhigh' }]
+    const codex: ModelOption[] = [
+      { id: 'gpt-6', label: 'GPT-6', tier: 'max', effortLevels: ['low', 'high', 'xhigh'], defaultEffort: 'xhigh' },
+    ]
     const reported = effortControlFor({ agentType: 'codex', model: 'gpt-6', models: codex })
     expect(reported?.choices.map((c) => c.label)).toEqual(['Low', 'High', 'Extra high'])
     expect(reported?.value).toBe('xhigh')
@@ -88,7 +130,11 @@ describe('effortControlFor', () => {
   })
 
   it('turns OpenCode variants into the levels, the base into Default', () => {
-    const control = effortControlFor({ agentType: 'opencode', models: [], variants: { available: ['', 'high', 'max'], current: 'high' } })
+    const control = effortControlFor({
+      agentType: 'opencode',
+      models: [],
+      variants: { available: ['', 'high', 'max'], current: 'high' },
+    })
     expect(control?.choices).toEqual([
       { value: '', label: 'Default', isDefault: false },
       { value: 'high', label: 'High', isDefault: false },
@@ -105,8 +151,14 @@ describe('effortControlFor', () => {
 
 describe('effortPick', () => {
   it('rewrites the OpenCode model id and sets the effort for the others', () => {
-    expect(effortPick('opencode', 'max', { model: 'google/gemini-3-pro/high', available: ['high', 'max'] })).toEqual({ kind: 'model', model: 'google/gemini-3-pro/max' })
-    expect(effortPick('opencode', '', { model: 'google/gemini-3-pro/high', available: ['high'] })).toEqual({ kind: 'model', model: 'google/gemini-3-pro' })
+    expect(effortPick('opencode', 'max', { model: 'google/gemini-3-pro/high', available: ['high', 'max'] })).toEqual({
+      kind: 'model',
+      model: 'google/gemini-3-pro/max',
+    })
+    expect(effortPick('opencode', '', { model: 'google/gemini-3-pro/high', available: ['high'] })).toEqual({
+      kind: 'model',
+      model: 'google/gemini-3-pro',
+    })
     expect(effortPick('claude-code', 'xhigh')).toEqual({ kind: 'effort', effort: 'xhigh' })
     expect(effortPick('codex', 'turbo')).toBeNull()
     expect(effortPick('opencode', 'high', { model: '', available: ['high'] })).toBeNull()
@@ -115,7 +167,10 @@ describe('effortPick', () => {
 
 describe('splitModelVariant', () => {
   it('strips a known variant and leaves a base id alone', () => {
-    expect(splitModelVariant('google/gemini-3-pro/high', ['low', 'high'])).toEqual({ base: 'google/gemini-3-pro', variant: 'high' })
+    expect(splitModelVariant('google/gemini-3-pro/high', ['low', 'high'])).toEqual({
+      base: 'google/gemini-3-pro',
+      variant: 'high',
+    })
     expect(splitModelVariant('google/gemini', ['', 'high'])).toEqual({ base: 'google/gemini', variant: '' })
   })
 })

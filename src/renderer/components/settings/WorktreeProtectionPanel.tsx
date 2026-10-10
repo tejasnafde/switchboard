@@ -15,10 +15,12 @@ export function WorktreeProtectionPanel() {
   const [protection, setProtection] = useState<WorktreeProtection | null>(null)
 
   useEffect(() => {
-    window.api.app.getProjects()
+    window.api.app
+      .getProjects()
       .then((rows: Array<{ path: string; name: string }>) => setProjects(rows ?? []))
       .catch((err: unknown) => log.warn('getProjects failed for worktree protection', err))
-    window.api.worktreeManager.getProtection()
+    window.api.worktreeManager
+      .getProtection()
       .then(setProtection)
       .catch((err: unknown) => log.warn('could not read worktree protection', err))
   }, [])
@@ -39,10 +41,17 @@ export function WorktreeProtectionPanel() {
       {projects.map((project) => {
         const on = protection?.projects.includes(project.path) ?? false
         return (
-          <div key={project.path} className="flex items-center gap-4 border-t border-[var(--border)] px-[14px] py-2.5 first:border-t-0">
+          <div
+            key={project.path}
+            className="flex items-center gap-4 border-t border-[var(--border)] px-[14px] py-2.5 first:border-t-0"
+          >
             <div className="min-w-0 flex-1" title={project.path}>
               <div className="truncate text-[13px] font-[500]">{project.name}</div>
-              {on && <div className="text-[12px] text-[var(--text-secondary)]">Protected: worktrees never offered for cleanup</div>}
+              {on && (
+                <div className="text-[12px] text-[var(--text-secondary)]">
+                  Protected: worktrees never offered for cleanup
+                </div>
+              )}
             </div>
             <button
               type="button"

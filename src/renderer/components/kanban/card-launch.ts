@@ -39,7 +39,10 @@ export async function resolveCardRuntimeMode(
         return persisted as RuntimeMode
       }
     } catch (err) {
-      launchLog.debug(`getConversationRuntimeMode failed for ${conversationId} - falling through to the card's mode`, err)
+      launchLog.debug(
+        `getConversationRuntimeMode failed for ${conversationId} - falling through to the card's mode`,
+        err,
+      )
     }
   }
   return isRuntimeMode(cardRuntimeMode) ? cardRuntimeMode : undefined
@@ -94,10 +97,7 @@ export interface LaunchResult {
  * isolated checkout), and auto-send the first turn built from the
  * card's title/description. Idempotent on already-linked cards.
  */
-export async function launchCardChat(
-  card: KanbanCard,
-  opts: LaunchOptions,
-): Promise<LaunchResult> {
+export async function launchCardChat(card: KanbanCard, opts: LaunchOptions): Promise<LaunchResult> {
   const log = (msg: string, data?: Record<string, unknown>) => {
     launchLog.info(msg, data ?? {})
   }
@@ -109,11 +109,9 @@ export async function launchCardChat(
     window.api.app
       .unarchiveConversation(card.conversationId)
       .catch((err: unknown) => log('unarchive failed', { err: String(err) }))
-    let existing = useAgentStore
-      .getState()
-      .sessions.find((s) => s.id === card.conversationId)
+    let existing = useAgentStore.getState().sessions.find((s) => s.id === card.conversationId)
     if (!existing) {
-      const rows = await window.api.app.getConversations(card.projectPath) as ConversationRow[]
+      const rows = (await window.api.app.getConversations(card.projectPath)) as ConversationRow[]
       const row = rows.find((candidate) => candidate.id === card.conversationId)
       if (!row) {
         throw new Error('The linked conversation is not available. Refresh the board to recover its creation state.')

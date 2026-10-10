@@ -40,7 +40,10 @@ export function ciScope(paths) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const paths = readFileSync(0, 'utf8').split('\n').map((p) => p.trim()).filter(Boolean)
+  const paths = readFileSync(0, 'utf8')
+    .split('\n')
+    .map((p) => p.trim())
+    .filter(Boolean)
   // No diff to read (an empty or unreadable range) must not skip anything.
   const scope = paths.length === 0 ? { code: true, visual: true } : ciScope(paths)
   process.stdout.write(`code=${scope.code}\nvisual=${scope.visual}\n`)

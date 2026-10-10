@@ -16,7 +16,5 @@ export function recoveryCandidateTitle(
   nativeConversationTitle: string | null,
   rootConversationTitle: string | null,
 ): string {
-  return nativeConversationTitle?.trim()
-    || rootConversationTitle?.trim()
-    || scannerTitle
+  return nativeConversationTitle?.trim() || rootConversationTitle?.trim() || scannerTitle
 }

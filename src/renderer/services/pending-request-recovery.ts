@@ -34,8 +34,10 @@ const NO_LONGER_WAITING = 'The agent is no longer waiting for an answer.'
 
 /** The request id of an approval or question card that is still open. */
 export function openCardRequestId(message: ChatMessage): string | null {
-  if (message.approval?.status === 'pending' && message.id.startsWith('approval_')) return message.id.slice('approval_'.length)
-  if (message.question?.status === 'pending' && message.id.startsWith('question_')) return message.id.slice('question_'.length)
+  if (message.approval?.status === 'pending' && message.id.startsWith('approval_'))
+    return message.id.slice('approval_'.length)
+  if (message.question?.status === 'pending' && message.id.startsWith('question_'))
+    return message.id.slice('question_'.length)
   return null
 }
 
@@ -102,7 +104,7 @@ export async function recoverPendingRequests(threadId: string, { cards = true } 
   const revisionOf = () => useAgentStore.getState().sessions.find((s) => s.id === threadId)?.pendingRequestRevision ?? 0
   try {
     const revision = revisionOf()
-    const pending = await getPendingRequests(threadId) ?? []
+    const pending = (await getPendingRequests(threadId)) ?? []
     const store = useAgentStore.getState()
     const session = store.sessions.find((s) => s.id === threadId)
     if (!session) return
@@ -140,7 +142,7 @@ async function recoverQueuedTurns(threadId: string, attempt = 1): Promise<void> 
   const revisionOf = () => useAgentStore.getState().sessions.find((s) => s.id === threadId)?.queuedTurnRevision ?? 0
   try {
     const revision = revisionOf()
-    const turns = await window.api.provider.listQueuedTurns(threadId) ?? []
+    const turns = (await window.api.provider.listQueuedTurns(threadId)) ?? []
     const session = useAgentStore.getState().sessions.find((s) => s.id === threadId)
     if (!session || (turns.length === 0 && !session.queuedTurns)) return
     // A live queued/dequeued event landed while the backend answered: the

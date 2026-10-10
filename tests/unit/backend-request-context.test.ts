@@ -9,7 +9,9 @@ describe('backend request context', () => {
   it('keeps concurrent remote client scopes isolated across awaits', async () => {
     const observed: string[] = []
     let release!: () => void
-    const gate = new Promise<void>((resolve) => { release = resolve })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
 
     const first = withBackendRequestContext({ clientScope: 'scope-a' }, async () => {
       await gate
@@ -34,11 +36,7 @@ describe('backend request context', () => {
   it('documents legacy shared-token scope while device sessions remain distinct', () => {
     // Legacy WS/TCP has no per-device identifier. Two clients presenting the
     // same static token must therefore share one origin namespace.
-    expect(hashClientScope('legacy-ws-token', 'shared')).toBe(
-      hashClientScope('legacy-ws-token', 'shared'),
-    )
-    expect(hashClientScope('device-session', 'device-a')).not.toBe(
-      hashClientScope('device-session', 'device-b'),
-    )
+    expect(hashClientScope('legacy-ws-token', 'shared')).toBe(hashClientScope('legacy-ws-token', 'shared'))
+    expect(hashClientScope('device-session', 'device-a')).not.toBe(hashClientScope('device-session', 'device-b'))
   })
 })

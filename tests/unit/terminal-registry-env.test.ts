@@ -99,17 +99,13 @@ describe('getOrCreateTerminal - env forwarding', () => {
     const { create } = makeApiStub()
     const env = { CLAUDE_CONFIG_DIR: '/home/user/.config/claude-work' }
     getOrCreateTerminal('env-test-1', '/projects/foo', 'claude', undefined, env)
-    expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'env-test-1', env }),
-    )
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ id: 'env-test-1', env }))
   })
 
   it('passes env=undefined when no env argument given', () => {
     const { create } = makeApiStub()
     getOrCreateTerminal('env-test-2', '/projects/foo', 'claude')
-    expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'env-test-2', env: undefined }),
-    )
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ id: 'env-test-2', env: undefined }))
   })
 
   it('passes env=undefined when env is an empty object', () => {
@@ -117,9 +113,7 @@ describe('getOrCreateTerminal - env forwarding', () => {
     // level - but it's still what the caller passed, so we forward it.
     const { create } = makeApiStub()
     getOrCreateTerminal('env-test-3', '/projects/foo', undefined, undefined, {})
-    expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'env-test-3', env: {} }),
-    )
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ id: 'env-test-3', env: {} }))
   })
 
   it('forwards CLAUDE_CONFIG_DIR exactly as given', () => {
@@ -132,13 +126,7 @@ describe('getOrCreateTerminal - env forwarding', () => {
 
   it('forwards cwd and initialCommand alongside env', () => {
     const { create } = makeApiStub()
-    getOrCreateTerminal(
-      'env-test-5',
-      '/projects/baz',
-      'codex',
-      undefined,
-      { CODEX_HOME: '/home/user/.codex-work' },
-    )
+    getOrCreateTerminal('env-test-5', '/projects/baz', 'codex', undefined, { CODEX_HOME: '/home/user/.codex-work' })
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: '/projects/baz',

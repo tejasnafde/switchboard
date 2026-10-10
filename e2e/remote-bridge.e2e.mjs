@@ -87,7 +87,8 @@ const SSH_OPTS = ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new
 
 /** Mirrors remoteExec.asUserScript: base64 so quoting survives ssh + sudo. */
 function asUserScript(script) {
-  const preamble = 'cd "$HOME" 2>/dev/null; export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; '
+  const preamble =
+    'cd "$HOME" 2>/dev/null; export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; '
   const payload = Buffer.from(preamble + script, 'utf8').toString('base64')
   const decode = `printf %s '${payload}' | base64 -d`
   return remoteUser ? `${decode} | sudo -n -H -u ${remoteUser} bash` : `${decode} | bash`
@@ -118,8 +119,9 @@ try {
 
   const folder = '/home/' + (remoteUser || 'ubuntu')
   const created = await win.evaluate(
-    (m) => window.api.machines.create({ name: 'e2e-bridge', sshAlias: m.alias, sshHost: m.alias, remoteUser: m.remoteUser }),
-    { alias, remoteUser }
+    (m) =>
+      window.api.machines.create({ name: 'e2e-bridge', sshAlias: m.alias, sshHost: m.alias, remoteUser: m.remoteUser }),
+    { alias, remoteUser },
   )
   check(!!created?.id, `machine created (${created?.id})`)
 
@@ -160,7 +162,7 @@ try {
   if (before.includes('switchboard.sb-bridge')) {
     check(
       !trail.includes('seed workbench bridge extension'),
-      'already-seeded remote: connect skipped the payload upload'
+      'already-seeded remote: connect skipped the payload upload',
     )
   } else {
     console.log('  (remote was unseeded, so the seed step is expected in the trail)')
@@ -171,7 +173,7 @@ try {
   check(exts.includes('switchboard.sb-bridge-0.0.1'), 'sb-bridge extension seeded on the remote')
   // -A: the payload marker is a dotfile, which plain `ls` hides.
   const seeded = onRemote(
-    'ls -A ~/.switchboard-server/ide-extensions/switchboard.sb-bridge-0.0.1 ~/.switchboard-server/ide-extensions/switchboard.sb-bridge-0.0.1/themes 2>/dev/null'
+    'ls -A ~/.switchboard-server/ide-extensions/switchboard.sb-bridge-0.0.1 ~/.switchboard-server/ide-extensions/switchboard.sb-bridge-0.0.1/themes 2>/dev/null',
   )
   for (const f of ['package.json', 'extension.js', 'protocol.js', '.sb-marker']) {
     check(seeded.includes(f), `  seeded ${f}`)
@@ -181,32 +183,35 @@ try {
   // A manifest that omits sb-bridge marks it removed, so the seed must clear it.
   // code-server rebuilds it from a folder scan, so post-boot it either does not
   // exist yet or lists sb-bridge - never lists other extensions without it.
-  const manifest = onRemote(
-    'cat ~/.switchboard-server/ide-extensions/extensions.json 2>/dev/null || echo NO_MANIFEST'
-  )
+  const manifest = onRemote('cat ~/.switchboard-server/ide-extensions/extensions.json 2>/dev/null || echo NO_MANIFEST')
   check(
     manifest.includes('NO_MANIFEST') || manifest.includes('sb-bridge'),
-    'extensions.json does not omit sb-bridge (cleared, or rebuilt including it)'
+    'extensions.json does not omit sb-bridge (cleared, or rebuilt including it)',
   )
 
   // ── The bootstrap handed the backend a token, and the bridge is up ───────
   const env = onRemote(
-    'P="$(cat ~/.switchboard-server/server.pid)"; tr "\\0" "\\n" < /proc/$P/environ | grep -E "^SB_BRIDGE_(PORT|TOKEN)="'
+    'P="$(cat ~/.switchboard-server/server.pid)"; tr "\\0" "\\n" < /proc/$P/environ | grep -E "^SB_BRIDGE_(PORT|TOKEN)="',
   )
   const bridgePort = env.match(/^SB_BRIDGE_PORT=(\d+)$/m)?.[1]
   const bridgeToken = env.match(/^SB_BRIDGE_TOKEN=(.+)$/m)?.[1]
   check(!!bridgePort, `remote backend has SB_BRIDGE_PORT (${bridgePort})`)
-  check(!!bridgeToken && bridgeToken.length >= 32, `remote backend has a minted SB_BRIDGE_TOKEN (${bridgeToken?.length} chars)`)
+  check(
+    !!bridgeToken && bridgeToken.length >= 32,
+    `remote backend has a minted SB_BRIDGE_TOKEN (${bridgeToken?.length} chars)`,
+  )
 
   const codeServerEnv = onRemote(
-    'IP="$(cat ~/.switchboard-server/ide.pid)"; tr "\\0" "\\n" < /proc/$IP/environ | grep -E "^SB_BRIDGE_(PORT|TOKEN)="'
+    'IP="$(cat ~/.switchboard-server/ide.pid)"; tr "\\0" "\\n" < /proc/$IP/environ | grep -E "^SB_BRIDGE_(PORT|TOKEN)="',
   )
   check(
     codeServerEnv.includes(`SB_BRIDGE_PORT=${bridgePort}`) && codeServerEnv.includes(`SB_BRIDGE_TOKEN=${bridgeToken}`),
-    'code-server inherited the SAME port+token (its extension hosts dial with these)'
+    'code-server inherited the SAME port+token (its extension hosts dial with these)',
   )
 
-  const listening = onRemote(`ss -ltn 2>/dev/null | grep ":${bridgePort}" || netstat -ltn 2>/dev/null | grep ":${bridgePort}" || echo NONE`)
+  const listening = onRemote(
+    `ss -ltn 2>/dev/null | grep ":${bridgePort}" || netstat -ltn 2>/dev/null | grep ":${bridgePort}" || echo NONE`,
+  )
   check(!listening.includes('NONE'), `bridge listening on ${bridgePort}`)
   check(listening.includes('127.0.0.1'), '  bound to loopback only (never tunneled)')
 
@@ -239,7 +244,10 @@ try {
   for (let i = 0; i < 30 && !relayOut.includes('SENT') && !relayOut.includes('WSERR'); i++) {
     await win.waitForTimeout(1000)
   }
-  check(relayOut.includes('SENT'), `stand-in workbench connected to the remote bridge${relayOut.includes('WSERR') ? ` (${relayOut.trim()})` : ''}`)
+  check(
+    relayOut.includes('SENT'),
+    `stand-in workbench connected to the remote bridge${relayOut.includes('WSERR') ? ` (${relayOut.trim()})` : ''}`,
+  )
 
   let got = { terminal: 0, dsmode: 0, selections: [] }
   for (let i = 0; i < 20; i++) {
@@ -257,13 +265,13 @@ try {
   // Routed to the local backend instead, this would come back ok:false.
   const opened = await win.evaluate(
     (a) => window.api.ide.open({ folder: a.folder, path: a.folder + '/x.ts', line: 4, machineId: a.machineId }),
-    { folder, machineId: created.id }
+    { folder, machineId: created.id },
   )
   check(opened?.ok === true, 'ide:open with machineId routed to the REMOTE bridge')
 
   const openedLocal = await win.evaluate(
     (a) => window.api.ide.open({ folder: a.folder, path: a.folder + '/x.ts', line: 4 }),
-    { folder }
+    { folder },
   )
   check(openedLocal?.ok === false, '  and without machineId it does NOT (stays local, as before)')
 
@@ -293,7 +301,7 @@ try {
     await win.waitForTimeout(1000)
     const res = await win.evaluate(
       (a) => window.api.ide.open({ folder: a.folder, path: a.folder, machineId: a.machineId }),
-      { folder, machineId: created.id }
+      { folder, machineId: created.id },
     )
     realHello = res?.ok === true
   }
@@ -319,10 +327,16 @@ try {
   }
 
   const ePresses = await chordReaches('Meta+Shift+E', () => window.__ide.terminal)
-  check(ePresses > 0, `REAL cmd+shift+E in the remote workbench reached the desktop${ePresses > 1 ? ` (took ${ePresses} presses)` : ''}`)
+  check(
+    ePresses > 0,
+    `REAL cmd+shift+E in the remote workbench reached the desktop${ePresses > 1 ? ` (took ${ePresses} presses)` : ''}`,
+  )
 
   const jPresses = await chordReaches('Meta+Shift+J', () => window.__ide.dsmode)
-  check(jPresses > 0, `REAL cmd+shift+J in the remote workbench reached the desktop${jPresses > 1 ? ` (took ${jPresses} presses)` : ''}`)
+  check(
+    jPresses > 0,
+    `REAL cmd+shift+J in the remote workbench reached the desktop${jPresses > 1 ? ` (took ${jPresses} presses)` : ''}`,
+  )
 
   // ctrl+` is the third terminal-intent chord and the one the local e2e covers.
   await win.evaluate(() => {

@@ -26,9 +26,10 @@ const SDK_MESSAGE = {
 }
 
 // The user line the CLI writes for the same notice, as a reload reads it.
-const TRANSCRIPT_TEXT = '<task-notification>\n<task-id>bd5t7u1q8</task-id>\n<tool-use-id>toolu_01WjAcjk2YZSSgxKidw1G35C</tool-use-id>\n'
-  + '<output-file>/private/tmp/claude-501/proj/sess/tasks/bd5t7u1q8.output</output-file>\n<status>failed</status>\n'
-  + '<summary>Background command "Re-run city tier analysis" failed with exit code 144</summary>\n</task-notification>'
+const TRANSCRIPT_TEXT =
+  '<task-notification>\n<task-id>bd5t7u1q8</task-id>\n<tool-use-id>toolu_01WjAcjk2YZSSgxKidw1G35C</tool-use-id>\n' +
+  '<output-file>/private/tmp/claude-501/proj/sess/tasks/bd5t7u1q8.output</output-file>\n<status>failed</status>\n' +
+  '<summary>Background command "Re-run city tier analysis" failed with exit code 144</summary>\n</task-notification>'
 
 function dispatch(msg: object): RuntimeEvent[] {
   const onEvent = vi.fn()
@@ -73,7 +74,12 @@ describe('Claude system/task_notification', () => {
 describe('live row vs reload', () => {
   const T = 'thread-1'
   // The CLI stamps the transcript line when a turn consumes the notice, just after it.
-  const transcriptLine = (at: number): ChatMessage => ({ id: 'jsonl-uuid', role: 'user', content: TRANSCRIPT_TEXT, timestamp: at + 70 })
+  const transcriptLine = (at: number): ChatMessage => ({
+    id: 'jsonl-uuid',
+    role: 'user',
+    content: TRANSCRIPT_TEXT,
+    timestamp: at + 70,
+  })
 
   beforeEach(() => {
     useAgentStore.setState({ sessions: [], activeSessionId: null })
@@ -98,7 +104,10 @@ describe('live row vs reload', () => {
     reduceProviderEvent(event, { streamingEnabled: true, coalescer: null })
     expect(messages()).toEqual([reloaded])
     // The same subagent finishing again later is a new notice.
-    reduceProviderEvent({ ...event, messageId: 'task_later', at: event.at + 600_000 }, { streamingEnabled: true, coalescer: null })
+    reduceProviderEvent(
+      { ...event, messageId: 'task_later', at: event.at + 600_000 },
+      { streamingEnabled: true, coalescer: null },
+    )
     expect(messages().map((m) => m.id)).toEqual(['jsonl-uuid', 'task_later'])
   })
 
@@ -110,7 +119,9 @@ describe('live row vs reload', () => {
     useChatStore.getState().ingest('c1', event)
     flushQueue()
     const items = useChatStore.getState().threads[threadKey('c1', T)].items
-    expect(items).toEqual([{ kind: 'synthetic', id: event.messageId, part: splitSyntheticUserText(TRANSCRIPT_TEXT)!.parts[0] }])
+    expect(items).toEqual([
+      { kind: 'synthetic', id: event.messageId, part: splitSyntheticUserText(TRANSCRIPT_TEXT)!.parts[0] },
+    ])
   })
 
   it('phone: a replay after a re-seed does not add it beside the history row', () => {
@@ -159,10 +170,18 @@ describe('live row vs reload', () => {
 
 describe('stored notice across a reload', () => {
   const T = 'thread-1'
-  const transcriptLine = (at: number): ChatMessage => ({ id: 'jsonl-uuid', role: 'user', content: TRANSCRIPT_TEXT, timestamp: at + 70 })
+  const transcriptLine = (at: number): ChatMessage => ({
+    id: 'jsonl-uuid',
+    role: 'user',
+    content: TRANSCRIPT_TEXT,
+    timestamp: at + 70,
+  })
   // What the registry writes for the live event (see the assistant-mirror test).
   const stored = (event: RuntimeTaskNotificationEvent): ChatMessage => ({
-    id: storedTaskNoticeId(T, event.messageId), role: 'user', content: taskNotificationText(event), timestamp: event.at,
+    id: storedTaskNoticeId(T, event.messageId),
+    role: 'user',
+    content: taskNotificationText(event),
+    timestamp: event.at,
   })
   const ctx = { streamingEnabled: true, coalescer: null }
 
@@ -196,7 +215,12 @@ describe('stored notice across a reload', () => {
 
     expect(desktopAfterReload(history, event).map((m) => m.id)).toEqual([stored(event).id])
     expect(phoneAfterReseed(history, event)).toEqual([
-      { kind: 'synthetic', id: `h-${stored(event).id}-s0`, part: splitSyntheticUserText(TRANSCRIPT_TEXT)!.parts[0], at: event.at },
+      {
+        kind: 'synthetic',
+        id: `h-${stored(event).id}-s0`,
+        part: splitSyntheticUserText(TRANSCRIPT_TEXT)!.parts[0],
+        at: event.at,
+      },
     ])
   })
 
@@ -214,8 +238,14 @@ describe('stored notice across a reload', () => {
     const late = { ...transcriptLine(event.at), timestamp: event.at + 60_000 }
     expect(mergeConversationMessages([late], [stored(event)])).toEqual([late])
     // Another task's line with equal fields does not claim it.
-    const other = { ...transcriptLine(event.at), content: TRANSCRIPT_TEXT.replace('bd5t7u1q8</task-id>', 'zz</task-id>') }
-    expect(mergeConversationMessages([other], [stored(event)]).map((m) => m.id)).toEqual([stored(event).id, 'jsonl-uuid'])
+    const other = {
+      ...transcriptLine(event.at),
+      content: TRANSCRIPT_TEXT.replace('bd5t7u1q8</task-id>', 'zz</task-id>'),
+    }
+    expect(mergeConversationMessages([other], [stored(event)]).map((m) => m.id)).toEqual([
+      stored(event).id,
+      'jsonl-uuid',
+    ])
     // A line with no task id pairs on fields inside the skew only.
     const bare = { ...transcriptLine(event.at), content: TRANSCRIPT_TEXT.replace(/<task-id>.*<\/task-id>\n/, '') }
     expect(mergeConversationMessages([bare], [stored(event)])).toEqual([bare])
@@ -225,10 +255,19 @@ describe('stored notice across a reload', () => {
   // Recorded from a Monitor task on this machine: one notice per event, then
   // one when its stream ended. The last was queued and never written as a line.
   const monitor = (uuid: string, summary: string, at: number): RuntimeTaskNotificationEvent => ({
-    type: 'task.notification', threadId: T, messageId: `task_${uuid}`, taskId: 'bkjj7ulhp', status: 'completed', summary, at,
+    type: 'task.notification',
+    threadId: T,
+    messageId: `task_${uuid}`,
+    taskId: 'bkjj7ulhp',
+    status: 'completed',
+    summary,
+    at,
   })
   const lineFor = (event: RuntimeTaskNotificationEvent, id: string): ChatMessage => ({
-    id, role: 'user', content: taskNotificationText(event), timestamp: event.at + 100,
+    id,
+    role: 'user',
+    content: taskNotificationText(event),
+    timestamp: event.at + 100,
   })
 
   it('keeps each notice of a task that reports more than once', () => {
@@ -241,8 +280,9 @@ describe('stored notice across a reload', () => {
     expect(phoneAfterReseed(merged, ended).map((i) => i.id)).toEqual(['h-line-web-s0', `h-${stored(ended).id}-s0`])
 
     // The other way round: the earlier notice was dropped, the later one written.
-    expect(mergeConversationMessages([lineFor(ended, 'line-ended')], [stored(web), stored(ended)]).map((m) => m.id))
-      .toEqual([stored(web).id, 'line-ended'])
+    expect(
+      mergeConversationMessages([lineFor(ended, 'line-ended')], [stored(web), stored(ended)]).map((m) => m.id),
+    ).toEqual([stored(web).id, 'line-ended'])
   })
 
   it('shows equal notices queued inside the skew once', () => {

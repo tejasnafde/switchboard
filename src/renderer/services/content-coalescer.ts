@@ -36,10 +36,7 @@ export interface ContentCoalescer {
   dispose: () => void
 }
 
-export function createContentCoalescer(
-  commit: (p: PendingContent) => void,
-  flushMs = 33,
-): ContentCoalescer {
+export function createContentCoalescer(commit: (p: PendingContent) => void, flushMs = 33): ContentCoalescer {
   const pending = new Map<string, PendingContent>()
   let timer: ReturnType<typeof setTimeout> | null = null
 

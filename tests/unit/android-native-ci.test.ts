@@ -103,7 +103,7 @@ describe('native Android publishing lane', () => {
   test('builds the Kotlin app with the exported production keystore instead of EAS', () => {
     const workflow = readFileSync(releaseWorkflowPath, 'utf8')
 
-    expect(workflow).toContain("working-directory: apps/android")
+    expect(workflow).toContain('working-directory: apps/android')
     expect(workflow).toContain("java-version: '17'")
     expect(workflow).toContain('ANDROID_KEYSTORE_BASE64')
     expect(workflow).toContain('SWITCHBOARD_ANDROID_KEYSTORE_PATH')
@@ -139,7 +139,7 @@ describe('native Android publishing lane', () => {
     expect(workflow).toContain('verify-android-apk.mjs --apk "$RELEASE_APK" --newer-than-published "$PUBLISHED_DIR"')
     expect(workflow).not.toContain('][0].browser_download_url')
     expect(workflow).toContain('Release already exists; increment apps/android versionName and versionCode')
-    expect(workflow).not.toContain("echo \"exists=true\" >> \"$GITHUB_OUTPUT\"")
+    expect(workflow).not.toContain('echo "exists=true" >> "$GITHUB_OUTPUT"')
   })
 
   test('release signing is opt-in locally but complete credentials are mandatory once selected', () => {

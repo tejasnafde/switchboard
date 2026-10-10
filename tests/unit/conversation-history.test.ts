@@ -34,19 +34,22 @@ vi.mock('../../src/main/provider/codex-session-dirs', () => ({
 }))
 
 vi.mock('../../src/main/projects/session-scanner', () => ({
-  scanCodexSessionCopies: () => [{
-    id: CODEX,
-    source: 'codex',
-    title: 'Codex',
-    startedAt: 1,
-    messageCount: 0,
-    filePath: '/codex-lenskart/rollout.jsonl',
-  }],
+  scanCodexSessionCopies: () => [
+    {
+      id: CODEX,
+      source: 'codex',
+      title: 'Codex',
+      startedAt: 1,
+      messageCount: 0,
+      filePath: '/codex-lenskart/rollout.jsonl',
+    },
+  ],
 }))
 
 vi.mock('../../src/main/agent/jsonl-cache', () => ({
   loadJsonlCached: (path: string) => diskMessages.get(path) ?? null,
-  loadJsonlCopies: (paths: string[]) => paths.flatMap((path) => diskMessages.has(path) ? [{ path, messages: diskMessages.get(path) }] : []),
+  loadJsonlCopies: (paths: string[]) =>
+    paths.flatMap((path) => (diskMessages.has(path) ? [{ path, messages: diskMessages.get(path) }] : [])),
 }))
 
 const { loadConversationHistory } = await import('../../src/main/conversations/history')

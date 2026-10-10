@@ -18,12 +18,20 @@ vi.mock('../../src/main/db/provider-instances', () => ({
 
 const saved: Array<{ id: string; conversationId: string; role: string; content: string }> = []
 const savedAt: Array<number | undefined> = []
-const activity: Array<{ id: string; conversationId: string; timestamp: number; toolCalls?: unknown; fileDiff?: { status: string } }> = []
+const activity: Array<{
+  id: string
+  conversationId: string
+  timestamp: number
+  toolCalls?: unknown
+  fileDiff?: { status: string }
+}> = []
 const statusLines: Array<{ id: string; line: string }> = []
 vi.mock('../../src/main/db/database', () => ({
   // A rotated id `uuid-1` belongs to thread `t1`.
   threadFamilyIds: (id: string) => (id === 't1' || id === 'uuid-1' ? ['t1', 'uuid-1'] : [id]),
-  setConversationStatusLine: (id: string, line: string) => { statusLines.push({ id, line }) },
+  setConversationStatusLine: (id: string, line: string) => {
+    statusLines.push({ id, line })
+  },
   saveActivityMessageIfAbsent: (row: (typeof activity)[number]) => {
     activity.push(row)
     return true
@@ -33,8 +41,13 @@ vi.mock('../../src/main/db/database', () => ({
   resolveRootThreadId: (id: string) => (id === 'rotated-session' ? 't1' : id),
   updateConversationSessionId: () => {},
   saveMessageIfAbsent: (
-    id: string, conversationId: string, role: string, content: string,
-    _images?: string, _displayBody?: string, timestamp?: number,
+    id: string,
+    conversationId: string,
+    role: string,
+    content: string,
+    _images?: string,
+    _displayBody?: string,
+    timestamp?: number,
   ) => {
     saved.push({ id, conversationId, role, content })
     savedAt.push(timestamp)
@@ -50,22 +63,43 @@ import { storedTaskNoticeId } from '../../src/shared/synthetic-message'
 /** Drives `publish` directly - the mirror is a property of the event stream. */
 const emitted: string[] = []
 function makeRegistry(): { publish: (e: RuntimeEvent) => void; registry: ProviderRegistry } {
-  const host = { handle: () => {}, emit: (channel: string) => { emitted.push(channel) }, on: () => {} }
+  const host = {
+    handle: () => {},
+    emit: (channel: string) => {
+      emitted.push(channel)
+    },
+    on: () => {},
+  }
   const registry = new ProviderRegistry(host as never)
-  const publish = (e: RuntimeEvent) => (registry as unknown as {
-    publish: (e: RuntimeEvent) => void
-  }).publish(e)
+  const publish = (e: RuntimeEvent) =>
+    (
+      registry as unknown as {
+        publish: (e: RuntimeEvent) => void
+      }
+    ).publish(e)
   return { publish, registry }
 }
 
-const content = (threadId: string, messageId: string, text: string, append?: boolean): RuntimeEvent => ({
-  type: 'content', threadId, messageId, text, append, streamKind: 'assistant',
-} as RuntimeEvent)
+const content = (threadId: string, messageId: string, text: string, append?: boolean): RuntimeEvent =>
+  ({
+    type: 'content',
+    threadId,
+    messageId,
+    text,
+    append,
+    streamKind: 'assistant',
+  }) as RuntimeEvent
 
-const turnEnd = (threadId: string): RuntimeEvent => ({ type: 'turn.completed', threadId } as RuntimeEvent)
+const turnEnd = (threadId: string): RuntimeEvent => ({ type: 'turn.completed', threadId }) as RuntimeEvent
 
 describe('live assistant mirror', () => {
-  beforeEach(() => { saved.length = 0; savedAt.length = 0; activity.length = 0; statusLines.length = 0; emitted.length = 0 })
+  beforeEach(() => {
+    saved.length = 0
+    savedAt.length = 0
+    activity.length = 0
+    statusLines.length = 0
+    emitted.length = 0
+  })
 
   it('persists the folded reply once the turn completes', () => {
     const { publish } = makeRegistry()
@@ -74,9 +108,7 @@ describe('live assistant mirror', () => {
     expect(saved).toHaveLength(0)
 
     publish(turnEnd('t1'))
-    expect(saved).toEqual([
-      { id: 'm1', conversationId: 't1', role: 'assistant', content: 'Hello world' },
-    ])
+    expect(saved).toEqual([{ id: 'm1', conversationId: 't1', role: 'assistant', content: 'Hello world' }])
   })
 
   it('stores the turn digest as the status line, without the tags', () => {
@@ -121,7 +153,13 @@ describe('live assistant mirror', () => {
 
   it('does not mirror reasoning or plan streams', () => {
     const { publish } = makeRegistry()
-    publish({ type: 'content', threadId: 't1', messageId: 'r1', text: 'thinking', streamKind: 'reasoning' } as RuntimeEvent)
+    publish({
+      type: 'content',
+      threadId: 't1',
+      messageId: 'r1',
+      text: 'thinking',
+      streamKind: 'reasoning',
+    } as RuntimeEvent)
     publish(turnEnd('t1'))
     expect(saved).toHaveLength(0)
   })
@@ -138,9 +176,7 @@ describe('live assistant mirror', () => {
     publish(content('t1', 'm1', 'from one'))
     publish(content('t2', 'm2', 'from two'))
     publish(turnEnd('t1'))
-    expect(saved).toEqual([
-      { id: 'm1', conversationId: 't1', role: 'assistant', content: 'from one' },
-    ])
+    expect(saved).toEqual([{ id: 'm1', conversationId: 't1', role: 'assistant', content: 'from one' }])
   })
 
   it('does not re-persist a flushed turn when a later turn ends', () => {
@@ -186,12 +222,14 @@ describe('live assistant mirror', () => {
       publish({ type: 'tool.completed', threadId: 't1', toolId: 'call_1', output: 'a.ts' })
       expect(activity).toHaveLength(0)
       publish(turnEnd('t1'))
-      expect(activity).toEqual([{
-        id: 'tool_t1:call_1',
-        conversationId: 't1',
-        timestamp: 1_000,
-        toolCalls: [{ id: 'call_1', name: 'Bash', input: '{\n  "command": "ls"\n}', output: 'a.ts' }],
-      }])
+      expect(activity).toEqual([
+        {
+          id: 'tool_t1:call_1',
+          conversationId: 't1',
+          timestamp: 1_000,
+          toolCalls: [{ id: 'call_1', name: 'Bash', input: '{\n  "command": "ls"\n}', output: 'a.ts' }],
+        },
+      ])
     } finally {
       vi.useRealTimers()
     }
@@ -212,8 +250,15 @@ describe('live assistant mirror', () => {
   it('mirrors a changed-file card as it is published, and skips an oversized one', async () => {
     const { publish, registry } = makeRegistry()
     const edit = (relPath: string, newContent: string) => ({
-      type: 'file.edited' as const, threadId: 't1', turnId: 'ab-1', fileEditId: `ab-1:${relPath}`,
-      repoRoot: '/repo', relPath, changeKind: 'modify' as const, oldContent: 'old', newContent,
+      type: 'file.edited' as const,
+      threadId: 't1',
+      turnId: 'ab-1',
+      fileEditId: `ab-1:${relPath}`,
+      repoRoot: '/repo',
+      relPath,
+      changeKind: 'modify' as const,
+      oldContent: 'old',
+      newContent,
     })
     ;(registry as unknown as { checkpoints: unknown }).checkpoints = {
       finishTurn: async () => [edit('a.ts', 'new'), edit('huge.bin', 'x'.repeat(3 * 1024 * 1024))],
@@ -239,22 +284,35 @@ describe('live assistant mirror', () => {
 })
 
 describe('live task notice mirror', () => {
-  beforeEach(() => { saved.length = 0; savedAt.length = 0 })
+  beforeEach(() => {
+    saved.length = 0
+    savedAt.length = 0
+  })
 
   const notice = (overrides: Partial<RuntimeTaskNotificationEvent> = {}): RuntimeEvent => ({
-    type: 'task.notification', threadId: 't1', messageId: 'task_u1', taskId: 'b1',
-    status: 'failed', summary: 'Build failed', outputFile: '/tmp/b1.output', at: 1_000, ...overrides,
+    type: 'task.notification',
+    threadId: 't1',
+    messageId: 'task_u1',
+    taskId: 'b1',
+    status: 'failed',
+    summary: 'Build failed',
+    outputFile: '/tmp/b1.output',
+    at: 1_000,
+    ...overrides,
   })
 
   it('stores the notice as its transcript text, at its own time', () => {
     const { publish } = makeRegistry()
     publish(notice())
-    expect(saved).toEqual([{
-      id: storedTaskNoticeId('t1', 'task_u1'),
-      conversationId: 't1',
-      role: 'user',
-      content: '<task-notification>\n<task-id>b1</task-id>\n<output-file>/tmp/b1.output</output-file>\n<status>failed</status>\n<summary>Build failed</summary>\n</task-notification>',
-    }])
+    expect(saved).toEqual([
+      {
+        id: storedTaskNoticeId('t1', 'task_u1'),
+        conversationId: 't1',
+        role: 'user',
+        content:
+          '<task-notification>\n<task-id>b1</task-id>\n<output-file>/tmp/b1.output</output-file>\n<status>failed</status>\n<summary>Build failed</summary>\n</task-notification>',
+      },
+    ])
     expect(savedAt).toEqual([1_000])
   })
 

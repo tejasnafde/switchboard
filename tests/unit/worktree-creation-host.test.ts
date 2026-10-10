@@ -112,11 +112,9 @@ describe('worktree creation BackendHost API', () => {
     await expect(get(getRequest)).resolves.toEqual(snapshot())
     await expect(act(actionRequest)).resolves.toEqual(snapshot({ status: 'cancelled' }))
 
-    expect([...host.handlers.keys()].sort()).toEqual([
-      WorktreeCreationChannels.ACT,
-      WorktreeCreationChannels.CREATE,
-      WorktreeCreationChannels.GET,
-    ].sort())
+    expect([...host.handlers.keys()].sort()).toEqual(
+      [WorktreeCreationChannels.ACT, WorktreeCreationChannels.CREATE, WorktreeCreationChannels.GET].sort(),
+    )
     expect(service.createWorktreeTransaction).toHaveBeenCalledOnce()
     expect(service.createWorktreeTransaction).toHaveBeenCalledWith(createRequest)
     expect(service.getWorktreeCreation).toHaveBeenCalledOnce()
@@ -160,8 +158,7 @@ describe('worktree creation BackendHost API', () => {
     expect(service.createWorktreeTransaction.mock.calls[0]).toHaveLength(1)
 
     service.createWorktreeTransaction.mockClear()
-    await expect(create('/projects/remote-repository', 'main', 'host-api'))
-      .rejects.toThrow()
+    await expect(create('/projects/remote-repository', 'main', 'host-api')).rejects.toThrow()
     expect(service.createWorktreeTransaction).not.toHaveBeenCalled()
   })
 
@@ -169,15 +166,19 @@ describe('worktree creation BackendHost API', () => {
     const { host, service } = setup()
     const create = host.handlers.get(WorktreeCreationChannels.CREATE)!
 
-    await expect(withBackendRequestContext(
-      { clientScope: 'device-session:test', transport: 'remote', deviceScopes: ['chat'] },
-      () => create(request({ launch: { startupCommand: 'touch /tmp/should-not-run' } })),
-    )).rejects.toThrow(/terminal.*scope/i)
+    await expect(
+      withBackendRequestContext(
+        { clientScope: 'device-session:test', transport: 'remote', deviceScopes: ['chat'] },
+        () => create(request({ launch: { startupCommand: 'touch /tmp/should-not-run' } })),
+      ),
+    ).rejects.toThrow(/terminal.*scope/i)
 
-    await expect(withBackendRequestContext(
-      { clientScope: 'device-session:test', transport: 'remote', deviceScopes: ['chat'] },
-      () => create(request({ setup: { policy: 'run' } })),
-    )).rejects.toThrow(/setup.*terminal.*scope/i)
+    await expect(
+      withBackendRequestContext(
+        { clientScope: 'device-session:test', transport: 'remote', deviceScopes: ['chat'] },
+        () => create(request({ setup: { policy: 'run' } })),
+      ),
+    ).rejects.toThrow(/setup.*terminal.*scope/i)
 
     expect(service.createWorktreeTransaction).not.toHaveBeenCalled()
   })
@@ -233,10 +234,7 @@ describe('worktree creation BackendHost API', () => {
     const create = host.handlers.get(WorktreeCreationChannels.CREATE)!
     const local = request({ launch: { startupCommand: 'npm run dev' } })
 
-    await withBackendRequestContext(
-      { clientScope: 'electron:local', transport: 'electron' },
-      () => create(local),
-    )
+    await withBackendRequestContext({ clientScope: 'electron:local', transport: 'electron' }, () => create(local))
 
     expect(service.createWorktreeTransaction).toHaveBeenCalledWith({
       ...local,
@@ -259,9 +257,11 @@ describe('worktree creation BackendHost API', () => {
 
     sink.publish(event)
 
-    expect(host.events).toEqual([{
-      channel: WorktreeCreationChannels.PROGRESS,
-      args: [event],
-    }])
+    expect(host.events).toEqual([
+      {
+        channel: WorktreeCreationChannels.PROGRESS,
+        args: [event],
+      },
+    ])
   })
 })

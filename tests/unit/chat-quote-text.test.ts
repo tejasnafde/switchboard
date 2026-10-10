@@ -2,7 +2,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { PILL_LABEL_ATTR, textWithPillLabels } from '../../src/renderer/services/context-formatters'
 
-afterEach(() => { document.body.innerHTML = '' })
+afterEach(() => {
+  document.body.innerHTML = ''
+})
 
 // A sent user bubble as renderPillBody draws it: text spans and chips, the
 // chip holding a dot and its label.

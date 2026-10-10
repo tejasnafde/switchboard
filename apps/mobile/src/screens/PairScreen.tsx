@@ -36,12 +36,7 @@ import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { keyboardAvoidance } from '../lib/keyboard-avoidance'
-import {
-  getClient,
-  parsePairingUrl,
-  useConnectionsStore,
-  type ConnectionConfig,
-} from '../stores/connections'
+import { getClient, parsePairingUrl, useConnectionsStore, type ConnectionConfig } from '../stores/connections'
 
 const log = createLogger('screen:pair')
 
@@ -87,9 +82,7 @@ export default function PairScreen() {
   const navigation = useNavigation<Nav>()
   const route = useRoute<RouteProp<RootStackParamList, 'Pair'>>()
   const editId = route.params?.editId
-  const editConfig = editId
-    ? useConnectionsStore.getState().configs.find((c) => c.id === editId)
-    : undefined
+  const editConfig = editId ? useConnectionsStore.getState().configs.find((c) => c.id === editId) : undefined
 
   const [kind, setKind] = useState<Kind>(editConfig?.kind ?? 'ws')
   // Editing cannot be done by scanning, so a saved machine opens straight to the form.
@@ -102,9 +95,7 @@ export default function PairScreen() {
   const [project, setProject] = useState(editConfig?.kind === 'iap' ? editConfig.project : '')
   const [zone, setZone] = useState(editConfig?.kind === 'iap' ? editConfig.zone : '')
   const [instance, setInstance] = useState(editConfig?.kind === 'iap' ? editConfig.instance : '')
-  const [port, setPort] = useState(
-    editConfig?.kind === 'iap' ? String(editConfig.port) : DEFAULT_IAP_PORT,
-  )
+  const [port, setPort] = useState(editConfig?.kind === 'iap' ? String(editConfig.port) : DEFAULT_IAP_PORT)
 
   const [permission, requestPermission] = useCameraPermissions()
   const scannedRef = useRef(false)
@@ -129,10 +120,12 @@ export default function PairScreen() {
       ),
     ).then((lists) => {
       if (cancelled) return
-      setDiscovery(selectAvailableIapTargets(
-        lists,
-        configs.flatMap((config) => config.kind === 'iap' ? [config] : []),
-      ))
+      setDiscovery(
+        selectAvailableIapTargets(
+          lists,
+          configs.flatMap((config) => (config.kind === 'iap' ? [config] : [])),
+        ),
+      )
     })
     return () => {
       cancelled = true
@@ -272,10 +265,7 @@ export default function PairScreen() {
 
   if (kind === 'iap') {
     return (
-      <KeyboardAvoidingView
-        style={styles.screen}
-        {...keyboardAvoidance(Platform.OS, headerHeight)}
-      >
+      <KeyboardAvoidingView style={styles.screen} {...keyboardAvoidance(Platform.OS, headerHeight)}>
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
           <Text style={styles.overline}>WORK VM OVER IAP</Text>
 
@@ -313,8 +303,8 @@ export default function PairScreen() {
             <View style={styles.notice}>
               <Text style={styles.noticeTitle}>Nothing to discover yet</Text>
               <Text style={styles.mutedBody}>
-                VMs come from your Mac&apos;s ssh config, and only the desktop app can read it. Pair
-                with a machine started by
+                VMs come from your Mac&apos;s ssh config, and only the desktop app can read it. Pair with a machine
+                started by
               </Text>
               <Text style={styles.codeInline}>npm run dev</Text>
               <Text style={styles.mutedBody}>and they appear here automatically.</Text>
@@ -336,10 +326,7 @@ export default function PairScreen() {
               <Field label="Instance" value={instance} onChange={setInstance} placeholder="vm-name" mono />
               <Field label="Port" value={port} onChange={setPort} placeholder={DEFAULT_IAP_PORT} mono numeric />
               <Field label="Token" value={token} onChange={setToken} placeholder="from the server" mono />
-              <Pressable
-                onPress={() => saveIap()}
-                style={({ pressed }) => [styles.cta, pressed && styles.pressed]}
-              >
+              <Pressable onPress={() => saveIap()} style={({ pressed }) => [styles.cta, pressed && styles.pressed]}>
                 <Text style={styles.ctaText}>{editId ? 'Save' : 'Add VM'}</Text>
               </Pressable>
             </View>
@@ -362,10 +349,7 @@ export default function PairScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      {...keyboardAvoidance(Platform.OS, headerHeight)}
-    >
+    <KeyboardAvoidingView style={styles.screen} {...keyboardAvoidance(Platform.OS, headerHeight)}>
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
         <Text style={styles.overline}>{editId ? 'EDIT MACHINE' : 'MACHINE ADDRESS'}</Text>
         <Field label="Name" value={label} onChange={setLabel} placeholder="optional" />

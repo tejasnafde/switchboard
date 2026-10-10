@@ -22,7 +22,15 @@ function remember(key: string, call: ToolCall): void {
  * click on it (expanding it) loads the whole call, which then replaces the
  * preview. `contents` keeps the wrapper out of the layout.
  */
-export function HistoryToolCall({ toolCall, sessionId, messageId }: { toolCall: ToolCall; sessionId?: string; messageId: string }) {
+export function HistoryToolCall({
+  toolCall,
+  sessionId,
+  messageId,
+}: {
+  toolCall: ToolCall
+  sessionId?: string
+  messageId: string
+}) {
   const key = sessionId ? `${sessionId}\0${messageId}\0${toolCall.id}` : ''
   const [full, setFull] = useState<ToolCall | null>(() => (toolCall.preview && loaded.get(key)) || null)
   const requested = useRef(false)
@@ -34,7 +42,8 @@ export function HistoryToolCall({ toolCall, sessionId, messageId }: { toolCall: 
     if (!toolCall.preview || !sessionId || current || requested.current) return
     requested.current = true
     const span = perfSpan('chat.load-tool-call', { thread: sessionId })
-    window.api.app.loadToolCall(sessionId, messageId, toolCall.id)
+    window.api.app
+      .loadToolCall(sessionId, messageId, toolCall.id)
       .then((result) => {
         requested.current = false
         span.end({ outcome: result?.toolCall ? 'loaded' : 'missing' })

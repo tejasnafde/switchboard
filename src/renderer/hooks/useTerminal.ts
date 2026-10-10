@@ -1,11 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useTerminalStore } from '../stores/terminal-store'
 import { useAgentStore } from '../stores/agent-store'
-import {
-  getOrCreateTerminal,
-  attachToContainer,
-  fitTerminal,
-} from '../services/terminal-registry'
+import { getOrCreateTerminal, attachToContainer, fitTerminal } from '../services/terminal-registry'
 
 interface UseTerminalOptions {
   id: string

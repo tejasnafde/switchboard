@@ -81,8 +81,7 @@ describe('kindForMinutes', () => {
 
 describe('time conversion', () => {
   it('parses ISO with fractional seconds and an offset', () => {
-    expect(isoToMs('2026-07-28T00:39:59.922303+00:00'))
-      .toBe(Date.parse('2026-07-28T00:39:59.922303+00:00'))
+    expect(isoToMs('2026-07-28T00:39:59.922303+00:00')).toBe(Date.parse('2026-07-28T00:39:59.922303+00:00'))
   })
 
   it('returns null rather than an Invalid Date', () => {

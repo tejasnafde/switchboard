@@ -136,7 +136,8 @@ describe('ProviderWorktreeStartupLauncher', () => {
   it('keeps a thrown prompt submission ambiguous and retries with the same idempotency origin', async () => {
     const registry = {
       startManagedSession: vi.fn(async () => ({ threadId: 'conversation-startup-1' })),
-      submitManagedUserTurn: vi.fn()
+      submitManagedUserTurn: vi
+        .fn()
         .mockRejectedValueOnce(new Error('transport closed after dispatch'))
         .mockResolvedValueOnce({
           status: 'accepted' as const,
@@ -162,9 +163,7 @@ describe('ProviderWorktreeStartupLauncher', () => {
     })
 
     expect(registry.submitManagedUserTurn).toHaveBeenCalledTimes(2)
-    expect(registry.submitManagedUserTurn.mock.calls[0][0]).toEqual(
-      registry.submitManagedUserTurn.mock.calls[1][0],
-    )
+    expect(registry.submitManagedUserTurn.mock.calls[0][0]).toEqual(registry.submitManagedUserTurn.mock.calls[1][0])
     expect(registry.submitManagedUserTurn.mock.calls[0][0]).toMatchObject({
       origin: 'creation-startup-1:initial-prompt',
       providerText: 'Begin once.',
@@ -173,7 +172,9 @@ describe('ProviderWorktreeStartupLauncher', () => {
 
   it('keeps a definite provider session startup rejection failed before prompt dispatch', async () => {
     const registry = {
-      startManagedSession: vi.fn(async () => { throw new Error('provider executable unavailable') }),
+      startManagedSession: vi.fn(async () => {
+        throw new Error('provider executable unavailable')
+      }),
       submitManagedUserTurn: vi.fn(),
     }
     const launcher = new ProviderWorktreeStartupLauncher(() => registry)
@@ -187,8 +188,11 @@ describe('ProviderWorktreeStartupLauncher', () => {
 
   it('provisions the selected launch config from the authoritative worktree root', async () => {
     const live = new Set<string>()
-    const create = vi.fn(async (options: { id: string }) => { live.add(options.id) })
-    const readConfig = vi.fn(() => `
+    const create = vi.fn(async (options: { id: string }) => {
+      live.add(options.id)
+    })
+    const readConfig = vi.fn(
+      () => `
 configs:
   default:
     terminals:
@@ -207,7 +211,8 @@ configs:
             cwd: tests
             wait_for: ready
             on_start: private-test-command
-`)
+`,
+    )
     const terminals = new WorktreeLaunchConfigTerminalProvisioner(
       readConfig,
       new ManagedTerminalRuntime(() => ({ has: (id) => live.has(id), create })),
@@ -227,7 +232,11 @@ configs:
     expect(create.mock.calls.map(([options]) => options)).toEqual([
       expect.objectContaining({ cwd: resolve('/managed/repo/apps/server'), initialCommand: 'private-server-command' }),
       expect.objectContaining({ cwd: resolve('/managed/repo') }),
-      expect.objectContaining({ cwd: resolve('/managed/repo/tests'), initialCommand: 'private-test-command', waitFor: 'ready' }),
+      expect.objectContaining({
+        cwd: resolve('/managed/repo/tests'),
+        initialCommand: 'private-test-command',
+        waitFor: 'ready',
+      }),
     ])
     expect(receipt.status).toBe('succeeded')
     expect(receipt.terminalIds).toHaveLength(3)
@@ -237,15 +246,14 @@ configs:
 
   it('falls back to the default config and gives a startup command its own stable handle', async () => {
     const live = new Set<string>()
-    const create = vi.fn(async (options: { id: string }) => { live.add(options.id) })
+    const create = vi.fn(async (options: { id: string }) => {
+      live.add(options.id)
+    })
     const terminals = new WorktreeLaunchConfigTerminalProvisioner(
       () => `terminals:\n  - label: Shell\n    on_start: private-default-command\n`,
       new ManagedTerminalRuntime(() => ({ has: (id) => live.has(id), create })),
     )
-    const launcher = new ProviderWorktreeStartupLauncher(
-      () => null,
-      terminals,
-    )
+    const launcher = new ProviderWorktreeStartupLauncher(() => null, terminals)
     const launchInput = input()
     launchInput.launch.launchConfigName = 'missing-config'
     launchInput.launch.startupCommand = 'private-bootstrap-command'
@@ -299,9 +307,11 @@ configs:
       status: 'succeeded',
       terminalIds: ['terminal-1'],
     })
-    expect(registry.startManagedSession).toHaveBeenCalledWith(expect.objectContaining({
-      provider: 'codex',
-      cwd: '/managed/repo',
-    }))
+    expect(registry.startManagedSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'codex',
+        cwd: '/managed/repo',
+      }),
+    )
   })
 })

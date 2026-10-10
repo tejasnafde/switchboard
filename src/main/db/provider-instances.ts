@@ -291,7 +291,9 @@ function envKeysNoDecrypt(r: DbRow): string[] {
     try {
       const parsed = JSON.parse(r.env_keys)
       if (Array.isArray(parsed)) return parsed.filter((k): k is string => typeof k === 'string')
-    } catch { log.warn(`malformed env_keys for instance ${r.id}`) }
+    } catch {
+      log.warn(`malformed env_keys for instance ${r.id}`)
+    }
   }
   const blob = r.env_encrypted
   if (!blob || blob.length === 0) return []
@@ -320,7 +322,9 @@ function overlayHomeKeyPresence(r: DbRow, agent: CredentialHomeAgent): 'absent' 
     try {
       const parsed = JSON.parse(r.env_keys)
       if (Array.isArray(parsed)) return parsed.includes(key) ? 'present' : 'absent'
-    } catch { log.warn(`malformed env_keys for instance ${r.id}`) }
+    } catch {
+      log.warn(`malformed env_keys for instance ${r.id}`)
+    }
   }
   // Plaintext fallback blobs are readable without the keychain.
   if (!hasMagic(blob, ENC_MAGIC) && !hasMagic(blob, PASS_MAGIC)) {
@@ -345,10 +349,7 @@ function overlayCredentialHome(r: DbRow, agent: CredentialHomeAgent): string | n
  *   'unreadable' - the key list says it has one (or predates the key list, so
  *                  cannot rule one out) and the blob would not open
  */
-type StoredOverlayHome =
-  | { kind: 'absent' }
-  | { kind: 'value'; value: string }
-  | { kind: 'unreadable' }
+type StoredOverlayHome = { kind: 'absent' } | { kind: 'value'; value: string } | { kind: 'unreadable' }
 
 function storedOverlayHome(r: DbRow, agent: CredentialHomeAgent): StoredOverlayHome {
   if (overlayHomeKeyPresence(r, agent) === 'absent') return { kind: 'absent' }
@@ -395,9 +396,9 @@ function envToStore(
   if (stored.kind === 'absent') return input.env
   if (stored.kind === 'unreadable') {
     throw new Error(
-      `upsertProviderInstance: the stored env overlay for ${existing.id} could not be read, `
-      + `so its credential home (${name}) cannot be preserved - this save would silently move the `
-      + `profile to the default account. Unlock the credential store and retry, or set ${name} explicitly.`,
+      `upsertProviderInstance: the stored env overlay for ${existing.id} could not be read, ` +
+        `so its credential home (${name}) cannot be preserved - this save would silently move the ` +
+        `profile to the default account. Unlock the credential store and retry, or set ${name} explicitly.`,
     )
   }
   return { ...input.env, [name]: stored.value }
@@ -425,8 +426,11 @@ function rowToWire(r: DbRow): ProviderInstanceWire {
     const presence = overlayHomeKeyPresence(r, agent)
     if (presence === 'absent') {
       effectiveOauthDir = canonicalCredentialHome(agent)
-    } else if (presence === 'present' && !hasMagic(r.env_encrypted ?? Buffer.alloc(0), ENC_MAGIC)
-      && !hasMagic(r.env_encrypted ?? Buffer.alloc(0), PASS_MAGIC)) {
+    } else if (
+      presence === 'present' &&
+      !hasMagic(r.env_encrypted ?? Buffer.alloc(0), ENC_MAGIC) &&
+      !hasMagic(r.env_encrypted ?? Buffer.alloc(0), PASS_MAGIC)
+    ) {
       // Plaintext fallback blob - readable with no keychain at all.
       const overlay = parseEnv((r.env_encrypted as Buffer).toString('utf-8'))[credentialHomeEnvName(agent)]
       effectiveOauthDir = effectiveCredentialHome(agent, overlay)
@@ -451,7 +455,7 @@ function rowToWire(r: DbRow): ProviderInstanceWire {
     accentColor: r.accent_color,
     authMode: r.auth_mode === 'oauth_dir' ? 'oauth_dir' : 'env',
     envKeys: envKeysNoDecrypt(r),
-    oauthDir: r.oauth_dir,  // wire keeps the literal so the user sees what they typed
+    oauthDir: r.oauth_dir, // wire keeps the literal so the user sees what they typed
     effectiveOauthDir,
     effectiveOauthDirSource,
     enabled: r.enabled === 1,
@@ -472,9 +476,7 @@ export function resolveEffectiveOauthDir(id: string): {
   effectiveOauthDir: string | null
   effectiveOauthDirSource: EffectiveOauthDirSource
 } | null {
-  const row = getDb().prepare(
-    'SELECT * FROM provider_instances WHERE id = ?'
-  ).get(id) as DbRow | undefined
+  const row = getDb().prepare('SELECT * FROM provider_instances WHERE id = ?').get(id) as DbRow | undefined
   if (!row) return null
   const agent = credentialAgent(row.agent_type)
   const canonical = expandTilde(row.oauth_dir)
@@ -493,9 +495,9 @@ export function resolveEffectiveOauthDir(id: string): {
 }
 
 export function listProviderInstances(): ProviderInstanceWire[] {
-  const rows = getDb().prepare(
-    'SELECT * FROM provider_instances ORDER BY agent_type ASC, created_at ASC'
-  ).all() as DbRow[]
+  const rows = getDb()
+    .prepare('SELECT * FROM provider_instances ORDER BY agent_type ASC, created_at ASC')
+    .all() as DbRow[]
   return rows.map(rowToWire)
 }
 
@@ -503,9 +505,7 @@ export function listProviderInstances(): ProviderInstanceWire[] {
  *  session-start. NEVER expose this over IPC. `withEnv: false` leaves `env`
  *  empty and never touches the keychain, for callers that need only the rest. */
 export function getProviderInstanceFull(id: string, opts: { withEnv?: boolean } = {}): ProviderInstanceRow | null {
-  const row = getDb().prepare(
-    'SELECT * FROM provider_instances WHERE id = ?'
-  ).get(id) as DbRow | undefined
+  const row = getDb().prepare('SELECT * FROM provider_instances WHERE id = ?').get(id) as DbRow | undefined
   return row ? rowToFull(row, opts.withEnv ?? true) : null
 }
 
@@ -532,19 +532,19 @@ export interface ProviderInstanceUpsertInput {
 }
 
 function deriveId(agentType: AgentType, displayName: string): string {
-  const slug = displayName.toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 32) || 'instance'
+  const slug =
+    displayName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 32) || 'instance'
   return `${agentType}-${slug}-${Math.random().toString(36).slice(2, 6)}`
 }
 
 /** Every row, in one read. The table holds a handful of rows, so validation
  *  filters in JS rather than adding query shapes for each check. */
 function allRows(): DbRow[] {
-  return getDb().prepare(
-    'SELECT * FROM provider_instances ORDER BY agent_type ASC, created_at ASC'
-  ).all() as DbRow[]
+  return getDb().prepare('SELECT * FROM provider_instances ORDER BY agent_type ASC, created_at ASC').all() as DbRow[]
 }
 
 /**
@@ -593,10 +593,8 @@ function validateCredentialHome(
 ): void {
   const agent = credentialAgent(input.agentType)
   const authMode = input.authMode ?? (existing?.auth_mode === 'oauth_dir' ? 'oauth_dir' : 'env')
-  const rawDir = input.oauthDir === undefined ? existing?.oauth_dir ?? null : input.oauthDir
-  const enabled = input.enabled === undefined
-    ? (existing ? existing.enabled === 1 : true)
-    : input.enabled
+  const rawDir = input.oauthDir === undefined ? (existing?.oauth_dir ?? null) : input.oauthDir
+  const enabled = input.enabled === undefined ? (existing ? existing.enabled === 1 : true) : input.enabled
 
   const dir = canonicalizeOauthPath(rawDir)
   if (authMode === 'oauth_dir') {
@@ -611,7 +609,9 @@ function validateCredentialHome(
   // The home this save will actually produce: the oauth_dir if there is one,
   // else the structural var in the overlay that will be stored.
   const home = dir
-    ? (agent ? effectiveCredentialHome(agent, dir) : dir)
+    ? agent
+      ? effectiveCredentialHome(agent, dir)
+      : dir
     : overlayHomeAfterSave(plannedEnv, existing, agent)
   if (!home || !enabled) return
 
@@ -619,17 +619,14 @@ function validateCredentialHome(
   const unchanged = existing !== undefined && existing.enabled === 1 && previous === home
   if (unchanged) return
 
-  if (agent
-    && home === canonicalCredentialHome(agent)
-    && resolvedId !== defaultInstanceId(input.agentType)) {
+  if (agent && home === canonicalCredentialHome(agent) && resolvedId !== defaultInstanceId(input.agentType)) {
     throw new Error(`upsertProviderInstance: ${home} is reserved for the default ${AGENT_LABEL[agent]} instance`)
   }
 
-  const clash = allRows().find((r) =>
-    r.id !== resolvedId
-    && r.agent_type === input.agentType
-    && r.enabled === 1
-    && explicitCredentialHome(r) === home)
+  const clash = allRows().find(
+    (r) =>
+      r.id !== resolvedId && r.agent_type === input.agentType && r.enabled === 1 && explicitCredentialHome(r) === home,
+  )
   if (clash) {
     throw new Error(`upsertProviderInstance: oauth_dir ${home} is already used by instance ${clash.id}`)
   }
@@ -667,15 +664,13 @@ export function upsertProviderInstance(input: ProviderInstanceUpsertInput): Prov
   const db = getDb()
   const now = Date.now()
   const existing = input.id
-    ? db.prepare('SELECT * FROM provider_instances WHERE id = ?').get(input.id) as DbRow | undefined
+    ? (db.prepare('SELECT * FROM provider_instances WHERE id = ?').get(input.id) as DbRow | undefined)
     : undefined
   const resolvedId = existing?.id ?? input.id ?? deriveId(input.agentType, input.displayName)
   // Resolve the env to be stored BEFORE validating, so the guard sees the
   // same overlay the write will persist - including a credential home the
   // caller could not re-send (see `envToStore`).
-  const plannedEnv = existing
-    ? envToStore(input, existing, credentialAgent(input.agentType))
-    : input.env ?? null
+  const plannedEnv = existing ? envToStore(input, existing, credentialAgent(input.agentType)) : (input.env ?? null)
   validateCredentialHome(input, existing, resolvedId, plannedEnv)
 
   if (existing) {
@@ -683,23 +678,24 @@ export function upsertProviderInstance(input: ProviderInstanceUpsertInput): Prov
     // existing encrypted blob untouched.
     const envUntouched = plannedEnv === null
     const newEnv = envUntouched ? existing.env_encrypted : encryptEnv(plannedEnv!)
-    const newEnvKeys = envUntouched
-      ? existing.env_keys
-      : JSON.stringify(Object.keys(plannedEnv!).sort())
+    const newEnvKeys = envUntouched ? existing.env_keys : JSON.stringify(Object.keys(plannedEnv!).sort())
     const newAuth = input.authMode ?? existing.auth_mode
     const newName = input.displayName
     const newAccent = input.accentColor === undefined ? existing.accent_color : input.accentColor
     const newOauthDir = input.oauthDir === undefined ? existing.oauth_dir : input.oauthDir
-    const newConfig = input.configJson === undefined
-      ? existing.config_json
-      : (input.configJson === null ? null : JSON.stringify(input.configJson))
-    const newEnabled = input.enabled === undefined ? existing.enabled : (input.enabled ? 1 : 0)
+    const newConfig =
+      input.configJson === undefined
+        ? existing.config_json
+        : input.configJson === null
+          ? null
+          : JSON.stringify(input.configJson)
+    const newEnabled = input.enabled === undefined ? existing.enabled : input.enabled ? 1 : 0
     db.prepare(
       `UPDATE provider_instances
           SET display_name = ?, accent_color = ?, auth_mode = ?,
               env_encrypted = ?, env_keys = ?, oauth_dir = ?, config_json = ?,
               enabled = ?, updated_at = ?
-        WHERE id = ?`
+        WHERE id = ?`,
     ).run(newName, newAccent, newAuth, newEnv, newEnvKeys, newOauthDir, newConfig, newEnabled, now, existing.id)
     clearDecryptedEnvCache()
     return rowToWire(db.prepare('SELECT * FROM provider_instances WHERE id = ?').get(existing.id) as DbRow)
@@ -708,16 +704,16 @@ export function upsertProviderInstance(input: ProviderInstanceUpsertInput): Prov
   // Insert path
   const id = resolvedId
   const env = plannedEnv ? encryptEnv(plannedEnv) : null
-  const config = input.configJson === undefined || input.configJson === null
-    ? null
-    : JSON.stringify(input.configJson)
+  const config = input.configJson === undefined || input.configJson === null ? null : JSON.stringify(input.configJson)
   db.prepare(
     `INSERT INTO provider_instances
        (id, agent_type, display_name, accent_color, auth_mode,
         env_encrypted, env_keys, oauth_dir, config_json, enabled, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
-    id, input.agentType, input.displayName,
+    id,
+    input.agentType,
+    input.displayName,
     input.accentColor ?? null,
     input.authMode ?? 'env',
     env,
@@ -725,7 +721,8 @@ export function upsertProviderInstance(input: ProviderInstanceUpsertInput): Prov
     input.oauthDir ?? null,
     config,
     input.enabled === false ? 0 : 1,
-    now, now,
+    now,
+    now,
   )
   clearDecryptedEnvCache()
   return rowToWire(db.prepare('SELECT * FROM provider_instances WHERE id = ?').get(id) as DbRow)
@@ -735,13 +732,15 @@ export function deleteProviderInstance(id: string): boolean {
   // Refuse to delete the default-seeded row of an agent kind that has
   // no other instances - at least one must always exist so the picker
   // has something to fall back to.
-  const row = getDb().prepare(
-    'SELECT agent_type FROM provider_instances WHERE id = ?'
-  ).get(id) as { agent_type: string } | undefined
+  const row = getDb().prepare('SELECT agent_type FROM provider_instances WHERE id = ?').get(id) as
+    | { agent_type: string }
+    | undefined
   if (!row) return false
-  const remaining = (getDb().prepare(
-    'SELECT count(*) AS c FROM provider_instances WHERE agent_type = ? AND id != ?'
-  ).get(row.agent_type, id) as { c: number }).c
+  const remaining = (
+    getDb()
+      .prepare('SELECT count(*) AS c FROM provider_instances WHERE agent_type = ? AND id != ?')
+      .get(row.agent_type, id) as { c: number }
+  ).c
   if (remaining === 0) {
     log.warn(`refusing to delete last instance for agent kind ${row.agent_type}`)
     return false
@@ -757,13 +756,13 @@ export function deleteProviderInstance(id: string): boolean {
  * profiles when the in-memory rotation tracker is cold (post-restart).
  */
 export function listOauthDirsForAgent(agentType: AgentType): string[] {
-  const rows = getDb().prepare(
-    `SELECT oauth_dir FROM provider_instances
-      WHERE agent_type = ? AND enabled = 1 AND oauth_dir IS NOT NULL AND oauth_dir != ''`
-  ).all(agentType) as Array<{ oauth_dir: string | null }>
-  const dirs = rows
-    .map((r) => expandTilde(r.oauth_dir))
-    .filter((d): d is string => !!d)
+  const rows = getDb()
+    .prepare(
+      `SELECT oauth_dir FROM provider_instances
+      WHERE agent_type = ? AND enabled = 1 AND oauth_dir IS NOT NULL AND oauth_dir != ''`,
+    )
+    .all(agentType) as Array<{ oauth_dir: string | null }>
+  const dirs = rows.map((r) => expandTilde(r.oauth_dir)).filter((d): d is string => !!d)
   return Array.from(new Set(dirs))
 }
 
@@ -791,9 +790,7 @@ export function resolveProviderInstance(
       throw new Error(`Provider instance not found: ${instanceId}`)
     }
     if (exact.agentType !== agentType) {
-      throw new Error(
-        `Provider instance ${instanceId} is the wrong kind for ${agentType} (it is ${exact.agentType})`,
-      )
+      throw new Error(`Provider instance ${instanceId} is the wrong kind for ${agentType} (it is ${exact.agentType})`)
     }
     if (!exact.enabled) {
       throw new Error(`Provider instance ${instanceId} is disabled`)
@@ -803,11 +800,13 @@ export function resolveProviderInstance(
   const fallback = getProviderInstanceFull(defaultInstanceId(agentType))
   if (fallback) return fallback
   // Last-ditch: any enabled instance of the right kind, oldest first.
-  const row = getDb().prepare(
-    `SELECT * FROM provider_instances
+  const row = getDb()
+    .prepare(
+      `SELECT * FROM provider_instances
       WHERE agent_type = ? AND enabled = 1
-      ORDER BY created_at ASC LIMIT 1`
-  ).get(agentType) as DbRow | undefined
+      ORDER BY created_at ASC LIMIT 1`,
+    )
+    .get(agentType) as DbRow | undefined
   return row ? rowToFull(row) : null
 }
 

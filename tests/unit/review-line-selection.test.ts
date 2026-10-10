@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { DiffHunk } from '../../src/shared/pull-requests'
-import { afterDrag, dragLineSelection, EDGE_BAND_PX, EDGE_HEADER_PX, EDGE_MAX_SPEED_PX, edgeProbeY, edgeScrollSpeed, nextLineSelection } from '../../src/renderer/components/reviews/line-selection'
+import {
+  afterDrag,
+  dragLineSelection,
+  EDGE_BAND_PX,
+  EDGE_HEADER_PX,
+  EDGE_MAX_SPEED_PX,
+  edgeProbeY,
+  edgeScrollSpeed,
+  nextLineSelection,
+} from '../../src/renderer/components/reviews/line-selection'
 
 describe('nextLineSelection', () => {
   const one = nextLineSelection(null, 'new', 0, 12, false)
@@ -113,12 +122,15 @@ describe('edgeProbeY', () => {
   })
 
   it('keeps the current range over a row with no line on the selected side', () => {
-    const hunk = { header: '@@', lines: [
-      { kind: 'context', oldLine: 1, newLine: 1, text: 'a' },
-      { kind: 'del', oldLine: 2, newLine: null, text: 'b' },
-      { kind: 'add', oldLine: null, newLine: 2, text: 'c' },
-      { kind: 'add', oldLine: null, newLine: 3, text: 'd' },
-    ] } as never
+    const hunk = {
+      header: '@@',
+      lines: [
+        { kind: 'context', oldLine: 1, newLine: 1, text: 'a' },
+        { kind: 'del', oldLine: 2, newLine: null, text: 'b' },
+        { kind: 'add', oldLine: null, newLine: 2, text: 'c' },
+        { kind: 'add', oldLine: null, newLine: 3, text: 'd' },
+      ],
+    } as never
     const range = { side: 'new' as const, hunk: 0, anchor: 1, start: 1, end: 3 }
     expect(dragLineSelection(range, hunk, 0, null)).toEqual(range)
   })

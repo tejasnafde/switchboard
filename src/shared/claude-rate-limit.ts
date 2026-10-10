@@ -43,11 +43,7 @@ const ORG_REASONS = new Set([
   'seat_tier_zero_credit_limit',
   'group_zero_credit_limit',
 ])
-const ACCOUNT_REASONS = new Set([
-  'out_of_credits',
-  'member_level_disabled',
-  'member_zero_credit_limit',
-])
+const ACCOUNT_REASONS = new Set(['out_of_credits', 'member_level_disabled', 'member_zero_credit_limit'])
 const NOT_PROVISIONED_REASONS = new Set(['overage_not_provisioned', 'no_limits_configured'])
 
 export function classifyOverageScope(reason: string | undefined): OverageScope {
@@ -96,11 +92,7 @@ function modelPart(model: string | null | undefined): string {
  * @param nowMs injected so the relative reset time is deterministic in tests.
  * @param model effective model id, when the caller knows it.
  */
-export function buildRateLimitMessage(
-  info: ClaudeRateLimitInfo,
-  nowMs: number,
-  model?: string | null,
-): string {
+export function buildRateLimitMessage(info: ClaudeRateLimitInfo, nowMs: number, model?: string | null): string {
   if (isOverageRejection(info)) {
     const resetsAtMs = unixSecondsToMs(info.resetsAt)
     const scope = classifyOverageScope(info.overageDisabledReason)

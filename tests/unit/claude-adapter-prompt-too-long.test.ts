@@ -22,7 +22,13 @@ function tooLong(): unknown[] {
       parent_tool_use_id: null,
       message: { model: '<synthetic>', content: [{ type: 'text', text: 'Prompt is too long' }] },
     },
-    { type: 'result', subtype: 'success', is_error: true, result: 'Prompt is too long', terminal_reason: 'prompt_too_long' },
+    {
+      type: 'result',
+      subtype: 'success',
+      is_error: true,
+      result: 'Prompt is too long',
+      terminal_reason: 'prompt_too_long',
+    },
   ]
 }
 
@@ -70,14 +76,19 @@ async function runTurn(message: string, queueBehind?: string) {
   const onEvent = vi.fn()
   await adapter.startSession({ threadId: 't1', provider: 'claude', cwd: '/tmp', runtimeMode: 'sandbox' }, onEvent)
   let release: () => void = () => {}
-  if (queueBehind) sdk.gate = new Promise<void>((resolve) => { release = resolve })
+  if (queueBehind)
+    sdk.gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
   await adapter.sendTurn('t1', message, 'sandbox')
   if (queueBehind) {
     await vi.waitFor(() => expect(sdk.read).toContain(message))
     await adapter.sendTurn('t1', queueBehind, 'sandbox', undefined, 'queue', 'q1')
     release()
   }
-  await vi.waitFor(() => expect(onEvent.mock.calls.filter(([e]) => e.type === 'turn.completed').length).toBeGreaterThanOrEqual(1))
+  await vi.waitFor(() =>
+    expect(onEvent.mock.calls.filter(([e]) => e.type === 'turn.completed').length).toBeGreaterThanOrEqual(1),
+  )
   // Anything a wrong implementation would still send arrives within a few ticks.
   await new Promise((resolve) => setTimeout(resolve, 50))
   await adapter.stopSession('t1')
@@ -121,7 +132,7 @@ describe('Claude prompt too long', () => {
     expect(result.turnEnds).toBe(1)
   })
 
-  it('does not compact when the user\'s own /compact is too long', async () => {
+  it("does not compact when the user's own /compact is too long", async () => {
     Object.assign(sdk, { read: [], refuse: 0, refuseCompact: true })
     const result = await runTurn('/compact')
     expect(sdk.read).toEqual(['/compact'])

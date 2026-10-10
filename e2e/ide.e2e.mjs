@@ -56,10 +56,7 @@ try {
 
   // The real boot: cold userData → download, seed, spawn, healthz.
   console.log('  (ensure may download the code-server tarball - allow a few minutes)')
-  const ensure = await win.evaluate(
-    (repo) => window.api.ide.ensure(repo),
-    repoRoot,
-  )
+  const ensure = await win.evaluate((repo) => window.api.ide.ensure(repo), repoRoot)
   check(ensure?.ok === true && Number.isInteger(ensure.port), `ide:ensure ok on port ${ensure?.port}`)
   if (!ensure?.ok) throw new Error(`ensure failed: ${ensure?.error}`)
 
@@ -69,9 +66,7 @@ try {
   const healthz = await fetch(`http://127.0.0.1:${ensure.port}/healthz`)
   check(healthz.ok, 'GET /healthz from outside the app returns 200')
 
-  const workbench = await fetch(
-    `http://127.0.0.1:${ensure.port}/?folder=${encodeURIComponent(repoRoot)}`,
-  )
+  const workbench = await fetch(`http://127.0.0.1:${ensure.port}/?folder=${encodeURIComponent(repoRoot)}`)
   const html = await workbench.text()
   check(workbench.ok && /vscode|workbench/i.test(html), 'workbench URL serves the VS Code shell')
 

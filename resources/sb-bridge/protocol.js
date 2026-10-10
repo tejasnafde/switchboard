@@ -35,9 +35,13 @@ const VALIDATORS = {
   terminal: () => true,
   focusExplorer: () => true,
   config: (m) => isSettingsObj(m.settings),
-  open: (m) => isStr(m.path) && (m.line === undefined || isNum(m.line)) && (m.endLine === undefined || isNum(m.endLine)),
+  open: (m) =>
+    isStr(m.path) && (m.line === undefined || isNum(m.line)) && (m.endLine === undefined || isNum(m.endLine)),
   selection: (m) =>
-    isStr(m.path) && isNum(m.startLine) && isNum(m.endLine) && typeof m.text === 'string' &&
+    isStr(m.path) &&
+    isNum(m.startLine) &&
+    isNum(m.endLine) &&
+    typeof m.text === 'string' &&
     (m.intent === undefined || m.intent === 'edit'),
 }
 

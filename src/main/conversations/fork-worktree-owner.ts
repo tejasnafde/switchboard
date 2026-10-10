@@ -60,8 +60,10 @@ export class ForkWorktreeOwnerAdapter implements ForkWorktreeOwnerPort {
       throw new Error(`Fork operation ${owner.requestId} is unavailable for worktree preparation`)
     }
     const prepared = JSON.parse(operation.preparedJson) as PreparedForkSnapshot
-    if (prepared.conversationId !== owner.conversationId
-      || prepared.source.conversationId !== owner.parentConversationId) {
+    if (
+      prepared.conversationId !== owner.conversationId ||
+      prepared.source.conversationId !== owner.parentConversationId
+    ) {
       throw new Error('Worktree owner does not match the frozen fork operation')
     }
     const provider = await this.providerArtifacts.prepare({
@@ -78,9 +80,7 @@ export class ForkWorktreeOwnerAdapter implements ForkWorktreeOwnerPort {
       prepared,
       provider,
       cloned,
-      ...(provider.stage && typeof provider.stage.path === 'string'
-        ? { artifactPath: provider.stage.path }
-        : {}),
+      ...(provider.stage && typeof provider.stage.path === 'string' ? { artifactPath: provider.stage.path } : {}),
     }
   }
 
@@ -192,9 +192,7 @@ export class ConversationForkWorktreePort {
     if (!prepared.git) throw new Error('Fork operation is missing its frozen Git source receipt')
     const receipt = prepared.git
     const current = await this.git.inspect(prepared.source.sourceCheckoutPath)
-    const confirmation = request.checkout.kind === 'new-worktree'
-      ? request.checkout.dirtySourceConfirmed
-      : undefined
+    const confirmation = request.checkout.kind === 'new-worktree' ? request.checkout.dirtySourceConfirmed : undefined
     const sourceDirty = receipt.trackedChanges > 0 || receipt.untrackedChanges > 0
     if (sourceDirty && !confirmation) {
       return {
@@ -204,8 +202,10 @@ export class ConversationForkWorktreePort {
       }
     }
     const sourceChanged = current.headSha !== receipt.headSha || current.statusDigest !== receipt.statusDigest
-    if (sourceChanged || (confirmation
-      && (confirmation.headSha !== receipt.headSha || confirmation.statusDigest !== receipt.statusDigest))) {
+    if (
+      sourceChanged ||
+      (confirmation && (confirmation.headSha !== receipt.headSha || confirmation.statusDigest !== receipt.statusDigest))
+    ) {
       return {
         kind: 'failed',
         requestId: request.requestId,
@@ -236,8 +236,7 @@ export class ConversationForkWorktreePort {
       requestId: request.requestId,
       error: {
         code: retained ? 'cleanup-required' : 'git-failed',
-        message: snapshot.error?.message
-          ?? `Worktree creation stopped at ${snapshot.phase}/${snapshot.status}.`,
+        message: snapshot.error?.message ?? `Worktree creation stopped at ${snapshot.phase}/${snapshot.status}.`,
         retryable: snapshot.error?.retryable ?? true,
       },
       ...(retained
@@ -283,9 +282,7 @@ export class ConversationForkWorktreePort {
       purpose: 'fork',
       setup: { policy: 'skip' },
       lineage: {
-        ...(prepared.source.sourceWorktreeId
-          ? { parentWorktreeId: prepared.source.sourceWorktreeId }
-          : {}),
+        ...(prepared.source.sourceWorktreeId ? { parentWorktreeId: prepared.source.sourceWorktreeId } : {}),
         parentConversationId: prepared.source.conversationId,
         sourceMessageId: prepared.anchor.messageId,
       },

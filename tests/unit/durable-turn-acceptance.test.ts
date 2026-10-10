@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import Database from 'better-sqlite3'
-import {
-  DurableTurnAcceptance,
-  TurnNotAcceptedError,
-} from '../../src/main/provider/durable-turn-acceptance'
+import { DurableTurnAcceptance, TurnNotAcceptedError } from '../../src/main/provider/durable-turn-acceptance'
 import {
   SqliteTurnAcceptanceStore,
   ensureTurnAcceptanceSchema,
@@ -14,7 +11,9 @@ describe('DurableTurnAcceptance', () => {
   it('returns domain success for a completed duplicate without dispatching twice', async () => {
     const { acceptance, close } = fixture()
     let dispatches = 0
-    const dispatch = async () => { dispatches++ }
+    const dispatch = async () => {
+      dispatches++
+    }
 
     await expect(acceptance.accept(key(), 'payload', dispatch)).resolves.toEqual({
       accepted: true,
@@ -33,14 +32,20 @@ describe('DurableTurnAcceptance', () => {
   it('reports concurrent reserved or dispatching duplicates without claiming success', async () => {
     const { acceptance, close } = fixture()
     let release!: () => void
-    const gate = new Promise<void>((resolve) => { release = resolve })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
     let dispatches = 0
     const first = acceptance.accept(key(), 'payload', async () => {
       dispatches++
       await gate
     })
 
-    await expect(acceptance.accept(key(), 'payload', async () => { dispatches++ })).resolves.toEqual({
+    await expect(
+      acceptance.accept(key(), 'payload', async () => {
+        dispatches++
+      }),
+    ).resolves.toEqual({
       accepted: false,
       duplicate: true,
       state: 'ambiguous',
@@ -76,12 +81,18 @@ describe('DurableTurnAcceptance', () => {
   it('releases a definite pre-accept rejection so a retry can dispatch', async () => {
     const { acceptance, close } = fixture()
     let dispatches = 0
-    await expect(acceptance.accept(key(), 'payload', async () => {
-      dispatches++
-      throw new TurnNotAcceptedError('provider was not ready')
-    })).rejects.toThrow('provider was not ready')
+    await expect(
+      acceptance.accept(key(), 'payload', async () => {
+        dispatches++
+        throw new TurnNotAcceptedError('provider was not ready')
+      }),
+    ).rejects.toThrow('provider was not ready')
 
-    await expect(acceptance.accept(key(), 'payload', async () => { dispatches++ })).resolves.toMatchObject({
+    await expect(
+      acceptance.accept(key(), 'payload', async () => {
+        dispatches++
+      }),
+    ).resolves.toMatchObject({
       accepted: true,
       duplicate: false,
     })
@@ -92,12 +103,18 @@ describe('DurableTurnAcceptance', () => {
   it('leaves a generic dispatch failure ambiguous and never auto-redelivers it', async () => {
     const { acceptance, close } = fixture()
     let dispatches = 0
-    await expect(acceptance.accept(key(), 'payload', async () => {
-      dispatches++
-      throw new Error('provider connection died')
-    })).rejects.toThrow('provider connection died')
+    await expect(
+      acceptance.accept(key(), 'payload', async () => {
+        dispatches++
+        throw new Error('provider connection died')
+      }),
+    ).rejects.toThrow('provider connection died')
 
-    await expect(acceptance.accept(key(), 'payload', async () => { dispatches++ })).resolves.toEqual({
+    await expect(
+      acceptance.accept(key(), 'payload', async () => {
+        dispatches++
+      }),
+    ).resolves.toEqual({
       accepted: false,
       duplicate: true,
       state: 'ambiguous',

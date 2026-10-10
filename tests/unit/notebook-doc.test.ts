@@ -16,14 +16,27 @@ const nb = (cells: unknown[], minor = 5): Record<string, unknown> => ({
 
 describe('ensureCellIds', () => {
   it('uses the native nbformat 4.5 cell id when present', () => {
-    const doc = nb([{ id: 'native-id', cell_type: 'code', source: ['x = 1'], metadata: {}, outputs: [], execution_count: null }])
+    const doc = nb([
+      { id: 'native-id', cell_type: 'code', source: ['x = 1'], metadata: {}, outputs: [], execution_count: null },
+    ])
     const { doc: out, changed } = ensureCellIds(doc)
     expect(mirrorCellsOf(out)[0].id).toBe('native-id')
     expect(changed).toBe(false)
   })
 
   it('falls back to metadata.cellbridge_id when there is no native id (nbformat 4.4)', () => {
-    const doc = nb([{ cell_type: 'code', source: ['x = 1'], metadata: { cellbridge_id: 'legacy-id' }, outputs: [], execution_count: null }], 4)
+    const doc = nb(
+      [
+        {
+          cell_type: 'code',
+          source: ['x = 1'],
+          metadata: { cellbridge_id: 'legacy-id' },
+          outputs: [],
+          execution_count: null,
+        },
+      ],
+      4,
+    )
     const { doc: out, changed } = ensureCellIds(doc)
     expect(mirrorCellsOf(out)[0].id).toBe('legacy-id')
     expect(changed).toBe(false)
@@ -56,7 +69,9 @@ describe('ensureCellIds', () => {
 
 describe('mirrorCellsOf', () => {
   it('joins nbformat array sources into a single string', () => {
-    const doc = nb([{ id: 'a', cell_type: 'code', source: ['x = 1\n', 'y = 2'], metadata: {}, outputs: [], execution_count: null }])
+    const doc = nb([
+      { id: 'a', cell_type: 'code', source: ['x = 1\n', 'y = 2'], metadata: {}, outputs: [], execution_count: null },
+    ])
     expect(mirrorCellsOf(doc)[0].source).toBe('x = 1\ny = 2')
   })
 
@@ -133,7 +148,10 @@ describe('applyMirror', () => {
   })
 
   it('uses metadata.cellbridge_id for new cells on pre-4.5 documents', () => {
-    const doc = nb([{ cell_type: 'code', source: ['x'], metadata: { cellbridge_id: 'a' }, outputs: [], execution_count: null }], 4)
+    const doc = nb(
+      [{ cell_type: 'code', source: ['x'], metadata: { cellbridge_id: 'a' }, outputs: [], execution_count: null }],
+      4,
+    )
     const out = applyMirror(doc, [
       { id: 'a', cellType: 'code', source: 'x' },
       { id: 'fresh', cellType: 'code', source: 'z' },
@@ -146,9 +164,10 @@ describe('applyMirror', () => {
 
 describe('serializeNotebook / source round-trip', () => {
   it('splits multiline source into nbformat line arrays with trailing newlines', () => {
-    const out = applyMirror(nb([{ id: 'a', cell_type: 'code', source: [''], metadata: {}, outputs: [], execution_count: null }]), [
-      { id: 'a', cellType: 'code', source: 'x = 1\ny = 2' },
-    ])
+    const out = applyMirror(
+      nb([{ id: 'a', cell_type: 'code', source: [''], metadata: {}, outputs: [], execution_count: null }]),
+      [{ id: 'a', cellType: 'code', source: 'x = 1\ny = 2' }],
+    )
     expect((out.cells as Array<Record<string, unknown>>)[0].source).toEqual(['x = 1\n', 'y = 2'])
   })
 

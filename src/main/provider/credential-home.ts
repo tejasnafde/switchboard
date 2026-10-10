@@ -52,9 +52,7 @@ const DEFAULT_DIR_NAME: Record<CredentialHomeAgent, string> = {
 }
 
 /** The env var that names this kind's credential home. */
-export function credentialHomeEnvName(
-  agentType: CredentialHomeAgent,
-): 'CLAUDE_CONFIG_DIR' | 'CODEX_HOME' {
+export function credentialHomeEnvName(agentType: CredentialHomeAgent): 'CLAUDE_CONFIG_DIR' | 'CODEX_HOME' {
   return HOME_ENV[agentType]
 }
 
@@ -68,10 +66,7 @@ export function canonicalCredentialHome(agentType: CredentialHomeAgent): string 
  * to the canonical default; a legacy relative row is anchored to the home dir
  * rather than to whatever cwd the child inherits.
  */
-export function effectiveCredentialHome(
-  agentType: CredentialHomeAgent,
-  dir: string | null | undefined,
-): string {
+export function effectiveCredentialHome(agentType: CredentialHomeAgent, dir: string | null | undefined): string {
   const canonical = canonicalizeOauthPath(dir)
   if (!canonical) return canonicalCredentialHome(agentType)
   return isAbsolute(canonical) ? canonical : resolve(homedir(), canonical)

@@ -8,11 +8,25 @@ import { PrefixHasher, clearJsonlCache, loadJsonlCopies } from '../../src/main/a
 import type { ChatLoadTiming } from '../../src/shared/perf-chat'
 
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex')
-const line = (uuid: string, text: string) => JSON.stringify({
-  type: 'assistant', uuid, timestamp: '2026-01-01T00:00:00Z',
-  message: { role: 'assistant', content: [{ type: 'text', text }] },
-}) + '\n'
-const timing = (): ChatLoadTiming => ({ readMs: 0, parseMs: 0, diskMs: 0, dbMs: 0, mergeMs: 0, enrichMs: 0, diskBytes: 0, diskLines: 0, cacheHits: 0, prefixSkips: 0 })
+const line = (uuid: string, text: string) =>
+  JSON.stringify({
+    type: 'assistant',
+    uuid,
+    timestamp: '2026-01-01T00:00:00Z',
+    message: { role: 'assistant', content: [{ type: 'text', text }] },
+  }) + '\n'
+const timing = (): ChatLoadTiming => ({
+  readMs: 0,
+  parseMs: 0,
+  diskMs: 0,
+  dbMs: 0,
+  mergeMs: 0,
+  enrichMs: 0,
+  diskBytes: 0,
+  diskLines: 0,
+  cacheHits: 0,
+  prefixSkips: 0,
+})
 
 describe('PrefixHasher', () => {
   it('digests every requested prefix across chunk boundaries', () => {
@@ -60,14 +74,21 @@ describe('loadJsonlCopies', () => {
     await writeFile(other, line('a', 'one') + line('x', 'owt'))
     const t = timing()
     const out = await loadJsonlCopies([full, other], 'claude-code', t)
-    expect(out.map((copy) => copy.messages.map((m) => m.id))).toEqual([['a', 'b'], ['a', 'x']])
+    expect(out.map((copy) => copy.messages.map((m) => m.id))).toEqual([
+      ['a', 'b'],
+      ['a', 'x'],
+    ])
     expect(t.prefixSkips).toBe(0)
   })
 
   it('skips missing copies and survives a missing newest copy', async () => {
     const prefix = join(dir, 'prefix.jsonl')
     await writeFile(prefix, line('a', 'one'))
-    const out = await loadJsonlCopies([join(dir, 'gone.jsonl'), prefix, join(dir, 'gone2.jsonl')], 'claude-code', timing())
+    const out = await loadJsonlCopies(
+      [join(dir, 'gone.jsonl'), prefix, join(dir, 'gone2.jsonl')],
+      'claude-code',
+      timing(),
+    )
     expect(out.map((copy) => copy.path)).toEqual([prefix])
   })
 })

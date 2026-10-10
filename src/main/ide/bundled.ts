@@ -18,10 +18,7 @@ import { createMainLogger } from '../logger'
 const log = createMainLogger('ide:bundled')
 
 export function bundledExtensionDir(): string {
-  const candidates = [
-    join(process.resourcesPath ?? '', 'sb-bridge'),
-    join(app.getAppPath(), 'resources', 'sb-bridge'),
-  ]
+  const candidates = [join(process.resourcesPath ?? '', 'sb-bridge'), join(app.getAppPath(), 'resources', 'sb-bridge')]
   const found = candidates.find((p) => p && existsSync(p))
   if (!found) throw new Error(`sb-bridge extension not found in: ${candidates.join(', ')}`)
   return found

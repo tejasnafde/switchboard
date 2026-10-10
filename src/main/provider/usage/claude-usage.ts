@@ -26,8 +26,14 @@ const REQUIRED_SCOPE = 'user:profile'
 const RETRY_DELAY_MS = 400
 /** Socket-level codes worth one more attempt. */
 const TRANSIENT_CODES = new Set([
-  'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT', 'EAI_AGAIN',
-  'ENOTFOUND', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT',
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'EPIPE',
+  'ETIMEDOUT',
+  'EAI_AGAIN',
+  'ENOTFOUND',
+  'UND_ERR_SOCKET',
+  'UND_ERR_CONNECT_TIMEOUT',
 ])
 
 /**
@@ -61,7 +67,7 @@ function describeFetchError(err: unknown): string {
     const inner = (cause as { errors?: unknown }).errors
     if (Array.isArray(inner)) {
       const codes = inner
-        .map((e) => (e instanceof Error ? (e as NodeJS.ErrnoException).code ?? e.message : String(e)))
+        .map((e) => (e instanceof Error ? ((e as NodeJS.ErrnoException).code ?? e.message) : String(e)))
         .filter(Boolean)
       if (codes.length > 0) parts.push(`[${[...new Set(codes)].join(', ')}]`)
     }
@@ -96,8 +102,10 @@ function causeCode(err: unknown): string | undefined {
  */
 function dnsHint(err: unknown): string {
   if (!DNS_CODES.has(causeCode(err) ?? '')) return ''
-  return ' DNS lookup failed - macOS may have cached an empty answer. Try:'
-    + ' sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder'
+  return (
+    ' DNS lookup failed - macOS may have cached an empty answer. Try:' +
+    ' sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder'
+  )
 }
 
 /** True for failures that a second attempt can plausibly fix. */
@@ -206,8 +214,9 @@ export async function fetchClaudeUsage(
     ...result,
     status: 'refresh-pending',
     plan,
-    message: "Signed in. The token refreshes on this account's next chat, and usage appears after it."
-      + ' Refresh now sends one tiny message on the smallest model, which uses a small amount of quota.',
+    message:
+      "Signed in. The token refreshes on this account's next chat, and usage appears after it." +
+      ' Refresh now sends one tiny message on the smallest model, which uses a small amount of quota.',
   }
 
   const state = providerAuthState({ credential: credential.credential, nowMs: Date.now() })
@@ -268,7 +277,8 @@ export async function fetchClaudeUsage(
       ...result,
       status: 'unauthenticated',
       plan,
-      message: 'The stored login was rejected. It may have been revoked, or it may lack the scope needed for usage reporting.',
+      message:
+        'The stored login was rejected. It may have been revoked, or it may lack the scope needed for usage reporting.',
       ...(loginCommand ? { command: loginCommand } : {}),
     }
   }

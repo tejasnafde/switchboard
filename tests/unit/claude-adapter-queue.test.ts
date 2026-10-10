@@ -39,7 +39,12 @@ function withSession(adapter: ClaudeAdapter, active: ReturnType<typeof makeActiv
 describe('ClaudeAdapter queued turns', () => {
   it('queues a send that arrives while the running send applies its mode', async () => {
     let releaseMode!: () => void
-    const setPermissionMode = vi.fn(() => new Promise<void>((resolve) => { releaseMode = resolve }))
+    const setPermissionMode = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseMode = resolve
+        }),
+    )
     const adapter = new ClaudeAdapter()
     const active = makeActive({ setPermissionMode })
     withSession(adapter, active)
@@ -102,7 +107,12 @@ describe('ClaudeAdapter queued turns', () => {
     // A retried query must not send the cancelled message again.
     expect(active.prompt.forget).toHaveBeenCalledWith(sdkMessage)
     expect(active.queuedTurns).toEqual([])
-    expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'cancelled' })
+    expect(active.onEvent).toHaveBeenCalledWith({
+      type: 'turn.dequeued',
+      threadId: 'thread-1',
+      messageId: 'remote_q1',
+      reason: 'cancelled',
+    })
     active.watchdog.turnEnded()
   })
 
@@ -137,11 +147,16 @@ describe('ClaudeAdapter queued turns', () => {
     expect(pushed[1].message.content).toBe('steer me in')
     expect(pushed[1].priority).toBeUndefined()
     expect(active.queuedTurns).toEqual([])
-    expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'promoted' })
+    expect(active.onEvent).toHaveBeenCalledWith({
+      type: 'turn.dequeued',
+      threadId: 'thread-1',
+      messageId: 'remote_q1',
+      reason: 'promoted',
+    })
     active.watchdog.turnEnded()
   })
 
-  it('promotes without changing the running turn\'s mode', async () => {
+  it("promotes without changing the running turn's mode", async () => {
     const setPermissionMode = vi.fn(async () => {})
     const { adapter, active } = running({ cancelAsyncMessage: vi.fn(async () => true), setPermissionMode })
     await adapter.sendTurn('thread-1', 'written in full access', 'full-access', undefined, 'queue', 'remote_q1')
@@ -154,10 +169,17 @@ describe('ClaudeAdapter queued turns', () => {
   it('reports a promote whose steer fails as dropped, and ends its turn', async () => {
     const { adapter, active } = running({ cancelAsyncMessage: vi.fn(async () => true) })
     await adapter.sendTurn('thread-1', 'lost', undefined, undefined, 'queue', 'remote_q1')
-    active.prompt.push.mockImplementationOnce(() => { throw new Error('queue closed') })
+    active.prompt.push.mockImplementationOnce(() => {
+      throw new Error('queue closed')
+    })
     await expect(adapter.promoteQueuedTurn('thread-1', 'remote_q1')).rejects.toThrow('queue closed')
     const events = active.onEvent.mock.calls.map(([e]) => e)
-    expect(events).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'dropped' })
+    expect(events).toContainEqual({
+      type: 'turn.dequeued',
+      threadId: 'thread-1',
+      messageId: 'remote_q1',
+      reason: 'dropped',
+    })
     expect(events.some((e) => e.type === 'turn.completed')).toBe(true)
     expect(events.some((e) => e.type === 'turn.dequeued' && e.reason === 'promoted')).toBe(false)
     active.watchdog.turnEnded()
@@ -165,7 +187,12 @@ describe('ClaudeAdapter queued turns', () => {
 
   it('does not count a message being cancelled as the one that starts next', async () => {
     let finishCancel!: (v: boolean) => void
-    const cancelAsyncMessage = vi.fn(() => new Promise<boolean>((resolve) => { finishCancel = resolve }))
+    const cancelAsyncMessage = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishCancel = resolve
+        }),
+    )
     const { adapter, active } = running({ cancelAsyncMessage, setPermissionMode: vi.fn(async () => {}) })
     await adapter.sendTurn('thread-1', 'a', undefined, undefined, 'queue', 'remote_a')
     await adapter.sendTurn('thread-1', 'b', undefined, undefined, 'queue', 'remote_b')
@@ -186,7 +213,12 @@ describe('ClaudeAdapter queued turns', () => {
 
   it('starts the head, with its own mode, when a cancel racing the turn end fails', async () => {
     let finishCancel!: (v: boolean) => void
-    const cancelAsyncMessage = vi.fn(() => new Promise<boolean>((resolve) => { finishCancel = resolve }))
+    const cancelAsyncMessage = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishCancel = resolve
+        }),
+    )
     const setPermissionMode = vi.fn(async () => {})
     const { adapter, active } = running({ cancelAsyncMessage, setPermissionMode })
     await adapter.sendTurn('thread-1', 'a', 'plan', undefined, 'queue', 'remote_a')
@@ -210,7 +242,12 @@ describe('ClaudeAdapter queued turns', () => {
 
   it('starts the head with its own mode when a cancel racing the turn end rejects', async () => {
     let failCancel!: (err: Error) => void
-    const cancelAsyncMessage = vi.fn(() => new Promise<boolean>((_resolve, reject) => { failCancel = reject }))
+    const cancelAsyncMessage = vi.fn(
+      () =>
+        new Promise<boolean>((_resolve, reject) => {
+          failCancel = reject
+        }),
+    )
     const { adapter, active } = running({ cancelAsyncMessage, setPermissionMode: vi.fn(async () => {}) })
     await adapter.sendTurn('thread-1', 'a', 'plan', undefined, 'queue', 'remote_a')
     await adapter.sendTurn('thread-1', 'b', 'full-access', undefined, 'queue', 'remote_b')
@@ -220,7 +257,9 @@ describe('ClaudeAdapter queued turns', () => {
     failCancel(new Error('control channel closed'))
     await expect(cancel).resolves.toBe(false)
     const dequeued = active.onEvent.mock.calls.map(([e]) => e).filter((e) => e.type === 'turn.dequeued')
-    expect(dequeued).toEqual([{ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_a', reason: 'started' }])
+    expect(dequeued).toEqual([
+      { type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_a', reason: 'started' },
+    ])
     expect(active.session.runtimeMode).toBe('plan')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((active as any).startAfterWithdraw).toBe(false)
@@ -229,7 +268,12 @@ describe('ClaudeAdapter queued turns', () => {
 
   it('forgets a deferred start when the queue is dropped, so a later cancel starts nothing', async () => {
     let finishCancel!: (v: boolean) => void
-    const cancelAsyncMessage = vi.fn(() => new Promise<boolean>((resolve) => { finishCancel = resolve }))
+    const cancelAsyncMessage = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishCancel = resolve
+        }),
+    )
     const { adapter, active } = running({ cancelAsyncMessage, setPermissionMode: vi.fn(async () => {}) })
     await adapter.sendTurn('thread-1', 'a', undefined, undefined, 'queue', 'remote_a')
     const cancel = adapter.cancelQueuedTurn('thread-1', 'remote_a')
@@ -241,13 +285,19 @@ describe('ClaudeAdapter queued turns', () => {
     expect((active as any).startAfterWithdraw).toBe(false)
     finishCancel(true)
     await cancel
-    const reasons = active.onEvent.mock.calls.map(([e]) => e).filter((e) => e.type === 'turn.dequeued').map((e) => e.reason)
+    const reasons = active.onEvent.mock.calls
+      .map(([e]) => e)
+      .filter((e) => e.type === 'turn.dequeued')
+      .map((e) => e.reason)
     expect(reasons).not.toContain('started')
     active.watchdog.turnEnded()
   })
 
   it('clears a deferred start on stopSession', async () => {
-    const { adapter, active } = running({ close: vi.fn(), cancelAsyncMessage: vi.fn(() => new Promise<boolean>(() => {})) })
+    const { adapter, active } = running({
+      close: vi.fn(),
+      cancelAsyncMessage: vi.fn(() => new Promise<boolean>(() => {})),
+    })
     await adapter.sendTurn('thread-1', 'a', undefined, undefined, 'queue', 'remote_a')
     void adapter.cancelQueuedTurn('thread-1', 'remote_a')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -262,18 +312,35 @@ describe('ClaudeAdapter queued turns', () => {
     await adapter.sendTurn('thread-1', 'next', 'plan', undefined, 'queue', 'remote_q1')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(adapter as any).startQueuedTurn(active)
-    expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'started' })
+    expect(active.onEvent).toHaveBeenCalledWith({
+      type: 'turn.dequeued',
+      threadId: 'thread-1',
+      messageId: 'remote_q1',
+      reason: 'started',
+    })
     expect(active.queuedTurns).toEqual([])
     active.watchdog.turnEnded()
   })
 })
 
 describe('ClaudeAdapter holds the queue after a usage limit or a failed turn', () => {
-  const rejected = { type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour', resetsAt: 1 } }
+  const rejected = {
+    type: 'rate_limit_event',
+    rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour', resetsAt: 1 },
+  }
 
   async function queuedBehindRunningTurn(cancelAsyncMessage: (uuid: string) => Promise<boolean>) {
     const adapter = new ClaudeAdapter()
-    const active = { ...makeActive({ cancelAsyncMessage, setPermissionMode: vi.fn(async () => {}), getContextUsage: vi.fn(async () => ({ totalTokens: 1, maxTokens: 2, percentage: 50 })) }), currentReasoningMessageId: null, partialMessageText: new Map(), lastKnownModel: null }
+    const active = {
+      ...makeActive({
+        cancelAsyncMessage,
+        setPermissionMode: vi.fn(async () => {}),
+        getContextUsage: vi.fn(async () => ({ totalTokens: 1, maxTokens: 2, percentage: 50 })),
+      }),
+      currentReasoningMessageId: null,
+      partialMessageText: new Map(),
+      lastKnownModel: null,
+    }
     active.turnStartedAt = Date.now()
     withSession(adapter, active)
     await adapter.sendTurn('thread-1', 'q1', undefined, undefined, 'queue', 'remote_q1')
@@ -288,7 +355,12 @@ describe('ClaudeAdapter holds the queue after a usage limit or a failed turn', (
     ;(adapter as any).handleSDKMessage('thread-1', active, rejected)
     await vi.waitFor(() => expect(cancelAsyncMessage).toHaveBeenCalledTimes(2))
 
-    expect(events()).toContainEqual({ type: 'turn.queue-held', threadId: 'thread-1', held: true, reason: 'The usage limit was reached.' })
+    expect(events()).toContainEqual({
+      type: 'turn.queue-held',
+      threadId: 'thread-1',
+      held: true,
+      reason: 'The usage limit was reached.',
+    })
     // Nothing started into the limit.
     expect(events().some((e) => e.type === 'turn.dequeued')).toBe(false)
     expect(active.queuedTurns.map((t) => (t as { held?: boolean }).held)).toEqual([true, true])
@@ -297,7 +369,12 @@ describe('ClaudeAdapter holds the queue after a usage limit or a failed turn', (
     await expect(adapter.resumeQueuedTurns('thread-1')).resolves.toBe(true)
     expect(active.prompt.push.mock.calls.map(([m]) => m.message.content)).toEqual(['q1', 'q2'])
     // Idle, so the CLI runs the first one now.
-    expect(events()).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'started' })
+    expect(events()).toContainEqual({
+      type: 'turn.dequeued',
+      threadId: 'thread-1',
+      messageId: 'remote_q1',
+      reason: 'started',
+    })
     expect(events()).toContainEqual({ type: 'turn.queue-held', threadId: 'thread-1', held: false })
     active.watchdog.turnEnded()
   })
@@ -306,7 +383,11 @@ describe('ClaudeAdapter holds the queue after a usage limit or a failed turn', (
     const cancelAsyncMessage = vi.fn(async () => true)
     const { adapter, active } = await queuedBehindRunningTurn(cancelAsyncMessage)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(adapter as any).handleSDKMessage('thread-1', active, { type: 'result', is_error: true, subtype: 'error_during_execution' })
+    ;(adapter as any).handleSDKMessage('thread-1', active, {
+      type: 'result',
+      is_error: true,
+      subtype: 'error_during_execution',
+    })
     await vi.waitFor(() => expect(cancelAsyncMessage).toHaveBeenCalledTimes(2))
     await expect(adapter.cancelQueuedTurn('thread-1', 'remote_q2')).resolves.toBe(true)
     expect(cancelAsyncMessage).toHaveBeenCalledTimes(2)
@@ -326,7 +407,9 @@ describe('ClaudeAdapter holds the queue after a usage limit or a failed turn', (
     await adapter.sendTurn('thread-1', 'q3', undefined, undefined, 'queue', 'remote_q3')
     expect(active.prompt.push).not.toHaveBeenCalled()
     expect(active.queuedTurns.map((t) => [t.id, (t as { held?: boolean }).held])).toEqual([
-      ['remote_q1', true], ['remote_q2', true], ['remote_q3', true],
+      ['remote_q1', true],
+      ['remote_q2', true],
+      ['remote_q3', true],
     ])
     await expect(adapter.resumeQueuedTurns('thread-1')).resolves.toBe(true)
     expect(active.prompt.push.mock.calls.map(([m]) => m.message.content)).toEqual(['q1', 'q2', 'q3'])
@@ -341,7 +424,12 @@ describe('ClaudeAdapter holds the queue after a usage limit or a failed turn', (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(adapter as any).handleSDKMessage('thread-1', active, rejected)
     await vi.waitFor(() => expect(cancelAsyncMessage).toHaveBeenCalledTimes(2))
-    expect(events()).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'started' })
+    expect(events()).toContainEqual({
+      type: 'turn.dequeued',
+      threadId: 'thread-1',
+      messageId: 'remote_q1',
+      reason: 'started',
+    })
     expect(active.queuedTurns.map((t) => t.id)).toEqual(['remote_q2'])
     active.watchdog.turnEnded()
   })
@@ -350,8 +438,18 @@ describe('ClaudeAdapter holds the queue after a usage limit or a failed turn', (
 describe('ClaudeAdapter keeps the queue and the turn state in step', () => {
   function setup(cancelAsyncMessage: (uuid: string) => Promise<boolean> = async () => true) {
     const adapter = new ClaudeAdapter()
-    const query = { cancelAsyncMessage, interrupt: vi.fn(async () => {}), setPermissionMode: vi.fn(async () => {}), getContextUsage: vi.fn(async () => ({ totalTokens: 1, maxTokens: 2, percentage: 50 })) }
-    const active = { ...makeActive(query), currentReasoningMessageId: null, partialMessageText: new Map(), lastKnownModel: null }
+    const query = {
+      cancelAsyncMessage,
+      interrupt: vi.fn(async () => {}),
+      setPermissionMode: vi.fn(async () => {}),
+      getContextUsage: vi.fn(async () => ({ totalTokens: 1, maxTokens: 2, percentage: 50 })),
+    }
+    const active = {
+      ...makeActive(query),
+      currentReasoningMessageId: null,
+      partialMessageText: new Map(),
+      lastKnownModel: null,
+    }
     active.turnStartedAt = Date.now()
     withSession(adapter, active)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -391,7 +489,12 @@ describe('ClaudeAdapter keeps the queue and the turn state in step', () => {
 
   it('starts nothing when the stopped turn ends while the hold is still taking messages back', async () => {
     let finishCancel!: (v: boolean) => void
-    const { adapter, active, feed, events } = setup(() => new Promise<boolean>((resolve) => { finishCancel = resolve }))
+    const { adapter, active, feed, events } = setup(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishCancel = resolve
+        }),
+    )
     await adapter.sendTurn('thread-1', 'a', undefined, undefined, 'queue', 'remote_a')
     await adapter.sendTurn('thread-1', 'b', undefined, undefined, 'queue', 'remote_b')
     await adapter.sendTurn('thread-1', 'steer')
@@ -399,13 +502,21 @@ describe('ClaudeAdapter keeps the queue and the turn state in step', () => {
     // The interrupted turn ends as a plain result, before the CLI answers the cancel.
     feed(result)
     expect(events().some((e) => e.type === 'turn.dequeued')).toBe(false)
-    expect(events().filter((e) => e.type === 'status').at(-1)?.status).toBe('idle')
+    expect(
+      events()
+        .filter((e) => e.type === 'status')
+        .at(-1)?.status,
+    ).toBe('idle')
     finishCancel(true)
     await vi.waitFor(() => expect(active.queuedTurns[0]).toMatchObject({ held: true }))
     finishCancel(true)
     await vi.waitFor(() => expect(active.queuedTurns.every((t) => (t as { held?: boolean }).held)).toBe(true))
     expect(events().some((e) => e.type === 'turn.dequeued')).toBe(false)
-    expect(events().filter((e) => e.type === 'status').at(-1)?.status).toBe('idle')
+    expect(
+      events()
+        .filter((e) => e.type === 'status')
+        .at(-1)?.status,
+    ).toBe('idle')
     active.watchdog.turnEnded()
   })
 
@@ -413,13 +524,19 @@ describe('ClaudeAdapter keeps the queue and the turn state in step', () => {
     const { adapter, active, query, feed, events } = setup()
     await adapter.sendTurn('thread-1', 'queued', 'full-access', undefined, 'queue', 'remote_q1')
     await adapter.sendTurn('thread-1', 'steer that misses the last tool step')
-    const steerUuid = active.prompt.push.mock.calls.map(([m]) => m).find((m) => m.message.content.startsWith('steer')).uuid
+    const steerUuid = active.prompt.push.mock.calls
+      .map(([m]) => m)
+      .find((m) => m.message.content.startsWith('steer')).uuid
     expect(typeof steerUuid).toBe('string')
 
     feed(result)
     // Undecided: something runs next, but not necessarily the queued message.
     expect(events().some((e) => e.type === 'turn.dequeued')).toBe(false)
-    expect(events().filter((e) => e.type === 'status').at(-1)?.status).toBe('running')
+    expect(
+      events()
+        .filter((e) => e.type === 'status')
+        .at(-1)?.status,
+    ).toBe('running')
 
     feed(messageStart([steerUuid]))
     expect(events()).toContainEqual({ type: 'status', threadId: 'thread-1', status: 'running', newTurn: true })
@@ -429,7 +546,12 @@ describe('ClaudeAdapter keeps the queue and the turn state in step', () => {
 
     // The steer's turn ends; the queued message is next, with its own mode.
     feed(result)
-    expect(events()).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'started' })
+    expect(events()).toContainEqual({
+      type: 'turn.dequeued',
+      threadId: 'thread-1',
+      messageId: 'remote_q1',
+      reason: 'started',
+    })
     expect(active.session.runtimeMode).toBe('full-access')
     active.watchdog.turnEnded()
   })
@@ -441,7 +563,12 @@ describe('ClaudeAdapter keeps the queue and the turn state in step', () => {
     const queuedUuid = active.queuedTurns[0].uuid
     feed(result)
     feed(messageStart([queuedUuid]))
-    expect(events()).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'started' })
+    expect(events()).toContainEqual({
+      type: 'turn.dequeued',
+      threadId: 'thread-1',
+      messageId: 'remote_q1',
+      reason: 'started',
+    })
     expect(events().some((e) => e.type === 'status' && e.newTurn)).toBe(false)
     active.watchdog.turnEnded()
   })
@@ -452,14 +579,23 @@ describe('ClaudeAdapter keeps the queue and the turn state in step', () => {
     await adapter.sendTurn('thread-1', 'steer')
     feed(result)
     feed(messageStart())
-    expect(events()).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'started' })
+    expect(events()).toContainEqual({
+      type: 'turn.dequeued',
+      threadId: 'thread-1',
+      messageId: 'remote_q1',
+      reason: 'started',
+    })
     active.watchdog.turnEnded()
   })
 
   it('announces a turn nobody started, such as a text-only late steer', () => {
     const { active, feed, events } = setup()
     feed(result)
-    expect(events().filter((e) => e.type === 'status').at(-1)?.status).toBe('idle')
+    expect(
+      events()
+        .filter((e) => e.type === 'status')
+        .at(-1)?.status,
+    ).toBe('idle')
     feed(messageStart(['some-steer']))
     expect(events()).toContainEqual({ type: 'status', threadId: 'thread-1', status: 'running', newTurn: true })
     feed(result)

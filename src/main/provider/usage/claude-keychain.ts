@@ -71,10 +71,7 @@ function stripTrailingSep(value: string): string {
  *
  * Pure and home-dir-injectable so the golden hashes can be asserted in tests.
  */
-export function claudeKeychainServiceCandidates(
-  configDir: string | null | undefined,
-  homeDir?: string,
-): string[] {
+export function claudeKeychainServiceCandidates(configDir: string | null | undefined, homeDir?: string): string[] {
   const raw = (configDir ?? '').trim()
   // An unset CLAUDE_CONFIG_DIR is the only case that uses the bare name.
   // "set to the default dir" still hashes, so this must not fall through.
@@ -144,13 +141,9 @@ export function parseStoredClaudeCredential(raw: string): StoredClaudeCredential
   if (typeof accessToken !== 'string' || accessToken.length === 0) return null
   return {
     accessToken,
-    expiresAtMs: typeof record.expiresAt === 'number' && Number.isFinite(record.expiresAt)
-      ? record.expiresAt
-      : null,
+    expiresAtMs: typeof record.expiresAt === 'number' && Number.isFinite(record.expiresAt) ? record.expiresAt : null,
     subscriptionType: typeof record.subscriptionType === 'string' ? record.subscriptionType : null,
-    scopes: Array.isArray(record.scopes)
-      ? record.scopes.filter((s): s is string => typeof s === 'string')
-      : [],
+    scopes: Array.isArray(record.scopes) ? record.scopes.filter((s): s is string => typeof s === 'string') : [],
     hasRefreshToken: typeof record.refreshToken === 'string' && record.refreshToken.length > 0,
   }
 }
@@ -253,7 +246,9 @@ export function createClaudeCredentialReader(deps: ClaudeCredentialReaderDeps = 
       }
       // The item exists. Trying the next account finds the same item and
       // asks for the password again, for the same answer.
-      log.warn(`keychain entry ${service} did not contain a claudeAiOauth payload; not reading it again until a refresh`)
+      log.warn(
+        `keychain entry ${service} did not contain a claudeAiOauth payload; not reading it again until a refresh`,
+      )
       return { kind: 'no-payload' }
     }
     return { kind: 'absent' }
@@ -327,7 +322,10 @@ export function createClaudeCredentialReader(deps: ClaudeCredentialReaderDeps = 
 
 const reader = createClaudeCredentialReader()
 
-export function readClaudeCredential(configDir: string | null, opts?: ReadCredentialOptions): Promise<CredentialReadResult> {
+export function readClaudeCredential(
+  configDir: string | null,
+  opts?: ReadCredentialOptions,
+): Promise<CredentialReadResult> {
   return reader.read(configDir, opts)
 }
 

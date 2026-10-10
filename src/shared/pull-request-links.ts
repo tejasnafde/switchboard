@@ -96,11 +96,15 @@ export type PrHistoryScanResult =
 /** What the manual scan tells the user. */
 export function historyScanSummary(result: PrHistoryScanResult): { title: string; body?: string } {
   if (!result.ok) return { title: 'Could not scan this chat', body: result.message }
-  const title = result.linked === 0
-    ? 'No new pull requests found'
-    : `Linked ${result.linked} pull request${result.linked === 1 ? '' : 's'}`
-  const parts = ["Only pull requests of this chat's project repository are linked, and one you unlinked stays unlinked."]
-  if (result.capped) parts.push(`This chat is long, so only its first ${result.capChars.toLocaleString('en-US')} characters were read.`)
+  const title =
+    result.linked === 0
+      ? 'No new pull requests found'
+      : `Linked ${result.linked} pull request${result.linked === 1 ? '' : 's'}`
+  const parts = [
+    "Only pull requests of this chat's project repository are linked, and one you unlinked stays unlinked.",
+  ]
+  if (result.capped)
+    parts.push(`This chat is long, so only its first ${result.capChars.toLocaleString('en-US')} characters were read.`)
   return { title, body: parts.join(' ') }
 }
 
@@ -111,11 +115,16 @@ export function normalizePrRef(ref: PrRef): PrRef {
 
 export function isPrRef(value: unknown): value is PrRef {
   const r = value as Partial<PrRef> | null
-  return !!r
-    && (r.host === 'github' || r.host === 'bitbucket')
-    && typeof r.owner === 'string' && /^[A-Za-z0-9_.-]+$/.test(r.owner)
-    && typeof r.name === 'string' && /^[A-Za-z0-9_.-]+$/.test(r.name)
-    && Number.isInteger(r.number) && (r.number as number) > 0
+  return (
+    !!r &&
+    (r.host === 'github' || r.host === 'bitbucket') &&
+    typeof r.owner === 'string' &&
+    /^[A-Za-z0-9_.-]+$/.test(r.owner) &&
+    typeof r.name === 'string' &&
+    /^[A-Za-z0-9_.-]+$/.test(r.name) &&
+    Number.isInteger(r.number) &&
+    (r.number as number) > 0
+  )
 }
 
 /** A chat may link only PRs of a repository its project covers. */
@@ -126,7 +135,8 @@ export function canLinkToProject(ref: PrRef, project: ProjectRepos | null): bool
 // https://github.com/<owner>/<repo>/pull/<n>
 // https://bitbucket.org/<workspace>/<repo>/pull-requests/<n>
 // The number must end the path segment: `/pull/61` inside `/pull/612` never matches.
-const PR_URL = /\bhttps?:\/\/(?:www\.)?(github\.com|bitbucket\.org)\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/(pull|pull-requests)\/(\d{1,9})(?!\w)/gi
+const PR_URL =
+  /\bhttps?:\/\/(?:www\.)?(github\.com|bitbucket\.org)\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/(pull|pull-requests)\/(\d{1,9})(?!\w)/gi
 
 const URL_HOST: Record<string, { host: PrHost; path: string }> = {
   'github.com': { host: 'github', path: 'pull' },
@@ -140,7 +150,12 @@ export function findPullRequestUrls(text: string): PrRef[] {
   for (const m of text.matchAll(PR_URL)) {
     const site = URL_HOST[m[1].toLowerCase()]
     if (m[4].toLowerCase() !== site.path) continue
-    const ref = normalizePrRef({ host: site.host, owner: m[2], name: m[3].replace(/\.git$/i, ''), number: Number(m[5]) })
+    const ref = normalizePrRef({
+      host: site.host,
+      owner: m[2],
+      name: m[3].replace(/\.git$/i, ''),
+      number: Number(m[5]),
+    })
     const key = prKey(ref)
     if (ref.number === 0 || seen.has(key)) continue
     seen.add(key)

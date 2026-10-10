@@ -44,7 +44,7 @@ export interface ConnectionManagerDeps {
     url: string | null,
     reason?: string,
     willRetry?: boolean,
-    idePort?: number | null
+    idePort?: number | null,
   ) => void
   /** Install/upgrade the remote backend before the tunnel. 'no-node' aborts. onStep reports progress labels. */
   provision?: (machine: Machine, onStep?: (label: string) => void) => Promise<{ action: string }>
@@ -95,7 +95,8 @@ export class ConnectionManager {
   /** Snapshot of every tracked connection, for a reloaded renderer to resync from. */
   statuses(): Record<string, { status: ConnectionStatus; url: string | null; idePort: number | null }> {
     const out: Record<string, { status: ConnectionStatus; url: string | null; idePort: number | null }> = {}
-    for (const [id, conn] of this.conns) out[id] = { status: conn.status, url: this.urlOf(id), idePort: this.idePortOf(id) }
+    for (const [id, conn] of this.conns)
+      out[id] = { status: conn.status, url: this.urlOf(id), idePort: this.idePortOf(id) }
     return out
   }
 
@@ -223,7 +224,9 @@ export class ConnectionManager {
     if (conn.attempts < max) {
       conn.attempts++
       this.transition(machine.id, 'fail', reason, true)
-      const delay = (this.deps.reconnectDelayMs ?? ((n) => reconnectDelay(n, { baseMs: 1000, capMs: 30_000, jitter: 0.25 })))(conn.attempts)
+      const delay = (
+        this.deps.reconnectDelayMs ?? ((n) => reconnectDelay(n, { baseMs: 1000, capMs: 30_000, jitter: 0.25 }))
+      )(conn.attempts)
       // A manual connect/disconnect in the meantime bumps the epoch (or flips
       // status); this timer must then no-op instead of firing an interleaved attempt.
       const scheduledEpoch = conn.epoch

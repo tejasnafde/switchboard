@@ -14,14 +14,8 @@ import {
   type WorktreeCreationSnapshot,
 } from '../../shared/worktree-creation'
 import type { WorktreeSetupConfig } from '../../shared/launch-config'
-import {
-  authorizeWorktreeCreationAction,
-  authorizeWorktreeCreationRequest,
-} from './authorization'
-import {
-  type WorktreeCreationRecord,
-  SqliteWorktreeCreationStore,
-} from '../db/worktree-creation'
+import { authorizeWorktreeCreationAction, authorizeWorktreeCreationRequest } from './authorization'
+import { type WorktreeCreationRecord, SqliteWorktreeCreationStore } from '../db/worktree-creation'
 import { createMainLogger } from '../logger'
 import type {
   ResolvedGitRepository,
@@ -66,9 +60,7 @@ export interface WorktreeSetupRunnerPort {
     command: string
     signal?: AbortSignal
   }): Promise<
-    | { kind: 'succeeded'; exitCode?: number }
-    | { kind: 'failed'; exitCode?: number }
-    | { kind: 'outcome_unknown' }
+    { kind: 'succeeded'; exitCode?: number } | { kind: 'failed'; exitCode?: number } | { kind: 'outcome_unknown' }
   >
 }
 
@@ -254,27 +246,29 @@ export class WorktreeCreationService {
   }
 
   async recoverInterruptedCreations(): Promise<void> {
-    await Promise.all(this.options.store.listRecoverable().map(async (record) => {
-      try {
-        await this.recoverOnce(record)
-      } catch (error) {
-        const failed = this.options.store.updateProgress({
-          machineId: record.machineId,
-          creationId: record.creationId,
-          expectedRevision: this.options.store.get(record)?.revision ?? record.revision,
-          phase: record.phase,
-          status: 'cleanup_required',
-          errorJson: JSON.stringify({
-            code: 'recovery_failed',
+    await Promise.all(
+      this.options.store.listRecoverable().map(async (record) => {
+        try {
+          await this.recoverOnce(record)
+        } catch (error) {
+          const failed = this.options.store.updateProgress({
+            machineId: record.machineId,
+            creationId: record.creationId,
+            expectedRevision: this.options.store.get(record)?.revision ?? record.revision,
             phase: record.phase,
-            message: error instanceof Error ? error.message : 'Worktree recovery failed.',
-            retryable: false,
-          }),
-          now: this.now(),
-        })
-        if (failed.kind === 'updated') this.publish(failed.record)
-      }
-    }))
+            status: 'cleanup_required',
+            errorJson: JSON.stringify({
+              code: 'recovery_failed',
+              phase: record.phase,
+              message: error instanceof Error ? error.message : 'Worktree recovery failed.',
+              retryable: false,
+            }),
+            now: this.now(),
+          })
+          if (failed.kind === 'updated') this.publish(failed.record)
+        }
+      }),
+    )
   }
 
   async getWorktreeCreation(input: GetWorktreeCreationRequest): Promise<WorktreeCreationSnapshot> {
@@ -291,10 +285,7 @@ export class WorktreeCreationService {
         `Worktree creation ${input.creationId} changed before the action was applied.`,
       )
     }
-    authorizeWorktreeCreationAction(
-      JSON.parse(current.requestJson) as WorktreeCreationRequest,
-      input.action,
-    )
+    authorizeWorktreeCreationAction(JSON.parse(current.requestJson) as WorktreeCreationRequest, input.action)
     if (input.action === 'cancel' && current.phase === 'pending' && current.status === 'pending') {
       return this.transitionFromAction(input, current.phase, 'cancelled')
     }
@@ -310,7 +301,7 @@ export class WorktreeCreationService {
       const plan = JSON.parse(current.materializationPlanJson) as WorktreeMaterializationPlan
       if (input.action === 'choose_setup_skip') {
         const previous = current.setupReceiptJson
-          ? JSON.parse(current.setupReceiptJson) as WorktreeSetupReceipt
+          ? (JSON.parse(current.setupReceiptJson) as WorktreeSetupReceipt)
           : undefined
         const skipped = this.options.store.updateProgress({
           ...input,
@@ -331,14 +322,14 @@ export class WorktreeCreationService {
         return this.finishAfterSetup(request, skipped.record)
       }
       const approvedSetup = current.setupReceiptJson
-        ? JSON.parse(current.setupReceiptJson) as WorktreeSetupReceipt
+        ? (JSON.parse(current.setupReceiptJson) as WorktreeSetupReceipt)
         : undefined
       return this.provisionSetup(request, plan, current, 'run', approvedSetup?.commandFingerprint)
     }
     if (
-      input.action === 'retry'
-      && (current.status === 'failed' || current.status === 'rolled_back')
-      && (current.phase === 'materializing' || current.phase === 'configuring' || current.phase === 'linking')
+      input.action === 'retry' &&
+      (current.status === 'failed' || current.status === 'rolled_back') &&
+      (current.phase === 'materializing' || current.phase === 'configuring' || current.phase === 'linking')
     ) {
       if (!current.materializationPlanJson) {
         throw new WorktreeCreationUnsafeActionError('The reserved materialization plan is unavailable.')
@@ -368,12 +359,9 @@ export class WorktreeCreationService {
     if (input.action === 'retry' && current.status === 'cleanup_required' && current.phase === 'provisioning') {
       const request = JSON.parse(current.requestJson) as WorktreeCreationRequest
       const startupReceipt = current.startupReceiptJson
-        ? JSON.parse(current.startupReceiptJson) as WorktreeStartupReceipt
+        ? (JSON.parse(current.startupReceiptJson) as WorktreeStartupReceipt)
         : undefined
-      if (
-        request.launch
-        && startupReceipt?.status === 'ambiguous'
-      ) {
+      if (request.launch && startupReceipt?.status === 'ambiguous') {
         return this.provisionStartup(request, current)
       }
     }
@@ -484,9 +472,7 @@ export class WorktreeCreationService {
       throw new WorktreeCreationValidationError(parsed.issues.map((issue) => issue.message).join(' '))
     }
     const request = authorizeWorktreeCreationRequest(parsed.value)
-    const payloadHash = createHash('sha256')
-      .update(canonicalizeWorktreeCreationIdentity(request))
-      .digest('hex')
+    const payloadHash = createHash('sha256').update(canonicalizeWorktreeCreationIdentity(request)).digest('hex')
     const key = `${request.repository.machineId}\u0000${request.creationId}`
     const running = this.inFlight.get(key)
     if (running) {
@@ -503,10 +489,7 @@ export class WorktreeCreationService {
     }
   }
 
-  private async create(
-    request: WorktreeCreationRequest,
-    payloadHash: string,
-  ): Promise<WorktreeCreationSnapshot> {
+  private async create(request: WorktreeCreationRequest, payloadHash: string): Promise<WorktreeCreationSnapshot> {
     const key = {
       machineId: request.repository.machineId,
       creationId: request.creationId,
@@ -557,13 +540,14 @@ export class WorktreeCreationService {
       materializationPlanJson: JSON.stringify(plan),
       now: this.now(),
     }
-    const reservation = request.owner.kind === 'kanban-card'
-      ? this.options.store.reserveKanbanOwner({
-          ...reservationInput,
-          owner: request.owner,
-          projectPath: repository.projectPath,
-        })
-      : this.options.store.reserve(reservationInput)
+    const reservation =
+      request.owner.kind === 'kanban-card'
+        ? this.options.store.reserveKanbanOwner({
+            ...reservationInput,
+            owner: request.owner,
+            projectPath: repository.projectPath,
+          })
+        : this.options.store.reserve(reservationInput)
     if (reservation.kind === 'owner_conflict') {
       throw new WorktreeCreationOwnerConflictError(
         this.kanbanOwnerConflictMessage(
@@ -682,10 +666,7 @@ export class WorktreeCreationService {
       if (configuring.kind !== 'updated') throw new Error('Worktree creation changed before sparse checkout.')
       this.publish(configuring.record)
       try {
-        const receipt = await this.options.git.configureSparse(
-          plan,
-          request.checkout.sparseCheckout.directories,
-        )
+        const receipt = await this.options.git.configureSparse(plan, request.checkout.sparseCheckout.directories)
         const configured = this.options.store.updateProgress({
           ...key,
           expectedRevision: configuring.record.revision,
@@ -693,9 +674,7 @@ export class WorktreeCreationService {
           status: 'pending',
           sparseReceiptJson: JSON.stringify({
             ...receipt,
-            ...(request.checkout.sparseCheckout.presetId
-              ? { presetId: request.checkout.sparseCheckout.presetId }
-              : {}),
+            ...(request.checkout.sparseCheckout.presetId ? { presetId: request.checkout.sparseCheckout.presetId } : {}),
           }),
           now: this.now(),
         })
@@ -714,18 +693,12 @@ export class WorktreeCreationService {
           sparseReceiptJson: JSON.stringify({
             mode: 'cone',
             directories: request.checkout.sparseCheckout.directories,
-            ...(request.checkout.sparseCheckout.presetId
-              ? { presetId: request.checkout.sparseCheckout.presetId }
-              : {}),
+            ...(request.checkout.sparseCheckout.presetId ? { presetId: request.checkout.sparseCheckout.presetId } : {}),
             status: 'failed',
           }),
           now: this.now(),
         })
-        return this.compensate(
-          plan,
-          failed.kind === 'updated' ? failed.record : configuring.record,
-          error,
-        )
+        return this.compensate(plan, failed.kind === 'updated' ? failed.record : configuring.record, error)
       }
     }
 
@@ -768,32 +741,36 @@ export class WorktreeCreationService {
           worktree,
           now: this.now(),
         })
-      } else linked = request.owner.kind === 'kanban-card'
-        ? this.options.store.commitKanbanOwner({
-            ...key,
-            expectedRevision: linking.record.revision,
-            worktree,
-            cardId: request.owner.cardId,
-            ...(request.launch?.initialAgent ? {
-              conversation: {
-                id: this.launchConversationId(request),
-                agentType: request.launch.initialAgent.provider,
-              },
-            } : {}),
-            now: this.now(),
-          })
-        : this.options.store.commitConversationOwner({
-            ...key,
-            expectedRevision: linking.record.revision,
-            worktree,
-            conversation: {
-              id: request.owner.conversationId,
-              projectPath: repository.projectPath,
-              agentType: request.owner.agentType,
-              title: request.owner.title ?? 'New conversation',
-            },
-            now: this.now(),
-          })
+      } else
+        linked =
+          request.owner.kind === 'kanban-card'
+            ? this.options.store.commitKanbanOwner({
+                ...key,
+                expectedRevision: linking.record.revision,
+                worktree,
+                cardId: request.owner.cardId,
+                ...(request.launch?.initialAgent
+                  ? {
+                      conversation: {
+                        id: this.launchConversationId(request),
+                        agentType: request.launch.initialAgent.provider,
+                      },
+                    }
+                  : {}),
+                now: this.now(),
+              })
+            : this.options.store.commitConversationOwner({
+                ...key,
+                expectedRevision: linking.record.revision,
+                worktree,
+                conversation: {
+                  id: request.owner.conversationId,
+                  projectPath: repository.projectPath,
+                  agentType: request.owner.agentType,
+                  title: request.owner.title ?? 'New conversation',
+                },
+                now: this.now(),
+              })
     } catch (error) {
       if (request.owner.kind === 'fork' && forkStage) {
         return this.compensateFork(plan, linking.record, forkStage, error)
@@ -865,10 +842,7 @@ export class WorktreeCreationService {
     const commandFingerprint = resolution.command
       ? createHash('sha256').update(resolution.command).digest('hex')
       : undefined
-    if (
-      forcedPolicy === 'run'
-      && (!approvedCommandFingerprint || approvedCommandFingerprint !== commandFingerprint)
-    ) {
+    if (forcedPolicy === 'run' && (!approvedCommandFingerprint || approvedCommandFingerprint !== commandFingerprint)) {
       const refreshed = this.options.store.updateProgress({
         ...key,
         expectedRevision: linked.revision,
@@ -878,10 +852,12 @@ export class WorktreeCreationService {
           requestedPolicy: request.setup.policy,
           resolvedPolicy: 'ask',
           status: 'awaiting_decision',
-          ...(resolution.command ? {
-            commandSource: 'launch-config',
-            commandFingerprint,
-          } : {}),
+          ...(resolution.command
+            ? {
+                commandSource: 'launch-config',
+                commandFingerprint,
+              }
+            : {}),
         } satisfies WorktreeSetupReceipt),
         now: this.now(),
       })
@@ -929,10 +905,7 @@ export class WorktreeCreationService {
       return this.finishAfterSetup(request, resolved.record)
     }
 
-    if (
-      resolution.startupPolicy === 'start-immediately'
-      && request.launch
-    ) {
+    if (resolution.startupPolicy === 'start-immediately' && request.launch) {
       return this.provisionSetupAndStartup(request, plan, linked, resolution.command ?? '', resolution.receipt)
     }
 
@@ -940,7 +913,9 @@ export class WorktreeCreationService {
     const runningReceipt: WorktreeSetupReceipt = {
       ...resolution.receipt,
       status: 'running',
-      commandFingerprint: createHash('sha256').update(resolution.command ?? '').digest('hex'),
+      commandFingerprint: createHash('sha256')
+        .update(resolution.command ?? '')
+        .digest('hex'),
       startedAt,
     }
     const running = this.options.store.updateProgress({
@@ -966,16 +941,12 @@ export class WorktreeCreationService {
         })
       : { kind: 'failed' as const }
     const finishedAt = this.now()
-    const status = outcome.kind === 'succeeded'
-      ? 'succeeded'
-      : outcome.kind === 'failed' ? 'failed' : 'ambiguous'
+    const status = outcome.kind === 'succeeded' ? 'succeeded' : outcome.kind === 'failed' ? 'failed' : 'ambiguous'
     const receipt: WorktreeSetupReceipt = {
       ...runningReceipt,
       status,
       finishedAt,
-      ...('exitCode' in outcome && outcome.exitCode !== undefined
-        ? { exitCode: outcome.exitCode }
-        : {}),
+      ...('exitCode' in outcome && outcome.exitCode !== undefined ? { exitCode: outcome.exitCode } : {}),
     }
     const completed = this.options.store.updateProgress({
       ...key,
@@ -983,16 +954,19 @@ export class WorktreeCreationService {
       phase: 'provisioning',
       status: outcome.kind === 'succeeded' ? 'pending' : 'cleanup_required',
       setupReceiptJson: JSON.stringify(receipt),
-      ...(outcome.kind === 'succeeded' ? {} : {
-        errorJson: JSON.stringify({
-          code: outcome.kind === 'failed' ? 'setup_failed' : 'setup_outcome_unknown',
-          phase: 'provisioning',
-          message: outcome.kind === 'failed'
-            ? 'Setup failed after it may have modified the worktree.'
-            : 'Setup delivery is ambiguous; the worktree was retained.',
-          retryable: false,
-        }),
-      }),
+      ...(outcome.kind === 'succeeded'
+        ? {}
+        : {
+            errorJson: JSON.stringify({
+              code: outcome.kind === 'failed' ? 'setup_failed' : 'setup_outcome_unknown',
+              phase: 'provisioning',
+              message:
+                outcome.kind === 'failed'
+                  ? 'Setup failed after it may have modified the worktree.'
+                  : 'Setup delivery is ambiguous; the worktree was retained.',
+              retryable: false,
+            }),
+          }),
       now: finishedAt,
     })
     if (completed.kind !== 'updated') {
@@ -1060,37 +1034,37 @@ export class WorktreeCreationService {
       : Promise.resolve({ status: 'failed' as const, terminalIds: [] })
     const [setupOutcome, startupReceipt] = await Promise.all([setupPromise, startupPromise])
     const finishedAt = this.now()
-    const setupStatus = setupOutcome.kind === 'succeeded'
-      ? 'succeeded'
-      : setupOutcome.kind === 'failed' ? 'failed' : 'ambiguous'
+    const setupStatus =
+      setupOutcome.kind === 'succeeded' ? 'succeeded' : setupOutcome.kind === 'failed' ? 'failed' : 'ambiguous'
     const setupReceipt: WorktreeSetupReceipt = {
       ...setupRunning,
       status: setupStatus,
       finishedAt,
-      ...('exitCode' in setupOutcome && setupOutcome.exitCode !== undefined
-        ? { exitCode: setupOutcome.exitCode }
-        : {}),
+      ...('exitCode' in setupOutcome && setupOutcome.exitCode !== undefined ? { exitCode: setupOutcome.exitCode } : {}),
     }
     const succeeded = setupOutcome.kind === 'succeeded' && startupReceipt.status === 'succeeded'
-    const error = setupOutcome.kind !== 'succeeded'
-      ? {
-          code: setupOutcome.kind === 'failed' ? 'setup_failed' : 'setup_outcome_unknown',
-          phase: 'provisioning' as const,
-          message: setupOutcome.kind === 'failed'
-            ? 'Setup failed after it may have modified the worktree.'
-            : 'Setup delivery is ambiguous; the worktree was retained.',
-          retryable: false,
-        }
-      : startupReceipt.status !== 'succeeded'
+    const error =
+      setupOutcome.kind !== 'succeeded'
         ? {
-            code: startupReceipt.status === 'ambiguous' ? 'startup_outcome_unknown' : 'startup_failed',
+            code: setupOutcome.kind === 'failed' ? 'setup_failed' : 'setup_outcome_unknown',
             phase: 'provisioning' as const,
-            message: startupReceipt.status === 'ambiguous'
-              ? 'Workspace startup is ambiguous; the worktree was retained.'
-              : 'The worktree was created, but the conversation was not started.',
-            retryable: startupReceipt.status === 'ambiguous',
+            message:
+              setupOutcome.kind === 'failed'
+                ? 'Setup failed after it may have modified the worktree.'
+                : 'Setup delivery is ambiguous; the worktree was retained.',
+            retryable: false,
           }
-        : undefined
+        : startupReceipt.status !== 'succeeded'
+          ? {
+              code: startupReceipt.status === 'ambiguous' ? 'startup_outcome_unknown' : 'startup_failed',
+              phase: 'provisioning' as const,
+              message:
+                startupReceipt.status === 'ambiguous'
+                  ? 'Workspace startup is ambiguous; the worktree was retained.'
+                  : 'The worktree was created, but the conversation was not started.',
+              retryable: startupReceipt.status === 'ambiguous',
+            }
+          : undefined
     const completed = this.options.store.updateProgress({
       ...key,
       expectedRevision: running.record.revision,
@@ -1193,16 +1167,19 @@ export class WorktreeCreationService {
       phase: succeeded ? 'ready' : 'provisioning',
       status: succeeded ? 'ready' : 'cleanup_required',
       startupReceiptJson: JSON.stringify(receipt),
-      ...(succeeded ? {} : {
-        errorJson: JSON.stringify({
-          code: receipt.status === 'ambiguous' ? 'startup_outcome_unknown' : 'startup_failed',
-          phase: 'provisioning',
-          message: receipt.status === 'ambiguous'
-            ? 'Workspace startup is ambiguous; the worktree was retained.'
-            : 'The worktree was created, but the conversation was not started.',
-          retryable: receipt.status === 'ambiguous',
-        }),
-      }),
+      ...(succeeded
+        ? {}
+        : {
+            errorJson: JSON.stringify({
+              code: receipt.status === 'ambiguous' ? 'startup_outcome_unknown' : 'startup_failed',
+              phase: 'provisioning',
+              message:
+                receipt.status === 'ambiguous'
+                  ? 'Workspace startup is ambiguous; the worktree was retained.'
+                  : 'The worktree was created, but the conversation was not started.',
+              retryable: receipt.status === 'ambiguous',
+            }),
+          }),
       now: this.now(),
     })
     if (completed.kind !== 'updated') {
@@ -1220,9 +1197,9 @@ export class WorktreeCreationService {
     }
     const request = JSON.parse(record.requestJson) as WorktreeCreationRequest
     const plan = JSON.parse(record.materializationPlanJson) as WorktreeMaterializationPlan
-    const continuation = await this.repositoryMutations.run(plan.repository.repositoryId, () => (
-      this.recoverWithRepositoryLock(record, request, plan)
-    ))
+    const continuation = await this.repositoryMutations.run(plan.repository.repositoryId, () =>
+      this.recoverWithRepositoryLock(record, request, plan),
+    )
     if (continuation) await continuation()
   }
 
@@ -1235,11 +1212,13 @@ export class WorktreeCreationService {
     // The returned `promise` is the one callers await and handle; this
     // `.finally().catch()` only prevents an unhandledRejection warning on
     // the separate finally-chain promise.
-    void promise.finally(() => {
-      if (this.recoveryInFlight.get(key) === promise) this.recoveryInFlight.delete(key)
-    }).catch((err) => {
-      log.debug(`worktree recovery for ${key} rejected (handled by the real awaiter)`, err)
-    })
+    void promise
+      .finally(() => {
+        if (this.recoveryInFlight.get(key) === promise) this.recoveryInFlight.delete(key)
+      })
+      .catch((err) => {
+        log.debug(`worktree recovery for ${key} rejected (handled by the real awaiter)`, err)
+      })
     return promise
   }
 
@@ -1263,9 +1242,9 @@ export class WorktreeCreationService {
         return
       }
       if (
-        inspection.kind === 'mismatch'
-        || (inspection.kind === 'exact' && inspection.headCommit !== plan.resolvedBaseCommit)
-        || (inspection.kind === 'branch_only' && inspection.headCommit !== plan.resolvedBaseCommit)
+        inspection.kind === 'mismatch' ||
+        (inspection.kind === 'exact' && inspection.headCommit !== plan.resolvedBaseCommit) ||
+        (inspection.kind === 'branch_only' && inspection.headCommit !== plan.resolvedBaseCommit)
       ) {
         await this.markCleanupRequired(record)
         return
@@ -1274,20 +1253,21 @@ export class WorktreeCreationService {
       return
     }
 
-    const ownerCommitted = request.owner.kind === 'kanban-card'
-      ? this.options.store.isKanbanOwnerCommitted(key)
-      : request.owner.kind === 'conversation'
-        ? this.options.store.isConversationOwnerCommitted(key)
-        : this.options.forkOwner?.isCommitted(key) ?? false
+    const ownerCommitted =
+      request.owner.kind === 'kanban-card'
+        ? this.options.store.isKanbanOwnerCommitted(key)
+        : request.owner.kind === 'conversation'
+          ? this.options.store.isConversationOwnerCommitted(key)
+          : (this.options.forkOwner?.isCommitted(key) ?? false)
     if (record.phase === 'awaiting_setup_decision' && ownerCommitted) {
       return
     }
     if (record.phase === 'provisioning' && ownerCommitted) {
       const setupReceipt = record.setupReceiptJson
-        ? JSON.parse(record.setupReceiptJson) as WorktreeSetupReceipt
+        ? (JSON.parse(record.setupReceiptJson) as WorktreeSetupReceipt)
         : undefined
       const startupReceipt = record.startupReceiptJson
-        ? JSON.parse(record.startupReceiptJson) as WorktreeStartupReceipt
+        ? (JSON.parse(record.startupReceiptJson) as WorktreeStartupReceipt)
         : undefined
 
       if (setupReceipt?.status === 'running') {
@@ -1336,11 +1316,11 @@ export class WorktreeCreationService {
         return () => this.provisionStartup(request, record)
       }
       if (
-        !request.launch
-        && setupReceipt
-        && (setupReceipt.status === 'succeeded'
-          || setupReceipt.status === 'skipped'
-          || setupReceipt.status === 'not_configured')
+        !request.launch &&
+        setupReceipt &&
+        (setupReceipt.status === 'succeeded' ||
+          setupReceipt.status === 'skipped' ||
+          setupReceipt.status === 'not_configured')
       ) {
         return () => this.finishAfterSetup(request, record)
       }
@@ -1366,9 +1346,9 @@ export class WorktreeCreationService {
 
     const inspection = await this.options.git.inspectMaterialization(plan)
     if (
-      inspection.kind === 'mismatch'
-      || (inspection.kind === 'exact' && inspection.headCommit !== plan.resolvedBaseCommit)
-      || (inspection.kind === 'branch_only' && inspection.headCommit !== plan.resolvedBaseCommit)
+      inspection.kind === 'mismatch' ||
+      (inspection.kind === 'exact' && inspection.headCommit !== plan.resolvedBaseCommit) ||
+      (inspection.kind === 'branch_only' && inspection.headCommit !== plan.resolvedBaseCommit)
     ) {
       await this.markCleanupRequired(record)
       return
@@ -1433,7 +1413,12 @@ export class WorktreeCreationService {
       return this.cleanupRequired(record, error)
     }
     if (rollback.kind === 'refused') {
-      const error = this.rollbackError(record, cause, new Error(`Rollback refused: ${rollback.reason}.`), 'rollback_refused')
+      const error = this.rollbackError(
+        record,
+        cause,
+        new Error(`Rollback refused: ${rollback.reason}.`),
+        'rollback_refused',
+      )
       log.warn('worktree compensation was refused', {
         machineId: record.machineId,
         creationId: record.creationId,
@@ -1451,10 +1436,7 @@ export class WorktreeCreationService {
         error: this.errorMessage(cause),
       })
     }
-    return this.rollBackReservation(
-      record,
-      cause === undefined ? undefined : this.compensatedError(record, cause),
-    )
+    return this.rollBackReservation(record, cause === undefined ? undefined : this.compensatedError(record, cause))
   }
 
   private async compensateFork(
@@ -1486,9 +1468,7 @@ export class WorktreeCreationService {
       return this.cleanupRequired(record, error)
     }
     if (!artifactRemoved || rollback.kind === 'refused') {
-      const refusal = rollback.kind === 'refused'
-        ? new Error(`Rollback refused: ${rollback.reason}.`)
-        : undefined
+      const refusal = rollback.kind === 'refused' ? new Error(`Rollback refused: ${rollback.reason}.`) : undefined
       const error = this.rollbackError(
         record,
         cause,
@@ -1512,10 +1492,7 @@ export class WorktreeCreationService {
         error: this.errorMessage(cause),
       })
     }
-    return this.rollBackReservation(
-      record,
-      cause === undefined ? undefined : this.compensatedError(record, cause),
-    )
+    return this.rollBackReservation(record, cause === undefined ? undefined : this.compensatedError(record, cause))
   }
 
   private beginCompensation(record: WorktreeCreationRecord): WorktreeCreationRecord {
@@ -1539,10 +1516,7 @@ export class WorktreeCreationService {
     throw new WorktreeCreationUnsafeActionError('Worktree creation changed before rollback could be recorded.')
   }
 
-  private rollBackReservation(
-    record: WorktreeCreationRecord,
-    error?: WorktreeCreationError,
-  ): WorktreeCreationSnapshot {
+  private rollBackReservation(record: WorktreeCreationRecord, error?: WorktreeCreationError): WorktreeCreationSnapshot {
     const result = this.options.store.updateProgress({
       machineId: record.machineId,
       creationId: record.creationId,
@@ -1560,10 +1534,7 @@ export class WorktreeCreationService {
     throw new WorktreeCreationNotFoundError(`Unknown worktree creation ${record.creationId}.`)
   }
 
-  private cleanupRequired(
-    record: WorktreeCreationRecord,
-    error?: WorktreeCreationError,
-  ): WorktreeCreationSnapshot {
+  private cleanupRequired(record: WorktreeCreationRecord, error?: WorktreeCreationError): WorktreeCreationSnapshot {
     const result = this.options.store.updateProgress({
       machineId: record.machineId,
       creationId: record.creationId,
@@ -1582,9 +1553,7 @@ export class WorktreeCreationService {
   }
 
   private errorMessage(error: unknown): string {
-    return error instanceof Error && error.message.trim()
-      ? error.message.trim()
-      : 'Unknown worktree creation failure.'
+    return error instanceof Error && error.message.trim() ? error.message.trim() : 'Unknown worktree creation failure.'
   }
 
   private compensatedError(record: WorktreeCreationRecord, cause: unknown): WorktreeCreationError {
@@ -1608,9 +1577,7 @@ export class WorktreeCreationService {
       ...(ownerCompensationFailure === undefined
         ? []
         : [`Owner compensation failed: ${this.errorMessage(ownerCompensationFailure)}`]),
-      ...(rollbackFailure === undefined
-        ? []
-        : [`Git rollback failed: ${this.errorMessage(rollbackFailure)}`]),
+      ...(rollbackFailure === undefined ? [] : [`Git rollback failed: ${this.errorMessage(rollbackFailure)}`]),
     ]
     return {
       code,
@@ -1650,19 +1617,17 @@ export class WorktreeCreationService {
       purpose: request.purpose,
       provenance: request.provenance,
       ...(request.lineage ? { lineage: request.lineage } : {}),
-      ...(record.sparseReceiptJson
-        ? { sparseCheckoutReceipt: JSON.parse(record.sparseReceiptJson) }
-        : {}),
-      ...(record.setupReceiptJson
-        ? { setupReceipt: JSON.parse(record.setupReceiptJson) }
-        : {}),
-      ...(record.startupReceiptJson
-        ? { startupReceipt: JSON.parse(record.startupReceiptJson) }
-        : {}),
+      ...(record.sparseReceiptJson ? { sparseCheckoutReceipt: JSON.parse(record.sparseReceiptJson) } : {}),
+      ...(record.setupReceiptJson ? { setupReceipt: JSON.parse(record.setupReceiptJson) } : {}),
+      ...(record.startupReceiptJson ? { startupReceipt: JSON.parse(record.startupReceiptJson) } : {}),
       warnings: JSON.parse(record.warningsJson) as string[],
       ...(record.errorJson ? { error: JSON.parse(record.errorJson) } : {}),
       ...(record.recoveryJson
-        ? { cleanupDisposition: (JSON.parse(record.recoveryJson) as { disposition: WorktreeCreationSnapshot['cleanupDisposition'] }).disposition }
+        ? {
+            cleanupDisposition: (
+              JSON.parse(record.recoveryJson) as { disposition: WorktreeCreationSnapshot['cleanupDisposition'] }
+            ).disposition,
+          }
         : {}),
       recoveryActions: this.recoveryActions(record),
       updatedAt: record.updatedAt,
@@ -1683,11 +1648,11 @@ export class WorktreeCreationService {
     }
     if (record.status === 'cleanup_required') {
       const setupReceipt = record.setupReceiptJson
-        ? JSON.parse(record.setupReceiptJson) as WorktreeSetupReceipt
+        ? (JSON.parse(record.setupReceiptJson) as WorktreeSetupReceipt)
         : undefined
       if (setupReceipt?.status === 'ambiguous') return ['retain']
       const startupReceipt = record.startupReceiptJson
-        ? JSON.parse(record.startupReceiptJson) as WorktreeStartupReceipt
+        ? (JSON.parse(record.startupReceiptJson) as WorktreeStartupReceipt)
         : undefined
       if (startupReceipt?.status === 'ambiguous') return ['retry', 'retain']
       const request = JSON.parse(record.requestJson) as WorktreeCreationRequest
@@ -1700,9 +1665,10 @@ export class WorktreeCreationService {
         : ['retry']
     }
     if (
-      record.status === 'rolled_back'
-      && (record.phase === 'materializing' || record.phase === 'configuring' || record.phase === 'linking')
-    ) return ['retry']
+      record.status === 'rolled_back' &&
+      (record.phase === 'materializing' || record.phase === 'configuring' || record.phase === 'linking')
+    )
+      return ['retry']
     if (record.status === 'pending' && record.phase === 'awaiting_setup_decision') {
       return ['choose_setup_run', 'choose_setup_skip']
     }
@@ -1719,9 +1685,7 @@ export async function createWorktreeCreationService(
   return service
 }
 
-export function startWorktreeCreationService(
-  options: WorktreeCreationServiceOptions,
-): WorktreeCreationService {
+export function startWorktreeCreationService(options: WorktreeCreationServiceOptions): WorktreeCreationService {
   const service = new WorktreeCreationService(options)
   void service.recoverInterruptedCreations().catch((error) => {
     log.warn('background worktree creation recovery failed', error)

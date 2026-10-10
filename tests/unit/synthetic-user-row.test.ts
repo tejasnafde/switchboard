@@ -5,14 +5,20 @@ import { MessageBubble } from '../../src/renderer/components/chat/MessageBubble'
 import { isSyntheticOnlyMessage } from '../../src/renderer/components/chat/SyntheticUserRow'
 import type { ChatMessage } from '../../src/shared/types'
 
-const NOTIFICATION = '<task-notification>\n<status>failed</status>\n<summary>Background command "Build" failed with exit code 2</summary>\n</task-notification>'
+const NOTIFICATION =
+  '<task-notification>\n<status>failed</status>\n<summary>Background command "Build" failed with exit code 2</summary>\n</task-notification>'
 const IMAGE = { url: 'data:image/png;base64,AAA=', mimeType: 'image/png' }
 
 const user = (over: Partial<ChatMessage>): ChatMessage => ({
-  id: 'm1', role: 'user', content: NOTIFICATION, timestamp: 1, ...over,
+  id: 'm1',
+  role: 'user',
+  content: NOTIFICATION,
+  timestamp: 1,
+  ...over,
 })
 
-const render = (message: ChatMessage) => renderToStaticMarkup(createElement(MessageBubble, { message, sessionId: 's1' }))
+const render = (message: ChatMessage) =>
+  renderToStaticMarkup(createElement(MessageBubble, { message, sessionId: 's1' }))
 const idCount = (markup: string) => markup.split('data-message-id="m1"').length - 1
 
 describe('synthetic user rows', () => {
@@ -29,7 +35,9 @@ describe('synthetic user rows', () => {
   })
 
   it('a context-only message with images renders the images without the context text', () => {
-    const markup = render(user({ content: '<environment_context>\n<cwd>/repo</cwd>\n</environment_context>', images: [IMAGE] }))
+    const markup = render(
+      user({ content: '<environment_context>\n<cwd>/repo</cwd>\n</environment_context>', images: [IMAGE] }),
+    )
     expect(markup).toContain(IMAGE.url)
     expect(markup).not.toContain('environment_context')
   })

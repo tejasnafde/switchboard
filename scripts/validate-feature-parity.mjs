@@ -106,16 +106,12 @@ export function validateFeatureParityManifest(manifest, { repoRoot } = {}) {
       }
 
       if (!['implemented', 'not_applicable', 'staged'].includes(surface.status)) {
-        errors.push(
-          `surfaces.${surfaceName}.status must be implemented, not_applicable, or staged`,
-        )
+        errors.push(`surfaces.${surfaceName}.status must be implemented, not_applicable, or staged`)
         continue
       }
 
       if (surface.status === 'implemented' && !nonEmptyStringArray(surface.evidence)) {
-        errors.push(
-          `surfaces.${surfaceName}.evidence must contain at least one item for implemented`,
-        )
+        errors.push(`surfaces.${surfaceName}.evidence must contain at least one item for implemented`)
       }
       if (surface.status === 'implemented' && nonEmptyStringArray(surface.evidence) && repoRoot) {
         const patterns = SURFACE_EVIDENCE_PATTERNS[surfaceName]
@@ -132,11 +128,12 @@ export function validateFeatureParityManifest(manifest, { repoRoot } = {}) {
             continue
           }
           if (!patterns.some((pattern) => pattern.test(evidence))) {
-            const label = surfaceName === 'nativeAndroid'
-              ? 'native Android'
-              : surfaceName === 'reactNativeIos'
-                ? 'React Native/iOS'
-                : surfaceName
+            const label =
+              surfaceName === 'nativeAndroid'
+                ? 'native Android'
+                : surfaceName === 'reactNativeIos'
+                  ? 'React Native/iOS'
+                  : surfaceName
             errors.push(`surfaces.${surfaceName}.evidence is outside the ${label} surface: ${rawEvidence}`)
           }
         }
@@ -242,9 +239,7 @@ export function isVersionOnlyBump(repoRoot, base, changedFiles, runGitDiff = def
     // rather than granting an exemption we could not verify.
     return false
   }
-  const edits = diff
-    .split(/\r?\n/)
-    .filter((line) => /^[+-]/.test(line) && !/^(\+\+\+|---)/.test(line))
+  const edits = diff.split(/\r?\n/).filter((line) => /^[+-]/.test(line) && !/^(\+\+\+|---)/.test(line))
   if (edits.length === 0) return false
   return edits.every((line) => /^[+-]\s*"version":\s*"[^"]+",?\s*$/.test(line))
 }
@@ -270,9 +265,7 @@ export function runFeatureParityValidation({ repoRoot, all = false, base = '', f
   const versionOnly = !all && isVersionOnlyBump(repoRoot, base, changedFiles)
 
   if (!all && !versionOnly && requiresFeatureParityManifest(changedFiles) && manifestFiles.length === 0) {
-    failures.push(
-      `Behavior-bearing changes require a changed ${MANIFEST_DIRECTORY}/<feature>.json manifest.`,
-    )
+    failures.push(`Behavior-bearing changes require a changed ${MANIFEST_DIRECTORY}/<feature>.json manifest.`)
   }
 
   for (const manifestFile of manifestFiles) {

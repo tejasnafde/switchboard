@@ -38,14 +38,19 @@ describe('renderSearchResultSnippetHtml', () => {
   const close = '\u0003'
 
   it('uses the control-character snippet, so markdown bold is plain text', () => {
-    const html = renderSearchResultSnippetHtml({ snippet: '**bold** **x**', snippetMarked: `**bold** ${open}x${close}` })
+    const html = renderSearchResultSnippetHtml({
+      snippet: '**bold** **x**',
+      snippetMarked: `**bold** ${open}x${close}`,
+    })
     expect(html).toContain('**bold**')
     expect(html.match(/<mark/g)).toHaveLength(1)
     expect(html).toMatch(/<mark[^>]*>x<\/mark>/)
   })
 
   it('balances stray markers', () => {
-    expect(renderSearchResultSnippetHtml({ snippet: '', snippetMarked: `${close}a ${open}b` })).toMatch(/^a <mark[^>]*>b<\/mark>$/)
+    expect(renderSearchResultSnippetHtml({ snippet: '', snippetMarked: `${close}a ${open}b` })).toMatch(
+      /^a <mark[^>]*>b<\/mark>$/,
+    )
   })
 
   it('falls back to the ** snippet from an older backend', () => {

@@ -38,7 +38,11 @@ export type ProviderHandle = object
 
 export type TargetResolution =
   | { ok: true; path: string; branch: string | null }
-  | { ok: false; code: Extract<RelocationFailureCode, 'target-missing' | 'different-repository' | 'invalid-target'>; message: string }
+  | {
+      ok: false
+      code: Extract<RelocationFailureCode, 'target-missing' | 'different-repository' | 'invalid-target'>
+      message: string
+    }
 
 export type AttachResult =
   | { ok: true; continuity: RelocationContinuity }
@@ -206,11 +210,7 @@ export class ExecutionRootCoordinator {
       return this.fail('unknown-thread', 'The conversation disappeared during validation.', rootAtAdmission)
     }
     if (rootNow.revision !== request.expectedRevision) {
-      return this.fail(
-        'stale-revision',
-        'The execution root moved while this request was being checked.',
-        rootNow,
-      )
+      return this.fail('stale-revision', 'The execution root moved while this request was being checked.', rootNow)
     }
 
     if (detached) return this.commitDetached(request, rootNow, target)
@@ -339,11 +339,7 @@ export class ExecutionRootCoordinator {
     return { ok: false, code, message, rolledBack: true, root: from }
   }
 
-  private fail(
-    code: RelocationFailureCode,
-    message: string,
-    root: ExecutionRoot,
-  ): RelocateExecutionRootResult {
+  private fail(code: RelocationFailureCode, message: string, root: ExecutionRoot): RelocateExecutionRootResult {
     return { ok: false, code, message, root }
   }
 }

@@ -47,7 +47,13 @@ export type TerminalStatus = 'running' | 'exited' | 'error'
 
 export type AgentType = 'claude-code' | 'codex' | 'opencode' | GenericAcpAgent | 'terminal'
 
-export const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'codex', 'opencode', ...GENERIC_ACP_AGENTS, 'terminal'] as const
+export const AGENT_TYPES: readonly AgentType[] = [
+  'claude-code',
+  'codex',
+  'opencode',
+  ...GENERIC_ACP_AGENTS,
+  'terminal',
+] as const
 
 /** An agent type that runs a provider, i.e. everything but a plain terminal. */
 export type AgentProvider = Exclude<AgentType, 'terminal'>

@@ -4,7 +4,13 @@ import { formatRelativeTime } from './sidebar-helpers'
 import { DEFAULT_RECENT_SESSION_LIMIT, type RecentSessionLimit } from './recent-session-limit'
 import { RECENT_DOT_LABELS, groupRecentSessions, recentDot } from './recent-groups'
 
-export function RecentSessionsSection({ items, initialLimit = DEFAULT_RECENT_SESSION_LIMIT, activeSessionId, displayedSessionIds = [], onSelect }: {
+export function RecentSessionsSection({
+  items,
+  initialLimit = DEFAULT_RECENT_SESSION_LIMIT,
+  activeSessionId,
+  displayedSessionIds = [],
+  onSelect,
+}: {
   items: RecentSessionItem[]
   initialLimit?: RecentSessionLimit
   activeSessionId: string | null
@@ -22,9 +28,7 @@ export function RecentSessionsSection({ items, initialLimit = DEFAULT_RECENT_SES
         <div key={group.key} className="sidebar-recent-group" data-group={group.key}>
           <div className="sidebar-section-label">
             <span>{group.label}</span>
-            {group.key !== 'done' && (
-              <span className="sidebar-recent-count">{group.items.length}</span>
-            )}
+            {group.key !== 'done' && <span className="sidebar-recent-count">{group.items.length}</span>}
           </div>
           {group.items.map((item) => {
             const dot = recentDot(item.status)
@@ -38,11 +42,19 @@ export function RecentSessionsSection({ items, initialLimit = DEFAULT_RECENT_SES
                 onClick={() => onSelect(item)}
               >
                 <span className="sidebar-recent-line">
-                  <span className="sidebar-recent-dot" data-dot={dot} role="img" aria-label={RECENT_DOT_LABELS[dot]} title={RECENT_DOT_LABELS[dot]} />
+                  <span
+                    className="sidebar-recent-dot"
+                    data-dot={dot}
+                    role="img"
+                    aria-label={RECENT_DOT_LABELS[dot]}
+                    title={RECENT_DOT_LABELS[dot]}
+                  />
                   <span className="sidebar-recent-title">{item.session.title}</span>
                   <span className="sidebar-recent-detail">{formatRelativeTime(item.session.startedAt)}</span>
                 </span>
-                <span className="sidebar-recent-status" title={item.statusLine}>{item.statusLine}</span>
+                <span className="sidebar-recent-status" title={item.statusLine}>
+                  {item.statusLine}
+                </span>
               </button>
             )
           })}

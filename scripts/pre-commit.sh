@@ -4,7 +4,8 @@
 # automatically on `npm install` via the `prepare` npm lifecycle).
 #
 # Steps, fail-fast:
-#   1. Deslop-lint staged TS files (catches new `as any`, useless catches,
+#   1. Format staged files (oxfmt), then deslop-lint staged TS files
+#      (catches new `as any`, useless catches,
 #      etc. - pre-existing violations are tracked separately via
 #      `npm run lint`).
 #   2. Run the test suite.
@@ -14,8 +15,9 @@
 
 set -e
 
-echo "==> deslop-lint staged files..."
-npx --no-install lint-staged
+echo "==> format and deslop-lint staged files..."
+# Serial: the format and lint globs overlap, and parallel tasks on one file race.
+npx --no-install lint-staged --concurrent false
 
 echo "==> running tests..."
 # git runs hooks with GIT_DIR (and GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY...) pointing at

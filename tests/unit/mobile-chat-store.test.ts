@@ -7,13 +7,7 @@ import { formatApprovalResultMarker } from '../../src/shared/agent-approval-card
 import { formatMergeBackMarker, type MergeBackRow } from '../../src/shared/merge-back'
 import { echoMessageId } from '../../src/shared/provider-events'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import {
-  useChatStore,
-  flushQueue,
-  resetQueue,
-  threadKey,
-  type FeedItem,
-} from '../../apps/mobile/src/stores/chat'
+import { useChatStore, flushQueue, resetQueue, threadKey, type FeedItem } from '../../apps/mobile/src/stores/chat'
 import { historyToItems } from '../../apps/mobile/src/lib/thread-history'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 
@@ -63,10 +57,11 @@ describe('content events replace rather than append', () => {
     ingest(content('second', 'msg-2'))
     flushQueue()
 
-    expect(items().filter((i) => i.kind === 'text').map((i) => (i as { text: string }).text)).toEqual([
-      'first',
-      'second',
-    ])
+    expect(
+      items()
+        .filter((i) => i.kind === 'text')
+        .map((i) => (i as { text: string }).text),
+    ).toEqual(['first', 'second'])
   })
 })
 
@@ -267,7 +262,9 @@ describe('user.message echo', () => {
       at: 1,
     })
     expect(useChatStore.getState().threads[KEY].items[0]).toMatchObject({
-      kind: 'user', text: 'visible body', images: ['data:image/jpeg;base64,BBB'],
+      kind: 'user',
+      text: 'visible body',
+      images: ['data:image/jpeg;base64,BBB'],
     })
   })
 
@@ -319,20 +316,53 @@ describe('messages the backend holds', () => {
 
 describe('an approval card that closed later', () => {
   it('shows what happened as a notice, once, even when the event is replayed', () => {
-    const content = formatApprovalResultMarker({ requestId: 'sbmcp_9', title: 'Re-run a failed check', outcome: 'done', text: 'Re-running integration.', delivery: 'turn' })
-    const event: RuntimeEvent = { type: 'approval.result', threadId: THREAD, messageId: 'apr_sbmcp_9', requestId: 'sbmcp_9', content, at: 1 }
+    const content = formatApprovalResultMarker({
+      requestId: 'sbmcp_9',
+      title: 'Re-run a failed check',
+      outcome: 'done',
+      text: 'Re-running integration.',
+      delivery: 'turn',
+    })
+    const event: RuntimeEvent = {
+      type: 'approval.result',
+      threadId: THREAD,
+      messageId: 'apr_sbmcp_9',
+      requestId: 'sbmcp_9',
+      content,
+      at: 1,
+    }
     ingest(event)
     ingest(event)
     flushQueue()
     expect(items().filter((i) => i.kind === 'notice')).toEqual([
-      { kind: 'notice', id: 'apr_sbmcp_9', text: 'Re-run a failed check · Done · Sent to the agent: Re-running integration.' },
+      {
+        kind: 'notice',
+        id: 'apr_sbmcp_9',
+        text: 'Re-run a failed check · Done · Sent to the agent: Re-running integration.',
+      },
     ])
   })
 })
 
 describe('a fork summary waiting in this chat', () => {
-  const row: MergeBackRow = { id: 'mb1', fork: 'f', forkTitle: 'paging', state: 'pending', turns: 2, omittedTurns: 0, files: ['a.ts'], moreFiles: 0, text: 'summary' }
-  const event = (content: string | null): RuntimeEvent => ({ type: 'merge-back.row', threadId: THREAD, messageId: 'mergeback_mb1', content, at: 1 })
+  const row: MergeBackRow = {
+    id: 'mb1',
+    fork: 'f',
+    forkTitle: 'paging',
+    state: 'pending',
+    turns: 2,
+    omittedTurns: 0,
+    files: ['a.ts'],
+    moreFiles: 0,
+    text: 'summary',
+  }
+  const event = (content: string | null): RuntimeEvent => ({
+    type: 'merge-back.row',
+    threadId: THREAD,
+    messageId: 'mergeback_mb1',
+    content,
+    at: 1,
+  })
   const cards = () => items().filter((i) => i.kind === 'mergeBack')
 
   it('shows the card, turns it delivered in place and removes it once discarded', () => {
@@ -341,28 +371,50 @@ describe('a fork summary waiting in this chat', () => {
     expect(cards()).toEqual([{ kind: 'mergeBack', id: 'h-mergeback_mb1', messageId: 'mergeback_mb1', row }])
     ingest(event(formatMergeBackMarker({ ...row, state: 'delivered' })))
     flushQueue()
-    expect(cards()).toEqual([{ kind: 'mergeBack', id: 'h-mergeback_mb1', messageId: 'mergeback_mb1', row: { ...row, state: 'delivered' } }])
+    expect(cards()).toEqual([
+      { kind: 'mergeBack', id: 'h-mergeback_mb1', messageId: 'mergeback_mb1', row: { ...row, state: 'delivered' } },
+    ])
     ingest(event(null))
     flushQueue()
     expect(cards()).toEqual([])
   })
 
   it('lands the history row and the live event on one card', () => {
-    const history = historyToItems([{ id: 'mergeback_mb1', role: 'system', content: formatMergeBackMarker(row), timestamp: 1 }])
+    const history = historyToItems([
+      { id: 'mergeback_mb1', role: 'system', content: formatMergeBackMarker(row), timestamp: 1 },
+    ])
     expect(history).toEqual([{ kind: 'mergeBack', id: 'h-mergeback_mb1', messageId: 'mergeback_mb1', row }])
     useChatStore.getState().seedItems(KEY, history)
     ingest(event(formatMergeBackMarker({ ...row, state: 'delivered' })))
     flushQueue()
-    expect(cards()).toEqual([{ kind: 'mergeBack', id: 'h-mergeback_mb1', messageId: 'mergeback_mb1', row: { ...row, state: 'delivered' } }])
+    expect(cards()).toEqual([
+      { kind: 'mergeBack', id: 'h-mergeback_mb1', messageId: 'mergeback_mb1', row: { ...row, state: 'delivered' } },
+    ])
   })
 })
 
 describe('an approval the backend refused', () => {
-  const opened: RuntimeEvent = { type: 'request.opened', threadId: THREAD, requestId: 'sbmcp_1', requestType: 'tool', toolName: 'mcp__switchboard__reply_to_conversation', detail: 'Reply' }
+  const opened: RuntimeEvent = {
+    type: 'request.opened',
+    threadId: THREAD,
+    requestId: 'sbmcp_1',
+    requestType: 'tool',
+    toolName: 'mcp__switchboard__reply_to_conversation',
+    detail: 'Reply',
+  }
   const approval = () => items().find((i) => i.kind === 'approval') as Extract<FeedItem, { kind: 'approval' }>
 
   it('keeps an agent pull request write card on the row, so the phone can render its buttons', () => {
-    const hostWrite = { action: 'resolve', agentLabel: 'Codex', host: 'github', prLabel: 'app #1', url: null, location: null, quote: null, maxChars: 8000 } as const
+    const hostWrite = {
+      action: 'resolve',
+      agentLabel: 'Codex',
+      host: 'github',
+      prLabel: 'app #1',
+      url: null,
+      location: null,
+      quote: null,
+      maxChars: 8000,
+    } as const
     ingest({ ...opened, hostWrite })
     flushQueue()
     expect(approval()).toMatchObject({ state: 'pending', hostWrite })
@@ -393,24 +445,40 @@ describe('an approval the backend refused', () => {
     useChatStore.getState().addNotice(KEY, 'Could not answer the approval: needs the desktop')
     const thread = useChatStore.getState().threads[KEY]
     expect(thread.status).toBe('running')
-    expect(thread.items.at(-1)).toMatchObject({ kind: 'notice', text: 'Could not answer the approval: needs the desktop' })
+    expect(thread.items.at(-1)).toMatchObject({
+      kind: 'notice',
+      text: 'Could not answer the approval: needs the desktop',
+    })
   })
 })
 
 describe('a message a session link refused', () => {
   const refused: RuntimeEvent = {
-    type: 'peer.undelivered', threadId: THREAD, messageId: 'pu_1', peerThreadId: 'agent_2', peerLabel: 'Roadmap',
-    fromLabel: 'Docs', reason: 'link-expired', text: 'Found it', sent: false, notify: true, at: 1,
+    type: 'peer.undelivered',
+    threadId: THREAD,
+    messageId: 'pu_1',
+    peerThreadId: 'agent_2',
+    peerLabel: 'Roadmap',
+    fromLabel: 'Docs',
+    reason: 'link-expired',
+    text: 'Found it',
+    sent: false,
+    notify: true,
+    at: 1,
   }
 
   it('adds one row, and the sent update replaces it on the history row id', () => {
     ingest(refused)
     ingest({ ...refused, sent: true, notify: false })
     flushQueue()
-    expect(items()).toEqual([{
-      kind: 'undelivered', id: 'h-pu_1', messageId: 'pu_1',
-      row: { to: 'agent_2', toLabel: 'Roadmap', reason: 'link-expired', text: 'Found it', sent: true },
-    }])
+    expect(items()).toEqual([
+      {
+        kind: 'undelivered',
+        id: 'h-pu_1',
+        messageId: 'pu_1',
+        row: { to: 'agent_2', toLabel: 'Roadmap', reason: 'link-expired', text: 'Found it', sent: true },
+      },
+    ])
   })
 })
 
@@ -427,20 +495,43 @@ describe('question answer refused', () => {
 
 describe('request.expired', () => {
   it('turns an open approval (even one approved optimistically) and an open question into notices', () => {
-    ingest({ type: 'request.opened', threadId: THREAD, requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' })
+    ingest({
+      type: 'request.opened',
+      threadId: THREAD,
+      requestId: 'r1',
+      requestType: 'command',
+      toolName: 'Bash',
+      detail: 'ls',
+    })
     ingest({ type: 'question.asked', threadId: THREAD, requestId: 'q1', questions: [] })
-    ingest({ type: 'request.opened', threadId: THREAD, requestId: 'r2', requestType: 'command', toolName: 'Read', detail: 'x' })
+    ingest({
+      type: 'request.opened',
+      threadId: THREAD,
+      requestId: 'r2',
+      requestType: 'command',
+      toolName: 'Read',
+      detail: 'x',
+    })
     ingest({ type: 'request.closed', threadId: THREAD, requestId: 'r2', decision: 'approve' })
     flushQueue()
     useChatStore.getState().markApprovalResolved(KEY, 'r1', 'approve')
 
-    ingest({ type: 'request.expired', threadId: THREAD, requestId: 'r1', reason: 'The agent session ended before it was answered.' })
+    ingest({
+      type: 'request.expired',
+      threadId: THREAD,
+      requestId: 'r1',
+      reason: 'The agent session ended before it was answered.',
+    })
     ingest({ type: 'request.expired', threadId: THREAD, requestId: 'q1', reason: 'Gone.' })
     ingest({ type: 'request.expired', threadId: THREAD, requestId: 'r2', reason: 'Gone.' })
     flushQueue()
 
     expect(items()).toEqual([
-      { kind: 'notice', id: 'a-r1', text: 'Approval expired, nothing was approved. The agent session ended before it was answered.' },
+      {
+        kind: 'notice',
+        id: 'a-r1',
+        text: 'Approval expired, nothing was approved. The agent session ended before it was answered.',
+      },
       { kind: 'notice', id: 'q-q1', text: 'Question expired, no answer was sent. Gone.' },
       expect.objectContaining({ kind: 'approval', requestId: 'r2', closed: true }),
     ])

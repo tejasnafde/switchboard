@@ -25,7 +25,12 @@ const log = createRendererLogger('chat:host-write-card')
 
 interface HostWriteApprovalCardProps {
   message: ChatMessage
-  onDecide: (requestId: string, decision: 'approve' | 'deny', note?: string, response?: HostWriteResponse) => void | Promise<void>
+  onDecide: (
+    requestId: string,
+    decision: 'approve' | 'deny',
+    note?: string,
+    response?: HostWriteResponse,
+  ) => void | Promise<void>
 }
 
 /**
@@ -90,21 +95,43 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
       <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-2">
         <span className="text-[13px] font-[600] text-[var(--text-primary)]">{hostWriteTitle(card)}</span>
         {!pending && (
-          <span className={cn('ml-auto text-[11px] font-[600] uppercase', status === 'accepted' ? 'text-[var(--success)]' : 'text-[var(--error)]')}>
-            {status === 'accepted' ? (card.action === 'review' ? 'Submitted' : 'Approved') : card.action === 'create' ? 'Not opened' : 'Not posted'}
+          <span
+            className={cn(
+              'ml-auto text-[11px] font-[600] uppercase',
+              status === 'accepted' ? 'text-[var(--success)]' : 'text-[var(--error)]',
+            )}
+          >
+            {status === 'accepted'
+              ? card.action === 'review'
+                ? 'Submitted'
+                : 'Approved'
+              : card.action === 'create'
+                ? 'Not opened'
+                : 'Not posted'}
           </span>
         )}
       </div>
 
       <div className="px-3 py-2 text-[12px] text-[var(--text-secondary)]">
         <div className="font-[family-name:var(--font-mono)] [overflow-wrap:anywhere]">
-          {card.url
-            ? <button type="button" onClick={() => openExternal(card.url!)} className="cursor-pointer border-none bg-transparent p-0 text-left text-[var(--text-secondary)] hover:underline">{hostWriteContext(card)}</button>
-            : hostWriteContext(card)}
+          {card.url ? (
+            <button
+              type="button"
+              onClick={() => openExternal(card.url!)}
+              className="cursor-pointer border-none bg-transparent p-0 text-left text-[var(--text-secondary)] hover:underline"
+            >
+              {hostWriteContext(card)}
+            </button>
+          ) : (
+            hostWriteContext(card)
+          )}
         </div>
         {card.checkName && <div className="mt-1 text-[var(--text-primary)]">{card.checkName}</div>}
         {card.quote && (
-          <div data-host-write-quote className="mt-1.5 whitespace-pre-wrap [overflow-wrap:anywhere] border-l-2 border-[var(--border)] pl-2.5 text-[var(--text-primary)]">
+          <div
+            data-host-write-quote
+            className="mt-1.5 whitespace-pre-wrap [overflow-wrap:anywhere] border-l-2 border-[var(--border)] pl-2.5 text-[var(--text-primary)]"
+          >
             <b>{card.quote.author}:</b> {card.quote.body}
           </div>
         )}
@@ -113,14 +140,23 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
 
       {card.action === 'review' && card.review && (
         <>
-          <ReviewDraftFields review={card.review} draft={draft} editable={pending && submitting === null} onChange={setDraft} />
+          <ReviewDraftFields
+            review={card.review}
+            draft={draft}
+            editable={pending && submitting === null}
+            onChange={setDraft}
+          />
           <div className="flex flex-wrap gap-x-2 px-3 pb-2 text-[11px] text-[var(--text-muted)]">
             <span>
               Posted as you, the summary and each comment ending with "via Switchboard". You pick the verdict.
               {card.review.commentOnly === 'author' && ' You wrote this pull request, so only Comment is offered.'}
               {card.review.commentOnly === 'closed' && ' This pull request is not open, so only Comment is offered.'}
             </span>
-            {pending && shownProblem && <span role="alert" className="ml-auto text-[var(--error)]">{shownProblem}</span>}
+            {pending && shownProblem && (
+              <span role="alert" className="ml-auto text-[var(--error)]">
+                {shownProblem}
+              </span>
+            )}
           </div>
         </>
       )}
@@ -136,14 +172,26 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
           />
           <div className="flex flex-wrap gap-x-2 px-3 pb-2 text-[11px] text-[var(--text-muted)]">
             <span>Opened as you, the description ending with "via Switchboard", and linked to this chat.</span>
-            {pending && problem && <span role="alert" className="ml-auto text-[var(--error)]">{problem}</span>}
+            {pending && problem && (
+              <span role="alert" className="ml-auto text-[var(--error)]">
+                {problem}
+              </span>
+            )}
           </div>
         </>
       )}
 
       {(card.action === 'reply' || card.action === 'comment') && (
         <div className="px-3 pb-2">
-          <div className="mb-1 text-[11px] text-[var(--text-muted)]">{card.action === 'comment' ? (pending ? 'Comment, editable' : 'Comment') : (pending ? 'Reply, editable' : 'Reply')}</div>
+          <div className="mb-1 text-[11px] text-[var(--text-muted)]">
+            {card.action === 'comment'
+              ? pending
+                ? 'Comment, editable'
+                : 'Comment'
+              : pending
+                ? 'Reply, editable'
+                : 'Reply'}
+          </div>
           <textarea
             aria-label={card.action === 'comment' ? 'Comment to post' : 'Reply to post'}
             value={text}
@@ -160,16 +208,28 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
           />
           <div className="mt-1 flex flex-wrap gap-x-2 text-[11px] text-[var(--text-muted)]">
             <span>Posted as you, ending with "via Switchboard".</span>
-            {pending && problem && <span role="alert" className="ml-auto text-[var(--error)]">{problem}</span>}
+            {pending && problem && (
+              <span role="alert" className="ml-auto text-[var(--error)]">
+                {problem}
+              </span>
+            )}
           </div>
         </div>
       )}
 
       {pending && (
-        <div data-host-write-actions className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border)] px-3 py-2">
+        <div
+          data-host-write-actions
+          className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border)] px-3 py-2"
+        >
           {/* Shares the row when there is room, takes its own line in a narrow chat. */}
-          <span className="mr-auto min-w-0 flex-[1_1_14rem] text-[11px] text-[var(--text-muted)]">{card.agentLabel} asked for this and carried on. It hears what you choose.</span>
-          <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[var(--text-secondary)]" title="Answer without sending the agent a message about it">
+          <span className="mr-auto min-w-0 flex-[1_1_14rem] text-[11px] text-[var(--text-muted)]">
+            {card.agentLabel} asked for this and carried on. It hears what you choose.
+          </span>
+          <label
+            className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[var(--text-secondary)]"
+            title="Answer without sending the agent a message about it"
+          >
             <input
               type="checkbox"
               data-host-write-quiet

@@ -30,10 +30,10 @@ describe('buildHandoffPreamble', () => {
     const out = buildHandoffPreamble([user('hello'), assistant('hi there'), user('follow up')])
     expect(out).toBe(
       `${HANDOFF_PREAMBLE_HEADER}\n` +
-      'user: hello\n' +
-      'assistant: hi there\n' +
-      'user: follow up\n\n' +
-      HANDOFF_PREAMBLE_FOOTER,
+        'user: hello\n' +
+        'assistant: hi there\n' +
+        'user: follow up\n\n' +
+        HANDOFF_PREAMBLE_FOOTER,
     )
   })
 
@@ -51,7 +51,11 @@ describe('buildHandoffPreamble', () => {
   it('includes tool calls with clipped input and output', () => {
     const out = buildHandoffPreamble([
       user('run the tests'),
-      { role: 'assistant', content: 'running', toolCalls: [{ name: 'Bash', input: 'npm test', output: `FAIL ${'x'.repeat(1000)}` }] },
+      {
+        role: 'assistant',
+        content: 'running',
+        toolCalls: [{ name: 'Bash', input: 'npm test', output: `FAIL ${'x'.repeat(1000)}` }],
+      },
     ])!
     expect(out).toContain('assistant: running\n[tool Bash] npm test -> FAIL x')
     expect(out).not.toContain('x'.repeat(500))
@@ -116,11 +120,7 @@ describe('buildHandoffPreamble', () => {
   })
 
   it('pluralizes the truncation notice', () => {
-    const msgs = [
-      user('one '.padEnd(300, 'a')),
-      user('two '.padEnd(300, 'b')),
-      user('three '.padEnd(300, 'c')),
-    ]
+    const msgs = [user('one '.padEnd(300, 'a')), user('two '.padEnd(300, 'b')), user('three '.padEnd(300, 'c'))]
     const out = buildHandoffPreamble(msgs, { maxChars: 500 })!
     expect(out).toContain('2 older turns omitted.')
   })
@@ -174,10 +174,7 @@ describe('stripHandoffPreamble', () => {
   })
 
   it('strips a truncated preamble too', () => {
-    const preamble = buildHandoffPreamble(
-      [user('a'.repeat(400)), user('b'.repeat(400))],
-      { maxChars: 500 },
-    )!
+    const preamble = buildHandoffPreamble([user('a'.repeat(400)), user('b'.repeat(400))], { maxChars: 500 })!
     expect(preamble.startsWith('(Earlier conversation truncated:')).toBe(true)
     expect(stripHandoffPreamble(`${preamble}\n\ntail`)).toBe('tail')
   })
@@ -243,7 +240,14 @@ describe('handoffDeltaStart', () => {
   const marker = (from: string, to: string) => ({ role: 'system', content: `[[sb:agent-switched]] ${from} → ${to}` })
 
   it('starts after the newest switch away from the target', () => {
-    const msgs = [user('q1'), assistant('a1'), marker('Claude Code', 'Codex'), user('q2'), assistant('b2'), marker('Codex', 'Claude Code')]
+    const msgs = [
+      user('q1'),
+      assistant('a1'),
+      marker('Claude Code', 'Codex'),
+      user('q2'),
+      assistant('b2'),
+      marker('Codex', 'Claude Code'),
+    ]
     expect(handoffDeltaStart(msgs, 'Claude Code')).toBe(3)
   })
 
@@ -252,7 +256,13 @@ describe('handoffDeltaStart', () => {
   })
 
   it('uses the latest of several departures', () => {
-    const msgs = [marker('Codex', 'OpenCode'), user('x'), marker('OpenCode', 'Codex'), user('y'), marker('Codex', 'OpenCode')]
+    const msgs = [
+      marker('Codex', 'OpenCode'),
+      user('x'),
+      marker('OpenCode', 'Codex'),
+      user('y'),
+      marker('Codex', 'OpenCode'),
+    ]
     expect(handoffDeltaStart(msgs, 'Codex')).toBe(5)
   })
 })
@@ -275,7 +285,14 @@ describe('handoffBudgetChars', () => {
 describe('planTurnHandoff', () => {
   const marker = (from: string, to: string) => ({ role: 'system', content: `[[sb:agent-switched]] ${from} → ${to}` })
   // Claude answered q1, the chat moved to Codex, which answered q2, and back.
-  const abA = [user('q1'), assistant('claude answer'), marker('Claude Code', 'Codex'), user('q2'), assistant('codex answer'), marker('Codex', 'Claude Code')]
+  const abA = [
+    user('q1'),
+    assistant('claude answer'),
+    marker('Claude Code', 'Codex'),
+    user('q2'),
+    assistant('codex answer'),
+    marker('Codex', 'Claude Code'),
+  ]
 
   it('A to B to A sends A only the turns it has not seen', () => {
     const plan = planTurnHandoff({ messages: abA, pendingFrom: 'codex', target: 'claude-code', resumedNatively: true })
@@ -298,7 +315,12 @@ describe('planTurnHandoff', () => {
   })
 
   it('a profile restart that lost its session replays everything with its own marker', () => {
-    const plan = planTurnHandoff({ messages: abA, pendingFrom: 'claude-code', target: 'claude-code', resumedNatively: false })
+    const plan = planTurnHandoff({
+      messages: abA,
+      pendingFrom: 'claude-code',
+      target: 'claude-code',
+      resumedNatively: false,
+    })
     expect(plan.preamble).toContain('claude answer')
     expect(plan.markerText).toBe('[[sb:context-handoff]] Claude Code profile restarted with visible history')
   })
@@ -307,8 +329,16 @@ describe('planTurnHandoff', () => {
   // doubled the prompt and failed a chat near its limit with "Prompt is too long".
   it('a profile restart that resumed its own session replays nothing it has seen', () => {
     const own = [user('q1'), assistant('claude answer'), user('q2'), assistant('second answer')]
-    expect(planTurnHandoff({ messages: own, pendingFrom: 'claude-code', target: 'claude-code', resumedNatively: true }).preamble).toBeNull()
-    const plan = planTurnHandoff({ messages: abA, pendingFrom: 'claude-code', target: 'claude-code', resumedNatively: true })
+    expect(
+      planTurnHandoff({ messages: own, pendingFrom: 'claude-code', target: 'claude-code', resumedNatively: true })
+        .preamble,
+    ).toBeNull()
+    const plan = planTurnHandoff({
+      messages: abA,
+      pendingFrom: 'claude-code',
+      target: 'claude-code',
+      resumedNatively: true,
+    })
     expect(plan.preamble).toContain('codex answer')
     expect(plan.preamble).not.toContain('claude answer')
   })

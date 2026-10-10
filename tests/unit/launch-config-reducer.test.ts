@@ -59,7 +59,7 @@ describe('launchConfigListReducer - deleteLaunchConfig', () => {
     expect(next.ok).toBe(false)
   })
 
-  it('is a no-op when the template doesn\'t exist', () => {
+  it("is a no-op when the template doesn't exist", () => {
     const next = launchConfigListReducer(seed, { type: 'deleteLaunchConfig', name: 'ghost' })
     expect(next.ok).toBe(false)
   })
@@ -96,7 +96,7 @@ describe('launchConfigListReducer - renameLaunchConfig', () => {
 })
 
 describe('launchConfigListReducer - replaceLaunchConfigBody', () => {
-  it('replaces a template\'s terminals with a fresh body', () => {
+  it("replaces a template's terminals with a fresh body", () => {
     const next = launchConfigListReducer(seed, {
       type: 'replaceLaunchConfigBody',
       name: 'backend',
@@ -108,7 +108,7 @@ describe('launchConfigListReducer - replaceLaunchConfigBody', () => {
     expect(next.config.configs!.backend.terminals[1].label).toBe('db')
   })
 
-  it('refuses to replace a template that doesn\'t exist', () => {
+  it("refuses to replace a template that doesn't exist", () => {
     const next = launchConfigListReducer(seed, {
       type: 'replaceLaunchConfigBody',
       name: 'ghost',

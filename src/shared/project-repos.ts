@@ -125,7 +125,11 @@ export async function scanChildWorkTrees(
  * The rule itself: a project's own repositories win (`also`: its other
  * remotes and fork parents), and only a folder without one covers its children.
  */
-export function projectReposFrom(own: RepoRef | null, children: readonly ChildRepo[], also: readonly RepoRef[] = []): ProjectRepos {
+export function projectReposFrom(
+  own: RepoRef | null,
+  children: readonly ChildRepo[],
+  also: readonly RepoRef[] = [],
+): ProjectRepos {
   if (!own) return { own: null, children: [...children] }
   const extra = also.filter((repo) => repoKey(repo) !== repoKey(own))
   return extra.length > 0 ? { own, also: extra, children: [] } : { own, children: [] }

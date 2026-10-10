@@ -23,15 +23,19 @@ describe('worktree setup policy resolution', () => {
   })
 
   it('resolves inherited run and skip repository defaults', () => {
-    expect(resolveWorktreeSetup('inherit', {
-      ...configured,
-      defaultPolicy: 'run',
-    })).toMatchObject({ action: 'run', command: 'npm ci', receipt: { resolvedPolicy: 'run' } })
+    expect(
+      resolveWorktreeSetup('inherit', {
+        ...configured,
+        defaultPolicy: 'run',
+      }),
+    ).toMatchObject({ action: 'run', command: 'npm ci', receipt: { resolvedPolicy: 'run' } })
 
-    expect(resolveWorktreeSetup('inherit', {
-      ...configured,
-      defaultPolicy: 'skip',
-    })).toEqual({
+    expect(
+      resolveWorktreeSetup('inherit', {
+        ...configured,
+        defaultPolicy: 'skip',
+      }),
+    ).toEqual({
       action: 'skip',
       startupPolicy: 'wait-for-setup',
       receipt: {
@@ -81,10 +85,12 @@ describe('worktree setup policy resolution', () => {
   })
 
   it('preserves start-immediately independently from setup execution', () => {
-    expect(resolveWorktreeSetup('run', {
-      ...configured,
-      defaultPolicy: 'run',
-      startupPolicy: 'start-immediately',
-    })).toMatchObject({ action: 'run', startupPolicy: 'start-immediately' })
+    expect(
+      resolveWorktreeSetup('run', {
+        ...configured,
+        defaultPolicy: 'run',
+        startupPolicy: 'start-immediately',
+      }),
+    ).toMatchObject({ action: 'run', startupPolicy: 'start-immediately' })
   })
 })

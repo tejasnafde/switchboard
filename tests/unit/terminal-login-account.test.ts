@@ -17,10 +17,7 @@
  *    silently naming the wrong kind of instance.
  */
 import { describe, it, expect } from 'vitest'
-import {
-  resolveVisibleLoginInstanceId,
-  nextTermInstanceId,
-} from '../../src/renderer/shared/terminal-login-account'
+import { resolveVisibleLoginInstanceId, nextTermInstanceId } from '../../src/renderer/shared/terminal-login-account'
 
 function inst(id: string, createdAt: number) {
   return { id, createdAt }

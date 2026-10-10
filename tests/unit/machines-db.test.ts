@@ -37,8 +37,7 @@ function prepare(sql: string) {
   }
   if (sql.includes('ORDER BY sort_order')) {
     return {
-      all: () =>
-        [...store.values()].sort((a, b) => a.sort_order - b.sort_order || a.created_at - b.created_at),
+      all: () => [...store.values()].sort((a, b) => a.sort_order - b.sort_order || a.created_at - b.created_at),
     }
   }
   if (sql.includes('MAX(sort_order)')) {
@@ -111,7 +110,15 @@ vi.mock('../../src/main/db/database', () => ({
   getDb: () => ({ prepare, transaction: (fn: (a: unknown) => void) => (a: unknown) => fn(a) }),
 }))
 
-import { listMachines, createMachine, updateMachine, deleteMachine, reorderMachines, saveMachineSnapshot, getMachineSnapshots } from '../../src/main/db/machines'
+import {
+  listMachines,
+  createMachine,
+  updateMachine,
+  deleteMachine,
+  reorderMachines,
+  saveMachineSnapshot,
+  getMachineSnapshots,
+} from '../../src/main/db/machines'
 
 beforeEach(() => {
   store.clear()
@@ -129,15 +136,18 @@ describe('machines CRUD', () => {
   })
 
   it('round-trips GCP IAP transport metadata', () => {
-    const machine = createMachine({
-      name: 'prod',
-      sshAlias: 'prod',
-      sshHost: 'prod-instance',
-      transportKind: 'gcloud-iap',
-      iapInstance: 'prod-instance',
-      iapProject: 'prod-project',
-      iapZone: 'asia-south1-b',
-    }, 1000)
+    const machine = createMachine(
+      {
+        name: 'prod',
+        sshAlias: 'prod',
+        sshHost: 'prod-instance',
+        transportKind: 'gcloud-iap',
+        iapInstance: 'prod-instance',
+        iapProject: 'prod-project',
+        iapZone: 'asia-south1-b',
+      },
+      1000,
+    )
 
     expect(machine).toMatchObject({
       transportKind: 'gcloud-iap',
@@ -187,7 +197,10 @@ describe('machines CRUD', () => {
   })
 
   it('saveMachineSnapshot upserts and getMachineSnapshots round-trips', () => {
-    saveMachineSnapshot('m1', { syncedAt: 100, projects: [{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 't' }] }] })
+    saveMachineSnapshot('m1', {
+      syncedAt: 100,
+      projects: [{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 't' }] }],
+    })
     let snaps = getMachineSnapshots()
     expect(snaps.m1.syncedAt).toBe(100)
     expect(snaps.m1.projects[0].name).toBe('api')

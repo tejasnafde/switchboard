@@ -6,12 +6,15 @@ import {
   type ArchivedRow,
 } from '../../src/renderer/components/settings/archived-list'
 
-const row = (id: string, title: string, project_path = '/Users/dev/code/acme-console'): ArchivedRow =>
-  ({ id, title, project_path, updated_at: 1 })
+const row = (id: string, title: string, project_path = '/Users/dev/code/acme-console'): ArchivedRow => ({
+  id,
+  title,
+  project_path,
+  updated_at: 1,
+})
 
 /** n rows named "chat 1".."chat n", in the order the DB returns them. */
-const rows = (n: number): ArchivedRow[] =>
-  Array.from({ length: n }, (_, i) => row(`c${i + 1}`, `chat ${i + 1}`))
+const rows = (n: number): ArchivedRow[] => Array.from({ length: n }, (_, i) => row(`c${i + 1}`, `chat ${i + 1}`))
 
 describe('matchesArchivedQuery', () => {
   const target = row('c1', 'Debug auth callback', '/Users/dev/code/acme-console')
@@ -91,7 +94,12 @@ describe('selectArchivedPage', () => {
 
   it('handles an empty list', () => {
     expect(selectArchivedPage([], '', 1, 10)).toMatchObject({
-      items: [], page: 1, pageCount: 1, total: 0, from: 0, to: 0,
+      items: [],
+      page: 1,
+      pageCount: 1,
+      total: 0,
+      from: 0,
+      to: 0,
     })
   })
 

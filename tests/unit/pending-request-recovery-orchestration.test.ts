@@ -4,7 +4,9 @@ import { recoverPendingRequests } from '../../src/renderer/services/pending-requ
 import type { PendingBlockingEvent } from '../../src/shared/pending-requests'
 
 function setWindowApi(getPendingRequests: (threadId: string) => Promise<PendingBlockingEvent[]>) {
-  ;(globalThis as unknown as { window: { api: { provider: { getPendingRequests: typeof getPendingRequests } } } }).window = {
+  ;(
+    globalThis as unknown as { window: { api: { provider: { getPendingRequests: typeof getPendingRequests } } } }
+  ).window = {
     api: { provider: { getPendingRequests } },
   }
 }
@@ -15,7 +17,14 @@ describe('recoverPendingRequests (desktop orchestration)', () => {
   })
 
   it('records an unopened chat as waiting without giving it messages', async () => {
-    const opened: PendingBlockingEvent = { type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' }
+    const opened: PendingBlockingEvent = {
+      type: 'request.opened',
+      threadId: 't1',
+      requestId: 'r1',
+      requestType: 'command',
+      toolName: 'Bash',
+      detail: 'ls',
+    }
     setWindowApi(vi.fn(() => Promise.resolve([opened])))
     useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'idle' })
 
@@ -29,12 +38,32 @@ describe('recoverPendingRequests (desktop orchestration)', () => {
   it('advances the recorded cards from live events for that thread only', () => {
     useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'idle' })
     const store = () => useAgentStore.getState()
-    store().trackPendingRequestEvent({ type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' })
-    store().trackPendingRequestEvent({ type: 'request.opened', threadId: 'other', requestId: 'r2', requestType: 'command', toolName: 'Bash', detail: 'ls' })
+    store().trackPendingRequestEvent({
+      type: 'request.opened',
+      threadId: 't1',
+      requestId: 'r1',
+      requestType: 'command',
+      toolName: 'Bash',
+      detail: 'ls',
+    })
+    store().trackPendingRequestEvent({
+      type: 'request.opened',
+      threadId: 'other',
+      requestId: 'r2',
+      requestType: 'command',
+      toolName: 'Bash',
+      detail: 'ls',
+    })
     expect(store().sessions[0].pendingRequests?.map((e) => e.type)).toEqual(['request.opened'])
 
     const before = store().sessions
-    store().trackPendingRequestEvent({ type: 'content', threadId: 't1', messageId: 'm', streamKind: 'assistant', text: 'x' } as never)
+    store().trackPendingRequestEvent({
+      type: 'content',
+      threadId: 't1',
+      messageId: 'm',
+      streamKind: 'assistant',
+      text: 'x',
+    } as never)
     expect(store().sessions).toBe(before)
 
     store().trackPendingRequestEvent({ type: 'request.closed', threadId: 't1', requestId: 'r1', decision: 'approve' })
@@ -42,13 +71,23 @@ describe('recoverPendingRequests (desktop orchestration)', () => {
   })
 
   it('discards a snapshot that a live event overtook while it was in flight, and asks again', async () => {
-    const opened: PendingBlockingEvent = { type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' }
+    const opened: PendingBlockingEvent = {
+      type: 'request.opened',
+      threadId: 't1',
+      requestId: 'r1',
+      requestType: 'command',
+      toolName: 'Bash',
+      detail: 'ls',
+    }
     const answers: PendingBlockingEvent[][] = [[opened], []]
     const getPendingRequests = vi.fn(async () => {
       const answer = answers.shift() ?? []
       // The close lands while the first request is still on the wire. Nothing
       // is recorded yet, so it changes no card - only the revision.
-      if (answer.length) useAgentStore.getState().trackPendingRequestEvent({ type: 'request.closed', threadId: 't1', requestId: 'r1', decision: 'approve' })
+      if (answer.length)
+        useAgentStore
+          .getState()
+          .trackPendingRequestEvent({ type: 'request.closed', threadId: 't1', requestId: 'r1', decision: 'approve' })
       return answer
     })
     setWindowApi(getPendingRequests)
@@ -63,9 +102,18 @@ describe('recoverPendingRequests (desktop orchestration)', () => {
   })
 
   it('appends a missing card to an already-loaded session', async () => {
-    const getPendingRequests = vi.fn(() => Promise.resolve<PendingBlockingEvent[]>([
-      { type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' },
-    ]))
+    const getPendingRequests = vi.fn(() =>
+      Promise.resolve<PendingBlockingEvent[]>([
+        {
+          type: 'request.opened',
+          threadId: 't1',
+          requestId: 'r1',
+          requestType: 'command',
+          toolName: 'Bash',
+          detail: 'ls',
+        },
+      ]),
+    )
     setWindowApi(getPendingRequests)
     useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'idle' })
 
@@ -82,9 +130,18 @@ describe('recoverPendingRequests (desktop orchestration)', () => {
   })
 
   it('does not duplicate a card already shown', async () => {
-    const getPendingRequests = vi.fn(() => Promise.resolve<PendingBlockingEvent[]>([
-      { type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' },
-    ]))
+    const getPendingRequests = vi.fn(() =>
+      Promise.resolve<PendingBlockingEvent[]>([
+        {
+          type: 'request.opened',
+          threadId: 't1',
+          requestId: 'r1',
+          requestType: 'command',
+          toolName: 'Bash',
+          detail: 'ls',
+        },
+      ]),
+    )
     setWindowApi(getPendingRequests)
     useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'idle' })
     useAgentStore.getState().appendMessage('t1', {
@@ -105,9 +162,11 @@ describe('recoverPendingRequests (desktop orchestration)', () => {
   })
 
   it('is a no-op when the session has not been loaded into the store yet', async () => {
-    const getPendingRequests = vi.fn(() => Promise.resolve<PendingBlockingEvent[]>([
-      { type: 'plan.proposed', threadId: 'unknown', planId: 'p1', planMarkdown: '# Plan' },
-    ]))
+    const getPendingRequests = vi.fn(() =>
+      Promise.resolve<PendingBlockingEvent[]>([
+        { type: 'plan.proposed', threadId: 'unknown', planId: 'p1', planMarkdown: '# Plan' },
+      ]),
+    )
     setWindowApi(getPendingRequests)
 
     await expect(recoverPendingRequests('unknown')).resolves.toBeUndefined()
@@ -141,16 +200,42 @@ describe('expired cards', () => {
   const openCards = () => {
     useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'running' })
     const store = useAgentStore.getState()
-    store.appendMessage('t1', { id: 'approval_r1', role: 'assistant', content: '', timestamp: 1, approval: { toolName: 'Bash', detail: 'ls', status: 'pending' } })
-    store.appendMessage('t1', { id: 'question_q1', role: 'assistant', content: '', timestamp: 2, question: { requestId: 'q1', questions: [], status: 'pending' } })
-    store.appendMessage('t1', { id: 'approval_r0', role: 'assistant', content: '', timestamp: 0, approval: { toolName: 'Read', detail: 'x', status: 'accepted' } })
+    store.appendMessage('t1', {
+      id: 'approval_r1',
+      role: 'assistant',
+      content: '',
+      timestamp: 1,
+      approval: { toolName: 'Bash', detail: 'ls', status: 'pending' },
+    })
+    store.appendMessage('t1', {
+      id: 'question_q1',
+      role: 'assistant',
+      content: '',
+      timestamp: 2,
+      question: { requestId: 'q1', questions: [], status: 'pending' },
+    })
+    store.appendMessage('t1', {
+      id: 'approval_r0',
+      role: 'assistant',
+      content: '',
+      timestamp: 0,
+      approval: { toolName: 'Read', detail: 'x', status: 'accepted' },
+    })
   }
   const messages = () => useAgentStore.getState().sessions.find((s) => s.id === 't1')!.messages
 
   it('a request.expired event turns the open card into a notice naming the reason', async () => {
     const { reduceProviderEvent } = await import('../../src/renderer/components/chat/provider-event-reducer')
     openCards()
-    reduceProviderEvent({ type: 'request.expired', threadId: 't1', requestId: 'r1', reason: 'The agent session ended before it was answered.' }, { streamingEnabled: true, coalescer: null })
+    reduceProviderEvent(
+      {
+        type: 'request.expired',
+        threadId: 't1',
+        requestId: 'r1',
+        reason: 'The agent session ended before it was answered.',
+      },
+      { streamingEnabled: true, coalescer: null },
+    )
     const card = messages().find((m) => m.id === 'approval_r1')!
     expect(card.approval).toBeUndefined()
     expect(card.role).toBe('system')
@@ -169,7 +254,20 @@ describe('expired cards', () => {
 
   it('recovery keeps a card the backend still holds', async () => {
     openCards()
-    setWindowApi(vi.fn(() => Promise.resolve([{ type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' } as PendingBlockingEvent])))
+    setWindowApi(
+      vi.fn(() =>
+        Promise.resolve([
+          {
+            type: 'request.opened',
+            threadId: 't1',
+            requestId: 'r1',
+            requestType: 'command',
+            toolName: 'Bash',
+            detail: 'ls',
+          } as PendingBlockingEvent,
+        ]),
+      ),
+    )
     await recoverPendingRequests('t1')
     expect(messages().find((m) => m.id === 'approval_r1')?.approval?.status).toBe('pending')
   })

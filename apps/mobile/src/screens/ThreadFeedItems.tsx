@@ -100,13 +100,7 @@ export const ToolItem = memo(function ToolItem({ item }: { item: Extract<FeedIte
             {summary.detail}
           </Text>
         )}
-        {hasOutput && (
-          <Ionicons
-            name={expanded ? 'chevron-up' : 'chevron-down'}
-            size={13}
-            color={colors.textFaint}
-          />
-        )}
+        {hasOutput && <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={13} color={colors.textFaint} />}
       </Pressable>
 
       {expanded && hasOutput && (
@@ -116,7 +110,9 @@ export const ToolItem = memo(function ToolItem({ item }: { item: Extract<FeedIte
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <Text style={styles.toolOutputText}>{output}</Text>
           </ScrollView>
-          <Text style={styles.toolMeta}>{lineCount} {lineCount === 1 ? 'line' : 'lines'}</Text>
+          <Text style={styles.toolMeta}>
+            {lineCount} {lineCount === 1 ? 'line' : 'lines'}
+          </Text>
         </View>
       )}
     </View>
@@ -147,44 +143,57 @@ export const ApprovalItem = memo(function ApprovalItem({
       <Text style={styles.approvalTitle}>
         {pending ? 'Approval needed' : item.state === 'approve' ? 'Approved' : 'Denied'}
       </Text>
-      {card
-        ? (
-          <>
-            <Text style={styles.hostWriteTitle}>{hostWriteTitle(card)}</Text>
-            <Text style={styles.toolName}>{[PR_HOST_LABEL[card.host], card.prLabel, card.location].filter(Boolean).join(' · ')}</Text>
-          </>
-        )
-        : <Text style={styles.toolName}>{item.toolName}</Text>}
-      {actions.kind === 'host-write'
-        ? (
-          <>
-            <View style={hidden && styles.hostWritePreviewCollapsed} testID="host-write-preview">
-              {actions.preview.sections.map((section, i) => (
-                <View key={i} style={styles.hostWriteSection}>
-                  <Text style={styles.toolName}>{section.label}</Text>
-                  <Text style={styles.hostWriteText} selectable>{section.text}</Text>
-                </View>
-              ))}
-            </View>
-            {actions.preview.long && (
-              <Pressable onPress={() => setExpanded((v) => !v)} accessibilityState={{ expanded }}>
-                <Text style={styles.toggleText}>{expanded ? 'Show less' : 'Show the full draft'}</Text>
-              </Pressable>
-            )}
-          </>
-        )
-        : (
-          <Text style={styles.toolOutput} numberOfLines={card ? 24 : 6}>
-            {item.detail}
+      {card ? (
+        <>
+          <Text style={styles.hostWriteTitle}>{hostWriteTitle(card)}</Text>
+          <Text style={styles.toolName}>
+            {[PR_HOST_LABEL[card.host], card.prLabel, card.location].filter(Boolean).join(' · ')}
           </Text>
-        )}
-      {pending && actions.kind === 'deny-only' && <Text style={styles.toolOutput}>Approve this on the desktop. You can deny it here.</Text>}
-      {pending && actions.kind === 'host-write' && (
-        <Text style={styles.toolOutput}>{hidden ? 'Show the full draft to approve it.' : 'Posts as shown. Edit on the desktop.'}</Text>
+        </>
+      ) : (
+        <Text style={styles.toolName}>{item.toolName}</Text>
       )}
-      {pending && actions.kind === 'host-write' && actions.buttons.map((b) => b.problem && (
-        <Text key={b.id} style={styles.toolOutput}>{b.label}: {b.problem}</Text>
-      ))}
+      {actions.kind === 'host-write' ? (
+        <>
+          <View style={hidden && styles.hostWritePreviewCollapsed} testID="host-write-preview">
+            {actions.preview.sections.map((section, i) => (
+              <View key={i} style={styles.hostWriteSection}>
+                <Text style={styles.toolName}>{section.label}</Text>
+                <Text style={styles.hostWriteText} selectable>
+                  {section.text}
+                </Text>
+              </View>
+            ))}
+          </View>
+          {actions.preview.long && (
+            <Pressable onPress={() => setExpanded((v) => !v)} accessibilityState={{ expanded }}>
+              <Text style={styles.toggleText}>{expanded ? 'Show less' : 'Show the full draft'}</Text>
+            </Pressable>
+          )}
+        </>
+      ) : (
+        <Text style={styles.toolOutput} numberOfLines={card ? 24 : 6}>
+          {item.detail}
+        </Text>
+      )}
+      {pending && actions.kind === 'deny-only' && (
+        <Text style={styles.toolOutput}>Approve this on the desktop. You can deny it here.</Text>
+      )}
+      {pending && actions.kind === 'host-write' && (
+        <Text style={styles.toolOutput}>
+          {hidden ? 'Show the full draft to approve it.' : 'Posts as shown. Edit on the desktop.'}
+        </Text>
+      )}
+      {pending &&
+        actions.kind === 'host-write' &&
+        actions.buttons.map(
+          (b) =>
+            b.problem && (
+              <Text key={b.id} style={styles.toolOutput}>
+                {b.label}: {b.problem}
+              </Text>
+            ),
+        )}
       {pending && quietOffered && (
         <Pressable
           testID="approval-quiet"
@@ -198,22 +207,33 @@ export const ApprovalItem = memo(function ApprovalItem({
       {pending && (
         <View style={styles.buttonRowWrap}>
           {actions.kind === 'plain' && (
-            <Pressable style={[styles.actionButton, styles.approveButton]} onPress={() => onDecide(item.requestId, 'approve', quietly(undefined, quiet))}>
+            <Pressable
+              style={[styles.actionButton, styles.approveButton]}
+              onPress={() => onDecide(item.requestId, 'approve', quietly(undefined, quiet))}
+            >
               <Text style={styles.actionLabel}>{quietLabel('Approve', 'approve', quiet)}</Text>
             </Pressable>
           )}
-          {actions.kind === 'host-write' && actions.buttons.map((b) => (
-            <Pressable
-              key={b.id}
-              disabled={hidden || b.problem !== null}
-              accessibilityState={{ disabled: hidden || b.problem !== null }}
-              style={[styles.actionButton, b.primary ? styles.approveButton : styles.secondaryButton, (hidden || b.problem !== null) && styles.buttonDisabled]}
-              onPress={() => onDecide(item.requestId, 'approve', quietly(b.response, quiet))}
-            >
-              <Text style={styles.actionLabel}>{quietLabel(b.label, 'approve', quiet)}</Text>
-            </Pressable>
-          ))}
-          <Pressable style={[styles.actionButton, styles.denyButton]} onPress={() => onDecide(item.requestId, 'deny', quietly(undefined, quiet))}>
+          {actions.kind === 'host-write' &&
+            actions.buttons.map((b) => (
+              <Pressable
+                key={b.id}
+                disabled={hidden || b.problem !== null}
+                accessibilityState={{ disabled: hidden || b.problem !== null }}
+                style={[
+                  styles.actionButton,
+                  b.primary ? styles.approveButton : styles.secondaryButton,
+                  (hidden || b.problem !== null) && styles.buttonDisabled,
+                ]}
+                onPress={() => onDecide(item.requestId, 'approve', quietly(b.response, quiet))}
+              >
+                <Text style={styles.actionLabel}>{quietLabel(b.label, 'approve', quiet)}</Text>
+              </Pressable>
+            ))}
+          <Pressable
+            style={[styles.actionButton, styles.denyButton]}
+            onPress={() => onDecide(item.requestId, 'deny', quietly(undefined, quiet))}
+          >
             <Text style={styles.actionLabel}>{quietLabel('Deny', 'deny', quiet)}</Text>
           </Pressable>
         </View>
@@ -232,9 +252,7 @@ export const QuestionItem = memo(function QuestionItem({
   const answered = item.answers != null
   // One selection array per question - submitted together as string[][],
   // matching the desktop QuestionCard wire shape.
-  const [selections, setSelections] = useState<string[][]>(
-    () => item.answers ?? item.questions.map(() => []),
-  )
+  const [selections, setSelections] = useState<string[][]>(() => item.answers ?? item.questions.map(() => []))
 
   // Typed "None of the above" text per question, as on the desktop: it
   // replaces the picks, and picking an option clears it.
@@ -299,9 +317,13 @@ export const QuestionItem = memo(function QuestionItem({
             )
           })}
           {answered ? (
-            (shown[qIdx] ?? []).filter((a) => !q.options.some((o) => o.label === a)).map((typed) => (
-              <Text key={typed} style={styles.optionLabel}>{typed}</Text>
-            ))
+            (shown[qIdx] ?? [])
+              .filter((a) => !q.options.some((o) => o.label === a))
+              .map((typed) => (
+                <Text key={typed} style={styles.optionLabel}>
+                  {typed}
+                </Text>
+              ))
           ) : (
             <TextInput
               value={otherTexts[qIdx]}
@@ -434,7 +456,11 @@ export function PeerUndeliveredItem({
         {row.sent ? peerUndeliveredHeading(row) : `Not delivered to ${row.toLabel}`}
       </Text>
       {!row.sent && <Text style={styles.undeliveredReason}>{peerUndeliveredReasonText(row)}</Text>}
-      <Text style={styles.undeliveredText} numberOfLines={long && !expanded ? UNDELIVERED_CLAMP_LINES : undefined} selectable>
+      <Text
+        style={styles.undeliveredText}
+        numberOfLines={long && !expanded ? UNDELIVERED_CLAMP_LINES : undefined}
+        selectable
+      >
         {row.text}
       </Text>
       {long && (
@@ -442,7 +468,11 @@ export function PeerUndeliveredItem({
           <Text style={styles.toggleText}>{expanded ? 'Show less' : 'Show more'}</Text>
         </Pressable>
       )}
-      {error !== undefined && <Text style={[styles.undeliveredReason, styles.deliveryFailed]} accessibilityLiveRegion="polite">{error}</Text>}
+      {error !== undefined && (
+        <Text style={[styles.undeliveredReason, styles.deliveryFailed]} accessibilityLiveRegion="polite">
+          {error}
+        </Text>
+      )}
       {!row.sent && (
         <View style={styles.buttonRow}>
           <Pressable
@@ -488,17 +518,29 @@ export function MergeBackItem({
   return (
     <View style={styles.undeliveredCard} testID="merge-back-row">
       <Text style={styles.undeliveredTitle}>{mergeBackRowTitle(row)}</Text>
-      {pending
-        ? mergeBackRowDetails(row).map((line, i) => <Text key={`${i}-${line}`} style={styles.undeliveredReason}>{line}</Text>)
-        : (
-          <>
-            {expanded && <Text style={styles.undeliveredText} selectable>{row.text}</Text>}
-            <Pressable onPress={() => setExpanded((v) => !v)} accessibilityRole="button">
-              <Text style={styles.toggleText}>{expanded ? 'Hide summary' : 'Show summary'}</Text>
-            </Pressable>
-          </>
-        )}
-      {error !== undefined && <Text style={[styles.undeliveredReason, styles.deliveryFailed]} accessibilityLiveRegion="polite">{error}</Text>}
+      {pending ? (
+        mergeBackRowDetails(row).map((line, i) => (
+          <Text key={`${i}-${line}`} style={styles.undeliveredReason}>
+            {line}
+          </Text>
+        ))
+      ) : (
+        <>
+          {expanded && (
+            <Text style={styles.undeliveredText} selectable>
+              {row.text}
+            </Text>
+          )}
+          <Pressable onPress={() => setExpanded((v) => !v)} accessibilityRole="button">
+            <Text style={styles.toggleText}>{expanded ? 'Hide summary' : 'Show summary'}</Text>
+          </Pressable>
+        </>
+      )}
+      {error !== undefined && (
+        <Text style={[styles.undeliveredReason, styles.deliveryFailed]} accessibilityLiveRegion="polite">
+          {error}
+        </Text>
+      )}
       {pending && canAct && (
         <>
           <View style={styles.buttonRow}>
@@ -561,19 +603,21 @@ export function HeldTurnBar({
         >
           <Ionicons name="arrow-up" size={15} color={colors.textDim} />
         </Pressable>
-      ) : actions.label === 'Queued' && (
-        <Pressable
-          onPress={onPromote}
-          disabled={!actions.canPromote}
-          accessibilityRole="button"
-          accessibilityLabel="Send now"
-          accessibilityState={{ disabled: !actions.canPromote }}
-          testID="held-send-now"
-          hitSlop={8}
-          style={[styles.heldAction, !actions.canPromote && styles.heldActionDisabled]}
-        >
-          <Ionicons name="arrow-up" size={15} color={colors.textDim} />
-        </Pressable>
+      ) : (
+        actions.label === 'Queued' && (
+          <Pressable
+            onPress={onPromote}
+            disabled={!actions.canPromote}
+            accessibilityRole="button"
+            accessibilityLabel="Send now"
+            accessibilityState={{ disabled: !actions.canPromote }}
+            testID="held-send-now"
+            hitSlop={8}
+            style={[styles.heldAction, !actions.canPromote && styles.heldActionDisabled]}
+          >
+            <Ionicons name="arrow-up" size={15} color={colors.textDim} />
+          </Pressable>
+        )
       )}
       <Pressable
         onPress={onCancel}

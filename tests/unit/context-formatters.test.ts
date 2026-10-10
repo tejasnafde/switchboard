@@ -53,8 +53,9 @@ describe('chatQuoteAuthor', () => {
   })
 
   it('attributes a quote of the user\'s message to "you"', () => {
-    expect(formatChatMessageContext({ agent: chatQuoteAuthor('user', 'Codex') ?? '', selection: 'Compare a.ts with b.ts' }))
-      .toBe('> from you: "Compare a.ts with b.ts"\n')
+    expect(
+      formatChatMessageContext({ agent: chatQuoteAuthor('user', 'Codex') ?? '', selection: 'Compare a.ts with b.ts' }),
+    ).toBe('> from you: "Compare a.ts with b.ts"\n')
   })
 })
 

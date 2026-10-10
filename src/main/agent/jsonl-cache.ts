@@ -158,9 +158,8 @@ async function loadJsonlSnapshot(
   // The open chat's transcript grows every turn. When it grew past a cached
   // state that ended on a line break, parse only the new bytes, and only once
   // the old bytes hash to the cached digest. Anything else parses in full.
-  const base = append && hit?.endsWithNewline && hit.ino === st.ino && hit.dev === st.dev && st.size > hit.size
-    ? hit
-    : undefined
+  const base =
+    append && hit?.endsWithNewline && hit.ino === st.ino && hit.dev === st.dev && st.size > hit.size ? hit : undefined
   const appendFrom = base?.size ?? 0
   let messages: ChatMessage[]
   let digest: string
@@ -220,7 +219,17 @@ async function loadJsonlSnapshot(
   const parsedBytes = retainedJsonBytes(messages)
   if (base) messages = base.messages.concat(messages)
   const retainedBytes = (base?.retainedBytes ?? 0) + parsedBytes
-  cache.set(key, { retainedBytes, mtimeMs: st.mtimeMs, size: st.size, ctimeMs: st.ctimeMs, ino: st.ino, dev: st.dev, digest, endsWithNewline, messages })
+  cache.set(key, {
+    retainedBytes,
+    mtimeMs: st.mtimeMs,
+    size: st.size,
+    ctimeMs: st.ctimeMs,
+    ino: st.ino,
+    dev: st.dev,
+    digest,
+    endsWithNewline,
+    messages,
+  })
   totalBytes += retainedBytes
   evict()
   return { messages, prefixes }
@@ -237,7 +246,8 @@ async function statOrNull(filePath: string): Promise<FileState | null> {
   try {
     return await stat(filePath)
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') log.info('session jsonl removed after its cache check', { filePath })
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT')
+      log.info('session jsonl removed after its cache check', { filePath })
     else log.warn('stat failed for session jsonl', { filePath, err })
     return null
   }
@@ -249,7 +259,8 @@ async function hashFile(
 ): Promise<{ digest: string; size: number; prefixes: Map<number, string> } | null> {
   const hash = new PrefixHasher(prefixSizes)
   try {
-    for await (const chunk of createReadStream(filePath, { highWaterMark: READ_CHUNK_BYTES })) hash.update(chunk as Buffer)
+    for await (const chunk of createReadStream(filePath, { highWaterMark: READ_CHUNK_BYTES }))
+      hash.update(chunk as Buffer)
   } catch (err) {
     log.warn('session jsonl hash failed', { filePath, err })
     return null

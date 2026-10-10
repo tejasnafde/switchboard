@@ -35,7 +35,13 @@ import { invalidateCatalog } from '../provider/catalog-probe'
 import { resolveInstanceEnv } from '../provider/instance-env'
 import { resolveOauthDirForCreate } from '../provider/oauth-path'
 import { demoUsage } from '../provider/adapters/demo-adapter'
-import { consumeInstanceReset, fetchInstanceUsage, forgetResetAttempt, invalidateUsage, type UsageRequestOptions } from '../provider/usage'
+import {
+  consumeInstanceReset,
+  fetchInstanceUsage,
+  forgetResetAttempt,
+  invalidateUsage,
+  type UsageRequestOptions,
+} from '../provider/usage'
 
 const log = createLogger('ipc:provider-instances')
 let demoUsageCalls = 0
@@ -82,16 +88,19 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
     return fetchInstanceUsage(id, opts)
   })
 
-  host.handle(ProviderInstanceChannels.CONSUME_RESET, async (id: unknown, creditId?: unknown): Promise<CodexResetResult> => {
-    if (typeof id !== 'string' || id.length === 0) throw new Error('consume-reset needs an instance id')
-    const credit = typeof creditId === 'string' && creditId.length > 0 && creditId.length <= 200 ? creditId : null
-    if (process.env.SB_DEMO_ADAPTER === '1') {
-      // Never a real spend in a demo launch.
-      const agentType = getProviderInstanceFull(id, { withEnv: false })?.agentType ?? 'codex'
-      return { outcome: 'nothingToReset', usage: demoUsage(id, agentType) }
-    }
-    return consumeInstanceReset(id, credit)
-  })
+  host.handle(
+    ProviderInstanceChannels.CONSUME_RESET,
+    async (id: unknown, creditId?: unknown): Promise<CodexResetResult> => {
+      if (typeof id !== 'string' || id.length === 0) throw new Error('consume-reset needs an instance id')
+      const credit = typeof creditId === 'string' && creditId.length > 0 && creditId.length <= 200 ? creditId : null
+      if (process.env.SB_DEMO_ADAPTER === '1') {
+        // Never a real spend in a demo launch.
+        const agentType = getProviderInstanceFull(id, { withEnv: false })?.agentType ?? 'codex'
+        return { outcome: 'nothingToReset', usage: demoUsage(id, agentType) }
+      }
+      return consumeInstanceReset(id, credit)
+    },
+  )
 
   host.handle(ProviderInstanceChannels.CREATE_OAUTH_DIR, (dir: string) => {
     return createOauthDir(dir)
@@ -107,10 +116,13 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
  * open, every instance save), so the answer is cached per ROW VERSION - a save
  * bumps `updatedAt` and invalidates it on its own.
  */
-const resolvedHomeMemo = new Map<string, {
-  effectiveOauthDir: string | null
-  effectiveOauthDirSource: ProviderInstanceWire['effectiveOauthDirSource']
-}>()
+const resolvedHomeMemo = new Map<
+  string,
+  {
+    effectiveOauthDir: string | null
+    effectiveOauthDirSource: ProviderInstanceWire['effectiveOauthDirSource']
+  }
+>()
 
 /**
  * Replace every `unresolved` effective home with the real one.
@@ -186,12 +198,7 @@ interface ProbeResult {
  * whole main-process event loop for up to the probe timeout (5-8s) - every
  * PTY and streaming turn stalled while a Settings "Test" ran.
  */
-function runProbe(
-  bin: string,
-  args: string[],
-  env: Record<string, string>,
-  timeoutMs: number,
-): Promise<ProbeResult> {
+function runProbe(bin: string, args: string[], env: Record<string, string>, timeoutMs: number): Promise<ProbeResult> {
   return new Promise((resolve) => {
     execFile(bin, args, { env, timeout: timeoutMs, encoding: 'utf-8' }, (err, stdout, stderr) => {
       if (!err) {

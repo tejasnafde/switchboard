@@ -133,7 +133,11 @@ function parseContent(kind: UserMessagePillKind, content: string): Parsed {
 }
 
 /** Build the chip and card text for a pill. `content` is the text it expands to, when known. */
-export function pillChipModel(input: { kind: UserMessagePillKind; label: string; content?: string | null }): PillChipModel {
+export function pillChipModel(input: {
+  kind: UserMessagePillKind
+  label: string
+  content?: string | null
+}): PillChipModel {
   const { kind: stored, label } = input
   const kind = pillChipKind(stored, label)
   const parsed = input.content ? parseContent(stored, input.content) : NOTHING
@@ -149,7 +153,7 @@ export function pillChipModel(input: { kind: UserMessagePillKind; label: string;
   if (stored === 'terminal') {
     const m = /^(.*) \((\d+) lines?\)$/.exec(label)
     const name = m ? m[1] : label
-    const lines = m ? Number(m[2]) : (parsed.lines.length || null)
+    const lines = m ? Number(m[2]) : parsed.lines.length || null
     return {
       ...base,
       name,
@@ -185,7 +189,9 @@ export function pillChipModel(input: { kind: UserMessagePillKind; label: string;
       name,
       count: chipCount(lines, 'line'),
       detail: lines !== null ? plural(lines, 'line') : null,
-      target: quote.trim() ? { type: 'message', role: kind === 'you' ? 'user' : 'assistant', quote: quote.trim() } : null,
+      target: quote.trim()
+        ? { type: 'message', role: kind === 'you' ? 'user' : 'assistant', quote: quote.trim() }
+        : null,
     }
   }
 

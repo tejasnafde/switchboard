@@ -21,7 +21,10 @@ describe('resolvePickerKeydown', () => {
   })
 
   it('lets an empty send-to picker and unclaimed keys fall through to the next picker', () => {
-    expect(resolvePickerKeydown(k('ArrowDown'), { ...closed, sendToMatches: 0, slashMatches: 1 })).toEqual({ menu: 'slash', op: 'next' })
+    expect(resolvePickerKeydown(k('ArrowDown'), { ...closed, sendToMatches: 0, slashMatches: 1 })).toEqual({
+      menu: 'slash',
+      op: 'next',
+    })
     expect(resolvePickerKeydown(k('Enter', true), { ...closed, sendToMatches: 2, atMatches: 1 })).toBeNull()
   })
 

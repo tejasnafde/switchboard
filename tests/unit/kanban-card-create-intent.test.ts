@@ -4,16 +4,18 @@ import { buildKanbanCardCreateSubmission } from '../../src/renderer/components/k
 
 describe('Kanban card create intent', () => {
   it('stores the initial agent prompt and runtime mode with a worktree request', () => {
-    expect(buildKanbanCardCreateSubmission({
-      projectPath: '/repo',
-      title: 'Fix transaction',
-      description: 'Keep the card recoverable.',
-      tags: ['backend'],
-      costCapUsd: 8,
-      runtimeMode: 'plan',
-      status: 'backlog',
-      withWorktree: true,
-    })).toMatchObject({
+    expect(
+      buildKanbanCardCreateSubmission({
+        projectPath: '/repo',
+        title: 'Fix transaction',
+        description: 'Keep the card recoverable.',
+        tags: ['backend'],
+        costCapUsd: 8,
+        runtimeMode: 'plan',
+        status: 'backlog',
+        withWorktree: true,
+      }),
+    ).toMatchObject({
       withWorktree: true,
       status: 'backlog',
       worktreeCreation: {
@@ -37,7 +39,9 @@ describe('Kanban card create intent', () => {
       withWorktree: true,
     })
     expect('runtimeMode' in submission).toBe(false)
-    expect(submission.worktreeCreation?.initialAgent && 'runtimeMode' in submission.worktreeCreation.initialAgent).toBe(false)
+    expect(submission.worktreeCreation?.initialAgent && 'runtimeMode' in submission.worktreeCreation.initialAgent).toBe(
+      false,
+    )
   })
 
   it('preserves the chosen status without asking for backend launch for a plain card', () => {
@@ -56,10 +60,7 @@ describe('Kanban card create intent', () => {
   })
 
   it('does not retain the renderer-owned create-then-launch orchestration', () => {
-    const source = readFileSync(
-      new URL('../../src/renderer/components/kanban/CardModal.tsx', import.meta.url),
-      'utf-8',
-    )
+    const source = readFileSync(new URL('../../src/renderer/components/kanban/CardModal.tsx', import.meta.url), 'utf-8')
     expect(source).not.toContain('launchCardChat(newCard')
     expect(source).not.toContain('beginCardLaunch(newCard.id)')
   })

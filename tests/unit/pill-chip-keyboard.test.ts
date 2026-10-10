@@ -12,13 +12,21 @@ import { $getRoot, $isTextNode, type LexicalEditor } from 'lexical'
 
 vi.mock('../../src/renderer/services/pill-chip-open', () => ({ openPillTarget: vi.fn(() => true) }))
 
-import { RichChatTextarea, type RichChatTextareaHandle } from '../../src/renderer/components/chat/lexical/RichChatTextarea'
+import {
+  RichChatTextarea,
+  type RichChatTextareaHandle,
+} from '../../src/renderer/components/chat/lexical/RichChatTextarea'
 import { $isPillNode } from '../../src/renderer/components/chat/lexical/PillNode'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
 // jsdom has no layout: Lexical measures the caret to scroll it into view once the editor has focus.
-const emptyRect = () => ({ x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, toJSON: () => ({}) }) as DOMRect
+const emptyRect = () =>
+  ({ x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, toJSON: () => ({}) }) as DOMRect
 Range.prototype.getBoundingClientRect ??= emptyRect
 ;(Text.prototype as { getBoundingClientRect?: () => DOMRect }).getBoundingClientRect ??= emptyRect
 
@@ -49,10 +57,16 @@ async function press(key: string): Promise<void> {
 /** Put the caret just after the chip, at the start of the text that follows it. */
 async function caretAfterChip(): Promise<void> {
   await act(async () => {
-    editorOf().update(() => {
-      const node = $getRoot().getFirstChild()?.getChildren().find((n) => $isPillNode(n))
-      node?.selectNext(0, 0)
-    }, { discrete: true })
+    editorOf().update(
+      () => {
+        const node = $getRoot()
+          .getFirstChild()
+          ?.getChildren()
+          .find((n) => $isPillNode(n))
+        node?.selectNext(0, 0)
+      },
+      { discrete: true },
+    )
   })
 }
 
@@ -64,13 +78,21 @@ beforeEach(async () => {
   document.body.append(container)
   root = createRoot(container)
   const ref = createRef<RichChatTextareaHandle>()
-  await act(async () => root.render(createElement(RichChatTextarea, {
-    ref,
-    value,
-    onChange: (next: string) => { value = next },
-    pillsById: { p1: pill },
-  })))
-  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  await act(async () =>
+    root.render(
+      createElement(RichChatTextarea, {
+        ref,
+        value,
+        onChange: (next: string) => {
+          value = next
+        },
+        pillsById: { p1: pill },
+      }),
+    ),
+  )
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
 })
 
 afterEach(() => {
@@ -111,7 +133,9 @@ describe('composer context chip', () => {
 
   it('opens the card with Space on a selected chip, without taking focus', async () => {
     const editable = container.querySelector('[contenteditable="true"]') as HTMLElement
-    await act(async () => { editable.focus() })
+    await act(async () => {
+      editable.focus()
+    })
     await caretAfterChip()
     await press('ArrowLeft')
     await press(' ')
@@ -130,15 +154,23 @@ describe('composer context chip', () => {
     expect(chip()).not.toBeNull()
     expect(value).toContain('[[pill:p1]]x')
     let text = ''
-    editorOf().getEditorState().read(() => {
-      text = $getRoot().getAllTextNodes().filter($isTextNode).map((n) => n.getTextContent()).join('|')
-    })
+    editorOf()
+      .getEditorState()
+      .read(() => {
+        text = $getRoot()
+          .getAllTextNodes()
+          .filter($isTextNode)
+          .map((n) => n.getTextContent())
+          .join('|')
+      })
     expect(text).toContain('x')
   })
 
   it('removes the chip with its remove control', async () => {
     const button = chip()!.querySelector<HTMLButtonElement>('[data-pill-remove]')!
-    await act(async () => { button.click() })
+    await act(async () => {
+      button.click()
+    })
     expect(chip()).toBeNull()
     expect(removed).toEqual(['p1'])
     expect(value).not.toContain('[[pill:p1]]')

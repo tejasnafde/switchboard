@@ -79,7 +79,11 @@ import {
 } from 'lexical'
 import { $createPillNode, $isPillNode, PillContentContext, PillNode } from './PillNode'
 import { parseBodyToSegments } from '../../../services/chat-input-body'
-import { selectionToRestore, type ComposerSelection, type SavedComposerSelection } from '../../../services/composer-selection'
+import {
+  selectionToRestore,
+  type ComposerSelection,
+  type SavedComposerSelection,
+} from '../../../services/composer-selection'
 import type { DraftPill } from '../../../stores/draft-store'
 import { createRendererLogger } from '../../../logger'
 import { matchesShortcut } from '@shared/shortcuts'
@@ -135,10 +139,7 @@ const PILL_INSERT_TAG = 'sb-pill-insert'
  * pills that have been removed; leaving the raw token string in the
  * editor would confuse the user.
  */
-function $populateFromBody(
-  body: string,
-  pillsById: Record<string, ComposerPill>,
-): void {
+function $populateFromBody(body: string, pillsById: Record<string, ComposerPill>): void {
   const root = $getRoot()
   root.clear()
   const paragraph = $createParagraphNode()
@@ -178,8 +179,14 @@ function serializeEditorToBody(editor: LexicalEditor): string {
   editor.getEditorState().read(() => {
     const root = $getRoot()
     const visit = (node: LexicalNode): void => {
-      if (node.getType() === 'linebreak') { out += '\n'; return }
-      if ($isPillNode(node)) { out += node.getTextContent(); return }
+      if (node.getType() === 'linebreak') {
+        out += '\n'
+        return
+      }
+      if ($isPillNode(node)) {
+        out += node.getTextContent()
+        return
+      }
       // ElementNode: recurse into children.
       const anyNode = node as LexicalNode & { getChildren?: () => LexicalNode[]; getTextContent?: () => string }
       if (typeof anyNode.getChildren === 'function') {
@@ -342,18 +349,21 @@ function PillInsertPlugin(): null {
         // caret from before the pill. The caller focuses the editor next.
         const root = editor.getRootElement()
         const unfocused = !!root && document.activeElement !== root
-        editor.update(() => {
-          const sel = $getSelection()
-          if (!$isRangeSelection(sel)) return
-          const pillNode = $createPillNode(pill.id, pill.label, pill.kind)
-          const spaceBefore = $createTextNode(' ')
-          const spaceAfter = $createTextNode(' ')
-          // Inserting whitespace + pill + whitespace mirrors
-          // `insertPillAtCursor`'s arithmetic so the editor body string
-          // and the pure helper agree on the result. Lexical's
-          // `$insertNodes` handles the split-and-stitch automatically.
-          $insertNodes([spaceBefore, pillNode, spaceAfter])
-        }, { tag: unfocused ? [PILL_INSERT_TAG, SKIP_DOM_SELECTION_TAG] : PILL_INSERT_TAG })
+        editor.update(
+          () => {
+            const sel = $getSelection()
+            if (!$isRangeSelection(sel)) return
+            const pillNode = $createPillNode(pill.id, pill.label, pill.kind)
+            const spaceBefore = $createTextNode(' ')
+            const spaceAfter = $createTextNode(' ')
+            // Inserting whitespace + pill + whitespace mirrors
+            // `insertPillAtCursor`'s arithmetic so the editor body string
+            // and the pure helper agree on the result. Lexical's
+            // `$insertNodes` handles the split-and-stitch automatically.
+            $insertNodes([spaceBefore, pillNode, spaceAfter])
+          },
+          { tag: unfocused ? [PILL_INSERT_TAG, SKIP_DOM_SELECTION_TAG] : PILL_INSERT_TAG },
+        )
         return true
       },
       COMMAND_PRIORITY_LOW,
@@ -368,13 +378,7 @@ function PillInsertPlugin(): null {
  * is currently showing). We compare to the editor's serialized body to
  * detect external writes - a typing-only update will already match.
  */
-function HydrationPlugin({
-  value,
-  pillsById,
-}: {
-  value: string
-  pillsById: RichChatTextareaProps['pillsById']
-}): null {
+function HydrationPlugin({ value, pillsById }: { value: string; pillsById: RichChatTextareaProps['pillsById'] }): null {
   const [editor] = useLexicalComposerContext()
   const lastValueRef = useRef<string | null>(null)
 
@@ -429,8 +433,12 @@ function SelectionMemoryPlugin(): null {
   useEffect(() => {
     let saved: SavedComposerSelection | null = null
     let pointerDown = false
-    const onPointerDown = (): void => { pointerDown = true }
-    const onPointerUp = (): void => { pointerDown = false }
+    const onPointerDown = (): void => {
+      pointerDown = true
+    }
+    const onPointerUp = (): void => {
+      pointerDown = false
+    }
     let rootEl: HTMLElement | null = null
     const removeRoot = editor.registerRootListener((root) => {
       rootEl?.removeEventListener('pointerdown', onPointerDown)
@@ -457,7 +465,8 @@ function SelectionMemoryPlugin(): null {
       () => {
         const dom = window.getSelection()
         const root = editor.getRootElement()
-        if (dom && root?.contains(dom.anchorNode)) editor.read(() => save($selectionOffsets($createRangeSelectionFromDom(dom, editor))))
+        if (dom && root?.contains(dom.anchorNode))
+          editor.read(() => save($selectionOffsets($createRangeSelectionFromDom(dom, editor))))
         return false
       },
       COMMAND_PRIORITY_LOW,
@@ -469,7 +478,12 @@ function SelectionMemoryPlugin(): null {
         const target = selectionToRestore(saved, serializeEditorToBody(editor))
         // Discrete: commit now, inside the focus event, so the DOM selection
         // is ours before the browser's selectionchange is read.
-        editor.update(() => { $selectOffsets(target) }, { discrete: true })
+        editor.update(
+          () => {
+            $selectOffsets(target)
+          },
+          { discrete: true },
+        )
         return false
       },
       COMMAND_PRIORITY_LOW,
@@ -510,21 +524,26 @@ function $pillBesideCaret(selection: RangeSelection, backward: boolean): PillNod
 function PillSelectPlugin(): null {
   const [editor] = useLexicalComposerContext()
   useEffect(() => {
-    const select = (backward: boolean) => (event: KeyboardEvent): boolean => {
-      if (event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return false
-      const selection = $getSelection()
-      if (!$isRangeSelection(selection)) return false
-      const pill = $pillBesideCaret(selection, backward)
-      if (!pill) return false
-      event.preventDefault()
-      const nodeSelection = $createNodeSelection()
-      nodeSelection.add(pill.getKey())
-      $setSelection(nodeSelection)
-      return true
-    }
+    const select =
+      (backward: boolean) =>
+      (event: KeyboardEvent): boolean => {
+        if (event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return false
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) return false
+        const pill = $pillBesideCaret(selection, backward)
+        if (!pill) return false
+        event.preventDefault()
+        const nodeSelection = $createNodeSelection()
+        nodeSelection.add(pill.getKey())
+        $setSelection(nodeSelection)
+        return true
+      }
     const offLeft = editor.registerCommand(KEY_ARROW_LEFT_COMMAND, select(true), COMMAND_PRIORITY_NORMAL)
     const offRight = editor.registerCommand(KEY_ARROW_RIGHT_COMMAND, select(false), COMMAND_PRIORITY_NORMAL)
-    return () => { offLeft(); offRight() }
+    return () => {
+      offLeft()
+      offRight()
+    }
   }, [editor])
   return null
 }
@@ -575,11 +594,7 @@ function PasteFilesPlugin({ onPasteFiles }: { onPasteFiles?: (files: File[]) => 
 }
 
 /** Reconstruct PillNodes from `[[pill:<id>]]` tokens on paste so cut/copy round-trips chips. */
-function PasteTextPlugin({
-  pillsById,
-}: {
-  pillsById: RichChatTextareaProps['pillsById']
-}): null {
+function PasteTextPlugin({ pillsById }: { pillsById: RichChatTextareaProps['pillsById'] }): null {
   const [editor] = useLexicalComposerContext()
   useEffect(() => {
     return editor.registerCommand<ClipboardEvent>(
@@ -630,9 +645,15 @@ const ImperativeHandlePlugin = forwardRef<
   useImperativeHandle(
     ref,
     () => ({
-      focus: () => { editor.focus() },
-      blur: () => { editor.blur() },
-      insertPill: (pill) => { editor.dispatchCommand(INSERT_PILL_COMMAND, pill) },
+      focus: () => {
+        editor.focus()
+      },
+      blur: () => {
+        editor.blur()
+      },
+      insertPill: (pill) => {
+        editor.dispatchCommand(INSERT_PILL_COMMAND, pill)
+      },
       replaceRange: (start, end, replacement) => {
         const cur = getValue()
         const next = cur.slice(0, start) + replacement + cur.slice(end)
@@ -745,11 +766,7 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
           <PillInsertPlugin />
           <PillSelectPlugin />
           <SelectionMemoryPlugin />
-          <ImperativeHandlePlugin
-            ref={ref}
-            pillsById={pillsById}
-            getValue={() => valueRef.current}
-          />
+          <ImperativeHandlePlugin ref={ref} pillsById={pillsById} getValue={() => valueRef.current} />
         </PillContentContext.Provider>
       </LexicalComposer>
     )

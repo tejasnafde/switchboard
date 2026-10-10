@@ -75,8 +75,10 @@ export default function NewSessionScreen({ route, navigation }: Props) {
   const coordinatorRef = useRef<ReturnType<typeof createNewSessionCreationCoordinator> | null>(null)
 
   const agentType = agentTypeFor(provider)
-  const activeWorktreeCreation = creationState.intent?.checkout.kind === 'worktree' &&
-    creationState.status !== 'idle' && creationState.status !== 'ready'
+  const activeWorktreeCreation =
+    creationState.intent?.checkout.kind === 'worktree' &&
+    creationState.status !== 'idle' &&
+    creationState.status !== 'ready'
   const offerWorktreeCreation = shouldOfferWorktreeCreation(
     getClient(connectionId)?.supportsCapability('worktree_creation_v1'),
     creationState,
@@ -139,15 +141,20 @@ export default function NewSessionScreen({ route, navigation }: Props) {
   useEffect(() => {
     setLiveModels(null)
     let cancelled = false
-    getClient(connectionId)?.listCatalog(agentType, selectedInstance?.id)
+    getClient(connectionId)
+      ?.listCatalog(agentType, selectedInstance?.id)
       .then((catalog) => {
         if (cancelled || !catalog?.length) return
         setLiveModels(catalog)
         // A pick the live catalog does not cover would start on a retired model.
-        setModel((picked) => reconcileSelectedModel(picked || undefined, { models: catalog }, coversFor(agentType)) ?? '')
+        setModel(
+          (picked) => reconcileSelectedModel(picked || undefined, { models: catalog }, coversFor(agentType)) ?? '',
+        )
       })
       .catch((err: unknown) => log.warn('catalog probe failed, keeping the static list', err))
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [connectionId, agentType, selectedInstance?.id])
   const models = useMemo(() => liveModels ?? modelsForAgent(agentType), [liveModels, agentType])
 
@@ -265,14 +272,15 @@ export default function NewSessionScreen({ route, navigation }: Props) {
       machineId: connectionId,
       projectPath,
       projectName,
-      checkout: checkoutKind === 'worktree'
-        ? {
-            kind: 'worktree',
-            baseRef: baseRef.trim() || 'HEAD',
-            branchSeed: projectName,
-            setupPolicy,
-          }
-        : { kind: 'parent-checkout' },
+      checkout:
+        checkoutKind === 'worktree'
+          ? {
+              kind: 'worktree',
+              baseRef: baseRef.trim() || 'HEAD',
+              branchSeed: projectName,
+              setupPolicy,
+            }
+          : { kind: 'parent-checkout' },
       conversation: { id: threadId, agentType },
       provider: {
         kind: provider,
@@ -492,7 +500,9 @@ export default function NewSessionScreen({ route, navigation }: Props) {
         {activeWorktreeCreation && (
           <View style={styles.progressCard} accessibilityLiveRegion="polite">
             <View style={styles.progressHeading}>
-              {(busy || creationState.status === 'ambiguous') && <ActivityIndicator size="small" color={colors.accent} />}
+              {(busy || creationState.status === 'ambiguous') && (
+                <ActivityIndicator size="small" color={colors.accent} />
+              )}
               <Text style={styles.progressLabel}>{creationActions.progressLabel}</Text>
             </View>
             {creationState.error && <Text style={styles.errorText}>{creationState.error}</Text>}

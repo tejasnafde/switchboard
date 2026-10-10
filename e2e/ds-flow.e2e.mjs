@@ -52,7 +52,7 @@ if (!project) {
       metadata: {},
       nbformat: 4,
       nbformat_minor: 5,
-    })
+    }),
   )
   execFileSync('git', ['init', '-q'], { cwd: project })
 }
@@ -139,10 +139,10 @@ try {
   let routed = false
   for (let i = 0; i < 90 && !routed; i++) {
     await win.waitForTimeout(1000)
-    const res = await win.evaluate(
-      ({ dir, nb }) => window.api.ide.open({ folder: dir, path: nb, line: 1 }),
-      { dir: project, nb: notebookName }
-    )
+    const res = await win.evaluate(({ dir, nb }) => window.api.ide.open({ folder: dir, path: nb, line: 1 }), {
+      dir: project,
+      nb: notebookName,
+    })
     routed = res?.ok === true
   }
   check(routed, 'notebook open routed through the sb-bridge')
@@ -159,9 +159,11 @@ try {
   check(rawJson === 0, 'no raw notebook JSON visible')
 
   // 7. Chat column is really the chat (composer present) on the right.
-  check((await win.locator('[data-chat-panel] textarea, [data-chat-panel] [contenteditable]').count()) > 0 ||
-        (await win.locator('[contenteditable="true"]').count()) > 0,
-    'chat composer present in the docked column')
+  check(
+    (await win.locator('[data-chat-panel] textarea, [data-chat-panel] [contenteditable]').count()) > 0 ||
+      (await win.locator('[contenteditable="true"]').count()) > 0,
+    'chat composer present in the docked column',
+  )
 
   // 8. Toggle back restores the default layout. Focus may be inside the
   //    workbench webview - the sb-bridge forwards cmd+shift+J from there, so

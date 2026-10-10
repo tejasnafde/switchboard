@@ -24,7 +24,8 @@ export const PopoverContent = forwardRef<
       // closed the popover. Only focus on a real element may dismiss it.
       onFocusOutside={(event) => {
         onFocusOutside?.(event)
-        if (event.target instanceof Element && event.target.hasAttribute('data-radix-focus-guard')) event.preventDefault()
+        if (event.target instanceof Element && event.target.hasAttribute('data-radix-focus-guard'))
+          event.preventDefault()
       }}
       {...props}
     />

@@ -17,11 +17,7 @@ describe('Google mint panel presentation', () => {
   })
 
   it('uses consistent polished action classes for primary and secondary actions', () => {
-    expect(googleMintActionClass('primary')).toBe(
-      'google-mint-action google-mint-action--primary',
-    )
-    expect(googleMintActionClass('secondary')).toBe(
-      'google-mint-action google-mint-action--secondary',
-    )
+    expect(googleMintActionClass('primary')).toBe('google-mint-action google-mint-action--primary')
+    expect(googleMintActionClass('secondary')).toBe('google-mint-action google-mint-action--secondary')
   })
 })

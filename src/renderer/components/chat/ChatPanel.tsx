@@ -34,11 +34,7 @@ import { isDraftSessionId } from '@shared/new-chat-draft'
 import { runningPlaceholder } from '@shared/turn-delivery'
 import { materializeDraft, takeFirstSend } from '../../services/draft-chat'
 import { ContextWindowMeter } from './ContextWindowMeter'
-import {
-  onSessionRename,
-  emitSessionRename,
-  onReducedProviderEvent,
-} from '../../services/session-events'
+import { onSessionRename, emitSessionRename, onReducedProviderEvent } from '../../services/session-events'
 import { isAssistantStreamingEnabled } from '../../services/streaming-pref'
 import { createRendererLogger } from '../../logger'
 
@@ -124,7 +120,16 @@ function slotSessions(
   return { own: null, other: null }
 }
 
-export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFocusIndicator = false, onClose, onOpenBeside, landing, emptyPlaceholder }: ChatPanelProps = {}) {
+export function ChatPanel({
+  sessionIdOverride,
+  chatSlot,
+  visible = true,
+  showFocusIndicator = false,
+  onClose,
+  onOpenBeside,
+  landing,
+  emptyPlaceholder,
+}: ChatPanelProps = {}) {
   const [agentType, setAgentType] = useState<AgentType>('claude-code')
   const [editingTitle, setEditingTitle] = useState(false)
   const [editTitleValue, setEditTitleValue] = useState('')
@@ -133,11 +138,13 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const slotSessionId = useLayoutStore((state) => slotSessions(state, chatSlot).own)
   const focusedChatSlot = useLayoutStore((state) => state.focusedChatSlot)
   const focusChatSlot = useLayoutStore((state) => state.focusChatSlot)
-  const opening = useChatWaitStore((s) => chatSlot && !landing ? s.opening[chatSlot] : undefined)
+  const opening = useChatWaitStore((s) => (chatSlot && !landing ? s.opening[chatSlot] : undefined))
   const activeSession = useAgentStore((s) => {
     // The landing screen names its draft itself, and null there means none:
     // the draft in the slot may be for a project no longer listed.
-    const resolvedId = opening?.id ?? (landing ? sessionIdOverride : sessionIdOverride ?? (chatSlot ? slotSessionId : s.activeSessionId))
+    const resolvedId =
+      opening?.id ??
+      (landing ? sessionIdOverride : (sessionIdOverride ?? (chatSlot ? slotSessionId : s.activeSessionId)))
     return s.sessions.find((sess) => sess.id === resolvedId)
   })
   // Per-action selectors (stable identities) instead of a bare useAgentStore(),
@@ -158,8 +165,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   // The fork the merge-back dialog was opened for; a session change closes it.
   const [mergeBackFor, setMergeBackFor] = useState<string | null>(null)
 
-
-  const messages = opening ? [] : activeSession?.messages ?? []
+  const messages = opening ? [] : (activeSession?.messages ?? [])
   const status = activeSession?.status ?? 'idle'
 
   // Compaction nudge. A one-minute tick is what lets the banner appear on a
@@ -170,13 +176,15 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     return () => clearInterval(id)
   }, [])
   const [compactionDismissedFor, setCompactionDismissedFor] = useState<string | null>(null)
-  const offerCompaction = activeSession?.id !== compactionDismissedFor && shouldOfferCompaction({
-    provider: activeSession?.type,
-    usedTokens: activeSession?.tokenUsage?.usedTokens,
-    lastMessageAt: messages.length ? messages[messages.length - 1].timestamp : undefined,
-    busy: status === 'running' || status === 'thinking',
-    now,
-  })
+  const offerCompaction =
+    activeSession?.id !== compactionDismissedFor &&
+    shouldOfferCompaction({
+      provider: activeSession?.type,
+      usedTokens: activeSession?.tokenUsage?.usedTokens,
+      lastMessageAt: messages.length ? messages[messages.length - 1].timestamp : undefined,
+      busy: status === 'running' || status === 'thinking',
+      now,
+    })
   const pendingDeliveryState = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index--) {
       const message = messages[index]
@@ -187,18 +195,21 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   }, [messages])
   const hasSession = activeSession !== undefined || opening !== undefined
   const sessionId = opening?.id ?? activeSession?.id ?? null
-  useEffect(() => { setMergeBackFor(null) }, [sessionId])
-  const wait = useChatWaitStore((s) => sessionId ? s.waits[sessionId] : undefined)
+  useEffect(() => {
+    setMergeBackFor(null)
+  }, [sessionId])
+  const wait = useChatWaitStore((s) => (sessionId ? s.waits[sessionId] : undefined))
   const followUpDefault = useFollowUpDefault(sessionId)
   const projectPath = opening?.projectPath ?? activeSession?.projectPath
   const resumeSessionId = activeSession?.resumeSessionId
   const chatTitle = opening?.title ?? activeSession?.title ?? 'New conversation'
   const otherSessionId = useLayoutStore((state) => slotSessions(state, chatSlot).other)
-  const hasDraftPayload = useDraftStore((state) => Boolean(sessionId && (
-    state.drafts[sessionId]
-    || state.pillsBySession[sessionId]?.length
-    || state.imagesBySession[sessionId]?.length
-  )))
+  const hasDraftPayload = useDraftStore((state) =>
+    Boolean(
+      sessionId &&
+      (state.drafts[sessionId] || state.pillsBySession[sessionId]?.length || state.imagesBySession[sessionId]?.length),
+    ),
+  )
   const focusSlot = useCallback(() => {
     if (chatSlot) focusChatSlot(chatSlot)
   }, [chatSlot, focusChatSlot])
@@ -215,9 +226,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     const targetSession = useAgentStore.getState().sessions.find((candidate) => candidate.id === otherSessionId)
     if (!targetSession) return
     const targetHasDraft = Boolean(
-      draftStore.drafts[otherSessionId]
-      || draftStore.pillsBySession[otherSessionId]?.length
-      || draftStore.imagesBySession[otherSessionId]?.length,
+      draftStore.drafts[otherSessionId] ||
+      draftStore.pillsBySession[otherSessionId]?.length ||
+      draftStore.imagesBySession[otherSessionId]?.length,
     )
     const crossesBoundary = requiresDraftTransferConfirmation(activeSession, targetSession)
     const [title, body] = [
@@ -234,47 +245,57 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     })
     draftStore.replaceDraftPayload(otherSessionId, {
       ...clone,
-      text: withDraftProvenance(
-        clone.text,
-        `${chatTitle} · ${agentLabel(activeSession.type)}`,
-      ),
+      text: withDraftProvenance(clone.text, `${chatTitle} · ${agentLabel(activeSession.type)}`),
     })
     useLayoutStore.getState().selectChatSession(otherSessionId)
     setTimeout(() => focusComposer(otherSessionId), 0)
   }, [activeSession, chatSlot, chatTitle, otherSessionId, sessionId, sessionIdOverride])
-  const remoteMachineName = useMachineStore((state) =>
-    state.remotes.find((machine) => machine.id === activeSession?.machineId)?.name,
+  const remoteMachineName = useMachineStore(
+    (state) => state.remotes.find((machine) => machine.id === activeSession?.machineId)?.name,
   )
-  const identity = useMemo(() => chatIdentity({
-    machineId: activeSession?.machineId,
-    machineName: remoteMachineName,
-    projectPath,
-    title: chatTitle,
-    worktreeBranch: activeSession?.worktreeBranch,
-  }), [activeSession?.machineId, activeSession?.worktreeBranch, chatTitle, projectPath, remoteMachineName])
+  const identity = useMemo(
+    () =>
+      chatIdentity({
+        machineId: activeSession?.machineId,
+        machineName: remoteMachineName,
+        projectPath,
+        title: chatTitle,
+        worktreeBranch: activeSession?.worktreeBranch,
+      }),
+    [activeSession?.machineId, activeSession?.worktreeBranch, chatTitle, projectPath, remoteMachineName],
+  )
   const runtimeMode = activeSession?.runtimeMode ?? 'sandbox'
   const model = activeSession?.model
   const resolvedModel = activeSession?.resolvedModel
   const reasoningEffort = activeSession?.reasoningEffort
   const instanceId = activeSession?.instanceId
 
-  const handleRuntimeModeChange = useCallback((mode: RuntimeMode) => {
-    if (!sessionId) return
-    changeRuntimeMode(sessionId, mode)
-  }, [sessionId])
+  const handleRuntimeModeChange = useCallback(
+    (mode: RuntimeMode) => {
+      if (!sessionId) return
+      changeRuntimeMode(sessionId, mode)
+    },
+    [sessionId],
+  )
 
-  const handleModelChange = useCallback((m: string) => {
-    if (!sessionId) return
-    changeModel(sessionId, agentType, m)
-    // `agentType` is read above, so it belongs here: without it the callback
-    // keeps the agent it was created with and files the model under the wrong
-    // one after a provider switch.
-  }, [sessionId, agentType])
+  const handleModelChange = useCallback(
+    (m: string) => {
+      if (!sessionId) return
+      changeModel(sessionId, agentType, m)
+      // `agentType` is read above, so it belongs here: without it the callback
+      // keeps the agent it was created with and files the model under the wrong
+      // one after a provider switch.
+    },
+    [sessionId, agentType],
+  )
 
-  const handleReasoningEffortChange = useCallback((effort: ReasoningEffort) => {
-    if (!sessionId) return
-    changeReasoningEffort(sessionId, effort)
-  }, [sessionId])
+  const handleReasoningEffortChange = useCallback(
+    (effort: ReasoningEffort) => {
+      if (!sessionId) return
+      changeReasoningEffort(sessionId, effort)
+    },
+    [sessionId],
+  )
 
   useEffect(() => {
     if (activeSession?.type) {
@@ -290,204 +311,225 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
    * dropdown would stay disabled (canChangeAgent false) forever after the
    * first turn because the ref never clears.
    */
-  const handleAgentTypeChange = useCallback(async (t: AgentType) => {
-    if (opening || t === 'terminal' || (sessionId && useChatWaitStore.getState().waits[sessionId]?.pending)) return
-    const prevType = agentType
-    setAgentType(t)
-    if (!sessionId) return
-    useChatWaitStore.getState().begin(sessionId, `Switching to ${agentLabel(t)}...`)
-    const switchSpan = perfSpan('provider.switch.action', { thread: sessionId, kind: 'agent', from: prevType, to: t })
-    try {
-    // Persist first so a failed write cannot leave the picker and DB on
-    // different providers. The backend commits the switch marker and the
-    // pending context handoff in the same transaction; an older one answers
-    // without `pendingHandoffFrom` and the two are written below instead.
-    const hasPriorMessages = (activeSession?.messages?.length ?? 0) > 0
-    const markerId = `agentswap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    let restored: Awaited<ReturnType<typeof window.api.app.setConversationProviderSelection>>
-    try {
-      restored = await window.api.app.setConversationProviderSelection(sessionId, t, defaultInstanceId(t), { hasHistory: hasPriorMessages, markerId })
-    } catch (err) {
-      setAgentType(prevType)
-      log.warn('failed to persist provider selection', err)
-      useChatWaitStore.getState().fail(sessionId, `Could not switch provider: ${err instanceof Error ? err.message : String(err)}`)
-      return
-    }
-    if ('pendingHandoffFrom' in restored) {
-      if (restored.marker) {
-        appendMessage(sessionId, { id: restored.marker.id, role: 'system', content: restored.marker.content, timestamp: restored.marker.timestamp })
-      }
-    } else {
-      // Persisted in-chat marker: an agent swap starts the new adapter cold,
-      // so make the switch - and its cost - visible and auditable.
-      if (hasPriorMessages && prevType !== t) {
-        const marker: ChatMessage = {
-          id: markerId,
-          role: 'system',
-          content: `${AGENT_SWITCH_MARKER_PREFIX} ${agentLabel(prevType)} → ${agentLabel(t)}`,
-          timestamp: Date.now(),
-        }
-        appendMessage(sessionId, marker)
-        window.api.app.saveMessage({
-          id: marker.id,
-          conversationId: sessionId,
-          role: marker.role,
-          content: marker.content,
-        }).catch((err) => {
-          log.warn(`failed to persist agent-swap marker for ${sessionId}`, err)
-        })
-      }
-      // Folded through the persisted flag so a chain of switches keeps the
-      // ORIGINAL source, and switching back to it clears the flag (that
-      // provider resumes its own native context).
+  const handleAgentTypeChange = useCallback(
+    async (t: AgentType) => {
+      if (opening || t === 'terminal' || (sessionId && useChatWaitStore.getState().waits[sessionId]?.pending)) return
+      const prevType = agentType
+      setAgentType(t)
+      if (!sessionId) return
+      useChatWaitStore.getState().begin(sessionId, `Switching to ${agentLabel(t)}...`)
+      const switchSpan = perfSpan('provider.switch.action', { thread: sessionId, kind: 'agent', from: prevType, to: t })
       try {
-        const { from: existing } = await window.api.app.getConversationPendingHandoff(sessionId)
-        const next = nextPendingHandoffFrom(existing, prevType, t, hasPriorMessages)
-        if (next !== existing) {
-          await window.api.app.setConversationPendingHandoff(sessionId, next)
+        // Persist first so a failed write cannot leave the picker and DB on
+        // different providers. The backend commits the switch marker and the
+        // pending context handoff in the same transaction; an older one answers
+        // without `pendingHandoffFrom` and the two are written below instead.
+        const hasPriorMessages = (activeSession?.messages?.length ?? 0) > 0
+        const markerId = `agentswap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+        let restored: Awaited<ReturnType<typeof window.api.app.setConversationProviderSelection>>
+        try {
+          restored = await window.api.app.setConversationProviderSelection(sessionId, t, defaultInstanceId(t), {
+            hasHistory: hasPriorMessages,
+            markerId,
+          })
+        } catch (err) {
+          setAgentType(prevType)
+          log.warn('failed to persist provider selection', err)
+          useChatWaitStore
+            .getState()
+            .fail(sessionId, `Could not switch provider: ${err instanceof Error ? err.message : String(err)}`)
+          return
         }
-      } catch (err) {
-        log.warn('failed to schedule context handoff', err)
+        if ('pendingHandoffFrom' in restored) {
+          if (restored.marker) {
+            appendMessage(sessionId, {
+              id: restored.marker.id,
+              role: 'system',
+              content: restored.marker.content,
+              timestamp: restored.marker.timestamp,
+            })
+          }
+        } else {
+          // Persisted in-chat marker: an agent swap starts the new adapter cold,
+          // so make the switch - and its cost - visible and auditable.
+          if (hasPriorMessages && prevType !== t) {
+            const marker: ChatMessage = {
+              id: markerId,
+              role: 'system',
+              content: `${AGENT_SWITCH_MARKER_PREFIX} ${agentLabel(prevType)} → ${agentLabel(t)}`,
+              timestamp: Date.now(),
+            }
+            appendMessage(sessionId, marker)
+            window.api.app
+              .saveMessage({
+                id: marker.id,
+                conversationId: sessionId,
+                role: marker.role,
+                content: marker.content,
+              })
+              .catch((err) => {
+                log.warn(`failed to persist agent-swap marker for ${sessionId}`, err)
+              })
+          }
+          // Folded through the persisted flag so a chain of switches keeps the
+          // ORIGINAL source, and switching back to it clears the flag (that
+          // provider resumes its own native context).
+          try {
+            const { from: existing } = await window.api.app.getConversationPendingHandoff(sessionId)
+            const next = nextPendingHandoffFrom(existing, prevType, t, hasPriorMessages)
+            if (next !== existing) {
+              await window.api.app.setConversationPendingHandoff(sessionId, next)
+            }
+          } catch (err) {
+            log.warn('failed to schedule context handoff', err)
+          }
+        }
+        // Write-through to the store so other consumers (sidebar
+        // session badges, command-palette filters) see the new agent type
+        // immediately. setAgentType also clears the stored `model` - a model
+        // id from one provider almost never round-trips to another (e.g.
+        // OpenCode's `nvidia-nim/z-ai/glm-5.1` is meaningless on Codex), and
+        // leaving the orphan id in place caused ModelPicker to fall into
+        // its "custom" branch on the new agent. The backend then hands back the
+        // model this chat last used on `t`, if any.
+        applyProviderSelection(sessionId, t, restored)
+        providerStartedRef.current.delete(sessionId)
+        agentStartedRef.current.delete(sessionId)
+        await window.api.provider?.stopSession?.(sessionId).catch((err) => {
+          log.warn(`stopSession failed for ${sessionId} during agent switch`, err)
+        })
+        messageLifecycle.settleThread(sessionId)
+      } finally {
+        useChatWaitStore.getState().finish(sessionId)
+        switchSpan.end()
       }
-    }
-    // Write-through to the store so other consumers (sidebar
-    // session badges, command-palette filters) see the new agent type
-    // immediately. setAgentType also clears the stored `model` - a model
-    // id from one provider almost never round-trips to another (e.g.
-    // OpenCode's `nvidia-nim/z-ai/glm-5.1` is meaningless on Codex), and
-    // leaving the orphan id in place caused ModelPicker to fall into
-    // its "custom" branch on the new agent. The backend then hands back the
-    // model this chat last used on `t`, if any.
-    applyProviderSelection(sessionId, t, restored)
-    providerStartedRef.current.delete(sessionId)
-    agentStartedRef.current.delete(sessionId)
-    await window.api.provider?.stopSession?.(sessionId).catch((err) => {
-      log.warn(`stopSession failed for ${sessionId} during agent switch`, err)
-    })
-    messageLifecycle.settleThread(sessionId)
-    } finally {
-      useChatWaitStore.getState().finish(sessionId)
-      switchSpan.end()
-    }
-  }, [opening, sessionId, agentType, activeSession?.messages?.length, appendMessage])
+    },
+    [opening, sessionId, agentType, activeSession?.messages?.length, appendMessage],
+  )
 
   // Existing sessions rotate atomically on the backend: it owns stop/start,
   // native-context migration, persistence, and rollback. A conversation that
   // has never started can still save its initial profile locally.
-  const handleInstanceChange = useCallback(async (nextInstanceId: string | undefined) => {
-    if (opening || !sessionId || !nextInstanceId || useChatWaitStore.getState().waits[sessionId]?.pending) return
-    const prevInstanceId = instanceId
-    if (prevInstanceId === nextInstanceId) return
-    // A draft has no conversation row and no session yet: the materializer
-    // reads the choice from the store when it creates the chat.
-    if (isDraftSessionId(sessionId)) {
-      storeSetInstanceId(sessionId, nextInstanceId)
-      return
-    }
-    const account = useProviderInstanceStore.getState().instances.find((i) => i.id === nextInstanceId)?.displayName ?? nextInstanceId
-    useChatWaitStore.getState().begin(sessionId, `Switching to ${account}...`)
-    const switchSpan = perfSpan('provider.switch.action', { thread: sessionId, kind: 'profile' })
-    try {
-    let result
-    try {
-      result = await window.api.provider.switchInstance(sessionId, {
-        targetInstanceId: nextInstanceId,
-        expectedCurrentInstanceId: prevInstanceId ?? null,
-      })
-      if (!result.ok && result.code === 'context-conflict') {
-        const startFresh = await confirm({
-          title: result.message,
-          body: 'The current profile is still active. Start the selected profile as a fresh native session and carry the visible conversation into the next turn?',
-          confirmLabel: 'Start fresh',
-        })
-        if (!startFresh) return
-        result = await window.api.provider.switchInstance(sessionId, {
-          targetInstanceId: nextInstanceId,
-          expectedCurrentInstanceId: prevInstanceId ?? null,
-          onContextConflict: 'start-fresh',
-        })
-      }
-    } catch (err) {
-      log.warn('profile switch failed', err)
-      useChatWaitStore.getState().fail(sessionId, `Could not switch profile: ${err instanceof Error ? err.message : String(err)}`)
-      appendMessage(sessionId, {
-        id: `profile_error_${Date.now()}`,
-        role: 'system',
-        content: `Could not switch profile: ${err instanceof Error ? err.message : String(err)}`,
-        timestamp: Date.now(),
-      })
-      return
-    }
-    if (!result.ok) {
-      if (result.currentInstanceId !== prevInstanceId) {
-        storeSetInstanceId(sessionId, result.currentInstanceId ?? undefined)
-      }
-      if (result.code !== 'context-unavailable') {
-        useChatWaitStore.getState().fail(sessionId, `Could not switch profile: ${result.message}`)
-        appendMessage(sessionId, {
-          id: `profile_error_${Date.now()}`,
-          role: 'system',
-          content: `Could not switch profile: ${result.message}`,
-          timestamp: Date.now(),
-        })
+  const handleInstanceChange = useCallback(
+    async (nextInstanceId: string | undefined) => {
+      if (opening || !sessionId || !nextInstanceId || useChatWaitStore.getState().waits[sessionId]?.pending) return
+      const prevInstanceId = instanceId
+      if (prevInstanceId === nextInstanceId) return
+      // A draft has no conversation row and no session yet: the materializer
+      // reads the choice from the store when it creates the chat.
+      if (isDraftSessionId(sessionId)) {
+        storeSetInstanceId(sessionId, nextInstanceId)
         return
       }
-      // No live backend session exists yet. This is the only safe DB-only
-      // path; a per-component ref cannot prove liveness in another panel,
-      // renderer process, or phone client.
+      const account =
+        useProviderInstanceStore.getState().instances.find((i) => i.id === nextInstanceId)?.displayName ??
+        nextInstanceId
+      useChatWaitStore.getState().begin(sessionId, `Switching to ${account}...`)
+      const switchSpan = perfSpan('provider.switch.action', { thread: sessionId, kind: 'profile' })
       try {
-        await window.api.app.setConversationProviderInstanceId(sessionId, nextInstanceId)
-      } catch (err) {
-        log.warn('could not save the initial profile', err)
-        useChatWaitStore.getState().fail(sessionId, 'Could not save the selected profile.')
-        return
+        let result
+        try {
+          result = await window.api.provider.switchInstance(sessionId, {
+            targetInstanceId: nextInstanceId,
+            expectedCurrentInstanceId: prevInstanceId ?? null,
+          })
+          if (!result.ok && result.code === 'context-conflict') {
+            const startFresh = await confirm({
+              title: result.message,
+              body: 'The current profile is still active. Start the selected profile as a fresh native session and carry the visible conversation into the next turn?',
+              confirmLabel: 'Start fresh',
+            })
+            if (!startFresh) return
+            result = await window.api.provider.switchInstance(sessionId, {
+              targetInstanceId: nextInstanceId,
+              expectedCurrentInstanceId: prevInstanceId ?? null,
+              onContextConflict: 'start-fresh',
+            })
+          }
+        } catch (err) {
+          log.warn('profile switch failed', err)
+          useChatWaitStore
+            .getState()
+            .fail(sessionId, `Could not switch profile: ${err instanceof Error ? err.message : String(err)}`)
+          appendMessage(sessionId, {
+            id: `profile_error_${Date.now()}`,
+            role: 'system',
+            content: `Could not switch profile: ${err instanceof Error ? err.message : String(err)}`,
+            timestamp: Date.now(),
+          })
+          return
+        }
+        if (!result.ok) {
+          if (result.currentInstanceId !== prevInstanceId) {
+            storeSetInstanceId(sessionId, result.currentInstanceId ?? undefined)
+          }
+          if (result.code !== 'context-unavailable') {
+            useChatWaitStore.getState().fail(sessionId, `Could not switch profile: ${result.message}`)
+            appendMessage(sessionId, {
+              id: `profile_error_${Date.now()}`,
+              role: 'system',
+              content: `Could not switch profile: ${result.message}`,
+              timestamp: Date.now(),
+            })
+            return
+          }
+          // No live backend session exists yet. This is the only safe DB-only
+          // path; a per-component ref cannot prove liveness in another panel,
+          // renderer process, or phone client.
+          try {
+            await window.api.app.setConversationProviderInstanceId(sessionId, nextInstanceId)
+          } catch (err) {
+            log.warn('could not save the initial profile', err)
+            useChatWaitStore.getState().fail(sessionId, 'Could not save the selected profile.')
+            return
+          }
+        }
+        storeSetInstanceId(sessionId, nextInstanceId)
+        // Machine default too, so a phone-started session picks the profile the
+        // user actually works with rather than `<agent-type>-default`. Scoped to
+        // this agent - the unscoped key used to hand a Codex pick to the next
+        // Claude/OpenCode session that started with no instance of its own.
+        window.api.settings
+          ?.set?.(defaultInstanceSettingKey(agentType), nextInstanceId)
+          .catch((err: unknown) => log.warn('could not save the default profile', err))
+        // Record a rotation marker in the chat stream - only when there's
+        // actually a prior conversation to attribute (skip on freshly-opened
+        // sessions where the picker is just being set up).
+        const hasPriorMessages = (activeSession?.messages?.length ?? 0) > 0
+        if (hasPriorMessages && prevInstanceId !== nextInstanceId) {
+          const instances = useProviderInstanceStore.getState().instances
+          const fromName =
+            instances.find((i) => i.id === prevInstanceId)?.displayName ?? prevInstanceId ?? 'previous instance'
+          const toName = instances.find((i) => i.id === nextInstanceId)?.displayName ?? nextInstanceId ?? 'default'
+          const marker: ChatMessage = {
+            id: `rotation_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            role: 'system',
+            content: `${ROTATION_MARKER_PREFIX} ${fromName} → ${toName}`,
+            timestamp: Date.now(),
+          }
+          appendMessage(sessionId, marker)
+          window.api.app
+            .saveMessage({
+              id: marker.id,
+              conversationId: sessionId,
+              role: marker.role,
+              content: marker.content,
+            })
+            .catch((err) => {
+              log.warn(`failed to persist instance-rotation marker for ${sessionId}`, err)
+            })
+        }
+        // The new instance may map to a different remote config dir - drop the
+        // machine's cached auth verdicts so the banner re-probes under it.
+        const machineForSession = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.machineId
+        if (machineForSession && machineForSession !== 'local') invalidateRemoteAuthCache(machineForSession)
+      } finally {
+        useChatWaitStore.getState().finish(sessionId)
+        switchSpan.end()
       }
-    }
-    storeSetInstanceId(sessionId, nextInstanceId)
-    // Machine default too, so a phone-started session picks the profile the
-    // user actually works with rather than `<agent-type>-default`. Scoped to
-    // this agent - the unscoped key used to hand a Codex pick to the next
-    // Claude/OpenCode session that started with no instance of its own.
-    window.api.settings
-      ?.set?.(defaultInstanceSettingKey(agentType), nextInstanceId)
-      .catch((err: unknown) => log.warn('could not save the default profile', err))
-    // Record a rotation marker in the chat stream - only when there's
-    // actually a prior conversation to attribute (skip on freshly-opened
-    // sessions where the picker is just being set up).
-    const hasPriorMessages = (activeSession?.messages?.length ?? 0) > 0
-    if (hasPriorMessages && prevInstanceId !== nextInstanceId) {
-      const instances = useProviderInstanceStore.getState().instances
-      const fromName = instances.find((i) => i.id === prevInstanceId)?.displayName
-        ?? prevInstanceId
-        ?? 'previous instance'
-      const toName = instances.find((i) => i.id === nextInstanceId)?.displayName
-        ?? nextInstanceId
-        ?? 'default'
-      const marker: ChatMessage = {
-        id: `rotation_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        role: 'system',
-        content: `${ROTATION_MARKER_PREFIX} ${fromName} → ${toName}`,
-        timestamp: Date.now(),
-      }
-      appendMessage(sessionId, marker)
-      window.api.app.saveMessage({
-        id: marker.id,
-        conversationId: sessionId,
-        role: marker.role,
-        content: marker.content,
-      }).catch((err) => {
-        log.warn(`failed to persist instance-rotation marker for ${sessionId}`, err)
-      })
-    }
-    // The new instance may map to a different remote config dir - drop the
-    // machine's cached auth verdicts so the banner re-probes under it.
-    const machineForSession = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.machineId
-    if (machineForSession && machineForSession !== 'local') invalidateRemoteAuthCache(machineForSession)
-    } finally {
-      useChatWaitStore.getState().finish(sessionId)
-      switchSpan.end()
-    }
-  }, [opening, sessionId, storeSetInstanceId, instanceId, activeSession?.messages?.length, appendMessage, agentType])
+    },
+    [opening, sessionId, storeSetInstanceId, instanceId, activeSession?.messages?.length, appendMessage, agentType],
+  )
 
   // ── Provider event listener (new SDK bridge) ──────────────────
 
@@ -521,10 +563,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     const removeProvider = onReducedProviderEvent((event) => {
       const tid = event.threadId
       if (!tid) return
-      prepareRuntimeEventLifecycle(
-        event,
-        messageLifecycle,
-        (threadId) => contentCoalescerRef.current?.flushThread(threadId),
+      prepareRuntimeEventLifecycle(event, messageLifecycle, (threadId) =>
+        contentCoalescerRef.current?.flushThread(threadId),
       )
 
       reduceProviderEvent(event, {
@@ -538,44 +578,50 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
 
   // ── Approval handler ──────────────────────────────────────────
   // Rejections propagate to the card so it can re-enable its buttons.
-  const handleApproval = useCallback(async (requestId: string, decision: 'approve' | 'deny', note?: string, response?: HostWriteResponse) => {
-    if (!sessionId) return
-    try {
-      await window.api.provider?.respondToRequest(sessionId, requestId, decision, response)
-    } catch (err) {
-      log.warn('respondToRequest failed', { requestId, decision, err })
-      expireIfRefused(sessionId, requestId, err)
-      appendMessage(sessionId, {
-        id: `error_${Date.now()}`,
-        role: 'system',
-        content: `Failed to ${decision === 'approve' ? 'approve' : 'deny'} the request: ${err instanceof Error ? err.message : String(err)}`,
-        timestamp: Date.now(),
-      })
-      throw err
-    }
-    // Queue the note only once the decision landed - a failed decision
-    // with a queued note would send a dangling follow-up message.
-    if (note) {
-      pendingNoteRef.current = { sessionId, text: note }
-    }
-  }, [sessionId, appendMessage])
+  const handleApproval = useCallback(
+    async (requestId: string, decision: 'approve' | 'deny', note?: string, response?: HostWriteResponse) => {
+      if (!sessionId) return
+      try {
+        await window.api.provider?.respondToRequest(sessionId, requestId, decision, response)
+      } catch (err) {
+        log.warn('respondToRequest failed', { requestId, decision, err })
+        expireIfRefused(sessionId, requestId, err)
+        appendMessage(sessionId, {
+          id: `error_${Date.now()}`,
+          role: 'system',
+          content: `Failed to ${decision === 'approve' ? 'approve' : 'deny'} the request: ${err instanceof Error ? err.message : String(err)}`,
+          timestamp: Date.now(),
+        })
+        throw err
+      }
+      // Queue the note only once the decision landed - a failed decision
+      // with a queued note would send a dangling follow-up message.
+      if (note) {
+        pendingNoteRef.current = { sessionId, text: note }
+      }
+    },
+    [sessionId, appendMessage],
+  )
 
-  const handleAnswerQuestion = useCallback(async (requestId: string, answers: string[][]) => {
-    if (!sessionId) return
-    try {
-      await window.api.provider?.answerQuestion?.(sessionId, requestId, answers)
-    } catch (err) {
-      log.warn('answerQuestion failed', { requestId, err })
-      expireIfRefused(sessionId, requestId, err)
-      appendMessage(sessionId, {
-        id: `error_${Date.now()}`,
-        role: 'system',
-        content: `Failed to submit answer: ${err instanceof Error ? err.message : String(err)}`,
-        timestamp: Date.now(),
-      })
-      throw err
-    }
-  }, [sessionId, appendMessage])
+  const handleAnswerQuestion = useCallback(
+    async (requestId: string, answers: string[][]) => {
+      if (!sessionId) return
+      try {
+        await window.api.provider?.answerQuestion?.(sessionId, requestId, answers)
+      } catch (err) {
+        log.warn('answerQuestion failed', { requestId, err })
+        expireIfRefused(sessionId, requestId, err)
+        appendMessage(sessionId, {
+          id: `error_${Date.now()}`,
+          role: 'system',
+          content: `Failed to submit answer: ${err instanceof Error ? err.message : String(err)}`,
+          timestamp: Date.now(),
+        })
+        throw err
+      }
+    },
+    [sessionId, appendMessage],
+  )
 
   // Rejections propagate to the card, which shows the inline error and
   // stays actionable so the user can retry.
@@ -623,9 +669,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           error: res.error,
         })
         throw new Error(
-          'conflict' in res && res.conflict
-            ? 'file changed on disk after the diff was captured'
-            : res.error,
+          'conflict' in res && res.conflict ? 'file changed on disk after the diff was captured' : res.error,
         )
       }
       persist()
@@ -633,33 +677,36 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     [sessionId, updateMessage],
   )
 
-  const handlePlanAction = useCallback((_planId: string, action: 'implement' | 'iterate') => {
-    if (!sessionId) return
-    // Switch session out of plan mode and send an appropriate follow-up
-    if (action === 'implement') {
-      storeSetRuntimeMode(sessionId, 'sandbox')
-      ;window.api.provider?.setRuntimeMode?.(sessionId, 'sandbox').catch((err) => {
-        log.warn('setRuntimeMode failed before implementing plan', err)
-      })
-      setTimeout(() => {
-        const text = 'Implement the plan you proposed.'
-        void submitProgrammaticTurn(text, handleSend, (_rejectedText, error) => {
-          appendMessage(sessionId, {
-            id: `error_${Date.now()}`,
-            role: 'system',
-            content: `Plan implementation was not sent: ${error}`,
-            timestamp: Date.now(),
-          })
+  const handlePlanAction = useCallback(
+    (_planId: string, action: 'implement' | 'iterate') => {
+      if (!sessionId) return
+      // Switch session out of plan mode and send an appropriate follow-up
+      if (action === 'implement') {
+        storeSetRuntimeMode(sessionId, 'sandbox')
+        window.api.provider?.setRuntimeMode?.(sessionId, 'sandbox').catch((err) => {
+          log.warn('setRuntimeMode failed before implementing plan', err)
         })
-      }, 50)
-    } else {
-      setTimeout(() => {
-        // Focus the chat input so user can iterate on the plan
-        focusComposer(sessionId)
-      }, 50)
-    }
-  // handleSend is defined below; safe as long as sessionId/deps are right
-  }, [sessionId, storeSetRuntimeMode, appendMessage])
+        setTimeout(() => {
+          const text = 'Implement the plan you proposed.'
+          void submitProgrammaticTurn(text, handleSend, (_rejectedText, error) => {
+            appendMessage(sessionId, {
+              id: `error_${Date.now()}`,
+              role: 'system',
+              content: `Plan implementation was not sent: ${error}`,
+              timestamp: Date.now(),
+            })
+          })
+        }, 50)
+      } else {
+        setTimeout(() => {
+          // Focus the chat input so user can iterate on the plan
+          focusComposer(sessionId)
+        }, 50)
+      }
+      // handleSend is defined below; safe as long as sessionId/deps are right
+    },
+    [sessionId, storeSetRuntimeMode, appendMessage],
+  )
 
   // Flush a pending approval note once the agent is idle again
   useEffect(() => {
@@ -744,7 +791,11 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     ): Promise<ChatSendResult> => {
       if (!sessionId) return { accepted: false, error: 'This chat is no longer available.' }
       const pendingWait = useChatWaitStore.getState().waits[sessionId]
-      if (opening || pendingWait?.pending) return { accepted: false, error: `${pendingWait?.label ?? 'Loading conversation...'} Your draft is held. Send when ready.` }
+      if (opening || pendingWait?.pending)
+        return {
+          accepted: false,
+          error: `${pendingWait?.label ?? 'Loading conversation...'} Your draft is held. Send when ready.`,
+        }
       // A draft has no conversation yet: the first send creates one and the
       // message follows it there (services/draftChat).
       if (isDraftSessionId(sessionId)) {
@@ -765,7 +816,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         const store = useAgentStore.getState()
         const target = resolveSendToTarget(
           sendTo.target,
-          store.sessions.filter((s) => !s.draft).map((s) => ({ id: s.id, title: s.title ?? s.id, machineId: s.machineId })),
+          store.sessions
+            .filter((s) => !s.draft)
+            .map((s) => ({ id: s.id, title: s.title ?? s.id, machineId: s.machineId })),
           sessionId,
         )
         if (!target.ok) return fail(target.error)
@@ -794,7 +847,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             const store = useAgentStore.getState()
             const target = resolveLinkTarget(
               linkCommand,
-              store.sessions.filter((s) => !s.draft).map((s) => ({ id: s.id, title: s.title ?? s.id, machineId: s.machineId })),
+              store.sessions
+                .filter((s) => !s.draft)
+                .map((s) => ({ id: s.id, title: s.title ?? s.id, machineId: s.machineId })),
               sessionId,
             )
             if (!target.ok) return fail(target.error)
@@ -891,13 +946,19 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         if (!(await ensureFullHistory(sessionId))) {
           return {
             accepted: false,
-            error: 'The full conversation could not be loaded for the context handoff. Your text and attachments are preserved; send again.',
+            error:
+              'The full conversation could not be loaded for the context handoff. Your text and attachments are preserved; send again.',
           }
         }
         // Live read - the closure's `messages` lags in-place streamed edits.
         const history = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.messages ?? []
         const handoffSpan = perfSpan('handoff.build', { thread: sessionId, messages: history.length })
-        const plan = planTurnHandoff({ messages: history, pendingFrom: pendingHandoffFrom, target: agentType as AgentProvider, resumedNatively: false })
+        const plan = planTurnHandoff({
+          messages: history,
+          pendingFrom: pendingHandoffFrom,
+          target: agentType as AgentProvider,
+          resumedNatively: false,
+        })
         handoffSpan.end({ characters: plan.preamble?.length ?? 0 })
         if (plan.preamble) {
           wireMessage = `${plan.preamble}\n\n${message}`
@@ -908,20 +969,22 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       // Unresolved: no mode goes to the backend, on the turn or the start, so it picks the project's.
       const modeToSend = runtimeModeToSend(useAgentStore.getState().sessions.find((s) => s.id === sessionId))
 
-      const origin = extras?.origin ?? desktopTurnAttempts.originFor(
-        sessionId,
-        desktopComposerFingerprint({
-          message,
-          runtimeMode,
-          images: images?.map((image) => ({
-            name: image.file.name,
-            size: image.file.size,
-            type: image.file.type,
-            lastModified: image.file.lastModified,
-          })),
-          extras,
-        }),
-      )
+      const origin =
+        extras?.origin ??
+        desktopTurnAttempts.originFor(
+          sessionId,
+          desktopComposerFingerprint({
+            message,
+            runtimeMode,
+            images: images?.map((image) => ({
+              name: image.file.name,
+              size: image.file.size,
+              type: image.file.type,
+              lastModified: image.file.lastModified,
+            })),
+            extras,
+          }),
+        )
       if (handoff) handoff.markerId = `handoff_${origin}`
 
       const turn = desktopPreparedTurns.prepare({
@@ -978,7 +1041,12 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             log.warn('session start failed', error)
             providerStartedRef.current.delete(sessionId)
             updateStatus(sessionId, 'idle')
-            useChatWaitStore.getState().fail(sessionId, `Could not start ${agentLabel(agentType)}: ${error instanceof Error ? error.message : String(error)}`)
+            useChatWaitStore
+              .getState()
+              .fail(
+                sessionId,
+                `Could not start ${agentLabel(agentType)}: ${error instanceof Error ? error.message : String(error)}`,
+              )
             throw error
           } finally {
             useChatWaitStore.getState().finish(sessionId)
@@ -1020,9 +1088,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
               return {
                 accepted: false,
                 error: replay.error,
-                delivery: replay.delivery === 'pending' || replay.delivery === 'ambiguous'
-                  ? 'ambiguous'
-                  : 'rejected',
+                delivery: replay.delivery === 'pending' || replay.delivery === 'ambiguous' ? 'ambiguous' : 'rejected',
                 recoveryOrigin: confirmedRecoveryOrigin,
               }
             }
@@ -1035,9 +1101,10 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       // Reconcile an explicitly confirmed older delivery before inserting the
       // new optimistic row. A completed recovery can replay its canonical
       // echo, and transcript order must remain old turn then new turn.
-      const pendingAlreadyExists = useAgentStore.getState().sessions
-        .find((session) => session.id === sessionId)?.messages
-        .some((candidate) => candidate.id === pendingMessage.id)
+      const pendingAlreadyExists = useAgentStore
+        .getState()
+        .sessions.find((session) => session.id === sessionId)
+        ?.messages.some((candidate) => candidate.id === pendingMessage.id)
       if (pendingAlreadyExists) {
         updateMessage(sessionId, pendingMessage.id, pendingMessage)
       } else {
@@ -1047,11 +1114,13 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       let outcome = await submitDesktopUserTurn(turn, submissionDependencies)
       if (!outcome.accepted && outcome.recoveryOrigin && outcome.recoveryOrigin !== origin) {
         const recoveryOrigin = outcome.recoveryOrigin
-        const confirmed = extras?.confirmedRecoveryOrigin === recoveryOrigin || await confirm({
-          title: 'An earlier message has unconfirmed delivery and is blocking this send.',
-          body: 'Continue without resending the earlier message?',
-          confirmLabel: 'Continue',
-        })
+        const confirmed =
+          extras?.confirmedRecoveryOrigin === recoveryOrigin ||
+          (await confirm({
+            title: 'An earlier message has unconfirmed delivery and is blocking this send.',
+            body: 'Continue without resending the earlier message?',
+            confirmLabel: 'Continue',
+          }))
         if (confirmed) {
           let resolution
           try {
@@ -1118,7 +1187,21 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     // these in the deps, the captured closure stays on the prior values and
     // the new session boots under the old credentials - visible as "instance
     // switch had no effect" in the registry log.
-    [opening, sessionId, agentType, projectPath, runtimeMode, appendMessage, updateMessage, messages.length, resumeSessionId, setTitle, instanceId, model, reasoningEffort],
+    [
+      opening,
+      sessionId,
+      agentType,
+      projectPath,
+      runtimeMode,
+      appendMessage,
+      updateMessage,
+      messages.length,
+      resumeSessionId,
+      setTitle,
+      instanceId,
+      model,
+      reasoningEffort,
+    ],
   )
   handleSendRef.current = handleSend
 
@@ -1143,10 +1226,15 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             <span className="h-[4px] w-[4px] animate-[pulse_1.4s_ease-in-out_0.2s_infinite] rounded-[50%] bg-[var(--accent)]" />
             <span className="h-[4px] w-[4px] animate-[pulse_1.4s_ease-in-out_0.4s_infinite] rounded-[50%] bg-[var(--accent)]" />
           </span>
-          <span>{pendingDeliveryState === 'pending' && status === 'idle'
-            ? 'Sending…'
-            : activeSession?.draft ? 'Creating the chat…'
-            : status === 'thinking' ? 'Thinking…' : 'Working…'}</span>
+          <span>
+            {pendingDeliveryState === 'pending' && status === 'idle'
+              ? 'Sending…'
+              : activeSession?.draft
+                ? 'Creating the chat…'
+                : status === 'thinking'
+                  ? 'Thinking…'
+                  : 'Working…'}
+          </span>
         </div>
       )}
 
@@ -1169,12 +1257,12 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           wait?.pending
             ? `${wait.label} You can keep typing.`
             : status === 'exited'
-            ? 'Agent has exited. Start a new session.'
-            : !hasSession
-              ? emptyPlaceholder ?? 'Click "+ New Chat" or select a session to start...'
-              : status === 'running' || status === 'thinking'
-                ? runningPlaceholder(activeSession?.type, followUpDefault)
-                : 'Message the agent...'
+              ? 'Agent has exited. Start a new session.'
+              : !hasSession
+                ? (emptyPlaceholder ?? 'Click "+ New Chat" or select a session to start...')
+                : status === 'running' || status === 'thinking'
+                  ? runningPlaceholder(activeSession?.type, followUpDefault)
+                  : 'Message the agent...'
         }
         agentType={agentType}
         onAgentTypeChange={handleAgentTypeChange}
@@ -1193,11 +1281,15 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         onModelChange={handleModelChange}
         reasoningEffort={reasoningEffort}
         onReasoningEffortChange={handleReasoningEffortChange}
-        contextUsage={hasSession && activeSession?.tokenUsage ? {
-          // Hidden until the first context_window event: the char estimate read "0" for every fresh chat.
-          usedTokens: activeSession.tokenUsage.usedTokens,
-          maxTokens: activeSession.tokenUsage.maxTokens ?? 200000,
-        } : undefined}
+        contextUsage={
+          hasSession && activeSession?.tokenUsage
+            ? {
+                // Hidden until the first context_window event: the char estimate read "0" for every fresh chat.
+                usedTokens: activeSession.tokenUsage.usedTokens,
+                maxTokens: activeSession.tokenUsage.maxTokens ?? 200000,
+              }
+            : undefined
+        }
         isRunning={status === 'running' || status === 'thinking'}
         onInterrupt={async () => {
           if (!sessionId) return
@@ -1246,7 +1338,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         onMergeBack={() => setMergeBackFor(sessionId ?? null)}
         leadingControl={landing?.composerLead}
       />
-
     </>
   )
 
@@ -1297,7 +1388,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
               <div className="chat-identity" title={projectPath}>
                 {identity.breadcrumb.slice(0, -1).map((part, index) => (
                   <span className="chat-identity-parent" key={`${part}-${index}`}>
-                    {part}<span className="chat-identity-separator">/</span>
+                    {part}
+                    <span className="chat-identity-separator">/</span>
                   </span>
                 ))}
                 {editingTitle ? (
@@ -1313,7 +1405,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
                     className="min-w-0 flex-[1_1_0%] rounded-[3px] border border-[var(--border-focus)] bg-[var(--bg-primary)] px-[6px] py-[1px] text-[12px] text-[var(--text-primary)] outline-none"
                   />
                 ) : (
-                  <span className="chat-identity-title" title={chatTitle}>{chatTitle}</span>
+                  <span className="chat-identity-title" title={chatTitle}>
+                    {chatTitle}
+                  </span>
                 )}
                 {!editingTitle && (
                   <button
@@ -1321,8 +1415,18 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
                     className="flex shrink-0 cursor-pointer items-center border-0 bg-transparent px-[2px] py-0 text-[var(--text-muted)] opacity-50 transition-opacity duration-[120ms] hover:opacity-100"
                     title="Rename"
                   >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                    <svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                     </svg>
                   </button>
                 )}
@@ -1380,12 +1484,21 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             {/* Status text. A running turn has none: the chat's own
                 Working… row already says so. */}
             {hasSession && (activeSession?.draft || (status !== 'running' && status !== 'thinking')) && (
-              <span className={cn('text-[11px] font-[400]', status === 'error' ? 'text-[var(--error,#f85149)]' : 'text-[var(--text-muted)]')}>
+              <span
+                className={cn(
+                  'text-[11px] font-[400]',
+                  status === 'error' ? 'text-[var(--error,#f85149)]' : 'text-[var(--text-muted)]',
+                )}
+              >
                 {activeSession?.draft
-                  ? status === 'running' ? 'creating…' : 'draft'
+                  ? status === 'running'
+                    ? 'creating…'
+                    : 'draft'
                   : status === 'idle' && pendingDeliveryState === 'pending'
                     ? 'sending…'
-                    : status === 'idle' ? 'ready' : status}
+                    : status === 'idle'
+                      ? 'ready'
+                      : status}
               </span>
             )}
           </div>
@@ -1402,7 +1515,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           {offerCompaction && activeSession && (
             <CompactionOfferBanner
               usedTokens={activeSession.tokenUsage?.usedTokens ?? 0}
-              onCompact={() => { void handleSend('/compact') }}
+              onCompact={() => {
+                void handleSend('/compact')
+              }}
               onDismiss={() => setCompactionDismissedFor(activeSession.id)}
             />
           )}
@@ -1411,32 +1526,40 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           {/* A pending switch shows in the picker button and the composer; only a failure needs a row here. */}
           {wait?.error && <LoadingStatus label={wait.label} error />}
           {/* Always mounted, only its text changes: a live region inserted already filled is often not announced. */}
-          <span role="status" aria-live="polite" className="sr-only">{wait?.pending ? wait.label : ''}</span>
-          {opening ? <ChatSkeleton label="Loading conversation..." /> : <MessageList
-            messages={messages}
-            sessionId={sessionId}
-            visible={visible}
-            busy={status === 'running' || status === 'thinking'}
-            hasOlderHistory={Boolean(activeSession?.olderHistoryCursor)}
-            agentType={activeSession?.type ?? agentType}
-            onApproval={handleApproval}
-            onAnswerQuestion={handleAnswerQuestion}
-            onPlanAction={handlePlanAction}
-            onFileDiffResolve={handleFileDiffResolve}
-          />}
+          <span role="status" aria-live="polite" className="sr-only">
+            {wait?.pending ? wait.label : ''}
+          </span>
+          {opening ? (
+            <ChatSkeleton label="Loading conversation..." />
+          ) : (
+            <MessageList
+              messages={messages}
+              sessionId={sessionId}
+              visible={visible}
+              busy={status === 'running' || status === 'thinking'}
+              hasOlderHistory={Boolean(activeSession?.olderHistoryCursor)}
+              agentType={activeSession?.type ?? agentType}
+              onApproval={handleApproval}
+              onAnswerQuestion={handleAnswerQuestion}
+              onPlanAction={handlePlanAction}
+              onFileDiffResolve={handleFileDiffResolve}
+            />
+          )}
 
           {composer}
         </>
       )}
       {mergeBackFor && mergeBackFor === sessionId && (
         <MergeBackDialog
-          mode={{ kind: 'send', forkSessionId: mergeBackFor, parentTitle: activeSession?.forkMetadata?.parentTitle ?? 'the parent chat' }}
+          mode={{
+            kind: 'send',
+            forkSessionId: mergeBackFor,
+            parentTitle: activeSession?.forkMetadata?.parentTitle ?? 'the parent chat',
+          }}
           onClose={() => setMergeBackFor(null)}
         />
       )}
-      {slashHelpOpen && (
-        <SlashHelpOverlay onClose={() => setSlashHelpOpen(false)} />
-      )}
+      {slashHelpOpen && <SlashHelpOverlay onClose={() => setSlashHelpOpen(false)} />}
     </div>
   )
 }

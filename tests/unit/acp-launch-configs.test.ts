@@ -63,14 +63,20 @@ describe('OpenCode launch config', () => {
     expect(OPENCODE_ACP_LAUNCH.findBinary()).toBe('/opt/homebrew/bin/opencode')
     expect(OPENCODE_ACP_LAUNCH.args('/tmp/p')).toEqual(['acp', '--cwd', '/tmp/p'])
     expect(OPENCODE_ACP_LAUNCH.modes).toEqual({ kind: 'fixed', plan: 'plan', other: 'build' })
-    expect(OPENCODE_ACP_LAUNCH.buildEnv({ NVIDIA_API_KEY: 'k' })).toEqual({ OPENCODE_ENABLE_QUESTION_TOOL: '1', NVIDIA_API_KEY: 'k' })
+    expect(OPENCODE_ACP_LAUNCH.buildEnv({ NVIDIA_API_KEY: 'k' })).toEqual({
+      OPENCODE_ENABLE_QUESTION_TOOL: '1',
+      NVIDIA_API_KEY: 'k',
+    })
     expect(OPENCODE_ACP_LAUNCH.preflight).toBeTypeOf('function')
     expect(OPENCODE_ACP_LAUNCH.prepareSession).toBeTypeOf('function')
   })
 
   it('reads model variants from set_model _meta', () => {
-    expect(OPENCODE_ACP_LAUNCH.modelVariants?.({ opencode: { modelId: 'm', variant: 'high', availableVariants: ['low', 'high'] } }))
-      .toEqual({ modelId: 'm', variant: 'high', availableVariants: ['low', 'high'] })
+    expect(
+      OPENCODE_ACP_LAUNCH.modelVariants?.({
+        opencode: { modelId: 'm', variant: 'high', availableVariants: ['low', 'high'] },
+      }),
+    ).toEqual({ modelId: 'm', variant: 'high', availableVariants: ['low', 'high'] })
     expect(OPENCODE_ACP_LAUNCH.modelVariants?.(undefined)).toBeNull()
   })
 })

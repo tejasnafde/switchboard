@@ -21,18 +21,12 @@ interface QuestionCardProps {
 export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
   const answered = question.status === 'answered'
   const [qIdx, setQIdx] = useState(0)
-  const [selections, setSelections] = useState<string[][]>(
-    () => question.answers ?? question.questions.map(() => [])
-  )
+  const [selections, setSelections] = useState<string[][]>(() => question.answers ?? question.questions.map(() => []))
   // Free-text "None of the above" fallback, per question. When a question
   // has a non-empty otherText, that overrides any picked option(s) on
   // submit - the agent sees the typed string as the user's answer.
-  const [otherTexts, setOtherTexts] = useState<string[]>(
-    () => question.questions.map(() => '')
-  )
-  const [otherOpen, setOtherOpen] = useState<boolean[]>(
-    () => question.questions.map(() => false)
-  )
+  const [otherTexts, setOtherTexts] = useState<string[]>(() => question.questions.map(() => ''))
+  const [otherOpen, setOtherOpen] = useState<boolean[]>(() => question.questions.map(() => false))
   const autoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const submitRef = useRef(false)
   const [submitting, setSubmitting] = useState(false)
@@ -77,9 +71,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
     const currentForQ = selections[qIdx] ?? []
     let nextForQ: string[]
     if (q.multiSelect) {
-      nextForQ = currentForQ.includes(label)
-        ? currentForQ.filter((l) => l !== label)
-        : [...currentForQ, label]
+      nextForQ = currentForQ.includes(label) ? currentForQ.filter((l) => l !== label) : [...currentForQ, label]
     } else {
       nextForQ = [label]
     }
@@ -127,7 +119,6 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-     
   }, [qIdx, selections, answered, activeQ?.id])
 
   // Cleanup auto-advance timer on unmount
@@ -154,41 +145,56 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
       }}
     >
       {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        padding: '8px 12px',
-        borderBottom: '1px solid var(--border)',
-      }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '8px 12px',
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--warning)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <circle cx="12" cy="12" r="10" />
           <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
           <line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
         {totalQuestions > 1 && (
-          <span style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '10px',
-            padding: '1px 6px',
-            borderRadius: '3px',
-            background: 'var(--bg-tertiary)',
-            color: 'var(--text-muted)',
-          }}>
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: '10px',
+              padding: '1px 6px',
+              borderRadius: '3px',
+              background: 'var(--bg-tertiary)',
+              color: 'var(--text-muted)',
+            }}
+          >
             {qIdx + 1}/{totalQuestions}
           </span>
         )}
-        <span style={{
-          fontSize: '10.5px',
-          fontWeight: 600,
-          color: 'var(--text-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.7px',
-          flex: 1,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
+        <span
+          style={{
+            fontSize: '10.5px',
+            fontWeight: 600,
+            color: 'var(--text-muted)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.7px',
+            flex: 1,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
           {answered ? 'Answered' : activeQ.header}
         </span>
       </div>
@@ -196,30 +202,32 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
       {/* Question text */}
       <div style={{ padding: '10px 12px 4px' }}>
         {activeQ.question && (
-          <div style={{
-            fontSize: '13px',
-            color: 'var(--text-primary)',
-            lineHeight: 1.5,
-            whiteSpace: 'pre-wrap',
-            marginBottom: '4px',
-          }}>
+          <div
+            style={{
+              fontSize: '13px',
+              color: 'var(--text-primary)',
+              lineHeight: 1.5,
+              whiteSpace: 'pre-wrap',
+              marginBottom: '4px',
+            }}
+          >
             {activeQ.question}
           </div>
         )}
         {activeQ.multiSelect && (
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-            Select one or more, then click Next.
-          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Select one or more, then click Next.</div>
         )}
       </div>
 
       {/* Options */}
-      <div style={{
-        padding: '4px 8px 8px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '3px',
-      }}>
+      <div
+        style={{
+          padding: '4px 8px 8px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '3px',
+        }}
+      >
         {activeQ.options.map((opt, i) => {
           const selected = activeSelections.includes(opt.label)
           const shortcut = i < 9 ? i + 1 : null
@@ -237,12 +245,8 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
                 width: '100%',
                 padding: '7px 10px',
                 borderRadius: '6px',
-                border: selected
-                  ? '1px solid rgba(88, 166, 255, 0.4)'
-                  : '1px solid transparent',
-                background: selected
-                  ? 'rgba(88, 166, 255, 0.08)'
-                  : 'rgba(255, 255, 255, 0.02)',
+                border: selected ? '1px solid rgba(88, 166, 255, 0.4)' : '1px solid transparent',
+                background: selected ? 'rgba(88, 166, 255, 0.08)' : 'rgba(255, 255, 255, 0.02)',
                 color: 'var(--text-primary)',
                 cursor: answered ? 'default' : 'pointer',
                 textAlign: 'left',
@@ -264,38 +268,44 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
             >
               {/* kbd shortcut badge */}
               {shortcut !== null && (
-                <kbd style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '4px',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '11px',
-                  fontWeight: 500,
-                  flexShrink: 0,
-                  background: selected ? 'rgba(88, 166, 255, 0.2)' : 'var(--bg-tertiary)',
-                  color: selected ? 'var(--accent)' : 'var(--text-muted)',
-                }}>
+                <kbd
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '4px',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    flexShrink: 0,
+                    background: selected ? 'rgba(88, 166, 255, 0.2)' : 'var(--bg-tertiary)',
+                    color: selected ? 'var(--accent)' : 'var(--text-muted)',
+                  }}
+                >
                   {shortcut}
                 </kbd>
               )}
 
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: '12.5px',
-                  fontWeight: 500,
-                  color: selected ? 'var(--text-primary)' : 'var(--text-primary)',
-                }}>
+                <div
+                  style={{
+                    fontSize: '12.5px',
+                    fontWeight: 500,
+                    color: selected ? 'var(--text-primary)' : 'var(--text-primary)',
+                  }}
+                >
                   {opt.label}
                   {opt.description && opt.description !== opt.label && (
-                    <span style={{
-                      marginLeft: '8px',
-                      fontSize: '11.5px',
-                      color: 'var(--text-muted)',
-                      fontWeight: 400,
-                    }}>
+                    <span
+                      style={{
+                        marginLeft: '8px',
+                        fontSize: '11.5px',
+                        color: 'var(--text-muted)',
+                        fontWeight: 400,
+                      }}
+                    >
                       {opt.description}
                     </span>
                   )}
@@ -304,7 +314,17 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
 
               {/* Check icon when selected */}
               {selected && (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--accent)"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ flexShrink: 0 }}
+                >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               )}
@@ -347,25 +367,31 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
           whenever the auto-advance path wasn't taken. A permanent Submit
           (disabled until a pick or typed answer exists) can't strand anyone. */}
       {!answered && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '6px 10px',
-          borderTop: '1px solid var(--border)',
-          background: 'rgba(0, 0, 0, 0.04)',
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 10px',
+            borderTop: '1px solid var(--border)',
+            background: 'rgba(0, 0, 0, 0.04)',
+          }}
+        >
           <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
             Press <kbd style={kbdStyle}>1-{Math.min(activeQ.options.length, 9)}</kbd> to pick
-            {activeQ.options.length < 9 ? <> · <kbd style={kbdStyle}>{activeQ.options.length + 1}</kbd> other</> : ''}
+            {activeQ.options.length < 9 ? (
+              <>
+                {' '}
+                · <kbd style={kbdStyle}>{activeQ.options.length + 1}</kbd> other
+              </>
+            ) : (
+              ''
+            )}
             {activeQ.multiSelect ? ' · toggle to multi-select' : ''}
           </span>
           <span style={{ flex: 1 }} />
           {qIdx > 0 && (
-            <button
-              onClick={() => setQIdx(qIdx - 1)}
-              style={btnGhost}
-            >
+            <button onClick={() => setQIdx(qIdx - 1)} style={btnGhost}>
               Back
             </button>
           )}
@@ -490,15 +516,17 @@ function OtherOption({
   }
 
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'flex-start',
-      gap: '6px',
-      padding: '4px',
-      borderRadius: '6px',
-      border: '1px solid rgba(88, 166, 255, 0.4)',
-      background: 'rgba(88, 166, 255, 0.06)',
-    }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: '6px',
+        padding: '4px',
+        borderRadius: '6px',
+        border: '1px solid rgba(88, 166, 255, 0.4)',
+        background: 'rgba(88, 166, 255, 0.06)',
+      }}
+    >
       <textarea
         ref={inputRef}
         value={text}
@@ -545,16 +573,18 @@ function OtherOption({
         ×
       </button>
       {hasOther && (
-        <span style={{
-          position: 'absolute',
-          fontSize: '10px',
-          color: 'var(--accent)',
-          padding: '2px 6px',
-          pointerEvents: 'none',
-          right: 0,
-          bottom: 0,
-          visibility: 'hidden', // reserved hook for future "will override" hint
-        }}>
+        <span
+          style={{
+            position: 'absolute',
+            fontSize: '10px',
+            color: 'var(--accent)',
+            padding: '2px 6px',
+            pointerEvents: 'none',
+            right: 0,
+            bottom: 0,
+            visibility: 'hidden', // reserved hook for future "will override" hint
+          }}
+        >
           Overrides picks
         </span>
       )}

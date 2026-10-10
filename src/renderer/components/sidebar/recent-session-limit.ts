@@ -1,5 +1,5 @@
 export const RECENT_SESSION_LIMITS = [4, 6, 8, 12] as const
-export type RecentSessionLimit = typeof RECENT_SESSION_LIMITS[number]
+export type RecentSessionLimit = (typeof RECENT_SESSION_LIMITS)[number]
 export const DEFAULT_RECENT_SESSION_LIMIT: RecentSessionLimit = 4
 export const RECENT_SESSION_PAGE_SIZE = 5
 export const RECENT_SESSION_LIMIT_SETTING = 'sidebar.recentSessionLimit'

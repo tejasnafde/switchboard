@@ -38,7 +38,7 @@ export type NotebookWatchEvent = 'change' | 'unlink'
 
 export type NotebookWatchFactory = (
   paths: string[],
-  onEvent: (absPath: string, event: NotebookWatchEvent) => void
+  onEvent: (absPath: string, event: NotebookWatchEvent) => void,
 ) => NotebookWatchHandle
 
 /** Default: chokidar over the mirror tree + the notebook files themselves. */

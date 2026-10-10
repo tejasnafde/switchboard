@@ -63,12 +63,8 @@ describePosix('oauthLoginCommand - POSIX-safe quoting (behavior 6)', () => {
   for (const dir of HOSTILE) {
     it(`passes ${JSON.stringify(dir)} to the shell literally`, () => {
       expect(shellValueOf(oauthLoginCommand('codex', dir), ' codex login', 'CODEX_HOME')).toBe(dir)
-      expect(
-        shellValueOf(oauthLoginCommand('claude-code', dir), ' claude auth login', 'CLAUDE_CONFIG_DIR'),
-      ).toBe(dir)
-      expect(
-        shellValueOf(oauthInteractiveLoginCommand('codex', dir), ' codex', 'CODEX_HOME'),
-      ).toBe(dir)
+      expect(shellValueOf(oauthLoginCommand('claude-code', dir), ' claude auth login', 'CLAUDE_CONFIG_DIR')).toBe(dir)
+      expect(shellValueOf(oauthInteractiveLoginCommand('codex', dir), ' codex', 'CODEX_HOME')).toBe(dir)
     })
   }
 
@@ -85,15 +81,18 @@ describePosix('oauthLoginCommand - POSIX-safe quoting (behavior 6)', () => {
   it('keeps the structurally generated ~ expansion working', () => {
     // The tilde here is OURS (the `~/.codex` default we pass when an instance
     // has no oauth_dir), so it must still expand to the pasting user's $HOME.
-    expect(shellValueOf(oauthLoginCommand('codex', '~/.codex'), ' codex login', 'CODEX_HOME'))
-      .toBe('/fake/home/testuser/.codex')
-    expect(shellValueOf(oauthLoginCommand('claude-code', '~/.claude-tejas'), ' claude auth login', 'CLAUDE_CONFIG_DIR'))
-      .toBe('/fake/home/testuser/.claude-tejas')
+    expect(shellValueOf(oauthLoginCommand('codex', '~/.codex'), ' codex login', 'CODEX_HOME')).toBe(
+      '/fake/home/testuser/.codex',
+    )
+    expect(
+      shellValueOf(oauthLoginCommand('claude-code', '~/.claude-tejas'), ' claude auth login', 'CLAUDE_CONFIG_DIR'),
+    ).toBe('/fake/home/testuser/.claude-tejas')
   })
 
   it('expands a structural ~ even when the rest of the path needs quoting', () => {
-    expect(shellValueOf(oauthLoginCommand('codex', '~/.codex $(echo INJECTED)'), ' codex login', 'CODEX_HOME'))
-      .toBe('/fake/home/testuser/.codex $(echo INJECTED)')
+    expect(shellValueOf(oauthLoginCommand('codex', '~/.codex $(echo INJECTED)'), ' codex login', 'CODEX_HOME')).toBe(
+      '/fake/home/testuser/.codex $(echo INJECTED)',
+    )
   })
 })
 
@@ -109,10 +108,14 @@ describePosix('oauthCreateDirCommand - POSIX-safe quoting (behavior 6)', () => {
   })
 
   it('still expands the structural ~ it is given', () => {
-    const out = execFileSync('/bin/sh', ['-c', oauthCreateDirCommand('~/.codex-work').replace(/^mkdir -p /, 'printf %s ')], {
-      encoding: 'utf-8',
-      env: { ...process.env, HOME: '/fake/home/testuser' },
-    })
+    const out = execFileSync(
+      '/bin/sh',
+      ['-c', oauthCreateDirCommand('~/.codex-work').replace(/^mkdir -p /, 'printf %s ')],
+      {
+        encoding: 'utf-8',
+        env: { ...process.env, HOME: '/fake/home/testuser' },
+      },
+    )
     expect(out).toBe('/fake/home/testuser/.codex-work')
   })
 })

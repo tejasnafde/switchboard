@@ -108,9 +108,7 @@ describe('native migration goldens', () => {
       text: '',
       attempts: 0,
     })
-    expect(imageOnly.images).toEqual([
-      { url: 'data:image/png;base64,iVBORw0KGgo=', mimeType: 'image/png' },
-    ])
+    expect(imageOnly.images).toEqual([{ url: 'data:image/png;base64,iVBORw0KGgo=', mimeType: 'image/png' }])
 
     for (const record of [text, imageOnly]) {
       const key = `sb-outbox:${record.messageId as string}`
@@ -189,7 +187,8 @@ describe('native protocol goldens', () => {
     expect(payloadChunks.map((chunk) => bytesHex(encodeIapData(chunk)))).toEqual(golden.iapFramesHex)
 
     const parser = new IapFrameParser()
-    const payloads = golden.iapFramesHex.flatMap((hex) => parser.push(hexBytes(hex)))
+    const payloads = golden.iapFramesHex
+      .flatMap((hex) => parser.push(hexBytes(hex)))
       .filter((frame): frame is { kind: 'data'; payload: Uint8Array } => frame.kind === 'data')
       .map((frame) => frame.payload)
     const joined = new Uint8Array(payloads.reduce((size, payload) => size + payload.length, 0))

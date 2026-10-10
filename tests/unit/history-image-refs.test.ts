@@ -5,7 +5,13 @@ import type { ChatMessage } from '../../src/shared/types'
 
 const png = `data:image/png;base64,${Buffer.from('0123456789').toString('base64')}`
 const history: ChatMessage[] = [
-  { id: 'u1', role: 'user', content: 'look', timestamp: 1, images: [{ url: png, mimeType: 'image/png' }, { url: 'https://x/y.png' }] },
+  {
+    id: 'u1',
+    role: 'user',
+    content: 'look',
+    timestamp: 1,
+    images: [{ url: png, mimeType: 'image/png' }, { url: 'https://x/y.png' }],
+  },
   { id: 'a1', role: 'assistant', content: 'ok', timestamp: 2 },
 ]
 
@@ -13,7 +19,10 @@ const loads = vi.hoisted(() => ({ count: 0 }))
 vi.mock('../../src/main/perf', () => ({ perfSpan: () => ({ end: () => {} }) }))
 vi.mock('../../src/main/db/database', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/main/db/database')>()),
-  getConversationById: (id: string) => id === 'gone' ? undefined : ({ id, project_path: '/repo', agent_type: 'claude-code', title: 'Chat', status_line: 'x' }),
+  getConversationById: (id: string) =>
+    id === 'gone'
+      ? undefined
+      : { id, project_path: '/repo', agent_type: 'claude-code', title: 'Chat', status_line: 'x' },
   resolveRootThreadId: () => 'root',
   getSessionLayout: () => null,
   getConversationForkMetadata: () => null,
@@ -31,7 +40,10 @@ const { AppChannels } = await import('../../src/shared/ipc-channels')
 
 function handlers() {
   const map = new Map<string, (...args: unknown[]) => Promise<any>>()
-  registerAppHandlers({ handle: (c: string, h: (...args: unknown[]) => Promise<any>) => map.set(c, h), emit: () => {} } as never, {})
+  registerAppHandlers(
+    { handle: (c: string, h: (...args: unknown[]) => Promise<any>) => map.set(c, h), emit: () => {} } as never,
+    {},
+  )
   return map
 }
 

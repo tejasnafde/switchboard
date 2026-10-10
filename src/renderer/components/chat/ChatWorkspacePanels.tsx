@@ -3,7 +3,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { showDragOverlay, hideDragOverlay } from '../../services/drag-overlay'
-import { nextChatPresentation, shouldShowChatFocusIndicator, type ChatPresentation } from '../../services/chat-workspace'
+import {
+  nextChatPresentation,
+  shouldShowChatFocusIndicator,
+  type ChatPresentation,
+} from '../../services/chat-workspace'
 import { ChatPanel } from './ChatPanel'
 import { ChatLanding } from './ChatLanding'
 import { primaryShowsLanding, type RecentChat } from '../../services/chat-landing'
@@ -33,14 +37,12 @@ export function ChatWorkspacePanels({
   const rightRef = useRef<HTMLDivElement>(null)
   const [workspaceWidth, setWorkspaceWidth] = useState(1000)
   const [splitDragging, setSplitDragging] = useState(false)
-  const [chatPresentation, setChatPresentation] = useState<ChatPresentation>(
-    dataScienceMode ? 'tabs' : 'split',
+  const [chatPresentation, setChatPresentation] = useState<ChatPresentation>(dataScienceMode ? 'tabs' : 'split')
+  const primaryLabel = useAgentStore(
+    (state) => state.sessions.find((session) => session.id === primarySessionId)?.title ?? 'Primary chat',
   )
-  const primaryLabel = useAgentStore((state) =>
-    state.sessions.find((session) => session.id === primarySessionId)?.title ?? 'Primary chat',
-  )
-  const secondaryLabel = useAgentStore((state) =>
-    state.sessions.find((session) => session.id === secondarySessionId)?.title ?? 'Secondary chat',
+  const secondaryLabel = useAgentStore(
+    (state) => state.sessions.find((session) => session.id === secondarySessionId)?.title ?? 'Secondary chat',
   )
 
   useEffect(() => {
@@ -55,9 +57,7 @@ export function ChatWorkspacePanels({
   }, [])
 
   useEffect(() => {
-    setChatPresentation((current) =>
-      nextChatPresentation(current, workspaceWidth, dataScienceMode, splitDragging),
-    )
+    setChatPresentation((current) => nextChatPresentation(current, workspaceWidth, dataScienceMode, splitDragging))
   }, [workspaceWidth, dataScienceMode, splitDragging])
 
   const dual = secondarySessionId !== null || openingSecondary !== undefined
@@ -92,55 +92,55 @@ export function ChatWorkspacePanels({
         </div>
       )}
       <div style={{ flex: '1 1 0%', minHeight: 0, minWidth: 0, display: 'flex' }}>
-      <div
-        ref={leftRef}
-        data-chat-slot-wrapper="primary"
-        style={{
-          flex: dual && !tabbed ? `${chatSplitRatio} 1 0%` : '1 1 0%',
-          display: tabbed && focusedSlot !== 'primary' ? 'none' : 'flex',
-          minWidth: 0,
-          overflow: 'hidden',
-        }}
-      >
-        {primaryShowsLanding(primarySessionId) && !openingPrimary ? (
-          <ChatLanding ensureDraftSession={ensureDraftSession} onOpenChat={onOpenChat} />
-        ) : (
-          <ChatPanel
-            chatSlot="primary"
-            visible={!tabbed || focusedSlot === 'primary'}
-            showFocusIndicator={showFocusIndicator}
-            onClose={dual ? () => closeChatSlot('primary') : undefined}
-            onOpenBeside={onOpenBeside}
+        <div
+          ref={leftRef}
+          data-chat-slot-wrapper="primary"
+          style={{
+            flex: dual && !tabbed ? `${chatSplitRatio} 1 0%` : '1 1 0%',
+            display: tabbed && focusedSlot !== 'primary' ? 'none' : 'flex',
+            minWidth: 0,
+            overflow: 'hidden',
+          }}
+        >
+          {primaryShowsLanding(primarySessionId) && !openingPrimary ? (
+            <ChatLanding ensureDraftSession={ensureDraftSession} onOpenChat={onOpenChat} />
+          ) : (
+            <ChatPanel
+              chatSlot="primary"
+              visible={!tabbed || focusedSlot === 'primary'}
+              showFocusIndicator={showFocusIndicator}
+              onClose={dual ? () => closeChatSlot('primary') : undefined}
+              onOpenBeside={onOpenBeside}
+            />
+          )}
+        </div>
+        {dual && !tabbed && (
+          <ChatSplitHandle
+            leftRef={leftRef}
+            rightRef={rightRef}
+            initialRatio={chatSplitRatio}
+            onCommit={setChatSplitRatio}
+            onDraggingChange={setSplitDragging}
           />
         )}
-      </div>
-      {dual && !tabbed && (
-        <ChatSplitHandle
-          leftRef={leftRef}
-          rightRef={rightRef}
-          initialRatio={chatSplitRatio}
-          onCommit={setChatSplitRatio}
-          onDraggingChange={setSplitDragging}
-        />
-      )}
-      <div
-        ref={rightRef}
-        data-chat-slot-wrapper="secondary"
-        style={{
-          flex: !tabbed ? `${1 - chatSplitRatio} 1 0%` : '1 1 0%',
-          display: !dual || (tabbed && focusedSlot !== 'secondary') ? 'none' : 'flex',
-          minWidth: 0,
-          overflow: 'hidden',
-        }}
-      >
-        <ChatPanel
-          chatSlot="secondary"
-          visible={dual && (!tabbed || focusedSlot === 'secondary')}
-          showFocusIndicator={showFocusIndicator}
-          onClose={() => closeChatSlot('secondary')}
-          onOpenBeside={onOpenBeside}
-        />
-      </div>
+        <div
+          ref={rightRef}
+          data-chat-slot-wrapper="secondary"
+          style={{
+            flex: !tabbed ? `${1 - chatSplitRatio} 1 0%` : '1 1 0%',
+            display: !dual || (tabbed && focusedSlot !== 'secondary') ? 'none' : 'flex',
+            minWidth: 0,
+            overflow: 'hidden',
+          }}
+        >
+          <ChatPanel
+            chatSlot="secondary"
+            visible={dual && (!tabbed || focusedSlot === 'secondary')}
+            showFocusIndicator={showFocusIndicator}
+            onClose={() => closeChatSlot('secondary')}
+            onOpenBeside={onOpenBeside}
+          />
+        </div>
       </div>
     </div>
   )
@@ -176,8 +176,14 @@ function ChatSplitHandle({
     const el = handleElRef.current
     // releasePointerCapture throws routinely (capture already lost/yanked by a
     // webview) - this is the expected, high-frequency case, not a bug.
-    // eslint-disable-next-line no-restricted-syntax -- see comment above
-    if (el) { try { el.releasePointerCapture(activePointerRef.current) } catch { /* ignore */ } }
+    if (el) {
+      try {
+        el.releasePointerCapture(activePointerRef.current)
+        // eslint-disable-next-line no-restricted-syntax -- see comment above
+      } catch {
+        /* ignore */
+      }
+    }
     activePointerRef.current = null
     onDraggingChange?.(false)
     document.body.style.cursor = ''
@@ -216,8 +222,12 @@ function ChatSplitHandle({
       onPointerDown={(e) => {
         // setPointerCapture can throw for an already-released pointer id;
         // routine, not worth logging.
-        // eslint-disable-next-line no-restricted-syntax -- see comment above
-        try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* ignore */ }
+        try {
+          ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+          // eslint-disable-next-line no-restricted-syntax -- see comment above
+        } catch {
+          /* ignore */
+        }
         activePointerRef.current = e.pointerId
         onDraggingChange?.(true)
         document.body.style.cursor = 'col-resize'

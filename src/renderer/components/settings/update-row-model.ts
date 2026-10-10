@@ -19,25 +19,32 @@ export interface UpdateRowView {
  */
 export function updateStatusLabel(status: UpdateStatus): string {
   switch (status.kind) {
-    case 'idle': return 'Idle.'
-    case 'checking': return 'Checking…'
-    case 'up-to-date': return `You're on the latest version (${status.version}).`
-    case 'available': return `Update available - downloading ${status.version}…`
-    case 'downloading': return `Downloading… ${status.percent}%`
-    case 'downloaded': return `Update ready: ${status.version}. Restart to install.`
-    case 'installing': return 'Restarting to install the update…'
-    case 'error': return `Couldn't check: ${status.message}`
+    case 'idle':
+      return 'Idle.'
+    case 'checking':
+      return 'Checking…'
+    case 'up-to-date':
+      return `You're on the latest version (${status.version}).`
+    case 'available':
+      return `Update available - downloading ${status.version}…`
+    case 'downloading':
+      return `Downloading… ${status.percent}%`
+    case 'downloaded':
+      return `Update ready: ${status.version}. Restart to install.`
+    case 'installing':
+      return 'Restarting to install the update…'
+    case 'error':
+      return `Couldn't check: ${status.message}`
     // Verbatim: the message already says the check is continuing, so any
     // "Couldn't" prefix would contradict it.
-    case 'slow': return status.message
-    case 'unsupported': return status.reason
+    case 'slow':
+      return status.message
+    case 'unsupported':
+      return status.reason
   }
 }
 
-export function updateRowView(
-  status: UpdateStatus,
-  flags: { checking: boolean; restarting: boolean },
-): UpdateRowView {
+export function updateRowView(status: UpdateStatus, flags: { checking: boolean; restarting: boolean }): UpdateRowView {
   // `installing` comes from main, which latches the request globally, so the
   // pending state survives a Settings remount that clears the local flag.
   const restarting = flags.restarting || status.kind === 'installing'

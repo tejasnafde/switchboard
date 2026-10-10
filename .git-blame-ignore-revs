@@ -1,0 +1,5 @@
+# oxfmt reformats. Use with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# Reformat the tree with oxfmt
+2f580d53000f380cecaa0cbf936b86bf615fddb7
+# Merge of origin/main: the pre-commit hook formatted the code main added since the reformat
+bff0d1cb8ef94ed0d970ee4f707973debfabb06e

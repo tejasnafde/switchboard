@@ -6,9 +6,6 @@
  */
 import type { UpdateStatus } from '@shared/update-status'
 
-export function shouldShowUpdateToast(
-  status: UpdateStatus,
-  dismissedVersion: string | null,
-): boolean {
+export function shouldShowUpdateToast(status: UpdateStatus, dismissedVersion: string | null): boolean {
   return status.kind === 'downloaded' && status.version !== dismissedVersion
 }

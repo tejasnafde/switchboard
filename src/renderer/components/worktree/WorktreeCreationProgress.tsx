@@ -40,7 +40,7 @@ export function WorktreeCreationProgress({
   const retained = snapshot.status === 'cleanup_required'
   const message = disconnected
     ? `Reconnect to continue tracking creation ${snapshot.creationId}.`
-    : snapshot.error?.message ?? detail
+    : (snapshot.error?.message ?? detail)
 
   return (
     <section

@@ -23,8 +23,8 @@ export function projectManagedRootSessions(
     .filter((conversation) => conversation.archived === 0 && !delegatedConversationIds.has(conversation.id))
     .map((conversation) => ({
       id: conversation.id,
-      source: (conversation.origin_source
-        ?? (conversation.agent_type === 'terminal' ? 'switchboard' : conversation.agent_type)) as SessionSource,
+      source: (conversation.origin_source ??
+        (conversation.agent_type === 'terminal' ? 'switchboard' : conversation.agent_type)) as SessionSource,
       title: conversation.title,
       startedAt: conversation.updated_at,
       messageCount: 0,
@@ -54,10 +54,7 @@ export function projectManagedRootSessions(
  * was previously only ever moved by the desktop renderer's saveMessage, so a
  * phone-driven chat never rose to the top.
  */
-export function sessionSummaryToConversationRow(
-  s: SessionSummary,
-  projectPath: string,
-): ConversationRow {
+export function sessionSummaryToConversationRow(s: SessionSummary, projectPath: string): ConversationRow {
   return {
     id: s.id,
     project_path: projectPath,

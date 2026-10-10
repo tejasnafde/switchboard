@@ -8,7 +8,8 @@ import { withVisibleHistory } from '../../src/main/provider/visible-history'
 import { prefixUserMessage } from '../../src/main/provider/adapters/claude-adapter'
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 
-const PREAMBLE = 'Conversation so far:\nuser: q\n\nRespond to the latest user message, using the conversation above as context.'
+const PREAMBLE =
+  'Conversation so far:\nuser: q\n\nRespond to the latest user message, using the conversation above as context.'
 
 describe('withVisibleHistory', () => {
   it('prefixes the first message after a failed resume, once', async () => {
@@ -41,9 +42,15 @@ describe('prefixUserMessage', () => {
   })
 
   it('prefixes the text block next to images', () => {
-    const m = message([{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AA' } }, { type: 'text', text: 'look' }])
+    const m = message([
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AA' } },
+      { type: 'text', text: 'look' },
+    ])
     prefixUserMessage(m, PREAMBLE)
-    expect(m.message.content).toEqual([expect.objectContaining({ type: 'image' }), { type: 'text', text: `${PREAMBLE}\n\nlook` }])
+    expect(m.message.content).toEqual([
+      expect.objectContaining({ type: 'image' }),
+      { type: 'text', text: `${PREAMBLE}\n\nlook` },
+    ])
   })
 
   it('adds a text block to an image-only message', () => {
