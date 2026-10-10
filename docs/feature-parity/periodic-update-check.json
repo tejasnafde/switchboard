@@ -1,0 +1,55 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "periodic-update-check",
+  "summary": "The desktop app checks for an update more than once per launch. Before this, `registerAutoUpdater` only checked 3s after launch and on a manual Settings click, so an app left running for days could sit many versions behind. It now also checks every hour and whenever the system wakes from sleep (electron's `powerMonitor` 'resume' event), through the same pure `shouldRunScheduledCheck` gate: a scheduled check is skipped while a check (manual, initial, or scheduled) is already in flight or the download a check started has not settled (electron-updater settles the check before its `downloadPromise`), and skipped entirely once an update has downloaded and is waiting for the user to restart, so a background tick can never overwrite the 'downloaded, restart to update' status the renderer shows. `autoInstallOnAppQuit` is unchanged (still false; the user clicks to install). The hourly timer is unref'd and is also cleared as an explicit step in the app's ordered shutdown sequence, so it can neither keep the process alive nor fire mid-teardown; an aborted `quitAndInstall` (the app recovers and keeps running) restarts it alongside the database and IDE it also stops. A routine scheduled check that finds nothing logs nothing; only a failure or an unreachable server logs a line, so a desktop left running for days does not fill the log with an hourly line.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/updater.ts",
+        "src/main/updater-schedule.ts",
+        "src/main/index.ts",
+        "tests/unit/updater-schedule.test.ts",
+        "tests/unit/updater-window-lifecycle.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Phones have their own update lanes, unrelated to electron-updater: expo-updates OTA for JS-only changes and a self-installed APK/release build for native changes (src/lib/self-update.ts). Neither polls the desktop's GitHub Release feed."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Same as reactNativeIos: native Android installs its own APK releases and has no electron-updater dependency to poll."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire protocol, IPC channel, or API contract changed. The headless server (src/server) has no updater at all; this only adds an internal timer and a powerMonitor listener inside the desktop main process's existing updater module."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table, column, setting, or migration. The in-flight/download/downloaded gate is in-memory module state in src/main/updater.ts, not persisted."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/updater.ts",
+        "src/main/updater-schedule.ts",
+        "src/main/index.ts",
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/updater-schedule.test.ts (vitest fake timers): shouldRunScheduledCheck's four cases (idle runs, in-flight skips, download-in-flight skips, downloaded skips); startUpdateScheduler fires hourly on the interval, skips a tick while in flight, skips a tick once downloaded, fires on resume, skips a resume tick while in flight, stop() clears the interval so no further ticks fire, the interval is unref'd, and a custom interval is respected.",
+      "tests/unit/updater-window-lifecycle.test.ts: registerAutoUpdater still wires up correctly with electron's powerMonitor mocked alongside app/ipcMain (regression for the new import), and an hourly tick skips while the download the launch check started is still running, then checks once it settles.",
+      "npm run typecheck and npx vitest run --maxWorkers=4 (full suite, 582 files) pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run against a real packaged build left open for an hour, or across an actual sleep/wake cycle - the scheduling rule is verified with fake timers and the wiring by code review, not a live electron-updater check over real time.",
+      "The 'downloaded, restart to update' skip and the aborted-quitAndInstall resume path were not exercised against a real downloaded update or a real failed install; both are covered only by the existing unit tests for their respective modules (quit-coordinator, install-attempt) plus this change's state gate."
+    ]
+  }
+}
