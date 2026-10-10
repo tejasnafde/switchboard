@@ -54,6 +54,8 @@ let checkInFlight = false
  * timeout-wrapped view onto the same stuck request pointlessly.
  */
 let inFlightCheck: ReturnType<typeof autoUpdater.checkForUpdates> | null = null
+/** Downloads started by a check that have not settled yet (`result.downloadPromise`). */
+let downloadsInFlight = 0
 /** Clears the hourly/resume scheduler. Set once registered, null after `stopAutoUpdaterScheduler`. */
 let stopScheduler: (() => void) | null = null
 
@@ -78,12 +80,37 @@ const CHECK_TIMEOUT_MS = 120_000
 function checkForUpdatesTracked(): ReturnType<typeof autoUpdater.checkForUpdates> {
   if (!inFlightCheck) {
     checkInFlight = true
-    inFlightCheck = autoUpdater.checkForUpdates().finally(() => {
-      checkInFlight = false
-      inFlightCheck = null
-    })
+    inFlightCheck = autoUpdater
+      .checkForUpdates()
+      .then((result) => {
+        trackDownload(result)
+        return result
+      })
+      .finally(() => {
+        checkInFlight = false
+        inFlightCheck = null
+      })
   }
   return withTimeout(inFlightCheck, CHECK_TIMEOUT_MS, 'Update check')
+}
+
+/**
+ * Counts a download the check started until it settles, so a scheduled check
+ * waits for it. Its failure is reported by the `error` event handler; the
+ * catch here only keeps the rejection from going unhandled.
+ */
+function trackDownload(result: Awaited<ReturnType<typeof autoUpdater.checkForUpdates>>): void {
+  const download = result?.downloadPromise
+  if (!download) return
+  downloadsInFlight += 1
+  download
+    .catch((err) => {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`update download failed: ${message}`)
+    })
+    .finally(() => {
+      downloadsInFlight -= 1
+    })
 }
 
 function trackWindow(window: BrowserWindow): void {
@@ -260,7 +287,11 @@ function runScheduledCheck(reason: ScheduledCheckReason): void {
 function startAutoUpdaterScheduler(): void {
   if (stopScheduler) return
   stopScheduler = startUpdateScheduler({
-    getState: () => ({ checkInFlight, downloaded: lastStatus.kind === 'downloaded' }),
+    getState: () => ({
+      checkInFlight,
+      downloadInFlight: downloadsInFlight > 0,
+      downloaded: lastStatus.kind === 'downloaded',
+    }),
     runCheck: runScheduledCheck,
     onResume: (listener) => {
       powerMonitor.on('resume', listener)

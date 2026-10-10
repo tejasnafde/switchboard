@@ -119,4 +119,26 @@ describe('updater window lifecycle', () => {
     // not a cancellation, so there is nothing to retry yet.
     expect(mocks.updater.checkForUpdates).toHaveBeenCalledTimes(1)
   })
+
+  it('an hourly check waits for a download the launch check started', async () => {
+    let finishDownload: (paths: string[]) => void = () => {}
+    const downloadPromise = new Promise<string[]>((resolve) => { finishDownload = resolve })
+    mocks.updater.checkForUpdates.mockImplementation(async () => ({ downloadPromise }))
+
+    const { registerAutoUpdater } = await import('../../src/main/updater')
+    registerAutoUpdater(fakeWindow() as never)
+
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(mocks.updater.checkForUpdates).toHaveBeenCalledTimes(1)
+
+    // The check has settled but its download has not: the hourly tick skips.
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
+    expect(mocks.updater.checkForUpdates).toHaveBeenCalledTimes(1)
+
+    // Once the download settles (here without an update-downloaded event),
+    // the next tick checks again.
+    finishDownload([])
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
+    expect(mocks.updater.checkForUpdates).toHaveBeenCalledTimes(2)
+  })
 })

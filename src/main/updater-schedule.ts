@@ -17,6 +17,12 @@ export const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000 // 1 hour
 export interface UpdateScheduleState {
   /** A checkForUpdates() call (manual, initial, or scheduled) is in flight. */
   checkInFlight: boolean
+  /**
+   * A download a check started is still running. electron-updater settles
+   * the check before its `downloadPromise`, so `checkInFlight` alone lets a
+   * scheduled check start mid-download.
+   */
+  downloadInFlight: boolean
   /** An update has already downloaded and is waiting on the user to restart. */
   downloaded: boolean
 }
@@ -25,14 +31,14 @@ export type ScheduledCheckReason = 'interval' | 'resume'
 
 /**
  * Pure: should a periodic or resume-triggered check run right now? Skips
- * while a check is already in flight (electron-updater dedups concurrent
+ * while a check or the download it started is already in flight (electron-updater dedups concurrent
  * checks anyway, so this just avoids the noise of trying) and once an
  * update has downloaded, since there is nothing newer to find until the
  * user installs it, and a background check must not overwrite the
  * "downloaded, restart to update" status the renderer is showing.
  */
 export function shouldRunScheduledCheck(state: UpdateScheduleState): boolean {
-  return !state.checkInFlight && !state.downloaded
+  return !state.checkInFlight && !state.downloadInFlight && !state.downloaded
 }
 
 export interface UpdateSchedulerDeps {

@@ -7,15 +7,19 @@ import {
 
 describe('shouldRunScheduledCheck', () => {
   it('runs when nothing is in flight and nothing has downloaded', () => {
-    expect(shouldRunScheduledCheck({ checkInFlight: false, downloaded: false })).toBe(true)
+    expect(shouldRunScheduledCheck({ checkInFlight: false, downloadInFlight: false, downloaded: false })).toBe(true)
   })
 
   it('skips while a check is already in flight', () => {
-    expect(shouldRunScheduledCheck({ checkInFlight: true, downloaded: false })).toBe(false)
+    expect(shouldRunScheduledCheck({ checkInFlight: true, downloadInFlight: false, downloaded: false })).toBe(false)
+  })
+
+  it('skips while a download a finished check started is still running', () => {
+    expect(shouldRunScheduledCheck({ checkInFlight: false, downloadInFlight: true, downloaded: false })).toBe(false)
   })
 
   it('skips once an update has downloaded and is waiting for a restart', () => {
-    expect(shouldRunScheduledCheck({ checkInFlight: false, downloaded: true })).toBe(false)
+    expect(shouldRunScheduledCheck({ checkInFlight: false, downloadInFlight: false, downloaded: true })).toBe(false)
   })
 })
 
@@ -29,8 +33,8 @@ describe('startUpdateScheduler', () => {
     vi.useRealTimers()
   })
 
-  function fakeState(overrides: Partial<{ checkInFlight: boolean; downloaded: boolean }> = {}) {
-    return { checkInFlight: false, downloaded: false, ...overrides }
+  function fakeState(overrides: Partial<{ checkInFlight: boolean; downloadInFlight: boolean; downloaded: boolean }> = {}) {
+    return { checkInFlight: false, downloadInFlight: false, downloaded: false, ...overrides }
   }
 
   /** A no-op resume source: registers nothing real, removes nothing real. */
