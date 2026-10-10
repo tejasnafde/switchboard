@@ -16,6 +16,7 @@ import { useLayoutStore } from '../../stores/layout-store'
 import { enhanceFilePills } from '../../services/message-pills'
 import { formatFilePathRef, type FilePathRef } from '@shared/file-path-ref'
 import { renderPillBody } from './render-pill-body'
+import { chatQuoteAuthor } from '../../services/context-formatters'
 import { splitSkillMentions } from './slash-commands'
 import { SkillChip } from './SkillChip'
 import {
@@ -423,7 +424,8 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     <div
       className="message-bubble-row"
       data-message-id={message.id}
-      data-context-source={message.role === 'assistant' ? 'chat-message' : undefined}
+      data-message-role={message.role}
+      data-context-source={chatQuoteAuthor(message.role, '') === null ? undefined : 'chat-message'}
       onContextMenu={(e) => {
         // Skip the menu for system / error messages - they aren't fork
         // anchors. Image-lightbox right-click is portal'd to body and
