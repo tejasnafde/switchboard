@@ -1,5 +1,7 @@
 package app.switchboard.mobile.domain.thread
 
+import app.switchboard.mobile.domain.remote.AcpAgents
+
 /**
  * Steer or queue a message sent while the agent works. Ported from
  * `src/shared/turn-delivery.ts` and `apps/mobile/src/lib/held-turns.ts`;
@@ -49,7 +51,7 @@ object TurnDeliveryPolicy {
     /** turn.queued / turn.dequeued plus list, promote and cancel. */
     const val QUEUE_CONTROLS_CAPABILITY = "turn_queue_controls_v1"
 
-    fun canSteer(provider: String?): Boolean = provider != "opencode" && provider != "terminal"
+    fun canSteer(provider: String?): Boolean = !AcpAgents.speaksAcp(provider) && provider != "terminal"
 
     /** Anything but an explicit `queue` means steer, which is what a send always did. */
     fun parseFollowUpDefault(value: String?): TurnDelivery =
@@ -101,7 +103,13 @@ object TurnDeliveryPolicy {
     }
 
     fun promoteUnavailableReason(provider: String?): String? =
-        if (canSteer(provider)) null else "OpenCode cannot take a message mid-turn, so this waits for the turn to end."
+        if (canSteer(provider)) null else "${cannotSteerName(provider)} cannot take a message mid-turn, so this waits for the turn to end."
+
+    private fun cannotSteerName(provider: String?): String = when {
+        provider == "opencode" -> "OpenCode"
+        AcpAgents.isGeneric(provider) -> AcpAgents.label(provider) ?: "This agent"
+        else -> "This agent"
+    }
 
     fun heldTurnActions(provider: String?): HeldTurnActions {
         val blocked = promoteUnavailableReason(provider)

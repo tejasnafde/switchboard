@@ -87,15 +87,16 @@ try {
   await reviews().getByRole('button', { name: 'Ask the agent', exact: true }).first().click()
   await win.locator('.chat-identity-title').filter({ hasText: CHAT }).waitFor({ state: 'visible', timeout: 10_000 })
   await pills().first().waitFor({ state: 'visible', timeout: 10_000 })
-  check('failed check lands as one pill', (await pills().count()) === 1 && (await pills().first().innerText()).includes('1 failed check · #612 · integration'), await pills().first().innerText())
+  const first = await pills().first().getAttribute('data-pill-label')
+  check('failed check lands as one pill', (await pills().count()) === 1 && first.includes('1 failed check · #612 · integration') && (await pills().first().innerText()).includes('PR #612'), first)
 
   await openReviewsOn612()
   await reviews().getByRole('tab', { name: /^Conversations/ }).click()
   await reviews().getByRole('button', { name: 'Send all 3 open conversations' }).click()
   await win.locator('.chat-identity-title').filter({ hasText: CHAT }).waitFor({ state: 'visible', timeout: 10_000 })
   await pills().nth(1).waitFor({ state: 'visible', timeout: 10_000 })
-  const second = await pills().nth(1).innerText()
-  check('all open conversations land as one pill', (await pills().count()) === 2 && second.includes('3 review conversations · #612'), second)
+  const second = await pills().nth(1).getAttribute('data-pill-label')
+  check('all open conversations land as one pill', (await pills().count()) === 2 && second.includes('3 review conversations · #612') && (await pills().nth(1).innerText()).includes('3 threads'), second)
 
   await win.locator('[contenteditable="true"][aria-label="Chat message"]').last().click()
   await win.keyboard.press('End')
@@ -108,7 +109,7 @@ try {
   check('provider text carries the expansion', stored.includes('Failed check: integration') && stored.includes('Review conversation on sync/worker.py:') && stored.includes('pankaj: Cap the jitter too.'))
   const pillKinds = q("SELECT pills_meta FROM messages WHERE conversation_id = 'promo-context' AND role = 'user' ORDER BY timestamp DESC LIMIT 1")
   check('pill metadata stores the review kind', (pillKinds.match(/"kind":"review"/g) ?? []).length === 2, pillKinds)
-  const sent = win.locator('[data-chat-panel] [data-pill-chip], [data-chat-panel] span[title*="review conversations"]')
+  const sent = win.locator('[data-chat-panel] [data-message-id] [data-pill-chip][data-pill-kind="review"]')
   check('the sent bubble draws the pills', (await sent.count()) >= 1)
 
   // Unlink from the Overview card: the header control goes away.
@@ -146,7 +147,7 @@ try {
   await reviews().getByRole('button', { name: 'Ask the agent' }).click()
   await win.locator('.chat-identity-title').filter({ hasText: CHAT }).waitFor({ state: 'visible', timeout: 10_000 })
   await pills().first().waitFor({ state: 'visible', timeout: 10_000 })
-  const lines = await pills().first().innerText()
+  const lines = await pills().first().getAttribute('data-pill-label')
   check('selected diff lines land as one pill', lines.includes('diff selection · #612 · worker.py:84-86'), lines)
 
   // The merge conflicts: one pill naming the base and the files.
@@ -154,7 +155,7 @@ try {
   await reviews().getByRole('button', { name: 'Ask the agent to resolve' }).click()
   await win.locator('.chat-identity-title').filter({ hasText: CHAT }).waitFor({ state: 'visible', timeout: 10_000 })
   await pills().nth(1).waitFor({ state: 'visible', timeout: 10_000 })
-  const conflicts = await pills().nth(1).innerText()
+  const conflicts = await pills().nth(1).getAttribute('data-pill-label')
   check('merge conflicts land as one pill', conflicts.includes('Merge conflicts with main · #612 · worker.py, config.py'), conflicts)
 } catch (err) {
   check('flow completed', false, String(err))

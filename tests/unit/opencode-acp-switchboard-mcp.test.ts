@@ -25,8 +25,12 @@ vi.mock('os', async (importOriginal) => {
   return { ...actual, homedir: () => osMock.homedir }
 })
 
-vi.mock('child_process', () => ({
-  spawn: vi.fn((_bin: unknown, _args: unknown, opts: { env: Record<string, string | undefined> }) => {
+// The adapter spawns through `cross-spawn`, not `child_process` directly
+// (Windows needs it to launch a global agent CLI's `.cmd` shim through a
+// shell), so that is the module to mock: cross-spawn's own
+// `require('child_process')` is real and unmocked here.
+vi.mock('cross-spawn', () => ({
+  default: vi.fn((_bin: unknown, _args: unknown, opts: { env: Record<string, string | undefined> }) => {
     spawnedEnvs.push(opts.env)
     const child = new EventEmitter() as EventEmitter & Record<string, unknown>
     child.stdin = new PassThrough()
