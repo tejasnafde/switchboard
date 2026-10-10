@@ -1,3 +1,4 @@
+import { agentShortLabel, isAgentType } from '@shared/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAgentStore } from '../stores/agent-store'
 import { useMachineStore } from '../stores/machine-store'
@@ -19,13 +20,7 @@ export function sessionPickerIdentity(
   session: PickerSessionIdentity,
   machineName?: string,
 ): { provider: string; title: string; context: string } {
-  const provider = session.type === 'codex'
-    ? 'Codex'
-    : session.type === 'opencode'
-      ? 'OpenCode'
-      : session.type === 'terminal'
-        ? 'Terminal'
-        : 'Claude'
+  const provider = agentShortLabel(isAgentType(session.type) ? session.type : undefined)
   const folder = (session.worktreePath ?? session.projectPath)?.split('/').filter(Boolean).pop()
   const machine = session.machineId && session.machineId !== 'local'
     ? machineName ?? session.machineId

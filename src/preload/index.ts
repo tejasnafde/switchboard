@@ -43,6 +43,7 @@ import type {
   ApprovalDecision,
   ProviderInstanceSwitchRequest,
   ProviderInstanceSwitchResult,
+  ProviderKind,
   UserTurnSubmissionResult,
   UserTurnSubmissionV1,
 } from '@shared/provider-events'
@@ -66,7 +67,7 @@ const log = createRendererLogger('preload:provider')
  */
 export interface StartSessionOpts {
   threadId: string
-  provider: 'claude' | 'codex' | 'opencode'
+  provider: ProviderKind
   cwd: string
   model?: string
   runtimeMode?: RuntimeMode
@@ -835,7 +836,7 @@ const api = {
     ): Promise<import('@shared/execution-root-relocation').RelocateExecutionRootResult> =>
       transport.invoke(ProviderChannels.RELOCATE_EXECUTION_ROOT, request),
 
-    isAvailable: (provider: 'claude' | 'codex') =>
+    isAvailable: (provider: ProviderKind) =>
       transport.invoke(ProviderChannels.IS_AVAILABLE, provider),
 
     /**

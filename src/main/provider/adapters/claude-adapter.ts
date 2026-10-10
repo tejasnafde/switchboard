@@ -10,6 +10,17 @@
 
 import type { TurnDelivery } from '@shared/turn-delivery'
 import { takeTurnDuration } from '../turn-duration'
+import {
+  canRetryAfterCompact,
+  COMPACT_COMMAND,
+  COMPACT_FIRST_MESSAGE,
+  COMPACTED_NOT_RESENT_MESSAGE,
+  COMPACTING_NOTICE,
+  isPromptTooLongResult,
+  isPromptTooLongText,
+  PROMPT_TOO_LONG_MESSAGE,
+  userMessageText,
+} from '../claude-prompt-too-long'
 import { parseImageDataUrl } from '@shared/provider-events'
 import { withHandoffPreamble } from '@shared/handoff'
 import { execSync, execFile } from 'child_process'
@@ -678,6 +689,13 @@ interface ActiveSession {
   portableHistory?: () => Promise<string | null>
   /** Started on this chat's earlier native session; false once a resume falls back to a fresh one. */
   resumedNative: boolean
+  /** The CLI said "Prompt is too long" for the running turn; its `result` decides what follows. */
+  promptTooLongSeen?: boolean
+  /**
+   * The running turn hit the context window: `/compact` was sent, and the
+   * turn's own messages go again once it ends (see recoverPromptTooLong).
+   */
+  promptTooLongRecovery?: { stage: 'compacting' | 'retrying'; messages: SDKUserMessage[] }
 }
 
 /** Put `preamble` in front of the text of a user message the CLI has not read yet. */
@@ -1211,6 +1229,10 @@ export class ClaudeAdapter implements ProviderAdapter {
         this.handleSDKMessage(threadId, active, msg)
       }
 
+      // A Stop can end the query before its `result`. The turn still ends,
+      // or its diff cards never come. Not for a torn-down session: a later
+      // session on this thread owns the turn count now.
+      if (this.sessions.get(threadId) === active) this.endTurnWithoutResult(threadId, active)
       active.session.status = 'idle'
       active.onEvent({ type: 'status', threadId, status: 'idle' })
     } catch (err) {
@@ -1282,6 +1304,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           active.onEvent({ type: 'status', threadId, status: 'error' })
         }
       } else if (e?.name === 'AbortError' || /abort/i.test(e?.message ?? '')) {
+        this.endTurnWithoutResult(threadId, active)
         active.session.status = 'idle'
         active.onEvent({ type: 'status', threadId, status: 'idle' })
       } else {
@@ -1296,6 +1319,8 @@ export class ClaudeAdapter implements ProviderAdapter {
       }
     } finally {
       active.query = null
+      active.promptTooLongSeen = false
+      active.promptTooLongRecovery = undefined
       active.steeredThisTurn = false
       active.awaitingNextTurn = false
       active.currentMessageId = null
@@ -1353,6 +1378,75 @@ export class ClaudeAdapter implements ProviderAdapter {
       }
     }
     return active.models?.models ?? []
+  }
+
+  /**
+   * A turn's `result` while its prompt does not fit the context window. The
+   * first time, send `/compact` and keep the turn running; once that ends,
+   * send the turn's messages again. Each step runs as a CLI turn of its own,
+   * so its `result` is absorbed here and the registry sees one turn. True
+   * when the turn goes on. Only when nothing is queued: the CLI starts a
+   * queued message the moment a turn ends, ahead of anything sent after.
+   * Every other ending gets a clear message instead of the CLI's text.
+   */
+  private recoverPromptTooLong(
+    threadId: string,
+    active: ActiveSession,
+    result: { is_error?: boolean },
+    tooLong: boolean,
+    unanswered: SDKUserMessage[],
+  ): boolean {
+    const recovery = active.promptTooLongRecovery
+    active.promptTooLongRecovery = undefined
+    if (recovery?.stage === 'compacting') {
+      if (tooLong || result.is_error) {
+        log.warn(`compacting ${threadId} did not succeed`)
+        active.onEvent({ type: 'error', threadId, message: PROMPT_TOO_LONG_MESSAGE })
+        return false
+      }
+      if (active.queuedTurns.length > 0) {
+        log.warn(`compacted ${threadId}; not sending the turn again ahead of ${active.queuedTurns.length} queued message(s)`)
+        active.onEvent({ type: 'error', threadId, message: COMPACTED_NOT_RESENT_MESSAGE })
+        return false
+      }
+      active.promptTooLongRecovery = { stage: 'retrying', messages: recovery.messages }
+      log.info(`compacted ${threadId}; sending ${recovery.messages.length} message(s) again`)
+      // Fresh objects with no uuid: the CLI has already answered these ones.
+      for (const message of recovery.messages) {
+        const { uuid: _uuid, priority: _priority, ...rest } = message as SDKUserMessage & { priority?: string }
+        active.prompt.push({ ...rest, message: { ...message.message } } as SDKUserMessage)
+      }
+      return true
+    }
+    if (!tooLong) return false
+    if (recovery) {
+      log.warn(`prompt too long on ${threadId} after compacting`)
+      active.onEvent({ type: 'error', threadId, message: PROMPT_TOO_LONG_MESSAGE })
+      return false
+    }
+    const queued = new Set(active.queuedTurns.map((turn) => turn.sdkMessage))
+    const messages = unanswered.filter((message) => !queued.has(message))
+    if (!canRetryAfterCompact(messages.map((m) => userMessageText(m.message.content)))) {
+      log.warn(`prompt too long on ${threadId}, and the turn cannot be compacted`)
+      active.onEvent({ type: 'error', threadId, message: PROMPT_TOO_LONG_MESSAGE })
+      return false
+    }
+    if (queued.size > 0) {
+      log.warn(`prompt too long on ${threadId}; ${queued.size} queued message(s) wait, so it is not compacted here`)
+      active.onEvent({ type: 'error', threadId, message: COMPACT_FIRST_MESSAGE })
+      return false
+    }
+    log.warn(`prompt too long on ${threadId}: compacting and sending the turn again`)
+    active.promptTooLongRecovery = { stage: 'compacting', messages }
+    active.onEvent({
+      type: 'content',
+      threadId,
+      messageId: `sys_compact_${Date.now()}`,
+      text: COMPACTING_NOTICE,
+      streamKind: 'reasoning',
+    })
+    active.prompt.push({ type: 'user', message: { role: 'user', content: COMPACT_COMMAND }, parent_tool_use_id: null } as SDKUserMessage)
+    return true
   }
 
   /**
@@ -1641,8 +1735,10 @@ export class ClaudeAdapter implements ProviderAdapter {
   async interruptTurn(threadId: string): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active?.query) return
-    // Stop means stop: the queued messages wait for Resume or Cancel.
+    // Stop means stop: the queued messages wait for Resume or Cancel, and a
+    // turn being compacted is not sent again.
     this.holdQueuedTurns(active, 'Stopped.')
+    active.promptTooLongRecovery = undefined
     try {
       await active.query.interrupt()
     } catch (err) {
@@ -1958,6 +2054,11 @@ export class ClaudeAdapter implements ProviderAdapter {
               .map((b) => b.text)
               .join('\n')
               .trim()
+            // Answered at the turn's `result`, by compacting or a clear message.
+            if (isPromptTooLongText(text)) {
+              active.promptTooLongSeen = true
+              break
+            }
             active.onEvent({
               type: 'error',
               threadId,
@@ -2049,9 +2150,15 @@ export class ClaudeAdapter implements ProviderAdapter {
         active.currentReasoningMessageId = null
         active.partialMessageText.clear()
 
+        const tooLong = active.promptTooLongSeen === true || isPromptTooLongResult(result as Parameters<typeof isPromptTooLongResult>[0])
+        active.promptTooLongSeen = false
+        // Read before `answered`: they are the messages a retry sends again.
+        const unanswered = tooLong ? active.prompt.pendingMessages() : []
+        active.prompt.answered(new Set(active.queuedTurns.map((turn) => turn.sdkMessage)))
+        if (this.recoverPromptTooLong(threadId, active, result as { is_error?: boolean }, tooLong, unanswered)) break
+
         const durationMs = takeTurnDuration(active)
         active.watchdog.turnEnded()
-        active.prompt.answered(new Set(active.queuedTurns.map((turn) => turn.sdkMessage)))
         // A failed turn holds the queue rather than running it into the failure.
         // A held queue (Stop) starts nothing here: the hold itself starts any
         // message the CLI already took.

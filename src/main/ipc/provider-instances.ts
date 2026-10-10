@@ -27,6 +27,8 @@ import { findClaudeBin } from '../provider/adapters/claude-adapter'
 import { findCodexPath } from '../provider/adapters/codex-adapter'
 import { findOpencodePath, buildOpencodeEnv } from '../provider/adapters/opencode/env'
 import { assertSupportedOpencode } from '../provider/adapters/opencode/version'
+import { genericAcpLaunchConfig } from '../provider/adapters/acp/agents'
+import { isGenericAcpAgent } from '@shared/acp-agents'
 import { applyEnvOverlay } from '../provider/env-overlay'
 import { invalidateCatalog } from '../provider/catalog-probe'
 import { resolveInstanceEnv } from '../provider/instance-env'
@@ -262,6 +264,15 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
       if (out.status !== 0) return { ok: false, message: out.stderr?.trim() || `exit ${out.status}` }
       const lines = (out.stdout ?? '').split('\n').filter((l) => l.trim().length > 0)
       return { ok: true, message: `${lines.length} models available` }
+    }
+    if (isGenericAcpAgent(instance.agentType)) {
+      // Found, not run: starting the agent could act on the user's account.
+      // Sign-in is checked when a chat starts.
+      const launch = genericAcpLaunchConfig(instance.agentType)
+      const bin = launch.findBinary()
+      return bin
+        ? { ok: true, message: `${launch.label} found at ${bin}. Sign-in is checked when a chat starts.` }
+        : { ok: false, message: launch.notFoundMessage }
     }
     return { ok: false, message: `unknown agent kind: ${instance.agentType}` }
   } catch (err) {
