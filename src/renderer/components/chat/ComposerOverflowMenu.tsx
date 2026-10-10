@@ -31,6 +31,14 @@ export function ComposerOverflowMenu({ entries }: { entries: OverflowEntry[] }) 
   const [view, setView] = useState<string | null>(null)
   const active = entries.find((entry) => entry.key === view)
 
+  // The footer widened while the menu was open: close it, so it does not
+  // pop open again the next time the footer narrows.
+  useEffect(() => {
+    if (entries.length > 0) return
+    setOpen(false)
+    setView(null)
+  }, [entries.length])
+
   if (entries.length === 0) return null
 
   const close = () => {
