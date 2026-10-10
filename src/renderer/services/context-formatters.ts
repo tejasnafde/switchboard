@@ -60,3 +60,41 @@ export function formatChatMessageContext(cap: ChatMessageCapture): string {
     .join('\n')
   return tail ? `${head}\n${tail}\n` : `${head}\n`
 }
+
+/**
+ * Who a ⌘L quote of a chat bubble names: the agent for its replies, "you" for
+ * the user's own messages. Null for any other row (system notices), which
+ * cannot be quoted.
+ */
+export function chatQuoteAuthor(role: string | null, agent: string): string | null {
+  if (role === 'assistant') return agent
+  if (role === 'user') return 'you'
+  return null
+}
+
+/**
+ * The one role a selection quotes, from every bubble it touches. A selection
+ * that takes in both a user message and an agent reply has no single author,
+ * so it is null and cannot be quoted.
+ */
+export function selectionQuoteRole(roles: ReadonlyArray<string | null>): string | null {
+  // An end outside every bubble (the gap between rows) names no author.
+  const distinct = [...new Set(roles.filter((role) => role !== null))]
+  return distinct.length === 1 ? distinct[0] : null
+}
+
+/** Set on a chip in a sent bubble to its label, so a quote can read it. */
+export const PILL_LABEL_ATTR = 'data-pill-label'
+
+/**
+ * The text of a selection in a user bubble, each chip as its label. The
+ * browser's own selection text puts line breaks around the chips, which are
+ * inline-flex boxes.
+ */
+export function textWithPillLabels(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? ''
+  if (node instanceof Element && node.hasAttribute(PILL_LABEL_ATTR)) return node.getAttribute(PILL_LABEL_ATTR) ?? ''
+  let text = ''
+  node.childNodes.forEach((child) => { text += textWithPillLabels(child) })
+  return text
+}
