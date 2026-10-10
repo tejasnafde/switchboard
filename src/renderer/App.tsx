@@ -26,7 +26,7 @@ import { SettingsPage } from './components/SettingsPage'
 import type { SettingsPageId } from './components/settings/settings-rows'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchModal } from './components/SearchModal'
-import { searchHitShownId, type MachineSearchHit } from './services/message-search'
+import { searchHitReadyId, type MachineSearchHit } from './services/message-search'
 import { SessionPickerModal } from './components/SessionPickerModal'
 import { GoToChatDialog } from './components/GoToChatDialog'
 import { QuickPromptModal } from './components/QuickPromptModal'
@@ -59,7 +59,7 @@ import { draftSessionId, isDraftSessionId } from '@shared/new-chat-draft'
 import { parkFirstSend, peekFirstSend, setDraftMaterializer, takeFirstSend } from './services/draft-chat'
 import { toAgentProvider, type SessionSummary, type ChatMessage } from '@shared/types'
 import { SETTING_DEFAULT_RUNTIME_MODE, isRuntimeMode } from '@shared/session-defaults'
-import { NEWEST_HISTORY_WINDOW } from './services/history-loader'
+import { NEWEST_HISTORY_WINDOW, ensureFullHistory } from './services/history-loader'
 import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgentType, resolveSessionResumeId, resolveSessionSelectTarget, shouldEvictMessages, shouldRetrySessionLoadAfterCreate } from './utils/session-eviction'
 import { createRendererLogger } from './logger'
 import { focusComposer } from './services/composer-registry'
@@ -1294,7 +1294,12 @@ export function App() {
       open?.projectPath ?? hit.projectPath,
       open?.machineId ?? hit.machineId,
     )
-    return searchHitShownId(hit, useLayoutStore.getState().focusedChatSessionId())
+    return searchHitReadyId(hit, {
+      focusedId: () => useLayoutStore.getState().focusedChatSessionId(),
+      sessionMessages: (conversationId) =>
+        useAgentStore.getState().sessions.find((session) => session.id === conversationId)?.messages,
+      ensureFullHistory,
+    })
   }, [handleSessionSelect])
 
   const handleOpenLoadedSessionBeside = useCallback(async (sessionId: string) => {

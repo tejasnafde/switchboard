@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { AppChannels } from '@shared/ipc-channels'
 import { agentShortLabel, providerKindFor, toAgentProvider } from '@shared/types'
+import type { ProviderKind } from '@shared/provider-events'
 import { formatRelativeTime } from '@shared/format'
 import { parseArchiveIntent } from '@shared/archive-intent'
 import type { MessageSearchResult } from '@shared/message-search'
@@ -42,11 +43,15 @@ function projectName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path
 }
 
-const AGENT_AVATAR = {
+const AGENT_AVATAR: Record<ProviderKind, { initials: string; className: string }> = {
   claude: { initials: 'CL', className: 'bg-[#6c5ce7]' },
   codex: { initials: 'CX', className: 'bg-[#10a37f]' },
   opencode: { initials: 'OC', className: 'bg-[#8a8a96]' },
-} as const
+  gemini: { initials: 'GE', className: 'bg-[var(--text-muted)]' },
+  vibe: { initials: 'VB', className: 'bg-[var(--text-muted)]' },
+  cline: { initials: 'CN', className: 'bg-[var(--text-muted)]' },
+  copilot: { initials: 'CP', className: 'bg-[var(--text-muted)]' },
+}
 
 function agentName(agentType: string): string {
   return agentShortLabel(toAgentProvider(agentType))
