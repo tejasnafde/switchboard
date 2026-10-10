@@ -31,7 +31,14 @@ interface FakeAgentState {
   lastChild: (EventEmitter & { kill: ReturnType<typeof vi.fn> }) | null
 }
 
-const fake = vi.hoisted(() => ({ state: null as FakeAgentState | null }))
+const fake = vi.hoisted(() => ({
+  state: null as FakeAgentState | null,
+  resumeSegment: null as { provider_session_id: string; provider_instance_id: string | null } | null,
+}))
+
+vi.mock('../../src/main/db/database', () => ({
+  resolveResumeSegment: () => fake.resumeSegment,
+}))
 
 vi.mock('../../src/main/provider/adapters/acp/agent-env', () => ({
   findAgentBinary: (name: string) => `/fake/bin/${name}`,
@@ -132,6 +139,7 @@ async function startGemini(events: RuntimeEvent[], extra: Record<string, unknown
 }
 
 beforeEach(() => {
+  fake.resumeSegment = null
   fake.state = {
     spawns: [],
     calls: [],
@@ -170,6 +178,26 @@ describe('generic ACP adapter over the protocol', () => {
       expect.objectContaining({ id: 'gemini-pro', label: 'Gemini Pro' }),
       expect.objectContaining({ id: 'gemini-flash', label: 'Gemini Flash' }),
     ])
+  })
+
+  it('hands the first-prompt hook what the user typed, not the history preamble', async () => {
+    fake.resumeSegment = { provider_session_id: 'old-sess', provider_instance_id: null }
+    const firstPrompts: string[] = []
+    const { AcpAdapter } = await import('../../src/main/provider/adapters/acp/acp-adapter')
+    const { genericAcpLaunchConfig } = await import('../../src/main/provider/adapters/acp/agents')
+    const adapter = new AcpAdapter({
+      ...genericAcpLaunchConfig('gemini'),
+      onFirstPrompt: async ({ message }) => { firstPrompts.push(message) },
+    })
+    await adapter.startSession({
+      threadId: 'chat-1',
+      provider: 'gemini',
+      cwd: '/tmp/project',
+      runtimeMode: 'full-access',
+      portableHistory: async () => 'EARLIER CONVERSATION',
+    }, () => {})
+    await adapter.sendTurn('chat-1', 'fix the bug')
+    expect(firstPrompts).toEqual(['fix the bug'])
   })
 
   it('maps plan onto the advertised plan mode and back to the mode it started in', async () => {

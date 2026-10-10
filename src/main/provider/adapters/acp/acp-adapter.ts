@@ -771,6 +771,8 @@ export class AcpAdapter implements ProviderAdapter {
     // Hold the slot across the mode await below, or a queued send arriving
     // now would start its own prompt ahead of this one.
     active.startingPrompt = true
+    // The title and first-prompt hook use what the user typed, never the history preamble.
+    const userText = message
     message = await withVisibleHistory(active, threadId, message)
 
     if (runtimeMode && runtimeMode !== active.session.runtimeMode) {
@@ -855,9 +857,9 @@ export class AcpAdapter implements ProviderAdapter {
     // Only after the ACP connection has accepted the prompt invocation: an
     // OpenCode summary makes the session visible to scanners.
     if (!active.firstUserMessage) {
-      active.firstUserMessage = message
+      active.firstUserMessage = userText
       try {
-        await this.config.onFirstPrompt?.({ sessionId, message, session: active.session })
+        await this.config.onFirstPrompt?.({ sessionId, message: userText, session: active.session })
       } catch (err) {
         log.warn(`${this.provider} first-prompt hook failed: ${errorText(err)}`)
       }
