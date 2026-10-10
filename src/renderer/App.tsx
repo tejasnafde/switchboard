@@ -26,6 +26,7 @@ import { SettingsPage } from './components/SettingsPage'
 import type { SettingsPageId } from './components/settings/settings-rows'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchModal } from './components/SearchModal'
+import { searchHitReadyId, type MachineSearchHit } from './services/message-search'
 import { SessionPickerModal } from './components/SessionPickerModal'
 import { GoToChatDialog } from './components/GoToChatDialog'
 import { QuickPromptModal } from './components/QuickPromptModal'
@@ -58,7 +59,7 @@ import { draftSessionId, isDraftSessionId } from '@shared/new-chat-draft'
 import { parkFirstSend, peekFirstSend, setDraftMaterializer, takeFirstSend } from './services/draft-chat'
 import { toAgentProvider, type SessionSummary, type ChatMessage } from '@shared/types'
 import { SETTING_DEFAULT_RUNTIME_MODE, isRuntimeMode } from '@shared/session-defaults'
-import { NEWEST_HISTORY_WINDOW } from './services/history-loader'
+import { NEWEST_HISTORY_WINDOW, ensureFullHistory } from './services/history-loader'
 import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgentType, resolveSessionResumeId, resolveSessionSelectTarget, shouldEvictMessages, shouldRetrySessionLoadAfterCreate } from './utils/session-eviction'
 import { createRendererLogger } from './logger'
 import { focusComposer } from './services/composer-registry'
@@ -1284,6 +1285,23 @@ export function App() {
     return () => registerReviewChatOpener(null)
   }, [handleSessionSelect])
 
+  // A message search hit opens through the sidebar path too, on the machine
+  // that answered it, reusing the chat when it is already open.
+  const handleOpenSearchHit = useCallback(async (hit: MachineSearchHit) => {
+    const open = useAgentStore.getState().sessions.find((session) => session.id === hit.conversationId)
+    await handleSessionSelect(
+      { id: hit.conversationId, source: toAgentProvider(hit.agentType), title: hit.conversationTitle, startedAt: hit.timestamp ?? 0, messageCount: 0, filePath: '', agentType: hit.agentType, worktreePath: hit.worktreePath, worktreeBranch: hit.worktreeBranch },
+      open?.projectPath ?? hit.projectPath,
+      open?.machineId ?? hit.machineId,
+    )
+    return searchHitReadyId(hit, {
+      focusedId: () => useLayoutStore.getState().focusedChatSessionId(),
+      sessionMessages: (conversationId) =>
+        useAgentStore.getState().sessions.find((session) => session.id === conversationId)?.messages,
+      ensureFullHistory,
+    })
+  }, [handleSessionSelect])
+
   const handleOpenLoadedSessionBeside = useCallback(async (sessionId: string) => {
     const session = useAgentStore.getState().sessions.find((candidate) => candidate.id === sessionId)
     if (!session) {
@@ -1760,7 +1778,7 @@ export function App() {
       )}
 
       <SettingsPage page={settingsPage} onNavigate={setSettingsPage} onClose={() => setSettingsPage(null)} />
-      <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} onOpenChat={handleOpenSearchHit} />
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
