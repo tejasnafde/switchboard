@@ -18,6 +18,7 @@ import { ViewToggle } from './components/layout/ViewToggle'
 import { TerminalSessionPane } from './components/terminal/TerminalSessionPane'
 import { TerminalStrip } from './components/terminal/TerminalStrip'
 import { IdePane } from './components/ide/IdePane'
+import { ChatVisual } from './components/chat/visuals/ChatVisual'
 import { KanbanView } from './components/kanban/KanbanView'
 import { ReviewsView } from './components/reviews/ReviewsView'
 import { registerReviewChatOpener } from './components/reviews/review-to-chat'
@@ -25,8 +26,9 @@ import { SettingsPage } from './components/SettingsPage'
 import type { SettingsPageId } from './components/settings/settings-rows'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchModal } from './components/SearchModal'
-import { StatusBar } from './components/StatusBar'
+import { searchHitReadyId, type MachineSearchHit } from './services/message-search'
 import { SessionPickerModal } from './components/SessionPickerModal'
+import { GoToChatDialog } from './components/GoToChatDialog'
 import { QuickPromptModal } from './components/QuickPromptModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { UpdateToast } from './components/UpdateToast'
@@ -62,6 +64,7 @@ import { draftSessionId, isDraftSessionId } from '@shared/new-chat-draft'
 import { parkFirstSend, peekFirstSend, setDraftMaterializer, takeFirstSend } from './services/draft-chat'
 import { toAgentProvider, type SessionSummary, type ChatMessage } from '@shared/types'
 import { SETTING_DEFAULT_RUNTIME_MODE, isRuntimeMode } from '@shared/session-defaults'
+import { NEWEST_HISTORY_WINDOW, ensureFullHistory } from './services/history-loader'
 import {
   needsMessageReload,
   resolveSessionDisplayTitle,
@@ -76,6 +79,7 @@ import { focusComposer } from './services/composer-registry'
 import { useDraftStore } from './stores/draft-store'
 import { nextDualChatShortcutAction, shouldEvictReplacedSession } from './services/chat-workspace'
 import type { AgentProvider } from '@shared/types'
+import type { ReasoningEffort } from '@shared/models'
 import { recoverPendingRequests } from './services/pending-request-recovery'
 import { ProviderChannels } from '@shared/ipc-channels'
 import type { LiveSessionSummary } from '@shared/live-sessions'
@@ -131,6 +135,7 @@ export function App() {
     registerTerminalEl,
     rightPaneMode,
     toggleRightPaneMode,
+    paneVisual,
     appView,
     dataScienceMode,
   } = useLayoutStore()
@@ -162,6 +167,7 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
+  const [goToChatOpen, setGoToChatOpen] = useState(false)
   const [quickPromptOpen, setQuickPromptOpen] = useState(false)
   // Refs mirror modal-open state so the keybinding effect (which only
   // depends on toggle callbacks) reads fresh values without re-binding
@@ -478,12 +484,15 @@ export function App() {
             if (!session || session.type === 'terminal') continue
             if (machineId !== null && session.machineId !== machineId) continue
             if (session.status === 'running' || session.status === 'thinking') continue
-            const loaded = (await window.api.app.loadSessionById(id)) as { messages?: ChatMessage[] } | null
+            const loaded = (await window.api.app.loadSessionById(id, NEWEST_HISTORY_WINDOW)) as {
+              messages?: ChatMessage[]
+              nextBeforeId?: string | null
+            } | null
             if (!current()) return
             const now = useAgentStore.getState().sessions.find((s) => s.id === id)
             // A turn that started while this loaded owns the transcript now.
             if (now && now.status !== 'running' && now.status !== 'thinking' && loaded?.messages?.length) {
-              useAgentStore.getState().setMessages(id, loaded.messages)
+              useAgentStore.getState().setMessages(id, loaded.messages, loaded.nextBeforeId ?? null)
               void recoverPendingRequests(id)
             }
           }
@@ -1053,9 +1062,9 @@ export function App() {
     ) => {
       const openTiming = beginChatOpen(session.id)
       let storeMs = 0
-      const setLoadedMessages = (id: string, messages: ChatMessage[]) => {
+      const setLoadedMessages = (id: string, messages: ChatMessage[], olderCursor: string | null | undefined) => {
         const start = performance.now()
-        setMessages(id, messages)
+        setMessages(id, messages, olderCursor ?? null)
         storeMs += performance.now() - start
       }
       const readyTiming = (id: string, load: ChatLoadDiagnostics | null) => {
@@ -1123,15 +1132,19 @@ export function App() {
           // Messages may have been evicted - reload from disk if so.
           if (needsMessageReload(existing)) {
             try {
-              const resp = (await window.api.app.loadSessionById(session.id)) as ChatLoadDiagnostics & {
+              const resp = (await window.api.app.loadSessionById(
+                session.id,
+                NEWEST_HISTORY_WINDOW,
+              )) as ChatLoadDiagnostics & {
                 messages: ChatMessage[]
+                nextBeforeId?: string | null
                 meta: { id: string; title: string; projectPath: string; agentType: string } | null
               }
               if (!isCurrentOpen()) return
               waits.settleLoad(openingSlot, openingTicket, session.id)
               loadDiagnostics = resp ?? null
               if (resp?.messages?.length) {
-                setLoadedMessages(session.id, resp.messages)
+                setLoadedMessages(session.id, resp.messages, resp.nextBeforeId)
               } else if (effectiveMachineId !== 'local') {
                 // Empty reload for a remote chat means routing/scan failure, not
                 // an empty conversation.
@@ -1180,6 +1193,7 @@ export function App() {
         // building a twin next to it.
         type LoadedSession = ChatLoadDiagnostics & {
           messages: ChatMessage[]
+          nextBeforeId?: string | null
           meta: {
             id: string
             title: string
@@ -1193,14 +1207,14 @@ export function App() {
             providerInstanceId?: string | null
             runtimeMode?: RuntimeMode | null
             model?: string | null
-            reasoningEffort?: 'low' | 'medium' | 'high' | null
+            reasoningEffort?: ReasoningEffort | null
             launchConfigName?: string | null
             forkMetadata?: import('@shared/conversation-fork').ForkLineageMetadata | null
           } | null
         }
         let loaded: LoadedSession | null = null
         try {
-          loaded = (await window.api.app.loadSessionById(session.id)) as LoadedSession
+          loaded = (await window.api.app.loadSessionById(session.id, NEWEST_HISTORY_WINDOW)) as LoadedSession
           waits.settleLoad(openingSlot, openingTicket, session.id)
         } catch (err) {
           log.warn('session history load failed', { sessionId: session.id, machineId: effectiveMachineId, err })
@@ -1304,7 +1318,7 @@ export function App() {
 
         if (shouldRetrySessionLoadAfterCreate(Boolean(loaded?.meta), session.filePath)) {
           try {
-            loaded = (await window.api.app.loadSessionById(session.id)) as LoadedSession
+            loaded = (await window.api.app.loadSessionById(session.id, NEWEST_HISTORY_WINDOW)) as LoadedSession
             loadDiagnostics = loaded
             waits.settleLoad(openingSlot, openingTicket, session.id)
           } catch (err) {
@@ -1362,7 +1376,7 @@ export function App() {
           log.warn('restore pinned model failed', { sessionId: session.id, err: modelResult.reason })
         }
 
-        if (loaded?.messages?.length) setLoadedMessages(session.id, loaded.messages)
+        if (loaded?.messages?.length) setLoadedMessages(session.id, loaded.messages, loaded.nextBeforeId)
         readyTiming(session.id, loadDiagnostics)
         void recoverPendingRequests(session.id)
       } finally {
@@ -1395,6 +1409,36 @@ export function App() {
     return () => registerReviewChatOpener(null)
   }, [handleSessionSelect])
 
+  // A message search hit opens through the sidebar path too, on the machine
+  // that answered it, reusing the chat when it is already open.
+  const handleOpenSearchHit = useCallback(
+    async (hit: MachineSearchHit) => {
+      const open = useAgentStore.getState().sessions.find((session) => session.id === hit.conversationId)
+      await handleSessionSelect(
+        {
+          id: hit.conversationId,
+          source: toAgentProvider(hit.agentType),
+          title: hit.conversationTitle,
+          startedAt: hit.timestamp ?? 0,
+          messageCount: 0,
+          filePath: '',
+          agentType: hit.agentType,
+          worktreePath: hit.worktreePath,
+          worktreeBranch: hit.worktreeBranch,
+        },
+        open?.projectPath ?? hit.projectPath,
+        open?.machineId ?? hit.machineId,
+      )
+      return searchHitReadyId(hit, {
+        focusedId: () => useLayoutStore.getState().focusedChatSessionId(),
+        sessionMessages: (conversationId) =>
+          useAgentStore.getState().sessions.find((session) => session.id === conversationId)?.messages,
+        ensureFullHistory,
+      })
+    },
+    [handleSessionSelect],
+  )
+
   const handleOpenLoadedSessionBeside = useCallback(
     async (sessionId: string) => {
       const session = useAgentStore.getState().sessions.find((candidate) => candidate.id === sessionId)
@@ -1405,8 +1449,11 @@ export function App() {
       openChatBeside(sessionId)
       if (needsMessageReload(session)) {
         try {
-          const loaded = (await window.api.app.loadSessionById(sessionId)) as { messages?: ChatMessage[] } | null
-          if (loaded?.messages?.length) setMessages(sessionId, loaded.messages)
+          const loaded = (await window.api.app.loadSessionById(sessionId, NEWEST_HISTORY_WINDOW)) as {
+            messages?: ChatMessage[]
+            nextBeforeId?: string | null
+          } | null
+          if (loaded?.messages?.length) setMessages(sessionId, loaded.messages, loaded.nextBeforeId ?? null)
         } catch (err) {
           log.warn('open-beside history reload failed', { sessionId, err })
           setAppToast('The chat opened, but its history could not be reloaded.')
@@ -1493,6 +1540,10 @@ export function App() {
         case 'toggle-search':
           e.preventDefault()
           setSearchOpen((prev) => !prev)
+          break
+        case 'go-to-chat':
+          e.preventDefault()
+          setGoToChatOpen((prev) => !prev)
           break
         // On the landing screen the companion is its draft, so the terminal
         // opens in the project its chip shows.
@@ -1828,7 +1879,7 @@ export function App() {
               style={{
                 position: 'absolute',
                 inset: 0,
-                display: rightPaneMode === 'terminal' ? 'flex' : 'none',
+                display: rightPaneMode === 'terminal' && !paneVisual ? 'flex' : 'none',
               }}
             >
               <TerminalStrip />
@@ -1837,11 +1888,18 @@ export function App() {
               style={{
                 position: 'absolute',
                 inset: 0,
-                display: rightPaneMode === 'files' ? 'flex' : 'none',
+                display: rightPaneMode === 'files' && !paneVisual ? 'flex' : 'none',
               }}
             >
               <IdePane />
             </div>
+            {/* Open in pane: the panes above stay mounted, hidden (the
+                translucent theme would show them through it). */}
+            {paneVisual && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex' }}>
+                <ChatVisual key={paneVisual.source} kind={paneVisual.kind} source={paneVisual.source} variant="pane" />
+              </div>
+            )}
           </div>
         </div>
 
@@ -1863,8 +1921,6 @@ export function App() {
             shown, so nothing polls a host from a hidden view. */}
         {appView === 'reviews' && <ReviewsView onOpenSettings={() => setSettingsPage('accounts')} />}
       </div>
-
-      <StatusBar />
 
       {Object.values(worktreeCreationSnapshots).some((snapshot) => snapshot.status !== 'ready') && (
         <div
@@ -1892,7 +1948,7 @@ export function App() {
       )}
 
       <SettingsPage page={settingsPage} onNavigate={setSettingsPage} onClose={() => setSettingsPage(null)} />
-      <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} onOpenChat={handleOpenSearchHit} />
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
@@ -1918,6 +1974,13 @@ export function App() {
         }}
         onNewChat={() => {
           void showLandingScreen()
+        }}
+      />
+      <GoToChatDialog
+        open={goToChatOpen}
+        onClose={() => setGoToChatOpen(false)}
+        onOpenChat={(item, placement) => {
+          void handleSessionSelect(item.session, item.projectPath, item.machineId, placement)
         }}
       />
       <SessionPickerModal

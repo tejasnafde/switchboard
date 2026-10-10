@@ -1,0 +1,80 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "provider-switch-handoff",
+  "summary": "A chat that switches between Claude Code, Codex and OpenCode gets a correct context handoff. (1) The backend builds the pending handoff into the next accepted turn (AtomicUserTurnSubmission's new finalize step, after the payload hash, so a retry of the same origin is still recognised) and consumes the flag in the acceptance transaction, writing the [[sb:context-handoff]] marker and recording it in the stored envelope so the echo and its replay carry handoffMarker. A client that already injected a preamble (an older desktop or Expo build) is left alone. (2) A provider returning to a chat it took part in, whose live session resumed its native one (ProviderAdapter.resumedNativeSession), gets only the turns after the newest agent-switch marker that left it (a delta, its own header); otherwise the whole conversation. (3) A failed native resume no longer continues blind: Claude (missing transcript, or the retry without --resume) rewrites the first unanswered SDK message, Codex (missing thread) and OpenCode (failed resume, or no resume capability) prefix the next message, each with the visible conversation from SessionStartOpts.portableHistory, minus the unanswered tail; the notices no longer say the messages are unaffected. (4) The handoff pins the first user message (dropped only when nothing else is left), includes tool calls and error rows in compact form, keeps whole turns newest first with a notice of how many were left out, keeps the TAIL of a newest turn larger than the budget, and is budgeted at a quarter of the target model's context window (at most 32k tokens, 3 characters per token) when a context_window event reported it for the chat's pinned model, else the 30,000-character cap. (5) An agent switch is one backend transaction: app:set-conversation-provider-selection with a 4th agentSwitch argument also writes the switch marker and folds the pending handoff (history is the client's flag or any stored user or assistant message on the thread's ids), and answers pendingHandoffFrom; an older backend ignores the argument and the desktop falls back to its separate calls. app:get-conversation-pending-handoff answers backendBuilds: true, and a client seeing it neither builds a preamble nor clears the flag. (6) Phones show the handoff marker row live from user.message.handoffMarker, with the id the history load uses.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/preload/index.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/handoff-turn.ts",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/lib/thread-history.ts",
+        "apps/mobile/src/stores/chat.ts",
+        "tests/unit/mobile-handoff-turn.test.ts",
+        "tests/unit/mobile-chat-store.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadEventDecoder.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadStoreReducerTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/handoff.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/durable-turn-acceptance.ts",
+        "src/main/provider/visible-history.ts",
+        "src/main/provider/types.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/adapters/codex-adapter.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/ipc/app.ts",
+        "tests/unit/handoff-preamble.test.ts",
+        "tests/unit/handoff-resume-fallback.test.ts",
+        "tests/unit/provider-registry-handoff.test.ts",
+        "tests/unit/atomic-user-turn-submission.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/conversations.ts",
+        "src/main/db/turn-acceptance.ts",
+        "tests/unit/conversation-rotation-fallback.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test",
+      "cd apps/android && ./gradlew testDebugUnitTest --tests '*ThreadStoreReducerTest*' --tests '*ThreadEventDecoderTest*'"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No real agent CLI was run: the delta, the fallback and the budget are covered by vitest over fake adapters and a fake history.",
+      "The context-window budget applies only when the chat pins a model whose window an earlier context_window event reported in this process; an unpinned chat, or a pinned alias that differs from the resolved model id, uses the 30,000-character cap.",
+      "Neither phone can switch provider; both only send turns, so the switch transaction is desktop-only. Their live marker row was not seen on a device."
+    ]
+  }
+}

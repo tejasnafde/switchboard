@@ -34,6 +34,8 @@ export const AppChannels = {
   GET_ARCHIVED_CONVERSATIONS: 'app:get-archived-conversations',
   EXPORT_MARKDOWN: 'app:export-markdown',
   LOAD_SESSION_BY_ID: 'app:load-session-by-id',
+  LOAD_HISTORY_IMAGE: 'app:load-history-image',
+  LOAD_TOOL_CALL: 'app:load-tool-call',
   ATTACH_TO_THREAD: 'app:attach-to-thread',
   GET_CONVERSATION_RUNTIME_MODE: 'app:get-conversation-runtime-mode',
   SET_CONVERSATION_RUNTIME_MODE: 'app:set-conversation-runtime-mode',
@@ -361,6 +363,9 @@ export const ProviderInstanceChannels = {
   /** Read this instance's subscription usage limits. Returns ProviderUsage;
    *  never throws, reports failures via its `status` field. */
   USAGE: 'provider-instances:usage',
+  /** Spend one banked Codex rate-limit reset: `(id, creditId?)` returns
+   *  CodexResetResult. Admin-scoped (src/shared/device-auth.ts). */
+  CONSUME_RESET: 'provider-instances:consume-reset',
   CREATE_OAUTH_DIR: 'provider-instances:create-oauth-dir',
   /** Local-only: resolve an instance's oauth_dir absolute path (not a secret,
    *  just a path). Used to forward the dir NAME to a remote at session start. */

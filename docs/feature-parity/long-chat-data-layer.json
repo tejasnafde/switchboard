@@ -1,0 +1,82 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "long-chat-data-layer",
+  "summary": "Long chats open cheaply after the first time. The backend keeps the merged history of recent chats and reuses it while the parse cache returns the same transcript arrays and the conversation's SQLite message revision (bumped by triggers on every insert, update and delete) is unchanged, so repeat opens, older pages, image and tool call misses and full loads skip the SQLite read and the merge. Pairing stored task notices with transcript lines is indexed instead of quadratic, and a stored pill or image enrichment is parsed once per load. Codex rollout copies in several CODEX_HOME folders are proven byte prefixes by sha256 and parsed once. A history load may ask toolPreviews (history_tool_previews_v1): tool calls with more than 2,000 characters of input or output arrive shortened and marked preview, and app:load-tool-call serves one in full when the user expands it. WsHost negotiates permessage-deflate for frames of 4 KiB or more with clients that offer it; the IAP TCP host is unchanged.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/services/history-loader.ts",
+        "src/renderer/services/history-window.ts",
+        "src/renderer/components/chat/HistoryToolCall.tsx",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/preload/index.ts",
+        "tests/unit/history-tool-previews.test.ts",
+        "e2e/history-tool-previews.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app never sends toolPreviews, so it keeps receiving whole tool calls from the same handler. Its socket is unchanged in code: on Android React Native's OkHttp offers permessage-deflate and now gets compressed frames, which OkHttp inflates below the app; iOS's WebSocket offers no extension and gets plain frames as before."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Android never sends toolPreviews, so its history responses are unchanged. Its OkHttp 4.12 socket offers a bare permessage-deflate, which the server answers with server_no_context_takeover and client_no_context_takeover only (no client_max_window_bits, which OkHttp would refuse), so frames arrive compressed and are inflated inside OkHttp. The IAP path speaks NDJSON over TcpHost, which is unchanged."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/conversations/history.ts",
+        "src/main/agent/dedupe-messages.ts",
+        "src/main/ipc/enrich-display-body.ts",
+        "src/main/ipc/app.ts",
+        "src/main/conversations/fork-anchor.ts",
+        "src/main/backend/ws-host.ts",
+        "src/main/backend/mobile-server.ts",
+        "src/server/index.ts",
+        "src/shared/history-tool-previews.ts",
+        "src/shared/phone-history-window.ts",
+        "src/shared/ws-protocol.ts",
+        "src/shared/ipc-channels.ts",
+        "tests/unit/history-merge-memo.test.ts",
+        "tests/unit/dedupe-messages.test.ts",
+        "tests/unit/enrich-display-body.test.ts",
+        "tests/unit/conversation-fork-anchor.test.ts",
+        "tests/unit/ws-host-deflate.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts",
+        "src/main/db/messages.ts",
+        "tests/unit/history-merge-memo.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md",
+        "docs/feature-parity/long-chat-data-layer.json"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/history-merge-memo.test.ts: the memo serves a repeat open and is rebuilt after a stored row is added, updated or deleted and after the transcript grows; two Codex rollout copies where one is a byte prefix of the other are parsed once.",
+      "tests/unit/dedupe-messages.test.ts: 4,000 stored task notices pair with 4,000 transcript lines in under a second (about 6.6 s before).",
+      "tests/unit/enrich-display-body.test.ts: one stored enrichment matching two messages is parsed once.",
+      "tests/unit/history-tool-previews.test.ts: small calls kept as they are, long output and long JSON input shortened with the collapsed summary unchanged, whole calls for clients that do not ask, a preview served whole from the memo without a reload, the history fallback and clean misses, and export reloading a chat that holds previews.",
+      "e2e/history-tool-previews.e2e.mjs (built app, SB_E2E_BACKGROUND=1, isolated profile): a SQLite-only chat with a 20,000-character Bash output opens with the preview, and expanding the call shows the whole output; with the plain ToolCallBlock it fails.",
+      "tests/unit/conversation-fork-anchor.test.ts: an anchor digested over a window with tool call previews and image references resolves.",
+      "tests/unit/ws-host-deflate.test.ts: a history window crosses the socket at under a quarter of its size for a client that offers deflate, plain for one that does not, and OkHttp's bare offer gets parameters OkHttp accepts.",
+      "Copy of a real 7,638-row chat (98 MB transcript in five profile copies, real SQLite rows) in a scratch dir: warm reopen 1.2 s to 0.26 s, merge 610 ms to 41 ms, first open 1.8 s to 1.2 s; a 131k-row SQLite-only chat 1.6 to 2.8 s to under 10 ms on reopen. New-window payload with previews 336 KB to 207 KB; a phone window on the wire 357 KB to 112 KB with deflate."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No phone run: the Android and Expo-on-Android sockets negotiate deflate inside OkHttp; the handshake is tested against OkHttp's offer, not on a device.",
+      "A chat that changed since its last open (a turn ended) still pays the SQLite read and the merge once."
+    ]
+  }
+}

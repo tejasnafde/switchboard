@@ -115,7 +115,7 @@ Code chat, terminal, file, and git surface on your laptop.
 ### Compare or delegate with two chats
 
 Open a conversation, choose **Open beside**, and select a second loaded chat.
-The highlighted chat owns the IDE, terminal strip, status bar, `Cmd+K`, and
+The highlighted chat owns the IDE, terminal strip, `Cmd+K`, and
 session-scoped commands; click anywhere in the other chat to switch that
 binding. **Copy prompt → other** clones the current draft, pills, and image
 attachments without linking the two composers. Each side is sent separately,

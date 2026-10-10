@@ -44,6 +44,7 @@ vi.mock('../../src/main/db/database', () => ({
   getConversationExecutionRoot: vi.fn(() => null),
   listSettingsWithPrefix: vi.fn(() => []),
   getConversationModel: vi.fn(() => null),
+  getConversationReasoningEffort: vi.fn(() => null),
   getConversationProviderInstanceId: vi.fn(() => null),
   getConversationRuntimeMode: vi.fn(() => null),
 }))

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { splitModelVariant } from '../../src/renderer/components/chat/model-variants'
+import { splitModelVariant } from '../../src/shared/effort'
 
 describe('splitModelVariant', () => {
   it('strips a known variant suffix', () => {

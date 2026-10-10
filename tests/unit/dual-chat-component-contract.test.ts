@@ -10,7 +10,7 @@ describe('dual-chat component contract', () => {
   const panel = read('../../src/renderer/components/chat/ChatPanel.tsx')
   const workspace = read('../../src/renderer/components/chat/ChatWorkspacePanels.tsx')
   const input = read('../../src/renderer/components/chat/ChatInput.tsx')
-  const statusBar = read('../../src/renderer/components/StatusBar.tsx')
+  const terminalStrip = read('../../src/renderer/components/terminal/TerminalStrip.tsx')
   const sidebar = read('../../src/renderer/components/sidebar/Sidebar.tsx')
   const main = read('../../src/main/index.ts')
   const preload = read('../../src/preload/index.ts')
@@ -31,9 +31,9 @@ describe('dual-chat component contract', () => {
     expect(panel).not.toMatch(/document\.querySelector\(['"]textarea/)
   })
 
-  it('exposes the companion-session binding on the persistent status surface', () => {
-    expect(statusBar).toContain('data-status-bar')
-    expect(statusBar).toContain('data-session-id={activeSessionId ?? undefined}')
+  it('exposes the companion-session binding on the terminal strip', () => {
+    expect(terminalStrip).toContain('data-terminal-strip')
+    expect(terminalStrip).toContain('data-session-id={activeSessionId ?? undefined}')
   })
 
   it('subscribes to slot ids as stable primitives for React external-store snapshots', () => {

@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in Switchboard does not work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead. Paste error text exactly.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a Claude Code chat in a project under ~/Desktop
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      multiple: true
+      options:
+        - Desktop (macOS)
+        - Desktop (Windows)
+        - Phone (Android app)
+        - Phone (iOS / Expo app)
+        - Remote machine over SSH or IAP
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      multiple: true
+      options:
+        - Claude Code
+        - Codex
+        - OpenCode
+        - Not agent related
+  - type: input
+    id: version
+    attributes:
+      label: Switchboard version
+      description: Desktop, Settings > About. Phone, the version line in the app's settings or at the bottom of Connections.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >
+        Desktop logs are in ~/Library/Application Support/switchboard/logs/ (macOS).
+        Remove tokens, paths or repository names you do not want public.
+      render: text

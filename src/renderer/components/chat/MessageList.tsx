@@ -1,5 +1,6 @@
 import { chatMessagesCommitted, chatMessagesUnmounted } from '../../services/perf-chat-open'
-import { useRef, useEffect, useCallback, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import { useRef, useEffect, useCallback, useLayoutEffect, useMemo, useReducer, useState, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { agentShortLabel, type AgentType, type ChatMessage } from '@shared/types'
 import { MessageBubble } from './MessageBubble'
@@ -15,6 +16,10 @@ import {
   projectTurnPresentation,
 } from './turn-presentation'
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
+import { shouldLoadOlder, turnIndexHolding } from '../../services/history-window'
+import { loadOlderHistory } from '../../services/history-loader'
+import { messageSearchTerms } from '@shared/message-search'
+import { cn } from '../../lib/utils'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -22,6 +27,8 @@ interface MessageListProps {
   visible?: boolean
   /** A turn is running, so rows can still grow on their own. */
   busy?: boolean
+  /** Older history exists past the loaded window; it loads near the top. */
+  hasOlderHistory?: boolean
   agentType?: AgentType
   // Promise-returning so the cards downstream can re-enable themselves when
   // the underlying IPC rejects.
@@ -82,14 +89,8 @@ function MeasuredTurn({
       ref={setRowRef}
       data-index={index}
       data-virtual-turn
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
-        transform: `translateY(${start}px)`,
-        marginBottom: '4px',
-      }}
+      className="absolute top-0 left-0 w-full mb-[4px]"
+      style={{ transform: `translateY(${start}px)` }}
     >
       {children}
     </div>
@@ -164,6 +165,7 @@ export function MessageList({
   sessionId,
   visible = true,
   busy = false,
+  hasOlderHistory = false,
   agentType = 'claude-code',
   onApproval,
   onAnswerQuestion,
@@ -189,6 +191,8 @@ export function MessageList({
   const prevSessionIdRef = useRef<string | null | undefined>(sessionId)
 
   const turns = useMemo(() => groupIntoTurns(messages), [messages])
+  const turnsRef = useRef(turns)
+  turnsRef.current = turns
   const turnsLengthRef = useRef(turns.length)
   turnsLengthRef.current = turns.length
 
@@ -209,8 +213,21 @@ export function MessageList({
   // showing false positives.
   const knownSkillNames = useSkillStore((s) => (sessionId ? s.namesBySession[sessionId] : undefined))
 
+  // A measured row above the view moves the scroll at once, but the virtualizer
+  // re-renders the rows' positions in a later task: one frame painted the
+  // content shifted by the size correction (the jump and flicker when
+  // scrolling up). Re-render before that frame instead.
+  const [, rerender] = useReducer((n: number) => n + 1, 0)
+  const scrollCorrectedRef = useRef(false)
   const virtualizer = useVirtualizer({
     count: turns.length,
+    onChange: (_instance, sync) => {
+      if (sync || !scrollCorrectedRef.current) return
+      scrollCorrectedRef.current = false
+      // A microtask: still before paint, and outside the commit a ref
+      // measurement may run in, where flushSync is not allowed.
+      queueMicrotask(() => flushSync(rerender))
+    },
     getScrollElement: () => containerRef.current,
     // Rough estimate - the measurer corrects this on mount via the ref.
     // 120px covers a short chat bubble + role label + timestamp.
@@ -227,16 +244,85 @@ export function MessageList({
     getItemKey: (index) => turns[index]?.[0]?.id ?? index,
   })
 
+  // A row above the view changed size: move the scroll by the same amount so
+  // the view stays put. Done here rather than by the virtualizer, whose own
+  // correction adds to the offset of its last scroll event and so undoes a
+  // scroll position set since (the anchor restore below).
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) => {
+    const container = instance.scrollElement
+    if (!container || item.start >= container.scrollTop) return false
+    container.scrollTop += delta
+    instance.scrollOffset = container.scrollTop
+    scrollCorrectedRef.current = true
+    return false
+  }
+
+  // The first row in view, so rows added above it (an older history window)
+  // do not move what the user is reading.
+  const viewAnchorRef = useRef<{ messageId: string; index: number; offset: number } | null>(null)
+  const hasOlderRef = useRef(hasOlderHistory)
+  hasOlderRef.current = hasOlderHistory
+  const loadingOlderRef = useRef(false)
+
+  const maybeLoadOlder = useCallback(() => {
+    const container = containerRef.current
+    if (!container || !sessionId || programmaticScrollRef.current) return
+    const first = virtualizer.getVirtualItems().find((item) => item.end > container.scrollTop)
+    if (
+      !shouldLoadOlder({
+        scrollTop: container.scrollTop,
+        firstVisibleTurn: first?.index ?? null,
+        turnCount: turnsLengthRef.current,
+        hasOlder: hasOlderRef.current,
+        loading: loadingOlderRef.current,
+      })
+    )
+      return
+    loadingOlderRef.current = true
+    void loadOlderHistory(sessionId).finally(() => {
+      loadingOlderRef.current = false
+    })
+  }, [sessionId, virtualizer])
+
   const handleScroll = useCallback(() => {
     const container = containerRef.current
     if (!container) return
+    const first = virtualizer.getVirtualItems().find((item) => item.end > container.scrollTop)
+    const firstId = first ? turnsRef.current[first.index]?.[0]?.id : undefined
+    viewAnchorRef.current =
+      first && firstId ? { messageId: firstId, index: first.index, offset: first.start - container.scrollTop } : null
+    maybeLoadOlder()
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
     if (programmaticScrollRef.current) {
       if (distanceFromBottom <= 50) isScrollLockedRef.current = false
       return
     }
     isScrollLockedRef.current = distanceFromBottom > 50
-  }, [])
+  }, [maybeLoadOlder, virtualizer])
+
+  // Rows were added above the one in view: put it back where it was. While
+  // following the bottom there is nothing to keep; the follow logic owns it.
+  useLayoutEffect(() => {
+    const container = containerRef.current
+    const anchor = viewAnchorRef.current
+    if (!container) return
+    if (anchor && isScrollLockedRef.current) {
+      const index = turnIndexHolding(turns, anchor.messageId)
+      const start = index >= 0 ? virtualizer.measurementsCache[index]?.start : undefined
+      if (index !== anchor.index && start !== undefined) {
+        container.scrollTop = start - anchor.offset
+        viewAnchorRef.current = { ...anchor, index }
+        // This render laid out the rows around the old offset, which now
+        // hold other turns: one frame showed an empty view. Render the rows
+        // around the anchor before that frame (an update from a layout
+        // effect commits before paint).
+        virtualizer.scrollOffset = container.scrollTop
+        rerender()
+      }
+    }
+    // A window shorter than the pane cannot be scrolled to its top.
+    if (visible && container.clientHeight > 0 && container.scrollHeight <= container.clientHeight) maybeLoadOlder()
+  }, [turns, visible, virtualizer, maybeLoadOlder])
 
   const beginProgrammaticFollow = useCallback(() => {
     programmaticScrollRef.current = true
@@ -501,20 +587,9 @@ export function MessageList({
 
   if (turns.length === 0) {
     return (
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--text-muted)',
-          fontSize: '14px',
-          padding: '20px',
-          textAlign: 'center',
-        }}
-      >
+      <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] text-[14px] p-[20px] text-center">
         <div>
-          <div style={{ marginBottom: '12px', opacity: 0.4 }}>
+          <div className="mb-[12px] opacity-40">
             <svg
               width="32"
               height="32"
@@ -548,24 +623,14 @@ export function MessageList({
       onPointerDown={() => {
         programmaticScrollRef.current = false
       }}
-      style={{
-        flex: 1,
-        overflowY: 'auto',
-        // NOTE: deliberately NOT using `contain: strict` - it creates a new
-        // containing block for `position: fixed` descendants, which breaks
-        // the MessageBubble image lightbox (clips to the scroll container
-        // instead of covering the viewport). The virtualizer alone provides
-        // enough perf without CSS containment.
-      }}
+      // NOTE: deliberately NOT using `contain: strict` - it creates a new
+      // containing block for `position: fixed` descendants, which breaks
+      // the MessageBubble image lightbox (clips to the scroll container
+      // instead of covering the viewport). The virtualizer alone provides
+      // enough perf without CSS containment.
+      className="flex-1 overflow-y-auto"
     >
-      <div
-        ref={contentRef}
-        style={{
-          height: `${totalSize}px`,
-          width: '100%',
-          position: 'relative',
-        }}
-      >
+      <div ref={contentRef} className="relative w-full" style={{ height: `${totalSize}px` }}>
         {virtualItems.map((vi) => {
           const group = turns[vi.index]
           const role = group[0].role
@@ -605,13 +670,11 @@ export function MessageList({
               {/* Turn role label. A group of provider-generated user rows is not "You". */}
               {!(isUser && group.every(isSyntheticOnlyMessage)) && (
                 <div
-                  style={{
-                    padding: '4px 16px 0',
-                    fontSize: '11px',
-                    color: isSystem ? 'var(--warning)' : 'var(--text-muted)',
-                    fontWeight: 500,
-                    textAlign: isUser ? 'right' : 'left',
-                  }}
+                  className={cn(
+                    'pt-[4px] px-[16px] pb-0 text-[11px] [font-weight:500]',
+                    isSystem ? 'text-[var(--warning)]' : 'text-[var(--text-muted)]',
+                    isUser ? 'text-right' : 'text-left',
+                  )}
                 >
                   {roleLabel(role, agentType)}
                 </div>
@@ -660,14 +723,10 @@ export function MessageList({
 
               {/* Turn timestamp */}
               <div
-                className="turn-timestamp"
-                style={{
-                  padding: '0 16px',
-                  fontSize: '10px',
-                  color: 'var(--text-muted)',
-                  opacity: 0.5,
-                  textAlign: isUser ? 'right' : 'left',
-                }}
+                className={cn(
+                  'turn-timestamp py-0 px-[16px] text-[10px] text-[var(--text-muted)] opacity-50',
+                  isUser ? 'text-right' : 'text-left',
+                )}
               >
                 {new Date(timestamp).toLocaleTimeString([], {
                   hour: '2-digit',
@@ -685,7 +744,9 @@ export function MessageList({
 // ─── In-chat search highlight helpers ──────────────────────────────
 // Walk the message bubble's text nodes and wrap the first occurrence
 // of `query` (case-insensitive) with <mark class="sb-search-mark active">.
-// Returns the wrapping <mark> so the caller can scroll it into view.
+// A message can match on its words alone (`textMatchesSearch`), so when the
+// query as typed is not in the text, the first of its words that is gets
+// the mark. Returns the wrapping <mark> so the caller can scroll it into view.
 //
 // We deliberately wrap only the FIRST match per bubble - the in-pane
 // search bar steps through one match at a time (each step scrolls to
@@ -694,6 +755,15 @@ export function MessageList({
 function wrapSearchMatches(bubble: HTMLElement, query: string): HTMLElement | null {
   const q = query.trim()
   if (!q) return null
+  const needles = [q, ...messageSearchTerms(q)]
+  for (const needle of needles) {
+    const mark = wrapFirstOccurrence(bubble, needle)
+    if (mark) return mark
+  }
+  return null
+}
+
+function wrapFirstOccurrence(bubble: HTMLElement, needle: string): HTMLElement | null {
   // Use a TreeWalker rooted at the bubble. Skip <script>, <style>, and
   // anything inside an existing mark (don't double-wrap on consecutive
   // searches before clearSearchMarks runs).
@@ -707,7 +777,7 @@ function wrapSearchMatches(bubble: HTMLElement, query: string): HTMLElement | nu
       return NodeFilter.FILTER_ACCEPT
     },
   })
-  const lower = q.toLowerCase()
+  const lower = needle.toLowerCase()
   let textNode: Text | null = null
   let idx = -1
   while ((textNode = walker.nextNode() as Text | null)) {
@@ -717,8 +787,8 @@ function wrapSearchMatches(bubble: HTMLElement, query: string): HTMLElement | nu
   }
   if (!textNode || idx < 0) return null
   const before = textNode.nodeValue!.slice(0, idx)
-  const match = textNode.nodeValue!.slice(idx, idx + q.length)
-  const after = textNode.nodeValue!.slice(idx + q.length)
+  const match = textNode.nodeValue!.slice(idx, idx + needle.length)
+  const after = textNode.nodeValue!.slice(idx + needle.length)
   const mark = document.createElement('mark')
   mark.className = 'sb-search-mark active'
   mark.textContent = match

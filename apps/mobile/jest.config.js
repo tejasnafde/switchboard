@@ -17,6 +17,8 @@ module.exports = {
   // resolves modules itself, so it needs telling separately.
   moduleNameMapper: {
     '^@shared/(.*)$': '<rootDir>/../../src/shared/$1',
+    // The 3 MB visual host page is an asset; tests need only a module id.
+    '\\.html$': '<rootDir>/src/test/asset-stub.js',
   },
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testMatch: ['<rootDir>/src/**/__tests__/**/*.test.{ts,tsx}'],
@@ -25,5 +27,8 @@ module.exports = {
   // babel's own preset (react-native-reanimated/plugin and
   // @react-native/babel-preset). Overriding it here replaced all three with one
   // hand-copied, already-stale line rather than extending it.
+  // The first test in a file pays the cold RN transform; on a loaded CI runner
+  // that alone passed jest's 5 s default (MergeBackSheet, 2026-10-09).
+  testTimeout: 15000,
   clearMocks: true,
 }

@@ -1,6 +1,16 @@
 import { useChatWaitStore } from '../../stores/chat-wait-store'
 import { USER_MESSAGE_IMAGE_TYPES } from '@shared/provider-events'
-import { useState, useCallback, useMemo, useRef, useEffect, type DragEvent, type ReactNode } from 'react'
+import {
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  useEffect,
+  type CSSProperties,
+  type DragEvent,
+  type ReactNode,
+} from 'react'
+import { cn } from '../../lib/utils'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('chat:input')
@@ -16,15 +26,10 @@ import { coversFor, reconcileSelectedModel } from '@shared/model-reconcile'
 import { followUpDelivery, sendAction, waitsForIdle, type TurnDelivery } from '@shared/turn-delivery'
 import { followOffNotice, followSuggestionView, type FollowSuggestionMode } from '@shared/follow-suggestions'
 import { useFollowUpDefault } from '../../services/effective-settings'
-import { RUNTIME_MODE_OPTIONS } from './runtime-mode-options'
 import { ArrowUpIcon, StopSquareIcon } from './chat-icons'
-import {
-  modelsForAgent,
-  REASONING_EFFORTS,
-  agentSupportsReasoningEffort,
-  type ModelOption,
-  type ReasoningEffort,
-} from '@shared/models'
+import { modelsForAgent, type ModelOption, type ReasoningEffort } from '@shared/models'
+import { effortControlFor, effortPick } from '@shared/effort'
+import { sessionCostLabel } from '@shared/format'
 import { defaultInstanceId, type AgentType, type ProviderSkill } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
 import { describeRelocationOutcome } from '../../services/execution-root-relocation'
@@ -35,7 +40,6 @@ import { useSpendBlockStore } from '../../stores/spend-block-store'
 import { describeSpendBlock, findSpendBlock } from '@shared/spend-block'
 import { SlashCommandMenu } from './SlashCommandMenu'
 import { resolvePickerKeydown } from './picker-keydown'
-import { VariantChips } from './model-variants'
 import {
   detectSlashTrigger,
   filterSlashCommands,
@@ -59,8 +63,7 @@ import {
 import { pinLinkTarget } from './link-command'
 import { fuzzyScore } from '../../services/fuzzy-score'
 import { AtMentionMenu } from './AtMentionMenu'
-import { DraftWorkspaceChips } from './DraftWorkspaceChips'
-import { BranchPickerTrigger } from './BranchPicker'
+import { ComposerFooter } from './ComposerFooter'
 import { RICH_TEXTAREA_MIN_HEIGHT, RichChatTextarea, type RichChatTextareaHandle } from './lexical/RichChatTextarea'
 import { serializeBodyWithPills } from '../../services/chat-input-body'
 import {
@@ -164,14 +167,23 @@ interface ChatInputProps {
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024 // 20MB
 
 /** The text-link buttons in the drift chip and its "off" line. */
-const driftLinkStyle = {
-  cursor: 'pointer',
-  border: 'none',
-  background: 'transparent',
-  color: 'var(--accent, #4a7dff)',
-  padding: 0,
-  fontSize: 11,
-} as const
+const driftLinkClass = 'cursor-pointer border-0 bg-transparent p-0 text-[11px] text-[var(--accent,#4a7dff)]'
+
+/** The model-unavailable and spend-limit notes above the editor. */
+const composerWarningClass =
+  'mb-[6px] flex gap-[8px] rounded-[var(--radius)] border border-[var(--warning)] bg-[var(--bg-tertiary)] px-[9px] py-[7px] text-[11px] leading-[1.45] text-[var(--text-secondary)]'
+
+const bannerFocusClass = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]'
+
+const bannerDismissClass = cn(
+  'absolute top-[4px] right-[4px] h-[20px] w-[20px] cursor-pointer rounded-[4px] border-0 bg-transparent p-0 [color:inherit] [font-family:inherit] [font-size:inherit] [font-weight:inherit] [line-height:inherit] hover:bg-[color-mix(in_srgb,currentColor_10%,transparent)]',
+  bannerFocusClass,
+)
+
+const recoveryActionClass = cn(
+  'mt-[6px] min-h-[30px] cursor-pointer rounded-[5px] border border-current bg-transparent px-[10px] py-[5px] text-[11px] font-[600] [color:inherit] [font-family:inherit] [line-height:inherit] transition-[background-color,transform] duration-[120ms] ease-[ease-out] hover:bg-[color-mix(in_srgb,currentColor_10%,transparent)] active:[transform:scale(0.96)]',
+  bannerFocusClass,
+)
 
 // Stop/Send sit inside the input box at its bottom-right, inset so they are
 // centred on a one-line draft and stay pinned to the corner as it grows.
@@ -193,6 +205,7 @@ function composerActionsInset(showStop: boolean): string {
 // downstream memos invalidated.
 const EMPTY_PILLS: import('../../stores/draft-store').DraftPill[] = []
 const EMPTY_IMAGES: import('../../stores/draft-store').ImageAttachment[] = []
+const EMPTY_VARIANTS: string[] = []
 
 export function ChatInput({
   sessionId,
@@ -315,6 +328,34 @@ export function ChatInput({
   }, [agentType, sessionId, sessionIsActive, persistDynamicModels])
 
   const models = dynamicModels && dynamicModels.length > 0 ? dynamicModels : staticModels
+
+  const costLabel = sessionCostLabel(useAgentStore((s) => s.sessions.find((x) => x.id === sessionId)?.costUsd))
+  const availableVariants = useAgentStore(
+    (s) => s.sessions.find((x) => x.id === sessionId)?.availableVariants ?? EMPTY_VARIANTS,
+  )
+  const currentVariant = useAgentStore((s) => s.sessions.find((x) => x.id === sessionId)?.currentVariant ?? '')
+  const variantModelId = useAgentStore((s) => s.sessions.find((x) => x.id === sessionId)?.variantModelId ?? '')
+  const effortControl = useMemo(
+    () =>
+      effortControlFor({
+        agentType,
+        model,
+        resolvedModel,
+        models,
+        reasoningEffort,
+        variants: { available: availableVariants, current: currentVariant },
+      }),
+    [agentType, model, resolvedModel, models, reasoningEffort, availableVariants, currentVariant],
+  )
+  const pickEffort = useCallback(
+    (value: string) => {
+      // With no pinned model, the variants' own model id is the one to rewrite.
+      const pick = effortPick(agentType, value, { model: model || variantModelId, available: availableVariants })
+      if (pick?.kind === 'model') onModelChange?.(pick.model)
+      else if (pick?.kind === 'effort') onReasoningEffortChange?.(pick.effort)
+    },
+    [agentType, model, variantModelId, availableVariants, onModelChange, onReasoningEffortChange],
+  )
   // Checked against the live (or last cached live) catalog only: the static
   // list is not evidence that a model was retired.
   const pickUnavailable =
@@ -1470,14 +1511,8 @@ export function ChatInput({
 
   return (
     <div
-      className="chat-composer"
+      className="chat-composer shrink-0 border-t border-[var(--border)] bg-[var(--bg-secondary)] px-[12px] pt-[8px] pb-[10px]"
       data-runtime-mode={runtimeMode}
-      style={{
-        padding: '8px 12px 10px',
-        borderTop: '1px solid var(--border)',
-        background: 'var(--bg-secondary)',
-        flexShrink: 0,
-      }}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -1485,51 +1520,21 @@ export function ChatInput({
     >
       {/* Image previews */}
       {images.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            gap: '6px',
-            marginBottom: '6px',
-            flexWrap: 'wrap',
-          }}
-        >
+        <div className="mb-[6px] flex flex-wrap gap-[6px]">
           {images.map((img) => (
             <div
               key={img.id}
-              style={{
-                position: 'relative',
-                width: '56px',
-                height: '56px',
-                borderRadius: '6px',
-                overflow: 'hidden',
-                border: '1px solid var(--border)',
-              }}
+              className="relative h-[56px] w-[56px] overflow-hidden rounded-[6px] border border-[var(--border)]"
             >
               <img
                 src={img.previewUrl}
                 alt="attachment"
                 onClick={() => setPreviewImage(img)}
-                style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+                className="h-full w-full cursor-pointer object-cover"
               />
               <button
                 onClick={() => removeImage(img.id)}
-                style={{
-                  position: 'absolute',
-                  top: '2px',
-                  right: '2px',
-                  width: '16px',
-                  height: '16px',
-                  borderRadius: '50%',
-                  background: 'rgba(0,0,0,0.6)',
-                  color: '#fff',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: '10px',
-                  lineHeight: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
+                className="absolute top-[2px] right-[2px] flex h-[16px] w-[16px] cursor-pointer items-center justify-center rounded-[50%] border-0 bg-[rgba(0,0,0,0.6)] text-[10px] leading-none text-[#fff]"
               >
                 x
               </button>
@@ -1543,31 +1548,22 @@ export function ChatInput({
           data-composer-send-error
           data-composer-recovery={recovery ? '' : undefined}
           role="alert"
-          style={{
-            position: 'relative',
-            marginBottom: '6px',
-            padding: '7px 9px',
-            border: `1px solid color-mix(in srgb, ${composerErrorColor} 45%, transparent)`,
-            borderRadius: '6px',
-            background: `color-mix(in srgb, ${composerErrorColor} 10%, transparent)`,
-            color: composerErrorColor,
-            fontSize: '12px',
-            lineHeight: 1.4,
-          }}
+          style={{ '--composer-error': composerErrorColor } as CSSProperties}
+          className="relative mb-[6px] rounded-[6px] border border-[color-mix(in_srgb,var(--composer-error)_45%,transparent)] bg-[color-mix(in_srgb,var(--composer-error)_10%,transparent)] px-[9px] py-[7px] text-[12px] leading-[1.4] text-[var(--composer-error)]"
         >
-          <button type="button" className="composer-banner-dismiss" aria-label="Dismiss" onClick={dismissBanner}>
+          <button type="button" className={bannerDismissClass} aria-label="Dismiss" onClick={dismissBanner}>
             x
           </button>
-          <div style={{ paddingRight: '18px' }}>{bannerError}</div>
+          <div className="pr-[18px]">{bannerError}</div>
           {canRestore && (
-            <button type="button" className="composer-recovery-action" onClick={restoreRecovery}>
+            <button type="button" className={recoveryActionClass} onClick={restoreRecovery}>
               Restore
             </button>
           )}
           {bannerError === SEND_TO_EMPTY_MESSAGE && (
             <button
               type="button"
-              className="composer-recovery-action"
+              className={recoveryActionClass}
               onClick={() => {
                 richRef.current?.replaceRange(value.length, value.length, '')
                 richRef.current?.focus()
@@ -1581,23 +1577,7 @@ export function ChatInput({
 
       {/* Drop overlay */}
       {isDragOver && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'rgba(var(--accent-rgb, 59, 130, 246), 0.08)',
-            border: '2px dashed var(--accent)',
-            borderRadius: 'var(--radius)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--accent)',
-            fontSize: '13px',
-            fontWeight: 500,
-            zIndex: 10,
-            pointerEvents: 'none',
-          }}
-        >
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[var(--radius)] border-2 border-dashed border-[var(--accent)] bg-[rgba(var(--accent-rgb,59,130,246),0.08)] text-[13px] font-[500] text-[var(--accent)]">
           Drop image to attach
         </div>
       )}
@@ -1614,31 +1594,16 @@ export function ChatInput({
           if (filePickerRef.current) filePickerRef.current.value = ''
           richRef.current?.focus()
         }}
-        style={{ display: 'none' }}
+        className="hidden"
       />
 
       {/* Before the send: a retired pick would otherwise fall back silently. */}
       {pickUnavailable && (
-        <div
-          data-model-unavailable-warning
-          style={{
-            display: 'flex',
-            gap: '8px',
-            alignItems: 'center',
-            margin: '0 0 6px',
-            padding: '7px 9px',
-            fontSize: '11px',
-            lineHeight: 1.45,
-            color: 'var(--text-secondary)',
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--warning)',
-            borderRadius: 'var(--radius)',
-          }}
-        >
-          <span aria-hidden style={{ color: 'var(--warning)', fontWeight: 600 }}>
+        <div data-model-unavailable-warning className={cn(composerWarningClass, 'items-center')}>
+          <span aria-hidden className="font-[600] text-[var(--warning)]">
             !
           </span>
-          <span style={{ flex: 1, minWidth: 0 }}>
+          <span className="min-w-0 flex-1">
             {model} is not available on this account any more. Your next message uses the default model, or pick another
             one.
           </span>
@@ -1646,14 +1611,7 @@ export function ChatInput({
             <button
               type="button"
               onClick={() => onModelChange('')}
-              style={{
-                border: 0,
-                background: 'none',
-                color: 'var(--accent)',
-                cursor: 'pointer',
-                fontSize: '11px',
-                whiteSpace: 'nowrap',
-              }}
+              className="cursor-pointer whitespace-nowrap border-0 bg-transparent text-[11px] text-[var(--accent)]"
             >
               Use default
             </button>
@@ -1663,26 +1621,11 @@ export function ChatInput({
 
       {/* Shown before the send: the plan windows read normal in this case. */}
       {spendBlock && (
-        <div
-          data-spend-block-warning
-          style={{
-            display: 'flex',
-            gap: '8px',
-            alignItems: 'flex-start',
-            margin: '0 0 6px',
-            padding: '7px 9px',
-            fontSize: '11px',
-            lineHeight: 1.45,
-            color: 'var(--text-secondary)',
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--warning)',
-            borderRadius: 'var(--radius)',
-          }}
-        >
-          <span aria-hidden style={{ color: 'var(--warning)', fontWeight: 600 }}>
+        <div data-spend-block-warning className={cn(composerWarningClass, 'items-start')}>
+          <span aria-hidden className="font-[600] text-[var(--warning)]">
             !
           </span>
-          <span style={{ flex: 1, minWidth: 0 }}>{describeSpendBlock(spendBlock)}</span>
+          <span className="min-w-0 flex-1">{describeSpendBlock(spendBlock)}</span>
         </div>
       )}
 
@@ -1690,7 +1633,7 @@ export function ChatInput({
           pill chips inline at the caret position (Cursor-style). The host
           sees a plain string body with `[[pill:id]]` tokens; pillsById
           maps tokens to chip metadata + serialized content. */}
-      <div style={{ position: 'relative', display: 'flex' }} onKeyDownCapture={handleEditorKeyDown}>
+      <div className="relative flex" onKeyDownCapture={handleEditorKeyDown}>
         {/* Slash command popover - positioned above the editor */}
         {slashQuery !== null && (
           <SlashCommandMenu
@@ -1732,7 +1675,7 @@ export function ChatInput({
             layout and let the inner ContentEditable size itself. */}
         <div
           data-chat-input-textarea
-          style={{ display: 'block', position: 'relative', flex: 1, minWidth: 0 }}
+          className="relative block min-w-0 flex-1"
           onBlur={() => {
             setTimeout(() => {
               dismissSlash()
@@ -1756,13 +1699,8 @@ export function ChatInput({
           />
           <div
             data-composer-actions
-            style={{
-              position: 'absolute',
-              right: COMPOSER_ACTION_INSET,
-              bottom: COMPOSER_ACTION_INSET,
-              display: 'flex',
-              gap: COMPOSER_ACTION_GAP,
-            }}
+            className="absolute flex"
+            style={{ right: COMPOSER_ACTION_INSET, bottom: COMPOSER_ACTION_INSET, gap: COMPOSER_ACTION_GAP }}
           >
             {showStop && (
               <Button
@@ -1790,207 +1728,119 @@ export function ChatInput({
         </div>
       </div>
 
-      {/* Footer bar: agent selector + mode toggle + hints. Wraps instead of
-          overflowing on a narrow pane; the policy drops the hint and shortens
-          the mode labels first. */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '8px',
-          rowGap: '4px',
-          marginTop: '6px',
-          fontSize: '11px',
-        }}
-      >
-        {leadingControl}
-
-        {/* Unified provider/instance/model picker - single drop-up popover
-            consolidating what used to be three separate footer controls. */}
-        {onModelChange && onInstanceChange && (
-          <UnifiedProviderPicker
-            wait={providerWait}
-            agentType={agentType}
-            onAgentTypeChange={onAgentTypeChange}
-            canChangeAgent={canChangeAgent && !providerWait?.pending}
-            instanceId={instanceId}
-            onInstanceChange={onInstanceChange}
-            model={model ?? ''}
-            onModelChange={onModelChange}
-            dynamicModels={dynamicModels}
-            resolvedModel={resolvedModel}
-          />
-        )}
-
-        {/* Variant chips (OpenCode ACP only) - surfaced when the agent reports
-            `availableVariants` for the currently selected model. Clicking a
-            chip rewrites the model id to `<base>/<variant>` (or strips the
-            variant if "base" is selected). */}
-        {agentType === 'opencode' && onModelChange && (
-          <VariantChips sessionId={sessionId ?? null} model={model ?? ''} onChange={onModelChange} />
-        )}
-
-        {/* Reasoning-effort selector - Codex-only, mirrors the desktop app's
-            second dropdown next to the model picker. */}
-        {agentSupportsReasoningEffort(agentType) && onReasoningEffortChange && (
-          <select
-            value={reasoningEffort ?? 'medium'}
-            onChange={(e) => onReasoningEffortChange(e.target.value as ReasoningEffort)}
-            title="Reasoning effort (Codex)"
-            style={{
-              background: 'var(--bg-tertiary)',
-              color: 'var(--text-secondary)',
-              border: '1px solid var(--border)',
-              borderRadius: '4px',
-              padding: '3px 6px',
-              fontSize: '11px',
-              cursor: 'pointer',
-              outline: 'none',
-            }}
-          >
-            {REASONING_EFFORTS.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-        )}
-
-        {driftSuggestion && driftView && driftView.kind !== 'hidden' && (
-          <span
-            data-drift-banner
-            data-drift-view={driftView.kind}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              flexShrink: 0,
-              whiteSpace: 'nowrap',
-              maxWidth: '100%',
-              fontSize: 11,
-              color: driftView.kind === 'off' ? 'var(--text-muted)' : 'var(--text-secondary)',
-              background: 'var(--bg-tertiary)',
-              border: '1px solid var(--border)',
-              borderRadius: 4,
-              padding: '3px 8px',
-            }}
-          >
-            {driftView.kind === 'chip' ? (
-              <>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  Agent is working in <strong>{driftSuggestion.branch}</strong>
-                </span>
-                <button
-                  type="button"
-                  onClick={followDrift}
-                  style={{
-                    cursor: 'pointer',
-                    border: 'none',
-                    background: 'var(--accent, #4a7dff)',
-                    color: '#fff',
-                    borderRadius: 3,
-                    padding: '2px 8px',
-                    fontSize: 11,
-                  }}
-                >
-                  Follow
-                </button>
-                <button
-                  type="button"
-                  title="Stop suggesting a branch to follow in this chat"
-                  onClick={() => setFollowSuggestions('muted')}
-                  style={driftLinkStyle}
-                >
-                  Not in this chat
-                </button>
-              </>
-            ) : (
-              <>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{followOffNotice(driftView)}</span>
-                <button type="button" onClick={() => setFollowSuggestions('on')} style={driftLinkStyle}>
-                  Turn back on
-                </button>
-              </>
-            )}
-            <button
-              type="button"
-              title="Dismiss"
-              aria-label="Dismiss"
-              onClick={dismissDrift}
-              style={{
-                cursor: 'pointer',
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--text-secondary)',
-                fontSize: 12,
-              }}
+      {/* Footer: one row of chips that never wraps; lower priorities shorten,
+          then move into "..." as the pane narrows (composer-footer-tiers.ts). */}
+      <ComposerFooter
+        lead={leadingControl}
+        // Unified provider/instance/model picker - single drop-up popover
+        // consolidating what used to be three separate footer controls.
+        provider={
+          onModelChange &&
+          onInstanceChange && (
+            <UnifiedProviderPicker
+              wait={providerWait}
+              agentType={agentType}
+              onAgentTypeChange={onAgentTypeChange}
+              canChangeAgent={canChangeAgent && !providerWait?.pending}
+              instanceId={instanceId}
+              onInstanceChange={onInstanceChange}
+              model={model ?? ''}
+              onModelChange={onModelChange}
+              dynamicModels={dynamicModels}
+              resolvedModel={resolvedModel}
+            />
+          )
+        }
+        effort={effortControl ? { control: effortControl, onPick: pickEffort } : null}
+        notice={
+          driftSuggestion &&
+          driftView &&
+          driftView.kind !== 'hidden' && (
+            <span
+              data-drift-banner
+              data-drift-view={driftView.kind}
+              className={cn(
+                'inline-flex h-[24px] min-w-0 shrink items-center gap-[6px] whitespace-nowrap rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] text-[11px]',
+                driftView.kind === 'off' ? 'text-[var(--text-muted)]' : 'text-[var(--text-secondary)]',
+              )}
             >
-              ×
-            </button>
-          </span>
-        )}
-
-        {/* Per-thread branch picker. On `swap-cwd` (picked branch already
-            has a worktree elsewhere) we update the store + persist to the
-            conversations row; the running adapter keeps its old cwd until
-            session restart, then picks up the new pointer. */}
-        {draftOptions && sessionId ? (
-          <DraftWorkspaceChips sessionId={sessionId} cwd={repoRoot} draft={draftOptions} />
-        ) : (
-          <BranchPickerTrigger
-            cwd={repoRoot}
-            followSessionId={sessionId ?? undefined}
-            onTurnFollowBackOn={() => setFollowSuggestions('on')}
-            onSwapWorktree={swapWorktreePointer}
-            onCwdMissing={healOrphanedWorktree}
-          />
-        )}
-
-        {/* Runtime mode selector (per-session) */}
-        {runtimeMode && onRuntimeModeChange && (
-          <select
-            className="runtime-mode-select"
-            data-runtime-mode={runtimeMode}
-            title={RUNTIME_MODE_OPTIONS.find((m) => m.value === runtimeMode)?.detail}
-            value={runtimeMode}
-            onChange={(e) => onRuntimeModeChange(e.target.value as RuntimeMode)}
-            style={{
-              background: 'var(--bg-tertiary)',
-              color: 'var(--text-secondary)',
-              border: '1px solid var(--border)',
-              borderRadius: '4px',
-              padding: '3px 6px',
-              fontSize: '11px',
-              cursor: 'pointer',
-              outline: 'none',
-            }}
-          >
-            {RUNTIME_MODE_OPTIONS.map((m) => (
-              <option key={m.value} value={m.value} title={m.detail}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        )}
-
-        {/* Context meter (24px), last so it sits centred under the Send button,
-            and marginLeft auto keeps it right-aligned when a narrow footer
-            wraps it onto a row of its own. flexShrink 0: this is the one
-            footer item that must never be squeezed under the pane edge. */}
-        {contextUsage && (
-          <span
-            style={{
-              flexShrink: 0,
-              display: 'inline-flex',
-              marginLeft: 'auto',
-              marginRight: `calc(${COMPOSER_ACTION_INSET} + (${COMPOSER_ACTION_SIZE} - 24px) / 2)`,
-            }}
-          >
-            <ContextWindowMeter usage={contextUsage} />
-          </span>
-        )}
-      </div>
+              {driftView.kind === 'chip' ? (
+                <>
+                  <span className="min-w-0 overflow-hidden text-ellipsis">
+                    Agent is working in <strong>{driftSuggestion.branch}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={followDrift}
+                    className="cursor-pointer rounded-[3px] border-0 bg-[var(--accent,#4a7dff)] px-[8px] py-[2px] text-[11px] text-[#fff]"
+                  >
+                    Follow
+                  </button>
+                  <button
+                    type="button"
+                    title="Stop suggesting a branch to follow in this chat"
+                    onClick={() => setFollowSuggestions('muted')}
+                    className={driftLinkClass}
+                  >
+                    Not in this chat
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="min-w-0 overflow-hidden text-ellipsis">{followOffNotice(driftView)}</span>
+                  <button type="button" onClick={() => setFollowSuggestions('on')} className={driftLinkClass}>
+                    Turn back on
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                title="Dismiss"
+                aria-label="Dismiss"
+                onClick={dismissDrift}
+                className="cursor-pointer border-0 bg-transparent text-[12px] text-[var(--text-secondary)]"
+              >
+                ×
+              </button>
+            </span>
+          )
+        }
+        sessionId={sessionId ?? null}
+        cwd={repoRoot}
+        draft={draftOptions}
+        // Per-thread branch picker. On `swap-cwd` (picked branch already has
+        // a worktree elsewhere) we update the store + persist to the
+        // conversations row; the running adapter keeps its old cwd until
+        // session restart, then picks up the new pointer.
+        branch={{
+          followSessionId: sessionId ?? undefined,
+          onTurnFollowBackOn: () => setFollowSuggestions('on'),
+          onSwapWorktree: swapWorktreePointer,
+          onCwdMissing: healOrphanedWorktree,
+        }}
+        mode={runtimeMode && onRuntimeModeChange ? { value: runtimeMode, onChange: onRuntimeModeChange } : null}
+        // Context meter (24px), last so it sits centred under the Send
+        // button. shrink-0: it must never be squeezed under the pane edge.
+        meter={
+          (contextUsage || costLabel) && (
+            <span
+              className="inline-flex h-[24px] shrink-0 items-center gap-[8px]"
+              style={{ marginRight: `calc(${COMPOSER_ACTION_INSET} + (${COMPOSER_ACTION_SIZE} - 24px) / 2)` }}
+            >
+              {/* What the agent reported this session has cost (OpenCode). */}
+              {costLabel && (
+                <span
+                  title="Session cost reported by the agent"
+                  className="text-[10.5px] [font-family:var(--font-mono)] text-[var(--text-muted)]"
+                >
+                  {costLabel}
+                </span>
+              )}
+              {contextUsage && <ContextWindowMeter usage={contextUsage} />}
+            </span>
+          )
+        }
+      />
 
       {/* Image lightbox */}
       {previewImage && (
@@ -2017,41 +1867,16 @@ export function ChatInput({
             }
             setPreviewImage(null)
           }}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 1100,
-            background: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
+          className="fixed inset-0 z-[1100] flex cursor-pointer items-center justify-center bg-[rgba(0,0,0,0.7)]"
         >
-          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '80vh' }}>
+          <div className="relative max-h-[80vh] max-w-[90vw]">
             <img
               src={previewImage.previewUrl}
               alt="preview"
-              style={{
-                maxWidth: '90vw',
-                maxHeight: '80vh',
-                objectFit: 'contain',
-                borderRadius: '8px',
-                boxShadow: '0 16px 48px rgba(0, 0, 0, 0.5)',
-              }}
+              className="max-h-[80vh] max-w-[90vw] rounded-[8px] object-contain shadow-[0_16px_48px_rgba(0,0,0,0.5)]"
               onClick={(e) => e.stopPropagation()}
             />
-            <div
-              style={{
-                position: 'absolute',
-                bottom: '-32px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                color: 'rgba(255,255,255,0.6)',
-                fontSize: '11px',
-                whiteSpace: 'nowrap',
-              }}
-            >
+            <div className="absolute bottom-[-32px] left-[50%] [transform:translateX(-50%)] whitespace-nowrap text-[11px] text-[rgba(255,255,255,0.6)]">
               Click backdrop to close · Right-click to copy
             </div>
           </div>

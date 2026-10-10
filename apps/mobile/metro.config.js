@@ -12,6 +12,8 @@ const repoRoot = path.resolve(projectRoot, '../..')
 
 const config = getDefaultConfig(projectRoot)
 config.watchFolders = [path.join(repoRoot, 'src', 'shared')]
+// The visual host page (assets/visual-host) ships as an asset, not as code.
+config.resolver.assetExts.push('html')
 config.resolver.extraNodeModules = {
   '@shared': path.join(repoRoot, 'src', 'shared'),
 }

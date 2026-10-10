@@ -27,6 +27,8 @@ import type { FollowSuggestionMode } from '@shared/follow-suggestions'
 import { isRuntimeMode, SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
 import { effectiveLocalSetting, projectOverride } from './project-settings-store'
 import { isDraftSessionId, type DraftChatOptions } from '@shared/new-chat-draft'
+import { prependOlder, rebaseOnNewest } from '../services/history-window'
+import { splitModelVariant } from '@shared/effort'
 import type { ForkLineageMetadata } from '@shared/conversation-fork'
 
 const log = createRendererLogger('store:agent')
@@ -112,6 +114,8 @@ interface AgentSession {
   type: AgentType
   status: AgentStatus
   messages: ChatMessage[]
+  /** `beforeId` of the next older history window; null or absent = all loaded. */
+  olderHistoryCursor?: string | null
   conversationId?: string
   projectPath?: string
   forkMetadata?: ForkLineageMetadata
@@ -201,9 +205,9 @@ interface AgentSession {
    */
   instanceId?: string
   /**
-   * Reasoning effort tier for agents that expose it as a separate selector
-   * (currently Codex only). Maps to the `reasoningEffort` param on
-   * turn/start. Claude doesn't surface this as a UI control.
+   * Thinking effort for Claude and Codex (OpenCode carries it in the model id
+   * as a variant). Offered per model by the composer's effort control, see
+   * `shared/effort.ts`.
    */
   reasoningEffort?: ReasoningEffort
   /** PTY pane id in terminal-registry. Only set for type='terminal' sessions. */
@@ -212,17 +216,19 @@ interface AgentSession {
   /**
    * Cumulative session cost in USD reported by the agent. ACP-backed
    * adapters populate this from `usage_update.cost.amount`; other adapters
-   * leave it undefined. StatusBar shows it next to the context-window count.
+   * leave it undefined. The composer footer shows it next to the context-window ring.
    */
   costUsd?: number
   /**
    * Variants advertised by the agent for the currently selected model
    * (e.g. 'low' / 'medium' / 'high' / 'max'). Empty/undefined for models
-   * without variants. The renderer pairs this with `currentVariant` to
-   * render a thinking-budget chip group next to the model picker.
+   * without variants. The composer's effort control lists them as its levels
+   * and marks `currentVariant`.
    */
   availableVariants?: string[]
   currentVariant?: string
+  /** The model those variants belong to, as the agent named it. */
+  variantModelId?: string
   /**
    * Per-session context-window usage. Sourced from `turn.completed` and
    * `context_window` runtime events. Lives on the session (not on the
@@ -257,6 +263,12 @@ interface AgentStore {
     stamp: number
     query?: string
   } | null
+  /**
+   * Open that chat's in-pane find (cmd+F) with `query` typed in, on
+   * `messageId`'s match. Set by message search (cmd+shift+F) after it opens
+   * the chat; the chat panel showing the session takes it and clears it.
+   */
+  pendingChatFind: { sessionId: string; query: string; messageId: string; stamp: number } | null
 
   /** `runtimeMode` only when someone chose it; absent, the session is unresolved (`initialRuntimeMode`). */
   addSession: (
@@ -286,7 +298,22 @@ interface AgentStore {
   appendMessage: (sessionId: string, message: ChatMessage) => void
   updateMessage: (sessionId: string, messageId: string, updates: Partial<ChatMessage>) => void
   removeMessage: (sessionId: string, messageId: string) => void
-  setMessages: (sessionId: string, messages: ChatMessage[]) => void
+  /** Replace the history. `olderHistoryCursor` marks it as a newest window. */
+  setMessages: (sessionId: string, messages: ChatMessage[], olderHistoryCursor?: string | null) => void
+  /** Put an older window in front, only if `expectedCursor` is still current. */
+  prependOlderMessages: (
+    sessionId: string,
+    expectedCursor: string,
+    older: ChatMessage[],
+    nextCursor: string | null,
+  ) => boolean
+  /** Replace a window whose oldest row the backend lost with its newest window, keeping live rows; only if `expectedCursor` is still current. */
+  rebaseHistoryWindow: (
+    sessionId: string,
+    expectedCursor: string,
+    newest: ChatMessage[],
+    nextCursor: string | null,
+  ) => boolean
   clearMessages: (sessionId: string) => void
   setConversationId: (sessionId: string, conversationId: string) => void
   setPendingRequests: (sessionId: string, pending: readonly PendingBlockingEvent[]) => void
@@ -301,14 +328,13 @@ interface AgentStore {
   setResolvedModel: (sessionId: string, resolvedModel: string) => void
   setReasoningEffort: (sessionId: string, effort: ReasoningEffort) => void
   setCostUsd: (sessionId: string, costUsd: number) => void
-  setVariants: (sessionId: string, available: string[], current: string) => void
+  setVariants: (sessionId: string, available: string[], current: string, modelId: string) => void
   setTokenUsage: (sessionId: string, usage: { usedTokens: number; maxTokens: number | null }) => void
   /**
    * Switch the agent backend (claude-code / codex / opencode) for a
-   * session. Required so consumers like StatusBar - which read from the
-   * store rather than the chat-panel-local `agentType` state - see the
-   * change immediately. Without this, the bottom status bar lagged the
-   * dropdown by a full provider round-trip.
+   * session. Required so consumers such as the sidebar - which read from
+   * the store rather than the chat-panel-local `agentType` state - see the
+   * change immediately instead of a full provider round-trip later.
    */
   setAgentType: (sessionId: string, type: AgentType) => void
   /**
@@ -348,12 +374,15 @@ interface AgentStore {
    *  this variant - MessageList resolves it to the message id on its end. */
   requestScrollToTimestamp: (sessionId: string, messageTimestamp: number) => void
   clearScrollToMessage: () => void
+  requestChatFind: (sessionId: string, query: string, messageId: string) => void
+  clearChatFind: () => void
 }
 
 export const useAgentStore = create<AgentStore>((set, get) => ({
   sessions: [],
   activeSessionId: null,
   pendingScrollToMessage: null,
+  pendingChatFind: null,
 
   addSession: (session) =>
     set((state) => ({
@@ -496,14 +525,40 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       ),
     })),
 
-  setMessages: (sessionId, messages) =>
+  setMessages: (sessionId, messages, olderHistoryCursor = null) =>
     set((state) => ({
-      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, messages } : s)),
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, messages, olderHistoryCursor } : s)),
     })),
+
+  prependOlderMessages: (sessionId, expectedCursor, older, nextCursor) => {
+    let applied = false
+    set((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId || s.olderHistoryCursor !== expectedCursor) return s
+        applied = true
+        return { ...s, messages: prependOlder(s.messages, older), olderHistoryCursor: nextCursor }
+      }),
+    }))
+    return applied
+  },
+
+  rebaseHistoryWindow: (sessionId, expectedCursor, newest, nextCursor) => {
+    let applied = false
+    set((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId || s.olderHistoryCursor !== expectedCursor) return s
+        const messages = rebaseOnNewest(s.messages, newest)
+        if (!messages) return s
+        applied = true
+        return { ...s, messages, olderHistoryCursor: nextCursor }
+      }),
+    }))
+    return applied
+  },
 
   clearMessages: (sessionId) =>
     set((state) => ({
-      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, messages: [] } : s)),
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, messages: [], olderHistoryCursor: null } : s)),
     })),
 
   setConversationId: (sessionId, conversationId) =>
@@ -592,7 +647,18 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   setModel: (sessionId, model) =>
     set((state) => ({
-      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, model } : s)),
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId) return s
+        // OpenCode variants belong to one base model; a variant pick keeps them,
+        // another model drops them until its own `model.variants` arrives.
+        const variants = s.availableVariants ?? []
+        const sameBase =
+          splitModelVariant(model, variants).base ===
+          splitModelVariant(s.variantModelId || s.model || '', variants).base
+        return sameBase || !s.availableVariants
+          ? { ...s, model }
+          : { ...s, model, availableVariants: undefined, currentVariant: undefined, variantModelId: undefined }
+      }),
     })),
 
   setResolvedModel: (sessionId, resolvedModel) =>
@@ -610,10 +676,12 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, costUsd } : s)),
     })),
 
-  setVariants: (sessionId, available, current) =>
+  setVariants: (sessionId, available, current, modelId) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, availableVariants: available, currentVariant: current } : s,
+        s.id === sessionId
+          ? { ...s, availableVariants: available, currentVariant: current, variantModelId: modelId }
+          : s,
       ),
     })),
 
@@ -729,4 +797,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     set({ pendingScrollToMessage: { sessionId, messageTimestamp, stamp: Date.now() } }),
 
   clearScrollToMessage: () => set({ pendingScrollToMessage: null }),
+
+  requestChatFind: (sessionId, query, messageId) =>
+    set({ pendingChatFind: { sessionId, query, messageId, stamp: Date.now() } }),
+
+  clearChatFind: () => set({ pendingChatFind: null }),
 }))

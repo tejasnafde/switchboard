@@ -13,7 +13,11 @@ object MessageSearchPresenter {
     fun row(result: MessageSearchResult): MessageSearchRow = MessageSearchRow(
         title = result.conversationTitle,
         snippet = cleanSnippet(result.snippet),
-        metadata = "${projectName(result.projectPath)} · ${roleLabel(result.role)}",
+        metadata = listOfNotNull(
+            projectName(result.projectPath),
+            roleLabel(result.role),
+            "Archived".takeIf { result.archived },
+        ).joinToString(" · "),
         result = result,
     )
 

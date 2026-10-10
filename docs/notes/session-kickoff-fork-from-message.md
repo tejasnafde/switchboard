@@ -54,6 +54,6 @@ user-created fork ancestry.
 
 ## Verification
 
-See `docs/plans/2026-08-24-conversation-fork-reliability-design.md`, the focused
+See `docs/plans/archive/2026-08-24-conversation-fork-reliability-design.md`, the focused
 `conversation-fork-*` tests, and
 `docs/feature-parity/conversation-fork-reliability.json` for current evidence.

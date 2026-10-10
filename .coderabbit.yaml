@@ -20,6 +20,9 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
+    # The free plan reviews one PR an hour; dependency bumps must not take those slots.
+    ignore_usernames:
+      - 'dependabot[bot]'
   path_filters:
     - '!**/package-lock.json'
     - '!**/*.snap'

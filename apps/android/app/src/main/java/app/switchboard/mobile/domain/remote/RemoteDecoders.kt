@@ -43,6 +43,7 @@ object RemoteDecoders {
                 worktreePath = raw.string("worktreePath"),
                 worktreeBranch = raw.string("worktreeBranch"),
                 raw = raw,
+                archived = raw.boolean("archived") ?: false,
             )
         }
 
@@ -220,6 +221,44 @@ object RemoteDecoders {
             app.switchboard.mobile.domain.thread.PrLinkUnlinkResult.Ok
         } else {
             app.switchboard.mobile.domain.thread.PrLinkUnlinkResult.Refused(raw.string("message") ?: "Refused")
+        }
+    }
+
+    /** `provider:merge-back-preview`: a discriminated union on `status`. */
+    fun mergeBackPreview(value: JsonValue?): app.switchboard.mobile.domain.thread.MergeBackPreview {
+        val raw = value.obj()
+        return when (val status = raw.stringRequired("status")) {
+            "ready" -> app.switchboard.mobile.domain.thread.MergeBackPreview.Ready(
+                parentId = raw.stringRequired("parentId"),
+                parentTitle = raw.stringRequired("parentTitle"),
+                text = raw.stringRequired("text"),
+                turns = raw.longRequired("turns"),
+                omittedTurns = raw.longRequired("omittedTurns"),
+                files = raw.required("files").array().values.map {
+                    (it as? JsonString)?.value ?: error("Expected files string")
+                },
+                moreFiles = raw.longRequired("moreFiles"),
+                replacesPending = raw.booleanRequired("replacesPending"),
+                token = raw.required("token"),
+            )
+            "empty" -> app.switchboard.mobile.domain.thread.MergeBackPreview.Empty(
+                parentTitle = raw.stringRequired("parentTitle"),
+                message = raw.stringRequired("message"),
+            )
+            "refused" -> app.switchboard.mobile.domain.thread.MergeBackPreview.Refused(
+                message = raw.stringRequired("message"),
+            )
+            else -> error("Unknown merge-back preview status: $status")
+        }
+    }
+
+    /** `provider:merge-back-send` / `-edit` / `-discard`: `{ ok: true }` or `{ ok: false, message }`. */
+    fun mergeBackActionResult(value: JsonValue?): app.switchboard.mobile.domain.thread.MergeBackActionResult {
+        val raw = value.obj()
+        return if (raw.booleanRequired("ok")) {
+            app.switchboard.mobile.domain.thread.MergeBackActionResult.Ok
+        } else {
+            app.switchboard.mobile.domain.thread.MergeBackActionResult.Refused(raw.string("message") ?: "Refused")
         }
     }
 

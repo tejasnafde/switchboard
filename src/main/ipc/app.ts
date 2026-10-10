@@ -3,7 +3,10 @@ import type { BackendHost } from '../backend/host'
 import { stat } from 'fs/promises'
 import { notifyConversationArchived, notifyWorktreeSwap, publishRuntimeEvent } from '../provider/provider-registry'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
-import { historyWindow, type HistoryWindowRequest } from '@shared/phone-history-window'
+import { historyWindow, type HistoryLoadOptions } from '@shared/phone-history-window'
+import { imagesByReference } from '@shared/history-image-refs'
+import { toolCallsByPreview } from '@shared/history-tool-previews'
+import { rememberHistoryImage, rememberedHistoryImage } from '../conversations/history-images'
 import { historyTail } from '@shared/turn-activity'
 import { parseFollowSuggestionMode } from '@shared/follow-suggestions'
 import { createMainLogger as createLogger } from '../logger'
@@ -53,6 +56,7 @@ import {
   setConversationProviderSelection,
   getConversationPendingHandoff,
   setConversationPendingHandoff,
+  switchConversationAgent,
   listSessionIdsForThread,
   resolveRootThreadId,
   recordThreadSession,
@@ -75,7 +79,7 @@ import {
 } from '../db/database'
 import { claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
-import { loadConversationHistory } from '../conversations/history'
+import { loadConversationHistory, mergedHistoryMessages } from '../conversations/history'
 import { sessionPreviewLine } from '@shared/turn-preview'
 import { loadJsonlCached } from '../agent/jsonl-cache'
 import { getConversationForkCoordinator } from '../conversations/conversation-fork-runtime'
@@ -94,6 +98,7 @@ import type {
   ChatMessage,
   SessionSummary,
   FileDiffAttachment,
+  ToolCall,
 } from '@shared/types'
 import { logicalImportConversationId, recoveryCandidateTitle } from '../db/conversation-sidebar-role'
 import { loadCursorConversation } from '../cursor/store'
@@ -122,7 +127,23 @@ const log = createLogger('ipc:app')
  */
 function capTail<T extends { messages: ChatMessage[] }>(
   result: T,
-  opts?: HistoryWindowRequest & { window?: boolean },
+  opts?: HistoryLoadOptions,
+  imageThreadId?: string,
+): T & { total: number; truncated: boolean } {
+  const capped = capMessages(result, opts)
+  const previewed = opts?.toolPreviews ? { ...capped, messages: toolCallsByPreview(capped.messages) } : capped
+  if (!opts?.imageRefs || !imageThreadId) return previewed
+  return {
+    ...previewed,
+    messages: imagesByReference(previewed.messages, (messageId, index, url) =>
+      rememberHistoryImage(imageThreadId, messageId, index, url),
+    ),
+  }
+}
+
+function capMessages<T extends { messages: ChatMessage[] }>(
+  result: T,
+  opts?: HistoryLoadOptions,
 ): T & { total: number; truncated: boolean } {
   if (opts?.window) return { ...result, ...historyWindow(result.messages, opts) }
   const total = result.messages.length
@@ -481,7 +502,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     AppChannels.LOAD_SESSION_BY_ID,
     async (
       conversationId: string,
-      opts?: HistoryWindowRequest & { window?: boolean },
+      opts?: HistoryLoadOptions,
     ): Promise<{
       messages: ChatMessage[]
       meta: {
@@ -566,7 +587,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
             `across ${history.familyIds.length} family id(s)`,
         )
         const response = {
-          ...capTail({ messages: history.messages, meta }, opts),
+          ...capTail({ messages: history.messages, meta }, opts, rootThreadId),
           timing: history.timing,
           loadStatus: 'loaded' as const,
         }
@@ -583,6 +604,67 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
         span.end({ outcome: 'error' })
         log.warn(`load-by-id failed for ${conversationId}: ${err}`)
         return { ...capTail({ messages: [], meta }, opts), loadStatus: 'error' }
+      }
+    },
+  )
+
+  // Full-history reads started for an image or tool call miss, by root thread,
+  // so a burst of thumbnails scrolling into view shares one read.
+  const missHistoryLoads = new Map<string, Promise<ChatMessage[]>>()
+  const historyForMisses = (
+    rootThreadId: string,
+    conversationId: string,
+    projectPath: string,
+  ): Promise<ChatMessage[]> => {
+    const running = missHistoryLoads.get(rootThreadId)
+    if (running) return running
+    const next = loadConversationHistory(conversationId, projectPath)
+      .then((history) => history.messages)
+      .finally(() => missHistoryLoads.delete(rootThreadId))
+    missHistoryLoads.set(rootThreadId, next)
+    return next
+  }
+
+  // The bytes of one image a windowed load sent by reference (`imageRefs`).
+  host.handle(
+    AppChannels.LOAD_HISTORY_IMAGE,
+    async (conversationId: string, messageId: string, index: number): Promise<{ url: string | null }> => {
+      if (typeof messageId !== 'string' || !Number.isInteger(index) || index < 0) return { url: null }
+      const row = getConversationById(conversationId)
+      if (!row) return { url: null }
+      const rootThreadId = resolveRootThreadId(row.id)
+      const remembered = rememberedHistoryImage(rootThreadId, messageId, index)
+      if (remembered) return { url: remembered }
+      try {
+        const messages = await historyForMisses(rootThreadId, conversationId, row.project_path)
+        const url = messages.find((message) => message.id === messageId)?.images?.[index]?.url ?? null
+        if (url) rememberHistoryImage(rootThreadId, messageId, index, url)
+        return { url }
+      } catch (err) {
+        log.warn(`history image load failed for ${conversationId}: ${err}`)
+        return { url: null }
+      }
+    },
+  )
+
+  // One tool call a load with `toolPreviews` shortened, in full.
+  host.handle(
+    AppChannels.LOAD_TOOL_CALL,
+    async (conversationId: string, messageId: string, toolCallId: string): Promise<{ toolCall: ToolCall | null }> => {
+      if (typeof messageId !== 'string' || typeof toolCallId !== 'string') return { toolCall: null }
+      const row = getConversationById(conversationId)
+      if (!row) return { toolCall: null }
+      const find = (messages: ChatMessage[]) =>
+        messages.find((message) => message.id === messageId)?.toolCalls?.find((call) => call.id === toolCallId) ?? null
+      // The load that sent the preview left its history in the memo, and a
+      // finished call does not change, so that copy answers without a re-read.
+      const remembered = find(mergedHistoryMessages(conversationId) ?? [])
+      if (remembered?.output !== undefined) return { toolCall: remembered }
+      try {
+        return { toolCall: find(await historyForMisses(resolveRootThreadId(row.id), conversationId, row.project_path)) }
+      } catch (err) {
+        log.warn(`tool call load failed for ${conversationId}: ${err}`)
+        return { toolCall: null }
       }
     },
   )
@@ -682,16 +764,31 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     setConversationReasoningEffort(id, effort)
     return { ok: true }
   })
-  host.handle(AppChannels.SET_CONVERSATION_PROVIDER_SELECTION, (id: string, agentType: string, instanceId: string) => {
-    return { ok: true, ...setConversationProviderSelection(id, agentType, instanceId) }
-  })
+  // With `agentSwitch`, the switch marker and the pending handoff commit in
+  // the same transaction, and the answer carries `pendingHandoffFrom`. An
+  // older backend ignores the 4th argument, which is how a client tells.
+  host.handle(
+    AppChannels.SET_CONVERSATION_PROVIDER_SELECTION,
+    (id: string, agentType: string, instanceId: string, agentSwitch?: { hasHistory: boolean; markerId: string }) => {
+      if (agentSwitch && typeof agentSwitch.markerId === 'string' && agentSwitch.markerId) {
+        return {
+          ok: true,
+          ...switchConversationAgent(id, agentType, instanceId, {
+            hasHistory: agentSwitch.hasHistory === true,
+            markerId: agentSwitch.markerId,
+          }),
+        }
+      }
+      return { ok: true, ...setConversationProviderSelection(id, agentType, instanceId) }
+    },
+  )
 
-  // Pending cross-provider context handoff. Scheduled by an agent switch
-  // (ChatPanel) or a transcript-handoff fork; the chat panel
-  // consumes it on the next send by prefixing the transcript preamble, then
-  // clears it so a reload cannot re-inject.
+  // Pending cross-provider context handoff. Scheduled by an agent switch or a
+  // transcript-handoff fork, built by the backend into the next accepted turn
+  // and cleared in the same transaction. `backendBuilds` tells a client not to
+  // build one itself; an older backend leaves that to the client.
   host.handle(AppChannels.GET_CONVERSATION_PENDING_HANDOFF, (id: string) => {
-    return { from: getConversationPendingHandoff(id) }
+    return { from: getConversationPendingHandoff(id), backendBuilds: true }
   })
   host.handle(AppChannels.SET_CONVERSATION_PENDING_HANDOFF, (id: string, from: string | null) => {
     setConversationPendingHandoff(id, from)

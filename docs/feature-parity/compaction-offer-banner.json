@@ -9,7 +9,6 @@
       "evidence": [
         "src/renderer/components/chat/CompactionOfferBanner.tsx",
         "src/renderer/components/chat/ChatPanel.tsx",
-        "src/renderer/components/StatusBar.tsx",
         "tests/unit/compaction-offer.test.ts"
       ]
     },

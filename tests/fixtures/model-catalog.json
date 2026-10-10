@@ -1,0 +1,128 @@
+{
+  "claude-code": [
+    {
+      "id": "claude-fable-5",
+      "label": "Claude Fable 5",
+      "tier": "max"
+    },
+    {
+      "id": "claude-opus-5",
+      "label": "Claude Opus 5",
+      "tier": "max"
+    },
+    {
+      "id": "claude-opus-4-8",
+      "label": "Claude Opus 4.8",
+      "tier": "max"
+    },
+    {
+      "id": "claude-opus-4-7",
+      "label": "Claude Opus 4.7",
+      "tier": "max"
+    },
+    {
+      "id": "claude-sonnet-5",
+      "label": "Claude Sonnet 5",
+      "tier": "balanced"
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "label": "Claude Sonnet 4.6",
+      "tier": "balanced"
+    },
+    {
+      "id": "claude-haiku-4-5",
+      "label": "Claude Haiku 4.5",
+      "tier": "fast"
+    }
+  ],
+  "codex": [
+    {
+      "id": "gpt-5.6-sol",
+      "label": "GPT-5.6-Sol",
+      "tier": "max"
+    },
+    {
+      "id": "gpt-5.6-terra",
+      "label": "GPT-5.6-Terra",
+      "tier": "balanced"
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "label": "GPT-5.6-Luna",
+      "tier": "fast"
+    },
+    {
+      "id": "gpt-5.5",
+      "label": "GPT-5.5",
+      "tier": "balanced"
+    },
+    {
+      "id": "gpt-5.4",
+      "label": "GPT-5.4",
+      "tier": "balanced"
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "label": "GPT-5.4-Mini",
+      "tier": "fast"
+    },
+    {
+      "id": "gpt-5.2",
+      "label": "GPT-5.2",
+      "tier": "balanced"
+    }
+  ],
+  "opencode": [
+    {
+      "id": "nvidia-nim/z-ai/glm-5.1",
+      "label": "GLM 5.1 (NVIDIA, free)",
+      "tier": "max"
+    },
+    {
+      "id": "nvidia-nim/moonshotai/kimi-k2.5",
+      "label": "Kimi K2.5 (NVIDIA, free)",
+      "tier": "max"
+    },
+    {
+      "id": "nvidia-nim/minimaxai/minimax-m2.7",
+      "label": "MiniMax M2.7 (NVIDIA, free)",
+      "tier": "balanced"
+    },
+    {
+      "id": "nvidia-nim/deepseek-ai/deepseek-v3_2",
+      "label": "DeepSeek V3.2 (NVIDIA, free)",
+      "tier": "balanced"
+    },
+    {
+      "id": "google/gemini-2.5-pro",
+      "label": "Gemini 2.5 Pro",
+      "tier": "max"
+    },
+    {
+      "id": "google/gemini-2.5-flash",
+      "label": "Gemini 2.5 Flash",
+      "tier": "balanced"
+    },
+    {
+      "id": "google/gemini-2.0-flash-exp",
+      "label": "Gemini 2.0 Flash (exp)",
+      "tier": "fast"
+    },
+    {
+      "id": "google/gemini-2.0-flash-thinking-exp",
+      "label": "Gemini 2.0 Flash Thinking",
+      "tier": "balanced"
+    },
+    {
+      "id": "google/gemini-1.5-pro",
+      "label": "Gemini 1.5 Pro",
+      "tier": "balanced"
+    },
+    {
+      "id": "google/gemini-1.5-flash",
+      "label": "Gemini 1.5 Flash",
+      "tier": "fast"
+    }
+  ]
+}

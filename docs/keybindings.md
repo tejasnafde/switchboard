@@ -8,7 +8,7 @@ Four contexts:
   editor has focus.
 - **Terminal** - scoped to the focused terminal pane's subtree.
 - **Chat** - scoped to the focused primary or secondary chat. The focused chat
-  also binds the IDE, terminal strip, status bar, and quick prompt.
+  also binds the IDE, terminal strip, and quick prompt.
 - **Global** - app-level actions, handled regardless of focus.
 
 `⌘` = Cmd on macOS / Ctrl on Windows·Linux unless noted.

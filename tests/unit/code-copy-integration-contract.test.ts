@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8')
 
 const bubble = read('../../src/renderer/components/chat/MessageBubble.tsx')
+const messageMarkdown = read('../../src/renderer/components/chat/visuals/MessageMarkdown.tsx')
 const plan = read('../../src/renderer/components/chat/PlanCard.tsx')
 const markdown = read('../../src/renderer/components/chat/MarkdownWithCopyControls.tsx')
 const panel = read('../../src/renderer/components/chat/ChatPanel.tsx')
@@ -12,7 +13,9 @@ const css = read('../../src/renderer/styles/global.css')
 
 describe('code-copy integration contract', () => {
   it('keeps copy ownership in the shared renderer instead of post-processing DOM walks', () => {
-    expect(bubble).toContain('<MarkdownWithCopyControls')
+    // The bubble renders MessageMarkdown, which hands every markdown piece to it.
+    expect(bubble).toContain('<MessageMarkdown')
+    expect(messageMarkdown).toContain('<MarkdownWithCopyControls')
     expect(plan).toContain('<MarkdownWithCopyControls')
     expect(bubble).not.toMatch(/querySelectorAll\(['"]pre['"]\)/)
     expect(plan).not.toMatch(/querySelectorAll\(['"]pre['"]\)/)

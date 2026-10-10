@@ -48,5 +48,5 @@ same `requestId` returns that result.
 All clients show the dirty-source warning and navigate with the returned parent
 `projectPath` plus authoritative `worktreePath`.
 
-See `docs/plans/2026-08-24-worktree-creation-transaction-design.md` and
-`docs/plans/2026-08-24-conversation-fork-reliability-design.md`.
+See `docs/plans/archive/2026-08-24-worktree-creation-transaction-design.md` and
+`docs/plans/archive/2026-08-24-conversation-fork-reliability-design.md`.

@@ -111,6 +111,19 @@ fun ThreadSessionScreen(
         onUnlinkPrLink = { ref ->
             (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.unlinkPrLink(ref) }
         },
+        mergeBack = session.mergeBack,
+        onOpenMergeBackSend = {
+            (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.openSendBack() }
+        },
+        onOpenMergeBackEdit = coordinator::openEditMergeBack,
+        onMergeBackTextChange = coordinator::setMergeBackText,
+        onMergeBackClose = coordinator::closeMergeBack,
+        onMergeBackSubmit = {
+            (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.submitMergeBack() }
+        },
+        onDiscardMergeBack = { id ->
+            (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.discardMergeBack(id) }
+        },
     )
 }
 

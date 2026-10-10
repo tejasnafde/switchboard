@@ -9,7 +9,11 @@
 import { create } from 'zustand'
 import type { ProviderInstance } from '@shared/types'
 import type { ProviderUsage } from '@shared/provider-usage'
+import type { CodexResetOutcome } from '@shared/codex-reset'
 import type { ProviderInstanceUpsertInput } from '../../preload'
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('store:provider-instances')
 
 interface ProviderInstanceStore {
   instances: ProviderInstance[]
@@ -37,6 +41,9 @@ interface ProviderInstanceStore {
    *  Nothing else reads usage unasked, since a Claude read can be a macOS
    *  password prompt per keychain item. */
   beginUsageVisit: () => void
+  /** Spend one banked Codex reset and store the reading main took after it.
+   *  Never throws: a failed call is `unknown`, which main can retry safely. */
+  consumeReset: (id: string, creditId: string | null) => Promise<CodexResetOutcome>
   clearError: () => void
 }
 
@@ -165,6 +172,17 @@ export const useProviderInstanceStore = create<ProviderInstanceStore>((set, get)
 
   beginUsageVisit: () => {
     requestedUsage.clear()
+  },
+
+  consumeReset: async (id, creditId) => {
+    try {
+      const { outcome, usage } = await window.api.providerInstances.consumeReset(id, creditId)
+      set((s) => ({ usages: { ...s.usages, [id]: usage } }))
+      return outcome
+    } catch (err) {
+      log.warn(`consume reset failed for ${id}`, err)
+      return 'unknown'
+    }
   },
 
   clearError: () => set({ error: null }),

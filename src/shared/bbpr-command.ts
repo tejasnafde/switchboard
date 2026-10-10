@@ -9,7 +9,7 @@
 const BBPR_AT_START = /^(?:[^\s'"]*\/)?bbpr\s+(\d{1,9})(?=\s|$)/
 
 /** Top-level commands of a shell line, split on `&&`, `||`, `;`, `|` and newlines outside quotes. */
-function shellSegments(command: string): string[] {
+export function shellSegments(command: string): string[] {
   const segments: string[] = []
   let current = ''
   let quote: '"' | "'" | null = null

@@ -1,3 +1,4 @@
+import { offeredAgentTypes, useInstalledAcpAgents } from '../../services/acp-agent-availability'
 import type { ChatWait } from '../../stores/chat-wait-store'
 import { LoadingStatus } from '../ui/loading-status'
 /**
@@ -68,8 +69,6 @@ interface UnifiedProviderPickerProps {
   resolvedModel?: string
 }
 
-const AGENTS = AGENT_TYPES.map((value) => ({ value, label: agentLabel(value) }))
-
 export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
   const {
     agentType,
@@ -105,6 +104,17 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
     setTermInstanceId((current) => nextTermInstanceId(prevLoginAgentTypeRef.current, loginAgentType, current))
     prevLoginAgentTypeRef.current = loginAgentType
   }, [loginAgentType])
+
+  // Generic ACP agents get a tab only when their CLI is installed.
+  const installedAcpAgents = useInstalledAcpAgents(open)
+  const agents = useMemo(
+    () =>
+      offeredAgentTypes(AGENT_TYPES, installedAcpAgents, new Set([agentType])).map((value) => ({
+        value,
+        label: agentLabel(value),
+      })),
+    [installedAcpAgents, agentType],
+  )
 
   const allInstances = useProviderInstanceStore((s) => s.instances)
   const loaded = useProviderInstanceStore((s) => s.loaded)
@@ -167,7 +177,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           type="button"
           title={`${agentShortLabel(agentType)}${effectiveInstance ? ' · ' + effectiveInstance.displayName : ''} · ${modelLabel}`}
           style={accentVar(accent)}
-          className="inline-flex max-w-[280px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] py-[3px] pr-[8px] pl-[4px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] data-[state=open]:border-[var(--pick-accent)]"
+          className="inline-flex h-[24px] min-w-0 max-w-[280px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] pr-[8px] pl-[4px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] data-[state=open]:border-[var(--pick-accent)]"
         >
           {wait?.pending ? (
             <>
@@ -185,11 +195,12 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
               >
                 {showInstanceBadge ? initials : agentShortLabel(agentType).slice(0, 2).toUpperCase()}
               </span>
-              <span className="truncate font-[500] text-[var(--text-primary)]">
+              {/* A narrow composer footer shows the model only (composer-footer-tiers.ts). */}
+              <span className="truncate font-[500] text-[var(--text-primary)] @max-[680px]/footer:hidden">
                 {agentShortLabel(agentType)}
                 {showInstanceBadge && effectiveInstance ? ` · ${effectiveInstance.displayName}` : ''}
               </span>
-              <span className="whitespace-nowrap text-[var(--text-muted)]">·</span>
+              <span className="whitespace-nowrap text-[var(--text-muted)] @max-[680px]/footer:hidden">·</span>
               <span className="truncate [font-family:var(--font-mono)] text-[var(--text-secondary)]">{modelLabel}</span>
             </>
           )}
@@ -224,6 +235,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           showCustom={showCustom}
           setShowCustom={setShowCustom}
           agentType={agentType}
+          agents={agents}
           canChangeAgent={canChangeAgent}
           // Stays open so the user sees the instance/model lists swap.
           onAgentTypeChange={onAgentTypeChange}
@@ -301,6 +313,7 @@ interface PopoverProps {
   showCustom: boolean
   setShowCustom: (show: boolean) => void
   agentType: AgentType
+  agents: ReadonlyArray<{ value: AgentType; label: string }>
   canChangeAgent: boolean
   onAgentTypeChange: (t: AgentType) => void
   instances: ProviderInstance[]
@@ -331,6 +344,7 @@ function UnifiedPickerPopover(props: PopoverProps) {
     showCustom,
     setShowCustom,
     agentType,
+    agents,
     canChangeAgent,
     onAgentTypeChange,
     instances,
@@ -366,7 +380,7 @@ function UnifiedPickerPopover(props: PopoverProps) {
     <>
       {/* Agent tabs */}
       <div className="flex gap-[2px] border-b border-[var(--border)] bg-[var(--bg-tertiary)] p-[6px]">
-        {AGENTS.map((a) => {
+        {agents.map((a) => {
           const active = a.value === agentType
           const locked = !canChangeAgent && !active
           return (

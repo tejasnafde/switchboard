@@ -32,6 +32,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.switchboard.mobile.domain.thread.ChatVisuals
+import app.switchboard.mobile.domain.thread.MessageSegment
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.GeistMono
 import app.switchboard.mobile.ui.theme.SurfaceRaised
@@ -42,62 +44,80 @@ fun ThreadRichText(
     markdown: String,
     modifier: Modifier = Modifier,
 ) {
-    val blocks = remember(markdown) { ThreadRichTextParser.parse(markdown) }
+    // Closed ```mermaid and ```chart blocks are drawn; one still streaming stays code.
+    val segments = remember(markdown) {
+        ChatVisuals.splitVisualBlocks(markdown).map { segment ->
+            when (segment) {
+                is MessageSegment.Markdown -> ThreadRichTextParser.parse(segment.text)
+                is MessageSegment.Visual -> segment
+            }
+        }
+    }
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        blocks.forEach { block ->
-            when (block) {
-                is RichTextBlock.Paragraph -> RichInlineText(block.inlines)
-                is RichTextBlock.Heading -> RichInlineText(
-                    inlines = block.inlines,
-                    style = when (block.level) {
-                        1 -> MaterialTheme.typography.headlineSmall
-                        2 -> MaterialTheme.typography.titleLarge
-                        3 -> MaterialTheme.typography.titleMedium
-                        else -> MaterialTheme.typography.titleSmall
-                    }.copy(fontWeight = FontWeight.SemiBold),
-                )
-                is RichTextBlock.Code -> CodeBlock(block)
-                is RichTextBlock.ListItem -> Row(
-                    modifier = Modifier.padding(start = (block.depth * 14).dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Text(
-                        block.marker,
-                        color = TextDim,
-                        fontFamily = GeistMono,
-                        modifier = Modifier.width(28.dp),
-                    )
-                    RichInlineText(block.inlines, modifier = Modifier.weight(1f))
-                }
-                is RichTextBlock.Quote -> Row {
-                    Box(
-                        Modifier
-                            .width(3.dp)
-                            .height(28.dp)
-                            .background(Accent),
-                    )
-                    RichInlineText(
-                        block.inlines,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(start = 10.dp),
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = TextDim,
-                            fontStyle = FontStyle.Italic,
-                        ),
-                    )
-                }
-                RichTextBlock.Rule -> Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(TextDim),
-                )
-                is RichTextBlock.Table -> RichTable(block)
+        segments.forEach { segment ->
+            when (segment) {
+                is MessageSegment.Visual -> ChatVisualCard(segment.kind, segment.source)
+                is List<*> -> RichBlocks(segment.filterIsInstance<RichTextBlock>())
             }
+        }
+    }
+}
+
+@Composable
+private fun RichBlocks(blocks: List<RichTextBlock>) {
+    blocks.forEach { block ->
+        when (block) {
+            is RichTextBlock.Paragraph -> RichInlineText(block.inlines)
+            is RichTextBlock.Heading -> RichInlineText(
+                inlines = block.inlines,
+                style = when (block.level) {
+                    1 -> MaterialTheme.typography.headlineSmall
+                    2 -> MaterialTheme.typography.titleLarge
+                    3 -> MaterialTheme.typography.titleMedium
+                    else -> MaterialTheme.typography.titleSmall
+                }.copy(fontWeight = FontWeight.SemiBold),
+            )
+            is RichTextBlock.Code -> CodeBlock(block)
+            is RichTextBlock.ListItem -> Row(
+                modifier = Modifier.padding(start = (block.depth * 14).dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(
+                    block.marker,
+                    color = TextDim,
+                    fontFamily = GeistMono,
+                    modifier = Modifier.width(28.dp),
+                )
+                RichInlineText(block.inlines, modifier = Modifier.weight(1f))
+            }
+            is RichTextBlock.Quote -> Row {
+                Box(
+                    Modifier
+                        .width(3.dp)
+                        .height(28.dp)
+                        .background(Accent),
+                )
+                RichInlineText(
+                    block.inlines,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 10.dp),
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = TextDim,
+                        fontStyle = FontStyle.Italic,
+                    ),
+                )
+            }
+            RichTextBlock.Rule -> Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(TextDim),
+            )
+            is RichTextBlock.Table -> RichTable(block)
         }
     }
 }

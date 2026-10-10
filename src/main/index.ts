@@ -65,7 +65,13 @@ import {
   startPullRequestHistoryScan,
 } from './ipc/pull-requests'
 import { tryResolveProviderInstance } from './db/provider-instances'
-import { registerAutoUpdater, quitAndInstall, reportInstallStatus } from './updater'
+import {
+  registerAutoUpdater,
+  quitAndInstall,
+  reportInstallStatus,
+  stopAutoUpdaterScheduler,
+  resumeAutoUpdaterScheduler,
+} from './updater'
 import { QuitCoordinator } from './quit-coordinator'
 import { backgroundByDefault } from './provider/agent-spawn-env'
 import { noteQuitSource, quitSource } from './quit-source'
@@ -122,6 +128,7 @@ const quitCoordinator = new QuitCoordinator(
             if (mainWindow) saveWindowBounds(mainWindow)
           },
         },
+        { name: 'updater', run: stopAutoUpdaterScheduler },
         { name: 'terminals', run: shutdownTerminals },
         { name: 'providers', run: () => providerRegistry?.stopAll(), timeoutMs: 5_000 },
         {
@@ -618,6 +625,7 @@ function createWindow(): BrowserWindow {
       onRecovered: () => {
         reopenDbAfterAbortedQuit()
         resumeIdeAfterAbortedQuit()
+        resumeAutoUpdaterScheduler()
       },
     })
     if (started) reportInstallStatus(window, { kind: 'installing' })

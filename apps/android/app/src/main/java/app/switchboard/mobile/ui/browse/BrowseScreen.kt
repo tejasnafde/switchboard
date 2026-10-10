@@ -63,6 +63,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
+import app.switchboard.mobile.domain.remote.AcpAgents
 import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.ui.theme.Accent
@@ -300,10 +301,8 @@ private fun ConversationsSurface(
         is BrowseConversationsPresentation.Content -> {
             var query by rememberSaveable { mutableStateOf("") }
             var renaming by remember { mutableStateOf<BrowseConversationRow?>(null) }
-            val visible = remember(presentation.rows, query) {
-                presentation.rows.filter {
-                    BrowseParityDecisions.conversationTitleMatches(it.title, query)
-                }
+            val visible = remember(presentation.rows, projectName, query) {
+                BrowseParityDecisions.searchConversations(presentation.rows, projectName, query)
             }
             PullToRefreshBox(
                 isRefreshing = presentation.status.showProgress,
@@ -324,7 +323,8 @@ private fun ConversationsSurface(
                             )
                         }
                     }
-                    val groups = BrowseConversationGroups.group(visible)
+                    // A query shows one ranked list; grouping by state would undo the ranking.
+                    val groups = if (query.isBlank()) BrowseConversationGroups.group(visible) else emptyList()
                     val sections = groups.ifEmpty { listOf(BrowseConversationGroup(BrowseConversationGroupKey.Done, visible)) }
                     sections.forEach { group ->
                         if (groups.isNotEmpty()) {
@@ -637,7 +637,7 @@ object BrowseAccessibilityPolicy {
         "claude", "claude-code" -> "Claude"
         "codex" -> "Codex"
         "opencode" -> "OpenCode"
-        else -> agentType
+        else -> AcpAgents.shortLabel(agentType) ?: agentType
     }
 }
 

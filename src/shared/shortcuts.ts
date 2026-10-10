@@ -91,6 +91,7 @@ export const SHORTCUTS: readonly ShortcutCommand[] = [
     bindings: ['Mod+Shift+P'],
   },
   { id: 'app.search', label: 'Search across chats', group: 'Navigation', scope: 'global', bindings: ['Mod+Shift+F'] },
+  { id: 'app.go-to-chat', label: 'Go to chat', group: 'Navigation', scope: 'global', bindings: ['Mod+P'] },
   { id: 'chat.new', label: 'New chat', group: 'Chat', scope: 'global', bindings: ['Mod+Shift+O'] },
   { id: 'chat.dual', label: 'Toggle dual-chat panel', group: 'Chat', scope: 'global', bindings: ['Mod+Shift+\\'] },
   {

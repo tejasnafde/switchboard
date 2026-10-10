@@ -9,7 +9,8 @@
  * stragglers on quit.
  */
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
+import type { ChildProcessWithoutNullStreams } from 'child_process'
+import spawn from 'cross-spawn'
 import { homedir } from 'os'
 import { createInterface, type Interface } from 'readline'
 import { parseCodexRateLimits } from '@shared/codex-usage-parse'
@@ -72,6 +73,8 @@ export class CodexProbeSession {
     const probeEnv = { ...env }
     delete probeEnv.RUST_LOG
     // cwd must exist or spawn throws; the probe never touches the filesystem.
+    // cross-spawn, like the ACP adapter: an npm install of codex on Windows
+    // is a `codex.cmd` shim, which plain `child_process.spawn` cannot start.
     this.child = spawn(bin, ['app-server'], {
       cwd: homedir(),
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -350,6 +353,7 @@ export async function fetchCodexUsage(
       account: account.account,
       windows: parsed.windows,
       overage: parsed.overage,
+      ...(parsed.resetCredits ? { resetCredits: parsed.resetCredits } : {}),
     }
   } catch (err) {
     const message = redactSecrets(err instanceof Error ? err.message : String(err))

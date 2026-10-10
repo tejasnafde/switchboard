@@ -12,6 +12,7 @@ import { execFile } from 'child_process'
 import { mkdirSync } from 'fs'
 import { homedir } from 'os'
 import { ProviderInstanceChannels } from '@shared/ipc-channels'
+import type { CodexResetResult } from '@shared/codex-reset'
 import { formatClaudeAuthStatus, oauthLoginCommand } from '@shared/provider-auth-format'
 import { createMainLogger as createLogger } from '../logger'
 import {
@@ -27,12 +28,20 @@ import { findClaudeBin } from '../provider/adapters/claude-adapter'
 import { findCodexPath } from '../provider/adapters/codex-adapter'
 import { findOpencodePath, buildOpencodeEnv } from '../provider/adapters/opencode/env'
 import { assertSupportedOpencode } from '../provider/adapters/opencode/version'
+import { genericAcpLaunchConfig } from '../provider/adapters/acp/agents'
+import { isGenericAcpAgent } from '@shared/acp-agents'
 import { applyEnvOverlay } from '../provider/env-overlay'
 import { invalidateCatalog } from '../provider/catalog-probe'
 import { resolveInstanceEnv } from '../provider/instance-env'
 import { resolveOauthDirForCreate } from '../provider/oauth-path'
 import { demoUsage } from '../provider/adapters/demo-adapter'
-import { fetchInstanceUsage, invalidateUsage, type UsageRequestOptions } from '../provider/usage'
+import {
+  consumeInstanceReset,
+  fetchInstanceUsage,
+  forgetResetAttempt,
+  invalidateUsage,
+  type UsageRequestOptions,
+} from '../provider/usage'
 
 const log = createLogger('ipc:provider-instances')
 let demoUsageCalls = 0
@@ -59,6 +68,7 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
   host.handle(ProviderInstanceChannels.DELETE, (id: string) => {
     log.info(`delete ${id}`)
     invalidateUsage(id)
+    forgetResetAttempt(id)
     invalidateCatalog()
     return deleteProviderInstance(id)
   })
@@ -77,6 +87,20 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
     }
     return fetchInstanceUsage(id, opts)
   })
+
+  host.handle(
+    ProviderInstanceChannels.CONSUME_RESET,
+    async (id: unknown, creditId?: unknown): Promise<CodexResetResult> => {
+      if (typeof id !== 'string' || id.length === 0) throw new Error('consume-reset needs an instance id')
+      const credit = typeof creditId === 'string' && creditId.length > 0 && creditId.length <= 200 ? creditId : null
+      if (process.env.SB_DEMO_ADAPTER === '1') {
+        // Never a real spend in a demo launch.
+        const agentType = getProviderInstanceFull(id, { withEnv: false })?.agentType ?? 'codex'
+        return { outcome: 'nothingToReset', usage: demoUsage(id, agentType) }
+      }
+      return consumeInstanceReset(id, credit)
+    },
+  )
 
   host.handle(ProviderInstanceChannels.CREATE_OAUTH_DIR, (dir: string) => {
     return createOauthDir(dir)
@@ -260,6 +284,15 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
       if (out.status !== 0) return { ok: false, message: out.stderr?.trim() || `exit ${out.status}` }
       const lines = (out.stdout ?? '').split('\n').filter((l) => l.trim().length > 0)
       return { ok: true, message: `${lines.length} models available` }
+    }
+    if (isGenericAcpAgent(instance.agentType)) {
+      // Found, not run: starting the agent could act on the user's account.
+      // Sign-in is checked when a chat starts.
+      const launch = genericAcpLaunchConfig(instance.agentType)
+      const bin = launch.findBinary()
+      return bin
+        ? { ok: true, message: `${launch.label} found at ${bin}. Sign-in is checked when a chat starts.` }
+        : { ok: false, message: launch.notFoundMessage }
     }
     return { ok: false, message: `unknown agent kind: ${instance.agentType}` }
   } catch (err) {

@@ -6,6 +6,14 @@ export interface HistoryWindowRequest {
   beforeId?: string
 }
 
+/** Options of `app:load-session-by-id`. `imageRefs` needs `history_image_refs_v1`,
+ *  `toolPreviews` needs `history_tool_previews_v1`. */
+export interface HistoryLoadOptions extends HistoryWindowRequest {
+  window?: boolean
+  imageRefs?: boolean
+  toolPreviews?: boolean
+}
+
 /** Stable message ids survive transcript growth between older-page requests. */
 export function historyWindow(messages: ChatMessage[], request: HistoryWindowRequest) {
   const requestedLimit = request.limit ?? 200

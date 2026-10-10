@@ -14,6 +14,14 @@ object ThreadTestTags {
     const val HOST_WRITE_PREVIEW = "thread-host-write-preview"
     const val HOST_WRITE_EXPAND = "thread-host-write-expand"
     const val QUEUE_TOGGLE = "thread-queue-next-toggle"
+    const val MERGE_BACK_SEND_BACK_ACTION = "thread-merge-back-send-back"
+    const val MERGE_BACK_SHEET = "thread-merge-back-sheet"
+    const val MERGE_BACK_SHEET_TEXT = "thread-merge-back-sheet-text"
+    const val MERGE_BACK_SHEET_SUBMIT = "thread-merge-back-sheet-submit"
+    const val MERGE_BACK_SHEET_CANCEL = "thread-merge-back-sheet-cancel"
+
+    fun mergeBackEdit(id: String) = "thread-merge-back-edit:$id"
+    fun mergeBackDiscard(id: String) = "thread-merge-back-discard:$id"
 
     fun hostWriteButton(id: String) = "thread-host-write-button:$id"
     fun fileGroup(key: String) = "thread-file-group:$key"

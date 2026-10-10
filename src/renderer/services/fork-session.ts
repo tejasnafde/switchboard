@@ -1,4 +1,5 @@
 import {
+  buildForkConversationRequest,
   canonicalizeForkMessage,
   type DirtySourceConfirmation,
   type DirtySourceReceipt,
@@ -125,26 +126,17 @@ export async function forkAndOpenSession(
   pendingForks.set(key, intent)
   saveForks()
 
-  const request: ForkConversationRequest = {
-    schemaVersion: 1,
+  const request = buildForkConversationRequest({
     requestId: intent.requestId,
     sourceConversationId,
-    ...(source.machineId ? { machineId: source.machineId } : {}),
-    anchor: {
-      messageId: message.id,
-      role: message.role,
-      timestamp: message.timestamp,
-      contentDigest: await sha256(canonicalizeForkMessage(message)),
-    },
-    checkout: withWorktree
-      ? {
-          kind: 'new-worktree',
-          basePolicy: 'source-head',
-          ...(dirtySourceConfirmed ? { dirtySourceConfirmed } : {}),
-        }
-      : { kind: 'shared-checkout' },
-    provenance: { surface: 'desktop', requestedAt: intent.requestedAt },
-  }
+    machineId: source.machineId,
+    message,
+    contentDigest: await sha256(canonicalizeForkMessage(message)),
+    withWorktree,
+    dirtySourceConfirmed,
+    surface: 'desktop',
+    requestedAt: intent.requestedAt,
+  })
 
   const prior = await window.api.app.getConversationFork({
     requestId: request.requestId,

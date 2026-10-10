@@ -183,6 +183,34 @@ function migrate(db: Database.Database): void {
       INSERT INTO messages_fts(rowid, content, conversation_id, role)
         VALUES (NEW.rowid, NEW.content, NEW.conversation_id, NEW.role);
     END;
+
+    -- Bumped by every write to a conversation's rows, whoever writes them, so
+    -- the merged-history memo (conversations/history.ts) knows exactly when
+    -- its copy is stale. Absent row = revision 0.
+    CREATE TABLE IF NOT EXISTS message_revisions (
+      conversation_id TEXT PRIMARY KEY,
+      revision INTEGER NOT NULL
+    );
+
+    CREATE TRIGGER IF NOT EXISTS message_revisions_insert AFTER INSERT ON messages
+    BEGIN
+      INSERT INTO message_revisions(conversation_id, revision) VALUES (NEW.conversation_id, 1)
+        ON CONFLICT(conversation_id) DO UPDATE SET revision = revision + 1;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS message_revisions_delete AFTER DELETE ON messages
+    BEGIN
+      INSERT INTO message_revisions(conversation_id, revision) VALUES (OLD.conversation_id, 1)
+        ON CONFLICT(conversation_id) DO UPDATE SET revision = revision + 1;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS message_revisions_update AFTER UPDATE ON messages
+    BEGIN
+      INSERT INTO message_revisions(conversation_id, revision) VALUES (OLD.conversation_id, 1)
+        ON CONFLICT(conversation_id) DO UPDATE SET revision = revision + 1;
+      INSERT INTO message_revisions(conversation_id, revision) VALUES (NEW.conversation_id, 1)
+        ON CONFLICT(conversation_id) DO UPDATE SET revision = revision + 1;
+    END;
   `)
 
   // Migration: add `images` column to messages if missing

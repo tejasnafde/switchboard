@@ -10,10 +10,24 @@
 
 import type { TurnDelivery } from '@shared/turn-delivery'
 import { takeTurnDuration } from '../turn-duration'
+import {
+  canRetryAfterCompact,
+  COMPACT_COMMAND,
+  COMPACT_FIRST_MESSAGE,
+  COMPACTED_NOT_RESENT_MESSAGE,
+  COMPACTING_NOTICE,
+  isPromptTooLongResult,
+  isPromptTooLongText,
+  PROMPT_TOO_LONG_MESSAGE,
+  userMessageText,
+} from '../claude-prompt-too-long'
 import { parseImageDataUrl } from '@shared/provider-events'
+import { withHandoffPreamble } from '@shared/handoff'
 import { execSync, execFile } from 'child_process'
 import { randomUUID } from 'crypto'
-import { inferModelTier } from '@shared/models'
+import type { ModelOption, ReasoningEffort } from '@shared/models'
+import { claudeQueryEffort } from '@shared/effort'
+import { claudeModelOptions } from '../claude-models'
 import { accessSync, constants, existsSync } from 'fs'
 import { homedir } from 'os'
 import { join, sep } from 'path'
@@ -410,14 +424,6 @@ const RUNTIME_MODE_TO_PERMISSION: Record<RuntimeMode, PermissionMode> = {
 }
 
 // Policy moved to `src/main/provider/policy.ts` so both adapters share it.
-// Re-exported here for backward compat with existing imports + tests.
-export {
-  PLAN_READ_ONLY_TOOLS,
-  CUSTOM_UI_TOOLS,
-  decidePermission,
-  denialMessage,
-  type PermissionDecision,
-} from '../policy'
 import { decidePermission, CUSTOM_UI_TOOLS, denialMessage, notebookWriteRedirect } from '../policy'
 import { notebookManager } from '../../notebooks/manager'
 import { AGENT_DIGEST_PROMPT_RULE } from '@shared/agent-digest'
@@ -642,8 +648,15 @@ interface ActiveSession {
   queuedTurns: QueuedClaudeTurn[]
   /** A turn ended while the head of the queue was being cancelled; start the next once that settles. */
   startAfterWithdraw?: boolean
-  /** Nothing queued starts until the user resumes: a turn failed (see holdQueuedTurns). */
+  /** Nothing queued starts until the user resumes: a turn failed or was stopped (see holdQueuedTurns). */
   queueHeld?: boolean
+  /** A steer was sent while this turn ran. One that missed the turn's last tool step runs next, ahead of the queue. */
+  steeredThisTurn?: boolean
+  /**
+   * A turn ended with a steer and a queued message both possibly waiting in
+   * the CLI. The next turn's first frame says which one runs (see noteTurnStart).
+   */
+  awaitingNextTurn?: boolean
   /**
    * Effective model id from the last `getContextUsage()` poll, e.g.
    * `claude-fable-5`. The rejection payload never carries the model, yet the
@@ -678,6 +691,29 @@ interface ActiveSession {
   stderrTail: StderrTail
   /** Consecutive turns `resolveResumePlacement` has tolerated a sibling io-error for; see MAX_ALTERNATE_IO_RETRIES. */
   resumeAlternateIoErrorStreak: number
+  /** The visible conversation, for a session whose resume failed (see SessionStartOpts). */
+  portableHistory?: () => Promise<string | null>
+  /** Started on this chat's earlier native session; false once a resume falls back to a fresh one. */
+  resumedNative: boolean
+  /** The CLI said "Prompt is too long" for the running turn; its `result` decides what follows. */
+  promptTooLongSeen?: boolean
+  /**
+   * The running turn hit the context window: `/compact` was sent, and the
+   * turn's own messages go again once it ends (see recoverPromptTooLong).
+   */
+  promptTooLongRecovery?: { stage: 'compacting' | 'retrying'; messages: SDKUserMessage[] }
+}
+
+/** Put `preamble` in front of the text of a user message the CLI has not read yet. */
+export function prefixUserMessage(message: SDKUserMessage, preamble: string): void {
+  const content = message.message.content
+  if (typeof content === 'string') {
+    message.message.content = withHandoffPreamble(content, preamble)
+    return
+  }
+  const text = content.find((block) => block.type === 'text')
+  if (text && text.type === 'text') text.text = withHandoffPreamble(text.text, preamble)
+  else content.push({ type: 'text', text: preamble })
 }
 
 export class ClaudeAdapter implements ProviderAdapter {
@@ -699,6 +735,25 @@ export class ClaudeAdapter implements ProviderAdapter {
 
   runtimeModeOf(threadId: string): RuntimeMode | undefined {
     return this.sessions.get(threadId)?.session.runtimeMode
+  }
+
+  resumedNativeSession(threadId: string): boolean {
+    return this.sessions.get(threadId)?.resumedNative === true
+  }
+
+  /** The resume failed and the CLI starts fresh: `message` carries the visible conversation. */
+  private async handOverVisibleHistory(
+    threadId: string,
+    active: ActiveSession,
+    message: SDKUserMessage | undefined,
+  ): Promise<void> {
+    if (!message || !active.portableHistory) return
+    try {
+      const preamble = await active.portableHistory()
+      if (preamble) prefixUserMessage(message, preamble)
+    } catch (err) {
+      log.warn(`could not load the visible conversation for ${threadId}; the new session starts without it`, err)
+    }
   }
 
   async isAvailable(): Promise<boolean> {
@@ -732,6 +787,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       runtimeMode: opts.runtimeMode ?? 'sandbox',
       cwd: opts.cwd,
       sessionId: resumeId,
+      reasoningEffort: opts.reasoningEffort,
       createdAt: Date.now(),
       instanceId: opts.instanceId,
     }
@@ -775,6 +831,8 @@ export class ClaudeAdapter implements ProviderAdapter {
       watchdog,
       stderrTail,
       resumeAlternateIoErrorStreak: 0,
+      portableHistory: opts.portableHistory,
+      resumedNative: Boolean(resumeId),
     }
 
     this.sessions.set(opts.threadId, active)
@@ -797,7 +855,9 @@ export class ClaudeAdapter implements ProviderAdapter {
     // Queued behind a running turn: its runtime mode must not touch that turn
     // (a queued full-access message would otherwise let a plan turn run a
     // shell). The mode travels with the message and applies when it starts.
-    const queued = delivery === 'queue' && active.turnStartedAt != null
+    const turnLive = active.turnStartedAt != null || active.awaitingNextTurn === true
+    const queued = delivery === 'queue' && turnLive
+    const steer = !queued && turnLive
     // Reserve the turn before any await, so a queued send that arrives while
     // this one applies its mode still sees a turn in progress.
     if (!queued) {
@@ -857,13 +917,17 @@ export class ClaudeAdapter implements ProviderAdapter {
     // Mid-turn, the SDK reads a message at the next tool boundary (a steer).
     // `later` holds it until the running turn ends: measured, a separate turn.
     // A queued message carries a uuid, which is what lets it be cancelled.
-    const uuid = queued ? randomUUID() : undefined
+    // A steer carries one too: the turn it ends up running in is stamped
+    // with it (see noteTurnStart).
+    const uuid = queued || steer ? randomUUID() : undefined
     const userMsg: SDKUserMessage = {
       type: 'user',
       message: { role: 'user', content },
       parent_tool_use_id: null,
-      ...(queued ? { priority: 'later' as const, uuid } : {}),
+      ...(queued ? { priority: 'later' as const } : {}),
+      ...(uuid ? { uuid } : {}),
     } as SDKUserMessage
+    if (steer) active.steeredThisTurn = true
     // A message joining an empty queue starts a new one, not held. One joining
     // a held queue waits behind it, out of the CLI's queue, as on Codex and OpenCode.
     if (queued && active.queuedTurns.length === 0) active.queueHeld = false
@@ -1094,12 +1158,17 @@ export class ClaudeAdapter implements ProviderAdapter {
           messageId: `sys_migrate_${Date.now()}`,
           text:
             placed.reason === 'source-missing'
-              ? '(No Claude transcript found for this conversation in any known profile. Starting a fresh session - your messages here are unaffected.)'
+              ? '(No Claude transcript found for this conversation in any known profile. Starting a fresh session with the visible conversation as context.)'
               : `(Couldn't move session history into place: ${placed.detail}. Retrying may fix it.)`,
           streamKind: 'reasoning',
         })
         // io-error is transient (ENOSPC, TCC); clearing the id is permanent.
-        if (placed.reason === 'source-missing') active.session.sessionId = undefined
+        if (placed.reason === 'source-missing') {
+          active.session.sessionId = undefined
+          active.resumedNative = false
+          await this.handOverVisibleHistory(threadId, active, active.prompt.pendingMessages()[0])
+          if (this.sessions.get(threadId) !== active) return
+        }
       }
     }
 
@@ -1140,9 +1209,11 @@ export class ClaudeAdapter implements ProviderAdapter {
     const systemPrompt = [notebookPrompt, AGENT_DIGEST_PROMPT_RULE].filter(Boolean).join('\n\n')
 
     await this.dropUnavailableModel(threadId, active)
+    const effort = claudeQueryEffort(active.session.reasoningEffort, active.session.model, active.models?.models ?? [])
     const queryOptions: SDKOptions = {
       cwd: active.session.cwd,
       ...(active.session.model ? { model: active.session.model } : {}),
+      ...(effort ? { effort } : {}),
       ...(systemPrompt ? { systemPrompt } : {}),
       // Added to the user's own MCP servers, which the CLI still loads. The
       // token in its env is what binds the server's tools to this thread.
@@ -1172,7 +1243,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     }
 
     log.info(
-      `starting query: cwd=${active.session.cwd} model=${active.session.model ?? 'default'} mode=${permissionMode} claudeBin=${claudeBin ?? 'auto'} resume=${active.session.sessionId ?? 'none'} CLAUDE_CONFIG_DIR=${env.CLAUDE_CONFIG_DIR ?? '(default ~/.claude)'} PATH=${env.PATH?.slice(0, 200)}`,
+      `starting query: cwd=${active.session.cwd} model=${active.session.model ?? 'default'} effort=${effort ?? 'default'} mode=${permissionMode} claudeBin=${claudeBin ?? 'auto'} resume=${active.session.sessionId ?? 'none'} CLAUDE_CONFIG_DIR=${env.CLAUDE_CONFIG_DIR ?? '(default ~/.claude)'} PATH=${env.PATH?.slice(0, 200)}`,
     )
 
     active.session.status = 'running'
@@ -1186,6 +1257,10 @@ export class ClaudeAdapter implements ProviderAdapter {
         this.handleSDKMessage(threadId, active, msg)
       }
 
+      // A Stop can end the query before its `result`. The turn still ends,
+      // or its diff cards never come. Not for a torn-down session: a later
+      // session on this thread owns the turn count now.
+      if (this.sessions.get(threadId) === active) this.endTurnWithoutResult(threadId, active)
       active.session.status = 'idle'
       active.onEvent({ type: 'status', threadId, status: 'idle' })
     } catch (err) {
@@ -1207,6 +1282,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           candidateDirs: active.candidateOauthDirs,
         })
         log.warn(`resume failed for ${threadId}: transcript ${where.kind} - preserving resume id`)
+        this.endTurnWithoutResult(threadId, active)
         active.session.status = 'idle'
         active.onEvent({ type: 'error', threadId, message: describeResumeFailure(where) })
         active.onEvent({ type: 'status', threadId, status: 'idle' })
@@ -1215,6 +1291,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         // that never had a Claude transcript) - retry without --resume.
         log.warn(`retrying without --resume for ${threadId}`)
         active.session.sessionId = undefined
+        active.resumedNative = false
         const retryOptions: Record<string, unknown> = { ...queryOptions }
         delete retryOptions.resume
 
@@ -1222,13 +1299,15 @@ export class ClaudeAdapter implements ProviderAdapter {
         // answer (this turn's, a steer, a queued one) goes to the new session,
         // or it is stored as sent and the agent never reads it.
         const unanswered = active.prompt.pendingMessages()
+        await this.handOverVisibleHistory(threadId, active, unanswered[0])
+        if (this.sessions.get(threadId) !== active) return
         active.prompt = new PromptQueue()
         for (const message of unanswered) active.prompt.push(message)
         active.onEvent({
           type: 'content',
           threadId,
           messageId: `sys_retry_${Date.now()}`,
-          text: '(Retrying as new session - could not resume imported conversation)',
+          text: '(Could not resume the earlier session. Retrying as a new session with the visible conversation as context.)',
           streamKind: 'reasoning',
         })
 
@@ -1243,6 +1322,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         } catch (retryErr) {
           const re = retryErr as { message?: string }
           log.error(`retry also failed: ${threadId}`, re?.message ?? retryErr)
+          this.endTurnWithoutResult(threadId, active)
           active.session.status = 'error'
           active.onEvent({
             type: 'error',
@@ -1252,9 +1332,11 @@ export class ClaudeAdapter implements ProviderAdapter {
           active.onEvent({ type: 'status', threadId, status: 'error' })
         }
       } else if (e?.name === 'AbortError' || /abort/i.test(e?.message ?? '')) {
+        this.endTurnWithoutResult(threadId, active)
         active.session.status = 'idle'
         active.onEvent({ type: 'status', threadId, status: 'idle' })
       } else {
+        this.endTurnWithoutResult(threadId, active)
         active.session.status = 'error'
         active.onEvent({
           type: 'error',
@@ -1265,6 +1347,10 @@ export class ClaudeAdapter implements ProviderAdapter {
       }
     } finally {
       active.query = null
+      active.promptTooLongSeen = false
+      active.promptTooLongRecovery = undefined
+      active.steeredThisTurn = false
+      active.awaitingNextTurn = false
       active.currentMessageId = null
       active.currentReasoningMessageId = null
       active.partialMessageText.clear()
@@ -1301,7 +1387,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     return active.skills
   }
 
-  async listModels(threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }>> {
+  async listModels(threadId: string): Promise<ModelOption[]> {
     const active = this.sessions.get(threadId)
     if (!active) return []
     // The live SDK list is the source of truth - `supportedModels()` reflects
@@ -1312,17 +1398,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     const identity = claudeExecutableIdentity()
     if (active.query && shouldRefreshCatalog(active.models, identity)) {
       try {
-        const models = await active.query.supportedModels()
-        // `value` verbatim: a live row is an alias (`sonnet`, `opus[1m]`),
-        // and rewriting it to a full id would name a model the CLI did not.
-        // `resolvedModel` is the CLI's OWN mapping when it supplies one -
-        // reconcileSelectedModel uses it to recognise a persisted explicit id.
-        const mapped = models.map((m) => ({
-          id: m.value,
-          label: m.displayName,
-          tier: inferModelTier(m.value),
-          ...(m.resolvedModel ? { resolvedModel: m.resolvedModel } : {}),
-        }))
+        const mapped = claudeModelOptions(await active.query.supportedModels())
         // Empty is never committed, so a probe that raced session startup does
         // not pin this session to the static catalog for its whole life.
         active.models = commitCatalog(active.models, mapped, identity)
@@ -1332,6 +1408,130 @@ export class ClaudeAdapter implements ProviderAdapter {
       }
     }
     return active.models?.models ?? []
+  }
+
+  /**
+   * A turn's `result` while its prompt does not fit the context window. The
+   * first time, send `/compact` and keep the turn running; once that ends,
+   * send the turn's messages again. Each step runs as a CLI turn of its own,
+   * so its `result` is absorbed here and the registry sees one turn. True
+   * when the turn goes on. Only when nothing is queued: the CLI starts a
+   * queued message the moment a turn ends, ahead of anything sent after.
+   * Every other ending gets a clear message instead of the CLI's text.
+   */
+  private recoverPromptTooLong(
+    threadId: string,
+    active: ActiveSession,
+    result: { is_error?: boolean },
+    tooLong: boolean,
+    unanswered: SDKUserMessage[],
+  ): boolean {
+    const recovery = active.promptTooLongRecovery
+    active.promptTooLongRecovery = undefined
+    if (recovery?.stage === 'compacting') {
+      if (tooLong || result.is_error) {
+        log.warn(`compacting ${threadId} did not succeed`)
+        active.onEvent({ type: 'error', threadId, message: PROMPT_TOO_LONG_MESSAGE })
+        return false
+      }
+      if (active.queuedTurns.length > 0) {
+        log.warn(
+          `compacted ${threadId}; not sending the turn again ahead of ${active.queuedTurns.length} queued message(s)`,
+        )
+        active.onEvent({ type: 'error', threadId, message: COMPACTED_NOT_RESENT_MESSAGE })
+        return false
+      }
+      active.promptTooLongRecovery = { stage: 'retrying', messages: recovery.messages }
+      log.info(`compacted ${threadId}; sending ${recovery.messages.length} message(s) again`)
+      // Fresh objects with no uuid: the CLI has already answered these ones.
+      for (const message of recovery.messages) {
+        const { uuid: _uuid, priority: _priority, ...rest } = message as SDKUserMessage & { priority?: string }
+        active.prompt.push({ ...rest, message: { ...message.message } } as SDKUserMessage)
+      }
+      return true
+    }
+    if (!tooLong) return false
+    if (recovery) {
+      log.warn(`prompt too long on ${threadId} after compacting`)
+      active.onEvent({ type: 'error', threadId, message: PROMPT_TOO_LONG_MESSAGE })
+      return false
+    }
+    const queued = new Set(active.queuedTurns.map((turn) => turn.sdkMessage))
+    const messages = unanswered.filter((message) => !queued.has(message))
+    if (!canRetryAfterCompact(messages.map((m) => userMessageText(m.message.content)))) {
+      log.warn(`prompt too long on ${threadId}, and the turn cannot be compacted`)
+      active.onEvent({ type: 'error', threadId, message: PROMPT_TOO_LONG_MESSAGE })
+      return false
+    }
+    if (queued.size > 0) {
+      log.warn(`prompt too long on ${threadId}; ${queued.size} queued message(s) wait, so it is not compacted here`)
+      active.onEvent({ type: 'error', threadId, message: COMPACT_FIRST_MESSAGE })
+      return false
+    }
+    log.warn(`prompt too long on ${threadId}: compacting and sending the turn again`)
+    active.promptTooLongRecovery = { stage: 'compacting', messages }
+    active.onEvent({
+      type: 'content',
+      threadId,
+      messageId: `sys_compact_${Date.now()}`,
+      text: COMPACTING_NOTICE,
+      streamKind: 'reasoning',
+    })
+    active.prompt.push({
+      type: 'user',
+      message: { role: 'user', content: COMPACT_COMMAND },
+      parent_tool_use_id: null,
+    } as SDKUserMessage)
+    return true
+  }
+
+  /**
+   * The query failed mid-turn, so no `result` will end the running turn. End
+   * it here, or the registry counts it as running until the next turn ends.
+   */
+  private endTurnWithoutResult(threadId: string, active: ActiveSession): void {
+    if (active.turnStartedAt == null) return
+    const durationMs = takeTurnDuration(active)
+    active.onEvent({ type: 'turn.completed', threadId, ...(durationMs !== undefined ? { durationMs } : {}) })
+  }
+
+  /**
+   * The first frame of a reply. The SDK stamps it with the uuids of the
+   * messages that turn answers, which settles what runs after a turn whose
+   * steer may have missed it (`awaitingNextTurn`): the queued message the
+   * stamp names, or the steer, as a turn of its own. Without a stamp (an
+   * older CLI) the head of the queue is assumed, as before. A reply nobody
+   * started (that late steer, or the agent's own follow-up) gets a turn too.
+   */
+  private noteTurnStart(threadId: string, active: ActiveSession, msg: SDKMessage): void {
+    const frame = msg as {
+      event?: { type?: string }
+      parent_tool_use_id?: string | null
+      user_message_uuid?: string
+      user_message_uuids?: string[]
+    }
+    if (frame.event?.type !== 'message_start' || frame.parent_tool_use_id) return
+    if (active.awaitingNextTurn) {
+      active.awaitingNextTurn = false
+      const stamped = frame.user_message_uuids ?? (frame.user_message_uuid ? [frame.user_message_uuid] : [])
+      const named = active.queuedTurns.find((turn) => !turn.held && stamped.includes(turn.uuid))
+      if (named) {
+        this.beginQueuedTurn(active, named)
+        return
+      }
+      if (stamped.length === 0) {
+        this.startQueuedTurn(active)
+        return
+      }
+      // The steer's turn. A send made meanwhile may have started its clock,
+      // but no send counted this turn, so it is announced either way.
+    } else if (active.turnStartedAt != null || active.startAfterWithdraw) {
+      return
+    }
+    active.turnStartedAt = Date.now()
+    active.watchdog.turnStarted(Date.now())
+    active.session.status = 'running'
+    active.onEvent({ type: 'status', threadId, status: 'running', newTurn: true })
   }
 
   /**
@@ -1512,6 +1712,8 @@ export class ClaudeAdapter implements ProviderAdapter {
       })
     active.turnStartedAt = Date.now()
     active.watchdog.turnStarted(Date.now())
+    active.session.status = 'running'
+    active.onEvent({ type: 'status', threadId: active.session.threadId, status: 'running' })
     if (mode && mode !== active.session.runtimeMode) {
       active.session.runtimeMode = mode
       active.query?.setPermissionMode(RUNTIME_MODE_TO_PERMISSION[mode]).catch((err: unknown) => {
@@ -1561,9 +1763,29 @@ export class ClaudeAdapter implements ProviderAdapter {
     }
   }
 
+  /**
+   * Recorded for the next query start, and applied to a running query
+   * through the SDK's flag-settings layer, which takes effect from the next
+   * request. `max` is session-scoped there, which suits a per-chat choice.
+   */
+  async setReasoningEffort(threadId: string, effort: ReasoningEffort): Promise<void> {
+    const active = this.sessions.get(threadId)
+    if (!active) return
+    active.session.reasoningEffort = effort
+    try {
+      await active.query?.applyFlagSettings({ effortLevel: effort })
+    } catch (err) {
+      log.warn(`failed to set effort mid-session for ${threadId}, it applies at the next query start: ${err}`)
+    }
+  }
+
   async interruptTurn(threadId: string): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active?.query) return
+    // Stop means stop: the queued messages wait for Resume or Cancel, and a
+    // turn being compacted is not sent again.
+    this.holdQueuedTurns(active, 'Stopped.')
+    active.promptTooLongRecovery = undefined
     try {
       await active.query.interrupt()
     } catch (err) {
@@ -1664,6 +1886,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     // Auto-approved tools never hit the pendingApprovals path, so this is
     // the only place their (legitimately silent) run gets bracketed.
     countToolBrackets(msg, active.watchdog, Date.now())
+    if (msg.type === 'stream_event') this.noteTurnStart(threadId, active, msg)
     switch (msg.type) {
       case 'system': {
         const sys = msg as SDKMessage & Record<string, unknown>
@@ -1888,6 +2111,11 @@ export class ClaudeAdapter implements ProviderAdapter {
               .map((b) => b.text)
               .join('\n')
               .trim()
+            // Answered at the turn's `result`, by compacting or a clear message.
+            if (isPromptTooLongText(text)) {
+              active.promptTooLongSeen = true
+              break
+            }
             active.onEvent({
               type: 'error',
               threadId,
@@ -1984,12 +2212,30 @@ export class ClaudeAdapter implements ProviderAdapter {
         active.currentReasoningMessageId = null
         active.partialMessageText.clear()
 
+        const tooLong =
+          active.promptTooLongSeen === true ||
+          isPromptTooLongResult(result as Parameters<typeof isPromptTooLongResult>[0])
+        active.promptTooLongSeen = false
+        // Read before `answered`: they are the messages a retry sends again.
+        const unanswered = tooLong ? active.prompt.pendingMessages() : []
+        active.prompt.answered(new Set(active.queuedTurns.map((turn) => turn.sdkMessage)))
+        if (this.recoverPromptTooLong(threadId, active, result as { is_error?: boolean }, tooLong, unanswered)) break
+
         const durationMs = takeTurnDuration(active)
         active.watchdog.turnEnded()
-        active.prompt.answered(new Set(active.queuedTurns.map((turn) => turn.sdkMessage)))
         // A failed turn holds the queue rather than running it into the failure.
-        if ((result as { is_error?: boolean }).is_error) this.holdQueuedTurns(active, 'The last turn failed.')
-        else this.startQueuedTurn(active)
+        // A held queue (Stop) starts nothing here: the hold itself starts any
+        // message the CLI already took.
+        if ((result as { is_error?: boolean }).is_error) {
+          this.holdQueuedTurns(active, 'The last turn failed.')
+        } else if (!active.queueHeld) {
+          // A steer that missed this turn's last tool step runs ahead of the
+          // queue, so the queued message cannot be marked started (and its
+          // mode applied) until the next turn shows which one it is.
+          if (active.steeredThisTurn && active.queuedTurns.length > 0) active.awaitingNextTurn = true
+          else this.startQueuedTurn(active)
+        }
+        active.steeredThisTurn = false
         active.onEvent({
           type: 'turn.completed',
           threadId,
@@ -2027,9 +2273,10 @@ export class ClaudeAdapter implements ProviderAdapter {
             })
         }
 
-        // Between turns - waiting for next user message
-        active.session.status = 'idle'
-        active.onEvent({ type: 'status', threadId, status: 'idle' })
+        // A queued message (or a late steer) is already the next turn.
+        const next = active.turnStartedAt != null || active.awaitingNextTurn ? 'running' : 'idle'
+        active.session.status = next
+        active.onEvent({ type: 'status', threadId, status: next })
         break
       }
 

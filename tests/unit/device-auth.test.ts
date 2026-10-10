@@ -23,6 +23,7 @@ import {
 import {
   AppChannels,
   ProviderChannels,
+  ProviderInstanceChannels,
   PullRequestChannels,
   PullRequestWriteChannels,
   SourceControlChannels,
@@ -56,6 +57,13 @@ describe('isChannelAllowed', () => {
     expect(isChannelAllowed(PHONE_SCOPES, ProviderChannels.LIST_PEER_LINKS)).toBe(true)
     expect(isChannelAllowed(FULL_SCOPES, ProviderChannels.LINK_PEER)).toBe(true)
     expect(isChannelAllowed(FULL_SCOPES, ProviderChannels.EXTEND_PEER_LINK)).toBe(true)
+  })
+
+  // Spending a banked Codex reset cannot be undone; the phone only shows the count.
+  it('keeps a phone from spending a Codex reset while it may still read usage', () => {
+    expect(isChannelAllowed(PHONE_SCOPES, ProviderInstanceChannels.CONSUME_RESET)).toBe(false)
+    expect(isChannelAllowed(PHONE_SCOPES, ProviderInstanceChannels.USAGE)).toBe(true)
+    expect(isChannelAllowed(FULL_SCOPES, ProviderInstanceChannels.CONSUME_RESET)).toBe(true)
   })
 
   it('keeps a phone from every pull request write while it may still read and link', () => {

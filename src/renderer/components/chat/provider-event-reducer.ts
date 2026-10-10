@@ -1,3 +1,4 @@
+import { agentLabel as agentLabelFor } from '@shared/types'
 import type { RuntimeEvent } from '@shared/provider-events'
 import {
   splitSyntheticUserText,
@@ -308,7 +309,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       const sess = store.sessions.find((s) => s.id === tid)
       if (sess) {
         const projectName = sess.projectPath?.split('/').pop()
-        const agentLabel = sess.type === 'codex' ? 'Codex' : sess.type === 'opencode' ? 'OpenCode' : 'Claude Code'
+        const agentLabel = agentLabelFor(sess.type)
         void notifyTurnCompleted({
           sessionTitle: sess.title ?? 'New conversation',
           projectName,
@@ -331,7 +332,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
         maxTokens: event.maxTokens ?? null,
       })
       // ACP adapters (currently OpenCode) also forward cumulative cost
-      // here. Push it onto the session so StatusBar can display it.
+      // here. Push it onto the session for the composer footer.
       if (typeof event.costUsd === 'number') {
         useAgentStore.getState().setCostUsd(tid, event.costUsd)
       }
@@ -391,8 +392,8 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
     }
     case 'model.variants': {
       // Agent-reported variant set for the currently selected model
-      // (OpenCode ACP). Drives the chip group next to the model picker.
-      useAgentStore.getState().setVariants(tid, event.availableVariants, event.currentVariant)
+      // (OpenCode ACP). Drives the composer's effort control.
+      useAgentStore.getState().setVariants(tid, event.availableVariants, event.currentVariant, event.modelId)
       break
     }
     case 'plan.proposed': {

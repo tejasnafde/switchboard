@@ -3,16 +3,21 @@
  * running turn (the agent reads it at its next step) or queued until the turn
  * ends. Claude and Codex accept a steer natively: Claude's SDK reads a
  * mid-turn message at the next tool boundary, Codex takes `turn/steer`.
- * OpenCode cannot take a mid-turn message, so everything it gets is queued.
+ * An ACP agent (OpenCode, Gemini CLI, ...) cannot take a mid-turn message,
+ * so everything it gets is queued.
  * Queueing is done by the backend: the client sends at once with
  * `delivery: 'queue'` and the adapter holds the message until the running
  * turn ends (see `QueuedTurnSummary` for what a client can do meanwhile).
  */
+
+import { speaksAcp } from './acp-agents'
+import { agentLabel, toAgentProvider } from './types'
+
 export type TurnDelivery = 'steer' | 'queue'
 
 /** Accepts either spelling of Claude (`claude` / `claude-code`). */
 export function canSteer(provider: string | undefined | null): boolean {
-  return provider !== 'opencode' && provider !== 'terminal'
+  return !speaksAcp(provider) && provider !== 'terminal'
 }
 
 /** Should a message sent now wait for the running turn to end? */
@@ -56,7 +61,7 @@ export function sendAction(provider: string | undefined | null, running: boolean
   if (!canSteer(provider)) {
     return {
       label: 'Queue',
-      tooltip: 'Queue (Enter): OpenCode cannot take a message mid-turn, so it runs after this turn',
+      tooltip: `Queue (Enter): ${cannotSteerName(provider)} cannot take a message mid-turn, so it runs after this turn`,
     }
   }
   const other = followUpDelivery(preferred, true)
@@ -104,10 +109,11 @@ export type QueuedTurnExit = 'started' | 'promoted' | 'cancelled' | 'dropped' | 
 /**
  * The registry counted a queued message as an outstanding turn when it was
  * accepted. Taking it out of the queue releases that count when no
- * `turn.completed` will ever arrive for it: cancelled, or promoted into a turn
- * it joins rather than starts (a Codex steer). A Claude steer is a turn of
- * its own, so a promoted Claude message keeps its count. (`started` keeps it
- * too, and `dropped` is settled by the adapter's own `turn.completed`.)
+ * `turn.completed` will ever arrive for it: cancelled, or promoted into the
+ * running turn as a steer, on every provider. A promoted Claude message that
+ * misses that turn's last tool step runs as a turn of its own, and the adapter
+ * counts it again (`newTurn` on its `running` status). (`started` keeps the
+ * count, and `dropped` is settled by the adapter's own `turn.completed`.)
  */
 export function releasesOutstandingTurn(provider: string, exit: 'promoted' | 'cancelled'): boolean {
   if (exit === 'cancelled') return true
@@ -126,7 +132,7 @@ export interface QueuedTurnSummary {
   text: string
   queuedAt: number
   /**
-   * The queue is held after a failed or usage-limited turn: nothing starts
+   * The queue is held after Stop or a failed or usage-limited turn: nothing starts
    * until the user resumes it (`provider:resume-queued-turns`) or cancels.
    */
   held?: boolean
@@ -140,5 +146,12 @@ export type QueuedTurnActionResult =
 
 /** Why a queued message cannot be sent now, or null when it can. */
 export function promoteUnavailableReason(provider: string | undefined | null): string | null {
-  return canSteer(provider) ? null : 'OpenCode cannot take a message mid-turn, so this waits for the turn to end.'
+  return canSteer(provider)
+    ? null
+    : `${cannotSteerName(provider)} cannot take a message mid-turn, so this waits for the turn to end.`
+}
+
+/** Who the "cannot take a message mid-turn" copy names. */
+function cannotSteerName(provider: string | undefined | null): string {
+  return speaksAcp(provider) ? agentLabel(toAgentProvider(provider)) : 'This agent'
 }

@@ -6,6 +6,8 @@
  * CLI (see claude-cli-refresh.ts).
  */
 
+import { isGenericAcpAgent } from '@shared/acp-agents'
+import { agentLabel } from '@shared/types'
 import { getProviderInstanceFull, type ProviderInstanceRow } from '../../db/provider-instances'
 import { resolveInstanceEnv } from '../instance-env'
 import { findCodexPath } from '../adapters/codex-adapter'
@@ -14,6 +16,8 @@ import { createMainLogger } from '../../logger'
 import { fetchClaudeUsage } from './claude-usage'
 import { forgetClaudeCredentialReads } from './claude-keychain'
 import { fetchCodexUsage } from './codex-usage'
+import { consumeCodexReset, ResetKeyBook } from './codex-reset'
+import type { CodexResetOutcome, CodexResetResult } from '@shared/codex-reset'
 
 export { disposeUsageProbes } from './codex-usage'
 
@@ -35,6 +39,9 @@ interface ActiveProbe {
   stale: boolean
 }
 const inFlight = new Map<string, ActiveProbe>()
+
+const resetKeys = new ResetKeyBook()
+const consuming = new Map<string, Promise<CodexResetResult>>()
 
 /**
  * Codex probes spawn a ~260MB binary, so they run one at a time no matter
@@ -116,6 +123,14 @@ async function probe(
       'OpenCode runs on your own provider API keys, so there is no subscription quota to report.',
     )
   }
+  if (isGenericAcpAgent(instance.agentType)) {
+    return flat(
+      id,
+      instance.agentType,
+      'not-applicable',
+      `${agentLabel(instance.agentType)} does not report a quota over the Agent Client Protocol.`,
+    )
+  }
 
   return flat(id, instance.agentType, 'unsupported', `Usage reporting is not available for ${instance.agentType}.`)
 }
@@ -185,4 +200,56 @@ export async function fetchInstanceUsage(id: string, opts: UsageRequestOptions =
   const active: ActiveProbe = { task, strength: wanted, stale: false }
   inFlight.set(id, active)
   return task
+}
+
+async function spendReset(id: string, creditId: string | null): Promise<CodexResetOutcome> {
+  const instance = usageInstance(id)
+  if (!instance || instance.agentType !== 'codex') {
+    log.warn(`reset asked for ${id}, which is not a Codex account`)
+    return 'unknown'
+  }
+  const bin = findCodexPath()
+  if (!bin) {
+    log.warn('reset asked for, but the codex binary was not found')
+    return 'unknown'
+  }
+  const env = resolveInstanceEnv(instance)
+  const attempt = resetKeys.take(id, creditId)
+  const outcome = await runExclusive(() => consumeCodexReset(env, bin, attempt))
+  resetKeys.settle(id, attempt, outcome)
+  log.info(`reset for ${id}: ${outcome}`)
+  return outcome
+}
+
+/**
+ * Spend one banked Codex reset for this instance, then read its usage again
+ * whatever the outcome, so the card shows the bars and count Codex reports.
+ * A second click while one runs joins it rather than starting another.
+ */
+export function consumeInstanceReset(id: string, creditId: string | null): Promise<CodexResetResult> {
+  const running = consuming.get(id)
+  if (running) return running
+  const task = spendReset(id, creditId)
+    .catch((err): CodexResetOutcome => {
+      log.warn(`reset threw for ${id}: ${err instanceof Error ? err.message : String(err)}`)
+      return 'unknown'
+    })
+    .then(async (outcome) => {
+      invalidateUsage(id)
+      return { outcome, usage: await fetchInstanceUsage(id, { force: true }) }
+    })
+    .finally(() => consuming.delete(id))
+  consuming.set(id, task)
+  return task
+}
+
+/** The instance was deleted: drop its pending reset attempt. Edits keep it,
+ *  so a rename between a lost reply and "Try again" cannot spend twice. */
+export function forgetResetAttempt(id: string): void {
+  resetKeys.forget(id)
+}
+
+/** Test seam: whether a reset attempt (and its key) is pending for the instance. */
+export function hasPendingReset(id: string): boolean {
+  return resetKeys.has(id)
 }

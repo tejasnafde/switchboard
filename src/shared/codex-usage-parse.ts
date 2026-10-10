@@ -15,6 +15,8 @@ import {
   unixSecondsToMs,
   windowLabelForMinutes,
   type UsageOverage,
+  type UsageResetCredit,
+  type UsageResetCredits,
   type UsageWindow,
 } from './provider-usage'
 
@@ -23,6 +25,8 @@ export interface CodexUsageParse {
   windows: UsageWindow[]
   overage: UsageOverage[]
   plan: string | null
+  /** Banked rate-limit resets, null when the response carries none. */
+  resetCredits: UsageResetCredits | null
   /** Every snapshot field was null - "unknown yet", distinct from an error. */
   allNull: boolean
   error?: string
@@ -33,7 +37,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function empty(overrides: Partial<CodexUsageParse> = {}): CodexUsageParse {
-  return { ok: true, windows: [], overage: [], plan: null, allNull: false, ...overrides }
+  return { ok: true, windows: [], overage: [], plan: null, resetCredits: null, allNull: false, ...overrides }
 }
 
 /** Detects the wrong protocol dialect (see the header note). */
@@ -86,7 +90,10 @@ function readSnapshot(
     const full = windows.filter((w) => (w.usedPercent ?? 0) >= 100)
     const hit =
       full.length > 0 ? full : [windows.reduce((a, b) => ((b.usedPercent ?? 0) > (a.usedPercent ?? 0) ? b : a))]
-    for (const w of hit) w.severity = 'critical'
+    for (const w of hit) {
+      w.severity = 'critical'
+      w.reached = true
+    }
   }
 
   // A spend control is a hard cap rather than a rolling window, but it
@@ -131,6 +138,40 @@ function readSnapshot(
 
   const plan = typeof snapshot.planType === 'string' ? snapshot.planType : null
   return { windows, overage, plan }
+}
+
+const CREDIT_STATUSES: ReadonlySet<UsageResetCredit['status']> = new Set(['available', 'redeeming', 'redeemed'])
+
+function readCount(value: unknown): number | null {
+  const n = typeof value === 'bigint' ? Number(value) : value
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null
+  return Math.max(0, Math.floor(n))
+}
+
+/**
+ * `rateLimitResetCredits { availableCount, credits[] | null }`. The list is
+ * optional on the wire: null means only the count is known. A credit without
+ * a string id is dropped, since it could not be named in a consume call.
+ */
+function readResetCredits(raw: Record<string, unknown>): UsageResetCredits | null {
+  const availableCount = readCount(raw.availableCount)
+  if (availableCount === null) return null
+  if (!Array.isArray(raw.credits)) return { availableCount, credits: null }
+  const credits: UsageResetCredit[] = []
+  for (const entry of raw.credits) {
+    if (!isRecord(entry) || typeof entry.id !== 'string' || entry.id.length === 0) continue
+    const status =
+      typeof entry.status === 'string' && CREDIT_STATUSES.has(entry.status as UsageResetCredit['status'])
+        ? (entry.status as UsageResetCredit['status'])
+        : 'unknown'
+    credits.push({
+      id: entry.id,
+      expiresAtMs: unixSecondsToMs(entry.expiresAt),
+      status,
+      title: typeof entry.title === 'string' && entry.title.trim() ? entry.title.trim() : null,
+    })
+  }
+  return { availableCount, credits }
 }
 
 export function parseCodexRateLimits(raw: unknown): CodexUsageParse {
@@ -180,27 +221,17 @@ export function parseCodexRateLimits(raw: unknown): CodexUsageParse {
     if (!plan && parsed.plan) plan = parsed.plan
   }
 
-  if (resetCredits) {
-    const count =
-      typeof resetCredits.availableCount === 'number'
-        ? resetCredits.availableCount
-        : typeof resetCredits.availableCount === 'bigint'
-          ? Number(resetCredits.availableCount)
-          : null
-    if (count !== null && count > 0) {
-      overage.push({
-        id: 'reset_credits',
-        label: 'Reset credits',
-        enabled: true,
-        usedPercent: null,
-        detail: `${count} available`,
-        blockedReason: null,
-      })
-    }
-  }
+  const resets = resetCredits ? readResetCredits(resetCredits) : null
 
   // "Nothing to show" is what the caller acts on, so base it on the rows
   // actually produced. A present-but-empty rateLimitsByLimitId used to fall
   // through as ok-with-no-rows, rendering a header and nothing else.
-  return { ok: true, windows, overage, plan, allNull: windows.length === 0 && overage.length === 0 }
+  return {
+    ok: true,
+    windows,
+    overage,
+    plan,
+    resetCredits: resets,
+    allNull: windows.length === 0 && overage.length === 0 && (resets?.availableCount ?? 0) === 0,
+  }
 }

@@ -11,8 +11,10 @@ import { createMainLogger as createLogger } from '../logger'
 import { trackAnalyticsEvent } from '../analytics'
 import { ClaudeAdapter } from './adapters/claude-adapter'
 import { CodexAdapter } from './adapters/codex-adapter'
-import { demoAdapters } from './adapters/demo-adapter'
+import { demoAdapters, demoCatalog } from './adapters/demo-adapter'
 import { OpencodeAcpAdapter } from './adapters/opencode-acp-adapter'
+import { AcpAdapter } from './adapters/acp/acp-adapter'
+import { genericAcpLaunchConfig } from './adapters/acp/agents'
 import { assertCwdReadable } from '../path-access'
 import { RuntimeEventBus } from './event-bus'
 import { DriftWatcher, parseWorktreeList, type WorktreeRef } from './worktree-drift'
@@ -38,7 +40,6 @@ import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
 import { MergeBackService } from '../conversations/merge-back'
-import { loadConversationHistory } from '../conversations/history'
 import { SqliteMergeBackStore } from '../db/merge-backs'
 import {
   commitConversationProviderSwitch,
@@ -62,6 +63,9 @@ import {
   getConversationExecutionRoot,
   commitConversationExecutionRoot,
   setConversationRuntimeMode,
+  getConversationModel,
+  getConversationPendingHandoff,
+  clearConversationPendingHandoff,
 } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import {
@@ -176,6 +180,16 @@ import {
   type RuntimeFileEditedEvent,
 } from '@shared/provider-events'
 import { agentLabel, isAgentProvider, toAgentProvider } from '@shared/types'
+import { GENERIC_ACP_AGENTS, speaksAcp } from '@shared/acp-agents'
+import {
+  answeredHistory,
+  buildHandoffPreamble,
+  handoffBudgetChars,
+  isHandoffSource,
+  planTurnHandoff,
+  stripHandoffPreamble,
+} from '@shared/handoff'
+import { loadConversationHistory } from '../conversations/history'
 import { peekCatalog, probeCatalog } from './catalog-probe'
 import { pendingRequestKey, type PendingBlockingEvent } from '@shared/pending-requests'
 import { turnPreviewLine } from '@shared/turn-preview'
@@ -214,7 +228,6 @@ type StoppedSessionSnapshot = {
 
 export class ProviderRegistry implements PeerToolHost {
   private adapters: Map<ProviderKind, ProviderAdapter>
-  private opencodeAcp: OpencodeAcpAdapter
   private host: BackendHost
   /**
    * Per-session resolved adapter, so existing sessions stay pinned to the
@@ -340,7 +353,6 @@ export class ProviderRegistry implements PeerToolHost {
     })
     activeRegistry = this
     this.host = host
-    this.opencodeAcp = new OpencodeAcpAdapter()
     // SB_DEMO_ADAPTER=1 swaps in the scripted adapter so the tour recorder
     // (videos/capture-tour.mjs) can capture agent-driven scenes without
     // credentials. Never set by a normal launch.
@@ -351,7 +363,8 @@ export class ProviderRegistry implements PeerToolHost {
         : new Map<ProviderKind, ProviderAdapter>([
             ['claude', new ClaudeAdapter()],
             ['codex', new CodexAdapter()],
-            ['opencode', this.opencodeAcp],
+            ['opencode', new OpencodeAcpAdapter()],
+            ...GENERIC_ACP_AGENTS.map((agent) => [agent, new AcpAdapter(genericAcpLaunchConfig(agent))] as const),
           ]))
     const turnStore = new SqliteTurnAcceptanceStore(() => getDb())
     this.atomicTurnSubmission =
@@ -429,6 +442,8 @@ export class ProviderRegistry implements PeerToolHost {
    * unattended chain cannot continue past the limit by waiting a turn.
    */
   private turnDepth = new Map<string, number>()
+  /** Context window (tokens) each provider last reported per resolved model, for handoff budgets. */
+  private contextWindows = new Map<string, number>()
 
   /** Accepted turns not yet matched by a turn.completed event. This is a
    * count, not a boolean: a queued message is its own turn after the running
@@ -974,7 +989,7 @@ export class ProviderRegistry implements PeerToolHost {
     chargedEdge: number | null
     fromRoot: string
     targetRoot: string
-  }): { reason: 'link-removed' | 'target-gone'; message: string } | null {
+  }): { reason: 'link-removed' | 'target-gone' | 'target-busy'; message: string } | null {
     if (input.chargedEdge !== null && this.peerLinks.edgeId(input.fromRoot, input.targetRoot) !== input.chargedEdge) {
       return {
         reason: 'link-removed',
@@ -988,6 +1003,13 @@ export class ProviderRegistry implements PeerToolHost {
       return {
         reason: 'target-gone',
         message: `"${input.targetLabel}" stopped or changed profiles before the message went out, so it was NOT delivered. Send it again once that session is running.`,
+      }
+    }
+    // A turn may have started during the checkpoint await; an ACP agent would drop the send.
+    if (speaksAcp(input.adapter.provider) && this.hasOutstandingTurn(input.targetThreadId)) {
+      return {
+        reason: 'target-busy',
+        message: `"${input.targetLabel}" is mid-turn and cannot take a message yet. Try again when it finishes.`,
       }
     }
     return null
@@ -1092,10 +1114,10 @@ export class ProviderRegistry implements PeerToolHost {
       if (!adapter) {
         throw new Error(`"${targetLabel}" is not running. Open it, then send again.`)
       }
-      // OpenCode ACP is one prompt per turn and DROPS a mid-turn send, so
+      // An ACP agent is one prompt per turn and DROPS a mid-turn send, so
       // delivering into a running turn would record a message the agent never
       // saw. The other adapters queue or steer, so they are fine.
-      if (adapter.provider === 'opencode' && this.hasOutstandingTurn(targetThreadId)) {
+      if (speaksAcp(adapter.provider) && this.hasOutstandingTurn(targetThreadId)) {
         throw new Error(`"${targetLabel}" is mid-turn and cannot take a message yet. Try again when it finishes.`)
       }
 
@@ -1174,7 +1196,8 @@ export class ProviderRegistry implements PeerToolHost {
       if (withdrawn) {
         // A running turn keeps the checkpoint it now has; a fresh one belongs
         // to a turn that will not happen.
-        if (targetCwd && !targetWasMidTurn) this.checkpoints.clear(targetThreadId)
+        // A turn that started meanwhile owns the checkpoint now.
+        if (targetCwd && !targetWasMidTurn && withdrawn.reason !== 'target-busy') this.checkpoints.clear(targetThreadId)
         this.peerGuard.release(verdict.id, key)
         releaseAgentSlot()
         log.warn(
@@ -1715,6 +1738,10 @@ export class ProviderRegistry implements PeerToolHost {
           : 'The agent session ended before it was answered.',
       )
     }
+    if (event.type === 'context_window' && event.maxTokens && event.model) {
+      const provider = this.sessionAdapters.get(event.threadId)?.provider
+      if (provider) this.contextWindows.set(`${provider}\0${event.model}`, event.maxTokens)
+    }
     this.bufferAssistantText(event)
     this.bufferToolCall(event)
     // A steer is not counted, but one that lands after the turn's last tool
@@ -1724,6 +1751,9 @@ export class ProviderRegistry implements PeerToolHost {
     // notices sent while the chat is idle.
     if (event.type === 'tool.started' && !this.hasOutstandingTurn(event.threadId))
       this.beginOutstandingTurn(event.threadId)
+    // A text-only one is marked by the adapter instead, and may start while a
+    // queued message is still counted, so it counts whatever the total.
+    if (event.type === 'status' && event.newTurn) this.beginOutstandingTurn(event.threadId)
     if (event.type === 'tool.started')
       this.checkpoints.noteToolStarted(event.threadId, event.toolId, event.toolName, event.input)
     if (event.type === 'tool.completed')
@@ -2022,8 +2052,10 @@ export class ProviderRegistry implements PeerToolHost {
           if (this.switchingSessions.has(threadId)) {
             throw new TurnNotAcceptedError('Session queue full while a profile switch is in progress')
           }
-          if (adapter.provider === 'opencode' && this.hasOutstandingTurn(threadId) && input.delivery !== 'queue') {
-            throw new TurnNotAcceptedError('OpenCode is mid-turn and cannot take another message yet')
+          if (speaksAcp(adapter.provider) && this.hasOutstandingTurn(threadId) && input.delivery !== 'queue') {
+            throw new TurnNotAcceptedError(
+              `${agentLabel(toAgentProvider(adapter.provider))} is mid-turn and cannot take another message yet`,
+            )
           }
           try {
             const cwd = this.sessionCwd.get(threadId)
@@ -2042,7 +2074,8 @@ export class ProviderRegistry implements PeerToolHost {
             throw new TurnNotAcceptedError('turn preparation failed before provider dispatch', { cause: error })
           }
         },
-        dispatch: async () => {
+        finalize: (turn) => this.withPendingHandoff(threadId, adapter, turn),
+        dispatch: async (turn) => {
           // A queued message becomes a turn of its own once the running one
           // ends, so it counts; a Codex steer joins the running turn and does not.
           const startsNewProviderTurn = startsOwnProviderTurn(
@@ -2058,7 +2091,7 @@ export class ProviderRegistry implements PeerToolHost {
           if (queuedId) {
             this.queuedTurns.expect(
               queuedId,
-              queuedTurnComposerText(input.providerText, input.displayBody, input.pillsMeta),
+              queuedTurnComposerText(turn.providerText, turn.displayBody, turn.pillsMeta),
               Date.now(),
             )
           }
@@ -2066,7 +2099,8 @@ export class ProviderRegistry implements PeerToolHost {
           // A fork's pending summaries ride on this message. Not on a queued
           // one: it may be cancelled before it ever reaches the agent.
           const mergeBack = queuedId ? null : this.mergeBacks.claimForTurn(threadId)
-          const providerText = mergeBack ? mergeBack.apply(input.providerText) : input.providerText
+          // After finalize, so a fork summary follows any handoff preamble.
+          const providerText = mergeBack ? mergeBack.apply(turn.providerText) : turn.providerText
           try {
             await adapter.sendTurn(threadId, providerText, input.runtimeMode, input.images, input.delivery, queuedId)
           } catch (error) {
@@ -2097,6 +2131,72 @@ export class ProviderRegistry implements PeerToolHost {
     } finally {
       releasePreparation()
     }
+  }
+
+  /** Budget for a handoff to `provider` on this chat's pinned model, when its window is known. */
+  private handoffMaxChars(provider: ProviderKind, rootId: string): number {
+    const model = getConversationModel(rootId)
+    return handoffBudgetChars(model ? this.contextWindows.get(`${provider}\0${model}`) : undefined)
+  }
+
+  /**
+   * Prefix a turn with the chat's pending context handoff. Built here so
+   * every client gets it, phones included, and the flag is consumed only in
+   * the acceptance transaction. A client that already injected one (an older
+   * desktop or Expo build) is left alone. A failed read sends the turn
+   * without one and keeps the flag for the next turn.
+   */
+  private async withPendingHandoff(
+    threadId: string,
+    adapter: ProviderAdapter,
+    turn: UserTurnSubmissionV1,
+  ): Promise<UserTurnSubmissionV1> {
+    if (turn.handoff || stripHandoffPreamble(turn.providerText) !== turn.providerText) return turn
+    try {
+      const rootId = resolveRootThreadId(threadId)
+      const pendingFrom = getConversationPendingHandoff(rootId)
+      if (!pendingFrom) return turn
+      if (!isHandoffSource(pendingFrom)) {
+        log.warn(`dropping pending handoff from an unknown provider on ${rootId}`)
+        clearConversationPendingHandoff(rootId, pendingFrom)
+        return turn
+      }
+      const { messages } = await loadConversationHistory(rootId, '')
+      const plan = planTurnHandoff({
+        messages,
+        pendingFrom,
+        target: toAgentProvider(adapter.provider),
+        resumedNatively: adapter.resumedNativeSession?.(threadId) ?? false,
+        maxChars: this.handoffMaxChars(adapter.provider, rootId),
+      })
+      log.info(`handoff ${rootId} from=${pendingFrom} to=${adapter.provider} chars=${plan.preamble?.length ?? 0}`)
+      if (!plan.preamble) {
+        // Nothing new to replay; left set, a later turn would replay itself.
+        clearConversationPendingHandoff(rootId, pendingFrom)
+        return turn
+      }
+      return {
+        ...turn,
+        providerText: `${plan.preamble}\n\n${turn.providerText}`,
+        displayBody: turn.displayBody ?? turn.providerText,
+        pillsMeta: turn.pillsMeta ?? {},
+        handoff: { expectedFrom: pendingFrom, markerId: `handoff_${turn.origin}`, markerText: plan.markerText },
+      }
+    } catch (err) {
+      log.warn(`could not build the pending handoff for ${threadId}; sending without it`, err)
+      return turn
+    }
+  }
+
+  /**
+   * The visible conversation as a handoff preamble, for an adapter whose
+   * native session could not be resumed. Leaves out the unanswered user
+   * messages it is about to send as themselves.
+   */
+  private async portableHistory(threadId: string, provider: ProviderKind): Promise<string | null> {
+    const rootId = resolveRootThreadId(threadId)
+    const { messages } = await loadConversationHistory(rootId, '')
+    return buildHandoffPreamble(answeredHistory(messages), { maxChars: this.handoffMaxChars(provider, rootId) })
   }
 
   registerIpcHandlers(): void {
@@ -2457,6 +2557,7 @@ export class ProviderRegistry implements PeerToolHost {
               runtimeMode: opts.runtimeMode,
               model: opts.model,
               instanceId: opts.instanceId,
+              reasoningEffort: opts.reasoningEffort,
             },
             opts.cwd,
           )
@@ -2490,6 +2591,7 @@ export class ProviderRegistry implements PeerToolHost {
           )
           const enrichedOpts: SessionStartOpts = {
             ...opts,
+            portableHistory: () => this.portableHistory(opts.threadId, opts.provider),
             instanceId: resolvedInstanceId,
             resolvedEnv,
             resolvedOauthDir,
@@ -2663,16 +2765,18 @@ export class ProviderRegistry implements PeerToolHost {
           const agentType = toAgentProvider(descriptor.provider)
           const target = getProviderInstanceFull(input.targetInstanceId)
           const remoteTargetConfig =
-            agentType !== 'opencode' && process.env.SWITCHBOARD_REMOTE && input.targetRemoteConfigDir
+            (agentType === 'claude-code' || agentType === 'codex') &&
+            process.env.SWITCHBOARD_REMOTE &&
+            input.targetRemoteConfigDir
               ? remoteProviderConfigDir(agentType, input.targetRemoteConfigDir)
               : null
           if (!remoteTargetConfig && (!target || !target.enabled || target.agentType !== agentType)) {
             return failure('invalid-instance', 'That profile is unavailable for this provider')
           }
-          if (descriptor.provider === 'opencode') {
+          if (speaksAcp(descriptor.provider)) {
             return failure(
               'unsupported-provider',
-              'OpenCode cannot preserve an existing thread across profile changes yet',
+              `${agentLabel(agentType)} cannot preserve an existing thread across profile changes yet`,
             )
           }
 
@@ -2704,7 +2808,7 @@ export class ProviderRegistry implements PeerToolHost {
             }
             const targetEventGate: ProviderEventGate = { state: 'staging', events: [] }
             const oldRemoteConfig =
-              oldCredentials.remoteConfigDir && agentType !== 'opencode'
+              oldCredentials.remoteConfigDir && (agentType === 'claude-code' || agentType === 'codex')
                 ? remoteProviderConfigDir(agentType, oldCredentials.remoteConfigDir)
                 : null
             const codexDefaultDir = remoteProviderConfigDir('codex', undefined)
@@ -2903,8 +3007,10 @@ export class ProviderRegistry implements PeerToolHost {
           log.info(
             `sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${acceptedImages?.length ?? 0}`,
           )
-          if (adapter.provider === 'opencode' && this.hasOutstandingTurn(threadId)) {
-            throw new TurnNotAcceptedError('OpenCode is mid-turn and cannot take another message yet')
+          if (speaksAcp(adapter.provider) && this.hasOutstandingTurn(threadId)) {
+            throw new TurnNotAcceptedError(
+              `${agentLabel(toAgentProvider(adapter.provider))} is mid-turn and cannot take another message yet`,
+            )
           }
           const dispatch = async (): Promise<void> => {
             // These operations happen before the provider boundary. A failure here
@@ -3093,8 +3199,8 @@ export class ProviderRegistry implements PeerToolHost {
         if (!isAgentProvider(req?.agentType)) return []
         // The probe starts the real CLI with this machine's credentials, so the
         // demo adapter's recordings and screenshots would list whatever models
-        // that account has. Empty means the picker's built-in list.
-        if (process.env.SB_DEMO_ADAPTER === '1') return []
+        // that account has. The demo has a fixed one instead.
+        if (process.env.SB_DEMO_ADAPTER === '1') return demoCatalog(req.agentType)
         return probeCatalog(req.agentType, req.instanceId, req.remoteConfigDir)
       },
     )

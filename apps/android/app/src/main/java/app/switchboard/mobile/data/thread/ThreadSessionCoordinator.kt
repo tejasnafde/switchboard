@@ -29,6 +29,10 @@ import app.switchboard.mobile.domain.remote.StartedSession
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWriteResponse
+import app.switchboard.mobile.domain.thread.FORK_MERGE_BACK_CAPABILITY
+import app.switchboard.mobile.domain.thread.MergeBackActionResult
+import app.switchboard.mobile.domain.thread.MergeBackPreview
+import app.switchboard.mobile.domain.thread.mergeBackPreviewNote
 import app.switchboard.mobile.domain.thread.PrLink
 import app.switchboard.mobile.domain.thread.PrLinkRef
 import app.switchboard.mobile.domain.thread.PrLinkUnlinkResult
@@ -47,6 +51,7 @@ import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
+import app.switchboard.mobile.protocol.JsonValue
 import app.switchboard.mobile.protocol.RuntimeEventPayload
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -94,6 +99,44 @@ data class ThreadSessionState(
     val forkMetadata: ForkLineageMetadata? = null,
     val followUp: ThreadFollowUpState = ThreadFollowUpState(),
     val prLinks: List<PrLink> = emptyList(),
+    val mergeBack: ThreadMergeBackState = ThreadMergeBackState(),
+)
+
+/** Which merge-back sheet is open: send this fork's work back, or edit a pending card. */
+sealed interface MergeBackSheetMode {
+    data class Send(val forkTitle: String, val parentTitle: String) : MergeBackSheetMode
+    data class Edit(val id: String, val forkTitle: String) : MergeBackSheetMode
+}
+
+sealed interface MergeBackSheetPhase {
+    data object Loading : MergeBackSheetPhase
+
+    data class Ready(
+        /** Null in Edit mode: nothing to pin, the row is already stored. */
+        val token: JsonValue?,
+        val note: String?,
+        val replacesPending: Boolean,
+    ) : MergeBackSheetPhase
+
+    data class Blocked(val message: String) : MergeBackSheetPhase
+}
+
+data class MergeBackSheet(
+    val mode: MergeBackSheetMode,
+    val phase: MergeBackSheetPhase,
+    val text: String,
+    val saving: Boolean = false,
+    val error: String? = null,
+)
+
+data class ThreadMergeBackState(
+    /** The backend advertises `fork_merge_back_v1`. */
+    val available: Boolean = false,
+    val sheet: MergeBackSheet? = null,
+    /** Discard requests in flight, by merge-back id. */
+    val discardingIds: Set<String> = emptySet(),
+    /** Why the last Discard was refused, by merge-back id. */
+    val rowErrors: Map<String, String> = emptyMap(),
 )
 
 data class ThreadFollowUpState(
@@ -325,6 +368,31 @@ interface ThreadSessionRemote {
     /** Start a queue held after a failed or usage-limited turn. */
     fun resumeQueuedTurns(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit): Unit =
         throw UnsupportedOperationException("Queued messages are not supported")
+
+    /** What a fork (`threadId`) would send back to its parent. Only called on `fork_merge_back_v1`. */
+    fun mergeBackPreview(threadId: String, callback: (RemoteResponse<MergeBackPreview>) -> Unit): Unit =
+        throw UnsupportedOperationException("Merge-back is not supported")
+
+    /** [token] is the opaque value the preview answered. */
+    fun mergeBackSend(
+        threadId: String,
+        text: String,
+        token: JsonValue,
+        callback: (RemoteResponse<MergeBackActionResult>) -> Unit,
+    ): Unit = throw UnsupportedOperationException("Merge-back is not supported")
+
+    fun mergeBackEdit(
+        threadId: String,
+        mergeBackId: String,
+        text: String,
+        callback: (RemoteResponse<MergeBackActionResult>) -> Unit,
+    ): Unit = throw UnsupportedOperationException("Merge-back is not supported")
+
+    fun mergeBackDiscard(
+        threadId: String,
+        mergeBackId: String,
+        callback: (RemoteResponse<MergeBackActionResult>) -> Unit,
+    ): Unit = throw UnsupportedOperationException("Merge-back is not supported")
 }
 
 class SwitchboardThreadSessionRemote(
@@ -471,6 +539,36 @@ class SwitchboardThreadSessionRemote(
 
     override fun resumeQueuedTurns(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) {
         client.resumeQueuedTurns(threadId, callback)
+    }
+
+    override fun mergeBackPreview(threadId: String, callback: (RemoteResponse<MergeBackPreview>) -> Unit) {
+        client.mergeBackPreview(threadId, callback).let { Unit }
+    }
+
+    override fun mergeBackSend(
+        threadId: String,
+        text: String,
+        token: JsonValue,
+        callback: (RemoteResponse<MergeBackActionResult>) -> Unit,
+    ) {
+        client.mergeBackSend(threadId, text, token, callback).let { Unit }
+    }
+
+    override fun mergeBackEdit(
+        threadId: String,
+        mergeBackId: String,
+        text: String,
+        callback: (RemoteResponse<MergeBackActionResult>) -> Unit,
+    ) {
+        client.mergeBackEdit(threadId, mergeBackId, text, callback).let { Unit }
+    }
+
+    override fun mergeBackDiscard(
+        threadId: String,
+        mergeBackId: String,
+        callback: (RemoteResponse<MergeBackActionResult>) -> Unit,
+    ) {
+        client.mergeBackDiscard(threadId, mergeBackId, callback).let { Unit }
     }
 }
 
@@ -623,6 +721,9 @@ class ThreadSessionCoordinator(
     private var prLinks: List<PrLink> = emptyList()
     private var prLinksRequest = 0L
     private var prLinksSubscription: Cancelable? = null
+    private var mergeBack = ThreadMergeBackState(available = FORK_MERGE_BACK_CAPABILITY in capabilities)
+    /** Bumped whenever the sheet opens or closes, so a stale preview/load answer is ignored. */
+    private var mergeBackSheetRequest = 0L
     private val mutableState = MutableStateFlow(
         ThreadSessionState(load, composer, models = models, profiles = profiles),
     )
@@ -1255,6 +1356,7 @@ class ThreadSessionCoordinator(
         archiveRequest += 1
         reattachRequest += 1
         prLinksRequest += 1
+        mergeBackSheetRequest += 1
         subscription?.cancel()
         gapSubscription?.cancel()
         prLinksSubscription?.cancel()
@@ -1778,6 +1880,7 @@ class ThreadSessionCoordinator(
                 heldBusy = heldBusy.toSet(),
             ),
             prLinks = prLinks,
+            mergeBack = mergeBack,
         )
     }
 
@@ -1843,6 +1946,186 @@ class ThreadSessionCoordinator(
             }
         } catch (error: RuntimeException) {
             controlMessage = error.message ?: "Could not unlink the pull request"
+            publish()
+        }
+    }
+
+    /**
+     * Open the sheet that sends this fork's work back to its parent, and
+     * fetch the preview to fill it. Only when the backend advertises
+     * `fork_merge_back_v1` and this chat is a fork. A preview that lands
+     * after the sheet closed or reopened (a different [mergeBackSheetRequest])
+     * is ignored.
+     */
+    @Synchronized
+    fun openSendBack() {
+        if (closed || remote.scope != scope || !mergeBack.available) return
+        val fork = forkMetadata ?: return
+        val request = ++mergeBackSheetRequest
+        mergeBack = mergeBack.copy(
+            sheet = MergeBackSheet(
+                mode = MergeBackSheetMode.Send(
+                    forkTitle = currentThread()?.historyMeta?.title.orEmpty(),
+                    parentTitle = fork.parentTitle,
+                ),
+                phase = MergeBackSheetPhase.Loading,
+                text = "",
+            ),
+        )
+        publish()
+        try {
+            remote.mergeBackPreview(threadId) { response ->
+                synchronized(this) {
+                    if (!accepts(response) || request != mergeBackSheetRequest) return@synchronized
+                    val sheet = mergeBack.sheet ?: return@synchronized
+                    mergeBack = mergeBack.copy(sheet = sheet.withPreview(response))
+                    publish()
+                }
+            }
+        } catch (error: RuntimeException) {
+            val sheet = mergeBack.sheet ?: return
+            mergeBack = mergeBack.copy(sheet = sheet.copy(phase = MergeBackSheetPhase.Blocked(error.message ?: "Request failed")))
+            publish()
+        }
+    }
+
+    /** Open the sheet that edits a pending card already in this (parent) chat: ready at once, nothing to fetch. */
+    @Synchronized
+    fun openEditMergeBack(id: String, forkTitle: String, text: String) {
+        if (closed) return
+        mergeBackSheetRequest += 1
+        mergeBack = mergeBack.copy(
+            sheet = MergeBackSheet(
+                mode = MergeBackSheetMode.Edit(id, forkTitle),
+                phase = MergeBackSheetPhase.Ready(token = null, note = null, replacesPending = false),
+                text = text,
+            ),
+        )
+        publish()
+    }
+
+    @Synchronized
+    fun setMergeBackText(text: String) {
+        val sheet = mergeBack.sheet ?: return
+        if (sheet.saving) return
+        mergeBack = mergeBack.copy(sheet = sheet.copy(text = text, error = null))
+        publish()
+    }
+
+    /** Ignored while saving: a send or save in flight cannot be called back. */
+    @Synchronized
+    fun closeMergeBack() {
+        val sheet = mergeBack.sheet ?: return
+        if (sheet.saving) return
+        mergeBackSheetRequest += 1
+        mergeBack = mergeBack.copy(sheet = null)
+        publish()
+    }
+
+    @Synchronized
+    fun submitMergeBack() {
+        val sheet = mergeBack.sheet ?: return
+        if (sheet.saving) return
+        val text = sheet.text
+        if (text.isBlank()) {
+            mergeBack = mergeBack.copy(sheet = sheet.copy(error = "The summary is empty."))
+            publish()
+            return
+        }
+        if (closed || remote.scope != scope) {
+            mergeBack = mergeBack.copy(sheet = sheet.copy(error = "Connection scope changed"))
+            publish()
+            return
+        }
+        mergeBack = mergeBack.copy(sheet = sheet.copy(saving = true, error = null))
+        publish()
+        val request = mergeBackSheetRequest
+        try {
+            when (val mode = sheet.mode) {
+                is MergeBackSheetMode.Send -> {
+                    val token = (sheet.phase as? MergeBackSheetPhase.Ready)?.token
+                    if (token == null) {
+                        mergeBack = mergeBack.copy(
+                            sheet = sheet.copy(saving = false, error = "This summary is out of date. Open Send back again."),
+                        )
+                        publish()
+                        return
+                    }
+                    remote.mergeBackSend(threadId, text, token) { response ->
+                        synchronized(this) { acceptMergeBackSubmit(request, response) }
+                    }
+                }
+
+                is MergeBackSheetMode.Edit -> {
+                    remote.mergeBackEdit(threadId, mode.id, text) { response ->
+                        synchronized(this) { acceptMergeBackSubmit(request, response) }
+                    }
+                }
+            }
+        } catch (error: RuntimeException) {
+            val current = mergeBack.sheet ?: return
+            mergeBack = mergeBack.copy(sheet = current.copy(saving = false, error = error.message ?: "Request failed"))
+            publish()
+        }
+    }
+
+    private fun acceptMergeBackSubmit(request: Long, response: RemoteResponse<MergeBackActionResult>) {
+        if (!accepts(response) || request != mergeBackSheetRequest) return
+        val sheet = mergeBack.sheet ?: return
+        mergeBack = when (val outcome = response.outcome) {
+            is RemoteOutcome.Success -> when (val result = outcome.value) {
+                MergeBackActionResult.Ok -> {
+                    mergeBackSheetRequest += 1
+                    mergeBack.copy(sheet = null)
+                }
+                is MergeBackActionResult.Refused -> mergeBack.copy(sheet = sheet.copy(saving = false, error = result.message))
+            }
+            is RemoteOutcome.Failure -> mergeBack.copy(sheet = sheet.copy(saving = false, error = outcome.message))
+        }
+        publish()
+    }
+
+    private fun MergeBackSheet.withPreview(response: RemoteResponse<MergeBackPreview>): MergeBackSheet = when (val outcome = response.outcome) {
+        is RemoteOutcome.Success -> when (val preview = outcome.value) {
+            is MergeBackPreview.Ready -> copy(
+                phase = MergeBackSheetPhase.Ready(preview.token, mergeBackPreviewNote(preview), preview.replacesPending),
+                text = preview.text,
+            )
+            is MergeBackPreview.Empty -> copy(phase = MergeBackSheetPhase.Blocked(preview.message))
+            is MergeBackPreview.Refused -> copy(phase = MergeBackSheetPhase.Blocked(preview.message))
+        }
+        is RemoteOutcome.Failure -> copy(phase = MergeBackSheetPhase.Blocked(outcome.message))
+    }
+
+    /** Discard a pending card in this (parent) chat. The row itself disappears
+     *  through the backend's own `merge-back.row` event, not here. */
+    @Synchronized
+    fun discardMergeBack(id: String) {
+        if (closed || remote.scope != scope || id in mergeBack.discardingIds) return
+        mergeBack = mergeBack.copy(
+            discardingIds = mergeBack.discardingIds + id,
+            rowErrors = mergeBack.rowErrors - id,
+        )
+        publish()
+        try {
+            remote.mergeBackDiscard(threadId, id) { response ->
+                synchronized(this) {
+                    if (!accepts(response)) return@synchronized
+                    mergeBack = mergeBack.copy(discardingIds = mergeBack.discardingIds - id)
+                    when (val outcome = response.outcome) {
+                        is RemoteOutcome.Success -> (outcome.value as? MergeBackActionResult.Refused)?.let { refused ->
+                            mergeBack = mergeBack.copy(rowErrors = mergeBack.rowErrors + (id to refused.message))
+                        }
+                        is RemoteOutcome.Failure -> mergeBack = mergeBack.copy(rowErrors = mergeBack.rowErrors + (id to outcome.message))
+                    }
+                    publish()
+                }
+            }
+        } catch (error: RuntimeException) {
+            mergeBack = mergeBack.copy(
+                discardingIds = mergeBack.discardingIds - id,
+                rowErrors = mergeBack.rowErrors + (id to (error.message ?: "Request failed")),
+            )
             publish()
         }
     }

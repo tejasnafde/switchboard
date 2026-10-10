@@ -43,6 +43,7 @@ vi.mock('../../src/main/db/database', () => ({
   },
   getConversationRuntimeMode: () => null,
   getConversationModel: () => null,
+  getConversationReasoningEffort: () => null,
   getConversationAgentType: () => null,
   getConversationExecutionRoot: () => null,
   getConversationProviderInstanceId: () => null,

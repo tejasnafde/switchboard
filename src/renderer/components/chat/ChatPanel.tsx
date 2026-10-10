@@ -1,21 +1,20 @@
+import { cn } from '../../lib/utils'
 import { useChatWaitStore } from '../../stores/chat-wait-store'
 import { LoadingStatus } from '../ui/loading-status'
 import { ChatSkeleton } from '../ui/chat-skeleton'
 import { perfSpan } from '../../perf'
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
+import type { ReasoningEffort } from '@shared/models'
 import { useAgentStore, adoptStartedRuntimeMode, runtimeModeToSend, type RuntimeMode } from '../../stores/agent-store'
+import { ensureFullHistory } from '../../services/history-loader'
 import { useDraftStore } from '../../stores/draft-store'
 import { useTerminalStore } from '../../stores/terminal-store'
 import { useKanbanStore } from '../../stores/kanban-store'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { useMachineStore } from '../../stores/machine-store'
-import {
-  ROTATION_MARKER_PREFIX,
-  AGENT_SWITCH_MARKER_PREFIX,
-  CONTEXT_HANDOFF_MARKER_PREFIX,
-} from '@shared/rotation-marker'
-import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
+import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX } from '@shared/rotation-marker'
+import { isHandoffSource, nextPendingHandoffFrom, planTurnHandoff } from '@shared/handoff'
 import { parseSendTo, resolveSendToTarget } from './send-to-command'
 import { parseLinkCommand, resolveLinkTarget } from './link-command'
 import { reduceProviderEvent, upsertAssistantContent } from './provider-event-reducer'
@@ -68,7 +67,7 @@ import {
 import { fitImageToBudget } from '../../services/image-downscale'
 import { imageRefusalMessage, MESSAGE_IMAGE_WIRE_BUDGET } from '@shared/image-resize'
 import { InPaneSearchBar } from '../InPaneSearchBar'
-import { defaultInstanceId, agentLabel, type AgentType, type ChatMessage } from '@shared/types'
+import { defaultInstanceId, agentLabel, type AgentProvider, type AgentType, type ChatMessage } from '@shared/types'
 import { defaultInstanceSettingKey } from '@shared/session-defaults'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useFollowUpDefault } from '../../services/effective-settings'
@@ -80,6 +79,7 @@ import {
   withDraftProvenance,
 } from '../../services/draft-transfer'
 import { providerKindFor } from '@shared/types'
+import { speaksAcp } from '@shared/acp-agents'
 import { confirm } from '../ui/confirm'
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 import { fileDiffNoRevertMessage } from '@shared/file-diff-revert'
@@ -290,7 +290,7 @@ export function ChatPanel({
   )
 
   const handleReasoningEffortChange = useCallback(
-    (effort: 'low' | 'medium' | 'high') => {
+    (effort: ReasoningEffort) => {
       if (!sessionId) return
       changeReasoningEffort(sessionId, effort)
     },
@@ -321,10 +321,17 @@ export function ChatPanel({
       const switchSpan = perfSpan('provider.switch.action', { thread: sessionId, kind: 'agent', from: prevType, to: t })
       try {
         // Persist first so a failed write cannot leave the picker and DB on
-        // different providers.
+        // different providers. The backend commits the switch marker and the
+        // pending context handoff in the same transaction; an older one answers
+        // without `pendingHandoffFrom` and the two are written below instead.
+        const hasPriorMessages = (activeSession?.messages?.length ?? 0) > 0
+        const markerId = `agentswap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
         let restored: Awaited<ReturnType<typeof window.api.app.setConversationProviderSelection>>
         try {
-          restored = await window.api.app.setConversationProviderSelection(sessionId, t, defaultInstanceId(t))
+          restored = await window.api.app.setConversationProviderSelection(sessionId, t, defaultInstanceId(t), {
+            hasHistory: hasPriorMessages,
+            markerId,
+          })
         } catch (err) {
           setAgentType(prevType)
           log.warn('failed to persist provider selection', err)
@@ -333,44 +340,51 @@ export function ChatPanel({
             .fail(sessionId, `Could not switch provider: ${err instanceof Error ? err.message : String(err)}`)
           return
         }
-        // Persisted in-chat marker: an agent swap silently drops all context
-        // (the new adapter starts cold), so make the switch - and its cost -
-        // visible and auditable, mirroring the instance-rotation marker below.
-        const hasPriorMessages = (activeSession?.messages?.length ?? 0) > 0
-        if (hasPriorMessages && prevType !== t) {
-          const marker: ChatMessage = {
-            id: `agentswap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            role: 'system',
-            content: `${AGENT_SWITCH_MARKER_PREFIX} ${agentLabel(prevType)} → ${agentLabel(t)}`,
-            timestamp: Date.now(),
-          }
-          appendMessage(sessionId, marker)
-          window.api.app
-            .saveMessage({
-              id: marker.id,
-              conversationId: sessionId,
-              role: marker.role,
-              content: marker.content,
+        if ('pendingHandoffFrom' in restored) {
+          if (restored.marker) {
+            appendMessage(sessionId, {
+              id: restored.marker.id,
+              role: 'system',
+              content: restored.marker.content,
+              timestamp: restored.marker.timestamp,
             })
-            .catch((err) => {
-              log.warn(`failed to persist agent-swap marker for ${sessionId}`, err)
-            })
-        }
-        // Schedule the cross-provider context handoff: the new adapter starts
-        // cold, so the next send replays the transcript as a preamble (see
-        // handleSend). Folded through the persisted flag so a chain of switches
-        // keeps the ORIGINAL source, and switching back to it clears the flag
-        // (that provider resumes its own native context).
-        try {
-          const { from: existing } = await window.api.app.getConversationPendingHandoff(sessionId)
-          const next = nextPendingHandoffFrom(existing, prevType, t, hasPriorMessages)
-          if (next !== existing) {
-            await window.api.app.setConversationPendingHandoff(sessionId, next)
           }
-        } catch (err) {
-          log.warn('failed to schedule context handoff', err)
+        } else {
+          // Persisted in-chat marker: an agent swap starts the new adapter cold,
+          // so make the switch - and its cost - visible and auditable.
+          if (hasPriorMessages && prevType !== t) {
+            const marker: ChatMessage = {
+              id: markerId,
+              role: 'system',
+              content: `${AGENT_SWITCH_MARKER_PREFIX} ${agentLabel(prevType)} → ${agentLabel(t)}`,
+              timestamp: Date.now(),
+            }
+            appendMessage(sessionId, marker)
+            window.api.app
+              .saveMessage({
+                id: marker.id,
+                conversationId: sessionId,
+                role: marker.role,
+                content: marker.content,
+              })
+              .catch((err) => {
+                log.warn(`failed to persist agent-swap marker for ${sessionId}`, err)
+              })
+          }
+          // Folded through the persisted flag so a chain of switches keeps the
+          // ORIGINAL source, and switching back to it clears the flag (that
+          // provider resumes its own native context).
+          try {
+            const { from: existing } = await window.api.app.getConversationPendingHandoff(sessionId)
+            const next = nextPendingHandoffFrom(existing, prevType, t, hasPriorMessages)
+            if (next !== existing) {
+              await window.api.app.setConversationPendingHandoff(sessionId, next)
+            }
+          } catch (err) {
+            log.warn('failed to schedule context handoff', err)
+          }
         }
-        // Write-through to the store so other consumers (StatusBar, sidebar
+        // Write-through to the store so other consumers (sidebar
         // session badges, command-palette filters) see the new agent type
         // immediately. setAgentType also clears the stored `model` - a model
         // id from one provider almost never round-trips to another (e.g.
@@ -904,51 +918,51 @@ export function ChatPanel({
       const liveStatus = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.status
       const busy = liveStatus === 'running' || liveStatus === 'thinking'
       // A queued send is held by the backend until the turn ends, so it may pass.
-      if (busy && agentType === 'opencode' && delivery !== 'queue') {
+      if (busy && speaksAcp(agentType) && delivery !== 'queue') {
         return {
           accepted: false,
-          error: 'OpenCode is still working. Your text and attachments are preserved; send again when it finishes.',
+          error: `${agentLabel(agentType)} is still working. Your text and attachments are preserved; send again when it finishes.`,
         }
       }
 
       // Cross-provider context handoff. A pending flag - set by an agent
       // switch over existing history, or by a degraded Codex / OpenCode
       // fork - means the current adapter has never seen the visible
-      // transcript. Prefix this turn's wire message with the transcript
-      // preamble. The backend clears the flag in the acceptance transaction.
+      // transcript. The backend prefixes this turn with it and clears the
+      // flag in the acceptance transaction; an older backend
+      // (`backendBuilds` absent) leaves the prefixing to this client.
       let wireMessage = message
       let pendingHandoffFrom: string | null = null
       let handoff: UserTurnSubmissionV1['handoff']
       try {
-        pendingHandoffFrom = (await window.api.app.getConversationPendingHandoff(sessionId)).from
+        const pending = await window.api.app.getConversationPendingHandoff(sessionId)
+        if (!pending.backendBuilds) pendingHandoffFrom = pending.from
       } catch (err) {
         log.warn('pending-handoff read failed, sending without preamble', err)
       }
-      if (pendingHandoffFrom) {
+      if (pendingHandoffFrom && isHandoffSource(pendingHandoffFrom)) {
+        // The preamble replays the whole chat, not just the open window, so
+        // a partial history must not reach the new agent as its context.
+        if (!(await ensureFullHistory(sessionId))) {
+          return {
+            accepted: false,
+            error:
+              'The full conversation could not be loaded for the context handoff. Your text and attachments are preserved; send again.',
+          }
+        }
         // Live read - the closure's `messages` lags in-place streamed edits.
         const history = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.messages ?? []
         const handoffSpan = perfSpan('handoff.build', { thread: sessionId, messages: history.length })
-        const preamble = buildHandoffPreamble(history)
-        handoffSpan.end({ characters: preamble?.length ?? 0 })
-        if (preamble) {
-          wireMessage = `${preamble}\n\n${message}`
-          const handoffFrom = pendingHandoffFrom as NonNullable<UserTurnSubmissionV1['handoff']>['expectedFrom']
-          const markerText =
-            handoffFrom === agentType
-              ? `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(agentType)} profile restarted with visible history`
-              : `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(handoffFrom)} → ${agentLabel(agentType)}`
-          if (
-            handoffFrom === 'claude-code' ||
-            handoffFrom === 'codex' ||
-            handoffFrom === 'opencode' ||
-            handoffFrom === 'cursor'
-          ) {
-            handoff = {
-              expectedFrom: handoffFrom,
-              markerId: '',
-              markerText,
-            }
-          }
+        const plan = planTurnHandoff({
+          messages: history,
+          pendingFrom: pendingHandoffFrom,
+          target: agentType as AgentProvider,
+          resumedNatively: false,
+        })
+        handoffSpan.end({ characters: plan.preamble?.length ?? 0 })
+        if (plan.preamble) {
+          wireMessage = `${plan.preamble}\n\n${message}`
+          handoff = { expectedFrom: pendingHandoffFrom, markerId: '', markerText: plan.markerText }
         }
       }
       const handoffInjected = wireMessage !== message
@@ -1194,6 +1208,7 @@ export function ChatPanel({
   const {
     panelRef,
     searchOpen,
+    findPrefill,
     chatSearchMatchInfo,
     handleChatSearchQuery,
     handleChatSearchNext,
@@ -1205,48 +1220,11 @@ export function ChatPanel({
     <>
       {/* Thinking indicator */}
       {(status === 'running' || status === 'thinking' || pendingDeliveryState === 'pending') && (
-        <div
-          style={{
-            padding: '8px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '12px',
-            color: 'var(--text-muted)',
-            flexShrink: 0,
-          }}
-        >
-          <span className="thinking-dots" style={{ display: 'inline-flex', gap: '3px' }}>
-            <span
-              style={{
-                animation: 'pulse 1.4s ease-in-out infinite',
-                animationDelay: '0s',
-                width: '4px',
-                height: '4px',
-                borderRadius: '50%',
-                background: 'var(--accent)',
-              }}
-            />
-            <span
-              style={{
-                animation: 'pulse 1.4s ease-in-out infinite',
-                animationDelay: '0.2s',
-                width: '4px',
-                height: '4px',
-                borderRadius: '50%',
-                background: 'var(--accent)',
-              }}
-            />
-            <span
-              style={{
-                animation: 'pulse 1.4s ease-in-out infinite',
-                animationDelay: '0.4s',
-                width: '4px',
-                height: '4px',
-                borderRadius: '50%',
-                background: 'var(--accent)',
-              }}
-            />
+        <div className="flex shrink-0 items-center gap-[8px] px-[16px] py-[8px] text-[12px] text-[var(--text-muted)]">
+          <span className="thinking-dots inline-flex gap-[3px]">
+            <span className="h-[4px] w-[4px] animate-[pulse_1.4s_ease-in-out_0s_infinite] rounded-[50%] bg-[var(--accent)]" />
+            <span className="h-[4px] w-[4px] animate-[pulse_1.4s_ease-in-out_0.2s_infinite] rounded-[50%] bg-[var(--accent)]" />
+            <span className="h-[4px] w-[4px] animate-[pulse_1.4s_ease-in-out_0.4s_infinite] rounded-[50%] bg-[var(--accent)]" />
           </span>
           <span>
             {pendingDeliveryState === 'pending' && status === 'idle'
@@ -1372,18 +1350,15 @@ export function ChatPanel({
       data-focused={showFocusIndicator ? isVisiblyFocused : undefined}
       onFocusCapture={focusSlot}
       onPointerDown={focusSlot}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        width: '100%',
-        height: '100%',
-        background: 'var(--bg-primary)',
-        position: 'relative',
-        boxShadow: isVisiblyFocused ? 'inset 0 0 0 1px color-mix(in srgb, var(--accent) 46%, transparent)' : undefined,
-      }}
+      className={cn(
+        'relative flex h-full w-full flex-col bg-[var(--bg-primary)]',
+        isVisiblyFocused && 'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--accent)_46%,transparent)]',
+      )}
     >
       {searchOpen && (
         <InPaneSearchBar
+          key={findPrefill?.stamp ?? 'find'}
+          initialValue={findPrefill?.query}
           onQuery={handleChatSearchQuery}
           onNext={handleChatSearchNext}
           onPrev={handleChatSearchPrev}
@@ -1405,20 +1380,8 @@ export function ChatPanel({
         <>
           {/* ── Top bar: folder / chat name ──────────────────────── */}
           <div
-            className="chat-panel-header"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              padding: '7px 16px',
-              borderBottom: '1px solid var(--border)',
-              gap: '6px',
-              flexShrink: 0,
-              background: 'var(--bg-secondary)',
-              fontSize: '12px',
-              minHeight: '32px',
-              // The linked-PR control hides itself when the header is too narrow for it.
-              containerType: 'inline-size',
-            }}
+            // The linked-PR control hides itself when the header is too narrow for it (container query).
+            className="chat-panel-header flex min-h-[32px] shrink-0 items-center gap-[6px] border-b border-[var(--border)] bg-[var(--bg-secondary)] px-[16px] py-[7px] text-[12px] [container-type:inline-size]"
           >
             {/* Plain identity breadcrumb; only consequential state receives color. */}
             {hasSession ? (
@@ -1439,17 +1402,7 @@ export function ChatPanel({
                       if (e.key === 'Escape') setEditingTitle(false)
                     }}
                     onBlur={commitRename}
-                    style={{
-                      border: '1px solid var(--border-focus)',
-                      borderRadius: '3px',
-                      background: 'var(--bg-primary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '12px',
-                      padding: '1px 6px',
-                      outline: 'none',
-                      flex: '1 1 0%',
-                      minWidth: 0,
-                    }}
+                    className="min-w-0 flex-[1_1_0%] rounded-[3px] border border-[var(--border-focus)] bg-[var(--bg-primary)] px-[6px] py-[1px] text-[12px] text-[var(--text-primary)] outline-none"
                   />
                 ) : (
                   <span className="chat-identity-title" title={chatTitle}>
@@ -1459,24 +1412,7 @@ export function ChatPanel({
                 {!editingTitle && (
                   <button
                     onClick={startRename}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer',
-                      padding: '0 2px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      opacity: 0.5,
-                      transition: 'opacity 0.12s',
-                      flexShrink: 0,
-                    }}
-                    onMouseEnter={(e) => {
-                      ;(e.currentTarget as HTMLElement).style.opacity = '1'
-                    }}
-                    onMouseLeave={(e) => {
-                      ;(e.currentTarget as HTMLElement).style.opacity = '0.5'
-                    }}
+                    className="flex shrink-0 cursor-pointer items-center border-0 bg-transparent px-[2px] py-0 text-[var(--text-muted)] opacity-50 transition-opacity duration-[120ms] hover:opacity-100"
                     title="Rename"
                   >
                     <svg
@@ -1501,10 +1437,10 @@ export function ChatPanel({
                 )}
               </div>
             ) : (
-              <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>Switchboard</span>
+              <span className="font-[500] text-[var(--text-primary)]">Switchboard</span>
             )}
 
-            <span style={{ flex: 1 }} />
+            <span className="flex-1" />
 
             {activeSession && activeSession.type !== 'terminal' && <LinkedPrControl sessionId={activeSession.id} />}
 
@@ -1539,23 +1475,7 @@ export function ChatPanel({
               <button
                 onClick={onClose}
                 title="Close this panel (⌘⇧\\)"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  padding: '2px 6px',
-                  borderRadius: '3px',
-                  fontSize: '14px',
-                  lineHeight: 1,
-                  flexShrink: 0,
-                }}
-                onMouseEnter={(e) => {
-                  ;(e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'
-                }}
-                onMouseLeave={(e) => {
-                  ;(e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'
-                }}
+                className="shrink-0 cursor-pointer rounded-[3px] border-0 bg-transparent px-[6px] py-[2px] text-[14px] leading-none text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               >
                 ×
               </button>
@@ -1565,11 +1485,10 @@ export function ChatPanel({
                 Working… row already says so. */}
             {hasSession && (activeSession?.draft || (status !== 'running' && status !== 'thinking')) && (
               <span
-                style={{
-                  color: status === 'error' ? 'var(--error, #f85149)' : 'var(--text-muted)',
-                  fontSize: '11px',
-                  fontWeight: 400,
-                }}
+                className={cn(
+                  'text-[11px] font-[400]',
+                  status === 'error' ? 'text-[var(--error,#f85149)]' : 'text-[var(--text-muted)]',
+                )}
               >
                 {activeSession?.draft
                   ? status === 'running'
@@ -1618,6 +1537,7 @@ export function ChatPanel({
               sessionId={sessionId}
               visible={visible}
               busy={status === 'running' || status === 'thinking'}
+              hasOlderHistory={Boolean(activeSession?.olderHistoryCursor)}
               agentType={activeSession?.type ?? agentType}
               onApproval={handleApproval}
               onAnswerQuestion={handleAnswerQuestion}

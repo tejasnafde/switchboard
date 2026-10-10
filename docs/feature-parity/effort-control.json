@@ -1,0 +1,95 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "effort-control",
+  "summary": "One thinking-effort control for Claude Code, Codex and OpenCode, and the bottom status bar removed. The composer shows 'Effort: <level>' right of the model chip (a Radix popover on Tailwind). It lists only the levels the selected model takes: Claude's per-model supportedEffortLevels from the Agent SDK's model list (live list and catalog probe), Codex's model/list supportedReasoningEfforts and defaultReasoningEffort (Low to High on Medium when Codex does not say), and OpenCode's model variants. It is hidden when the model has none. Claude gets the level as the query's `effort` at start and live through Query.applyFlagSettings({ effortLevel }); Codex keeps its per-turn `effort`, now only with a level offered for the model (no `max`, no `xhigh` without a catalog that lists it); an OpenCode pick still rewrites the model id to <base>/<variant>. It replaces Codex's native select and OpenCode's variant chips. ReasoningEffort widens to low/medium/high/xhigh/max and stays remembered per chat and per provider (conversations.reasoning_effort, provider_options_json, through resolveRootThreadId); a session the backend starts (a phone, a restart) now picks up the chat's stored effort when the client sends none. The status bar is removed: the terminal pane count moves to the terminal strip header ('2 terminals'), OpenCode's session cost next to the composer's context ring, and the companion-session binding the bar exposed is now on the terminal strip (data-terminal-strip, data-session-id).",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/EffortPicker.tsx",
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/terminal/TerminalStrip.tsx",
+        "src/renderer/App.tsx",
+        "src/renderer/styles/tailwind.css",
+        "src/renderer/styles/global.css",
+        "src/preload/index.ts",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/dual-chat-workspace.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "mobile_effort_control",
+      "followUpRelease": "mobile-v0.6.0, for the effort control on the thread screen. The model list the phone already reads (provider:list-models, provider:list-catalog) now carries effortLevels and defaultEffort, and provider:set-reasoning-effort plus app:set-conversation-reasoning-effort are open to a phone's chat scope, so the phone needs UI only. Until then a chat started or resumed from the phone runs with the effort the desktop stored for it, because the backend now fills it in. No phone code calls the effort channels, so nothing unfinished is reachable. The only Expo change is a widened type on the fork contract (apps/mobile/src/lib/api.ts), which ships with no runtime change.",
+      "evidence": [
+        "apps/mobile/src/lib/api.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "native_effort_control",
+      "followUpRelease": "Native Android 0.6.0, for the effort control on the thread screen, over the same shared API. Android reads reasoningEffort on the fork contract as a plain string (ConversationForkWire.kt), so the new xhigh and max values need no APK. A chat resumed from Android keeps the desktop's stored effort through the backend's session defaults.",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/ConversationForkWire.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/effort.ts",
+        "src/shared/models.ts",
+        "src/shared/format.ts",
+        "src/shared/provider-option-memory.ts",
+        "src/shared/session-defaults.ts",
+        "src/main/provider/claude-models.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/adapters/codex-adapter.ts",
+        "src/main/provider/adapters/demo-adapter.ts",
+        "src/main/provider/catalog-probe.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/session-defaults.ts",
+        "src/main/provider/types.ts",
+        "tests/unit/effort-control.test.ts",
+        "tests/unit/claude-adapter-effort.test.ts",
+        "tests/unit/codex-adapter.test.ts",
+        "tests/unit/session-defaults.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/conversations.ts",
+        "src/main/conversations/fork-source.ts",
+        "tests/unit/conversation-rotation-fallback.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md",
+        "docs/feature-parity/effort-control.json"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/effort-control.test.ts: level labels; parsing Claude strings and Codex objects (unknown levels dropped, weakest first); Claude ModelInfo to rows with levels; the control offers a Claude model only its levels with High as default, finds the alias row covering an explicit id and the default row when nothing is picked, hides for a model without effort or an unreported catalog, and shows the default when the stored level is not taken; Codex reported levels and default, else Low to High on Medium; OpenCode variants as levels with the base as Default; a pick rewrites the OpenCode model id and sets the effort for the others; what goes on the wire for Claude and Codex.",
+      "tests/unit/claude-adapter-effort.test.ts (fake SDK): the query starts with the chat's effort, none when unset, none when the catalog says the model does not take it, and a change mid-chat calls applyFlagSettings({ effortLevel }).",
+      "tests/unit/codex-adapter.test.ts: max never goes on a turn; model/list effort levels and default are parsed.",
+      "tests/unit/session-defaults.test.ts and conversation-rotation-fallback.test.ts: a started session takes the requested effort, else the conversation's, never an unknown level; the stored effort is read through a rotated id, an unknown stored level reads as none and an unknown level is refused on write.",
+      "tests/unit/format-cost-context.test.ts: the footer cost label and the terminal count label.",
+      "tests/unit/dual-chat-component-contract.test.ts and e2e/dual-chat-workspace.e2e.mjs: the companion-session binding is on the terminal strip.",
+      "Visual regression screens (Dark, Light, Translucent): every screen re-baselined for the removed bar and the effort chip (demo catalog), plus a new effort-picker screen of the open menu. The Tailwind move of ChatInput, ChatPanel and TerminalStrip passed the screens twice with no new baselines."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run against a live Claude CLI: that the SDK's supportedModels() fills supportedEffortLevels on this account, and that applyFlagSettings changes the next request's effort, are taken from sdk.d.ts (0.3.260) and covered only with a fake SDK.",
+      "Not run against a live Codex app-server: supportedReasoningEfforts and defaultReasoningEffort are read as documented by its model/list; a Codex that omits them gets Low to High as before.",
+      "OpenCode variants were not exercised live; the control uses the same model.variants event and model id rewrite the chips used.",
+      "The composer error banner, image previews, drop overlay and lightbox moved to Tailwind with the same values, but no visual screen shows them, so their pixel equality is unverified.",
+      "The feature tour clips under videos/dist still show the old status bar and the Codex select until they are re-recorded with videos/capture-tour.mjs."
+    ]
+  }
+}

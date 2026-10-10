@@ -30,7 +30,7 @@ import type {
   UserTurnResolutionResult,
   InterruptResult,
 } from '@shared/provider-events'
-import type { ModelOption } from '@shared/models'
+import type { ModelOption, ReasoningEffort } from '@shared/models'
 import type { PendingBlockingEvent } from '@shared/pending-requests'
 import type { QueuedTurnActionResult, QueuedTurnSummary } from '@shared/turn-delivery'
 import type {
@@ -46,6 +46,7 @@ import type {
 import type { SshIapTarget } from '@shared/machines'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import type { PeerMessageInput } from '@shared/peer-messaging'
+import type { MergeBackActionResult, MergeBackPreview, MergeBackToken } from '@shared/merge-back'
 import type { PrLink, PrLinkResult } from '@shared/pull-request-links'
 import type { PrRef } from '@shared/pull-requests'
 import type { ForkConversationOutcome, ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
@@ -102,7 +103,7 @@ export interface LoadedSession {
     providerInstanceId?: string | null
     runtimeMode?: RuntimeMode | null
     model?: string | null
-    reasoningEffort?: 'low' | 'medium' | 'high' | null
+    reasoningEffort?: ReasoningEffort | null
     forkMetadata?: ForkLineageMetadata | null
   } | null
   /** Full message count on the backend, which may exceed `messages.length`. */
@@ -396,6 +397,23 @@ export class SwitchboardClient {
     return this.transport.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, input)
   }
 
+  /** Merge-back (`fork_merge_back_v1`): the summary a fork would send back to its parent. */
+  mergeBackPreview(forkThreadId: string): Promise<MergeBackPreview> {
+    return this.transport.invoke(ProviderChannels.MERGE_BACK_PREVIEW, forkThreadId)
+  }
+
+  mergeBackSend(forkThreadId: string, text: string, token: MergeBackToken): Promise<MergeBackActionResult> {
+    return this.transport.invoke(ProviderChannels.MERGE_BACK_SEND, forkThreadId, text, token)
+  }
+
+  mergeBackEdit(parentThreadId: string, id: string, text: string): Promise<MergeBackActionResult> {
+    return this.transport.invoke(ProviderChannels.MERGE_BACK_EDIT, parentThreadId, id, text)
+  }
+
+  mergeBackDiscard(parentThreadId: string, id: string): Promise<MergeBackActionResult> {
+    return this.transport.invoke(ProviderChannels.MERGE_BACK_DISCARD, parentThreadId, id)
+  }
+
   /** The pull requests linked to a chat; open to a phone (`device-auth.ts`). */
   pullRequestLinks(threadId: string): Promise<PrLink[]> {
     return this.transport.invoke(PullRequestChannels.LINKS, threadId)
@@ -422,7 +440,8 @@ export class SwitchboardClient {
     return this.transport.invoke(ProviderChannels.SWITCH_INSTANCE, threadId, input)
   }
 
-  getPendingHandoff(threadId: string): Promise<{ from: string | null }> {
+  /** `backendBuilds`: the backend adds the handoff to the next turn and clears the flag itself. */
+  getPendingHandoff(threadId: string): Promise<{ from: string | null; backendBuilds?: boolean }> {
     return this.transport.invoke(AppChannels.GET_CONVERSATION_PENDING_HANDOFF, threadId)
   }
 

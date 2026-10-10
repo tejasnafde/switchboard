@@ -7,9 +7,12 @@
 
 import type { TurnDelivery } from '@shared/turn-delivery'
 import { AGENT_DIGEST_PROMPT_RULE } from '@shared/agent-digest'
+import { withVisibleHistory, type VisibleHistoryState } from '../visible-history'
 import { takeTurnDuration } from '../turn-duration'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'child_process'
-import { inferModelTier } from '@shared/models'
+import { inferModelTier, type ModelOption, type ReasoningEffort } from '@shared/models'
+import { codexWireEffort, parseEffortLevels } from '@shared/effort'
+import { isReasoningEffort } from '@shared/provider-option-memory'
 import { accessSync, constants } from 'fs'
 import { createInterface } from 'readline'
 import { createMainLogger as createLogger } from '../../logger'
@@ -205,8 +208,10 @@ interface McpElicitationField {
   type: 'string' | 'boolean' | 'number' | 'integer' | 'array'
 }
 
-interface ActiveSession {
+interface ActiveSession extends VisibleHistoryState {
   session: ProviderSession
+  /** `thread/resume` succeeded: the agent holds this chat's earlier thread. */
+  resumed?: boolean
   child: ChildProcessWithoutNullStreams | null
   onEvent: (event: RuntimeEvent) => void
   nextRpcId: number
@@ -239,6 +244,8 @@ interface ActiveSession {
    * Follow-up sends wait for it so they steer instead of starting a second
    * provider turn in the response gap. */
   turnStartPromise: Promise<void> | null
+  /** Turns Stop interrupted whose own turn/completed has not arrived yet. */
+  stoppedTurnIds: Set<string>
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -395,9 +402,7 @@ function codexFileChangeOutput(status: unknown): string {
   return 'Finished'
 }
 
-export function parseCodexModels(
-  input: unknown,
-): Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> {
+export function parseCodexModels(input: unknown): ModelOption[] {
   const root = asRecord(input)
   const entries = Array.isArray(root?.data) ? root.data : []
   return entries.flatMap((entry) => {
@@ -409,6 +414,10 @@ export function parseCodexModels(
         id,
         label: typeof model?.displayName === 'string' ? model.displayName : id,
         tier: inferModelTier(id),
+        ...(Array.isArray(model?.supportedReasoningEfforts)
+          ? { effortLevels: parseEffortLevels(model.supportedReasoningEfforts) }
+          : {}),
+        ...(isReasoningEffort(model?.defaultReasoningEffort) ? { defaultEffort: model.defaultReasoningEffort } : {}),
       },
     ]
   })
@@ -664,6 +673,7 @@ export class CodexAdapter implements ProviderAdapter {
       session,
       child: null,
       onEvent,
+      portableHistory: opts.portableHistory,
       nextRpcId: 1,
       pendingRpcs: new Map(),
       pendingApprovals: new Map(),
@@ -680,6 +690,7 @@ export class CodexAdapter implements ProviderAdapter {
       queueHeld: false,
       activeTurnId: null,
       turnStartPromise: null,
+      stoppedTurnIds: new Set(),
     }
 
     this.sessions.set(opts.threadId, active)
@@ -788,16 +799,18 @@ export class CodexAdapter implements ProviderAdapter {
           const result = resumed as { thread?: { id?: string } } | null
           const resumedId = result?.thread?.id ?? resumeThreadId
           active.threadId = resumedId
+          active.resumed = true
           session.sessionId = resumedId
           onEvent({ type: 'session', threadId: opts.threadId, sessionId: resumedId })
         } catch (err) {
           if (!isMissingThreadError(err)) throw err
           active.threadId = null
           session.sessionId = undefined
+          active.needsVisibleHistory = true
           onEvent({
             type: 'error',
             threadId: opts.threadId,
-            message: `Could not resume Codex thread ${resumeThreadId}; the next turn will start a new thread. ${err instanceof Error ? err.message : String(err)}`,
+            message: `Could not resume Codex thread ${resumeThreadId}; the next turn starts a new thread with the visible conversation as context. ${err instanceof Error ? err.message : String(err)}`,
           })
         }
       }
@@ -899,6 +912,7 @@ export class CodexAdapter implements ProviderAdapter {
     if (runtimeMode && runtimeMode !== active.session.runtimeMode) {
       active.session.runtimeMode = runtimeMode
     }
+    message = await withVisibleHistory(active, threadId, message)
 
     // A model chosen before the live catalog existed - a persisted picker
     // value, or the static list's default - must not go on being sent once
@@ -915,26 +929,30 @@ export class CodexAdapter implements ProviderAdapter {
     active.session.model = reconciledModel
 
     // Build current Codex app-server v2 user input blocks.
-    const content: Array<Record<string, unknown>> = []
-    if (message) {
-      const skillMention = message.match(/^\s*\$([A-Za-z][\w-]*)(?:\s+([\s\S]*))?$/)
-      const skill = skillMention
-        ? active.skills?.find((candidate) => candidate.name.toLowerCase() === skillMention[1].toLowerCase())
-        : undefined
-      if (skill?.path) {
-        content.push({ type: 'skill', name: skill.name, path: skill.path })
-        const instruction = skillMention?.[2]?.trim()
-        if (instruction) content.push({ type: 'text', text: instruction })
-      } else {
-        content.push({ type: 'text', text: message })
+    const buildContent = (text: string): Array<Record<string, unknown>> => {
+      const blocks: Array<Record<string, unknown>> = []
+      if (text) {
+        const skillMention = text.match(/^\s*\$([A-Za-z][\w-]*)(?:\s+([\s\S]*))?$/)
+        const skill = skillMention
+          ? active.skills?.find((candidate) => candidate.name.toLowerCase() === skillMention[1].toLowerCase())
+          : undefined
+        if (skill?.path) {
+          blocks.push({ type: 'skill', name: skill.name, path: skill.path })
+          const instruction = skillMention?.[2]?.trim()
+          if (instruction) blocks.push({ type: 'text', text: instruction })
+        } else {
+          blocks.push({ type: 'text', text })
+        }
       }
-    }
-    if (images && images.length > 0) {
-      for (const img of images) {
-        // Codex accepts data URLs directly - no need to strip the prefix.
-        content.push({ type: 'image', url: img.url })
+      if (images && images.length > 0) {
+        for (const img of images) {
+          // Codex accepts data URLs directly - no need to strip the prefix.
+          blocks.push({ type: 'image', url: img.url })
+        }
       }
+      return blocks
     }
+    let content = buildContent(message)
 
     // A follow-up can arrive after turn/start was sent but before its response
     // provides activeTurnId. Wait through that narrow gap, then take the steer
@@ -978,7 +996,11 @@ export class CodexAdapter implements ProviderAdapter {
     active.onEvent({ type: 'status', threadId, status: 'running' })
 
     const approvalPolicy = RUNTIME_MODE_TO_CODEX_POLICY[active.session.runtimeMode] ?? 'on-request'
-    const reasoningEffort = active.session.reasoningEffort
+    const reasoningEffort = codexWireEffort(
+      active.session.reasoningEffort,
+      active.session.model,
+      active.models?.models ?? [],
+    )
     const sandbox = RUNTIME_MODE_TO_CODEX_THREAD_SANDBOX[active.session.runtimeMode] ?? 'read-only'
     const sandboxPolicy = RUNTIME_MODE_TO_CODEX_TURN_SANDBOX[active.session.runtimeMode] ?? { type: 'readOnly' }
 
@@ -1033,6 +1055,16 @@ export class CodexAdapter implements ProviderAdapter {
           )
           active.threadId = null
           active.session.sessionId = undefined
+          if (active.resumed) {
+            // The thread this session natively resumed is the one that just
+            // went missing. The fresh thread below starts empty, so the
+            // retried turn must carry the visible conversation - the same
+            // fallback a failed native resume already uses - or everything
+            // before this turn is lost to the agent.
+            active.resumed = false
+            active.needsVisibleHistory = true
+            content = buildContent(await withVisibleHistory(active, threadId, message))
+          }
           await ensureThread()
           await startTurn()
         }
@@ -1217,7 +1249,7 @@ export class CodexAdapter implements ProviderAdapter {
     active.session.model = model
   }
 
-  async setReasoningEffort(threadId: string, effort: 'low' | 'medium' | 'high'): Promise<void> {
+  async setReasoningEffort(threadId: string, effort: ReasoningEffort): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) return
     active.session.reasoningEffort = effort
@@ -1234,6 +1266,10 @@ export class CodexAdapter implements ProviderAdapter {
       return
     }
 
+    // Stop means stop: the queued messages wait for Resume or Cancel instead
+    // of starting when the interrupted turn reports its end.
+    this.holdQueue(threadId, active, 'Stopped.')
+    active.stoppedTurnIds.add(turnId)
     await withTimeout(
       this.sendRpc(active, 'turn/interrupt', { threadId: active.threadId, turnId }),
       5_000,
@@ -1291,6 +1327,10 @@ export class CodexAdapter implements ProviderAdapter {
 
   runtimeModeOf(threadId: string): RuntimeMode | undefined {
     return this.sessions.get(threadId)?.session.runtimeMode
+  }
+
+  resumedNativeSession(threadId: string): boolean {
+    return this.sessions.get(threadId)?.resumed === true
   }
 
   async setRuntimeMode(threadId: string, mode: import('../types').RuntimeMode): Promise<void> {
@@ -1838,6 +1878,20 @@ export class CodexAdapter implements ProviderAdapter {
         active.onEvent({ type: 'status', threadId, status: 'error' })
       }
     } else if (method === 'turn/completed') {
+      const completedTurnId: unknown = notification.params?.turn?.id
+      const wasStopped = typeof completedTurnId === 'string' && active.stoppedTurnIds.delete(completedTurnId)
+      // The end of a turn Stop interrupted can arrive after the next send
+      // started a new turn. That turn is not over: ending it here would mark
+      // the chat idle mid-turn and start a queued message on top of it. The
+      // registry counted the new send as a steer of the stopped turn, so the
+      // new turn's own turn/completed settles that one count.
+      const otherTurnLive = active.activeTurnId
+        ? typeof completedTurnId === 'string' && completedTurnId !== active.activeTurnId
+        : wasStopped && active.turnStartPromise !== null
+      if (otherTurnLive) {
+        log.info(`ignoring turn/completed for ${String(completedTurnId)} on ${threadId}: a newer turn is running`)
+        return
+      }
       const turnStatus = notification.params?.turn?.status
       if (turnStatus === 'failed') {
         const message = notification.params?.turn?.error?.message ?? 'Codex turn failed'

@@ -1,3 +1,4 @@
+import { isAgentProvider } from '@shared/types'
 import type { AgentStatus, AgentType, ChatMessage, SessionSource } from '@shared/types'
 
 /** Returns true when a session's messages should be cleared on switch-away. */
@@ -34,9 +35,7 @@ export function resolveSessionOpenAgentType(
   scannedAgentType: Exclude<AgentType, 'terminal'>,
   loadedAgentType?: string,
 ): Exclude<AgentType, 'terminal'> {
-  return loadedAgentType === 'claude-code' || loadedAgentType === 'codex' || loadedAgentType === 'opencode'
-    ? loadedAgentType
-    : scannedAgentType
+  return isAgentProvider(loadedAgentType) ? loadedAgentType : scannedAgentType
 }
 
 export function resolveSessionResumeId(source: SessionSource, sessionId: string): string | undefined {

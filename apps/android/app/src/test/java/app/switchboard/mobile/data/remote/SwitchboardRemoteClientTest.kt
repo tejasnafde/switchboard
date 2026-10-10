@@ -542,6 +542,75 @@ class SwitchboardRemoteClientTest {
     }
 
     @Test
+    fun `merge-back preview decodes every status and the send call echoes the token unchanged`() {
+        val rpc = FakeRemoteRpc()
+        val client = SwitchboardRemoteClient("mac-a", rpc)
+        val responses = mutableListOf<RemoteResponse<app.switchboard.mobile.domain.thread.MergeBackPreview>>()
+        val token = obj("from" to obj("at" to JsonNumber("1"), "ids" to JsonArray(emptyList())))
+        rpc.reply(
+            obj(
+                "status" to JsonString("ready"),
+                "parentId" to JsonString("parent-1"),
+                "parentTitle" to JsonString("Parent"),
+                "text" to JsonString("summary"),
+                "turns" to JsonNumber("2"),
+                "omittedTurns" to JsonNumber("0"),
+                "files" to JsonArray(listOf(JsonString("a.ts"))),
+                "moreFiles" to JsonNumber("0"),
+                "replacesPending" to JsonBoolean(false),
+                "token" to token,
+            ),
+        )
+
+        client.mergeBackPreview("thread-1", responses::add)
+
+        assertCall(rpc, "provider:merge-back-preview", JsonString("thread-1"))
+        val ready = (responses.single().outcome as RemoteOutcome.Success).value
+            as app.switchboard.mobile.domain.thread.MergeBackPreview.Ready
+        assertEquals("Parent", ready.parentTitle)
+        assertEquals(token, ready.token)
+
+        val sendResponses = mutableListOf<RemoteResponse<app.switchboard.mobile.domain.thread.MergeBackActionResult>>()
+        rpc.reply(obj("ok" to JsonBoolean(true)))
+        client.mergeBackSend("thread-1", "edited", ready.token, sendResponses::add)
+        assertCall(rpc, "provider:merge-back-send", JsonString("thread-1"), JsonString("edited"), token)
+        assertEquals(
+            app.switchboard.mobile.domain.thread.MergeBackActionResult.Ok,
+            (sendResponses.single().outcome as RemoteOutcome.Success).value,
+        )
+
+        val refusedResponses = mutableListOf<RemoteResponse<app.switchboard.mobile.domain.thread.MergeBackPreview>>()
+        rpc.reply(obj("status" to JsonString("refused"), "message" to JsonString("Not a fork.")))
+        client.mergeBackPreview("thread-2", refusedResponses::add)
+        val refused = (refusedResponses.single().outcome as RemoteOutcome.Success).value
+            as app.switchboard.mobile.domain.thread.MergeBackPreview.Refused
+        assertEquals("Not a fork.", refused.message)
+    }
+
+    @Test
+    fun `merge-back edit and discard send positional args and surface a refusal`() {
+        val rpc = FakeRemoteRpc()
+        val client = SwitchboardRemoteClient("mac-a", rpc)
+
+        val editResponses = mutableListOf<RemoteResponse<app.switchboard.mobile.domain.thread.MergeBackActionResult>>()
+        rpc.reply(obj("ok" to JsonBoolean(false), "message" to JsonString("This summary was already sent or discarded.")))
+        client.mergeBackEdit("parent-thread", "mb_1", "new text", editResponses::add)
+        assertCall(rpc, "provider:merge-back-edit", JsonString("parent-thread"), JsonString("mb_1"), JsonString("new text"))
+        val editRefusal = (editResponses.single().outcome as RemoteOutcome.Success).value
+            as app.switchboard.mobile.domain.thread.MergeBackActionResult.Refused
+        assertEquals("This summary was already sent or discarded.", editRefusal.message)
+
+        val discardResponses = mutableListOf<RemoteResponse<app.switchboard.mobile.domain.thread.MergeBackActionResult>>()
+        rpc.reply(obj("ok" to JsonBoolean(true)))
+        client.mergeBackDiscard("parent-thread", "mb_1", discardResponses::add)
+        assertCall(rpc, "provider:merge-back-discard", JsonString("parent-thread"), JsonString("mb_1"))
+        assertEquals(
+            app.switchboard.mobile.domain.thread.MergeBackActionResult.Ok,
+            (discardResponses.single().outcome as RemoteOutcome.Success).value,
+        )
+    }
+
+    @Test
     fun requestIsRejectedBeforeItCanCrossIntoAnotherConnectionScope() {
         val rpc = FakeRemoteRpc()
         val client = SwitchboardRemoteClient("mac-a", rpc)

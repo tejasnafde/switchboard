@@ -17,6 +17,7 @@ import type { PeerLinkRefusal } from './peer-links'
 import { stripHandoffPreamble } from './handoff'
 import { splitSyntheticUserText } from './synthetic-message'
 import type { AgentProvider } from './types'
+import { GENERIC_ACP_AGENTS, type GenericAcpAgent } from './acp-agents'
 import type { QueuedTurnExit } from './turn-delivery'
 import type { FollowSuggestionMode } from './follow-suggestions'
 
@@ -55,7 +56,7 @@ export function isRuntimeMode(value: unknown): value is RuntimeMode {
   return typeof value === 'string' && (RUNTIME_MODES as readonly string[]).includes(value)
 }
 
-export type ProviderKind = 'claude' | 'codex' | 'opencode'
+export type ProviderKind = 'claude' | 'codex' | 'opencode' | GenericAcpAgent
 
 export interface UserTurnHandoffV1 {
   expectedFrom: AgentProvider | 'cursor'
@@ -429,7 +430,13 @@ export function validateUserMessageImages<T extends { url: string; mimeType?: st
   return images
 }
 
-const USER_TURN_HANDOFF_PROVIDERS = new Set(['claude-code', 'codex', 'opencode', 'cursor'])
+const USER_TURN_HANDOFF_PROVIDERS = new Set<string>([
+  'claude-code',
+  'codex',
+  'opencode',
+  ...GENERIC_ACP_AGENTS,
+  'cursor',
+])
 const USER_TURN_PILL_KINDS = new Set<UserMessagePillKind>(['file', 'terminal', 'chat-message', 'review'])
 
 /** Validate the complete commit-bearing turn before any submission mutation. */
@@ -738,6 +745,12 @@ export interface RuntimeStatusEvent {
   type: 'status'
   threadId: string
   status: ProviderSessionStatus
+  /**
+   * With `running`: a turn started that no send accounted for, such as a
+   * steer that missed the turn it was sent into and runs as its own. The
+   * backend counts it as running until its `turn.completed`.
+   */
+  newTurn?: boolean
 }
 
 /**

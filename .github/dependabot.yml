@@ -1,0 +1,73 @@
+# Security updates only (user decision, 2026-10-08). The repository's
+# "Dependabot security updates" setting opens a pull request when a dependency
+# has a known vulnerability; version upgrades are done on purpose and tested,
+# not proposed weekly. `open-pull-requests-limit: 0` turns version updates off
+# for each ecosystem while keeping its ignore list for the security PRs.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 0
+    groups:
+      desktop-minor:
+        update-types: [minor, patch]
+    ignore:
+      # Electron majors change Node, Chromium and the native ABI together and
+      # need `npm run rebuild` plus a smoke run. Take them on purpose.
+      - dependency-name: electron
+        update-types: [version-update:semver-major]
+
+  # The Expo SDK pins react, react-native and every expo-* package to one
+  # tested set. Bumping them one at a time breaks `expo-doctor`, which is how
+  # the Metro resolution failure in AGENTS.md happened. Upgrade those with
+  # `npx expo install --fix` instead; Dependabot handles the rest.
+  - package-ecosystem: npm
+    directory: /apps/mobile
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 0
+    groups:
+      mobile-minor:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: expo
+      - dependency-name: 'expo-*'
+      - dependency-name: '@expo/*'
+      - dependency-name: jest-expo
+      - dependency-name: react
+      - dependency-name: react-dom
+      - dependency-name: react-native
+      - dependency-name: 'react-native-*'
+      - dependency-name: '@react-native/*'
+      # Also pinned by the SDK: `npx expo install --fix` sets them to match it.
+      - dependency-name: babel-preset-expo
+      - dependency-name: jest
+      - dependency-name: '@types/jest'
+      - dependency-name: typescript
+
+  # AGP, Kotlin and KSP move in lockstep, so they share one pull request.
+  - package-ecosystem: gradle
+    directory: /apps/android
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 0
+    groups:
+      android:
+        patterns: ['*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      actions:
+        patterns: ['*']

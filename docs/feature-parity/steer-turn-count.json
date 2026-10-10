@@ -28,8 +28,7 @@
       "Diagnosed from the packaged app log on 2026-10-02: chat 71c92391 had six submitUserTurn entries between 08:47 and 08:52 UTC and one turn.completed at 09:09, then every profile switch was refused as busy until an agent switch restarted the session."
     ],
     "notExercised": [
-      "A live profile switch after steering has not been clicked in a packaged build yet.",
-      "A late steer whose own turn uses no tool and only writes text is not re-marked busy, so a switch in that window is not refused by the count; the session status check still applies."
+      "A live profile switch after steering has not been clicked in a packaged build yet."
     ]
   }
 }

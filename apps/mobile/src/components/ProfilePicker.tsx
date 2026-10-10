@@ -10,7 +10,7 @@ import React, { memo, useMemo } from 'react'
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { ProviderKind } from '@shared/provider-events'
 import type { ProviderInstance } from '@shared/types'
-import { AGENTS, profilesFor } from '../lib/profiles'
+import { agentsFor, profilesFor } from '../lib/profiles'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 
 export const ProfilePicker = memo(function ProfilePicker({
@@ -34,7 +34,10 @@ export const ProfilePicker = memo(function ProfilePicker({
   onPick: (provider: ProviderKind, instanceId?: string) => void
   onClose: () => void
 }) {
-  const byAgent = useMemo(() => AGENTS.map((a) => ({ ...a, profiles: profilesFor(instances, a.kind) })), [instances])
+  const byAgent = useMemo(
+    () => agentsFor(provider).map((a) => ({ ...a, profiles: profilesFor(instances, a.kind) })),
+    [instances, provider],
+  )
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>

@@ -50,6 +50,7 @@ vi.mock('../../src/main/db/database', () => ({
   resolveRootThreadId: (id: string) => rotated.get(id) ?? id,
   getConversationRuntimeMode: () => null,
   getConversationModel: () => null,
+  getConversationReasoningEffort: () => null,
   getConversationAgentType: () => null,
   getConversationProviderInstanceId: () => null,
   getSetting: () => null,
@@ -125,6 +126,9 @@ class QueueingAdapter implements ProviderAdapter {
     this.onEvent({ type: 'turn.dequeued', threadId, messageId: queuedId, reason: 'promoted' })
     return true
   }
+  emit(event: RuntimeEvent): void {
+    this.onEvent(event)
+  }
   /** The running turn ends; the oldest held message starts as its own. */
   finishTurn(threadId: string): void {
     this.onEvent({ type: 'turn.completed', threadId })
@@ -151,7 +155,7 @@ class QueueingAdapter implements ProviderAdapter {
 const passThroughSubmission = {
   async submit(input: UserTurnSubmissionV1, context: AtomicUserTurnContext) {
     await context.prepare()
-    await context.dispatch()
+    await context.dispatch(context.finalize ? await context.finalize(input) : input)
     return {
       status: 'accepted' as const,
       accepted: true as const,
@@ -275,6 +279,23 @@ describe('ProviderRegistry queued messages', () => {
     expect(t.outstanding()).toBe(1)
     expect(await t.list()).toEqual([])
     expect(await t.cancel('remote_b')).toMatchObject({ ok: false, reason: 'not-found' })
+    expect(t.outstanding()).toBe(1)
+    t.adapter.finishTurn('t1')
+    expect(t.outstanding()).toBe(0)
+  })
+
+  it('counts a late steer that runs as its own turn ahead of a queued message', async () => {
+    const t = await setup('claude')
+    await t.submit('a')
+    await t.submit('steer')
+    await t.submit('b', 'queue')
+    expect(t.outstanding()).toBe(2)
+    t.adapter.emit({ type: 'turn.completed', threadId: 't1' })
+    // The steer missed turn a and runs next; b is still waiting and counted.
+    t.adapter.emit({ type: 'status', threadId: 't1', status: 'running', newTurn: true })
+    expect(t.outstanding()).toBe(2)
+    t.adapter.finishTurn('t1')
+    // The steer's turn ended; b runs and is still counted.
     expect(t.outstanding()).toBe(1)
     t.adapter.finishTurn('t1')
     expect(t.outstanding()).toBe(0)

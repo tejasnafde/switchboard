@@ -679,6 +679,57 @@ describe('CodexAdapter', () => {
     expect(turnStart.params.effort).toBe('high')
   })
 
+  it('never puts max, which Codex does not have, on a turn', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        runtimeMode: 'sandbox',
+        reasoningEffort: 'max',
+      },
+      vi.fn(),
+    )
+
+    await adapter.sendTurn('thread-1', 'carried over from Claude')
+
+    const turnStart = writes.map((line) => JSON.parse(line)).find((message) => message.method === 'turn/start')
+    expect(turnStart.params).not.toHaveProperty('effort')
+  })
+
+  it("reads each model's effort levels and default from model/list", async () => {
+    const { parseCodexModels } = await import('../../src/main/provider/adapters/codex-adapter')
+    expect(
+      parseCodexModels({
+        data: [
+          {
+            id: 'gpt-6-sol',
+            displayName: 'GPT-6 Sol',
+            supportedReasoningEfforts: [
+              { reasoningEffort: 'minimal', description: 'x' },
+              { reasoningEffort: 'high', description: 'x' },
+              { reasoningEffort: 'low', description: 'x' },
+              { reasoningEffort: 'xhigh', description: 'x' },
+            ],
+            defaultReasoningEffort: 'high',
+          },
+          { id: 'gpt-5.2', displayName: 'GPT-5.2' },
+        ],
+      }),
+    ).toEqual([
+      {
+        id: 'gpt-6-sol',
+        label: 'GPT-6 Sol',
+        tier: 'max',
+        effortLevels: ['low', 'high', 'xhigh'],
+        defaultEffort: 'high',
+      },
+      { id: 'gpt-5.2', label: 'GPT-5.2', tier: 'balanced' },
+    ])
+  })
+
   it('routes approvals to codex auto_review in auto mode', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
@@ -843,6 +894,55 @@ describe('CodexAdapter', () => {
     const turnStarts = messages.filter((message) => message.method === 'turn/start')
     expect(turnStarts.map((message) => message.params.threadId)).toEqual(['codex-thread-existing', 'codex-thread-1'])
     expect(messages.filter((message) => message.method === 'thread/start')).toHaveLength(1)
+  })
+
+  it('carries the visible conversation into a retried turn when a natively resumed thread goes missing', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    turnStartErrors = ['thread not found: codex-thread-existing']
+    const portableHistory = vi.fn().mockResolvedValue('PRIOR CONVERSATION')
+
+    await adapter.startSession(
+      {
+        threadId: 'switchboard-thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        resumeSessionId: 'codex-thread-existing',
+        portableHistory,
+      },
+      vi.fn(),
+    )
+
+    await adapter.sendTurn('switchboard-thread-1', 'recover this turn')
+
+    const messages = writes.map((line) => JSON.parse(line))
+    const turnStarts = messages.filter((message) => message.method === 'turn/start')
+    expect(turnStarts).toHaveLength(2)
+    // The first attempt still targets the thread the adapter believed it had resumed.
+    expect(turnStarts[0].params).toMatchObject({
+      threadId: 'codex-thread-existing',
+      input: [{ type: 'text', text: 'recover this turn' }],
+    })
+    // The retry lands on the fresh thread and must carry the earlier visible
+    // conversation - the fresh thread has none of its own.
+    expect(turnStarts[1].params.threadId).toBe('codex-thread-1')
+    const retriedText = turnStarts[1].params.input[0].text as string
+    expect(retriedText).toContain('PRIOR CONVERSATION')
+    expect(retriedText).toContain('recover this turn')
+    expect(portableHistory).toHaveBeenCalledTimes(1)
+
+    // The fallback runs once: a later, ordinary turn on the fresh thread
+    // carries no extra preamble, and a normal native resume (no missing
+    // thread) never triggers it at all - see the `thread/resume` test above.
+    await adapter.interruptTurn('switchboard-thread-1')
+    writes.length = 0
+    await adapter.sendTurn('switchboard-thread-1', 'next turn')
+    const secondTurnStart = writes.map((line) => JSON.parse(line)).find((message) => message.method === 'turn/start')
+    expect(secondTurnStart?.params).toMatchObject({
+      threadId: 'codex-thread-1',
+      input: [{ type: 'text', text: 'next turn' }],
+    })
+    expect(portableHistory).toHaveBeenCalledTimes(1)
   })
 
   it('rejects a non-recoverable turn-start failure and restores idle status', async () => {
@@ -2610,6 +2710,85 @@ describe('CodexAdapter', () => {
     // steer against a stale expectedTurnId.
     expect(frames.some((m) => m.method === 'turn/start')).toBe(true)
     expect(frames.some((m) => m.method === 'turn/steer')).toBe(false)
+  })
+
+  it('holds the queue on Stop instead of starting it when the stopped turn ends', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'hello codex')
+    await adapter.sendTurn('thread-1', 'queued follow-up', undefined, undefined, 'queue', 'remote_q')
+    await adapter.interruptTurn('thread-1')
+    writes.length = 0
+
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'turn/completed',
+        params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'interrupted' } },
+      }) + '\n',
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'turn.queue-held',
+      threadId: 'thread-1',
+      held: true,
+      reason: 'Stopped.',
+    })
+    // The stopped turn still ends, which settles its count in the registry.
+    expect(onEvent.mock.calls.filter(([e]) => e.type === 'turn.completed' && e.turnId === 'turn-1')).toHaveLength(1)
+    expect(writes.map((w) => JSON.parse(w)).some((m) => m.method === 'turn/start')).toBe(false)
+  })
+
+  it('does not end the next turn when the stopped turn reports its end late', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'hello codex')
+    await adapter.interruptTurn('thread-1')
+    await adapter.sendTurn('thread-1', 'do this instead')
+    // The mock names every turn turn-1; the new one is turn-2.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const active = (adapter as any).sessions.get('thread-1')
+    active.activeTurnId = 'turn-2'
+    await adapter.sendTurn('thread-1', 'queued behind the new turn', undefined, undefined, 'queue', 'remote_q')
+    onEvent.mockClear()
+    writes.length = 0
+
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'turn/completed',
+        params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'interrupted' } },
+      }) + '\n',
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    const types = onEvent.mock.calls.map(([e]) => e.type)
+    expect(types).not.toContain('turn.completed')
+    expect(types).not.toContain('turn.dequeued')
+    expect(onEvent).not.toHaveBeenCalledWith({ type: 'status', threadId: 'thread-1', status: 'idle' })
+    expect(active.activeTurnId).toBe('turn-2')
+    expect(writes.map((w) => JSON.parse(w)).some((m) => m.method === 'turn/start')).toBe(false)
+
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'turn/completed',
+        params: { threadId: 'codex-thread-1', turn: { id: 'turn-2', items: [], status: 'completed' } },
+      }) + '\n',
+    )
+    await vi.waitFor(() =>
+      expect(onEvent).toHaveBeenCalledWith({
+        type: 'turn.dequeued',
+        threadId: 'thread-1',
+        messageId: 'remote_q',
+        reason: 'started',
+      }),
+    )
   })
 
   it('interrupts the active Codex turn by id and immediately returns the session to idle', async () => {

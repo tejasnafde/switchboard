@@ -402,6 +402,23 @@ describe('pickPermissionOptions', () => {
     expect(reject).toBe('r1')
   })
 
+  it('prefers allow_once even when allow_always is listed first', () => {
+    const { allow } = pickPermissionOptions([
+      { optionId: 'always', name: 'Always allow', kind: 'allow_always' },
+      { optionId: 'once', name: 'Allow once', kind: 'allow_once' },
+      { optionId: 'r1', name: 'Reject', kind: 'reject_once' },
+    ] as any)
+    expect(allow).toBe('once')
+  })
+
+  it('takes allow_always only when no allow_once is offered', () => {
+    const { allow } = pickPermissionOptions([
+      { optionId: 'always', name: 'Always allow', kind: 'allow_always' },
+      { optionId: 'r1', name: 'Reject', kind: 'reject_once' },
+    ] as any)
+    expect(allow).toBe('always')
+  })
+
   it('falls back to first/last when kinds are not tagged', () => {
     const { allow, reject } = pickPermissionOptions([
       { optionId: 'one', name: 'one' },
@@ -554,6 +571,39 @@ describe('OpenCode queued turns', () => {
     await expect(adapter.resumeQueuedTurns(tid)).resolves.toBe(true)
     await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2))
     expect(prompt.mock.calls[1][0].prompt).toEqual([{ type: 'text', text: 'queued' }])
+  })
+
+  it('holds the queue on Stop, so the cancelled prompt ending starts nothing', async () => {
+    const adapter = new OpencodeAcpAdapter()
+    let finishFirst!: () => void
+    const prompt = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishFirst = () => resolve({ stopReason: 'cancelled' })
+          }),
+      )
+      .mockImplementation(() => Promise.resolve({}))
+    const active = fakeSession({
+      prompt,
+      cancel: vi.fn(async () => {
+        finishFirst()
+      }),
+    })
+    ;(Reflect.get(adapter, 'sessions') as Map<string, unknown>).set(tid, active)
+
+    await adapter.sendTurn(tid, 'first')
+    await adapter.sendTurn(tid, 'queued', undefined, undefined, 'queue', 'remote_q1')
+    await adapter.interruptTurn(tid)
+    await vi.waitFor(() => expect(active.inFlightPrompt).toBeNull())
+    expect(active.onEvent).toHaveBeenCalledWith({
+      type: 'turn.queue-held',
+      threadId: tid,
+      held: true,
+      reason: 'Stopped.',
+    })
+    expect(prompt).toHaveBeenCalledTimes(1)
   })
 
   it('takes a held message back on cancel, so the prompt ending starts nothing', async () => {

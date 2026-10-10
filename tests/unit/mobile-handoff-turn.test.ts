@@ -33,4 +33,17 @@ describe('prepareMobileHandoffTurn', () => {
     })
     expect(client.loadSessionById).not.toHaveBeenCalled()
   })
+
+  it('leaves the handoff to a backend that builds it, so the outbox clears nothing', async () => {
+    const client = {
+      getPendingHandoff: vi.fn().mockResolvedValue({ from: 'codex', backendBuilds: true }),
+      loadSessionById: vi.fn(),
+    }
+
+    await expect(prepareMobileHandoffTurn(client, 'thread-1', 'typed')).resolves.toEqual({
+      pending: false,
+      wireMessage: 'typed',
+    })
+    expect(client.loadSessionById).not.toHaveBeenCalled()
+  })
 })

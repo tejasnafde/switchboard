@@ -1,3 +1,4 @@
+import { isAgentProvider } from '@shared/types'
 import { parseWorktreeCreationRequest } from '../../shared/worktree-creation'
 import { isRuntimeMode } from '../../shared/session-defaults'
 import type {
@@ -15,7 +16,7 @@ function isIntent(value: unknown): value is DesktopNewChatIntent {
     typeof input.projectPath === 'string' &&
     typeof input.machineId === 'string' &&
     input.checkout === 'worktree' &&
-    (input.agentType === 'claude-code' || input.agentType === 'codex' || input.agentType === 'opencode') &&
+    isAgentProvider(input.agentType) &&
     // Absent when the backend was left to pick it.
     (input.runtimeMode === undefined || isRuntimeMode(input.runtimeMode))
   )

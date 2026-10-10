@@ -1,3 +1,4 @@
+import { agentShortLabel, isAgentType } from '@shared/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAgentStore } from '../stores/agent-store'
 import { useMachineStore } from '../stores/machine-store'
@@ -19,14 +20,7 @@ export function sessionPickerIdentity(
   session: PickerSessionIdentity,
   machineName?: string,
 ): { provider: string; title: string; context: string } {
-  const provider =
-    session.type === 'codex'
-      ? 'Codex'
-      : session.type === 'opencode'
-        ? 'OpenCode'
-        : session.type === 'terminal'
-          ? 'Terminal'
-          : 'Claude'
+  const provider = agentShortLabel(isAgentType(session.type) ? session.type : undefined)
   const folder = (session.worktreePath ?? session.projectPath)?.split('/').filter(Boolean).pop()
   const machine = session.machineId && session.machineId !== 'local' ? (machineName ?? session.machineId) : 'Local'
   return {
@@ -34,6 +28,18 @@ export function sessionPickerIdentity(
     title: session.title ?? session.id.slice(0, 8),
     context: [folder, session.worktreeBranch, machine, session.status].filter(Boolean).join(' · '),
   }
+}
+
+/**
+ * The chats the picker offers: loaded ones, minus terminals, unsent drafts
+ * (the landing screen keeps one per project, and it is not a chat yet) and
+ * `excludeIds`.
+ */
+export function sessionPickerCandidates<T extends { id: string; type: string; draft?: unknown }>(
+  sessions: readonly T[],
+  excludeIds: readonly string[],
+): T[] {
+  return sessions.filter((s) => s.type !== 'terminal' && !s.draft && !excludeIds.includes(s.id))
 }
 
 interface SessionPickerModalProps {
@@ -62,10 +68,7 @@ export function SessionPickerModal({
   const remotes = useMachineStore((s) => s.remotes)
   const [activeIdx, setActiveIdx] = useState(0)
 
-  const candidates = useMemo(
-    () => sessions.filter((s) => s.type !== 'terminal' && !excludeIds.includes(s.id)),
-    [sessions, excludeIds],
-  )
+  const candidates = useMemo(() => sessionPickerCandidates(sessions, excludeIds), [sessions, excludeIds])
 
   useEffect(() => {
     if (open) setActiveIdx(0)

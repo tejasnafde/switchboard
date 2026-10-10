@@ -31,6 +31,8 @@
  *                           answer (e2e/chat-render-order.e2e.mjs)
  *   - text says "to-dos" -> a long markdown list with inline code and branch
  *                           paths (e2e/message-overflow.e2e.mjs)
+ *   - text says "draw"   -> a ```mermaid diagram and a ```chart bar chart,
+ *                           drawn in the chat (visual regression screens)
  *   - anything else      -> a short two-sentence reply
  *
  * With `SB_DEMO_CLAUDE_TRANSCRIPT_DIR` set, the claude adapter also appends a
@@ -45,7 +47,8 @@ import {
   type HostWriteDiffLine,
 } from '@shared/agent-host-writes'
 import { PR_DESCRIPTION_MAX_CHARS } from '@shared/agent-pr-create'
-import { agentLabel, toAgentProvider, type AgentType } from '@shared/types'
+import { agentLabel, toAgentProvider, type AgentProvider, type AgentType } from '@shared/types'
+import { CLAUDE_MODELS, type ModelOption, type ReasoningEffort } from '@shared/models'
 import { buildWindow, type ProviderUsage, type UsageWindow } from '@shared/provider-usage'
 import { randomUUID } from 'crypto'
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
@@ -136,7 +139,7 @@ const FIXED_AUTH_TS = [
   '',
 ].join('\n')
 
-const SKILLS: Record<ProviderKind, ProviderSkill[]> = {
+const SKILLS: Partial<Record<ProviderKind, ProviderSkill[]>> = {
   claude: [
     { name: 'review', description: 'Review a pull request', source: 'claude-code' },
     { name: 'commit', description: 'Commit staged changes with a message', source: 'claude-code' },
@@ -177,6 +180,25 @@ interface DemoQueuedTurn {
 }
 
 /** Long inline code and file-pill paths in lists (e2e/message-overflow.e2e.mjs). */
+const VISUALS_REPLY = [
+  'Here is how a chat opens now:',
+  '',
+  '```mermaid',
+  'flowchart LR',
+  '  open[Open chat] --> load[Load window]',
+  '  load --> tail[Parse tail]',
+  '  load --> images[Image refs]',
+  '  tail --> render[Render]',
+  '  images --> render',
+  '```',
+  '',
+  'And chat.open before and after, in ms:',
+  '',
+  '```chart',
+  '{"type":"bar","labels":["long chat","short chat"],"series":[{"name":"before","values":[3800,1100]},{"name":"after","values":[400,150]}],"yTitle":"ms"}',
+  '```',
+].join('\n')
+
 const TODO_REPLY = `**Left to-dos**
 
 **Release path (in progress)**
@@ -580,6 +602,8 @@ export class DemoAdapter implements ProviderAdapter {
       await this.say(threadId, turn, 'Interim note: checking the reload path first.')
       await this.tool(threadId, turn, 'Bash', { command: 'sleep 61' }, 'ok', undefined, LONG_TOOL_MS)
       await this.say(threadId, turn, 'Final answer: the order holds.')
+    } else if (/\bdraw\b/i.test(message)) {
+      await this.say(threadId, turn, VISUALS_REPLY)
     } else if (/to-dos/i.test(message)) {
       await this.say(threadId, turn, TODO_REPLY)
     } else {
@@ -677,7 +701,7 @@ export class DemoAdapter implements ProviderAdapter {
   }
 
   async listSkills(): Promise<ProviderSkill[]> {
-    return SKILLS[this.provider]
+    return SKILLS[this.provider] ?? []
   }
 }
 
@@ -689,6 +713,22 @@ export function demoAdapters(): Map<ProviderKind, ProviderAdapter> {
     ['codex', new DemoAdapter('codex')],
     ['opencode', new DemoAdapter('opencode')],
   ])
+}
+
+const ALL_EFFORT: ReasoningEffort[] = ['low', 'medium', 'high', 'xhigh', 'max']
+
+/**
+ * The catalog the picker gets in a demo launch, instead of probing the real
+ * CLI with this machine's account. Claude's is shaped like the live list (a
+ * `default` row, then the models, each with its effort levels), so the
+ * composer's effort control shows in recordings and screenshots.
+ */
+export function demoCatalog(agentType: AgentProvider): ModelOption[] {
+  if (agentType !== 'claude-code') return []
+  return [
+    { id: 'default', label: 'Default (recommended)', tier: 'balanced', effortLevels: ALL_EFFORT },
+    ...CLAUDE_MODELS.map((m) => ({ ...m, effortLevels: m.tier === 'fast' ? [] : ALL_EFFORT })),
+  ]
 }
 
 const MINUTE = 60_000
@@ -738,6 +778,23 @@ export function demoUsage(id: string, agentType: AgentType): ProviderUsage {
   }
   if (id.endsWith('-personal')) return reading('unauthenticated', [], 'the sign-in expired after 30 days without use')
   if (id.endsWith('-work')) return reading('ok', pair(1, 280, 0, 6 * 1440))
+  if (id.endsWith('-limit')) {
+    // A Codex account at its 5-hour limit with two banked resets, so the
+    // Accounts page offers "Use reset". Expiries sit at midday so the date
+    // reads the same in every timezone the suite runs in.
+    const [session, weekly] = pair(100, 232, 72, 3 * 1440 + 240)
+    const midday = (days: number) => Math.floor(now / 86_400_000 + days) * 86_400_000 + 12 * 3_600_000
+    return {
+      ...reading('ok', [{ ...session, severity: 'critical', reached: true }, weekly]),
+      resetCredits: {
+        availableCount: 2,
+        credits: [
+          { id: 'demo-reset-b', expiresAtMs: midday(34), status: 'available', title: 'Weekly limit reset' },
+          { id: 'demo-reset-a', expiresAtMs: midday(19), status: 'available', title: 'Weekly limit reset' },
+        ],
+      },
+    }
+  }
   if (agentType === 'codex') return reading('ok', pair(18, 182, 9, 3 * 1440))
   return reading('ok', pair(42, 134, 81, 2 * 1440))
 }

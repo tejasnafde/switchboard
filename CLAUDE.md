@@ -23,4 +23,4 @@ rules. The ones that bite most often:
 Switchboard-specific: `src/shared/iap-tunnel.ts` is the IAP codec and
 `scripts/iap-probe.mjs` is the live smoke test (validated end to end against
 `geoiq-ssg-dev-in` on 2026-07-25). Design notes in
-`docs/plans/2026-07-22-mobile-app.md`.
+`docs/plans/archive/2026-07-22-mobile-app.md`.

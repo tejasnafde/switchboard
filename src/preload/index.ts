@@ -3,6 +3,7 @@ import { IpcTransport, type Transport } from './transport'
 import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
+import type { HistoryLoadOptions } from '@shared/phone-history-window'
 import { RoutingTable } from './routing-table'
 import {
   TerminalChannels,
@@ -25,6 +26,7 @@ import {
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { PeerLinkView } from '@shared/peer-links'
+import type { ReasoningEffort } from '@shared/models'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanWorktreeCreationIntent } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type {
@@ -68,6 +70,7 @@ import type {
   ApprovalDecision,
   ProviderInstanceSwitchRequest,
   ProviderInstanceSwitchResult,
+  ProviderKind,
   UserTurnSubmissionResult,
   UserTurnSubmissionV1,
 } from '@shared/provider-events'
@@ -81,7 +84,7 @@ import type { DiagnosticsSnapshot } from '@shared/diagnostics-report'
 import { createRendererLogger } from '../renderer/logger'
 import { createWorktreeCreationApi } from './worktree-creation-api'
 import { createWorktreeManagerApi } from './worktree-manager-api'
-import type { AgentProvider } from '@shared/types'
+import type { AgentProvider, ToolCall } from '@shared/types'
 
 const log = createRendererLogger('preload:provider')
 
@@ -91,12 +94,12 @@ const log = createRendererLogger('preload:provider')
  */
 export interface StartSessionOpts {
   threadId: string
-  provider: 'claude' | 'codex' | 'opencode'
+  provider: ProviderKind
   cwd: string
   model?: string
   runtimeMode?: RuntimeMode
   resumeSessionId?: string
-  reasoningEffort?: 'low' | 'medium' | 'high'
+  reasoningEffort?: ReasoningEffort
   /** Provider instance id (named credential set). Falls back to default. */
   instanceId?: string
   /** Remote-only: oauth_dir basename attached by startSession below. */
@@ -217,7 +220,16 @@ const api = {
       transport.invoke(AppChannels.SET_CONVERSATION_WORKTREE, conversationId, worktreePath, worktreeBranch),
     loadSession: (filePath: string, conversationId?: string, source?: 'claude-code' | 'codex') =>
       transport.invoke(AppChannels.LOAD_SESSION, filePath, conversationId, source),
-    loadSessionById: (conversationId: string) => transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId),
+    loadSessionById: (conversationId: string, opts?: HistoryLoadOptions) =>
+      transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId, opts),
+    loadHistoryImage: (conversationId: string, messageId: string, index: number) =>
+      transport.invoke(AppChannels.LOAD_HISTORY_IMAGE, conversationId, messageId, index) as Promise<{
+        url: string | null
+      }>,
+    loadToolCall: (conversationId: string, messageId: string, toolCallId: string) =>
+      transport.invoke(AppChannels.LOAD_TOOL_CALL, conversationId, messageId, toolCallId) as Promise<{
+        toolCall: ToolCall | null
+      }>,
     attachToThread: (fragmentId: string, rootThreadId: string) =>
       transport.invoke(AppChannels.ATTACH_TO_THREAD, fragmentId, rootThreadId),
     relaunch: () => transport.invoke(AppChannels.RELAUNCH),
@@ -254,17 +266,33 @@ const api = {
       transport.invoke(AppChannels.GET_CONVERSATION_MODEL, id),
     setConversationModel: (id: string, model: string): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_MODEL, id, model),
-    setConversationReasoningEffort: (id: string, effort: 'low' | 'medium' | 'high'): Promise<{ ok: boolean }> =>
+    setConversationReasoningEffort: (id: string, effort: ReasoningEffort): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_REASONING_EFFORT, id, effort),
     setConversationProviderSelection: (
       id: string,
       agentType: AgentProvider,
       instanceId: string,
+      // With it, the backend commits the switch marker and pending handoff in
+      // the same transaction; `pendingHandoffFrom` in the answer confirms it.
+      agentSwitch?: { hasHistory: boolean; markerId: string },
       // `model` / `reasoningEffort` are what the chat last used on this
       // provider; absent from a backend older than per-provider memory.
-    ): Promise<{ ok: boolean; model?: string | null; reasoningEffort?: 'low' | 'medium' | 'high' | null }> =>
-      transport.invoke(AppChannels.SET_CONVERSATION_PROVIDER_SELECTION, id, agentType, instanceId),
-    getConversationPendingHandoff: (id: string): Promise<{ from: string | null }> =>
+    ): Promise<{
+      ok: boolean
+      model?: string | null
+      reasoningEffort?: ReasoningEffort | null
+      pendingHandoffFrom?: string | null
+      marker?: { id: string; content: string; timestamp: number }
+    }> =>
+      transport.invoke(
+        AppChannels.SET_CONVERSATION_PROVIDER_SELECTION,
+        id,
+        agentType,
+        instanceId,
+        ...(agentSwitch ? [agentSwitch] : []),
+      ),
+    // `backendBuilds`: the backend adds the handoff to the next turn itself.
+    getConversationPendingHandoff: (id: string): Promise<{ from: string | null; backendBuilds?: boolean }> =>
       transport.invoke(AppChannels.GET_CONVERSATION_PENDING_HANDOFF, id),
     setConversationPendingHandoff: (id: string, from: string | null): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_PENDING_HANDOFF, id, from),
@@ -633,6 +661,9 @@ const api = {
       opts?: { force?: boolean; refreshWithTurn?: boolean },
     ): Promise<import('@shared/provider-usage').ProviderUsage> =>
       transport.invoke(ProviderInstanceChannels.USAGE, id, opts),
+    /** Spend one banked Codex reset; main owns the idempotency key. */
+    consumeReset: (id: string, creditId: string | null): Promise<import('@shared/codex-reset').CodexResetResult> =>
+      transport.invoke(ProviderInstanceChannels.CONSUME_RESET, id, creditId),
     createOauthDir: (dir: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
       transport.invoke(ProviderInstanceChannels.CREATE_OAUTH_DIR, dir),
   },
@@ -686,7 +717,7 @@ const api = {
 
     setModel: (threadId: string, model: string) => transport.invoke(ProviderChannels.SET_MODEL, threadId, model),
 
-    setReasoningEffort: (threadId: string, effort: 'low' | 'medium' | 'high') =>
+    setReasoningEffort: (threadId: string, effort: ReasoningEffort) =>
       transport.invoke(ProviderChannels.SET_REASONING_EFFORT, threadId, effort),
 
     /** Dynamically fetch `opencode models` output. Returns provider/model IDs. */
@@ -854,7 +885,7 @@ const api = {
     ): Promise<import('@shared/execution-root-relocation').RelocateExecutionRootResult> =>
       transport.invoke(ProviderChannels.RELOCATE_EXECUTION_ROOT, request),
 
-    isAvailable: (provider: 'claude' | 'codex') => transport.invoke(ProviderChannels.IS_AVAILABLE, provider),
+    isAvailable: (provider: ProviderKind) => transport.invoke(ProviderChannels.IS_AVAILABLE, provider),
 
     /**
      * Proactive remote-auth preflight. `threadId` is passed purely so the

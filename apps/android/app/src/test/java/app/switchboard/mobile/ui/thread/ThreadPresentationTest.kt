@@ -420,6 +420,33 @@ class ThreadPresentationTest {
     }
 
     @Test
+    fun `a pending merge-back row maps to a MergeBack row, not a generic notice`() {
+        val content = "[[sb:merge-back]] " + app.switchboard.mobile.protocol.JsonCodec.encode(
+            JsonObject(
+                linkedMapOf(
+                    "id" to JsonString("mb_1"),
+                    "fork" to JsonString("agent_9"),
+                    "forkTitle" to JsonString("try sqlite paging"),
+                    "state" to JsonString("pending"),
+                    "turns" to JsonNumber("2"),
+                    "omittedTurns" to JsonNumber("0"),
+                    "files" to JsonArray(listOf(JsonString("a.ts"))),
+                    "moreFiles" to JsonNumber("0"),
+                    "text" to JsonString("summary"),
+                ),
+            ),
+        )
+
+        val row = ThreadPresenter.row(
+            FeedItem.RawNotice(id = "h-mb_1", eventType = "history.system", text = content, raw = JsonObject(linkedMapOf())),
+        ) as ThreadRowPresentation.MergeBack
+
+        assertEquals("mb_1", row.messageId)
+        assertEquals("pending", row.row.state)
+        assertEquals("try sqlite paging", row.row.forkTitle)
+    }
+
+    @Test
     fun `history window is presented as a product notice without diagnostics`() {
         val row = ThreadPresenter.row(
             FeedItem.RawNotice(

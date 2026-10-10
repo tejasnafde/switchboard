@@ -50,26 +50,34 @@ import {
   $createParagraphNode,
   $createRangeSelection,
   $createRangeSelectionFromDom,
+  $createNodeSelection,
   $createTextNode,
   $getRoot,
   $getSelection,
   $insertNodes,
+  $isElementNode,
   $isRangeSelection,
+  $isTextNode,
   $setSelection,
   BLUR_COMMAND,
   COMMAND_PRIORITY_LOW,
+  COMMAND_PRIORITY_NORMAL,
   createCommand,
   FOCUS_COMMAND,
+  KEY_ARROW_LEFT_COMMAND,
+  KEY_ARROW_RIGHT_COMMAND,
   KEY_ENTER_COMMAND,
   PASTE_COMMAND,
+  SKIP_DOM_SELECTION_TAG,
   type BaseSelection,
   type EditorState,
   type LexicalCommand,
   type LexicalEditor,
   type LexicalNode,
   type PointType,
+  type RangeSelection,
 } from 'lexical'
-import { $createPillNode, $isPillNode, PillNode } from './PillNode'
+import { $createPillNode, $isPillNode, PillContentContext, PillNode } from './PillNode'
 import { parseBodyToSegments } from '../../../services/chat-input-body'
 import {
   selectionToRestore,
@@ -106,7 +114,7 @@ interface RichChatTextareaProps {
   /** `altKey` is true for Alt/Option+Enter (queue instead of steer). */
   onEnter?: (key: { altKey: boolean }) => void
   onPasteFiles?: (files: File[]) => void
-  pillsById: Record<string, Pick<DraftPill, 'id' | 'label' | 'kind'>>
+  pillsById: Record<string, ComposerPill>
   placeholder?: string
   disabled?: boolean
   /** Forwarded to the contenteditable as a `data-*` attribute for ⌘F search etc. */
@@ -115,7 +123,12 @@ interface RichChatTextareaProps {
   trailingInset?: string
 }
 
+/** What the editor needs of a pill; `content` feeds the chip's count and card. */
+type ComposerPill = Pick<DraftPill, 'id' | 'label' | 'kind'> & Partial<Pick<DraftPill, 'content'>>
+
 export const INSERT_PILL_COMMAND: LexicalCommand<DraftPill> = createCommand('INSERT_PILL')
+/** Update tag of a pill insert, which can arrive while the editor is not focused (⌘L). */
+const PILL_INSERT_TAG = 'sb-pill-insert'
 
 /**
  * Build a Lexical paragraph node tree from the host's plain-text body.
@@ -126,7 +139,7 @@ export const INSERT_PILL_COMMAND: LexicalCommand<DraftPill> = createCommand('INS
  * pills that have been removed; leaving the raw token string in the
  * editor would confuse the user.
  */
-function $populateFromBody(body: string, pillsById: Record<string, Pick<DraftPill, 'id' | 'label' | 'kind'>>): void {
+function $populateFromBody(body: string, pillsById: Record<string, ComposerPill>): void {
   const root = $getRoot()
   root.clear()
   const paragraph = $createParagraphNode()
@@ -330,18 +343,27 @@ function PillInsertPlugin(): null {
     return editor.registerCommand<DraftPill>(
       INSERT_PILL_COMMAND,
       (pill) => {
-        editor.update(() => {
-          const sel = $getSelection()
-          if (!$isRangeSelection(sel)) return
-          const pillNode = $createPillNode(pill.id, pill.label, pill.kind)
-          const spaceBefore = $createTextNode(' ')
-          const spaceAfter = $createTextNode(' ')
-          // Inserting whitespace + pill + whitespace mirrors
-          // `insertPillAtCursor`'s arithmetic so the editor body string
-          // and the pure helper agree on the result. Lexical's
-          // `$insertNodes` handles the split-and-stitch automatically.
-          $insertNodes([spaceBefore, pillNode, spaceAfter])
-        })
+        // Unfocused (⌘L from a terminal, the IDE or a chat message), the
+        // commit would put the DOM selection in the editor, which focuses it
+        // before the new caret is saved, and the focus then restores the
+        // caret from before the pill. The caller focuses the editor next.
+        const root = editor.getRootElement()
+        const unfocused = !!root && document.activeElement !== root
+        editor.update(
+          () => {
+            const sel = $getSelection()
+            if (!$isRangeSelection(sel)) return
+            const pillNode = $createPillNode(pill.id, pill.label, pill.kind)
+            const spaceBefore = $createTextNode(' ')
+            const spaceAfter = $createTextNode(' ')
+            // Inserting whitespace + pill + whitespace mirrors
+            // `insertPillAtCursor`'s arithmetic so the editor body string
+            // and the pure helper agree on the result. Lexical's
+            // `$insertNodes` handles the split-and-stitch automatically.
+            $insertNodes([spaceBefore, pillNode, spaceAfter])
+          },
+          { tag: unfocused ? [PILL_INSERT_TAG, SKIP_DOM_SELECTION_TAG] : PILL_INSERT_TAG },
+        )
         return true
       },
       COMMAND_PRIORITY_LOW,
@@ -428,9 +450,11 @@ function SelectionMemoryPlugin(): null {
     const save = (offsets: ComposerSelection | null): void => {
       if (offsets) saved = { ...offsets, body: serializeEditorToBody(editor) }
     }
-    const removeUpdate = editor.registerUpdateListener(({ editorState }) => {
+    // A pill inserted while the editor is not focused leaves the caret after
+    // it, and focus comes back right after: save that.
+    const removeUpdate = editor.registerUpdateListener(({ editorState, tags }) => {
       const root = editor.getRootElement()
-      if (!root || document.activeElement !== root) return
+      if (!root || (document.activeElement !== root && !tags.has(PILL_INSERT_TAG))) return
       editorState.read(() => save($selectionOffsets()))
     })
     // Lexical learns of a caret move only from a later `selectionchange`, so
@@ -472,6 +496,53 @@ function SelectionMemoryPlugin(): null {
       removeFocus()
       window.removeEventListener('pointerup', onPointerUp, true)
       window.removeEventListener('pointercancel', onPointerUp, true)
+    }
+  }, [editor])
+  return null
+}
+
+/** The pill right beside a collapsed caret, on the side an arrow key moves to. */
+function $pillBesideCaret(selection: RangeSelection, backward: boolean): PillNode | null {
+  if (!selection.isCollapsed()) return null
+  const { anchor } = selection
+  const node = anchor.getNode()
+  let beside: LexicalNode | null = null
+  if ($isTextNode(node)) {
+    if (backward && anchor.offset === 0) beside = node.getPreviousSibling()
+    else if (!backward && anchor.offset === node.getTextContentSize()) beside = node.getNextSibling()
+  } else if ($isElementNode(node)) {
+    beside = node.getChildAtIndex(backward ? anchor.offset - 1 : anchor.offset)
+  }
+  return $isPillNode(beside) ? beside : null
+}
+
+/**
+ * Plugin: Left or Right arrow next to a chip selects it (a node selection,
+ * drawn with a tinted ring) instead of jumping past it. The chip then takes
+ * the keys (`PillChip` in PillNode). Shift extends text selection as before.
+ */
+function PillSelectPlugin(): null {
+  const [editor] = useLexicalComposerContext()
+  useEffect(() => {
+    const select =
+      (backward: boolean) =>
+      (event: KeyboardEvent): boolean => {
+        if (event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return false
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) return false
+        const pill = $pillBesideCaret(selection, backward)
+        if (!pill) return false
+        event.preventDefault()
+        const nodeSelection = $createNodeSelection()
+        nodeSelection.add(pill.getKey())
+        $setSelection(nodeSelection)
+        return true
+      }
+    const offLeft = editor.registerCommand(KEY_ARROW_LEFT_COMMAND, select(true), COMMAND_PRIORITY_NORMAL)
+    const offRight = editor.registerCommand(KEY_ARROW_RIGHT_COMMAND, select(false), COMMAND_PRIORITY_NORMAL)
+    return () => {
+      offLeft()
+      offRight()
     }
   }, [editor])
   return null
@@ -631,6 +702,7 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
 
     const valueRef = useRef(value)
     valueRef.current = value
+    const pillContent = useCallback((id: string) => pillsById[id]?.content, [pillsById])
     // The host computes the right inset, so it reaches the classes as a variable.
     const insetStyle = { '--sb-rci-inset': trailingInset } as React.CSSProperties
 
@@ -662,37 +734,40 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
 
     return (
       <LexicalComposer initialConfig={initialConfig}>
-        <EditableSync disabled={disabled} />
-        <HydrationPlugin value={value} pillsById={pillsById} />
-        <PlainTextPlugin
-          contentEditable={
-            <ContentEditable
-              {...(dataAttrs ?? {})}
-              spellCheck={false}
-              aria-label="Chat message"
-              data-placeholder={placeholder}
-              className="sb-rci-content flex-1 resize-none py-[10px] pl-[12px] pr-[var(--sb-rci-inset)] rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-[13px] [font-family:var(--font-sans)] leading-[1.5] outline-none max-h-[200px] overflow-y-auto min-h-[42px] whitespace-pre-wrap [word-break:break-word]"
-              style={insetStyle}
-            />
-          }
-          placeholder={
-            <div
-              className="sb-rci-placeholder absolute top-[10px] left-[12px] right-[var(--sb-rci-inset)] truncate text-[var(--text-muted)] pointer-events-none text-[13px] [font-family:var(--font-sans)]"
-              style={insetStyle}
-            >
-              {placeholder}
-            </div>
-          }
-          ErrorBoundary={LexicalErrorBoundary}
-        />
-        <HistoryPlugin />
-        <OnChangePlugin onChange={handleChange} />
-        <EnterKeyPlugin onEnter={onEnter} />
-        <PasteFilesPlugin onPasteFiles={onPasteFiles} />
-        <PasteTextPlugin pillsById={pillsById} />
-        <PillInsertPlugin />
-        <SelectionMemoryPlugin />
-        <ImperativeHandlePlugin ref={ref} pillsById={pillsById} getValue={() => valueRef.current} />
+        <PillContentContext.Provider value={pillContent}>
+          <EditableSync disabled={disabled} />
+          <HydrationPlugin value={value} pillsById={pillsById} />
+          <PlainTextPlugin
+            contentEditable={
+              <ContentEditable
+                {...(dataAttrs ?? {})}
+                spellCheck={false}
+                aria-label="Chat message"
+                data-placeholder={placeholder}
+                className="sb-rci-content flex-1 resize-none py-[10px] pl-[12px] pr-[var(--sb-rci-inset)] rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-[13px] [font-family:var(--font-sans)] leading-[1.5] outline-none max-h-[200px] overflow-y-auto min-h-[42px] whitespace-pre-wrap [word-break:break-word]"
+                style={insetStyle}
+              />
+            }
+            placeholder={
+              <div
+                className="sb-rci-placeholder absolute top-[10px] left-[12px] right-[var(--sb-rci-inset)] truncate text-[var(--text-muted)] pointer-events-none text-[13px] [font-family:var(--font-sans)]"
+                style={insetStyle}
+              >
+                {placeholder}
+              </div>
+            }
+            ErrorBoundary={LexicalErrorBoundary}
+          />
+          <HistoryPlugin />
+          <OnChangePlugin onChange={handleChange} />
+          <EnterKeyPlugin onEnter={onEnter} />
+          <PasteFilesPlugin onPasteFiles={onPasteFiles} />
+          <PasteTextPlugin pillsById={pillsById} />
+          <PillInsertPlugin />
+          <PillSelectPlugin />
+          <SelectionMemoryPlugin />
+          <ImperativeHandlePlugin ref={ref} pillsById={pillsById} getValue={() => valueRef.current} />
+        </PillContentContext.Provider>
       </LexicalComposer>
     )
   },

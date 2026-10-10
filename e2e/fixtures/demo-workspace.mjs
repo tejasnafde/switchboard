@@ -110,8 +110,8 @@ export function seedDatabase(
   { now = Date.now(), showFileDiffs = true, expandLocalTree = true, linkPullRequest = false } = {},
 ) {
   const messagePills = JSON.stringify({
-    auth_file: { label: 'src/api/auth.ts:1-7', kind: 'file' },
-    api_log: { label: 'api · oauth callback', kind: 'terminal' },
+    auth_file: { label: 'auth.ts (1-7)', kind: 'file' },
+    api_log: { label: 'api (12 lines)', kind: 'terminal' },
   })
   const snapshotA = JSON.stringify([
     {

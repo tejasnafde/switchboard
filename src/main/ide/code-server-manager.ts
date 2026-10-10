@@ -1,7 +1,7 @@
 /**
  * code-server lifecycle: spawn-arg construction, release-asset lookup, and
  * bridge-extension seeding for the single per-app server.
- * See docs/plans/2026-07-10-embedded-ide-design.md.
+ * See docs/plans/archive/2026-07-10-embedded-ide-design.md.
  */
 import { cpSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'

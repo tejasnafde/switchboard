@@ -8,7 +8,7 @@
  */
 
 import type { TurnDelivery } from '@shared/turn-delivery'
-import type { ModelOption } from '@shared/models'
+import type { ModelOption, ReasoningEffort } from '@shared/models'
 import type { Effect } from 'effect'
 
 export type {
@@ -54,8 +54,8 @@ export interface SessionStartOpts {
   model?: string
   runtimeMode?: RuntimeMode
   resumeSessionId?: string
-  /** Codex-only: reasoning effort tier (low/medium/high). */
-  reasoningEffort?: 'low' | 'medium' | 'high'
+  /** Thinking effort: Claude sends it as `effort`, Codex per turn, OpenCode ignores it (its effort is the model variant). */
+  reasoningEffort?: ReasoningEffort
   /** provider_instances row id; falls back to `<agent-type>-default`. */
   instanceId?: string
   /** Resolved env overlay (registry-populated; do not set from renderer). */
@@ -83,6 +83,12 @@ export interface SessionStartOpts {
    * these tools a second time.
    */
   switchboardMcp?: import('../mcp/switchboard-mcp-server').SwitchboardMcpLaunch
+  /**
+   * The visible conversation as a handoff preamble (registry-populated). An
+   * adapter that could not resume its native session prefixes the next
+   * message it sends with it, so the agent does not continue blind.
+   */
+  portableHistory?: () => Promise<string | null>
 }
 
 export interface ProviderSession {
@@ -94,8 +100,8 @@ export interface ProviderSession {
   cwd: string
   sessionId?: string
   createdAt: number
-  /** Codex-only: reasoning effort tier (low/medium/high). */
-  reasoningEffort?: 'low' | 'medium' | 'high'
+  /** Thinking effort the session applies (see SessionStartOpts.reasoningEffort). */
+  reasoningEffort?: ReasoningEffort
   /** ID of the provider_instances row this session resolved to. */
   instanceId?: string
   /** Persisted Switchboard title when the registry returns a live-session summary. */
@@ -182,7 +188,7 @@ export interface ProviderAdapter {
    */
   setModel?(threadId: string, model: string): Promise<void>
   /** Applies to the next turn of a live session (Codex reads it per turn). */
-  setReasoningEffort?(threadId: string, effort: 'low' | 'medium' | 'high'): Promise<void>
+  setReasoningEffort?(threadId: string, effort: ReasoningEffort): Promise<void>
 
   /**
    * Answer an AskUserQuestion request (unblocks the agent).
@@ -220,6 +226,13 @@ export interface ProviderAdapter {
    * that message starts, which only the adapter knows.
    */
   runtimeModeOf?(threadId: string): RuntimeMode | undefined
+
+  /**
+   * True when the live session resumed this chat's earlier native session,
+   * so the agent already holds what it saw before. Decides between a delta
+   * and a full context handoff; absent means a full one.
+   */
+  resumedNativeSession?(threadId: string): boolean
 }
 
 // Re-export Effect for internal adapter use (avoids extra imports elsewhere)

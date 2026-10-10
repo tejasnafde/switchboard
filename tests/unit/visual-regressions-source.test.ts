@@ -42,17 +42,23 @@ describe('visual regression harness safety', () => {
 
   it('captures the key screens in every theme, each from a pristine fixture', () => {
     expect(source).toContain("const THEMES = ['Dark', 'Light', 'Translucent']")
-    const screens = [...source.matchAll(/snapScreen\(win, '([a-z-]+)'/g)].map((match) => match[1])
+    const screens = [...source.matchAll(/snap(?:Screen\(win, |AsIs\()'([a-z-]+)'/g)].map((match) => match[1])
     expect(new Set(screens)).toEqual(
       new Set([
         'landing',
+        'message-search',
         'chat',
         'sidebar',
         'sidebar-needs-you',
         'command-palette',
+        'go-to-chat',
+        'go-to-chat-search',
         'provider-picker',
+        'effort-picker',
         'settings',
         'settings-accounts',
+        'accounts-codex-reset',
+        'accounts-codex-reset-confirm',
         'kanban',
         'reviews',
         'reviews-conflict',
@@ -66,14 +72,24 @@ describe('visual regression harness safety', () => {
         'host-write-approval',
         'host-review-draft',
         'host-create-pr',
+        'chat-diagram',
+        'chat-chart',
         'confirm-dialog',
         'chat-loading',
         'chat-profile-switch',
         'chat-provider-switch',
         'chat-starting',
         'chat-switch-error',
+        'sent-chips',
+        'composer-chips',
+        'composer-chip-card',
+        'composer-landing',
+        'composer-overflow-menu',
       ]),
     )
+    // The composer footer at each width the design names, held to one row.
+    expect(source).toContain('const FOOTER_WIDTHS = [360, 680, 1200]')
+    expect(source).toContain('snapScreen(win, `composer-footer-${width}`, theme, composer)')
     const run = source.slice(source.indexOf('async function runThemeScreens'))
     expect(run).toMatch(/for \(const theme of THEMES\) \{\s*fixture\.restore\(\)/)
   })

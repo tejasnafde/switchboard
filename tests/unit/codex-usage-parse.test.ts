@@ -50,9 +50,60 @@ describe('parseCodexRateLimits - real payload', () => {
     expect(parseCodexRateLimits(REAL_RESULT).windows).toHaveLength(1)
   })
 
-  it('surfaces reset credits as an overage row', () => {
+  it('reads reset credits into their own field, not an overage row', () => {
     const out = parseCodexRateLimits(REAL_RESULT)
-    expect(out.overage.find((o) => o.id === 'reset_credits')?.detail).toBe('3 available')
+    expect(out.overage.some((o) => o.id === 'reset_credits')).toBe(false)
+    expect(out.resetCredits).toEqual({
+      availableCount: 3,
+      credits: [{ id: 'RateLimitResetCredit_3b2b', expiresAtMs: null, status: 'available', title: null }],
+    })
+  })
+
+  it('converts credit expiries from unix seconds and keeps titles', () => {
+    const out = parseCodexRateLimits({
+      rateLimitResetCredits: {
+        availableCount: 2,
+        credits: [
+          {
+            id: 'a',
+            grantedAt: 1,
+            expiresAt: 1790000000,
+            resetType: 'codexRateLimits',
+            status: 'available',
+            title: ' Weekly limit reset ',
+          },
+          { id: 'b', expiresAt: null, status: 'redeeming' },
+          { id: 'c', status: 'somethingNew' },
+          { status: 'available' },
+        ],
+      },
+    })
+    expect(out.resetCredits?.credits).toEqual([
+      { id: 'a', expiresAtMs: 1790000000 * 1000, status: 'available', title: 'Weekly limit reset' },
+      { id: 'b', expiresAtMs: null, status: 'redeeming', title: null },
+      { id: 'c', expiresAtMs: null, status: 'unknown', title: null },
+    ])
+  })
+
+  it('keeps a known count with a null list, and drops a malformed count', () => {
+    expect(parseCodexRateLimits({ rateLimitResetCredits: { availableCount: 0, credits: null } }).resetCredits).toEqual({
+      availableCount: 0,
+      credits: null,
+    })
+    expect(parseCodexRateLimits({ rateLimitResetCredits: { availableCount: '2' } }).resetCredits).toBeNull()
+    expect(parseCodexRateLimits({ rateLimitResetCredits: null }).resetCredits).toBeNull()
+  })
+
+  it('marks the window a reached flag lands on', () => {
+    const out = parseCodexRateLimits({
+      rateLimits: {
+        limitId: 'codex',
+        primary: { usedPercent: 100, windowDurationMins: 300 },
+        secondary: { usedPercent: 40, windowDurationMins: 10080 },
+        rateLimitReachedType: 'rate_limit_reached',
+      },
+    })
+    expect(out.windows.map((w) => w.reached ?? false)).toEqual([true, false])
   })
 
   it('emits no credits row when the account has none', () => {
@@ -247,7 +298,7 @@ describe('parseCodexRateLimits - regressions', () => {
   it('keeps reset credits when no window snapshot exists', () => {
     // An early return used to discard these.
     const out = parseCodexRateLimits({ rateLimitResetCredits: { availableCount: 3, credits: null } })
-    expect(out.overage.map((o) => o.id)).toEqual(['reset_credits'])
+    expect(out.resetCredits).toEqual({ availableCount: 3, credits: null })
     expect(out.allNull).toBe(false)
   })
 })

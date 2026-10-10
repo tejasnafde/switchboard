@@ -8,6 +8,7 @@ import { formatMergeBackMarker, type MergeBackRow } from '../../src/shared/merge
 import { echoMessageId } from '../../src/shared/provider-events'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { useChatStore, flushQueue, resetQueue, threadKey, type FeedItem } from '../../apps/mobile/src/stores/chat'
+import { historyToItems } from '../../apps/mobile/src/lib/thread-history'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 
 const CONN = 'conn-1'
@@ -179,6 +180,25 @@ describe('user.message echo', () => {
     expect(users).toHaveLength(1)
   })
 
+  it('shows the backend handoff marker before the turn, once, for its own send too', () => {
+    const origin = 'm-789'
+    useChatStore.getState().addUserMessage(KEY, 'next', undefined, echoMessageId(origin))
+    const event = {
+      type: 'user.message' as const,
+      threadId: 't1',
+      text: 'Conversation so far:\nuser: q\n\nRespond to the latest user message, using the conversation above as context.\n\nnext',
+      displayBody: 'next',
+      origin,
+      at: 2,
+      handoffMarker: { id: `handoff_${origin}`, text: '[[sb:context-handoff]] Claude Code → Codex' },
+    }
+    useChatStore.getState().ingestNow('c1', event)
+    useChatStore.getState().ingestNow('c1', event)
+    const items = useChatStore.getState().threads[KEY].items
+    expect(items.map((i) => i.kind)).toEqual(['notice', 'user'])
+    expect(items[0]).toMatchObject({ id: `h-handoff_${origin}`, text: 'Context handoff: Claude Code → Codex' })
+  })
+
   it('is idempotent if the echo arrives twice', () => {
     const origin = 'm-456'
     const event = { type: 'user.message' as const, threadId: 't1', text: 'hi', origin, at: 1 }
@@ -343,25 +363,33 @@ describe('a fork summary waiting in this chat', () => {
     content,
     at: 1,
   })
-  const notices = () => items().filter((i) => i.kind === 'notice')
+  const cards = () => items().filter((i) => i.kind === 'mergeBack')
 
-  it('shows the card read-only, turns it delivered in place and removes it once discarded', () => {
+  it('shows the card, turns it delivered in place and removes it once discarded', () => {
     ingest(event(formatMergeBackMarker(row)))
     flushQueue()
-    expect(notices()).toEqual([
-      {
-        kind: 'notice',
-        id: 'h-mergeback_mb1',
-        text: 'From fork "paging" (not sent yet): 2 turns since the fork point or the last send\nChanged: a.ts',
-      },
-    ])
+    expect(cards()).toEqual([{ kind: 'mergeBack', id: 'h-mergeback_mb1', messageId: 'mergeback_mb1', row }])
     ingest(event(formatMergeBackMarker({ ...row, state: 'delivered' })))
     flushQueue()
-    expect(notices()).toHaveLength(1)
-    expect(notices()[0]).toMatchObject({ text: expect.stringContaining('Sent with your message') })
+    expect(cards()).toEqual([
+      { kind: 'mergeBack', id: 'h-mergeback_mb1', messageId: 'mergeback_mb1', row: { ...row, state: 'delivered' } },
+    ])
     ingest(event(null))
     flushQueue()
-    expect(notices()).toEqual([])
+    expect(cards()).toEqual([])
+  })
+
+  it('lands the history row and the live event on one card', () => {
+    const history = historyToItems([
+      { id: 'mergeback_mb1', role: 'system', content: formatMergeBackMarker(row), timestamp: 1 },
+    ])
+    expect(history).toEqual([{ kind: 'mergeBack', id: 'h-mergeback_mb1', messageId: 'mergeback_mb1', row }])
+    useChatStore.getState().seedItems(KEY, history)
+    ingest(event(formatMergeBackMarker({ ...row, state: 'delivered' })))
+    flushQueue()
+    expect(cards()).toEqual([
+      { kind: 'mergeBack', id: 'h-mergeback_mb1', messageId: 'mergeback_mb1', row: { ...row, state: 'delivered' } },
+    ])
   })
 })
 

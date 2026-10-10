@@ -475,6 +475,11 @@ async function settle(win) {
 
 async function snapScreen(win, screen, theme, target, mask = []) {
   await settle(win)
+  await snapAsIs(screen, theme, target, mask)
+}
+
+/** Compare `target` as it is now, without parking the pointer (a hover state). */
+async function snapAsIs(screen, theme, target, mask = []) {
   const shot = await target.screenshot({
     animations: 'disabled',
     caret: 'hide',
@@ -525,6 +530,82 @@ async function prepareScreensFixture() {
   }
 }
 
+/**
+ * The composer footer is one row at every width: every box in it (the chips,
+ * the "..." chip, the context meter) has the same offsetTop, and nothing
+ * scrolls sideways. Returns a problem, or null.
+ */
+async function footerRowProblem(composer, label) {
+  const problem = await composer.evaluate((root) => {
+    const footer = root.querySelector('[data-composer-footer]')
+    if (!footer) return 'no [data-composer-footer]'
+    const boxes = []
+    const collect = (el) => {
+      for (const child of el.children) {
+        const display = getComputedStyle(child).display
+        if (display === 'contents') collect(child)
+        else if (display !== 'none') {
+          boxes.push(child)
+          if (child.hasAttribute('data-composer-footer-track')) collect(child)
+        }
+      }
+    }
+    collect(footer)
+    const tops = boxes.map((el) => el.offsetTop)
+    if (new Set(tops).size > 1) {
+      return `children sit on ${new Set(tops).size} rows (offsetTop ${tops.join(', ')})`
+    }
+    const track = footer.querySelector('[data-composer-footer-track]')
+    if (track && track.scrollWidth > track.clientWidth)
+      return `the chips overflow by ${track.scrollWidth - track.clientWidth}px`
+    if (footer.scrollWidth > footer.clientWidth)
+      return `the footer overflows by ${footer.scrollWidth - footer.clientWidth}px`
+    if (root.scrollWidth > root.clientWidth) return `the composer overflows by ${root.scrollWidth - root.clientWidth}px`
+    return null
+  })
+  return problem ? `${label}: ${problem}` : null
+}
+
+const FOOTER_WIDTHS = [360, 680, 1200]
+
+/**
+ * The chat composer with its width pinned, so the footer's container queries
+ * see each width the design names (360: P3 to P5 in "...", 680: short labels
+ * and the model only, 1200: everything). Pinned near the window's left edge, low enough for the "..." menu to open above it, so
+ * a 1200 px composer is on screen whatever the pane widths are.
+ */
+async function captureFooterWidths(win, theme, composer) {
+  // The pinned composer sits over the chat, so a turn's time (stamped by the
+  // real main clock) can show through it. Hidden, not masked: a mask paints
+  // above the composer and the menu too.
+  const hideTurnTimes = await win.addStyleTag({ content: '.turn-timestamp { visibility: hidden !important; }' })
+  for (const width of FOOTER_WIDTHS) {
+    await composer.evaluate((el, w) => {
+      el.dataset.visualStyle = el.getAttribute('style') ?? ''
+      el.style.cssText += `;position:fixed;left:16px;top:420px;width:${w}px;z-index:1100;`
+    }, width)
+    const problem = await footerRowProblem(composer, `composer-footer-${width}-${theme.toLowerCase()}`)
+    if (problem) screenFailures.push(problem)
+    await snapScreen(win, `composer-footer-${width}`, theme, composer)
+    if (width === 360) {
+      // The "..." menu, holding effort, checkout and mode.
+      await composer.locator('[data-composer-overflow]').click()
+      const menu = win.getByRole('dialog', { name: 'More options' })
+      await menu.waitFor({ state: 'visible' })
+      if ((await menu.getByRole('menuitem').count()) !== 3)
+        screenFailures.push(`composer-overflow-${theme.toLowerCase()}: expected effort, branch and mode in the menu`)
+      await snapScreen(win, 'composer-overflow-menu', theme, menu)
+      await win.keyboard.press('Escape')
+      await menu.waitFor({ state: 'hidden' })
+    }
+    await composer.evaluate((el) => {
+      el.setAttribute('style', el.dataset.visualStyle ?? '')
+      delete el.dataset.visualStyle
+    })
+  }
+  await hideTurnTimes.evaluate((node) => node.remove())
+}
+
 async function captureThemeScreens(win, theme) {
   await chooseTheme(win, theme)
   // Each turn's time is stamped by the main process when it is saved, and
@@ -542,11 +623,34 @@ async function captureThemeScreens(win, theme) {
   // Choosing the theme leaves focus (and its ring) on the settings button.
   await editor.click()
   await snapScreen(win, 'landing', theme, win, [win.locator('.sidebar-root')])
+  // The landing card's footer: project, agent and model, effort, checkout and
+  // mode on one row in its 680 px column.
+  const landingComposer = win.locator('.chat-landing .chat-composer').first()
+  const landingProblem = await footerRowProblem(landingComposer, `composer-landing-${theme.toLowerCase()}`)
+  if (landingProblem) screenFailures.push(landingProblem)
+  await snapScreen(win, 'composer-landing', theme, landingComposer)
+
+  // Message search, before any live turn: every hit is a seeded message, so
+  // the relative times run off the frozen renderer clock. "ex" is a prefix of
+  // words in several chats (exponential, exchange, export).
+  await win.keyboard.press('ControlOrMeta+Shift+F')
+  const search = win.getByRole('dialog', { name: 'Search across all conversations' })
+  await search.waitFor({ state: 'visible' })
+  await win.keyboard.type('ex')
+  await search.getByText(/\d+ chats?, \d+ match/).waitFor({ state: 'visible', timeout: 10_000 })
+  await win.mouse.move(0, 0)
+  await snapScreen(win, 'message-search', theme, search)
+  await win.keyboard.press('Escape')
+  await search.waitFor({ state: 'hidden' })
 
   // A finished turn: text, an Edit tool call and the collapsed "Changed 1
   // file" group. Captured before switching threads, since reopening a thread
   // reloads it from the database.
   await openConversation(win, FINISHED_CHAT)
+  // The seeded user message's file and terminal pills, drawn as context chips.
+  const sentChips = win.locator('[data-message-id="promo-m2"]').first()
+  await sentChips.locator('[data-pill-chip]').nth(1).waitFor({ state: 'visible', timeout: 20_000 })
+  await snapScreen(win, 'sent-chips', theme, sentChips)
   await editor.click()
   await win.keyboard.type('Move the state check ahead of the token exchange.')
   await win.keyboard.press('Enter')
@@ -559,6 +663,17 @@ async function captureThemeScreens(win, theme) {
   await win.locator('[data-linked-pr][title*="build failed"]').first().waitFor({ state: 'visible', timeout: 20_000 })
   await snapScreen(win, 'chat', theme, win, [turnTimes, sidebar])
   await snapScreen(win, 'sidebar', theme, sidebar)
+  await captureFooterWidths(win, theme, win.locator('.chat-composer').first())
+
+  await win.keyboard.press('ControlOrMeta+P')
+  const goToChat = win.getByRole('dialog', { name: 'Go to chat' })
+  await goToChat.getByText('Recent').waitFor({ state: 'visible' })
+  await snapScreen(win, 'go-to-chat', theme, goToChat)
+  await win.keyboard.type('notes')
+  await goToChat.getByText('2 chats').waitFor({ state: 'visible' })
+  await snapScreen(win, 'go-to-chat-search', theme, goToChat)
+  await win.keyboard.press('Escape')
+  await goToChat.waitFor({ state: 'hidden' })
 
   await win.keyboard.press('Meta+Shift+P')
   const palette = win.locator('.palette-modal-content')
@@ -573,6 +688,14 @@ async function captureThemeScreens(win, theme) {
   await snapScreen(win, 'provider-picker', theme, picker)
   await win.keyboard.press('Escape')
   await picker.waitFor({ state: 'hidden' })
+
+  // The thinking-effort menu, from the demo catalog's per-model levels.
+  await win.locator('.chat-composer [data-effort-picker]').first().click()
+  const effortMenu = win.getByRole('dialog', { name: 'Thinking effort' })
+  await effortMenu.waitFor({ state: 'visible' })
+  await snapScreen(win, 'effort-picker', theme, effortMenu)
+  await win.keyboard.press('Escape')
+  await effortMenu.waitFor({ state: 'hidden' })
 
   // Two more Claude accounts after the picker shot, so its baseline keeps
   // the fixture's one-per-agent list, and before Settings opens, so its
@@ -613,9 +736,36 @@ async function captureThemeScreens(win, theme) {
       '[data-credential] { display: inline-block; width: 260px; overflow: hidden; white-space: nowrap; vertical-align: bottom }',
   })
   await snapScreen(win, 'settings-accounts', theme, settings, [settings.locator('[data-credential]')])
+  // A Codex account at its 5-hour limit with two banked resets (demoUsage
+  // answers `-limit` ids so), added after the page shot so that baseline
+  // keeps its cards. The card offers "Use reset"; its confirm is shot too
+  // and cancelled, so nothing is spent (the demo spend is fake anyway).
+  await win.evaluate(() =>
+    window.api.providerInstances.upsert({
+      id: 'codex-limit',
+      agentType: 'codex',
+      displayName: 'Personal',
+      accentColor: '#10a37f',
+      authMode: 'env',
+      env: null,
+      oauthDir: null,
+      enabled: true,
+    }),
+  )
+  // The page lists accounts when it opens, so leave it and come back.
+  await settings.getByRole('button', { name: /^Appearance/ }).click()
+  await settings.getByRole('button', { name: /^Accounts & models/ }).click()
+  const limitCard = settings.locator('[data-account="codex-limit"]')
+  await limitCard.getByRole('button', { name: 'Use reset', exact: true }).waitFor({ state: 'visible' })
+  await snapScreen(win, 'accounts-codex-reset', theme, limitCard, [limitCard.locator('[data-credential]')])
+  await limitCard.getByRole('button', { name: 'Use reset', exact: true }).click()
+  await limitCard.getByRole('alertdialog', { name: 'Use a Codex reset' }).waitFor({ state: 'visible' })
+  await snapScreen(win, 'accounts-codex-reset-confirm', theme, limitCard, [limitCard.locator('[data-credential]')])
+  await limitCard.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await limitCard.getByRole('alertdialog').waitFor({ state: 'detached' })
   // Delete them through the menu, or the composer chip names the account
   // on every later screen.
-  for (const name of ['akshaya', 'aditya']) {
+  for (const name of ['akshaya', 'aditya', 'Personal']) {
     await settings.getByRole('button', { name: `Actions for ${name}` }).click()
     await win.getByRole('button', { name: 'Delete', exact: true }).click()
     await win
@@ -686,11 +836,21 @@ async function captureThemeScreens(win, theme) {
   // The chat held on that approval heads the sidebar under "Needs you".
   await sidebar.locator('.sidebar-recent-group[data-group="needs-you"]').waitFor({ state: 'visible' })
   await snapScreen(win, 'sidebar-needs-you', theme, sidebar)
+  const runningProblem = await footerRowProblem(
+    win.locator('.chat-composer').first(),
+    `composer-running-${theme.toLowerCase()}`,
+  )
+  if (runningProblem) screenFailures.push(runningProblem)
   await snapScreen(win, 'composer-running', theme, win.locator('.chat-composer').first())
   // The draft queued behind that approval: the dashed Queued bubble.
   await editor.click()
   await win.keyboard.press('Alt+Enter')
   await win.locator('[data-queued-turn]').waitFor({ state: 'visible', timeout: 10_000 })
+  const queuedProblem = await footerRowProblem(
+    win.locator('.chat-composer').first(),
+    `queued-message-${theme.toLowerCase()}`,
+  )
+  if (queuedProblem) screenFailures.push(queuedProblem)
   await snapScreen(win, 'queued-message', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
 
   // A long list reply in the narrowest window, scrolled to its last list,
@@ -708,6 +868,11 @@ async function captureThemeScreens(win, theme) {
   const sideways = await list.evaluate((el) => el.scrollWidth - el.clientWidth)
   if (sideways > 0)
     screenFailures.push(`chat-narrow-${theme.toLowerCase()}: the message list scrolls ${sideways}px sideways`)
+  const narrowProblem = await footerRowProblem(
+    win.locator('.chat-composer').first(),
+    `chat-narrow-${theme.toLowerCase()}`,
+  )
+  if (narrowProblem) screenFailures.push(narrowProblem)
   await win
     .locator('.markdown-content ol')
     .last()
@@ -800,6 +965,28 @@ async function captureThemeScreens(win, theme) {
     SCREEN_SIZE,
   )
   await settle(win)
+
+  // A reply with a ```mermaid diagram and a ```chart block, drawn in the chat
+  // (demo adapter "draw" script). Deny the create card first so the turn ends.
+  await createCard.getByRole('button', { name: 'Deny', exact: true }).click()
+  await win.getByRole('button', { name: 'Send', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
+  await editor.click()
+  await win.keyboard.type('Draw the chat open flow and its timings.')
+  await win.keyboard.press('Enter')
+  const diagram = win.locator('[data-chat-visual="mermaid"]').last()
+  const chart = win.locator('[data-chat-visual="chart"]').last()
+  await diagram.scrollIntoViewIfNeeded()
+  await diagram.locator('svg').first().waitFor({ state: 'visible', timeout: 20_000 })
+  await snapScreen(win, 'chat-diagram', theme, diagram)
+  await chart.scrollIntoViewIfNeeded()
+  await chart.locator('svg').first().waitFor({ state: 'visible', timeout: 20_000 })
+  await snapScreen(win, 'chat-chart', theme, chart)
+  // Open in pane shows it over the right pane; Close returns the terminals.
+  await diagram.getByRole('button', { name: 'Open in pane', exact: true }).click()
+  const paneClose = win.getByRole('button', { name: 'Close', exact: true })
+  await paneClose.waitFor({ state: 'visible', timeout: 10_000 })
+  await paneClose.click()
+  await paneClose.waitFor({ state: 'hidden', timeout: 10_000 })
 }
 
 // A deterministic IPC latch exercises the production UI while the demo
@@ -917,6 +1104,86 @@ async function captureChatWaitScreens(win, theme) {
   }
 }
 
+/**
+ * A composer holding one context chip of every kind (file, terminal, an
+ * agent's message, the user's own message, a review, a long file name cut
+ * in the middle), then the hover card of the terminal chip. The draft is
+ * seeded the way the draft store keeps it, in a chat no other screen uses.
+ */
+const CHIP_CHAT = { id: 'side-notes', title: 'Add markdown export' }
+const CHIP_PILLS = [
+  {
+    id: 'chip_file',
+    kind: 'file',
+    label: 'auth.ts (1-7)',
+    content:
+      '@src/api/auth.ts:1-7\n```\nexport async function handleCallback(req) {\n  const state = req.query.state\n```\n',
+  },
+  {
+    id: 'chip_term',
+    kind: 'terminal',
+    label: 'api (12 lines)',
+    content:
+      '[from: api @ 10:29 · npm run dev]\n```\nError: state token expired\n    at handleCallback (src/api/oauth/callback.ts:41:11)\n    at processTicksAndRejections\nPOST /api/oauth/callback 500 in 38ms\n' +
+      Array.from({ length: 8 }, (_, i) => `GET /health 200 in ${i + 2}ms\n`).join('') +
+      '```\n',
+  },
+  {
+    id: 'chip_chat',
+    kind: 'chat-message',
+    label: 'Claude: "The exchange should happen only after the"',
+    content:
+      '> from Claude: "The exchange should happen only after the state token passes validation."\n> Right now it runs first.\n',
+  },
+  {
+    id: 'chip_you',
+    kind: 'chat-message',
+    label: 'you: "Keep the old cookie name, the phone app st…"',
+    content: '> from you: "Keep the old cookie name, the phone app still reads it."\n',
+  },
+  {
+    id: 'chip_review',
+    kind: 'review',
+    label: '3 review conversations · #612 · sync/worker.py:84, sync/worker.py:91, api/retry.py:12',
+    content:
+      'Review conversation on sync/worker.py:84\nReview conversation on sync/worker.py:91\nReview conversation on api/retry.py:12\n',
+  },
+  { id: 'chip_long', kind: 'file', label: 'provider-registry-handoff-preamble.ts (1840-1912)', content: '' },
+]
+const CHIP_DRAFT = `Compare ${CHIP_PILLS.map((pill) => `[[pill:${pill.id}]]`).join(' ')} and tell me which one is wrong.`
+
+async function captureComposerChips(win, theme) {
+  await win.evaluate(
+    ({ id, pills, draft }) => {
+      const drafts = JSON.parse(localStorage.getItem('switchboard.drafts') ?? '{}')
+      const pillsBySession = JSON.parse(localStorage.getItem('switchboard.draftPills') ?? '{}')
+      localStorage.setItem('switchboard.drafts', JSON.stringify({ ...drafts, [id]: draft }))
+      localStorage.setItem('switchboard.draftPills', JSON.stringify({ ...pillsBySession, [id]: pills }))
+    },
+    { id: CHIP_CHAT.id, pills: CHIP_PILLS, draft: CHIP_DRAFT },
+  )
+  await win.reload()
+  await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
+  await win.addStyleTag({ content: `${FREEZE_CSS} .turn-timestamp { visibility: hidden !important; }` })
+  await openConversation(win, CHIP_CHAT.title)
+  const composer = win.locator('.chat-composer').first()
+  const chips = composer.locator('[data-pill-chip]')
+  await chips.nth(CHIP_PILLS.length - 1).waitFor({ state: 'visible', timeout: 20_000 })
+  if ((await chips.count()) !== CHIP_PILLS.length)
+    screenFailures.push(
+      `composer-chips-${theme.toLowerCase()}: expected ${CHIP_PILLS.length} chips, found ${await chips.count()}`,
+    )
+  await snapScreen(win, 'composer-chips', theme, composer)
+  // The hover card: settle() parks the pointer, so hover after it and wait for the card.
+  await settle(win)
+  await composer.locator('[data-pill-chip][data-pill-kind="terminal"]').hover()
+  const card = win.getByRole('tooltip', { name: 'Terminal: api' })
+  await card.waitFor({ state: 'visible', timeout: 5_000 })
+  await win.waitForTimeout(250)
+  await snapAsIs('composer-chip-card', theme, win.locator('[data-chat-slot="primary"]'))
+  await win.mouse.move(SCREEN_SIZE.width / 2, 2)
+}
+
 async function runThemeScreens() {
   const fixture = await prepareScreensFixture()
   for (const theme of THEMES) {
@@ -934,6 +1201,7 @@ async function runThemeScreens() {
     await win.addStyleTag({ content: FREEZE_CSS })
     await captureThemeScreens(win, theme)
     await captureChatWaitScreens(win, theme)
+    await captureComposerChips(win, theme)
     await closeApp()
   }
 }

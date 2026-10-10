@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.thread
 
+import app.switchboard.mobile.domain.remote.AcpAgents
 import java.util.Locale
 
 object ThreadChromePolicy {
@@ -41,7 +42,7 @@ object ThreadChromePolicy {
         "codex" -> "Codex"
         "claude" -> "Claude"
         "opencode" -> "OpenCode"
-        else -> replaceFirstChar(Char::uppercaseChar)
+        else -> AcpAgents.shortLabel(this) ?: replaceFirstChar(Char::uppercaseChar)
     }
 
     private fun String.formatTokenCounts(): String {

@@ -21,11 +21,9 @@ class BrowseParityDecisionsTest {
     }
 
     @Test
-    fun `conversation search appears after eight and matches title only`() {
+    fun `conversation search appears after eight`() {
         assertFalse(BrowseParityDecisions.showConversationSearch(8, ""))
         assertTrue(BrowseParityDecisions.showConversationSearch(9, ""))
-        assertTrue(BrowseParityDecisions.conversationTitleMatches("Release Work", "work"))
-        assertFalse(BrowseParityDecisions.conversationTitleMatches("Release Work", "release/work"))
     }
 
     @Test
