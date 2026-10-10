@@ -100,6 +100,7 @@ jobs:
         if: needs.scope.outputs.code != 'false'
 
       - uses: actions/setup-node@v4
+        id: setup-node
         if: needs.scope.outputs.code != 'false'
         with:
           # 22 to match release.yml — `@electron/rebuild@4` and `node-abi@4`
@@ -108,16 +109,31 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      # Skips both npm ci steps below on a hit. Native modules (node-pty,
+      # better-sqlite3) are per-OS/arch, which the key covers; the exact
+      # node version covers their ABI. No restore-keys: a partial match
+      # would restore a node_modules for the wrong lockfile.
+      - name: Cache node_modules
+        id: cache-node-modules
+        if: needs.scope.outputs.code != 'false'
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/mobile/node_modules
+          key: node-modules-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-node.outputs.node-version }}-${{ hashFiles('package-lock.json', 'apps/mobile/package-lock.json', 'patches/**', 'apps/mobile/patches/**', 'scripts/install-hooks.mjs') }}
+
       # Linux-only: node-pty's native build needs build-essential + python3.
-      # macOS + Windows runners ship the toolchain pre-installed.
+      # macOS + Windows runners ship the toolchain pre-installed. Skipped on
+      # a cache hit - nothing compiles then.
       - name: Install system deps for node-pty (Linux)
-        if: needs.scope.outputs.code != 'false' && matrix.os == 'ubuntu-latest'
+        if: needs.scope.outputs.code != 'false' && steps.cache-node-modules.outputs.cache-hit != 'true' && matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y build-essential python3
 
       # Retry on transient flakes — the Electron CDN and the per-platform
       # Claude SDK tarball occasionally 502 on the windows-latest runner.
       - name: Install dependencies
-        if: needs.scope.outputs.code != 'false'
+        if: needs.scope.outputs.code != 'false' && steps.cache-node-modules.outputs.cache-hit != 'true'
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 10
@@ -132,7 +148,7 @@ jobs:
       # transform on a clean checkout while passing on any machine that has run
       # the mobile install.
       - name: Install mobile dependencies
-        if: needs.scope.outputs.code != 'false'
+        if: needs.scope.outputs.code != 'false' && steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci --prefix apps/mobile
 
       # Unused files and dependencies, and imports of packages that are only
@@ -145,9 +161,12 @@ jobs:
         if: needs.scope.outputs.code != 'false'
         run: npm run typecheck
 
+      # vitest's own default leaves one core idle (numCpus - 1) to keep a
+      # dev machine responsive; a CI runner has nothing else to leave room
+      # for, so use every core.
       - name: Unit tests
         if: needs.scope.outputs.code != 'false'
-        run: npm test
+        run: npm test -- --maxWorkers=100%
 
       # The mobile component suite runs under jest, not vitest, because the root
       # vitest config cannot load anything importing react-native. Without this
@@ -217,11 +236,22 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
+        id: setup-node
         with:
           node-version: '22'
           cache: 'npm'
 
+      # Same node_modules cache as the test job's macos-14 leg (this job
+      # never installs apps/mobile, so the key only covers the root lockfile).
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-visual-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-node.outputs.node-version }}-${{ hashFiles('package-lock.json', 'patches/**', 'scripts/install-hooks.mjs') }}
+
       - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 10
@@ -237,7 +267,10 @@ jobs:
           brew list sqlite >/dev/null 2>&1 || brew install sqlite
           echo "$(brew --prefix sqlite)/bin" >> "$GITHUB_PATH"
 
+      # Skipped on a cache hit: the cache is saved post-job, so a restored
+      # node_modules already carries this rebuild's output.
       - name: Rebuild native modules for Electron
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm run rebuild
 
       - name: Build
