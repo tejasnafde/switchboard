@@ -13,6 +13,8 @@ import { ClaudeAdapter } from './adapters/claude-adapter'
 import { CodexAdapter } from './adapters/codex-adapter'
 import { demoAdapters, demoCatalog } from './adapters/demo-adapter'
 import { OpencodeAcpAdapter } from './adapters/opencode-acp-adapter'
+import { AcpAdapter } from './adapters/acp/acp-adapter'
+import { genericAcpLaunchConfig } from './adapters/acp/agents'
 import { assertCwdReadable } from '../path-access'
 import { RuntimeEventBus } from './event-bus'
 import { DriftWatcher, parseWorktreeList, type WorktreeRef } from './worktree-drift'
@@ -128,6 +130,7 @@ import {
   type RuntimeFileEditedEvent,
 } from '@shared/provider-events'
 import { agentLabel, isAgentProvider, toAgentProvider } from '@shared/types'
+import { GENERIC_ACP_AGENTS, speaksAcp } from '@shared/acp-agents'
 import { answeredHistory, buildHandoffPreamble, handoffBudgetChars, isHandoffSource, planTurnHandoff, stripHandoffPreamble } from '@shared/handoff'
 import { loadConversationHistory } from '../conversations/history'
 import { peekCatalog, probeCatalog } from './catalog-probe'
@@ -169,7 +172,6 @@ type StoppedSessionSnapshot = {
 
 export class ProviderRegistry implements PeerToolHost {
   private adapters: Map<ProviderKind, ProviderAdapter>
-  private opencodeAcp: OpencodeAcpAdapter
   private host: BackendHost
   /**
    * Per-session resolved adapter, so existing sessions stay pinned to the
@@ -291,7 +293,6 @@ export class ProviderRegistry implements PeerToolHost {
     })
     activeRegistry = this
     this.host = host
-    this.opencodeAcp = new OpencodeAcpAdapter()
     // SB_DEMO_ADAPTER=1 swaps in the scripted adapter so the tour recorder
     // (videos/capture-tour.mjs) can capture agent-driven scenes without
     // credentials. Never set by a normal launch.
@@ -300,7 +301,8 @@ export class ProviderRegistry implements PeerToolHost {
       : new Map<ProviderKind, ProviderAdapter>([
         ['claude', new ClaudeAdapter()],
         ['codex', new CodexAdapter()],
-        ['opencode', this.opencodeAcp],
+        ['opencode', new OpencodeAcpAdapter()],
+        ...GENERIC_ACP_AGENTS.map((agent) => [agent, new AcpAdapter(genericAcpLaunchConfig(agent))] as const),
       ]))
     const turnStore = new SqliteTurnAcceptanceStore(() => getDb())
     this.atomicTurnSubmission = atomicTurnSubmission ?? new AtomicUserTurnSubmission({
@@ -868,7 +870,7 @@ export class ProviderRegistry implements PeerToolHost {
     chargedEdge: number | null
     fromRoot: string
     targetRoot: string
-  }): { reason: 'link-removed' | 'target-gone'; message: string } | null {
+  }): { reason: 'link-removed' | 'target-gone' | 'target-busy'; message: string } | null {
     if (input.chargedEdge !== null && this.peerLinks.edgeId(input.fromRoot, input.targetRoot) !== input.chargedEdge) {
       return {
         reason: 'link-removed',
@@ -879,6 +881,13 @@ export class ProviderRegistry implements PeerToolHost {
       return {
         reason: 'target-gone',
         message: `"${input.targetLabel}" stopped or changed profiles before the message went out, so it was NOT delivered. Send it again once that session is running.`,
+      }
+    }
+    // A turn may have started during the checkpoint await; an ACP agent would drop the send.
+    if (speaksAcp(input.adapter.provider) && this.hasOutstandingTurn(input.targetThreadId)) {
+      return {
+        reason: 'target-busy',
+        message: `"${input.targetLabel}" is mid-turn and cannot take a message yet. Try again when it finishes.`,
       }
     }
     return null
@@ -982,10 +991,10 @@ export class ProviderRegistry implements PeerToolHost {
     if (!adapter) {
       throw new Error(`"${targetLabel}" is not running. Open it, then send again.`)
     }
-    // OpenCode ACP is one prompt per turn and DROPS a mid-turn send, so
+    // An ACP agent is one prompt per turn and DROPS a mid-turn send, so
     // delivering into a running turn would record a message the agent never
     // saw. The other adapters queue or steer, so they are fine.
-    if (adapter.provider === 'opencode' && this.hasOutstandingTurn(targetThreadId)) {
+    if (speaksAcp(adapter.provider) && this.hasOutstandingTurn(targetThreadId)) {
       throw new Error(`"${targetLabel}" is mid-turn and cannot take a message yet. Try again when it finishes.`)
     }
 
@@ -1058,7 +1067,8 @@ export class ProviderRegistry implements PeerToolHost {
     if (withdrawn) {
       // A running turn keeps the checkpoint it now has; a fresh one belongs
       // to a turn that will not happen.
-      if (targetCwd && !targetWasMidTurn) this.checkpoints.clear(targetThreadId)
+      // A turn that started meanwhile owns the checkpoint now.
+      if (targetCwd && !targetWasMidTurn && withdrawn.reason !== 'target-busy') this.checkpoints.clear(targetThreadId)
       this.peerGuard.release(verdict.id, key)
       releaseAgentSlot()
       log.warn(`peer message withdrawn before delivery (${withdrawn.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
@@ -1799,8 +1809,8 @@ export class ProviderRegistry implements PeerToolHost {
           if (this.switchingSessions.has(threadId)) {
             throw new TurnNotAcceptedError('Session queue full while a profile switch is in progress')
           }
-          if (adapter.provider === 'opencode' && this.hasOutstandingTurn(threadId) && input.delivery !== 'queue') {
-            throw new TurnNotAcceptedError('OpenCode is mid-turn and cannot take another message yet')
+          if (speaksAcp(adapter.provider) && this.hasOutstandingTurn(threadId) && input.delivery !== 'queue') {
+            throw new TurnNotAcceptedError(`${agentLabel(toAgentProvider(adapter.provider))} is mid-turn and cannot take another message yet`)
           }
           try {
             const cwd = this.sessionCwd.get(threadId)
@@ -2465,14 +2475,14 @@ export class ProviderRegistry implements PeerToolHost {
 
       const agentType = toAgentProvider(descriptor.provider)
       const target = getProviderInstanceFull(input.targetInstanceId)
-      const remoteTargetConfig = agentType !== 'opencode' && process.env.SWITCHBOARD_REMOTE && input.targetRemoteConfigDir
+      const remoteTargetConfig = (agentType === 'claude-code' || agentType === 'codex') && process.env.SWITCHBOARD_REMOTE && input.targetRemoteConfigDir
         ? remoteProviderConfigDir(agentType, input.targetRemoteConfigDir)
         : null
       if (!remoteTargetConfig && (!target || !target.enabled || target.agentType !== agentType)) {
         return failure('invalid-instance', 'That profile is unavailable for this provider')
       }
-      if (descriptor.provider === 'opencode') {
-        return failure('unsupported-provider', 'OpenCode cannot preserve an existing thread across profile changes yet')
+      if (speaksAcp(descriptor.provider)) {
+        return failure('unsupported-provider', `${agentLabel(agentType)} cannot preserve an existing thread across profile changes yet`)
       }
 
       // Claim the thread before any transcript migration can await. Otherwise
@@ -2502,7 +2512,7 @@ export class ProviderRegistry implements PeerToolHost {
         ...(input.targetRemoteConfigDir ? { remoteConfigDir: input.targetRemoteConfigDir } : {}),
       }
       const targetEventGate: ProviderEventGate = { state: 'staging', events: [] }
-      const oldRemoteConfig = oldCredentials.remoteConfigDir && agentType !== 'opencode'
+      const oldRemoteConfig = oldCredentials.remoteConfigDir && (agentType === 'claude-code' || agentType === 'codex')
         ? remoteProviderConfigDir(agentType, oldCredentials.remoteConfigDir)
         : null
       const codexDefaultDir = remoteProviderConfigDir('codex', undefined)
@@ -2689,8 +2699,8 @@ export class ProviderRegistry implements PeerToolHost {
       const acceptedImages = validateUserMessageImages(images)
       firstContentSpan = this.beginFirstTurnTiming(threadId)
       log.info(`sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${acceptedImages?.length ?? 0}`)
-      if (adapter.provider === 'opencode' && this.hasOutstandingTurn(threadId)) {
-        throw new TurnNotAcceptedError('OpenCode is mid-turn and cannot take another message yet')
+      if (speaksAcp(adapter.provider) && this.hasOutstandingTurn(threadId)) {
+        throw new TurnNotAcceptedError(`${agentLabel(toAgentProvider(adapter.provider))} is mid-turn and cannot take another message yet`)
       }
       const dispatch = async (): Promise<void> => {
         // These operations happen before the provider boundary. A failure here

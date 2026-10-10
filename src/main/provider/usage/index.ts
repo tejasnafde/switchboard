@@ -6,6 +6,8 @@
  * CLI (see claude-cli-refresh.ts).
  */
 
+import { isGenericAcpAgent } from '@shared/acp-agents'
+import { agentLabel } from '@shared/types'
 import { getProviderInstanceFull, type ProviderInstanceRow } from '../../db/provider-instances'
 import { resolveInstanceEnv } from '../instance-env'
 import { findCodexPath } from '../adapters/codex-adapter'
@@ -107,6 +109,10 @@ async function probe(id: string, agentType: ProviderUsage['agentType'], opts: Us
   if (instance.agentType === 'opencode') {
     return flat(id, 'opencode', 'not-applicable',
       'OpenCode runs on your own provider API keys, so there is no subscription quota to report.')
+  }
+  if (isGenericAcpAgent(instance.agentType)) {
+    return flat(id, instance.agentType, 'not-applicable',
+      `${agentLabel(instance.agentType)} does not report a quota over the Agent Client Protocol.`)
   }
 
   return flat(id, instance.agentType, 'unsupported', `Usage reporting is not available for ${instance.agentType}.`)

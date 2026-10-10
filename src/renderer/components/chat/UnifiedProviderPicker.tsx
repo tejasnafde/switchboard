@@ -1,3 +1,4 @@
+import { offeredAgentTypes, useInstalledAcpAgents } from '../../services/acp-agent-availability'
 import type { ChatWait } from '../../stores/chat-wait-store'
 import { LoadingStatus } from '../ui/loading-status'
 /**
@@ -74,7 +75,6 @@ interface UnifiedProviderPickerProps {
   resolvedModel?: string
 }
 
-const AGENTS = AGENT_TYPES.map((value) => ({ value, label: agentLabel(value) }))
 
 export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
   const {
@@ -111,6 +111,13 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
     setTermInstanceId((current) => nextTermInstanceId(prevLoginAgentTypeRef.current, loginAgentType, current))
     prevLoginAgentTypeRef.current = loginAgentType
   }, [loginAgentType])
+
+  // Generic ACP agents get a tab only when their CLI is installed.
+  const installedAcpAgents = useInstalledAcpAgents(open)
+  const agents = useMemo(
+    () => offeredAgentTypes(AGENT_TYPES, installedAcpAgents, new Set([agentType])).map((value) => ({ value, label: agentLabel(value) })),
+    [installedAcpAgents, agentType],
+  )
 
   const allInstances = useProviderInstanceStore((s) => s.instances)
   const loaded = useProviderInstanceStore((s) => s.loaded)
@@ -233,6 +240,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           showCustom={showCustom}
           setShowCustom={setShowCustom}
           agentType={agentType}
+          agents={agents}
           canChangeAgent={canChangeAgent}
           // Stays open so the user sees the instance/model lists swap.
           onAgentTypeChange={onAgentTypeChange}
@@ -312,6 +320,7 @@ interface PopoverProps {
   showCustom: boolean
   setShowCustom: (show: boolean) => void
   agentType: AgentType
+  agents: ReadonlyArray<{ value: AgentType; label: string }>
   canChangeAgent: boolean
   onAgentTypeChange: (t: AgentType) => void
   instances: ProviderInstance[]
@@ -337,7 +346,7 @@ const sectionLabelClass = 'mb-[6px] text-[10px] font-[600] uppercase tracking-[0
 
 function UnifiedPickerPopover(props: PopoverProps) {
   const {
-    searchRef, showCustom, setShowCustom, agentType, canChangeAgent, onAgentTypeChange,
+    searchRef, showCustom, setShowCustom, agentType, agents, canChangeAgent, onAgentTypeChange,
     instances, effectiveInstanceId, showRail, onInstanceChange,
     model, models, onModelChange,
     allInstances, termCommand, setTermCommand, termInstanceId, setTermInstanceId,
@@ -360,7 +369,7 @@ function UnifiedPickerPopover(props: PopoverProps) {
     <>
       {/* Agent tabs */}
       <div className="flex gap-[2px] border-b border-[var(--border)] bg-[var(--bg-tertiary)] p-[6px]">
-        {AGENTS.map((a) => {
+        {agents.map((a) => {
           const active = a.value === agentType
           const locked = !canChangeAgent && !active
           return (

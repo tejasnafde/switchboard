@@ -24,6 +24,7 @@
 @source '../components/chat/ChatPanel.tsx';
 @source '../components/terminal/TerminalStrip.tsx';
 @source '../components/chat/ChatLanding.tsx';
+@source '../components/chat/ChatPanel.tsx';
 @source '../components/chat/BranchPicker.tsx';
 @source '../components/chat/HostWriteApprovalCard.tsx';
 @source '../components/chat/HostWriteReviewParts.tsx';
@@ -40,6 +41,7 @@
 @source '../components/chat/HistoryToolCall.tsx';
 @source '../components/chat/MessageList.tsx';
 @source '../components/chat/lexical/RichChatTextarea.tsx';
+@source '../components/chat/lexical/PillChipVisual.tsx';
 @source '../components/CommandPalette.tsx';
 @source '../components/SessionPickerModal.tsx';
 @source '../components/GoToChatDialog.tsx';

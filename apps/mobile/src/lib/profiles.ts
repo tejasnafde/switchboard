@@ -5,13 +5,26 @@
  * react-native cannot load in a node test.
  */
 import type { ProviderKind } from '@shared/provider-events'
+import { isGenericAcpAgent } from '@shared/acp-agents'
 import { AGENT_PROVIDERS, agentLabel, defaultInstanceId, providerKindFor, toAgentProvider, type AgentType, type ProviderInstance } from '@shared/types'
 
-export const AGENTS: { kind: ProviderKind; label: string; agentType: AgentType }[] = AGENT_PROVIDERS.map((agentType) => ({
-  kind: providerKindFor(agentType),
-  label: agentLabel(agentType),
-  agentType,
-}))
+type AgentChoice = { kind: ProviderKind; label: string; agentType: AgentType }
+
+function agentChoice(agentType: AgentType): AgentChoice {
+  return { kind: providerKindFor(agentType), label: agentLabel(agentType), agentType }
+}
+
+/**
+ * Agents a phone offers. The generic ACP agents (Gemini CLI, Vibe, Cline,
+ * Copilot) are staged on phones (flag mobile_generic_acp_agents): a phone
+ * shows and continues their chats but does not start or switch to them.
+ */
+export const AGENTS: AgentChoice[] = AGENT_PROVIDERS.filter((agentType) => !isGenericAcpAgent(agentType)).map(agentChoice)
+
+/** The offered agents, plus the chat's own agent when it is one of the staged ones. */
+export function agentsFor(current: ProviderKind): AgentChoice[] {
+  return isGenericAcpAgent(current) ? [...AGENTS, agentChoice(current)] : AGENTS
+}
 
 export function agentTypeFor(kind: ProviderKind): AgentType {
   return toAgentProvider(kind)

@@ -55,6 +55,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import app.switchboard.mobile.data.remote.NewSessionState
 import app.switchboard.mobile.data.remote.NewSessionWorkspace
+import app.switchboard.mobile.domain.remote.AcpAgents
 import app.switchboard.mobile.domain.remote.NewSessionDecisions
 import app.switchboard.mobile.domain.remote.NewSessionModelOption
 import app.switchboard.mobile.domain.remote.ProviderInstance
@@ -572,6 +573,8 @@ object NewSessionSelectorPolicy {
         ProviderKind.Claude -> "Claude"
         ProviderKind.Codex -> "Codex"
         ProviderKind.OpenCode -> "OpenCode"
+        ProviderKind.Gemini, ProviderKind.Vibe, ProviderKind.Cline, ProviderKind.Copilot ->
+            AcpAgents.shortLabel(provider.wire) ?: provider.wire
     }
 
     fun runtimeLabel(mode: RuntimeMode): String = when (mode) {
