@@ -48,7 +48,13 @@ import { registerWorktreeManagerHandlers } from './ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from './ipc/provider-instances'
 import { attachPullRequestAutoLink, registerPullRequestHandlers, startPullRequestHistoryScan } from './ipc/pull-requests'
 import { tryResolveProviderInstance } from './db/provider-instances'
-import { registerAutoUpdater, quitAndInstall, reportInstallStatus } from './updater'
+import {
+  registerAutoUpdater,
+  quitAndInstall,
+  reportInstallStatus,
+  stopAutoUpdaterScheduler,
+  resumeAutoUpdaterScheduler,
+} from './updater'
 import { QuitCoordinator } from './quit-coordinator'
 import { backgroundByDefault } from './provider/agent-spawn-env'
 import { noteQuitSource, quitSource } from './quit-source'
@@ -98,6 +104,7 @@ const quitCoordinator = new QuitCoordinator(
   async () => {
     const reports = await runShutdownSequence([
       { name: 'window-bounds', run: () => { if (mainWindow) saveWindowBounds(mainWindow) } },
+      { name: 'updater', run: stopAutoUpdaterScheduler },
       { name: 'terminals', run: shutdownTerminals },
       { name: 'providers', run: () => providerRegistry?.stopAll(), timeoutMs: 5_000 },
       { name: 'push', run: () => { detachPush?.(); detachPush = null; detachAutoLink?.(); detachAutoLink = null } },
@@ -550,6 +557,7 @@ function createWindow(): BrowserWindow {
       onRecovered: () => {
         reopenDbAfterAbortedQuit()
         resumeIdeAfterAbortedQuit()
+        resumeAutoUpdaterScheduler()
       },
     })
     if (started) reportInstallStatus(window, { kind: 'installing' })

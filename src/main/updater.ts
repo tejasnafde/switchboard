@@ -22,7 +22,7 @@
  * The module is intentionally tiny - most logic lives inside
  * electron-updater itself. We just adapt the events to our IPC shape.
  */
-import { app, ipcMain, type BrowserWindow } from 'electron'
+import { app, ipcMain, powerMonitor, type BrowserWindow } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { AppChannels } from '@shared/ipc-channels'
 import type { UpdateStatus } from '@shared/update-status'
@@ -30,6 +30,7 @@ import { withTimeout } from '@shared/promise-timeout'
 import { createMainLogger } from './logger'
 import { friendlyUpdateError, isStaleDownloadError, isCheckTimeout } from './updater-error'
 import { noteQuitSource } from './quit-source'
+import { startUpdateScheduler, type ScheduledCheckReason } from './updater-schedule'
 
 const log = createMainLogger('updater')
 
@@ -41,6 +42,22 @@ let lastStatus: UpdateStatus = { kind: 'idle' }
 const updaterWindows = new Set<BrowserWindow>()
 /** Guards the one-shot re-download after a purged staging file. */
 let staleDownloadRetried = false
+/** True for the duration of any checkForUpdates() call - manual, initial, or scheduled. */
+let checkInFlight = false
+/**
+ * The real `autoUpdater.checkForUpdates()` call currently running, shared by
+ * every tracked caller. Keyed off this (not off each caller's timeout-raced
+ * view of it) so `checkInFlight` reflects whether the actual request is
+ * still running - a caller's `withTimeout` can give up on a stalled request
+ * and report it without the request itself having settled, and dropping
+ * `checkInFlight` at that point would let a scheduled tick pile another
+ * timeout-wrapped view onto the same stuck request pointlessly.
+ */
+let inFlightCheck: ReturnType<typeof autoUpdater.checkForUpdates> | null = null
+/** Downloads started by a check that have not settled yet (`result.downloadPromise`). */
+let downloadsInFlight = 0
+/** Clears the hourly/resume scheduler. Set once registered, null after `stopAutoUpdaterScheduler`. */
+let stopScheduler: (() => void) | null = null
 
 /**
  * Backstop against a `checkForUpdates()` that never returns - not a verdict on
@@ -51,6 +68,50 @@ let staleDownloadRetried = false
  * the same in-flight request.
  */
 const CHECK_TIMEOUT_MS = 120_000
+
+/**
+ * The one path every checkForUpdates() call goes through - manual, initial,
+ * and the hourly/resume scheduler below - so `checkInFlight` covers all of
+ * them and a scheduled tick never piles onto a check already running. A
+ * concurrent call reuses the same real request (`inFlightCheck`) rather than
+ * starting another one, each still racing its own `withTimeout` so the
+ * timeout behavior a caller sees is unchanged.
+ */
+function checkForUpdatesTracked(): ReturnType<typeof autoUpdater.checkForUpdates> {
+  if (!inFlightCheck) {
+    checkInFlight = true
+    inFlightCheck = autoUpdater
+      .checkForUpdates()
+      .then((result) => {
+        trackDownload(result)
+        return result
+      })
+      .finally(() => {
+        checkInFlight = false
+        inFlightCheck = null
+      })
+  }
+  return withTimeout(inFlightCheck, CHECK_TIMEOUT_MS, 'Update check')
+}
+
+/**
+ * Counts a download the check started until it settles, so a scheduled check
+ * waits for it. Its failure is reported by the `error` event handler; the
+ * catch here only keeps the rejection from going unhandled.
+ */
+function trackDownload(result: Awaited<ReturnType<typeof autoUpdater.checkForUpdates>>): void {
+  const download = result?.downloadPromise
+  if (!download) return
+  downloadsInFlight += 1
+  download
+    .catch((err) => {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`update download failed: ${message}`)
+    })
+    .finally(() => {
+      downloadsInFlight -= 1
+    })
+}
 
 function trackWindow(window: BrowserWindow): void {
   if (updaterWindows.has(window)) return
@@ -95,7 +156,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
       // black-holes until the OS gives up. electron-updater dedups concurrent
       // checks, so a retry click during a stall inherits the stuck request.
       const startedAt = Date.now()
-      const result = await withTimeout(autoUpdater.checkForUpdates(), CHECK_TIMEOUT_MS, 'Update check')
+      const result = await checkForUpdatesTracked()
       log.info(`manual update check resolved in ${Date.now() - startedAt}ms`)
       // No `result` means the channel file was missing or unreachable;
       // electron-updater logs the underlying reason. Surface as error.
@@ -167,7 +228,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
       staleDownloadRetried = true
       log.warn('update staging file vanished mid-download - retrying once')
       send({ kind: 'checking' })
-      withTimeout(autoUpdater.checkForUpdates(), CHECK_TIMEOUT_MS, 'Update check').catch((retryErr) => {
+      checkForUpdatesTracked().catch((retryErr) => {
         const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr)
         log.error(`stale-download retry failed: ${retryMsg}`)
         send({ kind: 'error', message: friendlyUpdateError(retryMsg) })
@@ -182,7 +243,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
   // `checking-for-update` event fires before the listener is attached
   // and the UI looks stuck on "idle".
   setTimeout(() => {
-    withTimeout(autoUpdater.checkForUpdates(), CHECK_TIMEOUT_MS, 'Update check').catch((err) => {
+    checkForUpdatesTracked().catch((err) => {
       const message = err instanceof Error ? err.message : String(err)
       log.warn(`initial checkForUpdates failed: ${message}`)
       // Unstick the UI: without this, a hung launch-time check leaves the
@@ -193,6 +254,71 @@ export function registerAutoUpdater(window: BrowserWindow): void {
       })
     })
   }, 3_000)
+
+  startAutoUpdaterScheduler()
+}
+
+/**
+ * A periodic (hourly) or resume-triggered check. Deliberately quiet on the
+ * happy path - a routine check that finds nothing new logs nothing, so a
+ * desktop left running for days doesn't fill the log with one line an hour.
+ * Only a failure, or a no-result (unreachable server), gets a line; a found
+ * update already reaches the renderer and the log via the event handlers
+ * above and electron-updater's own wired-through logger.
+ */
+function runScheduledCheck(reason: ScheduledCheckReason): void {
+  checkForUpdatesTracked()
+    .then((result) => {
+      if (!result) {
+        log.warn(`${reason} update check: could not reach update server`)
+        send({ kind: 'error', message: 'Could not reach update server' })
+      }
+    })
+    .catch((err) => {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`${reason} update check failed: ${message}`)
+      send({
+        kind: isCheckTimeout(message) ? 'slow' : 'error',
+        message: friendlyUpdateError(message),
+      })
+    })
+}
+
+function startAutoUpdaterScheduler(): void {
+  if (stopScheduler) return
+  stopScheduler = startUpdateScheduler({
+    getState: () => ({
+      checkInFlight,
+      downloadInFlight: downloadsInFlight > 0,
+      downloaded: lastStatus.kind === 'downloaded',
+    }),
+    runCheck: runScheduledCheck,
+    onResume: (listener) => {
+      powerMonitor.on('resume', listener)
+      return () => powerMonitor.off('resume', listener)
+    },
+  })
+}
+
+/**
+ * Stops the hourly/resume scheduler. Called from the app's ordered shutdown
+ * sequence so the interval is cleared well before the process exits, rather
+ * than relying only on its unref() to keep it from firing mid-teardown.
+ */
+export function stopAutoUpdaterScheduler(): void {
+  stopScheduler?.()
+  stopScheduler = null
+}
+
+/**
+ * Restarts the scheduler after a quit that did not happen (e.g. an aborted
+ * `quitAndInstall`, see `onRecovered` in src/main/index.ts) - teardown
+ * already stopped it, and the app keeps running, so periodic checks must
+ * resume for the rest of the session.
+ */
+export function resumeAutoUpdaterScheduler(): void {
+  if (!app.isPackaged) return
+  startAutoUpdaterScheduler()
 }
 
 /**
