@@ -676,9 +676,27 @@ async function captureThemeScreens(win, theme) {
   // text after it in place.
   await win.addStyleTag({ content: '[data-credential] { display: inline-block; width: 260px; overflow: hidden; white-space: nowrap; vertical-align: bottom }' })
   await snapScreen(win, 'settings-accounts', theme, settings, [settings.locator('[data-credential]')])
+  // A Codex account at its 5-hour limit with two banked resets (demoUsage
+  // answers `-limit` ids so), added after the page shot so that baseline
+  // keeps its cards. The card offers "Use reset"; its confirm is shot too
+  // and cancelled, so nothing is spent (the demo spend is fake anyway).
+  await win.evaluate(() => window.api.providerInstances.upsert({
+    id: 'codex-limit', agentType: 'codex', displayName: 'Personal', accentColor: '#10a37f', authMode: 'env', env: null, oauthDir: null, enabled: true,
+  }))
+  // The page lists accounts when it opens, so leave it and come back.
+  await settings.getByRole('button', { name: /^Appearance/ }).click()
+  await settings.getByRole('button', { name: /^Accounts & models/ }).click()
+  const limitCard = settings.locator('[data-account="codex-limit"]')
+  await limitCard.getByRole('button', { name: 'Use reset', exact: true }).waitFor({ state: 'visible' })
+  await snapScreen(win, 'accounts-codex-reset', theme, limitCard, [limitCard.locator('[data-credential]')])
+  await limitCard.getByRole('button', { name: 'Use reset', exact: true }).click()
+  await limitCard.getByRole('alertdialog', { name: 'Use a Codex reset' }).waitFor({ state: 'visible' })
+  await snapScreen(win, 'accounts-codex-reset-confirm', theme, limitCard, [limitCard.locator('[data-credential]')])
+  await limitCard.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await limitCard.getByRole('alertdialog').waitFor({ state: 'detached' })
   // Delete them through the menu, or the composer chip names the account
   // on every later screen.
-  for (const name of ['akshaya', 'aditya']) {
+  for (const name of ['akshaya', 'aditya', 'Personal']) {
     await settings.getByRole('button', { name: `Actions for ${name}` }).click()
     await win.getByRole('button', { name: 'Delete', exact: true }).click()
     await win.getByRole('alertdialog', { name: `Delete "${name}"?` }).getByRole('button', { name: 'Delete' }).click()

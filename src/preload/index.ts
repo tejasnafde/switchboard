@@ -647,6 +647,9 @@ const api = {
       transport.invoke(ProviderInstanceChannels.TEST, id),
     usage: (id: string, opts?: { force?: boolean; refreshWithTurn?: boolean }): Promise<import('@shared/provider-usage').ProviderUsage> =>
       transport.invoke(ProviderInstanceChannels.USAGE, id, opts),
+    /** Spend one banked Codex reset; main owns the idempotency key. */
+    consumeReset: (id: string, creditId: string | null): Promise<import('@shared/codex-reset').CodexResetResult> =>
+      transport.invoke(ProviderInstanceChannels.CONSUME_RESET, id, creditId),
     createOauthDir: (dir: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
       transport.invoke(ProviderInstanceChannels.CREATE_OAUTH_DIR, dir),
   },

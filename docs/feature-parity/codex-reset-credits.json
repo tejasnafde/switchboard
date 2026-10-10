@@ -1,0 +1,69 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "codex-reset-credits",
+  "summary": "Settings > Accounts shows a Codex account's banked rate-limit resets (\"Resets available: N\" and the next expiry) in place of the old reset-credits overage line, and offers \"Use reset\" when a window is above 85% or flagged reached and a reset is banked. An inline confirm spends one through account/rateLimitResetCredit/consume on a short-lived codex app-server with the usage read's env. Main mints the idempotency key on the click and keeps it per account until a terminal outcome, so Try again after an unknown result reuses it; the soonest-expiring credit id is passed when the list is known. Every outcome is followed by a fresh usage read. The spend channel is admin-scoped.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/settings/CodexResetControls.tsx",
+        "src/renderer/components/settings/AccountsPanel.tsx",
+        "src/renderer/stores/provider-instance-store.ts",
+        "src/preload/index.ts",
+        "src/main/provider/usage/codex-reset.ts",
+        "src/main/provider/usage/index.ts",
+        "src/main/ipc/provider-instances.ts",
+        "tests/unit/codex-reset-controls.test.ts",
+        "tests/unit/codex-reset-consume.test.ts",
+        "e2e/visual-regressions.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native app has no Accounts screen and never calls provider-instances:usage, so it shows no Codex usage today and has nowhere to show the count. It cannot spend a reset either: provider-instances:consume-reset is admin-scoped and a phone holds the chat scope only."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android calls provider-instances:list only and never reads usage, so it shows no Codex usage today. The spend channel is admin-scoped and refused to its chat-scoped session."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/codex-reset.ts",
+        "src/shared/codex-usage-parse.ts",
+        "src/shared/provider-usage.ts",
+        "src/shared/ipc-channels.ts",
+        "src/shared/device-auth.ts",
+        "tests/unit/codex-reset.test.ts",
+        "tests/unit/codex-usage-parse.test.ts",
+        "tests/unit/device-auth.test.ts"
+      ],
+      "reason": "New channel provider-instances:consume-reset (admin-scoped). ProviderUsage gains an optional resetCredits field and UsageWindow an optional reached flag; the reset-credits overage row is no longer emitted. An older desktop against a newer backend shows no reset line and no button; a newer desktop against an older backend sees no resetCredits and shows neither, and the spend channel is never called."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored: the pending idempotency key lives in main-process memory until a terminal outcome and is gone on restart. No table, setting or migration."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, entitlement, deep link or update-channel change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/codex-usage-parse.test.ts: rateLimitResetCredits is read into resetCredits (count, expiries from unix seconds, titles, unknown statuses, a null list), not an overage row, and the reached flag marks its window.",
+      "tests/unit/codex-reset.test.ts: outcome mapping, when Use reset is offered (critical or reached, a reset banked; at the limit after nothingToReset), the soonest-expiring credit, the expiry note, the confirm rows and the approved result copy.",
+      "tests/unit/codex-reset-consume.test.ts drives a fake codex app-server script: the key and credit id are sent, a timeout is retried once with the same key, a dead server is unknown, an unknown outcome keeps the key for the next click while a terminal one drops it and the next click mints a new one, every outcome is followed by a usage read, and a second click joins the first.",
+      "tests/unit/codex-reset-controls.test.ts (jsdom): button visibility, the inline confirm and Cancel, the locked Applying state, the result banners, Try again after unknown.",
+      "tests/unit/device-auth.test.ts: a phone is refused provider-instances:consume-reset and keeps provider-instances:usage.",
+      "Visual screens accounts-codex-reset and accounts-codex-reset-confirm in Dark, Light and Translucent from the demo adapter's at-limit Codex account.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Never run against a real Codex account, by rule: consume is only ever sent to the fake app-server. The live outcome for a given window state (which windows Codex clears, its eligibility threshold) is not observed.",
+      "The demo launch answers a spend with nothingToReset and never calls Codex."
+    ]
+  }
+}

@@ -646,6 +646,23 @@ export function demoUsage(id: string, agentType: AgentType): ProviderUsage {
   }
   if (id.endsWith('-personal')) return reading('unauthenticated', [], 'the sign-in expired after 30 days without use')
   if (id.endsWith('-work')) return reading('ok', pair(1, 280, 0, 6 * 1440))
+  if (id.endsWith('-limit')) {
+    // A Codex account at its 5-hour limit with two banked resets, so the
+    // Accounts page offers "Use reset". Expiries sit at midday so the date
+    // reads the same in every timezone the suite runs in.
+    const [session, weekly] = pair(100, 232, 72, 3 * 1440 + 240)
+    const midday = (days: number) => Math.floor(now / 86_400_000 + days) * 86_400_000 + 12 * 3_600_000
+    return {
+      ...reading('ok', [{ ...session, severity: 'critical', reached: true }, weekly]),
+      resetCredits: {
+        availableCount: 2,
+        credits: [
+          { id: 'demo-reset-b', expiresAtMs: midday(34), status: 'available', title: 'Weekly limit reset' },
+          { id: 'demo-reset-a', expiresAtMs: midday(19), status: 'available', title: 'Weekly limit reset' },
+        ],
+      },
+    }
+  }
   if (agentType === 'codex') return reading('ok', pair(18, 182, 9, 3 * 1440))
   return reading('ok', pair(42, 134, 81, 2 * 1440))
 }

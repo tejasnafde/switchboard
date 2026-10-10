@@ -12,6 +12,7 @@ import { execFile } from 'child_process'
 import { mkdirSync } from 'fs'
 import { homedir } from 'os'
 import { ProviderInstanceChannels } from '@shared/ipc-channels'
+import type { CodexResetResult } from '@shared/codex-reset'
 import { formatClaudeAuthStatus, oauthLoginCommand } from '@shared/provider-auth-format'
 import { createMainLogger as createLogger } from '../logger'
 import {
@@ -34,7 +35,7 @@ import { invalidateCatalog } from '../provider/catalog-probe'
 import { resolveInstanceEnv } from '../provider/instance-env'
 import { resolveOauthDirForCreate } from '../provider/oauth-path'
 import { demoUsage } from '../provider/adapters/demo-adapter'
-import { fetchInstanceUsage, invalidateUsage, type UsageRequestOptions } from '../provider/usage'
+import { consumeInstanceReset, fetchInstanceUsage, forgetResetAttempt, invalidateUsage, type UsageRequestOptions } from '../provider/usage'
 
 const log = createLogger('ipc:provider-instances')
 let demoUsageCalls = 0
@@ -61,6 +62,7 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
   host.handle(ProviderInstanceChannels.DELETE, (id: string) => {
     log.info(`delete ${id}`)
     invalidateUsage(id)
+    forgetResetAttempt(id)
     invalidateCatalog()
     return deleteProviderInstance(id)
   })
@@ -78,6 +80,17 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
       return demoUsage(id, getProviderInstanceFull(id, { withEnv: false })?.agentType ?? 'claude-code')
     }
     return fetchInstanceUsage(id, opts)
+  })
+
+  host.handle(ProviderInstanceChannels.CONSUME_RESET, async (id: unknown, creditId?: unknown): Promise<CodexResetResult> => {
+    if (typeof id !== 'string' || id.length === 0) throw new Error('consume-reset needs an instance id')
+    const credit = typeof creditId === 'string' && creditId.length > 0 && creditId.length <= 200 ? creditId : null
+    if (process.env.SB_DEMO_ADAPTER === '1') {
+      // Never a real spend in a demo launch.
+      const agentType = getProviderInstanceFull(id, { withEnv: false })?.agentType ?? 'codex'
+      return { outcome: 'nothingToReset', usage: demoUsage(id, agentType) }
+    }
+    return consumeInstanceReset(id, credit)
   })
 
   host.handle(ProviderInstanceChannels.CREATE_OAUTH_DIR, (dir: string) => {

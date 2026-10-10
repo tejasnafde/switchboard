@@ -25,6 +25,8 @@ export interface UsageWindow {
   severity: UsageSeverity
   /** Optional secondary text, e.g. a dollar figure. Never a credential. */
   detail?: string
+  /** The provider flagged this window's limit as reached (Codex `rateLimitReachedType`). */
+  reached?: boolean
 }
 
 /**
@@ -41,6 +43,24 @@ export interface UsageOverage {
   detail?: string
   /** Provider reason string, e.g. `org_spend_cap_reached`. */
   blockedReason?: string | null
+}
+
+/** One banked Codex rate-limit reset (`rateLimitResetCredits.credits[]`). */
+export interface UsageResetCredit {
+  id: string
+  /** Epoch ms. null when the credit does not expire or the time is unknown. */
+  expiresAtMs: number | null
+  status: 'available' | 'redeeming' | 'redeemed' | 'unknown'
+  title: string | null
+}
+
+/**
+ * Banked resets an account can spend to clear its limits. `credits` is null
+ * when the provider reports only the count.
+ */
+export interface UsageResetCredits {
+  availableCount: number
+  credits: UsageResetCredit[] | null
 }
 
 export type UsageStatus =
@@ -67,6 +87,8 @@ export interface ProviderUsage {
   account: string | null
   windows: UsageWindow[]
   overage: UsageOverage[]
+  /** Codex only: banked rate-limit resets. Absent when the provider reports none. */
+  resetCredits?: UsageResetCredits
   /** Present when status !== 'ok'. Actionable prose, never a credential. */
   message?: string
   /** Copyable remediation command, mirroring the existing login-command affordance. */
