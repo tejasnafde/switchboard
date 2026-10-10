@@ -82,7 +82,7 @@
         "src/preload/routing-table.ts",
         "apps/mobile/src/screens/NewSessionScreen.tsx",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
-        "docs/plans/2026-08-24-worktree-creation-transaction-design.md",
+        "docs/plans/archive/2026-08-24-worktree-creation-transaction-design.md",
         "tests/unit/worktree-creation-host.test.ts",
         "tests/unit/worktree-creation-preload-api.test.ts",
         "tests/unit/ws-host-auth.test.ts",
