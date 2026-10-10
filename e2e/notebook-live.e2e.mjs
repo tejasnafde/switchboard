@@ -2,7 +2,7 @@
 /**
  * LIVE notebook-mirror probe: a real Claude agent in a throwaway repo is asked
  * to edit a Jupyter notebook. Asserts the full Phase 1 pipeline
- * (docs/plans/2026-07-18-data-scientist-mode-design.md):
+ * (docs/plans/archive/2026-07-18-data-scientist-mode-design.md):
  *   - the agent edits the .py mirror, never the .ipynb JSON
  *   - direct .ipynb writes (if attempted) are denied with the redirect message
  *   - the sync engine propagates the mirror edit into the .ipynb, preserving

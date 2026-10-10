@@ -194,8 +194,9 @@ export function isHandoffSource(value: string): value is HandoffSource {
 /**
  * The handoff a turn to `target` needs while `pendingFrom` is scheduled. A
  * provider that resumed its own native session and has taken part before
- * gets only the turns since it left (a delta); otherwise the whole
- * conversation. `preamble` is null when there is nothing to replay.
+ * gets only the turns since it left (a delta), and nothing on a profile
+ * restart it never left; otherwise the whole conversation. `preamble` is
+ * null when there is nothing to replay.
  */
 export function planTurnHandoff(input: {
   messages: ReadonlyArray<HandoffSourceMessage>
@@ -205,11 +206,12 @@ export function planTurnHandoff(input: {
   maxChars?: number
 }): { preamble: string | null; markerText: string } {
   const { pendingFrom, target } = input
-  const since = pendingFrom !== target && input.resumedNatively
-    ? handoffDeltaStart(input.messages, agentLabel(target))
-    : null
+  const since = input.resumedNatively ? handoffDeltaStart(input.messages, agentLabel(target)) : null
+  // The same agent resumed its own session (a profile restart that kept it):
+  // its transcript holds every turn up to its last switch away, if any.
+  const seenAll = pendingFrom === target && input.resumedNatively && since === null
   return {
-    preamble: buildHandoffPreamble(input.messages, { maxChars: input.maxChars, ...(since !== null ? { since } : {}) }),
+    preamble: seenAll ? null : buildHandoffPreamble(input.messages, { maxChars: input.maxChars, ...(since !== null ? { since } : {}) }),
     markerText: pendingFrom === target
       ? `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(target)} profile restarted with visible history`
       : `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(pendingFrom)} → ${agentLabel(target)}`,

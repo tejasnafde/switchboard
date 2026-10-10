@@ -1,0 +1,79 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "message-search",
+  "summary": "Message search (cmd+shift+F on the desktop, the search screen on native Android) matches better, orders by relevance with recency as the tiebreak, and names the chat. The backend splits the query into words (runs of letters and digits, the way the FTS tokenizer does), so punctuation, quotes, parentheses, *, :, ^, - and bare AND/OR/NOT/NEAR can no longer make an FTS syntax error that fell back to a slow exact-string scan; every word must match, each as a word prefix (\"sync\" finds \"syncing\"). The LIKE scan stays for a real FTS failure only, and logs it (error code only). Results order by: the words together as typed first, then bm25 relevance, and among results within the same tenth of the best score the newer message first (shared pure rule orderMessageSearchResults). Archived chats stay out unless the query has the word archive or archived (shared parseArchiveIntent, which Go to chat should reuse); that word is then dropped from the search and archived rows are marked. Results gain optional fields: timestamp, rank, phraseMatch, archived and snippetMarked (control-character markers, so a markdown bold word is not shown as a match); the old fields and the ** snippet are unchanged. The desktop dialog shows one row per matching message with the chat title (else Untitled chat), machine (remote only), project, agent, relative time and the highlighted snippet with a you/agent tag, arrow keys and Enter, and a footer counting chats and matches. It searches this machine and every connected remote machine and merges the hits in the same order. Opening a hit opens the chat through the sidebar's open path on its own machine, then opens that chat's cmd+F find bar with the query typed in and its cursor on the chosen message (waiting for the full history when the message is not loaded yet), so next and previous walk the chat's other matches. cmd+F now matches a message holding the typed text or every word of it, and highlights the first word found when the whole text is not there.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/SearchModal.tsx",
+        "src/renderer/components/search-snippet.ts",
+        "src/renderer/services/message-search.ts",
+        "src/renderer/components/chat/useChatSearch.ts",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/MessageList.tsx",
+        "src/renderer/components/InPaneSearchBar.tsx",
+        "src/renderer/stores/agent-store.ts",
+        "src/renderer/App.tsx",
+        "src/renderer/styles/tailwind.css",
+        "tests/unit/chat-find-prefill.test.ts",
+        "tests/unit/message-search-machines.test.ts",
+        "tests/unit/search-snippet.test.ts",
+        "e2e/radix-overlays.e2e.mjs",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/snapshots/message-search-dark-darwin.png",
+        "e2e/snapshots/message-search-light-darwin.png",
+        "e2e/snapshots/message-search-translucent-darwin.png"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app has no message search screen and never calls app:search-messages; its thread list filter is local and unchanged."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteDecoders.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/search/MessageSearchPresentation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/search/MessageSearchPresentationTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/message-search.ts",
+        "src/shared/archive-intent.ts",
+        "src/main/db/message-search.ts",
+        "tests/unit/message-search-query.test.ts",
+        "tests/unit/message-search-contract.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table, index or migration. The query reads the existing messages_fts index and the messages.timestamp and conversations.archived columns that every database already has."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Same channel and argument (app:search-messages with the query string); the new result fields are optional and additive. An older client reads the old fields and the ** snippet unchanged. An older backend answers without the new fields: the desktop then shows those hits after ranked ones, in the backend's order, without a time, and the old Android decoder ignores the extra fields. No package identity, signing or update-channel change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/message-search-query.test.ts: word splitting (punctuation, FTS syntax, non-ASCII letters, bare operators), the MATCH expression, parseArchiveIntent, the phrase rule, the order (a phrase above a more relevant scattered match, the newer message on a tie, relevance above recency when far apart, rows without rank last in their order) and the cmd+F text rule.",
+      "tests/unit/message-search-contract.test.ts, against a real migrated in-memory database: prefix and every-word matching, nine punctuation and FTS-syntax queries that stay on the FTS path, empty queries, snippet markers, stored task notices, the LIKE scan when the FTS table is gone, root-thread routing with title/project/agent/time, the archive rule, and the order (phrase above scattered, newer first on a tie, clearly more relevant above newer).",
+      "tests/unit/chat-find-prefill.test.ts (jsdom): a search hit opens the find bar with the query, on the chosen message (fails without the anchor), Next walks on; a find for another chat is left alone; a message not loaded yet is scrolled to and then landed on; a second prefill replaces an open bar's text.",
+      "tests/unit/message-search-machines.test.ts: hits from several machines merge in one order with their machine id, and a failing or empty machine costs only its own hits.",
+      "e2e/radix-overlays.e2e.mjs: every search check passes, plus the new ones (a hit opens the chat's find bar with the query, at 1/1, focused). Its 'session picker: the pick opens beside' check fails the same way on unchanged origin/main code.",
+      "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens npm run test:e2e:visual: new message-search screen in Dark, Light and Translucent (read); every other baseline unchanged; two runs pass without updating.",
+      "Android: MessageSearchPresentationTest, MessageSearchCoordinatorTest and SwitchboardRemoteClientTest pass (./gradlew :app:testDebugUnitTest).",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Search across a real connected remote machine was not driven; the merge is unit-tested and remote calls use the existing routing.invokeOn path.",
+      "The Android archived marker was not seen on a device; the presenter is unit-tested."
+    ]
+  }
+}
