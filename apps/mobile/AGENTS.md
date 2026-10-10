@@ -40,8 +40,11 @@ the provider registry's bus and posts to Expo for approvals, questions, turn
 end and errors only. Devices report which thread they have open so they are not
 notified about the screen in the user's hand, and registration carries the
 client's connection id, echoed back so a tap knows which backend to open.
-Android needs FCM credentials on the EAS project - see the Firebase section in
-`~/Desktop/projects/CLAUDE.local.md`. A new registry is created when a closed window is reopened, so
+Android needs FCM credentials on the EAS project: a JSON key for a service
+account with `roles/firebasecloudmessaging.admin`, uploaded to EAS under
+Android > FCM V1 (never committed). Without it `getExpoPushTokenAsync` throws and
+the app never gets a token. The owner's setup notes are in the Firebase section
+of `~/Desktop/projects/CLAUDE.local.md`. A new registry is created when a closed window is reopened, so
 the notifier must be re-attached there.
 
 **Testing: two runners, one rule.** Pure logic goes in the root vitest suite
