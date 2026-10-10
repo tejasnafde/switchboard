@@ -20,18 +20,27 @@ vi.mock('../../src/main/provider/usage/claude-keychain', () => ({ forgetClaudeCr
 vi.mock('../../src/main/provider/usage/claude-usage', () => ({ fetchClaudeUsage: vi.fn() }))
 
 const dir = mkdtempSync(join(tmpdir(), 'sb-codex-reset-test-'))
-const bin = join(dir, 'codex')
+// On Windows the fake is a `codex.cmd` shim around a node script, which is
+// also how an npm install of codex looks there, so the cross-spawn path runs.
+const script = join(dir, 'codex.js')
+const bin = process.platform === 'win32' ? join(dir, 'codex.cmd') : script
 const modeFile = join(dir, 'mode')
 const logFile = join(dir, 'log')
 
+function fakeEnv(): Record<string, string> {
+  const env: Record<string, string> = { PATH: process.env.PATH ?? '', FAKE_MODE_FILE: modeFile, FAKE_LOG_FILE: logFile }
+  if (process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot
+  return env
+}
+
 vi.mock('../../src/main/provider/adapters/codex-adapter', () => ({ findCodexPath: () => bin }))
 vi.mock('../../src/main/provider/instance-env', () => ({
-  resolveInstanceEnv: () => ({ PATH: process.env.PATH ?? '', FAKE_MODE_FILE: modeFile, FAKE_LOG_FILE: logFile }),
+  resolveInstanceEnv: () => fakeEnv(),
 }))
 
 // Modes: an outcome name answers with it; `exit` dies on consume (no answer);
 // `hang-once` stays silent on the first consume and answers `reset` after.
-writeFileSync(bin, `#!${process.execPath}
+writeFileSync(script, `#!${process.execPath}
 const fs = require('fs')
 const readline = require('readline')
 const mode = () => fs.readFileSync(process.env.FAKE_MODE_FILE, 'utf8').trim()
@@ -59,7 +68,8 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   }
 })
 `)
-chmodSync(bin, 0o755)
+chmodSync(script, 0o755)
+if (process.platform === 'win32') writeFileSync(bin, `@"${process.execPath}" "%~dp0codex.js" %*\r\n`)
 
 const { consumeInstanceReset, hasPendingReset, forgetResetAttempt } = await import('../../src/main/provider/usage')
 const { consumeCodexReset, ResetKeyBook } = await import('../../src/main/provider/usage/codex-reset')
@@ -96,7 +106,7 @@ describe('ResetKeyBook', () => {
 })
 
 describe('consumeCodexReset against a fake app-server', () => {
-  const env = () => ({ PATH: process.env.PATH ?? '', FAKE_MODE_FILE: modeFile, FAKE_LOG_FILE: logFile })
+  const env = fakeEnv
 
   it('sends the key and the credit id, and maps the answer', async () => {
     writeFileSync(modeFile, 'alreadyRedeemed')
