@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { openLandingProjectPicker } from './lib/new-chat.mjs'
+import { openLandingProjectPicker, pickChipOption } from './lib/new-chat.mjs'
 import { prepareElectronTestRuntime } from './electron-runtime.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -57,7 +57,7 @@ try {
   await openLandingProjectPicker(win)
   await win.keyboard.press('Enter')
   await win.getByTestId('draft-workspace').waitFor({ timeout: 5000 })
-  await win.getByTestId('draft-workspace').selectOption('project')
+  await pickChipOption(win, win.getByTestId('draft-workspace'), 'project')
   // Record turn starts and ends, to prove the order and not just the count.
   await win.evaluate(() => {
     window.__turnLog = []

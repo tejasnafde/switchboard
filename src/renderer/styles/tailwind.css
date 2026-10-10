@@ -20,6 +20,10 @@
 @source '../components/ui';
 @source '../components/chat/UnifiedProviderPicker.tsx';
 @source '../components/chat/EffortPicker.tsx';
+@source '../components/chat/FooterChip.tsx';
+@source '../components/chat/ComposerFooter.tsx';
+@source '../components/chat/ComposerOverflowMenu.tsx';
+@source '../components/chat/DraftWorkspaceChips.tsx';
 @source '../components/chat/ChatInput.tsx';
 @source '../components/chat/ChatPanel.tsx';
 @source '../components/terminal/TerminalStrip.tsx';

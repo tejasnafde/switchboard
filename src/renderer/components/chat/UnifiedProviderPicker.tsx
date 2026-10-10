@@ -183,7 +183,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           type="button"
           title={`${agentShortLabel(agentType)}${effectiveInstance ? ' · ' + effectiveInstance.displayName : ''} · ${modelLabel}`}
           style={accentVar(accent)}
-          className="inline-flex max-w-[280px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] py-[3px] pr-[8px] pl-[4px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] data-[state=open]:border-[var(--pick-accent)]"
+          className="inline-flex h-[24px] min-w-0 max-w-[280px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] pr-[8px] pl-[4px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] data-[state=open]:border-[var(--pick-accent)]"
         >
           {wait?.pending ? (
             <>
@@ -201,11 +201,12 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
               >
                 {showInstanceBadge ? initials : agentShortLabel(agentType).slice(0, 2).toUpperCase()}
               </span>
-              <span className="truncate font-[500] text-[var(--text-primary)]">
+              {/* A narrow composer footer shows the model only (composer-footer-tiers.ts). */}
+              <span className="truncate font-[500] text-[var(--text-primary)] @max-[680px]/footer:hidden">
                 {agentShortLabel(agentType)}
                 {showInstanceBadge && effectiveInstance ? ` · ${effectiveInstance.displayName}` : ''}
               </span>
-              <span className="whitespace-nowrap text-[var(--text-muted)]">·</span>
+              <span className="whitespace-nowrap text-[var(--text-muted)] @max-[680px]/footer:hidden">·</span>
               <span className="truncate [font-family:var(--font-mono)] text-[var(--text-secondary)]">{modelLabel}</span>
             </>
           )}
