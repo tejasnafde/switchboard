@@ -1,7 +1,7 @@
 /**
  * Embedded IDE pane: the real VS Code workbench (code-server) in a single
  * reused <webview>. Replaces the CodeMirror Files pane under
- * rightPaneMode === 'files'. Design: docs/plans/2026-07-10-embedded-ide-design.md.
+ * rightPaneMode === 'files'. Design: docs/plans/archive/2026-07-10-embedded-ide-design.md.
  *
  * RAM policy (P0): one webview ever - switching projects navigates it to the
  * new ?folder=. Hidden for 15 minutes -> kill the server and blank the webview

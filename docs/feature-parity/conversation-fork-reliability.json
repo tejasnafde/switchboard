@@ -70,7 +70,7 @@
       "evidence": [
         "src/shared/ws-protocol.ts",
         "src/server/index.ts",
-        "docs/plans/2026-08-24-conversation-fork-reliability-design.md",
+        "docs/plans/archive/2026-08-24-conversation-fork-reliability-design.md",
         "docs/notes/session-kickoff-fork-from-message.md",
         "docs/notes/session-kickoff-fork-to-worktree.md",
         "tests/unit/ws-protocol.test.ts",
