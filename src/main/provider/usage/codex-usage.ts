@@ -315,6 +315,7 @@ export async function fetchCodexUsage(
       account: account.account,
       windows: parsed.windows,
       overage: parsed.overage,
+      ...(parsed.resetCredits ? { resetCredits: parsed.resetCredits } : {}),
     }
   } catch (err) {
     const message = redactSecrets(err instanceof Error ? err.message : String(err))

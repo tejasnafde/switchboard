@@ -11,7 +11,7 @@
  * surface runs an agent. This is a reduction in blast radius, not a sandbox.
  */
 import { KEYBOARD_OVERRIDES_SETTING } from './shortcuts'
-import { ProviderChannels, PullRequestWriteChannels } from './ipc-channels'
+import { ProviderChannels, ProviderInstanceChannels, PullRequestWriteChannels } from './ipc-channels'
 import { governedSettingKey } from './project-settings'
 
 /** `terminal` is separate because a PTY is arbitrary code execution and nothing
@@ -57,6 +57,9 @@ const SCOPE_REQUIRED_CHANNELS: Partial<Record<DeviceScope, readonly string[]>> =
     // write; unlinking only takes power away, so it stays open.
     ProviderChannels.LINK_PEER,
     ProviderChannels.EXTEND_PEER_LINK,
+    // Spends a banked Codex reset on a paid account, and cannot be undone.
+    // The phone has no confirm for it; the usage read stays open.
+    ProviderInstanceChannels.CONSUME_RESET,
   ],
 }
 

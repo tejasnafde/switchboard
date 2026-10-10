@@ -35,6 +35,7 @@ import { cn } from '../../lib/utils'
 import { createRendererLogger } from '../../logger'
 import { SETTING_ROW, type SettingRowDef } from './settings-rows'
 import { SourceControlPanel } from './SourceControlPanel'
+import { CodexResetControls } from './CodexResetControls'
 import {
   accountsSummary,
   barTone,
@@ -279,6 +280,7 @@ function AccountCard({
 }) {
   const remove = useProviderInstanceStore((s) => s.remove)
   const test = useProviderInstanceStore((s) => s.test)
+  const consumeReset = useProviderInstanceStore((s) => s.consumeReset)
   const [note, setNote] = useState<{ ok: boolean; message: string } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const mounted = useRef(true)
@@ -393,6 +395,7 @@ function AccountCard({
             : windows.map((w) => <UsageMeter key={w.id} window={w} />)}
         </div>
       )}
+      <CodexResetControls usage={usage} onConsume={(creditId) => consumeReset(instance.id, creditId)} />
       {overage.map((o) => (
         <div key={o.id} className="mt-2 text-[12px] text-[var(--text-secondary)]">
           {[o.label, o.usedPercent !== null && `${Math.round(o.usedPercent)}%`, o.detail, o.blockedReason?.replace(/_/g, ' ')].filter(Boolean).join(' · ')}

@@ -18,7 +18,7 @@ vi.mock('../../src/main/logger', () => ({
   createMainLogger: () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() }),
 }))
 vi.mock('../../src/main/provider/instance-env', () => ({ resolveInstanceEnv: vi.fn(() => ({})) }))
-vi.mock('../../src/main/provider/usage', () => ({ fetchInstanceUsage: vi.fn(), invalidateUsage: vi.fn() }))
+vi.mock('../../src/main/provider/usage', () => ({ fetchInstanceUsage: vi.fn(), invalidateUsage: vi.fn(), consumeInstanceReset: vi.fn(), forgetResetAttempt: vi.fn() }))
 vi.mock('../../src/main/provider/catalog-probe', () => ({ invalidateCatalog }))
 vi.mock('../../src/main/provider/adapters/claude-adapter', () => ({ findClaudeBin: vi.fn(() => null) }))
 vi.mock('../../src/main/provider/adapters/codex-adapter', () => ({ findCodexPath: vi.fn(() => null) }))

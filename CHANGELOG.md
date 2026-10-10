@@ -5,6 +5,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Added
+- **Use a banked Codex reset from Settings > Accounts.** A Codex card now shows "Resets available: N" and when the next one expires, in place of the old "Reset credits" line. When a limit is above 85% or Codex says it is reached, "Use reset" opens an inline confirm, spends one reset, and reads the usage again, so the bars and the count come from Codex. A retry after a lost reply reuses the same request key and cannot spend a second reset. Phones cannot spend one.
 - **Go to chat (Mod+P).** A dialog lists the chats of every project, local and remote. With nothing typed it shows the 5 most recent chats, then all chats. Type to match chat titles (exact, then starts with, then contains) and then project names, newest first in each group; message text is not searched. Add the word "archived" to include archived chats. Enter opens the chat, Mod+Enter opens it beside the current one. The phones' chat-list search boxes rank with the same rules. See `docs/feature-parity/go-to-chat.json`.
 
 ### Changed
