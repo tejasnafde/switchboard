@@ -4,7 +4,8 @@
  * card's ⋯ menu; the editor dialog below is the add and edit flow.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { offeredAgentTypes, useInstalledAcpAgents } from '../../services/acp-agent-availability'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import type { ProviderInstance } from '@shared/types'
 import type { ProviderUsage, UsageWindow } from '@shared/provider-usage'
 import { buildWindow, fmtResetsAt } from '@shared/provider-usage'
@@ -81,6 +82,14 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
   const clearError = useProviderInstanceStore((s) => s.clearError)
   const instances = useProviderInstanceStore((s) => s.instances)
   const loaded = useProviderInstanceStore((s) => s.loaded)
+  // A generic ACP agent shows once its CLI is installed, or when the user has
+  // made an account for it beyond the seeded default.
+  const installedAcpAgents = useInstalledAcpAgents()
+  const offeredKinds = useMemo(() => offeredAgentTypes(
+    AGENT_PROVIDERS,
+    installedAcpAgents,
+    new Set(instances.filter((i) => i.id !== defaultInstanceId(i.agentType)).map((i) => i.agentType)),
+  ), [installedAcpAgents, instances])
   const usages = useProviderInstanceStore((s) => s.usages)
   const usageLoading = useProviderInstanceStore((s) => s.usageLoading)
   const syncUsage = useProviderInstanceStore((s) => s.syncUsage)
@@ -161,7 +170,7 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
       )}
 
       <Anchor def={SETTING_ROW.providers}>
-        {AGENT_PROVIDERS.map((kind) => {
+        {offeredKinds.map((kind) => {
           const group = ordered.filter((i) => i.agentType === kind)
           const starred = defaultAccountId(kind, instances, {
             scoped: stored[defaultInstanceSettingKey(kind)],
@@ -193,7 +202,7 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
       </Anchor>
 
       <Anchor def={SETTING_ROW.addAccount}>
-        <AddAccountButton onPick={setAdding} />
+        <AddAccountButton kinds={offeredKinds} onPick={setAdding} />
       </Anchor>
 
       <Anchor def={SETTING_ROW.sourceControl}>
@@ -229,7 +238,7 @@ function SummaryTile({ title, cell, alarm = false }: { title: string; cell: Summ
 const menuItemClass = 'flex w-full cursor-pointer items-center justify-between rounded-[5px] border-0 bg-transparent px-2 py-[5px] text-left text-[12.5px] text-[var(--text-primary)] outline-none hover:bg-[var(--bg-hover)] focus-visible:bg-[var(--bg-hover)]'
 const menuSurfaceClass = 'sb-floating-surface z-[1200] w-[230px] rounded-[8px] border border-[var(--border)] p-1 shadow-[0_12px_30px_rgba(0,0,0,0.45)]!'
 
-function AddAccountButton({ onPick }: { onPick: (kind: AgentProvider) => void }) {
+function AddAccountButton({ kinds, onPick }: { kinds: readonly AgentProvider[]; onPick: (kind: AgentProvider) => void }) {
   const [open, setOpen] = useState(false)
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -237,7 +246,7 @@ function AddAccountButton({ onPick }: { onPick: (kind: AgentProvider) => void })
         <Button variant="outline" size="sm">+ Add account</Button>
       </PopoverTrigger>
       <PopoverContent align="start" className={menuSurfaceClass}>
-        {AGENT_PROVIDERS.map((kind) => (
+        {kinds.map((kind) => (
           <button key={kind} type="button" className={menuItemClass} onClick={() => { setOpen(false); onPick(kind) }}>
             {agentLabel(kind)}
           </button>

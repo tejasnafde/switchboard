@@ -12,6 +12,10 @@ const SOURCE_LABEL: Record<SlashCommand['source'], string> = {
   'claude-code': 'CLAUDE CODE',
   codex: 'CODEX',
   opencode: 'OPENCODE',
+  gemini: 'GEMINI CLI',
+  vibe: 'MISTRAL VIBE',
+  cline: 'CLINE',
+  copilot: 'GITHUB COPILOT',
 }
 
 export const SlashMenu = memo(function SlashMenu({

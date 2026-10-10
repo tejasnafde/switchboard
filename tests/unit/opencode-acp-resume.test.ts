@@ -14,8 +14,12 @@ const state = vi.hoisted(() => ({
   calls: [] as string[],
 }))
 
-vi.mock('child_process', () => ({
-  spawn: vi.fn(() => {
+// The adapter spawns through `cross-spawn`, not `child_process` directly
+// (Windows needs it to launch a global agent CLI's `.cmd` shim through a
+// shell), so that is the module to mock: cross-spawn's own
+// `require('child_process')` is real and unmocked here.
+vi.mock('cross-spawn', () => ({
+  default: vi.fn(() => {
     const child = new EventEmitter() as EventEmitter & Record<string, unknown>
     child.stdin = new PassThrough()
     child.stdout = new PassThrough()

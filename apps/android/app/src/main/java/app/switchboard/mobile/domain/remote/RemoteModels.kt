@@ -17,6 +17,33 @@ enum class ProviderKind(val wire: String) {
     Claude("claude"),
     Codex("codex"),
     OpenCode("opencode"),
+    Gemini("gemini"),
+    Vibe("vibe"),
+    Cline("cline"),
+    Copilot("copilot"),
+}
+
+/**
+ * Agents the backend drives over the Agent Client Protocol, as in
+ * src/shared/acp-agents.ts. One prompt per session at a time, so they never
+ * steer. The generic ones are staged on Android (flag native_generic_acp_agents):
+ * their chats show and continue, but a new chat cannot pick them.
+ */
+object AcpAgents {
+    private val generic = linkedMapOf(
+        "gemini" to Pair("Gemini CLI", "Gemini"),
+        "vibe" to Pair("Mistral Vibe", "Vibe"),
+        "cline" to Pair("Cline", "Cline"),
+        "copilot" to Pair("GitHub Copilot", "Copilot"),
+    )
+
+    fun speaksAcp(provider: String?): Boolean = provider == "opencode" || provider in generic
+
+    fun isGeneric(provider: String?): Boolean = provider in generic
+
+    fun label(provider: String?): String? = generic[provider]?.first
+
+    fun shortLabel(provider: String?): String? = generic[provider]?.second
 }
 
 enum class ApprovalDecision(val wire: String) {

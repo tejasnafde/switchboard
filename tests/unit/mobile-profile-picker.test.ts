@@ -2,7 +2,7 @@
  * Agent / OAuth-profile selection on the mobile client.
  */
 import { describe, it, expect } from 'vitest'
-import { profilesFor, agentTypeFor } from '../../apps/mobile/src/lib/profiles'
+import { AGENTS, agentsFor, profilesFor, agentTypeFor } from '../../apps/mobile/src/lib/profiles'
 import type { ProviderInstance } from '../../src/shared/types'
 
 function inst(over: Partial<ProviderInstance>): ProviderInstance {
@@ -26,6 +26,19 @@ describe('agentTypeFor', () => {
     expect(agentTypeFor('claude')).toBe('claude-code')
     expect(agentTypeFor('codex')).toBe('codex')
     expect(agentTypeFor('opencode')).toBe('opencode')
+    expect(agentTypeFor('gemini')).toBe('gemini')
+  })
+})
+
+describe('agentsFor', () => {
+  it('offers only the built-in agents, staging the generic ACP ones', () => {
+    expect(AGENTS.map((a) => a.kind)).toEqual(['claude', 'codex', 'opencode'])
+    expect(agentsFor('codex')).toBe(AGENTS)
+  })
+
+  it('keeps a generic ACP chat\'s own agent so its profiles stay visible', () => {
+    expect(agentsFor('copilot').map((a) => a.kind)).toEqual(['claude', 'codex', 'opencode', 'copilot'])
+    expect(agentsFor('copilot').at(-1)).toEqual({ kind: 'copilot', label: 'GitHub Copilot', agentType: 'copilot' })
   })
 })
 

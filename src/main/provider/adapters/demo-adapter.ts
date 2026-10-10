@@ -105,7 +105,7 @@ const FIXED_AUTH_TS = [
   '',
 ].join('\n')
 
-const SKILLS: Record<ProviderKind, ProviderSkill[]> = {
+const SKILLS: Partial<Record<ProviderKind, ProviderSkill[]>> = {
   claude: [
     { name: 'review', description: 'Review a pull request', source: 'claude-code' },
     { name: 'commit', description: 'Commit staged changes with a message', source: 'claude-code' },
@@ -594,7 +594,7 @@ export class DemoAdapter implements ProviderAdapter {
   }
 
   async listSkills(): Promise<ProviderSkill[]> {
-    return SKILLS[this.provider]
+    return SKILLS[this.provider] ?? []
   }
 }
 

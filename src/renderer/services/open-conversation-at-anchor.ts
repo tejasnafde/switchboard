@@ -1,3 +1,4 @@
+import { isAgentType } from '@shared/types'
 import type { ForkLineageMetadata } from '@shared/conversation-fork'
 import type { ReasoningEffort } from '@shared/models'
 import type { AgentType, ChatMessage } from '@shared/types'
@@ -25,8 +26,7 @@ interface LoadedConversation {
 }
 
 function agentType(value: string): AgentType {
-  if (value === 'codex' || value === 'opencode' || value === 'terminal') return value
-  return 'claude-code'
+  return isAgentType(value) ? value : 'claude-code'
 }
 
 export async function openConversationAtAnchor(metadata: ForkLineageMetadata): Promise<void> {

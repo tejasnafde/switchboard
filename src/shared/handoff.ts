@@ -29,7 +29,7 @@
  */
 
 import { AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX, parseRotationMarker } from './rotation-marker'
-import { agentLabel, type AgentProvider } from './types'
+import { agentLabel, isAgentProvider, type AgentProvider } from './types'
 
 export const HANDOFF_PREAMBLE_HEADER = 'Conversation so far:'
 /** Header of a delta handoff: the target already holds what came before. */
@@ -188,7 +188,7 @@ export function buildHandoffPreamble(
 export type HandoffSource = AgentProvider | 'cursor'
 
 export function isHandoffSource(value: string): value is HandoffSource {
-  return value === 'claude-code' || value === 'codex' || value === 'opencode' || value === 'cursor'
+  return isAgentProvider(value) || value === 'cursor'
 }
 
 /**

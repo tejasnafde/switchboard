@@ -1,3 +1,4 @@
+import { isAgentType } from '@shared/types'
 import type { ForkLineageMetadata } from '@shared/conversation-fork'
 import type { ReasoningEffort } from '@shared/models'
 import type { AgentType } from '@shared/types'
@@ -20,8 +21,7 @@ export interface LoadedSearchSessionMeta {
 }
 
 function toAgentType(value: string): AgentType {
-  if (value === 'codex' || value === 'opencode' || value === 'terminal') return value
-  return 'claude-code'
+  return isAgentType(value) ? value : 'claude-code'
 }
 
 export function projectLoadedSearchSession(meta: LoadedSearchSessionMeta) {

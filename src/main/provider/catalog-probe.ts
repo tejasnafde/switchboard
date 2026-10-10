@@ -9,6 +9,7 @@
  * usage is spent. Results are cached per instance for an hour; a live
  * session's own list stays authoritative inside that chat.
  */
+import { isGenericAcpAgent } from '@shared/acp-agents'
 import { execFile } from 'child_process'
 import { homedir } from 'os'
 import { formatOpencodeModelLabel, inferModelTier, type ModelOption } from '@shared/models'
@@ -101,7 +102,7 @@ interface ProbeTarget {
  * startSession does, and the probe uses that dir's credential home.
  */
 function probeTarget(agentType: AgentProvider, instanceId: string | null | undefined, remoteConfigDir?: string): ProbeTarget {
-  if (remoteConfigDir && agentType !== 'opencode') {
+  if (remoteConfigDir && (agentType === 'claude-code' || agentType === 'codex')) {
     const dir = remoteProviderConfigDir(agentType, remoteConfigDir)
     const env = agentType === 'claude-code' ? buildClaudeCliEnv() : buildCodexCliEnv()
     applyCredentialHome(env, agentType, dir)
@@ -142,11 +143,13 @@ export function probeCatalog(agentType: AgentProvider, instanceId?: string | nul
 
   const task = (async () => {
     try {
+      // A generic ACP agent lists its models only inside a session, so
+      // there is nothing to probe ahead of one.
       const models = agentType === 'claude-code'
         ? await probeClaude(target.env)
         : agentType === 'codex'
           ? await probeCodex(target.env)
-          : await probeOpencode(target.instanceEnv)
+          : isGenericAcpAgent(agentType) ? [] : await probeOpencode(target.instanceEnv)
       // An empty answer is not cached, so the next ask retries.
       if (models.length > 0) cache.set(key, { models, at: Date.now() })
       return models

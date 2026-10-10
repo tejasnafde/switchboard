@@ -1,5 +1,5 @@
 import { isRuntimeMode, type RuntimeMode } from './provider-events'
-import { isAgentProvider, type AgentType } from './types'
+import { AGENT_TYPES, isAgentProvider, type AgentType } from './types'
 
 export const WORKTREE_CREATION_SCHEMA_VERSION = 1 as const
 
@@ -236,7 +236,7 @@ export type WorktreeCreationParseResult =
 type UnknownRecord = Record<string, unknown>
 
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/
-const AGENT_TYPE_VALUES: ReadonlySet<string> = new Set(['claude-code', 'codex', 'opencode', 'terminal'])
+const AGENT_TYPE_VALUES: ReadonlySet<string> = new Set(AGENT_TYPES)
 
 function record(value: unknown): UnknownRecord | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)

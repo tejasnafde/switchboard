@@ -10,18 +10,16 @@ import {
   AGENT_TYPES,
   isAgentType,
   agentLabel,
+  providerKindFor,
+  toAgentProvider,
   agentShortLabel,
   defaultInstanceId,
 } from '../../src/shared/types'
 import type { AgentType } from '../../src/shared/types'
 
 describe('AGENT_TYPES', () => {
-  it('contains all four agent kinds', () => {
-    expect(AGENT_TYPES).toContain('claude-code')
-    expect(AGENT_TYPES).toContain('codex')
-    expect(AGENT_TYPES).toContain('opencode')
-    expect(AGENT_TYPES).toContain('terminal')
-    expect(AGENT_TYPES).toHaveLength(4)
+  it('contains every agent kind, the generic ACP agents before the terminal', () => {
+    expect(AGENT_TYPES).toEqual(['claude-code', 'codex', 'opencode', 'gemini', 'vibe', 'cline', 'copilot', 'terminal'])
   })
 })
 
@@ -33,7 +31,7 @@ describe('isAgentType', () => {
   })
 
   it('returns false for unknown strings', () => {
-    expect(isAgentType('gemini')).toBe(false)
+    expect(isAgentType('goose')).toBe(false)
     expect(isAgentType('')).toBe(false)
     expect(isAgentType(null)).toBe(false)
     expect(isAgentType(undefined)).toBe(false)
@@ -48,6 +46,10 @@ describe('agentLabel', () => {
     expect(agentLabel('opencode')).toBe('OpenCode')
     expect(agentLabel('terminal')).toBe('Terminal')
     expect(agentLabel('cursor')).toBe('Cursor')
+    expect(agentLabel('gemini')).toBe('Gemini CLI')
+    expect(agentLabel('vibe')).toBe('Mistral Vibe')
+    expect(agentLabel('cline')).toBe('Cline')
+    expect(agentLabel('copilot')).toBe('GitHub Copilot')
   })
 
   it('falls back to Claude Code for undefined', () => {
@@ -70,6 +72,8 @@ describe('agentShortLabel', () => {
     expect(agentShortLabel('codex')).toBe('Codex')
     expect(agentShortLabel('opencode')).toBe('OpenCode')
     expect(agentShortLabel('terminal')).toBe('Terminal')
+    expect(agentShortLabel('gemini')).toBe('Gemini')
+    expect(agentShortLabel('copilot')).toBe('Copilot')
   })
 
   it('falls back to Claude for undefined', () => {
@@ -83,5 +87,16 @@ describe('defaultInstanceId', () => {
     for (const k of kinds) {
       expect(defaultInstanceId(k)).toBe(`${k}-default`)
     }
+  })
+})
+
+describe('provider kind and agent type', () => {
+  it('pass a generic ACP agent through unchanged in both directions', () => {
+    for (const agent of ['gemini', 'vibe', 'cline', 'copilot'] as const) {
+      expect(providerKindFor(agent)).toBe(agent)
+      expect(toAgentProvider(agent)).toBe(agent)
+    }
+    expect(providerKindFor('claude-code')).toBe('claude')
+    expect(toAgentProvider('mystery')).toBe('claude-code')
   })
 })

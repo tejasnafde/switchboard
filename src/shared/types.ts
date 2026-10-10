@@ -1,5 +1,6 @@
 /** Shared types between main process and renderer */
 import type { FileDiffNoRevertReason, ProviderKind, RuntimeMode, UserMessagePillsMeta } from './provider-events'
+import { GENERIC_ACP_AGENTS, GENERIC_ACP_AGENT_LABELS, isGenericAcpAgent, type GenericAcpAgent } from './acp-agents'
 
 // ─── Terminal ────────────────────────────────────────────────────────
 
@@ -44,14 +45,14 @@ export type TerminalStatus = 'running' | 'exited' | 'error'
 
 // ─── Agent ───────────────────────────────────────────────────────────
 
-export type AgentType = 'claude-code' | 'codex' | 'opencode' | 'terminal'
+export type AgentType = 'claude-code' | 'codex' | 'opencode' | GenericAcpAgent | 'terminal'
 
-export const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'codex', 'opencode', 'terminal'] as const
+export const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'codex', 'opencode', ...GENERIC_ACP_AGENTS, 'terminal'] as const
 
 /** An agent type that runs a provider, i.e. everything but a plain terminal. */
 export type AgentProvider = Exclude<AgentType, 'terminal'>
 
-export const AGENT_PROVIDERS: readonly AgentProvider[] = ['claude-code', 'codex', 'opencode']
+export const AGENT_PROVIDERS: readonly AgentProvider[] = ['claude-code', 'codex', 'opencode', ...GENERIC_ACP_AGENTS]
 
 export function isAgentProvider(value: unknown): value is AgentProvider {
   return typeof value === 'string' && (AGENT_PROVIDERS as readonly string[]).includes(value)
@@ -62,11 +63,11 @@ export function isAgentProvider(value: unknown): value is AgentProvider {
  * either spelling. Unknown values map to Claude, the default agent.
  */
 export function toAgentProvider(value: string | undefined | null): AgentProvider {
-  return value === 'codex' || value === 'opencode' ? value : 'claude-code'
+  return value === 'codex' || value === 'opencode' || isGenericAcpAgent(value) ? value : 'claude-code'
 }
 
 export function providerKindFor(agentType: string | undefined | null): ProviderKind {
-  return agentType === 'codex' || agentType === 'opencode' ? agentType : 'claude'
+  return agentType === 'codex' || agentType === 'opencode' || isGenericAcpAgent(agentType) ? agentType : 'claude'
 }
 
 export function isAgentType(v: unknown): v is AgentType {
@@ -86,6 +87,7 @@ export function defaultInstanceId(kind: AgentType): string {
 export function agentLabel(type: AgentType | 'cursor' | undefined): string {
   if (type === 'codex') return 'Codex'
   if (type === 'opencode') return 'OpenCode'
+  if (isGenericAcpAgent(type)) return GENERIC_ACP_AGENT_LABELS[type].label
   if (type === 'terminal') return 'Terminal'
   if (type === 'cursor') return 'Cursor'
   return 'Claude Code'
@@ -95,6 +97,7 @@ export function agentLabel(type: AgentType | 'cursor' | undefined): string {
 export function agentShortLabel(type: AgentType | undefined): string {
   if (type === 'codex') return 'Codex'
   if (type === 'opencode') return 'OpenCode'
+  if (isGenericAcpAgent(type)) return GENERIC_ACP_AGENT_LABELS[type].short
   if (type === 'terminal') return 'Terminal'
   return 'Claude'
 }
@@ -323,7 +326,7 @@ export interface ChatMessage {
 
 // ─── Projects & Sessions ─────────────────────────────────────────
 
-export type SessionSource = 'claude-code' | 'codex' | 'cursor' | 'switchboard' | 'opencode'
+export type SessionSource = 'claude-code' | 'codex' | 'cursor' | 'switchboard' | 'opencode' | GenericAcpAgent
 
 export interface Bookmark {
   id: string

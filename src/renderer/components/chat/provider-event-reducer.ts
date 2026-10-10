@@ -1,3 +1,4 @@
+import { agentLabel as agentLabelFor } from '@shared/types'
 import type { RuntimeEvent } from '@shared/provider-events'
 import { splitSyntheticUserText, taskNotificationText, transcriptShowsTaskNotification } from '@shared/synthetic-message'
 import { applyContentText, type ContentChunk } from '@shared/content-stream'
@@ -286,7 +287,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       const sess = store.sessions.find((s) => s.id === tid)
       if (sess) {
         const projectName = sess.projectPath?.split('/').pop()
-        const agentLabel = sess.type === 'codex' ? 'Codex' : sess.type === 'opencode' ? 'OpenCode' : 'Claude Code'
+        const agentLabel = agentLabelFor(sess.type)
         void notifyTurnCompleted({
           sessionTitle: sess.title ?? 'New conversation',
           projectName,

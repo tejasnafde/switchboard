@@ -1,3 +1,5 @@
+import { isGenericAcpAgent } from '@shared/acp-agents'
+import { agentLabel } from '@shared/types'
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { assembleClaudeForkAtEvent } from '../agent/jsonl-truncate'
@@ -90,6 +92,13 @@ export class DefaultProviderForkArtifacts implements ProviderForkArtifactPort {
     const { prepared } = input
     if (prepared.source.agentType === 'codex') return this.prepareCodex(prepared, input.targetCwd)
     if (prepared.source.agentType === 'opencode') return this.prepareOpencode(prepared, input.targetCwd)
+    if (isGenericAcpAgent(prepared.source.agentType)) {
+      return handoff(
+        prepared,
+        'native-fork-unsupported',
+        `${agentLabel(prepared.source.agentType)} chats fork with a transcript handoff; Switchboard does not fork them natively yet.`,
+      )
+    }
     if (prepared.anchor.provider !== 'claude-code') {
       return handoff(
         prepared,

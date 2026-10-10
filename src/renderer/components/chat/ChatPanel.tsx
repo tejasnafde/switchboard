@@ -1,7 +1,7 @@
+import { cn } from '../../lib/utils'
 import { useChatWaitStore } from '../../stores/chat-wait-store'
 import { LoadingStatus } from '../ui/loading-status'
 import { ChatSkeleton } from '../ui/chat-skeleton'
-import { cn } from '../../lib/utils'
 import { perfSpan } from '../../perf'
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
@@ -83,6 +83,7 @@ import {
   withDraftProvenance,
 } from '../../services/draft-transfer'
 import { providerKindFor } from '@shared/types'
+import { speaksAcp } from '@shared/acp-agents'
 import { confirm } from '../ui/confirm'
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 import { fileDiffNoRevertMessage } from '@shared/file-diff-revert'
@@ -862,10 +863,10 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       const liveStatus = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.status
       const busy = liveStatus === 'running' || liveStatus === 'thinking'
       // A queued send is held by the backend until the turn ends, so it may pass.
-      if (busy && agentType === 'opencode' && delivery !== 'queue') {
+      if (busy && speaksAcp(agentType) && delivery !== 'queue') {
         return {
           accepted: false,
-          error: 'OpenCode is still working. Your text and attachments are preserved; send again when it finishes.',
+          error: `${agentLabel(agentType)} is still working. Your text and attachments are preserved; send again when it finishes.`,
         }
       }
 
