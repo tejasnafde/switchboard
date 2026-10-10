@@ -64,7 +64,7 @@ import { resolveResumeSegment } from '../../../db/database'
 import { acpSwitchboardMcpServer } from '../../../mcp/agent-registration'
 import { markAgentSpawnEnv } from '../../agent-spawn-env'
 import type { AcpExpectedCapability, AcpLaunchConfig, AcpProviderKind, AcpSessionPrep } from './launch-config'
-import { acpFsProblem } from './fs-access'
+import { acpFsProblem, sliceTextLines } from './fs-access'
 import { acpModeFor, modelsFromConfigOptions, resolveAcpModeIds, type AcpModeIds } from './session-config'
 
 const log = createLogger('provider:acp')
@@ -1123,7 +1123,7 @@ export class AcpAdapter implements ProviderAdapter {
         }
         try {
           const content = await fs.readFile(params.path, 'utf-8')
-          return { content }
+          return { content: sliceTextLines(content, params.line, params.limit) }
         } catch (err) {
           throw new RequestError(-32603, `readTextFile failed: ${err instanceof Error ? err.message : String(err)}`)
         }
