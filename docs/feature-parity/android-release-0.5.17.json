@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-release-0.5.17",
+  "summary": "Native Android release 0.5.17 (versionCode 19): ships the Android work merged since 0.5.16. Diagrams and charts drawn in chat through the bundled visual host (chat-visuals.json), merge-back rows plus Send back, Edit and Discard on phones (fork-merge-back.json), chat-list search ranked like Go to chat (go-to-chat.json), pull request link provenance and unlink (pr-link-improvements.json), the handoff note on an agent switch, Stop, held-queue and expired-card recovery, queued-message data-loss fixes, and the model catalog fix for GPT-5.5 and GPT-5.4.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Android version bump only; the desktop parts of each shipped feature are covered by that feature's own manifest."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo client has its own OTA and build lanes; this bump touches only apps/android."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No API change; the backend contracts these Android features use are covered by their own manifests."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes in this bump."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        ".github/workflows/mobile-release.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "./gradlew :app:testDebugUnitTest passes on this branch."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Installing the update on a physical device through the in-app updater."
+    ]
+  }
+}

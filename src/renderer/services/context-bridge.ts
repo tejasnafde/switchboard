@@ -21,7 +21,7 @@ import { useAgentStore } from '../stores/agent-store'
 import { emitSessionActivity } from './session-events'
 import { useDraftStore } from '../stores/draft-store'
 import { agentShortLabel } from '@shared/types'
-import { formatFileViewerContext, formatChatMessageContext } from './context-formatters'
+import { formatFileViewerContext, formatChatMessageContext, chatQuoteAuthor, selectionQuoteRole, textWithPillLabels } from './context-formatters'
 import { useLayoutStore } from '../stores/layout-store'
 import { focusComposer } from './composer-registry'
 import { materializeDraft } from './draft-chat'
@@ -202,14 +202,19 @@ export function contextElementForSelection(
   return findContextSource(activeElement) ? activeElement : null
 }
 
-export function sessionIdForContextElement(el: ContextElement | null): string | null {
+/** The nearest value of `name` on `el` or an ancestor. */
+function closestAttribute(el: ContextElement | null, name: string): string | null {
   let current = el
   while (current) {
-    const sessionId = current.getAttribute('data-session-id')
-    if (sessionId) return sessionId
+    const value = current.getAttribute(name)
+    if (value) return value
     current = current.parentElement
   }
   return null
+}
+
+export function sessionIdForContextElement(el: ContextElement | null): string | null {
+  return closestAttribute(el, 'data-session-id')
 }
 
 /**
@@ -228,7 +233,7 @@ function getDomSelectionText(): string {
  * for `data-context-source` and dispatches to the appropriate formatter:
  *
  *   - 'terminal' → existing terminal selection flow
- *   - 'chat-message' → `> from <agent>: "..."` quoted block
+ *   - 'chat-message' → `> from <agent | you>: "..."` quoted block
  *   - null/unknown → fall back to terminal flow (preserves legacy ⌘L)
  *
  * cmd+l inside the embedded IDE never reaches this handler - the workbench
@@ -251,12 +256,31 @@ export function captureSelection(): boolean {
   const source = findContextSource(contextEl)
 
   if (source === 'chat-message') {
-    const text = getDomSelectionText()
+    const range = sel?.rangeCount ? sel.getRangeAt(0) : null
+    const roleOf = (node: Node | null | undefined): string | null =>
+      closestAttribute(node instanceof Element ? node : (node?.parentElement ?? null), 'data-message-role')
+    const ancestor = range?.commonAncestorContainer
+    const ancestorEl = ancestor instanceof Element ? ancestor : ancestor?.parentElement
+    const role = range
+      ? selectionQuoteRole([
+          roleOf(range.startContainer),
+          roleOf(range.endContainer),
+          ...Array.from(ancestorEl?.querySelectorAll('[data-message-role]') ?? [])
+            .filter((bubble) => range.intersectsNode(bubble))
+            .map((bubble) => bubble.getAttribute('data-message-role')),
+        ])
+      : closestAttribute(contextEl, 'data-message-role')
+    // Chips read as their labels only inside one user bubble; a selection
+    // across bubbles keeps the browser's text, which breaks lines between them.
+    const text = range && ancestorEl?.closest('[data-message-role="user"]')
+      ? textWithPillLabels(range.cloneContents())
+      : getDomSelectionText()
     if (!text.trim()) return false
     const sid = sessionIdForContextElement(contextEl)
     if (!sid) return false
     const session = useAgentStore.getState().sessions.find((s) => s.id === sid)
-    const agent = session ? agentShortLabel(session.type) : 'agent'
+    const agent = chatQuoteAuthor(role, session ? agentShortLabel(session.type) : 'agent')
+    if (!agent) return false
     const content = formatChatMessageContext({ agent, selection: text })
     const preview = text.trim().split('\n')[0].slice(0, 40)
     const pillId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`

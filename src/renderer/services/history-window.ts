@@ -2,8 +2,13 @@ import type { ChatMessage } from '@shared/types'
 
 /** Rows per desktop history window: one window of a long chat is ~130 KB. */
 export const DESKTOP_HISTORY_WINDOW = 200
-/** Start loading the older window this close to the top of the list. */
-export const LOAD_OLDER_THRESHOLD_PX = 400
+/**
+ * Prefetch the older window this close to the top at the latest: a few
+ * screens, so the window lands before the user reaches the oldest row.
+ */
+export const PREFETCH_OLDER_PX = 3000
+/** Or as soon as the first turn in view is among this oldest share of the loaded turns. */
+export const PREFETCH_OLDER_TURN_SHARE = 0.25
 
 /** Older rows go first; a row already shown (by id) is not repeated. */
 export function prependOlder(current: ChatMessage[], older: ChatMessage[]): ChatMessage[] {
@@ -32,8 +37,20 @@ export function olderThan(full: ChatMessage[], firstShownId: string): ChatMessag
   return index < 0 ? null : full.slice(0, index)
 }
 
-export function shouldLoadOlder(scrollTop: number, hasOlder: boolean, loading: boolean): boolean {
-  return hasOlder && !loading && scrollTop <= LOAD_OLDER_THRESHOLD_PX
+export interface OlderLoadState {
+  scrollTop: number
+  /** Index of the first turn in view, or null when none is laid out. */
+  firstVisibleTurn: number | null
+  turnCount: number
+  hasOlder: boolean
+  loading: boolean
+}
+
+/** Whether to fetch the previous window now, whichever of the two prefetch points comes first. */
+export function shouldLoadOlder(state: OlderLoadState): boolean {
+  if (!state.hasOlder || state.loading) return false
+  if (state.scrollTop <= PREFETCH_OLDER_PX) return true
+  return state.firstVisibleTurn !== null && state.firstVisibleTurn < state.turnCount * PREFETCH_OLDER_TURN_SHARE
 }
 
 /** Index of the turn holding `messageId`, or -1. */
