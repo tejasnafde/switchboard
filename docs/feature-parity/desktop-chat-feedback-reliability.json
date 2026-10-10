@@ -38,8 +38,8 @@
       "evidence": [
         "package.json",
         "CHANGELOG.md",
-        "docs/plans/2026-08-25-chat-rendering-and-send-feedback-design.md",
-        "docs/plans/2026-08-25-transactional-composer-send-recovery-design.md",
+        "docs/plans/archive/2026-08-25-chat-rendering-and-send-feedback-design.md",
+        "docs/plans/archive/2026-08-25-transactional-composer-send-recovery-design.md",
         ".github/workflows/release.yml"
       ]
     }

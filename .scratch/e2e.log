@@ -1,0 +1,6 @@
+PASS failure: no conversation row left behind 
+ALL PASS
+PASS the cancelled message is not stored rows: 0
+ALL PASS
+PASS the mirrored interim text keeps its own time, before the tool call 1791662312190 < 1791662373928
+ALL PASS

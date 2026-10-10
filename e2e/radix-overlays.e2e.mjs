@@ -249,6 +249,14 @@ async function searchModal() {
   check('search: a hit opens its chat', await win.locator('.chat-identity-title').filter({ hasText: 'Compare retry strategies' }).first()
     .waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false))
   check('search: a hit closes it', await hidden(search))
+  // The chat's own find bar opens with the query, on the hit, and has focus.
+  const find = win.locator('[data-chat-panel="true"] input[placeholder="Find in chat"]').first()
+  check('search: the chat find bar opens with the query', await find.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false)
+    && await find.inputValue() === 'backoff with jitter', await find.inputValue().catch(() => null))
+  check('search: the find bar is on the hit', await find.locator('xpath=..').getByText('1/1').waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false))
+  check('search: the find bar has focus', (await focused())?.placeholder === 'Find in chat')
+  await win.keyboard.press('Escape')
+  await find.waitFor({ state: 'hidden' })
 }
 
 async function quickPrompt() {

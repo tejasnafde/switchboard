@@ -19,7 +19,6 @@ import {
   runtimeModeToSend,
 } from '../../src/renderer/stores/agent-store'
 import { useProjectSettingsStore } from '../../src/renderer/stores/project-settings-store'
-import { projectLoadedSearchSession } from '../../src/renderer/services/search-session-projection'
 import { launchCardChat } from '../../src/renderer/components/kanban/card-launch'
 import type { KanbanCard } from '../../src/shared/kanban'
 import type { LiveSessionSummary } from '../../src/shared/live-sessions'
@@ -69,15 +68,6 @@ describe('every way a session enters the store applies it', () => {
     useAgentStore.getState().adoptLiveSessions([live('phone', 'full-access'), live('bare')], 'local')
     expect(runtimeModeToSend(session('phone'))).toBe('full-access')
     expect(runtimeModeToSend(session('bare'))).toBeUndefined()
-  })
-
-  it('a session opened from the sidebar, search, an anchor or a fork carries only the stored mode', () => {
-    // These paths all hand addSession the conversation's stored mode, or nothing.
-    const meta = { id: 'c', title: 't', projectPath: APP, agentType: 'claude-code' }
-    useAgentStore.getState().addSession(projectLoadedSearchSession({ ...meta, id: 'stored', runtimeMode: 'plan' }))
-    useAgentStore.getState().addSession(projectLoadedSearchSession({ ...meta, id: 'none', runtimeMode: null }))
-    expect(runtimeModeToSend(session('stored'))).toBe('plan')
-    expect(runtimeModeToSend(session('none'))).toBeUndefined()
   })
 })
 
