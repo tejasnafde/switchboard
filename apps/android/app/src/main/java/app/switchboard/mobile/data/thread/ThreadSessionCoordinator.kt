@@ -597,6 +597,7 @@ object LoadedSessionSnapshotMapper {
                                 text = message.content,
                                 stream = "assistant",
                                 done = true,
+                                parentToolCallId = message.parentToolCallId,
                             ),
                         )
                     }
@@ -610,6 +611,9 @@ object LoadedSessionSnapshotMapper {
                                     .getOrElse { JsonString(tool.input) },
                                 output = tool.output,
                                 state = "done",
+                                parentToolCallId = tool.parentToolCallId,
+                                isError = tool.isError,
+                                startedAt = message.timestamp,
                             ),
                         )
                     }

@@ -319,7 +319,11 @@ object ThreadStoreReducer {
             is ThreadEventPayload.ToolStarted -> withJournal.copy(
                 feed = upsert(
                     withJournal.feed,
-                    FeedItem.Tool("t-${event.toolId}", event.toolId, event.toolName, event.input, state = "running"),
+                    FeedItem.Tool(
+                        "t-${event.toolId}", event.toolId, event.toolName, event.input, state = "running",
+                        parentToolCallId = event.parentToolCallId,
+                        startedAt = scoped.nowMs.takeIf { it > 0 },
+                    ),
                 ),
             )
             is ThreadEventPayload.ToolCompleted -> {
@@ -331,7 +335,12 @@ object ThreadStoreReducer {
                     withJournal.copy(
                         feed = upsert(
                             withJournal.feed,
-                            existing.copy(output = event.output, state = "done"),
+                            existing.copy(
+                                output = event.output,
+                                state = "done",
+                                isError = event.isError,
+                                parentToolCallId = existing.parentToolCallId ?: event.parentToolCallId,
+                            ),
                         ),
                     )
                 }
@@ -498,7 +507,9 @@ object ThreadStoreReducer {
                     withJournal.feed,
                     FeedItem.User(
                         event.messageId,
-                        SyntheticUserMessage.taskNotificationText(event.taskId, event.status, event.summary, event.outputFile),
+                        SyntheticUserMessage.taskNotificationText(
+                            event.taskId, event.status, event.summary, event.outputFile, event.toolUseId,
+                        ),
                         event.at,
                         fromTranscript = true,
                     ),
@@ -542,7 +553,10 @@ object ThreadStoreReducer {
         return thread.copy(
             feed = upsert(
                 thread.feed,
-                (existing ?: FeedItem.Text(id, event.messageId, "", event.streamKind)).copy(text = text),
+                (existing ?: FeedItem.Text(id, event.messageId, "", event.streamKind)).copy(
+                    text = text,
+                    parentToolCallId = event.parentToolCallId ?: existing?.parentToolCallId,
+                ),
             ),
             unread = if (
                 existing == null && event.streamKind == "assistant" && !isViewing

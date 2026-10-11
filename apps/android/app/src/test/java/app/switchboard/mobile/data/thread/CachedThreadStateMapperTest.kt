@@ -52,6 +52,29 @@ class CachedThreadStateMapperTest {
     }
 
     @Test
+    fun `subagent fields survive the cache and older rows restore without them`() {
+        val feed = listOf(
+            FeedItem.Tool("t-B", "B", "Bash", null, "Exit code 1", "done", parentToolCallId = "A", isError = true, startedAt = 9),
+            FeedItem.Text("m-1", "m-1", "sub", "assistant", done = true, parentToolCallId = "A"),
+        )
+        val encoded = ThreadSnapshotCacheCodec.encode("mac", "thread-1", ThreadState(feed = feed))
+        val restored = CachedThreadStateMapper.from(snapshot(encoded.thread, encoded.feed), "mac", "thread-1")!!
+        assertEquals(feed, restored.feed)
+
+        val legacy = CachedThreadStateMapper.from(
+            snapshot(
+                CachedThreadEntity("mac:thread-1", "{}"),
+                listOf(CachedFeedRowEntity("mac:thread-1", "t-C", 0, """{"kind":"tool","id":"t-C","toolName":"Read","state":"done"}""")),
+            ),
+            "mac",
+            "thread-1",
+        )!!.feed.single() as FeedItem.Tool
+        assertNull(legacy.parentToolCallId)
+        assertEquals(false, legacy.isError)
+        assertNull(legacy.startedAt)
+    }
+
+    @Test
     fun `user rows keep their transcript flag, and legacy rows fall back to history ids`() {
         val rows = listOf(
             """{"kind":"user","id":"h-old","text":"[Request interrupted by user]","at":1}""",

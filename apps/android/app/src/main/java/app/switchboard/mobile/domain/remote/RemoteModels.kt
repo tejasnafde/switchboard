@@ -126,6 +126,8 @@ data class ChatMessage(
     val displayBody: String? = null,
     val pillsMeta: Map<String, MessagePill> = emptyMap(),
     val fileDiff: MessageFileDiff? = null,
+    /** A subagent's own text: the Agent/Task call it belongs to. */
+    val parentToolCallId: String? = null,
 )
 
 /** A turn's changed-file card, mirrored by the backend so history keeps it. */
@@ -143,6 +145,10 @@ data class MessageToolCall(
     val name: String,
     val input: String,
     val output: String?,
+    /** The Agent/Task call this one ran inside, for a subagent's own steps. */
+    val parentToolCallId: String? = null,
+    /** The provider reported the result as an error. */
+    val isError: Boolean = false,
 )
 
 data class MessageImage(

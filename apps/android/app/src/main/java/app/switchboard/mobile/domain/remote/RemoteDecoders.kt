@@ -328,6 +328,8 @@ object RemoteDecoders {
                 name = tool.stringRequired("name"),
                 input = tool.stringRequired("input"),
                 output = tool.string("output"),
+                parentToolCallId = tool.string("parentToolCallId"),
+                isError = (tool.values["isError"] as? JsonBoolean)?.value == true,
             )
         },
         images = raw.optionalArray("images").map { value ->
@@ -341,6 +343,7 @@ object RemoteDecoders {
         displayBody = raw.string("displayBody"),
         pillsMeta = decodeMessagePills(raw.values["pillsMeta"]),
         fileDiff = (raw.values["fileDiff"] as? JsonObject)?.let { messageFileDiff(it) },
+        parentToolCallId = raw.string("parentToolCallId"),
     )
 
     /** A malformed card is dropped rather than failing the whole thread load. */

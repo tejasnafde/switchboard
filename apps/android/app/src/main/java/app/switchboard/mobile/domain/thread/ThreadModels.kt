@@ -95,7 +95,14 @@ internal fun decodeMessagePills(value: JsonValue?): Map<String, MessagePill> {
 }
 
 sealed interface ThreadEventPayload {
-    data class Content(val messageId: String, val text: String, val append: Boolean, val streamKind: String) : ThreadEventPayload
+    data class Content(
+        val messageId: String,
+        val text: String,
+        val append: Boolean,
+        val streamKind: String,
+        /** A subagent's own text: the Agent/Task call it ran inside. */
+        val parentToolCallId: String? = null,
+    ) : ThreadEventPayload
     data class UserMessage(
         val text: String,
         val displayBody: String?,
@@ -107,8 +114,20 @@ sealed interface ThreadEventPayload {
         val handoffMarker: HandoffMarker? = null,
     ) : ThreadEventPayload
     data class HandoffMarker(val id: String, val text: String)
-    data class ToolStarted(val toolId: String, val toolName: String, val input: JsonValue) : ThreadEventPayload
-    data class ToolCompleted(val toolId: String, val output: String?) : ThreadEventPayload
+    data class ToolStarted(
+        val toolId: String,
+        val toolName: String,
+        val input: JsonValue,
+        /** Set when a subagent made this call: the Agent/Task call it ran inside. */
+        val parentToolCallId: String? = null,
+    ) : ThreadEventPayload
+    data class ToolCompleted(
+        val toolId: String,
+        val output: String?,
+        /** The provider reported the result as an error. */
+        val isError: Boolean = false,
+        val parentToolCallId: String? = null,
+    ) : ThreadEventPayload
     data class ToolDenied(val toolName: String, val reason: String, val mode: String) : ThreadEventPayload
     data class RequestOpened(
         val requestId: String,
@@ -187,6 +206,8 @@ sealed interface ThreadEventPayload {
         val summary: String,
         val outputFile: String?,
         val at: Long,
+        /** The tool call that started the task (a background command or a background subagent's Agent call). */
+        val toolUseId: String? = null,
     ) : ThreadEventPayload
     /** A message the backend holds until the running turn ends; `messageId` is its user row id. */
     data class TurnQueued(val messageId: String, val held: Boolean = false) : ThreadEventPayload
@@ -260,6 +281,8 @@ sealed interface FeedItem {
         val stream: String,
         val done: Boolean = false,
         val durationMs: Long? = null,
+        /** A subagent's own text: the Agent/Task call it belongs to. */
+        val parentToolCallId: String? = null,
     ) : FeedItem
     data class Tool(
         override val id: String,
@@ -268,6 +291,12 @@ sealed interface FeedItem {
         val input: JsonValue?,
         val output: String? = null,
         val state: String,
+        /** The Agent/Task call this one ran inside, for a subagent's own steps. */
+        val parentToolCallId: String? = null,
+        /** The provider reported the result as an error. */
+        val isError: Boolean = false,
+        /** When the call started, for a background agent's duration. */
+        val startedAt: Long? = null,
     ) : FeedItem
     data class Denial(override val id: String, val toolName: String, val reason: String, val mode: String) : FeedItem
     data class Approval(

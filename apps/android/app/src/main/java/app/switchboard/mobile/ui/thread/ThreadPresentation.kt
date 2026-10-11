@@ -10,6 +10,14 @@ import app.switchboard.mobile.domain.thread.HostWritePreview
 import app.switchboard.mobile.domain.thread.HostWriteResponse
 import app.switchboard.mobile.domain.thread.MergeBackRow
 import app.switchboard.mobile.domain.thread.PeerUndelivered
+import app.switchboard.mobile.domain.thread.SubagentCall
+import app.switchboard.mobile.domain.thread.SubagentCompletion
+import app.switchboard.mobile.domain.thread.SubagentDisplayItem
+import app.switchboard.mobile.domain.thread.SubagentEntryFacts
+import app.switchboard.mobile.domain.thread.SubagentStatus
+import app.switchboard.mobile.domain.thread.SubagentStep
+import app.switchboard.mobile.domain.thread.SubagentSteps
+import app.switchboard.mobile.domain.thread.SubagentToolCallFact
 import app.switchboard.mobile.domain.thread.SyntheticPart
 import app.switchboard.mobile.domain.thread.SyntheticTone
 import app.switchboard.mobile.domain.thread.SyntheticUserMessage
@@ -139,6 +147,7 @@ enum class ThreadRowKind {
     RAW_NOTICE,
     SYNTHETIC,
     MERGE_BACK,
+    SUBAGENT,
 }
 
 enum class ToolIconKind {
@@ -308,6 +317,37 @@ sealed interface ThreadRowPresentation {
     ) : ThreadRowPresentation {
         override val kind = ThreadRowKind.RAW_NOTICE
     }
+
+    /** One Agent/Task call with its subagent's steps folded under it (see [SubagentSteps]). */
+    data class Subagent(
+        override val key: String,
+        val description: String,
+        val model: String?,
+        val status: SubagentStatus,
+        val statusText: String,
+        val result: String?,
+        val items: List<SubagentItemRow>,
+    ) : ThreadRowPresentation {
+        override val kind = ThreadRowKind.SUBAGENT
+    }
+}
+
+/** A row under an expanded agent: one step, or a fold of steps. */
+sealed interface SubagentItemRow {
+    val key: String
+
+    /** [failed] marks the step the agent failed on; its output starts open. */
+    data class Step(val row: ThreadRowPresentation, val failed: Boolean = false) : SubagentItemRow {
+        override val key: String get() = row.key
+    }
+
+    /** "N more steps" or, with [notices], "N background tasks completed". */
+    data class Fold(
+        override val key: String,
+        val label: String,
+        val rows: List<ThreadRowPresentation>,
+        val notices: Boolean,
+    ) : SubagentItemRow
 }
 
 sealed interface ThreadPresentation {
@@ -347,9 +387,117 @@ object ThreadPresenter {
         return ThreadPresentation.Content(
             metadata = metadata(thread),
             contentStatus = contentStatus(state),
-            rows = thread.feed.flatMap(::rows),
+            rows = feedRows(thread.feed),
         )
     }
+
+    /**
+     * The feed's rows with each subagent's entries moved under its Agent/Task
+     * row. With no parent ids (an older backend) only the Agent/Task rows change.
+     */
+    fun feedRows(feed: List<FeedItem>): List<ThreadRowPresentation> {
+        val grouping = SubagentSteps.group(feed, ::subagentFacts)
+        return grouping.topLevel.flatMap { item ->
+            if (item is FeedItem.Tool && SubagentSteps.isSubagentToolName(item.toolName)) {
+                listOf(
+                    subagentRow(
+                        item,
+                        grouping.stepsByAgent[item.toolId].orEmpty(),
+                        grouping.completionsByAgent[item.toolId].orEmpty(),
+                    ),
+                )
+            } else {
+                rows(item)
+            }
+        }
+    }
+
+    /** A tool step's one-line label: `summarizeTool`'s detail, else its title. */
+    fun toolStepLabel(toolName: String, input: JsonValue?): String =
+        toolSummary(toolName, input).let { it.detail.ifEmpty { it.label } }
+
+    private fun noticeParts(item: FeedItem): List<SyntheticPart.TaskNotification> {
+        if (item !is FeedItem.User || !item.fromTranscript) return emptyList()
+        val split = SyntheticUserMessage.split(item.text) ?: return emptyList()
+        if (split.userText.isNotEmpty()) return emptyList()
+        return split.parts.filterIsInstance<SyntheticPart.TaskNotification>()
+    }
+
+    private fun subagentFacts(item: FeedItem): SubagentEntryFacts = when (item) {
+        is FeedItem.Tool -> SubagentEntryFacts(
+            toolCalls = listOf(SubagentToolCallFact(item.toolId, item.toolName, item.parentToolCallId)),
+        )
+        is FeedItem.Text -> SubagentEntryFacts(parentToolCallId = item.parentToolCallId)
+        is FeedItem.User -> SubagentEntryFacts(noticeToolUseId = noticeParts(item).firstNotNullOfOrNull { it.toolUseId })
+        else -> SubagentEntryFacts()
+    }
+
+    private fun subagentRow(
+        call: FeedItem.Tool,
+        entries: List<FeedItem>,
+        completionEntries: List<FeedItem>,
+    ): ThreadRowPresentation.Subagent {
+        val steps = mutableListOf<SubagentStep>()
+        val stepRows = mutableMapOf<String, ThreadRowPresentation>()
+        for (entry in entries) {
+            when (entry) {
+                is FeedItem.Tool -> {
+                    steps += SubagentStep.Tool(entry.id, entry.toolName, entry.input, entry.output, entry.isError)
+                    stepRows[entry.id] = row(entry)
+                }
+                is FeedItem.Text -> if (entry.text.isNotBlank()) {
+                    steps += SubagentStep.Text(entry.id, entry.text)
+                    stepRows[entry.id] = row(entry)
+                }
+                else -> noticeParts(entry).forEachIndexed { index, part ->
+                    val key = "${entry.id}:$index"
+                    steps += SubagentStep.Notice(key, part)
+                    stepRows[key] = syntheticRow(key, part)
+                }
+            }
+        }
+        val completions = completionEntries.flatMap { entry ->
+            noticeParts(entry).map { SubagentCompletion(it, (entry as FeedItem.User).at) }
+        }
+        val view = SubagentSteps.view(
+            SubagentCall(
+                input = call.input,
+                // A finished call with no output is done, not running forever.
+                output = call.output ?: "".takeIf { call.state != "running" },
+                isError = call.isError,
+                startedAt = call.startedAt,
+            ),
+            steps,
+            completions,
+            ::toolStepLabel,
+        )
+        val items = view.items.map { item ->
+            when (item) {
+                is SubagentDisplayItem.Step -> SubagentItemRow.Step(stepRows.getValue(item.step.key), item.failed)
+                is SubagentDisplayItem.More ->
+                    SubagentItemRow.Fold(item.key, item.label, item.steps.map { stepRows.getValue(it.key) }, notices = false)
+                is SubagentDisplayItem.Notices ->
+                    SubagentItemRow.Fold(item.key, item.label, item.steps.map { stepRows.getValue(it.key) }, notices = true)
+            }
+        }
+        return ThreadRowPresentation.Subagent(
+            key = call.id,
+            description = view.description,
+            model = view.model,
+            status = view.status,
+            statusText = SubagentSteps.statusText(view),
+            result = view.result,
+            items = items,
+        )
+    }
+
+    private fun syntheticRow(key: String, part: SyntheticPart) = ThreadRowPresentation.Synthetic(
+        key = key,
+        label = SyntheticUserMessage.label(part),
+        detail = SyntheticUserMessage.detail(part),
+        tone = SyntheticUserMessage.tone(part),
+        monospace = part is SyntheticPart.CommandOutput,
+    )
 
     fun metadata(thread: ThreadState): ThreadMetadataPresentation {
         val validMaximum = thread.maxTokens?.takeIf { it > 0 }
@@ -387,17 +535,7 @@ object ThreadPresenter {
         if (item !is FeedItem.User || !item.fromTranscript) return listOf(row(item))
         val split = SyntheticUserMessage.split(item.text) ?: return listOf(row(item))
         return buildList {
-            split.parts.forEachIndexed { index, part ->
-                add(
-                    ThreadRowPresentation.Synthetic(
-                        key = "${item.id}-s$index",
-                        label = SyntheticUserMessage.label(part),
-                        detail = SyntheticUserMessage.detail(part),
-                        tone = SyntheticUserMessage.tone(part),
-                        monospace = part is SyntheticPart.CommandOutput,
-                    ),
-                )
-            }
+            split.parts.forEachIndexed { index, part -> add(syntheticRow("${item.id}-s$index", part)) }
             if (split.userText.isNotEmpty() || item.images.isNotEmpty()) {
                 add(row(item.copy(text = split.userText)))
             }

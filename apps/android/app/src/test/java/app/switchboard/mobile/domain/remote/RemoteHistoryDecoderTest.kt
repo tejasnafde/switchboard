@@ -38,6 +38,14 @@ class RemoteHistoryDecoderTest {
                                         "input" to JsonString("pwd"),
                                         "output" to JsonString("/repo"),
                                     ),
+                                    obj(
+                                        "id" to JsonString("t-2"),
+                                        "name" to JsonString("Bash"),
+                                        "input" to JsonString("false"),
+                                        "output" to JsonString("Exit code 1"),
+                                        "parentToolCallId" to JsonString("A"),
+                                        "isError" to JsonBoolean(true),
+                                    ),
                                 ),
                             ),
                         ),
@@ -54,7 +62,10 @@ class RemoteHistoryDecoderTest {
             loaded.messages.single().images,
         )
         assertEquals(
-            listOf(MessageToolCall("t-1", "Bash", "pwd", "/repo")),
+            listOf(
+                MessageToolCall("t-1", "Bash", "pwd", "/repo"),
+                MessageToolCall("t-2", "Bash", "false", "Exit code 1", parentToolCallId = "A", isError = true),
+            ),
             loaded.messages.single().toolCalls,
         )
     }
