@@ -6,7 +6,10 @@
   "surfaces": {
     "desktop": {
       "status": "implemented",
-      "evidence": ["package.json", "package-lock.json", "src/main/provider/adapters/claude-adapter.ts"]
+      "evidence": [
+        "src/main/provider/adapters/claude-adapter.ts",
+        "tests/unit/claude-adapter-effort.test.ts"
+      ]
     },
     "reactNativeIos": {
       "status": "not_applicable",
@@ -18,7 +21,10 @@
     },
     "sharedBackendApi": {
       "status": "implemented",
-      "evidence": ["src/main/provider/adapters/claude-adapter.ts", "src/main/provider/AGENTS.md"]
+      "evidence": [
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/AGENTS.md"
+      ]
     },
     "storageDataMigration": {
       "status": "not_applicable",
@@ -26,7 +32,11 @@
     },
     "updateRelease": {
       "status": "implemented",
-      "evidence": ["src/main/machines/provision-deps.ts"]
+      "evidence": [
+        "package.json",
+        "src/main/machines/provision-deps.ts",
+        "CHANGELOG.md"
+      ]
     }
   },
   "verification": {
