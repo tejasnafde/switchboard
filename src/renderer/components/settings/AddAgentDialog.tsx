@@ -32,6 +32,7 @@ import {
   defaultSignInFolder,
   draftCredentials,
   envFromRows,
+  envRowErrors,
   folderLoginCommand,
   installCommand,
   isTestedAgent,
@@ -214,7 +215,7 @@ export function AddAgentDialog({
 
   async function save() {
     const taken = nameTaken(agent, name, instances)
-    if (!name.trim() || taken) return
+    if (!name.trim() || taken || envInvalid) return
     setSaving(true)
     setSaveError(null)
     try {
@@ -231,6 +232,8 @@ export function AddAgentDialog({
 
   const kindInstalled = installed[kind]
   const canContinueAgent = localMode ? !!local.command.trim() && !checkingLocal : kindInstalled === true
+  const envErrors = method.id === 'env' ? envRowErrors(envRows) : []
+  const envInvalid = envErrors.some((e) => e !== null)
   const nameError = name.trim() && nameTaken(agent, name, instances) ? 'An account with this name exists.' : null
   const models = modelsForAgent(agent)
   const stepIndex = ADD_AGENT_STEPS.findIndex((s) => s.id === step)
@@ -411,6 +414,7 @@ export function AddAgentDialog({
                 resetTest()
               }}
               envRows={envRows}
+              envErrors={envErrors}
               onEnvRows={(rows) => {
                 setEnvRows(rows)
                 resetTest()
@@ -538,12 +542,16 @@ export function AddAgentDialog({
             </Button>
           )}
           {step === 'sign-in' && (
-            <Button size="sm" onClick={() => setStep('config')}>
+            <Button size="sm" disabled={envInvalid} onClick={() => setStep('config')}>
               Continue
             </Button>
           )}
           {step === 'config' && (
-            <Button size="sm" disabled={saving || !name.trim() || !!nameError} onClick={() => void save()}>
+            <Button
+              size="sm"
+              disabled={saving || !name.trim() || !!nameError || envInvalid}
+              onClick={() => void save()}
+            >
               {saving ? 'Adding…' : 'Add agent'}
             </Button>
           )}
@@ -563,6 +571,7 @@ function SignInStep({
   apiKey,
   onKey,
   envRows,
+  envErrors,
   onEnvRows,
   test,
   onTest,
@@ -576,6 +585,7 @@ function SignInStep({
   apiKey: string
   onKey: (v: string) => void
   envRows: EnvRow[]
+  envErrors: (string | null)[]
   onEnvRows: (rows: EnvRow[]) => void
   test: TestState
   onTest: () => void
@@ -636,32 +646,40 @@ function SignInStep({
       {method.id === 'env' && (
         <Field label={method.label} hint={method.hint}>
           {envRows.map((row, i) => (
-            <div key={i} className="mb-1.5 flex gap-1.5">
-              <Input
-                aria-label="Variable name"
-                className="flex-1 [font-family:var(--font-mono)] text-[12px]"
-                placeholder="KEY"
-                value={row.key}
-                onChange={(e) => onEnvRows(envRows.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)))}
-              />
-              <Input
-                aria-label="Value"
-                type="password"
-                autoComplete="off"
-                className="flex-[2]"
-                placeholder="value"
-                value={row.value}
-                onChange={(e) => onEnvRows(envRows.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)))}
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8"
-                aria-label="Remove variable"
-                onClick={() => onEnvRows(envRows.filter((_, j) => j !== i))}
-              >
-                <Glyph d="M4 4l8 8M12 4l-8 8" />
-              </Button>
+            <div key={i} className="mb-1.5">
+              <div className="flex gap-1.5">
+                <Input
+                  aria-label="Variable name"
+                  aria-invalid={!!envErrors[i]}
+                  className="flex-1 [font-family:var(--font-mono)] text-[12px]"
+                  placeholder="KEY"
+                  value={row.key}
+                  onChange={(e) => onEnvRows(envRows.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)))}
+                />
+                <Input
+                  aria-label="Value"
+                  type="password"
+                  autoComplete="off"
+                  className="flex-[2]"
+                  placeholder="value"
+                  value={row.value}
+                  onChange={(e) => onEnvRows(envRows.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)))}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8"
+                  aria-label="Remove variable"
+                  onClick={() => onEnvRows(envRows.filter((_, j) => j !== i))}
+                >
+                  <Glyph d="M4 4l8 8M12 4l-8 8" />
+                </Button>
+              </div>
+              {envErrors[i] && (
+                <div role="alert" className="mt-1 text-[12px] text-destructive">
+                  {envErrors[i]}
+                </div>
+              )}
             </div>
           ))}
           <div className="flex items-center">

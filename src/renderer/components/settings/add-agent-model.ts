@@ -147,15 +147,26 @@ export interface EnvRow {
 
 const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/
 
-/** The rows as an env map. Empty rows are skipped; a row with a bad name is an error. */
-export function envFromRows(rows: readonly EnvRow[]): { env: Record<string, string> } | { error: string } {
-  const env: Record<string, string> = {}
-  for (const row of rows) {
+/** Per row, why it cannot be saved, or null. A row with no name and no value is skipped, so it is fine. */
+export function envRowErrors(rows: readonly EnvRow[]): (string | null)[] {
+  const seen = new Set<string>()
+  return rows.map((row) => {
     const key = row.key.trim()
-    if (!key && !row.value) continue
-    if (!ENV_KEY.test(key)) return { error: `"${key || '(empty)'}" is not a variable name.` }
-    env[key] = row.value
-  }
+    if (!key && !row.value) return null
+    if (!key) return 'Enter a name for this value.'
+    if (!ENV_KEY.test(key)) return `"${key}" is not a variable name. Use letters, digits and _, not a digit first.`
+    if (seen.has(key)) return `"${key}" is set twice.`
+    seen.add(key)
+    return null
+  })
+}
+
+/** The rows as an env map, or the first row error. Empty rows are skipped. */
+export function envFromRows(rows: readonly EnvRow[]): { env: Record<string, string> } | { error: string } {
+  const error = envRowErrors(rows).find((e) => e !== null)
+  if (error) return { error }
+  const env: Record<string, string> = {}
+  for (const row of rows) if (row.key.trim()) env[row.key.trim()] = row.value
   return { env }
 }
 
@@ -211,7 +222,10 @@ export interface AddAgentDraft {
   launch: AcpCommandConfig | null
 }
 
-/** The credentials part of an account, shared by the Test probe and the save. */
+/**
+ * The credentials part of an account, shared by the Test probe and the save.
+ * Throws on bad env rows, so a save never drops keys the user entered.
+ */
 export function draftCredentials(draft: AddAgentDraft): Pick<
   ProviderInstanceUpsertInput,
   'agentType' | 'env' | 'oauthDir' | 'configJson'
@@ -226,7 +240,8 @@ export function draftCredentials(draft: AddAgentDraft): Pick<
       return { ...base, authMode: 'env', env: draft.key ? { [draft.method.envKey]: draft.key } : {}, oauthDir: null }
     case 'env': {
       const parsed = envFromRows(draft.envRows)
-      return { ...base, authMode: 'env', env: 'env' in parsed ? parsed.env : {}, oauthDir: null }
+      if ('error' in parsed) throw new Error(parsed.error)
+      return { ...base, authMode: 'env', env: parsed.env, oauthDir: null }
     }
     case 'terminal':
       return { ...base, authMode: 'env', env: {}, oauthDir: null }

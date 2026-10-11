@@ -7,6 +7,7 @@ import {
   defaultSignInFolder,
   draftCredentials,
   envFromRows,
+  envRowErrors,
   installCommand,
   localCommandConfig,
   nameFromCommand,
@@ -62,8 +63,43 @@ describe('Add agent model', () => {
     ).toEqual({
       env: { RUST_LOG: 'warn' },
     })
-    expect(envFromRows([{ key: '1BAD', value: 'x' }])).toEqual({ error: '"1BAD" is not a variable name.' })
-    expect(envFromRows([{ key: '', value: 'orphan' }])).toEqual({ error: '"(empty)" is not a variable name.' })
+    expect(envFromRows([{ key: '1BAD', value: 'x' }])).toEqual({
+      error: '"1BAD" is not a variable name. Use letters, digits and _, not a digit first.',
+    })
+    expect(envFromRows([{ key: '', value: 'orphan' }])).toEqual({ error: 'Enter a name for this value.' })
+  })
+
+  it('says which env row is wrong, and allows valid and blank rows', () => {
+    expect(
+      envRowErrors([
+        { key: 'GOOD_KEY', value: 'a' },
+        { key: '', value: '' },
+        { key: '1BAD', value: 'x' },
+        { key: ' ', value: 'orphan' },
+        { key: ' GOOD_KEY', value: 'b' },
+        { key: 'EMPTY_OK', value: '' },
+      ]),
+    ).toEqual([
+      null,
+      null,
+      '"1BAD" is not a variable name. Use letters, digits and _, not a digit first.',
+      'Enter a name for this value.',
+      '"GOOD_KEY" is set twice.',
+      null,
+    ])
+    expect(
+      envFromRows([
+        { key: 'A', value: '1' },
+        { key: 'A', value: '2' },
+      ]),
+    ).toEqual({ error: '"A" is set twice.' })
+  })
+
+  it('refuses to save env rows it cannot read, instead of saving no keys', () => {
+    const env = signInMethods('opencode')[0]
+    const bad = draft({ kind: 'opencode', method: env, envRows: [{ key: '1BAD', value: 'x' }] })
+    expect(() => draftCredentials(bad)).toThrow('"1BAD" is not a variable name.')
+    expect(() => addAgentInput(bad, { name: 'OpenCode', accentColor: '#3da8ff' })).toThrow()
   })
 
   it('turns the local command form into a launch config', () => {
