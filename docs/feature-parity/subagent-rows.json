@@ -57,16 +57,15 @@
         "tests/fixtures/subagent-cases.json",
         "tests/unit/subagent-steps.test.ts",
         "tests/unit/claude-adapter-subagent.test.ts",
-        "tests/unit/live-task-notification.test.ts"
+        "tests/unit/live-task-notification.test.ts",
+        "src/main/agent/dedupe-messages.ts",
+        "src/main/agent/jsonl-parser.ts",
+        "src/main/agent/subagent-transcripts.ts"
       ]
     },
     "storageDataMigration": {
       "status": "implemented",
       "evidence": [
-        "src/main/provider/provider-registry.ts",
-        "src/main/agent/dedupe-messages.ts",
-        "src/main/agent/jsonl-parser.ts",
-        "src/main/agent/subagent-transcripts.ts",
         "src/main/conversations/history.ts",
         "tests/unit/subagent-transcripts.test.ts",
         "tests/unit/assistant-mirror.test.ts"
