@@ -1,10 +1,13 @@
 import type { ChatMessage } from '@shared/types'
 import { fmtDuration } from '@shared/format'
+import { subagentCallsOf } from './subagent-messages'
 
 export type TurnPresentationItem =
   | { kind: 'message'; message: ChatMessage }
   | { kind: 'activity'; messages: ChatMessage[]; toolCount: number }
   | { kind: 'files'; messages: ChatMessage[] }
+  /** A row of Agent/Task calls: one agent row each, never inside "Used N tools". */
+  | { kind: 'subagents'; message: ChatMessage }
 
 export function changedFilesLabel(fileCount: number): string {
   return `Changed ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`
@@ -59,6 +62,7 @@ function isToolOnly(message: ChatMessage): boolean {
 }
 
 function itemKind(message: ChatMessage): TurnPresentationItem['kind'] {
+  if (isToolOnly(message) && subagentCallsOf(message).length > 0) return 'subagents'
   if (isToolOnly(message)) return 'activity'
   if (message.fileDiff && !message.content) return 'files'
   return 'message'

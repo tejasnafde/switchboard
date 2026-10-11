@@ -288,10 +288,17 @@ export function cutLabel(text: string, max = BACKGROUND_TASK_LABEL_MAX): string 
  * which the expanded detail shows.
  */
 export function backgroundTaskLabel(summary: string): string {
-  // Greedy: a command can hold quotes of its own.
-  const quoted = /"(.*)"/s.exec(summary)?.[1] ?? summary
-  const firstLine = quoted.split('\n').find((line) => line.trim()) ?? ''
+  const firstLine =
+    backgroundTaskSubject(summary)
+      .split('\n')
+      .find((line) => line.trim()) ?? ''
   return cutLabel(firstLine.trim().replace(/^cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*&&\s*/, ''))
+}
+
+/** The task's description or whole command, as the summary quotes it. */
+export function backgroundTaskSubject(summary: string): string {
+  // Greedy: a command can hold quotes of its own.
+  return (/"(.*)"/s.exec(summary)?.[1] ?? summary).trim()
 }
 
 /** One-line label for a compact row, e.g. "Background task failed: Build (exit 144)". */

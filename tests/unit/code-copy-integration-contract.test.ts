@@ -57,7 +57,7 @@ describe('code-copy integration contract', () => {
     expect(toolCall).toContain("aria-label={`${copied ? 'Copied' : 'Copy'} code block`}")
     expect(toolCall).toContain('aria-live="polite"')
     expect(toolCall).toContain('className="tool-code-toolbar"')
-    expect(toolCall).toContain("padding: '6px 10px'")
+    expect(toolCall).toContain('px-[10px] py-[6px]')
     expect(toolCall).toContain('const codeRef = useRef<HTMLSpanElement>(null)')
     expect(toolCall).toMatch(
       /tool-code-toolbar[^]*?<button[^]*?<\/div>[^]*?<pre[^]*?<span ref=\{codeRef\}>\{children\}<\/span>/,
