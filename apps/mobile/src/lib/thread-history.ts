@@ -74,6 +74,7 @@ export function historyToItems(messages: ChatMessage[]): FeedItem[] {
         text: message.content,
         stream: 'assistant',
         done: true,
+        ...(message.parentToolCallId ? { parentToolCallId: message.parentToolCallId } : {}),
       })
     }
     for (const tool of message.toolCalls ?? []) {
@@ -84,6 +85,8 @@ export function historyToItems(messages: ChatMessage[]): FeedItem[] {
         input: tool.input,
         output: tool.output,
         state: 'done',
+        ...(tool.parentToolCallId ? { parentToolCallId: tool.parentToolCallId } : {}),
+        ...(tool.isError ? { isError: true } : {}),
       })
     }
     const diff = message.fileDiff

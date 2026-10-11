@@ -103,7 +103,9 @@ import { FORK_MERGE_BACK_CAPABILITY } from '@shared/merge-back'
 import { styles } from './thread-screen.styles'
 import { blockedSendReason } from '../lib/composer'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
-import { collapseFileEdits, type FeedRow } from '../lib/file-groups'
+import { collapseFileEdits } from '../lib/file-groups'
+import { collapseSubagents, type ThreadRow } from '../lib/subagent-rows'
+import { SubagentItem } from './SubagentItem'
 
 const log = createLogger('screen:thread')
 
@@ -636,7 +638,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     })
   }, [])
   const reversedItems = useMemo(
-    () => collapseFileEdits(thread.items, openFileGroups).reverse(),
+    () => collapseSubagents(collapseFileEdits(thread.items, openFileGroups)).reverse(),
     [thread.items, openFileGroups],
   )
   const itemCount = reversedItems.length
@@ -1115,7 +1117,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
   )
 
   const renderItem = useCallback(
-    ({ item }: { item: FeedRow }) => {
+    ({ item }: { item: ThreadRow }) => {
       switch (item.kind) {
         case 'user':
           const queued = queuedByBubbleId.get(item.id)
@@ -1179,6 +1181,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
           )
         case 'tool':
           return <ToolItem item={item} />
+        case 'subagent':
+          return <SubagentItem row={item} />
         case 'denial':
           return (
             <View style={styles.denialPill}>

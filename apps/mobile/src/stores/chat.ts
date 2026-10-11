@@ -47,8 +47,20 @@ export type FeedItem =
       stream: 'assistant' | 'reasoning' | 'plan'
       done: boolean
       durationMs?: number
+      /** A subagent's own text: the Agent/Task call it belongs to. */
+      parentToolCallId?: string
     }
-  | { kind: 'tool'; id: string; toolName: string; input: unknown; output?: string; state: 'running' | 'done' }
+  | {
+      kind: 'tool'
+      id: string
+      toolName: string
+      input: unknown
+      output?: string
+      state: 'running' | 'done'
+      /** A subagent's step: the Agent/Task call it ran inside. */
+      parentToolCallId?: string
+      isError?: boolean
+    }
   | { kind: 'denial'; id: string; toolName: string; reason: string }
   | {
       kind: 'approval'
@@ -345,15 +357,24 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
           ),
         }
       }
+      const parentToolCallId = event.parentToolCallId
       return {
         items: [
           ...t.items,
-          { kind: 'text', id, text: applyContentText(undefined, event), stream: event.streamKind, done: false },
+          {
+            kind: 'text',
+            id,
+            text: applyContentText(undefined, event),
+            stream: event.streamKind,
+            done: false,
+            ...(parentToolCallId ? { parentToolCallId } : {}),
+          },
         ],
         // Mirror the desktop rule (agent-store appendMessage): unread
         // bumps once per assistant MESSAGE, not per turn - counts stay
-        // consistent across clients watching the same session.
-        unread: event.streamKind === 'assistant' && !isActive ? t.unread + 1 : t.unread,
+        // consistent across clients watching the same session. A
+        // subagent's text sits inside its agent's row.
+        unread: event.streamKind === 'assistant' && !parentToolCallId && !isActive ? t.unread + 1 : t.unread,
       }
     }
     // A turn sent from another client (desktop, second phone). Our own
@@ -413,7 +434,14 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
       return {
         items: [
           ...t.items,
-          { kind: 'tool', id: `t-${event.toolId}`, toolName: event.toolName, input: event.input, state: 'running' },
+          {
+            kind: 'tool',
+            id: `t-${event.toolId}`,
+            toolName: event.toolName,
+            input: event.input,
+            state: 'running',
+            ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}),
+          },
         ],
       }
     case 'tool.completed':
@@ -425,6 +453,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
             ...(i as Extract<FeedItem, { kind: 'tool' }>),
             output: event.output,
             state: 'done' as const,
+            ...(event.isError ? { isError: true } : {}),
           }),
         ),
       }
