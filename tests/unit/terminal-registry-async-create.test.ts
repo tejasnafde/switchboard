@@ -37,31 +37,37 @@ if (typeof getComputedStyle === 'undefined') {
 }
 
 vi.mock('@xterm/xterm', () => {
-  const Terminal = vi.fn(() => ({
-    loadAddon: vi.fn(),
-    onData: vi.fn(),
-    onResize: vi.fn(),
-    attachCustomKeyEventHandler: vi.fn(),
-    open: vi.fn(),
-    dispose: vi.fn(),
-    write: vi.fn(),
-    options: {},
-    element: document.createElement('div'),
-  }))
+  const Terminal = vi.fn(function () {
+    return {
+      loadAddon: vi.fn(),
+      onData: vi.fn(),
+      onResize: vi.fn(),
+      attachCustomKeyEventHandler: vi.fn(),
+      open: vi.fn(),
+      dispose: vi.fn(),
+      write: vi.fn(),
+      options: {},
+      element: document.createElement('div'),
+    }
+  })
   return { Terminal }
 })
 
 vi.mock('@xterm/addon-fit', () => ({
-  FitAddon: vi.fn(() => ({ fit: vi.fn() })),
+  FitAddon: vi.fn(function () {
+    return { fit: vi.fn() }
+  }),
 }))
 
 vi.mock('@xterm/addon-search', () => ({
-  SearchAddon: vi.fn(() => ({
-    findNext: vi.fn(),
-    findPrevious: vi.fn(),
-    clearDecorations: vi.fn(),
-    onDidChangeResults: vi.fn(),
-  })),
+  SearchAddon: vi.fn(function () {
+    return {
+      findNext: vi.fn(),
+      findPrevious: vi.fn(),
+      clearDecorations: vi.fn(),
+      onDidChangeResults: vi.fn(),
+    }
+  }),
 }))
 
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
