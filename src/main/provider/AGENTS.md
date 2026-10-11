@@ -15,7 +15,7 @@ Detail for this part of the code. The root `AGENTS.md` holds the rules that appl
 - `event-bus.ts` - `RuntimeEventBus` (EventEmitter) decouples adapter event emission from the renderer, so N subscribers (renderer, future telemetry) can listen instead of 1:1 `webContents` coupling
 - `env-overlay.ts` - merges a provider-instance env overlay into the spawn env (skips empty strings so partial configs don't blank defaults)
 - `claude-session-migrate.ts` - copies Claude SDK session JSONL across `oauth_dir` when rotating provider instances mid-flight, so resume survives a credential switch
-- **Claude Agent SDK upgrades (0.3.296 since 2026-10-11).** Read the SDK CHANGELOG between the versions before a bump. Two changes from 0.3.260 to 0.3.296 matter here: from 0.3.286 an omitted `permissionMode` is left to the CLI's settings (`defaultMode`, or auto mode on third-party providers), so `queryOptions` must always pass one, as it does; from 0.3.268 the task tools (TodoWrite, TaskCreate and the rest) are default tools only on older models, so a newer model may never call them. Remote machines install the same version (`provision-deps.ts` reads it from `package.json`).
+- **Claude Agent SDK upgrades (0.3.296 since 2026-10-11).** Read the SDK CHANGELOG between the versions before a bump. One change from 0.3.260 to 0.3.296 matters here: from 0.3.286 an omitted `permissionMode` is left to the CLI's settings (`defaultMode`, or auto mode on third-party providers), so `queryOptions` must always pass one, as it does. Remote machines install the same version (`provision-deps.ts` reads it from `package.json`).
 
 ## Runtime events (wire format)
 
