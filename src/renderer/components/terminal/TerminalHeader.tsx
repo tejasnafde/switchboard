@@ -1,5 +1,7 @@
 import { memo } from 'react'
 import type { TerminalStatus } from '@shared/types'
+import { cn } from '../../lib/utils'
+import { Toolbar } from '../ui/toolbar'
 
 interface TerminalHeaderProps {
   label: string
@@ -10,9 +12,9 @@ interface TerminalHeaderProps {
 }
 
 const statusColors: Record<TerminalStatus, string> = {
-  running: 'var(--success)',
-  exited: 'var(--text-muted)',
-  error: 'var(--error)',
+  running: 'bg-[var(--success)]',
+  exited: 'bg-[var(--text-muted)]',
+  error: 'bg-[var(--error)]',
 }
 
 export const TerminalHeader = memo(function TerminalHeader({
@@ -23,39 +25,16 @@ export const TerminalHeader = memo(function TerminalHeader({
   onClick,
 }: TerminalHeaderProps) {
   return (
-    <div
+    <Toolbar
       onClick={onClick}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        padding: '4px 8px',
-        background: isActive ? 'var(--bg-tertiary)' : 'var(--bg-secondary)',
-        borderBottom: '1px solid var(--border)',
-        cursor: 'pointer',
-        userSelect: 'none',
-        fontSize: '12px',
-      }}
+      className={cn(
+        'cursor-pointer gap-[8px] border-b border-[var(--border)] px-[8px] py-[4px] text-[12px] select-none',
+        isActive ? 'bg-[var(--bg-tertiary)]' : 'bg-[var(--bg-secondary)]',
+      )}
     >
-      <span
-        style={{
-          width: '6px',
-          height: '6px',
-          borderRadius: '50%',
-          background: statusColors[status],
-          flexShrink: 0,
-        }}
-      />
+      <span className={cn('size-[6px] shrink-0 rounded-[50%]', statusColors[status])} />
 
-      <span
-        style={{
-          flex: 1,
-          color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
+      <span className={cn('flex-1 truncate', isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]')}>
         {label}
       </span>
 
@@ -64,19 +43,11 @@ export const TerminalHeader = memo(function TerminalHeader({
           e.stopPropagation()
           onClose()
         }}
-        style={{
-          background: 'none',
-          border: 'none',
-          color: 'var(--text-muted)',
-          cursor: 'pointer',
-          padding: '0 2px',
-          fontSize: '14px',
-          lineHeight: 1,
-        }}
+        className="cursor-pointer border-0 bg-transparent px-[2px] py-0 text-[14px] leading-none text-[var(--text-muted)]"
         title="Close terminal"
       >
         ×
       </button>
-    </div>
+    </Toolbar>
   )
 })

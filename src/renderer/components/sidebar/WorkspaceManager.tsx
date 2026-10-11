@@ -11,9 +11,12 @@ import {
   reorderWorkspacesById,
 } from '@shared/workspace-organization'
 import { colorTokenForWorkspace } from './sidebar-helpers'
+import { Combobox } from '../ui/combobox'
 import { confirm } from '../ui/confirm'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
 
+// The workspace picker's value for no workspace (a list row cannot be '').
+const UNGROUPED = '__ungrouped__'
 const WORKSPACE_COLORS = [1, 2, 3, 4, 5, 6].map((index) => `var(--workspace-color-${index})`)
 
 interface WorkspaceManagerProps {
@@ -187,19 +190,17 @@ function SortableProjectRow({
         <span className="workspace-organizer-project-name">{project.name}</span>
         <span className="workspace-organizer-project-path">{project.path}</span>
       </span>
-      <select
+      <Combobox
+        searchable={false}
         aria-label={`Workspace for ${project.name}`}
-        name={`workspace-${project.path}`}
-        value={project.workspaceId ?? ''}
-        onChange={(event) => onMove(event.target.value || null)}
-      >
-        <option value="">Ungrouped</option>
-        {workspaces.map((workspace) => (
-          <option key={workspace.id} value={workspace.id}>
-            {workspace.name}
-          </option>
-        ))}
-      </select>
+        value={project.workspaceId ?? UNGROUPED}
+        onValueChange={(value) => onMove(value === UNGROUPED ? null : value)}
+        options={[
+          { value: UNGROUPED, label: 'Ungrouped' },
+          ...workspaces.map((workspace) => ({ value: workspace.id, label: workspace.name })),
+        ]}
+        className="max-w-[132px] shrink-0 rounded-[4px] px-[6px] py-[4px] text-[var(--text-secondary)] max-[620px]:max-w-[96px]"
+      />
     </div>
   )
 }

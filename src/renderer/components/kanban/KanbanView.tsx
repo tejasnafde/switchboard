@@ -49,6 +49,8 @@ import { CardModal } from './CardModal'
 import { WorktreeManagerModal } from './WorktreeManagerModal'
 import { launchCardChat } from './card-launch'
 import { createRendererLogger } from '../../logger'
+import { Combobox } from '../ui/combobox'
+import { Toolbar } from '../ui/toolbar'
 
 const log = createRendererLogger('kanban:view')
 
@@ -61,6 +63,7 @@ const RUNTIME_MODE_BADGE: Record<RuntimeMode, string> = {
 }
 
 const UNGROUPED = '__ungrouped__'
+const ALL = '__all__'
 
 export function KanbanView(): React.ReactElement {
   const workspaceFilter = useLayoutStore((s) => s.kanbanWorkspaceFilter)
@@ -252,47 +255,45 @@ export function KanbanView(): React.ReactElement {
 
   return (
     <div style={paneStyle}>
-      <div style={toolbarStyle}>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>Kanban</div>
-        <select
-          value={workspaceFilter ?? ''}
-          onChange={(e) => setWorkspaceFilter(e.target.value || null)}
-          style={selectStyle}
+      <Toolbar className="gap-[8px] border-b border-[var(--border)] px-[12px] py-[8px]">
+        <div className="text-[13px] font-[600]">Kanban</div>
+        <Combobox
+          searchable={false}
+          aria-label="Filter by workspace"
           title="Filter by workspace"
-        >
-          <option value="">All workspaces</option>
-          {workspaces.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name}
-            </option>
-          ))}
-          <option value={UNGROUPED}>Ungrouped</option>
-        </select>
-        <select
-          value={projectFilter ?? ''}
-          onChange={(e) => setProjectFilter(e.target.value || null)}
-          style={selectStyle}
+          value={workspaceFilter ?? ALL}
+          onValueChange={(value) => setWorkspaceFilter(value === ALL ? null : value)}
+          options={[
+            { value: ALL, label: 'All workspaces' },
+            ...workspaces.map((w) => ({ value: w.id, label: w.name })),
+            { value: UNGROUPED, label: 'Ungrouped' },
+          ]}
+          className="rounded-[4px] px-[8px]"
+        />
+        <Combobox
+          searchable={false}
+          aria-label="Filter by project"
           title="Filter by project"
-        >
-          <option value="">All projects ({scopedProjects.length})</option>
-          {scopedProjects.map((p) => (
-            <option key={p.path} value={p.path}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+          value={projectFilter ?? ALL}
+          onValueChange={(value) => setProjectFilter(value === ALL ? null : value)}
+          options={[
+            { value: ALL, label: `All projects (${scopedProjects.length})` },
+            ...scopedProjects.map((p) => ({ value: p.path, label: p.name })),
+          ]}
+          className="rounded-[4px] px-[8px]"
+        />
         <input
           type="text"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter title / tag…"
-          style={inputStyle}
+          className="w-[200px] rounded-[4px] border border-[var(--border)] bg-transparent px-[8px] py-[4px] text-[12px] text-inherit"
         />
-        <div style={{ flex: 1 }} />
+        <div className="flex-1" />
         <button
           onClick={() => setManagingWorktrees(true)}
           disabled={!projectFilter}
-          style={secondaryBtnStyle}
+          className={toolbarButtonClass}
           title={projectFilter ? 'Manage git worktrees for this project' : 'Pick a project to manage its worktrees'}
         >
           ⎇ Worktrees
@@ -300,7 +301,7 @@ export function KanbanView(): React.ReactElement {
         <button
           onClick={() => setCreating(true)}
           disabled={!newCardDefaultPath}
-          style={primaryBtnStyle}
+          className="cursor-pointer rounded-[4px] border-0 bg-[var(--accent,#2563eb)] px-[12px] py-[4px] text-[12px] text-[white]"
           title={
             !newCardDefaultPath
               ? 'No projects in scope yet - open a project from the sidebar first'
@@ -311,10 +312,10 @@ export function KanbanView(): React.ReactElement {
         >
           ＋ New card
         </button>
-        <button onClick={() => setAppView('chats')} style={secondaryBtnStyle} title="Back to chats (⌘⇧K)">
+        <button onClick={() => setAppView('chats')} className={toolbarButtonClass} title="Back to chats (⌘⇧K)">
           ✕ Close
         </button>
-      </div>
+      </Toolbar>
 
       {launchError && (
         <div style={launchErrStyle}>
@@ -752,49 +753,8 @@ const paneStyle: CSSProperties = {
   minHeight: 0,
   background: 'var(--bg)',
 }
-const toolbarStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  padding: '8px 12px',
-  borderBottom: '1px solid var(--border)',
-  background: 'var(--bg-elev1, transparent)',
-}
-const inputStyle: CSSProperties = {
-  fontSize: 12,
-  padding: '4px 8px',
-  background: 'var(--bg)',
-  color: 'var(--fg)',
-  border: '1px solid var(--border)',
-  borderRadius: 4,
-  width: 200,
-}
-const selectStyle: CSSProperties = {
-  fontSize: 12,
-  padding: '4px 8px',
-  background: 'var(--bg)',
-  color: 'var(--fg)',
-  border: '1px solid var(--border)',
-  borderRadius: 4,
-}
-const primaryBtnStyle: CSSProperties = {
-  fontSize: 12,
-  padding: '4px 12px',
-  background: 'var(--accent, #2563eb)',
-  color: 'white',
-  border: 'none',
-  borderRadius: 4,
-  cursor: 'pointer',
-}
-const secondaryBtnStyle: CSSProperties = {
-  fontSize: 12,
-  padding: '4px 10px',
-  background: 'transparent',
-  color: 'var(--fg)',
-  border: '1px solid var(--border)',
-  borderRadius: 4,
-  cursor: 'pointer',
-}
+const toolbarButtonClass =
+  'cursor-pointer rounded-[4px] border border-[var(--border)] bg-transparent px-[10px] py-[4px] text-[12px] text-inherit'
 const launchErrStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',

@@ -195,12 +195,12 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
               >
                 {showInstanceBadge ? initials : agentShortLabel(agentType).slice(0, 2).toUpperCase()}
               </span>
-              {/* A narrow composer footer shows the model only (composer-footer-tiers.ts). */}
-              <span className="truncate font-[500] text-[var(--text-primary)] @max-[680px]/footer:hidden">
+              {/* A narrow composer footer shows the model only (ui/toolbar-steps.ts). */}
+              <span className="truncate font-[500] text-[var(--text-primary)] @max-[680px]/toolbar:hidden">
                 {agentShortLabel(agentType)}
                 {showInstanceBadge && effectiveInstance ? ` · ${effectiveInstance.displayName}` : ''}
               </span>
-              <span className="whitespace-nowrap text-[var(--text-muted)] @max-[680px]/footer:hidden">·</span>
+              <span className="whitespace-nowrap text-[var(--text-muted)] @max-[680px]/toolbar:hidden">·</span>
               <span className="truncate [font-family:var(--font-mono)] text-[var(--text-secondary)]">{modelLabel}</span>
             </>
           )}

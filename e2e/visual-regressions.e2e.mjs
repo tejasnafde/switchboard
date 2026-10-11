@@ -589,7 +589,7 @@ async function captureFooterWidths(win, theme, composer) {
     await snapScreen(win, `composer-footer-${width}`, theme, composer)
     if (width === 360) {
       // The "..." menu, holding effort, checkout and mode.
-      await composer.locator('[data-composer-overflow]').click()
+      await composer.locator('[data-toolbar-overflow]').click()
       const menu = win.getByRole('dialog', { name: 'More options' })
       await menu.waitFor({ state: 'visible' })
       if ((await menu.getByRole('menuitem').count()) !== 3)

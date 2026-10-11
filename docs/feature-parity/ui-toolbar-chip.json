@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ui-toolbar-chip",
+  "summary": "Desktop toolbar rows and pickers share two shadcn-style primitives. components/ui/toolbar.tsx holds the one-row Toolbar (a container), ToolbarItem (leaves the row below a step), the \"...\" ToolbarOverflow and useContainerTier; components/ui/toolbar-steps.ts holds the steps and the overflow rule; components/ui/chip.tsx holds the 24 px chip, ChipSelect and OptionList. The composer footer, the chat header, the terminal pane header and the Kanban toolbar use them; the footer and the chat header look the same as before. Every remaining native <select> (Kanban filters, the Kanban card's project, status and runtime mode, and the sidebar organizer's workspace picker) is now the ui Combobox list, and an ESLint rule plus a unit test fail on a native <select> outside components/ui.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/ui/toolbar.tsx",
+        "src/renderer/components/ui/toolbar-steps.ts",
+        "src/renderer/components/ui/chip.tsx",
+        "src/renderer/components/chat/ComposerFooter.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/terminal/TerminalHeader.tsx",
+        "src/renderer/components/kanban/KanbanView.tsx",
+        "src/renderer/components/kanban/CardModal.tsx",
+        "src/renderer/components/sidebar/WorkspaceManager.tsx",
+        "eslint.config.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app has no Kanban board, no sidebar organizer and none of these desktop toolbars; its own controls are React Native components."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The Compose app renders none of these desktop renderer components, and nothing it shows changes."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "A renderer component change only. The Kanban filters, card fields and workspace moves send the same values through the same IPC calls."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes. The pickers store the same values; their internal sentinels for \"all\" and \"ungrouped\" map back to null before any write."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "An unconditional desktop renderer change with no flag, package identity, signing, update-channel or rollout change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/toolbar.test.ts tests/unit/no-native-select.test.ts tests/unit/tailwind-sources.test.ts",
+      "SB_VISUAL_SCOPE=screens npm run test:e2e:visual (every composer and chat screen unchanged; only the kanban screens changed, for the filter pickers)",
+      "node e2e/radix-overlays.e2e.mjs (Kanban project filter), node e2e/draft-new-chat.e2e.mjs",
+      "npm run typecheck",
+      "npm test"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The Kanban card dialog's project, status and runtime-mode pickers and the organizer's workspace picker were not clicked in a running app; they use the same Combobox the Settings pickers use.",
+      "The terminal pane header was not compared in a screenshot (no visual screen shows it)."
+    ]
+  }
+}

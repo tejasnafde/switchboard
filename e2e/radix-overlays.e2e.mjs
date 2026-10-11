@@ -436,14 +436,16 @@ async function kanbanModals() {
   await clickOutside(8, 400)
   check('card: an outside click closes it', await hidden(newCard))
 
-  await win.locator('select[title="Filter by project"]').selectOption({ label: 'acme-console' })
+  await win.getByRole('combobox', { name: 'Filter by project' }).click()
+  await win.getByRole('option', { name: 'acme-console', exact: true }).click()
   await win.getByTitle('Manage git worktrees for this project').click()
   const worktrees = win.getByRole('dialog', { name: /^Worktrees - / })
   await worktrees.waitFor({ state: 'visible' })
   await win.keyboard.press('Escape')
   check('worktrees: Escape closes it', await hidden(worktrees))
   check('worktrees: focus returns to its button', await focusIsTrigger('Manage git worktrees'))
-  await win.locator('select[title="Filter by project"]').selectOption({ index: 0 })
+  await win.getByRole('combobox', { name: 'Filter by project' }).click()
+  await win.getByRole('option', { name: /^All projects/ }).click()
   await win.getByRole('button', { name: 'Chats', exact: true }).click()
 }
 

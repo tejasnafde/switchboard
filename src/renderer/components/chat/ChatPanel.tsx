@@ -81,6 +81,7 @@ import {
 import { providerKindFor } from '@shared/types'
 import { speaksAcp } from '@shared/acp-agents'
 import { confirm } from '../ui/confirm'
+import { Toolbar } from '../ui/toolbar'
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 import { fileDiffNoRevertMessage } from '@shared/file-diff-revert'
 
@@ -1379,9 +1380,9 @@ export function ChatPanel({
       ) : (
         <>
           {/* ── Top bar: folder / chat name ──────────────────────── */}
-          <div
+          <Toolbar
             // The linked-PR control hides itself when the header is too narrow for it (container query).
-            className="chat-panel-header flex min-h-[32px] shrink-0 items-center gap-[6px] border-b border-[var(--border)] bg-[var(--bg-secondary)] px-[16px] py-[7px] text-[12px] [container-type:inline-size]"
+            className="chat-panel-header min-h-[32px] shrink-0 gap-[6px] border-b border-[var(--border)] bg-[var(--bg-secondary)] px-[16px] py-[7px] text-[12px]"
           >
             {/* Plain identity breadcrumb; only consequential state receives color. */}
             {hasSession ? (
@@ -1501,7 +1502,7 @@ export function ChatPanel({
                       : status}
               </span>
             )}
-          </div>
+          </Toolbar>
 
           {activeSession?.forkMetadata && (
             <ForkLineageBanner

@@ -2499,22 +2499,6 @@ html, body, #root {
   font-size: 9.5px;
 }
 
-.workspace-organizer-project select {
-  max-width: 132px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 4px 22px 4px 6px;
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font: inherit;
-  cursor: pointer;
-}
-
-.workspace-organizer-project select:focus-visible {
-  border-color: var(--border-focus);
-  outline: none;
-}
-
 .workspace-organizer-empty {
   display: flex;
   align-items: center;
@@ -2560,10 +2544,6 @@ html, body, #root {
 @media (max-width: 620px) {
   .workspace-organizer-content {
     grid-template-columns: 154px minmax(0, 1fr);
-  }
-
-  .workspace-organizer-project select {
-    max-width: 96px;
   }
 }
 
