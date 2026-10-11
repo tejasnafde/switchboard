@@ -359,6 +359,7 @@ export function AddAgentDialog({
                   onChange={(e) => {
                     setLocal({ ...local, command: e.target.value })
                     setLocalError(null)
+                    setLocalFound(null)
                   }}
                 />
               </Field>
@@ -371,6 +372,7 @@ export function AddAgentDialog({
                   onChange={(e) => {
                     setLocal({ ...local, args: e.target.value })
                     setLocalError(null)
+                    setLocalFound(null)
                   }}
                 />
               </Field>
