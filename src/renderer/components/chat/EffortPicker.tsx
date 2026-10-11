@@ -1,5 +1,6 @@
 import { effortLabel, type EffortControl } from '@shared/effort'
-import { ChipSelect, GaugeIcon } from './FooterChip'
+import { ChipSelect } from '../ui/chip'
+import { GaugeIcon } from './FooterIcons'
 
 /**
  * "Effort: High" next to the model chip. The same control for every agent:

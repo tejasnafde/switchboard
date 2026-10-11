@@ -18,6 +18,7 @@ import { buildKanbanCardCreateSubmission } from './kanban-create-intent'
 import { describeKanbanWorktreeCreation } from './kanban-worktree-presentation'
 import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
 import type { RuntimeMode } from '@shared/provider-events'
+import { Combobox } from '../ui/combobox'
 import { confirm } from '../ui/confirm'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 import { cn } from '../../lib/utils'
@@ -303,17 +304,14 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
           <label className={labelClass}>
             Project
             {showProjectPicker ? (
-              <select
+              <Combobox
+                searchable={false}
+                aria-label="Project"
                 value={selectedProjectPath}
-                onChange={(e) => setSelectedProjectPath(e.target.value)}
-                className={inputClass}
-              >
-                {availableProjects!.map((p) => (
-                  <option key={p.path} value={p.path}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+                onValueChange={setSelectedProjectPath}
+                options={availableProjects!.map((p) => ({ value: p.path, label: p.name }))}
+                className={selectClass}
+              />
             ) : (
               <div className={chipClass} title={selectedProjectPath}>
                 {projectLabel}
@@ -361,17 +359,14 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
             {mode === 'edit' && (
               <label className={cn(labelClass, 'flex-1')}>
                 Status
-                <select
+                <Combobox
+                  searchable={false}
+                  aria-label="Status"
                   value={status}
-                  onChange={(e) => setStatus(e.target.value as KanbanStatus)}
-                  className={inputClass}
-                >
-                  {KANBAN_COLUMNS.map((col) => (
-                    <option key={col.id} value={col.id}>
-                      {col.label}
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={(value) => setStatus(value as KanbanStatus)}
+                  options={KANBAN_COLUMNS.map((col) => ({ value: col.id, label: col.label }))}
+                  className={selectClass}
+                />
               </label>
             )}
             <label className={cn(labelClass, 'flex-1')}>
@@ -393,20 +388,19 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
             Runtime mode
             {mode === 'create' ? (
               <>
-                <select
+                <Combobox
+                  searchable={false}
+                  aria-label="Runtime mode"
                   value={runtimeMode ?? PROJECT_DEFAULT_MODE}
-                  onChange={(e) =>
-                    setRuntimeMode(e.target.value === PROJECT_DEFAULT_MODE ? null : (e.target.value as RuntimeMode))
+                  onValueChange={(value) =>
+                    setRuntimeMode(value === PROJECT_DEFAULT_MODE ? null : (value as RuntimeMode))
                   }
-                  className={inputClass}
-                >
-                  <option value={PROJECT_DEFAULT_MODE}>Project default</option>
-                  {RUNTIME_MODE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: PROJECT_DEFAULT_MODE, label: 'Project default' },
+                    ...RUNTIME_MODE_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label })),
+                  ]}
+                  className={selectClass}
+                />
                 <span className={hintClass}>
                   {runtimeMode
                     ? RUNTIME_MODE_OPTIONS.find((o) => o.value === runtimeMode)?.hint
@@ -491,6 +485,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
 const labelClass = 'flex flex-col gap-[4px] text-[11px] opacity-[0.85]'
 const inputClass =
   'rounded-[4px] border border-[var(--border)] bg-transparent px-[8px] py-[6px] text-[13px] text-inherit'
+const selectClass = 'w-full rounded-[4px] px-[8px] py-[6px] text-[13px]'
 const chipClass =
   'self-start rounded-[4px] border border-[rgba(37,99,235,0.25)] bg-[rgba(37,99,235,0.10)] px-[10px] py-[5px] text-[12px] [font-family:monospace] text-[var(--accent,#2563eb)]'
 const hintClass = 'mt-[2px] text-[10px] opacity-[0.65]'

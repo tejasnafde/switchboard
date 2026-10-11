@@ -1,24 +1,24 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { cn } from '../../lib/utils'
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
+import { Popover, PopoverContent, PopoverTrigger } from './popover'
 
 /**
- * The composer footer's one chip: 24 px high, radius 6, 11 px text, an
- * optional 12 px icon and a caret. Every footer control uses it, so the row
- * lines up and no native <select> sits among the popovers.
+ * The toolbar chip: 24 px high, radius 6, 11 px text, an optional 12 px icon
+ * and a caret. Every control in a `Toolbar` row uses it, so the row lines up
+ * and no native <select> sits among the popovers.
  */
-export const footerChipClass =
+export const chipClass =
   'inline-flex h-[24px] shrink-0 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] focus-visible:border-[var(--accent)] data-[state=open]:border-[var(--accent)]'
 
-export const footerChipValueClass = 'font-[500] text-[var(--text-primary)]'
+export const chipValueClass = 'font-[500] text-[var(--text-primary)]'
 
-/** Shown in the footer when it is narrow; see `composer-footer-tiers.ts`. */
+/** `short` replaces `full` below the toolbar's first step (760 px, see toolbar-steps.ts). */
 export function ChipLabel({ full, short }: { full: ReactNode; short?: ReactNode }) {
   if (short === undefined) return <>{full}</>
   return (
     <>
-      <span className="@max-[760px]/footer:hidden">{full}</span>
-      <span className="hidden @max-[760px]/footer:inline">{short}</span>
+      <span className="@max-[760px]/toolbar:hidden">{full}</span>
+      <span className="hidden @max-[760px]/toolbar:inline">{short}</span>
     </>
   )
 }
@@ -126,7 +126,7 @@ export function OptionList({
 export const optionMenuClass = 'sb-provider-picker z-[1200] rounded-[8px] border border-[var(--border)] p-[4px]'
 
 /**
- * A footer chip that opens a short list, in place of a native <select>. Like
+ * A chip that opens a short list, in place of a native <select>. Like
  * one, ArrowUp and ArrowDown on the chip open the list, Escape closes it and
  * focus returns to the chip.
  */
@@ -181,10 +181,10 @@ export function ChipSelect({
             e.preventDefault()
             setOpen(true)
           }}
-          className={cn(footerChipClass, className)}
+          className={cn(chipClass, className)}
         >
           {icon}
-          <span className={cn(footerChipValueClass, valueClassName)}>
+          <span className={cn(chipValueClass, valueClassName)}>
             <ChipLabel full={full} short={short} />
           </span>
           <ChipCaret />
@@ -211,67 +211,6 @@ export function ChipSelect({
         />
       </PopoverContent>
     </Popover>
-  )
-}
-
-const iconClass = 'shrink-0 text-[var(--text-muted)]'
-
-export function GaugeIcon() {
-  return (
-    <svg
-      aria-hidden
-      width="12"
-      height="12"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      className={iconClass}
-    >
-      <path d="M2.5 11a5.5 5.5 0 1 1 11 0" />
-      <path d="M8 11l3-3.5" />
-    </svg>
-  )
-}
-
-export function BranchIcon() {
-  return (
-    <svg
-      aria-hidden
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={iconClass}
-    >
-      <line x1="6" y1="3" x2="6" y2="15" />
-      <circle cx="18" cy="6" r="3" />
-      <circle cx="6" cy="18" r="3" />
-      <path d="M18 9a9 9 0 0 1-9 9" />
-    </svg>
-  )
-}
-
-export function ShieldIcon() {
-  return (
-    <svg
-      aria-hidden
-      width="12"
-      height="12"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinejoin="round"
-      className={iconClass}
-    >
-      <path d="M8 1.8l5 2v4c0 3-2.2 5.2-5 6.4C5.2 13 3 10.8 3 7.8v-4z" />
-    </svg>
   )
 }
 

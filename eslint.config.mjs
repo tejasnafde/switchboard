@@ -19,6 +19,26 @@
 import tseslint from 'typescript-eslint'
 import reactHooks from 'eslint-plugin-react-hooks'
 
+const NO_SILENT_CATCH = [
+  {
+    selector: 'CatchClause > BlockStatement[body.length=0]',
+    message:
+      'Empty catch block - log the error with the scoped logger (see AGENTS.md Logging conventions), or add a disable comment explaining why logging is impossible or harmful here.',
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='catch'] > ArrowFunctionExpression[body.type='BlockStatement'][body.body.length=0]",
+    message:
+      'Empty .catch(() => {}) handler - log the rejection with the scoped logger (see AGENTS.md Logging conventions), or add a disable comment explaining why logging is impossible or harmful here.',
+  },
+]
+
+const NO_NATIVE_SELECT = {
+  selector: "JSXOpeningElement[name.name='select']",
+  message:
+    'Native <select> outside components/ui - use Combobox (searchable={false}) or ChipSelect from components/ui.',
+}
+
 export default tseslint.config(
   {
     ignores: [
@@ -64,20 +84,19 @@ export default tseslint.config(
       // handful of sites where logging is impossible or harmful (the
       // logger's own write path, pointer-capture release, etc.), use:
       //   // eslint-disable-next-line no-restricted-syntax -- <reason>
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: 'CatchClause > BlockStatement[body.length=0]',
-          message:
-            'Empty catch block - log the error with the scoped logger (see AGENTS.md Logging conventions), or add a disable comment explaining why logging is impossible or harmful here.',
-        },
-        {
-          selector:
-            "CallExpression[callee.property.name='catch'] > ArrowFunctionExpression[body.type='BlockStatement'][body.body.length=0]",
-          message:
-            'Empty .catch(() => {}) handler - log the rejection with the scoped logger (see AGENTS.md Logging conventions), or add a disable comment explaining why logging is impossible or harmful here.',
-        },
-      ],
+      'no-restricted-syntax': ['error', ...NO_SILENT_CATCH],
+    },
+  },
+  {
+    // A native <select> draws the OS chevron and radius among the app's chips
+    // and Radix popovers. Use Combobox (searchable={false}) or ChipSelect from
+    // components/ui; only the primitives there may wrap a raw element. This
+    // block repeats NO_SILENT_CATCH because a later rule entry replaces an
+    // earlier one rather than merging with it.
+    files: ['src/renderer/**/*.tsx'],
+    ignores: ['src/renderer/components/ui/**'],
+    rules: {
+      'no-restricted-syntax': ['error', ...NO_SILENT_CATCH, NO_NATIVE_SELECT],
     },
   },
 )

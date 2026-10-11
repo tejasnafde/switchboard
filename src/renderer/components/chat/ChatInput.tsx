@@ -1729,7 +1729,7 @@ export function ChatInput({
       </div>
 
       {/* Footer: one row of chips that never wraps; lower priorities shorten,
-          then move into "..." as the pane narrows (composer-footer-tiers.ts). */}
+          then move into "..." as the pane narrows (ui/toolbar-steps.ts). */}
       <ComposerFooter
         lead={leadingControl}
         // Unified provider/instance/model picker - single drop-up popover

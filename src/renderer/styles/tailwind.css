@@ -20,13 +20,13 @@
 @source '../components/ui';
 @source '../components/chat/UnifiedProviderPicker.tsx';
 @source '../components/chat/EffortPicker.tsx';
-@source '../components/chat/FooterChip.tsx';
+@source '../components/chat/FooterIcons.tsx';
 @source '../components/chat/ComposerFooter.tsx';
-@source '../components/chat/ComposerOverflowMenu.tsx';
 @source '../components/chat/DraftWorkspaceChips.tsx';
 @source '../components/chat/ChatInput.tsx';
 @source '../components/chat/ChatPanel.tsx';
 @source '../components/terminal/TerminalStrip.tsx';
+@source '../components/terminal/TerminalHeader.tsx';
 @source '../components/chat/ChatLanding.tsx';
 @source '../components/chat/ChatPanel.tsx';
 @source '../components/chat/BranchPicker.tsx';
@@ -53,7 +53,9 @@
 @source '../components/InPaneSearchBar.tsx';
 @source '../components/QuickPromptModal.tsx';
 @source '../components/sidebar/PromptModal.tsx';
+@source '../components/sidebar/WorkspaceManager.tsx';
 @source '../components/kanban/CardModal.tsx';
+@source '../components/kanban/KanbanView.tsx';
 @source '../components/kanban/WorktreeManagerModal.tsx';
 @source '../components/kanban/kanban-modal-classes.ts';
 @source '../components/SettingsPage.tsx';
