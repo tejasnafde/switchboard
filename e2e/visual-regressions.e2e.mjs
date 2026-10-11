@@ -1030,6 +1030,23 @@ async function captureThemeScreens(win, theme) {
   await snapScreen(win, 'html-preview', theme, preview, [preview.locator('webview')])
   await preview.getByRole('button', { name: 'Close preview' }).click()
   await preview.waitFor({ state: 'hidden', timeout: 10_000 })
+
+  // Two parallel subagents (demo adapter "subagents" script): one row each,
+  // collapsed, then both expanded with folded steps, the failing step's
+  // output and the report.
+  await editor.click()
+  await win.keyboard.type('Split the dependency audit across two subagents.')
+  await win.keyboard.press('Enter')
+  const agentRows = win.locator('[data-subagent-row]')
+  await agentRows.nth(1).waitFor({ state: 'visible', timeout: 20_000 })
+  await win.getByRole('button', { name: 'Send', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
+  const agentTurn = win.locator('[data-virtual-turn]').filter({ has: agentRows.first() }).last()
+  await agentTurn.scrollIntoViewIfNeeded()
+  await snapScreen(win, 'subagents', theme, agentTurn, [turnTimes])
+  for (const row of [agentRows.nth(0), agentRows.nth(1)]) await row.locator('> button').click()
+  await agentRows.nth(1).getByText('1 check failed, 14 passed.').waitFor({ timeout: 10_000 })
+  await agentTurn.scrollIntoViewIfNeeded()
+  await snapScreen(win, 'subagents-expanded', theme, agentTurn, [turnTimes])
 }
 
 // A deterministic IPC latch exercises the production UI while the demo

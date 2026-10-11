@@ -235,6 +235,13 @@ describe('live assistant mirror', () => {
     }
   })
 
+  it("does not store a subagent's text as the parent's reply", () => {
+    const { publish } = makeRegistry()
+    publish({ ...content('t1', 'sub_1', 'Checking the lockfile.'), parentToolCallId: 'agent_1' })
+    publish(turnEnd('t1'))
+    expect(saved).toEqual([])
+  })
+
   it("keeps a subagent step's Agent call and an error result on the stored row", () => {
     const { publish } = makeRegistry()
     publish({

@@ -41,6 +41,15 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - `request.expired` · the provider can no longer take an answer for an open approval or question (its session errored, stopped or restarted). Clients replace the card with a notice naming the reason, recovery closes cards the backend no longer lists, and `RESPOND_TO_REQUEST` / `ANSWER_QUESTION` refuse a request the registry no longer holds (`REQUEST_EXPIRED`) instead of returning silently
 - `error` · adapter-level error surfaced to chat
 
+## Subagent steps (2026-10-12)
+
+A Claude subagent's work belongs to the Agent/Task call that started it. The adapter passes the SDK's `parent_tool_use_id` on as `parentToolCallId` on that subagent's `tool.started`, `tool.completed` and `content` events, and the tool-use id on `task.notification` (`toolUseId`, written into the notice text as `<tool-use-id>`). A subagent's `stream_event` frames are dropped (they would land in the parent's open message), and its blocks never touch the parent's `currentMessageId`, since a background subagent runs while the parent streams. The SDK forwards a subagent's text only with `forwardSubagentText`, which is off, so live rows hold its tool calls and notices.
+
+- **One rule places them**: `shared/subagent-steps.ts` (`groupSubagentEntries`, `subagentView`; Android `SubagentSteps.kt`, both run `tests/fixtures/subagent-cases.json`). A step goes under its topmost Agent/Task call, so a subagent's own subagents flatten into it; a notice whose tool-use id is the agent call itself is that background agent's completion. A step whose agent is not in the feed (a history window) stays at the top level.
+- **Status**: an error result is a failure; a result is done, unless it is the "Async agent launched" placeholder of a background agent, which waits for its completion notice. Duration and step count come from the `<usage>` block the CLI appends to a finished agent's result.
+- **Reload**: the SQLite mirror stores `parentToolCallId` and `isError` inside the tool row's JSON (no migration), `mergeConversationMessages` carries them onto the transcript's call, and `loadConversationHistory` reads Claude Code's per-subagent transcripts (`<session>/subagents/agent-*.jsonl`, linked by `toolUseId` in `agent-*.meta.json`, `agent/subagent-transcripts.ts`) for chats Switchboard did not run. The JSONL parser keeps an Agent/Task call's result and every call's error flag; other outputs stay out.
+- **Codex and OpenCode**: not mapped. Codex runs a spawned agent as its own thread (`collabAgentToolCall` names it in `receiverThreadIds`), so its steps are not items of the parent turn; following child threads is a separate change. OpenCode's ACP stream carries no child-session updates.
+
 ## Image pipeline (2026-04-20)
 
 1. User pastes/drags image in `ChatInput` → `ImageAttachment[]`

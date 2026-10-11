@@ -605,7 +605,9 @@ export class ProviderRegistry implements PeerToolHost {
 
   /** Fold one content delta into the in-flight turn buffer. */
   private bufferAssistantText(event: RuntimeEvent): void {
-    if (event.type !== 'content' || event.streamKind !== 'assistant') return
+    // A subagent's text renders inside its agent's row, live only; stored, it
+    // would come back from a reload as the parent's own reply.
+    if (event.type !== 'content' || event.streamKind !== 'assistant' || event.parentToolCallId) return
     let byMessage = this.pendingAssistantText.get(event.threadId)
     if (!byMessage) {
       byMessage = new Map()
