@@ -198,6 +198,21 @@ describe('ApprovalItem', () => {
     expect(texts.join(' ')).toContain('Approve this on the desktop')
   })
 
+  it('lists every path of a Codex permissions request, uncut', () => {
+    const paths = Array.from({ length: 150 }, (_, i) => `/work/repo/dir-${i}`)
+    const texts = renderComponent(
+      <ApprovalItem
+        item={approval({ permissions: { sections: [{ label: 'Write access', items: paths }] } })}
+        backendTakesPhoneApproval
+        onDecide={() => {}}
+      />,
+    )
+      .texts()
+      .join('\n')
+    for (const path of paths) expect(texts).toContain(path)
+    expect(texts).toContain('Write access')
+  })
+
   it('offers only Deny for a card cached with the old desktop-only flag', () => {
     const texts = renderComponent(
       <ApprovalItem item={approval({ desktopOnly: true })} backendTakesPhoneApproval onDecide={() => {}} />,

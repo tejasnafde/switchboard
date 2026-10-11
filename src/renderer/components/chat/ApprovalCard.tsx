@@ -4,6 +4,7 @@ import { createRendererLogger } from '../../logger'
 import { matchesShortcut } from '@shared/shortcuts'
 import { isAgentApprovalCardId } from '@shared/agent-approval-cards'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
+import type { CodexPermissionView } from '@shared/codex-permission-request'
 
 const log = createRendererLogger('chat:approval-card')
 
@@ -121,7 +122,11 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
 
       {/* Detail - collapsible. Long JSON tool inputs used to overflow a
           160px box silently; now default-collapsed with a summary line. */}
-      <ApprovalDetail detail={message.approval.detail} />
+      {message.approval.permissions ? (
+        <PermissionList view={message.approval.permissions} />
+      ) : (
+        <ApprovalDetail detail={message.approval.detail} />
+      )}
 
       {/* Action bar */}
       {pending && (
@@ -376,6 +381,43 @@ const btnStyles: Record<string, React.CSSProperties> = {
     color: 'var(--text-muted)',
     border: '1px solid var(--border)',
   },
+}
+
+/**
+ * A Codex permissions request, every permission and path listed. Never
+ * collapsed or cut: an approval grants all of it.
+ */
+function PermissionList({ view }: { view: CodexPermissionView }) {
+  return (
+    <div
+      data-testid="approval-permissions"
+      style={{
+        padding: '8px 12px',
+        fontSize: '11.5px',
+        color: 'var(--text-secondary)',
+        maxHeight: '320px',
+        overflow: 'auto',
+      }}
+    >
+      <div>Codex asks for these permissions for this turn.</div>
+      {view.reason && <div style={{ marginTop: '4px' }}>Reason: {view.reason}</div>}
+      {view.sections.length === 0 && <div style={{ marginTop: '4px' }}>No permissions listed.</div>}
+      {view.sections.map((section, i) => (
+        <div key={i} style={{ marginTop: '6px' }}>
+          <div style={{ fontWeight: 600 }}>
+            {section.label} ({section.items.length})
+          </div>
+          <ul
+            style={{ margin: '2px 0 0', paddingLeft: '18px', fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}
+          >
+            {section.items.map((item, j) => (
+              <li key={j}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 /**

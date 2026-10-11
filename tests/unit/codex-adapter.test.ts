@@ -1226,6 +1226,81 @@ describe('CodexAdapter', () => {
     expect(frames).toContainEqual({ jsonrpc: '2.0', id: 904, result: { permissions: {}, scope: 'turn' } })
   })
 
+  it('lists a long permissions write list in full and grants only that list', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    await adapter.startSession(
+      { threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', runtimeMode: 'sandbox' },
+      onEvent,
+    )
+
+    const write = Array.from({ length: 150 }, (_, i) => `/tmp/project/packages/package-${i}/src`)
+    const permissions = { fileSystem: { write } }
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 905,
+        method: 'item/permissions/requestApproval',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          itemId: 'perm-905',
+          cwd: '/tmp/project',
+          permissions,
+          startedAtMs: 1,
+        },
+      }) + '\n',
+    )
+    await new Promise((resolve) => setImmediate(resolve))
+    const opened = onEvent.mock.calls.map(([event]) => event).find((event) => event.type === 'request.opened')
+    expect(opened.permissions.sections).toEqual([{ label: 'Write access', items: write }])
+    for (const path of write) expect(opened.detail).toContain(path)
+
+    await adapter.respondToRequest('thread-1', opened.requestId, 'approve')
+    const frames = writes.map((line) => JSON.parse(line))
+    expect(frames).toContainEqual({ jsonrpc: '2.0', id: 905, result: { permissions, scope: 'turn' } })
+  })
+
+  it('denies a permissions request over the path cap without asking the user', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    await adapter.startSession(
+      { threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', runtimeMode: 'sandbox' },
+      onEvent,
+    )
+
+    const write = Array.from({ length: 201 }, (_, i) => `/tmp/project/dir-${i}`)
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 906,
+        method: 'item/permissions/requestApproval',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          itemId: 'perm-906',
+          cwd: '/tmp/project',
+          permissions: { fileSystem: { write } },
+          startedAtMs: 1,
+        },
+      }) + '\n',
+    )
+    await new Promise((resolve) => setImmediate(resolve))
+    const events = onEvent.mock.calls.map(([event]) => event)
+    expect(events.some((event) => event.type === 'request.opened')).toBe(false)
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'tool.denied',
+        toolName: 'permissions',
+        reason: expect.stringContaining('201 paths'),
+      }),
+    )
+    const frames = writes.map((line) => JSON.parse(line))
+    expect(frames).toContainEqual({ jsonrpc: '2.0', id: 906, result: { permissions: {}, scope: 'turn' } })
+  })
+
   it('handles current item/tool/requestUserInput requests and keys answers by question id', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()

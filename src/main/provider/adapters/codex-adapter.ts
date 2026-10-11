@@ -25,6 +25,7 @@ import type {
   ApprovalDecision,
 } from '../types'
 import { decidePermission, denialMessage } from '../policy'
+import { readCodexPermissionRequest } from '@shared/codex-permission-request'
 import { parseCodexTodoItems, parseCodexTodoMarkdown } from './codex-todo'
 import { markAgentSpawnEnv } from '../agent-spawn-env'
 import { applyEnvOverlay } from '../env-overlay'
@@ -155,14 +156,18 @@ interface PendingApproval {
   approvalResult?: (approved: boolean) => Record<string, unknown>
 }
 
+const PERMISSIONS_APPROVAL = 'item/permissions/requestApproval'
+
 /**
  * The answer a Codex `item/<kind>/requestApproval` request takes. Command and file
  * approvals take a decision; a permissions request takes the profile it is
- * granted (all it asked for, or nothing), for this turn only.
+ * granted, for this turn only: exactly what `readCodexPermissionRequest` lists
+ * on the card, or nothing when it cannot list all of it.
  */
 export function codexApprovalResult(method: string, params: unknown, approved: boolean): Record<string, unknown> {
-  if (method === 'item/permissions/requestApproval') {
-    return { permissions: approved ? (asRecord(asRecord(params)?.permissions) ?? {}) : {}, scope: 'turn' }
+  if (method === PERMISSIONS_APPROVAL) {
+    const read = approved ? readCodexPermissionRequest(params) : null
+    return { permissions: read?.ok ? read.granted : {}, scope: 'turn' }
   }
   return { decision: approved ? 'accept' : 'decline' }
 }
@@ -1694,9 +1699,12 @@ export class CodexAdapter implements ProviderAdapter {
     if (method.includes('requestApproval')) {
       // Derive a tool name from the approval request shape so our policy
       // can evaluate it against the active runtime mode.
+      const permissionsRequest = method === PERMISSIONS_APPROVAL
       const toolName: string = method.includes('commandExecution')
         ? 'shell'
-        : (request.params?.toolName ?? request.params?.path ?? 'tool')
+        : permissionsRequest
+          ? 'permissions'
+          : (request.params?.toolName ?? request.params?.path ?? 'tool')
       const requestType = method.includes('commandExecution') ? ('command' as const) : ('file' as const)
       const currentMode = active.session.runtimeMode
       const policy = decidePermission(currentMode, toolName)
@@ -1730,7 +1738,16 @@ export class CodexAdapter implements ProviderAdapter {
         return
       }
 
-      // policy === 'prompt' - bubble the approval UI up to the user.
+      // policy === 'prompt' - bubble the approval UI up to the user. A
+      // permissions request the card cannot list in full is refused here: an
+      // approval would grant paths the user never saw.
+      const permissions = permissionsRequest ? readCodexPermissionRequest(request.params) : null
+      if (permissions && !permissions.ok) {
+        log.warn('refused a Codex permissions request the card cannot show', { threadId })
+        active.onEvent({ type: 'tool.denied', threadId, toolName, reason: permissions.reason, mode: currentMode })
+        this.writeMessage(active, { jsonrpc: '2.0', id: request.id, result: approvalResult(false) })
+        return
+      }
       const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       active.pendingApprovals.set(requestId, {
         jsonRpcId: request.id,
@@ -1744,7 +1761,9 @@ export class CodexAdapter implements ProviderAdapter {
         requestId,
         requestType,
         toolName,
-        detail: JSON.stringify(request.params ?? {}, null, 2).slice(0, 500),
+        ...(permissions?.ok
+          ? { detail: permissions.detail, permissions: permissions.view }
+          : { detail: JSON.stringify(request.params ?? {}, null, 2).slice(0, 500) }),
       })
       return
     }

@@ -284,6 +284,8 @@ export interface ChatMessage {
     status: 'pending' | 'accepted' | 'rejected'
     /** A pull request write the Switchboard MCP server holds for the user. */
     hostWrite?: import('./agent-host-writes').HostWriteCard
+    /** A Codex permissions request, listed in full. */
+    permissions?: import('./codex-permission-request').CodexPermissionView
   }
   /** Plan proposal from agent exiting plan mode */
   plan?: PlanAttachment

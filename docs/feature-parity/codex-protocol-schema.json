@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "codex-protocol-schema",
-  "summary": "Check the Codex app-server traffic against the JSON schema the installed CLI generates. The schema parts we use are committed with a regeneration script; tests fail when what codex-adapter.ts and the usage probes send or read differs from it. Fixes the one drift found: item/permissions/requestApproval was answered with a decision instead of a granted permission profile.",
+  "summary": "Check the Codex app-server traffic against the JSON schema the installed CLI generates. The schema parts we use are committed with a regeneration script; tests fail when what codex-adapter.ts and the usage probes send or read differs from it. Fixes the one drift found: item/permissions/requestApproval was answered with a decision instead of a granted permission profile. A permissions request now shows every permission and path on the approval card on all three clients, an approval grants only what the card listed, and a request over 200 paths (or 32 KiB, or with a field Switchboard cannot show) is denied with a notice.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -10,23 +10,31 @@
         "src/main/provider/adapters/codex-adapter.ts",
         "tests/unit/codex-adapter.test.ts",
         "tests/unit/codex-protocol-schema.test.ts",
-        "tests/unit/helpers/codex-schema.ts"
+        "tests/unit/helpers/codex-schema.ts",
+        "src/renderer/components/chat/ApprovalCard.tsx",
+        "tests/unit/codex-permission-request.test.ts"
       ]
     },
     "reactNativeIos": {
-      "status": "not_applicable",
-      "reason": "The Expo app does not speak the Codex app-server protocol. It sees Codex approvals only as backend request.opened events, whose shape this change does not touch; Approve and Deny reach the same respondToRequest path."
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/screens/__tests__/feed-items.test.tsx"
+      ]
     },
     "nativeAndroid": {
       "status": "not_applicable",
-      "reason": "The native Android app does not speak the Codex app-server protocol. It sees Codex approvals only as backend request.opened events, whose shape this change does not touch; Approve and Deny reach the same respondToRequest path."
+      "reason": "No Kotlin change is needed. Android renders request.opened detail in full (ApprovalRow uses a plain Text with no line cap), and detail is now the complete permission list in plain text, so Approve grants only what the card shows. It ignores the new structured permissions field."
     },
     "sharedBackendApi": {
       "status": "implemented",
       "evidence": [
         "src/main/provider/adapters/codex-adapter.ts",
         "src/main/provider/AGENTS.md",
-        "tests/fixtures/codex-app-server-schema.json"
+        "tests/fixtures/codex-app-server-schema.json",
+        "src/shared/provider-events.ts",
+        "src/shared/codex-permission-request.ts"
       ]
     },
     "storageDataMigration": {
@@ -46,7 +54,9 @@
       "npm run typecheck",
       "npm test -- --maxWorkers=4",
       "npx vitest run tests/unit/codex-adapter.test.ts tests/unit/codex-protocol-schema.test.ts",
-      "Mutation checks, reverted: renaming turnId on turn/interrupt and clientInfo on the usage probe's initialize fails the tests; answering a permissions request with a decision fails them."
+      "Mutation checks, reverted: renaming turnId on turn/interrupt and clientInfo on the usage probe's initialize fails the tests; answering a permissions request with a decision fails them.",
+      "npx vitest run tests/unit/codex-permission-request.test.ts",
+      "npm test --prefix apps/mobile"
     ],
     "hardware": [
       "node scripts/codex-app-server-schema.mjs against codex-cli 0.162.1 (installed) and 0.160.1 (official npm darwin-arm64 package, temp dir), both with a throwaway CODEX_HOME; the two extracts differ only in fields we neither send nor read."
@@ -54,7 +64,9 @@
     "notExercised": [
       "No live Codex session raised item/permissions/requestApproval; the new answer is checked against the schema only.",
       "Remote machines pin codex 0.153.2 (provision-setup.ts); its schema was not generated, so the permissions answer is not verified there.",
-      "The *_READS tables are kept by hand; a new read the adapter adds is checked only once it is listed there."
+      "The *_READS tables are kept by hand; a new read the adapter adds is checked only once it is listed there.",
+      "An Expo build older than this OTA still shows six lines of detail with Approve; it updates over the OTA lane (JS-only change).",
+      "The Android card was not run on a device; the claim rests on reading ApprovalRow."
     ]
   }
 }
