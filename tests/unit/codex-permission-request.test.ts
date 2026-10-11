@@ -56,6 +56,17 @@ describe('readCodexPermissionRequest', () => {
     expect(readCodexPermissionRequest({ permissions: { macos: {} } }).ok).toBe(false)
     expect(readCodexPermissionRequest({}).ok).toBe(false)
   })
+
+  it('refuses inherited property names as an access or a special path kind', () => {
+    for (const name of ['constructor', 'toString', '__proto__']) {
+      const access = { fileSystem: { entries: [{ access: name, path: { type: 'path', path: '/a' } }] } }
+      const special = {
+        fileSystem: { entries: [{ access: 'read', path: { type: 'special', value: { kind: name } } }] },
+      }
+      expect(readCodexPermissionRequest({ permissions: access }).ok).toBe(false)
+      expect(readCodexPermissionRequest({ permissions: special }).ok).toBe(false)
+    }
+  })
 })
 
 describe('codexApprovalResult for a permissions request', () => {

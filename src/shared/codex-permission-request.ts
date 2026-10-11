@@ -67,7 +67,7 @@ function specialPath(value: unknown): string {
     if (typeof special.path !== 'string') throw new Unreadable()
     return subpath ? `${special.path} (${subpath})` : special.path
   }
-  const label = SPECIAL_LABEL[special.kind]
+  const label = Object.hasOwn(SPECIAL_LABEL, special.kind) ? SPECIAL_LABEL[special.kind] : undefined
   if (!label) throw new Unreadable()
   onlyKeys(special, special.kind === 'project_roots' ? ['kind', 'subpath'] : ['kind'])
   return subpath ? `${label}: ${subpath}` : label
@@ -127,7 +127,8 @@ function readProfile(permissions: unknown): ReadProfile {
       const byAccess = new Map<string, string[]>()
       const entries = fs.entries.map((raw) => {
         const entry = record(raw)
-        if (!entry || typeof entry.access !== 'string' || !ACCESS_LABEL[entry.access]) throw new Unreadable()
+        if (!entry || typeof entry.access !== 'string' || !Object.hasOwn(ACCESS_LABEL, entry.access))
+          throw new Unreadable()
         onlyKeys(entry, ['access', 'path'])
         const shown = entryPath(entry.path)
         byAccess.set(entry.access, [...(byAccess.get(entry.access) ?? []), shown])
