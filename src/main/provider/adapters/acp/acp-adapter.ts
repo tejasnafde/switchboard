@@ -45,7 +45,6 @@ import {
   type WriteTextFileRequest,
   type WriteTextFileResponse,
   type NewSessionResponse,
-  type ModelInfo,
   type AvailableCommand,
   type SessionModeState,
 } from '@agentclientprotocol/sdk'
@@ -65,7 +64,14 @@ import { acpSwitchboardMcpServer } from '../../../mcp/agent-registration'
 import { markAgentSpawnEnv } from '../../agent-spawn-env'
 import type { AcpExpectedCapability, AcpLaunchConfig, AcpProviderKind, AcpSessionPrep } from './launch-config'
 import { acpFsProblem, sliceTextLines } from './fs-access'
-import { acpModeFor, modelsFromConfigOptions, resolveAcpModeIds, type AcpModeIds } from './session-config'
+import {
+  acpModeFor,
+  legacyModelCatalog,
+  modelsFromConfigOptions,
+  resolveAcpModeIds,
+  type AcpModeIds,
+  type AcpModelInfo,
+} from './session-config'
 
 const log = createLogger('provider:acp')
 const LOG_PAYLOAD_LIMIT = 4000
@@ -126,7 +132,7 @@ interface ActiveSession extends VisibleHistoryState {
   /** Cached skill list, kept fresh by `available_commands_update`. */
   skills: ProviderSkill[]
   /** Catalog from `session/new`: `models.availableModels`, or a model config option. */
-  availableModels: ModelInfo[]
+  availableModels: AcpModelInfo[]
   /** In-flight prompt promise (so we know a turn is active). */
   inFlightPrompt: Promise<void> | null
   /** True while drainQueued sets up the next queued prompt (the slot stays taken). */
@@ -563,13 +569,15 @@ export class AcpAdapter implements ProviderAdapter {
           const resumeId = canResume ? this.resumeTarget(opts) : null
           // An agent that cannot resume starts this chat's next session blind.
           if (!canResume && this.resumeTarget(opts)) active.needsVisibleHistory = true
-          let newSession: Pick<NewSessionResponse, 'sessionId' | 'models' | 'modes' | 'configOptions'> | null = null
+          let newSession:
+            | (Pick<NewSessionResponse, 'sessionId' | 'modes' | 'configOptions'> & { models: AcpModelInfo[] | null })
+            | null = null
           if (resumeId) {
             try {
               const resumed = await connection.resumeSession({ sessionId: resumeId, cwd: opts.cwd, mcpServers })
               newSession = {
                 sessionId: resumeId,
-                models: resumed?.models,
+                models: legacyModelCatalog(resumed),
                 modes: resumed?.modes,
                 configOptions: resumed?.configOptions,
               }
@@ -585,7 +593,10 @@ export class AcpAdapter implements ProviderAdapter {
               })
             }
           }
-          newSession ??= await connection.newSession({ cwd: opts.cwd, mcpServers })
+          if (!newSession) {
+            const created = await connection.newSession({ cwd: opts.cwd, mcpServers })
+            newSession = { ...created, models: legacyModelCatalog(created) }
+          }
           return { newSession, resumeId }
         })(),
         ACP_HANDSHAKE_TIMEOUT_MS,
@@ -598,9 +609,9 @@ export class AcpAdapter implements ProviderAdapter {
 
       // Capture the initial model catalog: `models` when the agent sends it,
       // else a model picker among its config options.
-      const configModels = newSession.models?.availableModels ? null : modelsFromConfigOptions(newSession.configOptions)
-      if (newSession.models?.availableModels) {
-        active.availableModels = newSession.models.availableModels
+      const configModels = newSession.models ? null : modelsFromConfigOptions(newSession.configOptions)
+      if (newSession.models) {
+        active.availableModels = newSession.models
       } else if (configModels) {
         active.availableModels = configModels.models
         active.modelConfigId = configModels.configId
@@ -1022,10 +1033,12 @@ export class AcpAdapter implements ProviderAdapter {
         log.info(`acp setSessionConfigOption ${active.modelConfigId} → ${modelId}`)
         return
       }
-      const res = await active.connection.unstable_setSessionModel({
+      // `session/set_model` left the SDK with the unstable model selectors
+      // (0.24); OpenCode 1.x still serves it, so it goes out as a raw request.
+      const res = (await active.connection.request('session/set_model', {
         sessionId: active.sessionId,
         modelId,
-      })
+      })) as { _meta?: unknown } | null
       const variants = this.config.modelVariants?.(res?._meta) ?? null
       if (variants) {
         active.onEvent({
