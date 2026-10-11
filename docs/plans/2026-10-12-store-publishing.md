@@ -3,7 +3,7 @@
 Status: planned, not started. The orchestrator work goes first (user, 2026-10-12).
 Procedure reference: the `app-store-publish` skill in `tejas-skills`.
 
-## Decisions (user, 2026-10-12)
+## Decisions (made by the user on 2026-10-12)
 
 | Topic | Decision |
 |---|---|
@@ -27,15 +27,16 @@ Procedure reference: the `app-store-publish` skill in `tejas-skills`.
 
 ## Work, in order
 
-1. **Android PR.** Remove the in-app APK updater (`platform/update/*`, its UI) and `REQUEST_INSTALL_PACKAGES`. Play forbids apps that update themselves outside Play. Change `mobile-release.yml` to build an AAB and upload it to a Play test track with the per-app service account. Check the AAB with `aapt2 dump permissions`.
-2. **iOS PR.** In `app.json`: `ITSAppUsesNonExemptEncryption: false` (TLS only, exempt), `supportsTablet: false` (no iPad screenshots or iPad review), on-device speech recognition where the phone supports it (`requiresOnDeviceRecognition` in `apps/mobile/src/lib/voice.ts`). In `eas.json`: a store build profile (`distribution: store`, remote versioning) and a submit profile using `APPLE_ASC_API_KEY`. Check the Android speech path at the same time.
-3. **Privacy policy PR (site repo).** Add the Switchboard phone app: camera (pairing QR), microphone and speech (on device where supported, otherwise Apple's or Google's speech service), photo attachments, push tokens and push text through Expo and FCM, and that chats travel only between the phone and the user's own backend. Then redeploy the site (`npx wrangler pages deploy dist --project-name tn07 --branch main`).
+1. **Android PR.** Remove the in-app APK updater (`platform/update/*`, its UI) and `REQUEST_INSTALL_PACKAGES`. Play forbids apps that update themselves outside Play. Change `mobile-release.yml` to build an AAB and upload it to a Play test track with the per-app service account. Check the AAB with `aapt2 dump permissions`. Update the Android section of `docs/releasing.md` in the same PR, so nobody follows the retired APK lane.
+2. **iOS PR.** In `app.json`: `ITSAppUsesNonExemptEncryption: false` (TLS only, exempt), `supportsTablet: false` (no native iPad support, so no iPad screenshots; Apple can still run the iPhone app on iPad in compatibility mode and may test that), on-device speech recognition where the phone supports it (`requiresOnDeviceRecognition` in `apps/mobile/src/lib/voice.ts`). In `eas.json`: a store build profile (`distribution: store`, remote versioning) and a submit profile using `APPLE_ASC_API_KEY`. Check the Android speech path at the same time.
+3. **Privacy policy PR (site repo).** Add the Switchboard phone app: camera (pairing QR), microphone and speech (on device where supported, otherwise Apple's or Google's speech service), photo attachments, push tokens and push text through Expo and FCM, and that chats travel only between the phone and the user's own backend, except notification text: a push carries a short excerpt (an agent's question, an error, an approval's detail) through Expo and FCM. Then redeploy the site (`npx wrangler pages deploy dist --project-name tn07 --branch main`).
 4. **Demo mode (mock first).** Sample chats, an approval card and a running turn, reachable from the connection screen without a backend, on both phones. The review notes point to it.
-5. **Account Holder guide.** A short checklist for the web UI steps below, so they can be done in one sitting.
+5. **Encrypted transport for the store builds.** Today the phones dial `ws://` and the Android release allows cleartext. Before submission, decide and implement: TLS (`wss://`) for production pairing (for example a self-signed certificate pinned at pairing, or the IAP tunnel, which is already TLS), cleartext limited to what still needs it, and a check that the Play build cannot use plain `ws://` for a remote host. Play's Data safety form records this; it does not make it acceptable.
+6. **Account Holder guide.** A short checklist for the web UI steps below, so they can be done in one sitting.
 
 ## Web UI steps (Account Holder)
 
-- **Play Console:** create the app record; Play App Signing setup; App access (demo mode instructions); Ads (none); Content rating; Target audience (18+); Data safety (cleartext `ws://` to the user's own backend affects "encrypted in transit"); then internal testing, then production and Send for review.
+- **Play Console:** create the app record; Play App Signing setup; App access (demo mode instructions); Ads (none); Content rating; Target audience (18+); Data safety (cleartext `ws://` to the user's own backend affects "encrypted in transit"); then internal testing (the FIRST internal release is reviewed before it is available; later internal updates generally are not), then production and Send for review.
 - **Apple:** app record (SKU `switchboard-ios`); App Privacy; an APNs key uploaded to EAS for push; the **Developer ID Application** certificate (Account Holder only) exported as `.p12` for desktop signing.
 
 ## API and EAS steps
@@ -46,4 +47,4 @@ Procedure reference: the `app-store-publish` skill in `tejas-skills`.
 
 ## Updates after approval
 
-Only the first review is slow. Later updates are reviewed in hours to a day or two. iOS JS changes ship over EAS Update without review when they do not change what the app is for. Android builds go to the internal testing track first (no full review) and are promoted when ready; iOS internal testers use TestFlight.
+Only the first review is slow. Later updates are reviewed in hours to a day or two. iOS JS changes ship over EAS Update without review only when they stay within the functionality Apple reviewed (fixes and small adjustments); a new feature or a change in behaviour goes through App Review as a new build. Android builds go to the internal testing track first (no review after the first internal release) and are promoted when ready; iOS internal testers use TestFlight.
