@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events'
 import { PassThrough } from 'stream'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { clientTrafficProblems } from './helpers/codex-schema'
 
 // These tests spawn a (mocked) codex app-server and await the JSON-RPC
 // handshake. On CPU-starved parallel CI runners (Windows) that in-process
@@ -10,6 +11,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.setConfig({ testTimeout: 20_000, hookTimeout: 20_000 })
 
 const writes: string[] = []
+// Everything each side wrote during one test, never cleared mid-test, so the
+// afterEach below can check all of the adapter's traffic against the schema.
+const sentByAdapter: string[] = []
+const sentByServer: string[] = []
 let emitFailedTurn = false
 let turnStartErrors: string[] = []
 let turnRetryMessages: string[] = []
@@ -40,6 +45,11 @@ type MockChild = EventEmitter & {
 
 function makeChild(): MockChild {
   const stdout = new PassThrough()
+  const serverWrite = stdout.write.bind(stdout) as (chunk: string) => boolean
+  stdout.write = ((chunk: string) => {
+    sentByServer.push(String(chunk))
+    return serverWrite(chunk)
+  }) as typeof stdout.write
   const child = new EventEmitter() as MockChild
   child.stdout = stdout
   child.stderr = new EventEmitter()
@@ -47,6 +57,7 @@ function makeChild(): MockChild {
     writable: true,
     write: vi.fn((chunk: string) => {
       writes.push(chunk)
+      sentByAdapter.push(chunk)
       const message = JSON.parse(chunk)
       if (message.method === 'initialize') {
         if (stallInitialize) {
@@ -468,6 +479,20 @@ function makeChild(): MockChild {
   lastChild = child
   return child
 }
+
+beforeEach(() => {
+  sentByAdapter.length = 0
+  sentByServer.length = 0
+})
+
+afterEach(() => {
+  const lines = (chunks: string[]) =>
+    chunks
+      .flatMap((c) => c.split('\n'))
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as unknown)
+  expect(clientTrafficProblems(lines(sentByAdapter), lines(sentByServer))).toEqual([])
+})
 
 vi.mock('child_process', () => ({
   execSync: vi.fn((command: string) => {
@@ -1153,6 +1178,127 @@ describe('CodexAdapter', () => {
       id: 900,
       result: { decision: 'accept' },
     })
+  })
+
+  it('answers a permissions request with the granted profile, not a decision', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        runtimeMode: 'sandbox',
+      },
+      onEvent,
+    )
+
+    const permissions = { network: { enabled: true } }
+    for (const id of [903, 904]) {
+      lastChild?.stdout.write(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          method: 'item/permissions/requestApproval',
+          params: {
+            threadId: 'codex-thread-1',
+            turnId: 'turn-1',
+            itemId: `perm-${id}`,
+            cwd: '/tmp/project',
+            permissions,
+            startedAtMs: 1,
+          },
+        }) + '\n',
+      )
+    }
+    await new Promise((resolve) => setImmediate(resolve))
+    const [approve, decline] = onEvent.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === 'request.opened')
+
+    await adapter.respondToRequest('thread-1', approve.requestId, 'approve')
+    await adapter.respondToRequest('thread-1', decline.requestId, 'deny')
+
+    const frames = writes.map((line) => JSON.parse(line))
+    expect(frames).toContainEqual({ jsonrpc: '2.0', id: 903, result: { permissions, scope: 'turn' } })
+    expect(frames).toContainEqual({ jsonrpc: '2.0', id: 904, result: { permissions: {}, scope: 'turn' } })
+  })
+
+  it('lists a long permissions write list in full and grants only that list', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    await adapter.startSession(
+      { threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', runtimeMode: 'sandbox' },
+      onEvent,
+    )
+
+    const write = Array.from({ length: 150 }, (_, i) => `/tmp/project/packages/package-${i}/src`)
+    const permissions = { fileSystem: { write } }
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 905,
+        method: 'item/permissions/requestApproval',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          itemId: 'perm-905',
+          cwd: '/tmp/project',
+          permissions,
+          startedAtMs: 1,
+        },
+      }) + '\n',
+    )
+    await new Promise((resolve) => setImmediate(resolve))
+    const opened = onEvent.mock.calls.map(([event]) => event).find((event) => event.type === 'request.opened')
+    expect(opened.permissions.sections).toEqual([{ label: 'Write access', items: write }])
+    for (const path of write) expect(opened.detail).toContain(path)
+
+    await adapter.respondToRequest('thread-1', opened.requestId, 'approve')
+    const frames = writes.map((line) => JSON.parse(line))
+    expect(frames).toContainEqual({ jsonrpc: '2.0', id: 905, result: { permissions, scope: 'turn' } })
+  })
+
+  it('denies a permissions request over the path cap without asking the user', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    await adapter.startSession(
+      { threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', runtimeMode: 'sandbox' },
+      onEvent,
+    )
+
+    const write = Array.from({ length: 201 }, (_, i) => `/tmp/project/dir-${i}`)
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 906,
+        method: 'item/permissions/requestApproval',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          itemId: 'perm-906',
+          cwd: '/tmp/project',
+          permissions: { fileSystem: { write } },
+          startedAtMs: 1,
+        },
+      }) + '\n',
+    )
+    await new Promise((resolve) => setImmediate(resolve))
+    const events = onEvent.mock.calls.map(([event]) => event)
+    expect(events.some((event) => event.type === 'request.opened')).toBe(false)
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'tool.denied',
+        toolName: 'permissions',
+        reason: expect.stringContaining('201 paths'),
+      }),
+    )
+    const frames = writes.map((line) => JSON.parse(line))
+    expect(frames).toContainEqual({ jsonrpc: '2.0', id: 906, result: { permissions: {}, scope: 'turn' } })
   })
 
   it('handles current item/tool/requestUserInput requests and keys answers by question id', async () => {

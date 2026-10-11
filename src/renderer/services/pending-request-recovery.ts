@@ -64,6 +64,7 @@ export function pendingRequestToChatMessage(event: PendingBlockingEvent, timesta
           detail: event.detail,
           status: 'pending',
           ...(event.hostWrite ? { hostWrite: event.hostWrite } : {}),
+          ...(event.permissions ? { permissions: event.permissions } : {}),
         },
       }
     case 'question.asked':

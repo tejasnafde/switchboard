@@ -33,6 +33,7 @@ import {
 } from '@shared/queued-turns'
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { HostWriteCard } from '@shared/agent-host-writes'
+import type { CodexPermissionView } from '@shared/codex-permission-request'
 import { approvalResultLabel, parseApprovalResultMarker } from '@shared/agent-approval-cards'
 import type { PeerUndelivered } from '@shared/peer-links'
 import { parseMergeBackMarker, type MergeBackRow } from '@shared/merge-back'
@@ -59,6 +60,8 @@ export type FeedItem =
       state: 'pending' | 'approve' | 'deny'
       /** A pull request write an agent asked for. */
       hostWrite?: HostWriteCard
+      /** A Codex permissions request: every permission and path an approval grants. */
+      permissions?: CodexPermissionView
       /** Written by releases that kept only this flag for a pull request write; such a card offers Deny only. */
       desktopOnly?: boolean
       closed?: true
@@ -435,6 +438,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
             requestType: event.requestType,
             state: 'pending',
             ...(event.hostWrite ? { hostWrite: event.hostWrite } : {}),
+            ...(event.permissions ? { permissions: event.permissions } : {}),
           },
         ],
       }

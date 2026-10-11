@@ -11,6 +11,7 @@
  */
 
 import type { HostWriteCard } from './agent-host-writes'
+import type { CodexPermissionView } from './codex-permission-request'
 import type { OverageScope } from './claude-rate-limit'
 import type { PeerMessageInitiator } from './peer-messaging'
 import type { PeerLinkRefusal } from './peer-links'
@@ -639,6 +640,8 @@ export interface RuntimeRequestOpenedEvent {
   detail: string
   /** A pull request write an agent asked for through the Switchboard MCP server. `detail` still describes it for clients that do not render the card. */
   hostWrite?: HostWriteCard
+  /** A Codex permissions request: every permission and path an approval grants. `detail` lists the same in plain text. */
+  permissions?: CodexPermissionView
 }
 
 export interface RuntimeRequestClosedEvent {

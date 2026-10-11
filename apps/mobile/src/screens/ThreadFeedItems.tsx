@@ -171,6 +171,22 @@ export const ApprovalItem = memo(function ApprovalItem({
             </Pressable>
           )}
         </>
+      ) : item.permissions ? (
+        // Never cut: an approval grants every path listed here.
+        <View testID="approval-permissions">
+          <Text style={styles.toolOutput}>Codex asks for these permissions for this turn.</Text>
+          {item.permissions.reason ? <Text style={styles.toolOutput}>Reason: {item.permissions.reason}</Text> : null}
+          {item.permissions.sections.map((section, i) => (
+            <View key={i} style={styles.hostWriteSection}>
+              <Text style={styles.toolName}>
+                {section.label} ({section.items.length})
+              </Text>
+              <Text style={styles.hostWriteText} selectable>
+                {section.items.join('\n')}
+              </Text>
+            </View>
+          ))}
+        </View>
       ) : (
         <Text style={styles.toolOutput} numberOfLines={card ? 24 : 6}>
           {item.detail}
