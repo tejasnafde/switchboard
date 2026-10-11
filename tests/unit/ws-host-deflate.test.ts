@@ -5,9 +5,10 @@ import { request } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { WsHost, wsServerOptions } from '../../src/main/backend/ws-host'
 
-const cleanups: Array<() => void> = []
-afterEach(() => {
-  for (const fn of cleanups.splice(0)) fn()
+// Awaited, so the host's disconnect logging finishes before the worker closes.
+const cleanups: Array<() => Promise<void>> = []
+afterEach(async () => {
+  for (const fn of cleanups.splice(0).reverse()) await fn()
 })
 
 // A history window: repetitive JSON, like the real one.
@@ -21,7 +22,7 @@ const history = Array.from({ length: 200 }, (_, i) => ({
 function boot(): Promise<number> {
   return new Promise((resolve) => {
     const wss = new WebSocketServer(wsServerOptions(0, '127.0.0.1'))
-    cleanups.push(() => wss.close())
+    cleanups.push(() => new Promise((done) => wss.close(() => done())))
     const host = new WsHost(wss)
     host.handle('history', () => history)
     wss.on('listening', () => resolve((wss.address() as AddressInfo).port))
@@ -35,7 +36,14 @@ function fetchHistory(
 ): Promise<{ extensions: string; bytes: number; messages: unknown }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/`, { perMessageDeflate })
-    cleanups.push(() => ws.close())
+    cleanups.push(
+      () =>
+        new Promise((done) => {
+          if (ws.readyState === WebSocket.CLOSED) return done()
+          ws.once('close', () => done())
+          ws.close()
+        }),
+    )
     ws.on('error', reject)
     ws.on('open', () => ws.send(JSON.stringify({ k: 'req', id: 1, ch: 'history', args: [] })))
     ws.on('message', (data) => {
