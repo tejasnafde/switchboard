@@ -58,7 +58,7 @@ export function htmlPreviewDisplay(target: HtmlPreviewTarget): { name: string; d
  */
 export async function loadHtmlPreview(target: HtmlPreviewTarget): Promise<PreviewOpenResult> {
   if (!target.machineId) {
-    return window.api.preview.open({ kind: 'file', filePath: htmlPreviewAbsolutePath(target) })
+    return window.api.preview.open({ kind: 'file', root: target.root, filePath: htmlPreviewAbsolutePath(target) })
   }
   const read = await window.api.routing.invokeOn<
     { ok: true; html: string; bytes: number } | { ok: false; error: string; bytes?: number }

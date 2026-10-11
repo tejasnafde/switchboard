@@ -23,6 +23,7 @@ import {
   type PreviewOpenRequest,
   type PreviewOpenResult,
 } from '@shared/html-preview'
+import { resolveWithinRepo } from '../ipc/files'
 import { createMainLogger } from '../logger'
 
 const log = createMainLogger('preview:controller')
@@ -140,6 +141,13 @@ export class PreviewController {
     const filePath = request.filePath
     if (!isAbsolute(filePath)) return { ok: false, error: 'failed', message: 'The preview needs an absolute path.' }
     if (!isHtmlPreviewPath(filePath)) return { ok: false, error: 'not-html' }
+    try {
+      // Only a file inside the chat's folder, symlinks resolved.
+      await resolveWithinRepo(request.root, filePath)
+    } catch (err) {
+      log.warn('preview refused a file outside the chat folder', err)
+      return { ok: false, error: 'failed', message: "The file is outside this chat's project folder." }
+    }
     let bytes: number
     let realFolder: string
     try {

@@ -103,8 +103,8 @@ export function blockedRequestLabel(url: string): string {
 }
 
 export type PreviewOpenRequest =
-  /** A file on this desktop: served with the files in its folder. */
-  | { kind: 'file'; filePath: string }
+  /** A file on this desktop, inside the chat's folder `root`: served with the files in its folder. */
+  | { kind: 'file'; root: string; filePath: string }
   /** A document read through a remote backend: served alone, never by path. */
   | { kind: 'content'; fileName: string; html: string }
 

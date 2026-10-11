@@ -56,7 +56,7 @@ describe('html preview sandbox', () => {
   })
 
   async function openPage() {
-    const result = await ctl.open({ kind: 'file', filePath: join(folder, 'page.html') })
+    const result = await ctl.open({ kind: 'file', root: base, filePath: join(folder, 'page.html') })
     if (!result.ok) throw new Error(`open failed: ${result.error}`)
     return result
   }
@@ -149,18 +149,32 @@ describe('html preview sandbox', () => {
     expect((await ctl.serve(`sb-preview://${result.token}/style.css`)).status).toBe(404)
   })
 
+  it('refuses a file outside the chat folder', async () => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'sb-html-preview-out-')))
+    try {
+      writeFileSync(join(outside, 'x.html'), '<p>x</p>')
+      symlinkSync(join(outside, 'x.html'), join(folder, 'linked.html'))
+      for (const filePath of [join(outside, 'x.html'), join(folder, 'linked.html')]) {
+        expect(await ctl.open({ kind: 'file', root: base, filePath })).toMatchObject({ ok: false, error: 'failed' })
+      }
+      expect(ctl.currentToken).toBeNull()
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
   it('refuses missing, oversized and non-html files', async () => {
-    expect(await ctl.open({ kind: 'file', filePath: join(folder, 'gone.html') })).toEqual({
+    expect(await ctl.open({ kind: 'file', root: base, filePath: join(folder, 'gone.html') })).toEqual({
       ok: false,
       error: 'not-found',
     })
-    expect(await ctl.open({ kind: 'file', filePath: join(base, 'secret.txt') })).toEqual({
+    expect(await ctl.open({ kind: 'file', root: base, filePath: join(base, 'secret.txt') })).toEqual({
       ok: false,
       error: 'not-html',
     })
     const big = join(folder, 'big.html')
     writeFileSync(big, Buffer.alloc(PREVIEW_MAX_BYTES + 1, 'a'))
-    expect(await ctl.open({ kind: 'file', filePath: big })).toMatchObject({ ok: false, error: 'too-large' })
+    expect(await ctl.open({ kind: 'file', root: base, filePath: big })).toMatchObject({ ok: false, error: 'too-large' })
     expect(
       await ctl.open({ kind: 'content', fileName: 'big.html', html: 'a'.repeat(PREVIEW_MAX_BYTES + 1) }),
     ).toMatchObject({ ok: false, error: 'too-large' })
