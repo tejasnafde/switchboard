@@ -292,7 +292,7 @@ export function ChatLanding({
       open={pickerOpen}
       onOpenChange={setPickerOpen}
       leading={selected ? <ProjectFavicon projectPath={selected.projectPath} size={14} /> : undefined}
-      className="h-[24px] max-w-[22ch] justify-start gap-1.5 px-2 py-0 text-[11px] @max-[400px]/footer:max-w-[14ch]"
+      className="h-[24px] max-w-[22ch] justify-start gap-1.5 px-2 py-0 text-[11px] @max-[400px]/toolbar:max-w-[14ch]"
       onCloseAutoFocus={(event) => {
         event.preventDefault()
         focusComposer(LANDING_COMPOSER_ID)

@@ -6,7 +6,13 @@
  * to IPC; everything else goes to the remote backend.
  */
 import type { Transport } from '@shared/transport'
-import { AppChannels, MachineChannels, AnalyticsChannels, SettingsFileChannels } from '@shared/ipc-channels'
+import {
+  AppChannels,
+  MachineChannels,
+  AnalyticsChannels,
+  SettingsFileChannels,
+  PreviewChannels,
+} from '@shared/ipc-channels'
 
 const LOCAL_CHANNELS = new Set<string>([
   AppChannels.OPEN_FOLDER,
@@ -27,6 +33,8 @@ const LOCAL_CHANNELS = new Set<string>([
   'app:shortcut-capture',
   // settings.json is beside this desktop's DB; the row is disabled while remote, so this is a backstop.
   ...Object.values(SettingsFileChannels),
+  // The HTML preview session lives in this Electron process.
+  ...Object.values(PreviewChannels),
   // The machine registry is this laptop's list of remotes, not the VM's.
   ...Object.values(MachineChannels),
   // Pairing and Google minting belong to the machine the user is sitting at.

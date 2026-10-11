@@ -26,7 +26,8 @@ import { cn } from '../../lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { rankAndFilterRefs, decideSwitchAction, type Ref } from './branch-picker-policy'
 import { followSuggestionsOff } from '@shared/follow-suggestions'
-import { BranchIcon, ChipCaret, footerChipClass, footerChipValueClass } from './FooterChip'
+import { ChipCaret, chipClass, chipValueClass } from '../ui/chip'
+import { BranchIcon } from './FooterIcons'
 
 const log = createRendererLogger('chat:branch-picker')
 
@@ -142,9 +143,9 @@ export function BranchPickerTrigger({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" title="Switch branch" className={footerChipClass}>
+        <button type="button" title="Switch branch" className={chipClass}>
           <BranchIcon />
-          <span className={cn(footerChipValueClass, 'max-w-[140px] truncate')}>{branch.current ?? '(detached)'}</span>
+          <span className={cn(chipValueClass, 'max-w-[140px] truncate')}>{branch.current ?? '(detached)'}</span>
           <ChipCaret />
         </button>
       </PopoverTrigger>

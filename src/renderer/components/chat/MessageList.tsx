@@ -1,9 +1,21 @@
 import { chatMessagesCommitted, chatMessagesUnmounted } from '../../services/perf-chat-open'
-import { useRef, useEffect, useCallback, useLayoutEffect, useMemo, useReducer, useState, type ReactNode } from 'react'
+import {
+  Fragment,
+  useRef,
+  useEffect,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useState,
+  type ReactNode,
+} from 'react'
 import { flushSync } from 'react-dom'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { agentShortLabel, type AgentType, type ChatMessage } from '@shared/types'
 import { MessageBubble } from './MessageBubble'
+import { HtmlFileCard } from './HtmlFileCard'
+import { htmlFilesWritten } from '../../services/html-preview-open'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAgentStore } from '../../stores/agent-store'
 import { useSkillStore } from '../../stores/skill-store'
@@ -659,6 +671,16 @@ export function MessageList({
             />
           )
 
+          // A written .html file gets a preview card after the work that wrote it.
+          const renderHtmlFileCards = (messages: ChatMessage[]) =>
+            sessionId
+              ? htmlFilesWritten(messages).map((path) => (
+                  <div key={`html:${path}`} className="px-[16px]">
+                    <HtmlFileCard path={path} sessionId={sessionId} />
+                  </div>
+                ))
+              : null
+
           return (
             <MeasuredTurn
               key={vi.key}
@@ -683,15 +705,24 @@ export function MessageList({
               {/* Preserve message objects and handlers while lowering the
                   default prominence of implementation detail. */}
               {presentation.map((item) => {
-                if (item.kind === 'message') return renderMessage(item.message)
+                if (item.kind === 'message')
+                  return (
+                    <Fragment key={item.message.id}>
+                      {renderMessage(item.message)}
+                      {renderHtmlFileCards([item.message])}
+                    </Fragment>
+                  )
                 if (item.kind === 'activity') {
                   return (
-                    <details className="turn-activity" key={item.messages[0].id}>
-                      <summary>{activitySummaryLabel(item.toolCount, turnDurationMs)}</summary>
-                      <div className="turn-activity-body">
-                        {item.messages.map((message) => renderMessage(message, true))}
-                      </div>
-                    </details>
+                    <Fragment key={item.messages[0].id}>
+                      <details className="turn-activity">
+                        <summary>{activitySummaryLabel(item.toolCount, turnDurationMs)}</summary>
+                        <div className="turn-activity-body">
+                          {item.messages.map((message) => renderMessage(message, true))}
+                        </div>
+                      </details>
+                      {renderHtmlFileCards(item.messages)}
+                    </Fragment>
                   )
                 }
                 const groupKey = item.messages[0].id
@@ -717,6 +748,7 @@ export function MessageList({
                         {changedFilesLabel(item.messages.length)}
                       </button>
                     )}
+                    {renderHtmlFileCards(item.messages)}
                   </section>
                 )
               })}

@@ -18,6 +18,7 @@ import { ViewToggle } from './components/layout/ViewToggle'
 import { TerminalSessionPane } from './components/terminal/TerminalSessionPane'
 import { TerminalStrip } from './components/terminal/TerminalStrip'
 import { IdePane } from './components/ide/IdePane'
+import { HtmlPreviewPane } from './components/preview/HtmlPreviewPane'
 import { ChatVisual } from './components/chat/visuals/ChatVisual'
 import { KanbanView } from './components/kanban/KanbanView'
 import { ReviewsView } from './components/reviews/ReviewsView'
@@ -1892,6 +1893,15 @@ export function App() {
               }}
             >
               <IdePane />
+            </div>
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: rightPaneMode === 'preview' && !paneVisual ? 'flex' : 'none',
+              }}
+            >
+              <HtmlPreviewPane />
             </div>
             {/* Open in pane: the panes above stay mounted, hidden (the
                 translucent theme would show them through it). */}

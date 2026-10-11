@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useAgentStore } from '../../stores/agent-store'
 import type { DraftChatOptions } from '@shared/new-chat-draft'
 import { createRendererLogger } from '../../logger'
-import { BranchIcon, ChipSelect, type ChipOption } from './FooterChip'
+import { ChipSelect, type ChipOption } from '../ui/chip'
+import { BranchIcon } from './FooterIcons'
 
 const log = createRendererLogger('chat:draft-workspace')
 

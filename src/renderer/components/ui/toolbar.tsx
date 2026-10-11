@@ -1,10 +1,92 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 import { cn } from '../../lib/utils'
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
-import { DotsIcon, footerChipClass, optionMenuClass } from './FooterChip'
+import { chipClass, DotsIcon, optionMenuClass } from './chip'
+import { Popover, PopoverContent, PopoverTrigger } from './popover'
+import type { ToolbarStep } from './toolbar-steps'
 
-/** A footer control that moved into the "..." menu (see composer-footer-tiers.ts). */
-export interface OverflowEntry {
+// Tailwind reads whole class names from the source, so each step is spelled out.
+const HIDE_BELOW: Record<ToolbarStep, string> = {
+  760: '@max-[760px]/toolbar:hidden',
+  680: '@max-[680px]/toolbar:hidden',
+  600: '@max-[600px]/toolbar:hidden',
+  480: '@max-[480px]/toolbar:hidden',
+  400: '@max-[400px]/toolbar:hidden',
+}
+
+const SHOW_BELOW: Record<ToolbarStep, string> = {
+  760: '@max-[760px]/toolbar:inline-flex',
+  680: '@max-[680px]/toolbar:inline-flex',
+  600: '@max-[600px]/toolbar:inline-flex',
+  480: '@max-[480px]/toolbar:inline-flex',
+  400: '@max-[400px]/toolbar:inline-flex',
+}
+
+/**
+ * A row of controls that never wraps. It is the `toolbar` container its
+ * items' `/toolbar` container queries read (see toolbar-steps.ts).
+ */
+export function Toolbar({ className, ...props }: ComponentProps<'div'>) {
+  return <div data-toolbar className={cn('@container/toolbar flex items-center', className)} {...props} />
+}
+
+/** An item that leaves the row below `hideBelow`; list it in the `ToolbarOverflow` too. */
+export function ToolbarItem({ hideBelow, children }: { hideBelow: ToolbarStep; children: ReactNode }) {
+  return <span className={cn('contents', HIDE_BELOW[hideBelow])}>{children}</span>
+}
+
+/**
+ * The tier an element's content width falls in, kept current with a
+ * ResizeObserver. For what a CSS container query cannot reach, such as a
+ * popover portalled out of the container: pass the same steps the container
+ * queries use, as a pure `tierOf(width)`.
+ *
+ * Returns a callback ref for the container and its current tier. The first
+ * reading happens in a layout effect, so the first paint already uses it.
+ */
+export function useContainerTier<T>(tierOf: (width: number) => T): [(element: HTMLElement | null) => void, T] {
+  const [element, setElement] = useState<HTMLElement | null>(null)
+  const [tier, setTier] = useState<T>(() => tierOf(0))
+  const tierOfRef = useRef(tierOf)
+  tierOfRef.current = tierOf
+
+  useLayoutEffect(() => {
+    if (!element) return
+    // Content box, the width an inline-size container query reads.
+    const read = (width: number) => setTier(tierOfRef.current(width))
+    read(element.getBoundingClientRect().width - horizontalPadding(element))
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1]
+      if (entry) read(entry.contentRect.width)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [element])
+
+  const ref = useCallback((next: HTMLElement | null) => setElement(next), [])
+  return [ref, tier]
+}
+
+function horizontalPadding(element: HTMLElement): number {
+  const style = getComputedStyle(element)
+  return (
+    (parseFloat(style.paddingLeft) || 0) +
+    (parseFloat(style.paddingRight) || 0) +
+    (parseFloat(style.borderLeftWidth) || 0) +
+    (parseFloat(style.borderRightWidth) || 0)
+  )
+}
+
+/** An item that left a `Toolbar` row for its "..." menu (see toolbar-steps.ts). */
+export interface ToolbarOverflowEntry {
   key: string
   icon: ReactNode
   /** The row's name: "Effort", "Checkout", "Mode". */
@@ -18,15 +100,15 @@ export interface OverflowEntry {
 }
 
 /**
- * The "..." chip at the end of a narrow composer footer. It lists the
- * controls the footer had no room for; a row opens that control's own list
- * in the same popover. Escape in a list goes back to the rows.
+ * The "..." chip at the end of a narrow toolbar. It lists the items the row
+ * had no room for; a row opens that item's own list in the same popover.
+ * Escape in a list goes back to the rows.
  *
- * The chip shows only below the footer's overflow step (a container query),
- * and the caller passes the entries `overflowedPriorities` names for the
- * width `useContainerTier` read, so both agree on what moved.
+ * The chip shows below `showBelow` (a container query, the highest step any
+ * item hides at), and the caller passes the entries `overflowedItems` names
+ * for the tier `useContainerTier` read, so both agree on what moved.
  */
-export function ComposerOverflowMenu({ entries }: { entries: OverflowEntry[] }) {
+export function ToolbarOverflow({ entries, showBelow }: { entries: ToolbarOverflowEntry[]; showBelow: ToolbarStep }) {
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<string | null>(null)
   const active = entries.find((entry) => entry.key === view)
@@ -59,8 +141,8 @@ export function ComposerOverflowMenu({ entries }: { entries: OverflowEntry[] }) 
           type="button"
           aria-label="More options"
           title="More options"
-          data-composer-overflow
-          className={cn(footerChipClass, 'hidden w-[24px] justify-center px-0 @max-[600px]/footer:inline-flex')}
+          data-toolbar-overflow
+          className={cn(chipClass, 'hidden w-[24px] justify-center px-0', SHOW_BELOW[showBelow])}
         >
           <DotsIcon />
         </button>
@@ -98,7 +180,13 @@ export function ComposerOverflowMenu({ entries }: { entries: OverflowEntry[] }) 
   )
 }
 
-function OverflowRows({ entries, onOpenEntry }: { entries: OverflowEntry[]; onOpenEntry: (key: string) => void }) {
+function OverflowRows({
+  entries,
+  onOpenEntry,
+}: {
+  entries: ToolbarOverflowEntry[]
+  onOpenEntry: (key: string) => void
+}) {
   const listRef = useRef<HTMLDivElement>(null)
   const rows = () => Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
 

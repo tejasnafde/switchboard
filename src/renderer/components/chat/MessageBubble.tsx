@@ -15,6 +15,8 @@ import { useDraftStore } from '../../stores/draft-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { enhanceFilePills } from '../../services/message-pills'
 import { formatFilePathRef, type FilePathRef } from '@shared/file-path-ref'
+import { isHtmlPreviewPath } from '@shared/html-preview'
+import { openHtmlPreviewFromChat } from '../../services/html-preview-open'
 import { renderPillBody } from './render-pill-body'
 import { chatQuoteAuthor } from '../../services/context-formatters'
 import { splitSkillMentions } from './slash-commands'
@@ -205,11 +207,14 @@ export const MessageBubble = memo(function MessageBubble({
           'vertical-align:baseline',
         ].join(';')
         span.textContent = originalText
-        span.title = `Open ${formatFilePathRef(ref)}`
+        const html = isHtmlPreviewPath(ref.path)
+        span.title = html ? `Preview ${formatFilePathRef(ref)}` : `Open ${formatFilePathRef(ref)}`
         span.setAttribute('data-context-source', 'file-chip')
         span.addEventListener('click', (e) => {
           e.preventDefault()
           e.stopPropagation()
+          // An .html file opens in the sandboxed preview pane, anything else in the IDE.
+          if (html && openHtmlPreviewFromChat(ref.path, sessionId)) return
           useLayoutStore
             .getState()
             .openInViewer(

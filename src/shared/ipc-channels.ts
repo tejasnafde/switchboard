@@ -209,6 +209,21 @@ export const FilesChannels = {
   DELETE_FILE: 'files:delete-file',
   RESOLVE: 'files:resolve',
   LIST_ALL: 'files:list-all',
+  /** An .html file's text for the HTML preview of a remote chat, capped at PREVIEW_MAX_BYTES. */
+  READ_HTML: 'files:read-html',
+} as const
+
+/**
+ * HTML preview pane (desktop only, see main/preview/). OPEN loads a local file
+ * or remote-read content into the preview session; EVENT pushes file changes
+ * and blocked requests.
+ */
+export const PreviewChannels = {
+  OPEN: 'preview:open',
+  CLOSE: 'preview:close',
+  SET_COLOR_SCHEME: 'preview:set-color-scheme',
+  OPEN_EXTERNAL: 'preview:open-external',
+  EVENT: 'preview:event',
 } as const
 
 /**

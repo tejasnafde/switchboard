@@ -1,7 +1,7 @@
 import type { RuntimeMode } from '@shared/provider-events'
 
 // Short labels: the footer chip shows the label, and `short` once the footer
-// is narrow (composer-footer-tiers.ts). The detail is a tooltip.
+// is narrow (ui/toolbar-steps.ts). The detail is a tooltip.
 export const RUNTIME_MODE_OPTIONS: ReadonlyArray<{ value: RuntimeMode; label: string; short: string; detail: string }> =
   [
     { value: 'sandbox', label: 'Supervised', short: 'Supervised', detail: 'Ask before commands and file changes' },

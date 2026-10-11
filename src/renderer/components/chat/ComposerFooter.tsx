@@ -2,10 +2,10 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import type { RuntimeMode } from '@shared/provider-events'
 import type { DraftChatOptions } from '@shared/new-chat-draft'
 import { effortLabel, type EffortControl } from '@shared/effort'
-import { useContainerTier } from '../../hooks/useContainerTier'
-import { footerTier, overflowedPriorities, type FooterPriority } from './composer-footer-tiers'
-import { BranchIcon, ChipSelect, GaugeIcon, OptionList, ShieldIcon } from './FooterChip'
-import { ComposerOverflowMenu, type OverflowEntry } from './ComposerOverflowMenu'
+import { ChipSelect, OptionList } from '../ui/chip'
+import { Toolbar, ToolbarItem, ToolbarOverflow, useContainerTier, type ToolbarOverflowEntry } from '../ui/toolbar'
+import { overflowedItems, toolbarTier, type ToolbarStep } from '../ui/toolbar-steps'
+import { BranchIcon, GaugeIcon, ShieldIcon } from './FooterIcons'
 import { EffortPicker, effortOptions } from './EffortPicker'
 import { DraftWorkspaceChips, useDraftWorkspace, type DraftWorkspaceSection } from './DraftWorkspaceChips'
 import { BranchPickerPopover, BranchPickerTrigger, useCurrentBranch, type CurrentBranch } from './BranchPicker'
@@ -22,7 +22,7 @@ interface BranchProps {
  * The row under the chat input: P1 project (landing), P2 agent and model, P3
  * effort, P4 checkout, P5 runtime mode, then the context meter. It never
  * wraps: as the footer narrows the lower priorities shorten, then move into
- * the "..." menu (composer-footer-tiers.ts). The meter never moves.
+ * the "..." menu (ui/toolbar-steps.ts). The meter never moves.
  */
 export function ComposerFooter({
   lead,
@@ -49,7 +49,7 @@ export function ComposerFooter({
   mode?: { value: RuntimeMode; onChange: (mode: RuntimeMode) => void } | null
   meter?: ReactNode
 }) {
-  const [footerRef, tier] = useContainerTier(footerTier)
+  const [footerRef, tier] = useContainerTier(toolbarTier)
   const isDraft = !!draft && !!sessionId
   const draftSections = useDraftWorkspace(isDraft ? sessionId : null, cwd, draft)
   const branch = useCurrentBranch(isDraft ? null : cwd, branchProps.onCwdMissing)
@@ -57,10 +57,12 @@ export function ComposerFooter({
   const modeOption = mode ? RUNTIME_MODE_OPTIONS.find((m) => m.value === mode.value) : undefined
   const modeOptions = RUNTIME_MODE_OPTIONS.map((m) => ({ value: m.value, label: m.label, title: m.detail }))
 
-  const entries: Record<3 | 4 | 5, OverflowEntry | null> = {
-    3: effort
+  // Highest priority first: the order the "..." menu lists them in.
+  const entries: Array<(ToolbarOverflowEntry & { hideBelow: ToolbarStep }) | null> = [
+    effort
       ? {
           key: 'effort',
+          hideBelow: 400,
           icon: <GaugeIcon />,
           name: 'Effort',
           valueText: effortLabel(effort.control.value),
@@ -77,10 +79,11 @@ export function ComposerFooter({
           ),
         }
       : null,
-    4: isDraft ? draftCheckoutEntry(draftSections) : branchEntry(cwd, branch, branchProps),
-    5: mode
+    withStep(isDraft ? draftCheckoutEntry(draftSections) : branchEntry(cwd, branch, branchProps), 480),
+    mode
       ? {
           key: 'mode',
+          hideBelow: 600,
           icon: <ShieldIcon />,
           name: 'Mode',
           valueText: modeOption?.label ?? mode.value,
@@ -97,28 +100,24 @@ export function ComposerFooter({
           ),
         }
       : null,
-  }
-  const overflow = overflowedPriorities(tier).flatMap((p) => {
-    const entry = entries[p as Exclude<FooterPriority, 1 | 2>]
-    return entry ? [entry] : []
-  })
+  ]
+  const overflow = overflowedItems(
+    entries.filter((entry) => entry !== null),
+    tier,
+  )
 
   return (
-    <div
-      ref={footerRef}
-      data-composer-footer
-      className="@container/footer mt-[6px] flex items-center gap-[8px] text-[11px]"
-    >
+    <Toolbar ref={footerRef} data-composer-footer className="mt-[6px] gap-[8px] text-[11px]">
       <div data-composer-footer-track className="flex min-w-0 flex-1 flex-nowrap items-center gap-[6px]">
         {lead}
         {provider}
         {effort && (
-          <span className="contents @max-[400px]/footer:hidden">
+          <ToolbarItem hideBelow={400}>
             <EffortPicker control={effort.control} onPick={effort.onPick} />
-          </span>
+          </ToolbarItem>
         )}
         {notice}
-        <span className="contents @max-[480px]/footer:hidden">
+        <ToolbarItem hideBelow={480}>
           {isDraft ? (
             <DraftWorkspaceChips sections={draftSections} />
           ) : (
@@ -130,9 +129,9 @@ export function ComposerFooter({
               onSwapWorktree={branchProps.onSwapWorktree}
             />
           )}
-        </span>
+        </ToolbarItem>
         {mode && (
-          <span className="contents @max-[600px]/footer:hidden">
+          <ToolbarItem hideBelow={600}>
             <ChipSelect
               label="Runtime mode"
               className="runtime-mode-select"
@@ -145,16 +144,20 @@ export function ComposerFooter({
               value={mode.value}
               onPick={(value) => mode.onChange(value as RuntimeMode)}
             />
-          </span>
+          </ToolbarItem>
         )}
-        <ComposerOverflowMenu entries={overflow} />
+        <ToolbarOverflow entries={overflow} showBelow={600} />
       </div>
       {meter}
-    </div>
+    </Toolbar>
   )
 }
 
-function draftCheckoutEntry(sections: DraftWorkspaceSection[]): OverflowEntry | null {
+function withStep<T extends object>(entry: T | null, hideBelow: ToolbarStep) {
+  return entry ? { ...entry, hideBelow } : null
+}
+
+function draftCheckoutEntry(sections: DraftWorkspaceSection[]): ToolbarOverflowEntry | null {
   const [checkout, ...rest] = sections
   if (!checkout) return null
   return {
@@ -186,7 +189,7 @@ function draftCheckoutEntry(sections: DraftWorkspaceSection[]): OverflowEntry | 
   }
 }
 
-function branchEntry(cwd: string | null, branch: CurrentBranch, props: BranchProps): OverflowEntry | null {
+function branchEntry(cwd: string | null, branch: CurrentBranch, props: BranchProps): ToolbarOverflowEntry | null {
   if (!cwd || !branch.isGitRepo) return null
   return {
     key: 'checkout',

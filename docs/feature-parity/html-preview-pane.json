@@ -1,0 +1,79 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "html-preview-pane",
+  "summary": "Clicking an agent-written .html file (its card under the Write call, or its inline file chip) opens it in a sandboxed preview as a third right-pane mode beside the terminal and the IDE: one reused webview in its own session, no Node, no popups, no navigation off the file and no network beyond the file's own folder, with live reload, a page theme and width menu, and the console's errors and blocked requests.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/preview/preview-controller.ts",
+        "src/main/preview/preview-session.ts",
+        "src/main/index.ts",
+        "src/main/ipc/files.ts",
+        "src/preload/index.ts",
+        "src/preload/hybrid-transport.ts",
+        "src/renderer/components/preview/HtmlPreviewPane.tsx",
+        "src/renderer/components/preview/preview-icons.tsx",
+        "src/renderer/components/chat/HtmlFileCard.tsx",
+        "src/renderer/components/chat/MessageList.tsx",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/components/ui/menu.tsx",
+        "src/renderer/services/html-preview-open.ts",
+        "src/renderer/services/html-preview-console.ts",
+        "src/renderer/stores/layout-store.ts",
+        "src/renderer/App.tsx",
+        "src/main/provider/adapters/demo-adapter.ts",
+        "tests/unit/html-preview-sandbox.test.ts",
+        "tests/unit/html-preview-open.test.ts",
+        "tests/unit/files-read-html.test.ts",
+        "e2e/html-preview.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The preview is a desktop pane: it needs an Electron webview in its own session with a request filter, a custom protocol and a folder watch, none of which the phone app has. Rendering agent-written HTML on a phone would need a separate sandbox design (a locked-down WebView with no bridge), so it is out of scope here; the phone keeps showing the file path as text."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Same as the iOS app: there is no right pane and no sandboxed webview session on Android. The chat shows the path as text, unchanged."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/html-preview.ts",
+        "src/shared/ipc-channels.ts",
+        "src/main/ipc/files.ts",
+        "tests/unit/files-read-html.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored in the database. The preview session is an in-memory partition, the right-pane 'preview' mode is never persisted (a restart returns to the terminal or the IDE), and the only saved value is the dismissed sandbox notice in renderer localStorage."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/ipc-channels.ts",
+        "src/main/ipc/files.ts",
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/html-preview-sandbox.test.ts: the controller blocks http, https, wss, loopback, file and other-scheme requests and reports them; a page from a previous open is refused; window.open is denied; navigation to another URL or another file is cancelled; the server returns 404 for ../, encoded ../ and backslash escapes, a sibling folder and a symlink out of the folder; remote content is served alone; missing, oversized and non-html files are refused; a burst of writes reloads once and a delete reports the file missing.",
+      "tests/unit/files-read-html.test.ts: files:read-html returns only .html files inside the repo and refuses escapes, other kinds and files over the 5 MB cap.",
+      "tests/unit/html-preview-open.test.ts: targets, paths, the right-pane mode round trip, CSP report parsing and console text.",
+      "e2e/html-preview.e2e.mjs against the real Electron sandbox: the demo agent writes the page, the card opens the pane in partition sb-html-preview, and a probe page written over it (live reload) fails to fetch the internet and loopback, fails to read ../secret.txt, an encoded ../ and a file:// URL, gets null from window.open, sees no require, process or window.api, and still loads assets/ok.css beside it. No new BrowserWindow appears, a deleted file shows File not found, and Close removes the webview."
+    ],
+    "hardware": [
+      "Run on this Mac (darwin arm64) in a background Electron window through the e2e script above."
+    ],
+    "notExercised": [
+      "Remote chats: the renderer reads the file through files:read-html on the machine's backend and loads it as content, but no live remote session was previewed. A remote page has no live reload (there is no local folder to watch) and loads no relative assets; Reload reads it again.",
+      "The legacy SWITCHBOARD_BACKEND_URL mode (the whole app on one remote backend) previews only files that exist on this desktop.",
+      "Windows and Linux were not run; the paths are built with the root's own separator and the folder watch uses fs.watch."
+    ]
+  }
+}

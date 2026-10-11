@@ -12,6 +12,7 @@ import {
   FilesChannels,
   GitChannels,
   IdeChannels,
+  PreviewChannels,
   KanbanChannels,
   MachineChannels,
   ProviderInstanceChannels,
@@ -26,6 +27,7 @@ import {
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { PeerLinkView } from '@shared/peer-links'
+import type { PreviewEvent, PreviewOpenRequest, PreviewOpenResult } from '@shared/html-preview'
 import type { ReasoningEffort } from '@shared/models'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanWorktreeCreationIntent } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
@@ -388,7 +390,10 @@ const api = {
       subPath?: string,
     ): Promise<{ ok: boolean; error?: string; entries: Array<{ name: string; isDir: boolean }> }> =>
       transport.invoke(FilesChannels.LIST_DIR, repoRoot, subPath ?? ''),
-    resolve: (repoRoot: string, subPath: string): Promise<{ ok: boolean; exists: boolean; absPath?: string }> =>
+    resolve: (
+      repoRoot: string,
+      subPath: string,
+    ): Promise<{ ok: boolean; exists: boolean; absPath?: string; size?: number }> =>
       transport.invoke(FilesChannels.RESOLVE, repoRoot, subPath),
     listAll: (repoRoot: string): Promise<{ ok: boolean; error?: string; files: string[] }> =>
       transport.invoke(FilesChannels.LIST_ALL, repoRoot),
@@ -923,6 +928,19 @@ const api = {
   },
 
   // ─── Embedded IDE (code-server webview) ────────────────────────
+  // ─── HTML preview (desktop only) ──────────────────────────────
+  preview: {
+    open: (request: PreviewOpenRequest): Promise<PreviewOpenResult> => transport.invoke(PreviewChannels.OPEN, request),
+    close: (): Promise<{ ok: boolean }> => transport.invoke(PreviewChannels.CLOSE),
+    setColorScheme: (webContentsId: number, scheme: 'light' | 'dark'): Promise<{ ok: boolean }> =>
+      transport.invoke(PreviewChannels.SET_COLOR_SCHEME, webContentsId, scheme),
+    /** Opens a local .html file in the system browser, outside the sandbox. */
+    openExternal: (filePath: string): Promise<{ ok: boolean }> =>
+      transport.invoke(PreviewChannels.OPEN_EXTERNAL, filePath),
+    onEvent: (callback: (event: PreviewEvent) => void) =>
+      transport.on<[PreviewEvent]>(PreviewChannels.EVENT, (event) => callback(event)),
+  },
+
   ide: {
     /** Boot the per-app server and serve `folder`. `theme` is seeded into the
      *  workbench settings before first paint; `skipDownload` is the prewarm
