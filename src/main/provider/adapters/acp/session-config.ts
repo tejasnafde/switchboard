@@ -2,7 +2,7 @@
  * Pure helpers for the parts of an ACP session that agents report in more
  * than one shape: the mode ids and the model catalog.
  */
-import type { ModelInfo, SessionConfigOption, SessionModeState } from '@agentclientprotocol/sdk'
+import type { SessionConfigOption, SessionModeState } from '@agentclientprotocol/sdk'
 import type { RuntimeMode } from '../../types'
 import type { AcpModeStrategy } from './launch-config'
 
@@ -24,6 +24,28 @@ export function resolveAcpModeIds(strategy: AcpModeStrategy, modes: SessionModeS
   return { plan, other }
 }
 
+/**
+ * A model as the agent names it. The ACP SDK dropped its own `ModelInfo` with
+ * the unstable model selectors (0.24); older agents still send that shape.
+ */
+export interface AcpModelInfo {
+  modelId: string
+  name: string
+  description?: string | null
+}
+
+/**
+ * The unstable `models` field of a `session/new` or `session/resume` reply,
+ * which the SDK no longer types but passes through. Null when absent or
+ * malformed.
+ */
+export function legacyModelCatalog(response: unknown): AcpModelInfo[] | null {
+  const models = (response as { models?: { availableModels?: unknown } } | null | undefined)?.models
+  const list = models?.availableModels
+  if (!Array.isArray(list)) return null
+  return list.filter((m): m is AcpModelInfo => typeof m?.modelId === 'string' && typeof m?.name === 'string')
+}
+
 export function acpModeFor(ids: AcpModeIds, mode: RuntimeMode): string | null {
   return mode === 'plan' ? ids.plan : ids.other
 }
@@ -32,7 +54,7 @@ export function acpModeFor(ids: AcpModeIds, mode: RuntimeMode): string | null {
 export interface AcpConfigModels {
   configId: string
   current: string
-  models: ModelInfo[]
+  models: AcpModelInfo[]
 }
 
 /**
@@ -44,7 +66,7 @@ export function modelsFromConfigOptions(
 ): AcpConfigModels | null {
   const option = options?.find((o) => o.category === 'model' && o.type === 'select')
   if (!option || option.type !== 'select') return null
-  const models: ModelInfo[] = []
+  const models: AcpModelInfo[] = []
   for (const entry of option.options) {
     if ('group' in entry) {
       for (const inner of entry.options) models.push({ modelId: inner.value, name: inner.name })

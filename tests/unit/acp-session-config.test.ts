@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   acpModeFor,
+  legacyModelCatalog,
   modelsFromConfigOptions,
   resolveAcpModeIds,
 } from '../../src/main/provider/adapters/acp/session-config'
@@ -73,6 +74,22 @@ describe('modelsFromConfigOptions', () => {
   it('is null without a model option', () => {
     expect(modelsFromConfigOptions(undefined)).toBeNull()
     expect(modelsFromConfigOptions([{ id: 'x', name: 'X', type: 'boolean', currentValue: true }])).toBeNull()
+  })
+})
+
+describe('legacyModelCatalog', () => {
+  it('reads models.availableModels and drops malformed entries', () => {
+    expect(
+      legacyModelCatalog({
+        models: { currentModelId: 'a', availableModels: [{ modelId: 'a', name: 'A' }, { modelId: 3 }, null] },
+      }),
+    ).toEqual([{ modelId: 'a', name: 'A' }])
+  })
+
+  it('is null when the reply has no model list', () => {
+    expect(legacyModelCatalog({ sessionId: 's' })).toBeNull()
+    expect(legacyModelCatalog(null)).toBeNull()
+    expect(legacyModelCatalog({ models: { availableModels: 'x' } })).toBeNull()
   })
 })
 
