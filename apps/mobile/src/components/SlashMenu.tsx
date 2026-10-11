@@ -16,6 +16,7 @@ const SOURCE_LABEL: Record<SlashCommand['source'], string> = {
   vibe: 'MISTRAL VIBE',
   cline: 'CLINE',
   copilot: 'GITHUB COPILOT',
+  'acp-command': 'LOCAL COMMAND',
 }
 
 export const SlashMenu = memo(function SlashMenu({

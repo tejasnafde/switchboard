@@ -170,6 +170,25 @@ describe('isChannelAllowed', () => {
     expect(isSettingsFrameAllowed(PHONE_SCOPES, 'settings:get', ['keyboard.overrides'])).toBe(true)
   })
 
+  it('keeps local command accounts and the draft Test, which run a program, to terminal-scoped sessions', () => {
+    const upsert = ProviderInstanceChannels.UPSERT
+    const local = {
+      agentType: 'acp-command',
+      displayName: 'Kestrel',
+      configJson: { launch: { command: 'x', args: [] } },
+    }
+    expect(isSettingsFrameAllowed(PHONE_SCOPES, upsert, [local])).toBe(false)
+    expect(isSettingsFrameAllowed(PHONE_SCOPES, upsert, [{ agentType: 'acp-command', displayName: 'K' }])).toBe(false)
+    expect(isSettingsFrameAllowed(PHONE_SCOPES, upsert, [{ agentType: 'codex', configJson: {} }])).toBe(false)
+    expect(isSettingsFrameAllowed(FULL_SCOPES, upsert, [local])).toBe(true)
+    // An ordinary rename or key change stays open.
+    expect(
+      isSettingsFrameAllowed(PHONE_SCOPES, upsert, [{ id: 'codex-work', agentType: 'codex', displayName: 'W' }]),
+    ).toBe(true)
+    expect(isChannelAllowed(PHONE_SCOPES, ProviderInstanceChannels.TEST_DRAFT)).toBe(false)
+    expect(isChannelAllowed(FULL_SCOPES, ProviderInstanceChannels.TEST_DRAFT)).toBe(true)
+  })
+
   it('still lets a phone write the ordinary settings it owns', () => {
     for (const key of ['projectOrder', 'chat.defaultModel.claude-code', 'ui.theme']) {
       expect(isSettingWriteAllowed(PHONE_SCOPES, key)).toBe(true)

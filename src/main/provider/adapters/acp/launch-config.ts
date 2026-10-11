@@ -51,10 +51,16 @@ export interface AcpLaunchConfig {
   readonly modes: AcpModeStrategy
   /** Logged as a warning when `initialize` does not advertise one of them. */
   readonly expectedCapabilities: readonly AcpExpectedCapability[]
-  /** Absolute path of the agent binary, or null when not installed. */
-  findBinary(): string | null
+  /**
+   * Absolute path of the agent binary, or null when not installed. Agents
+   * whose launch comes from the account (local commands) read it from
+   * `instanceId`; without one they answer null.
+   */
+  findBinary(instanceId?: string | null): string | null
   /** Arguments that start the agent's ACP server on stdio. */
-  args(cwd: string): string[]
+  args(cwd: string, instanceId?: string | null): string[]
+  /** Folder to start the agent in, when the account names one; else the chat's folder. */
+  spawnCwd?(instanceId?: string | null): string | null
   /** Spawn env: login shell env, process env, then the instance overlay. */
   buildEnv(overlay: Record<string, string>): Record<string, string>
   /** Runs before any session state exists; throws to refuse the binary. */

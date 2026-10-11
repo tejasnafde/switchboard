@@ -19,7 +19,17 @@ import type { AgentType } from '../../src/shared/types'
 
 describe('AGENT_TYPES', () => {
   it('contains every agent kind, the generic ACP agents before the terminal', () => {
-    expect(AGENT_TYPES).toEqual(['claude-code', 'codex', 'opencode', 'gemini', 'vibe', 'cline', 'copilot', 'terminal'])
+    expect(AGENT_TYPES).toEqual([
+      'claude-code',
+      'codex',
+      'opencode',
+      'gemini',
+      'vibe',
+      'cline',
+      'copilot',
+      'acp-command',
+      'terminal',
+    ])
   })
 })
 

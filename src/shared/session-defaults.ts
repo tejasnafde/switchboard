@@ -80,15 +80,22 @@ function firstSet(...values: Array<string | undefined>): string | undefined {
   return undefined
 }
 
+/**
+ * `account` is the mode the chosen account's new chats start in (an agent not
+ * tested with Switchboard starts in plan). It beats the machine default and
+ * yields to any mode the user or the conversation chose.
+ */
 export function resolveSessionDefaults(tiers: {
   requested: SessionDefaults
   conversation: SessionDefaults
+  account?: Pick<SessionDefaults, 'runtimeMode'>
   machine: SessionDefaults
 }): ResolvedSessionDefaults {
-  const { requested, conversation, machine } = tiers
+  const { requested, conversation, account, machine } = tiers
   // Per tier, so a bad mode from a client falls through instead of poisoning.
   const runtimeMode =
-    [requested.runtimeMode, conversation.runtimeMode, machine.runtimeMode].find(isRuntimeMode) ?? FALLBACK_RUNTIME_MODE
+    [requested.runtimeMode, conversation.runtimeMode, account?.runtimeMode, machine.runtimeMode].find(isRuntimeMode) ??
+    FALLBACK_RUNTIME_MODE
 
   return {
     runtimeMode,

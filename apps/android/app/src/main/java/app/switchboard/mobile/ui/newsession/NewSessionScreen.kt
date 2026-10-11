@@ -573,7 +573,7 @@ object NewSessionSelectorPolicy {
         ProviderKind.Claude -> "Claude"
         ProviderKind.Codex -> "Codex"
         ProviderKind.OpenCode -> "OpenCode"
-        ProviderKind.Gemini, ProviderKind.Vibe, ProviderKind.Cline, ProviderKind.Copilot ->
+        ProviderKind.Gemini, ProviderKind.Vibe, ProviderKind.Cline, ProviderKind.Copilot, ProviderKind.AcpCommand ->
             AcpAgents.shortLabel(provider.wire) ?: provider.wire
     }
 

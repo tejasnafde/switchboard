@@ -53,6 +53,11 @@ vi.mock('../../src/main/logger', () => ({
 vi.mock('../../src/main/provider/usage', () => ({ fetchInstanceUsage: vi.fn(), invalidateUsage: vi.fn() }))
 vi.mock('../../src/main/provider/adapters/claude-adapter', () => ({ findClaudeBin: vi.fn(() => '/usr/bin/claude') }))
 vi.mock('../../src/main/provider/adapters/codex-adapter', () => ({ findCodexPath: vi.fn(() => '/usr/bin/codex') }))
+vi.mock('../../src/main/provider/adapters/acp/agent-env', () => ({
+  resolveAgentCommand: vi.fn((command: string) => (command === 'kestrel-acp' ? '/usr/local/bin/kestrel-acp' : null)),
+  findAgentBinary: vi.fn(() => null),
+  buildAgentEnv: vi.fn(() => ({})),
+}))
 vi.mock('../../src/main/provider/adapters/opencode/env', () => ({
   findOpencodePath: vi.fn(() => null),
   buildOpencodeEnv: vi.fn(() => ({})),
@@ -75,11 +80,15 @@ class FakeHost implements BackendHost {
   }
 }
 
-async function testInstance(id: string): Promise<{ ok: boolean; message: string }> {
+async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const { registerProviderInstanceHandlers } = await import('../../src/main/ipc/provider-instances')
   const host = new FakeHost()
   registerProviderInstanceHandlers(host)
-  return host.invoke(ProviderInstanceChannels.TEST, id)
+  return host.invoke<T>(channel, ...args)
+}
+
+function testInstance(id: string): Promise<{ ok: boolean; message: string }> {
+  return invoke(ProviderInstanceChannels.TEST, id)
 }
 
 function instance(over: Record<string, unknown>) {
@@ -145,5 +154,63 @@ describe('Settings Test probe - login hint names the tested home (behavior 2)', 
 
     const { message } = await testInstance('x')
     expect(message).toContain('CODEX_HOME="$HOME/.codex" codex login')
+  })
+})
+
+describe('Settings Test probe for an account not saved yet (Add agent)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.resetModules()
+    mocks.exit = 1
+  })
+
+  it('probes the draft sign-in folder the same way as a saved account', async () => {
+    mocks.env.mockReturnValue({ CODEX_HOME: '/tmp/codex-new' })
+    const { ok, message } = await invoke<{ ok: boolean; message: string }>(ProviderInstanceChannels.TEST_DRAFT, {
+      agentType: 'codex',
+      authMode: 'oauth_dir',
+      oauthDir: ' /tmp/codex-new ',
+    })
+    expect(ok).toBe(false)
+    expect(message).toContain('CODEX_HOME="/tmp/codex-new" codex login')
+    expect(mocks.env).toHaveBeenCalledWith(expect.objectContaining({ agentType: 'codex', oauthDir: '/tmp/codex-new' }))
+    expect(mocks.full).not.toHaveBeenCalled()
+  })
+
+  it('finds a local command without running it, and says when it is not on the PATH', async () => {
+    const draft = (command: string) => ({
+      agentType: 'acp-command',
+      authMode: 'env',
+      configJson: { launch: { command, args: [] } },
+    })
+    expect(await invoke(ProviderInstanceChannels.TEST_DRAFT, draft('kestrel-acp'))).toEqual({
+      ok: true,
+      message: 'Found at /usr/local/bin/kestrel-acp. Sign-in is checked when a chat starts.',
+    })
+    expect(await invoke(ProviderInstanceChannels.TEST_DRAFT, draft('nope'))).toEqual({
+      ok: false,
+      message: 'Not found on your PATH.',
+    })
+  })
+
+  it('refuses a malformed draft instead of probing it', async () => {
+    for (const bad of [
+      null,
+      { agentType: 'terminal', authMode: 'env' },
+      { agentType: 'codex', authMode: 'env', env: { K: 1 } },
+    ]) {
+      expect(await invoke(ProviderInstanceChannels.TEST_DRAFT, bad)).toMatchObject({ ok: false })
+    }
+    expect(mocks.env).not.toHaveBeenCalled()
+  })
+
+  it('will not save a local command account without a command', async () => {
+    await expect(
+      invoke(ProviderInstanceChannels.UPSERT, {
+        agentType: 'acp-command',
+        displayName: 'K',
+        configJson: { launch: {} },
+      }),
+    ).rejects.toThrow('needs a command')
   })
 })

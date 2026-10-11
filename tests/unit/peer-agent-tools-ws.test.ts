@@ -25,6 +25,7 @@ vi.mock('../../src/main/db/provider-instances', () => ({
     oauthDir: null,
   }),
   listOauthDirsForAgent: () => [],
+  getProviderInstanceFull: () => null,
 }))
 
 const titles = new Map<string, string>([

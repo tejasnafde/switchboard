@@ -95,4 +95,19 @@ describe('sessionDefaultsFor - machine-level instance default is agent-scoped', 
     const resolved = sessionDefaultsFor('thread-fresh', 'opencode', {})
     expect(resolved.instanceId).toBeUndefined()
   })
+
+  it('starts an untested account in its stored mode unless someone chose one', () => {
+    rows.set(
+      'acp-command-kestrel',
+      codexRow({ id: 'acp-command-kestrel', agentType: 'acp-command', configJson: { startMode: 'plan' } }),
+    )
+    settings.set(defaultInstanceSettingKey('acp-command'), 'acp-command-kestrel')
+    settings.set('chat.defaultRuntimeMode', 'full-access')
+
+    expect(sessionDefaultsFor('thread-local-1', 'acp-command', {}).runtimeMode).toBe('plan')
+    expect(sessionDefaultsFor('thread-local-2', 'acp-command', { runtimeMode: 'sandbox' }).runtimeMode).toBe('sandbox')
+    // An account without a start mode keeps the machine default.
+    rows.set('acp-command-kestrel', codexRow({ id: 'acp-command-kestrel', agentType: 'acp-command' }))
+    expect(sessionDefaultsFor('thread-local-3', 'acp-command', {}).runtimeMode).toBe('full-access')
+  })
 })

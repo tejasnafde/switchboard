@@ -22,6 +22,7 @@ vi.mock('../../src/main/db/provider-instances', () => ({
     oauthDir: null,
   }),
   listOauthDirsForAgent: () => [],
+  getProviderInstanceFull: () => null,
 }))
 
 /** Claude rotates a thread's session id after the first turn; the sidebar then

@@ -117,7 +117,17 @@ export interface ProviderInstanceUpsertInput {
   /** Plaintext env map. Encrypted in main process before persisting. */
   env?: Record<string, string> | null
   oauthDir?: string | null
+  /** Agent-specific settings: a local command's launch config, the start mode. Omit to keep. */
+  configJson?: unknown
   enabled?: boolean
+}
+
+/** An account not saved yet, for the Test probe. */
+export type ProviderInstanceDraft = Pick<
+  ProviderInstanceUpsertInput,
+  'agentType' | 'env' | 'oauthDir' | 'configJson'
+> & {
+  authMode: 'env' | 'oauth_dir'
 }
 
 /**
@@ -661,6 +671,8 @@ const api = {
     delete: (id: string): Promise<boolean> => transport.invoke(ProviderInstanceChannels.DELETE, id),
     test: (id: string): Promise<{ ok: boolean; message: string }> =>
       transport.invoke(ProviderInstanceChannels.TEST, id),
+    testDraft: (draft: ProviderInstanceDraft): Promise<{ ok: boolean; message: string }> =>
+      transport.invoke(ProviderInstanceChannels.TEST_DRAFT, draft),
     usage: (
       id: string,
       opts?: { force?: boolean; refreshWithTurn?: boolean },

@@ -7,11 +7,19 @@ import { describe, expect, it, vi } from 'vitest'
 
 const lookups = vi.hoisted(() => [] as string[])
 
+const accounts = vi.hoisted(() => new Map<string, unknown>())
+
+vi.mock('../../src/main/db/provider-instances', () => ({
+  getProviderInstanceFull: (id: string) => (accounts.has(id) ? { configJson: accounts.get(id) } : null),
+  expandTilde: (p: string | null) => (p?.startsWith('~/') ? `/home/me/${p.slice(2)}` : p),
+}))
+
 vi.mock('../../src/main/provider/adapters/acp/agent-env', () => ({
   findAgentBinary: (name: string) => {
     lookups.push(name)
     return name === 'missing' ? null : `/usr/local/bin/${name}`
   },
+  resolveAgentCommand: (command: string) => (command === 'missing' ? null : `/resolved/${command}`),
   buildAgentEnv: (overlay: Record<string, string>) => ({ BASE: '1', ...overlay }),
 }))
 
@@ -22,7 +30,7 @@ vi.mock('../../src/main/provider/adapters/opencode/env', () => ({
 
 import { genericAcpLaunchConfig } from '../../src/main/provider/adapters/acp/agents'
 import { OPENCODE_ACP_LAUNCH } from '../../src/main/provider/adapters/opencode-acp-adapter'
-import { GENERIC_ACP_AGENTS } from '../../src/shared/acp-agents'
+import { BUILT_IN_ACP_AGENTS } from '../../src/shared/acp-agents'
 
 const EXPECTED = {
   gemini: { binary: 'gemini', args: ['--acp'], label: 'Gemini CLI', install: 'npm install -g @google/gemini-cli' },
@@ -33,10 +41,10 @@ const EXPECTED = {
 
 describe('generic ACP launch configs', () => {
   it('has a config for every generic agent', () => {
-    expect(Object.keys(EXPECTED).sort()).toEqual([...GENERIC_ACP_AGENTS].sort())
+    expect(Object.keys(EXPECTED).sort()).toEqual([...BUILT_IN_ACP_AGENTS].sort())
   })
 
-  for (const agent of GENERIC_ACP_AGENTS) {
+  for (const agent of BUILT_IN_ACP_AGENTS) {
     it(`${agent}: starts its documented ACP command`, () => {
       const config = genericAcpLaunchConfig(agent)
       const expected = EXPECTED[agent]
@@ -55,6 +63,25 @@ describe('generic ACP launch configs', () => {
       expect(config.modelLabel({ modelId: 'a/b', name: '' })).toBe('a/b')
     })
   }
+})
+
+describe('local command launch config', () => {
+  it("starts the account's own command, arguments and folder", () => {
+    accounts.set('acp-command-kestrel', {
+      launch: { command: 'kestrel-acp', args: ['acp', '--log-level', 'warn'], cwd: '~/work' },
+    })
+    accounts.set('acp-command-broken', { launch: { command: '' } })
+    const config = genericAcpLaunchConfig('acp-command')
+    expect(config.provider).toBe('acp-command')
+    expect(config.findBinary('acp-command-kestrel')).toBe('/resolved/kestrel-acp')
+    expect(config.args('/tmp/project', 'acp-command-kestrel')).toEqual(['acp', '--log-level', 'warn'])
+    expect(config.spawnCwd?.('acp-command-kestrel')).toBe('/home/me/work')
+    // No account, an unknown one or a malformed launch config: nothing to run.
+    expect(config.findBinary()).toBeNull()
+    expect(config.findBinary('acp-command-gone')).toBeNull()
+    expect(config.findBinary('acp-command-broken')).toBeNull()
+    expect(config.spawnCwd?.('acp-command-broken')).toBeNull()
+  })
 })
 
 describe('OpenCode launch config', () => {

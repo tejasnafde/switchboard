@@ -21,6 +21,7 @@ import {
   deleteProviderInstance,
   getProviderInstanceFull,
   resolveEffectiveOauthDir,
+  type ProviderInstanceRow,
   type ProviderInstanceUpsertInput,
   type ProviderInstanceWire,
 } from '../db/provider-instances'
@@ -29,7 +30,10 @@ import { findCodexPath } from '../provider/adapters/codex-adapter'
 import { findOpencodePath, buildOpencodeEnv } from '../provider/adapters/opencode/env'
 import { assertSupportedOpencode } from '../provider/adapters/opencode/version'
 import { genericAcpLaunchConfig } from '../provider/adapters/acp/agents'
-import { isGenericAcpAgent } from '@shared/acp-agents'
+import { ACP_COMMAND_AGENT, isGenericAcpAgent } from '@shared/acp-agents'
+import { acpCommandConfig } from '@shared/acp-command'
+import { isAgentProvider } from '@shared/types'
+import { resolveAgentCommand } from '../provider/adapters/acp/agent-env'
 import { applyEnvOverlay } from '../provider/env-overlay'
 import { invalidateCatalog } from '../provider/catalog-probe'
 import { resolveInstanceEnv } from '../provider/instance-env'
@@ -58,6 +62,7 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
 
   host.handle(ProviderInstanceChannels.UPSERT, (input: ProviderInstanceUpsertInput) => {
     log.info(`upsert ${input.id ?? '(new)'} agent=${input.agentType} name="${input.displayName}"`)
+    assertLaunchConfig(input)
     const saved = upsertProviderInstance(input)
     // An edited oauth dir or env overlay points at a different credential.
     invalidateUsage(saved.id)
@@ -75,6 +80,11 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
 
   host.handle(ProviderInstanceChannels.TEST, async (id: string) => {
     return testInstance(id)
+  })
+
+  host.handle(ProviderInstanceChannels.TEST_DRAFT, async (draft: unknown) => {
+    const row = draftInstance(draft)
+    return row ? probeInstance(row) : { ok: false, message: 'Nothing to test: the account is incomplete.' }
   })
 
   host.handle(ProviderInstanceChannels.USAGE, async (id: string, opts?: UsageRequestOptions) => {
@@ -232,7 +242,48 @@ function runProbe(bin: string, args: string[], env: Record<string, string>, time
 async function testInstance(id: string): Promise<{ ok: boolean; message: string }> {
   const instance = getProviderInstanceFull(id)
   if (!instance) return { ok: false, message: 'Instance not found.' }
+  return probeInstance(instance)
+}
 
+/** A local command account must name a command it can run. */
+function assertLaunchConfig(input: ProviderInstanceUpsertInput): void {
+  if (input.agentType !== ACP_COMMAND_AGENT) return
+  const existing = input.id ? getProviderInstanceFull(input.id, { withEnv: false }) : null
+  if (input.configJson === undefined && existing) return
+  if (!acpCommandConfig(input.configJson)) throw new Error('A local command account needs a command to run.')
+}
+
+/** An unsaved account from the Add agent dialog, shaped like a stored one. Null when malformed. */
+function draftInstance(draft: unknown): ProviderInstanceRow | null {
+  if (!draft || typeof draft !== 'object') return null
+  const { agentType, authMode, env, oauthDir, configJson } = draft as Record<string, unknown>
+  if (!isAgentProvider(agentType)) return null
+  if (authMode !== 'env' && authMode !== 'oauth_dir') return null
+  const overlay: Record<string, string> = {}
+  if (env !== undefined && env !== null) {
+    if (typeof env !== 'object' || Array.isArray(env)) return null
+    for (const [key, value] of Object.entries(env)) {
+      if (typeof value !== 'string') return null
+      overlay[key] = value
+    }
+  }
+  if (oauthDir !== undefined && oauthDir !== null && typeof oauthDir !== 'string') return null
+  return {
+    id: 'draft',
+    agentType,
+    displayName: '',
+    accentColor: null,
+    authMode,
+    env: overlay,
+    oauthDir: authMode === 'oauth_dir' && typeof oauthDir === 'string' && oauthDir.trim() ? oauthDir.trim() : null,
+    configJson: configJson ?? null,
+    enabled: true,
+    createdAt: 0,
+    updatedAt: 0,
+  }
+}
+
+async function probeInstance(instance: ProviderInstanceRow): Promise<{ ok: boolean; message: string }> {
   const env = resolveInstanceEnv(instance)
 
   try {
@@ -284,6 +335,15 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
       if (out.status !== 0) return { ok: false, message: out.stderr?.trim() || `exit ${out.status}` }
       const lines = (out.stdout ?? '').split('\n').filter((l) => l.trim().length > 0)
       return { ok: true, message: `${lines.length} models available` }
+    }
+    if (instance.agentType === ACP_COMMAND_AGENT) {
+      // Found, not run, like the other generic agents.
+      const launch = acpCommandConfig(instance.configJson)
+      if (!launch) return { ok: false, message: 'No command to run.' }
+      const bin = resolveAgentCommand(launch.command)
+      return bin
+        ? { ok: true, message: `Found at ${bin}. Sign-in is checked when a chat starts.` }
+        : { ok: false, message: 'Not found on your PATH.' }
     }
     if (isGenericAcpAgent(instance.agentType)) {
       // Found, not run: starting the agent could act on the user's account.

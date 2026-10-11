@@ -21,6 +21,7 @@ enum class ProviderKind(val wire: String) {
     Vibe("vibe"),
     Cline("cline"),
     Copilot("copilot"),
+    AcpCommand("acp-command"),
 }
 
 /**
@@ -35,6 +36,7 @@ object AcpAgents {
         "vibe" to Pair("Mistral Vibe", "Vibe"),
         "cline" to Pair("Cline", "Cline"),
         "copilot" to Pair("GitHub Copilot", "Copilot"),
+        "acp-command" to Pair("Local command", "Local"),
     )
 
     fun speaksAcp(provider: String?): Boolean = provider == "opencode" || provider in generic
