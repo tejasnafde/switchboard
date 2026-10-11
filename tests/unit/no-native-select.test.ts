@@ -4,7 +4,7 @@
  * the rule wired and checks the whole renderer in CI, where lint does not run.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import { ESLint } from 'eslint'
 import { describe, expect, it } from 'vitest'
 
@@ -35,7 +35,7 @@ describe('no native <select> outside components/ui', () => {
 
   it('the renderer has none', () => {
     const offenders = walk(renderer)
-      .filter((file) => !file.startsWith(ui))
+      .filter((file) => !file.startsWith(ui + sep))
       .filter((file) => /<select[\s>]/.test(readFileSync(file, 'utf8')))
       .map((file) => relative(root, file))
     expect(offenders).toEqual([])
