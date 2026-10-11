@@ -100,7 +100,7 @@ there**. Add new area detail to the nearest one, not to this file.
 | Switchboard MCP server, agent PR tools, approval cards, phone approvals | `src/main/mcp/AGENTS.md` |
 | Reviews, PR providers, chat-to-PR links, human writes | `src/main/pull-requests/AGENTS.md` |
 | Conversation forking and merge-back | `src/main/conversations/AGENTS.md` |
-| Embedded IDE (code-server) and file IPC | `src/main/ide/AGENTS.md` |
+| Embedded IDE (code-server), HTML preview pane and file IPC | `src/main/ide/AGENTS.md` |
 | Expo mobile app: update lanes, push, jest setup | `apps/mobile/AGENTS.md` |
 | Screenshot regression tests and background windows | `e2e/AGENTS.md` |
 | What ships today, feature by feature | `docs/features.md` |

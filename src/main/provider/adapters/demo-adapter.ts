@@ -52,7 +52,7 @@ import { CLAUDE_MODELS, type ModelOption, type ReasoningEffort } from '@shared/m
 import { buildWindow, type ProviderUsage, type UsageWindow } from '@shared/provider-usage'
 import { randomUUID } from 'crypto'
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { encodeClaudeProjectPath } from '../../projects/session-scanner'
 import { LEGACY_ID_MATCH_WINDOW_MS } from '../../agent/dedupe-messages'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../types'
@@ -198,6 +198,46 @@ const VISUALS_REPLY = [
   '{"type":"bar","labels":["long chat","short chat"],"series":[{"name":"before","values":[3800,1100]},{"name":"after","values":[400,150]}],"yTitle":"ms"}',
   '```',
 ].join('\n')
+
+/** The page the "pricing page" script writes, for the HTML preview. */
+const PRICING_PAGE_PATH = 'design/pricing-mock.html'
+const PRICING_PAGE_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tidepool pricing</title>
+<style>
+:root{--bg:#f7f6f2;--fg:#191917;--mut:#6b6a63;--card:#fff;--line:#e6e3da;--acc:#0f766e;--acc-fg:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#12161a;--fg:#eef1ee;--mut:#93a09b;--card:#1b2126;--line:#2a3238;--acc:#2dd4bf;--acc-fg:#062a26}}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:Georgia,serif;padding:26px 30px}
+nav{display:flex;align-items:center;gap:18px;font:12px system-ui,sans-serif;color:var(--mut);margin-bottom:28px}
+nav b{font:700 16px Georgia,serif;color:var(--fg)}
+nav .cta{margin-left:auto;background:var(--fg);color:var(--bg);padding:5px 11px;border-radius:999px;font-weight:600}
+h1{font-size:30px;line-height:1.15;margin:0 0 8px;font-weight:600}
+p.lede{font:13px system-ui,sans-serif;color:var(--mut);max-width:420px;margin:0 0 18px}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;font-family:system-ui,sans-serif}
+.plan{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px}
+.plan.hi{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.plan h2{font-size:12px;margin:0}.plan .pr{font:28px Georgia,serif;margin:8px 0 2px}
+.plan .pr small{font:11.5px system-ui,sans-serif;color:var(--mut)}
+.plan ul{list-style:none;padding:0;font-size:11.5px;line-height:1.9;color:var(--fg)}
+.plan li::before{content:"\\2713";color:var(--acc);margin-right:7px}
+.plan .b{display:block;text-align:center;font-size:12px;font-weight:600;padding:7px;border-radius:8px;border:1px solid var(--line)}
+.plan.hi .b{background:var(--acc);color:var(--acc-fg);border-color:var(--acc)}
+</style>
+</head>
+<body>
+<nav><b>Tidepool</b><span>Product</span><span>Docs</span><span>Pricing</span><span class="cta">Start free</span></nav>
+<h1>Pay for the tide,<br>not the ocean.</h1>
+<p class="lede">Every plan includes unlimited projects and the full API. Pick the seats and history you need.</p>
+<div class="plans">
+<div class="plan"><h2>Solo</h2><div class="pr">$0 <small>/ month</small></div><ul><li>1 seat</li><li>7 day history</li></ul><span class="b">Start free</span></div>
+<div class="plan hi"><h2>Team</h2><div class="pr">$24 <small>/ seat / month</small></div><ul><li>Up to 25 seats</li><li>90 day history</li></ul><span class="b">Start a trial</span></div>
+<div class="plan"><h2>Scale</h2><div class="pr">Custom</div><ul><li>Unlimited seats</li><li>Unlimited history</li></ul><span class="b">Talk to us</span></div>
+</div>
+</body>
+</html>
+`
 
 const TODO_REPLY = `**Left to-dos**
 
@@ -604,6 +644,21 @@ export class DemoAdapter implements ProviderAdapter {
       await this.say(threadId, turn, 'Final answer: the order holds.')
     } else if (/\bdraw\b/i.test(message)) {
       await this.say(threadId, turn, VISUALS_REPLY)
+    } else if (/pricing page/i.test(message)) {
+      await this.say(threadId, turn, 'Here is a first pass, one self-contained file that follows the system theme.')
+      const filePath = join(session.cwd, PRICING_PAGE_PATH)
+      await this.tool(
+        threadId,
+        turn,
+        'Write',
+        { file_path: filePath, content: PRICING_PAGE_HTML },
+        'File written',
+        () => {
+          mkdirSync(dirname(filePath), { recursive: true })
+          writeFileSync(filePath, PRICING_PAGE_HTML)
+        },
+      )
+      await this.say(threadId, turn, `Open \`${PRICING_PAGE_PATH}\` to see it. The Team plan is highlighted.`)
     } else if (/to-dos/i.test(message)) {
       await this.say(threadId, turn, TODO_REPLY)
     } else {

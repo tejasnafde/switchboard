@@ -49,7 +49,19 @@ export function paneMaxWidth(min: number, otherPaneWidth: number, viewportWidth?
   return Math.max(min, vw - otherPaneWidth - MIN_CHAT_WIDTH)
 }
 
-export type RightPaneMode = 'terminal' | 'files'
+/** `'preview'` shows the HTML preview; it is never persisted (it needs a file). */
+export type RightPaneMode = 'terminal' | 'files' | 'preview'
+
+/** An HTML file opened in the preview pane from a chat. */
+export interface HtmlPreviewTarget {
+  /** The path as the chat named it: relative to `root`, or absolute. */
+  path: string
+  /** The chat's worktree or project folder. */
+  root: string
+  /** The remote machine that holds the file, or null for this desktop. */
+  machineId: string | null
+  sessionId: string | null
+}
 
 export interface PaneVisual {
   kind: VisualKind
@@ -88,6 +100,16 @@ interface LayoutStore {
   paneVisual: PaneVisual | null
   openPaneVisual: (visual: PaneVisual) => void
   closePaneVisual: () => void
+
+  /**
+   * The HTML file the preview pane shows. Stays set while the pane is hidden
+   * (the preview idles out on its own); Close clears it and returns the right
+   * pane to the mode it had before the preview opened.
+   */
+  htmlPreview: HtmlPreviewTarget | null
+  htmlPreviewReturnMode: Exclude<RightPaneMode, 'preview'>
+  openHtmlPreview: (target: HtmlPreviewTarget) => void
+  closeHtmlPreview: () => void
 
   /**
    * Top-level app view ('chats' | 'kanban' | 'reviews'). ⌘⇧K toggles the board.
@@ -298,16 +320,18 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
 
   rightPaneMode: 'terminal',
   setRightPaneMode: (mode) => {
-    try {
-      persistSetting(RIGHT_PANE_MODE_KEY, mode)
-    } catch (err) {
-      log.debug(`failed to persist ${RIGHT_PANE_MODE_KEY}`, err)
+    if (mode !== 'preview') {
+      try {
+        persistSetting(RIGHT_PANE_MODE_KEY, mode)
+      } catch (err) {
+        log.debug(`failed to persist ${RIGHT_PANE_MODE_KEY}`, err)
+      }
     }
     set({ rightPaneMode: mode, paneVisual: null })
   },
   toggleRightPaneMode: () => {
-    // 2-mode cycle: terminal ↔ files. (Kanban is now a top-level view -
-    // see appView/⌘⇧K - not a right-pane mode.)
+    // 2-mode cycle: terminal ↔ files; the preview toggles to the terminal.
+    // (Kanban is now a top-level view - see appView/⌘⇧K - not a right-pane mode.)
     const cur = get().rightPaneMode
     const next: RightPaneMode = cur === 'terminal' ? 'files' : 'terminal'
     try {
@@ -321,6 +345,26 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   paneVisual: null,
   openPaneVisual: (visual) => set({ paneVisual: visual, terminalVisible: true }),
   closePaneVisual: () => set({ paneVisual: null }),
+
+  htmlPreview: null,
+  htmlPreviewReturnMode: 'terminal',
+  openHtmlPreview: (target) => {
+    const cur = get().rightPaneMode
+    set({
+      htmlPreview: target,
+      htmlPreviewReturnMode: cur === 'preview' ? get().htmlPreviewReturnMode : cur,
+      rightPaneMode: 'preview',
+      paneVisual: null,
+      terminalVisible: true,
+    })
+  },
+  closeHtmlPreview: () => {
+    const { rightPaneMode, htmlPreviewReturnMode } = get()
+    set({
+      htmlPreview: null,
+      rightPaneMode: rightPaneMode === 'preview' ? htmlPreviewReturnMode : rightPaneMode,
+    })
+  },
 
   dataScienceMode: false,
   toggleDataScienceMode: () => {

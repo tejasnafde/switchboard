@@ -987,6 +987,26 @@ async function captureThemeScreens(win, theme) {
   await paneClose.waitFor({ state: 'visible', timeout: 10_000 })
   await paneClose.click()
   await paneClose.waitFor({ state: 'hidden', timeout: 10_000 })
+
+  // An agent-written .html file: the card after the Write call, then the page
+  // in the sandboxed preview pane (demo adapter "pricing page" script).
+  await editor.click()
+  await win.keyboard.type('Mock up the pricing page as one HTML file.')
+  await win.keyboard.press('Enter')
+  const htmlCard = win.locator('[data-html-file-card]').last()
+  await htmlCard.waitFor({ state: 'visible', timeout: 20_000 })
+  await win.getByRole('button', { name: 'Send', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
+  await htmlCard.scrollIntoViewIfNeeded()
+  await snapScreen(win, 'html-file-card', theme, htmlCard)
+  await htmlCard.getByRole('button', { name: 'Preview', exact: true }).click()
+  const preview = win.locator('[data-html-preview-pane]:not([data-loading])')
+  await preview.getByText('Sandboxed. No network, no access to the app or your files.').waitFor({ timeout: 20_000 })
+  // The page itself is masked: a screenshot of the embedder composites a
+  // <webview> guest of a background window at a stale size, so its pixels are
+  // not the guest's (e2e/html-preview.e2e.mjs checks the guest's own layout).
+  await snapScreen(win, 'html-preview', theme, preview, [preview.locator('webview')])
+  await preview.getByRole('button', { name: 'Close preview' }).click()
+  await preview.waitFor({ state: 'hidden', timeout: 10_000 })
 }
 
 // A deterministic IPC latch exercises the production UI while the demo

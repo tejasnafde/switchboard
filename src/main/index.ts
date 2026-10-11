@@ -85,6 +85,13 @@ import { ProviderRegistry } from './provider/provider-registry'
 import { disposeUsageProbes } from './provider/usage'
 import { getDb, closeDb, getSetting, setSetting, getProjects, reopenDbAfterAbortedQuit } from './db/database'
 import { registerFaviconProtocol } from './protocol/sb-favicon'
+import {
+  attachPreviewGuestGuards,
+  hardenPreviewWebviewPreferences,
+  isPreviewContents,
+  registerHtmlPreviewHandlers,
+} from './preview/preview-session'
+import { PREVIEW_SCHEME } from '@shared/html-preview'
 import { createMainLogger } from './logger'
 import { warmShellEnv } from './shell-env'
 import { createDefaultWorktreeCreationRuntime, type WorktreeCreationRuntime } from './worktree-creation/runtime'
@@ -331,6 +338,17 @@ protocol.registerSchemesAsPrivileged([
       supportFetchAPI: true,
     },
   },
+  {
+    // HTML preview documents and the files beside them, served only inside
+    // the preview session (main/preview/). Standard so relative URLs resolve.
+    scheme: PREVIEW_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
 ])
 
 // Dev escape hatch: relocate userData so a second instance can run alongside
@@ -555,6 +573,10 @@ function createWindow(): BrowserWindow {
     shell.openExternal(url)
     return { action: 'deny' }
   })
+
+  window.webContents.on('will-attach-webview', (_event, webPreferences, params) =>
+    hardenPreviewWebviewPreferences(webPreferences, params),
+  )
 
   // Intercept in-page navigation (e.g., clicking a <a href="https://..."> link)
   // and open in the default browser instead of hijacking the app.
@@ -782,6 +804,11 @@ app.whenReady().then(() => {
   const OPEN_MARKER = '__SB_OPEN_EXTERNAL__'
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return
+    // The HTML preview gets none of this: its pages may not open anything.
+    if (isPreviewContents(contents)) {
+      attachPreviewGuestGuards(contents)
+      return
+    }
     contents.on('dom-ready', () => {
       contents
         .executeJavaScript(
@@ -876,6 +903,7 @@ app.whenReady().then(() => {
   registerGitHandlers(backendHost)
   registerSttHandlers(backendHost)
   registerIdeHandlers(backendHost)
+  registerHtmlPreviewHandlers(() => mainWindow)
   registerKanbanHandlers(backendHost, {
     createWorktreeTransaction: (request) => {
       if (!worktreeCreationRuntime) throw new Error('Worktree creation runtime is not ready.')
