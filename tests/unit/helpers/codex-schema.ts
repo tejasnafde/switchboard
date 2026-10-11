@@ -3,8 +3,8 @@
  * (regenerate with `node scripts/codex-app-server-schema.mjs`).
  *
  * ponytail: a validator for only the JSON Schema keywords that file uses
- * (type, enum, properties, required, additionalProperties, items, $ref,
- * anyOf, oneOf, allOf). Strict mode also refuses keys a schema does not
+ * (CHECKED below); any other keyword throws, so a regenerated fixture that
+ * needs more fails loudly instead of passing unchecked. Strict mode also refuses keys a schema does not
  * declare, which is how a renamed field we send shows up.
  */
 import { readFileSync } from 'node:fs'
@@ -51,15 +51,37 @@ function typeMatches(declared: unknown, value: unknown): boolean {
   return types.some((t) => t === actual || (t === 'number' && actual === 'integer'))
 }
 
+// Keywords that carry no constraint here (annotations, or bounds we do not check).
+const IGNORED = new Set(['$schema', 'title', 'description', 'default', 'format', 'minimum', 'maximum', 'examples'])
+const CHECKED = new Set([
+  'minLength',
+  'type',
+  'enum',
+  'properties',
+  'required',
+  'additionalProperties',
+  'items',
+  '$ref',
+  'anyOf',
+  'oneOf',
+  'allOf',
+])
+
 /** Problems with `value` against `schema`, as `path: reason` strings. */
 export function schemaProblems(schema: Schema | string, value: unknown, strict: boolean, path = '$'): string[] {
   const s = typeof schema === 'string' ? resolveRef(schema) : schema
+  const unknown = Object.keys(s).filter((k) => !CHECKED.has(k) && !IGNORED.has(k))
+  if (unknown.length)
+    throw new Error(`schema keyword ${unknown.join(', ')} at ${path} is not checked; extend codex-schema.ts`)
   if (typeof s.$ref === 'string') return schemaProblems(s.$ref, value, strict, path)
   const problems: string[] = []
   if (s.type !== undefined && !typeMatches(s.type, value)) {
     return [`${path}: expected ${JSON.stringify(s.type)}, got ${typeOf(value)}`]
   }
   if (Array.isArray(s.enum) && !s.enum.includes(value)) return [`${path}: ${JSON.stringify(value)} not in enum`]
+  if (typeof s.minLength === 'number' && typeof value === 'string' && value.length < s.minLength) {
+    return [`${path}: shorter than ${s.minLength}`]
+  }
   for (const key of ['anyOf', 'oneOf'] as const) {
     const branches = s[key] as Schema[] | undefined
     if (branches && !branches.some((b) => schemaProblems(b, value, strict, path).length === 0)) {
