@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "acp-sdk-1x",
+  "summary": "Upgrade @agentclientprotocol/sdk from 0.21 to 1.8, the client library behind the OpenCode adapter, the generic ACP adapter (Gemini CLI, Mistral Vibe, Cline, Copilot) and the OpenCode native fork. The SDK removed the unstable model selectors, so the adapter reads the legacy models field itself and sends session/set_model as a raw request. Agent behaviour is unchanged.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/adapters/acp/acp-adapter.ts",
+        "src/main/provider/adapters/acp/session-config.ts",
+        "src/main/provider/adapters/acp/launch-config.ts",
+        "tests/unit/acp-generic-adapter.test.ts",
+        "tests/unit/acp-session-config.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app does not depend on the ACP SDK. It reaches OpenCode and other ACP chats only through the backend's provider events, which this upgrade does not change."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android app does not depend on the ACP SDK. It reaches OpenCode and other ACP chats only through the backend's provider events, which this upgrade does not change."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/adapters/acp/acp-adapter.ts",
+        "src/main/conversations/native-fork-runners.ts",
+        "src/main/provider/AGENTS.md"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema or stored-data change. ACP session ids and resume segments are stored as before; the SDK upgrade changes only the client library and its types."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "package.json",
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test -- --maxWorkers=4",
+      "npx vitest run tests/unit/acp-generic-adapter.test.ts tests/unit/acp-session-config.test.ts"
+    ],
+    "hardware": [
+      "Live, macOS arm64, OpenCode 1.18.33, throwaway session in an empty temp project with the existing sign-in (no sign-in change): the real OpencodeAcpAdapter started a session, listed 57 models from the model config option, set two models through session/set_config_option, switched to plan and back, and ran a turn to turn.completed with streamed content. A missing provider key surfaced as a chat error. With the 1.8 SDK directly, session/set_model sent as a raw request returned {}."
+    ],
+    "notExercised": [
+      "Gemini CLI, Mistral Vibe, Cline and Copilot were not run; they were never run here before this upgrade either (docs only).",
+      "The OpenCode native fork (unstable_forkSession, unchanged in 1.8) was not run live.",
+      "No desktop app session ran; the smoke drove the adapter from a vitest harness outside the repo."
+    ]
+  }
+}

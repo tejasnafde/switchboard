@@ -124,6 +124,11 @@ function fakeAgent(conn: AgentSideConnection, state: FakeAgentState): Agent {
     async cancel() {
       state.calls.push('cancel')
     },
+    // Methods the SDK no longer types, such as `session/set_model`.
+    async extMethod(method, params) {
+      state.calls.push(`${method}:${String(params.modelId)}`)
+      return {}
+    },
   }
 }
 
@@ -247,6 +252,26 @@ describe('generic ACP adapter over the protocol', () => {
     const adapter = await startGemini([])
     await adapter.setModel('chat-1', 'gemini-flash')
     expect(fake.state!.calls).toContain('config:model=gemini-flash')
+  })
+
+  it('reads the legacy models field and sets the model with session/set_model', async () => {
+    // The shape OpenCode 1.x and older agents send; the SDK dropped its type.
+    fake.state!.newSession = {
+      models: {
+        currentModelId: 'gemini-pro',
+        availableModels: [
+          { modelId: 'gemini-pro', name: 'Gemini Pro' },
+          { modelId: 'gemini-flash', name: 'Gemini Flash' },
+        ],
+      },
+    } as FakeAgentState['newSession']
+    const adapter = await startGemini([])
+    await expect(adapter.listModels('chat-1')).resolves.toEqual([
+      expect.objectContaining({ id: 'gemini-pro', label: 'Gemini Pro' }),
+      expect.objectContaining({ id: 'gemini-flash', label: 'Gemini Flash' }),
+    ])
+    await adapter.setModel('chat-1', 'gemini-flash')
+    expect(fake.state!.calls).toContain('session/set_model:gemini-flash')
   })
 
   it('streams a turn, asks for an edit in sandbox mode, and passes the answer back', async () => {

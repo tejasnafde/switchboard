@@ -4,9 +4,9 @@
  * differ on the wire. Everything else (prompts, permissions, tool calls,
  * plans, usage, skills, resume) is plain Agent Client Protocol.
  */
-import type { ModelInfo } from '@agentclientprotocol/sdk'
 import type { GenericAcpAgent } from '@shared/acp-agents'
 import type { ProviderSession, RuntimeMode } from '../../types'
+import type { AcpModelInfo } from './session-config'
 
 /** Every provider kind the ACP adapter serves. */
 export type AcpProviderKind = 'opencode' | GenericAcpAgent
@@ -73,7 +73,7 @@ export interface AcpLaunchConfig {
     switchboardMcp: boolean
   }): Promise<AcpSessionPrep>
   /** Label for a catalog model in the picker. */
-  modelLabel(model: ModelInfo): string
+  modelLabel(model: AcpModelInfo): string
   /**
    * Model variants the agent reports in `session/set_model`'s `_meta`
    * (OpenCode only), or null.
