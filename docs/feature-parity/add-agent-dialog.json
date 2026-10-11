@@ -70,7 +70,7 @@
     },
     "updateRelease": {
       "status": "implemented",
-      "evidence": ["CHANGELOG.md", "package.json", "package-lock.json"]
+      "evidence": ["CHANGELOG.md", "package.json"]
     }
   },
   "verification": {
