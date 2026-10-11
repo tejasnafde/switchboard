@@ -151,6 +151,20 @@ interface PendingApproval {
   questionIds?: string[]
   mcpFields?: McpElicitationField[]
   mcpConfirm?: boolean
+  /** The answer to a `requestApproval` server request, by its method. */
+  approvalResult?: (approved: boolean) => Record<string, unknown>
+}
+
+/**
+ * The answer a Codex `item/<kind>/requestApproval` request takes. Command and file
+ * approvals take a decision; a permissions request takes the profile it is
+ * granted (all it asked for, or nothing), for this turn only.
+ */
+export function codexApprovalResult(method: string, params: unknown, approved: boolean): Record<string, unknown> {
+  if (method === 'item/permissions/requestApproval') {
+    return { permissions: approved ? (asRecord(asRecord(params)?.permissions) ?? {}) : {}, scope: 'turn' }
+  }
+  return { decision: approved ? 'accept' : 'decline' }
 }
 
 interface ToolOutputAccumulator {
@@ -1309,12 +1323,11 @@ export class CodexAdapter implements ProviderAdapter {
       return
     }
 
-    const codexDecision = decision === 'approve' ? 'accept' : 'decline'
-    // Send JSON-RPC response back to codex
+    const approved = decision === 'approve'
     this.writeMessage(active, {
       jsonrpc: '2.0',
       id: pending.jsonRpcId,
-      result: { decision: codexDecision },
+      result: pending.approvalResult?.(approved) ?? { decision: approved ? 'accept' : 'decline' },
     })
 
     active.onEvent({
@@ -1687,6 +1700,7 @@ export class CodexAdapter implements ProviderAdapter {
       const requestType = method.includes('commandExecution') ? ('command' as const) : ('file' as const)
       const currentMode = active.session.runtimeMode
       const policy = decidePermission(currentMode, toolName)
+      const approvalResult = (approved: boolean) => codexApprovalResult(method, request.params, approved)
 
       // Fast-path: policy has a definitive answer - respond immediately
       // without bothering the user. This is how plan mode's hard-deny,
@@ -1695,7 +1709,7 @@ export class CodexAdapter implements ProviderAdapter {
         this.writeMessage(active, {
           jsonrpc: '2.0',
           id: request.id,
-          result: { decision: 'accept' },
+          result: approvalResult(true),
         })
         return
       }
@@ -1711,7 +1725,7 @@ export class CodexAdapter implements ProviderAdapter {
         this.writeMessage(active, {
           jsonrpc: '2.0',
           id: request.id,
-          result: { decision: 'decline' },
+          result: approvalResult(false),
         })
         return
       }
@@ -1721,6 +1735,7 @@ export class CodexAdapter implements ProviderAdapter {
       active.pendingApprovals.set(requestId, {
         jsonRpcId: request.id,
         requestId,
+        approvalResult,
       })
 
       active.onEvent({
