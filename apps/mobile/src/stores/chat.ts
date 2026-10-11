@@ -390,14 +390,21 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
         i.kind === 'synthetic' && i.id.startsWith('h-') && i.at !== undefined ? [{ part: i.part, at: i.at }] : [],
       )
       if (transcriptShowsTaskNotification(historyRows, event)) return {}
-      const { status, summary, taskId, outputFile } = event
+      const { status, summary, taskId, outputFile, toolUseId } = event
       return {
         items: [
           ...t.items,
           {
             kind: 'synthetic',
             id: event.messageId,
-            part: { kind: 'task-notification', status, summary, taskId, outputFile },
+            part: {
+              kind: 'task-notification',
+              status,
+              summary,
+              taskId,
+              outputFile,
+              ...(toolUseId ? { toolUseId } : {}),
+            },
           },
         ],
       }

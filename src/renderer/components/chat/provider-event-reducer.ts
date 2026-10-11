@@ -103,6 +103,24 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       break
     }
     case 'content': {
+      // A subagent's text is a whole message that renders inside its agent's
+      // row, so it skips the streaming buffer.
+      if (event.parentToolCallId) {
+        const exists = useAgentStore
+          .getState()
+          .sessions.find((s) => s.id === tid)
+          ?.messages.some((m) => m.id === event.messageId)
+        if (exists) updateMessage(tid, event.messageId, { content: event.text })
+        else
+          appendMessage(tid, {
+            id: event.messageId,
+            role: 'assistant',
+            content: event.text,
+            parentToolCallId: event.parentToolCallId,
+            timestamp: Date.now(),
+          })
+        break
+      }
       const chunk = { text: event.text, append: event.append }
       if (!ctx.streamingEnabled) {
         bufferContent(streamingBuffer, tid, event.messageId, chunk)
@@ -210,6 +228,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
             id: event.toolId,
             name: event.toolName,
             input: toolInputText(event.input),
+            ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}),
           },
         ],
         timestamp: Date.now(),
@@ -222,7 +241,11 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       const toolMsg = session?.messages.find((m) => m.toolCalls?.some((tc) => tc.id === event.toolId))
       if (toolMsg) {
         updateMessage(tid, toolMsg.id, {
-          toolCalls: toolMsg.toolCalls?.map((tc) => (tc.id === event.toolId ? { ...tc, output: event.output } : tc)),
+          toolCalls: toolMsg.toolCalls?.map((tc) =>
+            tc.id === event.toolId
+              ? { ...tc, output: event.output, ...(event.isError ? { isError: true as const } : {}) }
+              : tc,
+          ),
         })
       }
       break

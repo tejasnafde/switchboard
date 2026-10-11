@@ -1878,6 +1878,49 @@ export class ClaudeAdapter implements ProviderAdapter {
     log.info(`session stopped: ${threadId}`)
   }
 
+  /**
+   * A subagent's message, stamped with the Agent/Task call that started it.
+   * Its text is a message of its own (the SDK forwards it only when asked to),
+   * and nothing here touches the parent's open message: a background subagent
+   * runs while the parent streams.
+   */
+  private emitSubagentBlocks(
+    threadId: string,
+    active: ActiveSession,
+    msg: SDKMessage,
+    content: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown }>,
+    parentToolCallId: string,
+  ): void {
+    const text = content
+      .filter((block) => block.type === 'text' && block.text)
+      .map((block) => block.text)
+      .join('\n')
+    const uuid = (msg as { uuid?: string }).uuid
+    if (text && uuid) {
+      active.onEvent({
+        type: 'content',
+        threadId,
+        messageId: `sub_${uuid}`,
+        text,
+        streamKind: 'assistant',
+        parentToolCallId,
+      })
+    }
+    for (const block of content) {
+      if (block.type !== 'tool_use' || !block.id || (block.name && CUSTOM_UI_TOOLS.has(block.name))) continue
+      active.onEvent({
+        type: 'tool.started',
+        threadId,
+        toolId: block.id,
+        toolName: block.name || 'Unknown',
+        input: block.input,
+        parentToolCallId,
+      })
+    }
+    active.session.status = 'running'
+    active.onEvent({ type: 'status', threadId, status: 'running' })
+  }
+
   // ── SDK Message Handler ──────────────────────────────────────
 
   private handleSDKMessage(threadId: string, active: ActiveSession, msg: SDKMessage): void {
@@ -1990,6 +2033,7 @@ export class ClaudeAdapter implements ProviderAdapter {
             status: note.status,
             summary: note.summary,
             ...(note.output_file ? { outputFile: note.output_file } : {}),
+            ...(note.tool_use_id ? { toolUseId: note.tool_use_id } : {}),
             at: Date.now(),
           })
         }
@@ -2017,9 +2061,11 @@ export class ClaudeAdapter implements ProviderAdapter {
             delta?: { type?: string; text?: string; thinking?: string }
           }
         }
-        const streamMsg = msg as StreamMsg
+        const streamMsg = msg as StreamMsg & { parent_tool_use_id?: string | null }
         const ev = streamMsg.event
-        if (!ev) break
+        // A subagent's stream would land in the parent's open message. Its
+        // complete messages follow as `assistant` frames, handled there.
+        if (!ev || streamMsg.parent_tool_use_id) break
 
         if (ev.type === 'content_block_delta') {
           const delta = ev.delta
@@ -2126,6 +2172,12 @@ export class ClaudeAdapter implements ProviderAdapter {
         }
         const content = (msg as SDKMessage & { message?: { content?: ContentBlock[] } }).message?.content
         if (!content || !Array.isArray(content)) break
+        const parentToolCallId = errMsg.parent_tool_use_id ?? undefined
+
+        if (parentToolCallId) {
+          this.emitSubagentBlocks(threadId, active, msg, content, parentToolCallId)
+          break
+        }
 
         // Skip text/thinking if already streamed via stream_event deltas.
         const wasStreaming = active.partialMessageText.size > 0
@@ -2189,12 +2241,15 @@ export class ClaudeAdapter implements ProviderAdapter {
       case 'user': {
         // Tool results ride a synthetic user message. Without this the only
         // thing settling a tool card was the end of the entire turn.
+        const parentToolCallId = (msg as { parent_tool_use_id?: string | null }).parent_tool_use_id ?? undefined
         for (const result of extractToolResults(msg)) {
           active.onEvent({
             type: 'tool.completed',
             threadId,
             toolId: result.toolId,
             output: result.output,
+            ...(result.isError ? { isError: true } : {}),
+            ...(parentToolCallId ? { parentToolCallId } : {}),
           })
         }
         break

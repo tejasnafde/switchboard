@@ -642,13 +642,18 @@ export class ProviderRegistry implements PeerToolHost {
           id: event.toolId,
           name: event.toolName,
           input: storedToolText(toolInputText(event.input)),
+          ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}),
         },
         at: pending?.at ?? Date.now(),
       })
     } else if (event.type === 'tool.completed') {
       const pending = this.pendingToolCalls.get(event.threadId)?.get(event.toolId)
       if (pending && event.output !== undefined)
-        pending.call = { ...pending.call, output: storedToolText(event.output) }
+        pending.call = {
+          ...pending.call,
+          output: storedToolText(event.output),
+          ...(event.isError ? { isError: true as const } : {}),
+        }
     }
   }
 

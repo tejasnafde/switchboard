@@ -19,6 +19,10 @@ export type SyntheticUserPart =
       summary: string
       taskId?: string
       outputFile?: string
+      /** The tool call that started the task; places the notice under a subagent. */
+      toolUseId?: string
+      /** A background subagent's final report (transcript lines carry it). */
+      result?: string
     }
   | { kind: 'interrupted'; duringToolUse: boolean }
   | { kind: 'command-output'; text: string; isError: boolean }
@@ -88,6 +92,8 @@ const BLOCKS: readonly Block[] = [
       summary: tag(inner, 'summary') ?? '',
       taskId: tag(inner, 'task-id'),
       outputFile: tag(inner, 'output-file'),
+      toolUseId: tag(inner, 'tool-use-id'),
+      result: tag(inner, 'result'),
     }),
   },
   {
@@ -148,9 +154,11 @@ export function taskNotificationText(n: {
   status: string
   summary: string
   outputFile?: string
+  toolUseId?: string
 }): string {
   const lines = [
     `<task-id>${n.taskId}</task-id>`,
+    n.toolUseId ? `<tool-use-id>${n.toolUseId}</tool-use-id>` : '',
     n.outputFile ? `<output-file>${n.outputFile}</output-file>` : '',
     `<status>${n.status}</status>`,
     `<summary>${n.summary}</summary>`,
@@ -261,13 +269,37 @@ export function userTypedText(text: string): string {
   return splitSyntheticUserText(text)?.userText ?? text
 }
 
+/** How long a background task's label may be before it is cut. */
+export const BACKGROUND_TASK_LABEL_MAX = 60
+
+/** Cut a one-line label to `max` characters, at a word when one ends late enough. */
+export function cutLabel(text: string, max = BACKGROUND_TASK_LABEL_MAX): string {
+  const line = text.replace(/\s+/g, ' ').trim()
+  if (line.length <= max) return line
+  const cut = line.slice(0, max)
+  const space = cut.lastIndexOf(' ')
+  return `${(space >= max * 0.75 ? cut.slice(0, space) : cut).trimEnd()}\u2026`
+}
+
+/**
+ * What a background task notice is about: the task's description, else its
+ * command. A command keeps its first line only, without a leading
+ * `cd <dir> &&`, cut by `cutLabel`. The whole command stays in the summary,
+ * which the expanded detail shows.
+ */
+export function backgroundTaskLabel(summary: string): string {
+  // Greedy: a command can hold quotes of its own.
+  const quoted = /"(.*)"/s.exec(summary)?.[1] ?? summary
+  const firstLine = quoted.split('\n').find((line) => line.trim()) ?? ''
+  return cutLabel(firstLine.trim().replace(/^cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*&&\s*/, ''))
+}
+
 /** One-line label for a compact row, e.g. "Background task failed: Build (exit 144)". */
 export function syntheticPartLabel(part: SyntheticUserPart): string {
   switch (part.kind) {
     case 'task-notification': {
-      const quoted = /"([^"]+)"/.exec(part.summary)?.[1]
       const exit = /exit code (\d+)/.exec(part.summary)?.[1]
-      const what = quoted ?? part.summary
+      const what = backgroundTaskLabel(part.summary)
       const exitSuffix = exit && exit !== '0' ? ` (exit ${exit})` : ''
       return `Background task ${part.status}${what ? `: ${what}` : ''}${exitSuffix}`
     }
