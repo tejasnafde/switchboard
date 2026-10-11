@@ -1,0 +1,47 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "claude-agent-sdk-0-3-296",
+  "summary": "Upgrade @anthropic-ai/claude-agent-sdk from 0.3.260 to 0.3.296 (bundled Claude Code CLI 2.1.260 to 2.1.296). No adapter code change was needed: the release notes between the two versions change nothing that claude-adapter.ts relies on for canUseTool, effort, streaming input, mcpServers, resume or rate_limit_event.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": ["package.json", "package-lock.json", "src/main/provider/adapters/claude-adapter.ts"]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app does not depend on the Claude Agent SDK. It reaches Claude sessions only through the backend's provider events, whose shapes this upgrade does not change."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android app does not depend on the Claude Agent SDK. It reaches Claude sessions only through the backend's provider events, whose shapes this upgrade does not change."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": ["src/main/provider/adapters/claude-adapter.ts", "src/main/provider/AGENTS.md"]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema or stored-data change. Claude transcripts stay in the CLI's own JSONL format, and resume of a session written by the 2.1.260 CLI was not changed by the release notes."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["src/main/machines/provision-deps.ts"]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test -- --maxWorkers=4",
+      "npx vitest run tests/unit/claude-adapter*"
+    ],
+    "hardware": [
+      "Live SDK smoke with CLAUDE_CONFIG_DIR=~/.claude-tech-team on macOS arm64, outside the app: a streaming-input query with model haiku, effort low and permissionMode default; canUseTool received the Write call (with the new defaultToNo and suppressAlwaysAllowRule option fields) and its deny reached the model; rate_limit_event arrived with the same rate_limit_info fields the adapter reads; a second query with resume answered from the first session's context."
+    ],
+    "notExercised": [
+      "No desktop app session ran on 0.3.296; the smoke drove the SDK directly with the adapter's option shape.",
+      "The Switchboard MCP server (mcpServers stdio) was not started in the live smoke; it is covered by the mocked adapter tests only.",
+      "Remote machines pick up 0.3.296 at their next provision (provision-deps.ts reads the version from package.json); no remote was provisioned."
+    ]
+  }
+}
