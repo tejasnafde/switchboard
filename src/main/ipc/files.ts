@@ -22,6 +22,7 @@ import { listAllFiles, listDirEntries } from '../files/listing'
 import { writeFileSafe, deleteFileSafe } from '../files/writing'
 import { createMainLogger as createLogger } from '../logger'
 import { currentBackendRequestContext } from '../backend/request-context'
+import { PREVIEW_MAX_BYTES, isHtmlPreviewPath } from '@shared/html-preview'
 
 const log = createLogger('ipc:files')
 
@@ -142,10 +143,28 @@ export function registerFilesHandlers(host: BackendHost): void {
   host.handle(FilesChannels.RESOLVE, async (repoRoot: string, subPath: string) => {
     try {
       const abs = await resolveWithinRepo(repoRoot, subPath)
-      await fs.access(abs)
-      return { ok: true, exists: true, absPath: abs }
+      const stat = await fs.stat(abs)
+      return { ok: true, exists: true, absPath: abs, size: stat.isFile() ? stat.size : undefined }
     } catch {
       return { ok: true, exists: false }
+    }
+  })
+
+  // HTML preview of a chat on this backend from another desktop: the text of
+  // one .html file, never other kinds and never past the preview cap.
+  host.handle(FilesChannels.READ_HTML, async (repoRoot: string, subPath: string) => {
+    if (!isHtmlPreviewPath(subPath)) return { ok: false, error: 'not-html' }
+    try {
+      const abs = await resolveWithinRepo(repoRoot, subPath)
+      const stat = await fs.stat(abs)
+      if (!stat.isFile()) return { ok: false, error: 'not-found' }
+      if (stat.size > PREVIEW_MAX_BYTES) return { ok: false, error: 'too-large', bytes: stat.size }
+      const html = await fs.readFile(abs, 'utf8')
+      return { ok: true, html, bytes: stat.size }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { ok: false, error: 'not-found' }
+      log.warn('read-html failed', { err: (err as Error).message })
+      return { ok: false, error: 'failed' }
     }
   })
 }

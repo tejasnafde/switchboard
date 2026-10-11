@@ -41,6 +41,8 @@
 @source '../components/chat/MergeBackRow.tsx';
 @source '../components/chat/QueuedTurnBar.tsx';
 @source '../components/chat/visuals';
+@source '../components/chat/HtmlFileCard.tsx';
+@source '../components/preview';
 @source '../components/chat/MessageImages.tsx';
 @source '../components/chat/HistoryToolCall.tsx';
 @source '../components/chat/MessageList.tsx';
