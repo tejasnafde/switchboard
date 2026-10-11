@@ -15,8 +15,7 @@
         "src/renderer/components/terminal/TerminalHeader.tsx",
         "src/renderer/components/kanban/KanbanView.tsx",
         "src/renderer/components/kanban/CardModal.tsx",
-        "src/renderer/components/sidebar/WorkspaceManager.tsx",
-        "eslint.config.mjs"
+        "src/renderer/components/sidebar/WorkspaceManager.tsx"
       ]
     },
     "reactNativeIos": {
