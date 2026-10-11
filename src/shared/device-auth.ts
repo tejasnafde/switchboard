@@ -13,6 +13,7 @@
 import { KEYBOARD_OVERRIDES_SETTING } from './shortcuts'
 import { ProviderChannels, ProviderInstanceChannels, PullRequestWriteChannels } from './ipc-channels'
 import { governedSettingKey } from './project-settings'
+import { ACP_COMMAND_AGENT } from './acp-agents'
 
 /** `terminal` is separate because a PTY is arbitrary code execution and nothing
  *  on the phone needs it. */
@@ -40,7 +41,7 @@ const SCOPE_REQUIRED_PREFIXES: Record<DeviceScope, readonly string[]> = {
 }
 
 const SCOPE_REQUIRED_CHANNELS: Partial<Record<DeviceScope, readonly string[]>> = {
-  terminal: ['app:save-launch-config'],
+  terminal: ['app:save-launch-config', ProviderInstanceChannels.TEST_DRAFT],
   // Removing a worktree can delete uncommitted work once a confirm is passed
   // along, and unprotecting one reopens it to cleanup. Nothing on the phone
   // does either.
@@ -91,9 +92,22 @@ export function isSettingWriteAllowed(scopes: readonly DeviceScope[], key: unkno
   return scopes.includes('admin')
 }
 
+/**
+ * An account save that sets a launch config or makes a local command account
+ * names a program the backend will run, which is what the terminal scope
+ * guards. Ordinary account edits stay open.
+ */
+export function isAccountWriteAllowed(scopes: readonly DeviceScope[], input: unknown): boolean {
+  if (!input || typeof input !== 'object') return true // shape errors belong to the handler
+  const { agentType, configJson } = input as { agentType?: unknown; configJson?: unknown }
+  if (agentType !== ACP_COMMAND_AGENT && configJson === undefined) return true
+  return scopes.includes('terminal')
+}
+
 /** The frame-level form both hosts enforce: removing a protected key is a write too. */
 export function isSettingsFrameAllowed(scopes: readonly DeviceScope[], channel: string, args: unknown): boolean {
   const list = Array.isArray(args) ? args : []
+  if (channel === ProviderInstanceChannels.UPSERT) return isAccountWriteAllowed(scopes, list[0])
   if (channel === 'settings:set' || channel === 'settings:remove') return isSettingWriteAllowed(scopes, list[0])
   // (projectPath, settingKey, value?)
   if (channel === 'settings:project-override-set' || channel === 'settings:project-override-remove') {

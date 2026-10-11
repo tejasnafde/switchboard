@@ -16,6 +16,7 @@ import {
   getSetting,
 } from '../db/database'
 import { getProviderInstanceFull } from '../db/provider-instances'
+import { accountStartMode } from '@shared/acp-command'
 import { effectiveBackendSetting } from '../project-settings'
 import {
   defaultInstanceSettingKey,
@@ -27,7 +28,7 @@ import {
   type ResolvedSessionDefaults,
   type SessionDefaults,
 } from '@shared/session-defaults'
-import type { AgentType } from '@shared/types'
+import { defaultInstanceId, type AgentType } from '@shared/types'
 
 function machineDefaults(agentType: AgentType, projectPath: string | null): SessionDefaults {
   const scoped = getSetting(defaultInstanceSettingKey(agentType)) ?? undefined
@@ -70,9 +71,16 @@ export function sessionDefaultsFor(
   cwd?: string,
 ): ResolvedSessionDefaults {
   const projectPath = getConversationExecutionRoot(threadId)?.projectPath ?? cwd ?? null
-  return resolveSessionDefaults({
+  const tiers = {
     requested,
     conversation: conversationDefaults(threadId, agentType),
     machine: machineDefaults(agentType, projectPath),
-  })
+  }
+  const resolved = resolveSessionDefaults(tiers)
+  // The account is known only once the tiers have picked one (else the
+  // agent's default row). A stale or wrong-kind id is left for the session
+  // start to refuse.
+  const account = getProviderInstanceFull(resolved.instanceId ?? defaultInstanceId(agentType), { withEnv: false })
+  const startMode = account?.agentType === agentType ? accountStartMode(account.configJson) : null
+  return startMode ? resolveSessionDefaults({ ...tiers, account: { runtimeMode: startMode } }) : resolved
 }

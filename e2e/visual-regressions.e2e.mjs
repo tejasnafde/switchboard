@@ -736,6 +736,29 @@ async function captureThemeScreens(win, theme) {
       '[data-credential] { display: inline-block; width: 260px; overflow: hidden; white-space: nowrap; vertical-align: bottom }',
   })
   await snapScreen(win, 'settings-accounts', theme, settings, [settings.locator('[data-credential]')])
+  // Add agent, step one, once every install check has answered (the demo
+  // backend reports the four ACP CLIs missing on every host).
+  await settings.getByRole('button', { name: 'Add agent', exact: true }).click()
+  const addAgent = win.getByTestId('add-agent-dialog')
+  await addAgent.waitFor({ state: 'visible' })
+  await win.waitForFunction(
+    () => !document.querySelector('[data-testid="add-agent-dialog"]')?.textContent?.includes('Checking'),
+  )
+  await snapScreen(win, 'add-agent', theme, addAgent)
+  await addAgent.getByRole('button', { name: 'Continue' }).click()
+  await addAgent.getByText('Run this once in a terminal').waitFor({ state: 'visible' })
+  await snapScreen(win, 'add-agent-sign-in', theme, addAgent)
+  // A local command that exists on every Mac, so the found check is stable.
+  await addAgent.getByRole('button', { name: 'Back' }).click()
+  await addAgent.getByRole('button', { name: 'Use a local command' }).click()
+  await addAgent.getByLabel('Command').fill('/bin/sh')
+  await addAgent.getByRole('button', { name: 'Continue' }).click()
+  await addAgent.getByText('Environment variables').waitFor({ state: 'visible' })
+  await addAgent.getByRole('button', { name: 'Continue' }).click()
+  await addAgent.getByText('is not tested with Switchboard').waitFor({ state: 'visible' })
+  await snapScreen(win, 'add-agent-config', theme, addAgent)
+  await win.keyboard.press('Escape')
+  await addAgent.waitFor({ state: 'hidden' })
   // A Codex account at its 5-hour limit with two banked resets (demoUsage
   // answers `-limit` ids so), added after the page shot so that baseline
   // keeps its cards. The card offers "Use reset"; its confirm is shot too

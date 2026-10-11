@@ -360,6 +360,10 @@ export const ProviderInstanceChannels = {
   /** Probe the credentials with a no-op call (claude auth status, codex
    *  login status, opencode models). Returns `{ ok, message }`. */
   TEST: 'provider-instances:test',
+  /** The same probe for an account not saved yet (the Add agent dialog):
+   *  `(draft)` with agentType, authMode, env, oauthDir and configJson.
+   *  Terminal-scoped (src/shared/device-auth.ts): it runs a command. */
+  TEST_DRAFT: 'provider-instances:test-draft',
   /** Read this instance's subscription usage limits. Returns ProviderUsage;
    *  never throws, reports failures via its `status` field. */
   USAGE: 'provider-instances:usage',

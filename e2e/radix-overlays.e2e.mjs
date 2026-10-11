@@ -565,19 +565,28 @@ async function settingsDialog() {
     (await hidden(projectList)) && (await projectPicker.textContent())?.includes(other),
   )
   check('project picker: focus returns to the trigger after a pick', await pickerHasFocus())
-  // The provider editor sits inside Settings; Escape closes only the editor.
+  // The Add agent dialog sits over Settings; Escape closes only the dialog.
   await settings.getByRole('button', { name: /^Accounts & models/ }).click()
-  await settings.getByRole('button', { name: '+ Add account' }).click()
-  await win.getByRole('button', { name: 'Claude Code', exact: true }).click()
-  const editor = settings.getByText(/^New account - /)
+  await settings.getByRole('button', { name: 'Add agent', exact: true }).click()
+  const editor = win.getByTestId('add-agent-dialog')
   await editor.waitFor({ state: 'visible' })
   await win.keyboard.press('Escape')
   check(
-    'settings: Escape closes the provider editor, not Settings',
+    'settings: Escape closes the Add agent dialog, not Settings',
     (await editor.waitFor({ state: 'hidden', timeout: 2000 }).then(
       () => true,
       () => false,
     )) && (await settings.isVisible()),
+  )
+  // Radix gives focus back once the dialog has unmounted, a frame later.
+  check(
+    'settings: focus returns to Add agent',
+    await win
+      .waitForFunction(() => document.activeElement?.textContent === 'Add agent', null, { timeout: 2000 })
+      .then(
+        () => true,
+        () => false,
+      ),
   )
   for (let i = 0; i < 12; i++) await win.keyboard.press('Tab')
   check('settings: Tab stays inside it', await win.evaluate(() => !!document.activeElement?.closest('.settings-page')))

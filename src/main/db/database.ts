@@ -4,6 +4,7 @@ import { join } from 'path'
 import { existsSync, mkdirSync, renameSync } from 'fs'
 import { createMainLogger as createLogger } from '../logger'
 import { AGENT_TYPES, defaultInstanceId } from '@shared/types'
+import { ACP_COMMAND_AGENT } from '@shared/acp-agents'
 import { deriveProjectPositions } from './project-ordering'
 import { ensureTurnAcceptanceSchema, recoverUndispatchedTurns } from './turn-acceptance'
 import { searchMessagesInDatabase, type SearchResult } from './message-search'
@@ -509,14 +510,15 @@ function migrate(db: Database.Database): void {
     db.exec('ALTER TABLE provider_instances ADD COLUMN env_keys TEXT')
   }
 
-  // Seed one default instance per agent kind (idempotent via OR IGNORE).
+  // Seed one default instance per agent kind (idempotent via OR IGNORE). A
+  // local command has none: a default row would have no command to run.
   const seed = db.prepare(
     `INSERT OR IGNORE INTO provider_instances
        (id, agent_type, display_name, auth_mode, enabled)
      VALUES (?, ?, 'Default', 'env', 1)`,
   )
   for (const kind of AGENT_TYPES) {
-    seed.run(defaultInstanceId(kind), kind)
+    if (kind !== ACP_COMMAND_AGENT) seed.run(defaultInstanceId(kind), kind)
   }
 
   // Backfill conversations.provider_instance_id from agent_type.

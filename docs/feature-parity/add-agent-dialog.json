@@ -1,0 +1,94 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "add-agent-dialog",
+  "summary": "Settings > Accounts replaces the \"+ Add account\" menu with an Add agent dialog in three steps, built only from shadcn/Radix primitives (new in components/ui: Input, Checkbox, RadioGroup, ToggleGroup). Agent: a grid of the seven built-in agents (Claude Code, Codex, OpenCode, Gemini CLI, Mistral Vibe, Cline, GitHub Copilot) with their install state, Recheck, and the install command of a missing one; or \"Use a local command\" (command, arguments, working folder) for any program that speaks the Agent Client Protocol on stdio, checked on Continue. Sign-in: each agent's own methods (a per-account sign-in folder with its login command, an API key stored encrypted, a CLI sign-in made in a terminal, or env vars) and a Test that runs the existing provider Test probe on the unsaved account (binary found plus the CLI's auth status; an ACP handshake is not attempted). Config: name (refused when taken), color, default model, use for new chats, and for agents not tested with Switchboard a note that new chats start in plan mode. A local command is saved as an account of the new acp-command agent with its launch config in config_json; the generic ACP adapter starts that account's command, arguments and folder. An account's config_json.startMode is a new tier of the session defaults, between the conversation and the machine default. ACP registry search is built but staged off.",
+  "surfaces": {
+    "desktop": {
+      "status": "staged",
+      "flag": "acp_registry_search",
+      "followUpRelease": "The release that ships an ACP registry backend: it supplies a real AcpRegistrySource in place of STUB_ACP_REGISTRY_SOURCE and turns ACP_REGISTRY_SEARCH_ENABLED on. What ships now: the whole dialog (Agent, Sign-in, Config, local command) is live; the registry section, its loading, unreachable, no-match and result states, and Add (which fills the local command form) are built but not rendered while the flag is off.",
+      "evidence": [
+        "src/renderer/components/settings/AddAgentDialog.tsx",
+        "src/renderer/components/settings/add-agent-model.ts",
+        "src/renderer/components/settings/acp-registry-source.ts",
+        "src/renderer/components/settings/AccountsPanel.tsx",
+        "src/renderer/components/settings/settings-rows.ts",
+        "src/renderer/components/ui/input.tsx",
+        "src/renderer/components/ui/checkbox.tsx",
+        "src/renderer/components/ui/radio-group.tsx",
+        "src/renderer/components/ui/toggle-group.tsx",
+        "src/renderer/services/acp-agent-availability.ts",
+        "src/renderer/components/GoToChatDialog.tsx",
+        "src/renderer/components/SearchModal.tsx",
+        "src/preload/index.ts",
+        "tests/unit/add-agent-model.test.ts",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/radix-overlays.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "mobile_generic_acp_agents",
+      "followUpRelease": "mobile-v0.6.0, with the other generic ACP agents. The app has no Accounts screen, so there is nothing to add an agent from. A chat on a local command account shows and continues like the other generic ACP agents (shared agentLabel names it \"Local command\"), and its skills are labelled (SlashMenu). It is left out of the new-chat list like them. A phone cannot create a local command account: that UPSERT needs the terminal scope.",
+      "evidence": ["apps/mobile/src/components/SlashMenu.tsx", "apps/mobile/src/lib/profiles.ts"]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "native_generic_acp_agents",
+      "followUpRelease": "Native Android 0.6.0, with the other generic ACP agents. ProviderKind knows acp-command, so a chat on a local command account reattaches to its own agent and AcpAgents names it; NewSessionDecisions does not offer it. The app has no Accounts screen, and its chat-scoped session cannot create a local command account.",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/newsession/NewSessionScreen.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/acp-agents.ts",
+        "src/shared/acp-command.ts",
+        "src/shared/session-defaults.ts",
+        "src/shared/device-auth.ts",
+        "src/shared/ipc-channels.ts",
+        "src/main/ipc/provider-instances.ts",
+        "src/main/provider/session-defaults.ts",
+        "src/main/provider/adapters/acp/agents.ts",
+        "src/main/provider/adapters/acp/agent-env.ts",
+        "src/main/provider/adapters/acp/launch-config.ts",
+        "src/main/provider/adapters/acp/acp-adapter.ts",
+        "tests/unit/acp-command.test.ts",
+        "tests/unit/acp-launch-configs.test.ts",
+        "tests/unit/provider-instance-test-probe-home.test.ts",
+        "tests/unit/device-auth.test.ts",
+        "tests/unit/session-defaults-instance-scope.test.ts",
+        "tests/unit/agent-types.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": ["src/main/db/database.ts", "src/main/db/provider-instances.ts", "tests/unit/agent-types.test.ts"]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["CHANGELOG.md", "package.json", "package-lock.json"]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/add-agent-model.test.ts: the seven tiles each have a sign-in method and an install command, tile status text, env row parsing, the local command form, name suggestions and clashes, the sign-in folder name, and the saved account (folder, API key, env, launch config, plan start mode for untested agents).",
+      "tests/unit/acp-command.test.ts: launch config parsing and refusal, argument splitting (quotes, escapes, no expansion, open quote), stored start mode.",
+      "tests/unit/acp-launch-configs.test.ts: the local command config starts the account's command, arguments and folder, and finds nothing without a valid account.",
+      "tests/unit/provider-instance-test-probe-home.test.ts: the draft Test probes an unsaved sign-in folder like a saved one, finds a local command without running it, refuses a malformed draft, and UPSERT refuses a local command without a command.",
+      "tests/unit/device-auth.test.ts: a phone cannot create a local command account, set a launch config, or call the draft Test; ordinary account edits stay open.",
+      "tests/unit/session-defaults-instance-scope.test.ts: an account's start mode beats the machine default and yields to a requested mode.",
+      "Visual regressions (screens phase): add-agent, add-agent-sign-in and add-agent-config in Dark, Light and Translucent."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No real local ACP command was started from a chat: the spawn path was exercised by unit tests only.",
+      "Gemini CLI, Mistral Vibe, Cline and Copilot were not installed here, so their sign-in methods were checked against their docs, not run.",
+      "A local command chat started with no account named takes the agent's default row for the start mode; acp-command has none, so it falls through to the machine default.",
+      "The ACP registry section was not rendered in the app (flag off)."
+    ]
+  }
+}

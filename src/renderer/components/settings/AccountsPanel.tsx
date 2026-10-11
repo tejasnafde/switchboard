@@ -40,6 +40,7 @@ import { cn } from '../../lib/utils'
 import { createRendererLogger } from '../../logger'
 import { SETTING_ROW, type SettingRowDef } from './settings-rows'
 import { SourceControlPanel } from './SourceControlPanel'
+import { AddAgentDialog } from './AddAgentDialog'
 import { CodexResetControls } from './CodexResetControls'
 import {
   accountsSummary,
@@ -99,7 +100,8 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
   const beginUsageVisit = useProviderInstanceStore((s) => s.beginUsageVisit)
   const loadUsage = useProviderInstanceStore((s) => s.loadUsage)
   const [editing, setEditing] = useState<ProviderInstance | null>(null)
-  const [adding, setAdding] = useState<AgentProvider | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [added, setAdded] = useState<string | null>(null)
   const [stored, setStored] = useState<Record<string, string>>({})
 
   // The settings read can land after the page closes. The effect body
@@ -213,7 +215,16 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
       </Anchor>
 
       <Anchor def={SETTING_ROW.addAccount}>
-        <AddAccountButton kinds={offeredKinds} onPick={setAdding} />
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+            Add agent
+          </Button>
+          {added && (
+            <span role="status" className="text-[12px] text-[var(--text-secondary)]">
+              {added}
+            </span>
+          )}
+        </div>
       </Anchor>
 
       <Anchor def={SETTING_ROW.sourceControl}>
@@ -223,7 +234,19 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
       </Anchor>
 
       {editing && <ProviderInstanceDialog instance={editing} onClose={() => setEditing(null)} />}
-      {adding && <ProviderInstanceDialog agentType={adding} onClose={() => setAdding(null)} />}
+      {adding && (
+        <AddAgentDialog
+          instances={instances}
+          storedModel={(kind) => stored[defaultModelSettingKey(kind)] ?? defaultModelFor(kind)}
+          onClose={() => setAdding(false)}
+          onAdded={({ instance, useForNewChats, model }) => {
+            const kind = instance.agentType as AgentProvider
+            if (useForNewChats) writeSetting(defaultInstanceSettingKey(kind), instance.id)
+            if (model) writeSetting(defaultModelSettingKey(kind), model)
+            setAdded(`${instance.displayName} added. Pick it from the agent menu in any chat.`)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -249,40 +272,6 @@ const menuItemClass =
   'flex w-full cursor-pointer items-center justify-between rounded-[5px] border-0 bg-transparent px-2 py-[5px] text-left text-[12.5px] text-[var(--text-primary)] outline-none hover:bg-[var(--bg-hover)] focus-visible:bg-[var(--bg-hover)]'
 const menuSurfaceClass =
   'sb-floating-surface z-[1200] w-[230px] rounded-[8px] border border-[var(--border)] p-1 shadow-[0_12px_30px_rgba(0,0,0,0.45)]!'
-
-function AddAccountButton({
-  kinds,
-  onPick,
-}: {
-  kinds: readonly AgentProvider[]
-  onPick: (kind: AgentProvider) => void
-}) {
-  const [open, setOpen] = useState(false)
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm">
-          + Add account
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className={menuSurfaceClass}>
-        {kinds.map((kind) => (
-          <button
-            key={kind}
-            type="button"
-            className={menuItemClass}
-            onClick={() => {
-              setOpen(false)
-              onPick(kind)
-            }}
-          >
-            {agentLabel(kind)}
-          </button>
-        ))}
-      </PopoverContent>
-    </Popover>
-  )
-}
 
 function AccountCard({
   instance,

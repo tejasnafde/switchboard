@@ -4,7 +4,7 @@
  * offered in the provider picker or in Settings > Accounts.
  */
 import { useEffect, useState } from 'react'
-import { GENERIC_ACP_AGENTS, isGenericAcpAgent, type GenericAcpAgent } from '@shared/acp-agents'
+import { BUILT_IN_ACP_AGENTS, isGenericAcpAgent, type GenericAcpAgent } from '@shared/acp-agents'
 import type { AgentType } from '@shared/types'
 import { createRendererLogger } from '../logger'
 
@@ -26,13 +26,17 @@ export function offeredAgentTypes<T extends AgentType>(
   return all.filter((type) => !isGenericAcpAgent(type) || installedAgents.has(type) || keep.has(type))
 }
 
-/** Asks the backend about every generic ACP agent; a failed answer counts as not installed. */
+/**
+ * Asks the backend about every generic ACP agent with a fixed binary (a local
+ * command is offered by its accounts alone); a failed answer counts as not
+ * installed.
+ */
 export async function probeInstalledAcpAgents(
   isAvailable: (agent: GenericAcpAgent) => Promise<boolean>,
 ): Promise<ReadonlySet<string>> {
   const seq = ++probeSeq
   const answers = await Promise.all(
-    GENERIC_ACP_AGENTS.map(async (agent) => {
+    BUILT_IN_ACP_AGENTS.map(async (agent) => {
       try {
         return (await isAvailable(agent)) ? agent : null
       } catch (err) {
@@ -41,7 +45,7 @@ export async function probeInstalledAcpAgents(
       }
     }),
   )
-  const result = new Set(answers.filter((agent): agent is GenericAcpAgent => agent !== null))
+  const result: ReadonlySet<string> = new Set(answers.filter((agent) => agent !== null))
   // An older probe finishing late must not replace a newer answer.
   if (seq === probeSeq) installed = result
   return result

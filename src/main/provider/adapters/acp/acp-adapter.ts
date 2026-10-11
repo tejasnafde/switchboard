@@ -417,7 +417,7 @@ export class AcpAdapter implements ProviderAdapter {
 
   async startSession(opts: SessionStartOpts, onEvent: (event: RuntimeEvent) => void): Promise<ProviderSession> {
     const { config } = this
-    const binPath = config.findBinary()
+    const binPath = config.findBinary(opts.instanceId)
     if (!binPath) throw new Error(config.notFoundMessage)
 
     // Provider-instance env vars (API keys and the like) overlay the config's
@@ -485,13 +485,14 @@ export class AcpAdapter implements ProviderAdapter {
     // and shell metacharacters escaped, so a cwd or arg containing spaces or
     // `&`/`|`/`"` cannot break the command line or inject one. It is an
     // exact passthrough to `child_process.spawn` on macOS/Linux.
-    const child = spawn(binPath, config.args(opts.cwd), {
-      cwd: opts.cwd,
+    const spawnCwd = config.spawnCwd?.(opts.instanceId) ?? opts.cwd
+    const child = spawn(binPath, config.args(opts.cwd, opts.instanceId), {
+      cwd: spawnCwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: markAgentSpawnEnv(active.prep.env),
     }) as ChildProcessWithoutNullStreams
     active.child = child
-    log.info(`spawned ${this.provider} acp pid=${child.pid} cwd=${opts.cwd}`)
+    log.info(`spawned ${this.provider} acp pid=${child.pid} cwd=${spawnCwd}`)
 
     child.stderr.on('data', (data: Buffer) => {
       log.info(`${this.provider} acp stderr: ${truncate(data.toString())}`)

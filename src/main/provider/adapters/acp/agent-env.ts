@@ -4,7 +4,7 @@
  */
 import { execFileSync } from 'child_process'
 import { accessSync, constants } from 'fs'
-import { delimiter, join } from 'path'
+import { delimiter, isAbsolute, join } from 'path'
 import { createMainLogger } from '../../../logger'
 import { peekShellEnv } from '../../../shell-env'
 
@@ -70,6 +70,19 @@ export function findAgentBinary(name: string, now = Date.now()): string | null {
     missedAt.set(name, now)
   }
   return path
+}
+
+/**
+ * Absolute path of a local command's executable: a `~/` or absolute path is
+ * checked as is, a bare name is looked up like an agent binary. A relative
+ * path has no folder to be relative to, so it is never found.
+ */
+export function resolveAgentCommand(command: string): string | null {
+  const home = process.env.HOME || ''
+  const path = command.startsWith('~/') ? join(home, command.slice(2)) : command
+  if (isAbsolute(path)) return isExecutable(path) ? path : null
+  if (/[\\/]/.test(path)) return null
+  return findAgentBinary(path)
 }
 
 /**

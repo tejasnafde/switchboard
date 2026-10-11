@@ -22,6 +22,7 @@ const AVATARS: Record<AgentType, { initials: string; className: string }> = {
   vibe: { initials: 'VB', className: 'bg-[var(--text-muted)]' },
   cline: { initials: 'CN', className: 'bg-[var(--text-muted)]' },
   copilot: { initials: 'CP', className: 'bg-[var(--text-muted)]' },
+  'acp-command': { initials: 'LC', className: 'bg-[var(--text-muted)]' },
 }
 
 interface GoToChatDialogProps {

@@ -8,7 +8,7 @@
  * `src/main/provider/adapters/acp/agents.ts`.
  */
 
-export const GENERIC_ACP_AGENTS = ['gemini', 'vibe', 'cline', 'copilot'] as const
+export const GENERIC_ACP_AGENTS = ['gemini', 'vibe', 'cline', 'copilot', 'acp-command'] as const
 
 export type GenericAcpAgent = (typeof GENERIC_ACP_AGENTS)[number]
 
@@ -21,6 +21,27 @@ export const GENERIC_ACP_AGENT_LABELS: Record<GenericAcpAgent, { label: string; 
   vibe: { label: 'Mistral Vibe', short: 'Vibe' },
   cline: { label: 'Cline', short: 'Cline' },
   copilot: { label: 'GitHub Copilot', short: 'Copilot' },
+  'acp-command': { label: 'Local command', short: 'Local' },
+}
+
+/**
+ * The agent whose command, arguments and folder come from each account's
+ * launch config (`shared/acp-command.ts`) instead of a fixed binary. It has
+ * no seeded default account: every account of it is one the user added.
+ */
+export const ACP_COMMAND_AGENT = 'acp-command' satisfies GenericAcpAgent
+
+/** Generic agents with a fixed binary, in the order Settings lists them. */
+export const BUILT_IN_ACP_AGENTS = GENERIC_ACP_AGENTS.filter(
+  (agent): agent is Exclude<GenericAcpAgent, typeof ACP_COMMAND_AGENT> => agent !== ACP_COMMAND_AGENT,
+)
+
+/** How to install each built-in generic agent's CLI. */
+export const GENERIC_ACP_AGENT_INSTALL: Record<(typeof BUILT_IN_ACP_AGENTS)[number], string> = {
+  gemini: 'npm install -g @google/gemini-cli',
+  vibe: 'uv tool install mistral-vibe',
+  cline: 'npm install -g cline',
+  copilot: 'npm install -g @github/copilot',
 }
 
 /**

@@ -236,9 +236,9 @@ const ROWS = {
     id: 'accounts.add',
     page: 'accounts',
     section: 'Accounts',
-    label: 'Add account',
+    label: 'Add agent',
     description:
-      'A new named account for Claude Code, Codex or OpenCode, signed in through its own folder or an API key.',
+      'A new named account for a built-in agent (Claude Code, Codex, OpenCode, Gemini CLI, Mistral Vibe, Cline, GitHub Copilot) or for any local command that speaks the Agent Client Protocol: pick the agent, sign it in and test it, then name it.',
   },
   sourceControl: {
     id: 'accounts.sourceControl',
