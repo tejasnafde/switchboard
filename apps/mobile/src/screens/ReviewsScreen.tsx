@@ -106,6 +106,7 @@ export default function ReviewsScreen({ route, navigation }: Props) {
   const [query, setQuery] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [showMerged, setShowMerged] = useState(false)
+  const [unhideError, setUnhideError] = useState<string | null>(null)
   const [now, setNow] = useState(Date.now)
 
   useFocusEffect(
@@ -151,10 +152,17 @@ export default function ReviewsScreen({ route, navigation }: Props) {
     if (tab === 'projects') navigation.replace('Projects', { connectionId, label, viaTab: true })
   }
   const showHiddenRepos = () => {
-    getClient(connectionId)
-      ?.unhidePullRequestRepos(hiddenRepos)
-      .then(() => refresh(connectionId, 'manual'))
-      .catch((err: unknown) => log.warn('showing hidden repositories failed', err))
+    setUnhideError(null)
+    const fail = (message: string) => setUnhideError(`Could not show them: ${message}`)
+    const client = getClient(connectionId)
+    if (!client) return fail('the backend is not connected.')
+    client
+      .unhidePullRequestRepos(hiddenRepos)
+      .then((result) => (result.ok ? refresh(connectionId, 'manual') : fail('the desktop refused.')))
+      .catch((err: unknown) => {
+        log.warn('showing hidden repositories failed', err)
+        fail(err instanceof Error ? err.message : String(err))
+      })
   }
   const setShow = (show: PhonePrShow) => setFilters({ ...filters, show })
 
@@ -287,6 +295,7 @@ export default function ReviewsScreen({ route, navigation }: Props) {
               <Text style={styles.link} onPress={showHiddenRepos}>
                 Show
               </Text>
+              {unhideError ? `\n${unhideError}` : ''}
             </Text>
           ) : null
         }
