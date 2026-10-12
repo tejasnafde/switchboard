@@ -426,6 +426,9 @@ describe('ExecFileGitWorktreeAdapter existing branch', () => {
     await git(origin, 'branch', '-D', 'fork-work')
     const clone = join(fixture.root, 'clone')
     await git(fixture.root, 'clone', '-q', origin, clone)
+    // A clone does not inherit the origin's local identity; CI runners have no global one.
+    await git(clone, 'config', 'user.name', 'Switchboard Test')
+    await git(clone, 'config', 'user.email', 'switchboard@example.test')
     return { origin, clone, prHead, forkHead }
   }
 
