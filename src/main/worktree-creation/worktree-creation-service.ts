@@ -30,6 +30,32 @@ import { resolveWorktreeSetup } from './setup-policy'
 
 const log = createMainLogger('worktree:creation')
 
+const CONFLICT_MESSAGES: Record<Extract<WorktreeMaterializationResult, { kind: 'conflict' }>['reason'], string> = {
+  branch_exists: 'Branch {branch} already exists.',
+  branch_missing: 'Branch {branch} no longer exists. Start the worktree again.',
+  branch_moved: 'Branch {branch} moved after this worktree was planned. Start the worktree again.',
+  branch_checked_out: 'Branch {branch} is already checked out in another worktree.',
+  path_exists: 'The worktree folder already exists.',
+  unsafe_path: 'The worktree folder is outside the managed location.',
+}
+
+function conflictError(reason: keyof typeof CONFLICT_MESSAGES, branch: string): WorktreeCreationError {
+  return {
+    code: reason,
+    phase: 'materializing',
+    message: CONFLICT_MESSAGES[reason].replace('{branch}', branch),
+    // A retry reuses the stored plan, which cannot succeed once the branch moved or went away (`unretryable`).
+    retryable: reason !== 'branch_missing' && reason !== 'branch_moved',
+  }
+}
+
+/** A failed materialization whose stored plan can never succeed again (the branch moved or went away). */
+function unretryable(record: WorktreeCreationRecord): boolean {
+  if (record.status !== 'failed' || !record.errorJson) return false
+  const code = (JSON.parse(record.errorJson) as WorktreeCreationError).code
+  return code === 'branch_missing' || code === 'branch_moved'
+}
+
 export interface GitWorktreePort {
   resolveRepository(projectPath: string): Promise<ResolvedGitRepository>
   planMaterialization(intent: WorktreeMaterializationIntent): Promise<WorktreeMaterializationPlan>
@@ -334,13 +360,17 @@ export class WorktreeCreationService {
       if (!current.materializationPlanJson) {
         throw new WorktreeCreationUnsafeActionError('The reserved materialization plan is unavailable.')
       }
+      if (unretryable(current)) {
+        throw new WorktreeCreationUnsafeActionError((JSON.parse(current.errorJson!) as WorktreeCreationError).message)
+      }
       const request = JSON.parse(current.requestJson) as WorktreeCreationRequest
       const plan = JSON.parse(current.materializationPlanJson) as WorktreeMaterializationPlan
       const step = await this.repositoryMutations.run(plan.repository.repositoryId, async () => {
-        const pending = this.options.store.transition({
+        const pending = this.options.store.updateProgress({
           ...input,
           phase: 'materializing',
           status: 'pending',
+          clearError: true,
           now: this.now(),
         })
         if (pending.kind !== 'updated') {
@@ -524,6 +554,7 @@ export class WorktreeCreationService {
       branch: request.checkout.branch,
       location: request.checkout.location ?? 'managed-user-data',
       userDataDir: this.options.userDataDir,
+      ...(request.checkout.existingBranch ? { existingBranch: request.checkout.existingBranch } : {}),
     })
     const requestJson = canonicalizeWorktreeCreationRequest(request)
     const worktreeId = this.createWorktreeId()
@@ -628,11 +659,12 @@ export class WorktreeCreationService {
         }
         return this.snapshot(failed.kind === 'stale' ? failed.record : materializing)
       }
-      const failed = this.options.store.transition({
+      const failed = this.options.store.updateProgress({
         ...key,
         expectedRevision: materializing.revision,
         phase: 'materializing',
         status: 'failed',
+        errorJson: JSON.stringify(conflictError(materialized.reason, materialized.branch)),
         now: this.now(),
       })
       if (failed.kind === 'updated') this.publish(failed.record)
@@ -1660,9 +1692,10 @@ export class WorktreeCreationService {
     }
     if (record.status === 'failed') {
       const request = JSON.parse(record.requestJson) as WorktreeCreationRequest
+      const retry: WorktreeCreationSnapshot['recoveryActions'] = unretryable(record) ? [] : ['retry']
       return request.owner.kind === 'conversation' && record.phase === 'materializing'
-        ? ['retry', 'start_in_project']
-        : ['retry']
+        ? [...retry, 'start_in_project']
+        : retry
     }
     if (
       record.status === 'rolled_back' &&

@@ -4,6 +4,12 @@ import { access, mkdir, realpath } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { cloneDependencyDirsInBackground } from '../git/dependency-clone'
+import { createMainLogger } from '../logger'
+import type { WorktreeExistingBranchIntent } from '../../shared/worktree-creation'
+import { parseRemoteUrl } from '../../shared/pull-request-remote'
+import { repoKey, type RepoRef } from '../../shared/pull-requests'
+
+const log = createMainLogger('worktree:git')
 
 const execFileAsync = promisify(execFile)
 
@@ -23,6 +29,27 @@ export interface WorktreeMaterializationIntent {
   }
   location: 'managed-in-repo' | 'managed-user-data'
   userDataDir?: string
+  existingBranch?: WorktreeExistingBranchIntent
+}
+
+/** An existing-branch checkout. Absent on a plan for a fresh branch. */
+export interface ExistingBranchPlan {
+  /** The local branch existed before this creation, so no rollback ever deletes it. */
+  preexisting: boolean
+  /** The local branch is a strict ancestor of the fetched head: move it forward from this commit first. */
+  fastForwardFrom?: string
+  /** Upstream to record on a branch this creation makes. Only for a fetched branch name, not `refs/...`. */
+  upstream?: { remote: string; ref: string }
+}
+
+/** Thrown at plan time; the IPC caller sees the message. */
+export class BranchCheckedOutError extends Error {
+  constructor(branch: string, worktreePath: string) {
+    super(
+      `Branch ${branch} is already checked out in ${worktreePath}. Work there, or switch that checkout to another branch first.`,
+    )
+    this.name = 'BranchCheckedOutError'
+  }
 }
 
 export interface WorktreeMaterializationPlan {
@@ -34,6 +61,7 @@ export interface WorktreeMaterializationPlan {
   worktreePath: string
   managedRoot: string
   containmentRoot: string
+  existingBranch?: ExistingBranchPlan
 }
 
 export type WorktreeMaterializationResult =
@@ -47,7 +75,7 @@ export type WorktreeMaterializationResult =
       kind: 'conflict'
       worktreePath: string
       branch: string
-      reason: 'branch_exists' | 'path_exists' | 'unsafe_path'
+      reason: 'branch_exists' | 'branch_missing' | 'branch_moved' | 'branch_checked_out' | 'path_exists' | 'unsafe_path'
     }
   | {
       kind: 'outcome_unknown'
@@ -254,21 +282,101 @@ export class ExecFileGitWorktreeAdapter {
     }
   }
 
-  async planMaterialization(intent: WorktreeMaterializationIntent): Promise<WorktreeMaterializationPlan> {
-    const resolvedBaseCommit = (
-      await this.run(intent.repository.projectPath, [
-        'rev-parse',
-        '--verify',
-        '--end-of-options',
-        `${intent.baseRef}^{commit}`,
-      ])
-    ).stdout.trim()
-    if (!/^[0-9a-f]{40,64}$/i.test(resolvedBaseCommit)) {
-      throw new Error(`Git returned an invalid commit for ${intent.baseRef}`)
+  private async commitOf(cwd: string, ref: string): Promise<string> {
+    const commit = (await this.run(cwd, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`])).stdout.trim()
+    if (!/^[0-9a-f]{40,64}$/i.test(commit)) throw new Error(`Git returned an invalid commit for ${ref}`)
+    return commit
+  }
+
+  /** The first configured remote whose URL (as written, before any `insteadOf`) is `repo`. */
+  private async remoteForRepo(cwd: string, repo: RepoRef): Promise<string | undefined> {
+    // Exits 1 when the repository has no remote at all.
+    const output = await this.run(cwd, ['config', '--get-regexp', '^remote\\..*\\.url$']).then(
+      (result) => result.stdout,
+      (error: unknown) => {
+        log.debug('no remote urls', { error: error instanceof Error ? error.message : String(error) })
+        return ''
+      },
+    )
+    for (const line of output.split('\n')) {
+      const match = /^remote\.(.+)\.url (\S+)$/.exec(line.trim())
+      const parsed = match ? parseRemoteUrl(match[2]) : null
+      if (match && parsed && repoKey(parsed) === repoKey(repo)) return match[1]
+    }
+    return undefined
+  }
+
+  private async checkedOutPath(projectPath: string, branch: string): Promise<string | null> {
+    const output = (await this.run(projectPath, ['worktree', 'list', '--porcelain'])).stdout
+    return parsePorcelainWorktrees(output).find((worktree) => worktree.branch === branch)?.worktreePath ?? null
+  }
+
+  /**
+   * Resolves an existing-branch checkout without touching any checkout: a
+   * fetch writes only a scratch ref, deleted again once read.
+   */
+  private async planExistingBranch(
+    intent: WorktreeMaterializationIntent,
+    existing: WorktreeExistingBranchIntent,
+  ): Promise<{ commit: string; plan: ExistingBranchPlan }> {
+    const cwd = intent.repository.projectPath
+    await this.run(cwd, ['check-ref-format', '--branch', existing.name])
+    const checkedOut = await this.checkedOutPath(cwd, existing.name)
+    if (checkedOut) throw new BranchCheckedOutError(existing.name, checkedOut)
+
+    let fetched: string | undefined
+    let remote: string | undefined
+    if (existing.fetch) {
+      remote = existing.fetch.repo
+        ? await this.remoteForRepo(cwd, existing.fetch.repo)
+        : // Only a configured remote: a bare name git cannot resolve as one is read as a path.
+          (await this.succeeds(cwd, ['remote', 'get-url', '--end-of-options', existing.fetch.remote ?? '']))
+          ? existing.fetch.remote
+          : undefined
+      if (!remote) {
+        const what = existing.fetch.repo
+          ? `no remote for ${existing.fetch.repo.owner}/${existing.fetch.repo.name}`
+          : `no remote named ${existing.fetch.remote}`
+        throw new Error(`${cwd} has ${what}.`)
+      }
+      const scratchRef = `refs/switchboard/fetch/${creationSuffix(intent.creationId)}`
+      await this.run(cwd, ['fetch', '--no-tags', '--end-of-options', remote, `+${existing.fetch.ref}:${scratchRef}`])
+      try {
+        fetched = await this.commitOf(cwd, scratchRef)
+      } finally {
+        await this.run(cwd, ['update-ref', '-d', scratchRef]).catch((error: unknown) =>
+          log.warn('could not delete the scratch fetch ref', {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        )
+      }
     }
 
+    const localRef = `refs/heads/${existing.name}`
+    const local = (await this.succeeds(cwd, ['show-ref', '--verify', '--quiet', localRef]))
+      ? await this.commitOf(cwd, localRef)
+      : null
+    if (local) {
+      // An older local copy of the head moves forward; a diverged one keeps its own commits.
+      if (fetched && fetched !== local && (await this.succeeds(cwd, ['merge-base', '--is-ancestor', local, fetched]))) {
+        return { commit: fetched, plan: { preexisting: true, fastForwardFrom: local } }
+      }
+      return { commit: local, plan: { preexisting: true } }
+    }
+    if (!fetched) throw new Error(`Branch ${existing.name} does not exist in ${cwd}.`)
+    const upstream =
+      existing.fetch && remote && !existing.fetch.ref.startsWith('refs/')
+        ? { remote, ref: existing.fetch.ref }
+        : undefined
+    return { commit: fetched, plan: { preexisting: false, ...(upstream ? { upstream } : {}) } }
+  }
+
+  async planMaterialization(intent: WorktreeMaterializationIntent): Promise<WorktreeMaterializationPlan> {
+    const existing = intent.existingBranch ? await this.planExistingBranch(intent, intent.existingBranch) : undefined
+    const resolvedBaseCommit = existing?.commit ?? (await this.commitOf(intent.repository.projectPath, intent.baseRef))
+
     const name = `${slug(intent.branch.seed)}-${creationSuffix(intent.creationId)}`
-    const branch = `${intent.branch.namespace}/${name}`
+    const branch = intent.existingBranch?.name ?? `${intent.branch.namespace}/${name}`
     let root: string
     let containmentRoot: string
     if (intent.location === 'managed-in-repo') {
@@ -293,6 +401,7 @@ export class ExecFileGitWorktreeAdapter {
       worktreePath: join(root, name),
       managedRoot: root,
       containmentRoot,
+      ...(existing ? { existingBranch: existing.plan } : {}),
     }
   }
 
@@ -321,7 +430,31 @@ export class ExecFileGitWorktreeAdapter {
       '--quiet',
       `refs/heads/${plan.branch}`,
     ])
-    if (branchExists) {
+    if (plan.existingBranch?.preexisting && (await this.checkedOutPath(plan.repository.projectPath, plan.branch))) {
+      return {
+        kind: 'conflict',
+        branch: plan.branch,
+        worktreePath: plan.worktreePath,
+        reason: 'branch_checked_out',
+      }
+    }
+    // A pre-existing branch must still be where the plan saw it (or already moved forward by an earlier try).
+    const existingHead =
+      plan.existingBranch?.preexisting && branchExists
+        ? await this.commitOf(plan.repository.projectPath, `refs/heads/${plan.branch}`)
+        : null
+    if (
+      plan.existingBranch?.preexisting &&
+      (!existingHead || ![plan.resolvedBaseCommit, plan.existingBranch.fastForwardFrom].includes(existingHead))
+    ) {
+      return {
+        kind: 'conflict',
+        branch: plan.branch,
+        worktreePath: plan.worktreePath,
+        reason: existingHead ? 'branch_moved' : 'branch_missing',
+      }
+    }
+    if (branchExists && !plan.existingBranch?.preexisting) {
       return {
         kind: 'conflict',
         branch: plan.branch,
@@ -339,16 +472,23 @@ export class ExecFileGitWorktreeAdapter {
     }
 
     await mkdir(dirname(plan.worktreePath), { recursive: true })
+    const cwd = plan.repository.projectPath
+    let movedForward = false
     try {
-      await this.run(plan.repository.projectPath, [
-        'worktree',
-        'add',
-        '-b',
-        plan.branch,
-        plan.worktreePath,
-        plan.resolvedBaseCommit,
-      ])
+      if (plan.existingBranch?.preexisting) {
+        const from = plan.existingBranch.fastForwardFrom
+        // Compare-and-swap, so a move between the check above and here still fails.
+        if (from && existingHead === from) {
+          await this.run(cwd, ['update-ref', `refs/heads/${plan.branch}`, plan.resolvedBaseCommit, from])
+          movedForward = true
+        }
+        await this.run(cwd, ['worktree', 'add', plan.worktreePath, plan.branch])
+      } else {
+        await this.run(cwd, ['worktree', 'add', '-b', plan.branch, plan.worktreePath, plan.resolvedBaseCommit])
+      }
     } catch (error) {
+      // The service sees a pre-existing branch with no worktree as absent and never compensates it.
+      if (movedForward) await this.undoFastForwardIfFree(plan)
       return {
         kind: 'outcome_unknown',
         branch: plan.branch,
@@ -357,6 +497,18 @@ export class ExecFileGitWorktreeAdapter {
       }
     }
 
+    const upstream = plan.existingBranch?.upstream
+    if (upstream) {
+      // Lets a plain `git push` / `git pull` in the worktree reach the PR branch. Best effort.
+      try {
+        await this.run(cwd, ['config', `branch.${plan.branch}.remote`, upstream.remote])
+        await this.run(cwd, ['config', `branch.${plan.branch}.merge`, `refs/heads/${upstream.ref}`])
+      } catch (error) {
+        log.warn('could not set the worktree branch upstream', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
     const headCommit = (await this.run(plan.worktreePath, ['rev-parse', 'HEAD'])).stdout.trim()
     cloneDependencyDirsInBackground(plan.repository.projectPath, plan.worktreePath)
     return {
@@ -374,6 +526,7 @@ export class ExecFileGitWorktreeAdapter {
     const byBranch = worktrees.find((worktree) => worktree.branch === plan.branch)
     const observed = byPath ?? byBranch
     if (!observed) {
+      if (plan.existingBranch?.preexisting) return { kind: 'absent' }
       try {
         const headCommit = (
           await this.run(plan.repository.projectPath, ['rev-parse', '--verify', `refs/heads/${plan.branch}^{commit}`])
@@ -417,7 +570,10 @@ export class ExecFileGitWorktreeAdapter {
   ): Promise<WorktreeRollbackResult> {
     if (!(await this.hasSafeManagedPath(plan))) return { kind: 'refused', reason: 'unsafe_path' }
     const inspection = await this.inspectMaterialization(plan)
-    if (inspection.kind === 'absent') return { kind: 'absent' }
+    if (inspection.kind === 'absent') {
+      if (mode === 'compensate') await this.undoFastForward(plan)
+      return { kind: 'absent' }
+    }
     if (inspection.kind === 'branch_only') {
       if (inspection.headCommit !== plan.resolvedBaseCommit) {
         return mode === 'compensate' ? { kind: 'refused', reason: 'identity_mismatch' } : { kind: 'removed' }
@@ -432,9 +588,43 @@ export class ExecFileGitWorktreeAdapter {
     const status = (await this.run(plan.worktreePath, ['status', '--porcelain', '--untracked-files=all'])).stdout
     if (status.trim().length > 0) return { kind: 'refused', reason: 'dirty' }
     await this.run(plan.repository.projectPath, ['worktree', 'remove', plan.worktreePath])
-    if (inspection.headCommit === plan.resolvedBaseCommit) {
+    if (inspection.headCommit === plan.resolvedBaseCommit && !plan.existingBranch?.preexisting) {
       await this.run(plan.repository.projectPath, ['branch', '-D', plan.branch])
     }
+    if (mode === 'compensate') await this.undoFastForward(plan)
     return { kind: 'removed' }
+  }
+
+  /** A failed `worktree add` puts the branch back, unless some worktree checked it out after all. */
+  private async undoFastForwardIfFree(plan: WorktreeMaterializationPlan): Promise<void> {
+    try {
+      if (await this.checkedOutPath(plan.repository.projectPath, plan.branch)) return
+      await this.undoFastForward(plan)
+    } catch (error) {
+      log.warn('could not move the branch back after a failed worktree add', {
+        branch: plan.branch,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  /** A compensated creation puts a pre-existing branch it moved forward back, only if nothing moved it since. */
+  private async undoFastForward(plan: WorktreeMaterializationPlan): Promise<void> {
+    const from = plan.existingBranch?.preexisting ? plan.existingBranch.fastForwardFrom : undefined
+    if (!from) return
+    const ref = `refs/heads/${plan.branch}`
+    const cwd = plan.repository.projectPath
+    if (!(await this.succeeds(cwd, ['show-ref', '--verify', '--quiet', ref]))) return
+    if ((await this.commitOf(cwd, ref)) !== plan.resolvedBaseCommit) return
+    try {
+      // Compare-and-swap, so a move since the check above still fails.
+      await this.run(cwd, ['update-ref', ref, from, plan.resolvedBaseCommit])
+      log.warn('moved the branch back after an incomplete creation', { branch: plan.branch })
+    } catch (error) {
+      log.warn('could not move the branch back after an incomplete creation', {
+        branch: plan.branch,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 }

@@ -1,0 +1,53 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "worktree-existing-branch",
+  "summary": "Worktree creation can check out a branch that already exists instead of making a fresh sb/, kanban/ or fork/ branch. The request's checkout carries an optional existingBranch { name, fetch?: { remote | repo, ref } }. With fetch, the backend first fetches the ref from that configured remote, or from the first remote whose configured URL points at repo (a phone cannot know the desktop's remote names), (a PR's head branch, refs/pull/<n>/head for a GitHub fork PR, a Bitbucket PR's source branch) into a scratch ref it deletes again. A missing local branch is created at the fetched commit (tracking the remote branch when the ref is a branch name); an older local copy is moved forward by compare-and-swap; a diverged local branch is checked out as it is. The worktree goes under the usual managed folder, the main checkout is never switched, and a branch already checked out in any worktree is refused with a message naming that checkout. The transactional create, compensate and retry flow is unchanged; a rollback removes the worktree but never deletes a branch that existed before, and a compensated one moves a branch it fast-forwarded back. A failed materialization now carries an error message, and a retry clears it. A pre-existing branch that moved or went away after the plan is a branch_moved or branch_missing conflict with no retry (the stored plan cannot succeed again). The backend advertises worktree_existing_branch_v1; an older backend drops the field and makes a fresh branch.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "No desktop screen asks for an existing branch yet. The first caller is the phone pull request view (follow-up PR, feat/phone-pr-view); the desktop new-chat, kanban and fork paths send no existingBranch and behave as before."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "This change adds the backend option only. The Expo app starts using it in the follow-up phone pull request view, behind the worktree_existing_branch_v1 capability; until then it sends no existingBranch."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "This change adds the backend option only. Native Android starts using it in the follow-up phone pull request view, behind the worktree_existing_branch_v1 capability; until then it sends no existingBranch."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/worktree-creation.ts",
+        "src/shared/ws-protocol.ts",
+        "src/main/worktree-creation/git-adapter.ts",
+        "src/main/worktree-creation/worktree-creation-service.ts",
+        "tests/unit/worktree-creation-git-adapter.test.ts",
+        "tests/unit/worktree-creation-contract.test.ts",
+        "tests/unit/worktree-creation-compensation.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table or migration. The existing-branch plan (preexisting, fastForwardFrom, upstream) rides inside the stored materialization plan JSON, and plans stored before this change have no such field and behave as fresh branches."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Backend-only option on an existing channel, gated by a new capability string. No package identity, signing, deep link or update channel change; older clients never send the field."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/worktree-creation-git-adapter.test.ts runs real git in temp repositories: a local branch is checked out while the main checkout stays on main at the same commit, and rollback keeps the branch; a branch checked out in the main checkout is refused at plan time with a message naming it, and one checked out after the plan gives a branch_checked_out conflict; a PR branch is fetched from origin into a new tracking branch and the scratch ref is gone; a fork PR head is fetched through refs/pull/7/head with no upstream; a stale local copy moves forward and a diverged one is kept; a missing branch, or a remote that is not configured, is refused; with repo, the remote whose URL names that repository is picked over a fork's origin, and a repository no remote points at is refused.",
+      "tests/unit/worktree-creation-contract.test.ts parses existingBranch and rejects unsafe names, remotes and refs.",
+      "tests/unit/worktree-creation-compensation.test.ts: a failed materialization carries its error message and a successful retry clears it; a branch_moved failure offers no retry and refuses one. The git adapter test also moves and deletes the branch after the plan.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run against a real GitHub or Bitbucket remote; the remotes are local repositories.",
+      "No UI calls it in this change, so the error message has not been seen on a screen."
+    ]
+  }
+}
