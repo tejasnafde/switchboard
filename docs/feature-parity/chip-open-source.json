@@ -42,8 +42,7 @@
         "src/shared/provider-events.ts",
         "src/main/provider/pill-metadata.ts",
         "tests/unit/pill-metadata.test.ts",
-        "tests/unit/user-turn-submission-contract.test.ts",
-        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/ThreadEventDecoderTest.kt"
+        "tests/unit/user-turn-submission-contract.test.ts"
       ]
     },
     "storageDataMigration": {
