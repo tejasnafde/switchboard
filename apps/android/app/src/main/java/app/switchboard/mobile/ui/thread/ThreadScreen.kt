@@ -197,6 +197,7 @@ fun ThreadScreen(
     pendingActions: ThreadPendingActions = ThreadPendingActions(),
     onImagesSelected: (List<ComposerImageSource>) -> Unit = {},
     onRemoveImage: (String) -> Unit = {},
+    onRemoveReviewPill: () -> Unit = {},
     queuedTurns: List<QueuedTurn> = emptyList(),
     onOutboxAction: (String, OutboxUiAction) -> Unit = { _, _ -> },
     forkMetadata: ForkLineageMetadata? = null,
@@ -342,6 +343,7 @@ fun ThreadScreen(
                 skills = skills,
                 onImagesSelected = onImagesSelected,
                 onRemoveImage = onRemoveImage,
+                onRemoveReviewPill = onRemoveReviewPill,
             )
         },
     ) { scaffoldPadding ->
@@ -645,6 +647,7 @@ private fun ThreadBottomArea(
     skills: List<ProviderSkill>,
     onImagesSelected: (List<ComposerImageSource>) -> Unit,
     onRemoveImage: (String) -> Unit,
+    onRemoveReviewPill: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         contentStatus?.takeIf { it.shouldRenderInline() }?.let {
@@ -676,6 +679,7 @@ private fun ThreadBottomArea(
                 skills = skills,
                 onImagesSelected = onImagesSelected,
                 onRemoveImage = onRemoveImage,
+                onRemoveReviewPill = onRemoveReviewPill,
             )
         }
     }
@@ -697,6 +701,7 @@ private fun ThreadComposer(
     skills: List<ProviderSkill>,
     onImagesSelected: (List<ComposerImageSource>) -> Unit,
     onRemoveImage: (String) -> Unit,
+    onRemoveReviewPill: () -> Unit,
 ) {
     val context = LocalContext.current
     val voice = rememberVoiceComposer(
@@ -780,6 +785,9 @@ private fun ThreadComposer(
         }
         if (slashQuery != null && slashCommands.isNotEmpty()) {
             ThreadSlashMenu(slashCommands, ::runSlash)
+        }
+        state.reviewPillLabel?.let { label ->
+            ComposerReviewPill(label = label, enabled = !state.submitting, onRemove = onRemoveReviewPill)
         }
         if (state.attachments.isNotEmpty()) {
             Row(
@@ -1260,6 +1268,41 @@ private fun ThreadSlashMenu(
 private fun ThreadSlashSource.menuLabel(): String = when (this) {
     ThreadSlashSource.Switchboard -> "SWITCHBOARD"
     is ThreadSlashSource.Agent -> value.uppercase()
+}
+
+/** The review pill the next send carries: "Review" and its label, with a remove button. */
+@Composable
+private fun ComposerReviewPill(label: String, enabled: Boolean, onRemove: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(SurfaceRaised)
+            .testTag(ThreadTestTags.REVIEW_PILL)
+            .padding(start = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Review", color = Accent, style = MaterialTheme.typography.labelMedium)
+        Text(
+            text = label,
+            color = TextDim,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 8.dp),
+        )
+        IconButton(
+            onClick = onRemove,
+            enabled = enabled,
+            modifier = Modifier
+                .size(SwitchboardDimensions.minimumTouchTarget)
+                .semantics { contentDescription = "Remove review pill" },
+        ) {
+            Icon(Icons.Default.Close, contentDescription = null, tint = TextDim, modifier = Modifier.size(16.dp))
+        }
+    }
 }
 
 @Composable

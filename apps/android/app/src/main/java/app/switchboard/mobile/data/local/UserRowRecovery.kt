@@ -21,7 +21,8 @@ object UserRowTables {
     private const val OUTBOX_SIZE = "(ifnull(length(CAST(text AS BLOB)), 0) + " +
         "ifnull(length(CAST(stateReason AS BLOB)), 0) + " +
         "ifnull(length(CAST(receiptRawJson AS BLOB)), 0) + " +
-        "ifnull(length(CAST(legacyRawJson AS BLOB)), 0))"
+        "ifnull(length(CAST(legacyRawJson AS BLOB)), 0) + " +
+        "ifnull(length(CAST(reviewPillJson AS BLOB)), 0))"
     private const val THREAD_PREFERENCE_SIZE = "ifnull(length(CAST(draft AS BLOB)), 0)"
     private const val PENDING_ACTION_SIZE = "(ifnull(length(CAST(argsJson AS BLOB)), 0) + " +
         "ifnull(length(CAST(lastError AS BLOB)), 0))"
@@ -124,6 +125,7 @@ class UserRowRecovery(
                 receiptRawJson = row.stringOrNull("receiptRawJson"),
                 legacyRawJson = row.stringOrNull("legacyRawJson"),
                 delivery = row.stringOrNull("delivery"),
+                reviewPillJson = row.stringOrNull("reviewPillJson"),
             )
         }
 

@@ -73,6 +73,7 @@ import { mergeHistoryItems, historyToItems } from '../lib/thread-history'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { PrLinksBanner } from '../components/PrLinksBanner'
+import { ReviewPillChip } from '../components/ReviewPillChip'
 import { unlinkPrLink } from '../lib/pr-link-unlink'
 import type { PrLink } from '@shared/pull-request-links'
 import { VoiceNoteBar } from '../components/MicButton'
@@ -119,6 +120,7 @@ const AnimatedKeyboardAvoidingView = Animated.createAnimatedComponent(KeyboardAv
 export default function ThreadScreen({ route, navigation }: Props) {
   const { connectionId, threadId, projectPath, worktreePath, isNew } = route.params
   const key = threadKey(connectionId, threadId)
+  const reviewPill = usePrefsStore((s) => s.threads[key]?.reviewPill)
   const thread = useChatStore((s) => s.threads[key]) ?? emptyThread()
   const backendLabel = useConnectionsStore((s) => s.configs.find((c) => c.id === connectionId)?.label) ?? 'backend'
 
@@ -706,8 +708,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
       return
     }
     const text = (textOverride ?? draft).trim()
-    // An image with no caption is a legitimate turn.
-    if (!text && attachments.length === 0) return
+    // Only the user's own send carries the review pill, never a one-tap override.
+    const pill = textOverride ? undefined : reviewPill
+    // An image with no caption is a legitimate turn, and so is a pill alone.
+    if (!text && attachments.length === 0 && !pill) return
     const images = textOverride ? [] : attachments.map((a) => ({ url: a.url, mimeType: a.mimeType }))
     // An override (Compact) is its own turn; it must not complete a pending edit.
     const editingId = textOverride ? undefined : useOutboxStore.getState().editingId
@@ -717,6 +721,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       setVoiceNote(null)
       setAttachments([])
       usePrefsStore.getState().rememberDraft(key, '')
+      if (pill) usePrefsStore.getState().setReviewPill(key, undefined)
     }
 
     // Every send goes through the outbox, including one made while connected.
@@ -736,6 +741,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       runtimeMode: thread.pickedMode,
       titleCandidate,
       whenIdle: toggle.queues && !textOverride,
+      ...(pill ? { reviewPill: pill } : {}),
     })
     setFlipNext(false)
     // Title from the first message, as the desktop does. `isNew` matters: an
@@ -744,7 +750,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // overwrite a title the user already has.
     useChatStore.getState().addUserMessage(
       key,
-      text,
+      // The phone draws a pill as its label, as `pillBodyText` does for the stored row.
+      pill ? `[${pill.label}] ${text}`.trim() : text,
       images.map((i) => i.url),
       turn.bubbleId,
     )
@@ -761,6 +768,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         useChatStore.getState().removeUserMessage(key, turn.bubbleId)
         setDraft((current) => (current ? current : text))
         setAttachments(attachments)
+        if (pill) usePrefsStore.getState().setReviewPill(key, pill)
         reportError(err)
       })
   }
@@ -1326,7 +1334,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
   )
 
   const isRunning = thread.status === 'running'
-  const canSend = draft.trim().length > 0 || attachments.length > 0
+  const canSend = draft.trim().length > 0 || attachments.length > 0 || reviewPill !== undefined
   // Vocabulary bias comes from the tree the agent works in, so a worktree
   // session biases on the worktree's files.
   const dictation = useDictation({
@@ -1566,6 +1574,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
         )}
         {slashQuery !== null && <SlashMenu commands={slashMatches} onPick={runSlash} />}
         <AttachmentStrip attachments={attachments} onRemove={removeAttachment} />
+        {reviewPill && (
+          <ReviewPillChip
+            label={reviewPill.label}
+            onRemove={() => usePrefsStore.getState().setReviewPill(key, undefined)}
+          />
+        )}
         {isRunning && canSteer(thread.provider ?? provider) && (
           <Pressable
             onPress={() => setFlipNext((v) => !v)}

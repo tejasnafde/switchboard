@@ -6,6 +6,8 @@
  */
 
 import { reconnectDelay } from '@shared/backoff'
+import type { UserMessagePillsMeta } from '@shared/provider-events'
+import { reviewPillTurn } from '@shared/pull-request-phone'
 
 /** A message the user has committed to sending, waiting for a live backend. */
 export interface QueuedMessage {
@@ -40,6 +42,31 @@ export interface QueuedMessage {
   titleCandidate?: string
   /** Queued by the user for after the running turn, instead of steering it. */
   whenIdle?: boolean
+  /** A review pill ("Work on PR", "Ask the agent") sent before the text (`reviewPillTurn`). */
+  reviewPill?: QueuedReviewPill
+}
+
+export interface QueuedReviewPill {
+  id: string
+  label: string
+  content: string
+}
+
+/** What a queued message puts on the wire: its text, or a review pill before it (`reviewPillTurn`). */
+export function queuedTurnBody(message: Pick<QueuedMessage, 'text' | 'reviewPill'>): {
+  providerText: string
+  displayBody: string
+  pillsMeta?: UserMessagePillsMeta
+} {
+  if (!message.reviewPill) return { providerText: message.text, displayBody: message.text }
+  return reviewPillTurn(message.text, message.reviewPill, message.reviewPill.id)
+}
+
+function parseReviewPill(value: unknown): QueuedReviewPill | undefined {
+  const pill = value as Partial<QueuedReviewPill> | null | undefined
+  return pill && typeof pill.id === 'string' && typeof pill.label === 'string' && typeof pill.content === 'string'
+    ? { id: pill.id, label: pill.label, content: pill.content }
+    : undefined
 }
 
 /** Frozen (persisted just before the first send), tried or unconfirmed: the backend may hold its fingerprint. */
@@ -86,6 +113,7 @@ export function parseQueuedMessage(value: unknown): QueuedMessage | null {
     deliveryState: message.deliveryState === 'ambiguous' ? 'ambiguous' : undefined,
     titleCandidate: typeof message.titleCandidate === 'string' ? message.titleCandidate : undefined,
     whenIdle: message.whenIdle === true ? true : undefined,
+    reviewPill: parseReviewPill(message.reviewPill),
   }
 }
 

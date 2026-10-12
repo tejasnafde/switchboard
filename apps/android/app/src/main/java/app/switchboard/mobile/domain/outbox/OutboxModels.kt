@@ -19,6 +19,17 @@ data class OutboxIdentity(
     val bubbleId: String = "remote_$origin"
 }
 
+/**
+ * A review pill sent with a turn (Reviews > Work on PR). Stored with the
+ * queued row so a retry sends the same envelope: the backend fingerprints
+ * an origin by its payload.
+ */
+data class QueuedReviewPill(
+    val id: String,
+    val label: String,
+    val content: String,
+)
+
 data class OutgoingTurnDraft(
     val connectionId: String,
     val threadId: String,
@@ -28,6 +39,7 @@ data class OutgoingTurnDraft(
     val createdAtMs: Long,
     /** `queue` holds a mid-turn message until the running turn ends; null steers or sends. */
     val delivery: String? = null,
+    val reviewPill: QueuedReviewPill? = null,
 )
 
 data class SendReceipt(
@@ -75,6 +87,7 @@ data class QueuedTurn(
     val legacyRawJson: String? = null,
     /** Frozen at send time: it is part of the backend's origin fingerprint. */
     val delivery: String? = null,
+    val reviewPill: QueuedReviewPill? = null,
 )
 
 enum class DeliveryReadiness {

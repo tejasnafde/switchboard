@@ -59,6 +59,7 @@ class OutboxCoordinator(
             nextAttemptAtMs = 0,
             deliveryState = OutboxDeliveryState.Pending,
             delivery = draft.delivery,
+            reviewPill = draft.reviewPill,
         )
         when (val persisted = store.insert(turn)) {
             is OutboxStorageResult.Failure -> {
@@ -141,6 +142,8 @@ class OutboxCoordinator(
             attachments = staged,
             runtimeMode = draft.runtimeMode,
             delivery = draft.delivery,
+            // An edit rewrites the text; the pill it was queued with stays.
+            reviewPill = draft.reviewPill ?: before.reviewPill,
             attempts = 0,
             nextAttemptAtMs = 0,
             deliveryState = OutboxDeliveryState.Pending,

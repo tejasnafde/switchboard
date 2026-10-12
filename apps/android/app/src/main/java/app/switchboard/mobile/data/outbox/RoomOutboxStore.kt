@@ -5,11 +5,13 @@ import app.switchboard.mobile.data.local.OutboxDao
 import app.switchboard.mobile.data.local.OutboxEntity
 import app.switchboard.mobile.data.local.OutboxWithAttachments
 import app.switchboard.mobile.domain.outbox.OutboxDeliveryState
+import app.switchboard.mobile.domain.outbox.QueuedReviewPill
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.outbox.SendReceipt
 import app.switchboard.mobile.domain.outbox.StagedAttachment
 import app.switchboard.mobile.protocol.JsonCodec
 import app.switchboard.mobile.protocol.JsonObject
+import app.switchboard.mobile.protocol.JsonString
 
 data class OutboxRows(
     val message: OutboxEntity,
@@ -42,6 +44,7 @@ object OutboxEntityMapper {
                 receiptRawJson = receipt?.raw?.let(JsonCodec::encode),
                 legacyRawJson = turn.legacyRawJson,
                 delivery = turn.delivery,
+                reviewPillJson = turn.reviewPill?.let(::encodeReviewPill),
             ),
             attachments = turn.attachments.mapIndexed { position, attachment ->
                 OutboxAttachmentEntity(
@@ -111,7 +114,24 @@ object OutboxEntityMapper {
             deliveryState = state,
             legacyRawJson = message.legacyRawJson,
             delivery = message.delivery,
+            reviewPill = message.reviewPillJson?.let { decodeReviewPill(message.origin, it) },
         )
+    }
+
+    private fun encodeReviewPill(pill: QueuedReviewPill): String = JsonCodec.encode(
+        JsonObject(
+            linkedMapOf(
+                "id" to JsonString(pill.id),
+                "label" to JsonString(pill.label),
+                "content" to JsonString(pill.content),
+            ),
+        ),
+    )
+
+    private fun decodeReviewPill(origin: String, source: String): QueuedReviewPill {
+        val raw = JsonCodec.parse(source) as? JsonObject ?: error("outbox $origin review pill is not a JSON object")
+        fun field(key: String) = (raw.values[key] as? JsonString)?.value ?: error("outbox $origin review pill has no $key")
+        return QueuedReviewPill(field("id"), field("label"), field("content"))
     }
 
     private fun requireNoReceiptOrReason(message: OutboxEntity) {

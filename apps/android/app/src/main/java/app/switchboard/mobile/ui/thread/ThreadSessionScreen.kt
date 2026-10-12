@@ -103,6 +103,7 @@ fun ThreadSessionScreen(
         pendingActions = session.pendingActions,
         onImagesSelected = onImagesSelected,
         onRemoveImage = onRemoveImage,
+        onRemoveReviewPill = coordinator::removeReviewPill,
         queuedTurns = queuedTurns,
         onOutboxAction = onOutboxAction,
         forkMetadata = session.forkMetadata,

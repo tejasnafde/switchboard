@@ -25,6 +25,8 @@ import { usePrefsStore, UNGROUPED_WORKSPACE_KEY } from '../stores/prefs'
 import { getClient } from '../stores/connections'
 import { useChatStore, threadKey } from '../stores/chat'
 import { UnreadPill } from '../components/UnreadPill'
+import { ConnectionTabBar } from '../components/ConnectionTabBar'
+import { useReviewsStore } from '../stores/reviews'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Projects'>
 
@@ -48,7 +50,14 @@ const ProjectUnread = memo(function ProjectUnread({
 })
 
 export default function ProjectsScreen({ route, navigation }: Props) {
-  const { connectionId } = route.params
+  const { connectionId, label } = route.params
+  const tabBar = (
+    <ConnectionTabBar
+      active="projects"
+      connectionId={connectionId}
+      onSelect={() => navigation.replace('Reviews', { connectionId, label })}
+    />
+  )
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [query, setQuery] = useState('')
@@ -88,7 +97,9 @@ export default function ProjectsScreen({ route, navigation }: Props) {
   useFocusEffect(
     useCallback(() => {
       void load()
-    }, [load]),
+      // For the tab badge; gated to one read per 5 minutes like the Reviews interval.
+      void useReviewsStore.getState().refresh(connectionId, 'interval')
+    }, [load, connectionId]),
   )
 
   const sections = useMemo(() => {
@@ -117,112 +128,126 @@ export default function ProjectsScreen({ route, navigation }: Props) {
     // The transport may still be dialing (reconnects are internal to it), so
     // frame the failure as "connecting" rather than a hard error.
     return (
-      <View style={styles.center}>
-        <Text style={styles.stateTitle}>Connecting to backend...</Text>
-        <Text style={styles.stateDetail} numberOfLines={2}>
-          {error}
-        </Text>
-        <Pressable style={styles.retryButton} onPress={() => void load()}>
-          <Text style={styles.retryLabel}>Retry</Text>
-        </Pressable>
+      <View style={styles.screen}>
+        <View style={styles.center}>
+          <Text style={styles.stateTitle}>Connecting to backend...</Text>
+          <Text style={styles.stateDetail} numberOfLines={2}>
+            {error}
+          </Text>
+          <Pressable style={styles.retryButton} onPress={() => void load()}>
+            <Text style={styles.retryLabel}>Retry</Text>
+          </Pressable>
+        </View>
+        {tabBar}
       </View>
     )
   }
 
   if (projects === null) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={styles.screen}>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.accent} />
+        </View>
+        {tabBar}
       </View>
     )
   }
 
   return (
-    <SectionList
-      sections={sections}
-      keyExtractor={(p) => p.path}
-      contentContainerStyle={sections.length === 0 ? styles.emptyContainer : styles.listContent}
-      keyboardShouldPersistTaps="handled"
-      stickySectionHeadersEnabled={false}
-      // A lone "Ungrouped" label above every project is clutter.
-      renderSectionHeader={({ section }) =>
-        sections.length > 1 ? (
-          <Pressable
-            style={({ pressed }) => [styles.sectionHeader, pressed && styles.sectionHeaderPressed]}
-            onPress={() => toggleWorkspaceCollapsed(section.key)}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: !section.collapsed }}
-            accessibilityHint={section.collapsed ? 'Expands the workspace' : 'Collapses the workspace'}
-          >
-            <Ionicons name={section.collapsed ? 'chevron-forward' : 'chevron-down'} size={14} color={colors.textDim} />
-            <Text style={styles.sectionTitle}>{section.title.toUpperCase()}</Text>
-            <Text style={styles.sectionCount}>{section.count}</Text>
-          </Pressable>
-        ) : null
-      }
-      ListHeaderComponent={
-        // Hidden until there are enough projects for finding one to be work.
-        (projects?.length ?? 0) > 6 || query !== '' ? (
-          <View style={styles.searchWrap}>
-            <TextInput
-              style={styles.searchInput}
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search projects"
-              placeholderTextColor={colors.textFaint}
-              autoCorrect={false}
-              autoCapitalize="none"
-              returnKeyType="search"
-              clearButtonMode="while-editing"
-            />
-          </View>
-        ) : null
-      }
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={colors.textDim} />
-      }
-      ListEmptyComponent={
-        <View style={styles.center}>
-          <Text style={styles.stateTitle}>{query === '' ? 'No projects' : 'No matches'}</Text>
-          <Text style={styles.stateDetail}>
-            {query === '' ? 'Add a project on the desktop app to see it here.' : `Nothing matches "${query.trim()}".`}
-          </Text>
-        </View>
-      }
-      renderItem={({ item }) => {
-        return (
-          <Pressable
-            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-            onPress={() =>
-              navigation.navigate('Conversations', {
-                connectionId,
-                projectPath: item.path,
-                projectName: item.name,
-              })
-            }
-          >
-            <View style={styles.rowBody}>
-              <View style={styles.titleLine}>
-                <Text style={styles.name} numberOfLines={1}>
-                  {item.name}
-                </Text>
-                <ProjectUnread connectionId={connectionId} sessionIds={item.sessions.map((s) => s.id)} />
-              </View>
-              <Text style={styles.meta}>
-                {item.sessions.length} {item.sessions.length === 1 ? 'session' : 'sessions'}
-              </Text>
-              <Text style={styles.path} numberOfLines={1} ellipsizeMode="middle">
-                {item.path}
-              </Text>
+    <View style={styles.screen}>
+      <SectionList
+        sections={sections}
+        keyExtractor={(p) => p.path}
+        contentContainerStyle={sections.length === 0 ? styles.emptyContainer : styles.listContent}
+        keyboardShouldPersistTaps="handled"
+        stickySectionHeadersEnabled={false}
+        // A lone "Ungrouped" label above every project is clutter.
+        renderSectionHeader={({ section }) =>
+          sections.length > 1 ? (
+            <Pressable
+              style={({ pressed }) => [styles.sectionHeader, pressed && styles.sectionHeaderPressed]}
+              onPress={() => toggleWorkspaceCollapsed(section.key)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: !section.collapsed }}
+              accessibilityHint={section.collapsed ? 'Expands the workspace' : 'Collapses the workspace'}
+            >
+              <Ionicons
+                name={section.collapsed ? 'chevron-forward' : 'chevron-down'}
+                size={14}
+                color={colors.textDim}
+              />
+              <Text style={styles.sectionTitle}>{section.title.toUpperCase()}</Text>
+              <Text style={styles.sectionCount}>{section.count}</Text>
+            </Pressable>
+          ) : null
+        }
+        ListHeaderComponent={
+          // Hidden until there are enough projects for finding one to be work.
+          (projects?.length ?? 0) > 6 || query !== '' ? (
+            <View style={styles.searchWrap}>
+              <TextInput
+                style={styles.searchInput}
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search projects"
+                placeholderTextColor={colors.textFaint}
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+              />
             </View>
-          </Pressable>
-        )
-      }}
-    />
+          ) : null
+        }
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={colors.textDim} />
+        }
+        ListEmptyComponent={
+          <View style={styles.center}>
+            <Text style={styles.stateTitle}>{query === '' ? 'No projects' : 'No matches'}</Text>
+            <Text style={styles.stateDetail}>
+              {query === '' ? 'Add a project on the desktop app to see it here.' : `Nothing matches "${query.trim()}".`}
+            </Text>
+          </View>
+        }
+        renderItem={({ item }) => {
+          return (
+            <Pressable
+              style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+              onPress={() =>
+                navigation.navigate('Conversations', {
+                  connectionId,
+                  projectPath: item.path,
+                  projectName: item.name,
+                })
+              }
+            >
+              <View style={styles.rowBody}>
+                <View style={styles.titleLine}>
+                  <Text style={styles.name} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <ProjectUnread connectionId={connectionId} sessionIds={item.sessions.map((s) => s.id)} />
+                </View>
+                <Text style={styles.meta}>
+                  {item.sessions.length} {item.sessions.length === 1 ? 'session' : 'sessions'}
+                </Text>
+                <Text style={styles.path} numberOfLines={1} ellipsizeMode="middle">
+                  {item.path}
+                </Text>
+              </View>
+            </Pressable>
+          )
+        }}
+      />
+      {tabBar}
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1 },
   searchWrap: { paddingBottom: space.sm },
   searchInput: {
     backgroundColor: colors.surfaceRaised,

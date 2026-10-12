@@ -130,7 +130,7 @@ const HEAD_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
 
 const PR_FIELDS = `
   number title url state isDraft createdAt updatedAt mergedAt mergeable
-  headRefName baseRefName headRefOid additions deletions changedFiles
+  headRefName baseRefName headRefOid isCrossRepository additions deletions changedFiles
   author { login avatarUrl ... on User { name } }
   baseRef { branchProtectionRule { requiredApprovingReviewCount } }
   reviewRequests(first: 20) { nodes { requestedReviewer { __typename ... on User { login name avatarUrl } ... on Team { slug name } } } }

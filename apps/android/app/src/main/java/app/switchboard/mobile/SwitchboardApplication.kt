@@ -125,6 +125,8 @@ class SwitchboardApplication : Application() {
         nativeRuntime.saveCollapsedWorkspaceIds(connectionId, workspaceIds)
     }
 
+    fun savePreference(key: String, value: String) = nativeRuntime.savePreference(key, value)
+
     fun refreshLiveStatuses(lease: app.switchboard.mobile.data.remote.ReadyClientLease) =
         nativeRuntime.refreshLiveStatuses(lease)
 

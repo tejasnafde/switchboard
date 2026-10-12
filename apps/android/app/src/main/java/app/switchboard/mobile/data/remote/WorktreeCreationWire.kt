@@ -8,6 +8,7 @@ import app.switchboard.mobile.domain.remote.WorktreeCreationRequest
 import app.switchboard.mobile.domain.remote.WorktreeCreationSnapshot
 import app.switchboard.mobile.domain.remote.WorktreeCleanupDisposition
 import app.switchboard.mobile.domain.remote.WorktreeCreationStatus
+import app.switchboard.mobile.domain.remote.WorktreeExistingBranch
 import app.switchboard.mobile.domain.remote.WorktreeLaunchAgent
 import app.switchboard.mobile.domain.remote.WorktreeSetupPolicy
 import app.switchboard.mobile.domain.remote.WorktreeStartupReceipt
@@ -26,13 +27,17 @@ object WorktreeCreationWire {
             "projectPath" to JsonString(request.projectPath),
             "machineId" to JsonString(request.machineId),
         ),
-        "checkout" to obj(
-            "baseRef" to JsonString(request.baseRef),
-            "branch" to obj(
-                "namespace" to JsonString("sb"),
-                "seed" to JsonString(request.branchSeed),
-            ),
-            "location" to JsonString("managed-in-repo"),
+        "checkout" to JsonObject(
+            linkedMapOf<String, JsonValue>(
+                "baseRef" to JsonString(request.baseRef),
+                "branch" to obj(
+                    "namespace" to JsonString("sb"),
+                    "seed" to JsonString(request.branchSeed),
+                ),
+                "location" to JsonString("managed-in-repo"),
+            ).apply {
+                request.existingBranch?.let { put("existingBranch", encodeExistingBranch(it)) }
+            },
         ),
         "owner" to encodeOwner(request.owner),
         "purpose" to JsonString("new-chat"),
@@ -70,6 +75,7 @@ object WorktreeCreationWire {
                 prompt = launch.string("prompt"),
             ),
             requestedAt = provenance.longRequired("requestedAt"),
+            existingBranch = checkout.objectValue("existingBranch")?.let(::decodeExistingBranch),
         )
     }
 
@@ -140,6 +146,49 @@ object WorktreeCreationWire {
             agentType = value.stringRequired("agentType"),
         )
     }
+
+    private fun encodeExistingBranch(branch: WorktreeExistingBranch): JsonObject = JsonObject(
+        linkedMapOf<String, JsonValue>("name" to JsonString(branch.name)).apply {
+            branch.fetch?.let { fetch ->
+                put(
+                    "fetch",
+                    JsonObject(
+                        linkedMapOf<String, JsonValue>().apply {
+                            fetch.remote?.let { put("remote", JsonString(it)) }
+                            fetch.repo?.let { repo ->
+                                put(
+                                    "repo",
+                                    obj(
+                                        "host" to JsonString(repo.host),
+                                        "owner" to JsonString(repo.owner),
+                                        "name" to JsonString(repo.name),
+                                    ),
+                                )
+                            }
+                            put("ref", JsonString(fetch.ref))
+                        },
+                    ),
+                )
+            }
+        },
+    )
+
+    private fun decodeExistingBranch(value: JsonObject): WorktreeExistingBranch = WorktreeExistingBranch(
+        name = value.stringRequired("name"),
+        fetch = value.objectValue("fetch")?.let { fetch ->
+            WorktreeExistingBranch.Fetch(
+                ref = fetch.stringRequired("ref"),
+                remote = fetch.string("remote"),
+                repo = fetch.objectValue("repo")?.let { repo ->
+                    WorktreeExistingBranch.Repo(
+                        host = repo.stringRequired("host"),
+                        owner = repo.stringRequired("owner"),
+                        name = repo.stringRequired("name"),
+                    )
+                },
+            )
+        },
+    )
 
     private fun encodeLaunch(launch: WorktreeLaunchAgent): JsonObject {
         val values = linkedMapOf<String, JsonValue>(

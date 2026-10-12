@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
             persistFollowUpDefault = switchboardApplication::setFollowUpDefault,
             seedPending = switchboardApplication::seedPendingRequests,
             refreshStatuses = switchboardApplication::refreshLiveStatuses,
+            persistPreference = switchboardApplication::savePreference,
         )
     }
 

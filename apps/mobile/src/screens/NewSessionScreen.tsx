@@ -20,6 +20,7 @@ import { createLogger } from '@shared/logger'
 import { modelsForAgent, type ModelOption } from '@shared/models'
 import { coversFor, reconcileSelectedModel } from '@shared/model-reconcile'
 import { isRuntimeMode } from '@shared/session-defaults'
+import { WORK_ON_PR_CAPABILITY, workOnPrCheckout } from '@shared/pull-request-phone'
 import type { RootStackParamList } from '../../App'
 import { ModePicker } from '../components/ModePicker'
 import { MicButton, VoiceNoteBar, type VoiceNote } from '../components/MicButton'
@@ -32,6 +33,7 @@ import {
 } from '../lib/new-session-creation'
 import { mobileNewSessionCreationStorage } from '../lib/new-session-creation-storage'
 import { agentTypeFor, profilesFor } from '../lib/profiles'
+import { startWorkOnPrChat } from '../lib/pr-chat'
 import { buildTurn } from '../lib/turn-submit'
 import { restoredWorktreeForm, shouldOfferWorktreeCreation } from '../lib/worktree-capability'
 import { useChatStore, threadKey } from '../stores/chat'
@@ -58,7 +60,14 @@ const SETUP_POLICIES: { value: WorktreeSetupPolicy; label: string }[] = [
 ]
 
 export default function NewSessionScreen({ route, navigation }: Props) {
-  const { connectionId, projectPath, projectName } = route.params
+  const { connectionId, projectPath, projectName, pullRequest } = route.params
+  // "Work on PR": a worktree on the PR's branch when the backend can, else the project checkout.
+  const prCheckout =
+    pullRequest && getClient(connectionId)?.supportsCapability(WORK_ON_PR_CAPABILITY) === true
+      ? workOnPrCheckout(pullRequest)
+      : null
+  // Read when the chat is ready, which the coordinator reports from a long-lived effect.
+  const workOnPr = useRef<{ text: string } | null>(null)
   const headerHeight = useHeaderHeight()
   const [provider, setProvider] = useState<ProviderKind>('claude')
   const [mode, setMode] = useState<RuntimeMode>('sandbox')
@@ -68,11 +77,14 @@ export default function NewSessionScreen({ route, navigation }: Props) {
   const [instances, setInstances] = useState<ProviderInstance[]>([])
   const [instanceId, setInstanceId] = useState<string | undefined>(undefined)
   const [model, setModel] = useState('')
-  const [checkoutKind, setCheckoutKind] = useState<CheckoutKind>('parent-checkout')
+  const [pickedCheckout, setCheckoutKind] = useState<CheckoutKind>('parent-checkout')
+  // A Work on PR chat has no choice: the PR's branch when the backend can check it out, else the project.
+  const checkoutKind: CheckoutKind = pullRequest ? (prCheckout ? 'worktree' : 'parent-checkout') : pickedCheckout
   const [baseRef, setBaseRef] = useState('HEAD')
   const [setupPolicy, setSetupPolicy] = useState<WorktreeSetupPolicy>('skip')
   const [creationState, setCreationState] = useState<MobileNewSessionCreationState>({ status: 'idle' })
   const coordinatorRef = useRef<ReturnType<typeof createNewSessionCreationCoordinator> | null>(null)
+  const pullRequestRef = useRef(pullRequest)
 
   const agentType = agentTypeFor(provider)
   const activeWorktreeCreation =
@@ -232,6 +244,19 @@ export default function NewSessionScreen({ route, navigation }: Props) {
         const readyState = coordinator.getState()
         const runtimeMode = readyState.intent?.provider.runtimeMode ?? 'sandbox'
         useChatStore.getState().setRuntimeMode(threadKey(connectionId, result.threadId), runtimeMode)
+        const pr = pullRequestRef.current
+        if (pr && workOnPr.current) {
+          const checkout = readyState.intent?.checkout
+          void startWorkOnPrChat({
+            connectionId,
+            threadId: result.threadId,
+            pr,
+            place: checkout?.kind === 'worktree' && checkout.existingBranch ? 'worktree' : 'checkout',
+            text: workOnPr.current.text,
+            runtimeMode,
+          })
+          workOnPr.current = null
+        }
         navigation.replace('Thread', {
           connectionId,
           threadId: result.threadId,
@@ -267,6 +292,8 @@ export default function NewSessionScreen({ route, navigation }: Props) {
     setError(null)
     const threadId = `mob-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
     const message = firstMessage.trim()
+    // A Work on PR chat sends its first message itself, with the review pill, once the chat exists.
+    if (pullRequest) workOnPr.current = { text: message || 'Work on this pull request.' }
     await coordinator.begin({
       connectionId,
       machineId: connectionId,
@@ -277,8 +304,9 @@ export default function NewSessionScreen({ route, navigation }: Props) {
           ? {
               kind: 'worktree',
               baseRef: baseRef.trim() || 'HEAD',
-              branchSeed: projectName,
+              branchSeed: pullRequest ? `pr-${pullRequest.ref.number}` : projectName,
               setupPolicy,
+              ...(prCheckout ? { existingBranch: prCheckout } : {}),
             }
           : { kind: 'parent-checkout' },
       conversation: { id: threadId, agentType },
@@ -288,7 +316,7 @@ export default function NewSessionScreen({ route, navigation }: Props) {
         model: model || undefined,
         runtimeMode: mode,
       },
-      ...(message ? { firstMessage: message } : {}),
+      ...(message && !pullRequest ? { firstMessage: message } : {}),
     })
   }
 
@@ -327,55 +355,69 @@ export default function NewSessionScreen({ route, navigation }: Props) {
           {projectPath}
         </Text>
 
-        <Text style={styles.sectionLabel}>Workspace</Text>
-        <View style={styles.providerList}>
-          <Pressable
-            disabled={activeWorktreeCreation}
-            onPress={() => setCheckoutKind('parent-checkout')}
-            style={[styles.providerRow, checkoutKind === 'parent-checkout' && styles.providerRowActive]}
-          >
-            <View style={styles.providerBody}>
-              <Text style={[styles.providerLabel, checkoutKind === 'parent-checkout' && styles.providerLabelActive]}>
-                Current checkout
-              </Text>
-              <Text style={styles.providerBlurb}>Start in the project folder as it is now</Text>
-            </View>
-            <View style={[styles.radio, checkoutKind === 'parent-checkout' && styles.radioActive]}>
-              {checkoutKind === 'parent-checkout' && <View style={styles.radioDot} />}
-            </View>
-          </Pressable>
-          {offerWorktreeCreation && (
+        {pullRequest && (
+          <View style={styles.prCard} testID="new-session-pr">
+            <Text style={styles.prTitle} numberOfLines={2}>{`#${pullRequest.ref.number} ${pullRequest.title}`}</Text>
+            <Text style={styles.providerBlurb}>
+              {prCheckout
+                ? `In a new worktree on ${pullRequest.sourceBranch}, linked to the pull request, with a review pill.`
+                : `In the project checkout. The agent checks out the pull request first.`}
+            </Text>
+          </View>
+        )}
+        {!pullRequest && <Text style={styles.sectionLabel}>Workspace</Text>}
+        {!pullRequest && (
+          <View style={styles.providerList}>
             <Pressable
               disabled={activeWorktreeCreation}
-              onPress={() => setCheckoutKind('worktree')}
-              style={[styles.providerRow, checkoutKind === 'worktree' && styles.providerRowActive]}
+              onPress={() => setCheckoutKind('parent-checkout')}
+              style={[styles.providerRow, checkoutKind === 'parent-checkout' && styles.providerRowActive]}
             >
               <View style={styles.providerBody}>
-                <Text style={[styles.providerLabel, checkoutKind === 'worktree' && styles.providerLabelActive]}>
-                  New worktree
+                <Text style={[styles.providerLabel, checkoutKind === 'parent-checkout' && styles.providerLabelActive]}>
+                  Current checkout
                 </Text>
-                <Text style={styles.providerBlurb}>Create an isolated checkout for this session</Text>
+                <Text style={styles.providerBlurb}>Start in the project folder as it is now</Text>
               </View>
-              <View style={[styles.radio, checkoutKind === 'worktree' && styles.radioActive]}>
-                {checkoutKind === 'worktree' && <View style={styles.radioDot} />}
+              <View style={[styles.radio, checkoutKind === 'parent-checkout' && styles.radioActive]}>
+                {checkoutKind === 'parent-checkout' && <View style={styles.radioDot} />}
               </View>
             </Pressable>
-          )}
-        </View>
+            {offerWorktreeCreation && (
+              <Pressable
+                disabled={activeWorktreeCreation}
+                onPress={() => setCheckoutKind('worktree')}
+                style={[styles.providerRow, checkoutKind === 'worktree' && styles.providerRowActive]}
+              >
+                <View style={styles.providerBody}>
+                  <Text style={[styles.providerLabel, checkoutKind === 'worktree' && styles.providerLabelActive]}>
+                    New worktree
+                  </Text>
+                  <Text style={styles.providerBlurb}>Create an isolated checkout for this session</Text>
+                </View>
+                <View style={[styles.radio, checkoutKind === 'worktree' && styles.radioActive]}>
+                  {checkoutKind === 'worktree' && <View style={styles.radioDot} />}
+                </View>
+              </Pressable>
+            )}
+          </View>
+        )}
 
         {checkoutKind === 'worktree' && (
           <>
-            <Text style={styles.sectionLabel}>Base ref</Text>
-            <TextInput
-              style={styles.singleLineInput}
-              value={baseRef}
-              onChangeText={setBaseRef}
-              editable={!activeWorktreeCreation}
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder="HEAD"
-              placeholderTextColor={colors.textFaint}
-            />
+            {!pullRequest && <Text style={styles.sectionLabel}>Base ref</Text>}
+            {!pullRequest && (
+              <TextInput
+                style={styles.singleLineInput}
+                value={baseRef}
+                onChangeText={setBaseRef}
+                editable={!activeWorktreeCreation}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="HEAD"
+                placeholderTextColor={colors.textFaint}
+              />
+            )}
             <Text style={styles.sectionLabel}>Workspace setup</Text>
             <View style={styles.chipRow}>
               {SETUP_POLICIES.map((policy) => {
@@ -481,7 +523,7 @@ export default function NewSessionScreen({ route, navigation }: Props) {
           value={firstMessage}
           onChangeText={setFirstMessage}
           editable={!activeWorktreeCreation}
-          placeholder="What should the agent do?"
+          placeholder={pullRequest ? 'Work on this pull request.' : 'What should the agent do?'}
           placeholderTextColor={colors.textFaint}
           multiline
         />
@@ -665,6 +707,18 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: radius.pill,
     backgroundColor: colors.accent,
+  },
+  prCard: {
+    gap: space.xs,
+    padding: space.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  prTitle: {
+    ...type.heading,
+    color: colors.text,
   },
   singleLineInput: {
     ...type.mono,

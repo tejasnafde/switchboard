@@ -464,6 +464,37 @@ class SwitchboardDatabaseTest {
     }
 
     @Test
+    fun migrationSevenToEightAddsANullReviewPillToEveryQueuedTurn() {
+        val name = "outbox-review-pill-migration-test"
+        migrationHelper.createDatabase(name, 7).apply {
+            execSQL(
+                "INSERT INTO connections (id, label, kind, url, project, zone, instance, port) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>("lan", "Mac", "ws", "ws://mac", "/repo", null, null, null),
+            )
+            execSQL(
+                "INSERT INTO outbox (origin, bubbleId, connectionId, threadId, text, runtimeMode, " +
+                    "createdAtMs, attempts, nextAttemptAtMs, deliveryState, stateReason, receiptLegacy, " +
+                    "receiptDuplicate, receiptRawJson, legacyRawJson, delivery) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>(
+                    "o-1", "remote_o-1", "lan", "thread", "hello", null,
+                    1L, 0, 0L, "pending", null, null, null, null, null, null,
+                ),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(name, 8, true, SwitchboardDatabase.MIGRATION_7_8).use { migrated ->
+            migrated.query("SELECT text, reviewPillJson FROM outbox WHERE origin = 'o-1'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("hello", cursor.getString(0))
+                assertTrue(cursor.isNull(1))
+            }
+        }
+    }
+
+    @Test
     fun migrationSixToSevenDropsUntriedStoredModesButKeepsTheTurnsAndDrafts() {
         val name = "runtime-mode-migration-test"
         migrationHelper.createDatabase(name, 6).apply {

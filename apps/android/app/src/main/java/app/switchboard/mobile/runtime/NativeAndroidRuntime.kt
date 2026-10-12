@@ -229,6 +229,17 @@ class NativeAndroidRuntime private constructor(
         pending: List<app.switchboard.mobile.protocol.JsonObject>,
     ) = browseActivityIndex.seedPending(transportScope, threadId, pending)
 
+    private val latestPreferences = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    fun savePreference(key: String, value: String) {
+        latestPreferences[key] = value
+        scope.launch {
+            // The latest value for the key, not this call's: two quick writes may run out of order.
+            val latest = latestPreferences[key] ?: return@launch
+            database.preferenceDao().upsertPreference(AppPreferenceEntity(key, latest))
+        }
+    }
+
     fun saveCollapsedWorkspaceIds(connectionId: String, workspaceIds: Set<String>) {
         if (connectionId.isBlank()) return
         val encoded = BrowseCollapsePreferences.encode(workspaceIds)

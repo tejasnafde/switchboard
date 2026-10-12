@@ -189,6 +189,8 @@ data class OutboxEntity(
     val receiptRawJson: String?,
     val legacyRawJson: String?,
     val delivery: String? = null,
+    /** `{ id, label, content }` of a review pill sent with the turn; null for every other row. */
+    val reviewPillJson: String? = null,
 )
 
 @Entity(

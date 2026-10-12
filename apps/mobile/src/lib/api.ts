@@ -47,8 +47,8 @@ import type { SshIapTarget } from '@shared/machines'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { MergeBackActionResult, MergeBackPreview, MergeBackToken } from '@shared/merge-back'
-import type { PrLink, PrLinkResult } from '@shared/pull-request-links'
-import type { PrRef } from '@shared/pull-requests'
+import type { PrLink, PrLinkChat, PrLinkResult } from '@shared/pull-request-links'
+import type { PrDetail, PrListData, PrRef, PrResult, RepoRef } from '@shared/pull-requests'
 import type { ForkConversationOutcome, ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type {
   GetWorktreeCreationRequest,
@@ -421,6 +421,32 @@ export class SwitchboardClient {
 
   unlinkPullRequest(threadId: string, ref: PrRef): Promise<PrLinkResult> {
     return this.transport.invoke(PullRequestChannels.UNLINK, threadId, ref)
+  }
+
+  /** Reviews reads; open to a phone. The writes (`PullRequestWriteChannels`) are admin-scoped and never called here. */
+  listPullRequests(): Promise<PrResult<PrListData>> {
+    return this.transport.invoke(PullRequestChannels.LIST)
+  }
+
+  pullRequestDetail(ref: PrRef): Promise<PrResult<PrDetail>> {
+    return this.transport.invoke(PullRequestChannels.DETAIL, ref)
+  }
+
+  pullRequestChats(ref: PrRef): Promise<PrLinkChat[]> {
+    return this.transport.invoke(PullRequestChannels.LINKED_CHATS, ref)
+  }
+
+  linkablePullRequestChats(ref: PrRef): Promise<PrLinkChat[]> {
+    return this.transport.invoke(PullRequestChannels.LINKABLE_CHATS, ref)
+  }
+
+  /** Links as `manual`, like the desktop's Reviews. */
+  linkPullRequest(threadId: string, ref: PrRef): Promise<PrLinkResult> {
+    return this.transport.invoke(PullRequestChannels.LINK, threadId, ref)
+  }
+
+  unhidePullRequestRepos(repos: RepoRef[]): Promise<{ ok: boolean }> {
+    return this.transport.invoke(PullRequestChannels.UNHIDE_REPOS, repos)
   }
 
   /** Any chat's links changed; the payload names the root chat, so re-read rather than match ids. */

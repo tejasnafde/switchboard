@@ -26,7 +26,7 @@ import androidx.room.migration.Migration
         MigrationCheckpointEntity::class,
         QuarantinedRecordEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class SwitchboardDatabase : RoomDatabase() {
@@ -182,8 +182,22 @@ abstract class SwitchboardDatabase : RoomDatabase() {
                 db.execSQL("UPDATE `thread_preferences` SET `mode` = NULL")
             }
         }
+        /** A queued turn's review pill (Reviews > Work on PR); null for every older row. */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `outbox` ADD COLUMN `reviewPillJson` TEXT")
+            }
+        }
         private val EXPLICIT_MIGRATIONS: Array<Migration> =
-            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+            arrayOf(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+                MIGRATION_6_7,
+                MIGRATION_7_8,
+            )
 
         fun open(context: Context): SwitchboardDatabase = builder(context).build()
 

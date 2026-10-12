@@ -8,6 +8,8 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { RuntimeMode } from '@shared/provider-events'
 import type { TurnDelivery } from '@shared/turn-delivery'
+import { DEFAULT_PHONE_PR_FILTERS, type PhonePrFilters } from '@shared/pull-request-phone'
+import type { QueuedReviewPill } from '../lib/outbox-model'
 
 /** Bounded: the map is persisted, so it cannot grow per thread ever opened. */
 export const MAX_REMEMBERED_THREADS = 200
@@ -17,6 +19,8 @@ export interface ThreadPref {
   model?: string
   /** Unsent composer text, so leaving a chat does not discard it. */
   draft?: string
+  /** A review pill waiting for the next send ("Work on PR", "Ask the agent"). */
+  reviewPill?: QueuedReviewPill
   /** Last write, used to decide what to drop when over the cap. */
   at: number
 }
@@ -48,7 +52,7 @@ export function withDraft(
   const current = threads[key]
   if ((current?.draft ?? '') === draft) return null
   // An emptied draft should not keep the entry alive on its own.
-  if (draft === '' && current?.mode === undefined && current?.model === undefined) {
+  if (draft === '' && current?.mode === undefined && current?.model === undefined && !current?.reviewPill) {
     if (current === undefined) return null
     const next = { ...threads }
     delete next[key]
@@ -82,6 +86,14 @@ interface PrefsState {
   rememberDraft: (key: string, draft: string) => void
   forget: (key: string) => void
   toggleWorkspaceCollapsed: (key: string) => void
+  setReviewPill: (key: string, pill: QueuedReviewPill | undefined) => void
+  /** Reviews filters, per connection. */
+  prFilters: Record<string, PhonePrFilters>
+  setPrFilters: (connectionId: string, filters: PhonePrFilters) => void
+}
+
+export function prFiltersFor(all: Record<string, PhonePrFilters>, connectionId: string): PhonePrFilters {
+  return { ...DEFAULT_PHONE_PR_FILTERS, ...all[connectionId] }
 }
 
 export const usePrefsStore = create<PrefsState>()(
@@ -91,6 +103,14 @@ export const usePrefsStore = create<PrefsState>()(
       defaultMode: 'sandbox',
       collapsedWorkspaces: [],
       followUpDefault: 'steer',
+      prFilters: {},
+
+      setPrFilters: (connectionId, filters) => set((s) => ({ prFilters: { ...s.prFilters, [connectionId]: filters } })),
+
+      setReviewPill: (key, reviewPill) =>
+        set((s) => ({
+          threads: pruneThreadPrefs({ ...s.threads, [key]: { ...s.threads[key], reviewPill, at: Date.now() } }),
+        })),
 
       setFollowUpDefault: (value) => set({ followUpDefault: value }),
 

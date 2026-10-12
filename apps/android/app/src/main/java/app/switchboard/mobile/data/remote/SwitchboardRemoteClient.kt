@@ -33,6 +33,14 @@ import app.switchboard.mobile.domain.remote.WorktreeCreationRecoveryAction
 import app.switchboard.mobile.domain.remote.WorktreeCreationRequest
 import app.switchboard.mobile.domain.remote.WorktreeCreationSnapshot
 import app.switchboard.mobile.domain.push.PushBackendResult
+import app.switchboard.mobile.domain.reviews.PrActionResult
+import app.switchboard.mobile.domain.reviews.PrDetail
+import app.switchboard.mobile.domain.reviews.PrLinkChat
+import app.switchboard.mobile.domain.reviews.PrListData
+import app.switchboard.mobile.domain.reviews.PrRef
+import app.switchboard.mobile.domain.reviews.PrResult
+import app.switchboard.mobile.domain.reviews.PullRequestDecoders
+import app.switchboard.mobile.domain.reviews.RepoRef
 import app.switchboard.mobile.domain.thread.HostWriteResponse
 import app.switchboard.mobile.domain.thread.MergeBackActionResult
 import app.switchboard.mobile.domain.thread.MergeBackPreview
@@ -106,6 +114,13 @@ object BackendChannels {
     /** The pull requests linked to a chat; open to a phone's scopes (`device-auth.ts`), no capability gate. */
     const val PullRequestLinks = "pull-requests:links"
     const val PullRequestUnlink = "pull-requests:unlink"
+    /** The phone's read-only Reviews tab; open to a phone's scopes. No write channel is ever called. */
+    const val PullRequestList = "pull-requests:list"
+    const val PullRequestDetail = "pull-requests:detail"
+    const val PullRequestLinkedChats = "pull-requests:linked-chats"
+    const val PullRequestLinkableChats = "pull-requests:linkable-chats"
+    const val PullRequestLink = "pull-requests:link"
+    const val PullRequestUnhideRepos = "pull-requests:unhide-repos"
     /** Payload `{ conversationId, created? }`; re-read the open thread's links rather than matching ids. */
     const val PullRequestLinksChanged = "pull-requests:links-changed"
     /** Merge-back (src/shared/merge-back.ts); gated behind `fork_merge_back_v1`. */
@@ -421,6 +436,10 @@ class SwitchboardRemoteClient(
         images: List<ImageInput>?,
         delivery: String?,
         callback: (RemoteResponse<CommandBody>) -> Unit,
+        /** The stored body with `[[pill:id]]` chips, when it differs from [providerText]. */
+        displayBody: String? = null,
+        /** pill id to label, kind `review` (the only pill a phone sends). */
+        reviewPillsMeta: Map<String, String>? = null,
     ) = command(
         BackendChannels.SubmitUserTurn,
         array(
@@ -449,6 +468,19 @@ class SwitchboardRemoteClient(
                         )
                     }
                     delivery?.let { put("delivery", JsonString(it)) }
+                    displayBody?.let { put("displayBody", JsonString(it)) }
+                    reviewPillsMeta?.let { meta ->
+                        put(
+                            "pillsMeta",
+                            JsonObject(
+                                LinkedHashMap<String, JsonValue>().apply {
+                                    meta.forEach { (id, label) ->
+                                        put(id, obj("label" to JsonString(label), "kind" to JsonString("review")))
+                                    }
+                                },
+                            ),
+                        )
+                    }
                 },
             ),
         ),
@@ -599,6 +631,48 @@ class SwitchboardRemoteClient(
         ),
         RemoteDecoders::prLinkUnlinkResult,
         callback,
+    )
+
+    fun listPullRequests(callback: (RemoteResponse<PrResult<PrListData>>) -> Unit) =
+        call(BackendChannels.PullRequestList, decoder = PullRequestDecoders::listResult, callback = callback)
+
+    fun pullRequestDetail(ref: PrRef, callback: (RemoteResponse<PrResult<PrDetail>>) -> Unit) =
+        call(BackendChannels.PullRequestDetail, array(encodePrRef(ref)), PullRequestDecoders::detailResult, callback)
+
+    fun pullRequestLinkedChats(ref: PrRef, callback: (RemoteResponse<List<PrLinkChat>>) -> Unit) =
+        call(BackendChannels.PullRequestLinkedChats, array(encodePrRef(ref)), PullRequestDecoders::linkChats, callback)
+
+    fun pullRequestLinkableChats(ref: PrRef, callback: (RemoteResponse<List<PrLinkChat>>) -> Unit) =
+        call(BackendChannels.PullRequestLinkableChats, array(encodePrRef(ref)), PullRequestDecoders::linkChats, callback)
+
+    /** Records a manual link from [threadId]'s chat to [ref]. */
+    fun linkPullRequest(threadId: String, ref: PrRef, callback: (RemoteResponse<PrActionResult>) -> Unit) =
+        call(
+            BackendChannels.PullRequestLink,
+            array(JsonString(threadId), encodePrRef(ref)),
+            PullRequestDecoders::actionResult,
+            callback,
+        )
+
+    fun unhidePullRequestRepos(repos: List<RepoRef>, callback: (RemoteResponse<PrActionResult>) -> Unit) =
+        call(
+            BackendChannels.PullRequestUnhideRepos,
+            array(
+                JsonArray(
+                    repos.map {
+                        obj("host" to JsonString(it.host), "owner" to JsonString(it.owner), "name" to JsonString(it.name))
+                    },
+                ),
+            ),
+            PullRequestDecoders::actionResult,
+            callback,
+        )
+
+    private fun encodePrRef(ref: PrRef): JsonObject = obj(
+        "host" to JsonString(ref.host),
+        "owner" to JsonString(ref.owner),
+        "name" to JsonString(ref.name),
+        "number" to JsonNumber(ref.number.toString()),
     )
 
     /** Any chat's links changed; the payload names the root chat, so re-read rather than match ids. */

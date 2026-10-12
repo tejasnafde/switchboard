@@ -5,6 +5,7 @@ import type {
   WorktreeCreationProgressEvent,
   WorktreeCreationRequest,
   WorktreeCreationSnapshot,
+  WorktreeExistingBranchIntent,
   WorktreeSetupPolicy,
 } from '@shared/worktree-creation'
 import type { MobileNewSessionCreationStorage, PersistedMobileNewSessionCreation } from './new-session-creation-storage'
@@ -28,6 +29,8 @@ export interface MobileNewSessionIntent {
         baseRef: string
         branchSeed: string
         setupPolicy: WorktreeSetupPolicy
+        /** Check out this branch (a PR head) instead of a fresh one; needs `worktree_existing_branch_v1`. */
+        existingBranch?: WorktreeExistingBranchIntent
       }
   conversation: {
     id: string
@@ -171,6 +174,10 @@ const DEFINITE_WORKTREE_MESSAGE_PATTERNS = [
   /requires? (?:the )?.*scope/i,
   /choose skip setup/i,
   /already (?:bound|linked|has a conversation)/i,
+  // Existing-branch refusals at plan time: nothing was reserved.
+  /is already checked out in /i,
+  /^Branch .+ does not exist in /i,
+  /has no remote (?:named|for) /i,
   /owner .* precondition/i,
   /\b(?:invalid|unsafe|unsupported)\b/i,
   /\bis required\b/i,
@@ -374,6 +381,7 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
           baseRef: intent.checkout.baseRef,
           branch: { namespace: 'sb', seed: intent.checkout.branchSeed },
           location: 'managed-in-repo',
+          ...(intent.checkout.existingBranch ? { existingBranch: intent.checkout.existingBranch } : {}),
         },
         owner: {
           kind: 'conversation',

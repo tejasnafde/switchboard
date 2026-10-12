@@ -5,7 +5,7 @@
  * Every send site builds here so that agreement holds in one place.
  */
 import { echoMessageId } from '@shared/provider-events'
-import type { QueuedMessage } from './outbox-model'
+import type { QueuedMessage, QueuedReviewPill } from './outbox-model'
 
 /** Random suffix, not the clock alone: two taps can land in one millisecond. */
 export function ownTurn(): string {
@@ -21,6 +21,7 @@ export interface BuildTurnInput {
   runtimeMode?: string
   titleCandidate?: string
   whenIdle?: boolean
+  reviewPill?: QueuedReviewPill
 }
 
 export interface BuiltTurn {
@@ -44,6 +45,7 @@ export function buildTurn(input: BuildTurnInput): BuiltTurn {
       ...(input.runtimeMode ? { runtimeMode: input.runtimeMode, modePicked: true as const } : {}),
       titleCandidate: input.titleCandidate,
       ...(input.whenIdle ? { whenIdle: true } : {}),
+      ...(input.reviewPill ? { reviewPill: input.reviewPill } : {}),
       createdAt: Date.now(),
       attempts: 0,
     },

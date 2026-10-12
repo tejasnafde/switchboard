@@ -29,6 +29,8 @@ import app.switchboard.mobile.platform.protocol.ProtocolHubEvent
 import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.ui.browse.BrowseThreadActivity
+import app.switchboard.mobile.domain.reviews.PhonePrFilters
+import app.switchboard.mobile.domain.reviews.PhonePullRequests
 import java.io.Closeable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,7 +60,19 @@ class AndroidRootNavigationRuntime(
     private val persistFollowUpDefault: (TurnDelivery) -> Unit = {},
     private val seedPending: (TransportScope, String, List<JsonObject>) -> Unit = { _, _, _ -> },
     private val refreshStatuses: (ReadyClientLease) -> Unit = {},
+    private val persistPreference: (String, String) -> Unit = { _, _ -> },
 ) : RootNavigationRuntime {
+    /** Saved this session; the offline snapshot is read once at startup and can lag. */
+    private val savedReviewFilters = java.util.concurrent.ConcurrentHashMap<String, PhonePrFilters>()
+
+    override fun reviewFilters(connectionId: String, snapshot: OfflineSnapshot): PhonePrFilters =
+        savedReviewFilters[connectionId] ?: super.reviewFilters(connectionId, snapshot)
+
+    override fun saveReviewFilters(connectionId: String, filters: PhonePrFilters) {
+        savedReviewFilters[connectionId] = filters
+        persistPreference(PhonePullRequests.filtersKey(connectionId), PhonePullRequests.encodeFilters(filters))
+    }
+
     override fun refreshLiveStatuses(lease: ReadyClientLease) = refreshStatuses(lease)
 
     override fun seedPendingRequests(scope: TransportScope, threadId: String, pending: List<JsonObject>) =

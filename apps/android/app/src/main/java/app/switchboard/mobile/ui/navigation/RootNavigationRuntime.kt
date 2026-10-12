@@ -10,6 +10,9 @@ import app.switchboard.mobile.data.thread.ThreadSessionRemote
 import app.switchboard.mobile.data.thread.ThreadSnapshotStore
 import app.switchboard.mobile.data.thread.ThreadState
 import app.switchboard.mobile.data.thread.NoOpThreadSnapshotStore
+import app.switchboard.mobile.data.thread.PendingReviewPills
+import app.switchboard.mobile.domain.reviews.PhonePrFilters
+import app.switchboard.mobile.domain.reviews.PhonePullRequests
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
 import app.switchboard.mobile.domain.connection.ConnectionStatus
 import app.switchboard.mobile.domain.outbox.EnqueueResult
@@ -40,6 +43,9 @@ private val DefaultFollowUp = MutableStateFlow(app.switchboard.mobile.domain.thr
 private val EmptyComposerDrafts = MutableStateFlow<Map<ComposerDraftKey, ComposerDraft>>(emptyMap())
 private val EmptyComposerErrors = MutableStateFlow<Map<ComposerDraftKey, String>>(emptyMap())
 private val EmptyQueuedTurns = MutableStateFlow<List<QueuedTurn>>(emptyList())
+
+/** Process-wide, so a pill left by Reviews survives the Activity being recreated. */
+private val ProcessReviewPills = PendingReviewPills()
 
 interface RootNavigationRuntime {
     val statuses: StateFlow<Map<String, ConnectionRuntimeState>>
@@ -118,6 +124,18 @@ interface RootNavigationRuntime {
         BrowseCollapsePreferences.initial(snapshot, connectionId)
 
     fun saveCollapsedWorkspaceIds(connectionId: String, workspaceIds: Set<String>) = Unit
+
+    /** Review pills waiting in a chat's composer (Reviews > Work on PR). */
+    val reviewPills: PendingReviewPills
+        get() = ProcessReviewPills
+
+    /** The Reviews filter sheet, saved per connection. */
+    fun reviewFilters(connectionId: String, snapshot: OfflineSnapshot): PhonePrFilters =
+        PhonePullRequests.decodeFilters(
+            snapshot.preferences.firstOrNull { it.key == PhonePullRequests.filtersKey(connectionId) }?.value,
+        )
+
+    fun saveReviewFilters(connectionId: String, filters: PhonePrFilters) = Unit
 
     fun browseSnapshotStore(snapshot: OfflineSnapshot): BrowseSnapshotStore = EmptyBrowseSnapshotStore
 

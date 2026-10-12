@@ -47,6 +47,8 @@ the app never gets a token. The owner's setup notes are in the Firebase section
 of `~/Desktop/projects/CLAUDE.local.md`. A new registry is created when a closed window is reopened, so
 the notifier must be re-attached there.
 
+**Reviews tab** (`ConnectionTabBar` under `ProjectsScreen` and `ReviewsScreen`, switched with `navigation.replace`, no tab library): the list lives in `stores/reviews.ts` per connection, filters in `prefs.prFilters`, a pending review pill in `prefs.threads[key].reviewPill` until the next send (`QueuedMessage.reviewPill`, `queuedTurnBody`). `PullRequestScreen` + `WorkOnPrSheet` are read-only; a "Work on PR" chat goes through `NewSessionScreen` with `pullRequest` (no first-message launch prompt: `lib/pr-chat.ts` links the PR and sends the first turn with the pill once the chat exists). JS only, so it ships on the OTA lane. Rules: `src/main/pull-requests/AGENTS.md`.
+
 **Testing: two runners, one rule.** Pure logic goes in the root vitest suite
 (`tests/unit/**`, `@shared` alias resolves). Anything importing react-native
 CANNOT load there, so components get jest instead: `npm test --prefix apps/mobile`,

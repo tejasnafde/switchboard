@@ -1,0 +1,1504 @@
+{
+  "now": 1791806400000,
+  "prs": {
+    "failed": {
+      "ref": {
+        "host": "github",
+        "owner": "geoiq",
+        "name": "switchboard",
+        "number": 1482
+      },
+      "title": "Retry uploads when the signed URL expires",
+      "url": "https://github.com/geoiq/switchboard/pull/1482",
+      "author": {
+        "login": "tejas",
+        "displayName": "tejas",
+        "avatarUrl": null
+      },
+      "authorId": "tejas",
+      "state": "open",
+      "draft": false,
+      "sourceBranch": "fix/upload-retry",
+      "targetBranch": "main",
+      "createdAt": 1791770400000,
+      "updatedAt": 1791805680000,
+      "mergedAt": null,
+      "additions": 184,
+      "deletions": 37,
+      "changedFiles": 6,
+      "unresolvedConversations": 3,
+      "mergeConflicts": false,
+      "conflictedFiles": [],
+      "checks": {
+        "state": "failure",
+        "total": 14,
+        "passed": 11,
+        "failed": 2,
+        "pending": 1
+      },
+      "reviewers": [
+        {
+          "id": "a",
+          "person": {
+            "login": "a",
+            "displayName": "a",
+            "avatarUrl": null
+          },
+          "state": "changes_requested",
+          "requested": true
+        },
+        {
+          "id": "b",
+          "person": {
+            "login": "b",
+            "displayName": "b",
+            "avatarUrl": null
+          },
+          "state": "approved",
+          "requested": true
+        }
+      ],
+      "approvals": {
+        "given": 1,
+        "required": null
+      },
+      "viewer": {
+        "isAuthor": true,
+        "isRequestedReviewer": false,
+        "hasReviewed": false,
+        "hasCommented": false
+      },
+      "projectPaths": [
+        "/p/switchboard"
+      ]
+    },
+    "askedBb": {
+      "ref": {
+        "host": "bitbucket",
+        "owner": "geoiq",
+        "name": "bb-sync",
+        "number": 605
+      },
+      "title": "Bitbucket: read conflicts",
+      "url": "https://github.com/geoiq/switchboard/pull/605",
+      "author": {
+        "login": "pankaj",
+        "displayName": "pankaj",
+        "avatarUrl": null
+      },
+      "authorId": "tejas",
+      "state": "open",
+      "draft": false,
+      "sourceBranch": "feat/605",
+      "targetBranch": "main",
+      "createdAt": 1791770400000,
+      "updatedAt": 1791802800000,
+      "mergedAt": null,
+      "additions": 184,
+      "deletions": 37,
+      "changedFiles": 6,
+      "unresolvedConversations": 0,
+      "mergeConflicts": false,
+      "conflictedFiles": [],
+      "checks": {
+        "state": "success",
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "pending": 0
+      },
+      "reviewers": [],
+      "approvals": {
+        "given": 0,
+        "required": null
+      },
+      "viewer": {
+        "isAuthor": false,
+        "isRequestedReviewer": true,
+        "hasReviewed": false,
+        "hasCommented": false
+      },
+      "projectPaths": [
+        "/p/switchboard"
+      ]
+    },
+    "ready": {
+      "ref": {
+        "host": "github",
+        "owner": "geoiq",
+        "name": "switchboard",
+        "number": 1477
+      },
+      "title": "PR 1477",
+      "url": "https://github.com/geoiq/switchboard/pull/1477",
+      "author": {
+        "login": "tejas",
+        "displayName": "tejas",
+        "avatarUrl": null
+      },
+      "authorId": "tejas",
+      "state": "open",
+      "draft": false,
+      "sourceBranch": "feat/1477",
+      "targetBranch": "main",
+      "createdAt": 1791770400000,
+      "updatedAt": 1791802800000,
+      "mergedAt": null,
+      "additions": 184,
+      "deletions": 37,
+      "changedFiles": 6,
+      "unresolvedConversations": 0,
+      "mergeConflicts": false,
+      "conflictedFiles": [],
+      "checks": {
+        "state": "success",
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "pending": 0
+      },
+      "reviewers": [],
+      "approvals": {
+        "given": 2,
+        "required": 2
+      },
+      "viewer": {
+        "isAuthor": true,
+        "isRequestedReviewer": false,
+        "hasReviewed": false,
+        "hasCommented": false
+      },
+      "projectPaths": [
+        "/p/switchboard"
+      ]
+    },
+    "running": {
+      "ref": {
+        "host": "github",
+        "owner": "geoiq",
+        "name": "switchboard",
+        "number": 1490
+      },
+      "title": "PR 1490",
+      "url": "https://github.com/geoiq/switchboard/pull/1490",
+      "author": {
+        "login": "tejas",
+        "displayName": "tejas",
+        "avatarUrl": null
+      },
+      "authorId": "tejas",
+      "state": "open",
+      "draft": false,
+      "sourceBranch": "feat/1490",
+      "targetBranch": "main",
+      "createdAt": 1791770400000,
+      "updatedAt": 1791806100000,
+      "mergedAt": null,
+      "additions": 184,
+      "deletions": 37,
+      "changedFiles": 6,
+      "unresolvedConversations": 0,
+      "mergeConflicts": false,
+      "conflictedFiles": [],
+      "checks": {
+        "state": "pending",
+        "total": 2,
+        "passed": 1,
+        "failed": 0,
+        "pending": 1
+      },
+      "reviewers": [],
+      "approvals": {
+        "given": 0,
+        "required": null
+      },
+      "viewer": {
+        "isAuthor": true,
+        "isRequestedReviewer": false,
+        "hasReviewed": false,
+        "hasCommented": false
+      },
+      "projectPaths": [
+        "/p/switchboard"
+      ]
+    },
+    "draft": {
+      "ref": {
+        "host": "github",
+        "owner": "geoiq",
+        "name": "switchboard",
+        "number": 1491
+      },
+      "title": "PR 1491",
+      "url": "https://github.com/geoiq/switchboard/pull/1491",
+      "author": {
+        "login": "tejas",
+        "displayName": "tejas",
+        "avatarUrl": null
+      },
+      "authorId": "tejas",
+      "state": "open",
+      "draft": true,
+      "sourceBranch": "feat/1491",
+      "targetBranch": "main",
+      "createdAt": 1791770400000,
+      "updatedAt": 1791802800000,
+      "mergedAt": null,
+      "additions": 184,
+      "deletions": 37,
+      "changedFiles": 6,
+      "unresolvedConversations": 0,
+      "mergeConflicts": false,
+      "conflictedFiles": [],
+      "checks": {
+        "state": "none",
+        "total": 0,
+        "passed": 0,
+        "failed": 0,
+        "pending": 0
+      },
+      "reviewers": [],
+      "approvals": {
+        "given": 0,
+        "required": null
+      },
+      "viewer": {
+        "isAuthor": true,
+        "isRequestedReviewer": false,
+        "hasReviewed": false,
+        "hasCommented": false
+      },
+      "projectPaths": [
+        "/p/switchboard"
+      ]
+    },
+    "commented": {
+      "ref": {
+        "host": "github",
+        "owner": "geoiq",
+        "name": "saathi-bot",
+        "number": 212
+      },
+      "title": "PR 212",
+      "url": "https://github.com/geoiq/switchboard/pull/212",
+      "author": {
+        "login": "pankaj",
+        "displayName": "pankaj",
+        "avatarUrl": null
+      },
+      "authorId": "tejas",
+      "state": "open",
+      "draft": false,
+      "sourceBranch": "feat/212",
+      "targetBranch": "main",
+      "createdAt": 1791770400000,
+      "updatedAt": 1791633600000,
+      "mergedAt": null,
+      "additions": 184,
+      "deletions": 37,
+      "changedFiles": 6,
+      "unresolvedConversations": 0,
+      "mergeConflicts": false,
+      "conflictedFiles": [],
+      "checks": {
+        "state": "success",
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "pending": 0
+      },
+      "reviewers": [],
+      "approvals": {
+        "given": 0,
+        "required": null
+      },
+      "viewer": {
+        "isAuthor": false,
+        "isRequestedReviewer": false,
+        "hasReviewed": false,
+        "hasCommented": true
+      },
+      "projectPaths": [
+        "/p/switchboard"
+      ]
+    },
+    "conflictsBb": {
+      "ref": {
+        "host": "bitbucket",
+        "owner": "geoiq",
+        "name": "bb-sync",
+        "number": 598
+      },
+      "title": "PR 598",
+      "url": "https://github.com/geoiq/switchboard/pull/598",
+      "author": {
+        "login": "pankaj",
+        "displayName": "pankaj",
+        "avatarUrl": null
+      },
+      "authorId": "tejas",
+      "state": "open",
+      "draft": false,
+      "sourceBranch": "feat/598",
+      "targetBranch": "main",
+      "createdAt": 1791770400000,
+      "updatedAt": 1791802800000,
+      "mergedAt": null,
+      "additions": 184,
+      "deletions": 37,
+      "changedFiles": 6,
+      "unresolvedConversations": 0,
+      "mergeConflicts": true,
+      "conflictedFiles": [
+        "src/a.ts",
+        "src/b.ts"
+      ],
+      "checks": {
+        "state": "success",
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "pending": 0
+      },
+      "reviewers": [],
+      "approvals": {
+        "given": 0,
+        "required": null
+      },
+      "viewer": {
+        "isAuthor": false,
+        "isRequestedReviewer": false,
+        "hasReviewed": false,
+        "hasCommented": true
+      },
+      "projectPaths": [
+        "/p/switchboard"
+      ],
+      "headFromFork": true
+    },
+    "fork": {
+      "ref": {
+        "host": "github",
+        "owner": "geoiq",
+        "name": "switchboard",
+        "number": 1500
+      },
+      "title": "PR 1500",
+      "url": "https://github.com/geoiq/switchboard/pull/1500",
+      "author": {
+        "login": "tejas",
+        "displayName": "tejas",
+        "avatarUrl": null
+      },
+      "authorId": "tejas",
+      "state": "open",
+      "draft": false,
+      "sourceBranch": "feat/1500",
+      "targetBranch": "main",
+      "createdAt": 1791770400000,
+      "updatedAt": 1791802800000,
+      "mergedAt": null,
+      "additions": 184,
+      "deletions": 37,
+      "changedFiles": 6,
+      "unresolvedConversations": null,
+      "mergeConflicts": null,
+      "conflictedFiles": [],
+      "checks": {
+        "state": "success",
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "pending": 0
+      },
+      "reviewers": [],
+      "approvals": {
+        "given": 0,
+        "required": null
+      },
+      "viewer": {
+        "isAuthor": true,
+        "isRequestedReviewer": false,
+        "hasReviewed": false,
+        "hasCommented": false
+      },
+      "projectPaths": [
+        "/p/switchboard"
+      ],
+      "headFromFork": true
+    },
+    "merged": {
+      "ref": {
+        "host": "github",
+        "owner": "geoiq",
+        "name": "switchboard",
+        "number": 1400
+      },
+      "title": "PR 1400",
+      "url": "https://github.com/geoiq/switchboard/pull/1400",
+      "author": {
+        "login": "tejas",
+        "displayName": "tejas",
+        "avatarUrl": null
+      },
+      "authorId": "tejas",
+      "state": "merged",
+      "draft": false,
+      "sourceBranch": "feat/1400",
+      "targetBranch": "main",
+      "createdAt": 1791770400000,
+      "updatedAt": 1791802800000,
+      "mergedAt": 1791720000000,
+      "additions": 184,
+      "deletions": 37,
+      "changedFiles": 6,
+      "unresolvedConversations": 0,
+      "mergeConflicts": false,
+      "conflictedFiles": [],
+      "checks": {
+        "state": "success",
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "pending": 0
+      },
+      "reviewers": [],
+      "approvals": {
+        "given": 0,
+        "required": null
+      },
+      "viewer": {
+        "isAuthor": true,
+        "isRequestedReviewer": false,
+        "hasReviewed": false,
+        "hasCommented": false
+      },
+      "projectPaths": [
+        "/p/switchboard"
+      ]
+    },
+    "closed": {
+      "ref": {
+        "host": "github",
+        "owner": "geoiq",
+        "name": "switchboard",
+        "number": 1300
+      },
+      "title": "PR 1300",
+      "url": "https://github.com/geoiq/switchboard/pull/1300",
+      "author": {
+        "login": "tejas",
+        "displayName": "tejas",
+        "avatarUrl": null
+      },
+      "authorId": "tejas",
+      "state": "closed",
+      "draft": false,
+      "sourceBranch": "feat/1300",
+      "targetBranch": "main",
+      "createdAt": 1791770400000,
+      "updatedAt": 1791802800000,
+      "mergedAt": null,
+      "additions": 184,
+      "deletions": 37,
+      "changedFiles": 6,
+      "unresolvedConversations": 0,
+      "mergeConflicts": false,
+      "conflictedFiles": [],
+      "checks": {
+        "state": "success",
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "pending": 0
+      },
+      "reviewers": [],
+      "approvals": {
+        "given": 0,
+        "required": null
+      },
+      "viewer": {
+        "isAuthor": true,
+        "isRequestedReviewer": false,
+        "hasReviewed": false,
+        "hasCommented": false
+      },
+      "projectPaths": [
+        "/p/switchboard"
+      ]
+    }
+  },
+  "hidden": [
+    "github:geoiq/switchboard#1490"
+  ],
+  "rowStatus": [
+    {
+      "pr": "failed",
+      "expected": {
+        "group": "needs-you",
+        "icon": "failed",
+        "phrase": "build failed"
+      }
+    },
+    {
+      "pr": "askedBb",
+      "expected": {
+        "group": "needs-you",
+        "icon": "review",
+        "phrase": "your review"
+      }
+    },
+    {
+      "pr": "ready",
+      "expected": {
+        "group": "ready",
+        "icon": "ready",
+        "phrase": ""
+      }
+    },
+    {
+      "pr": "running",
+      "expected": {
+        "group": "yours",
+        "icon": "running",
+        "phrase": "checks running"
+      }
+    },
+    {
+      "pr": "draft",
+      "expected": {
+        "group": "yours",
+        "icon": "draft",
+        "phrase": "draft"
+      }
+    },
+    {
+      "pr": "commented",
+      "expected": {
+        "group": "reviewing",
+        "icon": "waiting",
+        "phrase": "you commented"
+      }
+    },
+    {
+      "pr": "conflictsBb",
+      "expected": {
+        "group": "reviewing",
+        "icon": "conflict",
+        "phrase": "merge conflicts"
+      }
+    },
+    {
+      "pr": "fork",
+      "expected": {
+        "group": "yours",
+        "icon": "waiting",
+        "phrase": "waiting for review"
+      }
+    },
+    {
+      "pr": "merged",
+      "expected": {
+        "group": "merged",
+        "icon": "merged",
+        "phrase": ""
+      }
+    },
+    {
+      "pr": "closed",
+      "expected": null
+    }
+  ],
+  "filters": [
+    {
+      "id": "defaults",
+      "filters": {
+        "show": "all",
+        "groupBy": "status",
+        "checks": "any",
+        "excludedRepos": [],
+        "showDrafts": true,
+        "showHidden": false
+      },
+      "query": "",
+      "active": false,
+      "expected": [
+        "github:geoiq/switchboard#1482",
+        "bitbucket:geoiq/bb-sync#605",
+        "github:geoiq/switchboard#1477",
+        "github:geoiq/switchboard#1491",
+        "github:geoiq/saathi-bot#212",
+        "bitbucket:geoiq/bb-sync#598",
+        "github:geoiq/switchboard#1500",
+        "github:geoiq/switchboard#1400"
+      ]
+    },
+    {
+      "id": "needs-you",
+      "filters": {
+        "show": "needs-you",
+        "groupBy": "status",
+        "checks": "any",
+        "excludedRepos": [],
+        "showDrafts": true,
+        "showHidden": false
+      },
+      "query": "",
+      "active": false,
+      "expected": [
+        "github:geoiq/switchboard#1482",
+        "bitbucket:geoiq/bb-sync#605"
+      ]
+    },
+    {
+      "id": "mine",
+      "filters": {
+        "show": "mine",
+        "groupBy": "status",
+        "checks": "any",
+        "excludedRepos": [],
+        "showDrafts": true,
+        "showHidden": false
+      },
+      "query": "",
+      "active": false,
+      "expected": [
+        "github:geoiq/switchboard#1482",
+        "github:geoiq/switchboard#1477",
+        "github:geoiq/switchboard#1491",
+        "github:geoiq/switchboard#1500",
+        "github:geoiq/switchboard#1400"
+      ]
+    },
+    {
+      "id": "reviewing",
+      "filters": {
+        "show": "reviewing",
+        "groupBy": "status",
+        "checks": "any",
+        "excludedRepos": [],
+        "showDrafts": true,
+        "showHidden": false
+      },
+      "query": "",
+      "active": false,
+      "expected": [
+        "bitbucket:geoiq/bb-sync#605",
+        "github:geoiq/saathi-bot#212",
+        "bitbucket:geoiq/bb-sync#598"
+      ]
+    },
+    {
+      "id": "failing",
+      "filters": {
+        "show": "all",
+        "groupBy": "status",
+        "checks": "failing",
+        "excludedRepos": [],
+        "showDrafts": true,
+        "showHidden": false
+      },
+      "query": "",
+      "active": true,
+      "expected": [
+        "github:geoiq/switchboard#1482"
+      ]
+    },
+    {
+      "id": "running-with-hidden",
+      "filters": {
+        "show": "all",
+        "groupBy": "status",
+        "checks": "running",
+        "excludedRepos": [],
+        "showDrafts": true,
+        "showHidden": true
+      },
+      "query": "",
+      "active": true,
+      "expected": [
+        "github:geoiq/switchboard#1490"
+      ]
+    },
+    {
+      "id": "passing",
+      "filters": {
+        "show": "all",
+        "groupBy": "status",
+        "checks": "passing",
+        "excludedRepos": [],
+        "showDrafts": true,
+        "showHidden": false
+      },
+      "query": "",
+      "active": true,
+      "expected": [
+        "bitbucket:geoiq/bb-sync#605",
+        "github:geoiq/switchboard#1477",
+        "github:geoiq/saathi-bot#212",
+        "bitbucket:geoiq/bb-sync#598",
+        "github:geoiq/switchboard#1500",
+        "github:geoiq/switchboard#1400"
+      ]
+    },
+    {
+      "id": "no-drafts",
+      "filters": {
+        "show": "all",
+        "groupBy": "status",
+        "checks": "any",
+        "excludedRepos": [],
+        "showDrafts": false,
+        "showHidden": false
+      },
+      "query": "",
+      "active": true,
+      "expected": [
+        "github:geoiq/switchboard#1482",
+        "bitbucket:geoiq/bb-sync#605",
+        "github:geoiq/switchboard#1477",
+        "github:geoiq/saathi-bot#212",
+        "bitbucket:geoiq/bb-sync#598",
+        "github:geoiq/switchboard#1500",
+        "github:geoiq/switchboard#1400"
+      ]
+    },
+    {
+      "id": "without-bb-sync",
+      "filters": {
+        "show": "all",
+        "groupBy": "status",
+        "checks": "any",
+        "excludedRepos": [
+          "bitbucket:geoiq/bb-sync"
+        ],
+        "showDrafts": true,
+        "showHidden": false
+      },
+      "query": "",
+      "active": true,
+      "expected": [
+        "github:geoiq/switchboard#1482",
+        "github:geoiq/switchboard#1477",
+        "github:geoiq/switchboard#1491",
+        "github:geoiq/saathi-bot#212",
+        "github:geoiq/switchboard#1500",
+        "github:geoiq/switchboard#1400"
+      ]
+    },
+    {
+      "id": "query",
+      "filters": {
+        "show": "all",
+        "groupBy": "status",
+        "checks": "any",
+        "excludedRepos": [],
+        "showDrafts": true,
+        "showHidden": false
+      },
+      "query": "#1482",
+      "active": false,
+      "expected": [
+        "github:geoiq/switchboard#1482"
+      ]
+    }
+  ],
+  "needsYou": 2,
+  "sections": [
+    {
+      "groupBy": "status",
+      "expected": [
+        {
+          "key": "needs-you",
+          "title": "Needs you",
+          "rows": [
+            "github:geoiq/switchboard#1482",
+            "bitbucket:geoiq/bb-sync#605"
+          ]
+        },
+        {
+          "key": "ready",
+          "title": "Ready to merge",
+          "rows": [
+            "github:geoiq/switchboard#1477"
+          ]
+        },
+        {
+          "key": "yours",
+          "title": "Your pull requests",
+          "rows": [
+            "github:geoiq/switchboard#1490",
+            "github:geoiq/switchboard#1491",
+            "github:geoiq/switchboard#1500"
+          ]
+        },
+        {
+          "key": "reviewing",
+          "title": "Reviewing",
+          "rows": [
+            "bitbucket:geoiq/bb-sync#598",
+            "github:geoiq/saathi-bot#212"
+          ]
+        },
+        {
+          "key": "merged",
+          "title": "Merged this week",
+          "rows": [
+            "github:geoiq/switchboard#1400"
+          ]
+        }
+      ]
+    },
+    {
+      "groupBy": "repository",
+      "expected": [
+        {
+          "key": "github:geoiq/switchboard",
+          "title": "geoiq/switchboard",
+          "rows": [
+            "github:geoiq/switchboard#1482",
+            "github:geoiq/switchboard#1477",
+            "github:geoiq/switchboard#1490",
+            "github:geoiq/switchboard#1491",
+            "github:geoiq/switchboard#1500",
+            "github:geoiq/switchboard#1400"
+          ]
+        },
+        {
+          "key": "bitbucket:geoiq/bb-sync",
+          "title": "geoiq/bb-sync",
+          "rows": [
+            "bitbucket:geoiq/bb-sync#605",
+            "bitbucket:geoiq/bb-sync#598"
+          ]
+        },
+        {
+          "key": "github:geoiq/saathi-bot",
+          "title": "geoiq/saathi-bot",
+          "rows": [
+            "github:geoiq/saathi-bot#212"
+          ]
+        }
+      ]
+    }
+  ],
+  "statusCard": [
+    {
+      "pr": "failed",
+      "checks": {
+        "text": "2 of 14 failed",
+        "tone": "failure"
+      },
+      "reviews": {
+        "text": "Changes requested · 1 approval",
+        "tone": "pending"
+      },
+      "conversations": {
+        "text": "3 open",
+        "tone": "pending"
+      },
+      "conflicts": {
+        "text": "None with main",
+        "tone": "success"
+      },
+      "diffStat": "+184 -37 in 6 files",
+      "age": "12m"
+    },
+    {
+      "pr": "askedBb",
+      "checks": {
+        "text": "Passed",
+        "tone": "success"
+      },
+      "reviews": {
+        "text": "No reviews",
+        "tone": "dim"
+      },
+      "conversations": {
+        "text": "None open",
+        "tone": "success"
+      },
+      "conflicts": {
+        "text": "None with main",
+        "tone": "success"
+      },
+      "diffStat": "+184 -37 in 6 files",
+      "age": "1h"
+    },
+    {
+      "pr": "ready",
+      "checks": {
+        "text": "Passed",
+        "tone": "success"
+      },
+      "reviews": {
+        "text": "2 of 2 approvals",
+        "tone": "success"
+      },
+      "conversations": {
+        "text": "None open",
+        "tone": "success"
+      },
+      "conflicts": {
+        "text": "None with main",
+        "tone": "success"
+      },
+      "diffStat": "+184 -37 in 6 files",
+      "age": "1h"
+    },
+    {
+      "pr": "running",
+      "checks": {
+        "text": "1 of 2 running",
+        "tone": "pending"
+      },
+      "reviews": {
+        "text": "No reviews",
+        "tone": "dim"
+      },
+      "conversations": {
+        "text": "None open",
+        "tone": "success"
+      },
+      "conflicts": {
+        "text": "None with main",
+        "tone": "success"
+      },
+      "diffStat": "+184 -37 in 6 files",
+      "age": "5m"
+    },
+    {
+      "pr": "draft",
+      "checks": {
+        "text": "None reported",
+        "tone": "dim"
+      },
+      "reviews": {
+        "text": "No reviews",
+        "tone": "dim"
+      },
+      "conversations": {
+        "text": "None open",
+        "tone": "success"
+      },
+      "conflicts": {
+        "text": "None with main",
+        "tone": "success"
+      },
+      "diffStat": "+184 -37 in 6 files",
+      "age": "1h"
+    },
+    {
+      "pr": "commented",
+      "checks": {
+        "text": "Passed",
+        "tone": "success"
+      },
+      "reviews": {
+        "text": "No reviews",
+        "tone": "dim"
+      },
+      "conversations": {
+        "text": "None open",
+        "tone": "success"
+      },
+      "conflicts": {
+        "text": "None with main",
+        "tone": "success"
+      },
+      "diffStat": "+184 -37 in 6 files",
+      "age": "2d"
+    },
+    {
+      "pr": "conflictsBb",
+      "checks": {
+        "text": "Passed",
+        "tone": "success"
+      },
+      "reviews": {
+        "text": "No reviews",
+        "tone": "dim"
+      },
+      "conversations": {
+        "text": "None open",
+        "tone": "success"
+      },
+      "conflicts": {
+        "text": "2 files",
+        "tone": "failure"
+      },
+      "diffStat": "+184 -37 in 6 files",
+      "age": "1h"
+    },
+    {
+      "pr": "fork",
+      "checks": {
+        "text": "Passed",
+        "tone": "success"
+      },
+      "reviews": {
+        "text": "No reviews",
+        "tone": "dim"
+      },
+      "conversations": {
+        "text": "Not reported",
+        "tone": "dim"
+      },
+      "conflicts": {
+        "text": "Not checked yet",
+        "tone": "dim"
+      },
+      "diffStat": "+184 -37 in 6 files",
+      "age": "1h"
+    },
+    {
+      "pr": "merged",
+      "checks": {
+        "text": "Passed",
+        "tone": "success"
+      },
+      "reviews": {
+        "text": "No reviews",
+        "tone": "dim"
+      },
+      "conversations": {
+        "text": "None open",
+        "tone": "success"
+      },
+      "conflicts": {
+        "text": "None with main",
+        "tone": "success"
+      },
+      "diffStat": "+184 -37 in 6 files",
+      "age": "1h"
+    },
+    {
+      "pr": "closed",
+      "checks": {
+        "text": "Passed",
+        "tone": "success"
+      },
+      "reviews": {
+        "text": "No reviews",
+        "tone": "dim"
+      },
+      "conversations": {
+        "text": "None open",
+        "tone": "success"
+      },
+      "conflicts": {
+        "text": "None with main",
+        "tone": "success"
+      },
+      "diffStat": "+184 -37 in 6 files",
+      "age": "1h"
+    }
+  ],
+  "checks": {
+    "input": [
+      {
+        "id": "lint",
+        "name": "lint",
+        "state": "success",
+        "description": null,
+        "url": null,
+        "durationMs": 48000,
+        "rerunId": null
+      },
+      {
+        "id": "unit (macos-14)",
+        "name": "unit (macos-14)",
+        "state": "failure",
+        "description": null,
+        "url": null,
+        "durationMs": 252000,
+        "rerunId": null
+      },
+      {
+        "id": "android / assemble",
+        "name": "android / assemble",
+        "state": "pending",
+        "description": null,
+        "url": null,
+        "durationMs": null,
+        "rerunId": null
+      },
+      {
+        "id": "typecheck",
+        "name": "typecheck",
+        "state": "success",
+        "description": null,
+        "url": null,
+        "durationMs": 65000,
+        "rerunId": null
+      },
+      {
+        "id": "e2e / reviews",
+        "name": "e2e / reviews",
+        "state": "failure",
+        "description": null,
+        "url": null,
+        "durationMs": 580000,
+        "rerunId": null
+      },
+      {
+        "id": "docs",
+        "name": "docs",
+        "state": "skipped",
+        "description": null,
+        "url": null,
+        "durationMs": null,
+        "rerunId": null
+      }
+    ],
+    "ordered": [
+      "unit (macos-14)",
+      "e2e / reviews",
+      "android / assemble",
+      "lint",
+      "typecheck",
+      "docs"
+    ],
+    "trailing": {
+      "lint": "48s",
+      "unit (macos-14)": "failed · 4m 12s",
+      "android / assemble": "running",
+      "typecheck": "1m 05s",
+      "e2e / reviews": "failed · 9m 40s",
+      "docs": "skipped"
+    },
+    "morePassed": "+ 2 more passed",
+    "moreMixed": "+ 6 more"
+  },
+  "durations": [
+    [
+      0,
+      "0s"
+    ],
+    [
+      48000,
+      "48s"
+    ],
+    [
+      65000,
+      "1m 05s"
+    ],
+    [
+      252000,
+      "4m 12s"
+    ],
+    [
+      3725000,
+      "1h 02m"
+    ]
+  ],
+  "ages": [
+    [
+      0,
+      "now"
+    ],
+    [
+      30000,
+      "now"
+    ],
+    [
+      720000,
+      "12m"
+    ],
+    [
+      10800000,
+      "3h"
+    ],
+    [
+      176400000,
+      "2d"
+    ]
+  ],
+  "workOnPr": [
+    {
+      "pr": "failed",
+      "checkout": {
+        "name": "fix/upload-retry",
+        "fetch": {
+          "repo": {
+            "host": "github",
+            "owner": "geoiq",
+            "name": "switchboard"
+          },
+          "ref": "fix/upload-retry"
+        }
+      },
+      "command": "gh pr checkout 1482"
+    },
+    {
+      "pr": "askedBb",
+      "checkout": {
+        "name": "feat/605",
+        "fetch": {
+          "repo": {
+            "host": "bitbucket",
+            "owner": "geoiq",
+            "name": "bb-sync"
+          },
+          "ref": "feat/605"
+        }
+      },
+      "command": "bbpr 605"
+    },
+    {
+      "pr": "ready",
+      "checkout": {
+        "name": "feat/1477",
+        "fetch": {
+          "repo": {
+            "host": "github",
+            "owner": "geoiq",
+            "name": "switchboard"
+          },
+          "ref": "feat/1477"
+        }
+      },
+      "command": "gh pr checkout 1477"
+    },
+    {
+      "pr": "running",
+      "checkout": {
+        "name": "feat/1490",
+        "fetch": {
+          "repo": {
+            "host": "github",
+            "owner": "geoiq",
+            "name": "switchboard"
+          },
+          "ref": "feat/1490"
+        }
+      },
+      "command": "gh pr checkout 1490"
+    },
+    {
+      "pr": "draft",
+      "checkout": {
+        "name": "feat/1491",
+        "fetch": {
+          "repo": {
+            "host": "github",
+            "owner": "geoiq",
+            "name": "switchboard"
+          },
+          "ref": "feat/1491"
+        }
+      },
+      "command": "gh pr checkout 1491"
+    },
+    {
+      "pr": "commented",
+      "checkout": {
+        "name": "feat/212",
+        "fetch": {
+          "repo": {
+            "host": "github",
+            "owner": "geoiq",
+            "name": "saathi-bot"
+          },
+          "ref": "feat/212"
+        }
+      },
+      "command": "gh pr checkout 212"
+    },
+    {
+      "pr": "conflictsBb",
+      "checkout": null,
+      "command": "bbpr 598"
+    },
+    {
+      "pr": "fork",
+      "checkout": {
+        "name": "pr-1500",
+        "fetch": {
+          "repo": {
+            "host": "github",
+            "owner": "geoiq",
+            "name": "switchboard"
+          },
+          "ref": "refs/pull/1500/head"
+        }
+      },
+      "command": "gh pr checkout 1500"
+    },
+    {
+      "pr": "merged",
+      "checkout": {
+        "name": "feat/1400",
+        "fetch": {
+          "repo": {
+            "host": "github",
+            "owner": "geoiq",
+            "name": "switchboard"
+          },
+          "ref": "feat/1400"
+        }
+      },
+      "command": "gh pr checkout 1400"
+    },
+    {
+      "pr": "closed",
+      "checkout": {
+        "name": "feat/1300",
+        "fetch": {
+          "repo": {
+            "host": "github",
+            "owner": "geoiq",
+            "name": "switchboard"
+          },
+          "ref": "feat/1300"
+        }
+      },
+      "command": "gh pr checkout 1300"
+    }
+  ],
+  "hostErrors": [
+    {
+      "id": "github-signed-out",
+      "sources": [
+        {
+          "repo": {
+            "host": "github",
+            "owner": "geoiq",
+            "name": "switchboard"
+          },
+          "projectPaths": [],
+          "error": {
+            "kind": "token_rejected",
+            "host": "github",
+            "message": "The desktop's gh is signed out."
+          }
+        },
+        {
+          "repo": {
+            "host": "github",
+            "owner": "geoiq",
+            "name": "saathi-bot"
+          },
+          "projectPaths": [],
+          "error": {
+            "kind": "token_rejected",
+            "host": "github",
+            "message": "The desktop's gh is signed out."
+          }
+        },
+        {
+          "repo": {
+            "host": "bitbucket",
+            "owner": "geoiq",
+            "name": "bb-sync"
+          },
+          "projectPaths": [],
+          "error": null
+        }
+      ],
+      "expected": [
+        {
+          "host": "github",
+          "title": "Couldn't read GitHub",
+          "message": "The desktop's gh is signed out."
+        }
+      ]
+    },
+    {
+      "id": "one-repo-not-found",
+      "sources": [
+        {
+          "repo": {
+            "host": "github",
+            "owner": "geoiq",
+            "name": "switchboard"
+          },
+          "projectPaths": [],
+          "error": null
+        },
+        {
+          "repo": {
+            "host": "github",
+            "owner": "geoiq",
+            "name": "gone"
+          },
+          "projectPaths": [],
+          "error": {
+            "kind": "not_found",
+            "host": "github",
+            "message": "Not found"
+          }
+        }
+      ],
+      "expected": []
+    }
+  ],
+  "pillTurns": [
+    {
+      "text": "  fix the failures ",
+      "pill": {
+        "label": "L",
+        "content": "C"
+      },
+      "pillId": "review-1",
+      "expected": {
+        "displayBody": "[[pill:review-1]] fix the failures",
+        "providerText": "C\n\nfix the failures",
+        "pillsMeta": {
+          "review-1": {
+            "label": "L",
+            "kind": "review"
+          }
+        }
+      }
+    },
+    {
+      "text": "",
+      "pill": {
+        "label": "L",
+        "content": "C"
+      },
+      "pillId": "review-2",
+      "expected": {
+        "displayBody": "[[pill:review-2]]",
+        "providerText": "C",
+        "pillsMeta": {
+          "review-2": {
+            "label": "L",
+            "kind": "review"
+          }
+        }
+      }
+    }
+  ],
+  "subtitles": [
+    [
+      8,
+      [],
+      [
+        "github",
+        "bitbucket"
+      ],
+      "8 open"
+    ],
+    [
+      0,
+      [],
+      [
+        "github"
+      ],
+      "nothing open"
+    ],
+    [
+      2,
+      [
+        "github"
+      ],
+      [
+        "github",
+        "bitbucket"
+      ],
+      "showing Bitbucket only"
+    ]
+  ]
+}

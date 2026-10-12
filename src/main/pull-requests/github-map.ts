@@ -67,6 +67,7 @@ export interface GhPullRequest {
   mergedAt: string | null
   headRefName: string
   baseRefName: string
+  isCrossRepository?: boolean
   headRefOid?: string | null
   additions?: number | null
   deletions?: number | null
@@ -244,6 +245,7 @@ export function mapGhSummary(repo: RepoRef, pr: GhPullRequest, viewerLogin: stri
     draft: pr.isDraft,
     sourceBranch: pr.headRefName,
     targetBranch: pr.baseRefName,
+    headFromFork: pr.isCrossRepository === true,
     createdAt: parseTime(pr.createdAt) ?? 0,
     updatedAt: parseTime(pr.updatedAt) ?? 0,
     mergedAt: parseTime(pr.mergedAt),

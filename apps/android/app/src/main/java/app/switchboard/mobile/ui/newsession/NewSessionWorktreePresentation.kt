@@ -33,6 +33,16 @@ object NewSessionWorktreePresentationPolicy {
         setupPolicy = WorktreeSetupPolicy.Skip,
     )
 
+    /** Reviews > Work on PR: where the chat starts, before and after a fallback to the project. */
+    fun workOnPrWhere(state: NewSessionState): String {
+        val pr = state.workOnPr ?: return ""
+        return if (state.workspace is NewSessionWorkspace.Worktree) {
+            "In a worktree of ${state.projectName} on ${pr.branchName ?: pr.sourceBranch}."
+        } else {
+            "In ${state.projectName} on its current branch. The agent checks out the PR first."
+        }
+    }
+
     fun workspaceLabel(workspace: NewSessionWorkspace): String = when (workspace) {
         NewSessionWorkspace.ParentCheckout -> "Parent checkout"
         is NewSessionWorkspace.Worktree -> "New worktree"

@@ -58,7 +58,31 @@ data class WorktreeCreationRequest(
     val setupPolicy: WorktreeSetupPolicy,
     val launchAgent: WorktreeLaunchAgent,
     val requestedAt: Long,
+    /** Check out this branch instead of creating one; needs `worktree_existing_branch_v1`. */
+    val existingBranch: WorktreeExistingBranch? = null,
 )
+
+/**
+ * `WorktreeExistingBranchIntent` in src/shared/worktree-creation.ts: a local
+ * branch to check out, created from [fetch] when it does not exist yet.
+ */
+data class WorktreeExistingBranch(
+    val name: String,
+    val fetch: Fetch? = null,
+) {
+    /** Exactly one of [remote] and [repo]: the backend finds the remote pointing at [repo]. */
+    data class Fetch(
+        val ref: String,
+        val repo: Repo? = null,
+        val remote: String? = null,
+    )
+
+    data class Repo(
+        val host: String,
+        val owner: String,
+        val name: String,
+    )
+}
 
 data class WorktreeStartupReceipt(
     val status: Status,

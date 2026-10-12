@@ -16,6 +16,7 @@ import {
   markRejected,
   nextDeliverablePerThread,
   parseQueuedMessage,
+  queuedTurnBody,
   removeAcceptedOrigin,
   recoverRejectedDraft,
   selectRejectedForEdit,
@@ -306,5 +307,31 @@ describe('deterministic rejection recovery', () => {
     expect(selectRejectedForEdit(messages, blocked.messageId)).toEqual(blocked)
     expect(messages).toEqual([blocked])
     expect(messages[0].images).toEqual([image])
+  })
+})
+
+describe('review pill on a queued message', () => {
+  it('survives a restart, and a malformed one is dropped', () => {
+    const message: QueuedMessage = {
+      connectionId: 'c',
+      threadId: 't',
+      messageId: 'm1',
+      text: 'fix it',
+      createdAt: 1,
+      attempts: 0,
+      reviewPill: { id: 'review-1', label: '2 failed checks · #1482', content: 'Review context' },
+    }
+    expect(parseQueuedMessage(JSON.parse(JSON.stringify(message)))).toEqual(message)
+    expect(parseQueuedMessage({ ...message, reviewPill: { id: 'x' } })?.reviewPill).toBeUndefined()
+  })
+
+  it('goes on the wire as a chip before the text, its content in the provider text', () => {
+    const pill = { id: 'review-1', label: 'L', content: 'Review context' }
+    expect(queuedTurnBody({ text: 'fix it', reviewPill: pill })).toEqual({
+      providerText: 'Review context\n\nfix it',
+      displayBody: '[[pill:review-1]] fix it',
+      pillsMeta: { 'review-1': { label: 'L', kind: 'review' } },
+    })
+    expect(queuedTurnBody({ text: 'plain' })).toEqual({ providerText: 'plain', displayBody: 'plain' })
   })
 })
