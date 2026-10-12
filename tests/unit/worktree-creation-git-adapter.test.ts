@@ -403,3 +403,161 @@ describe('ExecFileGitWorktreeAdapter', () => {
     ).toBe(true)
   })
 })
+
+describe('ExecFileGitWorktreeAdapter existing branch', () => {
+  async function commitOn(repositoryPath: string, branch: string, content: string): Promise<string> {
+    await git(repositoryPath, 'switch', '-q', branch)
+    await writeFile(join(repositoryPath, 'README.md'), content, 'utf8')
+    await git(repositoryPath, 'commit', '-qam', content.trim())
+    const commit = await git(repositoryPath, 'rev-parse', 'HEAD')
+    await git(repositoryPath, 'switch', '-q', 'main')
+    return commit
+  }
+
+  /** An "origin" repository with a PR branch and a fork PR head, cloned as the project. */
+  async function createClone(): Promise<{ origin: string; clone: string; prHead: string; forkHead: string }> {
+    const fixture = await createRepository()
+    const origin = fixture.repositoryPath
+    await git(origin, 'branch', 'fix/upload-retry')
+    const prHead = await commitOn(origin, 'fix/upload-retry', 'pr work\n')
+    await git(origin, 'branch', 'fork-work')
+    const forkHead = await commitOn(origin, 'fork-work', 'fork work\n')
+    await git(origin, 'update-ref', 'refs/pull/7/head', forkHead)
+    await git(origin, 'branch', '-D', 'fork-work')
+    const clone = join(fixture.root, 'clone')
+    await git(fixture.root, 'clone', '-q', origin, clone)
+    return { origin, clone, prHead, forkHead }
+  }
+
+  it('checks out a local branch without touching the main checkout, and rollback keeps the branch', async () => {
+    const fixture = await createRepository()
+    await git(fixture.repositoryPath, 'branch', 'feature')
+    const featureHead = await commitOn(fixture.repositoryPath, 'feature', 'feature work\n')
+    const adapter = new ExecFileGitWorktreeAdapter()
+    const repository = await adapter.resolveRepository(fixture.repositoryPath)
+
+    const plan = await adapter.planMaterialization({
+      ...materializationInput(repository),
+      existingBranch: { name: 'feature' },
+    })
+    expect(plan).toMatchObject({
+      branch: 'feature',
+      resolvedBaseCommit: featureHead,
+      existingBranch: { preexisting: true },
+    })
+    expect(await adapter.materialize(plan)).toMatchObject({
+      kind: 'completed',
+      branch: 'feature',
+      headCommit: featureHead,
+    })
+    expect(await git(plan.worktreePath, 'branch', '--show-current')).toBe('feature')
+    expect(await git(fixture.repositoryPath, 'branch', '--show-current')).toBe('main')
+    expect(await git(fixture.repositoryPath, 'rev-parse', 'HEAD')).toBe(fixture.initialCommit)
+
+    expect(await adapter.rollbackMaterialization(plan)).toEqual({ kind: 'removed' })
+    expect(await pathExists(plan.worktreePath)).toBe(false)
+    expect(await git(fixture.repositoryPath, 'rev-parse', 'refs/heads/feature')).toBe(featureHead)
+    expect(await adapter.inspectMaterialization(plan)).toEqual({ kind: 'absent' })
+  })
+
+  it('refuses a branch already checked out in another worktree with a clear message', async () => {
+    const fixture = await createRepository()
+    const adapter = new ExecFileGitWorktreeAdapter()
+    const repository = await adapter.resolveRepository(fixture.repositoryPath)
+
+    await expect(
+      adapter.planMaterialization({ ...materializationInput(repository), existingBranch: { name: 'main' } }),
+    ).rejects.toThrow(`Branch main is already checked out in ${repository.projectPath}.`)
+
+    await git(fixture.repositoryPath, 'branch', 'feature')
+    const plan = await adapter.planMaterialization({
+      ...materializationInput(repository),
+      existingBranch: { name: 'feature' },
+    })
+    await git(
+      fixture.root,
+      '-C',
+      fixture.repositoryPath,
+      'worktree',
+      'add',
+      '-q',
+      join(fixture.root, 'elsewhere'),
+      'feature',
+    )
+    expect(await adapter.materialize(plan)).toMatchObject({ kind: 'conflict', reason: 'branch_checked_out' })
+  })
+
+  it('fetches a PR branch from the remote into a new local branch that tracks it', async () => {
+    const { clone, prHead } = await createClone()
+    const adapter = new ExecFileGitWorktreeAdapter()
+    const repository = await adapter.resolveRepository(clone)
+
+    const plan = await adapter.planMaterialization({
+      ...materializationInput(repository),
+      existingBranch: { name: 'fix/upload-retry', fetch: { remote: 'origin', ref: 'fix/upload-retry' } },
+    })
+    expect(plan.existingBranch).toEqual({
+      preexisting: false,
+      upstream: { remote: 'origin', ref: 'fix/upload-retry' },
+    })
+    expect(await adapter.materialize(plan)).toMatchObject({ kind: 'completed', headCommit: prHead })
+    expect(await git(plan.worktreePath, 'rev-parse', '--abbrev-ref', '@{upstream}')).toBe('origin/fix/upload-retry')
+    expect(await git(clone, 'for-each-ref', 'refs/switchboard')).toBe('')
+
+    // A branch this creation made is removed again on rollback.
+    expect(await adapter.rollbackMaterialization(plan)).toEqual({ kind: 'removed' })
+    expect(await gitSucceeds(clone, 'show-ref', '--verify', '--quiet', 'refs/heads/fix/upload-retry')).toBe(false)
+  })
+
+  it('fetches a fork PR head through refs/pull/<n>/head with no upstream', async () => {
+    const { clone, forkHead } = await createClone()
+    const adapter = new ExecFileGitWorktreeAdapter()
+    const repository = await adapter.resolveRepository(clone)
+
+    const plan = await adapter.planMaterialization({
+      ...materializationInput(repository),
+      existingBranch: { name: 'pr-7', fetch: { remote: 'origin', ref: 'refs/pull/7/head' } },
+    })
+    expect(plan.existingBranch).toEqual({ preexisting: false })
+    expect(await adapter.materialize(plan)).toMatchObject({ kind: 'completed', branch: 'pr-7', headCommit: forkHead })
+    expect(await gitSucceeds(plan.worktreePath, 'rev-parse', '@{upstream}')).toBe(false)
+  })
+
+  it('moves a stale local copy of the PR branch forward, but keeps a diverged one', async () => {
+    const { origin, clone, prHead } = await createClone()
+    await git(clone, 'branch', 'fix/upload-retry', 'origin/main')
+    const adapter = new ExecFileGitWorktreeAdapter()
+    const repository = await adapter.resolveRepository(clone)
+    const input = {
+      ...materializationInput(repository),
+      existingBranch: { name: 'fix/upload-retry', fetch: { remote: 'origin', ref: 'fix/upload-retry' } },
+    }
+
+    const stale = await adapter.planMaterialization(input)
+    expect(stale).toMatchObject({ resolvedBaseCommit: prHead, existingBranch: { preexisting: true } })
+    expect(await adapter.materialize(stale)).toMatchObject({ kind: 'completed', headCommit: prHead })
+    expect(await adapter.rollbackMaterialization(stale)).toEqual({ kind: 'removed' })
+    expect(await git(clone, 'rev-parse', 'refs/heads/fix/upload-retry')).toBe(prHead)
+
+    const local = await commitOn(clone, 'fix/upload-retry', 'local only\n')
+    await commitOn(origin, 'fix/upload-retry', 'remote only\n')
+    const diverged = await adapter.planMaterialization({ ...input, creationId: 'create_01HZY7WP8E4M5D4K7R2S0N9Q1C' })
+    expect(diverged).toMatchObject({ resolvedBaseCommit: local, existingBranch: { preexisting: true } })
+    expect(diverged.existingBranch?.fastForwardFrom).toBeUndefined()
+  })
+
+  it('rejects a missing local branch when nothing is fetched', async () => {
+    const fixture = await createRepository()
+    const adapter = new ExecFileGitWorktreeAdapter()
+    const repository = await adapter.resolveRepository(fixture.repositoryPath)
+    await expect(
+      adapter.planMaterialization({ ...materializationInput(repository), existingBranch: { name: 'nope' } }),
+    ).rejects.toThrow('Branch nope does not exist')
+    await expect(
+      adapter.planMaterialization({
+        ...materializationInput(repository),
+        existingBranch: { name: 'nope', fetch: { remote: 'repository', ref: 'main' } },
+      }),
+    ).rejects.toThrow('has no remote named repository')
+  })
+})

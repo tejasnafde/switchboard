@@ -349,4 +349,23 @@ describe('worktree creation request contract', () => {
       canonicalizeWorktreeCreationIdentity(second.value),
     )
   })
+
+  it('parses an existing-branch checkout and rejects unsafe names, remotes and refs', () => {
+    const request = conversationRequest()
+    const existingBranch = { name: 'fix/upload-retry', fetch: { remote: 'origin', ref: 'refs/pull/7/head' } }
+    const parsed = parseWorktreeCreationRequest({ ...request, checkout: { ...request.checkout, existingBranch } })
+    expect(parsed.ok && parsed.value.checkout.existingBranch).toEqual(existingBranch)
+
+    for (const bad of [
+      { name: '-x' },
+      { name: 'refs/heads/x' },
+      { name: 'a..b' },
+      { name: 'a b' },
+      { name: 'x', fetch: { remote: '--upload-pack=evil', ref: 'x' } },
+      { name: 'x', fetch: { remote: 'origin', ref: '-x' } },
+      { name: 'x', fetch: { remote: 'origin', ref: 'x:refs/heads/main' } },
+    ]) {
+      expectInvalid({ ...request, checkout: { ...request.checkout, existingBranch: bad } }, 'invalid_value')
+    }
+  })
 })

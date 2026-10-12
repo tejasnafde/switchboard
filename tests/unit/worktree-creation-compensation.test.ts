@@ -260,7 +260,11 @@ describe('WorktreeCreationService compensation', () => {
 
       const failed = await harness.service.createWorktreeTransaction(request())
 
-      expect(failed).toMatchObject({ phase: 'materializing', status: 'failed' })
+      expect(failed).toMatchObject({
+        phase: 'materializing',
+        status: 'failed',
+        error: { code: 'path_exists', message: 'The worktree folder already exists.' },
+      })
       expect(failed.recoveryActions).toContain('retry')
       expect(harness.git.calls).not.toContain('rollbackMaterialization')
       expect(count(harness.db, 'managed_worktrees')).toBe(0)
@@ -274,6 +278,7 @@ describe('WorktreeCreationService compensation', () => {
       })
 
       expect(retried).toMatchObject({ phase: 'ready', status: 'ready' })
+      expect(retried.error).toBeUndefined()
       expect(harness.git.calls.filter((call) => call === 'materialize')).toHaveLength(2)
       expect(count(harness.db, 'managed_worktrees')).toBe(1)
       expect(count(harness.db, 'conversations')).toBe(1)

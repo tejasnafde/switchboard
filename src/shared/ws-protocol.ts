@@ -70,6 +70,10 @@ export const BACKEND_CAPABILITIES = [
    *  in shared/merge-back): the `provider:merge-back-*` channels and the
    *  `merge-back.row` event. */
   'fork_merge_back_v1',
+  /** `worktree-creation:create` honours `checkout.existingBranch`: check out a
+   *  local or fetched branch (a PR head) instead of making a fresh one. An
+   *  older backend drops the field and makes a fresh branch. */
+  'worktree_existing_branch_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {

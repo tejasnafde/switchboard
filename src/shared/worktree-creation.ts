@@ -29,6 +29,17 @@ export interface WorktreeSparseCheckoutIntent {
   presetId?: string
 }
 
+/**
+ * Check out a branch that already exists (locally, or on a remote) instead of
+ * creating a fresh `<namespace>/` branch. `branch.seed` still names the path.
+ */
+export interface WorktreeExistingBranchIntent {
+  /** Local branch to check out. Created from `fetch` when it does not exist. */
+  name: string
+  /** Fetch first: a PR head is `{ remote: 'origin', ref: 'fix/x' }`, or `refs/pull/<n>/head` for a GitHub fork. */
+  fetch?: { remote: string; ref: string }
+}
+
 export interface WorktreeCheckoutIntent {
   baseRef: string
   branch: {
@@ -37,6 +48,8 @@ export interface WorktreeCheckoutIntent {
   }
   location?: 'managed-in-repo' | 'managed-user-data'
   sparseCheckout?: WorktreeSparseCheckoutIntent
+  /** Needs the backend capability `worktree_existing_branch_v1`; an older backend ignores it. */
+  existingBranch?: WorktreeExistingBranchIntent
 }
 
 export interface ConversationCreationOwner {
@@ -268,6 +281,29 @@ function validGitRef(value: unknown): value is string {
   )
 }
 
+/** A local branch name: what `git check-ref-format --branch` accepts, minus a few shapes git allows but we never want. */
+function validExistingBranchName(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= 255 &&
+    !value.startsWith('-') &&
+    !value.startsWith('/') &&
+    !value.startsWith('refs/') &&
+    !value.endsWith('/') &&
+    !value.endsWith('.lock') &&
+    !value.includes('..') &&
+    !value.includes('//') &&
+    !value.includes('@{') &&
+    !/[\\\s~^:?*[\]]/.test(value) &&
+    !hasControlCharacters(value)
+  )
+}
+
+function validRemoteName(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$/.test(value)
+}
+
 function validBranchSeed(value: unknown): value is string {
   return (
     typeof value === 'string' &&
@@ -359,6 +395,25 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
   const location = checkout?.location
   if (location !== undefined && location !== 'managed-in-repo' && location !== 'managed-user-data') {
     issue('invalid_value', 'checkout.location', 'Managed location is invalid.')
+  }
+
+  let existingBranch: WorktreeExistingBranchIntent | undefined
+  if (checkout?.existingBranch !== undefined) {
+    const existing = record(checkout.existingBranch)
+    const fetch = existing?.fetch === undefined ? undefined : record(existing.fetch)
+    if (!existing || !validExistingBranchName(existing.name)) {
+      issue('invalid_value', 'checkout.existingBranch.name', 'Existing branch name is empty or unsafe.')
+    } else if (
+      existing.fetch !== undefined &&
+      (!fetch || !validRemoteName(fetch.remote) || !validGitRef(fetch.ref) || fetch.ref.includes(':'))
+    ) {
+      issue('invalid_value', 'checkout.existingBranch.fetch', 'Existing branch fetch remote or ref is invalid.')
+    } else {
+      existingBranch = {
+        name: existing.name,
+        ...(fetch ? { fetch: { remote: fetch.remote as string, ref: fetch.ref as string } } : {}),
+      }
+    }
   }
 
   let sparseCheckout: WorktreeSparseCheckoutIntent | undefined
@@ -631,6 +686,7 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
         },
         ...(location ? { location: location as WorktreeCheckoutIntent['location'] } : {}),
         ...(sparseCheckout ? { sparseCheckout } : {}),
+        ...(existingBranch ? { existingBranch } : {}),
       },
       owner,
       purpose: purpose as WorktreePurpose,
