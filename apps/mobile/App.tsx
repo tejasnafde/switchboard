@@ -23,6 +23,9 @@ import ProjectsScreen from './src/screens/ProjectsScreen'
 import ConversationsScreen from './src/screens/ConversationsScreen'
 import ThreadScreen from './src/screens/ThreadScreen'
 import NewSessionScreen from './src/screens/NewSessionScreen'
+import ReviewsScreen from './src/screens/ReviewsScreen'
+import PullRequestScreen from './src/screens/PullRequestScreen'
+import type { PrDetail, PrRef } from '@shared/pull-requests'
 import SignInScreen from './src/screens/SignInScreen'
 
 const log = createLogger('app')
@@ -31,7 +34,8 @@ export type RootStackParamList = {
   Connections: undefined
   SignIn: undefined
   Pair: { editId?: string } | undefined
-  Projects: { connectionId: string; label: string }
+  /** `viaTab`: reached from the Reviews tab, so it swaps in without a push animation. */
+  Projects: { connectionId: string; label: string; viaTab?: boolean }
   Conversations: { connectionId: string; projectPath: string; projectName: string }
   Thread: {
     connectionId: string
@@ -44,7 +48,15 @@ export type RootStackParamList = {
     creationId?: string
     isNew?: boolean
   }
-  NewSession: { connectionId: string; projectPath: string; projectName: string }
+  NewSession: {
+    connectionId: string
+    projectPath: string
+    projectName: string
+    /** "Work on PR": start the chat on this pull request's branch, linked, with a review pill. */
+    pullRequest?: PrDetail
+  }
+  Reviews: { connectionId: string; label: string }
+  PullRequest: { connectionId: string; ref: PrRef; title: string }
   DevGallery: undefined
 }
 
@@ -183,7 +195,16 @@ export default function App() {
           <Stack.Screen
             name="Projects"
             component={ProjectsScreen}
-            options={({ route }) => ({ title: route.params.label })}
+            options={({ route }) => ({
+              title: route.params.label,
+              animation: route.params.viaTab ? 'none' : 'default',
+            })}
+          />
+          <Stack.Screen name="Reviews" component={ReviewsScreen} options={{ title: 'Reviews', animation: 'none' }} />
+          <Stack.Screen
+            name="PullRequest"
+            component={PullRequestScreen}
+            options={{ title: 'Pull request', headerBackTitle: 'Reviews' }}
           />
           <Stack.Screen
             name="Conversations"

@@ -27,6 +27,7 @@ import app.switchboard.mobile.domain.remote.WorktreeCreationStatus
 import app.switchboard.mobile.domain.remote.WorktreeLaunchAgent
 import app.switchboard.mobile.domain.remote.WorktreeSetupPolicy
 import app.switchboard.mobile.domain.remote.WorktreeStartupReceipt
+import app.switchboard.mobile.domain.reviews.WorkOnPrIntent
 import java.io.Closeable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -150,6 +151,8 @@ data class NewSessionState(
     val workspace: NewSessionWorkspace = NewSessionWorkspace.ParentCheckout,
     val worktreeRecord: WorktreeCreationSnapshot? = null,
     val error: String? = null,
+    /** Reviews > Work on PR: the workspace is decided and the first message is the chat's draft. */
+    val workOnPr: WorkOnPrIntent? = null,
 )
 
 data class NewSessionStarted(
@@ -181,9 +184,22 @@ class NewSessionCoordinator(
     /** Rejection is expected against an older backend (no `provider:list-catalog`
      *  handler) - the static list stays, this just names the reason. */
     private val onCatalogProbeFailed: (String) -> Unit = {},
+    /** A chat on a pull request: a worktree on its branch when [worktreeAvailable], else the project. */
+    private val workOnPr: WorkOnPrIntent? = null,
 ) : Closeable {
     private val mutableState = MutableStateFlow(
-        NewSessionState(connectionId, projectPath, projectName, worktreeAvailable = worktreeAvailable),
+        NewSessionState(
+            connectionId,
+            projectPath,
+            projectName,
+            worktreeAvailable = worktreeAvailable,
+            workspace = if (workOnPr?.existingBranch != null && worktreeAvailable) {
+                NewSessionWorkspace.Worktree(baseRef = "HEAD", setupPolicy = WorktreeSetupPolicy.Skip)
+            } else {
+                NewSessionWorkspace.ParentCheckout
+            },
+            workOnPr = workOnPr,
+        ),
     )
     val state = mutableState.asStateFlow()
 
@@ -328,6 +344,7 @@ class NewSessionCoordinator(
     @Synchronized
     fun selectWorkspace(workspace: NewSessionWorkspace) {
         if (mutableState.value.launchLocked) return
+        if (workOnPr != null) return
         if (workspace is NewSessionWorkspace.Worktree && !worktreeAvailable) return
         mutableState.value = mutableState.value.copy(workspace = workspace, error = null)
     }
@@ -471,7 +488,7 @@ class NewSessionCoordinator(
             machineId = connectionId,
             projectPath = projectPath,
             baseRef = workspace.baseRef,
-            branchSeed = mutableState.value.projectName,
+            branchSeed = workOnPr?.let { "pr-${it.number}" } ?: mutableState.value.projectName,
             owner = WorktreeCreationOwner.Conversation(
                 conversationId = ids.nextThreadId(),
                 agentType = agentType,
@@ -485,6 +502,7 @@ class NewSessionCoordinator(
                 prompt = mutableState.value.firstMessage.trim().ifEmpty { null },
             ),
             requestedAt = clock.nowMs(),
+            existingBranch = workOnPr?.existingBranch,
         ).also { worktreeRequest = it }
         mutableState.value = mutableState.value.copy(
             submitting = true,

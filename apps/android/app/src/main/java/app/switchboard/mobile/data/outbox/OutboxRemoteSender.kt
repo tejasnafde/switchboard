@@ -11,6 +11,8 @@ import app.switchboard.mobile.domain.remote.ImageInput
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RemoteResponse
 import app.switchboard.mobile.domain.remote.RuntimeMode
+import app.switchboard.mobile.domain.reviews.PhonePullRequests
+import app.switchboard.mobile.domain.reviews.PhoneReviewPill
 import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 import app.switchboard.mobile.platform.protocol.RequestSubmission
 import app.switchboard.mobile.platform.protocol.RpcFailure
@@ -79,11 +81,16 @@ class OutboxRemoteSender(
         )
         try {
             val images = materialized.takeIf { it.isNotEmpty() }
+            val pillTurn = turn.reviewPill?.let { pill ->
+                PhonePullRequests.reviewPillTurn(turn.text, PhoneReviewPill(pill.label, pill.content), pill.id)
+            }
             val submission = if (ATOMIC_USER_TURN_CAPABILITY in availability.capabilities) {
                 client.submitUserTurn(
                     threadId = turn.threadId,
                     origin = turn.origin,
-                    providerText = turn.text,
+                    providerText = pillTurn?.providerText ?: turn.text,
+                    displayBody = pillTurn?.displayBody,
+                    reviewPillsMeta = pillTurn?.pillsMeta,
                     runtimeMode = runtimeMode,
                     images = images,
                     // An older backend would steer a queued message, so it only asks where honoured.
@@ -91,9 +98,10 @@ class OutboxRemoteSender(
                     callback = completion::response,
                 )
             } else {
+                // An older backend has no display body: the agent still reads the pill's content.
                 client.sendTurn(
                     threadId = turn.threadId,
-                    message = turn.text,
+                    message = pillTurn?.providerText ?: turn.text,
                     runtimeMode = runtimeMode,
                     images = images,
                     origin = turn.origin,

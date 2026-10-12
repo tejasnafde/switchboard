@@ -23,6 +23,7 @@ import {
   retryDelayMs,
   selectRejectedForEdit,
   type QueuedMessage,
+  queuedTurnBody,
 } from '../lib/outbox-model'
 import { loadQueued, removeQueued, saveQueued } from '../lib/outbox-storage'
 import { getClient } from './connections'
@@ -244,7 +245,7 @@ async function deliver(message: QueuedMessage): Promise<void> {
   let providerAccepted = false
   try {
     const delivered = await submitQueuedTurn(message, {
-      prepare: (queued) => prepareMobileHandoffTurn(client, queued.threadId, queued.text),
+      prepare: (queued) => prepareMobileHandoffTurn(client, queued.threadId, queuedTurnBody(queued).providerText),
       persist: async (prepared) => {
         useOutboxStore.setState((state) => ({
           messages: state.messages.map((candidate) =>
@@ -258,8 +259,9 @@ async function deliver(message: QueuedMessage): Promise<void> {
           version: 1,
           threadId: prepared.threadId,
           origin: prepared.messageId,
-          providerText: prepared.providerText ?? prepared.text,
-          displayBody: prepared.text,
+          providerText: prepared.providerText ?? queuedTurnBody(prepared).providerText,
+          displayBody: queuedTurnBody(prepared).displayBody,
+          pillsMeta: queuedTurnBody(prepared).pillsMeta,
           images: prepared.images,
           runtimeMode: prepared.runtimeMode as RuntimeMode | undefined,
           autoTitleText: prepared.titleCandidate,

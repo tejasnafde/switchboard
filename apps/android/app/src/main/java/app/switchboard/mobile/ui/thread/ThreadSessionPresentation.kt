@@ -29,11 +29,14 @@ data class ThreadComposerPresentation(
     val queueToggle: QueueToggle? = null,
     /** Replaces the idle placeholder while a turn runs. */
     val runningPlaceholder: String? = null,
+    /** The label of a review pill the next send carries; null without one. */
+    val reviewPillLabel: String? = null,
 ) {
     val canSend: Boolean
         get() = canSendNow()
 
-    fun canSendNow(): Boolean = (draft.isNotBlank() || attachments.isNotEmpty()) && !submitting
+    fun canSendNow(): Boolean =
+        (draft.isNotBlank() || attachments.isNotEmpty() || reviewPillLabel != null) && !submitting
 }
 
 /** Messages the backend holds until the running turn ends, as the feed shows them. */
@@ -117,6 +120,7 @@ private fun ThreadComposerState.toPresentation(
     showInterrupt = showInterrupt,
     attachments = attachments,
     editingOrigin = editingOrigin,
+    reviewPillLabel = reviewPill?.label,
 )
 
 fun ThreadUiAction.toSessionControl(): ThreadSessionControl = when (this) {

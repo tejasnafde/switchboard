@@ -135,6 +135,13 @@ fun NewSessionScreen(
         ) {
             val selectorsEnabled = !state.submitting && !state.launchLocked
             val worktreePresentation = NewSessionWorktreePresentationPolicy.present(state)
+            state.workOnPr?.let { pr ->
+                WorkOnPrBanner(
+                    title = "Work on #${pr.number}",
+                    detail = pr.title,
+                    where = NewSessionWorktreePresentationPolicy.workOnPrWhere(state),
+                )
+            }
             CompactSelector(
                 field = NewSessionField.PROVIDER,
                 value = NewSessionSelectorPolicy.providerLabel(state.provider),
@@ -195,7 +202,7 @@ fun NewSessionScreen(
                 enabled = selectorsEnabled,
             )
 
-            CompactSelector(
+            if (state.workOnPr == null) CompactSelector(
                 field = NewSessionField.WORKSPACE,
                 value = NewSessionWorktreePresentationPolicy.workspaceLabel(state.workspace),
                 options = listOfNotNull(
@@ -230,6 +237,7 @@ fun NewSessionScreen(
                 )
             }
 
+            if (state.workOnPr == null) {
             SectionLabel(
                 text = "First message",
                 modifier = Modifier.padding(top = 24.dp, bottom = 10.dp, start = 4.dp),
@@ -260,6 +268,7 @@ fun NewSessionScreen(
                 modifier = Modifier.padding(top = 8.dp),
             )
             VoiceNoticeRow(voice = voice)
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -597,4 +606,20 @@ object NewSessionSelectorPolicy {
 
     fun modelLabel(options: List<NewSessionModelOption>, selectedId: String?): String =
         selectedId?.let { id -> options.firstOrNull { it.id == id }?.label } ?: "Backend default"
+}
+
+/** Reviews > Work on PR: which PR the chat is for and where it starts. */
+@Composable
+private fun WorkOnPrBanner(title: String, detail: String, where: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+        Text(detail, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(where, color = TextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+    }
 }

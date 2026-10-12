@@ -149,6 +149,27 @@ describe('React Native new-session creation coordinator', () => {
     expect(h.createParentCheckout).not.toHaveBeenCalled()
   })
 
+  it('asks for the PR branch as an existing branch, and a plan-time refusal is definite', async () => {
+    const h = harness()
+    const existingBranch = {
+      name: 'fix/upload-retry',
+      fetch: { repo: { host: 'github' as const, owner: 'geoiq', name: 'switchboard' }, ref: 'fix/upload-retry' },
+    }
+    h.createWorktree.mockRejectedValueOnce(
+      new Error(
+        'Branch fix/upload-retry is already checked out in /projects/switchboard. Work there, or switch that checkout to another branch first.',
+      ),
+    )
+
+    await h.coordinator.begin({ ...worktreeIntent, checkout: { ...worktreeIntent.checkout, existingBranch } })
+
+    expect(h.createWorktree.mock.calls[0][0].checkout).toMatchObject({ existingBranch })
+    expect(h.coordinator.getState()).toMatchObject({
+      status: 'failed',
+      error: expect.stringContaining('is already checked out in /projects/switchboard'),
+    })
+  })
+
   it('routes an explicit parent-checkout intent without creating a worktree', async () => {
     const h = harness()
 

@@ -3,6 +3,7 @@ package app.switchboard.mobile.data.outbox
 import app.switchboard.mobile.data.remote.RemoteRpc
 import app.switchboard.mobile.data.remote.SwitchboardRemoteClient
 import app.switchboard.mobile.domain.outbox.OutboxDeliveryState
+import app.switchboard.mobile.domain.outbox.QueuedReviewPill
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.outbox.SendOutcome
 import app.switchboard.mobile.domain.outbox.StagedAttachment
@@ -211,6 +212,37 @@ class OutboxRemoteSenderTest {
     }
 
     @Test
+    fun aReviewPillRidesTheEnvelopeAsAChipAndItsContent() {
+        val rpc = FakeRpc(synchronousOutcome = RpcOutcome.Success(null))
+        val envelope = MutableAvailability(4, extra = setOf(ATOMIC_USER_TURN_CAPABILITY))
+        val pill = QueuedReviewPill("review-1", "1 failed check · #7 · lint", "CONTEXT")
+        sender(rpc, envelope).send(turn(reviewPill = pill), {})
+
+        val body = rpc.lastArgs.values.single() as JsonObject
+        assertEquals(JsonString("CONTEXT\n\nhello"), body.values["providerText"])
+        assertEquals(JsonString("[[pill:review-1]] hello"), body.values["displayBody"])
+        val meta = (body.values["pillsMeta"] as JsonObject).values["review-1"] as JsonObject
+        assertEquals(JsonString("1 failed check · #7 · lint"), meta.values["label"])
+        assertEquals(JsonString("review"), meta.values["kind"])
+
+        // An older backend has no display body; the agent still reads the context.
+        sender(rpc).send(turn(origin = "origin-2", reviewPill = pill), {})
+        assertEquals(JsonString("CONTEXT\n\nhello"), rpc.lastArgs.values[1])
+    }
+
+    @Test
+    fun aReviewPillSurvivesTheOutboxRow() {
+        val pill = QueuedReviewPill("review-1", "label", "content \"quoted\"")
+        val queued = turn(reviewPill = pill)
+        val rows = OutboxEntityMapper.toRows(queued)
+        assertEquals(
+            queued,
+            OutboxEntityMapper.toDomain(app.switchboard.mobile.data.local.OutboxWithAttachments(rows.message, rows.attachments)),
+        )
+        assertEquals(null, OutboxEntityMapper.toRows(turn()).message.reviewPillJson)
+    }
+
+    @Test
     fun olderBackendKeepsThePositionalSend() {
         val rpc = FakeRpc(synchronousOutcome = RpcOutcome.Success(null))
         sender(rpc).send(turn(delivery = "queue"), {})
@@ -237,6 +269,7 @@ class OutboxRemoteSenderTest {
         attachments: List<StagedAttachment> = emptyList(),
         legacyRawJson: String? = null,
         delivery: String? = null,
+        reviewPill: QueuedReviewPill? = null,
     ) = QueuedTurn(
         connectionId = "mac-a",
         threadId = "thread-a",
@@ -251,6 +284,7 @@ class OutboxRemoteSenderTest {
         deliveryState = OutboxDeliveryState.Pending,
         legacyRawJson = legacyRawJson,
         delivery = delivery,
+        reviewPill = reviewPill,
     )
 
     private class MutableAvailability(

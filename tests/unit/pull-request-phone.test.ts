@@ -21,6 +21,7 @@ import {
   diffStatLabel,
   failedChecksPill,
   filterPhonePrs,
+  mergeOnDesktopNote,
   moreChecksLabel,
   needsYouCount,
   orderedChecks,
@@ -307,6 +308,9 @@ describe('phone pull request rules', () => {
     expect(conflictsStatus(PRS.conflictsBb)).toEqual({ text: '2 files', tone: 'failure' })
     expect(conflictsStatus(PRS.fork).text).toBe('Not checked yet')
     expect(diffStatLabel(PRS.failed)).toBe('+184 -37 in 6 files')
+    expect(mergeOnDesktopNote('bitbucket')).toBe(
+      'Reviews, comments and merges post as you on Bitbucket, so they stay on the desktop app.',
+    )
   })
 
   it('puts failed checks first, then running, and says what the hidden rest are', () => {
@@ -332,13 +336,14 @@ describe('phone pull request rules', () => {
     expect(prCheckoutCommand(PRS.askedBb)).toBe('bbpr 605')
   })
 
-  it('builds the review pill, asking for a checkout only off the branch', () => {
+  it('builds the review pill, asking for a checkout only in the project checkout', () => {
     const d = detail(PRS.failed, CHECKS)
-    const onBranch = workOnPrPill(d, true)
+    const onBranch = workOnPrPill(d, 'worktree')
     expect(onBranch.label).toBe('2 failed checks · #1482 · unit (macos-14), e2e / reviews')
     expect(onBranch.content).toContain('worktree on the pull request')
     expect(onBranch.content).not.toContain('gh pr checkout')
-    expect(workOnPrPill(d, false).content).toContain('run `gh pr checkout 1482`')
+    expect(workOnPrPill(d, 'checkout').content).toContain('run `gh pr checkout 1482`')
+    expect(workOnPrPill(d, 'attached').content).not.toContain('worktree')
     expect(failedChecksPill(detail(PRS.ready, [check('lint', 'success', 1)]))).toBeNull()
   })
 

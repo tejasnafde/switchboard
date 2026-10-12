@@ -229,6 +229,10 @@ class NativeAndroidRuntime private constructor(
         pending: List<app.switchboard.mobile.protocol.JsonObject>,
     ) = browseActivityIndex.seedPending(transportScope, threadId, pending)
 
+    fun savePreference(key: String, value: String) {
+        scope.launch { database.preferenceDao().upsertPreference(AppPreferenceEntity(key, value)) }
+    }
+
     fun saveCollapsedWorkspaceIds(connectionId: String, workspaceIds: Set<String>) {
         if (connectionId.isBlank()) return
         val encoded = BrowseCollapsePreferences.encode(workspaceIds)

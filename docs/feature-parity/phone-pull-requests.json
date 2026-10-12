@@ -1,0 +1,141 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "phone-pull-requests",
+  "summary": "Both phones get a per-connection tab bar (Projects, Reviews) with a badge counting the pull requests in Needs you. Reviews lists the desktop backend's pull-requests:list in the desktop's groups (pull-request-groups.ts) or by repository, with a text filter, chips (All, Needs you, Mine, Reviewing, By repo) and a filter sheet (group by, who, checks, repositories, drafts, hidden), saved per connection, refreshed by pull-request-refresh.ts. A host-wide failure gets one card; a failed refresh keeps the last list and says its age; hidden repositories can be shown again. The detail (pull-requests:detail) shows state, branches, author, size, a status card (checks expanding in place with failures first, reviews, conversations, conflicts), the description, linked chats, Open in browser and a Merge on desktop note: no PullRequestWriteChannels call. Work on PR opens a linked chat, attaches the PR as a review pill to another chat, or starts a chat in the PR's project: with the backend capability worktree_existing_branch_v1 in a worktree on the PR head (checkout.existingBranch: the source branch fetched from the project's remote for the PR's repository, a GitHub fork through refs/pull/<n>/head), else in the project checkout with the pill asking the agent to run gh pr checkout or bbpr. The new chat is linked (source manual) and its first turn carries the review pill ([[pill:id]] in the display body, the content in the provider text). PrSummary.headFromFork tells a fork's head apart. Rules live in src/shared/pull-request-phone.ts; both phones run tests/fixtures/phone-pr-cases.json.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop already has the Reviews view this mirrors, with its own Ask the agent and linked chats; no desktop renderer file changes. The only desktop-process change is the backend field headFromFork, listed under the shared backend."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/App.tsx",
+        "apps/mobile/src/components/ConnectionTabBar.tsx",
+        "apps/mobile/src/components/PrFilterSheet.tsx",
+        "apps/mobile/src/components/WorkOnPrSheet.tsx",
+        "apps/mobile/src/components/ReviewPillChip.tsx",
+        "apps/mobile/src/screens/ReviewsScreen.tsx",
+        "apps/mobile/src/screens/PullRequestScreen.tsx",
+        "apps/mobile/src/screens/ProjectsScreen.tsx",
+        "apps/mobile/src/screens/NewSessionScreen.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/stores/reviews.ts",
+        "apps/mobile/src/stores/prefs.ts",
+        "apps/mobile/src/stores/outbox.ts",
+        "apps/mobile/src/lib/pr-chat.ts",
+        "apps/mobile/src/lib/outbox-model.ts",
+        "apps/mobile/src/lib/turn-submit.ts",
+        "apps/mobile/src/lib/new-session-creation.ts",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/screens/__tests__/reviews-screen.test.tsx",
+        "apps/mobile/src/screens/__tests__/pr-detail.test.tsx",
+        "tests/unit/mobile-outbox.test.ts",
+        "tests/unit/mobile-new-session-creation-coordinator.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/androidTest/java/app/switchboard/mobile/data/local/SwitchboardDatabaseTest.kt",
+        "apps/android/app/src/androidTest/java/app/switchboard/mobile/ui/reviews/ReviewsScreenTest.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/MainActivity.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/SwitchboardApplication.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/local/Entities.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/local/SwitchboardDatabase.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/local/UserRowRecovery.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/OutboxCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/OutboxRemoteSender.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/RoomOutboxStore.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/NewSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/ReviewsCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/WorkOnPrStarter.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/WorktreeCreationWire.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/PendingReviewPills.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/outbox/OutboxModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/WorktreeCreation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/reviews/PhonePullRequests.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/reviews/PullRequestDecoders.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/reviews/PullRequestModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/reviews/WorkOnPr.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/PrLinkRows.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/runtime/NativeAndroidRuntime.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/AndroidRootNavigationRuntime.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/NavigationState.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/ReviewsRoutes.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/RootNavigationRuntime.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/newsession/NewSessionScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/newsession/NewSessionWorktreePresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/reviews/PullRequestDetailScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/reviews/ReviewsGlyphs.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/reviews/ReviewsPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/reviews/ReviewsScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadSessionPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadSessionScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadTestTags.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/outbox/OutboxRemoteSenderTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/ReviewsCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/WorkOnPrTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/reviews/PhonePullRequestsFixtureTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/reviews/ReviewsPresenterTest.kt",
+        "apps/android/schemas/app.switchboard.mobile.data.local.SwitchboardDatabase/8.json"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/pull-request-phone.ts",
+        "src/shared/pull-requests.ts",
+        "src/main/pull-requests/github.ts",
+        "src/main/pull-requests/github-map.ts",
+        "src/main/pull-requests/bitbucket-map.ts",
+        "tests/unit/pull-request-phone.test.ts",
+        "tests/unit/pull-requests-github-map.test.ts",
+        "tests/unit/pull-requests-bitbucket-map.test.ts",
+        "tests/fixtures/phone-pr-cases.json"
+      ],
+      "reason": "No new channel: the phones use the open pull-requests reads and link, plus worktree-creation:create with checkout.existingBranch (previous change, capability worktree_existing_branch_v1). headFromFork is optional; an older backend omits it and the phone treats the PR as not a fork."
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/prefs.ts",
+        "apps/mobile/src/lib/outbox-model.ts",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/local/SwitchboardDatabase.kt",
+        "apps/android/schemas/app.switchboard.mobile.data.local.SwitchboardDatabase/8.json",
+        "apps/android/app/src/androidTest/java/app/switchboard/mobile/data/local/SwitchboardDatabaseTest.kt"
+      ],
+      "reason": "Expo: optional prFilters and threads[key].reviewPill in the persisted prefs, and an optional reviewPill on a queued message (parseQueuedMessage drops a malformed one). Android: Room 7 to 8 adds a nullable outbox column for the pill. No backend table changes."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/AGENTS.md"
+      ],
+      "reason": "Expo change is JavaScript only (no new native module), so it ships on the OTA lane. Android ships in the next APK. A phone on an older backend without worktree_existing_branch_v1 falls back to a chat in the project whose pill asks the agent to check the PR out."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/pull-request-phone.test.ts: filters, badge, sections, status card wording, check order and labels, Work on PR checkout (branch, GitHub fork, Bitbucket fork), the review pill and its turn shape, host error cards; it keeps tests/fixtures/phone-pr-cases.json equal to the rules.",
+      "Android PhonePullRequestsFixtureTest runs every section of the same fixture; ReviewsCoordinatorTest, WorkOnPrTest, ReviewsPresenterTest, OutboxRemoteSenderTest and ThreadSessionCoordinatorTest cover the refresh gate and late results, the worktree-or-project decision and linking, and the pill on the wire. ./gradlew testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin passes.",
+      "apps/mobile jest: reviews-screen.test.tsx (groups, chips, badge, row navigation, host error card, empty state) and pr-detail.test.tsx (status card words, checks expand failures first, no write action, Work on PR sheet worktree, fallback, no project, attach).",
+      "tests/unit/mobile-outbox.test.ts (pill persists and goes on the wire) and mobile-new-session-creation-coordinator.test.ts (existingBranch in the request; a branch already checked out is a definite failure).",
+      "github and bitbucket map tests: headFromFork.",
+      "npm run typecheck and npm test pass (html-preview-sandbox timing test fails only under heavy load and passes alone)."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run on a phone, an emulator or a simulator: no screen of either app was seen rendered. The Android Compose UI tests (ReviewsScreenTest) and the Room migration androidTest compile but were not run.",
+      "Not run against a live backend or a real GitHub or Bitbucket pull request.",
+      "Android keeps a pending pill that was not sent yet in memory only; Expo persists it with the chat's draft.",
+      "A Work on PR creation restored after the app was killed mid-creation opens the chat without linking it or sending the pill."
+    ]
+  }
+}

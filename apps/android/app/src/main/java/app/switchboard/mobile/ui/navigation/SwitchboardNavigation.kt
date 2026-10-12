@@ -75,6 +75,10 @@ import app.switchboard.mobile.ui.home.HomePresenter
 import app.switchboard.mobile.ui.home.HomeRecentRow
 import app.switchboard.mobile.ui.home.HomeScreen
 import app.switchboard.mobile.ui.browse.BrowseCachedActivity
+import app.switchboard.mobile.ui.reviews.ConnectionTab
+import app.switchboard.mobile.data.remote.SwitchboardReviewsRemote
+import app.switchboard.mobile.data.remote.WorkOnPrStarter
+import app.switchboard.mobile.domain.reviews.WorkOnPr
 import app.switchboard.mobile.ui.newsession.NewSessionScreen
 import app.switchboard.mobile.ui.pairing.PairingForm
 import app.switchboard.mobile.ui.pairing.PairingSaveIntent
@@ -131,6 +135,7 @@ fun SwitchboardNavigation(
     onUpdateAction: (UpdateAction) -> Unit = {},
 ) {
     var navigationState by rememberSaveable { mutableStateOf(NavigationState.root()) }
+    val reviewsRegistry = remember { ReviewsCoordinatorRegistry() }
     val runtimeStatuses by (runtime?.statuses ?: EmptyRuntimeStatuses).collectAsState()
     val visibleConnections = remember(connectionsState, runtimeStatuses) {
         RuntimeConnectionsMapper.overlay(connectionsState, runtimeStatuses)
@@ -163,6 +168,58 @@ fun SwitchboardNavigation(
     }
 
     BackHandler(enabled = navigationState.canGoBack, onBack = ::navigateBack)
+
+    @Composable
+    fun BrowseRouteFor(route: AppRoute.Browse) {
+        BrowseRouteHost(
+            route = route,
+            snapshot = offlineSnapshot ?: emptyOfflineSnapshot(),
+            runtime = runtime,
+            status = runtimeStatuses[route.connectionId],
+            onProjectTap = { project ->
+                navigationState = navigationState.push(
+                    AppRoute.Browse(
+                        connectionId = route.connectionId,
+                        connectionLabel = route.connectionLabel,
+                        projectPath = project.path,
+                        projectName = project.name,
+                    ),
+                )
+            },
+            onSessionTap = { conversation ->
+                navigationState = navigationState.push(
+                    AppRoute.Thread(
+                        connectionId = route.connectionId,
+                        connectionLabel = route.connectionLabel,
+                        threadId = conversation.id,
+                        projectPath = conversation.projectPath,
+                        worktreePath = conversation.worktreePath,
+                        title = conversation.title,
+                        provider = conversation.agentType,
+                    ),
+                )
+            },
+            onNewSession = { projectPath, projectName ->
+                navigationState = navigationState.push(
+                    AppRoute.NewSession(
+                        connectionId = route.connectionId,
+                        connectionLabel = route.connectionLabel,
+                        projectPath = projectPath,
+                        projectName = projectName,
+                    ),
+                )
+            },
+            onMessageSearch = {
+                navigationState = navigationState.push(
+                    AppRoute.MessageSearch(
+                        connectionId = route.connectionId,
+                        connectionLabel = route.connectionLabel,
+                    ),
+                )
+            },
+            onBack = ::navigateBack,
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -346,53 +403,86 @@ fun SwitchboardNavigation(
                 }
             }
 
-            is AppRoute.Browse -> BrowseRouteHost(
+            is AppRoute.Browse -> if (route.projectPath == null) {
+                ProjectsTabHost(
+                    connectionId = route.connectionId,
+                    runtime = runtime,
+                    status = runtimeStatuses[route.connectionId],
+                    snapshot = offlineSnapshot ?: emptyOfflineSnapshot(),
+                    registry = reviewsRegistry,
+                    onTab = { tab ->
+                        if (tab == ConnectionTab.Reviews) {
+                            navigationState = navigationState.replace(
+                                AppRoute.Reviews(route.connectionId, route.connectionLabel),
+                            )
+                        }
+                    },
+                ) {
+                    BrowseRouteFor(route)
+                }
+            } else {
+                BrowseRouteFor(route)
+            }
+
+            is AppRoute.Reviews -> ReviewsRouteHost(
                 route = route,
-                snapshot = offlineSnapshot ?: emptyOfflineSnapshot(),
                 runtime = runtime,
                 status = runtimeStatuses[route.connectionId],
-                onProjectTap = { project ->
-                    navigationState = navigationState.push(
-                        AppRoute.Browse(
-                            connectionId = route.connectionId,
-                            connectionLabel = route.connectionLabel,
-                            projectPath = project.path,
-                            projectName = project.name,
-                        ),
-                    )
+                snapshot = offlineSnapshot ?: emptyOfflineSnapshot(),
+                registry = reviewsRegistry,
+                onTab = { tab ->
+                    if (tab == ConnectionTab.Projects) {
+                        navigationState = navigationState.replace(
+                            AppRoute.Browse(route.connectionId, route.connectionLabel),
+                        )
+                    }
                 },
-                onSessionTap = { conversation ->
+                onOpen = { pr ->
                     navigationState = navigationState.push(
-                        AppRoute.Thread(
+                        AppRoute.PullRequest(
                             connectionId = route.connectionId,
                             connectionLabel = route.connectionLabel,
-                            threadId = conversation.id,
-                            projectPath = conversation.projectPath,
-                            worktreePath = conversation.worktreePath,
-                            title = conversation.title,
-                            provider = conversation.agentType,
-                        ),
-                    )
-                },
-                onNewSession = { projectPath, projectName ->
-                    navigationState = navigationState.push(
-                        AppRoute.NewSession(
-                            connectionId = route.connectionId,
-                            connectionLabel = route.connectionLabel,
-                            projectPath = projectPath,
-                            projectName = projectName,
-                        ),
-                    )
-                },
-                onMessageSearch = {
-                    navigationState = navigationState.push(
-                        AppRoute.MessageSearch(
-                            connectionId = route.connectionId,
-                            connectionLabel = route.connectionLabel,
+                            host = pr.ref.host,
+                            owner = pr.ref.owner,
+                            name = pr.ref.name,
+                            number = pr.ref.number,
                         ),
                     )
                 },
                 onBack = ::navigateBack,
+            )
+
+            is AppRoute.PullRequest -> PullRequestRouteHost(
+                route = route,
+                runtime = runtime,
+                status = runtimeStatuses[route.connectionId],
+                onBack = ::navigateBack,
+                onOpenChat = { chat, pill ->
+                    if (pill != null) {
+                        runtime?.reviewPills?.set(ComposerDraftKey(route.connectionId, chat.id), pill)
+                    }
+                    navigationState = navigationState.push(
+                        AppRoute.Thread(
+                            connectionId = route.connectionId,
+                            connectionLabel = route.connectionLabel,
+                            threadId = chat.id,
+                            projectPath = chat.projectPath,
+                            title = chat.title,
+                            provider = chat.agentType,
+                        ),
+                    )
+                },
+                onStartChat = { detail, plan ->
+                    navigationState = navigationState.push(
+                        AppRoute.NewSession(
+                            connectionId = route.connectionId,
+                            connectionLabel = route.connectionLabel,
+                            projectPath = plan.projectPath,
+                            projectName = plan.projectName,
+                            workOnPr = WorkOnPr.intent(detail, plan),
+                        ),
+                    )
+                },
             )
 
             is AppRoute.NewSession -> NewSessionRouteHost(
@@ -400,12 +490,24 @@ fun SwitchboardNavigation(
                 runtime = runtime,
                 status = runtimeStatuses[route.connectionId],
                 onStarted = { started ->
+                    val workOnPr = route.workOnPr
+                    val lease = runtime?.lease(route.connectionId)
+                    if (workOnPr != null && runtime != null && lease != null) {
+                        WorkOnPrStarter(
+                            connectionId = route.connectionId,
+                            remote = SwitchboardReviewsRemote(lease.client),
+                            pills = runtime.reviewPills,
+                            saveDraft = runtime::saveComposerDraft,
+                            log = { Log.w("WorkOnPr", it) },
+                        ).onStarted(started, workOnPr)
+                    }
                     navigationState = navigationState.replace(
                         AppRoute.Thread(
                             connectionId = route.connectionId,
                             connectionLabel = route.connectionLabel,
                             threadId = started.threadId,
                             projectPath = started.projectPath,
+                            worktreePath = started.worktreePath.takeIf { workOnPr != null },
                             title = started.title,
                         ),
                     )
@@ -765,6 +867,7 @@ private fun NewSessionRouteHost(
             onCatalogProbeFailed = { message ->
                 Log.w("NewSessionCoordinator", "catalog probe failed, keeping the static list: $message")
             },
+            workOnPr = route.workOnPr,
         )
     }
     val state by coordinator.state.collectAsState()
@@ -980,11 +1083,17 @@ private fun ConnectedThreadRoute(
                 override fun clear(key: ComposerDraftKey): Boolean =
                     runtime.clearComposerDraftBlocking(key)
             },
+            reviewPills = runtime.reviewPills,
         )
     }
 
     LaunchedEffect(coordinator, savedDraft) {
         coordinator.installComposerDraft(savedDraft)
+    }
+    val pendingPills by runtime.reviewPills.state.collectAsState()
+    val pendingPill = pendingPills[composerKey]
+    LaunchedEffect(coordinator, pendingPill) {
+        coordinator.installReviewPill(pendingPill)
     }
 
     val viewingLeaseLifecycle = remember(runtime, lease.scope, route.threadId) {

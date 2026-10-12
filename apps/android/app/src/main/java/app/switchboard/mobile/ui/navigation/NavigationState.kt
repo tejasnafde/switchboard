@@ -2,6 +2,7 @@ package app.switchboard.mobile.ui.navigation
 
 import app.switchboard.mobile.platform.deeplink.AppDeepLinkRoute
 import app.switchboard.mobile.platform.deeplink.PendingAppDeepLink
+import app.switchboard.mobile.domain.reviews.WorkOnPrIntent
 import java.io.Serializable
 
 sealed interface AppRoute : Serializable {
@@ -51,6 +52,23 @@ sealed interface AppRoute : Serializable {
         val connectionLabel: String,
         val projectPath: String,
         val projectName: String,
+        /** Reviews > Work on PR > Start a chat. */
+        val workOnPr: WorkOnPrIntent? = null,
+    ) : AppRoute
+
+    /** A connection's Reviews tab; the Projects tab is [Browse] without a project. */
+    data class Reviews(
+        val connectionId: String,
+        val connectionLabel: String,
+    ) : AppRoute
+
+    data class PullRequest(
+        val connectionId: String,
+        val connectionLabel: String,
+        val host: String,
+        val owner: String,
+        val name: String,
+        val number: Long,
     ) : AppRoute
 }
 

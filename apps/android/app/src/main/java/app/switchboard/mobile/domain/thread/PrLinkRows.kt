@@ -47,10 +47,13 @@ object PrLinkRows {
     fun text(link: PrLink): String {
         val parts = mutableListOf("#${link.ref.number}")
         if (link.state != null && link.state != "open") parts += link.state
-        parts += (SOURCE_LABELS[link.source] ?: "Linked")
+        parts += sourceLabel(link.source)
         parts += "${link.ref.owner}/${link.ref.name}"
         return parts.joinToString(" · ")
     }
+
+    /** `linkSourceLabel`: a source a newer backend may send reads as a plain "Linked". */
+    fun sourceLabel(source: String?): String = SOURCE_LABELS[source] ?: "Linked"
 
     /** Accessible name of a link's Unlink button. Ported from `unlinkPrLabel`. */
     fun unlinkLabel(ref: PrLinkRef): String = "Unlink pull request ${ref.owner}/${ref.name} #${ref.number}"

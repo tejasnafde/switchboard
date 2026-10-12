@@ -609,6 +609,57 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `a pending review pill rides the next send and is then cleared`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val enqueue = FakeEnqueuePort()
+        val pills = PendingReviewPills()
+        val key = ComposerDraftKey("machine", "thread-1")
+        val pill = app.switchboard.mobile.domain.reviews.PhoneReviewPill("1 failed check · #7 · lint", "CONTEXT")
+        pills.set(key, pill)
+        val coordinator = ThreadSessionCoordinator(
+            scope = scope,
+            threadId = "thread-1",
+            initialCached = null,
+            remote = remote,
+            enqueue = enqueue,
+            clock = ThreadSessionClock { 123L },
+            composerPersistence = FakeComposerPersistence(),
+            reviewPills = pills,
+            pillIds = { "review-x" },
+        )
+        assertEquals(pill, coordinator.state.value.composer.reviewPill)
+        // The pill alone is enough to send.
+        enqueue.results += durable("origin-1", "")
+        assertTrue(coordinator.submit() is ComposerSubmitResult.Durable)
+        assertEquals(
+            app.switchboard.mobile.domain.outbox.QueuedReviewPill("review-x", pill.label, "CONTEXT"),
+            enqueue.drafts.single().reviewPill,
+        )
+        assertNull(coordinator.state.value.composer.reviewPill)
+        assertNull(pills.get(key))
+        assertEquals(ComposerSubmitResult.Empty, coordinator.submit())
+    }
+
+    @Test
+    fun `removing the review pill clears it from the pending store`() {
+        val pills = PendingReviewPills()
+        val key = ComposerDraftKey("machine", "thread-1")
+        pills.set(key, app.switchboard.mobile.domain.reviews.PhoneReviewPill("L", "C"))
+        val coordinator = ThreadSessionCoordinator(
+            scope = scope,
+            threadId = "thread-1",
+            initialCached = null,
+            remote = FakeThreadSessionRemote(scope),
+            enqueue = FakeEnqueuePort(),
+            clock = ThreadSessionClock { 123L },
+            reviewPills = pills,
+        )
+        coordinator.removeReviewPill()
+        assertNull(coordinator.state.value.composer.reviewPill)
+        assertNull(pills.get(key))
+    }
+
+    @Test
     fun `a mode picked on the phone applies at once and no turn re-sends it`() {
         val remote = FakeThreadSessionRemote(scope)
         val enqueue = FakeEnqueuePort()

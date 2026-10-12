@@ -293,7 +293,10 @@ export function diffStatLabel(pr: PrSummary): string {
   return `+${pr.additions} -${pr.deletions}${files}`
 }
 
-export const MERGE_ON_DESKTOP_NOTE = `Reviews, comments and merges post as you on the host, so they stay on the desktop app.`
+/** Follows "Merge on desktop." where the Merge button would be. */
+export function mergeOnDesktopNote(host: PrHost): string {
+  return `Reviews, comments and merges post as you on ${PR_HOST_LABEL[host]}, so they stay on the desktop app.`
+}
 
 export const RERUN_ON_DESKTOP_NOTE = 'Re-run failed jobs on the desktop.'
 
@@ -327,11 +330,14 @@ export interface PhoneReviewPill {
 }
 
 /**
- * The review pill a "Work on PR" chat starts with: the PR, its failed checks
- * and conflicts. When the chat is not already on the PR's branch (an older
- * backend, a Bitbucket fork), it first asks the agent to check it out.
+ * Where a "Work on PR" chat runs: a worktree on the PR's branch, the project
+ * checkout (an older backend, a Bitbucket fork: the agent checks it out
+ * first), or an existing chat the pill is attached to (no instruction).
  */
-export function workOnPrPill(pr: PrDetail, onBranch: boolean): PhoneReviewPill {
+export type WorkOnPrPlace = 'worktree' | 'checkout' | 'attached'
+
+/** The review pill a "Work on PR" chat starts with: the PR, its conflicts and failed checks. */
+export function workOnPrPill(pr: PrDetail, place: WorkOnPrPlace): PhoneReviewPill {
   const ctx: ReviewContext = {
     pr: pr.ref,
     title: pr.title,
@@ -342,10 +348,12 @@ export function workOnPrPill(pr: PrDetail, onBranch: boolean): PhoneReviewPill {
     ],
   }
   const expansion = expandReviewContext(ctx)
-  const where = onBranch
-    ? `This chat runs in a worktree on the pull request's branch (${pr.sourceBranch}).`
-    : `Before anything else, check out the pull request: run \`${prCheckoutCommand(pr)}\` in this project, and stop and say so if that fails.`
-  return { label: reviewContextLabel(ctx), content: `${expansion}\n\n${where}` }
+  const where = {
+    worktree: `This chat runs in a worktree on the pull request's branch (${pr.sourceBranch}).`,
+    checkout: `Before anything else, check out the pull request: run \`${prCheckoutCommand(pr)}\` in this project, and stop and say so if that fails.`,
+    attached: '',
+  }[place]
+  return { label: reviewContextLabel(ctx), content: where ? `${expansion}\n\n${where}` : expansion }
 }
 
 /**

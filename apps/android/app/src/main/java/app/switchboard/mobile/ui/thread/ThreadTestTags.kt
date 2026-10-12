@@ -14,6 +14,7 @@ object ThreadTestTags {
     const val HOST_WRITE_PREVIEW = "thread-host-write-preview"
     const val HOST_WRITE_EXPAND = "thread-host-write-expand"
     const val QUEUE_TOGGLE = "thread-queue-next-toggle"
+    const val REVIEW_PILL = "thread-composer-review-pill"
     const val MERGE_BACK_SEND_BACK_ACTION = "thread-merge-back-send-back"
     const val MERGE_BACK_SHEET = "thread-merge-back-sheet"
     const val MERGE_BACK_SHEET_TEXT = "thread-merge-back-sheet-text"

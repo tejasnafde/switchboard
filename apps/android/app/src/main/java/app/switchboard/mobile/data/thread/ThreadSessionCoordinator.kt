@@ -6,6 +6,9 @@ import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.data.remote.SwitchboardRemoteClient
 import app.switchboard.mobile.domain.outbox.EnqueueResult
 import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
+import app.switchboard.mobile.domain.outbox.QueuedReviewPill
+import app.switchboard.mobile.domain.reviews.PhonePullRequests
+import app.switchboard.mobile.domain.reviews.PhoneReviewPill
 import app.switchboard.mobile.domain.remote.AnswerQuestion
 import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.remote.ArchiveConversationResult
@@ -27,6 +30,7 @@ import app.switchboard.mobile.domain.remote.StartSession
 import app.switchboard.mobile.domain.remote.SessionMeta
 import app.switchboard.mobile.domain.remote.StartedSession
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.MessagePill
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWriteResponse
 import app.switchboard.mobile.domain.thread.FORK_MERGE_BACK_CAPABILITY
@@ -85,6 +89,8 @@ data class ThreadComposerState(
     val editingOrigin: String? = null,
     /** The next send does the opposite of the device's follow-up default. */
     val flipNextDelivery: Boolean = false,
+    /** A review pill the next send carries (Reviews > Work on PR). */
+    val reviewPill: PhoneReviewPill? = null,
 )
 
 data class ThreadSessionState(
@@ -678,6 +684,9 @@ class ThreadSessionCoordinator(
     private val capabilities: Set<String> = emptySet(),
     /** The device's "Follow-up while the agent works" choice, read at send time. */
     private val followUpDefault: () -> TurnDelivery = { TurnDelivery.Steer },
+    /** Review pills waiting for this chat's next send; the send clears it. */
+    private val reviewPills: PendingReviewPills? = null,
+    private val pillIds: (Long) -> String = { now -> PhonePullRequests.newPillId(now) },
 ) : AutoCloseable {
     private val canQueue = TurnDeliveryPolicy.QUEUE_CAPABILITY in capabilities
     private val canControlHeld = TurnDeliveryPolicy.QUEUE_CONTROLS_CAPABILITY in capabilities
@@ -712,6 +721,7 @@ class ThreadSessionCoordinator(
             ?: RuntimeMode.Sandbox,
         attachments = initialComposer?.attachments.orEmpty(),
         editingOrigin = initialComposer?.editingOrigin,
+        reviewPill = reviewPills?.get(ComposerDraftKey(scope.connectionId, threadId)),
     )
     private var composerHydrated = initialComposer != null
     private var composerHasUnacknowledgedLocalChanges = false
@@ -868,11 +878,27 @@ class ThreadSessionCoordinator(
         publish()
     }
 
+    /** Shows the pill [PendingReviewPills] holds for this chat (null removes the chip). */
+    @Synchronized
+    fun installReviewPill(pill: PhoneReviewPill?) {
+        if (composer.reviewPill == pill) return
+        composer = composer.copy(reviewPill = pill)
+        publish()
+    }
+
+    @Synchronized
+    fun removeReviewPill() {
+        reviewPills?.clear(composerKey)
+        composer = composer.copy(reviewPill = null)
+        publish()
+    }
+
     @Synchronized
     fun submit(): ComposerSubmitResult {
         if (composer.submitting || profiles.changing) return ComposerSubmitResult.Busy
         val text = composer.draft.trim()
-        if (text.isEmpty() && composer.attachments.isEmpty()) return ComposerSubmitResult.Empty
+        val pill = composer.reviewPill
+        if (text.isEmpty() && composer.attachments.isEmpty() && pill == null) return ComposerSubmitResult.Empty
         composer = composer.copy(submitting = true, error = null)
         publish()
         val thread = currentThread()
@@ -887,11 +913,16 @@ class ThreadSessionCoordinator(
                 preferred = followUpDefault(),
                 flipped = composer.flipNextDelivery,
             ),
+            reviewPill = pill?.let { QueuedReviewPill(pillIds(clock.nowMs()), it.label, it.content) },
         )
         return when (result) {
             is EnqueueResult.Durable -> {
                 addOptimistic(result.turn)
                 pickedMode = null
+                if (pill != null) {
+                    reviewPills?.clear(composerKey)
+                    composer = composer.copy(reviewPill = null)
+                }
                 val cleared = composerPersistence.clear(composerKey)
                 composer = if (cleared) {
                     composerHasUnacknowledgedLocalChanges = false
@@ -1776,6 +1807,7 @@ class ThreadSessionCoordinator(
         attachments: List<ComposerAttachment> = emptyList(),
         editingOrigin: String? = null,
         delivery: TurnDelivery? = null,
+        reviewPill: QueuedReviewPill? = null,
     ): EnqueueResult = try {
         val draft = OutgoingTurnDraft(
                 connectionId = scope.connectionId,
@@ -1791,6 +1823,7 @@ class ThreadSessionCoordinator(
                 runtimeMode = mode?.wire,
                 createdAtMs = clock.nowMs(),
                 delivery = delivery?.wire,
+                reviewPill = reviewPill,
             )
         editingOrigin?.let { enqueue.replace(it, draft) } ?: enqueue.enqueue(draft)
     } catch (error: RuntimeException) {
@@ -1816,9 +1849,13 @@ class ThreadSessionCoordinator(
     private fun addOptimistic(turn: app.switchboard.mobile.domain.outbox.QueuedTurn) {
         optimisticTurns[turn.origin] = turn
         val current = currentThread() ?: ThreadState()
+        val pillTurn = turn.reviewPill?.let { pill ->
+            PhonePullRequests.reviewPillTurn(turn.text, PhoneReviewPill(pill.label, pill.content), pill.id)
+        }
         val item = FeedItem.User(
             id = turn.bubbleId,
-            text = turn.text,
+            text = pillTurn?.displayBody ?: turn.text,
+            pillsMeta = pillTurn?.pillsMeta?.mapValues { (_, label) -> MessagePill(label, "review") }.orEmpty(),
             at = turn.createdAtMs,
             images = turn.attachments.map { attachment ->
                 val file = File(attachment.privateUri)
