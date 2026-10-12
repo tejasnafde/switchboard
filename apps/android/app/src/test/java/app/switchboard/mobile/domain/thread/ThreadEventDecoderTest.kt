@@ -20,9 +20,12 @@ class ThreadEventDecoderTest {
                 "text" to s("context wrapper\n\nvisible"),
                 "displayBody" to s("visible"),
                 "pillsMeta" to obj(
+                    // A desktop quote also names its source chat and message; the phone ignores both.
                     "selection-1" to obj(
                         "label" to s("Admin panel"),
                         "kind" to s("chat-message"),
+                        "sourceConversationId" to s("conv-1"),
+                        "sourceMessageId" to s("msg-1"),
                     ),
                     "review-1" to obj(
                         "label" to s("3 review conversations · #612 · worker.py:88"),

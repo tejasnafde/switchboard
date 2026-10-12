@@ -7,10 +7,11 @@
 import type { ReactNode } from 'react'
 import { PillChipVisual } from './lexical/PillChipVisual'
 import type { DraftPillKind } from '../../stores/draft-store'
+import type { PillMessageSource } from '@shared/provider-events'
 import { pillContentInMessage } from '../../services/pill-chip-model'
 import { PILL_LABEL_ATTR } from '../../services/context-formatters'
 
-export type PillsMeta = Record<string, { label: string; kind: DraftPillKind }>
+export type PillsMeta = Record<string, { label: string; kind: DraftPillKind } & PillMessageSource>
 
 const TOKEN_RE = /\[\[pill:([a-zA-Z0-9_-]+)\]\]/g
 
@@ -39,6 +40,11 @@ export function renderPillBody(body: string, pillsMeta: PillsMeta, messageText =
           label={meta.label}
           kind={meta.kind}
           content={content}
+          source={
+            meta.sourceConversationId && meta.sourceMessageId
+              ? { conversationId: meta.sourceConversationId, messageId: meta.sourceMessageId }
+              : null
+          }
           selectable
           rootProps={{ [PILL_LABEL_ATTR]: meta.label }}
         />,

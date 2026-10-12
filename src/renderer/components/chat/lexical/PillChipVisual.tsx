@@ -6,14 +6,23 @@
  * Source icon, name, a hairline and a count, tinted per kind (`--chip-tint-*`
  * in global.css, darker in the light theme). A 300 ms hover (or Space on a
  * chip selected with the arrow keys) opens a card with the first lines of what
- * was captured; a click opens the source. The card never takes focus, so the
- * composer keeps its caret.
+ * was captured; a click opens the source. The card says "Click to open" when
+ * the pointer opened it and shows the Enter hint when the chip is selected with
+ * the keyboard; a chip it cannot open shows neither. When the source is gone
+ * (a quoted message or its chat) the card says so instead. The card never
+ * takes focus, so the composer keeps its caret.
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { DraftPillKind } from '../../../stores/draft-store'
 import { Popover, PopoverAnchor, PopoverContent } from '../../ui/popover'
-import { pillChipModel, splitChipName, type PillChipKind, type PillChipModel } from '../../../services/pill-chip-model'
-import { openPillTarget } from '../../../services/pill-chip-open'
+import {
+  pillChipModel,
+  splitChipName,
+  type PillChipKind,
+  type PillChipModel,
+  type PillSource,
+} from '../../../services/pill-chip-model'
+import { canOpenPillTarget, openPillTarget, type PillOpenResult } from '../../../services/pill-chip-open'
 
 /** How long the pointer rests on a chip before its card opens. */
 export const PILL_CARD_HOVER_MS = 300
@@ -92,7 +101,24 @@ const REMOVE_CLASS = classes(
   'hover:!opacity-100 hover:bg-[color-mix(in_srgb,var(--chip-tint)_24%,transparent)]',
 )
 
-function PillChipCard({ model, removable }: { model: PillChipModel; removable: boolean }) {
+/** How the card offers to open the chip: Enter for a keyboard-selected chip, a click otherwise. */
+export type PillOpenHint = 'keyboard' | 'pointer' | null
+
+const KBD_CLASS =
+  'mr-[2px] rounded-[3px] bg-[var(--bg-tertiary)] px-[4px] text-[10px] text-[var(--text-secondary)] [font-family:var(--font-mono)]'
+
+export function PillChipCard({
+  model,
+  removable,
+  openHint,
+  notice = null,
+}: {
+  model: PillChipModel
+  removable: boolean
+  openHint: PillOpenHint
+  /** Why the last open did not land (the quoted message or its chat is gone). */
+  notice?: string | null
+}) {
   const header = [model.source, model.detail].filter(Boolean).join(' · ')
   return (
     <>
@@ -115,22 +141,22 @@ function PillChipCard({ model, removable }: { model: PillChipModel; removable: b
           ))}
         </pre>
       )}
-      {(model.target || removable || model.moreLines > 0) && (
+      {notice && (
+        <div data-pill-notice="true" className="mt-[6px] text-[11px] text-[var(--text-secondary)]">
+          {notice}
+        </div>
+      )}
+      {((openHint && !notice) || removable || model.moreLines > 0) && (
         <div className="mt-[7px] flex items-center gap-[12px] border-0 border-t border-solid border-[var(--border)] pt-[6px] text-[10.5px] text-[var(--text-muted)]">
-          {model.target && (
-            <span>
-              <kbd className="mr-[2px] rounded-[3px] bg-[var(--bg-tertiary)] px-[4px] text-[10px] text-[var(--text-secondary)] [font-family:var(--font-mono)]">
-                {'↵'}
-              </kbd>{' '}
-              open
+          {openHint === 'keyboard' && !notice && (
+            <span data-pill-open-hint="keyboard">
+              <kbd className={KBD_CLASS}>{'↵'}</kbd> open
             </span>
           )}
+          {openHint === 'pointer' && !notice && <span data-pill-open-hint="pointer">Click to open</span>}
           {removable && (
             <span>
-              <kbd className="mr-[2px] rounded-[3px] bg-[var(--bg-tertiary)] px-[4px] text-[10px] text-[var(--text-secondary)] [font-family:var(--font-mono)]">
-                {'⌫'}
-              </kbd>{' '}
-              remove
+              <kbd className={KBD_CLASS}>{'⌫'}</kbd> remove
             </span>
           )}
           {model.moreLines > 0 && (
@@ -147,6 +173,8 @@ interface PillChipVisualProps {
   kind: DraftPillKind
   /** The text the pill expands to, when known: drives the count, the card and the open target. */
   content?: string | null
+  /** For a Cmd+L quote: the chat and message it came from. */
+  source?: PillSource | null
   /** Editor variant disables text selection; bubble variant allows copy. */
   selectable?: boolean
   /** Composer only: draws the remove control and calls this. */
@@ -156,35 +184,51 @@ interface PillChipVisualProps {
   /** Controlled card state, for Space on a selected chip. Uncontrolled when absent. */
   cardOpen?: boolean
   onCardOpenChange?: (open: boolean) => void
+  /** Controlled card notice (the composer's Enter path sets it). Uncontrolled when absent. */
+  notice?: string | null
+  onNoticeChange?: (notice: string | null) => void
   /** Forwarded to the root span (data attributes, contentEditable). */
   rootProps?: Record<string, string | boolean | undefined>
 }
 
+function hostSessionId(el: Element | null): string | null {
+  return el?.closest('[data-session-id]')?.getAttribute('data-session-id') ?? null
+}
+
 /** Open a chip's source from its DOM node; the chat it sits in names the session. */
-export function openPillFromElement(model: PillChipModel, el: Element | null): boolean {
-  if (!model.target) return false
-  const sessionId = el?.closest('[data-session-id]')?.getAttribute('data-session-id') ?? null
-  return openPillTarget(model.target, sessionId)
+export async function openPillFromElement(model: PillChipModel, el: Element | null): Promise<PillOpenResult> {
+  if (!model.target) return { opened: false, notice: null }
+  return openPillTarget(model.target, hostSessionId(el))
 }
 
 export function PillChipVisual({
   label,
   kind,
   content,
+  source,
   selectable = true,
   onRemove,
   selected = false,
   cardOpen,
   onCardOpenChange,
+  notice,
+  onNoticeChange,
   rootProps,
 }: PillChipVisualProps): ReactNode {
-  const model = useMemo(() => pillChipModel({ kind, label, content }), [kind, label, content])
+  const model = useMemo(() => pillChipModel({ kind, label, content, source }), [kind, label, content, source])
   const { head, tail } = splitChipName(model.kind, model.name)
   const rootRef = useRef<HTMLSpanElement>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [hoverOpen, setHoverOpen] = useState(false)
+  const [localNotice, setLocalNotice] = useState<string | null>(null)
   const open = cardOpen ?? hoverOpen
+  const shownNotice = notice !== undefined ? notice : localNotice
+  const setNotice = (next: string | null): void => {
+    if (onNoticeChange) onNoticeChange(next)
+    else setLocalNotice(next)
+  }
   const setOpen = (next: boolean): void => {
+    if (!next) setNotice(null)
     if (onCardOpenChange) onCardOpenChange(next)
     else setHoverOpen(next)
   }
@@ -232,7 +276,11 @@ export function PillChipVisual({
             clearHover()
             if (model.target) {
               setOpen(false)
-              openPillFromElement(model, rootRef.current)
+              void openPillFromElement(model, rootRef.current).then((result) => {
+                if (result.opened || !result.notice) return
+                setNotice(result.notice)
+                setOpen(true)
+              })
             }
           }}
         >
@@ -295,7 +343,14 @@ export function PillChipVisual({
         className="sb-floating-surface pointer-events-none z-[1200] w-[320px] max-w-[calc(100vw-16px)] rounded-[8px] border border-solid border-[var(--border)] px-[10px] pb-[7px] pt-[8px] text-left text-[var(--text-primary)] [font-family:var(--font-sans)]"
         style={tintStyle}
       >
-        <PillChipCard model={model} removable={!!onRemove} />
+        <PillChipCard
+          model={model}
+          removable={!!onRemove}
+          openHint={
+            canOpenPillTarget(model.target, hostSessionId(rootRef.current)) ? (selected ? 'keyboard' : 'pointer') : null
+          }
+          notice={shownNotice}
+        />
       </PopoverContent>
     </Popover>
   )

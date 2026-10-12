@@ -41,9 +41,9 @@ import {
 } from 'lexical'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import { useLexicalNodeSelection } from '@lexical/react/useLexicalNodeSelection'
-import { createContext, useContext, useEffect, useState, type JSX } from 'react'
-import type { DraftPillKind } from '../../../stores/draft-store'
-import { pillChipModel } from '../../../services/pill-chip-model'
+import { createContext, useContext, useEffect, useMemo, useState, type JSX } from 'react'
+import type { DraftPill, DraftPillKind } from '../../../stores/draft-store'
+import { pillChipModel, type PillSource } from '../../../services/pill-chip-model'
 import { openPillFromElement, PillChipVisual } from './PillChipVisual'
 
 export type SerializedPillNode = Spread<
@@ -55,8 +55,11 @@ export type SerializedPillNode = Spread<
   SerializedLexicalNode
 >
 
-/** The text a composer pill expands to, by pill id. The node itself stores only label and kind. */
-export const PillContentContext = createContext<(pillId: string) => string | undefined>(() => undefined)
+/** What the chip reads of a composer pill beyond label and kind. */
+export type PillData = Partial<Pick<DraftPill, 'content' | 'sourceConversationId' | 'sourceMessageId'>>
+
+/** A composer pill's text and source, by pill id. The node itself stores only label and kind. */
+export const PillDataContext = createContext<(pillId: string) => PillData | undefined>(() => undefined)
 
 /** Remove a pill node and tell the host to drop its metadata, leaving the caret where it was. */
 function removePillNode(editor: LexicalEditor, nodeKey: NodeKey, pillId: string): void {
@@ -78,13 +81,27 @@ interface PillChipProps {
 
 function PillChip({ pillId, label, kind, nodeKey }: PillChipProps): JSX.Element {
   const [editor] = useLexicalComposerContext()
-  const content = useContext(PillContentContext)(pillId)
+  const data = useContext(PillDataContext)(pillId)
+  const content = data?.content
+  const sourceConversationId = data?.sourceConversationId
+  const sourceMessageId = data?.sourceMessageId
+  const source = useMemo<PillSource | null>(
+    () =>
+      sourceConversationId && sourceMessageId
+        ? { conversationId: sourceConversationId, messageId: sourceMessageId }
+        : null,
+    [sourceConversationId, sourceMessageId],
+  )
   const [isSelected] = useLexicalNodeSelection(nodeKey)
   const [cardOpen, setCardOpen] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isSelected) setCardOpen(false)
   }, [isSelected])
+  useEffect(() => {
+    if (!cardOpen) setNotice(null)
+  }, [cardOpen])
 
   // Keys on a chip selected with the arrow keys: Backspace or Delete removes
   // it, Space toggles its card, Enter opens its source, the arrows leave it,
@@ -141,11 +158,15 @@ function PillChip({ pillId, label, kind, nodeKey }: PillChipProps): JSX.Element 
         KEY_ENTER_COMMAND,
         (event) => {
           if (!onlyThis() || event?.shiftKey) return false
-          const model = pillChipModel({ kind, label, content })
+          const model = pillChipModel({ kind, label, content, source })
           if (!model.target) return false
           event?.preventDefault()
           setCardOpen(false)
-          openPillFromElement(model, editor.getElementByKey(nodeKey))
+          void openPillFromElement(model, editor.getElementByKey(nodeKey)).then((result) => {
+            if (result.opened || !result.notice) return
+            setNotice(result.notice)
+            setCardOpen(true)
+          })
           return true
         },
         COMMAND_PRIORITY_HIGH,
@@ -174,17 +195,20 @@ function PillChip({ pillId, label, kind, nodeKey }: PillChipProps): JSX.Element 
       ),
     ]
     return () => unregister.forEach((off) => off())
-  }, [editor, isSelected, cardOpen, nodeKey, pillId, kind, label, content])
+  }, [editor, isSelected, cardOpen, nodeKey, pillId, kind, label, content, source])
 
   return (
     <PillChipVisual
       label={label}
       kind={kind}
       content={content}
+      source={source}
       selectable={false}
       selected={isSelected}
       cardOpen={cardOpen}
       onCardOpenChange={setCardOpen}
+      notice={notice}
+      onNoticeChange={setNotice}
       onRemove={() => removePillNode(editor, nodeKey, pillId)}
       rootProps={{
         'data-pill-id': pillId,

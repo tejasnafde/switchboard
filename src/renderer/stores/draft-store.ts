@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { UserMessagePillKind } from '@shared/provider-events'
+import type { PillMessageSource, UserMessagePillKind } from '@shared/provider-events'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('store:draft')
@@ -30,7 +30,8 @@ export interface ImageAttachment {
   previewUrl: string
 }
 
-export interface DraftPill {
+/** A chat-message pill made by Cmd+L also names its source chat and message. */
+export interface DraftPill extends PillMessageSource {
   id: string
   kind: DraftPillKind
   /** Short display string shown on the chip (e.g. `cloudbuild.base.yaml (2-9)`). */
@@ -56,7 +57,14 @@ export function draftPayloadEquals(left: DraftPayload, right: DraftPayload): boo
   for (let index = 0; index < left.pills.length; index += 1) {
     const a = left.pills[index]
     const b = right.pills[index]
-    if (a.id !== b.id || a.kind !== b.kind || a.label !== b.label || a.content !== b.content) {
+    if (
+      a.id !== b.id ||
+      a.kind !== b.kind ||
+      a.label !== b.label ||
+      a.content !== b.content ||
+      a.sourceConversationId !== b.sourceConversationId ||
+      a.sourceMessageId !== b.sourceMessageId
+    ) {
       return false
     }
   }

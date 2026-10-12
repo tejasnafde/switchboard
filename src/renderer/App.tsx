@@ -1,5 +1,5 @@
 import type { ChatLoadDiagnostics } from '@shared/perf-chat'
-import { useChatWaitStore } from './stores/chat-wait-store'
+import { latestOpenTicket, useChatWaitStore } from './stores/chat-wait-store'
 import { beginChatOpen } from './services/perf-chat-open'
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse, paneMaxWidth, selectCompanionSessionId } from './stores/layout-store'
@@ -23,6 +23,8 @@ import { ChatVisual } from './components/chat/visuals/ChatVisual'
 import { KanbanView } from './components/kanban/KanbanView'
 import { ReviewsView } from './components/reviews/ReviewsView'
 import { registerReviewChatOpener } from './components/reviews/review-to-chat'
+import { registerPillChatOpener } from './services/pill-chip-open'
+import { openPillSourceChat } from './services/pill-chat-opener'
 import { SettingsPage } from './components/SettingsPage'
 import type { SettingsPageId } from './components/settings/settings-rows'
 import { CommandPalette } from './components/CommandPalette'
@@ -1408,6 +1410,27 @@ export function App() {
       return useLayoutStore.getState().focusedChatSessionId()
     })
     return () => registerReviewChatOpener(null)
+  }, [handleSessionSelect])
+
+  // A quote chip opens its source chat through the sidebar path.
+  useEffect(() => {
+    registerPillChatOpener((conversationId, hostSessionId, isCurrent) =>
+      openPillSourceChat(conversationId, hostSessionId, isCurrent, {
+        sessions: () => useAgentStore.getState().sessions,
+        bindRoute: (id, machineId) => window.api.routing.bind(id, machineId),
+        unbindRoute: (id) => window.api.routing.unbind(id),
+        probeMeta: async (id) => {
+          const probe = (await window.api.app.loadSessionById(id, { window: true, limit: 1 })) as {
+            meta?: { projectPath: string; agentType: string; title: string } | null
+          } | null
+          return probe?.meta ?? null
+        },
+        openSession: handleSessionSelect,
+        focusedId: () => useLayoutStore.getState().focusedChatSessionId(),
+        latestOpenTicket,
+      }),
+    )
+    return () => registerPillChatOpener(null)
   }, [handleSessionSelect])
 
   // A message search hit opens through the sidebar path too, on the machine

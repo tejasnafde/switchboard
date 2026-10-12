@@ -3,8 +3,9 @@
  * and, when the caller has it, the text the pill expands to. Pure, so the
  * composer chip and the sent-bubble chip read the same rules.
  *
- * The stored pill metadata is only `{ label, kind }`, so everything here is
- * read back out of the label shapes the capture paths write:
+ * The stored pill metadata is `{ label, kind }` (plus, for a Cmd+L quote, its
+ * source chat and message), so everything else is read back out of the label
+ * shapes the capture paths write:
  *   terminal      `api (12 lines)`            (context-bridge.ts)
  *   file          `auth.ts (1-7)` or `auth.ts` (IDE selection, @-mention)
  *   chat-message  `Claude: "first line…"`, `you: "…"` for the user's own
@@ -17,7 +18,13 @@ export type PillChipKind = 'file' | 'terminal' | 'chat-message' | 'you' | 'revie
 export type PillChipTarget =
   | { type: 'file'; path: string; startLine: number | null; endLine: number | null }
   | { type: 'terminal'; paneLabel: string }
-  | { type: 'message'; role: 'user' | 'assistant'; quote: string }
+  | { type: 'message'; role: 'user' | 'assistant'; quote: string; source: PillSource | null }
+
+/** The chat and message a Cmd+L chip was quoted from. Older pills have none and open by quote. */
+export interface PillSource {
+  conversationId: string
+  messageId: string
+}
 
 export interface PillChipModel {
   kind: PillChipKind
@@ -137,6 +144,7 @@ export function pillChipModel(input: {
   kind: UserMessagePillKind
   label: string
   content?: string | null
+  source?: PillSource | null
 }): PillChipModel {
   const { kind: stored, label } = input
   const kind = pillChipKind(stored, label)
@@ -189,9 +197,15 @@ export function pillChipModel(input: {
       name,
       count: chipCount(lines, 'line'),
       detail: lines !== null ? plural(lines, 'line') : null,
-      target: quote.trim()
-        ? { type: 'message', role: kind === 'you' ? 'user' : 'assistant', quote: quote.trim() }
-        : null,
+      target:
+        quote.trim() || input.source
+          ? {
+              type: 'message',
+              role: kind === 'you' ? 'user' : 'assistant',
+              quote: quote.trim(),
+              source: input.source ?? null,
+            }
+          : null,
     }
   }
 

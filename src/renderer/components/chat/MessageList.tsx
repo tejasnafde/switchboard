@@ -564,7 +564,9 @@ export function MessageList({
           // this list). Only the active match should look like the active
           // match.
           clearSearchMarks(containerRef.current)
-          const el = document.querySelector<HTMLElement>(`[data-message-id="${targetMessageId}"]`)
+          const el = containerRef.current?.querySelector<HTMLElement>(
+            `[data-message-id="${CSS.escape(targetMessageId)}"]`,
+          )
           if (el) {
             if (query && query.trim()) {
               // Wrap the matched substring with <mark> instead of flashing
@@ -578,13 +580,11 @@ export function MessageList({
                 // No text-node match (rare - substring may be in markdown
                 // syntax that React already split). Fall back to bubble
                 // pulse.
-                el.classList.add('message-search-highlight')
-                setTimeout(() => el.classList.remove('message-search-highlight'), 1000)
+                flashMessage(el)
               }
             } else {
               // Cross-chat ⌘⇧F (no query passed) keeps the old pulse.
-              el.classList.add('message-search-highlight')
-              setTimeout(() => el.classList.remove('message-search-highlight'), 1000)
+              flashMessage(el)
             }
           }
         }, 80)
@@ -802,6 +802,20 @@ export function MessageList({
 // search bar steps through one match at a time (each step scrolls to
 // a different message), so wrapping every occurrence would be visually
 // noisy and steal focus from the active one.
+/** The jump-to-message pulse; a steady tint instead of the fade under reduced motion. */
+const MESSAGE_FLASH_CLASSES = [
+  'rounded-[var(--radius)]',
+  'animate-[search-highlight-pulse_1s_ease-out]',
+  'motion-reduce:animate-none',
+  'motion-reduce:bg-[var(--accent-subtle)]',
+]
+const MESSAGE_FLASH_MS = 1000
+
+function flashMessage(el: HTMLElement): void {
+  el.classList.add(...MESSAGE_FLASH_CLASSES)
+  setTimeout(() => el.classList.remove(...MESSAGE_FLASH_CLASSES), MESSAGE_FLASH_MS)
+}
+
 function wrapSearchMatches(bubble: HTMLElement, query: string): HTMLElement | null {
   const q = query.trim()
   if (!q) return null

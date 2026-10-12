@@ -77,7 +77,7 @@ import {
   type PointType,
   type RangeSelection,
 } from 'lexical'
-import { $createPillNode, $isPillNode, PillContentContext, PillNode } from './PillNode'
+import { $createPillNode, $isPillNode, PillDataContext, PillNode } from './PillNode'
 import { parseBodyToSegments } from '../../../services/chat-input-body'
 import {
   selectionToRestore,
@@ -123,8 +123,9 @@ interface RichChatTextareaProps {
   trailingInset?: string
 }
 
-/** What the editor needs of a pill; `content` feeds the chip's count and card. */
-type ComposerPill = Pick<DraftPill, 'id' | 'label' | 'kind'> & Partial<Pick<DraftPill, 'content'>>
+/** What the editor needs of a pill; `content` feeds the chip's count and card, the source its open. */
+type ComposerPill = Pick<DraftPill, 'id' | 'label' | 'kind'> &
+  Partial<Pick<DraftPill, 'content' | 'sourceConversationId' | 'sourceMessageId'>>
 
 export const INSERT_PILL_COMMAND: LexicalCommand<DraftPill> = createCommand('INSERT_PILL')
 /** Update tag of a pill insert, which can arrive while the editor is not focused (⌘L). */
@@ -702,7 +703,7 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
 
     const valueRef = useRef(value)
     valueRef.current = value
-    const pillContent = useCallback((id: string) => pillsById[id]?.content, [pillsById])
+    const pillData = useCallback((id: string) => pillsById[id], [pillsById])
     // The host computes the right inset, so it reaches the classes as a variable.
     const insetStyle = { '--sb-rci-inset': trailingInset } as React.CSSProperties
 
@@ -734,7 +735,7 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
 
     return (
       <LexicalComposer initialConfig={initialConfig}>
-        <PillContentContext.Provider value={pillContent}>
+        <PillDataContext.Provider value={pillData}>
           <EditableSync disabled={disabled} />
           <HydrationPlugin value={value} pillsById={pillsById} />
           <PlainTextPlugin
@@ -767,7 +768,7 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
           <PillSelectPlugin />
           <SelectionMemoryPlugin />
           <ImperativeHandlePlugin ref={ref} pillsById={pillsById} getValue={() => valueRef.current} />
-        </PillContentContext.Provider>
+        </PillDataContext.Provider>
       </LexicalComposer>
     )
   },

@@ -39,3 +39,30 @@ describe('parsePersistedPillsMeta', () => {
     expect(Object.keys(parsePersistedPillsMeta(raw) ?? {})).toHaveLength(32)
   })
 })
+
+describe('pill metadata message source', () => {
+  it('keeps a paired source and drops a partial or malformed one', () => {
+    expect(
+      parsePersistedPillsMeta(
+        JSON.stringify({
+          quoted: { label: 'Claude: "x"', kind: 'chat-message', sourceConversationId: 'c1', sourceMessageId: 'm1' },
+          halfSource: { label: 'Claude: "y"', kind: 'chat-message', sourceConversationId: 'c1' },
+          badSource: { label: 'Claude: "z"', kind: 'chat-message', sourceConversationId: 7, sourceMessageId: 'm1' },
+          longSource: {
+            label: 'Claude: "w"',
+            kind: 'chat-message',
+            sourceConversationId: 'c'.repeat(257),
+            sourceMessageId: 'm1',
+          },
+          old: { label: 'you: "v"', kind: 'chat-message' },
+        }),
+      ),
+    ).toEqual({
+      quoted: { label: 'Claude: "x"', kind: 'chat-message', sourceConversationId: 'c1', sourceMessageId: 'm1' },
+      halfSource: { label: 'Claude: "y"', kind: 'chat-message' },
+      badSource: { label: 'Claude: "z"', kind: 'chat-message' },
+      longSource: { label: 'Claude: "w"', kind: 'chat-message' },
+      old: { label: 'you: "v"', kind: 'chat-message' },
+    })
+  })
+})

@@ -2939,15 +2939,10 @@ html, body, #root {
   background: var(--bg-hover);
 }
 
-/* Search result highlight pulse */
+/* Jump-to-message highlight pulse (MessageList flashMessage) */
 @keyframes search-highlight-pulse {
   0% { background: var(--accent-subtle); }
   100% { background: transparent; }
-}
-
-.message-search-highlight {
-  animation: search-highlight-pulse 1s ease-out;
-  border-radius: var(--radius);
 }
 
 /* In-chat search match - wraps the matched phrase only (not the
