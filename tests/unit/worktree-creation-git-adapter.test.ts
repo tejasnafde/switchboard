@@ -581,7 +581,12 @@ describe('ExecFileGitWorktreeAdapter existing branch', () => {
     const stale = await adapter.planMaterialization(input)
     expect(stale).toMatchObject({ resolvedBaseCommit: prHead, existingBranch: { preexisting: true } })
     expect(await adapter.materialize(stale)).toMatchObject({ kind: 'completed', headCommit: prHead })
+    // A compensated creation puts the moved branch back; an explicit removal keeps it moved.
+    const before = stale.existingBranch!.fastForwardFrom!
     expect(await adapter.rollbackMaterialization(stale)).toEqual({ kind: 'removed' })
+    expect(await git(clone, 'rev-parse', 'refs/heads/fix/upload-retry')).toBe(before)
+    expect(await adapter.materialize(stale)).toMatchObject({ kind: 'completed', headCommit: prHead })
+    expect(await adapter.rollbackMaterialization(stale, 'explicit_remove')).toEqual({ kind: 'removed' })
     expect(await git(clone, 'rev-parse', 'refs/heads/fix/upload-retry')).toBe(prHead)
 
     const local = await commitOn(clone, 'fix/upload-retry', 'local only\n')
