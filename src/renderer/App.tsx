@@ -1,5 +1,5 @@
 import type { ChatLoadDiagnostics } from '@shared/perf-chat'
-import { useChatWaitStore } from './stores/chat-wait-store'
+import { latestOpenTicket, useChatWaitStore } from './stores/chat-wait-store'
 import { beginChatOpen } from './services/perf-chat-open'
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse, paneMaxWidth, selectCompanionSessionId } from './stores/layout-store'
@@ -24,6 +24,7 @@ import { KanbanView } from './components/kanban/KanbanView'
 import { ReviewsView } from './components/reviews/ReviewsView'
 import { registerReviewChatOpener } from './components/reviews/review-to-chat'
 import { registerPillChatOpener } from './services/pill-chip-open'
+import { openPillSourceChat } from './services/pill-chat-opener'
 import { SettingsPage } from './components/SettingsPage'
 import type { SettingsPageId } from './components/settings/settings-rows'
 import { CommandPalette } from './components/CommandPalette'
@@ -1411,43 +1412,24 @@ export function App() {
     return () => registerReviewChatOpener(null)
   }, [handleSessionSelect])
 
-  // A quote chip opens its source chat through the sidebar path. A chat that
-  // is not loaded lives on the machine of the chat the chip sits in; a probe
-  // of its metadata tells a deleted chat apart before anything is added.
+  // A quote chip opens its source chat through the sidebar path.
   useEffect(() => {
-    registerPillChatOpener(async (conversationId, hostSessionId) => {
-      const sessions = useAgentStore.getState().sessions
-      const open = sessions.find((session) => session.id === conversationId)
-      const machineId = open?.machineId ?? sessions.find((s) => s.id === hostSessionId)?.machineId ?? 'local'
-      let projectPath = open?.projectPath
-      let agentType: string | undefined = open?.type
-      let title = open?.title ?? ''
-      if (!open) {
-        if (machineId !== 'local') window.api.routing.bind(conversationId, machineId)
-        const probe = (await window.api.app.loadSessionById(conversationId, { window: true, limit: 1 })) as {
-          meta?: { projectPath: string; agentType: string; title: string } | null
-        } | null
-        if (!probe?.meta) return null
-        projectPath = probe.meta.projectPath
-        agentType = probe.meta.agentType
-        title = probe.meta.title
-      }
-      const provider = toAgentProvider(agentType)
-      await handleSessionSelect(
-        {
-          id: conversationId,
-          source: provider,
-          title,
-          startedAt: 0,
-          messageCount: 0,
-          filePath: '',
-          agentType: provider,
+    registerPillChatOpener((conversationId, hostSessionId, isCurrent) =>
+      openPillSourceChat(conversationId, hostSessionId, isCurrent, {
+        sessions: () => useAgentStore.getState().sessions,
+        bindRoute: (id, machineId) => window.api.routing.bind(id, machineId),
+        unbindRoute: (id) => window.api.routing.unbind(id),
+        probeMeta: async (id) => {
+          const probe = (await window.api.app.loadSessionById(id, { window: true, limit: 1 })) as {
+            meta?: { projectPath: string; agentType: string; title: string } | null
+          } | null
+          return probe?.meta ?? null
         },
-        projectPath ?? '',
-        machineId,
-      )
-      return useLayoutStore.getState().focusedChatSessionId()
-    })
+        openSession: handleSessionSelect,
+        focusedId: () => useLayoutStore.getState().focusedChatSessionId(),
+        latestOpenTicket,
+      }),
+    )
     return () => registerPillChatOpener(null)
   }, [handleSessionSelect])
 

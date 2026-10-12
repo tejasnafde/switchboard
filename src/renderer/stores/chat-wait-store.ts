@@ -23,6 +23,10 @@ interface ChatWaitStore {
   finish: (id: string) => void
 }
 let ticket = 0
+/** The newest ticket `open` handed out; a change means another chat open started. */
+export function latestOpenTicket(): number {
+  return ticket
+}
 export const useChatWaitStore = create<ChatWaitStore>((set) => ({
   opening: {},
   waits: {},

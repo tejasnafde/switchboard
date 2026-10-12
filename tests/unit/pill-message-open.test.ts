@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   messageIdByQuote,
+  PILL_OPEN_SUPERSEDED,
   resolvePillMessage,
   type PillMessageDeps,
 } from '../../src/renderer/services/pill-message-open'
@@ -131,5 +132,14 @@ describe('messageIdByQuote', () => {
     expect(messageIdByQuote(messages, 'user', 'the cache key')).toBe('u2')
     expect(messageIdByQuote(messages, 'assistant', 'the cache key')).toBe('a1')
     expect(messageIdByQuote(messages, 'user', '')).toBeNull()
+  })
+})
+
+describe('resolvePillMessage with a superseded chat open', () => {
+  it('neither reports a gone chat nor finds a message', async () => {
+    const d = deps({ here: [] }, { focused: 'here' })
+    d.openChat = vi.fn(async () => PILL_OPEN_SUPERSEDED)
+    const result = await resolvePillMessage(target({ source: { conversationId: 'there', messageId: 'm1' } }), 'here', d)
+    expect(result).toEqual({ status: 'superseded' })
   })
 })

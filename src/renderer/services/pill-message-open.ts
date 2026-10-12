@@ -8,6 +8,9 @@ import type { PillChipTarget } from './pill-chip-model'
 
 type MessageTarget = Extract<PillChipTarget, { type: 'message' }>
 
+/** What `openChat` returns when a newer open or a manual navigation replaced it. */
+export const PILL_OPEN_SUPERSEDED = Symbol('pill-open-superseded')
+
 interface LoadedMessage {
   id: string
   role: string
@@ -28,7 +31,7 @@ export interface PillMessageDeps {
   /** The chat's loaded rows, or undefined when it is not open. */
   sessionMessages: (sessionId: string) => readonly LoadedMessage[] | undefined
   /** Open a chat the way a sidebar click does; resolves to the focused chat after, or null when the chat is gone. */
-  openChat: (conversationId: string) => Promise<string | null>
+  openChat: (conversationId: string) => Promise<string | null | typeof PILL_OPEN_SUPERSEDED>
   /** The full-history path cmd+F uses. */
   ensureFullHistory: (sessionId: string) => Promise<boolean>
   /** False once a newer chip open has started. */
@@ -68,7 +71,7 @@ export async function resolvePillMessage(
 
   if (sessionId !== hostSessionId && sessionId !== deps.focusedId()) {
     const opened = await deps.openChat(sessionId)
-    if (!deps.isCurrent()) return { status: 'superseded' }
+    if (!deps.isCurrent() || opened === PILL_OPEN_SUPERSEDED) return { status: 'superseded' }
     if (opened === null) return { status: 'chat-missing' }
     if (opened !== sessionId) return { status: 'superseded' }
   }

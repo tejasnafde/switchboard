@@ -10,7 +10,7 @@ import { useTerminalStore } from '../stores/terminal-store'
 import { useAgentStore } from '../stores/agent-store'
 import { focusTerminal } from './terminal-registry'
 import { ensureFullHistory } from './history-loader'
-import { resolvePillMessage } from './pill-message-open'
+import { resolvePillMessage, PILL_OPEN_SUPERSEDED } from './pill-message-open'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('chat:pill-open')
@@ -21,8 +21,16 @@ export const CHAT_GONE_NOTICE = 'Chat no longer available'
 /** `notice` is what the chip's card says when the source could not be opened. */
 export type PillOpenResult = { opened: true } | { opened: false; notice: string | null }
 
-/** Opens a chat the sidebar way (remote chats on their own machine); resolves to the focused chat, or null. */
-type PillChatOpener = (conversationId: string, hostSessionId: string | null) => Promise<string | null>
+/**
+ * Opens a chat the sidebar way (remote chats on their own machine); resolves
+ * to the focused chat, null, or PILL_OPEN_SUPERSEDED once `isCurrent` is false
+ * or the user navigated away.
+ */
+type PillChatOpener = (
+  conversationId: string,
+  hostSessionId: string | null,
+  isCurrent: () => boolean,
+) => Promise<string | null | typeof PILL_OPEN_SUPERSEDED>
 let chatOpener: PillChatOpener | null = null
 
 export function registerPillChatOpener(fn: PillChatOpener | null): void {
@@ -57,20 +65,21 @@ async function openMessage(
   hostSessionId: string | null,
 ): Promise<PillOpenResult> {
   const ticket = ++openTicket
+  const isCurrent = () => ticket === openTicket
   const resolution = await resolvePillMessage(target, hostSessionId, {
     focusedId: () => useLayoutStore.getState().focusedChatSessionId(),
     sessionMessages: (id) => useAgentStore.getState().sessions.find((s) => s.id === id)?.messages,
     openChat: async (conversationId) => {
       if (!chatOpener) return null
       try {
-        return await chatOpener(conversationId, hostSessionId)
+        return await chatOpener(conversationId, hostSessionId, isCurrent)
       } catch (err) {
         log.warn('opening the chip source chat failed', err)
         return null
       }
     },
     ensureFullHistory,
-    isCurrent: () => ticket === openTicket,
+    isCurrent,
   })
   if (resolution.status === 'found') {
     useAgentStore.getState().requestScrollToMessage(resolution.sessionId, resolution.messageId)
