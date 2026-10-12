@@ -341,6 +341,9 @@ export interface RuntimeTaskNotificationEvent {
   status: string
   summary: string
   outputFile?: string
+  /** The tool call that started the task (a background command, or a
+   *  background subagent's own Agent call), which places the notice. */
+  toolUseId?: string
   at: number
 }
 
@@ -571,6 +574,8 @@ export interface RuntimeContentEvent {
    */
   append?: boolean
   streamKind: 'assistant' | 'reasoning' | 'plan'
+  /** A subagent's own text: the Agent/Task call it ran inside. */
+  parentToolCallId?: string
 }
 
 /**
@@ -604,6 +609,8 @@ export interface RuntimeToolStartedEvent {
   toolId: string
   toolName: string
   input: unknown
+  /** Set when a subagent made this call: the Agent/Task call it ran inside. */
+  parentToolCallId?: string
 }
 
 export interface RuntimeToolCompletedEvent {
@@ -611,6 +618,10 @@ export interface RuntimeToolCompletedEvent {
   threadId: string
   toolId: string
   output?: string
+  /** The provider reported the result as an error. */
+  isError?: boolean
+  /** Set when a subagent made this call: the Agent/Task call it ran inside. */
+  parentToolCallId?: string
   /**
    * Files the tool wrote, for adapters whose `tool.started` input does not
    * name them yet (OpenCode). Absolute, or relative to the session folder.

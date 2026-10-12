@@ -2,6 +2,7 @@ import type { ChatMessage, ToolCall, MessageImage } from '@shared/types'
 import { createHash } from 'crypto'
 import { visibleUserMessageText } from '@shared/provider-events'
 import { compactSummaryText } from '@shared/synthetic-message'
+import { isSubagentToolName } from '@shared/subagent-steps'
 
 export type JsonlSource = 'claude-code' | 'codex'
 
@@ -26,6 +27,8 @@ export class JsonlParser {
   private buffer = ''
   private onMessage: (message: ChatMessage) => void
   private source: JsonlSource
+  /** Calls already emitted, so a later result can mark them (see `noteToolResults`). */
+  private toolCalls = new Map<string, ToolCall>()
 
   constructor(onMessage: (message: ChatMessage) => void, source: JsonlSource = 'claude-code') {
     this.onMessage = onMessage
@@ -95,6 +98,7 @@ export class JsonlParser {
         const toolCalls = extractToolCalls(event.message)
         // Skip assistant messages with no visible content (e.g., thinking-only)
         if (!content && toolCalls.length === 0) return null
+        for (const call of toolCalls) this.toolCalls.set(call.id, call)
         return {
           id: stableId(event),
           role: 'assistant',
@@ -105,6 +109,7 @@ export class JsonlParser {
       }
 
       case 'user': {
+        this.noteToolResults(event.message)
         const text = extractContent(event.message)
         // The summary a /compact leaves folds into one row.
         const content = event.isCompactSummary === true ? compactSummaryText(text) : text
@@ -138,6 +143,35 @@ export class JsonlParser {
         return null
     }
   }
+
+  /**
+   * The transcript keeps a tool's result in a later user line. An error marks
+   * its call, and an Agent/Task call keeps its report, which is what its row
+   * shows as the result and reads its status from. Other outputs stay out:
+   * they are the bulk of a transcript and the SQLite mirror holds them.
+   */
+  private noteToolResults(message: unknown): void {
+    if (this.toolCalls.size === 0 || !message || typeof message !== 'object') return
+    const blocks = (message as { content?: unknown }).content
+    if (!Array.isArray(blocks)) return
+    for (const block of blocks as Array<Record<string, unknown>>) {
+      if (block.type !== 'tool_result' || typeof block.tool_use_id !== 'string') continue
+      const call = this.toolCalls.get(block.tool_use_id)
+      if (!call) continue
+      this.toolCalls.delete(block.tool_use_id)
+      if (block.is_error === true) call.isError = true
+      if (isSubagentToolName(call.name)) call.output = toolResultText(block.content)
+    }
+  }
+}
+
+function toolResultText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((part: Record<string, unknown>) => (typeof part.text === 'string' ? part.text : ''))
+    .filter(Boolean)
+    .join('\n')
 }
 
 function extractContent(message: unknown): string {

@@ -360,6 +360,7 @@ class ThreadStoreReducerTest {
             "summary" to s("Background command \"Build\" failed with exit code 144"),
             "outputFile" to s("/tmp/tasks/bd5t7u1q8.output"),
             "at" to n(5),
+            "toolUseId" to s("toolu_1"),
         )
         state = ingest(state, "mac-a", 1, 1, raw)
         state = ingest(state, "mac-a", 1, 2, raw)
@@ -370,6 +371,40 @@ class ThreadStoreReducerTest {
             "<output-file>/tmp/tasks/bd5t7u1q8.output</output-file>\n<status>failed</status>\n" +
             "<summary>Background command \"Build\" failed with exit code 144</summary>\n</task-notification>"
         assertEquals(SyntheticUserMessage.split(transcript), SyntheticUserMessage.split(user.text))
+    }
+
+    @Test
+    fun subagentToolCallsAndTextKeepTheirParentAndAnErrorResult() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        state = reduce(
+            state,
+            ThreadAction.Runtime(
+                ScopedThreadEvent(
+                    ThreadEventScope("mac-a", 1), 1,
+                    ThreadEventDecoder.decode(
+                        event("tool.started", "toolId" to s("B"), "toolName" to s("Bash"), "input" to obj(), "parentToolCallId" to s("A")),
+                    ),
+                    nowMs = 1_000,
+                ),
+            ),
+        )
+        state = ingest(state, "mac-a", 1, 2, event("tool.completed", "toolId" to s("B"), "output" to s("Exit code 1"), "isError" to b(true)))
+        state = ingest(state, "mac-a", 1, 3, event("tool.started", "toolId" to s("C"), "toolName" to s("Read"), "input" to obj()))
+        state = ingest(state, "mac-a", 1, 4, event("tool.completed", "toolId" to s("C"), "output" to s("ok")))
+        state = ingest(
+            state, "mac-a", 1, 5,
+            event("content", "messageId" to s("m"), "text" to s("sub"), "streamKind" to s("assistant"), "parentToolCallId" to s("A")),
+        )
+
+        val feed = state.thread("mac-a", "thread-1")!!.feed
+        val sub = feed[0] as FeedItem.Tool
+        assertEquals("A", sub.parentToolCallId)
+        assertTrue(sub.isError)
+        assertEquals(1_000L, sub.startedAt)
+        val own = feed[1] as FeedItem.Tool
+        assertNull(own.parentToolCallId)
+        assertFalse(own.isError)
+        assertEquals("A", (feed[2] as FeedItem.Text).parentToolCallId)
     }
 
     @Test

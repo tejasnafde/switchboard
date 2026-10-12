@@ -44,6 +44,7 @@ describe('splitSyntheticUserText', () => {
           summary: 'Background command "Wait for the first extra-account job to finish" failed with exit code 144',
           taskId: 'b000000aa',
           outputFile: '/private/tmp/claude-501/-Users-me-proj/0000/tasks/b000000aa.output',
+          toolUseId: 'toolu_01REDACTED',
         },
       ],
       userText: '',

@@ -1,0 +1,936 @@
+{
+  "labels": [
+    {
+      "id": "description",
+      "summary": "Background command \"Check tinypool and run unit tests\" completed (exit code 0)",
+      "label": "Check tinypool and run unit tests"
+    },
+    {
+      "id": "cd-prefix-dropped",
+      "summary": "Background command \"cd /Users/tejas/Desktop/projects/switchboard/.claude/worktrees/depbot && npm ls tinypool\" completed (exit code 0)",
+      "label": "npm ls tinypool"
+    },
+    {
+      "id": "quoted-cd-prefix",
+      "summary": "Background command \"cd \"/tmp/a b\" && make\" completed",
+      "label": "make"
+    },
+    {
+      "id": "long-command-cut-at-word",
+      "summary": "Background command \"npm run typecheck 2>&1 | grep -E 'error' | head; echo TC=$?; npx vitest run --maxWorkers=4\" completed",
+      "label": "npm run typecheck 2>&1 | grep -E 'error' | head; echo…"
+    },
+    {
+      "id": "long-word-cut-hard",
+      "summary": "Background command \"for f in tests/unit/terminal-registry-async-create-and-more.test.ts tests/b.ts; do x; done\" completed",
+      "label": "for f in tests/unit/terminal-registry-async-create-and-more.…"
+    },
+    {
+      "id": "first-line-only",
+      "summary": "Background command \"git commit -q -F - <<'EOF'\nSecurity updates\nEOF\" completed",
+      "label": "git commit -q -F - <<'EOF'"
+    },
+    {
+      "id": "inner-quotes-kept",
+      "summary": "Background command \"grep -E \"error|warn\" log.txt\" failed with exit code 1",
+      "label": "grep -E \"error|warn\" log.txt"
+    },
+    {
+      "id": "agent-notice",
+      "summary": "Agent \"Audit skills against Gemini guide\" finished",
+      "label": "Audit skills against Gemini guide"
+    },
+    {
+      "id": "no-quotes",
+      "summary": "Task finished",
+      "label": "Task finished"
+    }
+  ],
+  "groupings": [
+    {
+      "id": "steps-attach-to-agent",
+      "entries": [
+        {
+          "key": "user"
+        },
+        {
+          "key": "agent",
+          "toolCalls": [
+            {
+              "id": "A",
+              "name": "Agent"
+            }
+          ]
+        },
+        {
+          "key": "s1",
+          "toolCalls": [
+            {
+              "id": "B",
+              "name": "Bash",
+              "parentToolCallId": "A"
+            }
+          ]
+        },
+        {
+          "key": "text",
+          "parentToolCallId": "A"
+        },
+        {
+          "key": "own",
+          "toolCalls": [
+            {
+              "id": "C",
+              "name": "Read"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "topLevel": [
+          "user",
+          "agent",
+          "own"
+        ],
+        "steps": {
+          "A": [
+            "s1",
+            "text"
+          ]
+        },
+        "completions": {}
+      }
+    },
+    {
+      "id": "two-parallel-agents",
+      "entries": [
+        {
+          "key": "a1",
+          "toolCalls": [
+            {
+              "id": "A1",
+              "name": "Agent"
+            }
+          ]
+        },
+        {
+          "key": "a2",
+          "toolCalls": [
+            {
+              "id": "A2",
+              "name": "Task"
+            }
+          ]
+        },
+        {
+          "key": "x1",
+          "toolCalls": [
+            {
+              "id": "X1",
+              "name": "Grep",
+              "parentToolCallId": "A1"
+            }
+          ]
+        },
+        {
+          "key": "y1",
+          "toolCalls": [
+            {
+              "id": "Y1",
+              "name": "Read",
+              "parentToolCallId": "A2"
+            }
+          ]
+        },
+        {
+          "key": "x2",
+          "toolCalls": [
+            {
+              "id": "X2",
+              "name": "Bash",
+              "parentToolCallId": "A1"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "topLevel": [
+          "a1",
+          "a2"
+        ],
+        "steps": {
+          "A1": [
+            "x1",
+            "x2"
+          ],
+          "A2": [
+            "y1"
+          ]
+        },
+        "completions": {}
+      }
+    },
+    {
+      "id": "nested-agent-flattened",
+      "entries": [
+        {
+          "key": "outer",
+          "toolCalls": [
+            {
+              "id": "A",
+              "name": "Agent"
+            }
+          ]
+        },
+        {
+          "key": "inner",
+          "toolCalls": [
+            {
+              "id": "B",
+              "name": "Agent",
+              "parentToolCallId": "A"
+            }
+          ]
+        },
+        {
+          "key": "deep",
+          "toolCalls": [
+            {
+              "id": "C",
+              "name": "Bash",
+              "parentToolCallId": "B"
+            }
+          ]
+        },
+        {
+          "key": "deeper-text",
+          "parentToolCallId": "C"
+        }
+      ],
+      "expected": {
+        "topLevel": [
+          "outer"
+        ],
+        "steps": {
+          "A": [
+            "inner",
+            "deep",
+            "deeper-text"
+          ]
+        },
+        "completions": {}
+      }
+    },
+    {
+      "id": "notices-by-tool-use-id",
+      "entries": [
+        {
+          "key": "agent",
+          "toolCalls": [
+            {
+              "id": "A",
+              "name": "Agent"
+            }
+          ]
+        },
+        {
+          "key": "bg",
+          "toolCalls": [
+            {
+              "id": "B",
+              "name": "Bash",
+              "parentToolCallId": "A"
+            }
+          ]
+        },
+        {
+          "key": "own-bg",
+          "toolCalls": [
+            {
+              "id": "P",
+              "name": "Bash"
+            }
+          ]
+        },
+        {
+          "key": "n-sub",
+          "noticeToolUseId": "B"
+        },
+        {
+          "key": "n-own",
+          "noticeToolUseId": "P"
+        },
+        {
+          "key": "n-agent-done",
+          "noticeToolUseId": "A"
+        },
+        {
+          "key": "n-unknown",
+          "noticeToolUseId": "Z"
+        }
+      ],
+      "expected": {
+        "topLevel": [
+          "agent",
+          "own-bg",
+          "n-own",
+          "n-unknown"
+        ],
+        "steps": {
+          "A": [
+            "bg",
+            "n-sub"
+          ]
+        },
+        "completions": {
+          "A": [
+            "n-agent-done"
+          ]
+        }
+      }
+    },
+    {
+      "id": "nested-agent-notice-is-a-step",
+      "entries": [
+        {
+          "key": "outer",
+          "toolCalls": [
+            {
+              "id": "A",
+              "name": "Agent"
+            }
+          ]
+        },
+        {
+          "key": "inner",
+          "toolCalls": [
+            {
+              "id": "B",
+              "name": "Agent",
+              "parentToolCallId": "A"
+            }
+          ]
+        },
+        {
+          "key": "n-inner",
+          "noticeToolUseId": "B"
+        }
+      ],
+      "expected": {
+        "topLevel": [
+          "outer"
+        ],
+        "steps": {
+          "A": [
+            "inner",
+            "n-inner"
+          ]
+        },
+        "completions": {}
+      }
+    },
+    {
+      "id": "agent-outside-window-stays-top-level",
+      "entries": [
+        {
+          "key": "orphan",
+          "toolCalls": [
+            {
+              "id": "B",
+              "name": "Bash",
+              "parentToolCallId": "GONE"
+            }
+          ]
+        },
+        {
+          "key": "orphan-text",
+          "parentToolCallId": "GONE"
+        }
+      ],
+      "expected": {
+        "topLevel": [
+          "orphan",
+          "orphan-text"
+        ],
+        "steps": {},
+        "completions": {}
+      }
+    },
+    {
+      "id": "older-backend-no-parents",
+      "entries": [
+        {
+          "key": "agent",
+          "toolCalls": [
+            {
+              "id": "A",
+              "name": "Agent"
+            }
+          ]
+        },
+        {
+          "key": "s1",
+          "toolCalls": [
+            {
+              "id": "B",
+              "name": "Bash"
+            }
+          ]
+        },
+        {
+          "key": "n"
+        }
+      ],
+      "expected": {
+        "topLevel": [
+          "agent",
+          "s1",
+          "n"
+        ],
+        "steps": {},
+        "completions": {}
+      }
+    }
+  ],
+  "views": [
+    {
+      "id": "done-folds-middle",
+      "call": {
+        "input": {
+          "description": "Security updates for dependabot PRs",
+          "model": "haiku",
+          "prompt": "Combine the PRs"
+        },
+        "output": "Combined dependabot PRs #292-#298.\nagentId: a61f505518fb5599c (use SendMessage with to: 'a61f505518fb5599c' to continue this agent)\n<usage>subagent_tokens: 143784\ntool_uses: 14\nduration_ms: 362000</usage>"
+      },
+      "steps": [
+        {
+          "kind": "tool",
+          "key": "s1",
+          "toolName": "Grep",
+          "input": {
+            "pattern": "(tinypool|vitest)@[0-9.]+"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s2",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/r/f2.ts"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s3",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/r/f3.ts"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s4",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/r/f4.ts"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s5",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/r/f5.ts"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s6",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/r/f6.ts"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s7",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/r/f7.ts"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s8",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/r/f8.ts"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s9",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/r/f9.ts"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s10",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/r/f10.ts"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "notice",
+          "key": "n1",
+          "part": {
+            "kind": "task-notification",
+            "status": "completed",
+            "summary": "Background command \"Check tinypool\" completed (exit code 0)"
+          }
+        },
+        {
+          "kind": "notice",
+          "key": "n2",
+          "part": {
+            "kind": "task-notification",
+            "status": "completed",
+            "summary": "Background command \"npm run typecheck\" completed (exit code 0)"
+          }
+        },
+        {
+          "kind": "notice",
+          "key": "n3",
+          "part": {
+            "kind": "task-notification",
+            "status": "completed",
+            "summary": "Background command \"npx oxfmt\" completed (exit code 0)"
+          }
+        },
+        {
+          "kind": "tool",
+          "key": "s14",
+          "toolName": "Bash",
+          "input": {
+            "command": "git push -u origin chore/security-updates"
+          },
+          "output": "pushed"
+        }
+      ],
+      "completions": [],
+      "expected": {
+        "description": "Security updates for dependabot PRs",
+        "model": "haiku",
+        "status": "done",
+        "statusText": "Done · 14 steps · 6m 02s",
+        "result": "Combined dependabot PRs #292-#298.",
+        "items": [
+          "step:s1",
+          "more:9 more steps",
+          "notices:3 background tasks completed",
+          "step:s14"
+        ]
+      }
+    },
+    {
+      "id": "running-current-step",
+      "call": {
+        "input": {
+          "description": "Security updates for dependabot PRs",
+          "model": "haiku",
+          "prompt": "Combine the PRs"
+        }
+      },
+      "steps": [
+        {
+          "kind": "tool",
+          "key": "s1",
+          "toolName": "Grep",
+          "input": {
+            "pattern": "tinypool"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s2",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/r/package-lock.json"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s3",
+          "toolName": "Edit",
+          "input": {
+            "file_path": "/r/a.test.ts"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "notice",
+          "key": "n1",
+          "part": {
+            "kind": "task-notification",
+            "status": "completed",
+            "summary": "Background command \"Check tinypool\" completed (exit code 0)"
+          }
+        },
+        {
+          "kind": "notice",
+          "key": "n2",
+          "part": {
+            "kind": "task-notification",
+            "status": "completed",
+            "summary": "Background command \"npm run typecheck\" completed (exit code 0)"
+          }
+        },
+        {
+          "kind": "notice",
+          "key": "n3",
+          "part": {
+            "kind": "task-notification",
+            "status": "failed",
+            "summary": "Background command \"npx oxfmt\" failed with exit code 1"
+          }
+        },
+        {
+          "kind": "tool",
+          "key": "s7",
+          "toolName": "Bash",
+          "input": {
+            "command": "npx vitest run --maxWorkers=4"
+          }
+        }
+      ],
+      "completions": [],
+      "expected": {
+        "description": "Security updates for dependabot PRs",
+        "model": "haiku",
+        "status": "running",
+        "statusText": "Step 7 · npx vitest run --maxWorkers=4",
+        "items": [
+          "step:s1",
+          "step:s2",
+          "step:s3",
+          "notices:3 background tasks, 1 failed",
+          "step:s7"
+        ]
+      }
+    },
+    {
+      "id": "failed-step-last-and-reason",
+      "call": {
+        "input": {
+          "description": "Audit apps/mobile dependencies",
+          "model": "sonnet"
+        },
+        "output": "<tool_use_error>expo-doctor exited 1</tool_use_error>",
+        "isError": true
+      },
+      "steps": [
+        {
+          "kind": "tool",
+          "key": "s1",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/r/apps/mobile/package.json"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s2",
+          "toolName": "Bash",
+          "input": {
+            "command": "npm audit"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s3",
+          "toolName": "Bash",
+          "input": {
+            "command": "npm ls"
+          },
+          "output": "Exit code 1\nmissing",
+          "isError": true
+        },
+        {
+          "kind": "tool",
+          "key": "s4",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/r/app.json"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s5",
+          "toolName": "Bash",
+          "input": {
+            "command": "npx expo-doctor"
+          },
+          "output": "Exit code 1\n1 check failed",
+          "isError": true
+        }
+      ],
+      "completions": [],
+      "expected": {
+        "description": "Audit apps/mobile dependencies",
+        "model": "sonnet",
+        "status": "failed",
+        "statusText": "Failed · expo-doctor exited 1 · 5 steps",
+        "items": [
+          "step:s1",
+          "more:3 more steps",
+          "failed:s5"
+        ]
+      }
+    },
+    {
+      "id": "background-agent-completes-by-notice",
+      "call": {
+        "input": {
+          "description": "Audit skills"
+        },
+        "output": "Async agent launched successfully.\nagentId: adf0 (internal)",
+        "startedAt": 1000
+      },
+      "steps": [
+        {
+          "kind": "tool",
+          "key": "s1",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/r/a.md"
+          },
+          "output": "ok"
+        }
+      ],
+      "completions": [
+        {
+          "part": {
+            "kind": "task-notification",
+            "status": "completed",
+            "summary": "Agent \"Audit skills\" finished",
+            "result": "Read all 20 files."
+          },
+          "at": 43000
+        }
+      ],
+      "expected": {
+        "description": "Audit skills",
+        "status": "done",
+        "statusText": "Done · 1 step · 42s",
+        "result": "Read all 20 files.",
+        "items": [
+          "step:s1"
+        ]
+      }
+    },
+    {
+      "id": "background-agent-running-until-notice",
+      "call": {
+        "input": {
+          "description": "Audit skills"
+        },
+        "output": "Async agent launched successfully."
+      },
+      "steps": [],
+      "completions": [],
+      "expected": {
+        "description": "Audit skills",
+        "status": "running",
+        "statusText": "Starting",
+        "items": []
+      }
+    },
+    {
+      "id": "background-agent-failed-notice",
+      "call": {
+        "input": {
+          "description": "Audit skills"
+        },
+        "output": "Async agent launched successfully."
+      },
+      "steps": [],
+      "completions": [
+        {
+          "part": {
+            "kind": "task-notification",
+            "status": "failed",
+            "summary": "Agent \"Audit skills\" failed: API Error 529"
+          }
+        }
+      ],
+      "expected": {
+        "description": "Audit skills",
+        "status": "failed",
+        "statusText": "Failed · API Error 529",
+        "items": []
+      }
+    },
+    {
+      "id": "background-agent-stopped",
+      "call": {
+        "input": {
+          "description": "Audit skills"
+        },
+        "output": "Async agent launched successfully."
+      },
+      "steps": [],
+      "completions": [
+        {
+          "part": {
+            "kind": "task-notification",
+            "status": "stopped",
+            "summary": "Agent \"Audit skills\" was stopped"
+          }
+        }
+      ],
+      "expected": {
+        "description": "Audit skills",
+        "status": "failed",
+        "statusText": "Failed · Stopped",
+        "items": []
+      }
+    },
+    {
+      "id": "no-steps-uses-usage-count",
+      "call": {
+        "input": {
+          "prompt": "Review the staged diff for bugs\nand more"
+        },
+        "output": "All good.\nagentId: a1 (use SendMessage)\n<usage>subagent_tokens: 1\ntool_uses: 67\nduration_ms: 349577</usage>"
+      },
+      "steps": [],
+      "completions": [],
+      "expected": {
+        "description": "Review the staged diff for bugs",
+        "status": "done",
+        "statusText": "Done · 67 steps · 5m 50s",
+        "result": "All good.",
+        "items": []
+      }
+    },
+    {
+      "id": "two-middle-steps-stay",
+      "call": {
+        "input": {
+          "description": "d"
+        },
+        "output": "ok"
+      },
+      "steps": [
+        {
+          "kind": "tool",
+          "key": "s1",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/a"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s2",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/b"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s3",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/c"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "tool",
+          "key": "s4",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/d"
+          },
+          "output": "ok"
+        }
+      ],
+      "completions": [],
+      "expected": {
+        "description": "d",
+        "status": "done",
+        "statusText": "Done · 4 steps",
+        "result": "ok",
+        "items": [
+          "step:s1",
+          "step:s2",
+          "step:s3",
+          "step:s4"
+        ]
+      }
+    },
+    {
+      "id": "single-notice-stays-a-step",
+      "call": {
+        "input": {
+          "description": "d"
+        },
+        "output": "ok"
+      },
+      "steps": [
+        {
+          "kind": "tool",
+          "key": "s1",
+          "toolName": "Read",
+          "input": {
+            "file_path": "/a"
+          },
+          "output": "ok"
+        },
+        {
+          "kind": "notice",
+          "key": "n1",
+          "part": {
+            "kind": "task-notification",
+            "status": "completed",
+            "summary": "Background command \"make\" completed (exit code 0)"
+          }
+        }
+      ],
+      "completions": [],
+      "expected": {
+        "description": "d",
+        "status": "done",
+        "statusText": "Done · 2 steps",
+        "result": "ok",
+        "items": [
+          "step:s1",
+          "step:n1"
+        ]
+      }
+    }
+  ]
+}

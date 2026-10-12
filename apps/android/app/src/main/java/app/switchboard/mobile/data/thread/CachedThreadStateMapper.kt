@@ -95,6 +95,7 @@ object CachedThreadStateMapper {
                 stream = value.string("stream") ?: "assistant",
                 done = (value.values["done"] as? JsonBoolean)?.value ?: true,
                 durationMs = value.long("durationMs"),
+                parentToolCallId = value.string("parentToolCallId"),
             )
 
             "tool" -> FeedItem.Tool(
@@ -104,6 +105,9 @@ object CachedThreadStateMapper {
                 input = value.values["input"].takeUnless { it == JsonNull },
                 output = value.string("output"),
                 state = value.string("state") ?: "done",
+                parentToolCallId = value.string("parentToolCallId"),
+                isError = value.boolean("isError") ?: false,
+                startedAt = value.long("startedAt"),
             )
 
             "denial" -> FeedItem.Denial(

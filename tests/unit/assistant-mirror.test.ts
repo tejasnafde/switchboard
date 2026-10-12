@@ -235,6 +235,37 @@ describe('live assistant mirror', () => {
     }
   })
 
+  it("does not store a subagent's text as the parent's reply", () => {
+    const { publish } = makeRegistry()
+    publish({ ...content('t1', 'sub_1', 'Checking the lockfile.'), parentToolCallId: 'agent_1' })
+    publish(turnEnd('t1'))
+    expect(saved).toEqual([])
+  })
+
+  it("keeps a subagent step's Agent call and an error result on the stored row", () => {
+    const { publish } = makeRegistry()
+    publish({
+      type: 'tool.started',
+      threadId: 't1',
+      toolId: 'bash_1',
+      toolName: 'Bash',
+      input: { command: 'npx expo-doctor' },
+      parentToolCallId: 'agent_1',
+    })
+    publish({ type: 'tool.completed', threadId: 't1', toolId: 'bash_1', output: 'Exit code 1', isError: true })
+    publish(turnEnd('t1'))
+    expect(activity[0].toolCalls).toEqual([
+      {
+        id: 'bash_1',
+        name: 'Bash',
+        input: '{\n  "command": "npx expo-doctor"\n}',
+        parentToolCallId: 'agent_1',
+        output: 'Exit code 1',
+        isError: true,
+      },
+    ])
+  })
+
   it('stores a capped copy of a long tool input, as with the output', () => {
     const { publish } = makeRegistry()
     const long = 'x'.repeat(STORED_TOOL_TEXT_MAX_CHARS * 4)

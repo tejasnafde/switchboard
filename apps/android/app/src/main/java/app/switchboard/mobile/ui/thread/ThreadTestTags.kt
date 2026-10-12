@@ -39,6 +39,13 @@ object ThreadTestTags {
     fun toolOutput(key: String) = "thread-tool-output:$key"
     fun toolOutputList(key: String) = "thread-tool-output-list:$key"
 
+    fun subagentRow(key: String) = "thread-subagent-row:$key"
+    fun subagentStatus(key: String) = "thread-subagent-status:$key"
+    fun subagentStatusText(key: String) = "thread-subagent-status-text:$key"
+    fun subagentSteps(key: String) = "thread-subagent-steps:$key"
+    fun subagentFold(key: String) = "thread-subagent-fold:$key"
+    fun subagentResult(key: String) = "thread-subagent-result:$key"
+
     fun questionOption(requestId: String, question: Int, option: Int) = "thread-question-option:$requestId:$question:$option"
     fun questionOther(requestId: String, question: Int) = "thread-question-other:$requestId:$question"
     fun questionOptionLabel(requestId: String, question: Int, option: Int) = "thread-question-option-label:$requestId:$question:$option"

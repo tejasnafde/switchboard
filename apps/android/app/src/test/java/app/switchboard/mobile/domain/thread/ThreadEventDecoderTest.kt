@@ -101,6 +101,40 @@ class ThreadEventDecoderTest {
     }
 
     @Test
+    fun subagentFieldsDecodeAndOlderPayloadsKeepTheirDefaults() {
+        fun payload(raw: JsonObject) = (ThreadEventDecoder.decode(raw) as ThreadRuntimeEvent.Known).payload
+
+        val started = payload(
+            event("tool.started", "toolId" to s("B"), "toolName" to s("Bash"), "input" to obj(), "parentToolCallId" to s("A")),
+        ) as ThreadEventPayload.ToolStarted
+        val completed = payload(
+            event("tool.completed", "toolId" to s("B"), "output" to s("x"), "isError" to b(true), "parentToolCallId" to s("A")),
+        ) as ThreadEventPayload.ToolCompleted
+        val content = payload(
+            event("content", "messageId" to s("m"), "text" to s("t"), "streamKind" to s("assistant"), "parentToolCallId" to s("A")),
+        ) as ThreadEventPayload.Content
+        val notice = payload(
+            event(
+                "task.notification", "messageId" to s("n"), "taskId" to s("k"), "status" to s("completed"),
+                "summary" to s("s"), "at" to n(1), "toolUseId" to s("A"),
+            ),
+        ) as ThreadEventPayload.TaskNotification
+        assertEquals("A", started.parentToolCallId)
+        assertEquals(ThreadEventPayload.ToolCompleted("B", "x", isError = true, parentToolCallId = "A"), completed)
+        assertEquals("A", content.parentToolCallId)
+        assertEquals("A", notice.toolUseId)
+
+        val oldStarted = payload(event("tool.started", "toolId" to s("B"), "toolName" to s("Bash"), "input" to obj()))
+        val oldCompleted = payload(event("tool.completed", "toolId" to s("B"), "output" to s("x")))
+        val oldNotice = payload(
+            event("task.notification", "messageId" to s("n"), "taskId" to s("k"), "status" to s("completed"), "summary" to s("s"), "at" to n(1)),
+        ) as ThreadEventPayload.TaskNotification
+        assertEquals(ThreadEventPayload.ToolStarted("B", "Bash", obj()), oldStarted)
+        assertEquals(ThreadEventPayload.ToolCompleted("B", "x"), oldCompleted)
+        assertEquals(null, oldNotice.toolUseId)
+    }
+
+    @Test
     fun malformedKnownAndUnknownEventsBecomeNonFatalVisibleExtensions() {
         val malformed = ThreadEventDecoder.decode(event("content", "text" to s("missing ids")))
         val extension = ThreadEventDecoder.decode(event("provider.future", "payload" to n(3)))

@@ -2,11 +2,18 @@ import { useState, useMemo, useRef } from 'react'
 import type { ToolCall } from '@shared/types'
 import { summarizeTool as summarizeToolShared } from '@shared/tool-summary'
 import { createRendererLogger } from '../../logger'
+import { cn } from '../../lib/utils'
 
 const log = createRendererLogger('chat:tool-call')
 
 interface ToolCallBlockProps {
   toolCall: ToolCall
+  /** A subagent's step: the quieter type of the agent row. */
+  step?: boolean
+  /** The step running now, or the one its agent failed on. */
+  emphasis?: 'current' | 'failed'
+  /** Replaces "Running" at the end of the row, e.g. "Exit 1". */
+  statusLabel?: string
 }
 
 // ─── Per-tool metadata ────────────────────────────────────────────
@@ -133,6 +140,9 @@ function summarizeTool(name: string, input: string): ToolSummary {
 
 // ─── Expanded body per tool type ──────────────────────────────────
 
+const bodyClass = 'flex flex-col gap-[6px] px-[12px] py-[8px]'
+const monoClass = '[font-family:var(--font-mono)]'
+
 function ExpandedBody({ kind, toolCall }: { kind: ToolKind; toolCall: ToolCall }) {
   const parsed = useMemo(() => {
     try {
@@ -144,9 +154,9 @@ function ExpandedBody({ kind, toolCall }: { kind: ToolKind; toolCall: ToolCall }
 
   if (kind === 'bash' && parsed) {
     return (
-      <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div className={bodyClass}>
         <CodeBlock variant="command">$ {parsed.command}</CodeBlock>
-        {parsed.description && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{parsed.description}</div>}
+        {parsed.description && <div className="text-[11px] text-[var(--text-muted)]">{parsed.description}</div>}
         {toolCall.output && <CodeBlock variant="output">{toolCall.output}</CodeBlock>}
       </div>
     )
@@ -154,12 +164,10 @@ function ExpandedBody({ kind, toolCall }: { kind: ToolKind; toolCall: ToolCall }
 
   if ((kind === 'edit' || kind === 'write') && parsed) {
     return (
-      <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div className={bodyClass}>
         <FileLabel path={parsed.file_path} />
         {parsed.move_path && (
-          <div style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
-            → {parsed.move_path}
-          </div>
+          <div className={cn('text-[11px] text-[var(--text-secondary)]', monoClass)}>→ {parsed.move_path}</div>
         )}
         {kind === 'edit' ? (
           <>
@@ -176,10 +184,10 @@ function ExpandedBody({ kind, toolCall }: { kind: ToolKind; toolCall: ToolCall }
 
   if (kind === 'read' && parsed) {
     return (
-      <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div className={bodyClass}>
         <FileLabel path={parsed.file_path} />
         {(parsed.offset || parsed.limit) && (
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+          <div className={cn('text-[11px] text-[var(--text-muted)]', monoClass)}>
             {parsed.offset && `offset=${parsed.offset}`}
             {parsed.offset && parsed.limit && ' · '}
             {parsed.limit && `limit=${parsed.limit}`}
@@ -192,38 +200,28 @@ function ExpandedBody({ kind, toolCall }: { kind: ToolKind; toolCall: ToolCall }
 
   if (kind === 'todo' && parsed?.todos) {
     return (
-      <div style={{ padding: '8px 12px' }}>
+      <div className="px-[12px] py-[8px]">
         {(parsed.todos as Array<{ status?: string; content?: string; text?: string }>).map((t, i) => (
-          <div
-            key={i}
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '6px',
-              padding: '3px 0',
-              fontSize: '12px',
-            }}
-          >
+          <div key={i} className="flex items-start gap-[6px] py-[3px] text-[12px]">
             <span
-              style={{
-                fontSize: '10px',
-                color:
-                  t.status === 'completed'
-                    ? 'var(--success)'
-                    : t.status === 'in_progress'
-                      ? 'var(--warning)'
-                      : 'var(--text-muted)',
-                marginTop: '2px',
-              }}
+              className={cn(
+                'mt-[2px] text-[10px]',
+                t.status === 'completed'
+                  ? 'text-[var(--success)]'
+                  : t.status === 'in_progress'
+                    ? 'text-[var(--warning)]'
+                    : 'text-[var(--text-muted)]',
+              )}
             >
               {t.status === 'completed' ? '●' : t.status === 'in_progress' ? '◐' : '○'}
             </span>
             <span
-              style={{
-                color: t.status === 'completed' ? 'var(--text-muted)' : 'var(--text-secondary)',
-                textDecoration: t.status === 'completed' ? 'line-through' : 'none',
-                flex: 1,
-              }}
+              className={cn(
+                'flex-1',
+                t.status === 'completed'
+                  ? 'text-[var(--text-muted)] line-through'
+                  : 'text-[var(--text-secondary)] no-underline',
+              )}
             >
               {t.content || t.text}
             </span>
@@ -235,7 +233,7 @@ function ExpandedBody({ kind, toolCall }: { kind: ToolKind; toolCall: ToolCall }
 
   // Fallback: raw JSON input + output
   return (
-    <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+    <div className={bodyClass}>
       <CodeBlock variant="code">{toolCall.input}</CodeBlock>
       {toolCall.output && <CodeBlock variant="output">{toolCall.output}</CodeBlock>}
     </div>
@@ -247,21 +245,26 @@ function ExpandedBody({ kind, toolCall }: { kind: ToolKind; toolCall: ToolCall }
 function FileLabel({ path }: { path: string }) {
   return (
     <div
-      style={{
-        fontSize: '11px',
-        fontFamily: 'var(--font-mono)',
-        color: 'var(--accent)',
-        padding: '3px 6px',
-        background: 'var(--accent-subtle)',
-        borderRadius: '3px',
-        display: 'inline-block',
-        alignSelf: 'flex-start',
-      }}
+      className={cn(
+        'inline-block self-start rounded-[3px] bg-[var(--accent-subtle)] px-[6px] py-[3px] text-[11px] text-[var(--accent)]',
+        monoClass,
+      )}
     >
       {path}
     </div>
   )
 }
+
+const preClass = cn(
+  'm-0 overflow-auto whitespace-pre-wrap rounded-[3px] px-[10px] py-[6px] text-[11px] [word-break:break-word]',
+  monoClass,
+)
+
+const codeVariantClass = {
+  command: 'border-l-2 border-l-[#10b981] bg-[rgba(16,185,129,0.06)] text-[var(--text-primary)]',
+  output: 'border-l-2 border-l-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)]',
+  code: 'border-l-2 border-l-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-primary)]',
+} as const
 
 function CodeBlock({ variant, children }: { variant: 'command' | 'output' | 'code'; children: React.ReactNode }) {
   const [copied, setCopied] = useState(false)
@@ -282,23 +285,6 @@ function CodeBlock({ variant, children }: { variant: 'command' | 'output' | 'cod
       })
   }
 
-  const variantStyles: Record<string, React.CSSProperties> = {
-    command: {
-      background: 'rgba(16, 185, 129, 0.06)',
-      color: 'var(--text-primary)',
-      borderLeft: '2px solid #10b981',
-    },
-    output: {
-      background: 'var(--bg-primary)',
-      color: 'var(--text-secondary)',
-      borderLeft: '2px solid var(--border)',
-    },
-    code: {
-      background: 'var(--bg-primary)',
-      color: 'var(--text-primary)',
-      borderLeft: '2px solid var(--border)',
-    },
-  }
   return (
     <div className="tool-code-block">
       <div className="tool-code-toolbar">
@@ -312,20 +298,7 @@ function CodeBlock({ variant, children }: { variant: 'command' | 'output' | 'cod
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
-      <pre
-        style={{
-          margin: 0,
-          padding: '6px 10px',
-          fontFamily: 'var(--font-mono)',
-          fontSize: '11px',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-          overflow: 'auto',
-          maxHeight: '240px',
-          borderRadius: '3px',
-          ...variantStyles[variant],
-        }}
-      >
+      <pre className={cn(preClass, 'max-h-[240px]', codeVariantClass[variant])}>
         <span ref={codeRef}>{children}</span>
       </pre>
     </div>
@@ -336,30 +309,17 @@ function DiffChunk({ type, content }: { type: 'add' | 'remove'; content: string 
   const isAdd = type === 'add'
   return (
     <pre
-      style={{
-        margin: 0,
-        padding: '6px 10px',
-        fontFamily: 'var(--font-mono)',
-        fontSize: '11px',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-        overflow: 'auto',
-        maxHeight: '200px',
-        borderRadius: '3px',
-        background: isAdd ? 'rgba(63, 185, 80, 0.08)' : 'rgba(248, 81, 73, 0.08)',
-        color: 'var(--text-primary)',
-        borderLeft: `2px solid ${isAdd ? 'var(--success)' : 'var(--error)'}`,
-      }}
+      className={cn(
+        preClass,
+        'max-h-[200px] border-l-2 text-[var(--text-primary)]',
+        isAdd
+          ? 'border-l-[var(--success)] bg-[rgba(63,185,80,0.08)]'
+          : 'border-l-[var(--error)] bg-[rgba(248,81,73,0.08)]',
+      )}
     >
       {content.split('\n').map((line, i) => (
         <div key={i}>
-          <span
-            style={{
-              color: isAdd ? 'var(--success)' : 'var(--error)',
-              marginRight: '6px',
-              userSelect: 'none',
-            }}
-          >
+          <span className={cn('mr-[6px] select-none', isAdd ? 'text-[var(--success)]' : 'text-[var(--error)]')}>
             {isAdd ? '+' : '-'}
           </span>
           {line}
@@ -371,43 +331,45 @@ function DiffChunk({ type, content }: { type: 'add' | 'remove'; content: string 
 
 // ─── Main component ───────────────────────────────────────────────
 
-export function ToolCallBlock({ toolCall }: ToolCallBlockProps) {
+export function ToolCallBlock({ toolCall, step, emphasis, statusLabel }: ToolCallBlockProps) {
   const [expanded, setExpanded] = useState(false)
   const kind = classifyTool(toolCall.name)
   const summary = useMemo(() => summarizeTool(toolCall.name, toolCall.input), [toolCall.name, toolCall.input])
-  const hasRunning = !toolCall.output
+  const status = statusLabel ?? (toolCall.output ? undefined : 'Running')
 
   return (
-    <div className="tool-call-row">
+    <div className={cn('tool-call-row', step && '!mt-0')}>
       <button
-        className="tool-call-trigger"
+        className={cn('tool-call-trigger', step && '!py-[3px] !text-[11.5px]')}
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded(!expanded)}
       >
         {/* Neutral glyph: tool type is useful; decorative category color is not. */}
         <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '16px',
-            height: '16px',
-            color: 'var(--text-muted)',
-            flexShrink: 0,
-          }}
+          className={cn(
+            'inline-flex h-[16px] w-[16px] shrink-0 items-center justify-center',
+            emphasis === 'current'
+              ? 'text-[var(--accent)]'
+              : emphasis === 'failed'
+                ? 'text-[var(--error)]'
+                : 'text-[var(--text-muted)]',
+          )}
         >
           <Icon kind={kind} />
         </span>
 
         {/* Label */}
         <span
-          style={{
-            color: 'var(--text-primary)',
-            fontWeight: 500,
-            fontSize: '12px',
-            flexShrink: 0,
-          }}
+          className={cn(
+            'shrink-0',
+            step
+              ? cn(
+                  'text-[11.5px] font-[400]',
+                  emphasis === 'current' ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]',
+                )
+              : 'text-[12px] font-[500] text-[var(--text-primary)]',
+          )}
         >
           {summary.label}
         </span>
@@ -415,44 +377,36 @@ export function ToolCallBlock({ toolCall }: ToolCallBlockProps) {
         {/* Detail - monospace, truncated */}
         {summary.detail && (
           <span
-            style={{
-              flex: 1,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              fontFamily: summary.mono ? 'var(--font-mono)' : 'inherit',
-              fontSize: '11px',
-              color: 'var(--text-muted)',
-            }}
+            className={cn(
+              'flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-[var(--text-muted)]',
+              summary.mono ? monoClass : '[font-family:inherit]',
+            )}
             title={summary.detail}
           >
             {summary.detail}
           </span>
         )}
 
-        {!summary.detail && <span style={{ flex: 1 }} />}
+        {!summary.detail && <span className="flex-1" />}
 
-        {hasRunning && <span style={{ color: 'var(--text-muted)', fontSize: '10px', flexShrink: 0 }}>Running</span>}
+        {status && (
+          <span
+            className={cn(
+              'shrink-0',
+              step ? 'text-[11px]' : 'text-[10px]',
+              emphasis === 'failed' ? 'text-[var(--error)]' : 'text-[var(--text-muted)]',
+            )}
+          >
+            {status}
+          </span>
+        )}
 
         {/* Chevron */}
-        <span
-          style={{
-            fontSize: '9px',
-            color: 'var(--text-muted)',
-            flexShrink: 0,
-          }}
-        >
-          {expanded ? '▾' : '▸'}
-        </span>
+        <span className="shrink-0 text-[9px] text-[var(--text-muted)]">{expanded ? '▾' : '▸'}</span>
       </button>
 
       {expanded && (
-        <div
-          style={{
-            borderTop: '1px solid var(--border)',
-            background: 'var(--bg-surface)',
-          }}
-        >
+        <div className="border-t border-[var(--border)] bg-[var(--bg-surface)]">
           <ExpandedBody kind={kind} toolCall={toolCall} />
         </div>
       )}

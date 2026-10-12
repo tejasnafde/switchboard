@@ -1,0 +1,100 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "subagent-rows",
+  "summary": "A Claude subagent's tool calls and background task notices attach to the Agent/Task call that started it, live and after a reload, and every client shows one collapsible row per subagent with its status, folded steps and report.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/SubagentRow.tsx",
+        "src/renderer/components/chat/subagent-messages.ts",
+        "src/renderer/components/chat/MessageList.tsx",
+        "src/renderer/components/chat/turn-presentation.ts",
+        "src/renderer/components/chat/ToolCallBlock.tsx",
+        "src/renderer/components/chat/HistoryToolCall.tsx",
+        "src/renderer/components/chat/provider-event-reducer.ts",
+        "src/renderer/components/ui/collapsible.tsx",
+        "tests/unit/subagent-row.test.ts",
+        "e2e/visual-regressions.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/subagent-rows.ts",
+        "apps/mobile/src/screens/SubagentItem.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/lib/thread-history.ts",
+        "apps/mobile/src/screens/__tests__/subagent-item.test.tsx",
+        "tests/unit/mobile-subagent-rows.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/SubagentSteps.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/SubagentRow.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/SyntheticUserMessage.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadEventDecoder.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/SubagentStepsFixturesTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/SubagentStepsTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/SubagentFeedRowsTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/SubagentRowRenderTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/subagent-steps.ts",
+        "src/shared/synthetic-message.ts",
+        "src/shared/provider-events.ts",
+        "src/shared/types.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/fixtures/subagent-cases.json",
+        "tests/unit/subagent-steps.test.ts",
+        "tests/unit/claude-adapter-subagent.test.ts",
+        "tests/unit/live-task-notification.test.ts",
+        "src/main/agent/dedupe-messages.ts",
+        "src/main/agent/jsonl-parser.ts",
+        "src/main/agent/subagent-transcripts.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/conversations/history.ts",
+        "tests/unit/subagent-transcripts.test.ts",
+        "tests/unit/assistant-mirror.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/provider-events.ts",
+        "apps/mobile/src/lib/subagent-rows.ts",
+        "tests/unit/mobile-subagent-rows.test.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/fixtures/subagent-cases.json (labels, grouping, rows) runs in vitest (tests/unit/subagent-steps.test.ts) and in the Android SubagentStepsFixturesTest.",
+      "All new fields are optional, so no migration: stored tool rows keep parentToolCallId and isError inside their tool_calls JSON, and notices keep the tool-use id inside their text. An older backend sends none of them; the phones then keep every step where it was (tests/unit/mobile-subagent-rows.test.ts, Android SubagentFeedRowsTest). The Expo change is JavaScript only, so it ships as an OTA.",
+      "tests/unit/subagent-row.test.ts drives the desktop row in jsdom: collapsed behind a button with aria-expanded and aria-controls, toggling, the failure in the row, the failing step's output, the folds and the report.",
+      "Visual regression screens subagents and subagents-expanded (two parallel subagents, one done, one failed) in Dark, Light and Translucent; the screens phase passed twice without updating.",
+      "Android: ./gradlew testDebugUnitTest compileDebugAndroidTestKotlin lintDebug passed, including Robolectric render tests of the row."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live Claude subagent run through this build; the adapter mapping is tested against recorded SDK message shapes.",
+      "Android on-device tests (connectedDebugAndroidTest) were not run; no emulator was started.",
+      "The Expo row was tested with jest only, not on a phone.",
+      "Codex and OpenCode are not mapped: Codex runs a spawned agent as its own thread, and OpenCode's ACP stream carries no child-session updates.",
+      "Runs of top-level background notices (the parent's own) are not folded; only a subagent's notices fold."
+    ]
+  }
+}

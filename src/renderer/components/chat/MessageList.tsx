@@ -28,10 +28,14 @@ import {
   projectTurnPresentation,
 } from './turn-presentation'
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
+import { SubagentRow } from './SubagentRow'
+import { groupChatSubagents, subagentCallsOf } from './subagent-messages'
 import { shouldLoadOlder, turnIndexHolding } from '../../services/history-window'
 import { loadOlderHistory } from '../../services/history-loader'
 import { messageSearchTerms } from '@shared/message-search'
 import { cn } from '../../lib/utils'
+
+const NO_MESSAGES: readonly ChatMessage[] = []
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -202,7 +206,9 @@ export function MessageList({
   const programmaticScrollRef = useRef(false)
   const prevSessionIdRef = useRef<string | null | undefined>(sessionId)
 
-  const turns = useMemo(() => groupIntoTurns(messages), [messages])
+  // A subagent's rows render inside its agent's row, so they never open a turn.
+  const subagents = useMemo(() => groupChatSubagents(messages), [messages])
+  const turns = useMemo(() => groupIntoTurns(subagents.topLevel), [subagents])
   const turnsRef = useRef(turns)
   turnsRef.current = turns
   const turnsLengthRef = useRef(turns.length)
@@ -712,6 +718,18 @@ export function MessageList({
                       {renderHtmlFileCards([item.message])}
                     </Fragment>
                   )
+                if (item.kind === 'subagents') {
+                  return subagentCallsOf(item.message).map((call) => (
+                    <SubagentRow
+                      key={call.id}
+                      call={call}
+                      startedAt={item.message.timestamp}
+                      steps={subagents.stepsByAgent.get(call.id) ?? NO_MESSAGES}
+                      completions={subagents.completionsByAgent.get(call.id) ?? NO_MESSAGES}
+                      sessionId={sessionId ?? undefined}
+                    />
+                  ))
+                }
                 if (item.kind === 'activity') {
                   return (
                     <Fragment key={item.messages[0].id}>

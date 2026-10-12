@@ -35,6 +35,7 @@ object ThreadEventDecoder {
             "content" -> ThreadEventKind.Content to ThreadEventPayload.Content(
                 raw.requiredString("messageId"), raw.requiredString("text"),
                 raw.boolean("append") ?: false, raw.requiredString("streamKind"),
+                raw.string("parentToolCallId"),
             )
             "user.message" -> ThreadEventKind.UserMessage to ThreadEventPayload.UserMessage(
                 raw.requiredString("text"), raw.string("displayBody"),
@@ -56,9 +57,11 @@ object ThreadEventDecoder {
             )
             "tool.started" -> ThreadEventKind.ToolStarted to ThreadEventPayload.ToolStarted(
                 raw.requiredString("toolId"), raw.requiredString("toolName"), raw.required("input"),
+                raw.string("parentToolCallId"),
             )
             "tool.completed" -> ThreadEventKind.ToolCompleted to ThreadEventPayload.ToolCompleted(
                 raw.requiredString("toolId"), raw.string("output"),
+                raw.boolean("isError") ?: false, raw.string("parentToolCallId"),
             )
             "tool.denied" -> ThreadEventKind.ToolDenied to ThreadEventPayload.ToolDenied(
                 raw.requiredString("toolName"), raw.requiredString("reason"), raw.requiredString("mode"),
@@ -141,6 +144,7 @@ object ThreadEventDecoder {
             "task.notification" -> ThreadEventKind.TaskNotification to ThreadEventPayload.TaskNotification(
                 raw.requiredString("messageId"), raw.requiredString("taskId"), raw.requiredString("status"),
                 raw.requiredString("summary"), raw.string("outputFile"), raw.requiredLong("at"),
+                raw.string("toolUseId"),
             )
             "turn.queued" -> ThreadEventKind.TurnQueued to ThreadEventPayload.TurnQueued(
                 raw.requiredString("messageId"), raw.boolean("held") ?: false,

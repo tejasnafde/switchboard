@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type ComponentProps } from 'react'
 import type { ToolCall } from '@shared/types'
 import { createRendererLogger } from '../../logger'
 import { perfSpan } from '../../perf'
@@ -26,11 +26,12 @@ export function HistoryToolCall({
   toolCall,
   sessionId,
   messageId,
+  ...row
 }: {
   toolCall: ToolCall
   sessionId?: string
   messageId: string
-}) {
+} & Omit<ComponentProps<typeof ToolCallBlock>, 'toolCall'>) {
   const key = sessionId ? `${sessionId}\0${messageId}\0${toolCall.id}` : ''
   const [full, setFull] = useState<ToolCall | null>(() => (toolCall.preview && loaded.get(key)) || null)
   const requested = useRef(false)
@@ -63,7 +64,7 @@ export function HistoryToolCall({
 
   return (
     <div className="contents" onClickCapture={load}>
-      <ToolCallBlock toolCall={current ?? toolCall} />
+      <ToolCallBlock toolCall={current ?? toolCall} {...row} />
     </div>
   )
 }

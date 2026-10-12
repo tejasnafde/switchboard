@@ -198,6 +198,12 @@ export interface ToolCall {
   /** `input` and `output` are shortened (`history_tool_previews_v1`); fetch
    *  the whole call with `app:load-tool-call`. */
   preview?: true
+  /** The Agent/Task call this one ran inside, for a subagent's own steps
+   *  (`shared/subagent-steps.ts`). Absent for the parent agent's calls. */
+  parentToolCallId?: string
+  /** The provider reported the result as an error (a failed command, a
+   *  subagent that failed). Absent when it did not say. */
+  isError?: true
 }
 
 export interface HistoryImageRef {
@@ -273,6 +279,8 @@ export interface ChatMessage {
   id: string
   role: MessageRole
   content: string
+  /** A subagent's own text: the Agent/Task call it belongs to. */
+  parentToolCallId?: string
   toolCalls?: ToolCall[]
   images?: MessageImage[]
   timestamp: number

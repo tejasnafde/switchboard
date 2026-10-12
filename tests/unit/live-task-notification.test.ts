@@ -58,6 +58,7 @@ describe('Claude system/task_notification', () => {
       status: 'failed',
       summary: SDK_MESSAGE.summary,
       outputFile: SDK_MESSAGE.output_file,
+      toolUseId: SDK_MESSAGE.tool_use_id,
       at: expect.any(Number),
     })
   })

@@ -605,7 +605,9 @@ export class ProviderRegistry implements PeerToolHost {
 
   /** Fold one content delta into the in-flight turn buffer. */
   private bufferAssistantText(event: RuntimeEvent): void {
-    if (event.type !== 'content' || event.streamKind !== 'assistant') return
+    // A subagent's text renders inside its agent's row, live only; stored, it
+    // would come back from a reload as the parent's own reply.
+    if (event.type !== 'content' || event.streamKind !== 'assistant' || event.parentToolCallId) return
     let byMessage = this.pendingAssistantText.get(event.threadId)
     if (!byMessage) {
       byMessage = new Map()
@@ -642,13 +644,18 @@ export class ProviderRegistry implements PeerToolHost {
           id: event.toolId,
           name: event.toolName,
           input: storedToolText(toolInputText(event.input)),
+          ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}),
         },
         at: pending?.at ?? Date.now(),
       })
     } else if (event.type === 'tool.completed') {
       const pending = this.pendingToolCalls.get(event.threadId)?.get(event.toolId)
       if (pending && event.output !== undefined)
-        pending.call = { ...pending.call, output: storedToolText(event.output) }
+        pending.call = {
+          ...pending.call,
+          output: storedToolText(event.output),
+          ...(event.isError ? { isError: true as const } : {}),
+        }
     }
   }
 

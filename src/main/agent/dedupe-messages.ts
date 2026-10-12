@@ -248,12 +248,25 @@ function sameToolCallsOnDisk(message: ChatMessage, diskIndexesByToolId: Map<stri
   return calls.every((call) => diskIndexesByToolId.get(call.id) === index) ? index : undefined
 }
 
-/** Claude's transcript keeps the tool_use and not its result, which the mirror has. */
+/**
+ * Claude's transcript keeps the tool_use and not its result, which the mirror
+ * has, with the error flag and a subagent step's Agent call.
+ */
 function withToolOutputs(calls: ToolCall[], mirrored: ToolCall[]): ToolCall[] {
-  const outputs = new Map(mirrored.map((call) => [call.id, call.output]))
+  const byId = new Map(mirrored.map((call) => [call.id, call]))
   return calls.map((call) => {
-    const output = outputs.get(call.id)
-    return call.output === undefined && output !== undefined ? { ...call, output } : call
+    const stored = byId.get(call.id)
+    if (!stored) return call
+    const output = call.output === undefined && stored.output !== undefined
+    const isError = stored.isError && !call.isError
+    const parent = stored.parentToolCallId && !call.parentToolCallId
+    if (!output && !isError && !parent) return call
+    return {
+      ...call,
+      ...(output ? { output: stored.output } : {}),
+      ...(isError ? { isError: true as const } : {}),
+      ...(parent ? { parentToolCallId: stored.parentToolCallId } : {}),
+    }
   })
 }
 

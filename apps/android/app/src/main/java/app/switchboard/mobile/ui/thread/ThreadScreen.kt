@@ -1509,6 +1509,7 @@ private fun ThreadRow(
             tint = TextDim,
         )
         is ThreadRowPresentation.Synthetic -> SyntheticRow(row)
+        is ThreadRowPresentation.Subagent -> SubagentRow(row)
         is ThreadRowPresentation.RawNotice -> NoticeCard(
             title = "Unsupported event · ${row.eventType}",
             body = "${row.source.text}\n${row.raw}",
@@ -1518,7 +1519,7 @@ private fun ThreadRow(
 }
 
 @Composable
-private fun SyntheticRow(row: ThreadRowPresentation.Synthetic) {
+internal fun SyntheticRow(row: ThreadRowPresentation.Synthetic) {
     var expanded by rememberSaveable(row.key) { mutableStateOf(false) }
     val tint = when (row.tone) {
         SyntheticTone.OK -> Green
@@ -1930,8 +1931,13 @@ private fun TextRow(
 }
 
 @Composable
-private fun ToolRow(row: ThreadRowPresentation.Tool) {
-    var expanded by rememberSaveable(row.key) { mutableStateOf(false) }
+internal fun ToolRow(
+    row: ThreadRowPresentation.Tool,
+    /** A subagent's step: no side inset, a lighter label. */
+    quiet: Boolean = false,
+    initiallyExpanded: Boolean = false,
+) {
+    var expanded by rememberSaveable(row.key) { mutableStateOf(initiallyExpanded) }
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val toggle = { expanded = !expanded }
@@ -1953,7 +1959,7 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = if (quiet) 0.dp else 16.dp)
             .testTag(ThreadTestTags.toolContainer(row.key)),
     ) {
         Row(
@@ -2017,7 +2023,8 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
             }
             Text(
                 text = row.label,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = if (quiet) FontWeight.Medium else FontWeight.SemiBold,
+                color = if (quiet) TextDim else Color.Unspecified,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

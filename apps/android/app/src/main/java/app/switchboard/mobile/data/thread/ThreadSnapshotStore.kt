@@ -237,6 +237,7 @@ object ThreadSnapshotCacheCodec {
             "stream" to JsonString(item.stream),
             "done" to JsonBoolean(item.done),
             "durationMs" to item.durationMs.jsonNumber(),
+            "parentToolCallId" to item.parentToolCallId.jsonString(),
         )
 
         is FeedItem.Tool -> jsonObject(
@@ -247,6 +248,9 @@ object ThreadSnapshotCacheCodec {
             "input" to (item.input ?: JsonNull),
             "output" to item.output.jsonString(),
             "state" to JsonString(item.state),
+            "parentToolCallId" to item.parentToolCallId.jsonString(),
+            "isError" to JsonBoolean(item.isError),
+            "startedAt" to item.startedAt.jsonNumber(),
         )
 
         is FeedItem.Denial -> jsonObject(

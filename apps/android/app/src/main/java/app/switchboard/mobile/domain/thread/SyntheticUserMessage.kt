@@ -15,6 +15,10 @@ sealed interface SyntheticPart {
         val summary: String,
         val taskId: String?,
         val outputFile: String?,
+        /** The tool call that started the task; places the notice under a subagent. */
+        val toolUseId: String? = null,
+        /** A background subagent's final report (transcript lines carry it). */
+        val result: String? = null,
     ) : SyntheticPart
     data class Interrupted(val duringToolUse: Boolean) : SyntheticPart
     data class CommandOutput(val text: String, val isError: Boolean) : SyntheticPart
@@ -69,6 +73,8 @@ object SyntheticUserMessage {
                 summary = tag(inner, "summary").orEmpty(),
                 taskId = tag(inner, "task-id"),
                 outputFile = tag(inner, "output-file"),
+                toolUseId = tag(inner, "tool-use-id"),
+                result = tag(inner, "result"),
             )
         },
         Block("[Request interrupted by user", "]") { inner -> SyntheticPart.Interrupted(inner.contains("tool use")) },
@@ -101,9 +107,16 @@ object SyntheticUserMessage {
     )
 
     /** Port of `taskNotificationText`: the transcript form of a live task notification. */
-    fun taskNotificationText(taskId: String, status: String, summary: String, outputFile: String?): String =
+    fun taskNotificationText(
+        taskId: String,
+        status: String,
+        summary: String,
+        outputFile: String?,
+        toolUseId: String? = null,
+    ): String =
         listOfNotNull(
             "<task-id>$taskId</task-id>",
+            toolUseId?.takeIf(String::isNotEmpty)?.let { "<tool-use-id>$it</tool-use-id>" },
             outputFile?.let { "<output-file>$it</output-file>" },
             "<status>$status</status>",
             "<summary>$summary</summary>",
@@ -160,11 +173,40 @@ object SyntheticUserMessage {
         return SyntheticSplit(parts, listOf(slash, remaining).filter { it.isNotEmpty() }.joinToString("\n"))
     }
 
+    /** Port of `BACKGROUND_TASK_LABEL_MAX`: how long a background task's label may be before it is cut. */
+    const val BACKGROUND_TASK_LABEL_MAX = 60
+
+    private val WHITESPACE = Regex("\\s+")
+    private val CD_PREFIX = Regex("^cd\\s+(?:\"[^\"]*\"|'[^']*'|\\S+)\\s*&&\\s*")
+    // Greedy: a command can hold quotes of its own.
+    private val QUOTED_SUBJECT = Regex("\"(.*)\"", RegexOption.DOT_MATCHES_ALL)
+
+    /** Port of `cutLabel`: one line, cut to [max] characters, at a word when one ends late enough. */
+    fun cutLabel(text: String, max: Int = BACKGROUND_TASK_LABEL_MAX): String {
+        val line = text.replace(WHITESPACE, " ").trim()
+        if (line.length <= max) return line
+        val cut = line.substring(0, max)
+        val space = cut.lastIndexOf(' ')
+        return (if (space >= max * 0.75) cut.substring(0, space) else cut).trimEnd() + "\u2026"
+    }
+
+    /**
+     * Port of `backgroundTaskLabel`: the task's description, else its command's
+     * first line without a leading `cd <dir> &&`, cut by [cutLabel].
+     */
+    fun backgroundTaskLabel(summary: String): String {
+        val firstLine = backgroundTaskSubject(summary).split('\n').firstOrNull { it.isNotBlank() }.orEmpty()
+        return cutLabel(firstLine.trim().replace(CD_PREFIX, ""))
+    }
+
+    /** Port of `backgroundTaskSubject`: the task's description or whole command, as the summary quotes it. */
+    fun backgroundTaskSubject(summary: String): String =
+        (QUOTED_SUBJECT.find(summary)?.groupValues?.get(1) ?: summary).trim()
+
     fun label(part: SyntheticPart): String = when (part) {
         is SyntheticPart.TaskNotification -> {
-            val quoted = Regex("\"([^\"]+)\"").find(part.summary)?.groupValues?.get(1)
             val exit = Regex("exit code (\\d+)").find(part.summary)?.groupValues?.get(1)
-            val what = quoted ?: part.summary
+            val what = backgroundTaskLabel(part.summary)
             val exitSuffix = if (exit != null && exit != "0") " (exit $exit)" else ""
             "Background task ${part.status}${if (what.isNotEmpty()) ": $what" else ""}$exitSuffix"
         }

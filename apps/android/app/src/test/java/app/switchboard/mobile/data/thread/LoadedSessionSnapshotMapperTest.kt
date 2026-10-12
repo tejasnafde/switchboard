@@ -132,6 +132,39 @@ class LoadedSessionSnapshotMapperTest {
     }
 
     @Test
+    fun `a subagent's history tool calls and text keep their agent and error flag`() {
+        val loaded = LoadedSession(
+            messages = listOf(
+                message(
+                    "a",
+                    "assistant",
+                    "",
+                    toolCalls = listOf(
+                        MessageToolCall("A", "Agent", "{\"description\":\"d\"}", "ok"),
+                        MessageToolCall("B", "Bash", "{}", "Exit code 1", parentToolCallId = "A", isError = true),
+                    ),
+                ),
+                message("b", "assistant", "sub text", parentToolCallId = "A"),
+            ),
+            meta = null,
+            total = 2,
+            truncated = false,
+            raw = JsonObject(linkedMapOf()),
+        )
+
+        val feed = LoadedSessionSnapshotMapper.map("thread", loaded).feed
+
+        val agent = feed[0] as FeedItem.Tool
+        assertEquals(null, agent.parentToolCallId)
+        assertEquals(false, agent.isError)
+        assertEquals(1L, agent.startedAt)
+        val step = feed[1] as FeedItem.Tool
+        assertEquals("A", step.parentToolCallId)
+        assertEquals(true, step.isError)
+        assertEquals("A", (feed[2] as FeedItem.Text).parentToolCallId)
+    }
+
+    @Test
     fun `mirrored changed-file history becomes the same row the live event builds`() {
         val diff = MessageFileDiff("ab-1:src/a.ts", "/repo", "src/a.ts", "modify", "a", "b")
         val loaded = LoadedSession(
@@ -175,6 +208,7 @@ class LoadedSessionSnapshotMapperTest {
         displayBody: String? = null,
         pillsMeta: Map<String, MessagePill> = emptyMap(),
         fileDiff: MessageFileDiff? = null,
+        parentToolCallId: String? = null,
     ) = ChatMessage(
         id = id,
         role = role,
@@ -186,5 +220,6 @@ class LoadedSessionSnapshotMapperTest {
         displayBody = displayBody,
         pillsMeta = pillsMeta,
         fileDiff = fileDiff,
+        parentToolCallId = parentToolCallId,
     )
 }

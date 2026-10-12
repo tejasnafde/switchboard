@@ -659,6 +659,8 @@ export class DemoAdapter implements ProviderAdapter {
         },
       )
       await this.say(threadId, turn, `Open \`${PRICING_PAGE_PATH}\` to see it. The Team plan is highlighted.`)
+    } else if (/subagents/i.test(message)) {
+      await this.runSubagents(threadId, turn)
     } else if (/to-dos/i.test(message)) {
       await this.say(threadId, turn, TODO_REPLY)
     } else {
@@ -668,6 +670,103 @@ export class DemoAdapter implements ProviderAdapter {
         'Two focused tests cover it: reject an expired state before network I/O, and exchange a valid code exactly once.',
       )
     }
+  }
+
+  /**
+   * Two subagents in parallel: one finishes with a report, one fails on its
+   * last step. Their steps carry the Agent call as `parentToolCallId`, as the
+   * Claude adapter stamps them.
+   */
+  private async runSubagents(threadId: string, turn: DemoTurn): Promise<void> {
+    const { session } = turn
+    await this.say(
+      threadId,
+      turn,
+      "I'll split this: one subagent patches the lockfile and tests, one audits the mobile app's dependencies.",
+    )
+    const lockfile = `demo_agent_${++this.seq}`
+    const mobile = `demo_agent_${++this.seq}`
+    for (const [toolId, input] of [
+      [lockfile, { description: 'Security updates for dependabot PRs', model: 'haiku', prompt: 'Combine the PRs.' }],
+      [mobile, { description: 'Audit apps/mobile dependencies', model: 'sonnet', prompt: 'Audit the deps.' }],
+    ] as const) {
+      session.onEvent({ type: 'tool.started', threadId, toolId, toolName: 'Agent', input })
+      this.record(session, 'assistant', [{ type: 'tool_use', id: toolId, name: 'Agent', input }])
+    }
+    const step = async (parent: string, toolName: string, input: unknown, output: string, isError = false) => {
+      if (turn.cancelled) return
+      const toolId = `demo_tool_${++this.seq}`
+      session.onEvent({ type: 'tool.started', threadId, toolId, toolName, input, parentToolCallId: parent })
+      await this.pause(turn, 60)
+      session.onEvent({
+        type: 'tool.completed',
+        threadId,
+        toolId,
+        output,
+        parentToolCallId: parent,
+        ...(isError ? { isError } : {}),
+      })
+      return toolId
+    }
+    const notice = (toolUseId: string | undefined, summary: string) => {
+      if (!toolUseId || turn.cancelled) return
+      session.onEvent({
+        type: 'task.notification',
+        threadId,
+        messageId: `task_demo_${++this.seq}`,
+        taskId: `b${this.seq}`,
+        status: 'completed',
+        summary,
+        toolUseId,
+        at: Date.now(),
+      })
+    }
+    await step(lockfile, 'Grep', { pattern: '(tinypool|vitest|@vitest/mocker)@[0-9.]+' }, 'package-lock.json')
+    await step(mobile, 'Read', { file_path: 'apps/mobile/package.json' }, '{ "name": "mobile" }')
+    for (const file of [
+      'package-lock.json',
+      'package.json',
+      'vitest.config.ts',
+      'tests/unit/terminal-registry-env.test.ts',
+    ])
+      await step(lockfile, 'Read', { file_path: file }, 'ok')
+    await step(mobile, 'Bash', { command: 'npm audit --prefix apps/mobile --json' }, '{ "vulnerabilities": {} }')
+    const checks = await step(lockfile, 'Bash', { command: 'npm ls tinypool', run_in_background: true }, 'started')
+    const typecheck = await step(lockfile, 'Bash', { command: 'npm run typecheck', run_in_background: true }, 'started')
+    const format = await step(lockfile, 'Bash', { command: 'npx oxfmt', run_in_background: true }, 'started')
+    notice(checks, 'Background command "Check tinypool and run unit tests" completed (exit code 0)')
+    notice(typecheck, 'Background command "npm run typecheck 2>&1 | tail -5" completed (exit code 0)')
+    notice(
+      format,
+      'Background command "cd /repo && npx oxfmt tests/unit/terminal-registry-*.test.ts" completed (exit code 0)',
+    )
+    await step(mobile, 'Bash', { command: 'npm ls --prefix apps/mobile expo' }, 'expo@57.0.0')
+    await step(mobile, 'Read', { file_path: 'apps/mobile/app.json' }, '{ "expo": {} }')
+    await step(
+      mobile,
+      'Bash',
+      { command: 'npx expo-doctor' },
+      'Exit code 1\nCheck for app config fields that may not be synced in a non-CNG project\n1 check failed, 14 passed.',
+      true,
+    )
+    if (turn.cancelled) return
+    session.onEvent({
+      type: 'tool.completed',
+      threadId,
+      toolId: mobile,
+      output: '<tool_use_error>expo-doctor exited 1</tool_use_error>',
+      isError: true,
+    })
+    await step(lockfile, 'Bash', { command: 'git push -u origin chore/security-updates' }, 'pushed')
+    if (turn.cancelled) return
+    session.onEvent({
+      type: 'tool.completed',
+      threadId,
+      toolId: lockfile,
+      output:
+        'Combined dependabot PRs **#292-#298** into one lockfile change on **chore/security-updates**. Typecheck clean, 412 tests pass.\nagentId: a1 (use SendMessage to continue this agent)\n<usage>subagent_tokens: 1200\ntool_uses: 11\nduration_ms: 362000</usage>',
+    })
+    await this.say(threadId, turn, 'The lockfile change is pushed. The mobile audit stopped at expo-doctor.')
   }
 
   /**

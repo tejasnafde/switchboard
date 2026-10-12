@@ -15,6 +15,7 @@ import { compareSessionCopies, listClaudeSessionCopies, claudeCandidateDirs } fr
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
 import { scanCodexSessionCopies } from '../projects/session-scanner'
 import { loadJsonlCopies } from '../agent/jsonl-cache'
+import { loadSubagentSteps } from '../agent/subagent-transcripts'
 import { createMainLogger } from '../logger'
 import { mergeConversationMessages } from '../agent/dedupe-messages'
 import { enrichMessagesWithDisplayBody } from '../ipc/enrich-display-body'
@@ -89,6 +90,14 @@ export async function loadConversationHistory(
         })
       }
     }
+    // A subagent's steps live in transcripts of their own, beside the session's.
+    diskMessages.push(
+      ...(await loadSubagentSteps(
+        copies.map((copy) => copy.path),
+        timing,
+        sources,
+      )),
+    )
   }
 
   const codexSessions = await scanCodexSessionCopies(knownSessionIds, codexCandidateDirs())
