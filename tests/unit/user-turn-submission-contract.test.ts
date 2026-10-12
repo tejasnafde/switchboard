@@ -93,6 +93,22 @@ describe('atomic user-turn envelope', () => {
     expect(() =>
       contract.validateUserTurnSubmission(
         submission({
+          pillsMeta: { quote: { label: 'Claude: "x"', kind: 'chat-message', sourceMessageId: 42 } },
+        }),
+      ),
+    ).toThrow('pill metadata')
+    expect(() =>
+      contract.validateUserTurnSubmission(
+        submission({
+          pillsMeta: {
+            quote: { label: 'Claude: "x"', kind: 'chat-message', sourceConversationId: 'c1', sourceMessageId: 'm1' },
+          },
+        }),
+      ),
+    ).not.toThrow()
+    expect(() =>
+      contract.validateUserTurnSubmission(
+        submission({
           handoff: { expectedFrom: '', markerId: '', markerText: '' },
         }),
       ),

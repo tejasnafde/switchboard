@@ -281,12 +281,19 @@ export function captureSelection(): boolean {
     if (!agent) return false
     const content = formatChatMessageContext({ agent, selection: text })
     const preview = text.trim().split('\n')[0].slice(0, 40)
+    // The bubble the selection starts in is the message the chip opens.
+    const startNode = range?.startContainer
+    const messageId = closestAttribute(
+      startNode instanceof Element ? startNode : (startNode?.parentElement ?? contextEl),
+      'data-message-id',
+    )
     const pillId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     useDraftStore.getState().addPill(sid, {
       id: pillId,
       kind: 'chat-message',
       label: `${agent}: "${preview}${preview.length === 40 ? '…' : ''}"`,
       content,
+      ...(messageId ? { sourceConversationId: sid, sourceMessageId: messageId } : {}),
     })
     reportUnavailableContextTarget(sid)
     window.dispatchEvent(new CustomEvent('sb-pill-added', { detail: { sessionId: sid, pillId } }))

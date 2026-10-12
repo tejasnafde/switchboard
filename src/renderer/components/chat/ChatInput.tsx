@@ -860,7 +860,13 @@ export function ChatInput({
       const pillsMeta: UserMessagePillsMeta = {}
       for (const p of pills) {
         if (trimmed.includes(`[[pill:${p.id}]]`)) {
-          pillsMeta[p.id] = { label: p.label, kind: p.kind }
+          pillsMeta[p.id] = {
+            label: p.label,
+            kind: p.kind,
+            ...(p.sourceConversationId && p.sourceMessageId
+              ? { sourceConversationId: p.sourceConversationId, sourceMessageId: p.sourceMessageId }
+              : {}),
+          }
         }
       }
       const submittedPayload: DraftPayload = submittedSessionId

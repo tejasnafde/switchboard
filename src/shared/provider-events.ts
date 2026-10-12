@@ -481,7 +481,9 @@ export function validateUserTurnSubmission(input: unknown): UserTurnSubmissionV1
         !pill ||
         typeof pill !== 'object' ||
         typeof pill.label !== 'string' ||
-        !USER_TURN_PILL_KINDS.has(pill.kind)
+        !USER_TURN_PILL_KINDS.has(pill.kind) ||
+        (pill.sourceConversationId !== undefined && typeof pill.sourceConversationId !== 'string') ||
+        (pill.sourceMessageId !== undefined && typeof pill.sourceMessageId !== 'string')
       ) {
         throw new Error('User turn pill metadata is invalid')
       }
@@ -601,7 +603,16 @@ export interface RuntimeUserMessageEvent {
 }
 
 export type UserMessagePillKind = 'file' | 'terminal' | 'chat-message' | 'review'
-export type UserMessagePillsMeta = Record<string, { label: string; kind: UserMessagePillKind }>
+/**
+ * Where a chat-message pill was quoted from: the chat and the message. Optional,
+ * so a pill stored before these fields existed still parses (it opens by quote).
+ */
+export interface PillMessageSource {
+  sourceConversationId?: string
+  sourceMessageId?: string
+}
+export type UserMessagePillMeta = { label: string; kind: UserMessagePillKind } & PillMessageSource
+export type UserMessagePillsMeta = Record<string, UserMessagePillMeta>
 
 export interface RuntimeToolStartedEvent {
   type: 'tool.started'

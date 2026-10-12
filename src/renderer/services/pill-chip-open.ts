@@ -1,16 +1,36 @@
 /**
  * Open what a context chip points at: the file in the IDE at its lines, the
- * terminal pane it was copied from, or the chat message it quotes. A chip
- * whose source cannot be found does nothing.
+ * terminal pane it was copied from, or the chat message it quotes (opening
+ * that chat first when it is another one). A message that is gone comes back
+ * as a notice for the chip's card.
  */
 import type { PillChipTarget } from './pill-chip-model'
 import { useLayoutStore } from '../stores/layout-store'
 import { useTerminalStore } from '../stores/terminal-store'
 import { useAgentStore } from '../stores/agent-store'
 import { focusTerminal } from './terminal-registry'
+import { ensureFullHistory } from './history-loader'
+import { resolvePillMessage } from './pill-message-open'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('chat:pill-open')
+
+export const MESSAGE_GONE_NOTICE = 'Message no longer in this chat'
+export const CHAT_GONE_NOTICE = 'Chat no longer available'
+
+/** `notice` is what the chip's card says when the source could not be opened. */
+export type PillOpenResult = { opened: true } | { opened: false; notice: string | null }
+
+/** Opens a chat the sidebar way (remote chats on their own machine); resolves to the focused chat, or null. */
+type PillChatOpener = (conversationId: string, hostSessionId: string | null) => Promise<string | null>
+let chatOpener: PillChatOpener | null = null
+
+export function registerPillChatOpener(fn: PillChatOpener | null): void {
+  chatOpener = fn
+}
+
+/** Bumped by every open, so a slow message open never scrolls after a newer one. */
+let openTicket = 0
 
 function findPane(sessionId: string | null, paneLabel: string): { sessionId: string; paneId: string } | null {
   const { layouts } = useTerminalStore.getState()
@@ -25,47 +45,61 @@ function findPane(sessionId: string | null, paneLabel: string): { sessionId: str
   return null
 }
 
-function findMessageElement(sessionId: string | null, role: 'user' | 'assistant', quote: string): HTMLElement | null {
-  if (!sessionId) return null
-  const session = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
-  const messages = session?.messages ?? []
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i]
-    if (message.role !== role) continue
-    const text = role === 'user' ? `${message.displayBody ?? ''}\n${message.content}` : message.content
-    if (!text.includes(quote)) continue
-    const panel = document.querySelector(`[data-chat-panel][data-session-id="${CSS.escape(sessionId)}"]`)
-    return panel?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(message.id)}"]`) ?? null
-  }
-  return null
+/** Whether the chip's card offers to open it: a terminal chip only while its pane exists. */
+export function canOpenPillTarget(target: PillChipTarget | null, sessionId: string | null): boolean {
+  if (!target) return false
+  if (target.type === 'terminal') return findPane(sessionId, target.paneLabel) !== null
+  return true
 }
 
-/** Open the chip's source. `sessionId` is the chat the chip sits in. Returns whether anything opened. */
-export function openPillTarget(target: PillChipTarget, sessionId: string | null): boolean {
+async function openMessage(
+  target: Extract<PillChipTarget, { type: 'message' }>,
+  hostSessionId: string | null,
+): Promise<PillOpenResult> {
+  const ticket = ++openTicket
+  const resolution = await resolvePillMessage(target, hostSessionId, {
+    focusedId: () => useLayoutStore.getState().focusedChatSessionId(),
+    sessionMessages: (id) => useAgentStore.getState().sessions.find((s) => s.id === id)?.messages,
+    openChat: async (conversationId) => {
+      if (!chatOpener) return null
+      try {
+        return await chatOpener(conversationId, hostSessionId)
+      } catch (err) {
+        log.warn('opening the chip source chat failed', err)
+        return null
+      }
+    },
+    ensureFullHistory,
+    isCurrent: () => ticket === openTicket,
+  })
+  if (resolution.status === 'found') {
+    useAgentStore.getState().requestScrollToMessage(resolution.sessionId, resolution.messageId)
+    return { opened: true }
+  }
+  if (resolution.status === 'superseded') return { opened: false, notice: null }
+  log.info('chip message source not found', { reason: resolution.status, hasSource: target.source !== null })
+  return { opened: false, notice: resolution.status === 'chat-missing' ? CHAT_GONE_NOTICE : MESSAGE_GONE_NOTICE }
+}
+
+/** Open the chip's source. `sessionId` is the chat the chip sits in. */
+export async function openPillTarget(target: PillChipTarget, sessionId: string | null): Promise<PillOpenResult> {
+  if (target.type === 'message') return openMessage(target, sessionId)
+  openTicket++
   if (target.type === 'file') {
     const range =
       target.startLine !== null ? { start: target.startLine, end: target.endLine ?? target.startLine } : null
     useLayoutStore.getState().openInViewer(target.path, range, sessionId)
-    return true
+    return { opened: true }
   }
-  if (target.type === 'terminal') {
-    const found = findPane(sessionId, target.paneLabel)
-    if (!found) {
-      log.debug('chip terminal pane not found')
-      return false
-    }
-    const layout = useLayoutStore.getState()
-    if (layout.rightPaneMode !== 'terminal') layout.setRightPaneMode('terminal')
-    if (!layout.terminalVisible) layout.toggleTerminal()
-    useTerminalStore.getState().setActivePane(found.sessionId, found.paneId)
-    requestAnimationFrame(() => focusTerminal(found.paneId))
-    return true
+  const found = findPane(sessionId, target.paneLabel)
+  if (!found) {
+    log.debug('chip terminal pane not found')
+    return { opened: false, notice: null }
   }
-  const el = findMessageElement(sessionId, target.role, target.quote)
-  if (!el) {
-    log.debug('chip message not found in the loaded history')
-    return false
-  }
-  el.scrollIntoView({ block: 'center', behavior: 'auto' })
-  return true
+  const layout = useLayoutStore.getState()
+  if (layout.rightPaneMode !== 'terminal') layout.setRightPaneMode('terminal')
+  if (!layout.terminalVisible) layout.toggleTerminal()
+  useTerminalStore.getState().setActivePane(found.sessionId, found.paneId)
+  requestAnimationFrame(() => focusTerminal(found.paneId))
+  return { opened: true }
 }

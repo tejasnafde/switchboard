@@ -23,6 +23,7 @@ import { ChatVisual } from './components/chat/visuals/ChatVisual'
 import { KanbanView } from './components/kanban/KanbanView'
 import { ReviewsView } from './components/reviews/ReviewsView'
 import { registerReviewChatOpener } from './components/reviews/review-to-chat'
+import { registerPillChatOpener } from './services/pill-chip-open'
 import { SettingsPage } from './components/SettingsPage'
 import type { SettingsPageId } from './components/settings/settings-rows'
 import { CommandPalette } from './components/CommandPalette'
@@ -1408,6 +1409,46 @@ export function App() {
       return useLayoutStore.getState().focusedChatSessionId()
     })
     return () => registerReviewChatOpener(null)
+  }, [handleSessionSelect])
+
+  // A quote chip opens its source chat through the sidebar path. A chat that
+  // is not loaded lives on the machine of the chat the chip sits in; a probe
+  // of its metadata tells a deleted chat apart before anything is added.
+  useEffect(() => {
+    registerPillChatOpener(async (conversationId, hostSessionId) => {
+      const sessions = useAgentStore.getState().sessions
+      const open = sessions.find((session) => session.id === conversationId)
+      const machineId = open?.machineId ?? sessions.find((s) => s.id === hostSessionId)?.machineId ?? 'local'
+      let projectPath = open?.projectPath
+      let agentType: string | undefined = open?.type
+      let title = open?.title ?? ''
+      if (!open) {
+        if (machineId !== 'local') window.api.routing.bind(conversationId, machineId)
+        const probe = (await window.api.app.loadSessionById(conversationId, { window: true, limit: 1 })) as {
+          meta?: { projectPath: string; agentType: string; title: string } | null
+        } | null
+        if (!probe?.meta) return null
+        projectPath = probe.meta.projectPath
+        agentType = probe.meta.agentType
+        title = probe.meta.title
+      }
+      const provider = toAgentProvider(agentType)
+      await handleSessionSelect(
+        {
+          id: conversationId,
+          source: provider,
+          title,
+          startedAt: 0,
+          messageCount: 0,
+          filePath: '',
+          agentType: provider,
+        },
+        projectPath ?? '',
+        machineId,
+      )
+      return useLayoutStore.getState().focusedChatSessionId()
+    })
+    return () => registerPillChatOpener(null)
   }, [handleSessionSelect])
 
   // A message search hit opens through the sidebar path too, on the machine

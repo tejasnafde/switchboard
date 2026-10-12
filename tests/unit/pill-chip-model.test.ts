@@ -195,3 +195,22 @@ describe('pillContentInMessage', () => {
     expect(pillContentInMessage('review', '3 review conversations · #612', 'anything')).toBeNull()
   })
 })
+
+describe('pillChipModel message source', () => {
+  const source = { conversationId: 'chat-1', messageId: 'msg-1' }
+
+  it('carries a Cmd+L source into the message target', () => {
+    const model = pillChipModel({ kind: 'chat-message', label: 'Claude: "The exchange"', source })
+    expect(model.target).toEqual({ type: 'message', role: 'assistant', quote: 'The exchange', source })
+  })
+
+  it('keeps an old pill without a source openable by its quote', () => {
+    const model = pillChipModel({ kind: 'chat-message', label: 'you: "Keep the old cookie"' })
+    expect(model.target).toEqual({ type: 'message', role: 'user', quote: 'Keep the old cookie', source: null })
+  })
+
+  it('opens a sourced pill even when its label has no quote', () => {
+    expect(pillChipModel({ kind: 'chat-message', label: 'Claude: ""', source }).target).toMatchObject({ source })
+    expect(pillChipModel({ kind: 'chat-message', label: 'Claude: ""' }).target).toBeNull()
+  })
+})

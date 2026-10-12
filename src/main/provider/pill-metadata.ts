@@ -8,6 +8,13 @@ const PILL_KINDS = new Set(['file', 'terminal', 'chat-message', 'review'])
 const MAX_PILLS = 32
 const MAX_PILL_ID_LENGTH = 128
 const MAX_PILL_LABEL_LENGTH = 120
+const MAX_SOURCE_ID_LENGTH = 256
+
+/** An optional source id: kept when it is a short non-empty string, dropped otherwise. */
+function sourceId(candidate: object, key: string): string | undefined {
+  const value = Reflect.get(candidate, key)
+  return typeof value === 'string' && value.length > 0 && value.length <= MAX_SOURCE_ID_LENGTH ? value : undefined
+}
 
 /** Decode the presentation-only pill metadata stored alongside a user turn. */
 export function parsePersistedPillsMeta(raw: unknown): UserMessagePillsMeta | undefined {
@@ -38,7 +45,13 @@ export function parsePersistedPillsMeta(raw: unknown): UserMessagePillsMeta | un
     if (typeof label !== 'string' || label.trim().length === 0 || label.length > MAX_PILL_LABEL_LENGTH) continue
     if (typeof kind !== 'string' || !PILL_KINDS.has(kind)) continue
 
-    pills[id] = { label, kind: kind as UserMessagePillKind }
+    const sourceConversationId = sourceId(candidate, 'sourceConversationId')
+    const sourceMessageId = sourceId(candidate, 'sourceMessageId')
+    pills[id] = {
+      label,
+      kind: kind as UserMessagePillKind,
+      ...(sourceConversationId && sourceMessageId ? { sourceConversationId, sourceMessageId } : {}),
+    }
     accepted += 1
   }
 

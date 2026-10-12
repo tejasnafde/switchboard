@@ -10,7 +10,10 @@ import { act, createElement, createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { $getRoot, $isTextNode, type LexicalEditor } from 'lexical'
 
-vi.mock('../../src/renderer/services/pill-chip-open', () => ({ openPillTarget: vi.fn(() => true) }))
+vi.mock('../../src/renderer/services/pill-chip-open', () => ({
+  openPillTarget: vi.fn(async () => ({ opened: true })),
+  canOpenPillTarget: vi.fn(() => true),
+}))
 
 import {
   RichChatTextarea,

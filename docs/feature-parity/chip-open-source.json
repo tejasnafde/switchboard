@@ -1,0 +1,74 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "chip-open-source",
+  "summary": "Desktop: opening a context chip's source. A Cmd+L quote chip stores the source chat and message ids (optional sourceConversationId and sourceMessageId on the draft pill and in pills_meta). A click or Enter opens that chat through the sidebar path when it is not the chat the chip sits in or the focused chat (a chat that is not loaded is probed on the host chat's machine first, so a deleted chat is reported, not added), loads the full history when the message is older than the loaded window, falls back to the quote when the id is not found, scrolls the virtualized message list with requestScrollToMessage and flashes the bubble (Tailwind, a steady tint under reduced motion). A message or chat that is gone shows a notice in the chip's card and logs at info. The card says Click to open for the pointer, the Enter hint only for a keyboard-selected chip, and no hint when the chip cannot open. Pills without ids keep opening by quote. The phones draw chips as labels with no open action; they accept and ignore the new fields.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/services/pill-message-open.ts",
+        "src/renderer/services/pill-chip-open.ts",
+        "src/renderer/services/pill-chip-model.ts",
+        "src/renderer/services/context-bridge.ts",
+        "src/renderer/components/chat/lexical/PillChipVisual.tsx",
+        "src/renderer/components/chat/lexical/PillNode.tsx",
+        "src/renderer/components/chat/lexical/RichChatTextarea.tsx",
+        "src/renderer/components/chat/render-pill-body.tsx",
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/MessageList.tsx",
+        "src/renderer/stores/draft-store.ts",
+        "src/renderer/App.tsx",
+        "tests/unit/pill-message-open.test.ts",
+        "tests/unit/pill-chip-card-hints.test.ts",
+        "tests/unit/context-bridge-quote-source.test.ts",
+        "tests/unit/pill-chip-model.test.ts",
+        "e2e/snapshots/composer-chip-card-dark-darwin.png",
+        "e2e/snapshots/composer-chip-card-light-darwin.png",
+        "e2e/snapshots/composer-chip-card-translucent-darwin.png"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app draws no chips and has no open action: a sent body is plain text with each pill as [label] (src/shared/pill-body-text.ts), which reads only label, so the new optional fields are ignored."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Android draws a sent pill as its label with no open action and has no composer pills. decodeMessagePills (ThreadModels.kt) reads only label and kind, so the new fields are ignored; ThreadEventDecoderTest now feeds them and still passes."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/provider-events.ts",
+        "src/main/provider/pill-metadata.ts",
+        "tests/unit/pill-metadata.test.ts",
+        "tests/unit/user-turn-submission-contract.test.ts",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/ThreadEventDecoderTest.kt"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table, column or migration. pills_meta is a JSON text column and the localStorage draft pills are JSON; both gain two optional string fields. Rows and drafts written before keep parsing and open by quote; an older build reading a new row ignores the fields."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships with the next desktop build. No native module, permission, signing, package identity or update channel change; the phones need no release."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/pill-message-open.test.ts: same chat by id with no open, another chat opened and its full history loaded, a deleted chat, an old pill by quote, a message gone after the full load, an id fallback to the quote, a superseded open.",
+      "tests/unit/pill-chip-card-hints.test.ts (jsdom): Click to open for the pointer, the Enter hint for a keyboard-selected chip, no hint when it cannot open, the gone notice in place of the hint.",
+      "tests/unit/context-bridge-quote-source.test.ts (jsdom): Cmd+L stores the chat and message ids; fails without the capture change.",
+      "tests/unit/pill-metadata.test.ts and user-turn-submission-contract.test.ts: the source is kept only as a pair of short strings; a non-string source is rejected.",
+      "Android ThreadEventDecoderTest with the new fields in a pill (gradle testDebugUnitTest).",
+      "SB_VISUAL_SCOPE=screens npm run test:e2e:visual: composer-chip-card baselines updated in three themes (the hovered terminal chip has no pane in the demo, so its card no longer shows the wrong Enter hint), read; two runs pass without updating.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "A click on a quote chip that opens another chat, loads older history and scrolls was not driven in the built app; the resolver is tested with stubs and the scroll uses the existing requestScrollToMessage path.",
+      "A remote source chat that is not loaded was not opened against a real remote machine."
+    ]
+  }
+}
