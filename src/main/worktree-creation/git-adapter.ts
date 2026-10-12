@@ -566,7 +566,10 @@ export class ExecFileGitWorktreeAdapter {
   ): Promise<WorktreeRollbackResult> {
     if (!(await this.hasSafeManagedPath(plan))) return { kind: 'refused', reason: 'unsafe_path' }
     const inspection = await this.inspectMaterialization(plan)
-    if (inspection.kind === 'absent') return { kind: 'absent' }
+    if (inspection.kind === 'absent') {
+      if (mode === 'compensate') await this.undoFastForward(plan)
+      return { kind: 'absent' }
+    }
     if (inspection.kind === 'branch_only') {
       if (inspection.headCommit !== plan.resolvedBaseCommit) {
         return mode === 'compensate' ? { kind: 'refused', reason: 'identity_mismatch' } : { kind: 'removed' }
@@ -584,6 +587,22 @@ export class ExecFileGitWorktreeAdapter {
     if (inspection.headCommit === plan.resolvedBaseCommit && !plan.existingBranch?.preexisting) {
       await this.run(plan.repository.projectPath, ['branch', '-D', plan.branch])
     }
+    if (mode === 'compensate') await this.undoFastForward(plan)
     return { kind: 'removed' }
+  }
+
+  /** A compensated creation puts a pre-existing branch it moved forward back, only if nothing moved it since. */
+  private async undoFastForward(plan: WorktreeMaterializationPlan): Promise<void> {
+    const from = plan.existingBranch?.preexisting ? plan.existingBranch.fastForwardFrom : undefined
+    if (!from) return
+    const ref = `refs/heads/${plan.branch}`
+    const cwd = plan.repository.projectPath
+    if (!(await this.succeeds(cwd, ['show-ref', '--verify', '--quiet', ref]))) return
+    if ((await this.commitOf(cwd, ref)) !== plan.resolvedBaseCommit) return
+    await this.run(cwd, ['update-ref', ref, from, plan.resolvedBaseCommit]).catch((error: unknown) =>
+      log.warn('could not move the branch back after a compensated creation', {
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    )
   }
 }
