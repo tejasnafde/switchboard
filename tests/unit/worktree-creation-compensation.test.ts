@@ -287,6 +287,38 @@ describe('WorktreeCreationService compensation', () => {
     }
   })
 
+  it('offers no retry once the planned existing branch moved', async () => {
+    const harness = fixture()
+    try {
+      harness.git.materializeResults = [
+        {
+          kind: 'conflict',
+          worktreePath: '/repo/.switchboard/worktrees/compensation-test-1234567890',
+          branch: 'fix/upload-retry',
+          reason: 'branch_moved',
+        },
+      ]
+
+      const failed = await harness.service.createWorktreeTransaction(request())
+
+      expect(failed).toMatchObject({
+        status: 'failed',
+        error: { code: 'branch_moved', retryable: false },
+        recoveryActions: ['start_in_project'],
+      })
+      await expect(
+        harness.service.actOnWorktreeCreation({
+          machineId: 'machine-local',
+          creationId: request().creationId,
+          expectedRevision: failed.revision,
+          action: 'retry',
+        }),
+      ).rejects.toThrow('Branch fix/upload-retry moved after this worktree was planned.')
+    } finally {
+      harness.close()
+    }
+  })
+
   it('rolls back an exact worktree and branch when sparse configuration definitely fails', async () => {
     const harness = fixture()
     try {
