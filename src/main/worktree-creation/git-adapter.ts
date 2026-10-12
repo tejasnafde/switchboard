@@ -473,18 +473,22 @@ export class ExecFileGitWorktreeAdapter {
 
     await mkdir(dirname(plan.worktreePath), { recursive: true })
     const cwd = plan.repository.projectPath
+    let movedForward = false
     try {
       if (plan.existingBranch?.preexisting) {
         const from = plan.existingBranch.fastForwardFrom
         // Compare-and-swap, so a move between the check above and here still fails.
         if (from && existingHead === from) {
           await this.run(cwd, ['update-ref', `refs/heads/${plan.branch}`, plan.resolvedBaseCommit, from])
+          movedForward = true
         }
         await this.run(cwd, ['worktree', 'add', plan.worktreePath, plan.branch])
       } else {
         await this.run(cwd, ['worktree', 'add', '-b', plan.branch, plan.worktreePath, plan.resolvedBaseCommit])
       }
     } catch (error) {
+      // The service sees a pre-existing branch with no worktree as absent and never compensates it.
+      if (movedForward) await this.undoFastForwardIfFree(plan)
       return {
         kind: 'outcome_unknown',
         branch: plan.branch,
@@ -591,6 +595,19 @@ export class ExecFileGitWorktreeAdapter {
     return { kind: 'removed' }
   }
 
+  /** A failed `worktree add` puts the branch back, unless some worktree checked it out after all. */
+  private async undoFastForwardIfFree(plan: WorktreeMaterializationPlan): Promise<void> {
+    try {
+      if (await this.checkedOutPath(plan.repository.projectPath, plan.branch)) return
+      await this.undoFastForward(plan)
+    } catch (error) {
+      log.warn('could not move the branch back after a failed worktree add', {
+        branch: plan.branch,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   /** A compensated creation puts a pre-existing branch it moved forward back, only if nothing moved it since. */
   private async undoFastForward(plan: WorktreeMaterializationPlan): Promise<void> {
     const from = plan.existingBranch?.preexisting ? plan.existingBranch.fastForwardFrom : undefined
@@ -599,10 +616,15 @@ export class ExecFileGitWorktreeAdapter {
     const cwd = plan.repository.projectPath
     if (!(await this.succeeds(cwd, ['show-ref', '--verify', '--quiet', ref]))) return
     if ((await this.commitOf(cwd, ref)) !== plan.resolvedBaseCommit) return
-    await this.run(cwd, ['update-ref', ref, from, plan.resolvedBaseCommit]).catch((error: unknown) =>
-      log.warn('could not move the branch back after a compensated creation', {
+    try {
+      // Compare-and-swap, so a move since the check above still fails.
+      await this.run(cwd, ['update-ref', ref, from, plan.resolvedBaseCommit])
+      log.warn('moved the branch back after an incomplete creation', { branch: plan.branch })
+    } catch (error) {
+      log.warn('could not move the branch back after an incomplete creation', {
+        branch: plan.branch,
         error: error instanceof Error ? error.message : String(error),
-      }),
-    )
+      })
+    }
   }
 }

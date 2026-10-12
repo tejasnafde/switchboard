@@ -571,6 +571,25 @@ describe('ExecFileGitWorktreeAdapter existing branch', () => {
     expect(await gitSucceeds(plan.worktreePath, 'rev-parse', '@{upstream}')).toBe(false)
   })
 
+  it('moves a fast-forwarded branch back when git worktree add fails', async () => {
+    const { clone, prHead } = await createClone()
+    await git(clone, 'branch', 'fix/upload-retry', 'origin/main')
+    const before = await git(clone, 'rev-parse', 'refs/heads/fix/upload-retry')
+    const adapter = new ExecFileGitWorktreeAdapter()
+    const repository = await adapter.resolveRepository(clone)
+    const plan = await adapter.planMaterialization({
+      ...materializationInput(repository),
+      existingBranch: { name: 'fix/upload-retry', fetch: { remote: 'origin', ref: 'fix/upload-retry' } },
+    })
+    expect(plan.existingBranch).toMatchObject({ preexisting: true, fastForwardFrom: before })
+    // A file where git keeps its worktree records makes `worktree add` fail after the fast-forward.
+    await writeFile(join(clone, '.git', 'worktrees'), 'blocker\n')
+
+    expect(await adapter.materialize(plan)).toMatchObject({ kind: 'outcome_unknown' })
+    expect(await git(clone, 'rev-parse', 'refs/heads/fix/upload-retry')).toBe(before)
+    expect(before).not.toBe(prHead)
+  })
+
   it('moves a stale local copy of the PR branch forward, but keeps a diverged one', async () => {
     const { origin, clone, prHead } = await createClone()
     await git(clone, 'branch', 'fix/upload-retry', 'origin/main')
