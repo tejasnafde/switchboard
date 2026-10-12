@@ -526,6 +526,34 @@ describe('ExecFileGitWorktreeAdapter existing branch', () => {
     expect(await gitSucceeds(clone, 'show-ref', '--verify', '--quiet', 'refs/heads/fix/upload-retry')).toBe(false)
   })
 
+  it('fetches from the remote that points at the named repository', async () => {
+    const { origin, clone, prHead } = await createClone()
+    // `origin` is a personal fork; `upstream` is the repository the PR lives in.
+    await git(clone, 'remote', 'set-url', 'origin', 'https://github.com/me/widgets.git')
+    await git(clone, 'remote', 'add', 'upstream', 'git@github.com:Acme/widgets.git')
+    await git(clone, 'config', `url.${origin}.insteadOf`, 'git@github.com:Acme/widgets.git')
+    const adapter = new ExecFileGitWorktreeAdapter()
+    const repository = await adapter.resolveRepository(clone)
+
+    const plan = await adapter.planMaterialization({
+      ...materializationInput(repository),
+      existingBranch: {
+        name: 'fix/upload-retry',
+        fetch: { repo: { host: 'github', owner: 'acme', name: 'widgets' }, ref: 'fix/upload-retry' },
+      },
+    })
+    expect(plan).toMatchObject({
+      resolvedBaseCommit: prHead,
+      existingBranch: { preexisting: false, upstream: { remote: 'upstream', ref: 'fix/upload-retry' } },
+    })
+    await expect(
+      adapter.planMaterialization({
+        ...materializationInput(repository),
+        existingBranch: { name: 'x', fetch: { repo: { host: 'github', owner: 'other', name: 'widgets' }, ref: 'x' } },
+      }),
+    ).rejects.toThrow('has no remote for other/widgets')
+  })
+
   it('fetches a fork PR head through refs/pull/<n>/head with no upstream', async () => {
     const { clone, forkHead } = await createClone()
     const adapter = new ExecFileGitWorktreeAdapter()

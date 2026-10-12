@@ -355,6 +355,12 @@ describe('worktree creation request contract', () => {
     const existingBranch = { name: 'fix/upload-retry', fetch: { remote: 'origin', ref: 'refs/pull/7/head' } }
     const parsed = parseWorktreeCreationRequest({ ...request, checkout: { ...request.checkout, existingBranch } })
     expect(parsed.ok && parsed.value.checkout.existingBranch).toEqual(existingBranch)
+    const byRepo = { name: 'x', fetch: { repo: { host: 'bitbucket', owner: 'geoiq', name: 'bb-sync' }, ref: 'x' } }
+    const parsedByRepo = parseWorktreeCreationRequest({
+      ...request,
+      checkout: { ...request.checkout, existingBranch: byRepo },
+    })
+    expect(parsedByRepo.ok && parsedByRepo.value.checkout.existingBranch).toEqual(byRepo)
 
     for (const bad of [
       { name: '-x' },
@@ -364,6 +370,10 @@ describe('worktree creation request contract', () => {
       { name: 'x', fetch: { remote: '--upload-pack=evil', ref: 'x' } },
       { name: 'x', fetch: { remote: 'origin', ref: '-x' } },
       { name: 'x', fetch: { remote: 'origin', ref: 'x:refs/heads/main' } },
+      { name: 'x', fetch: { ref: 'x' } },
+      { name: 'x', fetch: { remote: 'origin', repo: { host: 'github', owner: 'a', name: 'b' }, ref: 'x' } },
+      { name: 'x', fetch: { repo: { host: 'gitlab', owner: 'a', name: 'b' }, ref: 'x' } },
+      { name: 'x', fetch: { repo: { host: 'github', owner: 'a/b', name: 'c' }, ref: 'x' } },
     ]) {
       expectInvalid({ ...request, checkout: { ...request.checkout, existingBranch: bad } }, 'invalid_value')
     }

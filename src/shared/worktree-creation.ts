@@ -1,4 +1,5 @@
 import { isRuntimeMode, type RuntimeMode } from './provider-events'
+import type { RepoRef } from './pull-requests'
 import { AGENT_TYPES, isAgentProvider, type AgentType } from './types'
 
 export const WORKTREE_CREATION_SCHEMA_VERSION = 1 as const
@@ -36,8 +37,12 @@ export interface WorktreeSparseCheckoutIntent {
 export interface WorktreeExistingBranchIntent {
   /** Local branch to check out. Created from `fetch` when it does not exist. */
   name: string
-  /** Fetch first: a PR head is `{ remote: 'origin', ref: 'fix/x' }`, or `refs/pull/<n>/head` for a GitHub fork. */
-  fetch?: { remote: string; ref: string }
+  /**
+   * Fetch first: a PR head is `{ ref: 'fix/x' }`, or `refs/pull/<n>/head` for a GitHub fork. Name a
+   * configured `remote`, or the `repo` and the backend fetches from the project's remote pointing at it
+   * (a client cannot know the desktop's remote names). Exactly one of the two.
+   */
+  fetch?: { remote?: string; repo?: RepoRef; ref: string }
 }
 
 export interface WorktreeCheckoutIntent {
@@ -304,6 +309,20 @@ function validRemoteName(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$/.test(value)
 }
 
+function repoRef(value: unknown): RepoRef | null {
+  const repo = record(value)
+  const segment = (part: unknown): part is string =>
+    typeof part === 'string' &&
+    part.length > 0 &&
+    part.length <= 200 &&
+    !/[\s/]/.test(part) &&
+    !hasControlCharacters(part)
+  if (!repo || (repo.host !== 'github' && repo.host !== 'bitbucket') || !segment(repo.owner) || !segment(repo.name)) {
+    return null
+  }
+  return { host: repo.host, owner: repo.owner, name: repo.name }
+}
+
 function validBranchSeed(value: unknown): value is string {
   return (
     typeof value === 'string' &&
@@ -401,17 +420,28 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
   if (checkout?.existingBranch !== undefined) {
     const existing = record(checkout.existingBranch)
     const fetch = existing?.fetch === undefined ? undefined : record(existing.fetch)
+    const fetchRepo = fetch?.repo === undefined ? undefined : repoRef(fetch.repo)
+    const fetchSource =
+      fetch && (fetch.remote === undefined) !== (fetch.repo === undefined)
+        ? fetch.remote !== undefined
+          ? validRemoteName(fetch.remote) && { remote: fetch.remote }
+          : fetchRepo && { repo: fetchRepo }
+        : null
     if (!existing || !validExistingBranchName(existing.name)) {
       issue('invalid_value', 'checkout.existingBranch.name', 'Existing branch name is empty or unsafe.')
     } else if (
       existing.fetch !== undefined &&
-      (!fetch || !validRemoteName(fetch.remote) || !validGitRef(fetch.ref) || fetch.ref.includes(':'))
+      (!fetch || !fetchSource || !validGitRef(fetch.ref) || fetch.ref.includes(':'))
     ) {
-      issue('invalid_value', 'checkout.existingBranch.fetch', 'Existing branch fetch remote or ref is invalid.')
+      issue(
+        'invalid_value',
+        'checkout.existingBranch.fetch',
+        'Existing branch fetch remote, repository or ref is invalid.',
+      )
     } else {
       existingBranch = {
         name: existing.name,
-        ...(fetch ? { fetch: { remote: fetch.remote as string, ref: fetch.ref as string } } : {}),
+        ...(fetch && fetchSource ? { fetch: { ...fetchSource, ref: fetch.ref as string } } : {}),
       }
     }
   }

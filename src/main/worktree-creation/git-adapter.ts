@@ -6,6 +6,8 @@ import { promisify } from 'node:util'
 import { cloneDependencyDirsInBackground } from '../git/dependency-clone'
 import { createMainLogger } from '../logger'
 import type { WorktreeExistingBranchIntent } from '../../shared/worktree-creation'
+import { parseRemoteUrl } from '../../shared/pull-request-remote'
+import { repoKey, type RepoRef } from '../../shared/pull-requests'
 
 const log = createMainLogger('worktree:git')
 
@@ -286,6 +288,24 @@ export class ExecFileGitWorktreeAdapter {
     return commit
   }
 
+  /** The first configured remote whose URL (as written, before any `insteadOf`) is `repo`. */
+  private async remoteForRepo(cwd: string, repo: RepoRef): Promise<string | undefined> {
+    // Exits 1 when the repository has no remote at all.
+    const output = await this.run(cwd, ['config', '--get-regexp', '^remote\\..*\\.url$']).then(
+      (result) => result.stdout,
+      (error: unknown) => {
+        log.debug('no remote urls', { error: error instanceof Error ? error.message : String(error) })
+        return ''
+      },
+    )
+    for (const line of output.split('\n')) {
+      const match = /^remote\.(.+)\.url (\S+)$/.exec(line.trim())
+      const parsed = match ? parseRemoteUrl(match[2]) : null
+      if (match && parsed && repoKey(parsed) === repoKey(repo)) return match[1]
+    }
+    return undefined
+  }
+
   private async checkedOutPath(projectPath: string, branch: string): Promise<string | null> {
     const output = (await this.run(projectPath, ['worktree', 'list', '--porcelain'])).stdout
     return parsePorcelainWorktrees(output).find((worktree) => worktree.branch === branch)?.worktreePath ?? null
@@ -305,19 +325,22 @@ export class ExecFileGitWorktreeAdapter {
     if (checkedOut) throw new BranchCheckedOutError(existing.name, checkedOut)
 
     let fetched: string | undefined
+    let remote: string | undefined
     if (existing.fetch) {
-      // Only a configured remote: a bare name git cannot resolve as one is read as a path.
-      if (!(await this.succeeds(cwd, ['remote', 'get-url', '--end-of-options', existing.fetch.remote]))) {
-        throw new Error(`${cwd} has no remote named ${existing.fetch.remote}.`)
+      remote = existing.fetch.repo
+        ? await this.remoteForRepo(cwd, existing.fetch.repo)
+        : // Only a configured remote: a bare name git cannot resolve as one is read as a path.
+          (await this.succeeds(cwd, ['remote', 'get-url', '--end-of-options', existing.fetch.remote ?? '']))
+          ? existing.fetch.remote
+          : undefined
+      if (!remote) {
+        const what = existing.fetch.repo
+          ? `no remote for ${existing.fetch.repo.owner}/${existing.fetch.repo.name}`
+          : `no remote named ${existing.fetch.remote}`
+        throw new Error(`${cwd} has ${what}.`)
       }
       const scratchRef = `refs/switchboard/fetch/${creationSuffix(intent.creationId)}`
-      await this.run(cwd, [
-        'fetch',
-        '--no-tags',
-        '--end-of-options',
-        existing.fetch.remote,
-        `+${existing.fetch.ref}:${scratchRef}`,
-      ])
+      await this.run(cwd, ['fetch', '--no-tags', '--end-of-options', remote, `+${existing.fetch.ref}:${scratchRef}`])
       try {
         fetched = await this.commitOf(cwd, scratchRef)
       } finally {
@@ -342,8 +365,8 @@ export class ExecFileGitWorktreeAdapter {
     }
     if (!fetched) throw new Error(`Branch ${existing.name} does not exist in ${cwd}.`)
     const upstream =
-      existing.fetch && !existing.fetch.ref.startsWith('refs/')
-        ? { remote: existing.fetch.remote, ref: existing.fetch.ref }
+      existing.fetch && remote && !existing.fetch.ref.startsWith('refs/')
+        ? { remote, ref: existing.fetch.ref }
         : undefined
     return { commit: fetched, plan: { preexisting: false, ...(upstream ? { upstream } : {}) } }
   }
