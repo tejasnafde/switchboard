@@ -32,7 +32,8 @@ const log = createMainLogger('worktree:creation')
 
 const CONFLICT_MESSAGES: Record<Extract<WorktreeMaterializationResult, { kind: 'conflict' }>['reason'], string> = {
   branch_exists: 'Branch {branch} already exists.',
-  branch_missing: 'Branch {branch} no longer exists.',
+  branch_missing: 'Branch {branch} no longer exists. Start the worktree again.',
+  branch_moved: 'Branch {branch} moved after this worktree was planned. Start the worktree again.',
   branch_checked_out: 'Branch {branch} is already checked out in another worktree.',
   path_exists: 'The worktree folder already exists.',
   unsafe_path: 'The worktree folder is outside the managed location.',
@@ -43,7 +44,8 @@ function conflictError(reason: keyof typeof CONFLICT_MESSAGES, branch: string): 
     code: reason,
     phase: 'materializing',
     message: CONFLICT_MESSAGES[reason].replace('{branch}', branch),
-    retryable: true,
+    // A retry reuses the stored plan, which cannot succeed once the branch moved or went away.
+    retryable: reason !== 'branch_missing' && reason !== 'branch_moved',
   }
 }
 

@@ -73,7 +73,7 @@ export type WorktreeMaterializationResult =
       kind: 'conflict'
       worktreePath: string
       branch: string
-      reason: 'branch_exists' | 'branch_missing' | 'branch_checked_out' | 'path_exists' | 'unsafe_path'
+      reason: 'branch_exists' | 'branch_missing' | 'branch_moved' | 'branch_checked_out' | 'path_exists' | 'unsafe_path'
     }
   | {
       kind: 'outcome_unknown'
@@ -415,12 +415,20 @@ export class ExecFileGitWorktreeAdapter {
         reason: 'branch_checked_out',
       }
     }
-    if (plan.existingBranch?.preexisting && !branchExists) {
+    // A pre-existing branch must still be where the plan saw it (or already moved forward by an earlier try).
+    const existingHead =
+      plan.existingBranch?.preexisting && branchExists
+        ? await this.commitOf(plan.repository.projectPath, `refs/heads/${plan.branch}`)
+        : null
+    if (
+      plan.existingBranch?.preexisting &&
+      (!existingHead || ![plan.resolvedBaseCommit, plan.existingBranch.fastForwardFrom].includes(existingHead))
+    ) {
       return {
         kind: 'conflict',
         branch: plan.branch,
         worktreePath: plan.worktreePath,
-        reason: 'branch_missing',
+        reason: existingHead ? 'branch_moved' : 'branch_missing',
       }
     }
     if (branchExists && !plan.existingBranch?.preexisting) {
@@ -445,9 +453,8 @@ export class ExecFileGitWorktreeAdapter {
     try {
       if (plan.existingBranch?.preexisting) {
         const from = plan.existingBranch.fastForwardFrom
-        // Compare-and-swap: refuses if the branch moved since the plan. A retry finds it already moved.
-        const head = from ? await this.commitOf(cwd, `refs/heads/${plan.branch}`) : null
-        if (from && head !== plan.resolvedBaseCommit) {
+        // Compare-and-swap, so a move between the check above and here still fails.
+        if (from && existingHead === from) {
           await this.run(cwd, ['update-ref', `refs/heads/${plan.branch}`, plan.resolvedBaseCommit, from])
         }
         await this.run(cwd, ['worktree', 'add', plan.worktreePath, plan.branch])

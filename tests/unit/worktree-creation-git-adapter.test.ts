@@ -487,6 +487,23 @@ describe('ExecFileGitWorktreeAdapter existing branch', () => {
     expect(await adapter.materialize(plan)).toMatchObject({ kind: 'conflict', reason: 'branch_checked_out' })
   })
 
+  it('reports a conflict when the branch moves or goes away after the plan', async () => {
+    const fixture = await createRepository()
+    await git(fixture.repositoryPath, 'branch', 'feature')
+    const adapter = new ExecFileGitWorktreeAdapter()
+    const repository = await adapter.resolveRepository(fixture.repositoryPath)
+    const plan = await adapter.planMaterialization({
+      ...materializationInput(repository),
+      existingBranch: { name: 'feature' },
+    })
+
+    await commitOn(fixture.repositoryPath, 'feature', 'moved\n')
+    expect(await adapter.materialize(plan)).toMatchObject({ kind: 'conflict', reason: 'branch_moved' })
+    await git(fixture.repositoryPath, 'branch', '-D', 'feature')
+    expect(await adapter.materialize(plan)).toMatchObject({ kind: 'conflict', reason: 'branch_missing' })
+    expect(await pathExists(plan.worktreePath)).toBe(false)
+  })
+
   it('fetches a PR branch from the remote into a new local branch that tracks it', async () => {
     const { clone, prHead } = await createClone()
     const adapter = new ExecFileGitWorktreeAdapter()
