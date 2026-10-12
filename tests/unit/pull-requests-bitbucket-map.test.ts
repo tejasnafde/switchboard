@@ -80,6 +80,11 @@ describe('mapBbComments', () => {
 describe('mapBbSummary', () => {
   const extra = { checks: mapBbStatuses(statuses), unresolvedConversations: 2, conflictedFiles: [] }
 
+  it('says whether the source branch comes from a fork', () => {
+    expect(mapBbSummary(repo, open[0], viewer, extra).headFromFork).toBe(false)
+    expect(mapBbSummary(repo, open[1], viewer, extra).headFromFork).toBe(true)
+  })
+
   it('reads reviewers, approvals and your part in it', () => {
     const pr = mapBbSummary(repo, open[0], viewer, extra)
     expect(pr.ref).toEqual({ ...repo, number: 612 })

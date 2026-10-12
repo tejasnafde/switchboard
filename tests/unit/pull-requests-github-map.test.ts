@@ -30,6 +30,11 @@ const list = fixture('github-list.json')
 describe('mapGhSummary', () => {
   const [review, mine] = list.data.r0.open.nodes
 
+  it('says whether the head branch comes from a fork', () => {
+    expect(mapGhSummary(repo, mine, 'tejasnafde').headFromFork).toBe(true)
+    expect(mapGhSummary(repo, review, 'tejasnafde').headFromFork).toBe(false)
+  })
+
   it('marks a PR you were asked to review, and lists a team request as a team reviewer', () => {
     const pr = mapGhSummary(repo, review, 'tejasnafde')
     expect(pr.viewer).toEqual({ isAuthor: false, isRequestedReviewer: true, hasReviewed: false, hasCommented: false })

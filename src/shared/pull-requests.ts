@@ -111,6 +111,8 @@ export interface PrSummary {
   draft: boolean
   sourceBranch: string
   targetBranch: string
+  /** The source branch lives in another repository (a fork), so it cannot be fetched by name from this one. Absent from an older backend. */
+  headFromFork?: boolean
   createdAt: number
   updatedAt: number
   mergedAt: number | null

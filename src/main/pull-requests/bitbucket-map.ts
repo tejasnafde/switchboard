@@ -43,6 +43,13 @@ export interface BbParticipant {
   participated_on?: string | null
 }
 
+/** Bitbucket's default PR fields name both repositories; a missing one reads as not a fork. */
+function isBbFork(pr: Pick<BbPullRequest, 'source' | 'destination'>): boolean {
+  const source = pr.source.repository?.full_name?.toLowerCase()
+  const destination = pr.destination.repository?.full_name?.toLowerCase()
+  return !!source && !!destination && source !== destination
+}
+
 export interface BbPullRequest {
   id: number
   title: string
@@ -50,10 +57,11 @@ export interface BbPullRequest {
   state: 'OPEN' | 'MERGED' | 'DECLINED' | 'SUPERSEDED'
   draft?: boolean
   author?: BbUser
-  source: { branch: { name: string }; commit?: { hash: string } | null }
+  source: { branch: { name: string }; commit?: { hash: string } | null; repository?: { full_name?: string } | null }
   destination: {
     branch: { name: string; merge_strategies?: string[]; default_merge_strategy?: string }
     commit?: { hash: string } | null
+    repository?: { full_name?: string } | null
   }
   comment_count?: number
   created_on: string
@@ -209,6 +217,7 @@ export function mapBbSummary(
     draft: !!pr.draft,
     sourceBranch: pr.source.branch.name,
     targetBranch: pr.destination.branch.name,
+    headFromFork: isBbFork(pr),
     createdAt: parseTime(pr.created_on) ?? 0,
     updatedAt: parseTime(pr.updated_on) ?? 0,
     // Bitbucket has no merge time; a merged PR's last update is its merge.
