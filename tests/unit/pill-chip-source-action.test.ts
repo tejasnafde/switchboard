@@ -4,7 +4,7 @@
  * named after where it goes, and a review chip opens its pull request in
  * Reviews.
  */
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { openPillTarget, pillSourceAction } from '../../src/renderer/services/pill-chip-open'
 import { useTerminalStore, type SessionLayout } from '../../src/renderer/stores/terminal-store'
 import { useAgentStore } from '../../src/renderer/stores/agent-store'
@@ -17,6 +17,9 @@ const layout = (label: string) =>
 
 const pr = (owner: string, name: string, number: number) =>
   ({ ref: { host: 'github', owner, name, number } }) as unknown as PrSummary
+
+const realRefresh = useReviewStore.getState().refresh
+afterEach(() => useReviewStore.setState({ refresh: realRefresh, loading: false }))
 
 beforeEach(() => {
   useTerminalStore.setState({ layouts: {} })
@@ -62,6 +65,22 @@ describe('openPillTarget review', () => {
     expect(await openPillTarget({ type: 'review', number: 612, repo: 'acme/api' }, 's1')).toBe(true)
     expect(useReviewStore.getState().selectedKey).toBe('github:acme/api#612')
     expect(useLayoutStore.getState().appView).toBe('reviews')
+  })
+
+  it('reads the list first when Reviews has not loaded it', async () => {
+    let finish = (): void => {}
+    useReviewStore.setState({
+      refresh: async () => {
+        useReviewStore.setState({ loading: true })
+        await new Promise<void>((resolve) => (finish = resolve))
+        useReviewStore.setState({ loading: false, list: list([pr('acme', 'api', 612)]) })
+      },
+    })
+    const opened = openPillTarget({ type: 'review', number: 612, repo: 'acme/api' }, 's1')
+    expect(useLayoutStore.getState().appView).toBe('reviews')
+    finish()
+    expect(await opened).toBe(true)
+    expect(useReviewStore.getState().selectedKey).toBe('github:acme/api#612')
   })
 
   it('selects nothing when the number alone matches two repositories', async () => {

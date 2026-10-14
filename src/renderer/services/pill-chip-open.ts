@@ -70,8 +70,25 @@ export function pillSourceAction(target: PillChipTarget | null, sessionId: strin
   return title ? `Show in \u201c${title}\u201d` : 'Show in chat'
 }
 
+/** Resolves once the Reviews list is read, starting the read when there is none. */
+async function reviewListRead(): Promise<void> {
+  if (useReviewStore.getState().list) return
+  void useReviewStore.getState().refresh('open', { asHeader: true })
+  if (!useReviewStore.getState().loading) return
+  await new Promise<void>((resolve) => {
+    const stop = useReviewStore.subscribe((s) => {
+      if (s.loading) return
+      stop()
+      resolve()
+    })
+  })
+}
+
 /** The pull request a review chip names: same number, and the same repository when the chip knows it. */
-function openReview(target: Extract<PillChipTarget, { type: 'review' }>): boolean {
+async function openReview(target: Extract<PillChipTarget, { type: 'review' }>, ticket: number): Promise<boolean> {
+  useLayoutStore.getState().setAppView('reviews')
+  await reviewListRead()
+  if (ticket !== openTicket) return true
   const reviews = useReviewStore.getState()
   const repo = target.repo?.toLowerCase()
   const matches = (reviews.list?.prs ?? []).filter(
@@ -80,7 +97,6 @@ function openReview(target: Extract<PillChipTarget, { type: 'review' }>): boolea
   // Two repositories with the same number and no repository on the chip: show the list, pick none.
   if (matches.length === 1) reviews.select(prKey(matches[0].ref))
   else log.debug('chip pull request not in the list', { matches: matches.length })
-  useLayoutStore.getState().setAppView('reviews')
   return true
 }
 
@@ -118,8 +134,8 @@ async function openMessage(
 /** Open the chip's source. `sessionId` is the chat the chip sits in. */
 export async function openPillTarget(target: PillChipTarget, sessionId: string | null): Promise<boolean> {
   if (target.type === 'message') return openMessage(target, sessionId)
-  openTicket++
-  if (target.type === 'review') return openReview(target)
+  const ticket = ++openTicket
+  if (target.type === 'review') return openReview(target, ticket)
   if (target.type === 'file') {
     const range =
       target.startLine !== null ? { start: target.startLine, end: target.endLine ?? target.startLine } : null
