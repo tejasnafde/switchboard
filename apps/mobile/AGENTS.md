@@ -23,16 +23,13 @@ it. `.fingerprintignore` keeps generated (`/android`, `/ios`) and test-only
 paths out of the hash. Switching policy re-targets every future update, so
 APKs built before the switch need replacing once.
 
-**Android release builds block cleartext, and dev builds do not.** RN's Gradle
-plugin sets `usesCleartextTraffic=false` for the release build type, and Expo's
-main manifest sets nothing, so targetSdk 28+ defaults to blocking it. Our whole
-transport is `ws://`, so a `preview`/`production` APK failed every connection
-while `expo run:android` worked. `plugins/withAndroidCleartextTraffic.js` sets
-the attribute on the main manifest; iOS needs `NSAllowsArbitraryLoads` plus
-`NSLocalNetworkUsageDescription` (both in app.json) for the same reason. Verify
-after touching either with `npx expo prebuild -p android --clean` then grep the
-manifest, and delete the generated `android/` afterwards (prebuild also rewrites
-the `android`/`ios` npm scripts for a bare workflow; revert that).
+**Historical: Expo Android release builds.** This app no longer ships on
+Android, so the notes on verifying an Expo Android release build (cleartext
+traffic, `expo prebuild -p android`) no longer apply. Android release
+maintainers: follow "Native Android mobile release" in `docs/releasing.md`.
+`plugins/withAndroidCleartextTraffic.js` and the iOS `NSAllowsArbitraryLoads`
+plus `NSLocalNetworkUsageDescription` keys in app.json remain; iOS needs the
+latter because the whole transport is `ws://`.
 
 **Push** (`src/main/push/`, `src/shared/push-policy.ts`): the BACKEND sends,
 because the phone is asleep when it matters. `attachPushNotifier` subscribes to
@@ -40,11 +37,8 @@ the provider registry's bus and posts to Expo for approvals, questions, turn
 end and errors only. Devices report which thread they have open so they are not
 notified about the screen in the user's hand, and registration carries the
 client's connection id, echoed back so a tap knows which backend to open.
-Android needs FCM credentials on the EAS project: a JSON key for a service
-account with `roles/firebasecloudmessaging.admin`, uploaded to EAS under
-Android > FCM V1 (never committed). Without it `getExpoPushTokenAsync` throws and
-the app never gets a token. The owner's setup notes are in the Firebase section
-of `~/Desktop/projects/CLAUDE.local.md`. A new registry is created when a closed window is reopened, so
+Historical: while this Expo app also shipped on Android, its push needed FCM
+credentials on the EAS project (Android > FCM V1). That lane is retired. A new registry is created when a closed window is reopened, so
 the notifier must be re-attached there.
 
 **Reviews tab** (`ConnectionTabBar` under `ProjectsScreen` and `ReviewsScreen`, switched with `navigation.replace`, no tab library): the list lives in `stores/reviews.ts` per connection, filters in `prefs.prFilters`, a pending review pill in `prefs.threads[key].reviewPill` until the next send (`QueuedMessage.reviewPill`, `queuedTurnBody`). `PullRequestScreen` + `WorkOnPrSheet` are read-only; a "Work on PR" chat goes through `NewSessionScreen` with `pullRequest` (no first-message launch prompt: `lib/pr-chat.ts` links the PR and sends the first turn with the pill once the chat exists). JS only, so it ships on the OTA lane. Rules: `src/main/pull-requests/AGENTS.md`.

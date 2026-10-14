@@ -17,7 +17,10 @@ object RetiredUpdaterCleanup {
         Thread({
             try {
                 PREFERENCES.forEach(context::deleteSharedPreferences)
-                File(context.cacheDir, STAGING_DIRECTORY).deleteRecursively()
+                val staging = File(context.cacheDir, STAGING_DIRECTORY)
+                if (!staging.deleteRecursively() && staging.exists()) {
+                    Log.w(TAG, "retired updater cleanup left cache/$STAGING_DIRECTORY in place")
+                }
             } catch (error: Exception) {
                 Log.w(TAG, "retired updater cleanup failed: ${error.javaClass.simpleName}")
             }

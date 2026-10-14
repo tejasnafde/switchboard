@@ -11,13 +11,23 @@ the GitHub `mobile-v*` APK releases are retired: Play forbids apps that update
 themselves outside Play. The app requests no `REQUEST_INSTALL_PACKAGES`, and at
 each start it deletes what the updater stored (state and staged APKs).
 
+Prerequisites, done once by hand before the workflow can upload:
+
+1. Create the app record for `app.switchboard.mobile` in the Play Console.
+2. Upload the first AAB through the Play Console (for example to the internal
+   testing track). The Play Publishing API only edits an app that already
+   exists and cannot create one, and its first upload needs a bundle that was
+   already uploaded through the Console. Build that AAB with the workflow (it
+   keeps the AAB as an artifact) or locally with the upload key.
+
 To release:
 
 1. Increment `versionCode` and `versionName` in
    `apps/android/app/build.gradle.kts` and merge to main.
 2. Dispatch `mobile-release.yml` by hand. Pick the track (`internal` by
-   default, or `alpha` or `beta`). Pick status `draft` only for the first
-   upload to a new Play app record, which accepts drafts only.
+   default, or `alpha` or `beta`) and the release status. Pick `draft` while
+   the app is still unpublished in Play, which accepts only draft releases
+   then. A draft release does not replace the first Console upload above.
 3. Promote the release to production in the Play Console when it is ready.
 
 The job runs the Android unit, lint and androidTest compile gate, builds a

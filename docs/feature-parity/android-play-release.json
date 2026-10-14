@@ -2,11 +2,13 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "android-play-release",
-  "summary": "Google Play becomes the only native Android channel. The in-app APK updater (GitHub release check, download, staging, installer hand-off, banner, snackbar and the Settings Updates row) is removed, with REQUEST_INSTALL_PACKAGES and the FileProvider that served staged APKs. mobile-release.yml builds a signed AAB, verifies package, version, upload-key signer and permissions, and uploads it to a Play test track.",
+  "summary": "Google Play becomes the only native Android channel. The in-app APK updater (GitHub release check, download, staging, installer hand-off, banner, snackbar and the Settings Updates row) is removed, with REQUEST_INSTALL_PACKAGES and the FileProvider that served staged APKs. mobile-release.yml builds a signed AAB, verifies package, version, upload-key signer and permissions, and uploads it to a Play test track. The desktop Mobile pairing tab links the Google Play listing instead of switchboard.tn07.dev/apk, and keeps the last sideload build (mobile-v0.5.18) as a secondary link until the listing is live.",
   "surfaces": {
     "desktop": {
-      "status": "not_applicable",
-      "reason": "The desktop app and its electron-updater lane are unchanged. The Mobile pairing tab still links switchboard.tn07.dev/apk; it moves to the Play listing once that is live."
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/settings/MobilePairingTab.tsx"
+      ]
     },
     "reactNativeIos": {
       "status": "not_applicable",
@@ -50,7 +52,8 @@
     "hardware": [],
     "notExercised": [
       "The workflow on GitHub Actions: it needs PLAY_SERVICE_ACCOUNT_JSON and a Play app record, which do not exist yet.",
-      "Starting the app on a device that holds updater state, to see the cleanup delete it."
+      "Starting the app on a device that holds updater state, to see the cleanup delete it.",
+      "The Mobile pairing tab in the running desktop app; only typecheck and the unit suite cover it."
     ]
   }
 }
