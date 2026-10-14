@@ -15,9 +15,7 @@
     "nativeAndroid": {
       "status": "implemented",
       "evidence": [
-        "apps/android/app/src/main/java/app/switchboard/mobile/AppContract.kt",
-        "apps/android/app/src/main/java/app/switchboard/mobile/platform/update/ArchivePreflightPolicy.kt",
-        "apps/android/app/src/main/java/app/switchboard/mobile/platform/update/PendingInstallationTracker.kt"
+        "apps/android/app/src/main/java/app/switchboard/mobile/AppContract.kt"
       ]
     },
     "sharedBackendApi": {
@@ -27,7 +25,7 @@
     "storageDataMigration": {
       "status": "implemented",
       "evidence": [
-        "apps/android/app/src/main/java/app/switchboard/mobile/platform/update/PendingInstallationTracker.kt"
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/storage/RetiredUpdaterCleanup.kt"
       ]
     },
     "updateRelease": {
