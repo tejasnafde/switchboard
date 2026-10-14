@@ -36,7 +36,11 @@ class VoiceComposerBinding internal constructor(
     val lock: () -> Unit,
     val userEdited: (String) -> Unit,
     val openNoticeAction: () -> Boolean,
-)
+) {
+    /** The same binding with another start, for a composer that must not open the microphone. */
+    fun withStart(start: () -> Unit) =
+        VoiceComposerBinding(state, start, stop, cancel, lock, userEdited, openNoticeAction)
+}
 
 private data object UnavailableTranscriptRefiner : VoiceTranscriptRefiner {
     override val available: Boolean = false

@@ -92,6 +92,9 @@ android {
     // The chat visual host page (scripts/build-visual-host.mjs) is one file
     // shared with the Expo app, so the assets come from its folder.
     sourceSets["main"].assets.srcDir("../../mobile/assets/visual-host")
+    // The demo fixture is one file shared with the Expo app and the TS player
+    // (src/shared/phone-demo/phone-demo.ts), so it ships from its own folder.
+    sourceSets["main"].assets.srcDir("../../../src/shared/phone-demo/fixture")
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"

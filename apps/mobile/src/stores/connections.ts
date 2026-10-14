@@ -15,6 +15,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { WsTransport } from '@shared/ws-transport'
 import { createLogger } from '@shared/logger'
+import { DEMO_CONNECTION_ID, DemoTransport } from '@shared/phone-demo/phone-demo'
 export { parsePairingUrl } from '../lib/pairing'
 import { SwitchboardClient } from '../lib/api'
 import { IapTransport, type IapResumeState } from '../lib/iap-transport'
@@ -121,6 +122,27 @@ interface ConnectionsState {
   setStatus: (id: string, status: ConnectionStatus) => void
   /** Why a connection is not live, keyed by id. Cleared on success. */
   detail: Record<string, string>
+  /** The demo connection is open. Runtime only: it is never in `configs`. */
+  demoActive: boolean
+  startDemo: () => void
+  /** Close the demo client. `lib/demo.ts` `leaveDemo` also drops its state. */
+  stopDemo: () => void
+}
+
+/** Feed a client's events to the chat store. */
+function attachClient(id: string, client: SwitchboardClient): void {
+  clients.set(id, client)
+  eventUnsubs.set(
+    id,
+    client.onEvent((event) => {
+      if (event.type === 'user.message' && event.origin) {
+        void acknowledgeAcceptedOrigin(id, event.threadId, event.origin).catch((err: unknown) =>
+          log.warn('could not reconcile an accepted queued message', err),
+        )
+      }
+      useChatStore.getState().ingest(id, event)
+    }),
+  )
 }
 
 export const useConnectionsStore = create<ConnectionsState>()(
@@ -129,6 +151,7 @@ export const useConnectionsStore = create<ConnectionsState>()(
       configs: [],
       status: {},
       detail: {},
+      demoActive: false,
 
       addConnection: (config) => {
         // The in-memory config keeps the token so a connect() on the next line
@@ -251,18 +274,23 @@ export const useConnectionsStore = create<ConnectionsState>()(
           client = wsClient
         }
 
-        clients.set(id, client)
-        eventUnsubs.set(
-          id,
-          client.onEvent((event) => {
-            if (event.type === 'user.message' && event.origin) {
-              void acknowledgeAcceptedOrigin(id, event.threadId, event.origin).catch((err: unknown) =>
-                log.warn('could not reconcile an accepted queued message', err),
-              )
-            }
-            useChatStore.getState().ingest(id, event)
-          }),
-        )
+        attachClient(id, client)
+      },
+
+      startDemo: () => {
+        if (get().demoActive) return
+        attachClient(DEMO_CONNECTION_ID, new SwitchboardClient(new DemoTransport()))
+        set({ demoActive: true })
+        get().setStatus(DEMO_CONNECTION_ID, 'connected')
+      },
+
+      stopDemo: () => {
+        get().disconnect(DEMO_CONNECTION_ID)
+        set((s) => {
+          const status = { ...s.status }
+          delete status[DEMO_CONNECTION_ID]
+          return { demoActive: false, status }
+        })
       },
 
       disconnect: (id) => {

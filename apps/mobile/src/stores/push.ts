@@ -6,6 +6,7 @@
  */
 import { create } from 'zustand'
 import { createLogger } from '@shared/logger'
+import { isDemoConnection } from '@shared/phone-demo/phone-demo'
 import { obtainPushToken, type PushSetup } from '../lib/push'
 import { getClient, useConnectionsStore } from './connections'
 
@@ -48,7 +49,7 @@ export const usePushStore = create<PushState>((set, get) => ({
     const registerConnected = (): void => {
       const { status } = useConnectionsStore.getState()
       for (const [id, s] of Object.entries(status)) {
-        if (s === 'connected') void get().registerWith(id)
+        if (s === 'connected' && !isDemoConnection(id)) void get().registerWith(id)
       }
     }
     registerConnected()
@@ -90,3 +91,19 @@ export const usePushStore = create<PushState>((set, get) => ({
       .catch((err) => log.warn('reportViewing failed', err))
   },
 }))
+
+/**
+ * Ask for push only once a machine is paired, so a fresh install and the demo
+ * never see the permission prompt. Returns a teardown.
+ */
+export function initPushWhenPaired(): () => void {
+  let unsubscribe = (): void => undefined
+  const check = (): void => {
+    if (useConnectionsStore.getState().configs.length === 0) return
+    unsubscribe()
+    void usePushStore.getState().init()
+  }
+  unsubscribe = useConnectionsStore.subscribe(check)
+  check()
+  return () => unsubscribe()
+}

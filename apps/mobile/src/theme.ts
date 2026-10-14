@@ -43,6 +43,8 @@ export const colors = {
   amber: '#d29922',
   red: '#f85149',
   purple: '#bc8cff',
+  /** The demo strip and badges. */
+  purpleWash: 'rgba(188,140,255,0.10)',
 } as const
 
 export const statusColor: Record<string, string> = {

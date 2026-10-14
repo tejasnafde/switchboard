@@ -86,6 +86,7 @@ import app.switchboard.mobile.ui.theme.Surface
 import app.switchboard.mobile.ui.theme.SurfaceRaised
 import app.switchboard.mobile.ui.theme.SwitchboardDimensions
 import app.switchboard.mobile.ui.theme.TextDim
+import app.switchboard.mobile.ui.demo.DemoBadge
 
 object ReviewsTestTags {
     const val TAB_PROJECTS = "connection-tab-projects"
@@ -201,13 +202,17 @@ fun ReviewsScreen(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.semantics { heading() },
             )
-            Text(
-                presentation.subtitle,
-                color = TextDim,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    presentation.subtitle,
+                    color = TextDim,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                DemoBadge(Modifier.padding(start = 6.dp))
+            }
         }
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),

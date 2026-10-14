@@ -16,6 +16,7 @@ import app.switchboard.mobile.BuildConfig
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.ui.connections.ConnectionIntent
 import app.switchboard.mobile.ui.connections.ConnectionsLoadState
+import app.switchboard.mobile.ui.navigation.PhoneDemoController
 import app.switchboard.mobile.ui.navigation.RootNavigationRuntime
 import app.switchboard.mobile.platform.notification.PendingNotificationRoute
 import app.switchboard.mobile.platform.deeplink.PendingAppDeepLink
@@ -52,6 +53,7 @@ fun SwitchboardApp(
     onNotificationRouteAccepted: (PendingNotificationRoute) -> Unit = {},
     pendingAppDeepLink: PendingAppDeepLink? = null,
     onAppDeepLinkAccepted: (PendingAppDeepLink) -> Unit = {},
+    phoneDemo: PhoneDemoController? = null,
 ) {
     Scaffold(
         modifier = modifier
@@ -82,6 +84,7 @@ fun SwitchboardApp(
                 onNotificationRouteAccepted = onNotificationRouteAccepted,
                 pendingAppDeepLink = pendingAppDeepLink,
                 onAppDeepLinkAccepted = onAppDeepLinkAccepted,
+                phoneDemo = phoneDemo,
             )
 
         }

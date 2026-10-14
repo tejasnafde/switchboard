@@ -37,6 +37,7 @@ import type { CodexPermissionView } from '@shared/codex-permission-request'
 import { approvalResultLabel, parseApprovalResultMarker } from '@shared/agent-approval-cards'
 import type { PeerUndelivered } from '@shared/peer-links'
 import { parseMergeBackMarker, type MergeBackRow } from '@shared/merge-back'
+import { withoutDemo } from '@shared/phone-demo/phone-demo'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
@@ -217,6 +218,8 @@ interface ChatState {
   staleGeneration: number
   /** Mark this backend's history stale and ask screens to refresh it. */
   invalidateConnection: (connectionId: string) => void
+  /** Drop every feed of one connection (leaving the demo). */
+  forgetConnection: (connectionId: string) => void
 }
 
 /**
@@ -462,6 +465,9 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
         items: [...t.items, { kind: 'denial', id: `d-${Date.now()}`, toolName: event.toolName, reason: event.reason }],
       }
     case 'request.opened':
+      // A live event queued while pending-request recovery ran can land after
+      // recovery already added the card.
+      if (t.items.some((i) => i.kind === 'approval' && i.requestId === event.requestId)) return {}
       return {
         items: [
           ...t.items,
@@ -792,6 +798,13 @@ export const useChatStore = create<ChatState>()(
 
       staleGeneration: 0,
 
+      forgetConnection: (connectionId) =>
+        set((s) => {
+          const prefix = `${connectionId}:`
+          const threads = Object.fromEntries(Object.entries(s.threads).filter(([key]) => !key.startsWith(prefix)))
+          return { threads, activeKey: s.activeKey?.startsWith(prefix) ? null : s.activeKey }
+        }),
+
       invalidateConnection: (connectionId) => {
         flushQueue()
         set((s) => {
@@ -825,7 +838,8 @@ export const useChatStore = create<ChatState>()(
         }
       },
       // Only the feeds. activeKey and staleGeneration describe this run.
-      partialize: (s) => ({ threads: prunePersistedThreads(s.threads) }),
+      // The demo's feeds are never written: it keeps nothing on the phone.
+      partialize: (s) => ({ threads: prunePersistedThreads(withoutDemo(s.threads)) }),
       onRehydrateStorage: () => (state) => {
         if (!state) {
           resolveCache()

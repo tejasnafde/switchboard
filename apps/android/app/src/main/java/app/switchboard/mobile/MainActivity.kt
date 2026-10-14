@@ -11,6 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import app.switchboard.mobile.ui.SwitchboardApp
@@ -65,7 +66,6 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
         ensureNotificationChannel()
-        switchboardApplication.notificationPermissions.requestIfNeeded(this)
         switchboardApplication.ingestRemoteNotificationIntent(intent)
         if (savedInstanceState == null) ingestAppDeepLinkIntent(intent, coldStart = true)
         setContent {
@@ -76,6 +76,12 @@ class MainActivity : ComponentActivity() {
                 .collectAsState()
             val routeWake by notificationRouteWake.collectAsState()
             val pendingAppDeepLink by appDeepLinkRequest.collectAsState()
+            // Ask for notifications only once a machine is paired, so a fresh
+            // install and the demo never see the prompt.
+            val paired = connectionSnapshot?.connections?.isNotEmpty() == true
+            LaunchedEffect(paired) {
+                if (paired) switchboardApplication.notificationPermissions.requestIfNeeded(this@MainActivity)
+            }
             val visibleStartupState = when {
                 startupState is StartupRuntimeState.Ready && connectionSnapshot != null ->
                     (startupState as StartupRuntimeState.Ready).copy(
@@ -121,6 +127,7 @@ class MainActivity : ComponentActivity() {
                             appDeepLinkRequest.value = null
                         }
                     },
+                    phoneDemo = switchboardApplication.phoneDemo,
                 )
             }
         }

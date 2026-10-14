@@ -1,0 +1,71 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "phone-demo-mode",
+  "summary": "Store plan step 4: an offline demo on both phones. Try the demo on the empty Connections screen opens a built-in demo machine that plays bundled sample data from one shared fixture (src/shared/phone-demo/fixture/phone-demo.json): one project, three chats (a running turn, a Bash approval that can be approved or denied, a finished turn with a diagram and file changes) and sample pull requests. A purple strip with Leave demo marks every demo screen, Leave demo is also in Settings, nothing is stored and nothing goes on the network. Push, microphone and camera prompts are hidden in the demo; both phones now ask for notifications only once a machine is paired.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The demo exists for phone store reviewers without a backend; the desktop app is the backend and gains no demo surface."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/connections.ts",
+        "apps/mobile/src/lib/demo.ts",
+        "apps/mobile/src/components/DemoStrip.tsx",
+        "apps/mobile/src/screens/ConnectionsScreen.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/App.tsx",
+        "apps/mobile/src/screens/__tests__/demo-mode.test.tsx",
+        "apps/mobile/src/screens/__tests__/demo-screens.test.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/PhoneDemoFixture.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/PhoneDemoRpc.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/PhoneDemoRuntime.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/demo/PhoneDemoChrome.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/MainActivity.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/PhoneDemoRpcTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/navigation/PhoneDemoRuntimeTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/demo/PhoneDemoUiTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/phone-demo/phone-demo.ts",
+        "src/shared/phone-demo/fixture/phone-demo.json",
+        "tests/unit/phone-demo.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema or stored-data change. The demo connection is runtime only and every per-connection store filters it out before writing (Expo partialize and saveQueued; Android keeps the demo runtime off Room, the outbox and the connection list)."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "docs/releasing.md",
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "vitest tests/unit/phone-demo.test.ts: fixture tokens, scripts, every channel, approve/deny/stop/reply, and a whole session with WebSocket, fetch and XMLHttpRequest stubbed and never called.",
+      "jest (apps/mobile): Try the demo opens the demo project, the strip and Leave demo (strip and Connections settings), nothing from the demo reaches AsyncStorage, voice says it is not in the demo without asking for the microphone, the real Conversations, Reviews and Thread screens render the demo data, and Approve plays the script.",
+      "Gradle :app:testDebugUnitTest: PhoneDemoRpcTest, PhoneDemoRuntimeTest (no socket, HTTP, Room or outbox reachable from the demo) and the Robolectric PhoneDemoUiTest.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run on a physical phone, an emulator or the iOS simulator (the simulator is off limits on this machine). Android screenshots come from Robolectric.",
+      "The Expo app was not rendered visually; its screens were exercised in jest only."
+    ]
+  }
+}

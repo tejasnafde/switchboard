@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.newsession
 
+import app.switchboard.mobile.ui.demo.LocalPhoneDemo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -91,11 +92,13 @@ fun NewSessionScreen(
     onCancelWorktree: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val demo = LocalPhoneDemo.current
+    // The demo asks for no microphone, and it cannot start a chat anyway.
     val voice = rememberVoiceComposer(
         draft = state.firstMessage,
         onDraft = onFirstMessage,
         projectPath = state.projectPath,
-    )
+    ).let { binding -> if (demo) binding.withStart {} else binding }
     Column(
         modifier = modifier
             .fillMaxSize()

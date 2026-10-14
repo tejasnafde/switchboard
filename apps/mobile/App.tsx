@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { NavigationContainer, DarkTheme, createNavigationContainerRef } from '@react-navigation/native'
 import * as Notifications from 'expo-notifications'
-import { usePushStore } from './src/stores/push'
+import { initPushWhenPaired } from './src/stores/push'
 import { threadRouteFromPush, type ThreadRoute } from './src/lib/push-route'
 import DevGalleryScreen from './src/screens/DevGalleryScreen'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
@@ -27,6 +27,8 @@ import ReviewsScreen from './src/screens/ReviewsScreen'
 import PullRequestScreen from './src/screens/PullRequestScreen'
 import type { PrDetail, PrRef } from '@shared/pull-requests'
 import SignInScreen from './src/screens/SignInScreen'
+import { DemoBadge, withDemoStrip } from './src/components/DemoStrip'
+import { isDemoConnection } from '@shared/phone-demo/phone-demo'
 
 const log = createLogger('app')
 
@@ -61,6 +63,20 @@ export type RootStackParamList = {
 }
 
 const Stack = createNativeStackNavigator<RootStackParamList>()
+
+// Every screen under a connection carries the demo strip when that connection
+// is the demo. A new chat needs a real machine.
+const DemoProjectsScreen = withDemoStrip(ProjectsScreen)
+const DemoReviewsScreen = withDemoStrip(ReviewsScreen)
+const DemoPullRequestScreen = withDemoStrip(PullRequestScreen)
+const DemoConversationsScreen = withDemoStrip(ConversationsScreen)
+const DemoThreadScreen = withDemoStrip(ThreadScreen)
+const DemoNewSessionScreen = withDemoStrip(NewSessionScreen, { notInDemo: true })
+
+/** The DEMO badge in the header of the demo's own machine screens. */
+function demoBadge(connectionId: string) {
+  return isDemoConnection(connectionId) ? { headerRight: () => <DemoBadge /> } : {}
+}
 
 const theme = {
   ...DarkTheme,
@@ -133,7 +149,6 @@ export default function App() {
     // Silent refresh on start: hydrates the keychain and renews the token if it
     // is close to expiry, so the first IAP dial does not have to wait.
     void warmUpGoogleAuth().catch((err) => log.warn('google auth warm-up failed', err))
-    void usePushStore.getState().init()
     // Anything the user sent before the app was last killed is still owed to
     // them. Restored before the first dial so it goes out as soon as a backend
     // answers.
@@ -145,6 +160,7 @@ export default function App() {
   // invoke times out. Installed once, for every connection.
   useEffect(() => installLifecycleReconnect(), [])
   useEffect(() => installNetworkWatch(), [])
+  useEffect(() => initPushWhenPaired(), [])
 
   // Tapping a notification opens the thread it came from.
   //
@@ -194,31 +210,36 @@ export default function App() {
           <Stack.Screen name="Pair" component={PairScreen} options={{ title: 'Pair backend', presentation: 'modal' }} />
           <Stack.Screen
             name="Projects"
-            component={ProjectsScreen}
+            component={DemoProjectsScreen}
             options={({ route }) => ({
               title: route.params.label,
               animation: route.params.viaTab ? 'none' : 'default',
+              ...demoBadge(route.params.connectionId),
             })}
           />
-          <Stack.Screen name="Reviews" component={ReviewsScreen} options={{ title: 'Reviews', animation: 'none' }} />
+          <Stack.Screen
+            name="Reviews"
+            component={DemoReviewsScreen}
+            options={({ route }) => ({ title: 'Reviews', animation: 'none', ...demoBadge(route.params.connectionId) })}
+          />
           <Stack.Screen
             name="PullRequest"
-            component={PullRequestScreen}
+            component={DemoPullRequestScreen}
             options={{ title: 'Pull request', headerBackTitle: 'Reviews' }}
           />
           <Stack.Screen
             name="Conversations"
-            component={ConversationsScreen}
+            component={DemoConversationsScreen}
             options={({ route }) => ({ title: route.params.projectName })}
           />
           <Stack.Screen
             name="Thread"
-            component={ThreadScreen}
+            component={DemoThreadScreen}
             options={({ route }) => ({ title: route.params.title })}
           />
           <Stack.Screen
             name="NewSession"
-            component={NewSessionScreen}
+            component={DemoNewSessionScreen}
             options={{ title: 'New session', presentation: 'modal' }}
           />
           {__DEV__ && (

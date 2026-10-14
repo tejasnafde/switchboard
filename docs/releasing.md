@@ -83,6 +83,22 @@ anything in the native project (a module, a permission, an Info.plist key in
   asks the export compliance question. `supportsTablet` is `false`: iPads run
   the iPhone app in compatibility mode and need no iPad screenshots.
 
+### Store review notes (demo mode)
+
+Reviewers have no Switchboard backend, so both phones ship an offline demo:
+"Try the demo" on the empty Connections screen plays bundled sample data
+(`src/shared/phone-demo/`) with no account, no network and nothing stored.
+Paste this into App Store Connect (App Review Information > Notes) and into
+Play Console (App content > App access, "All or some functionality is
+restricted", with these instructions):
+
+> No account needed. On first launch, tap Try the demo. Open the chat marked
+> Approval needed and tap Approve. Open the Reviews tab. Real use needs the
+> user's own desktop backend.
+
+The demo hides the push, microphone and camera prompts, so a reviewer who
+wants to see them needs a paired backend; say so if a review asks.
+
 ## TL;DR
 
 A desktop release is a tag on `main`. There is no version-bump pull request:
