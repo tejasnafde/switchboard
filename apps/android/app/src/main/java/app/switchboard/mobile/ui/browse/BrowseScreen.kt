@@ -73,6 +73,8 @@ import app.switchboard.mobile.ui.theme.Red
 import app.switchboard.mobile.ui.theme.Surface
 import app.switchboard.mobile.ui.theme.SurfaceRaised
 import app.switchboard.mobile.ui.theme.TextDim
+import app.switchboard.mobile.ui.demo.DemoBadge
+import app.switchboard.mobile.ui.demo.LocalPhoneDemo
 import app.switchboard.mobile.ui.components.InlineStatus
 import app.switchboard.mobile.ui.components.InlineStatusProgress
 import app.switchboard.mobile.ui.components.SectionLabel
@@ -122,6 +124,7 @@ fun BrowseScreen(
             is BrowseRoute.Conversations -> {
                 BrowseTopBar(
                     title = route.projectName,
+                    demoMachineLabel = state.connectionLabel,
                     onBack = onBack,
                     onMessageSearch = onMessageSearch,
                     actionLabel = "New",
@@ -158,15 +161,35 @@ private fun BrowseTopBar(
     onMessageSearch: () -> Unit,
     actionLabel: String? = null,
     onAction: () -> Unit = {},
+    /** In the demo, the machine a project screen belongs to, shown with its badge. */
+    demoMachineLabel: String? = null,
 ) {
+    val demo = LocalPhoneDemo.current
     TopAppBar(
         title = {
-            Text(
-                text = title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.semantics { heading() },
-            )
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = title,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .semantics { heading() },
+                    )
+                    if (demoMachineLabel == null) DemoBadge(Modifier.padding(start = 8.dp))
+                }
+                if (demo && demoMachineLabel != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = demoMachineLabel,
+                            color = TextDim,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        DemoBadge(Modifier.padding(start = 6.dp))
+                    }
+                }
+            }
         },
         navigationIcon = {
             IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {

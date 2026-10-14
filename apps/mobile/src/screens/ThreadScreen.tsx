@@ -82,6 +82,8 @@ import { SyntheticRow } from '../components/SyntheticRow'
 import { useDictation, type VoiceNote } from '../hooks/useDictation'
 import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
+import { DEMO_STRIP_HEIGHT } from '../components/DemoStrip'
+import { DEMO_LABEL, NOT_IN_DEMO, isDemoConnection } from '@shared/phone-demo/phone-demo'
 import { outboxPresentation, recoverRejectedDraft } from '../lib/outbox-model'
 import { forgetMobileForkRequest, mobileForkRequest } from '../lib/conversation-fork'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
@@ -122,11 +124,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const key = threadKey(connectionId, threadId)
   const reviewPill = usePrefsStore((s) => s.threads[key]?.reviewPill)
   const thread = useChatStore((s) => s.threads[key]) ?? emptyThread()
-  const backendLabel = useConnectionsStore((s) => s.configs.find((c) => c.id === connectionId)?.label) ?? 'backend'
+  const demo = isDemoConnection(connectionId)
+  const backendLabel =
+    useConnectionsStore((s) => s.configs.find((c) => c.id === connectionId)?.label) ?? (demo ? DEMO_LABEL : 'backend')
 
   // Real header height: the keyboard offset must clear it, and hardcoding 96
   // was wrong on Android where it was 0.
-  const headerHeight = useHeaderHeight()
+  // The demo strip sits between the header and this screen.
+  const headerHeight = useHeaderHeight() + (demo ? DEMO_STRIP_HEIGHT : 0)
   const insets = useSafeAreaInsets()
   const [draft, setDraft] = useState('')
   // True when the next send should do the opposite of the device's follow-up
@@ -1342,6 +1347,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     onDraft: setDraft,
     onNote: setVoiceNote,
     refine: { connectionId, projectPath: worktreePath ?? projectPath },
+    unavailableNote: demo ? NOT_IN_DEMO : undefined,
   })
 
   const contextShare = thread.usedTokens != null ? contextPercent(thread.usedTokens, thread.maxTokens) : null

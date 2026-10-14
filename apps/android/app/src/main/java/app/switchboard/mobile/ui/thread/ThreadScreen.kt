@@ -148,6 +148,7 @@ import app.switchboard.mobile.ui.theme.Surface
 import app.switchboard.mobile.ui.theme.SurfaceRaised
 import app.switchboard.mobile.ui.theme.TextDim
 import app.switchboard.mobile.ui.theme.TextFaint
+import app.switchboard.mobile.ui.theme.Violet
 import app.switchboard.mobile.ui.components.InlineStatus
 import app.switchboard.mobile.ui.components.InlineStatusProgress
 import app.switchboard.mobile.ui.components.SectionLabel
@@ -159,6 +160,9 @@ import app.switchboard.mobile.ui.theme.SwitchboardDimensions
 import app.switchboard.mobile.ui.voice.ThreadVoicePrimaryControl
 import app.switchboard.mobile.ui.voice.VoiceNoticeRow
 import app.switchboard.mobile.ui.voice.rememberVoiceComposer
+import app.switchboard.mobile.ui.demo.DemoBadge
+import app.switchboard.mobile.ui.demo.LocalPhoneDemo
+import app.switchboard.mobile.ui.demo.PhoneDemoCopy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -310,6 +314,7 @@ fun ThreadScreen(
             }
         },
         actions = {
+            DemoBadge(Modifier.align(Alignment.CenterVertically).padding(end = 4.dp))
             if (composer != null) {
                 SwitchboardTopBarAction(
                     contentDescription = "Agent settings",
@@ -704,10 +709,15 @@ private fun ThreadComposer(
     onRemoveReviewPill: () -> Unit,
 ) {
     val context = LocalContext.current
+    val demo = LocalPhoneDemo.current
+    // The demo asks for no microphone: the button says what it cannot do instead.
+    var demoNotice by remember { mutableStateOf<String?>(null) }
     val voice = rememberVoiceComposer(
         draft = state.draft,
         onDraft = onDraftChange,
-    )
+    ).let { binding ->
+        if (demo) binding.withStart { demoNotice = PhoneDemoCopy.NOT_IN_DEMO } else binding
+    }
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
@@ -745,7 +755,8 @@ private fun ThreadComposer(
             is ThreadSlashAction.SetMode -> onRuntimeModeChange(action.mode)
             ThreadSlashAction.ClearLocalFeed -> onClearLocalFeed()
             ThreadSlashAction.Interrupt -> onInterrupt()
-            ThreadSlashAction.AttachImage -> imagePicker.launch(arrayOf("image/*"))
+            ThreadSlashAction.AttachImage ->
+                if (demo) demoNotice = PhoneDemoCopy.NOT_IN_DEMO else imagePicker.launch(arrayOf("image/*"))
             is ThreadSlashAction.Insert -> focusRequester.requestFocus()
         }
     }
@@ -782,6 +793,9 @@ private fun ThreadComposer(
         }
         state.controlMessage?.let {
             Text(it, color = Amber, style = MaterialTheme.typography.labelSmall)
+        }
+        demoNotice?.let {
+            Text(it, color = Violet, style = MaterialTheme.typography.labelSmall)
         }
         if (slashQuery != null && slashCommands.isNotEmpty()) {
             ThreadSlashMenu(slashCommands, ::runSlash)
@@ -833,16 +847,19 @@ private fun ThreadComposer(
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
-                IconButton(
-                    onClick = { imagePicker.launch(arrayOf("image/*")) },
-                    enabled = !state.submitting,
-                    modifier = Modifier.size(SwitchboardDimensions.minimumTouchTarget),
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = "Attach image")
+                if (!demo) {
+                    IconButton(
+                        onClick = { imagePicker.launch(arrayOf("image/*")) },
+                        enabled = !state.submitting,
+                        modifier = Modifier.size(SwitchboardDimensions.minimumTouchTarget),
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = "Attach image")
+                    }
                 }
                 TextField(
                     value = state.draft,
                     onValueChange = { text ->
+                        demoNotice = null
                         voice.userEdited(text)
                         onDraftChange(text)
                     },

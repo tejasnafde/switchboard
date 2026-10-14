@@ -3,6 +3,17 @@ package app.switchboard.mobile.ui.navigation
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalUriHandler
+import app.switchboard.mobile.ui.demo.DemoStrip
+import app.switchboard.mobile.ui.demo.DemoUriHandler
+import app.switchboard.mobile.ui.demo.LeaveDemoDialog
+import app.switchboard.mobile.ui.demo.LocalPhoneDemo
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -103,6 +114,7 @@ import app.switchboard.mobile.update.UpdateState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 
+private val NoPhoneDemo = MutableStateFlow<PhoneDemoNavigationRuntime?>(null)
 private val EmptyRuntimeStatuses = MutableStateFlow<Map<String, ConnectionRuntimeState>>(emptyMap())
 private val SteerFollowUp = kotlinx.coroutines.flow.MutableStateFlow(app.switchboard.mobile.domain.thread.TurnDelivery.Steer)
 private val EmptyComposerDrafts = MutableStateFlow<Map<ComposerDraftKey, ComposerDraft>>(emptyMap())
@@ -133,6 +145,62 @@ fun SwitchboardNavigation(
     updateState: UpdateState = UpdateState.Idle,
     updatesEnabled: Boolean = false,
     onUpdateAction: (UpdateAction) -> Unit = {},
+    phoneDemo: PhoneDemoController? = null,
+) {
+    // The demo swaps in its own machine, runtime and an empty snapshot; the
+    // stored ones are left untouched and come back on Leave demo.
+    val demo by remember(phoneDemo) { phoneDemo?.active ?: NoPhoneDemo }.collectAsState()
+    val active = demo
+    SwitchboardNavigationHost(
+        connectionsState = active?.connections ?: connectionsState,
+        buildStamp = buildStamp,
+        resolveEditForm = resolveEditForm,
+        onConnectionIntent = onConnectionIntent,
+        onPairingIntent = onPairingIntent,
+        googleAccountPresentation = googleAccountPresentation,
+        onGoogleImportCredentials = onGoogleImportCredentials,
+        onGoogleSignOut = onGoogleSignOut,
+        offlineSnapshot = if (active != null) emptyOfflineSnapshot() else offlineSnapshot,
+        runtime = active ?: runtime,
+        pendingNotificationRoute = pendingNotificationRoute.takeIf { active == null },
+        notificationRouteWake = notificationRouteWake,
+        onNotificationRouteAccepted = onNotificationRouteAccepted,
+        pendingAppDeepLink = pendingAppDeepLink,
+        onAppDeepLinkAccepted = onAppDeepLinkAccepted,
+        updateState = updateState,
+        updatesEnabled = updatesEnabled,
+        onUpdateAction = onUpdateAction,
+        demo = active,
+        phoneDemo = phoneDemo,
+    )
+}
+
+@Composable
+private fun SwitchboardNavigationHost(
+    connectionsState: ConnectionsLoadState,
+    buildStamp: String,
+    resolveEditForm: (String) -> PairingForm?,
+    onConnectionIntent: (ConnectionIntent) -> Unit,
+    onPairingIntent: suspend (PairingSaveIntent) -> PairingSaveResult,
+    googleAccountPresentation: GoogleAccountPresentation = GoogleAccountPresentation.SignedOut,
+    onGoogleImportCredentials: suspend (String) -> GoogleCredentialImportResult = {
+        GoogleCredentialImportResult.PersistenceFailed
+    },
+    onGoogleSignOut: suspend () -> GoogleSignOutResult = {
+        GoogleSignOutResult.AlreadySignedOut
+    },
+    offlineSnapshot: OfflineSnapshot? = null,
+    runtime: RootNavigationRuntime? = null,
+    pendingNotificationRoute: PendingNotificationRoute? = null,
+    notificationRouteWake: Long = 0,
+    onNotificationRouteAccepted: (PendingNotificationRoute) -> Unit = {},
+    pendingAppDeepLink: PendingAppDeepLink? = null,
+    onAppDeepLinkAccepted: (PendingAppDeepLink) -> Unit = {},
+    updateState: UpdateState = UpdateState.Idle,
+    updatesEnabled: Boolean = false,
+    onUpdateAction: (UpdateAction) -> Unit = {},
+    demo: PhoneDemoNavigationRuntime?,
+    phoneDemo: PhoneDemoController?,
 ) {
     var navigationState by rememberSaveable { mutableStateOf(NavigationState.root()) }
     val reviewsRegistry = remember { ReviewsCoordinatorRegistry() }
@@ -140,6 +208,37 @@ fun SwitchboardNavigation(
     val visibleConnections = remember(connectionsState, runtimeStatuses) {
         RuntimeConnectionsMapper.overlay(connectionsState, runtimeStatuses)
     }
+    var confirmLeaveDemo by rememberSaveable { mutableStateOf(false) }
+
+    // A stack restored after the process died can still name the demo machine.
+    LaunchedEffect(demo == null) {
+        if (demo == null && navigationState.backStack.any { it.connectionIdOrNull() == PhoneDemoNavigationRuntime.CONNECTION_ID }) {
+            navigationState = NavigationState.root()
+        }
+    }
+
+    /** Try the demo opens straight into its one project. */
+    fun openDemo() {
+        val started = phoneDemo?.start() ?: return
+        navigationState = NavigationState.root()
+            .push(AppRoute.Browse(started.connectionId, started.connectionLabel))
+            .push(
+                AppRoute.Browse(
+                    connectionId = started.connectionId,
+                    connectionLabel = started.connectionLabel,
+                    projectPath = started.fixture.projectPath,
+                    projectName = started.fixture.projectName,
+                ),
+            )
+    }
+
+    fun leaveDemo() {
+        confirmLeaveDemo = false
+        phoneDemo?.leave()
+        navigationState = NavigationState.root()
+    }
+    val onTryDemo: (() -> Unit)? = if (phoneDemo != null && demo == null) ::openDemo else null
+    val onLeaveDemo: (() -> Unit)? = if (demo != null) { { confirmLeaveDemo = true } } else null
 
     LaunchedEffect(pendingAppDeepLink?.requestId) {
         val pending = pendingAppDeepLink ?: return@LaunchedEffect
@@ -221,9 +320,17 @@ fun SwitchboardNavigation(
         )
     }
 
+    CompositionLocalProvider(
+        LocalPhoneDemo provides (demo != null),
+        LocalUriHandler provides if (demo != null) DemoUriHandler else LocalUriHandler.current,
+    ) {
+    Column(modifier = Modifier.fillMaxSize()) {
+    onLeaveDemo?.let { DemoStrip(onLeave = it) }
     Box(
         modifier = Modifier
-            .fillMaxSize()
+            .weight(1f)
+            .fillMaxWidth()
+            .then(if (demo != null) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier)
             .edgeSwipeBack(
                 enabled = navigationState.canGoBack,
                 onBack = ::navigateBack,
@@ -242,6 +349,7 @@ fun SwitchboardNavigation(
                     navigationState = navigationState.push(AppRoute.Settings)
                 },
                 onAdd = { navigationState = navigationState.push(AppRoute.Pair()) },
+                onTryDemo = onTryDemo,
                 onManageMachines = {
                     navigationState = navigationState.push(AppRoute.ManageConnections)
                 },
@@ -273,6 +381,7 @@ fun SwitchboardNavigation(
                 presentation = ConnectionsPresenter.present(visibleConnections),
                 buildStamp = buildStamp,
                 onAdd = { navigationState = navigationState.push(AppRoute.Pair()) },
+                onTryDemo = onTryDemo,
                 onManualAdd = {
                     navigationState = navigationState.push(AppRoute.Pair(startManual = true))
                 },
@@ -327,6 +436,7 @@ fun SwitchboardNavigation(
                 onUpdateAction = onUpdateAction,
                 followUpDefault = (runtime?.followUpDefault ?: SteerFollowUp).collectAsState().value,
                 onFollowUpDefault = { runtime?.setFollowUpDefault(it) },
+                onLeaveDemo = onLeaveDemo,
             )
 
             is AppRoute.Pair -> PairingScreen(
@@ -537,6 +647,26 @@ fun SwitchboardNavigation(
             )
         }
     }
+    }
+    if (confirmLeaveDemo && demo != null) {
+        LeaveDemoDialog(onLeave = ::leaveDemo, onStay = { confirmLeaveDemo = false })
+    }
+    }
+}
+
+private fun AppRoute.connectionIdOrNull(): String? = when (this) {
+    is AppRoute.Browse -> connectionId
+    is AppRoute.Thread -> connectionId
+    is AppRoute.NewSession -> connectionId
+    is AppRoute.Reviews -> connectionId
+    is AppRoute.PullRequest -> connectionId
+    is AppRoute.MessageSearch -> connectionId
+    AppRoute.Connections,
+    AppRoute.ManageConnections,
+    AppRoute.Settings,
+    AppRoute.GoogleAccount,
+    is AppRoute.Pair,
+    -> null
 }
 
 @Composable
@@ -548,6 +678,7 @@ private fun HomeRouteHost(
     onGoogleAccount: () -> Unit,
     onSettings: () -> Unit,
     onAdd: () -> Unit,
+    onTryDemo: (() -> Unit)?,
     onManageMachines: () -> Unit,
     onMachine: (String) -> Unit,
     onRecent: (HomeRecentRow) -> Unit,
@@ -636,6 +767,7 @@ private fun HomeRouteHost(
         },
         onManageMachines = onManageMachines,
         onAddMachine = onAdd,
+        onTryDemo = onTryDemo,
         onGoogleAccount = onGoogleAccount,
         onSettings = onSettings,
         onRetryMachines = onRetry,

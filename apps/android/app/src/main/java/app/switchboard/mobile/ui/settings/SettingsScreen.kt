@@ -34,7 +34,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.role
 import app.switchboard.mobile.domain.thread.TurnDelivery
 import app.switchboard.mobile.ui.components.SectionLabel
+import app.switchboard.mobile.ui.demo.PhoneDemoCopy
 import app.switchboard.mobile.ui.theme.TextDim
+import app.switchboard.mobile.ui.theme.Violet
 
 @Composable
 fun SettingsScreen(
@@ -46,6 +48,8 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     followUpDefault: TurnDelivery = TurnDelivery.Steer,
     onFollowUpDefault: (TurnDelivery) -> Unit = {},
+    /** Set while the demo runs: Settings is the second way out of it. */
+    onLeaveDemo: (() -> Unit)? = null,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -72,6 +76,22 @@ fun SettingsScreen(
                 bottom = 120.dp,
             ),
         ) {
+            onLeaveDemo?.let { leave ->
+                item { SectionLabel("DEMO", Modifier.padding(top = 24.dp, bottom = 8.dp)) }
+                item {
+                    ListItem(
+                        headlineContent = { Text(PhoneDemoCopy.LEAVE) },
+                        supportingContent = {
+                            Text("Sample data on this phone. Leaving keeps nothing.", color = TextDim, maxLines = 2)
+                        },
+                        trailingContent = { Text(PhoneDemoCopy.LEAVE, color = Violet) },
+                        modifier = Modifier
+                            .clickable(role = Role.Button, onClick = leave)
+                            .testTag(SettingsTestTags.LEAVE_DEMO),
+                    )
+                }
+                item { HorizontalDivider() }
+            }
             item { SectionLabel("ACCOUNT", Modifier.padding(top = 24.dp, bottom = 8.dp)) }
             item {
                 SettingsNavigationRow(
@@ -164,6 +184,7 @@ private fun FollowUpDefaultRow(value: TurnDelivery, onChange: (TurnDelivery) -> 
 }
 
 object SettingsTestTags {
+    const val LEAVE_DEMO = "settings-leave-demo"
     fun followUp(option: TurnDelivery) = "settings-follow-up-${option.wire}"
 }
 

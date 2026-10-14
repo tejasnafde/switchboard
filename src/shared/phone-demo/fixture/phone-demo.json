@@ -1,0 +1,665 @@
+{
+  "version": 1,
+  "connection": { "id": "demo", "label": "Demo machine" },
+  "project": { "path": "/demo/acme-console", "name": "acme-console" },
+  "chats": [
+    {
+      "id": "demo-approval",
+      "title": "Run the test suite after the fix",
+      "agentType": "claude-code",
+      "branch": "fix/totals",
+      "updatedAt": "@now-30000",
+      "statusLine": "Approval needed: Bash",
+      "messages": [
+        {
+          "id": "demo-approval-u1",
+          "role": "user",
+          "content": "The invoice total is off by a cent on some orders. Find it and fix it.",
+          "timestamp": "@now-240000"
+        },
+        {
+          "id": "demo-approval-a1",
+          "role": "assistant",
+          "content": "",
+          "timestamp": "@now-230000",
+          "toolCalls": [
+            {
+              "id": "demo-approval-t1",
+              "name": "Grep",
+              "input": "{\"pattern\":\"toFixed\",\"path\":\"src/\"}",
+              "output": "src/billing/totals.ts:14:    total += Number(line.amount.toFixed(2))"
+            }
+          ]
+        },
+        {
+          "id": "demo-approval-a2",
+          "role": "assistant",
+          "content": "Found it: `sumLines` rounds each line before adding, so the rounding errors stack up. I changed it to add in cents and round once at the end.",
+          "timestamp": "@now-200000",
+          "toolCalls": [
+            {
+              "id": "demo-approval-t2",
+              "name": "Edit",
+              "input": "{\"file_path\":\"src/billing/totals.ts\",\"old_string\":\"    total += Number(line.amount.toFixed(2))\",\"new_string\":\"    cents += Math.round(line.amount * 100)\"}",
+              "output": "The file src/billing/totals.ts has been updated."
+            }
+          ]
+        },
+        {
+          "id": "demo-approval-a3",
+          "role": "assistant",
+          "content": "I'd like to run the billing tests to confirm.",
+          "timestamp": "@now-30000"
+        }
+      ],
+      "pending": [
+        {
+          "type": "request.opened",
+          "threadId": "demo-approval",
+          "requestId": "demo-approval-request",
+          "requestType": "command",
+          "toolName": "Bash",
+          "detail": "npm test -- src/billing"
+        }
+      ],
+      "scripts": {
+        "connect": [
+          { "atMs": 0, "event": { "type": "status", "threadId": "demo-approval", "status": "running" } },
+          {
+            "atMs": 0,
+            "event": {
+              "type": "request.opened",
+              "threadId": "demo-approval",
+              "requestId": "demo-approval-request",
+              "requestType": "command",
+              "toolName": "Bash",
+              "detail": "npm test -- src/billing"
+            }
+          }
+        ],
+        "approve": [
+          {
+            "atMs": 0,
+            "event": {
+              "type": "request.closed",
+              "threadId": "demo-approval",
+              "requestId": "demo-approval-request",
+              "decision": "approve"
+            }
+          },
+          {
+            "atMs": 400,
+            "event": {
+              "type": "tool.started",
+              "threadId": "demo-approval",
+              "toolId": "demo-approval-t3",
+              "toolName": "Bash",
+              "input": { "command": "npm test -- src/billing", "description": "Run the billing tests" }
+            }
+          },
+          {
+            "atMs": 2000,
+            "event": {
+              "type": "tool.completed",
+              "threadId": "demo-approval",
+              "toolId": "demo-approval-t3",
+              "output": "PASS src/billing/totals.test.ts\nTests: 12 passed, 12 total"
+            }
+          },
+          {
+            "atMs": 2600,
+            "event": {
+              "type": "content",
+              "threadId": "demo-approval",
+              "messageId": "demo-approval-a4",
+              "text": "All 12 billing tests pass. Invoice totals now match to the cent.",
+              "streamKind": "assistant"
+            }
+          },
+          { "atMs": 2800, "event": { "type": "turn.completed", "threadId": "demo-approval", "durationMs": 2800 } },
+          { "atMs": 2800, "event": { "type": "status", "threadId": "demo-approval", "status": "idle" } }
+        ],
+        "deny": [
+          {
+            "atMs": 0,
+            "event": {
+              "type": "request.closed",
+              "threadId": "demo-approval",
+              "requestId": "demo-approval-request",
+              "decision": "deny"
+            }
+          },
+          {
+            "atMs": 500,
+            "event": {
+              "type": "content",
+              "threadId": "demo-approval",
+              "messageId": "demo-approval-a5",
+              "text": "Okay, skipping the tests. The fix is in `src/billing/totals.ts` when you want to run them.",
+              "streamKind": "assistant"
+            }
+          },
+          { "atMs": 700, "event": { "type": "turn.completed", "threadId": "demo-approval", "durationMs": 700 } },
+          { "atMs": 700, "event": { "type": "status", "threadId": "demo-approval", "status": "idle" } }
+        ],
+        "interrupt": [
+          {
+            "atMs": 0,
+            "event": {
+              "type": "request.closed",
+              "threadId": "demo-approval",
+              "requestId": "demo-approval-request",
+              "decision": "deny"
+            }
+          },
+          { "atMs": 0, "event": { "type": "turn.completed", "threadId": "demo-approval" } },
+          { "atMs": 0, "event": { "type": "status", "threadId": "demo-approval", "status": "idle" } }
+        ]
+      }
+    },
+    {
+      "id": "demo-running",
+      "title": "Add pagination to the orders table",
+      "agentType": "claude-code",
+      "branch": "feat/orders-paging",
+      "updatedAt": "@now-60000",
+      "statusLine": "Editing OrdersTable.tsx",
+      "messages": [
+        {
+          "id": "demo-running-u1",
+          "role": "user",
+          "content": "The orders table loads all 4,000 rows at once. Page it, 50 per page, and keep the sort when I change pages.",
+          "timestamp": "@now-60000"
+        }
+      ],
+      "pending": [],
+      "scripts": {
+        "connect": [
+          { "atMs": 0, "event": { "type": "status", "threadId": "demo-running", "status": "running" } },
+          {
+            "atMs": 0,
+            "event": {
+              "type": "content",
+              "threadId": "demo-running",
+              "messageId": "demo-running-a1",
+              "text": "I'll page it on the server and keep the sort in the URL so it survives a page change.",
+              "streamKind": "assistant"
+            }
+          },
+          {
+            "atMs": 600,
+            "event": {
+              "type": "tool.started",
+              "threadId": "demo-running",
+              "toolId": "demo-running-t1",
+              "toolName": "Read",
+              "input": { "file_path": "src/api/orders.ts" }
+            }
+          },
+          {
+            "atMs": 1400,
+            "event": { "type": "tool.completed", "threadId": "demo-running", "toolId": "demo-running-t1", "output": "" }
+          },
+          {
+            "atMs": 2000,
+            "event": {
+              "type": "tool.started",
+              "threadId": "demo-running",
+              "toolId": "demo-running-t2",
+              "toolName": "Read",
+              "input": { "file_path": "src/components/OrdersTable.tsx" }
+            }
+          },
+          {
+            "atMs": 2800,
+            "event": { "type": "tool.completed", "threadId": "demo-running", "toolId": "demo-running-t2", "output": "" }
+          },
+          {
+            "atMs": 3600,
+            "event": {
+              "type": "tool.started",
+              "threadId": "demo-running",
+              "toolId": "demo-running-t3",
+              "toolName": "Edit",
+              "input": {
+                "file_path": "src/api/orders.ts",
+                "old_string": "export async function listOrders(sort: Sort) {",
+                "new_string": "export async function listOrders(sort: Sort, page = 1, pageSize = 50) {"
+              }
+            }
+          },
+          {
+            "atMs": 5000,
+            "event": {
+              "type": "tool.completed",
+              "threadId": "demo-running",
+              "toolId": "demo-running-t3",
+              "output": "The file src/api/orders.ts has been updated."
+            }
+          },
+          {
+            "atMs": 5800,
+            "event": {
+              "type": "content",
+              "threadId": "demo-running",
+              "messageId": "demo-running-a2",
+              "text": "The API now takes `page` and `pageSize` and returns a total. Wiring the table to it next.",
+              "streamKind": "assistant"
+            }
+          },
+          {
+            "atMs": 6800,
+            "event": {
+              "type": "tool.started",
+              "threadId": "demo-running",
+              "toolId": "demo-running-t4",
+              "toolName": "Edit",
+              "input": {
+                "file_path": "src/components/OrdersTable.tsx",
+                "old_string": "const rows = useOrders(sort)",
+                "new_string": "const { rows, total } = useOrders(sort, page)"
+              }
+            }
+          }
+        ],
+        "interrupt": [
+          {
+            "atMs": 0,
+            "event": {
+              "type": "tool.completed",
+              "threadId": "demo-running",
+              "toolId": "demo-running-t4",
+              "output": "Interrupted by the user.",
+              "isError": true
+            }
+          },
+          { "atMs": 0, "event": { "type": "turn.completed", "threadId": "demo-running" } },
+          { "atMs": 0, "event": { "type": "status", "threadId": "demo-running", "status": "idle" } }
+        ]
+      }
+    },
+    {
+      "id": "demo-done",
+      "title": "Retry uploads when a signed URL expires",
+      "agentType": "claude-code",
+      "branch": "fix/upload-retry",
+      "updatedAt": "@now-720000",
+      "statusLine": "3 files changed, 12 tests passed",
+      "messages": [
+        {
+          "id": "demo-done-u1",
+          "role": "user",
+          "content": "Uploads that outlive their signed URL fail with a 403. Get a fresh URL and retry once.",
+          "timestamp": "@now-900000"
+        },
+        {
+          "id": "demo-done-a1",
+          "role": "assistant",
+          "content": "",
+          "timestamp": "@now-880000",
+          "toolCalls": [
+            {
+              "id": "demo-done-t1",
+              "name": "Read",
+              "input": "{\"file_path\":\"src/upload/putFile.ts\"}",
+              "output": ""
+            }
+          ]
+        },
+        {
+          "id": "demo-done-a2",
+          "role": "assistant",
+          "content": "Uploads that outlive their signed URL now get a fresh URL and one retry. Here is the flow:\n\n```mermaid\nflowchart LR\n  A[Upload] --> B[PUT to URL]\n  B -->|ok| C[Done]\n  B -->|403 expired| D[New URL, retry once]\n  D --> C\n```",
+          "timestamp": "@now-760000"
+        },
+        {
+          "id": "demo-done-f1",
+          "role": "assistant",
+          "content": "",
+          "timestamp": "@now-750000",
+          "fileDiff": {
+            "fileEditId": "demo-done-turn:src/upload/putFile.ts",
+            "repoRoot": "/demo/acme-console",
+            "relPath": "src/upload/putFile.ts",
+            "changeKind": "modify",
+            "oldContent": "export async function putFile(url: string, body: Blob) {\n  const res = await fetch(url, { method: 'PUT', body })\n  if (!res.ok) throw new Error(`upload failed: ${res.status}`)\n  return res\n}\n",
+            "newContent": "export async function putFile(key: string, url: string, body: Blob) {\n  let res = await fetch(url, { method: 'PUT', body })\n  if (res.status === 403) {\n    // The signed URL expired while the upload waited. Sign again, retry once.\n    url = await signUploadUrl(key)\n    res = await fetch(url, { method: 'PUT', body })\n  }\n  if (!res.ok) throw new Error(`upload failed: ${res.status}`)\n  return res\n}\n",
+            "status": "accepted"
+          }
+        },
+        {
+          "id": "demo-done-f2",
+          "role": "assistant",
+          "content": "",
+          "timestamp": "@now-750000",
+          "fileDiff": {
+            "fileEditId": "demo-done-turn:src/upload/sign.ts",
+            "repoRoot": "/demo/acme-console",
+            "relPath": "src/upload/sign.ts",
+            "changeKind": "modify",
+            "oldContent": "export async function signUploadUrl(key: string) {\n  const { url } = await api.post('/uploads/sign', { key })\n  return url\n}\n",
+            "newContent": "export async function signUploadUrl(key: string): Promise<string> {\n  const { url } = await api.post('/uploads/sign', { key, ttlSeconds: 900 })\n  return url\n}\n",
+            "status": "accepted"
+          }
+        },
+        {
+          "id": "demo-done-f3",
+          "role": "assistant",
+          "content": "",
+          "timestamp": "@now-750000",
+          "fileDiff": {
+            "fileEditId": "demo-done-turn:test/upload.test.ts",
+            "repoRoot": "/demo/acme-console",
+            "relPath": "test/upload.test.ts",
+            "changeKind": "add",
+            "oldContent": "",
+            "newContent": "import { putFile } from '../src/upload/putFile'\n\ntest('retries once with a fresh URL after a 403', async () => {\n  mockFetch([403, 200])\n  await putFile('a.png', 'https://bucket/old', new Blob(['x']))\n  expect(signUploadUrl).toHaveBeenCalledWith('a.png')\n})\n",
+            "status": "accepted"
+          }
+        },
+        {
+          "id": "demo-done-a3",
+          "role": "assistant",
+          "content": "",
+          "timestamp": "@now-730000",
+          "toolCalls": [
+            {
+              "id": "demo-done-t2",
+              "name": "Bash",
+              "input": "{\"command\":\"npm test -- src/upload\"}",
+              "output": "PASS test/upload.test.ts\nTests: 12 passed, 12 total"
+            }
+          ]
+        },
+        {
+          "id": "demo-done-a4",
+          "role": "assistant",
+          "content": "Done. Three files changed and the upload tests pass.",
+          "timestamp": "@now-720000"
+        }
+      ],
+      "pending": [],
+      "scripts": {}
+    }
+  ],
+  "scripts": {
+    "reply": [
+      { "atMs": 0, "event": { "type": "status", "threadId": "@thread", "status": "running" } },
+      {
+        "atMs": 900,
+        "event": {
+          "type": "content",
+          "threadId": "@thread",
+          "messageId": "@message",
+          "text": "This is the demo, so this reply is scripted. Pair your own machine to run real agents.",
+          "streamKind": "assistant"
+        }
+      },
+      { "atMs": 1100, "event": { "type": "turn.completed", "threadId": "@thread", "durationMs": 1100 } },
+      { "atMs": 1100, "event": { "type": "status", "threadId": "@thread", "status": "idle" } }
+    ],
+    "interrupt": [
+      { "atMs": 0, "event": { "type": "turn.completed", "threadId": "@thread" } },
+      { "atMs": 0, "event": { "type": "status", "threadId": "@thread", "status": "idle" } }
+    ]
+  },
+  "pullRequests": [
+    {
+      "ref": { "host": "github", "owner": "acme", "name": "console", "number": 214 },
+      "title": "Fix rounding in invoice totals",
+      "url": "https://github.com/acme/console/pull/214",
+      "author": { "login": "you", "displayName": "You", "avatarUrl": null },
+      "authorId": "you",
+      "state": "open",
+      "draft": false,
+      "sourceBranch": "fix/totals",
+      "targetBranch": "main",
+      "createdAt": "@now-7200000",
+      "updatedAt": "@now-240000",
+      "mergedAt": null,
+      "additions": 6,
+      "deletions": 3,
+      "changedFiles": 1,
+      "unresolvedConversations": 0,
+      "mergeConflicts": false,
+      "conflictedFiles": [],
+      "checks": { "state": "failure", "total": 3, "passed": 2, "failed": 1, "pending": 0 },
+      "reviewers": [],
+      "approvals": { "given": 0, "required": 1 },
+      "viewer": { "isAuthor": true, "isRequestedReviewer": false, "hasReviewed": false, "hasCommented": false },
+      "projectPaths": ["/demo/acme-console"],
+      "detail": {
+        "description": "Invoice totals were off by a cent on some orders because each line was rounded before the sum. This adds in cents and rounds once.",
+        "headSha": "4f1c2ab",
+        "mergeBlockers": [
+          { "kind": "checks_failed", "label": "1 check failed" },
+          { "kind": "approvals_missing", "label": "1 approval required" }
+        ],
+        "mergeStrategies": ["squash"],
+        "activity": [
+          { "id": "a214-1", "kind": "opened", "actor": null, "summary": "Opened", "detail": null, "at": "@now-7200000" },
+          { "id": "a214-2", "kind": "pushed", "actor": null, "summary": "Pushed 1 commit", "detail": null, "at": "@now-240000" }
+        ],
+        "checkList": [
+          { "id": "c214-1", "name": "build", "state": "failure", "description": "Type error in src/billing/totals.ts", "url": null, "durationMs": 74000, "rerunId": null },
+          { "id": "c214-2", "name": "lint", "state": "success", "description": null, "url": null, "durationMs": 21000, "rerunId": null },
+          { "id": "c214-3", "name": "unit tests", "state": "success", "description": null, "url": null, "durationMs": 96000, "rerunId": null }
+        ],
+        "viewerCanManage": false
+      }
+    },
+    {
+      "ref": { "host": "github", "owner": "acme", "name": "console", "number": 209 },
+      "title": "Add CSV export to the reports page",
+      "url": "https://github.com/acme/console/pull/209",
+      "author": { "login": "priya", "displayName": "Priya", "avatarUrl": null },
+      "authorId": "priya",
+      "state": "open",
+      "draft": false,
+      "sourceBranch": "feat/csv-export",
+      "targetBranch": "main",
+      "createdAt": "@now-86400000",
+      "updatedAt": "@now-3600000",
+      "mergedAt": null,
+      "additions": 142,
+      "deletions": 8,
+      "changedFiles": 5,
+      "unresolvedConversations": 1,
+      "mergeConflicts": false,
+      "conflictedFiles": [],
+      "checks": { "state": "success", "total": 3, "passed": 3, "failed": 0, "pending": 0 },
+      "reviewers": [
+        {
+          "id": "you",
+          "person": { "login": "you", "displayName": "You", "avatarUrl": null },
+          "state": "pending",
+          "requested": true
+        }
+      ],
+      "approvals": { "given": 0, "required": 1 },
+      "viewer": { "isAuthor": false, "isRequestedReviewer": true, "hasReviewed": false, "hasCommented": false },
+      "projectPaths": ["/demo/acme-console"],
+      "detail": {
+        "description": "Adds an Export button to the reports page. The CSV streams from the server so large reports do not load into the browser first.",
+        "headSha": "9b07e41",
+        "mergeBlockers": [
+          { "kind": "approvals_missing", "label": "1 approval required" },
+          { "kind": "unresolved_conversations", "label": "1 unresolved conversation" }
+        ],
+        "mergeStrategies": ["squash"],
+        "activity": [
+          {
+            "id": "a209-1",
+            "kind": "opened",
+            "actor": { "login": "priya", "displayName": "Priya", "avatarUrl": null },
+            "summary": "Opened and requested your review",
+            "detail": null,
+            "at": "@now-86400000"
+          }
+        ],
+        "checkList": [
+          { "id": "c209-1", "name": "build", "state": "success", "description": null, "url": null, "durationMs": 68000, "rerunId": null },
+          { "id": "c209-2", "name": "lint", "state": "success", "description": null, "url": null, "durationMs": 19000, "rerunId": null },
+          { "id": "c209-3", "name": "unit tests", "state": "success", "description": null, "url": null, "durationMs": 102000, "rerunId": null }
+        ],
+        "viewerCanManage": false
+      }
+    },
+    {
+      "ref": { "host": "github", "owner": "acme", "name": "console", "number": 212 },
+      "title": "Retry uploads when a signed URL expires",
+      "url": "https://github.com/acme/console/pull/212",
+      "author": { "login": "you", "displayName": "You", "avatarUrl": null },
+      "authorId": "you",
+      "state": "open",
+      "draft": false,
+      "sourceBranch": "fix/upload-retry",
+      "targetBranch": "main",
+      "createdAt": "@now-10800000",
+      "updatedAt": "@now-720000",
+      "mergedAt": null,
+      "additions": 42,
+      "deletions": 9,
+      "changedFiles": 3,
+      "unresolvedConversations": 0,
+      "mergeConflicts": false,
+      "conflictedFiles": [],
+      "checks": { "state": "success", "total": 3, "passed": 3, "failed": 0, "pending": 0 },
+      "reviewers": [
+        {
+          "id": "sam",
+          "person": { "login": "sam", "displayName": "Sam", "avatarUrl": null },
+          "state": "approved",
+          "requested": false
+        },
+        {
+          "id": "priya",
+          "person": { "login": "priya", "displayName": "Priya", "avatarUrl": null },
+          "state": "approved",
+          "requested": false
+        }
+      ],
+      "approvals": { "given": 2, "required": 1 },
+      "viewer": { "isAuthor": true, "isRequestedReviewer": false, "hasReviewed": false, "hasCommented": false },
+      "projectPaths": ["/demo/acme-console"],
+      "detail": {
+        "description": "An upload that outlives its signed URL gets a fresh URL and one retry, instead of failing with a 403.",
+        "headSha": "e3a9d10",
+        "mergeBlockers": [],
+        "mergeStrategies": ["squash"],
+        "activity": [
+          {
+            "id": "a212-1",
+            "kind": "reviewed",
+            "actor": { "login": "sam", "displayName": "Sam", "avatarUrl": null },
+            "summary": "Approved",
+            "detail": null,
+            "at": "@now-1800000"
+          },
+          {
+            "id": "a212-2",
+            "kind": "reviewed",
+            "actor": { "login": "priya", "displayName": "Priya", "avatarUrl": null },
+            "summary": "Approved",
+            "detail": "Nice, the test covers the expired case.",
+            "at": "@now-900000"
+          }
+        ],
+        "checkList": [
+          { "id": "c212-1", "name": "build", "state": "success", "description": null, "url": null, "durationMs": 71000, "rerunId": null },
+          { "id": "c212-2", "name": "lint", "state": "success", "description": null, "url": null, "durationMs": 20000, "rerunId": null },
+          { "id": "c212-3", "name": "unit tests", "state": "success", "description": null, "url": null, "durationMs": 99000, "rerunId": null }
+        ],
+        "viewerCanManage": false
+      }
+    },
+    {
+      "ref": { "host": "github", "owner": "acme", "name": "console", "number": 215 },
+      "title": "Add pagination to the orders table",
+      "url": "https://github.com/acme/console/pull/215",
+      "author": { "login": "you", "displayName": "You", "avatarUrl": null },
+      "authorId": "you",
+      "state": "open",
+      "draft": false,
+      "sourceBranch": "feat/orders-paging",
+      "targetBranch": "main",
+      "createdAt": "@now-600000",
+      "updatedAt": "@now-60000",
+      "mergedAt": null,
+      "additions": 58,
+      "deletions": 12,
+      "changedFiles": 2,
+      "unresolvedConversations": 0,
+      "mergeConflicts": false,
+      "conflictedFiles": [],
+      "checks": { "state": "pending", "total": 3, "passed": 1, "failed": 0, "pending": 2 },
+      "reviewers": [],
+      "approvals": { "given": 0, "required": 1 },
+      "viewer": { "isAuthor": true, "isRequestedReviewer": false, "hasReviewed": false, "hasCommented": false },
+      "projectPaths": ["/demo/acme-console"],
+      "detail": {
+        "description": "Pages the orders table on the server, 50 rows per page, and keeps the sort in the URL.",
+        "headSha": "71cc0f2",
+        "mergeBlockers": [
+          { "kind": "checks_pending", "label": "2 checks running" },
+          { "kind": "approvals_missing", "label": "1 approval required" }
+        ],
+        "mergeStrategies": ["squash"],
+        "activity": [
+          { "id": "a215-1", "kind": "opened", "actor": null, "summary": "Opened", "detail": null, "at": "@now-600000" }
+        ],
+        "checkList": [
+          { "id": "c215-1", "name": "lint", "state": "success", "description": null, "url": null, "durationMs": 18000, "rerunId": null },
+          { "id": "c215-2", "name": "build", "state": "pending", "description": null, "url": null, "durationMs": null, "rerunId": null },
+          { "id": "c215-3", "name": "unit tests", "state": "pending", "description": null, "url": null, "durationMs": null, "rerunId": null }
+        ],
+        "viewerCanManage": false
+      }
+    },
+    {
+      "ref": { "host": "github", "owner": "acme", "name": "console", "number": 205 },
+      "title": "Show a spinner while the dashboard loads",
+      "url": "https://github.com/acme/console/pull/205",
+      "author": { "login": "you", "displayName": "You", "avatarUrl": null },
+      "authorId": "you",
+      "state": "merged",
+      "draft": false,
+      "sourceBranch": "feat/dashboard-spinner",
+      "targetBranch": "main",
+      "createdAt": "@now-345600000",
+      "updatedAt": "@now-259200000",
+      "mergedAt": "@now-259200000",
+      "additions": 24,
+      "deletions": 6,
+      "changedFiles": 2,
+      "unresolvedConversations": 0,
+      "mergeConflicts": false,
+      "conflictedFiles": [],
+      "checks": { "state": "success", "total": 3, "passed": 3, "failed": 0, "pending": 0 },
+      "reviewers": [
+        {
+          "id": "sam",
+          "person": { "login": "sam", "displayName": "Sam", "avatarUrl": null },
+          "state": "approved",
+          "requested": false
+        }
+      ],
+      "approvals": { "given": 1, "required": 1 },
+      "viewer": { "isAuthor": true, "isRequestedReviewer": false, "hasReviewed": false, "hasCommented": false },
+      "projectPaths": ["/demo/acme-console"],
+      "detail": {
+        "description": "The dashboard showed a blank page for a second on slow networks. It now shows a spinner until the first data arrives.",
+        "headSha": "c0d4e55",
+        "mergeBlockers": [],
+        "mergeStrategies": ["squash"],
+        "activity": [
+          { "id": "a205-1", "kind": "merged", "actor": null, "summary": "Merged into main", "detail": null, "at": "@now-259200000" }
+        ],
+        "checkList": [
+          { "id": "c205-1", "name": "build", "state": "success", "description": null, "url": null, "durationMs": 70000, "rerunId": null }
+        ],
+        "viewerCanManage": false
+      }
+    }
+  ]
+}

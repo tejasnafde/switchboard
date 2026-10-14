@@ -20,6 +20,9 @@ import { colors, fonts, radius, space, statusColor, type, HIT } from '../theme'
 import { getSignedInEmail, warmUpGoogleAuth } from '../lib/google-auth'
 import { initialsFromEmail } from '../lib/account'
 import { BuildStamp } from '../components/BuildStamp'
+import { confirmLeaveDemo } from '../components/DemoStrip'
+import { Ionicons } from '@expo/vector-icons'
+import { DEMO_CONNECTION_ID, DEMO_LABEL, DEMO_PROJECT } from '@shared/phone-demo/phone-demo'
 import { usePrefsStore } from '../stores/prefs'
 import type { TurnDelivery } from '@shared/turn-delivery'
 import { chatCacheReady } from '../stores/chat'
@@ -93,6 +96,7 @@ export default function ConnectionsScreen() {
   const configs = useConnectionsStore((s) => s.configs)
   const status = useConnectionsStore((s) => s.status)
   const detail = useConnectionsStore((s) => s.detail)
+  const demoActive = useConnectionsStore((s) => s.demoActive)
   const [ready, setReady] = useState(false)
   // Avatar monogram from the signed-in account rather than a hardcoded one.
   // Null until the keychain read resolves; the avatar shows a dash meanwhile.
@@ -188,6 +192,16 @@ export default function ConnectionsScreen() {
     [navigation],
   )
 
+  const openDemo = useCallback(() => {
+    useConnectionsStore.getState().startDemo()
+    navigation.navigate('Projects', { connectionId: DEMO_CONNECTION_ID, label: DEMO_LABEL })
+    navigation.navigate('Conversations', {
+      connectionId: DEMO_CONNECTION_ID,
+      projectPath: DEMO_PROJECT.path,
+      projectName: DEMO_PROJECT.name,
+    })
+  }, [navigation])
+
   if (configs.length === 0) {
     return (
       <View style={styles.emptyWrap}>
@@ -209,6 +223,7 @@ export default function ConnectionsScreen() {
         >
           <Text style={styles.ctaText}>Scan a pairing QR</Text>
         </Pressable>
+        <DemoEntry onOpen={openDemo} />
         {/* Also here, not only in the paired list's footer: a fresh install is
             exactly when someone asks which build they are holding, and it is
             the first place a pairing problem gets debugged. */}
@@ -232,6 +247,7 @@ export default function ConnectionsScreen() {
       }
       ListFooterComponent={
         <View>
+          {demoActive && <DemoEntry onOpen={openDemo} />}
           <FollowUpDefaultSetting />
           <BuildStamp />
           {__DEV__ && (
@@ -431,12 +447,64 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  demoButton: {
+    marginTop: space.sm,
+    minHeight: HIT + 4,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderStrong,
+    flexDirection: 'row',
+    gap: space.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  demoButtonText: { fontFamily: fonts.display, fontSize: 15, color: colors.text },
+  demoNote: { ...type.bodySm, color: colors.textFaint, textAlign: 'center', marginTop: space.sm },
+  demoLeave: { alignItems: 'center', paddingVertical: space.sm },
+  demoLeaveText: { fontFamily: fonts.display, fontSize: 14, color: colors.purple },
   ctaText: {
     fontFamily: fonts.display,
     fontSize: 15,
     color: '#08131f',
   },
 })
+
+/**
+ * "Try the demo" on the empty screen. While the demo is open it reads "Back to
+ * the demo" and offers Leave demo, here and in the list footer (the app's
+ * settings), not only in the demo's own strip.
+ */
+function DemoEntry({ onOpen }: { onOpen: () => void }) {
+  const active = useConnectionsStore((s) => s.demoActive)
+  return (
+    <View>
+      <Pressable
+        onPress={onOpen}
+        testID="try-demo"
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.demoButton, pressed && styles.pressed]}
+      >
+        <Ionicons name="play-circle-outline" size={18} color={colors.purple} />
+        <Text style={styles.demoButtonText}>{active ? 'Back to the demo' : 'Try the demo'}</Text>
+      </Pressable>
+      {active ? (
+        <Pressable
+          onPress={() => confirmLeaveDemo(() => undefined)}
+          testID="settings-leave-demo"
+          accessibilityRole="button"
+          hitSlop={8}
+          style={({ pressed }) => [styles.demoLeave, pressed && styles.pressed]}
+        >
+          <Text style={styles.demoLeaveText}>Leave demo</Text>
+        </Pressable>
+      ) : (
+        <Text style={styles.demoNote}>
+          Sample chats and pull requests on this phone. No machine needed, nothing is sent anywhere.
+        </Text>
+      )}
+    </View>
+  )
+}
 
 /**
  * This device's "Follow-up while the agent works": what a send does while a

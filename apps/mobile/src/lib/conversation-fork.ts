@@ -6,6 +6,7 @@ import {
   type ForkConversationRequest,
 } from '@shared/conversation-fork'
 import type { ChatMessage } from '@shared/types'
+import { NOT_IN_DEMO, isDemoConnection } from '@shared/phone-demo/phone-demo'
 
 const PREFIX = 'sb.conversation-fork.v1:'
 
@@ -26,6 +27,7 @@ export async function mobileForkRequest(input: {
   withWorktree: boolean
   requestedAt?: number
 }): Promise<ForkConversationRequest> {
+  if (isDemoConnection(input.connectionId)) throw new Error(NOT_IN_DEMO)
   const key = intentKey({ ...input, messageId: input.message.id })
   let requestId = await AsyncStorage.getItem(key)
   if (!requestId) {

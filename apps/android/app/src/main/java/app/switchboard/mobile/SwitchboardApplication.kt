@@ -22,6 +22,8 @@ import app.switchboard.mobile.runtime.NativeAndroidRuntime
 import app.switchboard.mobile.runtime.DurableComposerRuntime
 import app.switchboard.mobile.runtime.GoogleAccountRuntime
 import app.switchboard.mobile.ui.browse.BrowseThreadActivity
+import app.switchboard.mobile.data.remote.PhoneDemoFixture
+import app.switchboard.mobile.ui.navigation.PhoneDemoController
 import java.io.Closeable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -56,6 +58,15 @@ class SwitchboardApplication : Application() {
         private set
     lateinit var threadSnapshotStore: RoomThreadSnapshotStore
         private set
+
+    /** The offline demo. Memory only: the fixture asset is read when it starts. */
+    val phoneDemo: PhoneDemoController by lazy {
+        PhoneDemoController(
+            readFixture = {
+                assets.open(PhoneDemoFixture.ASSET_NAME).bufferedReader().use { it.readText() }
+            },
+        )
+    }
 
     private val mutableStartupState = MutableStateFlow<StartupRuntimeState>(StartupRuntimeState.Loading)
     val startupState = mutableStartupState.asStateFlow()

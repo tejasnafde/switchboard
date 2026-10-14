@@ -15,3 +15,7 @@ val OnAccent = Color(0xFF07111B)
 val Green = Color(0xFF3FB950)
 val Amber = Color(0xFFD29922)
 val Red = Color(0xFFF85149)
+
+/** Demo mode: the strip, badges and Leave demo. Text on a dark violet tint. */
+val Violet = Color(0xFFA78BFA)
+val VioletTint = Color(0x29A78BFA)

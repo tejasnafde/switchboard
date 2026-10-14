@@ -74,6 +74,7 @@ import app.switchboard.mobile.platform.google.GoogleAccountPresentation
 import app.switchboard.mobile.ui.components.InlineStatus
 import app.switchboard.mobile.ui.components.SectionLabel
 import app.switchboard.mobile.ui.components.StatusTone
+import app.switchboard.mobile.ui.demo.TryDemoButton
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -88,6 +89,7 @@ fun ConnectionsScreen(
     onGoogleAccount: () -> Unit = {},
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onTryDemo: (() -> Unit)? = null,
 ) {
     var actionRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
     var removeRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
@@ -109,6 +111,7 @@ fun ConnectionsScreen(
                 buildStamp = buildStamp,
                 onScan = onAdd,
                 onManualAdd = onManualAdd,
+                onTryDemo = onTryDemo,
             )
 
             is ConnectionsPresentation.Failure -> FailureState(
@@ -284,6 +287,7 @@ private fun EmptyState(
     buildStamp: String,
     onScan: () -> Unit,
     onManualAdd: () -> Unit,
+    onTryDemo: (() -> Unit)?,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -323,6 +327,7 @@ private fun EmptyState(
             ) {
                 Text("Enter address manually")
             }
+            onTryDemo?.let { TryDemoButton(onClick = it, modifier = Modifier.padding(top = 8.dp)) }
             BuildStamp(buildStamp, Modifier.padding(top = 32.dp))
         }
     }

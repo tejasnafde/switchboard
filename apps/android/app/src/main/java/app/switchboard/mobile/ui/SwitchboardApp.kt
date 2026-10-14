@@ -22,6 +22,7 @@ import app.switchboard.mobile.BuildConfig
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.ui.connections.ConnectionIntent
 import app.switchboard.mobile.ui.connections.ConnectionsLoadState
+import app.switchboard.mobile.ui.navigation.PhoneDemoController
 import app.switchboard.mobile.ui.navigation.RootNavigationRuntime
 import app.switchboard.mobile.platform.notification.PendingNotificationRoute
 import app.switchboard.mobile.platform.deeplink.PendingAppDeepLink
@@ -66,6 +67,7 @@ fun SwitchboardApp(
     updateState: UpdateState = UpdateState.Idle,
     updatesEnabled: Boolean = false,
     onUpdateAction: (UpdateAction) -> Unit = {},
+    phoneDemo: PhoneDemoController? = null,
 ) {
     val updatePresentation = UpdateSurfacePresentation.from(updateState)
     val snackbarHostState = remember { SnackbarHostState() }
@@ -136,6 +138,7 @@ fun SwitchboardApp(
                 updateState = updateState,
                 updatesEnabled = updatesEnabled,
                 onUpdateAction = onUpdateAction,
+                phoneDemo = phoneDemo,
             )
 
         }

@@ -53,6 +53,8 @@ import app.switchboard.mobile.ui.connections.ConnectionRowPresentation
 import app.switchboard.mobile.ui.connections.ConnectionStatus
 import app.switchboard.mobile.ui.connections.ConnectionsPresentation
 import app.switchboard.mobile.ui.connections.GoogleAccountAvatarPolicy
+import app.switchboard.mobile.ui.demo.DemoBadge
+import app.switchboard.mobile.ui.demo.TryDemoButton
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.Amber
 import app.switchboard.mobile.ui.theme.GeistMono
@@ -76,6 +78,7 @@ fun HomeScreen(
     onSettings: () -> Unit,
     onRetryMachines: () -> Unit,
     modifier: Modifier = Modifier,
+    onTryDemo: (() -> Unit)? = null,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         HomeTopBar(
@@ -146,6 +149,7 @@ fun HomeScreen(
                         onAction = onAddMachine,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    onTryDemo?.let { TryDemoButton(onClick = it, modifier = Modifier.padding(top = 12.dp)) }
                 }
 
                 is ConnectionsPresentation.Failure -> item {
@@ -371,15 +375,21 @@ private fun HomeMachineRow(row: ConnectionRowPresentation, onClick: () -> Unit) 
                 .clip(CircleShape)
                 .background(tint),
         )
-        Text(
-            text = row.label,
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Row(
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 12.dp),
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = row.label,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            DemoBadge(Modifier.padding(start = 8.dp))
+        }
         Text(
             text = row.statusLabel,
             color = TextDim,

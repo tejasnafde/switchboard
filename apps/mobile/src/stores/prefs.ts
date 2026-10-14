@@ -10,6 +10,7 @@ import type { RuntimeMode } from '@shared/provider-events'
 import type { TurnDelivery } from '@shared/turn-delivery'
 import { DEFAULT_PHONE_PR_FILTERS, type PhonePrFilters } from '@shared/pull-request-phone'
 import type { QueuedReviewPill } from '../lib/outbox-model'
+import { DEMO_CONNECTION_ID, withoutDemo } from '@shared/phone-demo/phone-demo'
 
 /** Bounded: the map is persisted, so it cannot grow per thread ever opened. */
 export const MAX_REMEMBERED_THREADS = 200
@@ -118,8 +119,9 @@ export const usePrefsStore = create<PrefsState>()(
         set((s) => ({
           threads: pruneThreadPrefs({ ...s.threads, [key]: { ...s.threads[key], mode, at: Date.now() } }),
           // A mode chosen on one thread is the best guess for the next new one,
-          // which is how the desktop composer behaves.
-          defaultMode: mode,
+          // which is how the desktop composer behaves. A pick in the demo does
+          // not carry over.
+          defaultMode: key.startsWith(`${DEMO_CONNECTION_ID}:`) ? s.defaultMode : mode,
         })),
 
       rememberModel: (key, model) =>
@@ -147,6 +149,8 @@ export const usePrefsStore = create<PrefsState>()(
     {
       name: 'switchboard-prefs',
       storage: createJSONStorage(() => AsyncStorage),
+      // Drafts, modes and filters picked in the demo are never written.
+      partialize: (s) => ({ ...s, threads: withoutDemo(s.threads), prFilters: withoutDemo(s.prFilters) }),
     },
   ),
 )

@@ -8,6 +8,7 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { createLogger } from '@shared/logger'
+import { isDemoConnection } from '@shared/phone-demo/phone-demo'
 import { parseQueuedMessage, type QueuedMessage } from './outbox-model'
 
 const log = createLogger('mobile:outbox-storage')
@@ -27,6 +28,8 @@ function parseQueued(raw: string): QueuedMessage | null {
 }
 
 export async function saveQueued(message: QueuedMessage): Promise<void> {
+  // The demo plays back in memory and keeps nothing on the phone.
+  if (isDemoConnection(message.connectionId)) return
   await AsyncStorage.setItem(keyFor(message.messageId), JSON.stringify(message))
 }
 

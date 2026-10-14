@@ -70,11 +70,14 @@ export function useDictation({
   onDraft,
   onNote,
   refine,
+  unavailableNote,
 }: {
   draft: string
   onDraft: (text: string) => void
   onNote: (note: VoiceNote | null) => void
   refine?: RefineConfig
+  /** Set where voice input is off (the demo): a press shows this note and never asks for the microphone. */
+  unavailableNote?: string
 }): Dictation {
   const available = useMemo(() => isVoiceAvailable(), [])
   const [listening, setListening] = useState(false)
@@ -194,6 +197,10 @@ export function useDictation({
 
   const start = useCallback(async () => {
     if (sessionRef.current) return true
+    if (unavailableNote) {
+      postNote({ message: unavailableNote })
+      return false
+    }
     onNote(null)
     const granted = await ensureVoicePermission()
     if (!granted) {
@@ -261,7 +268,7 @@ export function useDictation({
     sessionRef.current = session
     setListening(true)
     return true
-  }, [onDraft, onNote, postNote, runRefinement])
+  }, [onDraft, onNote, postNote, runRefinement, unavailableNote])
 
   return { available, listening, refining, start, stop }
 }

@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.reviews
 
+import app.switchboard.mobile.ui.demo.LocalPhoneDemo
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -169,18 +170,21 @@ fun PullRequestDetailScreen(
                 Spacer(Modifier.width(8.dp))
                 Text("Work on PR", fontWeight = FontWeight.SemiBold)
             }
-            Spacer(Modifier.width(10.dp))
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(SurfaceRaised)
-                    .clickable { onOpenUrl(detail.summary.url) }
-                    .testTag(PullRequestDetailTestTags.OPEN_BROWSER)
-                    .semantics { contentDescription = "Open in browser" },
-                contentAlignment = Alignment.Center,
-            ) {
-                ReviewsGlyphIcon(ReviewsGlyph.External, MaterialTheme.colorScheme.onSurface)
+            // The demo's pull requests are made up, so there is nothing to open.
+            if (!LocalPhoneDemo.current) {
+                Spacer(Modifier.width(10.dp))
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(SurfaceRaised)
+                        .clickable { onOpenUrl(detail.summary.url) }
+                        .testTag(PullRequestDetailTestTags.OPEN_BROWSER)
+                        .semantics { contentDescription = "Open in browser" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ReviewsGlyphIcon(ReviewsGlyph.External, MaterialTheme.colorScheme.onSurface)
+                }
             }
         }
         if (workSheet) {
