@@ -167,9 +167,11 @@ describe('Android APK release verifier', () => {
         permissions: ['android.permission.INTERNET', 'android.permission.CAMERA'],
       })
       expect(() => parseBundleManifest('<manifest package="app.switchboard.mobile">')).toThrow('versionCode')
-      expect(() =>
-        parseBundleManifest(manifest([]).replace('</manifest>', "<uses-permission android:name='x'/></manifest>")),
-      ).toThrow('without a name')
+      const withTag = (tag: string) => manifest([]).replace('</manifest>', `${tag}</manifest>`)
+      expect(parseBundleManifest(withTag("<uses-permission android:name='x'/>")).permissions).toEqual(['x'])
+      expect(() => parseBundleManifest(withTag('<uses-permission android:maxSdkVersion="28"/>'))).toThrow(
+        'without a name',
+      )
     })
 
     test('reads the first certificate of each keytool signer', () => {
