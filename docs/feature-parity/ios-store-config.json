@@ -1,0 +1,52 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ios-store-config",
+  "summary": "Store plan step 2: App Store configuration for the Expo iOS app. app.json sets ITSAppUsesNonExemptEncryption false and supportsTablet false; eas.json adds a store build profile (distribution store, remote build numbers, autoIncrement) and a store submit profile that reads the App Store Connect API key from environment variables; iOS dictation prefers on-device recognition when the recognizer supports it. These are native changes and need a new iOS build, not an OTA.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Only apps/mobile config, apps/mobile/src/lib/voice.ts and docs change; the desktop app is untouched."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/app.json",
+        "apps/mobile/eas.json",
+        "apps/mobile/src/lib/voice.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The Play app is the native Kotlin app, which already uses the platform SpeechRecognizer (AndroidSpeechRecognizerGateway) with no on-device request; it ships through Play, so the App Store keys and EAS profiles do not apply. The Expo app's Android dictation is left on the default recognizer on purpose."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire protocol or backend change."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/eas.json",
+        "docs/releasing.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx expo config --type introspect shows ITSAppUsesNonExemptEncryption false and supportsTablet false in the resolved iOS config.",
+      "The eas-json resolver loads the store build and submit profiles and substitutes the ASC_API_KEY_* variables.",
+      "npx expo-doctor stays at 20/21 (the one failure is the existing 15 out-of-date packages).",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "A store build on EAS and eas submit (needs a new iOS build and the App Store record; not run from this job).",
+      "On-device dictation on a physical iPhone, and the fallback on a locale without an on-device model."
+    ]
+  }
+}

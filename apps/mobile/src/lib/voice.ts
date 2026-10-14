@@ -6,6 +6,7 @@
  * isVoiceAvailable() and never touch the module directly.
  */
 import { createLogger } from '@shared/logger'
+import { Platform } from 'react-native'
 import type { ExpoSpeechRecognitionErrorEvent, ExpoSpeechRecognitionResultEvent } from 'expo-speech-recognition'
 
 const log = createLogger('mobile:voice')
@@ -110,6 +111,7 @@ export function startListening(handlers: VoiceHandlers, options?: VoiceOptions):
       interimResults: true,
       addsPunctuation: true,
       continuous: true,
+      requiresOnDeviceRecognition: prefersOnDevice(speech),
       // iOS options; Android already records 16 kHz mono wav. Int16 at 16 kHz
       // keeps the upload small enough for the backend's 25 MB cap.
       ...(options?.persistAudio
@@ -147,6 +149,22 @@ export function joinDraft(base: string, transcript: string): string {
   if (!transcript) return base
   if (!base) return transcript
   return /\s$/.test(base) ? base + transcript : `${base} ${transcript}`
+}
+
+/**
+ * iOS only: keep audio on the phone when its recognizer can. The native side
+ * re-checks support for the session's locale and falls back to Apple's server
+ * when it cannot. Android stays on the default recognizer, where on-device
+ * fails outright on a phone without the language pack.
+ */
+function prefersOnDevice(module: SpeechModule): boolean {
+  if (Platform.OS !== 'ios') return false
+  try {
+    return module.supportsOnDeviceRecognition()
+  } catch (err) {
+    log.warn('supportsOnDeviceRecognition threw - using the default recognizer', err)
+    return false
+  }
 }
 
 function deviceLocale(): string {

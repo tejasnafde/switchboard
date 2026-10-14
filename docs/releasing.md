@@ -49,6 +49,29 @@ on physical API 24 and current devices, seed its storage/outbox, and exercise an
 actual in-app upgrade without uninstalling. Record migration, installer and
 post-upgrade data checks separately from automated results.
 
+## iOS App Store build
+
+The Expo app in `apps/mobile` ships to the App Store through the `store`
+profiles in `eas.json`. JS-only changes keep shipping over `mobile-ota.yml`;
+anything in the native project (a module, a permission, an Info.plist key in
+`app.json`) needs a new store build and a review.
+
+- **Build:** `eas build -p ios --profile store` (`distribution: store`,
+  channel `production`, so OTA updates reach it). Build numbers are remote
+  (`cli.appVersionSource: remote`) and `autoIncrement` bumps one per build;
+  the marketing version is still `expo.version` in `app.json`.
+- **Submit:** `eas submit -p ios --profile store`. The profile reads the App
+  Store Connect API key from three environment variables, so no key is in the
+  repo: `ASC_API_KEY_PATH` (path to the `.p8` file), `ASC_API_KEY_ID` and
+  `ASC_API_KEY_ISSUER_ID`. Their values come from the Secret Manager secret
+  `APPLE_ASC_API_KEY` in `teejayproject` (JSON `{key_id, issuer_id, team_id,
+  p8}`); in CI set them from repository secrets of the same names. EAS reads
+  them on the machine that runs `eas submit`, not from the build's EAS
+  environment.
+- `ITSAppUsesNonExemptEncryption` is `false` (system TLS only), so no build
+  asks the export compliance question. `supportsTablet` is `false`: iPads run
+  the iPhone app in compatibility mode and need no iPad screenshots.
+
 ## TL;DR
 
 A desktop release is a tag on `main`. There is no version-bump pull request:
