@@ -43,8 +43,8 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import { useLexicalNodeSelection } from '@lexical/react/useLexicalNodeSelection'
 import { createContext, useContext, useEffect, useMemo, useState, type JSX } from 'react'
 import type { DraftPill, DraftPillKind } from '../../../stores/draft-store'
-import { pillChipModel, type PillSource } from '../../../services/pill-chip-model'
-import { openPillFromElement, PillChipVisual } from './PillChipVisual'
+import type { PillSource } from '../../../services/pill-chip-model'
+import { PillChipVisual } from './PillChipVisual'
 
 export type SerializedPillNode = Spread<
   {
@@ -94,17 +94,14 @@ function PillChip({ pillId, label, kind, nodeKey }: PillChipProps): JSX.Element 
   )
   const [isSelected] = useLexicalNodeSelection(nodeKey)
   const [cardOpen, setCardOpen] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [viewerOpen, setViewerOpen] = useState(false)
 
   useEffect(() => {
     if (!isSelected) setCardOpen(false)
   }, [isSelected])
-  useEffect(() => {
-    if (!cardOpen) setNotice(null)
-  }, [cardOpen])
 
   // Keys on a chip selected with the arrow keys: Backspace or Delete removes
-  // it, Space toggles its card, Enter opens its source, the arrows leave it,
+  // it, Space toggles its card, Enter opens its viewer, the arrows leave it,
   // and a typed character goes after it.
   useEffect(() => {
     if (!isSelected) return
@@ -158,15 +155,9 @@ function PillChip({ pillId, label, kind, nodeKey }: PillChipProps): JSX.Element 
         KEY_ENTER_COMMAND,
         (event) => {
           if (!onlyThis() || event?.shiftKey) return false
-          const model = pillChipModel({ kind, label, content, source })
-          if (!model.target) return false
           event?.preventDefault()
           setCardOpen(false)
-          void openPillFromElement(model, editor.getElementByKey(nodeKey)).then((result) => {
-            if (result.opened || !result.notice) return
-            setNotice(result.notice)
-            setCardOpen(true)
-          })
+          setViewerOpen(true)
           return true
         },
         COMMAND_PRIORITY_HIGH,
@@ -195,7 +186,7 @@ function PillChip({ pillId, label, kind, nodeKey }: PillChipProps): JSX.Element 
       ),
     ]
     return () => unregister.forEach((off) => off())
-  }, [editor, isSelected, cardOpen, nodeKey, pillId, kind, label, content, source])
+  }, [editor, isSelected, cardOpen, nodeKey, pillId])
 
   return (
     <PillChipVisual
@@ -207,8 +198,8 @@ function PillChip({ pillId, label, kind, nodeKey }: PillChipProps): JSX.Element 
       selected={isSelected}
       cardOpen={cardOpen}
       onCardOpenChange={setCardOpen}
-      notice={notice}
-      onNoticeChange={setNotice}
+      viewerOpen={viewerOpen}
+      onViewerOpenChange={setViewerOpen}
       onRemove={() => removePillNode(editor, nodeKey, pillId)}
       rootProps={{
         'data-pill-id': pillId,

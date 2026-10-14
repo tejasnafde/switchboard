@@ -19,6 +19,8 @@ export type PillChipTarget =
   | { type: 'file'; path: string; startLine: number | null; endLine: number | null }
   | { type: 'terminal'; paneLabel: string }
   | { type: 'message'; role: 'user' | 'assistant'; quote: string; source: PillSource | null }
+  /** `repo` is `owner/name`, read from the expansion's header when the chip has it. */
+  | { type: 'review'; number: number; repo: string | null }
 
 /** The chat and message a Cmd+L chip was quoted from. Older pills have none and open by quote. */
 export interface PillSource {
@@ -42,6 +44,10 @@ export interface PillChipModel {
   preview: string[]
   /** Lines of captured text past the preview. */
   moreLines: number
+  /** All of the captured text, as the viewer shows it. Empty when the chip has no text. */
+  lines: string[]
+  /** Line number of `lines[0]`: the file's own for a file range, 1 otherwise. */
+  firstLine: number
   /** What a click opens. Null when the chip has no source to open. */
   target: PillChipTarget | null
 }
@@ -96,6 +102,7 @@ interface Parsed {
   lines: string[]
   where: string | null
   path: string | null
+  repo?: string | null
   startLine: number | null
   endLine: number | null
 }
@@ -136,7 +143,8 @@ function parseContent(kind: UserMessagePillKind, content: string): Parsed {
     })
     return { ...NOTHING, lines: trimBlankLines(lines) }
   }
-  return { ...NOTHING, lines: text.split('\n').filter((line) => line.trim()) }
+  const repo = /^Review context from \S+ (\S+) #\d+:/.exec(text)?.[1] ?? null
+  return { ...NOTHING, lines: trimBlankLines(text.split('\n')), repo }
 }
 
 /** Build the chip and card text for a pill. `content` is the text it expands to, when known. */
@@ -149,13 +157,17 @@ export function pillChipModel(input: {
   const { kind: stored, label } = input
   const kind = pillChipKind(stored, label)
   const parsed = input.content ? parseContent(stored, input.content) : NOTHING
-  const preview = parsed.lines.slice(0, PREVIEW_LINES)
+  // The review card previews its text lines; the blank lines between blocks are for the viewer.
+  const previewLines = stored === 'review' ? parsed.lines.filter((line) => line.trim()) : parsed.lines
+  const preview = previewLines.slice(0, PREVIEW_LINES)
   const base = {
     kind,
     source: SOURCE[kind],
     where: parsed.where,
     preview,
-    moreLines: Math.max(0, parsed.lines.length - preview.length),
+    moreLines: Math.max(0, previewLines.length - preview.length),
+    lines: parsed.lines,
+    firstLine: 1,
   }
 
   if (stored === 'terminal') {
@@ -179,6 +191,7 @@ export function pillChipModel(input: {
     const range = start !== null && end !== null && end !== start ? `${start}–${end}` : null
     return {
       ...base,
+      firstLine: start ?? 1,
       name,
       count: range,
       detail: range ? `lines ${range}` : start !== null ? `line ${start}` : null,
@@ -228,7 +241,7 @@ export function pillChipModel(input: {
     count: n !== null ? chipCount(n, unit, units) : null,
     detail: n !== null ? plural(n, unit, units) : head,
     where: places.length ? places.join(' · ') : null,
-    target: null,
+    target: number ? { type: 'review', number: Number(number[1]), repo: parsed.repo ?? null } : null,
   }
 }
 
@@ -298,4 +311,9 @@ export function pillContentInMessage(kind: UserMessagePillKind, label: string, t
     return lines.slice(0, count).join('\n')
   }
   return null
+}
+
+/** A terminal line the viewer tints as an error: an error word, or an HTTP 5xx status in a request log. */
+export function isErrorLine(line: string): boolean {
+  return /\b(error|errors|fatal|failed|failure|panic|exception)\b|\b5\d\d in \d/i.test(line)
 }

@@ -1,0 +1,70 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "chip-viewer",
+  "summary": "Desktop: a click on a context chip, or Enter on a chip selected with the arrow keys, opens a viewer (a Radix Dialog from ui/dialog) with the exact text the chip expanded to, in the composer and in sent bubbles. Terminal and file text is monospace with line numbers (a file range uses the file's own numbers; a terminal opens at its end with error lines tinted); messages and review context wrap. The header gives the name, kind, line count and origin; Copy, or Cmd+C with nothing selected, copies all of it. Go to source is a secondary button shown only when the source resolves: Open pane (while the pane exists), Open in editor, Show in chat (named after the other chat when it is loaded) and, for review chips, Open in Reviews (selects the pull request by number and, when the chip's text names it, repository). When there is no source, or an open does not land, the button goes and a quiet note says this is the text that was (or will be) sent; the old 'Message no longer in this chat' and 'Chat no longer available' notices are gone. A review chip in the composer shows the review context it carries; a sent review chip has no recoverable text and shows only Open in Reviews. The hover card says Click to view (Enter: view) on every chip.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/lexical/PillChipViewer.tsx",
+        "src/renderer/components/chat/lexical/PillChipVisual.tsx",
+        "src/renderer/components/chat/lexical/PillNode.tsx",
+        "src/renderer/services/pill-chip-model.ts",
+        "src/renderer/services/pill-chip-open.ts",
+        "src/renderer/styles/tailwind.css",
+        "tests/unit/pill-chip-viewer.test.ts",
+        "tests/unit/pill-chip-source-action.test.ts",
+        "tests/unit/pill-chip-model.test.ts",
+        "tests/unit/pill-chip-keyboard.test.ts",
+        "tests/unit/pill-chip-card-hints.test.ts",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/snapshots/composer-chip-viewer-dark-darwin.png",
+        "e2e/snapshots/composer-chip-viewer-light-darwin.png",
+        "e2e/snapshots/composer-chip-viewer-translucent-darwin.png"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "mobile_chip_viewer",
+      "followUpRelease": "A later Expo release that draws sent pills as chips. Today a sent or stored body is plain text with each pill as [label] (src/shared/pill-body-text.ts), with no tap action, and the composer has only the review pill chip. A viewer would help (the label is all a phone shows of a capture), but there is no chip to tap yet, and the captured text must be read out of the message text the way the desktop does (pillContentInMessage). Nothing ships on the phone in this change, so the flag gates nothing yet.",
+      "evidence": ["src/shared/pill-body-text.ts", "apps/mobile/src/components/ReviewPillChip.tsx"]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "native_chip_viewer",
+      "followUpRelease": "A later native Android release. UserMessageBody (ThreadScreen.kt) draws a sent pill as an inline tinted chip with its label and no tap action. A viewer would show the captured text on a tap; it needs the expansion read from the message text (pills_meta holds only label and kind). Nothing ships on Android in this change, so the flag gates nothing yet.",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/PillBodyPresentation.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire, IPC or backend change. The viewer reads the text the renderer already has: the draft pill's content in the composer, the message text in a sent bubble."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing new is stored. Draft pills and pills_meta keep their shape; older rows show what their message text holds."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships with the next desktop build. No native module, permission, signing, package identity or update channel change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/pill-chip-model.test.ts: the viewer text per kind (terminal without header and fence, a file range with its own first line, a message unquoted, review context with blank lines and its repository), no text without content, the error-line rule.",
+      "tests/unit/pill-chip-source-action.test.ts: Go to source labels (a terminal only while its pane exists, Open in editor, Open in Reviews, Show in a named other chat), and Open in Reviews selects the pull request by repository and number, or none when the number alone is ambiguous.",
+      "tests/unit/pill-chip-viewer.test.ts (jsdom): numbered lines with error tint, file numbering, wrapped messages, Copy and Cmd+C, Go to source closes when it lands and gives way to the note when it does not, the composer's will-be-sent note, a review chip with no text.",
+      "tests/unit/pill-chip-keyboard.test.ts (jsdom): Enter on a selected composer chip and a click open the viewer; Escape closes it.",
+      "SB_VISUAL_SCOPE=screens npm run test:e2e:visual: new composer-chip-viewer screen in three themes and the composer-chip-card baselines (Click to view), read; two runs pass without updating.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Show in chat into another chat and Open in Reviews were not driven in the built app; they reuse the tested opener paths (pill-message-open, pill-chat-opener) and the Reviews store select.",
+      "Phones: nothing changed."
+    ]
+  }
+}

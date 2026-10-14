@@ -90,6 +90,7 @@ describe('visual regression harness safety', () => {
         'sent-chips',
         'composer-chips',
         'composer-chip-card',
+        'composer-chip-viewer',
         'composer-landing',
         'composer-overflow-menu',
       ]),

@@ -1,25 +1,22 @@
 /**
- * Open what a context chip points at: the file in the IDE at its lines, the
- * terminal pane it was copied from, or the chat message it quotes (opening
- * that chat first when it is another one). A message that is gone comes back
- * as a notice for the chip's card.
+ * Open what a context chip points at, the chip viewer's "Go to source": the
+ * file in the IDE at its lines, the terminal pane it was copied from, the
+ * chat message it quotes (opening that chat first when it is another one), or
+ * the pull request in Reviews. An open that does not land resolves to false,
+ * and the viewer then says its text is the copy that was sent.
  */
 import type { PillChipTarget } from './pill-chip-model'
 import { useLayoutStore } from '../stores/layout-store'
 import { useTerminalStore } from '../stores/terminal-store'
 import { useAgentStore } from '../stores/agent-store'
+import { useReviewStore } from '../stores/review-store'
+import { prKey } from '@shared/pull-requests'
 import { focusTerminal } from './terminal-registry'
 import { ensureFullHistory } from './history-loader'
 import { resolvePillMessage, PILL_OPEN_SUPERSEDED } from './pill-message-open'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('chat:pill-open')
-
-export const MESSAGE_GONE_NOTICE = 'Message no longer in this chat'
-export const CHAT_GONE_NOTICE = 'Chat no longer available'
-
-/** `notice` is what the chip's card says when the source could not be opened. */
-export type PillOpenResult = { opened: true } | { opened: false; notice: string | null }
 
 /**
  * Opens a chat the sidebar way (remote chats on their own machine); resolves
@@ -53,17 +50,44 @@ function findPane(sessionId: string | null, paneLabel: string): { sessionId: str
   return null
 }
 
-/** Whether the chip's card offers to open it: a terminal chip only while its pane exists. */
-export function canOpenPillTarget(target: PillChipTarget | null, sessionId: string | null): boolean {
-  if (!target) return false
-  if (target.type === 'terminal') return findPane(sessionId, target.paneLabel) !== null
+/**
+ * The viewer's "Go to source" button text, or null when the source does not
+ * resolve: a terminal chip only while its pane exists, a quote in another
+ * chat named after that chat when it is loaded. `sessionId` is the chat the
+ * chip sits in.
+ */
+export function pillSourceAction(target: PillChipTarget | null, sessionId: string | null): string | null {
+  if (!target) return null
+  if (target.type === 'terminal') return findPane(sessionId, target.paneLabel) ? 'Open pane' : null
+  if (target.type === 'file') return 'Open in editor'
+  if (target.type === 'review') return 'Open in Reviews'
+  const other = target.source?.conversationId
+  if (!other || other === sessionId) return 'Show in chat'
+  const title = useAgentStore
+    .getState()
+    .sessions.find((s) => s.id === other)
+    ?.title?.trim()
+  return title ? `Show in \u201c${title}\u201d` : 'Show in chat'
+}
+
+/** The pull request a review chip names: same number, and the same repository when the chip knows it. */
+function openReview(target: Extract<PillChipTarget, { type: 'review' }>): boolean {
+  const reviews = useReviewStore.getState()
+  const repo = target.repo?.toLowerCase()
+  const matches = (reviews.list?.prs ?? []).filter(
+    (pr) => pr.ref.number === target.number && (!repo || `${pr.ref.owner}/${pr.ref.name}`.toLowerCase() === repo),
+  )
+  // Two repositories with the same number and no repository on the chip: show the list, pick none.
+  if (matches.length === 1) reviews.select(prKey(matches[0].ref))
+  else log.debug('chip pull request not in the list', { matches: matches.length })
+  useLayoutStore.getState().setAppView('reviews')
   return true
 }
 
 async function openMessage(
   target: Extract<PillChipTarget, { type: 'message' }>,
   hostSessionId: string | null,
-): Promise<PillOpenResult> {
+): Promise<boolean> {
   const ticket = ++openTicket
   const isCurrent = () => ticket === openTicket
   const resolution = await resolvePillMessage(target, hostSessionId, {
@@ -83,32 +107,34 @@ async function openMessage(
   })
   if (resolution.status === 'found') {
     useAgentStore.getState().requestScrollToMessage(resolution.sessionId, resolution.messageId)
-    return { opened: true }
+    return true
   }
-  if (resolution.status === 'superseded') return { opened: false, notice: null }
-  log.info('chip message source not found', { reason: resolution.status, hasSource: target.source !== null })
-  return { opened: false, notice: resolution.status === 'chat-missing' ? CHAT_GONE_NOTICE : MESSAGE_GONE_NOTICE }
+  if (resolution.status !== 'superseded') {
+    log.info('chip message source not found', { reason: resolution.status, hasSource: target.source !== null })
+  }
+  return false
 }
 
 /** Open the chip's source. `sessionId` is the chat the chip sits in. */
-export async function openPillTarget(target: PillChipTarget, sessionId: string | null): Promise<PillOpenResult> {
+export async function openPillTarget(target: PillChipTarget, sessionId: string | null): Promise<boolean> {
   if (target.type === 'message') return openMessage(target, sessionId)
   openTicket++
+  if (target.type === 'review') return openReview(target)
   if (target.type === 'file') {
     const range =
       target.startLine !== null ? { start: target.startLine, end: target.endLine ?? target.startLine } : null
     useLayoutStore.getState().openInViewer(target.path, range, sessionId)
-    return { opened: true }
+    return true
   }
   const found = findPane(sessionId, target.paneLabel)
   if (!found) {
     log.debug('chip terminal pane not found')
-    return { opened: false, notice: null }
+    return false
   }
   const layout = useLayoutStore.getState()
   if (layout.rightPaneMode !== 'terminal') layout.setRightPaneMode('terminal')
   if (!layout.terminalVisible) layout.toggleTerminal()
   useTerminalStore.getState().setActivePane(found.sessionId, found.paneId)
   requestAnimationFrame(() => focusTerminal(found.paneId))
-  return { opened: true }
+  return true
 }
