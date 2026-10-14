@@ -1242,6 +1242,13 @@ async function captureComposerChips(win, theme) {
   await win.waitForTimeout(250)
   await snapAsIs('composer-chip-card', theme, win.locator('[data-chat-slot="primary"]'))
   await win.mouse.move(SCREEN_SIZE.width / 2, 2)
+  // The viewer: a click on the chip shows all of the text it captured.
+  await composer.locator('[data-pill-chip][data-pill-kind="terminal"]').click()
+  const viewer = win.getByRole('dialog', { name: 'api' })
+  await viewer.waitFor({ state: 'visible', timeout: 5_000 })
+  await snapScreen(win, 'composer-chip-viewer', theme, viewer)
+  await win.keyboard.press('Escape')
+  await viewer.waitFor({ state: 'hidden' })
 }
 
 async function runThemeScreens() {
