@@ -90,9 +90,9 @@ export function parseBundleManifest(xml) {
     throw new Error('bundle manifest is missing a numeric versionCode')
   }
   if (!versionName) throw new Error('bundle manifest is missing versionName')
-  const permissions = [...xml.matchAll(/<uses-permission(?:-sdk-23)?\b[^>]*\sandroid:name="([^"]*)"/g)].map(
-    (match) => match[1],
-  )
+  const tags = xml.match(/<uses-permission(?:-sdk-23)?\b[^>]*>/g) ?? []
+  const permissions = tags.map((tag) => tag.match(/\sandroid:name="([^"]*)"/)?.[1])
+  if (permissions.some((name) => !name)) throw new Error('bundle manifest has a uses-permission without a name')
   return { packageName, versionCode: Number(versionCodeText), versionName, permissions }
 }
 

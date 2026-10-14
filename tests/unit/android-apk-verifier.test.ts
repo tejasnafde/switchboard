@@ -167,6 +167,9 @@ describe('Android APK release verifier', () => {
         permissions: ['android.permission.INTERNET', 'android.permission.CAMERA'],
       })
       expect(() => parseBundleManifest('<manifest package="app.switchboard.mobile">')).toThrow('versionCode')
+      expect(() =>
+        parseBundleManifest(manifest([]).replace('</manifest>', "<uses-permission android:name='x'/></manifest>")),
+      ).toThrow('without a name')
     })
 
     test('reads the first certificate of each keytool signer', () => {
