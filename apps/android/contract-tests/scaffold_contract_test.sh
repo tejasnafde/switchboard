@@ -45,12 +45,11 @@ require_text app/build.gradle.kts 'JavaVersion.VERSION_17'
 require_text app/build.gradle.kts 'jvmTarget = JvmTarget.JVM_17'
 
 manifest=app/src/main/AndroidManifest.xml
-for permission in INTERNET ACCESS_NETWORK_STATE CAMERA RECORD_AUDIO POST_NOTIFICATIONS REQUEST_INSTALL_PACKAGES; do
+for permission in INTERNET ACCESS_NETWORK_STATE CAMERA RECORD_AUDIO POST_NOTIFICATIONS; do
   require_text "$manifest" "android.permission.$permission"
 done
 require_text "$manifest" 'android:usesCleartextTraffic="true"'
 require_text "$manifest" 'android:screenOrientation="portrait"'
-require_text "$manifest" 'androidx.core.content.FileProvider'
 require_text "$manifest" 'android:scheme="switchboard"'
 require_text "$manifest" 'android:scheme="com.googleusercontent.apps.974343814740-be31f3e59stdql81uke54r62aodb5c7q"'
 

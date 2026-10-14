@@ -1,0 +1,56 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-play-release",
+  "summary": "Google Play becomes the only native Android channel. The in-app APK updater (GitHub release check, download, staging, installer hand-off, banner, snackbar and the Settings Updates row) is removed, with REQUEST_INSTALL_PACKAGES and the FileProvider that served staged APKs. mobile-release.yml builds a signed AAB, verifies package, version, upload-key signer and permissions, and uploads it to a Play test track.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop app and its electron-updater lane are unchanged. The Mobile pairing tab still links switchboard.tn07.dev/apk; it moves to the Play listing once that is live."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo client is the iOS app and keeps its OTA lane (mobile-ota.yml, --platform ios); only its AGENTS.md text about lanes changes."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/AndroidManifest.xml",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/settings/SettingsScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/settings/SettingsPresentationTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "The updater read GitHub releases directly; no backend or wire protocol was involved."
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/storage/RetiredUpdaterCleanup.kt"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        ".github/workflows/mobile-release.yml",
+        "scripts/verify-android-apk.mjs",
+        "tests/unit/android-apk-verifier.test.ts",
+        "tests/unit/android-native-ci.test.ts",
+        "docs/releasing.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "./gradlew testDebugUnitTest lintDebug bundleRelease assembleRelease compileDebugAndroidTestKotlin passes on this branch.",
+      "verify-android-apk.mjs --aab read the locally built AAB with bundletool 1.18.3 and keytool, listed its permissions and refused the throwaway signer.",
+      "aapt2 dump permissions on the release APK lists no REQUEST_INSTALL_PACKAGES."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The workflow on GitHub Actions: it needs PLAY_SERVICE_ACCOUNT_JSON and a Play app record, which do not exist yet.",
+      "Starting the app on a device that holds updater state, to see the cleanup delete it."
+    ]
+  }
+}

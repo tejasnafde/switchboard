@@ -6,18 +6,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import app.switchboard.mobile.BuildConfig
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.ui.connections.ConnectionIntent
@@ -33,11 +27,6 @@ import app.switchboard.mobile.ui.pairing.PairingForm
 import app.switchboard.mobile.ui.pairing.PairingSaveIntent
 import app.switchboard.mobile.ui.pairing.PairingSaveResult
 import app.switchboard.mobile.ui.theme.SwitchboardTheme
-import app.switchboard.mobile.ui.update.UpdateSurface
-import app.switchboard.mobile.ui.update.UpdateSurfacePlacement
-import app.switchboard.mobile.ui.update.UpdateSurfacePresentation
-import app.switchboard.mobile.update.UpdateAction
-import app.switchboard.mobile.update.UpdateState
 
 @Composable
 fun SwitchboardApp(
@@ -63,54 +52,14 @@ fun SwitchboardApp(
     onNotificationRouteAccepted: (PendingNotificationRoute) -> Unit = {},
     pendingAppDeepLink: PendingAppDeepLink? = null,
     onAppDeepLinkAccepted: (PendingAppDeepLink) -> Unit = {},
-    updateState: UpdateState = UpdateState.Idle,
-    updatesEnabled: Boolean = false,
-    onUpdateAction: (UpdateAction) -> Unit = {},
 ) {
-    val updatePresentation = UpdateSurfacePresentation.from(updateState)
-    val snackbarHostState = remember { SnackbarHostState() }
-    LaunchedEffect(updatePresentation) {
-        val presentation = updatePresentation
-        if (presentation?.placement != UpdateSurfacePlacement.Snackbar) {
-            snackbarHostState.currentSnackbarData?.dismiss()
-            return@LaunchedEffect
-        }
-        val result = snackbarHostState.showSnackbar(
-            message = presentation.snackbarMessage,
-            actionLabel = presentation.actionLabel,
-            withDismissAction = false,
-            duration = SnackbarDuration.Indefinite,
-        )
-        if (result == SnackbarResult.ActionPerformed) {
-            presentation.action?.let(onUpdateAction)
-        }
-    }
     Scaffold(
         modifier = modifier
             .fillMaxSize()
             .imePadding(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        snackbarHost = {
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier.navigationBarsPadding(),
-            )
-        },
-        bottomBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding(),
-            ) {
-                if (updatePresentation?.placement == UpdateSurfacePlacement.ReservedBanner) {
-                    UpdateSurface(
-                        state = updateState,
-                        onAction = onUpdateAction,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    )
-                }
-            }
-        },
+        // Keeps content above the navigation bar.
+        bottomBar = { Spacer(Modifier.fillMaxWidth().navigationBarsPadding()) },
     ) { contentPadding ->
         Box(
             modifier = Modifier
@@ -133,9 +82,6 @@ fun SwitchboardApp(
                 onNotificationRouteAccepted = onNotificationRouteAccepted,
                 pendingAppDeepLink = pendingAppDeepLink,
                 onAppDeepLinkAccepted = onAppDeepLinkAccepted,
-                updateState = updateState,
-                updatesEnabled = updatesEnabled,
-                onUpdateAction = onUpdateAction,
             )
 
         }

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { basename, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const CANONICAL_ANDROID_PACKAGE = 'app.switchboard.mobile'
@@ -74,30 +74,45 @@ function compareVersionNames(left, right) {
   return 0
 }
 
-/**
- * The new APK must be strictly newer than EVERY published one, by versionCode
- * and by versionName, each compared with its own maximum: Android refuses an
- * update whose versionCode is not higher than the installed one, and the
- * in-app updater orders releases by name. Returns null when nothing is
- * published yet, which is the first release and has nothing to exceed.
- */
-export function verifyNewerThanPublished(candidate, published) {
-  if (published.length === 0) return null
-  const highestCode = published.reduce((a, b) => (b.versionCode > a.versionCode ? b : a))
-  const highestName = published.reduce((a, b) => (compareVersionNames(b.versionName, a.versionName) > 0 ? b : a))
-  const errors = []
-  if (candidate.versionCode <= highestCode.versionCode) {
-    errors.push(
-      `versionCode ${candidate.versionCode} must exceed the highest published versionCode ${highestCode.versionCode} (${highestCode.source})`,
-    )
+/** Play forbids self-updating apps, so a store bundle must never ask to install packages. */
+export const FORBIDDEN_PERMISSIONS = ['android.permission.REQUEST_INSTALL_PACKAGES']
+
+/** Reads identity and permissions from `bundletool dump manifest` XML. */
+export function parseBundleManifest(xml) {
+  const manifestTag = xml.match(/<manifest\b[^>]*>/)?.[0]
+  if (!manifestTag) throw new Error('bundle manifest is missing the manifest element')
+  const attribute = (name) => manifestTag.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1]
+  const packageName = attribute('package')
+  const versionCodeText = attribute('android:versionCode')
+  const versionName = attribute('android:versionName')
+  if (!packageName) throw new Error('bundle manifest is missing package')
+  if (!versionCodeText || !/^\d+$/.test(versionCodeText)) {
+    throw new Error('bundle manifest is missing a numeric versionCode')
   }
-  if (compareVersionNames(candidate.versionName, highestName.versionName) <= 0) {
-    errors.push(
-      `versionName ${candidate.versionName} must exceed the highest published versionName ${highestName.versionName} (${highestName.source})`,
-    )
+  if (!versionName) throw new Error('bundle manifest is missing versionName')
+  const permissions = [...xml.matchAll(/<uses-permission(?:-sdk-23)?\b[^>]*\sandroid:name="([^"]*)"/g)].map(
+    (match) => match[1],
+  )
+  return { packageName, versionCode: Number(versionCodeText), versionName, permissions }
+}
+
+/** First certificate SHA-256 of each signer in `keytool -printcert -jarfile` output. */
+export function parseKeytoolSigners(output) {
+  const signers = output
+    .split(/^Signer #\d+:/m)
+    .slice(1)
+    .map((block) => block.match(/SHA256:\s*([0-9A-Fa-f:]+)/)?.[1])
+  if (signers.length === 0 || signers.some((signer) => !signer)) {
+    throw new Error('keytool output contains no signer SHA-256 fingerprint')
   }
-  throwVerificationErrors(errors)
-  return { highestVersionCode: highestCode.versionCode, highestVersionName: highestName.versionName }
+  return [...new Set(signers.map(fingerprint))]
+}
+
+export function verifyBundleEvidence(evidence) {
+  const identity = verifyApkIdentity(evidence)
+  const forbidden = evidence.permissions.filter((permission) => FORBIDDEN_PERMISSIONS.includes(permission))
+  throwVerificationErrors(forbidden.map((permission) => `bundle must not request ${permission}`))
+  return { ...identity, permissions: evidence.permissions }
 }
 
 export function verifyApkEvidence(evidence) {
@@ -176,16 +191,16 @@ function runTool(command, args) {
 }
 
 function parseArguments(argv) {
-  const options = { metadataOnly: false, identityOnly: false, publishedDir: null, apk: null, checksum: null }
+  const options = { metadataOnly: false, identityOnly: false, aab: null, apk: null, checksum: null }
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === '--metadata-only') {
       options.metadataOnly = true
     } else if (arg === '--identity-only') {
       options.identityOnly = true
-    } else if (arg === '--newer-than-published') {
-      options.publishedDir = argv[++i] ?? null
-      if (!options.publishedDir) throw new Error('--newer-than-published needs a directory')
+    } else if (arg === '--aab') {
+      options.aab = argv[++i] ?? null
+      if (!options.aab) throw new Error('--aab needs a path')
     } else if (arg === '--apk') {
       options.apk = argv[++i] ?? null
     } else if (arg === '--checksum') {
@@ -194,11 +209,17 @@ function parseArguments(argv) {
       throw new Error(`unknown argument: ${arg}`)
     }
   }
-  if (!options.apk) throw new Error('--apk is required')
-  if ([options.metadataOnly, options.identityOnly, options.publishedDir !== null].filter(Boolean).length > 1) {
-    throw new Error('--metadata-only, --identity-only and --newer-than-published are mutually exclusive')
+  if (options.aab) {
+    if (options.apk || options.metadataOnly || options.identityOnly || options.checksum) {
+      throw new Error('--aab takes no other option')
+    }
+    return options
   }
-  if (!options.metadataOnly && !options.identityOnly && !options.publishedDir && !options.checksum) {
+  if (!options.apk) throw new Error('--apk is required')
+  if (options.metadataOnly && options.identityOnly) {
+    throw new Error('--metadata-only and --identity-only are mutually exclusive')
+  }
+  if (!options.metadataOnly && !options.identityOnly && !options.checksum) {
     throw new Error('--checksum is required in strict mode')
   }
   return options
@@ -206,31 +227,13 @@ function parseArguments(argv) {
 
 function runCli(argv) {
   const options = parseArguments(argv)
+  if (options.aab) return verifyBundleCli(resolve(options.aab))
   const apkPath = resolve(options.apk)
   if (!existsSync(apkPath)) throw new Error(`APK does not exist: ${apkPath}`)
 
   const aapt = process.env.AAPT2 || 'aapt2'
   const metadata = parseAaptBadging(runTool(aapt, ['dump', 'badging', apkPath]))
   verifyMetadataEvidence(metadata)
-
-  if (options.publishedDir) {
-    const publishedDir = resolve(options.publishedDir)
-    if (!existsSync(publishedDir)) throw new Error(`published APK directory does not exist: ${publishedDir}`)
-    const published = readdirSync(publishedDir)
-      .filter((name) => name.endsWith('.apk'))
-      .sort()
-      .map((name) => ({
-        ...parseAaptBadging(runTool(aapt, ['dump', 'badging', join(publishedDir, name)])),
-        source: name,
-      }))
-    const highest = verifyNewerThanPublished(metadata, published)
-    process.stdout.write(
-      highest
-        ? `Android APK ${metadata.versionName} (${metadata.versionCode}) is newer than all ${published.length} published APKs (highest ${highest.highestVersionName}, versionCode ${highest.highestVersionCode})\n`
-        : 'No published Android APK to compare against; this is the first release\n',
-    )
-    return
-  }
 
   const actualSha256 = sha256File(apkPath)
 
@@ -263,6 +266,23 @@ function runCli(argv) {
   })
   process.stdout.write(
     `Verified Android release APK: ${evidence.packageName} ${evidence.versionName} (${evidence.versionCode}) ${evidence.sha256}\n`,
+  )
+}
+
+function verifyBundleCli(aabPath) {
+  if (!existsSync(aabPath)) throw new Error(`AAB does not exist: ${aabPath}`)
+  const bundletool = process.env.BUNDLETOOL_JAR
+  if (!bundletool) throw new Error('BUNDLETOOL_JAR must name a bundletool-all jar')
+  const manifest = parseBundleManifest(
+    runTool(process.env.JAVA || 'java', ['-jar', bundletool, 'dump', 'manifest', '--bundle', aabPath]),
+  )
+  const signerSha256 = parseKeytoolSigners(
+    runTool(process.env.KEYTOOL || 'keytool', ['-printcert', '-jarfile', aabPath]),
+  )
+  const evidence = verifyBundleEvidence({ ...manifest, signerSha256 })
+  process.stdout.write(
+    `Verified Android release AAB: ${evidence.packageName} ${evidence.versionName} (${evidence.versionCode}) ${evidence.signerSha256}\n` +
+      `Permissions:\n${evidence.permissions.map((permission) => `  ${permission}`).join('\n')}\n`,
   )
 }
 

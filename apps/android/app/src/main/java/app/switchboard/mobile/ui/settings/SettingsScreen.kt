@@ -12,14 +12,12 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,7 +40,6 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onGoogleAccount: () -> Unit,
     onManageMachines: () -> Unit,
-    onUpdateAction: (app.switchboard.mobile.update.UpdateAction) -> Unit,
     modifier: Modifier = Modifier,
     followUpDefault: TurnDelivery = TurnDelivery.Steer,
     onFollowUpDefault: (TurnDelivery) -> Unit = {},
@@ -97,35 +94,6 @@ fun SettingsScreen(
             item { HorizontalDivider() }
 
             item { SectionLabel("APP", Modifier.padding(top = 24.dp, bottom = 8.dp)) }
-            item {
-                ListItem(
-                    headlineContent = { Text("Updates") },
-                    supportingContent = {
-                        Text(
-                            text = presentation.update.detail,
-                            color = TextDim,
-                            maxLines = 2,
-                        )
-                    },
-                    trailingContent = {
-                        when {
-                            presentation.update.action != null -> TextButton(
-                                onClick = {
-                                    onUpdateAction(requireNotNull(presentation.update.action))
-                                },
-                                modifier = Modifier.heightIn(min = 48.dp),
-                            ) {
-                                Text(requireNotNull(presentation.update.actionLabel))
-                            }
-                            presentation.update.busy -> CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        }
-                    },
-                )
-            }
-            item { HorizontalDivider() }
             item {
                 ListItem(
                     headlineContent = { Text("Switchboard") },
