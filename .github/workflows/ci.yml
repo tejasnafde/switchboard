@@ -39,8 +39,9 @@ jobs:
         if: github.event_name == 'pull_request'
         run: npm run validate:feature-parity -- --base "${{ github.event.pull_request.base.sha }}"
 
+      # Also on pull requests: a PR that deletes a file another manifest cites
+      # as evidence must fail here, not on main after the merge (#305, #341).
       - name: Validate feature manifest history
-        if: github.event_name != 'pull_request'
         run: npm run validate:feature-parity -- --all
 
   # Which jobs this change needs (scripts/ci-scope.mjs). The test job always

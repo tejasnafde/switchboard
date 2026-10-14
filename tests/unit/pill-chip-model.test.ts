@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isErrorLine,
   pillChipKind,
   pillChipModel,
   pillContentInMessage,
   splitChipName,
 } from '../../src/renderer/services/pill-chip-model'
 import { formatChatMessageContext, formatFileViewerContext } from '../../src/renderer/services/context-formatters'
-import { reviewContextLabel, type ReviewContext } from '../../src/shared/review-context'
+import { expandReviewContext, reviewContextLabel, type ReviewContext } from '../../src/shared/review-context'
 
 const terminalContent =
   '[from: api @ 14:31 · npm run dev]\n```\nError: state token expired\n    at handleCallback\n    at processTicks\nPOST /api/oauth/callback 500\nline five\n```\n'
@@ -93,7 +94,7 @@ describe('pillChipModel counts', () => {
       name: 'PR #612',
       count: '3 threads',
       detail: '3 threads',
-      target: null,
+      target: { type: 'review', number: 612, repo: null },
     })
     expect(pillChipModel({ kind: 'review', label: '1 review conversation · #7 · a.ts:3' })).toMatchObject({
       name: 'PR #7',
@@ -132,6 +133,66 @@ describe('pillChipModel preview and target', () => {
       endLine: null,
     })
     expect(pillChipModel({ kind: 'file', label: 'auth.ts (1-2)' }).target).toBeNull()
+  })
+})
+
+describe('pillChipModel viewer text', () => {
+  it('terminal: every captured line without the header or the fence', () => {
+    const model = pillChipModel({ kind: 'terminal', label: 'api (5 lines)', content: terminalContent })
+    expect(model.lines).toEqual([
+      'Error: state token expired',
+      '    at handleCallback',
+      '    at processTicks',
+      'POST /api/oauth/callback 500',
+      'line five',
+    ])
+    expect(model.firstLine).toBe(1)
+  })
+
+  it("file: the range's lines, numbered from the file's own first line", () => {
+    const content = formatFileViewerContext({ path: 'src/a.ts', startLine: 40, endLine: 42, content: 'x\n\ny\n' })
+    const model = pillChipModel({ kind: 'file', label: 'a.ts (40-42)', content })
+    expect(model.lines).toEqual(['x', '', 'y'])
+    expect(model.firstLine).toBe(40)
+    expect(pillChipModel({ kind: 'file', label: 'a.ts', content: '@src/a.ts' }).lines).toEqual([])
+  })
+
+  it('message: the quoted text without the quote marks', () => {
+    const content = '> from Claude: "The exchange should wait."\n> Right now it runs first.\n>\n> Swap them.'
+    const model = pillChipModel({ kind: 'chat-message', label: 'Claude: "The exchange should wait."', content })
+    expect(model.lines).toEqual(['The exchange should wait.', 'Right now it runs first.', '', 'Swap them.'])
+  })
+
+  it('review: the context that was sent, blank lines kept, with the repository for Reviews', () => {
+    const ctx = {
+      pr: { host: 'github', owner: 'acme', name: 'api', number: 612 },
+      title: 'Fix the callback',
+      url: 'https://github.com/acme/api/pull/612',
+      items: [{ kind: 'check', name: 'unit', description: 'tests failed', url: null }],
+    } as unknown as ReviewContext
+    const model = pillChipModel({ kind: 'review', label: reviewContextLabel(ctx), content: expandReviewContext(ctx) })
+    expect(model.lines[0]).toBe('Review context from GitHub acme/api #612: Fix the callback')
+    expect(model.lines).toContain('')
+    expect(model.lines).toContain('[1] Failed check: unit')
+    // The card still previews text lines only.
+    expect(model.preview.every((line) => line.trim())).toBe(true)
+    expect(model.target).toEqual({ type: 'review', number: 612, repo: 'acme/api' })
+  })
+
+  it('has no text when the chip has no content', () => {
+    expect(pillChipModel({ kind: 'review', label: '2 failed checks · #7' }).lines).toEqual([])
+    expect(pillChipModel({ kind: 'terminal', label: 'api (3 lines)' }).lines).toEqual([])
+  })
+})
+
+describe('isErrorLine', () => {
+  it('tints error words and 5xx request lines, not stack frames or 2xx', () => {
+    expect(isErrorLine('Error: state token expired')).toBe(true)
+    expect(isErrorLine('14:31:09 POST /api/oauth/callback 500 in 38ms')).toBe(true)
+    expect(isErrorLine('npm ERR! failed to build')).toBe(true)
+    expect(isErrorLine('    at verifyState (src/state.ts:22:9)')).toBe(false)
+    expect(isErrorLine('GET /api/health 200 in 2ms')).toBe(false)
+    expect(isErrorLine('errorHandler registered')).toBe(false)
   })
 })
 

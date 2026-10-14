@@ -33,9 +33,6 @@ class MainActivity : ComponentActivity() {
     private val switchboardApplication
         get() = application as SwitchboardApplication
 
-    private val updateRuntime
-        get() = switchboardApplication.updateRuntime
-
     private val connectionRepository
         get() = switchboardApplication.connectionRepository
 
@@ -72,7 +69,6 @@ class MainActivity : ComponentActivity() {
         switchboardApplication.ingestRemoteNotificationIntent(intent)
         if (savedInstanceState == null) ingestAppDeepLinkIntent(intent, coldStart = true)
         setContent {
-            val updateState by updateRuntime.state
             val startupState by switchboardApplication.startupState.collectAsState()
             val connectionSnapshot by connectionRepository.snapshots.collectAsState()
             val googleAccountPresentation by switchboardApplication.googleAccountRuntime
@@ -131,9 +127,6 @@ class MainActivity : ComponentActivity() {
                             appDeepLinkRequest.value = null
                         }
                     },
-                    updateState = updateState,
-                    updatesEnabled = updateRuntime.enabled,
-                    onUpdateAction = updateRuntime::onAction,
                     phoneDemo = switchboardApplication.phoneDemo,
                 )
             }
@@ -143,7 +136,6 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         signalNotificationRoute()
-        updateRuntime.onActivityResumed()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -152,11 +144,6 @@ class MainActivity : ComponentActivity() {
         switchboardApplication.ingestRemoteNotificationIntent(intent)
         ingestAppDeepLinkIntent(intent, coldStart = false)
         signalNotificationRoute()
-    }
-
-    override fun onPause() {
-        updateRuntime.onActivityPaused()
-        super.onPause()
     }
 
     private fun ensureNotificationChannel() {

@@ -11,8 +11,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { $getRoot, $isTextNode, type LexicalEditor } from 'lexical'
 
 vi.mock('../../src/renderer/services/pill-chip-open', () => ({
-  openPillTarget: vi.fn(async () => ({ opened: true })),
-  canOpenPillTarget: vi.fn(() => true),
+  openPillTarget: vi.fn(async () => true),
+  pillSourceAction: vi.fn(() => 'Open pane'),
 }))
 
 import {
@@ -148,6 +148,21 @@ describe('composer context chip', () => {
     expect(document.activeElement).toBe(editable)
     await press(' ')
     expect(document.querySelector('[role="tooltip"][aria-label="Terminal: api"]')).toBeNull()
+  })
+
+  it('opens the viewer with Enter on a selected chip, and with a click', async () => {
+    await caretAfterChip()
+    await press('ArrowLeft')
+    await press('Enter')
+    const viewer = () => document.querySelector('[data-pill-viewer="terminal"]')
+    expect(viewer()?.textContent).toContain('ready')
+    expect(value).toBe('see [[pill:p1]] now')
+    await act(async () => {
+      viewer()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(viewer()).toBeNull()
+    await act(async () => chip()!.click())
+    expect(viewer()).not.toBeNull()
   })
 
   it('types after a selected chip instead of dropping the key', async () => {

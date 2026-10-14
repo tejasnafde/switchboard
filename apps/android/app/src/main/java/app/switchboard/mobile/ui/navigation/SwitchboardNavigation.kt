@@ -109,8 +109,6 @@ import app.switchboard.mobile.ui.thread.ThreadSessionScreen
 import app.switchboard.mobile.ui.thread.GitContextPresenter
 import app.switchboard.mobile.ui.settings.SettingsPresenter
 import app.switchboard.mobile.ui.settings.SettingsScreen
-import app.switchboard.mobile.update.UpdateAction
-import app.switchboard.mobile.update.UpdateState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 
@@ -142,9 +140,6 @@ fun SwitchboardNavigation(
     onNotificationRouteAccepted: (PendingNotificationRoute) -> Unit = {},
     pendingAppDeepLink: PendingAppDeepLink? = null,
     onAppDeepLinkAccepted: (PendingAppDeepLink) -> Unit = {},
-    updateState: UpdateState = UpdateState.Idle,
-    updatesEnabled: Boolean = false,
-    onUpdateAction: (UpdateAction) -> Unit = {},
     phoneDemo: PhoneDemoController? = null,
 ) {
     // The demo swaps in its own machine, runtime and an empty snapshot; the
@@ -167,9 +162,6 @@ fun SwitchboardNavigation(
         onNotificationRouteAccepted = onNotificationRouteAccepted,
         pendingAppDeepLink = pendingAppDeepLink,
         onAppDeepLinkAccepted = onAppDeepLinkAccepted,
-        updateState = updateState,
-        updatesEnabled = updatesEnabled,
-        onUpdateAction = onUpdateAction,
         demo = active,
         phoneDemo = phoneDemo,
     )
@@ -196,9 +188,6 @@ private fun SwitchboardNavigationHost(
     onNotificationRouteAccepted: (PendingNotificationRoute) -> Unit = {},
     pendingAppDeepLink: PendingAppDeepLink? = null,
     onAppDeepLinkAccepted: (PendingAppDeepLink) -> Unit = {},
-    updateState: UpdateState = UpdateState.Idle,
-    updatesEnabled: Boolean = false,
-    onUpdateAction: (UpdateAction) -> Unit = {},
     demo: PhoneDemoNavigationRuntime?,
     phoneDemo: PhoneDemoController?,
 ) {
@@ -422,9 +411,7 @@ private fun SwitchboardNavigationHost(
                 presentation = SettingsPresenter.present(
                     account = googleAccountPresentation,
                     connections = visibleConnections,
-                    updateState = updateState,
                     versionName = buildStamp.removePrefix("v").substringBefore(" ·"),
-                    updatesEnabled = updatesEnabled,
                 ),
                 onBack = ::navigateBack,
                 onGoogleAccount = {
@@ -433,7 +420,6 @@ private fun SwitchboardNavigationHost(
                 onManageMachines = {
                     navigationState = navigationState.push(AppRoute.ManageConnections)
                 },
-                onUpdateAction = onUpdateAction,
                 followUpDefault = (runtime?.followUpDefault ?: SteerFollowUp).collectAsState().value,
                 onFollowUpDefault = { runtime?.setFollowUpDefault(it) },
                 onLeaveDemo = onLeaveDemo,

@@ -6,11 +6,10 @@
  * Source icon, name, a hairline and a count, tinted per kind (`--chip-tint-*`
  * in global.css, darker in the light theme). A 300 ms hover (or Space on a
  * chip selected with the arrow keys) opens a card with the first lines of what
- * was captured; a click opens the source. The card says "Click to open" when
- * the pointer opened it and shows the Enter hint when the chip is selected with
- * the keyboard; a chip it cannot open shows neither. When the source is gone
- * (a quoted message or its chat) the card says so instead. The card never
- * takes focus, so the composer keeps its caret.
+ * was captured; a click opens the viewer (`PillChipViewer`) with all of it.
+ * The card says "Click to view" when the pointer opened it and shows the Enter
+ * hint when the chip is selected with the keyboard. The card never takes
+ * focus, so the composer keeps its caret.
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { DraftPillKind } from '../../../stores/draft-store'
@@ -22,7 +21,7 @@ import {
   type PillChipModel,
   type PillSource,
 } from '../../../services/pill-chip-model'
-import { canOpenPillTarget, openPillTarget, type PillOpenResult } from '../../../services/pill-chip-open'
+import { PillChipViewer } from './PillChipViewer'
 
 /** How long the pointer rests on a chip before its card opens. */
 export const PILL_CARD_HOVER_MS = 300
@@ -101,7 +100,7 @@ const REMOVE_CLASS = classes(
   'hover:!opacity-100 hover:bg-[color-mix(in_srgb,var(--chip-tint)_24%,transparent)]',
 )
 
-/** How the card offers to open the chip: Enter for a keyboard-selected chip, a click otherwise. */
+/** How the card offers to view the chip: Enter for a keyboard-selected chip, a click otherwise. */
 export type PillOpenHint = 'keyboard' | 'pointer' | null
 
 const KBD_CLASS =
@@ -111,13 +110,10 @@ export function PillChipCard({
   model,
   removable,
   openHint,
-  notice = null,
 }: {
   model: PillChipModel
   removable: boolean
   openHint: PillOpenHint
-  /** Why the last open did not land (the quoted message or its chat is gone). */
-  notice?: string | null
 }) {
   const header = [model.source, model.detail].filter(Boolean).join(' · ')
   return (
@@ -141,19 +137,14 @@ export function PillChipCard({
           ))}
         </pre>
       )}
-      {notice && (
-        <div data-pill-notice="true" className="mt-[6px] text-[11px] text-[var(--text-secondary)]">
-          {notice}
-        </div>
-      )}
-      {((openHint && !notice) || removable || model.moreLines > 0) && (
+      {(openHint || removable || model.moreLines > 0) && (
         <div className="mt-[7px] flex items-center gap-[12px] border-0 border-t border-solid border-[var(--border)] pt-[6px] text-[10.5px] text-[var(--text-muted)]">
-          {openHint === 'keyboard' && !notice && (
+          {openHint === 'keyboard' && (
             <span data-pill-open-hint="keyboard">
-              <kbd className={KBD_CLASS}>{'↵'}</kbd> open
+              <kbd className={KBD_CLASS}>{'↵'}</kbd> view
             </span>
           )}
-          {openHint === 'pointer' && !notice && <span data-pill-open-hint="pointer">Click to open</span>}
+          {openHint === 'pointer' && <span data-pill-open-hint="pointer">Click to view</span>}
           {removable && (
             <span>
               <kbd className={KBD_CLASS}>{'⌫'}</kbd> remove
@@ -184,21 +175,15 @@ interface PillChipVisualProps {
   /** Controlled card state, for Space on a selected chip. Uncontrolled when absent. */
   cardOpen?: boolean
   onCardOpenChange?: (open: boolean) => void
-  /** Controlled card notice (the composer's Enter path sets it). Uncontrolled when absent. */
-  notice?: string | null
-  onNoticeChange?: (notice: string | null) => void
+  /** Controlled viewer state, for Enter on a selected chip. Uncontrolled when absent. */
+  viewerOpen?: boolean
+  onViewerOpenChange?: (open: boolean) => void
   /** Forwarded to the root span (data attributes, contentEditable). */
   rootProps?: Record<string, string | boolean | undefined>
 }
 
 function hostSessionId(el: Element | null): string | null {
   return el?.closest('[data-session-id]')?.getAttribute('data-session-id') ?? null
-}
-
-/** Open a chip's source from its DOM node; the chat it sits in names the session. */
-export async function openPillFromElement(model: PillChipModel, el: Element | null): Promise<PillOpenResult> {
-  if (!model.target) return { opened: false, notice: null }
-  return openPillTarget(model.target, hostSessionId(el))
 }
 
 export function PillChipVisual({
@@ -211,8 +196,8 @@ export function PillChipVisual({
   selected = false,
   cardOpen,
   onCardOpenChange,
-  notice,
-  onNoticeChange,
+  viewerOpen,
+  onViewerOpenChange,
   rootProps,
 }: PillChipVisualProps): ReactNode {
   const model = useMemo(() => pillChipModel({ kind, label, content, source }), [kind, label, content, source])
@@ -220,17 +205,16 @@ export function PillChipVisual({
   const rootRef = useRef<HTMLSpanElement>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [hoverOpen, setHoverOpen] = useState(false)
-  const [localNotice, setLocalNotice] = useState<string | null>(null)
+  const [localViewerOpen, setLocalViewerOpen] = useState(false)
   const open = cardOpen ?? hoverOpen
-  const shownNotice = notice !== undefined ? notice : localNotice
-  const setNotice = (next: string | null): void => {
-    if (onNoticeChange) onNoticeChange(next)
-    else setLocalNotice(next)
-  }
+  const viewing = viewerOpen ?? localViewerOpen
   const setOpen = (next: boolean): void => {
-    if (!next) setNotice(null)
     if (onCardOpenChange) onCardOpenChange(next)
     else setHoverOpen(next)
+  }
+  const setViewing = (next: boolean): void => {
+    if (onViewerOpenChange) onViewerOpenChange(next)
+    else setLocalViewerOpen(next)
   }
   const clearHover = (): void => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
@@ -274,14 +258,8 @@ export function PillChipVisual({
           onClick={(e) => {
             if (onRemoveTarget(e.target)) return
             clearHover()
-            if (model.target) {
-              setOpen(false)
-              void openPillFromElement(model, rootRef.current).then((result) => {
-                if (result.opened || !result.notice) return
-                setNotice(result.notice)
-                setOpen(true)
-              })
-            }
+            setOpen(false)
+            setViewing(true)
           }}
         >
           <KindIcon kind={model.kind} />
@@ -343,15 +321,19 @@ export function PillChipVisual({
         className="sb-floating-surface pointer-events-none z-[1200] w-[320px] max-w-[calc(100vw-16px)] rounded-[8px] border border-solid border-[var(--border)] px-[10px] pb-[7px] pt-[8px] text-left text-[var(--text-primary)] [font-family:var(--font-sans)]"
         style={tintStyle}
       >
-        <PillChipCard
-          model={model}
-          removable={!!onRemove}
-          openHint={
-            canOpenPillTarget(model.target, hostSessionId(rootRef.current)) ? (selected ? 'keyboard' : 'pointer') : null
-          }
-          notice={shownNotice}
-        />
+        <PillChipCard model={model} removable={!!onRemove} openHint={selected ? 'keyboard' : 'pointer'} />
       </PopoverContent>
+      {viewing && (
+        <PillChipViewer
+          model={model}
+          icon={<KindIcon kind={model.kind} className="h-[13px] w-[13px]" />}
+          tintStyle={tintStyle}
+          sessionId={hostSessionId(rootRef.current)}
+          sent={!onRemove}
+          open
+          onOpenChange={setViewing}
+        />
+      )}
     </Popover>
   )
 }
