@@ -98,8 +98,6 @@ import app.switchboard.mobile.ui.thread.ThreadSessionScreen
 import app.switchboard.mobile.ui.thread.GitContextPresenter
 import app.switchboard.mobile.ui.settings.SettingsPresenter
 import app.switchboard.mobile.ui.settings.SettingsScreen
-import app.switchboard.mobile.update.UpdateAction
-import app.switchboard.mobile.update.UpdateState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 
@@ -130,9 +128,6 @@ fun SwitchboardNavigation(
     onNotificationRouteAccepted: (PendingNotificationRoute) -> Unit = {},
     pendingAppDeepLink: PendingAppDeepLink? = null,
     onAppDeepLinkAccepted: (PendingAppDeepLink) -> Unit = {},
-    updateState: UpdateState = UpdateState.Idle,
-    updatesEnabled: Boolean = false,
-    onUpdateAction: (UpdateAction) -> Unit = {},
 ) {
     var navigationState by rememberSaveable { mutableStateOf(NavigationState.root()) }
     val reviewsRegistry = remember { ReviewsCoordinatorRegistry() }
@@ -313,9 +308,7 @@ fun SwitchboardNavigation(
                 presentation = SettingsPresenter.present(
                     account = googleAccountPresentation,
                     connections = visibleConnections,
-                    updateState = updateState,
                     versionName = buildStamp.removePrefix("v").substringBefore(" ·"),
-                    updatesEnabled = updatesEnabled,
                 ),
                 onBack = ::navigateBack,
                 onGoogleAccount = {
@@ -324,7 +317,6 @@ fun SwitchboardNavigation(
                 onManageMachines = {
                     navigationState = navigationState.push(AppRoute.ManageConnections)
                 },
-                onUpdateAction = onUpdateAction,
                 followUpDefault = (runtime?.followUpDefault ?: SteerFollowUp).collectAsState().value,
                 onFollowUpDefault = { runtime?.setFollowUpDefault(it) },
             )

@@ -100,7 +100,7 @@ describe('native Android publishing lane', () => {
     expect(app).not.toContain('AppContract.VERSION_NAME')
   })
 
-  test('builds the Kotlin app with the exported production keystore instead of EAS', () => {
+  test('builds a signed AAB with the exported upload keystore instead of EAS', () => {
     const workflow = readFileSync(releaseWorkflowPath, 'utf8')
 
     expect(workflow).toContain('working-directory: apps/android')
@@ -108,38 +108,34 @@ describe('native Android publishing lane', () => {
     expect(workflow).toContain('ANDROID_KEYSTORE_BASE64')
     expect(workflow).toContain('SWITCHBOARD_ANDROID_KEYSTORE_PATH')
     expect(workflow).toContain(
-      './gradlew --no-daemon testDebugUnitTest lintDebug assembleRelease compileDebugAndroidTestKotlin',
+      './gradlew --no-daemon testDebugUnitTest lintDebug bundleRelease compileDebugAndroidTestKotlin',
     )
-    expect(workflow).not.toMatch(/eas build|expo-github-action|EXPO_TOKEN/i)
+    expect(workflow).not.toMatch(/assembleRelease|\.apk\b|eas build|expo-github-action|EXPO_TOKEN/i)
   })
 
-  test('cannot publish the incomplete native port merely because main changed', () => {
+  test('cannot publish merely because main changed', () => {
     const workflow = readFileSync(releaseWorkflowPath, 'utf8')
 
     expect(workflow).toContain('workflow_dispatch:')
     expect(workflow).not.toContain('  push:\n')
   })
 
-  test('strictly verifies and publishes the canonical APK plus checksum', () => {
+  test('verifies the AAB before uploading it to a Play test track, and never to GitHub releases', () => {
     const workflow = readFileSync(releaseWorkflowPath, 'utf8')
+    const parsed = parseYaml(workflow) as any
+    const steps = parsed.jobs.release.steps as any[]
+    const verify = steps.findIndex((step) => String(step.run ?? '').includes('verify-android-apk.mjs --aab'))
+    const upload = steps.findIndex((step) => String(step.uses ?? '').startsWith('r0adkll/upload-google-play@'))
 
-    expect(workflow).toContain('verify-android-apk.mjs --apk "$RELEASE_APK" --checksum "$CHECKSUM_FILE"')
-    expect(workflow).toContain('sha256sum')
-    expect(workflow).toContain('switchboard-${{ steps.version.outputs.version }}.apk.sha256')
-    expect(workflow).toContain('gh release create')
-    expect(workflow).toContain('--latest=false')
-  })
-
-  test('rejects a tag-version mismatch or a version not above every published APK', () => {
-    const workflow = readFileSync(releaseWorkflowPath, 'utf8')
-
-    expect(workflow).toContain('APK_VERSION_NAME')
-    expect(workflow).toContain('gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100"')
-    expect(workflow).toContain('select(.draft == false and (.tag_name | startswith("mobile-v")))')
-    expect(workflow).toContain('verify-android-apk.mjs --apk "$RELEASE_APK" --newer-than-published "$PUBLISHED_DIR"')
-    expect(workflow).not.toContain('][0].browser_download_url')
-    expect(workflow).toContain('Release already exists; increment apps/android versionName and versionCode')
-    expect(workflow).not.toContain('echo "exists=true" >> "$GITHUB_OUTPUT"')
+    expect(verify).toBeGreaterThanOrEqual(0)
+    expect(upload).toBeGreaterThan(verify)
+    expect(steps[upload].uses).toMatch(/@[0-9a-f]{40}$/)
+    expect(steps[upload].with.serviceAccountJsonPlainText).toBe('${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}')
+    expect(steps[upload].with.packageName).toBe('app.switchboard.mobile')
+    expect(parsed.on.workflow_dispatch.inputs.track.options).toEqual(['internal', 'alpha', 'beta'])
+    expect(parsed.permissions).toEqual({ contents: 'read' })
+    expect(workflow).toContain('sha256sum --check')
+    expect(workflow).not.toMatch(/gh release/)
   })
 
   test('release signing is opt-in locally but complete credentials are mandatory once selected', () => {

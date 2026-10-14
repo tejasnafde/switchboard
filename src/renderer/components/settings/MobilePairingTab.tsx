@@ -31,8 +31,9 @@ const SETTINGS_KEYS = {
 const DEFAULT_PORT = '8765'
 const CUSTOM_HOST = '__custom__'
 
-/** Worker `switchboard-apk`: 302s to the newest APK release asset on GitHub. */
-const APK_DOWNLOAD_URL = 'https://switchboard.tn07.dev/apk'
+const PLAY_LISTING_URL = 'https://play.google.com/store/apps/details?id=app.switchboard.mobile'
+/** The last sideload build. The APK channel is retired; this link stays until the Play listing is live. */
+const LAST_APK_RELEASE_URL = 'https://github.com/tejasnafde/switchboard/releases/tag/mobile-v0.5.18'
 
 interface LanAddress {
   iface: string
@@ -100,7 +101,7 @@ export function MobilePairingTab() {
   const [loaded, setLoaded] = useState(false)
   const [customHost, setCustomHost] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
-  const [apkQrDataUrl, setApkQrDataUrl] = useState<string | null>(null)
+  const [playQrDataUrl, setPlayQrDataUrl] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   // Whether the desktop is actually serving this QR. Without it a stale QR
   // looks identical to a dead port, which is exactly how it fails in practice.
@@ -244,11 +245,11 @@ export function MobilePairingTab() {
   // The download QR encodes a static URL, so render it once per mount.
   useEffect(() => {
     let cancelled = false
-    QRCode.toDataURL(APK_DOWNLOAD_URL, { margin: 1, width: 160 })
+    QRCode.toDataURL(PLAY_LISTING_URL, { margin: 1, width: 160 })
       .then((dataUrl) => {
-        if (!cancelled) setApkQrDataUrl(dataUrl)
+        if (!cancelled) setPlayQrDataUrl(dataUrl)
       })
-      .catch((err) => log.warn('APK QR generation failed', err))
+      .catch((err) => log.warn('Play listing QR generation failed', err))
     return () => {
       cancelled = true
     }
@@ -614,46 +615,31 @@ export function MobilePairingTab() {
         <InfoHint text="This computer needs no command: it serves the endpoint itself. On a VM, the server bundle (out/server/index.cjs) must be present first, and binding beyond loopback without SWITCHBOARD_TOKEN mints one and saves it to ~/.switchboard-server/token. TCP_PORT starts a second listener on 8766 speaking ndjson, which is what an IAP-tunnelled phone dials. Running it here as well would take the port and stop the app from serving." />
       </div>
 
-      {/* APK download QR - static URL, resolved to the newest release by the Worker */}
-      <div
-        style={{
-          display: 'flex',
-          gap: '14px',
-          alignItems: 'center',
-          padding: '12px 14px',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius)',
-          background: 'var(--bg-tertiary)',
-          marginTop: '14px',
-        }}
-      >
-        {apkQrDataUrl && (
+      {/* Android download: the Play listing, plus the last sideload build until the listing is live */}
+      <div className="mt-3.5 flex items-center gap-3.5 rounded-md border border-[var(--border)] bg-[var(--bg-tertiary)] px-3.5 py-3">
+        {playQrDataUrl && (
           <img
-            src={apkQrDataUrl}
-            alt="Android app download QR code"
+            src={playQrDataUrl}
+            alt="Google Play listing QR code"
             width={100}
             height={100}
-            style={{ borderRadius: '4px', background: '#fff', flexShrink: 0 }}
+            className="shrink-0 rounded-[4px] bg-white"
           />
         )}
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-            Get the app
+        <div className="min-w-0">
+          <div className="mb-1 text-[11px] font-medium text-[var(--text-secondary)]">Get the app</div>
+          <div className="text-[10.5px] leading-normal text-[var(--text-muted)]">
+            Scan to get the Android app on Google Play. The listing goes live after Google reviews it.
           </div>
-          <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-            Scan to download the Android app
-          </div>
-          <div
-            style={{
-              fontSize: '11px',
-              fontFamily: 'var(--font-mono)',
-              color: 'var(--text-primary)',
-              wordBreak: 'break-all',
-              marginTop: '6px',
-            }}
+          <a
+            href={PLAY_LISTING_URL}
+            className="mt-1.5 block break-all font-[family-name:var(--font-mono)] text-[11px] text-[var(--text-primary)]"
           >
-            {APK_DOWNLOAD_URL}
-          </div>
+            {PLAY_LISTING_URL}
+          </a>
+          <a href={LAST_APK_RELEASE_URL} className="mt-1.5 block text-[10.5px] text-[var(--accent)]">
+            Install the APK directly
+          </a>
         </div>
       </div>
 

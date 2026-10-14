@@ -17,7 +17,7 @@ import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.platform.startup.AndroidStartupRuntime
 import app.switchboard.mobile.platform.startup.GoogleStartupState
 import app.switchboard.mobile.platform.startup.StartupRuntimeState
-import app.switchboard.mobile.platform.update.AndroidUpdateRuntime
+import app.switchboard.mobile.platform.storage.RetiredUpdaterCleanup
 import app.switchboard.mobile.runtime.NativeAndroidRuntime
 import app.switchboard.mobile.runtime.DurableComposerRuntime
 import app.switchboard.mobile.runtime.GoogleAccountRuntime
@@ -28,8 +28,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class SwitchboardApplication : Application() {
-    lateinit var updateRuntime: AndroidUpdateRuntime
-        private set
     lateinit var startupRuntime: AndroidStartupRuntime
         private set
     lateinit var connectionRepository: NativeConnectionRepository
@@ -67,8 +65,7 @@ class SwitchboardApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        updateRuntime = AndroidUpdateRuntime(this)
-        updateRuntime.start()
+        RetiredUpdaterCleanup.run(this)
         nativeRuntime = NativeAndroidRuntime.create(this)
         startupRuntime = nativeRuntime.startup
         connectionRepository = nativeRuntime.connectionRepository

@@ -5,49 +5,60 @@ install instructions live in `README.md`.
 
 ## Native Android mobile release
 
-Native Android uses the existing `mobile-v<version>` GitHub channel, but no
-longer builds its APK on EAS. Increment `versionName` and `versionCode` in
-`apps/android/app/build.gradle.kts`; a main-branch change under `apps/android`
-becomes eligible for a manual `mobile-release.yml` dispatch, which builds
-`switchboard-<version>.apk` and its `.sha256` file. Keep the lane manual until
-the complete production-signed physical-device upgrade matrix is certified.
+Google Play is the only channel for the native Android app
+(`apps/android`, package `app.switchboard.mobile`). The in-app APK updater and
+the GitHub `mobile-v*` APK releases are retired: Play forbids apps that update
+themselves outside Play. The app requests no `REQUEST_INSTALL_PACKAGES`, and at
+each start it deletes what the updater stored (state and staged APKs).
 
-The release job is intentionally inert until the production EAS keystore used
-for the public v0.4.0 APK has been exported and these repository secrets exist:
+Prerequisites, done once by hand before the workflow can upload:
 
-- `ANDROID_KEYSTORE_BASE64`
-- `ANDROID_KEYSTORE_PASSWORD`
-- `ANDROID_KEY_ALIAS`
-- `ANDROID_KEY_PASSWORD`
+1. Create the app record for `app.switchboard.mobile` in the Play Console.
+2. Upload the first AAB through the Play Console (for example to the internal
+   testing track). The Play Publishing API only edits an app that already
+   exists and cannot create one, and its first upload needs a bundle that was
+   already uploaded through the Console. Build that AAB with the workflow (it
+   keeps the AAB as an artifact) or locally with the upload key.
 
-Before publishing, the workflow runs the Android unit/lint gate and rejects an
-APK unless its package is `app.switchboard.mobile`, its version is monotonic,
-its sole signer has SHA-256 fingerprint
+To release:
+
+1. Increment `versionCode` and `versionName` in
+   `apps/android/app/build.gradle.kts` and merge to main.
+2. Dispatch `mobile-release.yml` by hand. Pick the track (`internal` by
+   default, or `alpha` or `beta`) and the release status. Pick `draft` while
+   the app is still unpublished in Play, which accepts only draft releases
+   then. A draft release does not replace the first Console upload above.
+3. Promote the release to production in the Play Console when it is ready.
+
+The job runs the Android unit, lint and androidTest compile gate, builds a
+signed AAB (`bundleRelease`), and checks it with
+`scripts/verify-android-apk.mjs --aab` (pinned bundletool and `keytool`). It
+refuses the AAB unless the package is `app.switchboard.mobile`, the versionName
+matches Gradle, the versions are above the native floor, the sole signer has
+SHA-256 fingerprint
 `BC:81:1E:37:12:C2:D5:7F:2B:6E:BD:A5:43:92:E6:2E:BD:2A:77:34:53:E5:0F:B3:75:E1:10:2D:B9:01:A8:F6`,
-and its checksum file matches the APK bytes. Never generate a replacement key:
-Android would reject the update and force an uninstall, losing app-private
-data.
+and the manifest does not request `REQUEST_INSTALL_PACKAGES`. The log lists
+every permission of the AAB. The AAB is kept as a workflow artifact for 90
+days, then uploaded to Play. Play refuses a `versionCode` it has already seen,
+so it enforces monotonic versions.
 
-Monotonic means strictly higher than every APK ever published, not just the
-newest one. The job pages through all releases (`gh api --paginate`), downloads
-the APK of every non-draft `mobile-v*` release, and
-`scripts/verify-android-apk.mjs --newer-than-published <dir>` refuses the new
-APK unless its `versionCode` exceeds the highest published `versionCode` and
-its `versionName` exceeds the highest published `versionName`, each compared
-with its own maximum and naming the release it failed to beat. The published
-APKs are only read for their version: 0.3.0 and 0.4.0 carry `versionCode` 1,
-below the native floor, so they are compared but not identity-checked. When no
-`mobile-v*` APK is published yet the check is skipped with a notice, which is
-the first release.
+Signing uses Play App Signing. Play holds the app signing key; the key above is
+the upload key, so register it as the upload key when Play App Signing is set
+up. If a different upload key is ever used, change `CANONICAL_SIGNER_SHA256`
+in the verifier in the same PR. Because Play re-signs with its own key, a
+sideloaded APK cannot upgrade to the Play build: uninstall it once, install
+from Play, and pair again.
 
-React Native remains the iOS client. `mobile-ota.yml` now publishes EAS updates
-with `--platform ios`; native Android receives signed APK updates only.
+Repository secrets (the job fails with a named error when one is missing):
 
-The workflow proves artifact identity, not installation behavior. Before the
-first native public release, install the untouched production-signed v0.4.0 APK
-on physical API 24 and current devices, seed its storage/outbox, and exercise an
-actual in-app upgrade without uninstalling. Record migration, installer and
-post-upgrade data checks separately from automated results.
+- `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+  `ANDROID_KEY_PASSWORD`: the upload keystore.
+- `PLAY_SERVICE_ACCOUNT_JSON`: the JSON key of a per-app service account,
+  invited in the Play Console with release rights for `app.switchboard.mobile`
+  only.
+
+React Native remains the iOS client. `mobile-ota.yml` publishes EAS updates
+with `--platform ios` only.
 
 ## iOS App Store build
 
