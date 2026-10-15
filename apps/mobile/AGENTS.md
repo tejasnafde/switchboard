@@ -46,9 +46,11 @@ then awaits `push.unregisterWith` before closing the captured client. It uses th
 existing `push:unregister` RPC once, waits at most two seconds, and forgets its
 registration even offline. Demo connections never register or unregister.
 Registration and pairing callbacks must not change state or save credentials
-for a removed or replaced client.
+for a removed or replaced client. Credential writes are serialized per connection,
+so unpair deletes keys after any session or legacy-token save already in flight.
 Android also waits for unregister completion or the same two-second limit before
-removing its fleet connection.
+removing its fleet connection. Repeated Android removals share the same pending
+unregister result, including its timeout.
 
 **Reviews tab** (`ConnectionTabBar` under `ProjectsScreen` and `ReviewsScreen`, switched with `navigation.replace`, no tab library): the list lives in `stores/reviews.ts` per connection, filters in `prefs.prFilters`, a pending review pill in `prefs.threads[key].reviewPill` until the next send (`QueuedMessage.reviewPill`, `queuedTurnBody`). `PullRequestScreen` + `WorkOnPrSheet` are read-only; a "Work on PR" chat goes through `NewSessionScreen` with `pullRequest` (no first-message launch prompt: `lib/pr-chat.ts` links the PR and sends the first turn with the pill once the chat exists). JS only, so it ships on the OTA lane. Rules: `src/main/pull-requests/AGENTS.md`.
 

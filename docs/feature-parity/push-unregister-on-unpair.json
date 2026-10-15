@@ -52,10 +52,11 @@
   "verification": {
     "automated": [
       "Backend vitest covers unregister persistence and session revocation isolation. Expo jest covers unpair ordering, offline cleanup, timeout and demo exclusion. Android coordinator tests cover acknowledgement ordering and stale ready snapshots.",
-      "Expo: npm test --prefix apps/mobile -- --runInBand passed 26 suites and 130 tests. Mobile typecheck passed.",
-      "Native Android: :app:testDebugUnitTest --no-daemon --max-workers=2 passed 185 suites and 1071 tests, including the new stale-ready and completion-order regressions.",
-      "Root foreground gate: npm run typecheck and npm test -- --maxWorkers=4 passed; 624 files, 6629 tests passed, 1 file and 4 tests skipped.",
-      "The late Expo pairing-response regression failed before its identity guard and passes with it."
+      "Expo: npm test --prefix apps/mobile -- --runInBand passed 26 suites and 133 tests. Mobile typecheck passed.",
+      "Native Android: :app:testDebugUnitTest --no-daemon --max-workers=2 passed 185 suites and 1073 tests, including the new stale-ready and completion-order regressions.",
+      "Root foreground gate: npm run typecheck and npm test -- --maxWorkers=4 passed; 624 files, 6630 tests passed, 1 file and 4 tests skipped.",
+      "The late Expo pairing-response regression failed before its identity guard and passes with it.",
+      "Review regressions cover repeated Android removal sharing one pending result, timeout fencing a late response, Expo credential deletion waiting behind an in-flight save, and socket closure when push token persistence fails."
     ],
     "hardware": [],
     "notExercised": [

@@ -142,7 +142,10 @@ export function revokeSession(id: string, nowMs: number = Date.now()): boolean {
   if (!target || isRevoked(target)) return false
   saveSessions(sessions.map((s) => (s.id === id ? { ...s, revokedAt: nowMs } : s)))
   log.info(`revoked device session ${target.label}`)
-  unregisterSessionDevices(id)
-  onRevoked?.(id)
+  try {
+    unregisterSessionDevices(id)
+  } finally {
+    onRevoked?.(id)
+  }
   return true
 }

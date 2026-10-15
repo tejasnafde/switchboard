@@ -96,6 +96,20 @@ export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'er
 /** Runtime-only: clients live outside the store so persist never touches them. */
 const clients = new Map<string, SwitchboardClient>()
 const eventUnsubs = new Map<string, () => void>()
+const credentialWrites = new Map<string, Promise<void>>()
+
+// A native save already in flight must finish before unpair deletes its keys.
+function queueCredentialWrite(id: string, write: () => Promise<void>): Promise<void> {
+  const next = (credentialWrites.get(id) ?? Promise.resolve())
+    .then(write)
+    .catch((err: unknown) => log.warn('connection credential write failed', err))
+  credentialWrites.set(id, next)
+  void next.then(() => {
+    if (credentialWrites.get(id) === next) credentialWrites.delete(id)
+  })
+  return next
+}
+
 /** An IAP tunnel is rebuilt on every reconnect, so its cursor outlives it here. */
 const iapResume = new Map<string, IapResumeState>()
 
@@ -171,7 +185,8 @@ export const useConnectionsStore = create<ConnectionsState>()(
       removeConnection: async (id) => {
         const client = clients.get(id)
         iapResume.delete(id)
-        void deleteConnectionToken(id)
+        keystoreFailures.delete(id)
+        const forgettingCredentials = queueCredentialWrite(id, () => deleteConnectionToken(id))
         set((s) => {
           const status = { ...s.status }
           delete status[id]
@@ -187,6 +202,7 @@ export const useConnectionsStore = create<ConnectionsState>()(
             return { status }
           })
         }
+        await forgettingCredentials
       },
 
       connect: (id) => {
@@ -243,19 +259,21 @@ export const useConnectionsStore = create<ConnectionsState>()(
           transport.onSessionIssued = (session) => {
             if (!isCurrentConnection()) return
             log.info('received a device session, retiring the pairing code', config.label)
-            void saveConnectionSession(id, session).then((ok) => {
+            void queueCredentialWrite(id, async () => {
               if (!isCurrentConnection()) return
-              // The code is already consumed server-side, so a lost session
-              // means re-pairing. Keep it in the blob rather than nowhere.
-              if (!ok) {
+              const ok = await saveConnectionSession(id, session)
+              if (!isCurrentConnection()) return
+              // The pairing code was consumed, so retain the session if the
+              // keystore refused it rather than losing both credentials.
+              if (ok) keystoreFailures.delete(id)
+              else {
                 keystoreFailures.add(id)
                 log.error('keystore refused the device session; keeping it in local storage', config.label)
               }
+              // Re-persist using the keystore outcome, including a required fallback.
+              get().updateConnection(id, {})
+              await saveConnectionToken(id, undefined)
             })
-            // The shared token is cleared here: this connection now has a
-            // credential of its own, and keeping the old one alive would
-            // preserve exactly the blast radius the session removes.
-            void saveConnectionToken(id, undefined)
             get().updateConnection(id, { session, pairing: undefined, token: undefined })
           }
           transport.onResumeGap = () => reseed(id, config.label)
@@ -359,8 +377,13 @@ const keystoreFailures = new Set<string>()
  * keeps the persisted copy instead of stripping the only remaining one.
  */
 async function rememberToken(id: string, token: string | undefined): Promise<void> {
-  if (await saveConnectionToken(id, token)) keystoreFailures.delete(id)
-  else keystoreFailures.add(id)
+  await queueCredentialWrite(id, async () => {
+    const ok = await saveConnectionToken(id, token)
+    const config = useConnectionsStore.getState().configs.find((c) => c.id === id)
+    if (!config) return
+    if (ok && !config.session) keystoreFailures.delete(id)
+    else if (!ok) keystoreFailures.add(id)
+  })
 }
 
 let resolveSecrets: () => void = () => undefined
@@ -380,8 +403,16 @@ export const secretsReady = new Promise<void>((resolve) => {
  */
 async function hydrateTokens(configs: ConnectionConfig[]): Promise<void> {
   try {
-    const { failed } = await migrateTokensToKeystore(configs)
-    for (const id of failed) keystoreFailures.add(id)
+    await Promise.all(
+      configs.map((config) =>
+        queueCredentialWrite(config.id, async () => {
+          if (!useConnectionsStore.getState().configs.some((c) => c.id === config.id)) return
+          const { failed } = await migrateTokensToKeystore([config])
+          if (!useConnectionsStore.getState().configs.some((c) => c.id === config.id)) return
+          for (const id of failed) keystoreFailures.add(id)
+        }),
+      ),
+    )
     const loaded = await Promise.all(
       configs.map(async (config) => ({
         id: config.id,

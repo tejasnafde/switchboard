@@ -1,4 +1,4 @@
-import { beforeEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createMigratedDb } from './helpers/test-db'
 import { registerPushHandlers } from '../../src/main/ipc/push'
 import { withBackendRequestContext } from '../../src/main/backend/request-context'
@@ -7,7 +7,9 @@ import {
   redeemPairingCode,
   listSessions,
   revokeSession,
+  setRevocationListener,
 } from '../../src/main/backend/device-sessions'
+import * as pushRegistry from '../../src/main/push/registry'
 import { listDevices } from '../../src/main/push/registry'
 import { PushChannels } from '../../src/shared/ipc-channels'
 
@@ -56,4 +58,22 @@ it('unregister is idempotent and persists the removal without deleting other dev
   expect(handlers.get(PushChannels.UNREGISTER)!('ExpoPushToken[phone]')).toEqual({ ok: true })
   handlers.get(PushChannels.UNREGISTER)!('ExpoPushToken[phone]')
   expect(listDevices().map((d) => d.token)).toEqual(['ExpoPushToken[other]'])
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  setRevocationListener(null)
+})
+
+it('closes revoked sockets even if push token persistence fails', () => {
+  const code = createPairingCode()
+  redeemPairingCode(code.code, 'phone', ['chat'])
+  const id = listSessions()[0].id
+  const close = vi.fn()
+  setRevocationListener(close)
+  vi.spyOn(pushRegistry, 'unregisterSessionDevices').mockImplementation(() => {
+    throw new Error('settings unavailable')
+  })
+  expect(() => revokeSession(id)).toThrow('settings unavailable')
+  expect(close).toHaveBeenCalledWith(id)
 })

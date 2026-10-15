@@ -90,7 +90,8 @@ it the phone hands the tunnel to connect() instead of probing.
 
 `push:register` records `deviceSessionId` from the backend request context,
 never from client arguments. `revokeSession` deletes that session's push tokens
-and viewing leases before closing its live sockets. The existing
+and viewing leases before closing its live sockets. Socket revocation runs in
+`finally` even if push-settings persistence fails. The existing
 `push:unregister(token)` request is idempotent and is used by both phones before
 unpair teardown. Stored tokens from before ownership tracking remain compatible;
 re-registering on the upgraded backend adds their owner. Legacy

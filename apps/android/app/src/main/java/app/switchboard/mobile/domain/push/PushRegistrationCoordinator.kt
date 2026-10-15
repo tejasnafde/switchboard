@@ -2,6 +2,7 @@ package app.switchboard.mobile.domain.push
 
 import app.switchboard.mobile.platform.protocol.TransportScope
 import java.io.Closeable
+import java.util.concurrent.CompletableFuture
 
 sealed interface PushBackendResult {
     data object Accepted : PushBackendResult
@@ -42,7 +43,7 @@ class PushRegistrationCoordinator {
         val threadId: String,
     )
 
-    private val removing = mutableSetOf<String>()
+    private val removing = mutableMapOf<String, CompletableFuture<PushBackendResult>>()
     private var token: String? = null
     private var ready = emptyMap<String, PushBackend>()
     private val registered = mutableSetOf<RegistrationKey>()
@@ -97,7 +98,13 @@ class PushRegistrationCoordinator {
         connectionId: String,
         onComplete: (PushBackendResult) -> Unit = {},
     ) {
-        removing += connectionId
+        removing[connectionId]?.let { pending ->
+            pending.thenAccept { onComplete(it) }
+            return
+        }
+        val completion = CompletableFuture<PushBackendResult>()
+        removing[connectionId] = completion
+        completion.thenAccept { onComplete(it) }
         val backend = ready[connectionId]
         ready = ready - connectionId
         val lease = viewing.remove(connectionId)
@@ -105,13 +112,18 @@ class PushRegistrationCoordinator {
         registering.removeAll { it.scope.connectionId == connectionId }
         val currentToken = token
         if (backend == null || currentToken == null) {
-            onComplete(PushBackendResult.Accepted)
+            completion.complete(PushBackendResult.Accepted)
             return
         }
         if (lease?.scope == backend.scope) {
             reportViewing(backend, currentToken, threadId = null)
         }
-        backend.unregister(currentToken, onComplete)
+        backend.unregister(currentToken) { completion.complete(it) }
+    }
+
+    @Synchronized
+    fun onRemovalTimeout(connectionId: String) {
+        removing[connectionId]?.complete(PushBackendResult.TransportFailure("Push unregister timed out"))
     }
 
     @Synchronized

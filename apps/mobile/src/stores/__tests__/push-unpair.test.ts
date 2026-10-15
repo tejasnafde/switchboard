@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as secrets from '../../lib/secrets'
 import { getClient, useConnectionsStore } from '../connections'
 import { usePushStore } from '../push'
@@ -98,4 +99,88 @@ test('a late pairing response cannot restore keys for a removed machine', async 
   acknowledge({ ok: true })
   await removing
   expect(save).not.toHaveBeenCalled()
+})
+
+test('credential deletion follows a session save already in flight', async () => {
+  const events: string[] = []
+  let finishSave!: () => void
+  jest.spyOn(secrets, 'saveConnectionSession').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        events.push('save-start')
+        finishSave = () => {
+          events.push('save-end')
+          resolve(true)
+        }
+      }),
+  )
+  jest.spyOn(secrets, 'deleteConnectionToken').mockImplementation(async () => {
+    events.push('delete')
+  })
+  const transport = {
+    invoke: jest.fn(async () => ({ ok: true })),
+    on: jest.fn(() => () => {}),
+    close: jest.fn(),
+    onSessionIssued: undefined as ((session: string) => void) | undefined,
+  }
+  jest.spyOn(SwitchboardClient, 'overWs').mockReturnValue(new SwitchboardClient(transport as never))
+  useConnectionsStore.getState().connect('mac')
+  transport.onSessionIssued?.('pending-session')
+  await Promise.resolve()
+  const removing = useConnectionsStore.getState().removeConnection('mac')
+  finishSave()
+  await removing
+  expect(events).toEqual(['save-start', 'save-end', 'delete'])
+})
+
+test('serializing credentials preserves the fallback when the session keystore write fails', async () => {
+  jest.spyOn(secrets, 'saveConnectionSession').mockResolvedValue(false)
+  jest.spyOn(secrets, 'saveConnectionToken').mockResolvedValue(true)
+  jest.spyOn(console, 'error').mockImplementation(() => undefined)
+  const transport = {
+    invoke: jest.fn(async () => ({ ok: true })),
+    on: jest.fn(() => () => {}),
+    close: jest.fn(),
+    onSessionIssued: undefined as ((session: string) => void) | undefined,
+  }
+  jest.spyOn(SwitchboardClient, 'overWs').mockReturnValue(new SwitchboardClient(transport as never))
+  useConnectionsStore.getState().connect('mac')
+  transport.onSessionIssued?.('fallback-session')
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  const persisted = useConnectionsStore.persist.getOptions().partialize!(useConnectionsStore.getState()) as {
+    configs: { session?: string }[]
+  }
+  useConnectionsStore.getState().disconnect('mac')
+  expect(persisted.configs[0].session).toBe('fallback-session')
+})
+
+test('unpair deletes keys after a legacy credential migration already in flight', async () => {
+  const events: string[] = []
+  let finishMigration!: () => void
+  jest.spyOn(secrets, 'migrateTokensToKeystore').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        events.push('migration-start')
+        finishMigration = () => {
+          events.push('migration-end')
+          resolve({ migrated: ['legacy'], failed: [] })
+        }
+      }),
+  )
+  jest.spyOn(secrets, 'deleteConnectionToken').mockImplementation(async () => {
+    events.push('delete')
+  })
+  await AsyncStorage.setItem(
+    'sb-connections',
+    JSON.stringify({
+      state: { configs: [{ id: 'legacy', kind: 'ws', label: 'Legacy', url: 'ws://localhost', token: 'legacy-token' }] },
+      version: 0,
+    }),
+  )
+  await useConnectionsStore.persist.rehydrate()
+  const removing = useConnectionsStore.getState().removeConnection('legacy')
+  await Promise.resolve()
+  finishMigration()
+  await removing
+  expect(events).toEqual(['migration-start', 'migration-end', 'delete'])
 })

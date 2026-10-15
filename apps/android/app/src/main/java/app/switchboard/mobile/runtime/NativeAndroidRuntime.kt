@@ -210,7 +210,7 @@ class NativeAndroidRuntime private constructor(
                     true
                 } != true
             ) {
-                Log.w(TAG, "Push unregister timed out; forgetting removed machine")
+                pushRegistration.onRemovalTimeout(connectionId)
             }
             connectionFleet.remove(connectionId)
         }
