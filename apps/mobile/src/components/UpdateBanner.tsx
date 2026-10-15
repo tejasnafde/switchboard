@@ -1,77 +1,22 @@
 /**
- * Bottom-anchored update banners, one per update lane.
+ * Bottom-anchored update banner for the OTA lane.
  *
  * `<UpdateBanner />` is mounted once in App.tsx over the navigator, so it
  * overlays every screen and survives navigation. It renders nothing at all when
  * there is no update, which is the normal case.
  *
- * Two lanes, both surfaced here (see src/lib/self-update.ts and src/lib/ota-update.ts):
- * - APK: a newer native binary on GitHub Releases. Download plus an install prompt.
- * - OTA: a newer JS bundle, already downloaded. Just needs a restart.
- *
- * When both are pending the APK banner comes first, since the native binary is
- * the one that gates what the JS bundle is allowed to use.
+ * A newer JS bundle (src/lib/ota-update.ts) is already downloaded and just needs
+ * a restart. Native updates come from the App Store, not from this banner.
  */
-import { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
-import { createLogger } from '@shared/logger'
 import { colors, fonts, radius, space, type } from '../theme'
-import { checkForApkUpdate, downloadAndInstall, type ApkUpdate } from '../lib/self-update'
 import { useOtaUpdate } from '../lib/ota-update'
-
-const log = createLogger('mobile:update-banner')
 
 export function UpdateBanner() {
   return (
     <View style={styles.host} pointerEvents="box-none">
-      <ApkUpdateBanner />
       <OtaUpdateBanner />
     </View>
-  )
-}
-
-/** Newer APK on GitHub Releases: download it, then hand off to the installer. */
-function ApkUpdateBanner() {
-  const [update, setUpdate] = useState<ApkUpdate | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let mounted = true
-    // Never rejects, but a stray rejection must not go unlogged.
-    checkForApkUpdate()
-      .then((found) => {
-        if (mounted) setUpdate(found)
-      })
-      .catch((err) => log.warn('apk update check rejected unexpectedly', err))
-    return () => {
-      mounted = false
-    }
-  }, [])
-
-  const install = useCallback(() => {
-    if (!update) return
-    setBusy(true)
-    setError(null)
-    downloadAndInstall(update)
-      .catch((err) => {
-        log.warn('apk install handoff failed', err)
-        setError(err instanceof Error ? err.message : 'Install failed')
-      })
-      .finally(() => setBusy(false))
-  }, [update])
-
-  if (!update) return null
-
-  return (
-    <Banner
-      title={`Switchboard ${update.version} is ready`}
-      subtitle={busy ? 'Downloading' : 'Update installs from a GitHub release'}
-      actionLabel="Install"
-      busy={busy}
-      error={error}
-      onPress={install}
-    />
   )
 }
 

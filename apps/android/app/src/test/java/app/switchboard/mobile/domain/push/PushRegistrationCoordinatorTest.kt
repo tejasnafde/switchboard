@@ -76,6 +76,66 @@ class PushRegistrationCoordinatorTest {
     }
 
     @Test
+    fun `removal ignores stale ready snapshots`() {
+        val coordinator = PushRegistrationCoordinator()
+        val backend = FakeBackend(scope(40))
+        coordinator.onExpoToken("ExpoPushToken[token]")
+        coordinator.onReady(listOf(backend))
+        coordinator.beforeConnectionRemoved("mac-a")
+        coordinator.onReady(listOf(backend))
+        assertEquals(1, backend.calls.count { it.startsWith("register:") })
+    }
+
+    @Test
+    fun `removal waits for unregister response and offline removal completes immediately`() {
+        val coordinator = PushRegistrationCoordinator()
+        val backend = FakeBackend(scope(41))
+        coordinator.onExpoToken("ExpoPushToken[token]")
+        coordinator.onReady(listOf(backend))
+        var result: PushBackendResult? = null
+        coordinator.beforeConnectionRemoved("mac-a") { result = it }
+        assertEquals(null, result)
+        backend.complete(PushBackendResult.TransportFailure("offline"))
+        assertEquals(PushBackendResult.TransportFailure("offline"), result)
+
+        result = null
+        coordinator.beforeConnectionRemoved("offline") { result = it }
+        assertEquals(PushBackendResult.Accepted, result)
+    }
+
+    @Test
+    fun `repeated removal shares the pending unregister result`() {
+        val coordinator = PushRegistrationCoordinator()
+        val backend = FakeBackend(scope(42))
+        coordinator.onExpoToken("ExpoPushToken[token]")
+        coordinator.onReady(listOf(backend))
+        val results = mutableListOf<PushBackendResult>()
+        coordinator.beforeConnectionRemoved("mac-a", results::add)
+        coordinator.beforeConnectionRemoved("mac-a", results::add)
+        assertTrue(results.isEmpty())
+        backend.complete(PushBackendResult.Accepted)
+        assertEquals(listOf(PushBackendResult.Accepted, PushBackendResult.Accepted), results)
+        assertEquals(1, backend.calls.count { it.startsWith("unregister:") })
+    }
+
+    @Test
+    fun `timeout completes shared removal and a late response cannot change it`() {
+        val coordinator = PushRegistrationCoordinator()
+        val backend = FakeBackend(scope(43))
+        coordinator.onExpoToken("ExpoPushToken[token]")
+        coordinator.onReady(listOf(backend))
+        val results = mutableListOf<PushBackendResult>()
+        coordinator.beforeConnectionRemoved("mac-a", results::add)
+        coordinator.onRemovalTimeout("mac-a")
+        backend.complete(PushBackendResult.Accepted)
+        coordinator.beforeConnectionRemoved("mac-a", results::add)
+        assertEquals(
+            List(2) { PushBackendResult.TransportFailure("Push unregister timed out") },
+            results,
+        )
+    }
+
+    @Test
     fun `viewing lease stays on its exact scope until replacement route enters`() {
         val coordinator = PushRegistrationCoordinator()
         val first = FakeBackend(scope(10))

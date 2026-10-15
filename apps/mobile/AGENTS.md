@@ -12,7 +12,7 @@ that side). Imports `@shared/*` and nothing else from the repo.
 **Update lanes.** Android ships the native app in `apps/android` through
 Google Play (`mobile-release.yml`, see `docs/releasing.md`); this Expo app is
 the iOS client. `mobile-ota.yml` publishes JS-only changes over expo-updates
-with `--platform ios`. Native changes - a new module, a permission, an SDK
+with `--platform ios`. There is no in-app binary updater: `UpdateBanner` shows only the OTA restart, and native updates come from the App Store. Native changes - a new module, a permission, an SDK
 bump - need a new iOS build. `runtimeVersion` uses the **`fingerprint`**
 policy (changed 2026-08-01, was `appVersion`), so the hash covers native deps,
 config plugins and the native-affecting parts of app.json. An OTA can therefore
@@ -42,6 +42,17 @@ client's connection id, echoed back so a tap knows which backend to open.
 Historical: while this Expo app also shipped on Android, its push needed FCM
 credentials on the EAS project (Android > FCM V1). That lane is retired. A new registry is created when a closed window is reopened, so
 the notifier must be re-attached there.
+
+**Unpair push cleanup:** `connections.removeConnection` removes the saved config,
+then awaits `push.unregisterWith` before closing the captured client. It uses the
+existing `push:unregister` RPC once, waits at most two seconds, and forgets its
+registration even offline. Demo connections never register or unregister.
+Registration and pairing callbacks must not change state or save credentials
+for a removed or replaced client. Credential writes are serialized per connection,
+so unpair deletes keys after any session or legacy-token save already in flight.
+Android also waits for unregister completion or the same two-second limit before
+removing its fleet connection. Repeated Android removals share the same pending
+unregister result, including its timeout.
 
 **Reviews tab** (`ConnectionTabBar` under `ProjectsScreen` and `ReviewsScreen`, switched with `navigation.replace`, no tab library): the list lives in `stores/reviews.ts` per connection, filters in `prefs.prFilters`, a pending review pill in `prefs.threads[key].reviewPill` until the next send (`QueuedMessage.reviewPill`, `queuedTurnBody`). `PullRequestScreen` + `WorkOnPrSheet` are read-only; a "Work on PR" chat goes through `NewSessionScreen` with `pullRequest` (no first-message launch prompt: `lib/pr-chat.ts` links the PR and sends the first turn with the pill once the chat exists). JS only, so it ships on the OTA lane. Rules: `src/main/pull-requests/AGENTS.md`.
 

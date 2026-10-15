@@ -1,0 +1,40 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "store-cleanup",
+  "summary": "Store path cleanup: the Expo app drops its dead APK self-update lane (self-update.ts, version.ts and the APK banner; the app ships only on iOS, where that lane returned early). The desktop Mobile pairing settings stop linking to the last GitHub APK and say the Android app is coming to Google Play. A repo-wide .gitattributes keeps text LF on every checkout and marks binaries. docs/store/account-holder-guide.md lists the store web steps for the Account Holder.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": ["src/renderer/components/settings/MobilePairingTab.tsx"]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": ["apps/mobile/src/components/UpdateBanner.tsx", "apps/mobile/README.md"]
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android app has no APK updater left (removed by the Play release work) and none of its code changes. The .gitattributes rule only normalises gradlew.bat in the index; its checkout stays CRLF."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire, RPC or shared module changes; the removed files lived only in apps/mobile."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing reads or writes stored data differently; the APK lane kept no state."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["CHANGELOG.md", "docs/store/account-holder-guide.md", "docs/plans/2026-10-12-store-publishing.md"]
+    }
+  },
+  "verification": {
+    "automated": ["npm run typecheck and npm test pass; the mobile typecheck passes without self-update.ts."],
+    "hardware": [],
+    "notExercised": [
+      "The Settings > Mobile copy was not looked at in a running app; no visual screen covers that tab.",
+      "No iOS build was made; the change is JS only and ships on the OTA lane."
+    ]
+  }
+}

@@ -33,7 +33,7 @@ Procedure reference: the `app-store-publish` skill in `tejas-skills`.
 4. **Demo mode (mock first).** Sample chats, an approval card and a running turn, reachable from the connection screen without a backend, on both phones. The review notes point to it.
 5. **Encrypted transport for the store builds.** Today the phones dial `ws://` and the Android release allows cleartext. Before submission, decide and implement: TLS (`wss://`) for production pairing (for example a self-signed certificate pinned at pairing, or the IAP tunnel, which is already TLS), cleartext limited to what still needs it, and a check that the Play build cannot use plain `ws://` for a remote host. Play's Data safety form records this; it does not make it acceptable.
    Done (2026-10-15): a self-signed certificate per install, served as `wss://` on the same port and pinned through the QR's `fp`; Android pins it and its release build drops cleartext except loopback. iOS store builds refuse remote `ws://` but cannot pin yet: that needs a native module and a new iOS build (`docs/feature-parity/encrypted-phone-transport.json`). For the Data safety form, Android traffic to the user's backend is now encrypted in transit.
-6. **Account Holder guide.** A short checklist for the web UI steps below, so they can be done in one sitting.
+6. **Account Holder guide.** A short checklist for the web UI steps below, so they can be done in one sitting: [`docs/store/account-holder-guide.md`](../store/account-holder-guide.md).
 
 ## Web UI steps (Account Holder)
 

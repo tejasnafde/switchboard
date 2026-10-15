@@ -304,6 +304,10 @@ export class SwitchboardClient {
     return this.transport.invoke(PushChannels.REGISTER, token, label, clientRef)
   }
 
+  unregisterPush(token: string): Promise<unknown> {
+    return this.transport.invoke(PushChannels.UNREGISTER, token)
+  }
+
   /** Which thread this device has open, so it is not notified about it. */
   reportViewing(token: string, threadId: string | null): Promise<unknown> {
     return this.transport.invoke(PushChannels.VIEWING, token, threadId)
