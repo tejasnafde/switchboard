@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createNativeForkRunners } from '../../src/main/conversations/native-fork-runners'
 import { isUnsupportedMethodError } from '../../src/main/conversations/native-fork'
 import { OpencodeUnsupportedVersionError } from '../../src/main/provider/adapters/opencode/version'
@@ -11,6 +11,7 @@ const itWithPosixToolShims = process.platform === 'win32' ? it.skip : it
 
 const dirs: string[] = []
 afterEach(() => {
+  vi.unstubAllEnvs()
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
@@ -53,6 +54,8 @@ if (process.argv.includes('--version')) {
   console.log(process.env.FAKE_VERSION || '1.18.33')
   process.exit(0)
 }
+// 2.x's acp takes no options and rejects unknown ones.
+if ((process.env.FAKE_VERSION || '').startsWith('2.') && process.argv.includes('--cwd')) process.exit(1)
 const { Readable, Writable } = require('stream')
 const acp = require(${JSON.stringify(resolve('node_modules/@agentclientprotocol/sdk/dist/acp.js'))})
 const stream = acp.ndJsonStream(Writable.toWeb(process.stdout), Readable.toWeb(process.stdin))
@@ -126,6 +129,14 @@ describe('native fork runners', () => {
       .catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(OpencodeUnsupportedVersionError)
     expect(existsSync(pidFile)).toBe(false)
+  })
+
+  itWithPosixToolShims('forks over a 2.x acp started without --cwd when opencode_v2_acp is on', async () => {
+    vi.stubEnv('SB_OPENCODE_V2_ACP', '1')
+    const dir = scratch()
+    await expect(
+      runners(dir, '', { FAKE_VERSION: '2.0.29' }).forkOpencodeSession('inst', { sessionId: 'ses_1', cwd: dir }),
+    ).resolves.toBe('forked-ses_1')
   })
 
   itWithPosixToolShims('reports an OpenCode without session/fork as unsupported, without calling it', async () => {

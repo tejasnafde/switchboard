@@ -76,3 +76,52 @@ export function modelsFromConfigOptions(
   }
   return { configId: option.id, current: option.currentValue, models }
 }
+
+/** The base level of an effort config option (OpenCode 2.x: the model with no variant). */
+export const CONFIG_EFFORT_DEFAULT = 'default'
+
+/** A thinking-effort picker carried as a session config option. */
+export interface AcpConfigEffort {
+  configId: string
+  current: string
+  values: string[]
+}
+
+/**
+ * The effort option among `configOptions`: the one named `configId` when
+ * given, else the first `category: thought_level` select. Null when the
+ * current model has none (OpenCode 2.x drops it for a model without variants).
+ */
+export function effortFromConfigOptions(
+  options: readonly SessionConfigOption[] | null | undefined,
+  configId?: string | null,
+): AcpConfigEffort | null {
+  const option = options?.find((o) => (configId ? o.id === configId : o.category === 'thought_level'))
+  if (!option || option.type !== 'select') return null
+  const values: string[] = []
+  for (const entry of option.options) {
+    if ('group' in entry) values.push(...entry.options.map((inner) => inner.value))
+    else values.push(entry.value)
+  }
+  return { configId: option.id, current: option.currentValue, values }
+}
+
+/** The effort option as model variants: `''` is the base model. */
+export function configEffortVariants(effort: AcpConfigEffort): { available: string[]; current: string } {
+  return {
+    available: effort.values.filter((v) => v !== CONFIG_EFFORT_DEFAULT),
+    current: effort.current === CONFIG_EFFORT_DEFAULT ? '' : effort.current,
+  }
+}
+
+/**
+ * Split a `provider/model/variant` id into the model to select and the
+ * variant to set through the effort option. An id the catalog lists as is
+ * stays whole, so a model whose own id has three parts is never cut.
+ */
+export function splitConfigModelId(id: string, catalog: readonly string[]): { model: string; variant: string } {
+  if (catalog.includes(id)) return { model: id, variant: '' }
+  const cut = id.lastIndexOf('/')
+  if (cut > 0 && catalog.includes(id.slice(0, cut))) return { model: id.slice(0, cut), variant: id.slice(cut + 1) }
+  return { model: id, variant: '' }
+}

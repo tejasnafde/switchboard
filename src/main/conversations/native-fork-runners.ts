@@ -11,6 +11,7 @@ import { scanCodexSessionCopies } from '../projects/session-scanner'
 import { findCodexPath } from '../provider/adapters/codex-adapter'
 import { buildOpencodeEnv, findOpencodePath } from '../provider/adapters/opencode/env'
 import { assertSupportedOpencode } from '../provider/adapters/opencode/version'
+import { opencodeAcpArgs } from '../provider/adapters/opencode/cli-args'
 import { resolveInstanceEnv } from '../provider/instance-env'
 import { CodexProbeSession } from '../provider/usage/codex-usage'
 import { NativeForkUnsupportedError } from './native-fork'
@@ -110,8 +111,8 @@ export function createNativeForkRunners(
       const bin = binaries.opencode()
       if (!bin) throw new Error('OpenCode CLI not found')
       const env = opencodeEnvOf(instanceId)
-      await assertSupportedOpencode(bin, env, params.cwd)
-      const child = spawn(bin, ['acp', '--cwd', params.cwd], {
+      const generation = await assertSupportedOpencode(bin, env, params.cwd)
+      const child = spawn(bin, opencodeAcpArgs(params.cwd, generation), {
         cwd: params.cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
         env,

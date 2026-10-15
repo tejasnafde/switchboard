@@ -29,6 +29,7 @@ import { findClaudeBin } from '../provider/adapters/claude-adapter'
 import { findCodexPath } from '../provider/adapters/codex-adapter'
 import { findOpencodePath, buildOpencodeEnv } from '../provider/adapters/opencode/env'
 import { assertSupportedOpencode } from '../provider/adapters/opencode/version'
+import { opencodeModelsArgs } from '../provider/adapters/opencode/cli-args'
 import { genericAcpLaunchConfig } from '../provider/adapters/acp/agents'
 import { ACP_COMMAND_AGENT, isGenericAcpAgent } from '@shared/acp-agents'
 import { acpCommandConfig } from '@shared/acp-command'
@@ -329,8 +330,8 @@ async function probeInstance(instance: ProviderInstanceRow): Promise<{ ok: boole
       applyEnvOverlay(overlay, instance.env)
       const probeEnv = buildOpencodeEnv(overlay)
       // A refused 2.x lands in the catch below, so Test reads the same copy as chat.
-      await assertSupportedOpencode(bin, probeEnv)
-      const out = await runProbe(bin, ['models'], probeEnv, 8000)
+      const generation = await assertSupportedOpencode(bin, probeEnv)
+      const out = await runProbe(bin, opencodeModelsArgs(generation), probeEnv, 8000)
       if (out.error) return { ok: false, message: out.error.message }
       if (out.status !== 0) return { ok: false, message: out.stderr?.trim() || `exit ${out.status}` }
       const lines = (out.stdout ?? '').split('\n').filter((l) => l.trim().length > 0)

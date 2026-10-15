@@ -3,7 +3,7 @@
  * config for a long-lived `opencode acp` child, plus what only OpenCode
  * needs: reading the user's opencode.json for MCP servers and permission
  * rules, the inline config that lets Switchboard's own MCP tools through
- * without a second prompt, the 1.x version gate, model variants, and the
+ * without a second prompt, the version gate (2.x behind a flag), model variants, and the
  * session summary the session scanner reads.
  *
  * Replaced the legacy shell-out adapter (deleted 2026-05-02), which spawned
@@ -21,6 +21,7 @@ import type { RuntimeMode } from '../types'
 import type { SessionSummary } from '@shared/types'
 import { findOpencodePath, buildOpencodeEnv } from './opencode/env'
 import { assertSupportedOpencode } from './opencode/version'
+import { opencodeAcpArgs } from './opencode/cli-args'
 import {
   isSwitchboardOpencodeReadTool,
   isSwitchboardOpencodeTool,
@@ -505,7 +506,12 @@ export const OPENCODE_ACP_LAUNCH: AcpLaunchConfig = {
   // overlay `buildOpencodeEnv`'s shell + settings-DB layers so per-instance
   // keys win.
   buildEnv: (overlay) => buildOpencodeEnv({ OPENCODE_ENABLE_QUESTION_TOOL: '1', ...overlay }),
-  preflight: assertSupportedOpencode,
+  // 2.x (behind the `opencode_v2_acp` flag) starts with no `--cwd` and sets
+  // the variant through its `effort` config option.
+  preflight: async (bin, env, cwd) => {
+    const generation = await assertSupportedOpencode(bin, env, cwd)
+    return { args: opencodeAcpArgs(cwd, generation), effortConfigId: generation === 2 ? 'effort' : null }
+  },
   prepareSession: prepareOpencodeSession,
   modelLabel: (model) => formatOpencodeModelLabel(model.modelId),
   modelVariants: (meta) => {

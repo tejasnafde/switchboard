@@ -1,0 +1,74 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "opencode-v2-acp",
+  "summary": "OpenCode 2.x through the existing ACP adapter, behind the staged flag opencode_v2_acp (OPENCODE_V2_ACP_ENABLED, false; SB_OPENCODE_V2_ACP=1 in Switchboard's env turns it on for testing). With the flag off nothing changes except the refusal copy, which now tells a user who ran `opencode upgrade --major` how to put 1.x back (npm i -g opencode-ai@1 or the curl installer) and that 2.x moved their sign-ins into its database. With the flag on, assertSupportedOpencode returns the generation (1 or 2) instead of refusing a 2.x (3.x and later are still refused, an unversioned install with a v2 signal counts as 2), and every spawn site follows it: the chat adapter and the native-fork runner start `opencode acp` with no --cwd (the spawn cwd is the folder), and the catalog probe and the Settings Test run `opencode models --standalone`, so a private server gets the account's env instead of the shared background service. Model changes already went through setSessionConfigOption whenever session/new returns a model config option; now, once the agent reports an effort option (or the preflight names one for 2.x), a provider/model/variant pick is split into the model option and the effort option (the base level is `default`), and model.variants is emitted from the effort option, so the composer's effort control works as with 1.x. A 1.x session, which reports no effort option, keeps its model ids whole and gets no new event. A subagent's text that 2.x streams into the parent session (_meta opencode/child-session) is dropped so it does not run into the parent's message; its tool calls still show.",
+  "surfaces": {
+    "desktop": {
+      "status": "staged",
+      "flag": "opencode_v2_acp",
+      "followUpRelease": "The release that sets OPENCODE_V2_ACP_ENABLED to true, after a 2.x chat is checked with a signed-in provider: approval cards for a code-mode execute call, the question tool (it fails over ACP on 2.x and the adapter has no question handling for OpenCode), and subagent tool calls shown under their subagent row. What ships now: the refusal copy for everyone, and the whole v2 path for anyone who sets SB_OPENCODE_V2_ACP=1.",
+      "evidence": [
+        "src/main/provider/adapters/opencode/version.ts",
+        "src/main/provider/adapters/opencode/cli-args.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/provider/adapters/acp/acp-adapter.ts",
+        "src/main/provider/adapters/acp/launch-config.ts",
+        "src/main/provider/adapters/acp/session-config.ts",
+        "src/main/conversations/native-fork-runners.ts",
+        "src/main/provider/catalog-probe.ts",
+        "src/main/ipc/provider-instances.ts",
+        "tests/unit/opencode-version-gate.test.ts",
+        "tests/unit/opencode-acp-v2-config.test.ts",
+        "tests/unit/native-fork-runners.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The adapter, the version gate, the catalog probe, the fork runner and the Settings Test all run on the backend. A phone reads OpenCode models through LIST_MODELS and variants through the existing model.variants event, both unchanged in shape, and shows a refusal as the existing start-session error text."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Same as React Native: everything changed runs on the backend, and Android gets the same model.variants event and start-session error string it already handles. No Android code or wire field changed."
+    },
+    "sharedBackendApi": {
+      "status": "staged",
+      "flag": "opencode_v2_acp",
+      "followUpRelease": "Same release as the desktop entry: the headless server runs the same main-process code and the same flag.",
+      "evidence": [
+        "src/main/provider/adapters/acp/acp-adapter.ts",
+        "src/main/provider/adapters/opencode/version.ts",
+        "tests/unit/opencode-acp-v2-config.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing Switchboard stores changed: no schema, migration or setting. With the flag on, a 2.x binary runs, and 2.x migrates the user's own opencode.db forward in place and moves auth.json into it. That is OpenCode's own one-way upgrade, which the user started with `opencode upgrade --major` or a 2.x install; the flag only lets Switchboard drive a binary the user already chose."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, native module, deep link or release packaging changed. The flag is a compile-time constant (off) plus an env override, so a release ships the 1.x-only behaviour."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/opencode-version-gate.test.ts: the flag reads SB_OPENCODE_V2_ACP; with it on a 2.x fake is generation 2, a 1.x fake generation 1, a 3.x fake refused with '1.x and 2.x' copy, an unversioned install with an opencode2 shim generation 2; the adapter spawns `acp` with no --cwd in the chat folder for 2.x and `acp --cwd` for 1.x; the catalog probe and the Settings Test run `models --standalone` on 2.x; with it off the existing refusal tests pass and the copy names `opencode upgrade --major`.",
+      "npx vitest run tests/unit/opencode-acp-v2-config.test.ts: against a fake agent in the shapes 2.0.29 sent, a variant pick becomes model then effort, a model with no variants clears the variants and gets no effort call, a reselect with no variant goes back to `default`, an unknown variant is not sent, the starting model's variants go out with no model pushed, and a 1.x session keeps the id whole with no model.variants event; the helpers and the child-session text filter.",
+      "npx vitest run tests/unit/native-fork-runners.test.ts: with the flag on, a 2.x fake that exits on --cwd forks natively."
+    ],
+    "hardware": [
+      "Live, OpenCode 2.0.29 from npm @opencode/cli in a private /tmp dir with HOME and every XDG dir inside it (never the real data or config), no provider key: initialize (protocol 1, session fork/resume/list/close/delete, _meta opencode/child-session-updates), session/new configOptions (model with no variants in the ids, effort as category thought_level with `default` as the base, mode), set_config_option model and effort (the effort option disappears for a model without variants, an unknown effort is refused with Invalid params, the level sticks across a reselect of the same model), session/set_model answers Method not found, setSessionMode build answers, `opencode models --standalone` lists models, `acp --help` shows no --cwd.",
+      "Live, the real OpencodeAcpAdapter with SB_OPENCODE_V2_ACP=1 against that sandbox (env mocked to the sandbox only): a chat started on a free model, a variant pick on a model with effort levels (model then effort high, then back to default, model.variants with low..max), a model without variants (empty variants, a warning, no effort call), and a full turn that answered and completed.",
+      "Live, permission injection and tool names with a private two-server MCP setup: 2.x runs MCP tools through a code-mode `execute` tool (tools.switchboard.list_agent_sessions()), so a permission request names `execute` with the code as rawInput, never `switchboard_*`. The injected `switchboard_list_agent_sessions: allow` rule still applied inside execute (no request), and an `other_*: ask` rule produced one `execute` request. Shell ran without a request.",
+      "Live: background subagents and async shell both work over ACP. A background subagent's text, thought chunks and tool calls stream into the parent session tagged _meta opencode/child-session with toolCallIds prefixed by the child session id; a background shell reports its shell id and output file, then its result.",
+      "Live: the question tool (OPENCODE_ENABLE_QUESTION_TOOL=1) reached the client only as a tool call that failed; no permission or extension request came for it.",
+      "Live, OpenCode 1.18.33 in its own private sandbox for comparison: configOptions model and mode only, no effort option, no variants in the model ids, session/set_model answers."
+    ],
+    "notExercised": [
+      "A 2.x chat with a signed-in provider (API key): only free models were used, no account was touched.",
+      "An approval card for a code-mode execute call in the app, and how its code reads there.",
+      "The desktop app itself with the flag on (the adapter was driven from vitest); the phones against a 2.x backend.",
+      "The native fork against a real 2.x (only the fake); resume of a 2.x session after a restart."
+    ]
+  }
+}

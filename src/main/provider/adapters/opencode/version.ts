@@ -4,8 +4,10 @@
  * OpenCode 2.x ships under the same `opencode` binary name but breaks the
  * ACP surface we drive: `opencode acp --cwd` is rejected, `session/set_model`
  * is gone, and `opencode models` attaches to a shared background service
- * (see AGENTS.md, OpenCode section). Until a v2 path exists every spawn site
- * refuses a 2.x binary with one clear message instead of a CLI usage error.
+ * (see AGENTS.md, OpenCode section). Every spawn site refuses a 2.x binary
+ * with one clear message instead of a CLI usage error, unless the staged
+ * `opencode_v2_acp` flag is on: then a 2.x runs through the v2 path (see
+ * `cli-args.ts` and the ACP adapter's effort config option).
  */
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -18,6 +20,20 @@ const log = createMainLogger('provider:opencode:version')
 const VERSION_TIMEOUT_MS = 10_000
 
 export const OPENCODE_FIRST_UNSUPPORTED_MAJOR = 2
+
+/**
+ * Staged flag `opencode_v2_acp`: OpenCode 2.x through the ACP adapter. Off
+ * until the v2 path is verified with a signed-in provider. `SB_OPENCODE_V2_ACP=1`
+ * in Switchboard's own env turns it on for testing.
+ */
+export const OPENCODE_V2_ACP_ENABLED = false
+
+export function opencodeV2AcpEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return OPENCODE_V2_ACP_ENABLED || env.SB_OPENCODE_V2_ACP === '1'
+}
+
+/** Which OpenCode command line a binary speaks: 1.x, or 2.x behind the flag. */
+export type OpencodeGeneration = 1 | 2
 
 export interface OpencodeVersion {
   raw: string
@@ -41,11 +57,16 @@ export class OpencodeUnsupportedVersionError extends Error {
   constructor(
     public readonly version: string,
     public readonly binPath: string,
+    v2Allowed = false,
   ) {
     super(
       `OpenCode ${version} is not supported yet (found at ${binPath}). ` +
-        `Switchboard works with OpenCode 1.x only for now. Install OpenCode 1.x ` +
-        `(npm i -g opencode-ai) or switch back, then try again.`,
+        `Switchboard works with OpenCode ${v2Allowed ? '1.x and 2.x' : '1.x only'} for now. ` +
+        (v2Allowed
+          ? `Install OpenCode 1.x (npm i -g opencode-ai) or 2.x, then try again.`
+          : `If you ran \`opencode upgrade --major\`, put 1.x back with npm i -g opencode-ai@1 ` +
+            `or curl -fsSL https://opencode.ai/install | bash, then try again. ` +
+            `2.x moved your sign-ins into its database, so run \`opencode auth login\` again if 1.x asks.`),
     )
     this.name = 'OpencodeUnsupportedVersionError'
   }
@@ -171,29 +192,37 @@ export function readOpencodeVersion(
 }
 
 /**
- * Throws OpencodeUnsupportedVersionError for a 2.x (or later) binary. When
- * `--version` gives no answer, the install's files decide
- * (`opencodeV2InstallSignal`); with neither, the binary is let through, since
- * refusing on a failed read would lock out a working 1.x install. That last
- * case can still run an unrecognised 2.x.
+ * The generation `bin` speaks, or throws OpencodeUnsupportedVersionError: for
+ * a 2.x binary while `v2Allowed` (the `opencode_v2_acp` flag) is off, and for
+ * a 3.x or later always. When `--version` gives no answer, the install's
+ * files decide (`opencodeV2InstallSignal`); with neither, the binary is let
+ * through as 1.x, since refusing on a failed read would lock out a working
+ * 1.x install. That last case can still run an unrecognised 2.x.
  */
 export async function assertSupportedOpencode(
   bin: string,
   env: Record<string, string>,
   cwd?: string,
   run?: VersionRunner,
-): Promise<void> {
+  v2Allowed = opencodeV2AcpEnabled(),
+): Promise<OpencodeGeneration> {
+  const firstUnsupported = v2Allowed ? OPENCODE_FIRST_UNSUPPORTED_MAJOR + 1 : OPENCODE_FIRST_UNSUPPORTED_MAJOR
   const version = await readOpencodeVersion(bin, env, cwd, run)
   if (version) {
-    if (version.major >= OPENCODE_FIRST_UNSUPPORTED_MAJOR) throw new OpencodeUnsupportedVersionError(version.raw, bin)
-    return
+    if (version.major >= firstUnsupported) throw new OpencodeUnsupportedVersionError(version.raw, bin, v2Allowed)
+    return version.major >= OPENCODE_FIRST_UNSUPPORTED_MAJOR ? 2 : 1
   }
   const signal = opencodeV2InstallSignal(bin)
   if (signal) {
+    if (v2Allowed) {
+      log.warn(`opencode at ${bin} gave no version but ${signal}; running it as 2.x`)
+      return 2
+    }
     log.warn(`opencode at ${bin} gave no version but ${signal}; refusing it as 2.x`)
     throw new OpencodeUnsupportedVersionError('2.x', bin)
   }
   log.warn(`opencode at ${bin} gave no version and looks like 1.x; letting it run`)
+  return 1
 }
 
 export function _resetOpencodeVersionCacheForTests(): void {
