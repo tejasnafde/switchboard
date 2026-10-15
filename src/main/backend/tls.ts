@@ -7,7 +7,7 @@
  * the host. Sharing the port keeps every saved address valid: a phone that does
  * not know `fp` keeps dialling ws:// where it always did.
  */
-import { createHash, generateKeyPairSync, randomBytes, sign, X509Certificate } from 'node:crypto'
+import { createHash, createPrivateKey, generateKeyPairSync, randomBytes, sign, X509Certificate } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createServer as createHttpsServer } from 'node:https'
@@ -42,9 +42,11 @@ export function loadOrCreateTlsIdentity(dir: string): TlsIdentity {
     const key = readFileSync(keyFile, 'utf8')
     const cert = readFileSync(certFile, 'utf8')
     try {
+      if (!new X509Certificate(cert).checkPrivateKey(createPrivateKey(key)))
+        throw new Error('key does not match certificate')
       return { key, cert, fingerprint: certificateFingerprint(cert) }
     } catch (err) {
-      log.warn('stored TLS certificate is unreadable, minting a new one (paired phones must pair again)', err)
+      log.warn('stored TLS key or certificate is unreadable, minting a new pair (paired phones must pair again)', err)
     }
   }
   const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
