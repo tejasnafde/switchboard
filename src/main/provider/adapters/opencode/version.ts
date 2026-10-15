@@ -63,7 +63,7 @@ export class OpencodeUnsupportedVersionError extends Error {
       `OpenCode ${version} is not supported yet (found at ${binPath}). ` +
         `Switchboard works with OpenCode ${v2Allowed ? '1.x and 2.x' : '1.x only'} for now. ` +
         (v2Allowed
-          ? `Install OpenCode 1.x (npm i -g opencode-ai) or 2.x, then try again.`
+          ? `Install OpenCode 1.x (npm i -g opencode-ai@1) or 2.x, then try again.`
           : `If you ran \`opencode upgrade --major\`, put 1.x back with npm i -g opencode-ai@1 ` +
             `or curl -fsSL https://opencode.ai/install | bash, then try again. ` +
             `2.x moved your sign-ins into its database, so run \`opencode auth login\` again if 1.x asks.`),
