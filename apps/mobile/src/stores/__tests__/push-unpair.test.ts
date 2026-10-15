@@ -13,6 +13,12 @@ afterEach(() => {
 })
 
 const token = 'ExpoPushToken[phone]'
+
+// connect() checks the transport gate asynchronously before it makes the client.
+async function connected(id: string): Promise<void> {
+  for (let i = 0; i < 50 && !getClient(id); i++) await new Promise((r) => setTimeout(r, 0))
+  expect(getClient(id)).toBeDefined()
+}
 beforeEach(() => {
   usePushStore.setState({ token, registered: new Set(['mac']) })
   useConnectionsStore.setState({
@@ -35,6 +41,7 @@ test('unpair waits for unregister before closing the client and forgets registra
   }
   jest.spyOn(SwitchboardClient, 'overWs').mockReturnValue(new SwitchboardClient(transport as never))
   useConnectionsStore.getState().connect('mac')
+  await connected('mac')
   useConnectionsStore.getState().setStatus('mac', 'connected')
   const removing = useConnectionsStore.getState().removeConnection('mac')
   expect(transport.invoke).toHaveBeenCalledWith('push:unregister', token)
@@ -69,6 +76,7 @@ test('unresponsive backend gets one attempt and removal finishes after two secon
   const transport = { invoke: jest.fn(() => new Promise(() => {})), on: jest.fn(() => () => {}), close: jest.fn() }
   jest.spyOn(SwitchboardClient, 'overWs').mockReturnValue(new SwitchboardClient(transport as never))
   useConnectionsStore.getState().connect('mac')
+  await connected('mac')
   const removing = useConnectionsStore.getState().removeConnection('mac')
   await jest.advanceTimersByTimeAsync(2000)
   await removing
@@ -94,6 +102,7 @@ test('a late pairing response cannot restore keys for a removed machine', async 
   }
   jest.spyOn(SwitchboardClient, 'overWs').mockReturnValue(new SwitchboardClient(transport as never))
   useConnectionsStore.getState().connect('mac')
+  await connected('mac')
   const removing = useConnectionsStore.getState().removeConnection('mac')
   transport.onSessionIssued?.('late-session')
   acknowledge({ ok: true })
@@ -125,6 +134,7 @@ test('credential deletion follows a session save already in flight', async () =>
   }
   jest.spyOn(SwitchboardClient, 'overWs').mockReturnValue(new SwitchboardClient(transport as never))
   useConnectionsStore.getState().connect('mac')
+  await connected('mac')
   transport.onSessionIssued?.('pending-session')
   await Promise.resolve()
   const removing = useConnectionsStore.getState().removeConnection('mac')
@@ -145,6 +155,7 @@ test('serializing credentials preserves the fallback when the session keystore w
   }
   jest.spyOn(SwitchboardClient, 'overWs').mockReturnValue(new SwitchboardClient(transport as never))
   useConnectionsStore.getState().connect('mac')
+  await connected('mac')
   transport.onSessionIssued?.('fallback-session')
   await new Promise<void>((resolve) => setImmediate(resolve))
   const persisted = useConnectionsStore.persist.getOptions().partialize!(useConnectionsStore.getState()) as {

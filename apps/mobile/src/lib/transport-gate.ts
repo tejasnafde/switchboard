@@ -26,9 +26,11 @@ export function storeBuildKnown(): Promise<void> {
   if (storeBuild !== undefined) return Promise.resolve()
   probe ??= (
     Platform.OS === 'ios'
-      ? Application.getIosApplicationReleaseTypeAsync().then(
-          (type) => type === Application.ApplicationReleaseType.APP_STORE,
-        )
+      ? // Called inside then() so a missing native function (an older binary, a
+        // partial mock) rejects into the catch below instead of throwing here.
+        Promise.resolve()
+          .then(() => Application.getIosApplicationReleaseTypeAsync())
+          .then((type) => type === Application.ApplicationReleaseType.APP_STORE)
       : Promise.resolve(false)
   )
     .catch((err: unknown) => {
