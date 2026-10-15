@@ -88,8 +88,8 @@
       "iOS Jest: pinned socket selection, optional module absence, platform isolation, per-socket event routing and cleanup, auth/hello framing through the real transport, and terminal pin failure without retries. The store gate allows pinned URLs only when the native module is available.",
       "Expo prebuild -p ios --no-install succeeded; generated ios/ moved outside the worktree. Expo autolinking resolves SwitchboardPinnedWebSocket and fingerprint sources include modules/pinned-websocket/ios.",
       "PinnedSocket.swift compiled with swiftc for arm64-apple-ios16.4 using the iPhoneOS SDK, producing an unsigned object.",
-      "Scratch Expo iOS fingerprint comparison with and without the local module produced different runtime hashes. Mobile typecheck and all 28 Jest suites / 148 tests passed, including a detectOpenHandles run with clean exit.",
-      "Native callback regression executable on macOS: non-server-trust challenges use default handling without a certificate-change event; a server-trust challenge without trust/leaf cancels and reports certificateChanged. This does not exercise a TLS handshake."
+      "Scratch Expo iOS fingerprint comparison with and without the local module produced different runtime hashes. Mobile typecheck and all 28 Jest suites / 149 tests passed, including a detectOpenHandles run with clean exit.",
+      "Native callback regression executable on macOS: non-server-trust challenges use default handling without a certificate-change event; a server-trust challenge without trust/leaf cancels with an ordinary TLS failure. This does not exercise a TLS handshake."
     ],
     "hardware": [],
     "notExercised": [

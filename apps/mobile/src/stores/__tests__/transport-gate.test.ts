@@ -127,3 +127,16 @@ it('dials pinned wss from the store without changing the saved pairing URL', asy
   expect(mockDialed).toEqual(['wss://192.168.1.8:8765/'])
   expect(s.getState().configs.find((c) => c.id === 'mac')).toMatchObject({ kind: 'ws', url })
 })
+
+it('rejects malformed pins before connecting without throwing or dialing', async () => {
+  mockPinningAvailable = true
+  mockReleaseType.mockResolvedValue(APP_STORE)
+  const { gate, store } = load()
+  await gate.storeBuildKnown()
+  const s = store.useConnectionsStore
+  s.getState().addConnection({ id: 'mac', kind: 'ws', label: 'Mac', url: 'ws://mac?fp=invalid', session: 's' })
+  expect(() => s.getState().connect('mac')).not.toThrow()
+  expect(mockDialed).toEqual([])
+  expect(s.getState().status.mac).toBe('error')
+  expect(s.getState().detail.mac).toMatch(/fingerprint/)
+})

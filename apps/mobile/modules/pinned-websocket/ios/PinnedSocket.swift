@@ -39,7 +39,7 @@ final class PinnedSocket: NSObject, URLSessionWebSocketDelegate {
           let certificates = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
           let leaf = certificates.first else {
       completionHandler(.cancelAuthenticationChallenge, nil)
-      fail(certificateChanged: true)
+      fail()
       return
     }
     let digest = SHA256.hash(data: SecCertificateCopyData(leaf) as Data)
@@ -62,7 +62,7 @@ final class PinnedSocket: NSObject, URLSessionWebSocketDelegate {
 
   func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
     guard !finished else { return }
-    guard verified else { fail(certificateChanged: true); return }
+    guard verified else { fail(); return }
     emit(["type": "open"])
     receive()
   }

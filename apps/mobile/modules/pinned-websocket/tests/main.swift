@@ -33,8 +33,8 @@ var cancelled = false
 socket.urlSession(URLSession.shared, didReceive: untrusted) { disposition, credential in
   cancelled = disposition == .cancelAuthenticationChallenge && credential == nil
 }
-guard cancelled, events.count == 1, events[0]["certificateChanged"] as? Bool == true else {
-  print("FAIL: Server trust without a leaf certificate must cancel with certificateChanged")
+guard cancelled, events.count == 1, events[0]["certificateChanged"] as? Bool == false else {
+  print("FAIL: Server trust without a leaf certificate must cancel with an ordinary TLS failure")
   exit(1)
 }
 print("Missing server trust: passed")
