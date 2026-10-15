@@ -32,7 +32,7 @@ Procedure reference: the `app-store-publish` skill in `tejas-skills`.
 3. **Privacy policy PR (site repo).** Add the Switchboard phone app: camera (pairing QR), microphone and speech (on device where supported, otherwise Apple's or Google's speech service), photo attachments, push tokens and push text through Expo and FCM, and that chats travel only between the phone and the user's own backend, except notification text: a push carries a short excerpt (an agent's question, an error, an approval's detail) through Expo and FCM. Then redeploy the site (`npx wrangler pages deploy dist --project-name tn07 --branch main`).
 4. **Demo mode (mock first).** Sample chats, an approval card and a running turn, reachable from the connection screen without a backend, on both phones. The review notes point to it.
 5. **Encrypted transport for the store builds.** Today the phones dial `ws://` and the Android release allows cleartext. Before submission, decide and implement: TLS (`wss://`) for production pairing (for example a self-signed certificate pinned at pairing, or the IAP tunnel, which is already TLS), cleartext limited to what still needs it, and a check that the Play build cannot use plain `ws://` for a remote host. Play's Data safety form records this; it does not make it acceptable.
-6. **Account Holder guide.** A short checklist for the web UI steps below, so they can be done in one sitting.
+6. **Account Holder guide.** A short checklist for the web UI steps below, so they can be done in one sitting: [`docs/store/account-holder-guide.md`](../store/account-holder-guide.md).
 
 ## Web UI steps (Account Holder)
 

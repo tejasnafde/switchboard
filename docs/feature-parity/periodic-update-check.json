@@ -16,11 +16,11 @@
     },
     "reactNativeIos": {
       "status": "not_applicable",
-      "reason": "Phones have their own update lanes, unrelated to electron-updater: expo-updates OTA for JS-only changes and a self-installed APK/release build for native changes (src/lib/self-update.ts). Neither polls the desktop's GitHub Release feed."
+      "reason": "Phones have their own update lanes, unrelated to electron-updater: expo-updates OTA for JS-only changes and the App Store for native changes. Neither polls the desktop's GitHub Release feed."
     },
     "nativeAndroid": {
       "status": "not_applicable",
-      "reason": "Same as reactNativeIos: native Android installs its own APK releases and has no electron-updater dependency to poll."
+      "reason": "Same as reactNativeIos: native Android updates through Google Play and has no electron-updater dependency to poll."
     },
     "sharedBackendApi": {
       "status": "not_applicable",
