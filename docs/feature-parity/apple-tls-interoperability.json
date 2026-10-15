@@ -1,0 +1,44 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "apple-tls-interoperability",
+  "summary": "Add real-server TLS interoperability coverage. The reported Apple pre-trust decode error was not reproduced on macOS 26.6.2. No production TLS, certificate, pinning or transport behavior changes.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Only backend tests and instructions change; Electron product code is unchanged."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "macOS URLSession coverage does not change or build the iOS app or native module."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "No Android implementation changes; real-device Android verification remains pending."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Production server, wire contract, TLS settings and cleartext compatibility are unchanged."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Stored keys, certificates and fingerprints are preserved with no migration or re-pair required."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No packaging, signing, update-channel or deployment changes; coverage ships with the normal source tree."
+    }
+  },
+  "verification": {
+    "automated": [
+      "macOS-only vitest compiles tests/fixtures/apple-tls-probe.swift and checks matching pin opens and echoes, wrong pin reaches the trust callback and cancels, and forced TLS 1.2 works against DualWebSocketServer with a persisted production certificate.",
+      "Portable vitest coverage splits a ClientHello after the first byte for TLS 1.2 and TLS 1.3.",
+      "Manual scratch probes: Node 25.9.0 and Electron Node 24.18.1; 32 fresh production certificates passed 64 Apple probes across default TLS and TLS 1.2. Curl with h2,http/1.1 ALPN and OpenSSL s_client TLS 1.2 completed handshakes."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No iPhone, Android device, simulator, Expo bridge or Safari browser was exercised.",
+      "The original failing scratch certificate and probe were unavailable. No root cause or before-fix regression is claimed."
+    ]
+  }
+}
