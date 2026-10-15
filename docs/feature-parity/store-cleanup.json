@@ -26,7 +26,7 @@
     },
     "updateRelease": {
       "status": "implemented",
-      "evidence": ["CHANGELOG.md", "docs/store/account-holder-guide.md", "docs/plans/2026-10-12-store-publishing.md", ".gitattributes"]
+      "evidence": ["CHANGELOG.md", "docs/store/account-holder-guide.md", "docs/plans/2026-10-12-store-publishing.md"]
     }
   },
   "verification": {
