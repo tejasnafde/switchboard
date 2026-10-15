@@ -1,0 +1,82 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "encrypted-phone-transport",
+  "summary": "Store plan step 5: encrypted transport for the phones. The desktop phone endpoint and the headless server mint one self-signed certificate per install (data dir, tls/), reuse it across restarts, and serve wss:// and ws:// on the same port (the first byte of a connection picks TLS or plain). The pairing QR keeps its ws:// address and adds the certificate's SHA-256 as fp, so older phones ignore it and keep ws://. Native Android pins fp, dials wss:// on the same port, treats a changed certificate as a terminal error that asks for a re-pair, and in release builds refuses plain ws:// to any host but loopback and the emulator host (network security config and a clear message). The Expo iOS app cannot pin without a native module: it keeps fp in the saved address, and App Store and TestFlight builds refuse plain ws:// to a remote host, so they reach a backend over Cloud IAP or a wss:// address with a system-trusted certificate until a pinning module ships.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/backend/tls.ts",
+        "src/main/backend/mobile-server.ts",
+        "src/renderer/components/settings/MobilePairingTab.tsx",
+        "tests/unit/backend-tls.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/pairing.ts",
+        "apps/mobile/src/lib/transport-gate.ts",
+        "apps/mobile/src/stores/connections.ts",
+        "apps/mobile/src/screens/ConnectionsScreen.tsx",
+        "apps/mobile/src/stores/__tests__/transport-gate.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/connection/TransportSecurity.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/protocol/PinnedTls.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/protocol/OkHttpWebSocketDialer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/connection/NativeConnectionTargetResolver.kt",
+        "apps/android/app/src/main/res/xml/network_security_config.xml",
+        "apps/android/app/src/debug/res/xml/network_security_config.xml",
+        "apps/android/app/src/test/java/app/switchboard/mobile/platform/protocol/PinnedTlsTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/connection/ConnectionDecisionsTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/connection/NativeConnectionTargetResolverTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/transport-security.ts",
+        "src/shared/types.ts",
+        "src/server/index.ts",
+        "tests/unit/transport-security.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/backend/tls.ts",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/connection/ConnectionDecisions.kt",
+        "tests/unit/backend-tls.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md",
+        "src/main/backend/AGENTS.md",
+        "apps/mobile/AGENTS.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "vitest tests/unit/backend-tls.test.ts: the certificate verifies against its own key, its SHA-256 matches the stored fingerprint, the key file is 0600, a restart reuses it and an unreadable one is replaced; one port answers ws:// and wss:// with the pinned certificate; close releases the port for a restart.",
+      "vitest tests/unit/transport-security.test.ts: the QR URL carries fp, the Expo parser keeps it lowercase and refuses a malformed one, and the cleartext rule allows only wss://, loopback and 10.0.2.2.",
+      "jest apps/mobile transport-gate.test.ts: an App Store build refuses remote ws:// before any dial and shows the reason, an internal build dials as before, an unreadable build type fails closed.",
+      "Gradle :app:testDebugUnitTest: PinnedTlsTest dials a MockWebServer over TLS with a certificate made by the desktop generator (match opens, mismatch is CertificateChangedFailure), pairing parse upgrades a pinned ws:// QR to wss://, the resolver refuses remote ws:// in release mode, and the status copy for a changed certificate.",
+      "Gradle lintDebug assembleRelease: the release APK packs the TLS-only network security config, debug the permissive one.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run on a physical phone or an emulator, and not against a running desktop app: the wss:// path was exercised only by the tests above.",
+      "iOS pinning is not built: React Native's WebSocket cannot pin, so it needs a native module and a new iOS build.",
+      "The Settings > Mobile QR was not checked visually; only its URL string changed."
+    ]
+  }
+}

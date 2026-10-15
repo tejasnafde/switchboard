@@ -140,16 +140,18 @@ export default function PairScreen() {
     // fails auth for a reason nothing on screen explains.
     const fromUrl = parsePairingUrl(rawUrl.trim())
     const trimmedToken = rawToken.trim()
+    // A saved pinned address already has a query (`?fp=`).
+    const base = fromUrl?.url ?? rawUrl.trim()
     const parsed =
       fromUrl?.token || !trimmedToken
         ? fromUrl
-        : parsePairingUrl(`${fromUrl?.url ?? rawUrl.trim()}?token=${encodeURIComponent(trimmedToken)}`)
+        : parsePairingUrl(`${base}${base.includes('?') ? '&' : '?'}token=${encodeURIComponent(trimmedToken)}`)
     if (!parsed) {
       Alert.alert('Not a machine address', 'Expected something like ws://192.168.1.8:8765')
       return
     }
     // Default the name to the host so the scan path needs no typing at all.
-    const name = (rawLabel ?? '').trim() || parsed.url.replace(/^wss?:\/\//, '')
+    const name = (rawLabel ?? '').trim() || parsed.url.replace(/^wss?:\/\//, '').replace(/\?.*$/, '')
     const store = useConnectionsStore.getState()
     // `session: undefined` on an edit is deliberate: re-pairing with a fresh
     // code must not keep a session minted for the previous credential.

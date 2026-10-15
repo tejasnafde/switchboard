@@ -1,5 +1,6 @@
 package app.switchboard.mobile.platform.protocol
 
+import app.switchboard.mobile.domain.connection.CertificatePin
 import app.switchboard.mobile.protocol.DisconnectCause
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -26,7 +27,8 @@ class OkHttpWebSocketDialer(
             -> frameAuthenticatedUrl(cleanUrl)
         }
         val request = Request.Builder().url(dialUrl).build()
-        val webSocket = client.newWebSocket(
+        val dialClient = CertificatePin.of(direct.url)?.let(client::pinnedTo) ?: client
+        val webSocket = dialClient.newWebSocket(
             request,
             object : WebSocketListener() {
                 private val terminalCallbackDelivered = AtomicBoolean(false)
@@ -54,7 +56,7 @@ class OkHttpWebSocketDialer(
                     response: Response?,
                 ) {
                     if (terminalCallbackDelivered.compareAndSet(false, true)) {
-                        callbacks.onFailure(t)
+                        callbacks.onFailure(if (t.isCertificatePinMismatch()) CertificateChangedFailure(t) else t)
                     }
                 }
 

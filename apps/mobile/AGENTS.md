@@ -31,6 +31,8 @@ maintainers: follow "Native Android mobile release" in `docs/releasing.md`.
 plus `NSLocalNetworkUsageDescription` keys in app.json remain; iOS needs the
 latter because the whole transport is `ws://`.
 
+**Transport security** (`lib/transport-gate.ts`, rules in `src/main/backend/AGENTS.md`): App Store and TestFlight builds (read from the binary with `getIosApplicationReleaseTypeAsync`, never from the bundle, because store and internal builds share the `production` OTA channel) refuse plain `ws://` to a remote host before dialing; an unreadable build type fails closed. This app cannot pin the desktop's self-signed certificate: React Native's iOS WebSocket (SocketRocket) exposes no hook, so pinning needs a native module and a new build. Until then it keeps the QR's `fp` in the saved URL (`lib/pairing.ts`, shown without the query) and still dials the scheme it was given.
+
 **Push** (`src/main/push/`, `src/shared/push-policy.ts`): the BACKEND sends,
 because the phone is asleep when it matters. `attachPushNotifier` subscribes to
 the provider registry's bus and posts to Expo for approvals, questions, turn

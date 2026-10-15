@@ -172,7 +172,7 @@ object ConnectionsPresenter {
     }
 
     private fun String.removeWebSocketScheme(): String =
-        removePrefix("ws://").removePrefix("wss://")
+        removePrefix("ws://").removePrefix("wss://").substringBefore('?')
 }
 
 object ConnectionRowPolicy {
