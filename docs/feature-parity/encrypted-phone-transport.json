@@ -49,9 +49,9 @@
     "storageDataMigration": {
       "status": "implemented",
       "evidence": [
-        "src/main/backend/tls.ts",
         "apps/android/app/src/main/java/app/switchboard/mobile/domain/connection/ConnectionDecisions.kt",
-        "tests/unit/backend-tls.test.ts"
+        "tests/unit/backend-tls.test.ts",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/connection/NativeConnectionRepository.kt"
       ]
     },
     "updateRelease": {
