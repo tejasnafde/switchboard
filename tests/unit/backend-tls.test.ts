@@ -35,6 +35,14 @@ describe('loadOrCreateTlsIdentity', () => {
     expect(loadOrCreateTlsIdentity(dir)).toEqual(first)
   })
 
+  it('always mints a certificate that parses (random serials)', () => {
+    // A serial whose first byte is 0x00 before a byte < 0x80 is invalid DER, about 1 in 512.
+    for (let i = 0; i < 1500; i++) {
+      const dir = scratch()
+      expect(() => loadOrCreateTlsIdentity(dir)).not.toThrow()
+    }
+  })
+
   it('replaces a certificate it cannot parse', () => {
     const dir = scratch()
     const first = loadOrCreateTlsIdentity(dir)

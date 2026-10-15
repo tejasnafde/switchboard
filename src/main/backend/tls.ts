@@ -93,7 +93,7 @@ const ECDSA_SHA256 = seq(oid('1.2.840.10045.4.3.2'))
 function selfSignedCertificate(spki: Buffer, signer: (tbs: Buffer) => Buffer): string {
   const name = seq(der(0x31, seq(oid('2.5.4.3'), der(0x0c, Buffer.from('Switchboard')))))
   const serial = randomBytes(16)
-  serial[0] &= 0x7f // positive INTEGER
+  serial[0] = (serial[0] & 0x7f) | 0x40 // positive and never 0x00, which DER forbids before a byte < 0x80
   const notBefore = new Date(Date.now() - 24 * 60 * 60 * 1000)
   const tbs = seq(
     der(0xa0, der(0x02, Buffer.from([2]))), // v3
