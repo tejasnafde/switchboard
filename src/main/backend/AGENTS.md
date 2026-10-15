@@ -85,3 +85,14 @@ refresh. A foreground return after under 10 s probes; a longer absence reconnect
 On the WebSocket host `ready` and ping answers shipped together (74dcf945), so a
 `ready` frame is heartbeat proof there. The IAP TCP host needs `heartbeat_v1`; without
 it the phone hands the tunnel to connect() instead of probing.
+
+## Push token ownership and revocation
+
+`push:register` records `deviceSessionId` from the backend request context,
+never from client arguments. `revokeSession` deletes that session's push tokens
+and viewing leases before closing its live sockets. Socket revocation runs in
+`finally` even if push-settings persistence fails. The existing
+`push:unregister(token)` request is idempotent and is used by both phones before
+unpair teardown. Stored tokens from before ownership tracking remain compatible;
+re-registering on the upgraded backend adds their owner. Legacy
+shared-token and IAP registrations have no per-device session to revoke.

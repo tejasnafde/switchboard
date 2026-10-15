@@ -25,6 +25,7 @@ interface PushState {
   problem: Exclude<PushSetup, { ok: true }> | null
   registered: Set<string>
   init: () => Promise<void>
+  unregisterWith: (connectionId: string) => Promise<void>
   registerWith: (connectionId: string) => Promise<void>
   reportViewing: (connectionId: string, threadId: string | null) => void
 }
@@ -58,7 +59,13 @@ export const usePushStore = create<PushState>((set, get) => ({
 
   registerWith: async (connectionId) => {
     const { token, registered } = get()
-    if (!token || registered.has(connectionId)) return
+    if (
+      !token ||
+      registered.has(connectionId) ||
+      isDemoConnection(connectionId) ||
+      !useConnectionsStore.getState().configs.some((c) => c.id === connectionId)
+    )
+      return
     // Claim the slot before awaiting: the subscription can fire again while
     // this request is in flight, which would double-register.
     set({ registered: new Set(registered).add(connectionId) })
@@ -71,6 +78,11 @@ export const usePushStore = create<PushState>((set, get) => ({
       // Pass our own connection id so every payload comes back tagged with the
       // backend that sent it - a tap can then open the right thread.
       const res = await client.registerPush(token, 'phone', connectionId)
+      if (
+        getClient(connectionId) !== client ||
+        !useConnectionsStore.getState().configs.some((c) => c.id === connectionId)
+      )
+        return
       if (res?.ok === false) {
         log.warn(`backend rejected push token: ${res.error}`)
         set({ registered: withoutId(get().registered, connectionId) })
@@ -79,7 +91,32 @@ export const usePushStore = create<PushState>((set, get) => ({
       // An older backend has no push handler. Not worth surfacing, but let a
       // later attempt retry.
       log.warn('push registration failed', err)
-      set({ registered: withoutId(get().registered, connectionId) })
+      if (
+        getClient(connectionId) === client &&
+        useConnectionsStore.getState().configs.some((c) => c.id === connectionId)
+      ) {
+        set({ registered: withoutId(get().registered, connectionId) })
+      }
+    }
+  },
+
+  unregisterWith: async (connectionId) => {
+    const { token } = get()
+    set({ registered: withoutId(get().registered, connectionId) })
+    const client = getClient(connectionId)
+    if (!token || !client || isDemoConnection(connectionId)) return
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        client.unregisterPush(token),
+        new Promise((_, reject) => {
+          timeout = setTimeout(() => reject(new Error('push unregister timed out')), 2000)
+        }),
+      ])
+    } catch (err) {
+      log.warn('push unregister failed; forgetting removed machine', err)
+    } finally {
+      clearTimeout(timeout)
     }
   },
 
