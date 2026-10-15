@@ -5,16 +5,13 @@
  * share a distribution profile), not from the JS bundle, because the store and
  * internal builds share an OTA channel and a bundle-time flag would follow
  * whichever profile published last.
- *
- * TestFlight and App Store builds cannot pin the desktop's self-signed
- * certificate yet: React Native's WebSocket has no hook for it, so that needs a
- * native module. Until then they reach a backend over Cloud IAP or a wss://
- * address whose certificate the system trusts.
  */
 import * as Application from 'expo-application'
 import { Platform } from 'react-native'
 import { createLogger } from '@shared/logger'
 import { cleartextRefusal } from '@shared/transport-security'
+
+import { pinnedTarget } from './pinned-websocket'
 
 const log = createLogger('lib:transport-gate')
 
@@ -51,5 +48,11 @@ export function transportRefusal(url: string): string | null | undefined {
     void storeBuildKnown()
     return undefined
   }
-  return storeBuild ? cleartextRefusal(url) : null
+  try {
+    const target = pinnedTarget(url)
+    return storeBuild ? cleartextRefusal(target?.url ?? url) : null
+  } catch (error) {
+    log.warn('invalid pinned connection target')
+    return error instanceof Error ? error.message : 'Invalid connection address'
+  }
 }

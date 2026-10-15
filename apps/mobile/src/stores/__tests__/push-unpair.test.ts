@@ -4,6 +4,9 @@ import { getClient, useConnectionsStore } from '../connections'
 import { usePushStore } from '../push'
 import { SwitchboardClient } from '../../lib/api'
 
+// These tests exercise unpair ordering; the transport gate has its own build-type tests.
+jest.mock('../../lib/transport-gate', () => ({ transportRefusal: () => null, storeBuildKnown: async () => {} }))
+
 jest.mock('expo-network', () => ({}))
 jest.mock('../../lib/push', () => ({ obtainPushToken: jest.fn() }))
 

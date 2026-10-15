@@ -5,6 +5,12 @@
  */
 import { Platform } from 'react-native'
 
+let mockPinningAvailable = false
+jest.mock('expo-modules-core', () => ({
+  ...jest.requireActual('expo-modules-core'),
+  requireOptionalNativeModule: () => (mockPinningAvailable ? {} : null),
+}))
+
 const mockReleaseType = jest.fn<Promise<number>, []>()
 jest.mock('expo-application', () => ({
   nativeApplicationVersion: '0.4.1',
@@ -41,6 +47,7 @@ const APP_STORE = 5
 const DEVELOPMENT = 3
 
 beforeEach(() => {
+  mockPinningAvailable = false
   mockDialed.length = 0
   mockReleaseType.mockReset()
   Platform.OS = 'ios'
@@ -97,4 +104,26 @@ describe('connect', () => {
     expect(() => s.getState().connect('mac')).toThrow('dial reached')
     expect(mockDialed).toEqual(['ws://192.168.1.8:8765'])
   })
+})
+
+it('allows a pinned remote connection in a store binary with the native module', async () => {
+  mockPinningAvailable = true
+  mockReleaseType.mockResolvedValue(APP_STORE)
+  const { gate } = load()
+  await gate.storeBuildKnown()
+  expect(gate.transportRefusal('ws://192.168.1.8:8765?fp=' + 'a'.repeat(64))).toBeNull()
+  expect(gate.transportRefusal('ws://192.168.1.8:8765')).toMatch(/encrypted/)
+})
+
+it('dials pinned wss from the store without changing the saved pairing URL', async () => {
+  mockPinningAvailable = true
+  mockReleaseType.mockResolvedValue(APP_STORE)
+  const { gate, store } = load()
+  await gate.storeBuildKnown()
+  const s = store.useConnectionsStore
+  const url = 'ws://192.168.1.8:8765?fp=' + 'a'.repeat(64)
+  s.getState().addConnection({ id: 'mac', kind: 'ws', label: 'Mac', url, session: 's' })
+  expect(() => s.getState().connect('mac')).toThrow('dial reached')
+  expect(mockDialed).toEqual(['wss://192.168.1.8:8765/'])
+  expect(s.getState().configs.find((c) => c.id === 'mac')).toMatchObject({ kind: 'ws', url })
 })
