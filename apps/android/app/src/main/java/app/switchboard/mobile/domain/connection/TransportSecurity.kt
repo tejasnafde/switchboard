@@ -33,10 +33,8 @@ object CleartextPolicy {
         return !isLoopbackHost(host)
     }
 
-    fun isLoopbackHost(host: String): Boolean {
-        val h = host.lowercase().removePrefix("[").removeSuffix("]")
-        return h == "localhost" || h == "::1" || h == "10.0.2.2" || LOOPBACK_V4.matches(h)
-    }
+    /** Exactly the hosts res/xml/network_security_config.xml leaves cleartext open to. */
+    fun isLoopbackHost(host: String): Boolean = host.lowercase() in CLEARTEXT_HOSTS
 
-    private val LOOPBACK_V4 = Regex("^127\\.\\d+\\.\\d+\\.\\d+$")
+    private val CLEARTEXT_HOSTS = setOf("localhost", "127.0.0.1", "10.0.2.2")
 }

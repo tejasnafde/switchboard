@@ -46,13 +46,14 @@ class ConnectionDecisionsTest {
     }
 
     @Test
-    fun `cleartext policy allows only loopback and the emulator host`() {
+    fun `cleartext policy allows only the hosts the network security config allows`() {
         assertEquals(true, CleartextPolicy.refuses("ws://192.168.1.8:8765"))
         assertEquals(true, CleartextPolicy.refuses("ws://127.0.0.1.evil.example:8765"))
         assertEquals(false, CleartextPolicy.refuses("ws://127.0.0.1:8765"))
         assertEquals(false, CleartextPolicy.refuses("ws://localhost:8765"))
         assertEquals(false, CleartextPolicy.refuses("ws://10.0.2.2:8765"))
-        assertEquals(false, CleartextPolicy.refuses("ws://[::1]:8765"))
+        assertEquals(true, CleartextPolicy.refuses("ws://[::1]:8765"))
+        assertEquals(true, CleartextPolicy.refuses("ws://127.0.0.2:8765"))
         assertEquals(false, CleartextPolicy.refuses("wss://192.168.1.8:8765"))
     }
 
