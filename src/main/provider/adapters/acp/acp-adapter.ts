@@ -47,6 +47,7 @@ import {
   type NewSessionResponse,
   type AvailableCommand,
   type SessionModeState,
+  type SessionConfigOption,
 } from '@agentclientprotocol/sdk'
 import { createMainLogger as createLogger } from '../../../logger'
 import type {
@@ -66,9 +67,14 @@ import type { AcpExpectedCapability, AcpLaunchConfig, AcpProviderKind, AcpSessio
 import { acpFsProblem, sliceTextLines } from './fs-access'
 import {
   acpModeFor,
+  CONFIG_EFFORT_DEFAULT,
+  configEffortVariants,
+  effortFromConfigOptions,
   legacyModelCatalog,
   modelsFromConfigOptions,
+  splitConfigModelId,
   resolveAcpModeIds,
+  type AcpConfigEffort,
   type AcpModeIds,
   type AcpModelInfo,
 } from './session-config'
@@ -127,6 +133,16 @@ interface ActiveSession extends VisibleHistoryState {
   currentModeId: string | null
   /** Set when the model picker is a session config option, not `models`. */
   modelConfigId: string | null
+  /**
+   * The config option that carries the model variant (OpenCode 2.x `effort`),
+   * from the preflight or the first effort option the agent reports. While
+   * set, a `provider/model/variant` id is split across the two options.
+   */
+  effortConfigId: string | null
+  /** Bumped by each model change, so a pick a newer one replaced is skipped. */
+  modelChangeSeq: number
+  /** The config-option model changes, run one after another. */
+  modelChange: Promise<void>
   /** Pending `requestPermission` calls awaiting user decision. */
   pendingPermissions: Map<string, PendingPermission>
   /** Cached skill list, kept fresh by `available_commands_update`. */
@@ -389,6 +405,17 @@ function errorText(err: unknown): string {
 }
 
 /**
+ * OpenCode 2.x streams a subagent's (child session's) updates into the
+ * parent's session, tagged `_meta["opencode/child-session"]`. Its text would
+ * run into the parent's own message, so it is dropped; the subagent's answer
+ * still arrives as its tool call's result, and its tool calls stay visible.
+ */
+export function isChildSessionText(update: SessionUpdate): boolean {
+  if (update.sessionUpdate !== 'agent_message_chunk' && update.sessionUpdate !== 'agent_thought_chunk') return false
+  return update._meta?.['opencode/child-session'] != null
+}
+
+/**
  * Ceiling on the whole ACP handshake: `initialize` through `resumeSession`
  * or `newSession`. An agent binary that does an interactive first-run or
  * sign-in step instead of speaking ACP never answers these calls, which
@@ -434,7 +461,7 @@ export class AcpAdapter implements ProviderAdapter {
     }
     const baseEnv = config.buildEnv(overlay)
     // Before any session state exists, so a refused binary leaves nothing to clean up.
-    await config.preflight?.(binPath, baseEnv, opts.cwd)
+    const preflight = await config.preflight?.(binPath, baseEnv, opts.cwd)
 
     const session: ProviderSession = {
       threadId: opts.threadId,
@@ -459,6 +486,9 @@ export class AcpAdapter implements ProviderAdapter {
       advertisedModes: null,
       currentModeId: null,
       modelConfigId: null,
+      effortConfigId: preflight?.effortConfigId ?? null,
+      modelChangeSeq: 0,
+      modelChange: Promise.resolve(),
       pendingPermissions: new Map(),
       skills: [],
       availableModels: [],
@@ -492,7 +522,7 @@ export class AcpAdapter implements ProviderAdapter {
     // `&`/`|`/`"` cannot break the command line or inject one. It is an
     // exact passthrough to `child_process.spawn` on macOS/Linux.
     const spawnCwd = config.spawnCwd?.(opts.instanceId) ?? opts.cwd
-    const child = spawn(binPath, config.args(opts.cwd, opts.instanceId), {
+    const child = spawn(binPath, preflight?.args ?? config.args(opts.cwd, opts.instanceId), {
       cwd: spawnCwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: markAgentSpawnEnv(active.prep.env),
@@ -616,6 +646,8 @@ export class AcpAdapter implements ProviderAdapter {
       } else if (configModels) {
         active.availableModels = configModels.models
         active.modelConfigId = configModels.configId
+        // With no model to push, the starting model's variants go out now.
+        if (!opts.model) this.publishConfigEffort(opts.threadId, active, configModels.current, newSession.configOptions)
       }
       active.advertisedModes = newSession.modes ?? null
       active.currentModeId = newSession.modes?.currentModeId ?? null
@@ -1026,12 +1058,11 @@ export class AcpAdapter implements ProviderAdapter {
     if (!active?.connection || !active.sessionId) return
     try {
       if (active.modelConfigId) {
-        await active.connection.setSessionConfigOption({
-          sessionId: active.sessionId,
-          configId: active.modelConfigId,
-          value: modelId,
-        })
-        log.info(`acp setSessionConfigOption ${active.modelConfigId} → ${modelId}`)
+        // One change at a time, so the agent never applies an older pick last.
+        const seq = ++active.modelChangeSeq
+        const run = active.modelChange.then(() => this.applyConfigModel(threadId, active, seq, modelId))
+        active.modelChange = run
+        await run
         return
       }
       // `session/set_model` left the SDK with the unstable model selectors
@@ -1056,6 +1087,111 @@ export class AcpAdapter implements ProviderAdapter {
     }
   }
 
+  /**
+   * Set the model through its config option, then the variant through the
+   * effort option. Runs on `active.modelChange`, one at a time; a pick that a
+   * newer one replaced while it waited, or while its model was being set,
+   * does nothing more. Never rejects, so the chain keeps going.
+   */
+  private async applyConfigModel(threadId: string, active: ActiveSession, seq: number, modelId: string): Promise<void> {
+    if (seq !== active.modelChangeSeq || !active.connection || !active.sessionId || !active.modelConfigId) return
+    // Only an agent with an effort option takes the variant apart from the model.
+    const { model, variant } = active.effortConfigId
+      ? splitConfigModelId(
+          modelId,
+          active.availableModels.map((m) => m.modelId),
+        )
+      : { model: modelId, variant: '' }
+    try {
+      const res = await active.connection.setSessionConfigOption({
+        sessionId: active.sessionId,
+        configId: active.modelConfigId,
+        value: model,
+      })
+      log.info(`acp setSessionConfigOption ${active.modelConfigId} → ${model}`)
+      if (seq !== active.modelChangeSeq) return
+      await this.applyConfigEffort(threadId, active, seq, model, variant, res?.configOptions)
+    } catch (err) {
+      log.warn(`acp setSessionConfigOption ${active.modelConfigId}(${model}) failed: ${errorText(err)}`)
+    }
+  }
+
+  /**
+   * After a model change, set the variant through the effort option (the base
+   * level when `variant` is empty) and report the model's variants. Only for
+   * agents whose effort is a model variant (`modelVariants`).
+   */
+  private async applyConfigEffort(
+    threadId: string,
+    active: ActiveSession,
+    seq: number,
+    model: string,
+    variant: string,
+    options: readonly SessionConfigOption[] | null | undefined,
+  ): Promise<void> {
+    const effort = this.readConfigEffort(active, options)
+    if (variant && !effort) log.warn(`acp ${model} has no effort option; variant ${variant} not applied`)
+    const target = variant || (effort?.values.includes(CONFIG_EFFORT_DEFAULT) ? CONFIG_EFFORT_DEFAULT : '')
+    if (effort && target && target !== effort.current && active.connection && active.sessionId) {
+      if (!effort.values.includes(target)) {
+        log.warn(`acp ${model} does not offer effort ${target}`)
+      } else {
+        try {
+          const res = await active.connection.setSessionConfigOption({
+            sessionId: active.sessionId,
+            configId: effort.configId,
+            value: target,
+          })
+          log.info(`acp setSessionConfigOption ${effort.configId} → ${target}`)
+          if (seq !== active.modelChangeSeq) return
+          this.publishConfigEffort(threadId, active, model, res?.configOptions)
+          return
+        } catch (err) {
+          log.warn(`acp setSessionConfigOption ${effort.configId}(${target}) failed: ${errorText(err)}`)
+        }
+      }
+    }
+    this.publishConfigEffort(threadId, active, model, options)
+  }
+
+  /**
+   * The effort option in `options`, remembered on the session. Null for an
+   * agent whose effort is not a model variant (no `modelVariants`), and when
+   * the current model has none.
+   */
+  private readConfigEffort(
+    active: ActiveSession,
+    options: readonly SessionConfigOption[] | null | undefined,
+  ): AcpConfigEffort | null {
+    if (!this.config.modelVariants || !options) return null
+    const effort = effortFromConfigOptions(options, active.effortConfigId)
+    if (effort) active.effortConfigId = effort.configId
+    return effort
+  }
+
+  /**
+   * Emit `model.variants` from the effort option in `options` (an empty list
+   * when the model has none). An agent that never reported an effort option
+   * keeps 1.x behaviour: no event. A null `options` reports nothing.
+   */
+  private publishConfigEffort(
+    threadId: string,
+    active: ActiveSession,
+    model: string,
+    options: readonly SessionConfigOption[] | null | undefined,
+  ): void {
+    const effort = this.readConfigEffort(active, options)
+    if (!options || !active.effortConfigId) return
+    const variants = effort ? configEffortVariants(effort) : { available: [], current: '' }
+    active.onEvent({
+      type: 'model.variants',
+      threadId,
+      modelId: model,
+      availableVariants: variants.available,
+      currentVariant: variants.current,
+    })
+  }
+
   /** The Client interface we expose back to the agent over the connection. */
   private makeClient(threadId: string): Client {
     const adapter = this
@@ -1075,6 +1211,8 @@ export class AcpAdapter implements ProviderAdapter {
         if (params.update.sessionUpdate === 'current_mode_update') {
           active.currentModeId = params.update.currentModeId
         }
+
+        if (isChildSessionText(params.update)) return
 
         // The model catalog can change mid-session for agents that carry it
         // as a config option.

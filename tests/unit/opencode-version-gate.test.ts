@@ -59,8 +59,10 @@ import {
   parseOpencodeVersion,
   opencodeEnvFingerprint,
   opencodeV2InstallSignal,
+  opencodeV2AcpEnabled,
   readOpencodeVersion,
 } from '../../src/main/provider/adapters/opencode/version'
+import { opencodeAcpArgs, opencodeModelsArgs } from '../../src/main/provider/adapters/opencode/cli-args'
 import { opencodeCandidatePaths } from '../../src/main/provider/adapters/opencode/env'
 import { invalidateCatalog, probeCatalog } from '../../src/main/provider/catalog-probe'
 import { OpencodeAcpAdapter } from '../../src/main/provider/adapters/opencode-acp-adapter'
@@ -79,6 +81,7 @@ beforeEach(() => {
   state.warn = []
 })
 afterEach(() => {
+  vi.unstubAllEnvs()
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
@@ -142,12 +145,12 @@ describe('readOpencodeVersion', () => {
   itWithPosixToolShims('treats a failed run as unknown, never as v2, and retries it next time', async () => {
     const fake = fakeOpencode('2.0.19', { versionExit: 1 })
     await expect(readOpencodeVersion(fake.bin, {})).resolves.toBeNull()
-    await expect(assertSupportedOpencode(fake.bin, {})).resolves.toBeUndefined()
+    await expect(assertSupportedOpencode(fake.bin, {})).resolves.toBe(1)
     expect(fake.calls()).toEqual(['--version', '--version'])
   })
 
   it('treats a binary that cannot be run as unknown', async () => {
-    await expect(assertSupportedOpencode('/nonexistent/opencode', {})).resolves.toBeUndefined()
+    await expect(assertSupportedOpencode('/nonexistent/opencode', {})).resolves.toBe(1)
   })
 
   it('treats unparseable output as unknown', async () => {
@@ -208,7 +211,8 @@ describe('readOpencodeVersion', () => {
     expect(failure).toBeInstanceOf(OpencodeUnsupportedVersionError)
     expect((failure as Error).message).toContain('OpenCode 2.0.19 is not supported yet')
     expect((failure as Error).message).toContain('npm i -g opencode-ai')
-    await expect(assertSupportedOpencode(fakeOpencode('1.18.33\n').bin, {})).resolves.toBeUndefined()
+    expect((failure as Error).message).toContain('opencode upgrade --major')
+    await expect(assertSupportedOpencode(fakeOpencode('1.18.33\n').bin, {})).resolves.toBe(1)
   })
 })
 
@@ -245,13 +249,13 @@ describe('a 2.x install whose --version gives no answer', () => {
   itWithPosixToolShims('is let through with no signal, since a 1.x may simply fail --version', async () => {
     const fake = fakeOpencode('', { versionExit: 1 })
     expect(opencodeV2InstallSignal(fake.bin)).toBeNull()
-    await expect(assertSupportedOpencode(fake.bin, {})).resolves.toBeUndefined()
+    await expect(assertSupportedOpencode(fake.bin, {})).resolves.toBe(1)
   })
 
   itWithPosixToolShims('does not override a readable 1.x version', async () => {
     const fake = fakeOpencode('1.18.33\n')
     writeFileSync(join(fake.bin, '..', 'opencode2'), '#!/bin/sh\n')
-    await expect(assertSupportedOpencode(fake.bin, {})).resolves.toBeUndefined()
+    await expect(assertSupportedOpencode(fake.bin, {})).resolves.toBe(1)
   })
 })
 
@@ -308,6 +312,92 @@ describe('refusing OpenCode 2.x on every spawn path', () => {
     expect(result.ok).toBe(false)
     expect(result.message).toBe(new OpencodeUnsupportedVersionError('2.0.19', fake.bin).message)
     expect(fake.calls()).toEqual(['--version'])
+  })
+})
+
+describe('the opencode_v2_acp flag', () => {
+  it('is off unless SB_OPENCODE_V2_ACP=1', () => {
+    expect(opencodeV2AcpEnabled({})).toBe(false)
+    expect(opencodeV2AcpEnabled({ SB_OPENCODE_V2_ACP: '0' })).toBe(false)
+    expect(opencodeV2AcpEnabled({ SB_OPENCODE_V2_ACP: '1' })).toBe(true)
+  })
+
+  itWithPosixToolShims('lets 2.x through as generation 2, and still refuses 3.x', async () => {
+    await expect(assertSupportedOpencode(fakeOpencode('2.0.29\n').bin, {}, undefined, undefined, true)).resolves.toBe(2)
+    await expect(assertSupportedOpencode(fakeOpencode('1.18.33\n').bin, {}, undefined, undefined, true)).resolves.toBe(
+      1,
+    )
+    const failure = await assertSupportedOpencode(fakeOpencode('3.0.0\n').bin, {}, undefined, undefined, true).catch(
+      (error: unknown) => error,
+    )
+    expect(failure).toBeInstanceOf(OpencodeUnsupportedVersionError)
+    expect((failure as Error).message).toContain('1.x and 2.x')
+  })
+
+  itWithPosixToolShims('reads an unversioned install with a v2 signal as generation 2', async () => {
+    const fake = fakeOpencode('', { versionExit: 1 })
+    writeFileSync(join(fake.bin, '..', 'opencode2'), '#!/bin/sh\n')
+    await expect(assertSupportedOpencode(fake.bin, {}, undefined, undefined, true)).resolves.toBe(2)
+  })
+
+  itWithPosixToolShims('reads the flag from the env when not passed', async () => {
+    const fake = fakeOpencode('2.0.29\n')
+    await expect(assertSupportedOpencode(fake.bin, {})).rejects.toBeInstanceOf(OpencodeUnsupportedVersionError)
+    vi.stubEnv('SB_OPENCODE_V2_ACP', '1')
+    await expect(assertSupportedOpencode(fake.bin, {})).resolves.toBe(2)
+  })
+
+  it('builds 1.x and 2.x command lines', () => {
+    expect(opencodeAcpArgs('/p', 1)).toEqual(['acp', '--cwd', '/p'])
+    expect(opencodeAcpArgs('/p', 2)).toEqual(['acp'])
+    expect(opencodeModelsArgs(1)).toEqual(['models'])
+    expect(opencodeModelsArgs(2)).toEqual(['models', '--standalone'])
+  })
+
+  itWithPosixToolShims('the chat adapter spawns a 2.x acp with no --cwd, in the chat folder', async () => {
+    vi.stubEnv('SB_OPENCODE_V2_ACP', '1')
+    const cwd = scratch()
+    const fake = fakeOpencode('2.0.29\n', { logCwd: true })
+    state.bin = fake.bin
+    const adapter = new OpencodeAcpAdapter()
+    await adapter
+      .startSession({ threadId: 't-v2-on', provider: 'opencode', cwd, runtimeMode: 'sandbox' }, vi.fn())
+      .catch(() => undefined)
+    await adapter.stopSession('t-v2-on')
+    expect(fake.calls()).toEqual([`--version @${cwd}`, `acp @${cwd}`])
+  })
+
+  itWithPosixToolShims('the chat adapter keeps --cwd for 1.x with the flag on', async () => {
+    vi.stubEnv('SB_OPENCODE_V2_ACP', '1')
+    const cwd = scratch()
+    const fake = fakeOpencode('1.18.33\n')
+    state.bin = fake.bin
+    const adapter = new OpencodeAcpAdapter()
+    await adapter
+      .startSession({ threadId: 't-v1-on', provider: 'opencode', cwd, runtimeMode: 'sandbox' }, vi.fn())
+      .catch(() => undefined)
+    await adapter.stopSession('t-v1-on')
+    expect(fake.calls()).toEqual(['--version', `acp --cwd ${cwd}`])
+  })
+
+  itWithPosixToolShims('the catalog probe and Settings Test run `models --standalone` on 2.x', async () => {
+    vi.stubEnv('SB_OPENCODE_V2_ACP', '1')
+    const fake = fakeOpencode('2.0.29\n')
+    state.bin = fake.bin
+    const models = await probeCatalog('opencode', 'oc')
+    expect(models.map((m) => m.id)).toEqual(['google/gemini-2.5-pro'])
+    const handlers = new Map<string, (...args: unknown[]) => unknown>()
+    const host = {
+      handle: (channel: string, fn: (...args: unknown[]) => unknown) => {
+        handlers.set(channel, fn)
+      },
+      on() {},
+      emit() {},
+    }
+    registerProviderInstanceHandlers(host as unknown as BackendHost)
+    const result = (await handlers.get(ProviderInstanceChannels.TEST)!('oc')) as { ok: boolean; message: string }
+    expect(result).toEqual({ ok: true, message: '1 models available' })
+    expect(fake.calls()).toEqual(['--version', 'models --standalone', 'models --standalone'])
   })
 })
 
