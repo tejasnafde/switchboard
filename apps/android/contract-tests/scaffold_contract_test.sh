@@ -48,7 +48,8 @@ manifest=app/src/main/AndroidManifest.xml
 for permission in INTERNET ACCESS_NETWORK_STATE CAMERA RECORD_AUDIO POST_NOTIFICATIONS; do
   require_text "$manifest" "android.permission.$permission"
 done
-require_text "$manifest" 'android:usesCleartextTraffic="true"'
+require_text "$manifest" 'android:networkSecurityConfig="@xml/network_security_config"'
+require_text app/src/main/res/xml/network_security_config.xml '<base-config cleartextTrafficPermitted="false" />'
 require_text "$manifest" 'android:screenOrientation="portrait"'
 require_text "$manifest" 'android:scheme="switchboard"'
 require_text "$manifest" 'android:scheme="com.googleusercontent.apps.974343814740-be31f3e59stdql81uke54r62aodb5c7q"'

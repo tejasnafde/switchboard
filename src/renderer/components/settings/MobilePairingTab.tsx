@@ -1,8 +1,10 @@
 /**
  * Mobile pairing.
  *
- * The QR encodes `ws://<host>:<port>?pair=<code>`, where the code is one-time
- * and expires in five minutes. A phone redeems it once for a session of its
+ * The QR encodes `ws://<host>:<port>?pair=<code>&fp=<sha256>`, where the code is
+ * one-time and expires in five minutes, and `fp` pins the endpoint's TLS
+ * certificate: a phone that knows it dials wss:// on the same port, an older
+ * one ignores it and keeps ws://. A phone redeems it once for a session of its
  * own, which can be revoked without disturbing any other device.
  *
  * The old shared token is still stored and still accepted, because a phone
@@ -13,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MobilePairingStatus } from '@shared/types'
+import { withCertPin } from '@shared/transport-security'
 import type { DeviceSessionView } from '@shared/device-auth'
 import QRCode from 'qrcode'
 import { GoogleMintPanel } from './GoogleMintPanel'
@@ -217,8 +220,8 @@ export function MobilePairingTab() {
 
   const pairingUrl = useMemo(() => {
     if (!host || !pairing || !isValidPort(port)) return null
-    return `ws://${host}:${port}?pair=${pairing.code}`
-  }, [host, port, pairing])
+    return withCertPin(`ws://${host}:${port}?pair=${pairing.code}`, endpoint?.fingerprint)
+  }, [host, port, pairing, endpoint?.fingerprint])
 
   // Regenerate the QR whenever the pairing URL changes.
   useEffect(() => {

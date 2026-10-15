@@ -30,6 +30,34 @@ class ConnectionDecisionsTest {
     }
 
     @Test
+    fun `a pinned QR upgrades to wss on the same port and keeps the pin`() {
+        val pin = "ab".repeat(32)
+        assertEquals(
+            PairingTarget("wss://192.168.1.8:8765?fp=$pin", null, "c0de"),
+            PairingUrl.parse("ws://192.168.1.8:8765/?pair=c0de&fp=${pin.uppercase()}"),
+        )
+        assertEquals(pin, CertificatePin.of("wss://192.168.1.8:8765?fp=$pin"))
+        assertNull(CertificatePin.of("ws://192.168.1.8:8765"))
+    }
+
+    @Test
+    fun `a malformed pin is refused rather than dropped`() {
+        assertNull(PairingUrl.parse("ws://host:8765?pair=c0de&fp=deadbeef"))
+    }
+
+    @Test
+    fun `cleartext policy allows only the hosts the network security config allows`() {
+        assertEquals(true, CleartextPolicy.refuses("ws://192.168.1.8:8765"))
+        assertEquals(true, CleartextPolicy.refuses("ws://127.0.0.1.evil.example:8765"))
+        assertEquals(false, CleartextPolicy.refuses("ws://127.0.0.1:8765"))
+        assertEquals(false, CleartextPolicy.refuses("ws://localhost:8765"))
+        assertEquals(false, CleartextPolicy.refuses("ws://10.0.2.2:8765"))
+        assertEquals(true, CleartextPolicy.refuses("ws://[::1]:8765"))
+        assertEquals(true, CleartextPolicy.refuses("ws://127.0.0.2:8765"))
+        assertEquals(false, CleartextPolicy.refuses("wss://192.168.1.8:8765"))
+    }
+
+    @Test
     fun `credentials never remain embedded in the dial endpoint`() {
         val parsed = PairingUrl.parse("ws://host:8765/path?token=secret#device")
 
@@ -113,6 +141,17 @@ class ConnectionDecisionsTest {
                     generation = 4,
                     reason = ConnectionTerminalReason.GoogleCredentialsBlocked,
                 ),
+            ),
+        )
+    }
+
+    @Test
+    fun `a changed certificate tells the user to pair again`() {
+        assertEquals(
+            ConnectionRuntimeState(4, ConnectionStatus.Error, "This computer's certificate changed. Scan its QR again to pair"),
+            ConnectionStatusReducer.reduce(
+                ConnectionRuntimeState(4, ConnectionStatus.Connecting, ""),
+                ConnectionRuntimeEvent.TerminalFailure(4, ConnectionTerminalReason.CertificateChanged),
             ),
         )
     }

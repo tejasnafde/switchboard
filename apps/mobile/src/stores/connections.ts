@@ -20,6 +20,7 @@ export { parsePairingUrl } from '../lib/pairing'
 import { SwitchboardClient } from '../lib/api'
 import { IapTransport, type IapResumeState } from '../lib/iap-transport'
 import { foregroundAction } from '../lib/app-lifecycle'
+import { storeBuildKnown, transportRefusal } from '../lib/transport-gate'
 import {
   deleteConnectionToken,
   loadConnectionSession,
@@ -215,6 +216,20 @@ export const useConnectionsStore = create<ConnectionsState>()(
           // Connect again to revive a transport that had given up. Replace it.
           if (existing.transport.isAlive?.() !== false) return
           get().disconnect(id)
+        }
+        if (config.kind === 'ws') {
+          const refusal = transportRefusal(config.url)
+          if (refusal === undefined) {
+            // The build type is read once, in the first moments of a launch.
+            void storeBuildKnown().then(() => get().connect(id))
+            return
+          }
+          if (refusal) {
+            log.warn('refusing plain ws:// to a remote host in a store build', config.label)
+            set((s) => ({ detail: { ...s.detail, [id]: refusal } }))
+            get().setStatus(id, 'error')
+            return
+          }
         }
         get().setStatus(id, 'connecting')
 

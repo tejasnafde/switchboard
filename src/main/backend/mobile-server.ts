@@ -12,6 +12,9 @@ import { getSetting } from '../db/database'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
 import { WsHost, wsServerOptions } from './ws-host'
+import { DualWebSocketServer, loadOrCreateTlsIdentity, type TlsIdentity } from './tls'
+import { userDataDir } from '../runtime'
+import { join } from 'node:path'
 import { authenticateSession, redeemPairingCode, setRevocationListener } from './device-sessions'
 import { PHONE_SCOPES } from '@shared/device-auth'
 
@@ -36,6 +39,22 @@ export class MobileEndpoint implements BackendHost {
   private inner: WsHost | null = null
   private wss: WebSocketServer | null = null
   private state: MobileEndpointStatus = { listening: false, port: null, reason: 'not started' }
+  /** Loaded on first listen; null when it could not be read or written. */
+  private identity: TlsIdentity | null | undefined
+
+  /** The install's certificate, or null to serve ws:// only (the QR then
+   *  carries no fingerprint, so pinned phones refuse rather than downgrade). */
+  private tlsIdentity(): TlsIdentity | null {
+    if (this.identity === undefined) {
+      try {
+        this.identity = loadOrCreateTlsIdentity(join(userDataDir(), 'tls'))
+      } catch (err) {
+        log.error('could not load or create the TLS certificate, serving ws:// only', err)
+        this.identity = null
+      }
+    }
+    return this.identity
+  }
 
   handle<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => unknown): void {
     // Last-wins on the inner host already; keep the replay list in step.
@@ -105,7 +124,11 @@ export class MobileEndpoint implements BackendHost {
     // listener bound to every interface is an easy way for one connection to
     // pin memory. Nothing legitimate approaches this: the largest frames are
     // pasted images, which the chat path already bounds well below it.
-    const wss = new WebSocketServer(wsServerOptions(port, '0.0.0.0'))
+    const identity = this.tlsIdentity()
+    const fingerprint = identity?.fingerprint ?? null
+    const wss = identity
+      ? new DualWebSocketServer(port, '0.0.0.0', identity)
+      : new WebSocketServer(wsServerOptions(port, '0.0.0.0'))
     // The phone gets a device session scoped to chat only: the app has no
     // terminal UI at all, so granting it PTY spawn would mean a stolen
     // credential runs commands rather than merely reads conversations.
@@ -132,7 +155,7 @@ export class MobileEndpoint implements BackendHost {
 
     wss.on('listening', () => {
       log.info(`mobile endpoint listening on 0.0.0.0:${port}`)
-      this.state = { listening: true, port, reason: null }
+      this.state = { listening: true, port, reason: null, fingerprint }
     })
     wss.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EADDRINUSE') {
@@ -158,7 +181,7 @@ export class MobileEndpoint implements BackendHost {
     this.activeEnabled = enabled
     // Optimistic until the 'listening'/'error' event lands - callers polling
     // status() right after apply() see the port they asked for.
-    this.state = { listening: true, port, reason: null }
+    this.state = { listening: true, port, reason: null, fingerprint }
     return this.state
   }
 

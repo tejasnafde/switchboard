@@ -2,6 +2,7 @@ package app.switchboard.mobile.data.connection
 
 import app.switchboard.mobile.data.local.ConnectionEntity
 import app.switchboard.mobile.data.local.OfflineSnapshot
+import app.switchboard.mobile.domain.connection.CleartextPolicy
 import app.switchboard.mobile.domain.iap.IapTarget
 import app.switchboard.mobile.platform.migration.CredentialWriteVerification
 import app.switchboard.mobile.platform.migration.SelectedCredential
@@ -30,7 +31,7 @@ class NativeConnectionTargetResolverTest {
                 "ref-legacy" to NativeCredential(NativeCredential.Kind.LEGACY_INLINE_TOKEN, "legacy-secret"),
             ),
         )
-        val resolver = NativeConnectionTargetResolver(database, credentials)
+        val resolver = NativeConnectionTargetResolver(database, credentials, requireEncryption = true)
 
         val session = resolver.resolve("session", deviceId = "phone", deviceLabel = "Pixel")
         val pairing = resolver.resolve("pairing", deviceId = "phone", deviceLabel = "Pixel")
@@ -60,7 +61,7 @@ class NativeConnectionTargetResolverTest {
         val credentials = FakeCredentials(
             mapOf("ref" to NativeCredential(NativeCredential.Kind.LEGACY_INLINE_TOKEN, secret)),
         )
-        val ready = NativeConnectionTargetResolver(database, credentials)
+        val ready = NativeConnectionTargetResolver(database, credentials, requireEncryption = true)
             .resolve("legacy", "phone", "Pixel")
 
         assertFalse(ready.toString().contains(secret))
@@ -73,7 +74,7 @@ class NativeConnectionTargetResolverTest {
         assertFalse(target.toString().contains("url-secret"))
         assertFalse(target.toString().contains("ref"))
 
-        val missing = NativeConnectionTargetResolver(database, FakeCredentials(emptyMap()))
+        val missing = NativeConnectionTargetResolver(database, FakeCredentials(emptyMap()), requireEncryption = true)
             .resolve("legacy", "phone", "Pixel")
         assertTrue(missing is ConnectionTargetResolution.Failure)
         assertFalse(missing.toString().contains("ref"))
@@ -107,7 +108,7 @@ class NativeConnectionTargetResolverTest {
             ),
         )
 
-        val result = NativeConnectionTargetResolver(database, credentials)
+        val result = NativeConnectionTargetResolver(database, credentials, requireEncryption = true)
             .resolve("iap", "phone", "Pixel") as ConnectionTargetResolution.Ready
 
         assertEquals(
@@ -132,11 +133,31 @@ class NativeConnectionTargetResolverTest {
                 "ref-session" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "secret"),
             ),
         )
-        val resolver = NativeConnectionTargetResolver(FakeDatabase(rows), credentials)
+        val resolver = NativeConnectionTargetResolver(FakeDatabase(rows), credentials, requireEncryption = true)
 
         listOf("missing", "port", "session").forEach { id ->
             assertTrue(resolver.resolve(id, "phone", "Pixel") is ConnectionTargetResolution.Failure)
         }
+    }
+
+    @Test
+    fun `a release build refuses plain ws to a remote host and names the fix`() {
+        val rows = mapOf(
+            "lan" to stored("lan", "ref", url = "ws://192.168.1.8:8765"),
+            "loopback" to stored("loopback", "ref", url = "ws://127.0.0.1:8765"),
+            "pinned" to stored("pinned", "ref", url = "wss://192.168.1.8:8765?fp=${"ab".repeat(32)}"),
+        )
+        val credentials = FakeCredentials(mapOf("ref" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "s")))
+        val release = NativeConnectionTargetResolver(FakeDatabase(rows), credentials, requireEncryption = true)
+        val debug = NativeConnectionTargetResolver(FakeDatabase(rows), credentials, requireEncryption = false)
+
+        assertEquals(
+            ConnectionTargetResolution.Failure(CleartextPolicy.REFUSED_MESSAGE),
+            release.resolve("lan", "phone", "Pixel"),
+        )
+        assertTrue(release.resolve("loopback", "phone", "Pixel") is ConnectionTargetResolution.Ready)
+        assertTrue(release.resolve("pinned", "phone", "Pixel") is ConnectionTargetResolution.Ready)
+        assertTrue(debug.resolve("lan", "phone", "Pixel") is ConnectionTargetResolution.Ready)
     }
 
     private class FakeDatabase(

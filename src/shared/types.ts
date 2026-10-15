@@ -453,6 +453,9 @@ export interface MobilePairingStatus {
   port: number | null
   /** Human-readable reason when not listening. */
   reason: string | null
+  /** SHA-256 (hex) of the endpoint's TLS certificate, for the QR's `fp`.
+   *  Absent when the endpoint serves ws:// only. */
+  fingerprint?: string | null
 }
 
 export interface ConversationRow {

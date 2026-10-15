@@ -24,11 +24,21 @@ object PairingUrl {
             } else {
                 null
             }
+            // A pinned QR still says ws:// so older phones keep working; this
+            // phone pins the certificate and dials TLS on the same port.
+            val pin = parameters.firstOrNull { it.first == CertificatePin.QUERY_PARAMETER }?.second?.lowercase()
+            if (pin != null && !CertificatePin.isFingerprint(pin)) return null
             val endpoint = buildString {
-                append(uri.scheme)
+                append(if (pin != null) "wss" else uri.scheme)
                 append("://")
                 append(uri.rawAuthority)
-                append(uri.rawPath.orEmpty())
+                append(uri.rawPath.orEmpty().let { if (pin != null) it.removeSuffix("/") else it })
+                pin?.let {
+                    append('?')
+                    append(CertificatePin.QUERY_PARAMETER)
+                    append('=')
+                    append(it)
+                }
                 uri.rawFragment?.let {
                     append('#')
                     append(it)
@@ -125,6 +135,7 @@ enum class ConnectionTerminalReason {
     GoogleSignInRequired,
     GoogleCredentialsBlocked,
     BackendHandshakeTimedOut,
+    CertificateChanged,
 }
 
 sealed interface ConnectionRuntimeEvent {
@@ -200,6 +211,8 @@ object ConnectionStatusReducer {
                         "Google credentials could not be read safely"
                     ConnectionTerminalReason.BackendHandshakeTimedOut ->
                         "The desktop did not finish connecting. Check Mobile access on the Mac and try again"
+                    ConnectionTerminalReason.CertificateChanged ->
+                        "This computer's certificate changed. Scan its QR again to pair"
                 },
             )
         }

@@ -361,7 +361,11 @@ class NativeAndroidRuntime private constructor(
                 scope = scope,
                 snapshots = RepositoryConnectionFleetSnapshotSource(repository),
                 targetResolver = DeviceConnectionFleetTargetResolver(
-                    resolver = NativeConnectionTargetResolver(connectionDatabase, credentials),
+                    resolver = NativeConnectionTargetResolver(
+                        connectionDatabase,
+                        credentials,
+                        requireEncryption = !BuildConfig.DEBUG,
+                    ),
                     deviceId = identity.deviceId,
                     deviceLabel = identity.deviceLabel,
                 ),

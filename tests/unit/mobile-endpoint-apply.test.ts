@@ -38,6 +38,20 @@ vi.mock('ws', () => {
   return { WebSocketServer: FakeWebSocketServer, default: {} }
 })
 
+// The real dual-scheme server binds its own socket; keep this test on the fake.
+const FINGERPRINT = 'ab'.repeat(32)
+vi.mock('../../src/main/backend/tls', async () => {
+  const { WebSocketServer } = await import('ws')
+  return {
+    loadOrCreateTlsIdentity: () => ({ key: '', cert: '', fingerprint: FINGERPRINT }),
+    DualWebSocketServer: class extends WebSocketServer {
+      constructor(port: number, host: string) {
+        super({ port, host })
+      }
+    },
+  }
+})
+
 vi.mock('../../src/main/logger', () => ({
   createMainLogger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
 }))
@@ -56,7 +70,7 @@ describe('MobileEndpoint.apply', () => {
   it('starts a listener on the configured port', () => {
     const ep = new MobileEndpoint()
     const status = ep.apply()
-    expect(status).toMatchObject({ listening: true, port: 8765 })
+    expect(status).toMatchObject({ listening: true, port: 8765, fingerprint: FINGERPRINT })
     expect(created).toBe(1)
   })
 

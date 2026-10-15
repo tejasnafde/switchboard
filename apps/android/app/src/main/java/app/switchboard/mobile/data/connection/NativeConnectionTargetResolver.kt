@@ -1,5 +1,6 @@
 package app.switchboard.mobile.data.connection
 
+import app.switchboard.mobile.domain.connection.CleartextPolicy
 import app.switchboard.mobile.domain.iap.IapTarget
 import app.switchboard.mobile.platform.protocol.LineEndpoint
 import app.switchboard.mobile.platform.protocol.LineTarget
@@ -15,6 +16,9 @@ sealed interface ConnectionTargetResolution {
 class NativeConnectionTargetResolver(
     private val database: ConnectionDatabase,
     private val credentials: ConnectionCredentialStore,
+    /** Release builds: plain ws:// only to loopback (the dial would also hit the
+     *  network security config; this names the fix instead of a socket error). */
+    private val requireEncryption: Boolean,
 ) {
     fun resolve(
         connectionId: String,
@@ -28,6 +32,9 @@ class NativeConnectionTargetResolver(
             WEBSOCKET_KIND -> {
                 val url = row.url?.takeIf(String::isNotBlank)
                     ?: return ConnectionTargetResolution.Failure("That machine does not have a WebSocket target")
+                if (requireEncryption && CleartextPolicy.refuses(url)) {
+                    return ConnectionTargetResolution.Failure(CleartextPolicy.REFUSED_MESSAGE)
+                }
                 LineEndpoint.DirectWebSocket(withoutEmbeddedAuth(url))
             }
             IAP_KIND -> {
