@@ -41,6 +41,15 @@ Historical: while this Expo app also shipped on Android, its push needed FCM
 credentials on the EAS project (Android > FCM V1). That lane is retired. A new registry is created when a closed window is reopened, so
 the notifier must be re-attached there.
 
+**Unpair push cleanup:** `connections.removeConnection` removes the saved config,
+then awaits `push.unregisterWith` before closing the captured client. It uses the
+existing `push:unregister` RPC once, waits at most two seconds, and forgets its
+registration even offline. Demo connections never register or unregister.
+Registration and pairing callbacks must not change state or save credentials
+for a removed or replaced client.
+Android also waits for unregister completion or the same two-second limit before
+removing its fleet connection.
+
 **Reviews tab** (`ConnectionTabBar` under `ProjectsScreen` and `ReviewsScreen`, switched with `navigation.replace`, no tab library): the list lives in `stores/reviews.ts` per connection, filters in `prefs.prFilters`, a pending review pill in `prefs.threads[key].reviewPill` until the next send (`QueuedMessage.reviewPill`, `queuedTurnBody`). `PullRequestScreen` + `WorkOnPrSheet` are read-only; a "Work on PR" chat goes through `NewSessionScreen` with `pullRequest` (no first-message launch prompt: `lib/pr-chat.ts` links the PR and sends the first turn with the pill once the chat exists). JS only, so it ships on the OTA lane. Rules: `src/main/pull-requests/AGENTS.md`.
 
 **Demo mode** (`@shared/phone-demo`, `lib/demo.ts`, `components/DemoStrip.tsx`): "Try the demo" on the empty Connections screen starts a runtime-only connection (`DEMO_CONNECTION_ID`, never in `configs`) whose `DemoTransport` answers from `src/shared/phone-demo/fixture/phone-demo.json` and plays its scripts on timers; it holds no socket. Native Android packs the same file as an asset (`build.gradle.kts`) and plays it with `PhoneDemoRpc.kt` (a `RemoteRpc`) inside `PhoneDemoRuntime.kt`, an in-memory runtime that replaces the real one while the demo is open and never touches Room, the outbox or the connection list; change the fixture's conventions in both players. Every screen under a connection is wrapped in `withDemoStrip` (strip + Leave demo; `NewSession` shows "not in the demo"). Nothing from the demo is stored: the chat cache and prefs `partialize` with `withoutDemo`, `saveQueued` skips it, a fork refuses before writing its intent, and `leaveDemo` drops the demo's state from every store. A new per-connection persisted store must filter it too. The push prompt waits for a paired machine (`initPushWhenPaired`), and voice says "Not in the demo" (`useDictation`'s `unavailableNote`). JS only, OTA lane.

@@ -18,6 +18,7 @@ import {
 } from '@shared/device-auth'
 import { getSetting, setSetting } from '../db/database'
 import { createMainLogger } from '../logger'
+import { unregisterSessionDevices } from '../push/registry'
 
 const log = createMainLogger('backend:device-sessions')
 
@@ -141,6 +142,7 @@ export function revokeSession(id: string, nowMs: number = Date.now()): boolean {
   if (!target || isRevoked(target)) return false
   saveSessions(sessions.map((s) => (s.id === id ? { ...s, revokedAt: nowMs } : s)))
   log.info(`revoked device session ${target.label}`)
+  unregisterSessionDevices(id)
   onRevoked?.(id)
   return true
 }

@@ -28,6 +28,7 @@ import {
   saveConnectionSession,
   saveConnectionToken,
 } from '../lib/secrets'
+import { usePushStore } from './push'
 import { useChatStore } from './chat'
 import { acknowledgeAcceptedOrigin, drain as drainOutbox } from './outbox'
 
@@ -116,7 +117,7 @@ interface ConnectionsState {
   status: Record<string, ConnectionStatus>
   addConnection: (config: ConnectionConfig) => void
   updateConnection: (id: string, patch: Partial<ConnectionConfig>) => void
-  removeConnection: (id: string) => void
+  removeConnection: (id: string) => Promise<void>
   connect: (id: string) => void
   disconnect: (id: string) => void
   setStatus: (id: string, status: ConnectionStatus) => void
@@ -167,8 +168,8 @@ export const useConnectionsStore = create<ConnectionsState>()(
         }))
       },
 
-      removeConnection: (id) => {
-        get().disconnect(id)
+      removeConnection: async (id) => {
+        const client = clients.get(id)
         iapResume.delete(id)
         void deleteConnectionToken(id)
         set((s) => {
@@ -176,6 +177,16 @@ export const useConnectionsStore = create<ConnectionsState>()(
           delete status[id]
           return { configs: s.configs.filter((c) => c.id !== id), status }
         })
+        await usePushStore.getState().unregisterWith(id)
+        if (clients.get(id) === client) {
+          get().disconnect(id)
+          iapResume.delete(id)
+          set((s) => {
+            const status = { ...s.status }
+            delete status[id]
+            return { status }
+          })
+        }
       },
 
       connect: (id) => {
@@ -227,9 +238,13 @@ export const useConnectionsStore = create<ConnectionsState>()(
           // The minted session is transmitted exactly once, in reply to the
           // pairing code. Persisting it here is what makes the code one-time
           // rather than a credential the phone keeps re-presenting.
+          const isCurrentConnection = (): boolean =>
+            clients.get(id)?.transport === transport && get().configs.some((c) => c.id === id)
           transport.onSessionIssued = (session) => {
+            if (!isCurrentConnection()) return
             log.info('received a device session, retiring the pairing code', config.label)
             void saveConnectionSession(id, session).then((ok) => {
+              if (!isCurrentConnection()) return
               // The code is already consumed server-side, so a lost session
               // means re-pairing. Keep it in the blob rather than nowhere.
               if (!ok) {

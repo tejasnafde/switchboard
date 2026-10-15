@@ -1,0 +1,67 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "push-unregister-on-unpair",
+  "summary": "Phones unregister their push token before closing a removed machine, with one bounded attempt. Backend device revocation removes session-owned push tokens.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/backend/device-sessions.ts",
+        "src/main/ipc/push.ts",
+        "src/main/push/registry.ts",
+        "tests/unit/push-revocation.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/connections.ts",
+        "apps/mobile/src/stores/push.ts",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/stores/__tests__/push-unpair.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/push/PushRegistrationCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/runtime/NativeAndroidRuntime.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/push/PushRegistrationCoordinatorTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/ipc/push.ts",
+        "src/shared/ipc-channels.ts",
+        "src/shared/ws-protocol.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/push/registry.ts",
+        "tests/unit/push-revocation.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, native dependencies, deep links or update channels change. Expo changes can ship through the existing iOS OTA lane, Android through its normal binary lane, and desktop/headless through normal releases. Existing push:unregister RPC is reused, including on older push-capable backends. Optional deviceSessionId in the existing settings JSON requires no SQL migration and is ignored by old backends. Deploy an upgraded backend and restart the phone app so it registers existing tokens with ownership for revocation cleanup."
+    }
+  },
+  "verification": {
+    "automated": [
+      "Backend vitest covers unregister persistence and session revocation isolation. Expo jest covers unpair ordering, offline cleanup, timeout and demo exclusion. Android coordinator tests cover acknowledgement ordering and stale ready snapshots.",
+      "Expo: npm test --prefix apps/mobile -- --runInBand passed 26 suites and 130 tests. Mobile typecheck passed.",
+      "Native Android: :app:testDebugUnitTest --no-daemon --max-workers=2 passed 185 suites and 1071 tests, including the new stale-ready and completion-order regressions.",
+      "Root foreground gate: npm run typecheck and npm test -- --maxWorkers=4 passed; 624 files, 6629 tests passed, 1 file and 4 tests skipped.",
+      "The late Expo pairing-response regression failed before its identity guard and passes with it."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No physical phone push delivery or iOS simulator run. Pushes already handed to Expo cannot be recalled.",
+      "Offline unpair is best effort with no retry. Legacy tokens without a session owner cannot be attributed retroactively; a later registration on an upgraded backend records ownership."
+    ]
+  }
+}

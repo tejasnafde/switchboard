@@ -76,6 +76,34 @@ class PushRegistrationCoordinatorTest {
     }
 
     @Test
+    fun `removal ignores stale ready snapshots`() {
+        val coordinator = PushRegistrationCoordinator()
+        val backend = FakeBackend(scope(40))
+        coordinator.onExpoToken("ExpoPushToken[token]")
+        coordinator.onReady(listOf(backend))
+        coordinator.beforeConnectionRemoved("mac-a")
+        coordinator.onReady(listOf(backend))
+        assertEquals(1, backend.calls.count { it.startsWith("register:") })
+    }
+
+    @Test
+    fun `removal waits for unregister response and offline removal completes immediately`() {
+        val coordinator = PushRegistrationCoordinator()
+        val backend = FakeBackend(scope(41))
+        coordinator.onExpoToken("ExpoPushToken[token]")
+        coordinator.onReady(listOf(backend))
+        var result: PushBackendResult? = null
+        coordinator.beforeConnectionRemoved("mac-a") { result = it }
+        assertEquals(null, result)
+        backend.complete(PushBackendResult.TransportFailure("offline"))
+        assertEquals(PushBackendResult.TransportFailure("offline"), result)
+
+        result = null
+        coordinator.beforeConnectionRemoved("offline") { result = it }
+        assertEquals(PushBackendResult.Accepted, result)
+    }
+
+    @Test
     fun `viewing lease stays on its exact scope until replacement route enters`() {
         val coordinator = PushRegistrationCoordinator()
         val first = FakeBackend(scope(10))
