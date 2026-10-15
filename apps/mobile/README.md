@@ -112,7 +112,7 @@ googleapis.com) and stores it in the device keychain via `expo-secure-store`.
 ## Voice input
 
 The composer mic (dictation via `expo-speech-recognition`) needs the dev build
-or APK; in Expo Go the native module is absent, so the mic is hidden and
+or a store build; in Expo Go the native module is absent, so the mic is hidden and
 everything else works.
 
 ## Layout
@@ -134,55 +134,35 @@ everything else works.
 
 ## Releasing
 
-Two lanes. Pick by asking one question: **does the native binary change?**
+Two separate apps ship through two different stores. This Expo app (`apps/mobile`) ships to iOS only, through the App Store. The native Android app (`apps/android`) ships only through Google Play. See `docs/releasing.md` for the Play steps.
 
-| Change | Lane | Workflow | User experience |
+### iOS: pick a lane
+
+Ask one question: **does the native binary change?**
+
+| Change | Lane | How it ships | User experience |
 |---|---|---|---|
-| JS, TSX, assets, `src/shared` | OTA | `mobile-ota.yml` | Banner on next foreground, tap Restart |
-| New native module, new permission, Expo SDK bump, `app.json` native keys | iOS build | App Store (see `docs/plans/2026-10-12-store-publishing.md`) | App Store update |
+| JS, TSX, assets, `src/shared` | OTA | `mobile-ota.yml` (push to `main` under `apps/mobile/**`, or run by hand) | Banner on next foreground, tap Restart |
+| New native module, new permission, Expo SDK bump, native `app.json` keys | App Store build | EAS `store` profile, then submit (see `docs/plans/2026-10-12-store-publishing.md`) | App Store update |
 
-Both workflows trigger on push to `main` under `apps/mobile/**` and can be run
-by hand from the Actions tab.
+OTA updates need no version bump. `runtimeVersion` uses the `fingerprint` policy
+(`app.json`), which derives the value from the native project, so an OTA only
+reaches a binary whose native side matches it.
 
-### Bumping the version
+### Android: Google Play
 
-`expo.version` in `app.json` is the single source of truth. The release tag, the
-APK filename, and the OTA `runtimeVersion` all derive from it.
+`mobile-release.yml` is manual. It builds a signed AAB and uploads it to a Play
+test track. Nothing in this lane builds or attaches an APK. Details and the
+promotion steps are in `docs/releasing.md`.
 
-```sh
-# apps/mobile/app.json -> expo.version: "0.1.0" becomes "0.2.0"
-```
+### EAS profiles
 
-Then push to `main`. `mobile-release.yml` builds `mobile-v0.2.0` and attaches
-`switchboard-0.2.0.apk`. It is idempotent: if a release for that tag already
-exists it logs a notice and skips before spending any EAS build minutes, so a
-re-run on an unchanged version is free. **An APK only goes out when you bump the
-version.**
+`eas.json` cannot carry comments. The profiles that matter:
 
-Do NOT bump the version for a JS-only change. `runtimeVersion` is pinned to
-`appVersion`, so bumping it parks the OTA lane until the matching APK is
-published, and installed phones see nothing in the meantime.
+- `development`: dev client for device testing. Google sign-in and the mic need it, and Expo Go cannot run them.
+- `store`: the App Store build (`autoIncrement` on). Its `submit.store` block holds the App Store Connect settings.
 
-### Tag namespace
-
-Mobile releases are tagged `mobile-v<version>`, not `v<version>`. The Electron
-desktop app already owns `v*` (see `.github/workflows/release.yml`, currently at
-`v0.7.x`); sharing that namespace would collide on tag names and fire the
-desktop release workflow.
-
-### EAS build profiles
-
-`eas.json` is schema-validated, so it cannot carry comments. What the profiles mean:
-
-| Profile | Purpose |
-|---|---|
-| `development` | `developmentClient: true`. A dev client with native modules (voice, secure storage) that Expo Go lacks. |
-| `preview` | Release-mode build for testing off-CI. Same artifact shape as production. |
-| `production` | What `mobile-release.yml` builds and attaches to the GitHub Release. `autoIncrement` is off on purpose: `expo.version` in `app.json` is the single source of truth, and both the tag and the OTA `runtimeVersion` derive from it. Auto-incrementing would desync the tag from the binary. |
-
-All three produce an **APK, never an AAB**: Switchboard self-distributes via GitHub
-Releases and updates itself in-app, so there is no Play Store upload needing an AAB.
-There are no `submit` profiles for the same reason.
+Do not release from the internal profiles (`preview`, `production`).
 
 ### One-time setup
 
@@ -196,32 +176,15 @@ There are no `submit` profiles for the same reason.
    ```
 
    Until `eas update:configure` has run, `Updates.isEnabled` is false and the
-   OTA lane is completely inert (the app no-ops and logs nothing noisy). The APK
-   lane works without it. These values are account-specific and are deliberately
-   not hardcoded here; a wrong `projectId` fails the build with a confusing
-   ownership error. See `extra["//updates"]` in `app.json`.
+   OTA lane is inert (the app no-ops and logs nothing noisy). These values are
+   account-specific and are deliberately not hardcoded here; a wrong `projectId`
+   fails the build with a confusing ownership error. See `extra["//updates"]` in
+   `app.json`.
 
 2. **`EXPO_TOKEN` repo secret.** Create an access token at
    <https://expo.dev/settings/access-tokens> and add it under Settings ->
-   Secrets and variables -> Actions. Both workflows need it. `GITHUB_TOKEN` is
+   Secrets and variables -> Actions. The OTA workflow needs it. `GITHUB_TOKEN` is
    automatic and needs no setup.
-
-### The first install is manual
-
-Self-update cannot bootstrap itself. For the very first install, download the
-APK from the GitHub Release onto the phone and open it. Android will block it
-until you grant "install unknown apps" to whatever opened it (Chrome, Files,
-Drive) under Settings -> Apps -> Special app access -> Install unknown apps.
-
-After that, Switchboard updates itself: `REQUEST_INSTALL_PACKAGES` in `app.json`
-lets it hand a downloaded APK to the package installer, and the install prompt
-comes from Switchboard itself rather than a browser. Sideloaded APKs also do not
-auto-update in the background; the user always taps Install.
-
-`eas.json` builds an APK in every profile, never an AAB, because we
-self-distribute rather than upload to the Play Store. Use the `development`
-profile for a device build that can exercise Google sign-in, which cannot work
-in Expo Go at all.
 
 ## Not yet
 

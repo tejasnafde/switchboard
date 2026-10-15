@@ -12,8 +12,8 @@ we agree before you start.
 
 Get these from Tejas:
 
-- The first AAB file (`app-release.aab`), built by the `mobile-release.yml`
-  workflow.
+- The first AAB file (`switchboard-<version>.aab`, in the `switchboard-<version>-aab`
+  artifact of the `mobile-release.yml` workflow run).
 - The upload key certificate fingerprint, if Play asks for it.
 - The store listing text, the graphics and the screenshots.
 - The email address of the per-app publisher service account for
