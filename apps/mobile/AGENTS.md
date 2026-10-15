@@ -12,7 +12,7 @@ that side). Imports `@shared/*` and nothing else from the repo.
 **Update lanes.** Android ships the native app in `apps/android` through
 Google Play (`mobile-release.yml`, see `docs/releasing.md`); this Expo app is
 the iOS client. `mobile-ota.yml` publishes JS-only changes over expo-updates
-with `--platform ios`. Native changes - a new module, a permission, an SDK
+with `--platform ios`. There is no in-app binary updater: `UpdateBanner` shows only the OTA restart, and native updates come from the App Store. Native changes - a new module, a permission, an SDK
 bump - need a new iOS build. `runtimeVersion` uses the **`fingerprint`**
 policy (changed 2026-08-01, was `appVersion`), so the hash covers native deps,
 config plugins and the native-affecting parts of app.json. An OTA can therefore

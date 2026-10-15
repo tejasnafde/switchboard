@@ -119,10 +119,8 @@ everything else works.
 
 - `src/lib/api.ts` - SwitchboardClient: typed invoke/event wrapper over
   `src/shared/ws-transport` (imported from the repo root via `@shared`)
-- `src/lib/self-update.ts` - APK self-update off GitHub Releases; `selfCheck()`
-  asserts the version comparison and release picking offline
 - `src/lib/ota-update.ts` - expo-updates OTA check on mount and on foreground
-- `src/components/UpdateBanner.tsx` - bottom banner for both update lanes,
+- `src/components/UpdateBanner.tsx` - bottom banner for the OTA lane,
   mounted once in `App.tsx` over the navigator
 - `src/lib/google-auth.ts` - imported Google credentials, keychain-backed token
   cache with single-flight silent refresh
@@ -141,7 +139,7 @@ Two lanes. Pick by asking one question: **does the native binary change?**
 | Change | Lane | Workflow | User experience |
 |---|---|---|---|
 | JS, TSX, assets, `src/shared` | OTA | `mobile-ota.yml` | Banner on next foreground, tap Restart |
-| New native module, new Android permission, Expo SDK bump, `app.json` native keys | APK | `mobile-release.yml` | Banner, tap Install, Android install prompt |
+| New native module, new permission, Expo SDK bump, `app.json` native keys | iOS build | App Store (see `docs/plans/2026-10-12-store-publishing.md`) | App Store update |
 
 Both workflows trigger on push to `main` under `apps/mobile/**` and can be run
 by hand from the Actions tab.
@@ -170,10 +168,7 @@ published, and installed phones see nothing in the meantime.
 Mobile releases are tagged `mobile-v<version>`, not `v<version>`. The Electron
 desktop app already owns `v*` (see `.github/workflows/release.yml`, currently at
 `v0.7.x`); sharing that namespace would collide on tag names and fire the
-desktop release workflow. Because desktop releases far outnumber mobile ones,
-`self-update.ts` reads the releases *list* and picks the newest release carrying
-an `.apk` rather than calling `/releases/latest`, which would nearly always
-return a desktop release with no APK attached.
+desktop release workflow.
 
 ### EAS build profiles
 
@@ -182,7 +177,7 @@ return a desktop release with no APK attached.
 | Profile | Purpose |
 |---|---|
 | `development` | `developmentClient: true`. A dev client with native modules (voice, secure storage) that Expo Go lacks. |
-| `preview` | Release-mode build for testing off-CI. Same artifact shape as production, so it also exercises the self-update path. |
+| `preview` | Release-mode build for testing off-CI. Same artifact shape as production. |
 | `production` | What `mobile-release.yml` builds and attaches to the GitHub Release. `autoIncrement` is off on purpose: `expo.version` in `app.json` is the single source of truth, and both the tag and the OTA `runtimeVersion` derive from it. Auto-incrementing would desync the tag from the binary. |
 
 All three produce an **APK, never an AAB**: Switchboard self-distributes via GitHub
