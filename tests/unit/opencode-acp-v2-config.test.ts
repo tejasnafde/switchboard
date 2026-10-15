@@ -188,16 +188,32 @@ describe('OpenCode 2.x over ACP', () => {
   })
 })
 
-describe('two model picks in flight', () => {
-  it('lets only the later one set effort and report variants', async () => {
+describe('model picks one at a time', () => {
+  it('sends only the latest of picks made together, and reports only its variants', async () => {
     const { adapter, events } = await start()
     state.calls = []
     const before = variantEvents(events).length
-    await Promise.all([adapter.setModel('t1', 'anthropic/sonnet/high'), adapter.setModel('t1', 'opencode/big-pickle')])
-    expect(state.calls).toEqual(['model=anthropic/sonnet', 'model=opencode/big-pickle'])
+    await Promise.all([
+      adapter.setModel('t1', 'anthropic/sonnet/high'),
+      adapter.setModel('t1', 'anthropic/sonnet/max'),
+      adapter.setModel('t1', 'opencode/big-pickle'),
+    ])
+    expect(state.calls).toEqual(['model=opencode/big-pickle'])
     expect(variantEvents(events).slice(before)).toEqual([
       expect.objectContaining({ modelId: 'opencode/big-pickle', availableVariants: [] }),
     ])
+  })
+
+  it('runs a pick made while another is in flight after it, never before', async () => {
+    const { adapter } = await start()
+    state.calls = []
+    const first = adapter.setModel('t1', 'anthropic/sonnet/high')
+    await Promise.resolve()
+    await Promise.resolve()
+    const second = adapter.setModel('t1', 'opencode/big-pickle')
+    await Promise.all([first, second])
+    expect(state.calls.at(-1)).toBe('model=opencode/big-pickle')
+    expect(state.model).toBe('opencode/big-pickle')
   })
 })
 

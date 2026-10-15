@@ -139,8 +139,10 @@ interface ActiveSession extends VisibleHistoryState {
    * set, a `provider/model/variant` id is split across the two options.
    */
   effortConfigId: string | null
-  /** Bumped by each model change, so a slower earlier one does not set effort or report variants. */
+  /** Bumped by each model change, so a pick a newer one replaced is skipped. */
   modelChangeSeq: number
+  /** The config-option model changes, run one after another. */
+  modelChange: Promise<void>
   /** Pending `requestPermission` calls awaiting user decision. */
   pendingPermissions: Map<string, PendingPermission>
   /** Cached skill list, kept fresh by `available_commands_update`. */
@@ -486,6 +488,7 @@ export class AcpAdapter implements ProviderAdapter {
       modelConfigId: null,
       effortConfigId: preflight?.effortConfigId ?? null,
       modelChangeSeq: 0,
+      modelChange: Promise.resolve(),
       pendingPermissions: new Map(),
       skills: [],
       availableModels: [],
@@ -1055,22 +1058,11 @@ export class AcpAdapter implements ProviderAdapter {
     if (!active?.connection || !active.sessionId) return
     try {
       if (active.modelConfigId) {
+        // One change at a time, so the agent never applies an older pick last.
         const seq = ++active.modelChangeSeq
-        // Only an agent with an effort option takes the variant apart from the model.
-        const { model, variant } = active.effortConfigId
-          ? splitConfigModelId(
-              modelId,
-              active.availableModels.map((m) => m.modelId),
-            )
-          : { model: modelId, variant: '' }
-        const res = await active.connection.setSessionConfigOption({
-          sessionId: active.sessionId,
-          configId: active.modelConfigId,
-          value: model,
-        })
-        log.info(`acp setSessionConfigOption ${active.modelConfigId} → ${model}`)
-        if (seq !== active.modelChangeSeq) return
-        await this.applyConfigEffort(threadId, active, seq, model, variant, res?.configOptions)
+        const run = active.modelChange.then(() => this.applyConfigModel(threadId, active, seq, modelId))
+        active.modelChange = run
+        await run
         return
       }
       // `session/set_model` left the SDK with the unstable model selectors
@@ -1092,6 +1084,35 @@ export class AcpAdapter implements ProviderAdapter {
       log.info(`acp setSessionModel → ${modelId}${variants?.variant ? ` (variant=${variants.variant})` : ''}`)
     } catch (err) {
       log.warn(`acp setSessionModel(${modelId}) failed: ${errorText(err)}`)
+    }
+  }
+
+  /**
+   * Set the model through its config option, then the variant through the
+   * effort option. Runs on `active.modelChange`, one at a time; a pick that a
+   * newer one replaced while it waited, or while its model was being set,
+   * does nothing more. Never rejects, so the chain keeps going.
+   */
+  private async applyConfigModel(threadId: string, active: ActiveSession, seq: number, modelId: string): Promise<void> {
+    if (seq !== active.modelChangeSeq || !active.connection || !active.sessionId || !active.modelConfigId) return
+    // Only an agent with an effort option takes the variant apart from the model.
+    const { model, variant } = active.effortConfigId
+      ? splitConfigModelId(
+          modelId,
+          active.availableModels.map((m) => m.modelId),
+        )
+      : { model: modelId, variant: '' }
+    try {
+      const res = await active.connection.setSessionConfigOption({
+        sessionId: active.sessionId,
+        configId: active.modelConfigId,
+        value: model,
+      })
+      log.info(`acp setSessionConfigOption ${active.modelConfigId} → ${model}`)
+      if (seq !== active.modelChangeSeq) return
+      await this.applyConfigEffort(threadId, active, seq, model, variant, res?.configOptions)
+    } catch (err) {
+      log.warn(`acp setSessionConfigOption ${active.modelConfigId}(${model}) failed: ${errorText(err)}`)
     }
   }
 
