@@ -41,7 +41,6 @@
     "storageDataMigration": {
       "status": "implemented",
       "evidence": [
-        "src/main/push/registry.ts",
         "tests/unit/push-revocation.test.ts"
       ]
     },
