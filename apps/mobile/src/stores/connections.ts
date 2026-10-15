@@ -20,6 +20,7 @@ export { parsePairingUrl } from '../lib/pairing'
 import { SwitchboardClient } from '../lib/api'
 import { IapTransport, type IapResumeState } from '../lib/iap-transport'
 import { foregroundAction } from '../lib/app-lifecycle'
+import { CERTIFICATE_CHANGED_MESSAGE, pinnedTarget, PinnedWebSocket } from '../lib/pinned-websocket'
 import { storeBuildKnown, transportRefusal } from '../lib/transport-gate'
 import {
   deleteConnectionToken,
@@ -264,7 +265,13 @@ export const useConnectionsStore = create<ConnectionsState>()(
             config.session || config.pairing
               ? { session: config.session, pairing: config.pairing, label: config.label }
               : null
-          const wsClient = SwitchboardClient.overWs(config.url, config.token, auth)
+          const target = pinnedTarget(config.url)
+          const wsClient = SwitchboardClient.overWs(
+            target?.url ?? config.url,
+            config.token,
+            auth,
+            target ? (url) => new PinnedWebSocket(url, target.fingerprint) : undefined,
+          )
           const transport = wsClient.transport as WsTransport
           // The minted session is transmitted exactly once, in reply to the
           // pairing code. Persisting it here is what makes the code one-time
@@ -312,11 +319,15 @@ export const useConnectionsStore = create<ConnectionsState>()(
               set((s) => ({
                 detail: {
                   ...s.detail,
-                  [id]: transport.authRejected ? 'token rejected - re-pair' : 'offline',
+                  [id]: transport.certificateChanged
+                    ? CERTIFICATE_CHANGED_MESSAGE
+                    : transport.authRejected
+                      ? 'token rejected - re-pair'
+                      : 'offline',
                 },
               }))
-              // authRejected = server said 4001 (bad token): error, not merely off.
-              get().setStatus(id, transport.authRejected ? 'error' : 'disconnected')
+              // Auth rejection and certificate changes need the user to re-pair.
+              get().setStatus(id, transport.authRejected || transport.certificateChanged ? 'error' : 'disconnected')
             }
           }
           client = wsClient

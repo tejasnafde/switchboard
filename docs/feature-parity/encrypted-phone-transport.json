@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "encrypted-phone-transport",
-  "summary": "Store plan step 5: encrypted transport for the phones. The desktop phone endpoint and the headless server mint one self-signed certificate per install (data dir, tls/), reuse it across restarts, and serve wss:// and ws:// on the same port (the first byte of a connection picks TLS or plain). The pairing QR keeps its ws:// address and adds the certificate's SHA-256 as fp, so older phones ignore it and keep ws://. Native Android pins fp, dials wss:// on the same port, treats a changed certificate as a terminal error that asks for a re-pair, and in release builds refuses plain ws:// to any host but loopback and the emulator host (network security config and a clear message). The Expo iOS app cannot pin without a native module: it keeps fp in the saved address, and App Store and TestFlight builds refuse plain ws:// to a remote host, so they reach a backend over Cloud IAP or a wss:// address with a system-trusted certificate until a pinning module ships.",
+  "summary": "Store plan step 5: encrypted transport for the phones. The desktop phone endpoint and the headless server mint one self-signed certificate per install (data dir, tls/), reuse it across restarts, and serve wss:// and ws:// on the same port (the first byte of a connection picks TLS or plain). The pairing QR keeps its ws:// address and adds the certificate's SHA-256 as fp, so older phones ignore it and keep ws://. Native Android pins fp, dials wss:// on the same port, treats a changed certificate as a terminal error that asks for a re-pair, and in release builds refuses plain ws:// to any host but loopback and the emulator host (network security config and a clear message). New Expo iOS binaries use an Apple-only local Expo module backed by URLSessionWebSocketTask to pin the QR leaf certificate SHA-256, upgrading pinned addresses to wss:// on the same port. A mismatch is terminal with the same re-pair message as Android. Store builds still refuse remote ws:// without fp. Optional native lookup preserves the old gate in Expo Go and older binaries; fingerprint runtimeVersion includes the native module and prevents this OTA reaching old binaries. IAP, stored URLs, credentials, package identity and signing are unchanged.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -20,7 +20,15 @@
         "apps/mobile/src/lib/transport-gate.ts",
         "apps/mobile/src/stores/connections.ts",
         "apps/mobile/src/screens/ConnectionsScreen.tsx",
-        "apps/mobile/src/stores/__tests__/transport-gate.test.ts"
+        "apps/mobile/src/stores/__tests__/transport-gate.test.ts",
+        "apps/mobile/src/lib/pinned-websocket.ts",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/modules/pinned-websocket/expo-module.config.json",
+        "apps/mobile/modules/pinned-websocket/ios/PinnedSocket.swift",
+        "apps/mobile/modules/pinned-websocket/ios/SwitchboardPinnedWebSocketModule.swift",
+        "apps/mobile/modules/pinned-websocket/ios/SwitchboardPinnedWebSocket.podspec",
+        "apps/mobile/src/lib/__tests__/pinned-websocket.test.ts",
+        "apps/mobile/modules/pinned-websocket/tests/main.swift"
       ]
     },
     "nativeAndroid": {
@@ -43,7 +51,9 @@
         "src/shared/transport-security.ts",
         "src/shared/types.ts",
         "src/server/index.ts",
-        "tests/unit/transport-security.test.ts"
+        "tests/unit/transport-security.test.ts",
+        "src/shared/ws-transport.ts",
+        "tests/unit/ws-transport-pinned-socket.test.ts"
       ]
     },
     "storageDataMigration": {
@@ -51,7 +61,9 @@
       "evidence": [
         "apps/android/app/src/main/java/app/switchboard/mobile/domain/connection/ConnectionDecisions.kt",
         "tests/unit/backend-tls.test.ts",
-        "apps/android/app/src/main/java/app/switchboard/mobile/data/connection/NativeConnectionRepository.kt"
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/connection/NativeConnectionRepository.kt",
+        "apps/mobile/src/lib/pairing.ts",
+        "apps/mobile/src/stores/connections.ts"
       ]
     },
     "updateRelease": {
@@ -59,7 +71,9 @@
       "evidence": [
         "CHANGELOG.md",
         "src/main/backend/AGENTS.md",
-        "apps/mobile/AGENTS.md"
+        "apps/mobile/AGENTS.md",
+        "apps/mobile/app.json",
+        "apps/mobile/.fingerprintignore"
       ]
     }
   },
@@ -70,13 +84,20 @@
       "jest apps/mobile transport-gate.test.ts: an App Store build refuses remote ws:// before any dial and shows the reason, an internal build dials as before, an unreadable build type fails closed.",
       "Gradle :app:testDebugUnitTest: PinnedTlsTest dials a MockWebServer over TLS with a certificate made by the desktop generator (match opens, mismatch is CertificateChangedFailure), pairing parse upgrades a pinned ws:// QR to wss://, the resolver refuses remote ws:// in release mode, and the status copy for a changed certificate.",
       "Gradle lintDebug assembleRelease: the release APK packs the TLS-only network security config, debug the permissive one.",
-      "npm run typecheck and npm test pass."
+      "npm run typecheck and npm test pass.",
+      "iOS Jest: pinned socket selection, optional module absence, platform isolation, per-socket event routing and cleanup, auth/hello framing through the real transport, and terminal pin failure without retries. The store gate allows pinned URLs only when the native module is available.",
+      "Expo prebuild -p ios --no-install succeeded; generated ios/ moved outside the worktree. Expo autolinking resolves SwitchboardPinnedWebSocket and fingerprint sources include modules/pinned-websocket/ios.",
+      "PinnedSocket.swift compiled with swiftc for arm64-apple-ios16.4 using the iPhoneOS SDK, producing an unsigned object.",
+      "Scratch Expo iOS fingerprint comparison with and without the local module produced different runtime hashes. Mobile typecheck and all 28 Jest suites / 149 tests passed, including a detectOpenHandles run with clean exit.",
+      "Native callback regression executable on macOS: non-server-trust challenges use default handling without a certificate-change event; a server-trust challenge without trust/leaf cancels with an ordinary TLS failure. This does not exercise a TLS handshake."
     ],
     "hardware": [],
     "notExercised": [
       "Not run on a physical phone or an emulator, and not against a running desktop app: the wss:// path was exercised only by the tests above.",
-      "iOS pinning is not built: React Native's WebSocket cannot pin, so it needs a native module and a new iOS build.",
-      "The Settings > Mobile QR was not checked visually; only its URL string changed."
+      "The Settings > Mobile QR was not checked visually; only its URL string changed.",
+      "Full iOS app and Expo bridge compilation blocked: pod install fails because the installed pod launcher cannot find the cocoapods gem. No workspace was generated, so xcodebuild could not run.",
+      "No iOS simulator, physical device, App Store build, or live iOS TLS handshake was exercised. Native pin acceptance and mismatch still need device verification.",
+      "A scratch macOS CLI URLSession TLS loopback probe failed with NSURLErrorDomain -1200 before the trust callback, with both matching and mismatching pins. This did not validate native trust; no iOS runtime conclusion is claimed."
     ]
   }
 }
