@@ -2,7 +2,7 @@
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { X509Certificate } from 'node:crypto'
+import { createPrivateKey, X509Certificate } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 import type { TLSSocket } from 'node:tls'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -35,6 +35,14 @@ describe('loadOrCreateTlsIdentity', () => {
     expect(loadOrCreateTlsIdentity(dir)).toEqual(first)
   })
 
+  it('always mints a certificate that parses (random serials)', () => {
+    // A serial whose first byte is 0x00 before a byte < 0x80 is invalid DER, about 1 in 512.
+    for (let i = 0; i < 1500; i++) {
+      const dir = scratch()
+      expect(() => loadOrCreateTlsIdentity(dir)).not.toThrow()
+    }
+  })
+
   it('replaces a certificate it cannot parse', () => {
     const dir = scratch()
     const first = loadOrCreateTlsIdentity(dir)
@@ -42,6 +50,20 @@ describe('loadOrCreateTlsIdentity', () => {
     const second = loadOrCreateTlsIdentity(dir)
     expect(second.fingerprint).not.toBe(first.fingerprint)
     expect(readFileSync(join(dir, 'tls-cert.pem'), 'utf8')).toBe(second.cert)
+  })
+
+  it('replaces a pair whose key is unreadable or belongs to another certificate', () => {
+    const dir = scratch()
+    const first = loadOrCreateTlsIdentity(dir)
+    writeFileSync(join(dir, 'tls-key.pem'), 'garbage')
+    const second = loadOrCreateTlsIdentity(dir)
+    expect(second.fingerprint).not.toBe(first.fingerprint)
+
+    const other = loadOrCreateTlsIdentity(scratch())
+    writeFileSync(join(dir, 'tls-key.pem'), other.key)
+    const third = loadOrCreateTlsIdentity(dir)
+    expect(third.fingerprint).not.toBe(second.fingerprint)
+    expect(new X509Certificate(third.cert).checkPrivateKey(createPrivateKey(third.key))).toBe(true)
   })
 })
 

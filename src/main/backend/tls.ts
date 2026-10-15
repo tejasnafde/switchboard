@@ -7,7 +7,7 @@
  * the host. Sharing the port keeps every saved address valid: a phone that does
  * not know `fp` keeps dialling ws:// where it always did.
  */
-import { createHash, generateKeyPairSync, randomBytes, sign, X509Certificate } from 'node:crypto'
+import { createHash, createPrivateKey, generateKeyPairSync, randomBytes, sign, X509Certificate } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createServer as createHttpsServer } from 'node:https'
@@ -42,9 +42,11 @@ export function loadOrCreateTlsIdentity(dir: string): TlsIdentity {
     const key = readFileSync(keyFile, 'utf8')
     const cert = readFileSync(certFile, 'utf8')
     try {
+      if (!new X509Certificate(cert).checkPrivateKey(createPrivateKey(key)))
+        throw new Error('key does not match certificate')
       return { key, cert, fingerprint: certificateFingerprint(cert) }
     } catch (err) {
-      log.warn('stored TLS certificate is unreadable, minting a new one (paired phones must pair again)', err)
+      log.warn('stored TLS key or certificate is unreadable, minting a new pair (paired phones must pair again)', err)
     }
   }
   const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
@@ -91,7 +93,7 @@ const ECDSA_SHA256 = seq(oid('1.2.840.10045.4.3.2'))
 function selfSignedCertificate(spki: Buffer, signer: (tbs: Buffer) => Buffer): string {
   const name = seq(der(0x31, seq(oid('2.5.4.3'), der(0x0c, Buffer.from('Switchboard')))))
   const serial = randomBytes(16)
-  serial[0] &= 0x7f // positive INTEGER
+  serial[0] = (serial[0] & 0x7f) | 0x40 // positive and never 0x00, which DER forbids before a byte < 0x80
   const notBefore = new Date(Date.now() - 24 * 60 * 60 * 1000)
   const tbs = seq(
     der(0xa0, der(0x02, Buffer.from([2]))), // v3
