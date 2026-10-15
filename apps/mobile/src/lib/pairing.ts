@@ -11,10 +11,10 @@ import { CERT_PIN_PARAM, isCertFingerprint } from '@shared/transport-security'
  *   ws://host:8765?pair=<code>    one-time code, redeemed for a device session
  *   ws://host:8765?token=<tok>    legacy shared secret, still accepted
  *   ...&fp=<sha256 hex>           the backend's TLS certificate, kept in the
- *                                 saved URL for a pinned wss:// dial. This app
- *                                 cannot pin yet (React Native's WebSocket has
- *                                 no hook for it), so it still dials the scheme
- *                                 it was given. A malformed `fp` is refused.
+ *                                 saved URL for a pinned wss:// dial when the
+ *                                 native module is available. Older binaries
+ *                                 keep their original scheme and transport gate.
+ *                                 A malformed `fp` is refused.
  *
  * `pair` wins when both are present: a desktop offering a code supports
  * sessions, and taking the shared token there opts back into the credential the

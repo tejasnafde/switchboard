@@ -3,7 +3,7 @@
  * window.api subset. One instance per paired backend. Channel names and event
  * types come from src/shared, so this stays in lockstep with the server.
  */
-import { WsTransport } from '@shared/ws-transport'
+import { WsTransport, type TransportSocket } from '@shared/ws-transport'
 import type { Transport } from '@shared/transport'
 import {
   AppChannels,
@@ -138,12 +138,13 @@ export class SwitchboardClient {
     url: string,
     token?: string,
     auth?: { session?: string; pairing?: string; label?: string } | null,
+    createSocket?: (url: string) => TransportSocket,
   ): SwitchboardClient {
     // `auth=frame` tells the backend to expect in-band credentials rather than
     // rejecting a tokenless connection outright. It carries no secret.
     const query = auth ? 'auth=frame' : token ? `token=${encodeURIComponent(token)}` : ''
     const dialUrl = query ? `${url}${url.includes('?') ? '&' : '?'}${query}` : url
-    return new SwitchboardClient(new WsTransport(dialUrl, undefined, {}, auth ?? null))
+    return new SwitchboardClient(new WsTransport(dialUrl, undefined, {}, auth ?? null, createSocket))
   }
 
   // ── app ──

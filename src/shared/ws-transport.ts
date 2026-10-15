@@ -3,7 +3,7 @@
  * WebSocket so it needs no dependency. Frames before 'open' queue; in-flight
  * invokes reject on close. An unexpected close re-dials the same URL with
  * capped exponential backoff (tunnel blips heal in place - subscriptions and
- * queued frames survive). Only a deliberate close() or a server auth rejection
+ * queued frames survive). Only a deliberate close(), a certificate mismatch or a server auth rejection
  * is terminal; a long outage keeps retrying at the cap.
  *
  * Three mobile-driven behaviours live here:
@@ -53,6 +53,14 @@ export interface WsReconnectOptions {
 /** WsHost's auth rejection close code - a server verdict, not a blip. */
 const CLOSE_UNAUTHORIZED = 4001
 
+export const CERTIFICATE_CHANGED_CLOSE = 4003
+
+export interface TransportSocket {
+  send(data: string): void
+  close(): void
+  addEventListener<K extends keyof WebSocketEventMap>(type: K, listener: (event: WebSocketEventMap[K]) => void): void
+}
+
 export type WsTransportState = 'connected' | 'reconnecting' | 'closed'
 
 /**
@@ -66,7 +74,7 @@ export type WsTransportState = 'connected' | 'reconnecting' | 'closed'
 export type WsCloseReason = 'transient' | 'blocked'
 
 export function classifyCloseCode(code: number | null): WsCloseReason {
-  return code === CLOSE_UNAUTHORIZED ? 'blocked' : 'transient'
+  return code === CLOSE_UNAUTHORIZED || code === CERTIFICATE_CHANGED_CLOSE ? 'blocked' : 'transient'
 }
 
 interface PendingInvoke {
@@ -94,7 +102,7 @@ function stripTrailingUndefined(args: unknown[]): unknown[] {
 }
 
 export class WsTransport implements Transport {
-  private ws!: WebSocket
+  private ws!: TransportSocket
   private nextId = 1
   private readonly pending = new Map<number, PendingInvoke>()
   private readonly listeners = new Map<string, Set<(...args: unknown[]) => void>>()
@@ -105,6 +113,7 @@ export class WsTransport implements Transport {
   /** Set when the server closed us with 4001 - surfaced so UIs can say "bad token"
    *  instead of spinning on "connecting". */
   authRejected = false
+  certificateChanged = false
   /**
    * Why the last socket died, and how many re-dials since the last success.
    *
@@ -141,7 +150,7 @@ export class WsTransport implements Transport {
   private peerSendsHeartbeat = false
   /** The socket already routed through onSocketDead. forceReconnect drives that
    *  path by hand, and the real 'close' event then arrives for the same socket. */
-  private deadSocket: WebSocket | null = null
+  private deadSocket: TransportSocket | null = null
   /** Defaults true so a caller that never reports keeps always-retry. */
   private online = true
   /** When set, authenticate with an `auth` frame instead of a URL token. */
@@ -164,6 +173,7 @@ export class WsTransport implements Transport {
     private readonly timeoutMs = DEFAULT_TIMEOUT_MS,
     reconnect: WsReconnectOptions = {},
     auth: { session?: string; pairing?: string; label?: string } | null = null,
+    private readonly createSocket: (url: string) => TransportSocket = (url) => new WebSocket(url),
   ) {
     this.auth = auth
     this.reconnectBaseMs = reconnect.baseMs ?? RECONNECT_BASE_MS
@@ -242,7 +252,7 @@ export class WsTransport implements Transport {
   }
 
   private dial(): void {
-    const sock = new WebSocket(this.url)
+    const sock = this.createSocket(this.url)
     this.ws = sock
     this.peerSendsHeartbeat = false
     // Every handler guards on `sock === this.ws` so a superseded socket's late
@@ -298,7 +308,7 @@ export class WsTransport implements Transport {
     sock.addEventListener('error', () => onDead())
   }
 
-  private onSocketDead(sock: WebSocket, code: number | null): void {
+  private onSocketDead(sock: TransportSocket, code: number | null): void {
     if (sock !== this.ws || this.closed || sock === this.deadSocket) return
     this.deadSocket = sock
     this.open = false
@@ -313,11 +323,11 @@ export class WsTransport implements Transport {
     }
     this.lastCloseCode = code
     this.lastCloseReason = classifyCloseCode(code)
-    // 4001 is the server's auth verdict - re-dialing would loop against a
-    // rejection forever. Terminal shutdown; the owner re-pairs with a new token.
+    // Auth rejection and a pin mismatch require re-pairing, never retries.
     if (this.lastCloseReason === 'blocked') {
-      log.error('server rejected token (4001), closing transport', this.url)
-      this.authRejected = true
+      log.error('connection blocked, closing transport', { code })
+      this.authRejected = code === CLOSE_UNAUTHORIZED
+      this.certificateChanged = code === CERTIFICATE_CHANGED_CLOSE
       this.shutdown()
       this.onStateChange?.('closed')
       return
