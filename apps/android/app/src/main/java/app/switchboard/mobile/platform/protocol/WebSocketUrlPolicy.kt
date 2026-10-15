@@ -1,5 +1,6 @@
 package app.switchboard.mobile.platform.protocol
 
+import app.switchboard.mobile.domain.connection.CertificatePin
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
@@ -10,6 +11,7 @@ fun legacyAuthenticatedUrl(url: String, rawToken: String): String {
             .newBuilder()
             .removeAllQueryParameters(PAIR_QUERY_PARAMETER)
             .removeAllQueryParameters(AUTH_QUERY_PARAMETER)
+            .removeAllQueryParameters(CertificatePin.QUERY_PARAMETER)
             .setQueryParameter(TOKEN_QUERY_PARAMETER, rawToken)
             .build(),
     )
@@ -22,6 +24,7 @@ fun frameAuthenticatedUrl(url: String): String {
             .newBuilder()
             .removeAllQueryParameters(TOKEN_QUERY_PARAMETER)
             .removeAllQueryParameters(PAIR_QUERY_PARAMETER)
+            .removeAllQueryParameters(CertificatePin.QUERY_PARAMETER)
             .setQueryParameter(AUTH_QUERY_PARAMETER, FRAME_AUTH_VALUE)
             .build(),
     )

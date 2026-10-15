@@ -12,6 +12,9 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { WebSocketServer } from 'ws'
 import { WsHost, wsServerOptions } from '../main/backend/ws-host'
+import { DualWebSocketServer, loadOrCreateTlsIdentity, type TlsIdentity } from '../main/backend/tls'
+import { userDataDir } from '../main/runtime'
+import { withCertPin } from '@shared/transport-security'
 import { TcpHost } from '../main/backend/tcp-host'
 import { MultiHost } from '../main/backend/multi-host'
 import { registerPushHandlers } from '../main/ipc/push'
@@ -113,7 +116,20 @@ function stableToken(): string {
 }
 
 const token = process.env.SWITCHBOARD_TOKEN ?? (isLoopback ? undefined : stableToken())
-const wss = new WebSocketServer(wsServerOptions(port, bindHost))
+/** The install's certificate for wss:// on the same port, or null for ws:// only. */
+function tlsIdentity(): TlsIdentity | null {
+  try {
+    return loadOrCreateTlsIdentity(join(userDataDir(), 'tls'))
+  } catch (err) {
+    log.error('could not load or create the TLS certificate, serving ws:// only', err)
+    return null
+  }
+}
+
+const identity = tlsIdentity()
+const wss = identity
+  ? new DualWebSocketServer(port, bindHost, identity)
+  : new WebSocketServer(wsServerOptions(port, bindHost))
 const wsHost = new WsHost(wss, token)
 
 // Second listener speaking newline-delimited JSON over raw TCP. This is what a
@@ -216,7 +232,7 @@ async function printPairingInfo(): Promise<void> {
     log.warn('no external IPv4 address found, cannot suggest a pairing URL')
     return
   }
-  const url = `ws://${addresses[0]}:${port}?token=${token}`
+  const url = withCertPin(`ws://${addresses[0]}:${port}?token=${token}`, identity?.fingerprint)
   console.log('\nPair this backend in the mobile app (+ -> WebSocket -> Scan):\n')
   try {
     const QRCode = (await import('qrcode')).default

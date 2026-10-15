@@ -23,3 +23,8 @@ condition = "AND"
 paths = ['''^apps/mobile/google-services\.json$''']
 regexTarget = "line"
 regexes = ['''"current_key"\s*:\s*"AIza''']
+
+[[allowlists]]
+description = "Throwaway EC test key in PinnedTlsTest: minted by the desktop TLS code for the pinning test, it protects nothing"
+targetRules = ["private-key"]
+paths = ['''^apps/android/app/src/test/java/app/switchboard/mobile/platform/protocol/PinnedTlsTest\.kt$''']

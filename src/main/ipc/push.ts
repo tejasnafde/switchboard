@@ -3,6 +3,7 @@
  * with the desktop app or with a headless server on a VM.
  */
 import { PushChannels } from '@shared/ipc-channels'
+import { currentBackendRequestContext } from '../backend/request-context'
 import type { BackendHost } from '../backend/host'
 import { createMainLogger } from '../logger'
 import { registerDevice, setViewing, unregisterDevice } from '../push/registry'
@@ -11,7 +12,7 @@ const log = createMainLogger('ipc:push')
 
 export function registerPushHandlers(host: BackendHost): void {
   host.handle(PushChannels.REGISTER, (token: string, label?: string, clientRef?: string) => {
-    const result = registerDevice(token, label, clientRef)
+    const result = registerDevice(token, label, clientRef, currentBackendRequestContext()?.deviceSessionId)
     if (!result.ok) log.warn(`register rejected: ${result.error}`)
     return result
   })

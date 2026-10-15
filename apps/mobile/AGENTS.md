@@ -31,6 +31,8 @@ maintainers: follow "Native Android mobile release" in `docs/releasing.md`.
 plus `NSLocalNetworkUsageDescription` keys in app.json remain; iOS needs the
 latter because the whole transport is `ws://`.
 
+**Transport security** (`lib/transport-gate.ts`, rules in `src/main/backend/AGENTS.md`): App Store and TestFlight builds (read from the binary with `getIosApplicationReleaseTypeAsync`, never from the bundle, because store and internal builds share the `production` OTA channel) refuse plain `ws://` to a remote host before dialing; an unreadable build type fails closed. This app cannot pin the desktop's self-signed certificate: React Native's iOS WebSocket (SocketRocket) exposes no hook, so pinning needs a native module and a new build. Until then it keeps the QR's `fp` in the saved URL (`lib/pairing.ts`, shown without the query) and still dials the scheme it was given.
+
 **Push** (`src/main/push/`, `src/shared/push-policy.ts`): the BACKEND sends,
 because the phone is asleep when it matters. `attachPushNotifier` subscribes to
 the provider registry's bus and posts to Expo for approvals, questions, turn
@@ -40,6 +42,17 @@ client's connection id, echoed back so a tap knows which backend to open.
 Historical: while this Expo app also shipped on Android, its push needed FCM
 credentials on the EAS project (Android > FCM V1). That lane is retired. A new registry is created when a closed window is reopened, so
 the notifier must be re-attached there.
+
+**Unpair push cleanup:** `connections.removeConnection` removes the saved config,
+then awaits `push.unregisterWith` before closing the captured client. It uses the
+existing `push:unregister` RPC once, waits at most two seconds, and forgets its
+registration even offline. Demo connections never register or unregister.
+Registration and pairing callbacks must not change state or save credentials
+for a removed or replaced client. Credential writes are serialized per connection,
+so unpair deletes keys after any session or legacy-token save already in flight.
+Android also waits for unregister completion or the same two-second limit before
+removing its fleet connection. Repeated Android removals share the same pending
+unregister result, including its timeout.
 
 **Reviews tab** (`ConnectionTabBar` under `ProjectsScreen` and `ReviewsScreen`, switched with `navigation.replace`, no tab library): the list lives in `stores/reviews.ts` per connection, filters in `prefs.prFilters`, a pending review pill in `prefs.threads[key].reviewPill` until the next send (`QueuedMessage.reviewPill`, `queuedTurnBody`). `PullRequestScreen` + `WorkOnPrSheet` are read-only; a "Work on PR" chat goes through `NewSessionScreen` with `pullRequest` (no first-message launch prompt: `lib/pr-chat.ts` links the PR and sends the first turn with the pill once the chat exists). JS only, so it ships on the OTA lane. Rules: `src/main/pull-requests/AGENTS.md`.
 

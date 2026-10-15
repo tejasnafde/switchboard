@@ -19,6 +19,7 @@ Three things beyond plain RPC, all driven by the phone case:
 - **Epoch.** `WsHost` mints a random `epoch` per process. A restarted server resets `seq` to 0, so without this a client holding a high cursor would silently discard every later event. A changed epoch, or an evicted cursor, answers `ready { gap: true }` and the client re-seeds via `onResumeGap` rather than showing a transcript with a hole in it.
 - **Liveness.** The host pings every 15s and terminates clients that stop answering; the client re-dials after 40s of silence and exposes `probe()`/`forceReconnect()`. A mobile socket dies with no FIN, so elapsed silence is the only signal a client that cannot send protocol pings has. Both sides require proof the peer speaks the heartbeat before acting on its silence, because a phone updates over OTA independently of the desktop it pairs with.
 - **Auth in a frame, not the URL** (`src/shared/device-auth.ts`, `src/main/backend/device-sessions.ts`). The QR carries a one-time pairing code (5 min); a device redeems it once for its own session, stored as a sha256 hash and revocable on its own. Scopes deny only what is dangerous (`terminal:*` and `mobile-pairing:*` for a phone, so a stolen phone credential can neither open a shell nor revoke your other devices) rather than allowing only what is listed - deny-by-default needs a hand-maintained channel list whose failure mode is a feature breaking silently for paired devices. Legacy `?token=` still works; `?auth=frame` declares in-band auth, and an unauthenticated socket is closed after 10s.
+- **TLS on the same port** (`tls.ts`, `src/shared/transport-security.ts`). The phone endpoint and the headless server mint one self-signed EC certificate per install (`<data dir>/tls/`, key 0600; hand-built DER because Node cannot create certificates) and serve it through `DualWebSocketServer`, which reads the first byte of each connection: a TLS handshake record goes to an https server, anything else to plain http, both feeding one `ws` server. The QR stays `ws://host:port?pair=<code>` plus `&fp=<sha256 hex>` (`withCertPin`), so a phone that predates this ignores `fp` and keeps ws://. A phone that pins dials wss:// on the same port and treats a different certificate as terminal (re-pair). Deleting `tls/` therefore breaks every pinned phone until it re-pairs. Store builds refuse plain ws:// to a non-loopback host (`cleartextRefusal`); loopback, `10.0.2.2` and the IAP tunnel keep their transport.
 - **Content is incremental.** `content` events carry a delta with `append`, folded by `applyContentText` (`src/shared/content-stream.ts`). Cumulative text cost O(n^2) bytes per reply. `mergeContentChunks` is associative, which is what lets the renderer's 30fps coalescer and the phone's 50ms batcher drop intermediate commits losslessly.
 
 **Client transports** (`src/preload/`): `IpcTransport` (local), `WsTransport` (`src/shared/ws-transport.ts`, browser WebSocket + reconnect/outbox), `HybridTransport` (desktop-only channels → IPC, everything else → remote WS), `TransportRouter` + `routing-table.ts` (one transport per machine keyed by threadId/terminal id, so one window drives local + multiple remotes at once). `SWITCHBOARD_BACKEND_URL=ws://host:8765` flips the base transport to hybrid; unset = pure local.
@@ -85,3 +86,14 @@ refresh. A foreground return after under 10 s probes; a longer absence reconnect
 On the WebSocket host `ready` and ping answers shipped together (74dcf945), so a
 `ready` frame is heartbeat proof there. The IAP TCP host needs `heartbeat_v1`; without
 it the phone hands the tunnel to connect() instead of probing.
+
+## Push token ownership and revocation
+
+`push:register` records `deviceSessionId` from the backend request context,
+never from client arguments. `revokeSession` deletes that session's push tokens
+and viewing leases before closing its live sockets. Socket revocation runs in
+`finally` even if push-settings persistence fails. The existing
+`push:unregister(token)` request is idempotent and is used by both phones before
+unpair teardown. Stored tokens from before ownership tracking remain compatible;
+re-registering on the upgraded backend adds their owner. Legacy
+shared-token and IAP registrations have no per-device session to revoke.

@@ -32,7 +32,9 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Connections'>
 
 /** One-line target summary for either connection kind, in the mono face. */
 function describeTarget(config: ConnectionConfig): string {
-  return config.kind === 'iap' ? `${config.instance}  ${config.zone}` : config.url.replace(/^wss?:\/\//, '')
+  return config.kind === 'iap'
+    ? `${config.instance}  ${config.zone}`
+    : config.url.replace(/^wss?:\/\//, '').replace(/\?.*$/, '')
 }
 
 const STATUS_COPY: Record<ConnectionStatus, string> = {

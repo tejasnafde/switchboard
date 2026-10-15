@@ -37,6 +37,7 @@ export interface PushDevice {
   label?: string
   /** The client's own id for this backend, echoed back in every payload. */
   clientRef?: string
+  deviceSessionId?: string
   registeredAt: number
 }
 
@@ -68,17 +69,32 @@ function saveDevices(devices: PushDevice[]): void {
   setSetting(SETTING_KEY, JSON.stringify(devices))
 }
 
-export function registerDevice(token: string, label?: string, clientRef?: string): { ok: boolean; error?: string } {
+export function registerDevice(
+  token: string,
+  label?: string,
+  clientRef?: string,
+  deviceSessionId?: string,
+): { ok: boolean; error?: string } {
   if (!isExpoPushToken(token)) return { ok: false, error: 'not an Expo push token' }
-  saveDevices(upsertDevice(listDevices(), { token, label, clientRef, registeredAt: Date.now() }))
+  saveDevices(upsertDevice(listDevices(), { token, label, clientRef, deviceSessionId, registeredAt: Date.now() }))
   log.info(`registered push device${label ? ` (${label})` : ''}`)
   return { ok: true }
 }
 
 export function unregisterDevice(token: string): void {
+  viewing.delete(token)
   const next = listDevices().filter((d) => d.token !== token)
   saveDevices(next)
   log.info('unregistered push device')
+}
+
+export function unregisterSessionDevices(deviceSessionId: string): void {
+  const devices = listDevices()
+  const removed = devices.filter((d) => d.deviceSessionId === deviceSessionId)
+  if (removed.length === 0) return
+  saveDevices(devices.filter((d) => d.deviceSessionId !== deviceSessionId))
+  for (const device of removed) viewing.delete(device.token)
+  log.info('removed revoked session push tokens', { count: removed.length })
 }
 
 export function pushEnabled(): boolean {

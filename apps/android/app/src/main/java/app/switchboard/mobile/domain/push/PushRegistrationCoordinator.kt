@@ -2,6 +2,7 @@ package app.switchboard.mobile.domain.push
 
 import app.switchboard.mobile.platform.protocol.TransportScope
 import java.io.Closeable
+import java.util.concurrent.CompletableFuture
 
 sealed interface PushBackendResult {
     data object Accepted : PushBackendResult
@@ -42,6 +43,7 @@ class PushRegistrationCoordinator {
         val threadId: String,
     )
 
+    private val removing = mutableMapOf<String, CompletableFuture<PushBackendResult>>()
     private var token: String? = null
     private var ready = emptyMap<String, PushBackend>()
     private val registered = mutableSetOf<RegistrationKey>()
@@ -73,7 +75,7 @@ class PushRegistrationCoordinator {
     fun onReady(backends: List<PushBackend>) {
         val previous = ready
         ready = backends
-            .filter { it.scope.connectionId.isNotBlank() }
+            .filter { it.scope.connectionId.isNotBlank() && it.scope.connectionId !in removing }
             .associateBy { it.scope.connectionId }
         val scopes = ready.values.mapTo(mutableSetOf()) { it.scope }
         registered.removeAll { it.scope !in scopes }
@@ -92,17 +94,36 @@ class PushRegistrationCoordinator {
     }
 
     @Synchronized
-    fun beforeConnectionRemoved(connectionId: String) {
-        val backend = ready[connectionId] ?: return
+    fun beforeConnectionRemoved(
+        connectionId: String,
+        onComplete: (PushBackendResult) -> Unit = {},
+    ) {
+        removing[connectionId]?.let { pending ->
+            pending.thenAccept { onComplete(it) }
+            return
+        }
+        val completion = CompletableFuture<PushBackendResult>()
+        removing[connectionId] = completion
+        completion.thenAccept { onComplete(it) }
+        val backend = ready[connectionId]
         ready = ready - connectionId
         val lease = viewing.remove(connectionId)
-        registered.removeAll { it.scope == backend.scope }
-        registering.removeAll { it.scope == backend.scope }
-        val currentToken = token ?: return
+        registered.removeAll { it.scope.connectionId == connectionId }
+        registering.removeAll { it.scope.connectionId == connectionId }
+        val currentToken = token
+        if (backend == null || currentToken == null) {
+            completion.complete(PushBackendResult.Accepted)
+            return
+        }
         if (lease?.scope == backend.scope) {
             reportViewing(backend, currentToken, threadId = null)
         }
-        backend.unregister(currentToken) { }
+        backend.unregister(currentToken) { completion.complete(it) }
+    }
+
+    @Synchronized
+    fun onRemovalTimeout(connectionId: String) {
+        removing[connectionId]?.complete(PushBackendResult.TransportFailure("Push unregister timed out"))
     }
 
     @Synchronized

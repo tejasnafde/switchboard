@@ -29,6 +29,7 @@ import app.switchboard.mobile.data.remote.RoomWorktreeCreationStore
 import app.switchboard.mobile.data.remote.ReadyEndpointLookup
 import app.switchboard.mobile.data.thread.RoomThreadSnapshotStore
 import app.switchboard.mobile.domain.push.ExpoPushProjectIdentity
+import app.switchboard.mobile.domain.push.PushBackendResult
 import app.switchboard.mobile.domain.push.PushRegistrationCoordinator
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
 import app.switchboard.mobile.domain.connection.ConnectionStatus
@@ -77,6 +78,7 @@ import app.switchboard.mobile.ui.browse.BrowseThreadActivityIndex
 import app.switchboard.mobile.BuildConfig
 import java.io.Closeable
 import java.util.UUID
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -88,6 +90,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import app.switchboard.mobile.domain.thread.TurnDelivery
 import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 
 class NativeAndroidRuntime private constructor(
@@ -194,8 +197,23 @@ class NativeAndroidRuntime private constructor(
     /** Continues across Activity recreation; the application owns both this scope and the Room write. */
     fun removeConnection(connectionId: String) {
         if (connectionId.isBlank()) return
-        pushRegistration.beforeConnectionRemoved(connectionId)
-        scope.launch { connectionFleet.remove(connectionId) }
+        val acknowledged = CompletableDeferred<Unit>()
+        pushRegistration.beforeConnectionRemoved(connectionId) { result ->
+            if (result != PushBackendResult.Accepted) {
+                Log.w(TAG, "Push unregister failed; forgetting removed machine")
+            }
+            acknowledged.complete(Unit)
+        }
+        scope.launch {
+            if (withTimeoutOrNull(2_000) {
+                    acknowledged.await()
+                    true
+                } != true
+            ) {
+                pushRegistration.onRemovalTimeout(connectionId)
+            }
+            connectionFleet.remove(connectionId)
+        }
     }
 
     fun onFcmToken(token: String) = pushTokenRuntime.onFcmToken(token)
@@ -343,7 +361,11 @@ class NativeAndroidRuntime private constructor(
                 scope = scope,
                 snapshots = RepositoryConnectionFleetSnapshotSource(repository),
                 targetResolver = DeviceConnectionFleetTargetResolver(
-                    resolver = NativeConnectionTargetResolver(connectionDatabase, credentials),
+                    resolver = NativeConnectionTargetResolver(
+                        connectionDatabase,
+                        credentials,
+                        requireEncryption = !BuildConfig.DEBUG,
+                    ),
                     deviceId = identity.deviceId,
                     deviceLabel = identity.deviceLabel,
                 ),
