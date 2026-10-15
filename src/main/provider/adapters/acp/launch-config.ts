@@ -24,6 +24,18 @@ export type AcpExpectedCapability = 'loadSession' | 'resume' | 'fork' | 'image' 
  */
 export type AcpModeStrategy = { kind: 'fixed'; plan: string; other: string } | { kind: 'advertised' }
 
+/** What `preflight` learned about the binary it checked. */
+export interface AcpPreflight {
+  /** Replaces `args(cwd)` for this spawn. */
+  args?: string[]
+  /**
+   * The config option that carries the model variant (`modelVariants` agents
+   * only). Without one, a variant is read from an effort option the agent
+   * reports, and otherwise stays part of the model id.
+   */
+  effortConfigId?: string | null
+}
+
 /** Per-session result of `prepareSession`. */
 export interface AcpSessionPrep {
   /** The env the agent is spawned with. */
@@ -63,8 +75,11 @@ export interface AcpLaunchConfig {
   spawnCwd?(instanceId?: string | null): string | null
   /** Spawn env: login shell env, process env, then the instance overlay. */
   buildEnv(overlay: Record<string, string>): Record<string, string>
-  /** Runs before any session state exists; throws to refuse the binary. */
-  preflight?(binPath: string, env: Record<string, string>, cwd: string): Promise<void>
+  /**
+   * Runs before any session state exists; throws to refuse the binary. What it
+   * returns overrides `args` and names the effort config option for this binary.
+   */
+  preflight?(binPath: string, env: Record<string, string>, cwd: string): Promise<AcpPreflight | void>
   /** Reads the agent's own config to finish the env and permission rules. */
   prepareSession?(input: {
     cwd: string
