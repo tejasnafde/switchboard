@@ -4,6 +4,8 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+- Add real-server Apple URLSession pinning checks and split-ClientHello coverage for TLS 1.2 and 1.3. Existing certificates and pairing fingerprints are preserved.
+
 ### Added
 - **Pinned TLS for iOS pairing.** New App Store and TestFlight binaries can pair directly over Wi-Fi using the QR certificate fingerprint and a local Expo URLSession WebSocket module. A changed certificate stops retries and asks to scan the QR again. Remote cleartext without a pin stays refused. Expo Go and older binaries retain their existing gate; the native module changes the fingerprint runtime version, so this requires a new iOS binary. IAP and saved credentials are unchanged.
 - **OpenCode 2.x, behind a flag (off).** With `SB_OPENCODE_V2_ACP=1` (staged flag `opencode_v2_acp`), an OpenCode 2.x binary runs instead of being refused: `opencode acp` starts with no `--cwd`, the model list and the Settings Test run `opencode models --standalone` so an account's API keys apply, the native fork follows the same gate, and a model variant pick sets 2.x's `effort` option, so the effort control works as with 1.x. A subagent's text that 2.x streams into the parent session no longer runs into the parent's message. With the flag off, 2.x is still refused, and the message now tells a user who ran `opencode upgrade --major` how to put 1.x back. Checked live against OpenCode 2.0.29 in a private sandbox with free models; not checked with a signed-in provider.

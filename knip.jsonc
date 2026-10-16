@@ -34,6 +34,7 @@
   ],
   // External CLIs the scripts shell out to, and a shell builtin.
   "ignoreBinaries": [
+    "swiftc",
     "sqlite3",
     "ffmpeg",
     "codex",

@@ -173,6 +173,9 @@ jobs:
       - name: Unit tests
         if: needs.scope.outputs.code != 'false'
         run: npm test -- --maxWorkers=100%
+        env:
+          # The Apple TLS interop test must not skip on the macOS runner.
+          SB_REQUIRE_SWIFTC: ${{ runner.os == 'macOS' && '1' || '' }}
 
       # The mobile component suite runs under jest, not vitest, because the root
       # vitest config cannot load anything importing react-native. Without this

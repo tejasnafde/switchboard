@@ -3,7 +3,9 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createPrivateKey, X509Certificate } from 'node:crypto'
-import type { AddressInfo } from 'node:net'
+import { createServer, connect as connectTcp, type AddressInfo, type Socket } from 'node:net'
+import { connect as connectTls } from 'node:tls'
+import { Transform } from 'node:stream'
 import type { TLSSocket } from 'node:tls'
 import { afterEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
@@ -110,6 +112,56 @@ describe('DualWebSocketServer', () => {
     expect(JSON.stringify(secure.reply)).toContain('hi')
     expect(secure.peerFingerprint).toBe(fingerprint)
   })
+
+  it.each(['TLSv1.2', 'TLSv1.3'] as const)(
+    'accepts a ClientHello split after its first byte with %s',
+    async (version) => {
+      const { port, fingerprint } = await boot()
+      const sockets = new Set<Socket>()
+      const proxy = createServer((client) => {
+        const upstream = connectTcp(port, '127.0.0.1')
+        sockets.add(client)
+        sockets.add(upstream)
+        let first = true
+        const split = new Transform({
+          transform(chunk: Buffer, _encoding, done) {
+            if (!first) return done(null, chunk)
+            first = false
+            this.push(chunk.subarray(0, 1))
+            // Let the production listener route the first byte before the rest arrives.
+            setTimeout(() => done(null, chunk.subarray(1)), 50)
+          },
+        })
+        client.pipe(split).pipe(upstream).pipe(client)
+      })
+      cleanups.push(() => {
+        for (const socket of sockets) socket.destroy()
+        return new Promise<void>((done) => proxy.close(() => done()))
+      })
+      await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve))
+      await new Promise<void>((resolve, reject) => {
+        const socket = connectTls({
+          port: (proxy.address() as AddressInfo).port,
+          host: '127.0.0.1',
+          rejectUnauthorized: false,
+          minVersion: version,
+          maxVersion: version,
+        })
+        cleanups.push(() => {
+          socket.destroy()
+        })
+        socket.once('error', reject)
+        socket.once('secureConnect', () => {
+          try {
+            expect(socket.getPeerX509Certificate()?.fingerprint256.replace(/:/g, '').toLowerCase()).toBe(fingerprint)
+            resolve()
+          } catch (err) {
+            reject(err)
+          }
+        })
+      })
+    },
+  )
 
   it('releases the port on close so the endpoint can restart on it', async () => {
     const identity = loadOrCreateTlsIdentity(scratch())
