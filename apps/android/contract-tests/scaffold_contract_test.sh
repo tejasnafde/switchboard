@@ -20,11 +20,24 @@ require_text() {
   }
 }
 
-require_pattern() {
+# Print the body of the first `defaultConfig { ... }` block, matching braces.
+default_config() {
+  awk '
+    !inside && /^[[:space:]]*defaultConfig[[:space:]]*\{/ { inside = 1; depth = 0 }
+    inside {
+      print
+      depth += gsub(/\{/, "{") - gsub(/\}/, "}")
+      if (depth == 0) exit
+    }
+  ' "$root/$1"
+}
+
+# Android reads the app version from defaultConfig, so only that block counts.
+require_default_config_pattern() {
   local file="$1"
   local pattern="$2"
-  grep -Eq "$pattern" "$root/$file" || {
-    echo "$file does not match: $pattern" >&2
+  default_config "$file" | grep -Eq "$pattern" || {
+    echo "$file defaultConfig does not match: $pattern" >&2
     return 1
   }
 }
@@ -48,8 +61,8 @@ require_text app/build.gradle.kts 'applicationIdSuffix = ".native.dev"'
 require_text app/build.gradle.kts 'compileSdk = 36'
 require_text app/build.gradle.kts 'minSdk = 24'
 require_text app/build.gradle.kts 'targetSdk = 36'
-require_pattern app/build.gradle.kts '^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*[1-9][0-9]*[[:space:]]*$'
-require_pattern app/build.gradle.kts '^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"[^"]+"[[:space:]]*$'
+require_default_config_pattern app/build.gradle.kts '^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*[1-9][0-9]*[[:space:]]*$'
+require_default_config_pattern app/build.gradle.kts '^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"[^"]+"[[:space:]]*$'
 require_text app/build.gradle.kts 'JavaVersion.VERSION_17'
 require_text app/build.gradle.kts 'jvmTarget = JvmTarget.JVM_17'
 
