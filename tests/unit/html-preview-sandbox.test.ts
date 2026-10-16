@@ -7,7 +7,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PreviewController, PREVIEW_CSP, resolvePreviewAsset } from '../../src/main/preview/preview-controller'
+import { setTimeout as delay } from 'node:timers/promises'
+import {
+  PreviewController,
+  PREVIEW_CSP,
+  PREVIEW_RELOAD_DEBOUNCE_MS,
+  resolvePreviewAsset,
+} from '../../src/main/preview/preview-controller'
 import { PREVIEW_MAX_BYTES, type PreviewEvent } from '../../src/shared/html-preview'
 
 function fakeGuest() {
@@ -182,11 +188,33 @@ describe('html preview sandbox', () => {
 
   it('reports a change on disk once per burst of writes', async () => {
     const { token } = await openPage()
-    writeFileSync(join(folder, 'page.html'), '<h1>v2</h1>')
-    writeFileSync(join(folder, 'page.html'), '<h1>v3</h1>')
-    await expect.poll(() => events.filter((e) => e.type === 'changed').length, { timeout: 3000 }).toBe(1)
-    expect(events[0]).toEqual({ type: 'changed', token })
+    const changed = { type: 'changed', token }
+    const quietMs = PREVIEW_RELOAD_DEBOUNCE_MS * 2
+    const poll = { timeout: 10_000, interval: quietMs }
+
+    // fs.watch can return before macOS delivers notifications. Observe a setup
+    // asset write before measuring the page writes, without retrying either burst.
+    await expect
+      .poll(() => {
+        if (events.some((e) => e.type === 'changed')) return true
+        writeFileSync(join(folder, 'ready.css'), 'h1{color:blue}')
+        return false
+      }, poll)
+      .toBe(true)
+    await delay(quietMs)
+    events.length = 0
+
+    for (const burst of [1, 2]) {
+      writeFileSync(join(folder, 'page.html'), `<h1>v${burst * 2}</h1>`)
+      writeFileSync(join(folder, 'page.html'), `<h1>v${burst * 2 + 1}</h1>`)
+      await expect.poll(() => events.length, poll).toBe(burst)
+      await delay(quietMs)
+      expect(events).toEqual(Array(burst).fill(changed))
+    }
+
     rmSync(join(folder, 'page.html'))
-    await expect.poll(() => events.some((e) => e.type === 'missing'), { timeout: 3000 }).toBe(true)
-  })
+    await expect.poll(() => events.length, poll).toBe(3)
+    await delay(quietMs)
+    expect(events).toEqual([changed, changed, { type: 'missing', token }])
+  }, 45_000)
 })

@@ -1,0 +1,43 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "test-watcher-and-android-scaffold",
+  "summary": "Test-only fixes for preview watcher startup timing and stale Android scaffold version expectations. No product behavior changes.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Only the preview sandbox test changes; Electron runtime and UI behavior are unchanged."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No React Native or iOS source, build configuration, or tests change."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Only the scaffold source contract test changes; application identity, version declarations, and runtime behavior are unchanged."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No backend, IPC, or wire contract changes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data, schema, migration, or upgrade logic changes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No release version, packaging, signing, channel, or rollout changes."
+    }
+  },
+  "verification": {
+    "automated": [
+      "Run the HTML preview sandbox file 30 times before and after under concurrent full-suite load.",
+      "Run bash apps/android/contract-tests/scaffold_contract_test.sh directly.",
+      "Run npm run typecheck and npm test -- --maxWorkers=4."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No app, simulator, device, or store verification: runtime and visual behavior are unchanged."
+    ]
+  }
+}
