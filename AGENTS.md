@@ -135,6 +135,7 @@ there**. Add new area detail to the nearest one, not to this file.
 - CSS variables: `.theme-dark`, `.theme-light`, `.theme-translucent` in `global.css`
 - Translucent uses macOS vibrancy (`setVibrancy('sidebar')`) + transparent BG
 - Theme picker in Settings modal (`⌘,`)
+- `--text-muted` must read at 4.5:1 or better on `--bg-primary` (dark and light) and on `--bg-secondary` (light): `theme-css-contract.test.ts` and `light-theme-contrast.test.ts` parse `global.css` and fail below it (maths in `tests/unit/helpers/contrast.ts`). A change to either value refreshes every screenshot that shows muted text.
 
 ### Git tooling + worktrees
 

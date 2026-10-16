@@ -1,0 +1,30 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "light-text-muted-contrast",
+  "summary": "The light theme's muted text colour (--text-muted) goes from #9ca3af to #666e7b, so timestamps, project headers, the composer placeholder and other secondary labels read at 4.97:1 on the main background and 4.59:1 on the sidebar (WCAG AA). Dark and translucent are unchanged.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/styles/global.css",
+        "tests/unit/light-theme-contrast.test.ts",
+        "e2e/snapshots"
+      ]
+    },
+    "reactNativeIos": { "status": "not_applicable", "reason": "The Expo app has only a dark palette (apps/mobile/src/theme.ts); there is no light theme and no #9ca3af muted colour." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "The Android app uses only darkColorScheme (ui/theme/Theme.kt); there is no light theme and no #9ca3af muted colour." },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "One CSS variable in the renderer; no API change." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "Styling only; nothing is stored." },
+    "updateRelease": { "status": "not_applicable", "reason": "Ships with the next desktop release; no packaging change." }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/light-theme-contrast.test.ts parses global.css and requires light --text-muted at 4.5:1 or better on --bg-primary and --bg-secondary; it fails on the old #9ca3af.",
+      "Visual screens phase: 48 light baselines refreshed (each checked, only muted text darker), no dark or translucent baseline changed, then two runs without updating passed.",
+      "npm run typecheck and npm test."
+    ],
+    "hardware": [],
+    "notExercised": ["Muted text on hover and selected rows (#e2e6eb) is about 4.1:1, under 4.5, as shown in the approved mock."]
+  }
+}
