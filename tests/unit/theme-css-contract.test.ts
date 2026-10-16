@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { contrastRatio } from './helpers/contrast'
 
 const css = readFileSync(new URL('../../src/renderer/styles/global.css', import.meta.url), 'utf8')
 const main = readFileSync(new URL('../../src/main/index.ts', import.meta.url), 'utf8')
@@ -18,18 +19,6 @@ function exactRule(selector: string): string {
   const body = css.match(new RegExp(`^\\s*${escaped}\\s*\\{([^}]*)\\}`, 'm'))?.[1]
   if (!body) throw new Error(`missing exact selector: ${selector}`)
   return body
-}
-
-function luminance(hex: string): number {
-  const channels = hex.match(/[0-9a-f]{2}/gi)?.map((part) => parseInt(part, 16) / 255) ?? []
-  const [r, g, b] = channels.map((value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4))
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
-}
-
-function contrast(foreground: string, background: string): number {
-  const light = Math.max(luminance(foreground), luminance(background))
-  const dark = Math.min(luminance(foreground), luminance(background))
-  return (light + 0.05) / (dark + 0.05)
 }
 
 describe('theme CSS contracts', () => {
@@ -88,6 +77,6 @@ describe('theme CSS contracts', () => {
     const background = darkTheme.match(/--bg-primary:\s*(#[0-9a-f]{6})/i)?.[1]
     expect(foreground).toBeTruthy()
     expect(background).toBeTruthy()
-    expect(contrast(foreground!, background!)).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio(foreground!, background!)).toBeGreaterThanOrEqual(4.5)
   })
 })
