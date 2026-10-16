@@ -1,5 +1,5 @@
 /** Native Apple interoperability coverage, using the production server and identity. */
-import { execFile } from 'node:child_process'
+import { execFile, spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -10,7 +10,14 @@ import { DualWebSocketServer, loadOrCreateTlsIdentity } from '../../src/main/bac
 
 const exec = promisify(execFile)
 
-describe.skipIf(process.platform !== 'darwin')('Apple URLSession against DualWebSocketServer', () => {
+// swiftc ships with Apple's command-line tools, a separate install, so a Mac
+// without them skips this file. CI's macOS leg sets SB_REQUIRE_SWIFTC=1 so the
+// coverage cannot skip silently there.
+const hasSwiftc = process.platform === 'darwin' && spawnSync('swiftc', ['--version']).status === 0
+if (process.env.SB_REQUIRE_SWIFTC === '1' && !hasSwiftc)
+  throw new Error('SB_REQUIRE_SWIFTC=1 but swiftc is not available')
+
+describe.skipIf(!hasSwiftc)('Apple URLSession against DualWebSocketServer', () => {
   let dir: string
   let server: DualWebSocketServer
   let port: number
