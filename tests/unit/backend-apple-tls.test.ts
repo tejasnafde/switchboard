@@ -8,7 +8,16 @@ import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { DualWebSocketServer, loadOrCreateTlsIdentity } from '../../src/main/backend/tls'
 
-const exec = promisify(execFile)
+const execFileAsync = promisify(execFile)
+// Keep the probe's output when it exits non-zero, so a CI failure shows what it printed.
+async function exec(file: string, args: string[], opts: { timeout: number }): Promise<{ stdout: string }> {
+  try {
+    return await execFileAsync(file, args, opts)
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; message: string }
+    throw new Error(`${e.message}\nstdout:\n${e.stdout ?? ''}\nstderr:\n${e.stderr ?? ''}`)
+  }
+}
 
 // swiftc ships with Apple's command-line tools, a separate install, so a Mac
 // without them skips this file. CI's macOS leg sets SB_REQUIRE_SWIFTC=1 so the

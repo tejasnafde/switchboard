@@ -36,6 +36,9 @@ final class Probe: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
             accepted ? .useCredential : .cancelAuthenticationChallenge,
             accepted ? URLCredential(trust: trust) : nil
         )
+        // Older macOS can leave send/receive pending after a cancelled challenge,
+        // so a rejected pin ends the probe here instead of waiting for a timeout.
+        if rejected { done.signal() }
     }
 
     func urlSession(
