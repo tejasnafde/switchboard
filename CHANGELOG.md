@@ -4,6 +4,8 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+- Stabilize the HTML preview watcher test by observing watcher readiness before measuring write bursts, and make the Android scaffold contract validate version declarations instead of a fixed release number.
+
 - Add real-server Apple URLSession pinning checks and split-ClientHello coverage for TLS 1.2 and 1.3. Existing certificates and pairing fingerprints are preserved.
 
 ### Added

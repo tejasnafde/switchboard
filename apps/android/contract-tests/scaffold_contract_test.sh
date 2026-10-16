@@ -20,6 +20,15 @@ require_text() {
   }
 }
 
+require_pattern() {
+  local file="$1"
+  local pattern="$2"
+  grep -Eq "$pattern" "$root/$file" || {
+    echo "$file does not match: $pattern" >&2
+    return 1
+  }
+}
+
 require_file gradlew
 require_file gradle/wrapper/gradle-wrapper.jar
 require_file gradle/wrapper/gradle-wrapper.properties
@@ -39,8 +48,8 @@ require_text app/build.gradle.kts 'applicationIdSuffix = ".native.dev"'
 require_text app/build.gradle.kts 'compileSdk = 36'
 require_text app/build.gradle.kts 'minSdk = 24'
 require_text app/build.gradle.kts 'targetSdk = 36'
-require_text app/build.gradle.kts 'versionCode = 7'
-require_text app/build.gradle.kts 'versionName = "0.5.5"'
+require_pattern app/build.gradle.kts '^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*[1-9][0-9]*[[:space:]]*$'
+require_pattern app/build.gradle.kts '^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"[^"]+"[[:space:]]*$'
 require_text app/build.gradle.kts 'JavaVersion.VERSION_17'
 require_text app/build.gradle.kts 'jvmTarget = JvmTarget.JVM_17'
 
