@@ -27,7 +27,7 @@
     "updateRelease": {
       "status": "implemented",
       "evidence": [
-        "vitest.config.ts"
+        "CHANGELOG.md"
       ]
     }
   },
