@@ -6,6 +6,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ### Changed
 - **iOS bundle id is `app.tn07.switchboard`.** Apple reports `app.switchboard.mobile` as taken by another developer, so the App Store app uses the tn07 prefix, like scout. The Android package is unchanged. A development iOS build with the old id is a different app: install the new build and pair again.
+- Stop `ide-bridge-host.test.ts` from logging after its worker closes: the test now waits for each settings seed write that `startBridgeHost` starts without awaiting, so no write runs into the scratch-dir cleanup and logs during teardown (CI `EnvironmentTeardownError`).
 
 - Stabilize the HTML preview watcher test by observing watcher readiness before measuring write bursts, and make the Android scaffold contract validate version declarations instead of a fixed release number.
 

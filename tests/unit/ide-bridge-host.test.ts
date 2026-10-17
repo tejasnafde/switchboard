@@ -8,7 +8,7 @@
  * because focus was inside the workbench webview and there was no bridge on the
  * remote to forward the intent. These tests pin the relay, not the transport.
  */
-import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -38,6 +38,23 @@ class FakeWss extends EventEmitter {
 
 vi.mock('ws', () => ({ WebSocketServer: FakeWss }))
 
+// startBridgeHost seeds settings.json without awaiting it, so each test leaves a
+// write in flight. Unawaited, those writes ran into afterAll's rmSync and logged
+// after the worker closed (EnvironmentTeardownError on CI). Collect them so
+// afterEach can wait; the real patch still runs.
+const pendingPatches = vi.hoisted(() => [] as Promise<void>[])
+vi.mock('../../src/main/ide/settings', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../src/main/ide/settings')>()
+  return {
+    ...real,
+    patchWorkbenchSettings: (...args: Parameters<typeof real.patchWorkbenchSettings>) => {
+      const p = real.patchWorkbenchSettings(...args)
+      pendingPatches.push(p)
+      return p
+    },
+  }
+})
+
 /** Minimal BackendHost: records emits and holds the registered handlers. */
 function fakeHost() {
   const emitted: Array<{ channel: string; args: unknown[] }> = []
@@ -58,6 +75,7 @@ const FOLDER = '/home/tejas/repo'
 // startBridgeHost seeds first-run settings into userDataDir, so give it a real
 // scratch dir rather than letting it write to a fixed path under /tmp.
 const userDataDir = mkdtempSync(join(tmpdir(), 'sb-bridge-host-test-'))
+afterEach(() => Promise.all(pendingPatches.splice(0)))
 afterAll(() => rmSync(userDataDir, { recursive: true, force: true }))
 
 let startBridgeHost: typeof import('../../src/main/ide/bridge-host').startBridgeHost
