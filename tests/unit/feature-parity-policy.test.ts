@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   changedFilesSince,
+  isDependencyOnlyBump,
   isVersionOnlyBump,
   requiresFeatureParityManifest,
   validateFeatureParityManifest,
@@ -214,5 +215,56 @@ describe('deletions are behaviour-bearing', () => {
 
   it('requires a manifest for a deleted product file', () => {
     expect(requiresFeatureParityManifest(['src/main/provider/some-adapter.ts'])).toBe(true)
+  })
+})
+
+describe('isDependencyOnlyBump', () => {
+  const diff = (text: string) => () => text
+  const lock = ['apps/mobile/package-lock.json']
+  const both = ['apps/mobile/package.json', 'apps/mobile/package-lock.json']
+
+  it('exempts a lockfile-only change without reading the diff', () => {
+    expect(
+      isDependencyOnlyBump('/repo', 'main', lock, () => {
+        throw new Error('not called')
+      }),
+    ).toBe(true)
+  })
+
+  it('exempts a dependency range change in package.json', () => {
+    expect(
+      isDependencyOnlyBump('/repo', 'main', both, diff('-    "js-yaml": "^3.15.1",\n+    "js-yaml": "^3.15.2",')),
+    ).toBe(true)
+    expect(
+      isDependencyOnlyBump('/repo', 'main', ['package.json'], diff('-    "a": ">=1.2.3",\n+    "a": "npm:b@1.0.0",')),
+    ).toBe(true)
+  })
+
+  it('refuses a script, a path or any other field', () => {
+    expect(
+      isDependencyOnlyBump('/repo', 'main', both, diff('-    "test": "vitest",\n+    "test": "vitest run",')),
+    ).toBe(false)
+    expect(
+      isDependencyOnlyBump('/repo', 'main', both, diff('-  "main": "out/main/index.js",\n+  "main": "out/other.js",')),
+    ).toBe(false)
+    expect(isDependencyOnlyBump('/repo', 'main', both, diff('+    "x": "1.2.3",\n+  "scripts": {'))).toBe(false)
+  })
+
+  it('refuses a source file, an empty diff, a failed git and a missing base', () => {
+    expect(
+      isDependencyOnlyBump(
+        '/repo',
+        'main',
+        [...both, 'src/main/index.ts'],
+        diff('-    "a": "1.0.0",\n+    "a": "1.0.1",'),
+      ),
+    ).toBe(false)
+    expect(isDependencyOnlyBump('/repo', 'main', both, diff(''))).toBe(false)
+    expect(
+      isDependencyOnlyBump('/repo', 'main', both, () => {
+        throw new Error('no git')
+      }),
+    ).toBe(false)
+    expect(isDependencyOnlyBump('/repo', '', lock)).toBe(false)
   })
 })
