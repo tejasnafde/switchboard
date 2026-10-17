@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ios-bundle-id",
+  "summary": "The App Store app's bundle identifier changes from app.switchboard.mobile to app.tn07.switchboard, because Apple reports the old id as registered by another developer (the team's bundle id list has never held it). The Android package keeps app.switchboard.mobile. A deliberate identity change: a development iOS build with the old id is a separate app, so the user installs the new build once and pairs again. Native change: needs a new iOS build, never an OTA.",
+  "surfaces": {
+    "desktop": { "status": "not_applicable", "reason": "Only apps/mobile/app.json and docs change." },
+    "reactNativeIos": { "status": "implemented", "evidence": ["apps/mobile/app.json", "CHANGELOG.md"] },
+    "nativeAndroid": { "status": "not_applicable", "reason": "The Android package app.switchboard.mobile is unchanged; Play and the developer verification already know it." },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "No wire protocol or backend change; pairing does not read the bundle id." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "No stored data format changes. Data stored by the old-id development build is not migrated: it is a different app sandbox on iOS, and the user pairs again." },
+    "updateRelease": { "status": "implemented", "evidence": ["docs/plans/2026-10-12-store-publishing.md", "docs/store/account-holder-guide.md"] }
+  },
+  "verification": {
+    "automated": ["npx expo config --type introspect resolves ios.bundleIdentifier to app.tn07.switchboard.", "npm run typecheck and npm test pass (pre-commit hook)."],
+    "hardware": [],
+    "notExercised": ["The EAS store build and the App Store record with the new id (the next run of sb-tools/eas-ios-build.sh).", "Google sign-in on iOS with the new bundle id: the OAuth client ...be31f3e is probably an iOS-type client bound to the old id; if sign-in fails, a new iOS client is a one-time GCP console step."]
+  }
+}

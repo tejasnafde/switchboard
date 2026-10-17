@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Changed
+- **iOS bundle id is `app.tn07.switchboard`.** Apple reports `app.switchboard.mobile` as taken by another developer, so the App Store app uses the tn07 prefix, like scout. The Android package is unchanged. A development iOS build with the old id is a different app: install the new build and pair again.
+
 - Stabilize the HTML preview watcher test by observing watcher readiness before measuring write bursts, and make the Android scaffold contract validate version declarations instead of a fixed release number.
 
 - Add real-server Apple URLSession pinning checks and split-ClientHello coverage for TLS 1.2 and 1.3. Existing certificates and pairing fingerprints are preserved.
