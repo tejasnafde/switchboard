@@ -145,6 +145,7 @@ class NativeConnectionTargetResolverTest {
         val rows = mapOf(
             "lan" to stored("lan", "ref", url = "ws://192.168.1.8:8765"),
             "loopback" to stored("loopback", "ref", url = "ws://127.0.0.1:8765"),
+            "emulator-host" to stored("emulator-host", "ref", url = "ws://10.0.2.2:8765"),
             "pinned" to stored("pinned", "ref", url = "wss://192.168.1.8:8765?fp=${"ab".repeat(32)}"),
         )
         val credentials = FakeCredentials(mapOf("ref" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "s")))
@@ -155,9 +156,14 @@ class NativeConnectionTargetResolverTest {
             ConnectionTargetResolution.Failure(CleartextPolicy.REFUSED_MESSAGE),
             release.resolve("lan", "phone", "Pixel"),
         )
+        assertEquals(
+            ConnectionTargetResolution.Failure(CleartextPolicy.REFUSED_MESSAGE),
+            release.resolve("emulator-host", "phone", "Pixel"),
+        )
         assertTrue(release.resolve("loopback", "phone", "Pixel") is ConnectionTargetResolution.Ready)
         assertTrue(release.resolve("pinned", "phone", "Pixel") is ConnectionTargetResolution.Ready)
         assertTrue(debug.resolve("lan", "phone", "Pixel") is ConnectionTargetResolution.Ready)
+        assertTrue(debug.resolve("emulator-host", "phone", "Pixel") is ConnectionTargetResolution.Ready)
     }
 
     private class FakeDatabase(

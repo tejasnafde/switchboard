@@ -22,7 +22,7 @@ object CertificatePin {
         ?.takeIf(::isFingerprint)
 }
 
-/** Release builds dial a remote host only over TLS. */
+/** Release builds dial anything but this phone itself only over TLS. Debug builds skip this check. */
 object CleartextPolicy {
     const val REFUSED_MESSAGE =
         "This build needs an encrypted connection. Update Switchboard on the computer and scan its QR again"
@@ -34,7 +34,8 @@ object CleartextPolicy {
     }
 
     /** Exactly the hosts res/xml/network_security_config.xml leaves cleartext open to. */
-    fun isLoopbackHost(host: String): Boolean = host.lowercase() in CLEARTEXT_HOSTS
+    fun isLoopbackHost(host: String): Boolean = host.lowercase().removeSurrounding("[", "]") in CLEARTEXT_HOSTS
 
-    private val CLEARTEXT_HOSTS = setOf("localhost", "127.0.0.1", "10.0.2.2")
+    // No 10.0.2.2: it is the emulator's host only on an emulator; on a phone it is a LAN address.
+    private val CLEARTEXT_HOSTS = setOf("localhost", "127.0.0.1", "::1")
 }
