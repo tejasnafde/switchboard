@@ -71,7 +71,7 @@ object ConnectionSecurityPolicy {
 
 /**
  * The phones' transport-security copy, identical to CONNECTION_SECURITY_COPY in
- * `src/shared/connection-security.ts`. ConnectionSecurityCopyFixtureTest checks
+ * `src/shared/connection-security.ts`. ConnectionSecurityTest checks
  * [all] against tests/fixtures/connection-security-copy.json.
  */
 object ConnectionSecurityCopy {

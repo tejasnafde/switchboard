@@ -1,6 +1,6 @@
 /**
  * tests/fixtures/connection-security-copy.json is the copy native Android keeps
- * in ConnectionSecurityCopy.kt (checked by ConnectionSecurityCopyFixtureTest).
+ * in ConnectionSecurityCopy.kt (checked by ConnectionSecurityTest).
  * After changing CONNECTION_SECURITY_COPY, regenerate it with
  *
  *   SB_UPDATE_FIXTURES=1 npx vitest run tests/unit/connection-security.test.ts

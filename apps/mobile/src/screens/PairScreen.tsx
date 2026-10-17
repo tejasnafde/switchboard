@@ -231,17 +231,25 @@ export default function PairScreen() {
     saveWs(data.trim(), '', editConfig?.label)
   }
 
+  // A saved ws machine must not turn into an IAP one: IAP always adds a machine.
+  const openIap = () => (editId ? navigation.replace('Pair', { kind: 'iap' }) : setKind('iap'))
+
   const oldQrSheet = (
     <OldQrSheet
       address={oldQr}
       onScanAgain={() => {
         setOldQr(null)
+        // The edit form cannot scan; reopen as a scan into the same machine.
+        if (editId && !rescan) {
+          navigation.replace('Pair', { editId, rescan: true })
+          return
+        }
         setManual(false)
         scannedRef.current = false
       }}
       onUseIap={() => {
         setOldQr(null)
-        setKind('iap')
+        openIap()
       }}
       onCancel={() => {
         setOldQr(null)
@@ -285,10 +293,7 @@ export default function PairScreen() {
             >
               <Text style={styles.ghostText}>Type it instead</Text>
             </Pressable>
-            <Pressable
-              onPress={() => setKind('iap')}
-              style={({ pressed }) => [styles.ghost, pressed && styles.pressed]}
-            >
+            <Pressable onPress={openIap} style={({ pressed }) => [styles.ghost, pressed && styles.pressed]}>
               <Text style={styles.ghostText}>Add a work VM</Text>
             </Pressable>
           </View>
