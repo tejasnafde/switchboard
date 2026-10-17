@@ -43,7 +43,7 @@ WHY PEOPLE USE IT
 
 YOUR CODE STAYS ON YOUR MACHINE
 
-Switchboard has no cloud account and no relay server of its own. Your phone talks straight to the desktop app you run, over an encrypted connection pinned to that machine. Your chats, code and files never pass through our servers. There are no ads, no analytics and no tracking.
+Switchboard has no cloud account and no relay server of its own. Your phone talks straight to the desktop app you run, over an encrypted connection pinned to that machine. Your chats, code and files never pass through our servers. There are no ads and no tracking, and we run no analytics of our own.
 
 TRY IT FIRST
 

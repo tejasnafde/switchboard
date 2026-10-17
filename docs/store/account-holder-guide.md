@@ -44,8 +44,9 @@ Use the GlycoCare organization account. Touch only the Switchboard app.
 7. **Target audience.** App content > Target audience. Select 18 and over
    only.
 8. **Data safety.** App content > Data safety. Use the answers in
-   `docs/store/play/data-safety.md`. The store build uses TLS only for remote
-   backends, so "encrypted in transit" is Yes.
+   `docs/store/play/data-safety.md`. The store build uses TLS for remote
+   backends, so "encrypted in transit" is Yes; read the one exception noted
+   there (`10.0.2.2`) and ask Tejas whether it is fixed first.
 9. **Store listing.** Grow > Store presence > Main store listing. Paste the
    name, the short description ("Watch, steer and approve your desktop coding
    agents from your phone."), the full description, the icon, the feature

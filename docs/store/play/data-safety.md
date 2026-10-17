@@ -59,8 +59,18 @@ Encryption in transit, why Yes is true for the release build:
 
 - `src/main/res/xml/network_security_config.xml` (release) sets
   `cleartextTrafficPermitted="false"` for every host except `localhost`,
-  `127.0.0.1` and `10.0.2.2`. Loopback traffic never leaves the phone, so it
-  is not transmission off the device.
+  `127.0.0.1` and `10.0.2.2`, and the app's own rule matches it
+  (`domain/connection/TransportSecurity.kt`, `CLEARTEXT_HOSTS`). Loopback
+  traffic never leaves the phone.
+- **One exception to check before submitting:** `10.0.2.2` is the Android
+  emulator's alias for its host computer, but on a physical phone it is an
+  ordinary private network address. A user whose desktop has exactly that LAN
+  address could pair with it over plain `ws://`. It is an edge case (the
+  address must be typed by hand and match exactly), but it makes "all data
+  encrypted in transit" not strictly true. Recommended: remove `10.0.2.2`
+  from the release config and `CLEARTEXT_HOSTS` (emulators can use
+  `adb reverse` to `localhost` instead) before the first production release.
+  Until then, Yes describes every normal pairing path.
 - A paired backend is dialled over `wss://` with its certificate pinned from
   the pairing QR (`platform/protocol/PinnedTls.kt`), or through the Google IAP tunnel (TLS).
   Remote `ws://` is refused. See
@@ -121,9 +131,10 @@ form answer is No. What the user controls:
 - **Remove machine** on the phone's Connections screen, or revoking the device
   in the desktop app's Settings > Mobile pairing, ends the pairing. Chats live on the user's own computer, and the
   user deletes them there.
-- A dead push token is dropped by the backend on the next failed send
-  (`dropDeadTokens`). Removing a machine does not currently unregister the token on the
-  backend; uninstall does, through that path.
+- The backend removes a dead push token only after a send to it fails
+  (`dropDeadTokens` in `src/main/push/registry.ts`). After an uninstall the
+  token stays registered on the backend until the next send attempt.
+  Removing a machine on the phone does not currently unregister the token.
 
 ## Content rating (IARC questionnaire)
 
