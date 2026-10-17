@@ -42,6 +42,13 @@ every permission of the AAB. The AAB is kept as a workflow artifact for 90
 days, then uploaded to Play. Play refuses a `versionCode` it has already seen,
 so it enforces monotonic versions.
 
+The release build allows plain `ws://` only to loopback (`localhost`,
+`127.0.0.1`, `::1`), in `res/xml/network_security_config.xml` and in
+`CleartextPolicy`. Every other host, the emulator's `10.0.2.2` included, needs
+the pinned `wss://` path or the IAP tunnel, so the Play Data safety form can
+answer "data is encrypted in transit". To reach a desktop from an emulator,
+use the debug build, which allows any host.
+
 Signing uses Play App Signing. Play holds the app signing key; the key above is
 the upload key, so register it as the upload key when Play App Signing is set
 up. If a different upload key is ever used, change `CANONICAL_SIGNER_SHA256`
@@ -98,6 +105,10 @@ restricted", with these instructions):
 
 The demo hides the push, microphone and camera prompts, so a reviewer who
 wants to see them needs a paired backend; say so if a review asks.
+
+The Play listing text, the policy form answers (Data safety, Content rating,
+App access) and the graphics are in `docs/store/play/` (`listing.md` says how
+to regenerate the images).
 
 ## TL;DR
 

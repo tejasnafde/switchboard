@@ -15,7 +15,7 @@ Get these from Tejas:
 - The first AAB file (`switchboard-<version>.aab`, in the `switchboard-<version>-aab`
   artifact of the `mobile-release.yml` workflow run).
 - The upload key certificate fingerprint, if Play asks for it.
-- The store listing text, the graphics and the screenshots.
+- The store listing text, the graphics and the screenshots (`docs/store/play/`).
 - The email address of the per-app publisher service account for
   `app.switchboard.mobile`.
 
@@ -40,17 +40,21 @@ Use the GlycoCare organization account. Touch only the Switchboard app.
 5. **Ads.** App content > Ads. Select "No, my app does not contain ads".
 6. **Content rating.** App content > Content rating > Start questionnaire.
    Category: Utility, productivity, communication or other. Answer No to every
-   content question. Submit.
+   content question. One exception: if it asks whether the app displays
+   AI-generated content, answer Yes (details in
+   `docs/store/play/data-safety.md`). Submit.
 7. **Target audience.** App content > Target audience. Select 18 and over
    only.
-8. **Data safety.** App content > Data safety. Use the answers Tejas sends.
-   Important: the phone can talk to the user's own backend over plain
-   `ws://`, so do not mark all data as "encrypted in transit" unless Tejas
-   confirms that the store build uses TLS only.
+8. **Data safety.** App content > Data safety. Use the answers in
+   `docs/store/play/data-safety.md`. For "encrypted in transit", select Yes
+   only after Tejas confirms that the AAB you upload no longer allows plain
+   `ws://` to `10.0.2.2` (the one exception that file describes). If it still
+   does, ask him before you answer.
 9. **Store listing.** Grow > Store presence > Main store listing. Paste the
    name, the short description ("Watch, steer and approve your desktop coding
    agents from your phone."), the full description, the icon, the feature
-   graphic and the screenshots. Category: Tools. Save.
+   graphic and the screenshots, all from `docs/store/play/listing.md` and the
+   files beside it. Category: Tools. Save.
 10. **Roll out to internal testing.** Go back to the release from step 3.
     Click Review release, then Start rollout. Google reviews the first
     internal release before testers can install it.
@@ -60,12 +64,14 @@ release review page shows.
 
 ## Apple (App Store Connect and Developer portal)
 
+Before these steps, the App ID `app.tn07.switchboard` must exist in Certificates, Identifiers & Profiles. The first EAS store build (`sb-tools/eas-ios-build.sh`, run by Tejas) registers it. If it is missing, register it there first: Identifiers > + > App IDs > App, explicit bundle ID `app.tn07.switchboard`, capability Push Notifications.
+
 Use the Account Holder Apple ID. Touch only Switchboard and the keys named
 here. Never change the GlycoCare apps or their keys.
 
 1. **Create the app record.** App Store Connect > Apps > + > New App.
    Platform: iOS. Name: `Switchboard: Run Your Agents`. Primary language:
-   English (U.S.). Bundle ID: `app.switchboard.mobile`. SKU:
+   English (U.S.). Bundle ID: `app.tn07.switchboard`. SKU:
    `switchboard-ios`. User access: Full access. Click Create.
 2. **App Privacy.** In the new app, App Privacy > Get Started. Use the answers
    Tejas sends (the same facts as the Play Data safety form). Add the privacy
@@ -75,7 +81,7 @@ here. Never change the GlycoCare apps or their keys.
    Notifications service (APNs). Continue, then Register. Download the `.p8`
    file. It downloads only once. Note the Key ID.
    Tejas uploads it to EAS (`eas credentials`); if you upload it yourself,
-   choose iOS > Push Notifications key for `app.switchboard.mobile`.
+   choose iOS > Push Notifications key for `app.tn07.switchboard`.
 4. **Developer ID Application certificate (desktop signing).** Only the
    Account Holder can create this. On a Mac: Keychain Access > Certificate
    Assistant > Request a Certificate From a Certificate Authority. Save the

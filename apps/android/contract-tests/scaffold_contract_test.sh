@@ -72,6 +72,11 @@ for permission in INTERNET ACCESS_NETWORK_STATE CAMERA RECORD_AUDIO POST_NOTIFIC
 done
 require_text "$manifest" 'android:networkSecurityConfig="@xml/network_security_config"'
 require_text app/src/main/res/xml/network_security_config.xml '<base-config cleartextTrafficPermitted="false" />'
+# Release cleartext is loopback only: 10.0.2.2 is a LAN address on a real phone.
+if grep -q '10\.0\.2\.2' "$root"/app/src/main/res/xml/network_security_config.xml; then
+  echo "release network_security_config.xml must not allow cleartext to 10.0.2.2" >&2
+  exit 1
+fi
 require_text "$manifest" 'android:screenOrientation="portrait"'
 require_text "$manifest" 'android:scheme="switchboard"'
 require_text "$manifest" 'android:scheme="com.googleusercontent.apps.974343814740-be31f3e59stdql81uke54r62aodb5c7q"'

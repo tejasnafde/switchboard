@@ -1,0 +1,49 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-release-cleartext",
+  "summary": "The native Android release build allows plain ws:// only to loopback (localhost, 127.0.0.1, ::1). The emulator host 10.0.2.2 is debug only, because on a real phone it is a LAN address.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop does not dial phones; its ws:// and wss:// endpoint is unchanged."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app keeps its own transport gate (src/shared/transport-security.ts) and is not the Play upload; this change is the native Android network security config only."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/res/xml/network_security_config.xml",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/connection/TransportSecurity.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/connection/ConnectionDecisionsTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/connection/NativeConnectionTargetResolverTest.kt",
+        "apps/android/contract-tests/scaffold_contract_test.sh"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "The wire protocol, the QR payload and the server's ws:// and wss:// endpoint are unchanged."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Saved machines are not rewritten. A saved ws://10.0.2.2 machine in a release build is refused at dial time with the existing re-pair message."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Package, signing and the Play upload workflow are unchanged; the release AAB simply carries the stricter config."
+    }
+  },
+  "verification": {
+    "automated": [
+      "gradle :app:testDebugUnitTest ConnectionDecisionsTest and NativeConnectionTargetResolverTest: release refuses a saved ws://10.0.2.2 machine, debug allows it, [::1] is loopback.",
+      "gradle :app:lintDebug and :app:lintRelease pass with ::1 in the release network security config.",
+      "apps/android/contract-tests/scaffold_contract_test.sh fails when the release config names 10.0.2.2."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No physical phone or emulator was run; the platform enforcement of the network security config was not exercised on a device."
+    ]
+  }
+}

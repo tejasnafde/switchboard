@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "parity-dependency-bumps",
+  "summary": "The feature-parity validator exempts a dependency-only bump, as it already exempts npm version: every changed file is a package.json or package-lock.json (root or apps/mobile), and every changed package.json line is a \"name\": \"<version range>\" pair. Dependabot pull requests no longer need a manifest. A change to a script, a path or any other field still does.",
+  "surfaces": {
+    "desktop": { "status": "not_applicable", "reason": "A CI policy script changes; no app code." },
+    "reactNativeIos": { "status": "not_applicable", "reason": "Same: policy script only. apps/mobile dependency bumps are what the exemption covers." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "Policy script only; Gradle dependency bumps are not package.json changes and are unaffected." },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "No wire protocol or backend change." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "No stored data changes." },
+    "updateRelease": { "status": "implemented", "evidence": ["scripts/validate-feature-parity.mjs", "tests/unit/feature-parity-policy.test.ts"] }
+  },
+  "verification": {
+    "automated": ["tests/unit/feature-parity-policy.test.ts covers a lockfile-only change, a dependency range change, an npm: alias, a script change, a main path change, a mixed diff, an empty diff, a failed git and a missing base.", "npm run validate:feature-parity -- --base origin/main passes on this branch."],
+    "hardware": [],
+    "notExercised": ["A live dependabot pull request after this merges (#333 and #334 are the first)."]
+  }
+}
