@@ -4,7 +4,7 @@
  * Switchboard that predates the certificate pin. Offers the same two ways out
  * as the refused machine row.
  */
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { CONNECTION_SECURITY_COPY as COPY } from '@shared/connection-security'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
@@ -26,28 +26,31 @@ export function OldQrSheet({
       <View style={styles.backdrop}>
         <View style={styles.sheet}>
           <View style={styles.grab} />
-          <View style={styles.head}>
-            <Ionicons name="warning" size={20} color={colors.amber} />
-            <Text style={styles.title} accessibilityRole="header">
-              {COPY.oldQrTitle}
-            </Text>
-          </View>
-          <Text style={styles.body}>{COPY.oldQrBody}</Text>
-          <View style={styles.address}>
-            <Text style={styles.addressText} numberOfLines={1}>
-              {address}
-            </Text>
-            <Text style={[styles.addressText, { color: colors.amber }]}>{COPY.noCertificate}</Text>
-          </View>
-          <Option title={COPY.oldQrScanAgain} body={COPY.oldQrScanAgainBody} primary onPress={onScanAgain} />
-          <Option title={COPY.oldQrCloudIap} body={COPY.oldQrCloudIapBody} onPress={onUseIap} />
-          <Pressable
-            onPress={onCancel}
-            accessibilityRole="button"
-            style={({ pressed }) => [styles.cancel, pressed && styles.pressed]}
-          >
-            <Text style={styles.cancelText}>{COPY.cancel}</Text>
-          </Pressable>
+          {/* Scrolls when large text makes it taller than the screen. */}
+          <ScrollView bounces={false}>
+            <View style={styles.head}>
+              <Ionicons name="warning" size={20} color={colors.amber} />
+              <Text style={styles.title} accessibilityRole="header">
+                {COPY.oldQrTitle}
+              </Text>
+            </View>
+            <Text style={styles.body}>{COPY.oldQrBody}</Text>
+            <View style={styles.address}>
+              <Text style={styles.addressText} numberOfLines={1}>
+                {address}
+              </Text>
+              <Text style={[styles.addressText, { color: colors.amber }]}>{COPY.noCertificate}</Text>
+            </View>
+            <Option title={COPY.oldQrScanAgain} body={COPY.oldQrScanAgainBody} primary onPress={onScanAgain} />
+            <Option title={COPY.oldQrCloudIap} body={COPY.oldQrCloudIapBody} onPress={onUseIap} />
+            <Pressable
+              onPress={onCancel}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.cancel, pressed && styles.pressed]}
+            >
+              <Text style={styles.cancelText}>{COPY.cancel}</Text>
+            </Pressable>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -89,6 +92,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 34,
+    maxHeight: '90%',
   },
   grab: {
     width: 36,
