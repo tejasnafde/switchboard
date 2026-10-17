@@ -99,6 +99,10 @@ restricted", with these instructions):
 The demo hides the push, microphone and camera prompts, so a reviewer who
 wants to see them needs a paired backend; say so if a review asks.
 
+The Play listing text, the policy form answers (Data safety, Content rating,
+App access) and the graphics are in `docs/store/play/` (`listing.md` says how
+to regenerate the images).
+
 ## TL;DR
 
 A desktop release is a tag on `main`. There is no version-bump pull request:

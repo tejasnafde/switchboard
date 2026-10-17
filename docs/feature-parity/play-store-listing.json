@@ -1,0 +1,51 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "play-store-listing",
+  "summary": "Store plan: everything the Play Console store listing and policy forms need, as files in docs/store/play (listing text, Data safety, Content rating and App access answers, the 512 px icon, the feature graphic and six 1080x1920 screenshots). The screenshots come from a Robolectric test that renders the real Compose screens in demo mode and is skipped unless SB_STORE_SHOTS_DIR is set. No app behaviour changes.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The listing is for the Android app on Google Play; the desktop app ships through GitHub releases and gains nothing here."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "This batch covers Google Play only. The App Store listing for the Expo app is a separate step of the store plan."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/demo/StoreScreenshotsTest.kt",
+        "docs/store/play/listing.md",
+        "docs/store/play/data-safety.md"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No protocol, API or shared code change; the screenshots read the existing demo fixture."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data or schema change; the new file is a unit test and the rest are docs and images."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "docs/store/account-holder-guide.md",
+        "docs/store/play/listing.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "Gradle :app:testDebugUnitTest --tests '*StoreScreenshotsTest' with SB_STORE_SHOTS_DIR set rendered the six screenshots; without it the test is skipped.",
+      "Image sizes and formats checked with Pillow: icon 512x512 RGBA, feature graphic 1024x500 RGB, screenshots 1080x1920.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Nothing was uploaded to Play Console; a browser session uploads these files.",
+      "Screenshots are Robolectric renders, not captures from a phone or an emulator."
+    ]
+  }
+}
