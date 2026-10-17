@@ -60,6 +60,8 @@ release review page shows.
 
 ## Apple (App Store Connect and Developer portal)
 
+Before these steps, the App ID `app.tn07.switchboard` must exist in Certificates, Identifiers & Profiles. The first EAS store build (`sb-tools/eas-ios-build.sh`, run by Tejas) registers it. If it is missing, register it there first: Identifiers > + > App IDs > App, explicit bundle ID `app.tn07.switchboard`, capability Push Notifications.
+
 Use the Account Holder Apple ID. Touch only Switchboard and the keys named
 here. Never change the GlycoCare apps or their keys.
 

@@ -41,8 +41,8 @@
     ],
     "hardware": [],
     "notExercised": [
-      "The EAS store build and the App Store record with the new id (the next run of sb-tools/eas-ios-build.sh).",
-      "Google sign-in on iOS with the new bundle id: the OAuth client ...be31f3e is probably an iOS-type client bound to the old id; if sign-in fails, a new iOS client is a one-time GCP console step."
+      "The EAS store build and the App Store record with the new id (the next run of sb-tools/eas-ios-build.sh); that build registers the App ID.",
+      "Token renewal on the new build with an imported credential: the phone uses the Desktop-type Google client and desktop-minted refresh tokens (apps/mobile/app.json, googleClientId note), not an iOS client, so the bundle id does not bind it; confirm renewal still works after the install."
     ]
   }
 }
