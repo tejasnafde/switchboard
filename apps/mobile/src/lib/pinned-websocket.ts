@@ -23,6 +23,9 @@ const native =
   Platform.OS === 'ios' ? requireOptionalNativeModule<NativePinnedSocket>('SwitchboardPinnedWebSocket') : null
 let nextId = 0
 
+/** This binary can pin a certificate: false in Expo Go and binaries without the native module. */
+export const canPinCertificates = native !== null
+
 export function pinnedTarget(url: string): { url: string; fingerprint: string } | null {
   if (!native) return null
   const parsed = new URL(url)

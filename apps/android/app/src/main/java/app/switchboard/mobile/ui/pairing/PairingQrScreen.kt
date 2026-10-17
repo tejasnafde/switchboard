@@ -76,6 +76,8 @@ import kotlinx.coroutines.launch
 fun PairingQrScreen(
     onBack: () -> Unit,
     onManual: () -> Unit,
+    /** Connection id and label a scan replaces, or null to add a machine. */
+    rescan: Pair<String, String>? = null,
     onSave: suspend (PairingSaveIntent) -> PairingSaveResult,
     onSaved: () -> Unit,
     modifier: Modifier = Modifier,
@@ -119,7 +121,7 @@ fun PairingQrScreen(
         val ready = next as? PairingQrState.ReadyToSave ?: return
         scope.launch {
             val result = try {
-                onSave(PairingSaveIntent.Add(ready.submission))
+                onSave(PairingFormPolicy.scanIntent(ready.submission, rescan))
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {

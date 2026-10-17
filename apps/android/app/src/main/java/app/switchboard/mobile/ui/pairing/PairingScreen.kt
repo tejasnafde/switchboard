@@ -69,6 +69,8 @@ fun PairingScreen(
     discoverIapTargets: suspend () -> IapTargetSelection = {
         IapTargetSelection(emptyList(), 0, 0)
     },
+    rescan: Boolean = false,
+    startIap: Boolean = false,
 ) {
     if (editConnectionId != null && initialForm == null) {
         MissingEditState(onBack = onBack, modifier = modifier)
@@ -76,15 +78,18 @@ fun PairingScreen(
     }
 
     var manual by rememberSaveable(editConnectionId) {
-        mutableStateOf(startManual || editConnectionId != null)
+        mutableStateOf(startManual || startIap || (editConnectionId != null && !rescan))
     }
     var kind by rememberSaveable(editConnectionId) {
-        mutableStateOf(initialForm?.kind ?: PairingConnectionKind.WEBSOCKET)
+        mutableStateOf(
+            initialForm?.kind ?: if (startIap) PairingConnectionKind.IAP else PairingConnectionKind.WEBSOCKET,
+        )
     }
     if (!manual) {
         PairingQrScreen(
             onBack = onBack,
             onManual = { manual = true },
+            rescan = editConnectionId?.takeIf { rescan }?.let { id -> id to initialForm?.label.orEmpty() },
             onSave = onSave,
             onSaved = onSaved,
             modifier = modifier,

@@ -3,6 +3,7 @@ package app.switchboard.mobile.ui.connections
 import app.switchboard.mobile.data.local.ConnectionEntity
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
+import app.switchboard.mobile.domain.connection.ConnectionTerminalReason
 import app.switchboard.mobile.domain.connection.ConnectionStatus as RuntimeStatus
 import app.switchboard.mobile.platform.startup.StartupRuntimeState
 import org.junit.Assert.assertEquals
@@ -39,6 +40,22 @@ class RuntimeConnectionsMapperTest {
         assertEquals("retry 2", connecting.connections.single().detail)
         assertEquals(ConnectionStatus.ERROR, failed.connections.single().status)
         assertEquals("token rejected - re-pair", failed.connections.single().detail)
+    }
+
+    @Test
+    fun marksOnlyACertificateMismatchAsCertificateChanged() {
+        fun mapped(state: ConnectionRuntimeState) =
+            (RuntimeConnectionsMapper.map(ready(ws("a")), mapOf("a" to state)) as ConnectionsLoadState.Ready)
+                .connections.single()
+
+        val changed = mapped(
+            ConnectionRuntimeState(3, RuntimeStatus.Error, "changed", ConnectionTerminalReason.CertificateChanged),
+        )
+        val timedOut = mapped(
+            ConnectionRuntimeState(3, RuntimeStatus.Error, "timed out", ConnectionTerminalReason.BackendHandshakeTimedOut),
+        )
+        assertEquals(true, changed.certificateChanged)
+        assertEquals(false, timedOut.certificateChanged)
     }
 
     @Test

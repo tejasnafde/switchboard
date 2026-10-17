@@ -1,5 +1,9 @@
 package app.switchboard.mobile.ui.connections
 
+import app.switchboard.mobile.domain.connection.CertificatePin
+import app.switchboard.mobile.domain.connection.ConnectionSecurity
+import app.switchboard.mobile.domain.connection.ConnectionSecurityCopy
+import app.switchboard.mobile.domain.connection.ConnectionSecurityPolicy
 import java.io.Serializable
 
 enum class ConnectionKind : Serializable {
@@ -30,6 +34,8 @@ data class ConnectionItem(
     val target: ConnectionTarget,
     val status: ConnectionStatus,
     val detail: String? = null,
+    /** The last dial stopped on a certificate that is not the pinned one. */
+    val certificateChanged: Boolean = false,
 ) : Serializable
 
 sealed interface ConnectionsLoadState : Serializable {
@@ -54,6 +60,11 @@ data class ConnectionRowPresentation(
     val live: Boolean,
     val showProgress: Boolean,
     val detail: String?,
+    val security: ConnectionSecurity = ConnectionSecurity.PLAIN,
+    /** First 8 hex of the pinned certificate, for PINNED and CERTIFICATE_CHANGED rows. */
+    val shortFingerprint: String? = null,
+    /** Host and port, or the IAP zone: the text after the transport label. */
+    val address: String = target,
 ) : Serializable
 
 sealed interface ConnectionsPresentation : Serializable {
@@ -99,7 +110,11 @@ sealed interface ConnectionIntent : Serializable {
 }
 
 object ConnectionsPresenter {
-    fun present(state: ConnectionsLoadState): ConnectionsPresentation = when (state) {
+    /** [requireEncryption] is true in release builds, which refuse plain ws:// to another computer. */
+    fun present(
+        state: ConnectionsLoadState,
+        requireEncryption: Boolean = false,
+    ): ConnectionsPresentation = when (state) {
         ConnectionsLoadState.Loading -> ConnectionsPresentation.Loading
         is ConnectionsLoadState.Failed -> ConnectionsPresentation.Failure(state.message)
         is ConnectionsLoadState.Ready -> {
@@ -111,17 +126,28 @@ object ConnectionsPresenter {
                     summary = if (state.isRefreshing) {
                         "connecting"
                     } else {
-                        "$liveCount of ${state.connections.size} live"
+                        ConnectionSecurityCopy.fill(
+                            ConnectionSecurityCopy.LIVE_COUNT,
+                            "live" to liveCount,
+                            "total" to state.connections.size,
+                        )
                     },
-                    rows = state.connections.map(::row),
+                    rows = state.connections.map { row(it, requireEncryption) },
                     recoveryMessage = state.recoveryMessage,
                 )
             }
         }
     }
 
-    fun row(item: ConnectionItem): ConnectionRowPresentation {
+    fun row(item: ConnectionItem, requireEncryption: Boolean = false): ConnectionRowPresentation {
         val live = item.status == ConnectionStatus.LIVE
+        val url = (item.target as? ConnectionTarget.WebSocket)?.url
+        val security = ConnectionSecurityPolicy.of(
+            url = url,
+            iap = item.kind == ConnectionKind.IAP,
+            requireEncryption = requireEncryption,
+            certificateChanged = item.certificateChanged,
+        )
         return ConnectionRowPresentation(
             id = item.id,
             label = item.label,
@@ -140,6 +166,14 @@ object ConnectionsPresenter {
             live = live,
             showProgress = item.status == ConnectionStatus.CONNECTING,
             detail = item.detail.takeUnless { live },
+            security = security,
+            shortFingerprint = url
+                ?.takeIf { ConnectionSecurityPolicy.showsFingerprint(security) }
+                ?.let { ConnectionSecurityPolicy.shortFingerprint(CertificatePin.of(it)) },
+            address = when (val target = item.target) {
+                is ConnectionTarget.WebSocket -> target.url.removeWebSocketScheme()
+                is ConnectionTarget.Iap -> target.zone
+            },
         )
     }
 
@@ -175,28 +209,27 @@ object ConnectionsPresenter {
         removePrefix("ws://").removePrefix("wss://").substringBefore('?')
 }
 
-object ConnectionRowPolicy {
-    fun statusLabel(status: ConnectionStatus): String = when (status) {
-        ConnectionStatus.LIVE -> "Live"
-        ConnectionStatus.CONNECTING -> "Connecting"
-        ConnectionStatus.OFFLINE -> "Offline"
-        ConnectionStatus.ERROR -> "Error"
-    }
-
-    fun supportingText(row: ConnectionRowPresentation): String = listOfNotNull(
-        row.target,
-        row.detail?.trim()?.takeIf(String::isNotEmpty),
-    ).joinToString(" · ")
-}
-
 data class ConnectionSections(
-    val available: List<ConnectionRowPresentation>,
-    val unavailable: List<ConnectionRowPresentation>,
+    val live: List<ConnectionRowPresentation>,
+    val attention: List<ConnectionRowPresentation>,
 )
 
 object ConnectionsListPolicy {
-    fun sections(rows: List<ConnectionRowPresentation>): ConnectionSections = ConnectionSections(
-        available = rows.filter { it.status == ConnectionStatus.LIVE },
-        unavailable = rows.filter { it.status != ConnectionStatus.LIVE },
-    )
+    /** "Live" holds every row the user need not act on; "Needs attention" the rest. */
+    fun sections(rows: List<ConnectionRowPresentation>): ConnectionSections {
+        val (attention, live) = rows.partition {
+            ConnectionSecurityPolicy.needsAttention(it.security, error = it.status == ConnectionStatus.ERROR)
+        }
+        return ConnectionSections(live = live, attention = attention)
+    }
+
+    /** Why a row is not live, unless its security hint already says so. */
+    fun statusDetail(row: ConnectionRowPresentation): String? = row.detail
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?.takeUnless {
+            row.live ||
+                row.security == ConnectionSecurity.REFUSED ||
+                row.security == ConnectionSecurity.CERTIFICATE_CHANGED
+        }
 }

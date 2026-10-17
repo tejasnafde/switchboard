@@ -170,6 +170,22 @@ class PairingFormPolicyTest {
         )
     }
 
+    @Test
+    fun aScanAddsAMachineOrReplacesTheOneBeingScannedAgainKeepingItsName() {
+        val submission = PairingSubmission(label = "192.168.1.40:8765", url = "wss://192.168.1.40:8765?fp=abc", pairing = "p")
+
+        assertEquals(PairingSaveIntent.Add(submission), PairingFormPolicy.scanIntent(submission, null))
+        assertEquals(
+            PairingSaveIntent.Edit(
+                connectionId = "build",
+                submission = submission.copy(label = "Build server"),
+                resetSession = true,
+                reconnect = true,
+            ),
+            PairingFormPolicy.scanIntent(submission, "build" to "Build server"),
+        )
+    }
+
     private fun invalidField(form: PairingForm): PairingField =
         (PairingFormPolicy.validate(form) as PairingValidation.Invalid).field
 }

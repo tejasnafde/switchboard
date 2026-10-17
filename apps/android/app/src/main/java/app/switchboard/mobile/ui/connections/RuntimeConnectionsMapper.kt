@@ -1,6 +1,7 @@
 package app.switchboard.mobile.ui.connections
 
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
+import app.switchboard.mobile.domain.connection.ConnectionTerminalReason
 import app.switchboard.mobile.domain.connection.ConnectionStatus as RuntimeStatus
 import app.switchboard.mobile.platform.startup.StartupRuntimeState
 
@@ -26,6 +27,7 @@ object RuntimeConnectionsMapper {
                         RuntimeStatus.Error -> ConnectionStatus.ERROR
                     },
                     detail = live.detail.takeIf(String::isNotBlank),
+                    certificateChanged = live.reason == ConnectionTerminalReason.CertificateChanged,
                 )
             },
         )

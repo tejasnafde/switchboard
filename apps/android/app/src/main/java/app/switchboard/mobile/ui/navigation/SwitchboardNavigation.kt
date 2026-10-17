@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalUriHandler
+import app.switchboard.mobile.BuildConfig
 import app.switchboard.mobile.ui.demo.DemoStrip
 import app.switchboard.mobile.ui.demo.DemoUriHandler
 import app.switchboard.mobile.ui.demo.LeaveDemoDialog
@@ -367,7 +368,10 @@ private fun SwitchboardNavigationHost(
             )
 
             AppRoute.ManageConnections -> ConnectionsScreen(
-                presentation = ConnectionsPresenter.present(visibleConnections),
+                presentation = ConnectionsPresenter.present(
+                    visibleConnections,
+                    requireEncryption = !BuildConfig.DEBUG,
+                ),
                 buildStamp = buildStamp,
                 onAdd = { navigationState = navigationState.push(AppRoute.Pair()) },
                 onTryDemo = onTryDemo,
@@ -376,6 +380,12 @@ private fun SwitchboardNavigationHost(
                 },
                 onEdit = { connectionId ->
                     navigationState = navigationState.push(AppRoute.Pair(connectionId))
+                },
+                onRescan = { connectionId ->
+                    navigationState = navigationState.push(AppRoute.Pair(connectionId, rescan = true))
+                },
+                onUseIap = {
+                    navigationState = navigationState.push(AppRoute.Pair(startIap = true))
                 },
                 googleAccount = googleAccountPresentation,
                 onGoogleAccount = {
@@ -428,6 +438,8 @@ private fun SwitchboardNavigationHost(
             is AppRoute.Pair -> PairingScreen(
                 editConnectionId = route.editConnectionId,
                 startManual = route.startManual,
+                rescan = route.rescan,
+                startIap = route.startIap,
                 initialForm = route.editConnectionId?.let(resolveEditForm),
                 onBack = ::navigateBack,
                 onSave = onPairingIntent,

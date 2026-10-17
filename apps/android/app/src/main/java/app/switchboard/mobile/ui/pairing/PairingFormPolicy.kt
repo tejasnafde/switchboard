@@ -182,6 +182,23 @@ object PairingFormPolicy {
         }
     }
 
+    /**
+     * A scanned QR adds a machine, or replaces [rescan]'s address and credential
+     * when the user scans again for a machine whose QR is outdated or whose
+     * certificate changed. The saved name is kept.
+     */
+    fun scanIntent(submission: PairingSubmission, rescan: Pair<String, String>?): PairingSaveIntent =
+        if (rescan == null) {
+            PairingSaveIntent.Add(submission)
+        } else {
+            PairingSaveIntent.Edit(
+                connectionId = rescan.first,
+                submission = submission.copy(label = rescan.second.ifBlank { submission.label }),
+                resetSession = true,
+                reconnect = true,
+            )
+        }
+
     private fun String.removeWebSocketScheme(): String =
         removePrefix("ws://").removePrefix("wss://").substringBefore('?')
 }

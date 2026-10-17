@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MobilePairingStatus } from '@shared/types'
+import { shortFingerprint } from '@shared/connection-security'
 import { withCertPin } from '@shared/transport-security'
 import type { DeviceSessionView } from '@shared/device-auth'
 import QRCode from 'qrcode'
@@ -222,6 +223,7 @@ export function MobilePairingTab() {
     if (!host || !pairing || !isValidPort(port)) return null
     return withCertPin(`ws://${host}:${port}?pair=${pairing.code}`, endpoint?.fingerprint)
   }, [host, port, pairing, endpoint?.fingerprint])
+  const shortFp = shortFingerprint(endpoint?.fingerprint)
 
   // Regenerate the QR whenever the pairing URL changes.
   useEffect(() => {
@@ -511,6 +513,18 @@ export function MobilePairingTab() {
               {endpoint.listening
                 ? `Serving this QR on port ${endpoint.port}`
                 : `Not serving: ${endpoint.reason ?? 'unknown'}`}
+            </div>
+          )}
+          {shortFp && (
+            <div className="mt-2 text-[10.5px] leading-normal text-[var(--text-muted)]">
+              Certificate{' '}
+              <span
+                data-testid="pairing-short-fingerprint"
+                className="[font-family:var(--font-mono)] text-[11px] text-[var(--text-primary)]"
+              >
+                {shortFp}
+              </span>
+              . The phone shows the same code next to this computer&apos;s name.
             </div>
           )}
         </div>

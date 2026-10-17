@@ -35,7 +35,8 @@ const log = createLogger('app')
 export type RootStackParamList = {
   Connections: undefined
   SignIn: undefined
-  Pair: { editId?: string } | undefined
+  /** `rescan` scans a new QR for `editId`; `kind: 'iap'` opens on the Cloud IAP list. */
+  Pair: { editId?: string; rescan?: boolean; kind?: 'iap' } | undefined
   /** `viaTab`: reached from the Reviews tab, so it swaps in without a push animation. */
   Projects: { connectionId: string; label: string; viaTab?: boolean }
   Conversations: { connectionId: string; projectPath: string; projectName: string }

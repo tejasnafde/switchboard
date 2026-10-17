@@ -36,6 +36,8 @@ import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { keyboardAvoidance } from '../lib/keyboard-avoidance'
+import { transportRefusal } from '../lib/transport-gate'
+import { OldQrSheet } from '../components/OldQrSheet'
 import { getClient, parsePairingUrl, useConnectionsStore, type ConnectionConfig } from '../stores/connections'
 
 const log = createLogger('screen:pair')
@@ -82,11 +84,16 @@ export default function PairScreen() {
   const navigation = useNavigation<Nav>()
   const route = useRoute<RouteProp<RootStackParamList, 'Pair'>>()
   const editId = route.params?.editId
+  // A machine whose QR is outdated or whose certificate changed scans a new QR
+  // into the same saved entry instead of opening the form.
+  const rescan = Boolean(editId && route.params?.rescan)
   const editConfig = editId ? useConnectionsStore.getState().configs.find((c) => c.id === editId) : undefined
 
-  const [kind, setKind] = useState<Kind>(editConfig?.kind ?? 'ws')
+  const [kind, setKind] = useState<Kind>(editConfig?.kind ?? route.params?.kind ?? 'ws')
   // Editing cannot be done by scanning, so a saved machine opens straight to the form.
-  const [manual, setManual] = useState(Boolean(editId))
+  const [manual, setManual] = useState(Boolean(editId) && !rescan)
+  // Address of a scanned or typed QR this build refuses (no certificate pin).
+  const [oldQr, setOldQr] = useState<string | null>(null)
   const [discovery, setDiscovery] = useState<IapTargetSelection | null>(null)
 
   const [label, setLabel] = useState(editConfig?.label ?? '')
@@ -100,7 +107,7 @@ export default function PairScreen() {
   const [permission, requestPermission] = useCameraPermissions()
   const scannedRef = useRef(false)
 
-  const scanning = kind === 'ws' && !manual && !editId
+  const scanning = kind === 'ws' && !manual && (!editId || rescan)
 
   useEffect(() => {
     if (scanning && !permission?.granted) void requestPermission()
@@ -148,6 +155,12 @@ export default function PairScreen() {
         : parsePairingUrl(`${base}${base.includes('?') ? '&' : '?'}token=${encodeURIComponent(trimmedToken)}`)
     if (!parsed) {
       Alert.alert('Not a machine address', 'Expected something like ws://192.168.1.8:8765')
+      return
+    }
+    // Undefined while the build type is unknown: save, and connect() decides.
+    if (typeof transportRefusal(parsed.url) === 'string') {
+      log.warn('refusing a pairing address without a certificate pin')
+      setOldQr(parsed.url)
       return
     }
     // Default the name to the host so the scan path needs no typing at all.
@@ -215,8 +228,27 @@ export default function PairScreen() {
     }
     // Hand saveWs the RAW payload, not the parsed pieces: it re-parses, and
     // passing url+token discarded the pairing code the QR now carries.
-    saveWs(data.trim(), '')
+    saveWs(data.trim(), '', editConfig?.label)
   }
+
+  const oldQrSheet = (
+    <OldQrSheet
+      address={oldQr}
+      onScanAgain={() => {
+        setOldQr(null)
+        setManual(false)
+        scannedRef.current = false
+      }}
+      onUseIap={() => {
+        setOldQr(null)
+        setKind('iap')
+      }}
+      onCancel={() => {
+        setOldQr(null)
+        navigation.goBack()
+      }}
+    />
+  )
 
   if (scanning) {
     return (
@@ -261,6 +293,7 @@ export default function PairScreen() {
             </Pressable>
           </View>
         </View>
+        {oldQrSheet}
       </View>
     )
   }
@@ -372,6 +405,7 @@ export default function PairScreen() {
           </Pressable>
         )}
       </ScrollView>
+      {oldQrSheet}
     </KeyboardAvoidingView>
   )
 }

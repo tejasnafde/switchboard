@@ -3,6 +3,17 @@ package app.switchboard.mobile.ui.connections
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import app.switchboard.mobile.domain.connection.ConnectionSecurity
+import app.switchboard.mobile.domain.connection.ConnectionSecurityCopy
+import app.switchboard.mobile.domain.connection.ConnectionSecurityPolicy
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -90,9 +101,12 @@ fun ConnectionsScreen(
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     onTryDemo: (() -> Unit)? = null,
+    onRescan: (String) -> Unit = {},
+    onUseIap: () -> Unit = {},
 ) {
     var actionRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
     var removeRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
+    var certificateRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
 
     Column(
         modifier = modifier
@@ -122,8 +136,16 @@ fun ConnectionsScreen(
             is ConnectionsPresentation.Content -> ConnectionsList(
                 presentation = presentation,
                 buildStamp = buildStamp,
-                onOpen = { onConnectionIntent(ConnectionIntent.Open(it)) },
+                onOpen = { row ->
+                    if (row.security == ConnectionSecurity.CERTIFICATE_CHANGED) {
+                        certificateRow = row
+                    } else {
+                        onConnectionIntent(ConnectionIntent.Open(row.id))
+                    }
+                },
                 onLongPress = { actionRow = it },
+                onRescan = onRescan,
+                onUseIap = onUseIap,
             )
         }
     }
@@ -176,6 +198,21 @@ fun ConnectionsScreen(
                 }
             }
         }
+    }
+
+    certificateRow?.let { row ->
+        CertificateChangedSheet(
+            row = row,
+            onScan = {
+                certificateRow = null
+                onRescan(row.id)
+            },
+            onRemove = {
+                certificateRow = null
+                removeRow = row
+            },
+            onDismiss = { certificateRow = null },
+        )
     }
 
     removeRow?.let { row ->
@@ -248,7 +285,7 @@ private fun ConnectionsTopBar(
         }
         Spacer(Modifier.width(8.dp))
         Text(
-            text = "Switchboard",
+            text = "Machines",
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier
                 .weight(1f)
@@ -381,8 +418,10 @@ private fun FailureState(message: String, onRetry: () -> Unit) {
 private fun ConnectionsList(
     presentation: ConnectionsPresentation.Content,
     buildStamp: String,
-    onOpen: (String) -> Unit,
+    onOpen: (ConnectionRowPresentation) -> Unit,
     onLongPress: (ConnectionRowPresentation) -> Unit,
+    onRescan: (String) -> Unit,
+    onUseIap: () -> Unit,
 ) {
     val sections = ConnectionsListPolicy.sections(presentation.rows)
     LazyColumn(
@@ -393,7 +432,7 @@ private fun ConnectionsList(
             bottom = 132.dp,
         ),
     ) {
-        item { MachineSectionHeader("AVAILABLE NOW", presentation.summary) }
+        item { MachineSectionHeader(ConnectionSecurityCopy.SECTION_LIVE, presentation.summary) }
         presentation.recoveryMessage?.let { message ->
             item {
                 InlineStatus(
@@ -406,23 +445,26 @@ private fun ConnectionsList(
                 )
             }
         }
-        items(sections.available, key = { it.id }) { row ->
+        items(sections.live, key = { it.id }) { row ->
             ConnectionRow(
                 row = row,
-                onOpen = { onOpen(row.id) },
+                onOpen = { onOpen(row) },
                 onLongPress = { onLongPress(row) },
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
         }
-        if (sections.unavailable.isNotEmpty()) {
-            item { MachineSectionHeader("UNAVAILABLE") }
+        if (sections.attention.isNotEmpty()) {
+            item { MachineSectionHeader(ConnectionSecurityCopy.SECTION_ATTENTION) }
         }
-        items(sections.unavailable, key = { it.id }) { row ->
+        items(sections.attention, key = { it.id }) { row ->
             ConnectionRow(
                 row = row,
-                onOpen = { onOpen(row.id) },
+                onOpen = { onOpen(row) },
                 onLongPress = { onLongPress(row) },
             )
+            if (row.security == ConnectionSecurity.REFUSED) {
+                RefusedHint(onScan = { onRescan(row.id) }, onUseIap = onUseIap)
+            }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
         }
         item { BuildStamp(buildStamp, Modifier.padding(top = 16.dp)) }
@@ -454,12 +496,15 @@ private fun ConnectionRow(
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val indication = LocalIndication.current
-    val tint = when (row.status) {
-        ConnectionStatus.LIVE -> Green
-        ConnectionStatus.CONNECTING -> Amber
-        ConnectionStatus.OFFLINE -> TextDim
-        ConnectionStatus.ERROR -> Red
+    val tint = when {
+        row.security == ConnectionSecurity.REFUSED -> Amber
+        row.security == ConnectionSecurity.CERTIFICATE_CHANGED -> Red
+        row.status == ConnectionStatus.LIVE -> Green
+        row.status == ConnectionStatus.CONNECTING -> Amber
+        row.status == ConnectionStatus.OFFLINE -> TextDim
+        else -> Red
     }
+    val warns = row.security == ConnectionSecurity.REFUSED || row.security == ConnectionSecurity.CERTIFICATE_CHANGED
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -474,7 +519,7 @@ private fun ConnectionRow(
                 interactionSource = interactionSource,
                 indication = indication,
                 role = Role.Button,
-                onClickLabel = "Open ${row.label}",
+                onClickLabel = ConnectionsAccessibilityPolicy.clickLabel(row),
                 onLongClickLabel = ConnectionsAccessibilityPolicy.longClickLabel(row),
                 onClick = onOpen,
                 onLongClick = onLongPress,
@@ -488,7 +533,7 @@ private fun ConnectionRow(
                 .clearAndSetSemantics {},
             contentAlignment = Alignment.Center,
         ) {
-            if (row.showProgress) {
+            if (row.showProgress && !warns) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(10.dp),
                     strokeWidth = 1.5.dp,
@@ -509,20 +554,63 @@ private fun ConnectionRow(
                 .padding(horizontal = 12.dp)
                 .clearAndSetSemantics {},
         ) {
-            Text(
-                text = row.label,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = ConnectionRowPolicy.supportingText(row),
-                color = if (row.status == ConnectionStatus.ERROR) Red else TextDim,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = row.label,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                row.shortFingerprint?.let {
+                    Text(
+                        text = it,
+                        color = TextDim,
+                        fontFamily = GeistMono,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(start = 10.dp),
+                    )
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(top = 3.dp),
-            )
+            ) {
+                val icon = when {
+                    warns -> Icons.Default.Warning
+                    ConnectionSecurityPolicy.showsLock(row.security) -> Icons.Default.Lock
+                    else -> null
+                }
+                icon?.let {
+                    Icon(it, contentDescription = null, tint = TextDim, modifier = Modifier.size(12.dp))
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    text = ConnectionSecurityPolicy.label(row.security),
+                    color = TextDim,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                )
+                Text(
+                    text = " · ${row.address}",
+                    color = TextDim,
+                    fontFamily = GeistMono,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            ConnectionsListPolicy.statusDetail(row)?.let {
+                Text(
+                    text = it,
+                    color = if (row.status == ConnectionStatus.ERROR) Red else TextDim,
+                    fontFamily = GeistMono,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
         }
         Icon(
             Icons.AutoMirrored.Filled.KeyboardArrowRight,
@@ -533,14 +621,154 @@ private fun ConnectionRow(
     }
 }
 
+/** The amber hint under a row this build will not dial: the QR first, then Cloud IAP. Never a retry. */
+@Composable
+private fun RefusedHint(onScan: () -> Unit, onUseIap: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 22.dp, bottom = 12.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Amber.copy(alpha = 0.08f))
+            .border(1.dp, Amber.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+            .padding(12.dp),
+    ) {
+        Text(
+            text = ConnectionSecurityCopy.REFUSED_HINT,
+            color = TextPrimary,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 10.dp),
+        ) {
+            Button(onClick = onScan, modifier = Modifier.heightIn(min = 40.dp)) {
+                Text(ConnectionSecurityCopy.SCAN_NEW_QR)
+            }
+            FilledTonalButton(onClick = onUseIap, modifier = Modifier.heightIn(min = 40.dp)) {
+                Text(ConnectionSecurityCopy.USE_CLOUD_IAP)
+            }
+        }
+    }
+}
+
+/**
+ * Opened by a tap on a certificate-changed row, before any scanner, so the
+ * interception warning is read first.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CertificateChangedSheet(
+    row: ConnectionRowPresentation,
+    onScan: () -> Unit,
+    onRemove: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Warning, contentDescription = null, tint = Red, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = ConnectionSecurityCopy.CERTIFICATE_CHANGED,
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.semantics { heading() },
+                )
+            }
+            Text(
+                text = ConnectionSecurityCopy.fill(ConnectionSecurityCopy.CERTIFICATE_CHANGED_BODY, "label" to row.label),
+                color = TextDim,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 8.dp, bottom = 14.dp),
+            )
+            SheetCard(
+                title = ConnectionSecurityCopy.CERTIFICATE_EXPECTED_TITLE,
+                body = AnnotatedString(ConnectionSecurityCopy.CERTIFICATE_EXPECTED_BODY),
+            )
+            SheetCard(
+                title = ConnectionSecurityCopy.CERTIFICATE_UNEXPECTED_TITLE,
+                body = unexpectedBody(row.shortFingerprint),
+            )
+            Button(
+                onClick = onScan,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .heightIn(min = 44.dp),
+            ) {
+                Text(ConnectionSecurityCopy.SCAN_QR_AGAIN)
+            }
+            OutlinedButton(
+                onClick = onRemove,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .heightIn(min = 44.dp),
+            ) {
+                Text(ConnectionSecurityCopy.REMOVE_MACHINE)
+            }
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .heightIn(min = 44.dp),
+            ) {
+                Text(ConnectionSecurityCopy.NOT_NOW)
+            }
+        }
+    }
+}
+
+/** The interception sentence with the pinned short fingerprint set in mono. */
+private fun unexpectedBody(fingerprint: String?): AnnotatedString {
+    val (before, after) = ConnectionSecurityCopy.CERTIFICATE_UNEXPECTED_BODY.split("{fingerprint}")
+    return buildAnnotatedString {
+        append(before)
+        withStyle(SpanStyle(fontFamily = GeistMono, color = TextPrimary)) { append(fingerprint ?: "?") }
+        append(after)
+    }
+}
+
+@Composable
+private fun SheetCard(title: String, body: AnnotatedString) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Surface)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.titleSmall)
+        Text(
+            text = body,
+            color = TextDim,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+}
+
 object ConnectionsAccessibilityPolicy {
     fun contentDescription(row: ConnectionRowPresentation): String =
         "${row.label}, ${row.target}"
 
-    fun stateDescription(row: ConnectionRowPresentation): String =
-        listOfNotNull(row.statusLabel, row.detail?.takeIf(String::isNotBlank)).joinToString(", ")
+    fun stateDescription(row: ConnectionRowPresentation): String = listOfNotNull(
+        row.statusLabel,
+        ConnectionSecurityPolicy.label(row.security),
+        row.shortFingerprint,
+        ConnectionsListPolicy.statusDetail(row),
+    ).joinToString(", ")
 
     fun longClickLabel(row: ConnectionRowPresentation): String = "Show actions for ${row.label}"
+
+    fun clickLabel(row: ConnectionRowPresentation): String =
+        if (row.security == ConnectionSecurity.CERTIFICATE_CHANGED) {
+            "Show what changed on ${row.label}"
+        } else {
+            "Open ${row.label}"
+        }
 }
 
 @Composable

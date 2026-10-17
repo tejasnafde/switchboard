@@ -1,0 +1,71 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "encrypted-transport-ui-states",
+  "summary": "The UI follow-up to encrypted phone transport, built to the approved mock. The desktop's Devices & machines tab shows the short certificate fingerprint (first 8 lowercase hex of the pinned SHA-256) beside the QR. Both phones show the same machine-row anatomy: status dot, name, short fingerprint for pinned rows, then a lock and Encrypted, Not encrypted, local only, or Cloud IAP, then the address in mono. Rows are split into Live (N of M) and Needs attention. A remote ws:// row the build refuses is amber with a hint and Scan new QR and Use Cloud IAP (no retry). A row whose certificate changed is red: iOS shows the hint inline with Scan QR again and Remove; Android opens a sheet with the reinstall case, the interception warning with the fingerprint sentence, Scan QR again, Remove machine and Not now before any scanner. Scan again replaces the saved machine instead of adding a second one. On iOS a scanned or typed QR without a certificate pin opens the QR from an older Switchboard sheet instead of saving. Rules and copy live in src/shared/connection-security.ts; Android keeps a copy checked against tests/fixtures/connection-security-copy.json.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": ["src/renderer/components/settings/MobilePairingTab.tsx"]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/components/MachineRow.tsx",
+        "apps/mobile/src/components/OldQrSheet.tsx",
+        "apps/mobile/src/screens/ConnectionsScreen.tsx",
+        "apps/mobile/src/screens/PairScreen.tsx",
+        "apps/mobile/src/lib/pinned-websocket.ts",
+        "apps/mobile/App.tsx",
+        "apps/mobile/src/components/__tests__/MachineRow.test.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/connection/ConnectionSecurity.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/connection/ConnectionDecisions.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/connections/ConnectionsPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/connections/ConnectionsScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/connections/RuntimeConnectionsMapper.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/NavigationState.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/pairing/PairingScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/pairing/PairingQrScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/pairing/PairingFormPolicy.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/connection/ConnectionSecurityTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/connections/ConnectionRowPolicyTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/connections/ConnectionsPresentationTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/connection-security.ts",
+        "tests/unit/connection-security.test.ts",
+        "tests/fixtures/connection-security-copy.json"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing new is stored. Row states are derived from the saved address (its fp parameter) and in-memory connection state. A scan again rewrites the existing saved machine through the existing edit path (Expo updateConnection, Android PairingSaveIntent.Edit), so no schema or migration changes."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["CHANGELOG.md", "apps/mobile/AGENTS.md"]
+    }
+  },
+  "verification": {
+    "automated": [
+      "vitest tests/unit/connection-security.test.ts: short fingerprint, fp in a URL, the row-state order (IAP, certificate changed, refused, pinned, local, plain), Needs attention, the fingerprint and lock rules, placeholder filling, and the copy fixture equal to the shared copy.",
+      "jest apps/mobile MachineRow.test.tsx: pinned, local, IAP, refused and certificate-changed rows render the mock anatomy, copy and buttons (no retry on a refused row), and the old QR sheet renders its title, address, two options and Cancel.",
+      "Gradle :app:testDebugUnitTest: ConnectionSecurityTest (rules and every Android string equal to the fixture), ConnectionRowPolicyTest (sections and status detail), ConnectionsPresentationTest (security, short fingerprint and address per row), RuntimeConnectionsMapperTest (only a certificate mismatch marks a row), ConnectionsAccessibilityPolicyTest, PairingFormPolicyTest (a scan again edits the machine and keeps its name), ConnectionDecisionsTest.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run on a phone, an emulator or the iOS simulator. The Compose rows, the Android sheet, the Expo sheet's slide-in and the scan-again flow against a running desktop were not seen on a screen.",
+      "The desktop Devices & machines tab is not in the visual regression screens, so the fingerprint line was not captured in a screenshot."
+    ]
+  }
+}

@@ -5,6 +5,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Changed
+- **Phones say how each machine is connected.** The Machines list on iOS and Android shows a lock and "Encrypted" with the certificate's short fingerprint (the same 8 characters the desktop now shows beside the pairing QR), "Not encrypted, local only" or "Cloud IAP", and moves machines that need you to "Needs attention". An old QR without a certificate gets an amber hint with Scan new QR and Use Cloud IAP; a changed certificate gets a red warning that says to compare the fingerprint before scanning again. Scanning again replaces the saved machine. JS only on iOS (OTA lane).
 - **Tests run in worker threads.** Vitest used one forked process per test file, about 630 per run, and macOS `launchservicesd` registered every one at 100-190% CPU for the whole run. The thread pool runs the same 6674 tests green in 73 s with `launchservicesd` at 0.2%.
 
 - Stop `ide-bridge-host.test.ts` from logging after its worker closes: the test now waits for each settings seed write that `startBridgeHost` starts without awaiting, so no write runs into the scratch-dir cleanup and logs during teardown (CI `EnvironmentTeardownError`).
