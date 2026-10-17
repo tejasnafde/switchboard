@@ -51,7 +51,7 @@ requires SDK collection to be declared even when the developer never sees it.
 | Question | Answer |
 |---|---|
 | Does your app collect or share any of the required user data types? | **Yes** |
-| Is all of the user data collected by your app encrypted in transit? | **No** while the uploaded AAB still allows plain `ws://` to `10.0.2.2` (see below). **Yes** once that exception is removed. |
+| Is all of the user data collected by your app encrypted in transit? | **Yes.** The release build allows plain traffic only to loopback, which never leaves the phone (see below). |
 | Which of the following methods of account creation does your app support? | **My app does not allow users to create an account.** The optional Google account connection signs in to the user's own Google Cloud project to reach their machines; it creates no account with us. |
 | Do you provide a way for users to request that their data is deleted? | **No.** We hold no user data to delete. See "Deletion" below for what the user controls. |
 
@@ -59,18 +59,11 @@ Encryption in transit in the release build:
 
 - `src/main/res/xml/network_security_config.xml` (release) sets
   `cleartextTrafficPermitted="false"` for every host except `localhost`,
-  `127.0.0.1` and `10.0.2.2`, and the app's own rule matches it
+  `127.0.0.1` and `::1`, and the app's own rule matches it
   (`domain/connection/TransportSecurity.kt`, `CLEARTEXT_HOSTS`). Loopback
-  traffic never leaves the phone.
-- **One exception to check before submitting:** `10.0.2.2` is the Android
-  emulator's alias for its host computer, but on a physical phone it is an
-  ordinary private network address. A user whose desktop has exactly that LAN
-  address could pair with it over plain `ws://`. It is an edge case (the
-  address must be typed by hand and match exactly), but it makes "all data
-  encrypted in transit" not strictly true. Recommended: remove `10.0.2.2`
-  from the release config and `CLEARTEXT_HOSTS` (emulators can use
-  `adb reverse` to `localhost` instead) before the first production release.
-  Answer Yes only once the uploaded AAB no longer has the exception.
+  traffic never leaves the phone. The emulator alias `10.0.2.2` is allowed in
+  debug builds only (PR #361); emulators use it there, or `adb reverse` to
+  `localhost`.
 - A paired backend is dialled over `wss://` with its certificate pinned from
   the pairing QR (`platform/protocol/PinnedTls.kt`), or through the Google IAP tunnel (TLS).
   Remote `ws://` is refused. See
