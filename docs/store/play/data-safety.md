@@ -51,11 +51,11 @@ requires SDK collection to be declared even when the developer never sees it.
 | Question | Answer |
 |---|---|
 | Does your app collect or share any of the required user data types? | **Yes** |
-| Is all of the user data collected by your app encrypted in transit? | **Yes** |
+| Is all of the user data collected by your app encrypted in transit? | **No** while the uploaded AAB still allows plain `ws://` to `10.0.2.2` (see below). **Yes** once that exception is removed. |
 | Which of the following methods of account creation does your app support? | **My app does not allow users to create an account.** The optional Google account connection signs in to the user's own Google Cloud project to reach their machines; it creates no account with us. |
 | Do you provide a way for users to request that their data is deleted? | **No.** We hold no user data to delete. See "Deletion" below for what the user controls. |
 
-Encryption in transit, why Yes is true for the release build:
+Encryption in transit in the release build:
 
 - `src/main/res/xml/network_security_config.xml` (release) sets
   `cleartextTrafficPermitted="false"` for every host except `localhost`,
@@ -70,8 +70,7 @@ Encryption in transit, why Yes is true for the release build:
   encrypted in transit" not strictly true. Recommended: remove `10.0.2.2`
   from the release config and `CLEARTEXT_HOSTS` (emulators can use
   `adb reverse` to `localhost` instead) before the first production release.
-  Answer Yes once the uploaded AAB no longer has the exception; until then,
-  the developer decides whether to accept the edge case.
+  Answer Yes only once the uploaded AAB no longer has the exception.
 - A paired backend is dialled over `wss://` with its certificate pinned from
   the pairing QR (`platform/protocol/PinnedTls.kt`), or through the Google IAP tunnel (TLS).
   Remote `ws://` is refused. See
@@ -99,7 +98,7 @@ stated.
 | Messages | **Other in-app messages** | **Yes** | No | No (core function) | App functionality | Prompts, follow-ups, answers and approvals go to the user's own backend; replies come back from it. Dictated text joins the prompt as text. |
 | Photos and videos | **Photos** | **Yes** | No | Yes (user attaches) | App functionality | A photo the user picks (system picker, `image/*`, no photo permission) is sent to their own backend with the prompt. |
 | Photos and videos | Videos | No | No | - | - | The picker accepts images only. |
-| Audio | Voice or sound recordings, Music files, Other audio files | No | No | - | - | The app never records or uploads audio. Dictation hands the microphone to Android's system `SpeechRecognizer` (Google's recognizer, on device or Google's server by the phone's settings) and receives text. `RECORD_AUDIO` is declared because that API requires it of the caller. |
+| Audio | Voice or sound recordings, Music files, Other audio files | No | No | - | - | The app never records or uploads audio. Dictation hands the microphone to Android's system `SpeechRecognizer` (Google's recognizer, on device or Google's server by the phone's settings) and receives text. `RECORD_AUDIO` is declared because that API requires it of the caller. If Play review asks for it anyway, declare Voice or sound recordings: collected, not shared, processed ephemerally, optional, App functionality. |
 | Files and docs | Files and docs | No | No | - | - | The only picker is `OpenMultipleDocuments` limited to `image/*`. |
 | Calendar | Calendar events | No | No | - | - | - |
 | Contacts | Contacts | No | No | - | - | - |

@@ -40,7 +40,9 @@ Use the GlycoCare organization account. Touch only the Switchboard app.
 5. **Ads.** App content > Ads. Select "No, my app does not contain ads".
 6. **Content rating.** App content > Content rating > Start questionnaire.
    Category: Utility, productivity, communication or other. Answer No to every
-   content question (details in `docs/store/play/data-safety.md`). Submit.
+   content question. One exception: if it asks whether the app displays
+   AI-generated content, answer Yes (details in
+   `docs/store/play/data-safety.md`). Submit.
 7. **Target audience.** App content > Target audience. Select 18 and over
    only.
 8. **Data safety.** App content > Data safety. Use the answers in

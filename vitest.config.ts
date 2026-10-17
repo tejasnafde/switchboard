@@ -5,6 +5,13 @@ export default defineConfig({
   test: {
     include: ['tests/unit/**/*.test.ts'],
     environment: 'node',
+    // Worker threads, not forked processes. The fork pool starts about 630
+    // processes per run (one per test file), and on macOS launchservicesd
+    // registers each one: measured at 100-190% CPU for the whole run on an
+    // 8-core Mac, which no `nice` on the workers can lower. Threads measured
+    // on 2026-10-17: same 6674 tests green in 73 s, launchservicesd median
+    // 0.2%. Tests must not call process.chdir (threads cannot); none do.
+    pool: 'threads',
     // A throwaway home + SWITCHBOARD_DATA_DIR per run, so tests never write
     // into the real ~/.switchboard (logs, db, shell, worktrees).
     globalSetup: ['tests/setup/global-private-home.ts'],
