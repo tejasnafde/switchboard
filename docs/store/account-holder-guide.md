@@ -65,7 +65,7 @@ here. Never change the GlycoCare apps or their keys.
 
 1. **Create the app record.** App Store Connect > Apps > + > New App.
    Platform: iOS. Name: `Switchboard: Run Your Agents`. Primary language:
-   English (U.S.). Bundle ID: `app.switchboard.mobile`. SKU:
+   English (U.S.). Bundle ID: `app.tn07.switchboard`. SKU:
    `switchboard-ios`. User access: Full access. Click Create.
 2. **App Privacy.** In the new app, App Privacy > Get Started. Use the answers
    Tejas sends (the same facts as the Play Data safety form). Add the privacy
@@ -75,7 +75,7 @@ here. Never change the GlycoCare apps or their keys.
    Notifications service (APNs). Continue, then Register. Download the `.p8`
    file. It downloads only once. Note the Key ID.
    Tejas uploads it to EAS (`eas credentials`); if you upload it yourself,
-   choose iOS > Push Notifications key for `app.switchboard.mobile`.
+   choose iOS > Push Notifications key for `app.tn07.switchboard`.
 4. **Developer ID Application certificate (desktop signing).** Only the
    Account Holder can create this. On a Mac: Keychain Access > Certificate
    Assistant > Request a Certificate From a Certificate Authority. Save the
