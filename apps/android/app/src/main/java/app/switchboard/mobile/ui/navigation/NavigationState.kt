@@ -22,6 +22,10 @@ sealed interface AppRoute : Serializable {
     data class Pair(
         val editConnectionId: String? = null,
         val startManual: Boolean = false,
+        /** Scan a new QR into [editConnectionId] instead of opening its form. */
+        val rescan: Boolean = false,
+        /** Open on the Cloud IAP list. */
+        val startIap: Boolean = false,
     ) : AppRoute
 
     data class Browse(

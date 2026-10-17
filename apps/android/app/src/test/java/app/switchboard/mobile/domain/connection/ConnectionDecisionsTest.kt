@@ -124,7 +124,12 @@ class ConnectionDecisionsTest {
         val current = ConnectionRuntimeState(4, ConnectionStatus.Connecting, "")
 
         assertEquals(
-            ConnectionRuntimeState(4, ConnectionStatus.Error, "Sign in to Google to connect through Cloud IAP"),
+            ConnectionRuntimeState(
+                4,
+                ConnectionStatus.Error,
+                "Sign in to Google to connect through Cloud IAP",
+                ConnectionTerminalReason.GoogleSignInRequired,
+            ),
             ConnectionStatusReducer.reduce(
                 current,
                 ConnectionRuntimeEvent.TerminalFailure(
@@ -134,7 +139,12 @@ class ConnectionDecisionsTest {
             ),
         )
         assertEquals(
-            ConnectionRuntimeState(4, ConnectionStatus.Error, "Google credentials could not be read safely"),
+            ConnectionRuntimeState(
+                4,
+                ConnectionStatus.Error,
+                "Google credentials could not be read safely",
+                ConnectionTerminalReason.GoogleCredentialsBlocked,
+            ),
             ConnectionStatusReducer.reduce(
                 current,
                 ConnectionRuntimeEvent.TerminalFailure(
@@ -148,7 +158,12 @@ class ConnectionDecisionsTest {
     @Test
     fun `a changed certificate tells the user to pair again`() {
         assertEquals(
-            ConnectionRuntimeState(4, ConnectionStatus.Error, "This computer's certificate changed. Scan its QR again to pair"),
+            ConnectionRuntimeState(
+                4,
+                ConnectionStatus.Error,
+                "This computer's certificate changed. Scan its QR again to pair",
+                ConnectionTerminalReason.CertificateChanged,
+            ),
             ConnectionStatusReducer.reduce(
                 ConnectionRuntimeState(4, ConnectionStatus.Connecting, ""),
                 ConnectionRuntimeEvent.TerminalFailure(4, ConnectionTerminalReason.CertificateChanged),
@@ -166,6 +181,7 @@ class ConnectionDecisionsTest {
                 generation = 4,
                 status = ConnectionStatus.Error,
                 detail = "The desktop did not finish connecting. Check Mobile access on the Mac and try again",
+                reason = reason,
             ),
             ConnectionStatusReducer.reduce(
                 ConnectionRuntimeState(4, ConnectionStatus.Connecting, ""),

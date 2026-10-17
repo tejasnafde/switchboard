@@ -7,16 +7,16 @@
  * MachineChannels, MachineLayer); "backends" was a second name for the same
  * thing.
  *
- * Rows are cards with a status rail down the left edge, coloured by liveness, so
- * state reads peripherally without a legend. Machine-produced detail (urls,
- * instance names) sits in the mono face; names sit in the display face.
+ * Rows are cards (components/MachineRow) with a status dot, the transport and
+ * the address, split into "Live" and "Needs attention". Machine-produced detail
+ * (urls, zones, fingerprints) sits in the mono face; names in the display face.
  */
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
-import { ActivityIndicator, Alert, FlatList, LayoutAnimation, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Alert, FlatList, LayoutAnimation, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useFocusEffect, useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import type { RootStackParamList } from '../../App'
-import { colors, fonts, radius, space, statusColor, type, HIT } from '../theme'
+import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { getSignedInEmail, warmUpGoogleAuth } from '../lib/google-auth'
 import { initialsFromEmail } from '../lib/account'
 import { BuildStamp } from '../components/BuildStamp'
@@ -26,7 +26,17 @@ import { DEMO_CONNECTION_ID, DEMO_LABEL, DEMO_PROJECT } from '@shared/phone-demo
 import { usePrefsStore } from '../stores/prefs'
 import type { TurnDelivery } from '@shared/turn-delivery'
 import { chatCacheReady } from '../stores/chat'
-import { useConnectionsStore, secretsReady, type ConnectionConfig, type ConnectionStatus } from '../stores/connections'
+import { useConnectionsStore, secretsReady, type ConnectionConfig } from '../stores/connections'
+import { MachineRow } from '../components/MachineRow'
+import { CERTIFICATE_CHANGED_MESSAGE, canPinCertificates } from '../lib/pinned-websocket'
+import { transportRefusal } from '../lib/transport-gate'
+import {
+  CONNECTION_SECURITY_COPY,
+  connectionSecurity,
+  fillCopy,
+  needsAttention,
+  type ConnectionSecurity,
+} from '@shared/connection-security'
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Connections'>
 
@@ -37,61 +47,35 @@ function describeTarget(config: ConnectionConfig): string {
     : config.url.replace(/^wss?:\/\//, '').replace(/\?.*$/, '')
 }
 
-const STATUS_COPY: Record<ConnectionStatus, string> = {
-  connected: 'live',
-  connecting: 'connecting',
-  disconnected: 'offline',
-  error: 'error',
+function securityOf(config: ConnectionConfig, detail: string | undefined): ConnectionSecurity {
+  return config.kind === 'iap'
+    ? 'iap'
+    : connectionSecurity({
+        kind: 'ws',
+        url: config.url,
+        canPin: canPinCertificates,
+        refused: typeof transportRefusal(config.url) === 'string',
+        certificateChanged: detail === CERTIFICATE_CHANGED_MESSAGE,
+      })
 }
 
-function ConnectionRow({
-  config,
-  status,
-  detail,
-  onOpen,
-  onActions,
-}: {
-  config: ConnectionConfig
-  status: ConnectionStatus
-  detail?: string
-  onOpen: () => void
-  onActions: () => void
-}) {
-  const tint = statusColor[status] ?? colors.textFaint
-  const live = status === 'connected'
-  return (
-    <Pressable
-      onPress={onOpen}
-      onLongPress={onActions}
-      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-    >
-      {/* Status rail: liveness readable peripherally, no legend needed. */}
-      <View style={[styles.rail, { backgroundColor: tint }]} />
-      <View style={styles.cardBody}>
-        <View style={styles.cardTop}>
-          <Text style={styles.cardName} numberOfLines={1}>
-            {config.label}
-          </Text>
-          {config.kind === 'iap' && <Text style={styles.kindTag}>IAP</Text>}
-        </View>
-        <Text style={styles.cardTarget} numberOfLines={1}>
-          {describeTarget(config)}
-        </Text>
-        <View style={styles.cardFoot}>
-          {status === 'connecting' ? (
-            <ActivityIndicator size="small" color={tint} />
-          ) : (
-            <View style={[styles.dot, { backgroundColor: tint }]} />
-          )}
-          <Text style={[styles.statusText, live && { color: colors.textDim }]}>{STATUS_COPY[status]}</Text>
-          {/* Says WHY when it is not live: a socket that opens and is dropped
-              reads the same as one that never opens without this. */}
-          {!live && detail ? <Text style={styles.statusDetail}>{detail}</Text> : null}
-        </View>
-      </View>
-    </Pressable>
-  )
+function confirmRemove(config: ConnectionConfig): void {
+  Alert.alert('Remove machine?', `"${config.label}" will be forgotten on this device.`, [
+    { text: 'Cancel', style: 'cancel' },
+    {
+      text: 'Remove',
+      style: 'destructive',
+      onPress: () => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
+        void useConnectionsStore.getState().removeConnection(config.id)
+      },
+    },
+  ])
 }
+
+type ListItem =
+  | { key: string; header: string; count?: string }
+  | { key: string; config: ConnectionConfig; security: ConnectionSecurity }
 
 export default function ConnectionsScreen() {
   const navigation = useNavigation<Nav>()
@@ -172,22 +156,7 @@ export default function ConnectionsScreen() {
           text: isLive ? 'Disconnect' : 'Connect',
           onPress: () => (isLive ? store.disconnect(config.id) : store.connect(config.id)),
         },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () =>
-            Alert.alert('Remove machine?', `"${config.label}" will be forgotten on this device.`, [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Remove',
-                style: 'destructive',
-                onPress: () => {
-                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
-                  useConnectionsStore.getState().removeConnection(config.id)
-                },
-              },
-            ]),
-        },
+        { text: 'Remove', style: 'destructive', onPress: () => confirmRemove(config) },
         { text: 'Cancel', style: 'cancel' },
       ])
     },
@@ -235,18 +204,24 @@ export default function ConnectionsScreen() {
   }
 
   const liveCount = configs.filter((c) => (status[c.id] ?? 'disconnected') === 'connected').length
+  const rows = configs.map((config) => ({ key: config.id, config, security: securityOf(config, detail[config.id]) }))
+  const attention = rows.filter((row) => needsAttention(row.security, status[row.key] ?? 'disconnected'))
+  const items: ListItem[] = [
+    {
+      key: 'h-live',
+      header: CONNECTION_SECURITY_COPY.sectionLive,
+      count: ready ? fillCopy('liveCount', { live: liveCount, total: configs.length }) : 'connecting',
+    },
+    ...rows.filter((row) => !attention.includes(row)),
+    ...(attention.length > 0 ? [{ key: 'h-attention', header: CONNECTION_SECURITY_COPY.sectionAttention }] : []),
+    ...attention,
+  ]
 
   return (
     <FlatList
-      data={configs}
-      keyExtractor={(item) => item.id}
+      data={items}
+      keyExtractor={(item) => item.key}
       contentContainerStyle={styles.list}
-      ListHeaderComponent={
-        <View style={styles.listHeader}>
-          <Text style={styles.overline}>MACHINES</Text>
-          <Text style={styles.count}>{ready ? `${liveCount} of ${configs.length} live` : 'connecting'}</Text>
-        </View>
-      }
       ListFooterComponent={
         <View>
           {demoActive && <DemoEntry onOpen={openDemo} />}
@@ -259,15 +234,26 @@ export default function ConnectionsScreen() {
           )}
         </View>
       }
-      renderItem={({ item }) => (
-        <ConnectionRow
-          config={item}
-          status={status[item.id] ?? 'disconnected'}
-          detail={detail[item.id]}
-          onOpen={() => navigation.navigate('Projects', { connectionId: item.id, label: item.label })}
-          onActions={() => showRowActions(item)}
-        />
-      )}
+      renderItem={({ item }) =>
+        'header' in item ? (
+          <View style={styles.listHeader}>
+            <Text style={styles.overline}>{item.header}</Text>
+            {item.count ? <Text style={styles.count}>{item.count}</Text> : null}
+          </View>
+        ) : (
+          <MachineRow
+            config={item.config}
+            security={item.security}
+            status={status[item.key] ?? 'disconnected'}
+            detail={detail[item.key]}
+            onOpen={() => navigation.navigate('Projects', { connectionId: item.key, label: item.config.label })}
+            onActions={() => showRowActions(item.config)}
+            onScan={() => navigation.navigate('Pair', { editId: item.key, rescan: true })}
+            onUseIap={() => navigation.navigate('Pair', { kind: 'iap' })}
+            onRemove={() => confirmRemove(item.config)}
+          />
+        )
+      }
     />
   )
 }
@@ -296,79 +282,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'space-between',
-    paddingTop: space.lg,
-    paddingBottom: space.md,
+    paddingTop: space.md,
+    paddingBottom: 6,
+    paddingHorizontal: 2,
   },
   overline: {
     ...type.label,
-    color: colors.textFaint,
+    color: colors.textDim,
     textTransform: 'uppercase',
   },
   count: {
     ...type.monoSm,
-    color: colors.textFaint,
-  },
-
-  card: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    marginBottom: space.md,
-    overflow: 'hidden',
-    minHeight: 78,
-  },
-  cardPressed: {
-    backgroundColor: colors.surfaceRaised,
-  },
-  rail: {
-    width: 3,
-  },
-  cardBody: {
-    flex: 1,
-    paddingHorizontal: space.lg,
-    paddingVertical: space.md,
-    gap: 3,
-  },
-  cardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-  },
-  cardName: {
-    ...type.heading,
-    color: colors.text,
-    flexShrink: 1,
-  },
-  kindTag: {
-    ...type.monoSm,
-    color: colors.accent,
-    backgroundColor: colors.accentWash,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: radius.sm,
-    overflow: 'hidden',
-  },
-  cardTarget: {
-    ...type.mono,
     color: colors.textDim,
-  },
-  cardFoot: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    marginTop: space.xs,
-  },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: radius.pill,
-  },
-  statusDetail: { color: colors.textFaint, ...type.monoSm },
-  statusText: {
-    ...type.monoSm,
-    color: colors.textFaint,
   },
 
   headerAction: {

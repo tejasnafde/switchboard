@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.pairing
 
+import app.switchboard.mobile.domain.connection.CleartextPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -168,6 +169,40 @@ class PairingFormPolicyTest {
                 editing = true,
             ),
         )
+    }
+
+    @Test
+    fun aScanAddsAMachineOrReplacesTheOneBeingScannedAgainKeepingItsName() {
+        val submission = PairingSubmission(label = "192.168.1.40:8765", url = "wss://192.168.1.40:8765?fp=abc", pairing = "p")
+
+        assertEquals(PairingSaveIntent.Add(submission), PairingFormPolicy.scanIntent(submission, null))
+        assertEquals(
+            PairingSaveIntent.Edit(
+                connectionId = "build",
+                submission = submission.copy(label = "Build server"),
+                resetSession = true,
+                reconnect = true,
+            ),
+            PairingFormPolicy.scanIntent(submission, "build" to "Build server"),
+        )
+    }
+
+    @Test
+    fun aReleaseRescanRefusesAnAddressThisBuildWillNotDial() {
+        val plain = PairingSubmission(label = "192.168.1.40:8765", url = "ws://192.168.1.40:8765", pairing = "p")
+        val pinned = plain.copy(url = "wss://192.168.1.40:8765?fp=abc")
+        val loopback = plain.copy(url = "ws://127.0.0.1:8765")
+        val rescan = "build" to "Build server"
+
+        assertEquals(
+            CleartextPolicy.REFUSED_MESSAGE,
+            PairingFormPolicy.scanRefusal(plain, rescan, requireEncryption = true),
+        )
+        assertNull(PairingFormPolicy.scanRefusal(pinned, rescan, requireEncryption = true))
+        assertNull(PairingFormPolicy.scanRefusal(loopback, rescan, requireEncryption = true))
+        assertNull(PairingFormPolicy.scanRefusal(plain, rescan, requireEncryption = false))
+        // Adding a machine is unchanged: the row then reads as needing encryption.
+        assertNull(PairingFormPolicy.scanRefusal(plain, null, requireEncryption = true))
     }
 
     private fun invalidField(form: PairingForm): PairingField =

@@ -66,6 +66,17 @@ describe('transportRefusal', () => {
     expect(gate.transportRefusal('wss://mac.tailnet.ts.net')).toBeNull()
   })
 
+  it('settles the refusal before a rescan replaces a saved address', async () => {
+    let release!: (type: number) => void
+    mockReleaseType.mockReturnValue(new Promise((resolve) => (release = resolve)))
+    const { gate } = load()
+    expect(gate.transportRefusal('ws://192.168.1.8:8765')).toBeUndefined()
+    const refusal = gate.settledTransportRefusal('ws://192.168.1.8:8765')
+    release(APP_STORE)
+    await expect(refusal).resolves.toMatch(/encrypted connection/)
+    await expect(gate.settledTransportRefusal('ws://127.0.0.1:8765')).resolves.toBeNull()
+  })
+
   it('lets an internal build keep plain ws://', async () => {
     mockReleaseType.mockResolvedValue(DEVELOPMENT)
     const { gate } = load()

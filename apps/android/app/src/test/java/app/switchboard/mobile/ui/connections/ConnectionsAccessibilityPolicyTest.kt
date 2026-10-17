@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.connections
 
+import app.switchboard.mobile.domain.connection.ConnectionSecurity
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -23,9 +24,14 @@ class ConnectionsAccessibilityPolicyTest {
             ConnectionsAccessibilityPolicy.contentDescription(row),
         )
         assertEquals(
-            "error, Pairing expired",
+            "error, Not encrypted, Pairing expired",
             ConnectionsAccessibilityPolicy.stateDescription(row),
         )
         assertEquals("Show actions for Studio", ConnectionsAccessibilityPolicy.longClickLabel(row))
+        assertEquals("Open Studio", ConnectionsAccessibilityPolicy.clickLabel(row))
+
+        val changed = row.copy(security = ConnectionSecurity.CERTIFICATE_CHANGED, shortFingerprint = "7c0e51b2")
+        assertEquals("error, Certificate changed, 7c0e51b2", ConnectionsAccessibilityPolicy.stateDescription(changed))
+        assertEquals("Show what changed on Studio", ConnectionsAccessibilityPolicy.clickLabel(changed))
     }
 }

@@ -61,6 +61,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import app.switchboard.mobile.BuildConfig
 import app.switchboard.mobile.ui.theme.Surface
 import app.switchboard.mobile.ui.theme.TextDim
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
@@ -76,9 +77,13 @@ import kotlinx.coroutines.launch
 fun PairingQrScreen(
     onBack: () -> Unit,
     onManual: () -> Unit,
+    /** Connection id and label a scan replaces, or null to add a machine. */
+    rescan: Pair<String, String>? = null,
     onSave: suspend (PairingSaveIntent) -> PairingSaveResult,
     onSaved: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Release builds refuse plain ws:// to another computer. */
+    requireEncryption: Boolean = !BuildConfig.DEBUG,
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
@@ -113,13 +118,17 @@ fun PairingQrScreen(
     }
 
     fun submitPayload(rawPayload: String) {
-        val next = PairingQrReducer.reduce(scanState, PairingQrEvent.Detected(rawPayload))
+        val detected = PairingQrReducer.reduce(scanState, PairingQrEvent.Detected(rawPayload))
+        // A refused rescan keeps the scanner open, so the old address is never replaced.
+        val refusal = (detected as? PairingQrState.ReadyToSave)
+            ?.let { PairingFormPolicy.scanRefusal(it.submission, rescan, requireEncryption) }
+        val next = refusal?.let { PairingQrState.Scanning(message = it) } ?: detected
         if (next == scanState) return
         scanState = next
         val ready = next as? PairingQrState.ReadyToSave ?: return
         scope.launch {
             val result = try {
-                onSave(PairingSaveIntent.Add(ready.submission))
+                onSave(PairingFormPolicy.scanIntent(ready.submission, rescan))
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {

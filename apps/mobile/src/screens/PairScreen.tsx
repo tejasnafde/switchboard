@@ -36,6 +36,8 @@ import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { keyboardAvoidance } from '../lib/keyboard-avoidance'
+import { settledTransportRefusal, transportRefusal } from '../lib/transport-gate'
+import { OldQrSheet } from '../components/OldQrSheet'
 import { getClient, parsePairingUrl, useConnectionsStore, type ConnectionConfig } from '../stores/connections'
 
 const log = createLogger('screen:pair')
@@ -82,11 +84,16 @@ export default function PairScreen() {
   const navigation = useNavigation<Nav>()
   const route = useRoute<RouteProp<RootStackParamList, 'Pair'>>()
   const editId = route.params?.editId
+  // A machine whose QR is outdated or whose certificate changed scans a new QR
+  // into the same saved entry instead of opening the form.
+  const rescan = Boolean(editId && route.params?.rescan)
   const editConfig = editId ? useConnectionsStore.getState().configs.find((c) => c.id === editId) : undefined
 
-  const [kind, setKind] = useState<Kind>(editConfig?.kind ?? 'ws')
+  const [kind, setKind] = useState<Kind>(editConfig?.kind ?? route.params?.kind ?? 'ws')
   // Editing cannot be done by scanning, so a saved machine opens straight to the form.
-  const [manual, setManual] = useState(Boolean(editId))
+  const [manual, setManual] = useState(Boolean(editId) && !rescan)
+  // Address of a scanned or typed QR this build refuses (no certificate pin).
+  const [oldQr, setOldQr] = useState<string | null>(null)
   const [discovery, setDiscovery] = useState<IapTargetSelection | null>(null)
 
   const [label, setLabel] = useState(editConfig?.label ?? '')
@@ -100,7 +107,7 @@ export default function PairScreen() {
   const [permission, requestPermission] = useCameraPermissions()
   const scannedRef = useRef(false)
 
-  const scanning = kind === 'ws' && !manual && !editId
+  const scanning = kind === 'ws' && !manual && (!editId || rescan)
 
   useEffect(() => {
     if (scanning && !permission?.granted) void requestPermission()
@@ -132,7 +139,7 @@ export default function PairScreen() {
     }
   }, [kind])
 
-  const saveWs = (rawUrl: string, rawToken: string, rawLabel?: string) => {
+  const saveWs = async (rawUrl: string, rawToken: string, rawLabel?: string) => {
     // The server prints a full `ws://host:port?token=...`, so pasting that whole
     // string into Address is the obvious move. Parse it FIRST and prefer the
     // token it carries; blindly appending the token field produced
@@ -148,6 +155,15 @@ export default function PairScreen() {
         : parsePairingUrl(`${base}${base.includes('?') ? '&' : '?'}token=${encodeURIComponent(trimmedToken)}`)
     if (!parsed) {
       Alert.alert('Not a machine address', 'Expected something like ws://192.168.1.8:8765')
+      return
+    }
+    // Undefined while the build type is unknown. A new machine saves and
+    // connect() decides; an edit waits, because it replaces the working
+    // address and credential before anything dials the new one.
+    const refusal = editId ? await settledTransportRefusal(parsed.url) : transportRefusal(parsed.url)
+    if (typeof refusal === 'string') {
+      log.warn('refusing a pairing address without a certificate pin')
+      setOldQr(parsed.url)
       return
     }
     // Default the name to the host so the scan path needs no typing at all.
@@ -215,8 +231,35 @@ export default function PairScreen() {
     }
     // Hand saveWs the RAW payload, not the parsed pieces: it re-parses, and
     // passing url+token discarded the pairing code the QR now carries.
-    saveWs(data.trim(), '')
+    void saveWs(data.trim(), '', editConfig?.label)
   }
+
+  // A saved ws machine must not turn into an IAP one: IAP always adds a machine.
+  const openIap = () => (editId ? navigation.replace('Pair', { kind: 'iap' }) : setKind('iap'))
+
+  const oldQrSheet = (
+    <OldQrSheet
+      address={oldQr}
+      onScanAgain={() => {
+        setOldQr(null)
+        // The edit form cannot scan; reopen as a scan into the same machine.
+        if (editId && !rescan) {
+          navigation.replace('Pair', { editId, rescan: true })
+          return
+        }
+        setManual(false)
+        scannedRef.current = false
+      }}
+      onUseIap={() => {
+        setOldQr(null)
+        openIap()
+      }}
+      onCancel={() => {
+        setOldQr(null)
+        navigation.goBack()
+      }}
+    />
+  )
 
   if (scanning) {
     return (
@@ -253,14 +296,12 @@ export default function PairScreen() {
             >
               <Text style={styles.ghostText}>Type it instead</Text>
             </Pressable>
-            <Pressable
-              onPress={() => setKind('iap')}
-              style={({ pressed }) => [styles.ghost, pressed && styles.pressed]}
-            >
+            <Pressable onPress={openIap} style={({ pressed }) => [styles.ghost, pressed && styles.pressed]}>
               <Text style={styles.ghostText}>Add a work VM</Text>
             </Pressable>
           </View>
         </View>
+        {oldQrSheet}
       </View>
     )
   }
@@ -358,7 +399,7 @@ export default function PairScreen() {
         <Field label="Address" value={url} onChange={setUrl} placeholder="ws://192.168.1.8:8765" mono />
         <Field label="Token" value={token} onChange={setToken} placeholder="from the server" mono />
         <Pressable
-          onPress={() => saveWs(url, token, label)}
+          onPress={() => void saveWs(url, token, label)}
           style={({ pressed }) => [styles.cta, pressed && styles.pressed]}
         >
           <Text style={styles.ctaText}>{editId ? 'Save' : 'Connect'}</Text>
@@ -372,6 +413,7 @@ export default function PairScreen() {
           </Pressable>
         )}
       </ScrollView>
+      {oldQrSheet}
     </KeyboardAvoidingView>
   )
 }

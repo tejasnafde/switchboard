@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.pairing
 
+import app.switchboard.mobile.domain.connection.CleartextPolicy
 import app.switchboard.mobile.domain.connection.PairingUrl
 import app.switchboard.mobile.domain.connection.IapTargetError
 import app.switchboard.mobile.domain.connection.IapTargetValidator
@@ -181,6 +182,34 @@ object PairingFormPolicy {
             )
         }
     }
+
+    /**
+     * A scanned QR adds a machine, or replaces [rescan]'s address and credential
+     * when the user scans again for a machine whose QR is outdated or whose
+     * certificate changed. The saved name is kept.
+     */
+    fun scanIntent(submission: PairingSubmission, rescan: Pair<String, String>?): PairingSaveIntent =
+        if (rescan == null) {
+            PairingSaveIntent.Add(submission)
+        } else {
+            PairingSaveIntent.Edit(
+                connectionId = rescan.first,
+                submission = submission.copy(label = rescan.second.ifBlank { submission.label }),
+                resetSession = true,
+                reconnect = true,
+            )
+        }
+
+    /**
+     * A rescan replaces the machine's address and credential before anything
+     * dials it, so a release build refuses a QR it will not dial here, while the
+     * old address still works. Adding a machine is not refused: its row reads
+     * "Needs encryption" and shows the fix.
+     */
+    fun scanRefusal(submission: PairingSubmission, rescan: Pair<String, String>?, requireEncryption: Boolean): String? =
+        CleartextPolicy.REFUSED_MESSAGE.takeIf {
+            rescan != null && requireEncryption && CleartextPolicy.refuses(submission.url)
+        }
 
     private fun String.removeWebSocketScheme(): String =
         removePrefix("ws://").removePrefix("wss://").substringBefore('?')

@@ -129,6 +129,8 @@ data class ConnectionRuntimeState(
     val generation: Long,
     val status: ConnectionStatus,
     val detail: String,
+    /** Why a terminal failure stopped the connection, when one did. */
+    val reason: ConnectionTerminalReason? = null,
 )
 
 enum class ConnectionTerminalReason {
@@ -204,6 +206,7 @@ object ConnectionStatusReducer {
             is ConnectionRuntimeEvent.TerminalFailure -> ConnectionRuntimeState(
                 generation = event.generation,
                 status = ConnectionStatus.Error,
+                reason = event.reason,
                 detail = when (event.reason) {
                     ConnectionTerminalReason.GoogleSignInRequired ->
                         "Sign in to Google to connect through Cloud IAP"
