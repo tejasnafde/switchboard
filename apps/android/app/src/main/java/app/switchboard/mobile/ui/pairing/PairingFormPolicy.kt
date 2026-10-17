@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.pairing
 
+import app.switchboard.mobile.domain.connection.CleartextPolicy
 import app.switchboard.mobile.domain.connection.PairingUrl
 import app.switchboard.mobile.domain.connection.IapTargetError
 import app.switchboard.mobile.domain.connection.IapTargetValidator
@@ -197,6 +198,17 @@ object PairingFormPolicy {
                 resetSession = true,
                 reconnect = true,
             )
+        }
+
+    /**
+     * A rescan replaces the machine's address and credential before anything
+     * dials it, so a release build refuses a QR it will not dial here, while the
+     * old address still works. Adding a machine is not refused: its row reads
+     * "Needs encryption" and shows the fix.
+     */
+    fun scanRefusal(submission: PairingSubmission, rescan: Pair<String, String>?, requireEncryption: Boolean): String? =
+        CleartextPolicy.REFUSED_MESSAGE.takeIf {
+            rescan != null && requireEncryption && CleartextPolicy.refuses(submission.url)
         }
 
     private fun String.removeWebSocketScheme(): String =

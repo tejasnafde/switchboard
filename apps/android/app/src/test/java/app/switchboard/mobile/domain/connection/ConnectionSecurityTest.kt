@@ -34,9 +34,14 @@ class ConnectionSecurityTest {
 
         assertEquals(ConnectionSecurity.PINNED, of("wss://192.168.1.24:8765?fp=$fp"))
         assertEquals(ConnectionSecurity.LOCAL, of("ws://127.0.0.1:8765"))
-        assertEquals(ConnectionSecurity.LOCAL, of("ws://10.0.2.2:8765"))
+        // A release build treats 10.0.2.2 as a LAN address: it is the host only on an emulator.
+        assertEquals(ConnectionSecurity.REFUSED, of("ws://10.0.2.2:8765"))
+        assertEquals(ConnectionSecurity.PLAIN, of("ws://10.0.2.2:8765", release = false))
         assertEquals(ConnectionSecurity.REFUSED, of("ws://10.0.4.17:8765"))
         assertEquals(ConnectionSecurity.PLAIN, of("ws://10.0.4.17:8765", release = false))
+        assertEquals(ConnectionSecurity.ENCRYPTED, of("wss://10.0.4.17:8765"))
+        assertEquals(ConnectionSecurity.ENCRYPTED, of("wss://10.0.4.17:8765", release = false))
+        assertEquals(ConnectionSecurity.LOCAL, of("wss://127.0.0.1:8765"))
         assertEquals(ConnectionSecurity.CERTIFICATE_CHANGED, of("wss://192.168.1.40:8765?fp=$fp", changed = true))
         assertEquals(ConnectionSecurity.IAP, of(null, iap = true, changed = true))
     }
@@ -50,6 +55,9 @@ class ConnectionSecurityTest {
         assertFalse(ConnectionSecurityPolicy.showsFingerprint(ConnectionSecurity.IAP))
         assertTrue(ConnectionSecurityPolicy.showsLock(ConnectionSecurity.IAP))
         assertFalse(ConnectionSecurityPolicy.showsLock(ConnectionSecurity.REFUSED))
+        assertTrue(ConnectionSecurityPolicy.showsLock(ConnectionSecurity.ENCRYPTED))
+        assertFalse(ConnectionSecurityPolicy.showsFingerprint(ConnectionSecurity.ENCRYPTED))
+        assertEquals(ConnectionSecurityCopy.PINNED, ConnectionSecurityPolicy.label(ConnectionSecurity.ENCRYPTED))
     }
 
     @Test

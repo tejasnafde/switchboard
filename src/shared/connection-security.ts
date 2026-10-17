@@ -28,6 +28,8 @@ export type ConnectionSecurity =
   | 'pinned'
   /** Plain ws:// to loopback or the emulator host: never leaves the device. */
   | 'local'
+  /** wss:// to another computer with no certificate pin this app can check. */
+  | 'encrypted'
   /** Plain ws:// to another computer, allowed in an internal build. */
   | 'plain'
   /** The Cloud IAP tunnel, encrypted by Google. */
@@ -55,7 +57,8 @@ export function connectionSecurity(input: ConnectionSecurityInput): ConnectionSe
   const url = input.url ?? ''
   if (input.canPin && fingerprintInUrl(url)) return 'pinned'
   const host = /^wss?:\/\/(\[[^\]]*\]|[^/:?#]*)/i.exec(url.trim())?.[1]
-  return host !== undefined && isLoopbackHost(host) ? 'local' : 'plain'
+  if (host !== undefined && isLoopbackHost(host)) return 'local'
+  return /^wss:\/\//i.test(url.trim()) ? 'encrypted' : 'plain'
 }
 
 /** Rows listed under "Needs attention": only the user can fix them. */
@@ -70,7 +73,7 @@ export function showsFingerprint(security: ConnectionSecurity): boolean {
 
 /** States whose detail line starts with a lock. */
 export function showsLock(security: ConnectionSecurity): boolean {
-  return security === 'pinned' || security === 'iap'
+  return security === 'pinned' || security === 'encrypted' || security === 'iap'
 }
 
 /**
@@ -127,6 +130,7 @@ export function fillCopy(key: ConnectionSecurityCopyKey, values: Record<string, 
 export function securityLabel(security: ConnectionSecurity): string {
   switch (security) {
     case 'pinned':
+    case 'encrypted':
       return CONNECTION_SECURITY_COPY.pinned
     case 'local':
       return CONNECTION_SECURITY_COPY.local

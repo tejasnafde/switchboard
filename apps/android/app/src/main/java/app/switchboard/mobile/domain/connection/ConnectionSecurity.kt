@@ -13,6 +13,9 @@ enum class ConnectionSecurity {
     /** Plain ws:// to loopback or the emulator host. */
     LOCAL,
 
+    /** wss:// to another computer with no certificate pin. */
+    ENCRYPTED,
+
     /** Plain ws:// to another computer, allowed in a debug build. */
     PLAIN,
 
@@ -46,6 +49,7 @@ object ConnectionSecurityPolicy {
         CertificatePin.of(url) != null -> ConnectionSecurity.PINNED
         runCatching { URI(url).host }.getOrNull()?.let(CleartextPolicy::isLoopbackHost) == true ->
             ConnectionSecurity.LOCAL
+        url.startsWith("wss://", ignoreCase = true) -> ConnectionSecurity.ENCRYPTED
         else -> ConnectionSecurity.PLAIN
     }
 
@@ -57,10 +61,12 @@ object ConnectionSecurityPolicy {
         security == ConnectionSecurity.PINNED || security == ConnectionSecurity.CERTIFICATE_CHANGED
 
     fun showsLock(security: ConnectionSecurity): Boolean =
-        security == ConnectionSecurity.PINNED || security == ConnectionSecurity.IAP
+        security == ConnectionSecurity.PINNED ||
+            security == ConnectionSecurity.ENCRYPTED ||
+            security == ConnectionSecurity.IAP
 
     fun label(security: ConnectionSecurity): String = when (security) {
-        ConnectionSecurity.PINNED -> ConnectionSecurityCopy.PINNED
+        ConnectionSecurity.PINNED, ConnectionSecurity.ENCRYPTED -> ConnectionSecurityCopy.PINNED
         ConnectionSecurity.LOCAL -> ConnectionSecurityCopy.LOCAL
         ConnectionSecurity.PLAIN -> ConnectionSecurityCopy.PLAIN
         ConnectionSecurity.IAP -> ConnectionSecurityCopy.IAP

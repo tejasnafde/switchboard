@@ -36,7 +36,7 @@ import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { keyboardAvoidance } from '../lib/keyboard-avoidance'
-import { transportRefusal } from '../lib/transport-gate'
+import { settledTransportRefusal, transportRefusal } from '../lib/transport-gate'
 import { OldQrSheet } from '../components/OldQrSheet'
 import { getClient, parsePairingUrl, useConnectionsStore, type ConnectionConfig } from '../stores/connections'
 
@@ -139,7 +139,7 @@ export default function PairScreen() {
     }
   }, [kind])
 
-  const saveWs = (rawUrl: string, rawToken: string, rawLabel?: string) => {
+  const saveWs = async (rawUrl: string, rawToken: string, rawLabel?: string) => {
     // The server prints a full `ws://host:port?token=...`, so pasting that whole
     // string into Address is the obvious move. Parse it FIRST and prefer the
     // token it carries; blindly appending the token field produced
@@ -157,8 +157,11 @@ export default function PairScreen() {
       Alert.alert('Not a machine address', 'Expected something like ws://192.168.1.8:8765')
       return
     }
-    // Undefined while the build type is unknown: save, and connect() decides.
-    if (typeof transportRefusal(parsed.url) === 'string') {
+    // Undefined while the build type is unknown. A new machine saves and
+    // connect() decides; an edit waits, because it replaces the working
+    // address and credential before anything dials the new one.
+    const refusal = editId ? await settledTransportRefusal(parsed.url) : transportRefusal(parsed.url)
+    if (typeof refusal === 'string') {
       log.warn('refusing a pairing address without a certificate pin')
       setOldQr(parsed.url)
       return
@@ -228,7 +231,7 @@ export default function PairScreen() {
     }
     // Hand saveWs the RAW payload, not the parsed pieces: it re-parses, and
     // passing url+token discarded the pairing code the QR now carries.
-    saveWs(data.trim(), '', editConfig?.label)
+    void saveWs(data.trim(), '', editConfig?.label)
   }
 
   // A saved ws machine must not turn into an IAP one: IAP always adds a machine.
@@ -396,7 +399,7 @@ export default function PairScreen() {
         <Field label="Address" value={url} onChange={setUrl} placeholder="ws://192.168.1.8:8765" mono />
         <Field label="Token" value={token} onChange={setToken} placeholder="from the server" mono />
         <Pressable
-          onPress={() => saveWs(url, token, label)}
+          onPress={() => void saveWs(url, token, label)}
           style={({ pressed }) => [styles.cta, pressed && styles.pressed]}
         >
           <Text style={styles.ctaText}>{editId ? 'Save' : 'Connect'}</Text>

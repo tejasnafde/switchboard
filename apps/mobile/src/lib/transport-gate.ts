@@ -58,3 +58,9 @@ export function transportRefusal(url: string): string | null | undefined {
     return error instanceof Error ? error.message : 'Invalid connection address'
   }
 }
+
+/** `transportRefusal` once the build type is known. */
+export async function settledTransportRefusal(url: string): Promise<string | null> {
+  await storeBuildKnown()
+  return transportRefusal(url) ?? null
+}

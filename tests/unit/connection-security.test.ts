@@ -65,6 +65,13 @@ describe('connectionSecurity', () => {
     expect(ws('ws://10.0.4.17:8765')).toBe('plain')
   })
 
+  it('reads wss:// without a usable pin as encrypted, unless it is loopback', () => {
+    expect(ws('wss://10.0.4.17:8765')).toBe('encrypted')
+    expect(ws(`wss://10.0.4.17:8765?fp=${FP}`, { canPin: false })).toBe('encrypted')
+    expect(ws('WSS://10.0.4.17:8765')).toBe('encrypted')
+    expect(ws('wss://127.0.0.1:8765')).toBe('local')
+  })
+
   it('puts a certificate change before a refusal, and IAP before both', () => {
     expect(ws('ws://10.0.4.17:8765', { refused: true })).toBe('refused')
     expect(ws(`ws://10.0.4.17:8765?fp=${FP}`, { refused: true, certificateChanged: true })).toBe('certificate-changed')
@@ -83,13 +90,14 @@ describe('row rules', () => {
 
   it('shows the fingerprint only where something is pinned, and the lock only where it is encrypted', () => {
     expect(['pinned', 'certificate-changed'].every((s) => showsFingerprint(s as never))).toBe(true)
-    expect(['local', 'plain', 'iap', 'refused'].some((s) => showsFingerprint(s as never))).toBe(false)
-    expect(showsLock('pinned') && showsLock('iap')).toBe(true)
+    expect(['local', 'plain', 'iap', 'refused', 'encrypted'].some((s) => showsFingerprint(s as never))).toBe(false)
+    expect(showsLock('pinned') && showsLock('iap') && showsLock('encrypted')).toBe(true)
     expect(['local', 'plain', 'refused', 'certificate-changed'].some((s) => showsLock(s as never))).toBe(false)
   })
 
   it('labels every state', () => {
     expect(securityLabel('pinned')).toBe('Encrypted')
+    expect(securityLabel('encrypted')).toBe('Encrypted')
     expect(securityLabel('local')).toBe('Not encrypted, local only')
     expect(securityLabel('iap')).toBe('Cloud IAP')
     expect(securityLabel('refused')).toBe('Needs encryption')
