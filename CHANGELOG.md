@@ -4,6 +4,8 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+- Stop `ide-bridge-host.test.ts` from logging after its worker closes: the test now waits for each settings seed write that `startBridgeHost` starts without awaiting, so no write runs into the scratch-dir cleanup and logs during teardown (CI `EnvironmentTeardownError`).
+
 - Stabilize the HTML preview watcher test by observing watcher readiness before measuring write bursts, and make the Android scaffold contract validate version declarations instead of a fixed release number.
 
 - Add real-server Apple URLSession pinning checks and split-ClientHello coverage for TLS 1.2 and 1.3. Existing certificates and pairing fingerprints are preserved.
