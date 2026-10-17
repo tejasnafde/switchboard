@@ -1,0 +1,44 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "vitest-thread-pool",
+  "summary": "The desktop unit test runner uses vitest's thread pool instead of one forked process per test file. Developer and CI tooling only; no app behaviour changes.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Test runner configuration only; no src change."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app's tests run under jest, which is unchanged."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Gradle tests are unchanged."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No protocol change."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data change."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run --pool=threads --maxWorkers=50%: 630 files, 6674 tests passed in 73 s; launchservicesd sampled every 3 s, median 0.2%.",
+      "CI on this pull request runs the suite under threads on Ubuntu, macOS and Windows."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "A fork-pool baseline on the same commit (observed earlier the same day at 100-190% launchservicesd across three runs, not re-measured)."
+    ]
+  }
+}
