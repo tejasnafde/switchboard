@@ -5,6 +5,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Changed
+- **Android release builds allow cleartext only to loopback.** The release network security config and `CleartextPolicy` drop the emulator host `10.0.2.2`, which is an ordinary LAN address on a real phone, and add `::1`. A saved `ws://10.0.2.2` machine in a release build now shows the "needs an encrypted connection" message; debug builds still reach any host. Needed for the Play Data safety answer "encrypted in transit".
 - **iOS bundle id is `app.tn07.switchboard`.** Apple reports `app.switchboard.mobile` as taken by another developer, so the App Store app uses the tn07 prefix, like scout. The Android package is unchanged. A development iOS build with the old id is a different app: install the new build and pair again.
 - **Tests run in worker threads.** Vitest used one forked process per test file, about 630 per run, and macOS `launchservicesd` registered every one at 100-190% CPU for the whole run. The thread pool runs the same 6674 tests green in 73 s with `launchservicesd` at 0.2%.
 - **Dependency bumps need no parity manifest.** The feature-parity check exempts a change that touches only `package.json` dependency lines and `package-lock.json`, in the root or in `apps/mobile`, the way it already exempts `npm version`. Dependabot pull requests pass the policy again; a script or path change still needs a manifest.

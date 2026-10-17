@@ -51,8 +51,8 @@ class ConnectionDecisionsTest {
         assertEquals(true, CleartextPolicy.refuses("ws://127.0.0.1.evil.example:8765"))
         assertEquals(false, CleartextPolicy.refuses("ws://127.0.0.1:8765"))
         assertEquals(false, CleartextPolicy.refuses("ws://localhost:8765"))
-        assertEquals(false, CleartextPolicy.refuses("ws://10.0.2.2:8765"))
-        assertEquals(true, CleartextPolicy.refuses("ws://[::1]:8765"))
+        assertEquals(true, CleartextPolicy.refuses("ws://10.0.2.2:8765"))
+        assertEquals(false, CleartextPolicy.refuses("ws://[::1]:8765"))
         assertEquals(true, CleartextPolicy.refuses("ws://127.0.0.2:8765"))
         assertEquals(false, CleartextPolicy.refuses("wss://192.168.1.8:8765"))
     }
