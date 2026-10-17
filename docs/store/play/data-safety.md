@@ -70,7 +70,8 @@ Encryption in transit, why Yes is true for the release build:
   encrypted in transit" not strictly true. Recommended: remove `10.0.2.2`
   from the release config and `CLEARTEXT_HOSTS` (emulators can use
   `adb reverse` to `localhost` instead) before the first production release.
-  Until then, Yes describes every normal pairing path.
+  Answer Yes once the uploaded AAB no longer has the exception; until then,
+  the developer decides whether to accept the edge case.
 - A paired backend is dialled over `wss://` with its certificate pinned from
   the pairing QR (`platform/protocol/PinnedTls.kt`), or through the Google IAP tunnel (TLS).
   Remote `ws://` is refused. See
