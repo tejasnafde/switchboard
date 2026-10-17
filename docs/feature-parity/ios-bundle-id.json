@@ -1,0 +1,48 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ios-bundle-id",
+  "summary": "The App Store app's bundle identifier changes from app.switchboard.mobile to app.tn07.switchboard, because Apple reports the old id as registered by another developer (the team's bundle id list has never held it). The Android package keeps app.switchboard.mobile. A deliberate identity change: a development iOS build with the old id is a separate app, so the user installs the new build once and pairs again. Native change: needs a new iOS build, never an OTA.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Only apps/mobile/app.json and docs change."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/app.json"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The Android package app.switchboard.mobile is unchanged; Play and the developer verification already know it."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire protocol or backend change; pairing does not read the bundle id."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data format changes. Data stored by the old-id development build is not migrated: it is a different app sandbox on iOS, and the user pairs again."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "docs/plans/2026-10-12-store-publishing.md",
+        "docs/store/account-holder-guide.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx expo config --type introspect resolves ios.bundleIdentifier to app.tn07.switchboard.",
+      "npm run typecheck and npm test pass (pre-commit hook)."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The EAS store build and the App Store record with the new id (the next run of sb-tools/eas-ios-build.sh); that build registers the App ID.",
+      "Token renewal on the new build with an imported credential: the phone uses the Desktop-type Google client and desktop-minted refresh tokens (apps/mobile/app.json, googleClientId note), not an iOS client, so the bundle id does not bind it; confirm renewal still works after the install."
+    ]
+  }
+}
