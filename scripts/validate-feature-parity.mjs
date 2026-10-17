@@ -244,6 +244,38 @@ export function isVersionOnlyBump(repoRoot, base, changedFiles, runGitDiff = def
   return edits.every((line) => /^[+-]\s*"version":\s*"[^"]+",?\s*$/.test(line))
 }
 
+const PACKAGE_MANIFEST = /(^|\/)package(-lock)?\.json$/
+const DEPENDENCY_LINE = /^[+-]\s*"[^"]+":\s*"(?:npm:[^"]+|(?:[~^]|>=|<=|>|<|=)?\d+\.\d+\.\d+[^"]*)",?\s*$/
+
+/**
+ * Is this diff nothing but a dependency version bump?
+ *
+ * Dependabot changes one `package.json` dependency line and regenerates the
+ * matching `package-lock.json`, in the root or in `apps/mobile`. That changes
+ * no product code on any surface, and a manifest per bump would stop every
+ * dependency update. The exemption is as narrow as the version-only one: every
+ * changed file must be a package manifest or lockfile, and every added or
+ * removed `package.json` line must be a `"name": "<version range>"` pair. A
+ * script, a `main` path or any other field fails it, because such values do
+ * not look like a version. Lockfile lines are not inspected: npm writes them.
+ */
+export function isDependencyOnlyBump(repoRoot, base, changedFiles, runGitDiff = defaultGitDiff) {
+  if (changedFiles.length === 0) return false
+  if (!changedFiles.every((path) => PACKAGE_MANIFEST.test(path))) return false
+  if (!base) return false
+  const manifests = changedFiles.filter((path) => !path.endsWith('package-lock.json'))
+  if (manifests.length === 0) return true
+  let diff
+  try {
+    diff = runGitDiff(repoRoot, base, manifests)
+  } catch {
+    return false
+  }
+  const edits = diff.split(/\r?\n/).filter((line) => /^[+-]/.test(line) && !/^(\+\+\+|---)/.test(line))
+  if (edits.length === 0) return false
+  return edits.every((line) => DEPENDENCY_LINE.test(line))
+}
+
 function parseArgs(args) {
   const result = { all: false, base: '', files: [] }
   for (let index = 0; index < args.length; index += 1) {
@@ -262,7 +294,8 @@ export function runFeatureParityValidation({ repoRoot, all = false, base = '', f
     : changedFiles.filter((path) => MANIFEST_PATTERN.test(path)).map((path) => join(repoRoot, path))
   const failures = []
 
-  const versionOnly = !all && isVersionOnlyBump(repoRoot, base, changedFiles)
+  const versionOnly =
+    !all && (isVersionOnlyBump(repoRoot, base, changedFiles) || isDependencyOnlyBump(repoRoot, base, changedFiles))
 
   if (!all && !versionOnly && requiresFeatureParityManifest(changedFiles) && manifestFiles.length === 0) {
     failures.push(`Behavior-bearing changes require a changed ${MANIFEST_DIRECTORY}/<feature>.json manifest.`)
