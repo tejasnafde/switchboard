@@ -101,8 +101,8 @@ fun ConnectionsScreen(
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     onTryDemo: (() -> Unit)? = null,
-    onRescan: (String) -> Unit = {},
-    onUseIap: () -> Unit = {},
+    onRescan: (String) -> Unit,
+    onUseIap: () -> Unit,
 ) {
     var actionRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
     var removeRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
