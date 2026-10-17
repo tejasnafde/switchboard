@@ -170,7 +170,7 @@ there**. Add new area detail to the nearest one, not to this file.
 
 Screenshot tests and how to run e2e without stealing focus: `e2e/AGENTS.md`.
 
-Run the whole suite: `npm test`. Targeted runs: `npx vitest run tests/unit/<file>.test.ts`. Notable files:
+Run the whole suite: `npm test`. Vitest runs test files in worker threads (`pool: 'threads'` in `vitest.config.ts`), not forked processes: the fork pool's ~630 processes per run pinned macOS `launchservicesd` at 100-190% CPU. A test must not call `process.chdir`; pass `cwd` to the code under test instead. Targeted runs: `npx vitest run tests/unit/<file>.test.ts`. Notable files:
 
 - `message-list.test.ts` - `groupIntoTurns` keeper-list (regression for empty-content attachment drops)
 - `slash-commands.test.ts` - slash trigger + registry

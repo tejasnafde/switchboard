@@ -12,7 +12,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.switchboard.mobile",
+      "bundleIdentifier": "app.tn07.switchboard",
       "infoPlist": {
         "//": "Backends are reached over ws:// on a LAN, a tailnet, or an ssh tunnel, so App Transport Security has to allow cleartext or every pairing fails at the platform layer. NSLocalNetworkUsageDescription is separately required from iOS 14: without it a dial to a private-range address is refused with no prompt and no error the app can report. ITSAppUsesNonExemptEncryption is false because the app uses only the system's TLS (exempt), which skips the export compliance question on every App Store build.",
         "NSAppTransportSecurity": {

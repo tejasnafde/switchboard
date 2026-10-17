@@ -1,0 +1,42 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ide-bridge-host-test-teardown",
+  "summary": "Test-only fix: the bridge host test awaits the settings seed write that startBridgeHost starts without awaiting, so nothing logs after the vitest worker closes. No product behavior changes.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Only tests/unit/ide-bridge-host.test.ts and a note in src/main/ide/AGENTS.md change; bridge host and IDE runtime code are unchanged."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No React Native or iOS source, build configuration, or tests change."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "No Android source, build configuration, or tests change."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No backend, IPC, or wire contract changes; the headless bridge host code is unchanged."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data, schema, migration, or upgrade logic changes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No release version, packaging, signing, channel, or rollout changes."
+    }
+  },
+  "verification": {
+    "automated": [
+      "Run tests/unit/ide-bridge-host.test.ts 40 times (--maxWorkers=2) before and after, with the full suite running once in parallel: late log lines went from 1200 to 0 and settings write failures from 800 to 0.",
+      "Run npm run typecheck and the full vitest suite."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The CI EnvironmentTeardownError did not reproduce on macOS in either loop; the fix removes the late logs that cause it on Ubuntu."
+    ]
+  }
+}
