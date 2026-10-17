@@ -15,9 +15,7 @@
     "nativeAndroid": {
       "status": "implemented",
       "evidence": [
-        "apps/android/app/src/test/java/app/switchboard/mobile/ui/demo/StoreScreenshotsTest.kt",
-        "docs/store/play/listing.md",
-        "docs/store/play/data-safety.md"
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/demo/StoreScreenshotsTest.kt"
       ]
     },
     "sharedBackendApi": {
@@ -32,7 +30,8 @@
       "status": "implemented",
       "evidence": [
         "docs/store/account-holder-guide.md",
-        "docs/store/play/listing.md"
+        "docs/store/play/listing.md",
+        "docs/store/play/data-safety.md"
       ]
     }
   },
