@@ -5,6 +5,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Changed
+- **Android Home shows how each machine is connected.** The Home machine list uses the Machines screen's row: the lock and "Encrypted" with the short fingerprint, "Not encrypted, local only" or "Cloud IAP", the amber hint on a machine this build will not dial, and the certificate sheet on a tap of a machine whose certificate changed. The account holder guide gains the iOS push key step and drops the Play steps that are done.
+
+### Changed
 - **Native Android 0.5.19 (versionCode 21), the first Play build.** It carries the foreground reconnect fix, the machine transport rows, loopback-only release cleartext and the revoked-phone message, and it replaces the 0.5.18 internal draft.
 
 ### Changed

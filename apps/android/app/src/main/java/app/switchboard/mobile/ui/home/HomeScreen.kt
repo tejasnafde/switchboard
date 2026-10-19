@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
@@ -32,6 +31,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,11 +52,14 @@ import app.switchboard.mobile.ui.components.InlineStatus
 import app.switchboard.mobile.ui.components.InlineStatusProgress
 import app.switchboard.mobile.ui.components.SectionLabel
 import app.switchboard.mobile.ui.components.StatusTone
+import app.switchboard.mobile.domain.connection.ConnectionSecurity
+import app.switchboard.mobile.ui.connections.CertificateChangedSheet
+import app.switchboard.mobile.ui.connections.ConnectionRow
 import app.switchboard.mobile.ui.connections.ConnectionRowPresentation
-import app.switchboard.mobile.ui.connections.ConnectionStatus
 import app.switchboard.mobile.ui.connections.ConnectionsPresentation
 import app.switchboard.mobile.ui.connections.GoogleAccountAvatarPolicy
-import app.switchboard.mobile.ui.demo.DemoBadge
+import app.switchboard.mobile.ui.connections.RefusedHint
+import app.switchboard.mobile.ui.connections.RemoveMachineDialog
 import app.switchboard.mobile.ui.demo.TryDemoButton
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.Amber
@@ -77,9 +83,14 @@ fun HomeScreen(
     onGoogleAccount: () -> Unit,
     onSettings: () -> Unit,
     onRetryMachines: () -> Unit,
+    onRescan: (String) -> Unit,
+    onUseIap: () -> Unit,
+    onRemoveMachine: (String) -> Unit,
     modifier: Modifier = Modifier,
     onTryDemo: (() -> Unit)? = null,
 ) {
+    var certificateRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
+    var removeRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
     Column(modifier = modifier.fillMaxSize()) {
         HomeTopBar(
             googleAccount = googleAccount,
@@ -165,7 +176,19 @@ fun HomeScreen(
 
                 is ConnectionsPresentation.Content -> {
                     items(machines.rows.take(HOME_MACHINE_LIMIT), key = { it.id }) { row ->
-                        HomeMachineRow(row = row, onClick = { onMachine(row.id) })
+                        ConnectionRow(
+                            row = row,
+                            onOpen = {
+                                if (row.security == ConnectionSecurity.CERTIFICATE_CHANGED) {
+                                    certificateRow = row
+                                } else {
+                                    onMachine(row.id)
+                                }
+                            },
+                        )
+                        if (row.security == ConnectionSecurity.REFUSED) {
+                            RefusedHint(onScan = { onRescan(row.id) }, onUseIap = onUseIap)
+                        }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
                     }
                     machines.recoveryMessage?.let { message ->
@@ -183,6 +206,32 @@ fun HomeScreen(
                 }
             }
         }
+    }
+
+    certificateRow?.let { row ->
+        CertificateChangedSheet(
+            row = row,
+            onScan = {
+                certificateRow = null
+                onRescan(row.id)
+            },
+            onRemove = {
+                certificateRow = null
+                removeRow = row
+            },
+            onDismiss = { certificateRow = null },
+        )
+    }
+
+    removeRow?.let { row ->
+        RemoveMachineDialog(
+            row = row,
+            onRemove = {
+                removeRow = null
+                onRemoveMachine(row.id)
+            },
+            onDismiss = { removeRow = null },
+        )
     }
 }
 
@@ -345,61 +394,6 @@ private fun HomeRecentTrailing(row: HomeRecentRow) {
             fontFamily = GeistMono,
             fontSize = 11.sp,
             modifier = Modifier.padding(start = 6.dp),
-        )
-    }
-}
-
-@Composable
-private fun HomeMachineRow(row: ConnectionRowPresentation, onClick: () -> Unit) {
-    val tint = when (row.status) {
-        ConnectionStatus.LIVE -> Green
-        ConnectionStatus.CONNECTING -> Amber
-        ConnectionStatus.OFFLINE -> TextDim
-        ConnectionStatus.ERROR -> Red
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 64.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(role = Role.Button, onClick = onClick)
-            .semantics(mergeDescendants = true) {
-                contentDescription = "${row.label}, ${row.statusLabel}"
-            }
-            .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(7.dp)
-                .clip(CircleShape)
-                .background(tint),
-        )
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = row.label,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            DemoBadge(Modifier.padding(start = 8.dp))
-        }
-        Text(
-            text = row.statusLabel,
-            color = TextDim,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = TextDim,
-            modifier = Modifier.padding(start = 4.dp),
         )
     }
 }
