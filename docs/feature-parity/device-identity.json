@@ -13,8 +13,7 @@
       "evidence": [
         "apps/mobile/src/lib/device-identity.ts",
         "apps/mobile/src/stores/connections.ts",
-        "apps/mobile/src/lib/__tests__/device-identity.test.ts",
-        "tests/unit/ws-transport-device-identity.test.ts"
+        "apps/mobile/src/lib/__tests__/device-identity.test.ts"
       ]
     },
     "nativeAndroid": {
@@ -38,13 +37,13 @@
         "src/main/backend/mobile-server.ts",
         "tests/unit/device-identity.test.ts",
         "tests/unit/device-revoke-e2e.test.ts",
-        "tests/fixtures/mobile-native/protocol/ws-frames.json"
+        "tests/fixtures/mobile-native/protocol/ws-frames.json",
+        "tests/unit/ws-transport-device-identity.test.ts"
       ]
     },
     "storageDataMigration": {
       "status": "implemented",
       "evidence": [
-        "src/main/backend/device-sessions.ts",
         "tests/unit/device-identity.test.ts"
       ]
     },
