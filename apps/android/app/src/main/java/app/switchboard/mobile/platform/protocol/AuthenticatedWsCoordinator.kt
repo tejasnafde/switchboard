@@ -256,7 +256,10 @@ class AuthenticatedWsCoordinator(
                 retryAttempts = 0
                 dialCurrentGeneration()
             }
-            else -> if (connection != null) armHandshakeTimeout(currentState.generation, connection)
+            // Restart only a running timer; openedLocked arms the first one.
+            else -> if (connection != null && handshakeTask != null) {
+                armHandshakeTimeout(currentState.generation, connection)
+            }
         }
     }
 
