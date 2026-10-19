@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-release-0.5.20",
+  "summary": "Native Android release 0.5.20 (versionCode 22): replaces the 0.5.19 Play internal draft before any rollout. Adds what merged after 0.5.19: device identity on pairing and session auth (#365, device_identity_v1: install id, name, model, OS and app version; a re-pair supersedes the old session) and the Home screen machine rows with transport state (#366).",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Android version bump only; the desktop parts of each shipped feature are covered by that feature's own manifest."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo client has its own OTA and build lanes; this bump touches only apps/android."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No API change; the backend contracts these Android features use are covered by their own manifests."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes in this bump."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        ".github/workflows/mobile-release.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "./gradlew :app:testDebugUnitTest passes on this branch."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The Play internal rollout and install on a phone (next step, by the user)."
+    ]
+  }
+}
