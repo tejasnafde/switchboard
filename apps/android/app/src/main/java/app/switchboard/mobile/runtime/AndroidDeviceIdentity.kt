@@ -11,6 +11,8 @@ import java.io.File
 
 private const val TAG = "DeviceIdentity"
 
+private val INSTALL_ID_LOCK = Any()
+
 /**
  * The install id the desktop uses to recognise this install pairing again.
  * Minted once and kept in `noBackupFilesDir`, so Auto Backup and device
@@ -42,7 +44,12 @@ class NoBackupInstallIdStorage(directory: File) : DeviceIdentityStorage {
  */
 fun androidDeviceIdentity(context: Context): DeviceIdentityPayload? {
     val installId = try {
-        StableDeviceIdentityProvider(NoBackupInstallIdStorage(context.applicationContext.noBackupFilesDir)).get().deviceId
+        // One file per process: two first launches racing would each mint an id.
+        synchronized(INSTALL_ID_LOCK) {
+            StableDeviceIdentityProvider(NoBackupInstallIdStorage(context.applicationContext.noBackupFilesDir))
+                .get()
+                .deviceId
+        }
     } catch (error: Exception) {
         Log.w(TAG, "could not read or store the install id, sending no device identity", error)
         return null
