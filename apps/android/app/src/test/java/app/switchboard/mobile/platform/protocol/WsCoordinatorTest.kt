@@ -705,6 +705,31 @@ class WsCoordinatorTest {
     }
 
     @Test
+    fun `a handshake timeout that fires as resume rearms it leaves the fresh handshake alone`() {
+        val fixture = Fixture()
+        fixture.coordinator.connect(fixture.target())
+        val call = fixture.dialer.calls.single()
+        call.listener.onOpen(call.socket)
+        val stale = fixture.scheduler.activeTasks().single()
+        val phaseBefore = fixture.coordinator.phase
+
+        // The stale callback started before resume and waited for the monitor.
+        fixture.coordinator.resume()
+        stale.block()
+
+        assertFalse(call.socket.closed)
+        assertEquals(phaseBefore, fixture.coordinator.phase)
+        assertTrue(fixture.observer.transportFailures.isEmpty())
+        val fresh = fixture.scheduler.activeTasks().single()
+        assertEquals(15_000L, fresh.delayMs)
+
+        // The fresh timer still owns the handshake and still times it out.
+        fixture.scheduler.runTaskWithDelay(15_000L)
+        assertTrue(call.socket.closed)
+        assertEquals(ConnectionPhase.Disconnected, fixture.coordinator.phase)
+    }
+
+    @Test
     fun `resume never revives rejection disconnect destroy or a dial in flight`() {
         val rejected = Fixture()
         val call = rejected.connectReady()

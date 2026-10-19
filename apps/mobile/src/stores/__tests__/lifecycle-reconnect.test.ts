@@ -27,16 +27,14 @@ afterEach(() => {
 
 // connect() checks the transport gate asynchronously before it makes the client.
 async function connectWith(transport: Record<string, unknown>): Promise<void> {
-  jest
-    .spyOn(SwitchboardClient, 'overWs')
-    .mockReturnValue(
-      new SwitchboardClient({
-        invoke: jest.fn(),
-        on: jest.fn(() => () => {}),
-        close: jest.fn(),
-        ...transport,
-      } as never),
-    )
+  jest.spyOn(SwitchboardClient, 'overWs').mockReturnValue(
+    new SwitchboardClient({
+      invoke: jest.fn(),
+      on: jest.fn(() => () => {}),
+      close: jest.fn(),
+      ...transport,
+    } as never),
+  )
   useConnectionsStore.getState().connect('mac')
   for (let i = 0; i < 50 && !getClient('mac'); i++) await new Promise((r) => setTimeout(r, 0))
   expect(getClient('mac')).toBeDefined()

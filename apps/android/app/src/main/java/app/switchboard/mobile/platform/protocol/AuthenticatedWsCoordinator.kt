@@ -72,6 +72,13 @@ class AuthenticatedWsCoordinator(
     private var peerSpeaksHeartbeat = false
     private var probeTask: Cancelable? = null
     private var handshakeTask: Cancelable? = null
+
+    /**
+     * Bumped on every arm and cancel. cancel() cannot stop a timeout callback
+     * that already started and waits for the monitor, so the callback acts
+     * only while the arming it captured is still the current one.
+     */
+    private var handshakeArming = 0L
     private var retryAttempts = 0
     private var networkAvailable = true
     private var redialPending = false
@@ -784,8 +791,10 @@ class AuthenticatedWsCoordinator(
         connection: LineConnection,
     ) {
         cancelHandshake()
+        val arming = handshakeArming
         handshakeTask = scheduler.schedule(handshakeTimeoutMs) {
             synchronized(this) {
+                if (handshakeArming != arming) return@synchronized
                 handshakeTask = null
                 val currentState = state ?: return@synchronized
                 if (
@@ -817,6 +826,7 @@ class AuthenticatedWsCoordinator(
     }
 
     private fun cancelHandshake() {
+        handshakeArming++
         handshakeTask?.cancel()
         handshakeTask = null
     }

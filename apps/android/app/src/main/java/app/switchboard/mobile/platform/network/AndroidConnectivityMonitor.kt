@@ -9,26 +9,71 @@ import android.os.Build
 import android.util.Log
 import java.io.Closeable
 
+/** The ConnectivityManager calls the monitor makes, so a test can drive them. */
+internal interface ConnectivitySource {
+    val allNetworks: Array<Network>
+    val activeNetwork: Network?
+
+    fun getNetworkCapabilities(network: Network): NetworkCapabilities?
+
+    fun registerNetworkCallback(request: NetworkRequest, callback: ConnectivityManager.NetworkCallback)
+
+    fun registerDefaultNetworkCallback(callback: ConnectivityManager.NetworkCallback)
+
+    fun unregisterNetworkCallback(callback: ConnectivityManager.NetworkCallback)
+}
+
+private class ManagerConnectivitySource(private val manager: ConnectivityManager) : ConnectivitySource {
+    override val allNetworks: Array<Network> get() = manager.allNetworks
+    override val activeNetwork: Network? get() = manager.activeNetwork
+
+    override fun getNetworkCapabilities(network: Network) = manager.getNetworkCapabilities(network)
+
+    override fun registerNetworkCallback(request: NetworkRequest, callback: ConnectivityManager.NetworkCallback) =
+        manager.registerNetworkCallback(request, callback)
+
+    override fun registerDefaultNetworkCallback(callback: ConnectivityManager.NetworkCallback) =
+        manager.registerDefaultNetworkCallback(callback)
+
+    override fun unregisterNetworkCallback(callback: ConnectivityManager.NetworkCallback) =
+        manager.unregisterNetworkCallback(callback)
+}
+
 /** Application-scoped network monitor that deliberately ignores WAN validation. */
 class AndroidConnectivityMonitor private constructor(
-    private val manager: ConnectivityManager,
+    private val manager: ConnectivitySource,
     private val observer: (Boolean) -> Unit,
     private val onRouteChanged: () -> Unit,
 ) : Closeable {
     private var closed = false
     private var registered = false
+    private var defaultRegistered = false
     private var lastReported: Boolean? = null
     private var lastRoute: String? = null
+
+    /** Availability of any network, the default one or not. */
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = reportCurrent()
         override fun onLost(network: Network) = reportCurrent()
         override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) = reportCurrent()
     }
 
+    /**
+     * Changes of the default network. With two networks up, Android can move
+     * the default route without any availability change, so the callback
+     * above need not fire and the socket would stay on the old route.
+     */
+    private val defaultCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) = reportCurrent()
+        override fun onLost(network: Network) = reportCurrent()
+    }
+
     private fun start() {
         val request = allUsableNetworksRequest()
         manager.registerNetworkCallback(request, callback)
         registered = true
+        manager.registerDefaultNetworkCallback(defaultCallback)
+        defaultRegistered = true
         reportCurrent()
     }
 
@@ -77,7 +122,9 @@ class AndroidConnectivityMonitor private constructor(
         if (closed) return
         closed = true
         if (registered) runCatching { manager.unregisterNetworkCallback(callback) }
+        if (defaultRegistered) runCatching { manager.unregisterNetworkCallback(defaultCallback) }
         registered = false
+        defaultRegistered = false
     }
 
     companion object {
@@ -90,10 +137,17 @@ class AndroidConnectivityMonitor private constructor(
         ): AndroidConnectivityMonitor {
             val manager = context.applicationContext
                 .getSystemService(ConnectivityManager::class.java)
-            return AndroidConnectivityMonitor(manager, observer, onRouteChanged).also { monitor ->
+            return install(ManagerConnectivitySource(manager), observer, onRouteChanged)
+        }
+
+        internal fun install(
+            source: ConnectivitySource,
+            observer: (Boolean) -> Unit,
+            onRouteChanged: () -> Unit,
+        ): AndroidConnectivityMonitor =
+            AndroidConnectivityMonitor(source, observer, onRouteChanged).also { monitor ->
                 runCatching(monitor::start).onFailure { runCatching { observer(true) } }
             }
-        }
 
         private fun hasUsableTransport(capabilities: NetworkCapabilities): Boolean =
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
