@@ -99,7 +99,7 @@ unpair teardown. A token with no owner (registered before ownership tracking,
 or by a legacy shared-token or IAP phone) is deleted by ANY revoke, because it
 may be the revoked phone's; a phone that keeps access registers again on its
 next connect. `listSessionViews` leaves revoked sessions out (a row that stays
-reads as if Revoke did nothing); the tombstone stays so the token is refused.
+reads as if Revoke did nothing); its tombstone stays in the store.
 A phone on the legacy shared token (`mobilePairing.token`) is not a device
 session: it is not listed and Revoke cannot cut it off. Phones show
 `CONNECTION_SECURITY_COPY.removed` on any 4001.

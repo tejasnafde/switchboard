@@ -54,8 +54,7 @@ function saveSessions(sessions: DeviceSession[]): void {
 }
 
 /** Revoked devices are left out: a row that stays after Revoke reads as if
- *  Revoke did nothing. The tombstone stays in the store, so the token is
- *  still refused. */
+ *  Revoke did nothing. */
 export function listSessionViews(): DeviceSessionView[] {
   return listSessions()
     .filter((s) => !isRevoked(s))
@@ -140,7 +139,7 @@ export function setRevocationListener(fn: ((id: string) => void) | null): void {
   onRevoked = fn
 }
 
-/** Tombstoned rather than deleted, so a returning token is still refused. */
+/** Tombstoned: the store keeps when a device was revoked, the list hides it. */
 export function revokeSession(id: string, nowMs: number = Date.now()): boolean {
   const sessions = listSessions()
   const target = sessions.find((s) => s.id === id)
