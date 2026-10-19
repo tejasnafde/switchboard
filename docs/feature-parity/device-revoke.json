@@ -16,8 +16,7 @@
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
-        "apps/mobile/src/stores/connections.ts",
-        "tests/unit/connection-security.test.ts"
+        "apps/mobile/src/stores/connections.ts"
       ]
     },
     "nativeAndroid": {
@@ -32,7 +31,8 @@
       "status": "implemented",
       "evidence": [
         "src/shared/connection-security.ts",
-        "tests/fixtures/connection-security-copy.json"
+        "tests/fixtures/connection-security-copy.json",
+        "tests/unit/connection-security.test.ts"
       ]
     },
     "storageDataMigration": {
