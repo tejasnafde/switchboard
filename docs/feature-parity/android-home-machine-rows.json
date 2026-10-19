@@ -1,0 +1,47 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-home-machine-rows",
+  "summary": "The native Android Home screen's machine list uses the Connections screen's row: status dot, name, short fingerprint, then a lock and Encrypted, Not encrypted, local only, or Cloud IAP, and the address. A refused ws:// row shows the amber hint with Scan new QR and Use Cloud IAP. A tap on a certificate-changed row opens the certificate sheet (Scan QR again, Remove machine, Not now) instead of the machine. Home now applies the release rule that refuses plain ws:// to another computer, as the Connections screen already did.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop has no phone Home screen. Its Devices & machines tab is unchanged."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The iOS app has no separate Home machine list: its Machines screen (ConnectionsScreen.tsx) already uses the shared MachineRow."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/home/HomeScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/connections/ConnectionsScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/home/HomeMachineRowsTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire, API or shared copy change. The rows read the existing copy in ConnectionSecurity.kt, already checked against tests/fixtures/connection-security-copy.json."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing new is stored. Row states come from the saved address and in-memory connection state, as on the Connections screen."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["CHANGELOG.md", "docs/store/account-holder-guide.md"]
+    }
+  },
+  "verification": {
+    "automated": [
+      "Robolectric HomeMachineRowsTest renders HomeScreen: pinned, local and IAP rows show their transport copy and the short fingerprint; a refused row shows the amber hint and its two buttons call rescan and Cloud IAP; a certificate-changed row opens the sheet, not the machine, and Remove machine then Remove calls remove.",
+      "Gradle testDebugUnitTest lintDebug compileDebugAndroidTestKotlin pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run on a phone or an emulator. No screenshot test covers Home: the store screenshots open Connections from Home with no machines."
+    ]
+  }
+}

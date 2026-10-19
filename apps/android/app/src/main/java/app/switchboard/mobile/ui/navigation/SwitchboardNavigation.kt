@@ -365,6 +365,15 @@ private fun SwitchboardNavigationHost(
                     )
                 },
                 onRetry = { onConnectionIntent(ConnectionIntent.Retry) },
+                onRescan = { connectionId ->
+                    navigationState = navigationState.push(AppRoute.Pair(connectionId, rescan = true))
+                },
+                onUseIap = {
+                    navigationState = navigationState.push(AppRoute.Pair(startIap = true))
+                },
+                onRemoveMachine = { connectionId ->
+                    runtime?.remove(connectionId) ?: onConnectionIntent(ConnectionIntent.Remove(connectionId))
+                },
             )
 
             AppRoute.ManageConnections -> ConnectionsScreen(
@@ -681,6 +690,9 @@ private fun HomeRouteHost(
     onMachine: (String) -> Unit,
     onRecent: (HomeRecentRow) -> Unit,
     onRetry: () -> Unit,
+    onRescan: (String) -> Unit,
+    onUseIap: () -> Unit,
+    onRemoveMachine: (String) -> Unit,
 ) {
     var recentLimit by rememberSaveable { mutableStateOf(HOME_RECENT_PAGE_SIZE) }
     val connectionItems = (connectionsState as? ConnectionsLoadState.Ready)
@@ -756,7 +768,7 @@ private fun HomeRouteHost(
     }
     HomeScreen(
         recents = recents,
-        machines = ConnectionsPresenter.present(connectionsState),
+        machines = ConnectionsPresenter.present(connectionsState, requireEncryption = !BuildConfig.DEBUG),
         googleAccount = googleAccountPresentation,
         onRecent = onRecent,
         onMachine = onMachine,
@@ -769,6 +781,9 @@ private fun HomeRouteHost(
         onGoogleAccount = onGoogleAccount,
         onSettings = onSettings,
         onRetryMachines = onRetry,
+        onRescan = onRescan,
+        onUseIap = onUseIap,
+        onRemoveMachine = onRemoveMachine,
     )
 }
 
