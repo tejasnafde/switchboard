@@ -368,6 +368,7 @@ class NativeAndroidRuntime private constructor(
                     ),
                     deviceId = identity.deviceId,
                     deviceLabel = identity.deviceLabel,
+                    device = androidDeviceIdentity(applicationContext),
                 ),
                 coordinatorFactory = AuthenticatedConnectionFleetCoordinatorFactory(
                     dialer = composeNativeLineDialer(

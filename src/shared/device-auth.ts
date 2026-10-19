@@ -14,6 +14,7 @@ import { KEYBOARD_OVERRIDES_SETTING } from './shortcuts'
 import { ProviderChannels, ProviderInstanceChannels, PullRequestWriteChannels } from './ipc-channels'
 import { governedSettingKey } from './project-settings'
 import { ACP_COMMAND_AGENT } from './acp-agents'
+import type { DeviceIdentity, DevicePlatform } from './device-identity'
 
 /** `terminal` is separate because a PTY is arbitrary code execution and nothing
  *  on the phone needs it. */
@@ -167,8 +168,13 @@ export interface DeviceSession {
   label: string
   scopes: DeviceScope[]
   createdAt: number
+  /** Set on every auth and refreshed at most once a minute while connected. */
   lastSeenAt: number
   revokedAt?: number
+  /** Absent for a session paired by a phone that predates device_identity_v1. */
+  identity?: DeviceIdentity
+  /** Remote address of the latest authenticated connection. */
+  lastAddress?: string
 }
 
 export function isRevoked(session: DeviceSession): boolean {
@@ -184,16 +190,30 @@ export interface DeviceSessionView {
   createdAt: number
   lastSeenAt: number
   revoked: boolean
+  /** Optional: absent for older phones and older backends. */
+  installId?: string
+  name?: string
+  manufacturer?: string
+  model?: string
+  platform?: DevicePlatform
+  osVersion?: string
+  appVersion?: string
+  lastAddress?: string
+  /** In memory only: an authenticated socket for this session is open now. */
+  online?: boolean
 }
 
-export function toView(session: DeviceSession): DeviceSessionView {
+export function toView(session: DeviceSession, online = false): DeviceSessionView {
   return {
+    ...session.identity,
     id: session.id,
     label: session.label,
     scopes: session.scopes,
     createdAt: session.createdAt,
     lastSeenAt: session.lastSeenAt,
     revoked: isRevoked(session),
+    ...(session.lastAddress ? { lastAddress: session.lastAddress } : {}),
+    online,
   }
 }
 

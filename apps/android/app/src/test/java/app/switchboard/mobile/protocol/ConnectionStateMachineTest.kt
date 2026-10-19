@@ -14,6 +14,28 @@ class ConnectionStateMachineTest {
     private val generation = selected.generation
 
     @Test
+    fun pairingAndSessionAuthCarryTheDeviceIdentity() {
+        val device = DeviceIdentityPayload.from("0b6f3a4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b", null, "Google", "Pixel 9", "16", "0.5.19")
+        val paired = ConnectionStateMachine.reduce(
+            selected,
+            ConnectionEvent.SocketOpened(generation, Credential.Pairing("PAIR-4821", "Switchboard Android", device)),
+        )
+        val resumed = ConnectionStateMachine.reduce(
+            selected,
+            ConnectionEvent.SocketOpened(generation, Credential.Session("session-device-7", device)),
+        )
+
+        assertEquals(
+            listOf(ConnectionEffect.Send(WsFrame.Auth(pairing = "PAIR-4821", label = "Switchboard Android", device = device))),
+            paired.effects,
+        )
+        assertEquals(
+            listOf(ConnectionEffect.Send(WsFrame.Auth(session = "session-device-7", device = device))),
+            resumed.effects,
+        )
+    }
+
+    @Test
     fun socketOpenDoesNotPermitOutboxUntilAuthAndReadyComplete() {
         val opened = ConnectionStateMachine.reduce(
             selected,

@@ -881,7 +881,7 @@ app.whenReady().then(() => {
   // not be able to mint itself another session or revoke the devices that
   // could remove it.
   backendHost.handle(AppChannels.MOBILE_PAIRING_CODE, () => createPairingCode())
-  backendHost.handle(AppChannels.MOBILE_DEVICES, () => listSessionViews())
+  backendHost.handle(AppChannels.MOBILE_DEVICES, () => listSessionViews(mobileEndpoint?.onlineSessionIds()))
   backendHost.handle(AppChannels.MOBILE_DEVICE_REVOKE, (id: string) => revokeSession(id))
   // Same scope, for a sharper reason: this one opens a browser on the desktop
   // and hands back a credential that grants cloud-platform access as the user.

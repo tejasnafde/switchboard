@@ -15,7 +15,7 @@ import { WsHost, wsServerOptions } from './ws-host'
 import { DualWebSocketServer, loadOrCreateTlsIdentity, type TlsIdentity } from './tls'
 import { userDataDir } from '../runtime'
 import { join } from 'node:path'
-import { authenticateSession, redeemPairingCode, setRevocationListener } from './device-sessions'
+import { authenticateSession, redeemPairingCode, setRevocationListener, touchSession } from './device-sessions'
 import { PHONE_SCOPES } from '@shared/device-auth'
 
 const log = createLogger('backend:mobile-server')
@@ -84,6 +84,11 @@ export class MobileEndpoint implements BackendHost {
     return this.state
   }
 
+  /** Device sessions connected right now. Empty while the endpoint is off. */
+  onlineSessionIds(): Set<string> {
+    return this.inner?.onlineSessionIds() ?? new Set()
+  }
+
   /**
    * Start or restart the listener from current settings; safe to call any time.
    * A restart terminates every connected phone, so it only happens when the
@@ -136,11 +141,12 @@ export class MobileEndpoint implements BackendHost {
       wss,
       token ?? undefined,
       {
-        redeem: (pairing, label) => redeemPairingCode(pairing, label, [...PHONE_SCOPES]),
-        authenticate: (session) => {
-          const found = authenticateSession(session)
+        redeem: (pairing, label, context) => redeemPairingCode(pairing, label, [...PHONE_SCOPES], context),
+        authenticate: (session, context) => {
+          const found = authenticateSession(session, context)
           return found ? { id: found.id, scopes: found.scopes } : null
         },
+        touch: (sessionId) => touchSession(sessionId),
       },
       // Bound to 0.0.0.0, so a connection must present a credential even when
       // no shared token is configured. The default (trust everything) is only

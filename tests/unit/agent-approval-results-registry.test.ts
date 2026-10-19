@@ -6,7 +6,10 @@
  * That turn is not the user's: it leaves hop depth and link budgets alone.
  * Cards and held results survive a restart (a second registry on the store).
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
 vi.mock('../../src/main/db/provider-instances', () => ({
@@ -69,6 +72,10 @@ import { splitSyntheticUserText } from '../../src/shared/synthetic-message'
 import type { PeerLinkView } from '../../src/shared/peer-links'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
+
+// A real folder: START_SESSION refuses a cwd that does not exist, and Windows has no /tmp.
+const PROJECT_DIR = mkdtempSync(join(tmpdir(), 'sb-approval-results-'))
+afterAll(() => rmSync(PROJECT_DIR, { recursive: true, force: true }))
 
 class FakeHost implements BackendHost {
   readonly events: RuntimeEvent[] = []
@@ -193,7 +200,7 @@ function setup(store: ApprovalCardStore<AgentWritePlan> = memoryApprovalCardStor
   const broker = (registry as unknown as { agentApprovals: AgentApprovalBroker }).agentApprovals
   const start = async (...ids: string[]) => {
     for (const threadId of ids)
-      await host.invoke(ProviderChannels.START_SESSION, { threadId, provider: 'claude', cwd: '/tmp' })
+      await host.invoke(ProviderChannels.START_SESSION, { threadId, provider: 'claude', cwd: PROJECT_DIR })
   }
   /** A card the agent in `from` opened to message `to`. */
   const openCard = (from: string, to: string, message = 'the migration landed') => {
@@ -401,7 +408,7 @@ describe('a card answered while the session is changing profiles', () => {
     await host.invoke(ProviderChannels.START_SESSION, {
       threadId: 'hub',
       provider: 'claude',
-      cwd: '/tmp',
+      cwd: PROJECT_DIR,
       instanceId: 'claude-work',
     })
     const opened = broker.open({

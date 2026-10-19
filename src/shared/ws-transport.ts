@@ -19,6 +19,7 @@
  *    say "token rejected" instead of spinning on "connecting".
  */
 import { encodeFrame, decodeFrame, type WsFrame } from './ws-protocol'
+import type { DeviceIdentity } from './device-identity'
 import { reconnectDelay } from './backoff'
 import type { Transport } from './transport'
 import { createLogger } from './logger'
@@ -43,6 +44,15 @@ const MAX_QUEUED_FRAMES = 100
  *  not churn the connection, short enough to beat an invoke timeout. */
 const SILENCE_LIMIT_MS = 40_000
 const WATCHDOG_INTERVAL_MS = 5_000
+
+/** Credentials for the `auth` frame. `device` rides on every auth, the pair
+ *  and each session reconnect, so it survives the session swap. */
+export interface WsAuth {
+  session?: string
+  pairing?: string
+  label?: string
+  device?: DeviceIdentity
+}
 
 export interface WsReconnectOptions {
   baseMs?: number
@@ -154,7 +164,7 @@ export class WsTransport implements Transport {
   /** Defaults true so a caller that never reports keeps always-retry. */
   private online = true
   /** When set, authenticate with an `auth` frame instead of a URL token. */
-  private auth: { session?: string; pairing?: string; label?: string } | null = null
+  private auth: WsAuth | null = null
   /** The minted session is transmitted exactly once, so the owner must persist
    *  it here or the device has to pair again. */
   onSessionIssued: ((session: string) => void) | null = null
@@ -172,7 +182,7 @@ export class WsTransport implements Transport {
     readonly url: string,
     private readonly timeoutMs = DEFAULT_TIMEOUT_MS,
     reconnect: WsReconnectOptions = {},
-    auth: { session?: string; pairing?: string; label?: string } | null = null,
+    auth: WsAuth | null = null,
     private readonly createSocket: (url: string) => TransportSocket = (url) => new WebSocket(url),
   ) {
     this.auth = auth
@@ -508,7 +518,7 @@ export class WsTransport implements Transport {
       if (frame.session) {
         // Swap in the session at once, so a reconnect before the owner has
         // persisted it still authenticates.
-        this.auth = { session: frame.session }
+        this.auth = { session: frame.session, device: this.auth?.device }
         this.onSessionIssued?.(frame.session)
       }
       return

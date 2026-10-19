@@ -87,10 +87,10 @@ afterEach(() => {
   endpoint.close()
 })
 
-async function pairPhone(port: number): Promise<{ client: Client; session: string }> {
+async function pairPhone(port: number, device?: object): Promise<{ client: Client; session: string }> {
   const client = await dial(port)
   open.push(client.ws)
-  client.ws.send(JSON.stringify({ k: 'auth', pairing: createPairingCode().code, label: 'Pixel 9' }))
+  client.ws.send(JSON.stringify({ k: 'auth', pairing: createPairingCode().code, label: 'Pixel 9', device }))
   const authed = await client.next()
   expect(authed).toMatchObject({ k: 'authed', ok: true })
   return { client, session: authed.session as string }
@@ -138,5 +138,24 @@ describe('revoking a paired device', () => {
     const { client } = await pairPhone(port)
     revokeSession(listSessionViews()[0].id)
     expect(await client.closed).toBe(4001)
+  })
+
+  it('replaces the session a reinstalled phone left behind, closing its socket and dropping its push tokens', async () => {
+    const { port } = endpoint.apply() as { port: number }
+    const device = { installId: '0b6f3a4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b', model: 'Pixel 9', platform: 'android' }
+    const before = await pairPhone(port, device)
+    before.client.ws.send(JSON.stringify({ k: 'req', id: 1, ch: 'push:register', args: ['ExponentPushToken[a]'] }))
+    expect(await before.client.next()).toMatchObject({ k: 'res', id: 1, ok: true })
+    expect(listSessionViews()).toMatchObject([{ installId: device.installId, lastAddress: '127.0.0.1', online: false }])
+    expect(endpoint.onlineSessionIds().size).toBe(1)
+
+    const after = await pairPhone(port, device)
+    expect(await before.client.closed).toBe(4001)
+    expect(listDevices()).toEqual([])
+    const views = listSessionViews(endpoint.onlineSessionIds())
+    expect(views).toHaveLength(1)
+    expect(views[0]).toMatchObject({ model: 'Pixel 9', online: true })
+    after.client.ws.send(JSON.stringify({ k: 'req', id: 2, ch: 'probe', args: [] }))
+    expect(await after.client.next()).toMatchObject({ k: 'res', id: 2, ok: true, result: 'ok' })
   })
 })

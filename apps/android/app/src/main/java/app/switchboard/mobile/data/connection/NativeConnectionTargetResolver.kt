@@ -7,6 +7,7 @@ import app.switchboard.mobile.platform.protocol.LineTarget
 import app.switchboard.mobile.platform.protocol.withoutEmbeddedAuth
 import app.switchboard.mobile.platform.storage.NativeCredential
 import app.switchboard.mobile.protocol.Credential
+import app.switchboard.mobile.protocol.DeviceIdentityPayload
 
 sealed interface ConnectionTargetResolution {
     data class Ready(val target: LineTarget) : ConnectionTargetResolution
@@ -24,6 +25,7 @@ class NativeConnectionTargetResolver(
         connectionId: String,
         deviceId: String,
         deviceLabel: String,
+        device: DeviceIdentityPayload? = null,
     ): ConnectionTargetResolution = try {
         val stored = database.find(connectionId)
             ?: return ConnectionTargetResolution.Failure("That machine no longer exists")
@@ -53,7 +55,7 @@ class NativeConnectionTargetResolver(
             ?: return ConnectionTargetResolution.Failure("That machine has no active credential")
         val native = credentials.read(logicalKey)
             ?: return ConnectionTargetResolution.Failure("The saved credential could not be read")
-        val credential = native.toTransportCredential(deviceLabel)
+        val credential = native.toTransportCredential(deviceLabel, device)
         if (endpoint is LineEndpoint.CloudIap && credential !is Credential.LegacySharedToken) {
             return ConnectionTargetResolution.Failure("That Cloud IAP machine has no backend credential")
         }
@@ -76,8 +78,11 @@ class NativeConnectionTargetResolver(
     }
 }
 
-private fun NativeCredential.toTransportCredential(deviceLabel: String): Credential = when (kind) {
-    NativeCredential.Kind.DEVICE_SESSION -> Credential.Session(value)
-    NativeCredential.Kind.PAIRING_TOKEN -> Credential.Pairing(value, deviceLabel)
+private fun NativeCredential.toTransportCredential(
+    deviceLabel: String,
+    device: DeviceIdentityPayload?,
+): Credential = when (kind) {
+    NativeCredential.Kind.DEVICE_SESSION -> Credential.Session(value, device)
+    NativeCredential.Kind.PAIRING_TOKEN -> Credential.Pairing(value, deviceLabel, device)
     NativeCredential.Kind.LEGACY_INLINE_TOKEN -> Credential.LegacySharedToken(value)
 }

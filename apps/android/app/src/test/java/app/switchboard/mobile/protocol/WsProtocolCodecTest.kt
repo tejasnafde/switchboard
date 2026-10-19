@@ -11,7 +11,7 @@ class WsProtocolCodecTest {
     fun committedTypeScriptGoldensDecodeAndEncodeByteForByte() {
         val fixture = JsonCodec.parse(fixtureFile("ws-frames.json").readText()).requireArray()
 
-        assertEquals(10, fixture.values.size)
+        assertEquals(11, fixture.values.size)
         fixture.values.forEach { entryValue ->
             val entry = entryValue.requireObject()
             val name = entry.requireString("name")

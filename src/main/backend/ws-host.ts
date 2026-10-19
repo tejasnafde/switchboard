@@ -30,6 +30,7 @@ import {
   PHONE_SCOPES,
   type DeviceScope,
 } from '@shared/device-auth'
+import type { DeviceIdentity } from '@shared/device-identity'
 import { EventReplayBuffer, resumeFrom } from '@shared/event-replay-buffer'
 import { FilesChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
@@ -72,6 +73,10 @@ export const HEARTBEAT_INTERVAL_MS = 15_000
 /** Miss this many consecutive pings and the socket is presumed dead. */
 const HEARTBEAT_MISS_LIMIT = 2
 
+/** How often a connected device's lastSeenAt is written back, by default.
+ *  Each write rewrites the whole session row, so it is not done per frame. */
+export const LAST_SEEN_REFRESH_MS = 60_000
+
 /** How long a client declaring in-band auth has to actually send it. */
 const AUTH_GRACE_MS = 10_000
 
@@ -96,6 +101,10 @@ interface ClientState {
   sawPong: boolean
   /** Stable for device sessions and credential-sharing legacy clients. */
   clientScope: string
+  /** The peer's address as the socket saw it, recorded on auth. */
+  address?: string
+  /** When this connection last refreshed its session's lastSeenAt. */
+  touchedAt: number
 }
 
 /**
@@ -104,9 +113,22 @@ interface ClientState {
  * of. The default refuses everything, so a host that was not given one simply
  * has no auth-frame path rather than a broken one.
  */
+export interface DeviceAuthContext {
+  device?: DeviceIdentity
+  address?: string
+}
+
 export interface DeviceAuthPort {
-  redeem: (pairing: string, label: string) => { ok: boolean; session?: string; scopes?: DeviceScope[]; error?: string }
-  authenticate: (session: string) => { id: string; scopes: DeviceScope[] } | null
+  redeem: (
+    pairing: string,
+    label: string,
+    context: DeviceAuthContext,
+  ) => { ok: boolean; session?: string; scopes?: DeviceScope[]; error?: string }
+  authenticate: (session: string, context: DeviceAuthContext) => { id: string; scopes: DeviceScope[] } | null
+  /** Refresh a connected session's lastSeenAt. Called on traffic, at most
+   *  once per `touchIntervalMs` per connection. */
+  touch?: (sessionId: string) => void
+  touchIntervalMs?: number
 }
 
 const NO_DEVICE_AUTH: DeviceAuthPort = {
@@ -173,7 +195,14 @@ export class WsHost implements BackendHost {
         token && legacyScopes
           ? hashClientScope('legacy-ws-token', token)
           : hashClientScope('trusted-ws', 'local-trust-boundary')
-      this.clients.set(socket, { missedPings: 0, sawPong: false, scopes: legacyScopes, clientScope })
+      this.clients.set(socket, {
+        missedPings: 0,
+        sawPong: false,
+        scopes: legacyScopes,
+        clientScope,
+        address: req.socket?.remoteAddress,
+        touchedAt: 0,
+      })
       log.info(`client connected (${this.clients.size} total)`)
       if (legacyScopes === null) {
         // Anything still unauthenticated past this is not a slow client.
@@ -235,6 +264,7 @@ export class WsHost implements BackendHost {
       return
     }
     const state = this.clients.get(socket)
+    if (state) this.touch(state)
     // Everything below acts on the user's machine, so it needs a credential.
     if ((frame.k === 'req' || frame.k === 'snd') && !state?.scopes) {
       if (frame.k === 'req') {
@@ -341,14 +371,15 @@ export class WsHost implements BackendHost {
   private onAuth(socket: WebSocket, frame: Extract<WsFrame, { k: 'auth' }>): void {
     const state = this.clients.get(socket)
     if (!state) return
+    const context: DeviceAuthContext = { device: frame.device, address: state.address }
     if (frame.pairing) {
-      const result = this.deviceAuth.redeem(frame.pairing, frame.label ?? 'device')
+      const result = this.deviceAuth.redeem(frame.pairing, frame.label ?? 'device', context)
       if (!result.ok || !result.session) {
         this.reply(socket, { k: 'authed', ok: false, error: result.error ?? 'pairing failed' })
         return
       }
       state.scopes = result.scopes ?? PHONE_SCOPES
-      const authenticated = this.deviceAuth.authenticate(result.session)
+      const authenticated = this.deviceAuth.authenticate(result.session, context)
       if (!authenticated) {
         state.scopes = null
         this.reply(socket, { k: 'authed', ok: false, error: 'paired session could not be authenticated' })
@@ -356,10 +387,11 @@ export class WsHost implements BackendHost {
       }
       state.sessionId = authenticated.id
       state.clientScope = hashClientScope('device-session', authenticated.id)
+      state.touchedAt = Date.now()
       this.reply(socket, { k: 'authed', ok: true, session: result.session, scopes: [...state.scopes] })
       return
     }
-    const session = frame.session ? this.deviceAuth.authenticate(frame.session) : null
+    const session = frame.session ? this.deviceAuth.authenticate(frame.session, context) : null
     if (!session) {
       // Close, not just refuse: a revoked device should stop reconnecting
       // rather than sit in a retry loop against a decision that will not change.
@@ -370,7 +402,35 @@ export class WsHost implements BackendHost {
     state.scopes = session.scopes
     state.sessionId = session.id
     state.clientScope = hashClientScope('device-session', session.id)
+    state.touchedAt = Date.now()
     this.reply(socket, { k: 'authed', ok: true, scopes: [...session.scopes] })
+  }
+
+  /**
+   * Keep a connected device's lastSeenAt current. Auth sets it, and the
+   * heartbeat's pongs arrive every 15 s, so any traffic is a cheap clock; the
+   * interval bounds the store writes.
+   */
+  private touch(state: ClientState): void {
+    const { touch, touchIntervalMs = LAST_SEEN_REFRESH_MS } = this.deviceAuth
+    if (!touch || !state.sessionId || !state.scopes) return
+    const now = Date.now()
+    if (now - state.touchedAt < touchIntervalMs) return
+    state.touchedAt = now
+    try {
+      touch(state.sessionId)
+    } catch (err) {
+      log.warn('could not refresh a device session last-seen time', err)
+    }
+  }
+
+  /** Device sessions with an authenticated socket open now. */
+  onlineSessionIds(): Set<string> {
+    const online = new Set<string>()
+    for (const [socket, state] of this.clients) {
+      if (state.sessionId && state.scopes && socket.readyState === socket.OPEN) online.add(state.sessionId)
+    }
+    return online
   }
 
   /**

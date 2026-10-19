@@ -158,6 +158,7 @@ describe('native protocol goldens', () => {
     expect(goldens.map((golden) => golden.name)).toEqual([
       'auth-pairing',
       'auth-session',
+      'auth-session-device',
       'hello-resume',
       'ready-resumed',
       'request-send-turn',

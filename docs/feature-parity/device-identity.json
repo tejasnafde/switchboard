@@ -1,0 +1,68 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "device-identity",
+  "summary": "Paired phones say who they are (install id, name, manufacturer, model, platform, OS and app version) on the pairing auth and every session auth. The backend stores it on the device session, replaces the old session when the same install pairs again, refreshes lastSeenAt while a phone stays connected, and records the last address and an in-memory online flag. Data only: the Devices tab does not show the new fields yet.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Data only. The device list response carries the new optional fields and the current Devices tab ignores them; its redesign that shows them waits for the user's approval of the mock."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/device-identity.ts",
+        "apps/mobile/src/stores/connections.ts",
+        "apps/mobile/src/lib/__tests__/device-identity.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/protocol/DeviceIdentityPayload.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/runtime/AndroidDeviceIdentity.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/protocol/AuthenticatedWsCoordinator.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/protocol/DeviceIdentityPayloadTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/platform/protocol/WsCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/runtime/NoBackupInstallIdStorageTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/device-identity.ts",
+        "src/shared/ws-protocol.ts",
+        "src/shared/device-auth.ts",
+        "src/main/backend/device-sessions.ts",
+        "src/main/backend/ws-host.ts",
+        "src/main/backend/mobile-server.ts",
+        "tests/unit/device-identity.test.ts",
+        "tests/unit/device-revoke-e2e.test.ts",
+        "tests/fixtures/mobile-native/protocol/ws-frames.json",
+        "tests/unit/ws-transport-device-identity.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "tests/unit/device-identity.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, native dependency, deep link or update channel change. iOS uses modules already in the binary (expo-secure-store, expo-crypto, expo-application), so it ships by OTA. Android ships in its normal binary lane, the desktop in a normal release. Capability device_identity_v1 is additive: an older backend drops the device field and an older phone sends none, so every pairing keeps working."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/device-identity.test.ts: the wire field, sessions stored before the change, supersede on a second pairing of the same install, the identity and address update on a session auth, and the throttled lastSeenAt refresh through a real WsHost socket. The supersede and refresh tests fail with those code paths disabled.",
+      "tests/unit/device-revoke-e2e.test.ts: a second pairing of the same install through the real MobileEndpoint closes the first socket with 4001, drops its push token, and lists one online row with the address.",
+      "Shared golden frame auth-session-device in tests/fixtures/mobile-native/protocol/ws-frames.json, decoded and encoded byte for byte by vitest and the Android codec test.",
+      "Android :app:testDebugUnitTest (all) and :app:lintDebug; jest for the Expo payload and the connection store."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No physical phone run. iOS has no expo-device, so the name and model are the device class (iPhone, iPad). Android reads Settings.Global DEVICE_NAME, which some OEM builds leave empty; the model stands in. Android keeps its install id out of backups, so a reinstall there gets a new id and the old row stays until it is revoked; iOS keeps its id in the keychain on this device only, so a reinstall keeps it."
+    ]
+  }
+}

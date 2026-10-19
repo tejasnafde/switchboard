@@ -17,6 +17,7 @@
  *    would silently discard every subsequent event. A changed epoch means
  *    "start over".
  */
+import { parseDeviceIdentity, type DeviceIdentity } from './device-identity'
 
 /**
  * Channels excluded from the replay buffer. Terminal output is high-volume and
@@ -74,6 +75,11 @@ export const BACKEND_CAPABILITIES = [
    *  local or fetched branch (a PR head) instead of making a fresh one. An
    *  older backend drops the field and makes a fresh branch. */
   'worktree_existing_branch_v1',
+  /** The backend records the `device` identity on `auth` and lets a re-paired
+   *  install replace its old session (`DEVICE_IDENTITY_CAPABILITY` in
+   *  shared/device-identity). Phones send it regardless; an older backend
+   *  drops it. */
+  'device_identity_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {
@@ -100,9 +106,11 @@ export type WsFrame =
   /**
    * Credential, in a frame rather than the URL: a query string lands in proxy
    * logs and process listings. `pairing` is the one-time QR code, exchanged
-   * once for a `session`, which every later connect presents.
+   * once for a `session`, which every later connect presents. `device` is the
+   * phone's identity (shared/device-identity), on the pair and every session
+   * auth.
    */
-  | { k: 'auth'; session?: string; pairing?: string; label?: string }
+  | { k: 'auth'; session?: string; pairing?: string; label?: string; device?: DeviceIdentity }
   /** Verdict. `session` carries the minted token on a pairing exchange, which
    *  is the only time it is transmitted. */
   | { k: 'authed'; ok: true; session?: string; scopes: string[] }
@@ -188,7 +196,10 @@ export function decodeFrame(data: string): WsFrame | null {
       // Neither credential is malformed, not anonymous: letting it through
       // would make the auth step optional.
       if (!session && !pairing) return null
-      return { k: 'auth', session, pairing, label }
+      // A malformed identity is dropped, not fatal: it is display data, and
+      // refusing the credential over it would lock a phone out.
+      const device = parseDeviceIdentity(frame.device) ?? undefined
+      return { k: 'auth', session, pairing, label, ...(device ? { device } : {}) }
     }
     case 'authed': {
       if (frame.ok === true) {

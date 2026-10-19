@@ -2,6 +2,7 @@ package app.switchboard.mobile.platform.protocol
 
 import app.switchboard.mobile.protocol.ConnectionPhase
 import app.switchboard.mobile.protocol.Credential
+import app.switchboard.mobile.protocol.DeviceIdentityPayload
 import app.switchboard.mobile.protocol.DisconnectCause
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonBoolean
@@ -305,6 +306,40 @@ class WsCoordinatorTest {
                 "send:hello",
             ),
             fixture.operationLog,
+        )
+    }
+
+    @Test
+    fun deviceIdentityRidesOnThePairingAuthAndOnTheMintedSessionAfterAReconnect() {
+        val device = DeviceIdentityPayload(
+            installId = "0b6f3a4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b",
+            name = "Pixel 9",
+            manufacturer = "Google",
+            model = "Pixel 9",
+            osVersion = "16",
+            appVersion = "0.5.19",
+        )
+        val fixture = Fixture()
+        fixture.coordinator.connect(
+            fixture.target(credential = Credential.Pairing("PAIR-4821", "Switchboard Android", device)),
+        )
+        val first = fixture.dialer.calls.single()
+        first.listener.onOpen(first.socket)
+        assertEquals(
+            WsFrame.Auth(pairing = "PAIR-4821", label = "Switchboard Android", device = device),
+            WsProtocol.decode(first.socket.sent.first()),
+        )
+        first.listener.onText(
+            WsProtocol.encode(WsFrame.Authed.Success("minted-device-session", listOf("provider"))),
+        )
+        first.listener.onFailure(IllegalStateException("network"))
+        fixture.scheduler.runNext()
+
+        val second = fixture.dialer.calls.last()
+        second.listener.onOpen(second.socket)
+        assertEquals(
+            WsFrame.Auth(session = "minted-device-session", device = device),
+            WsProtocol.decode(second.socket.sent.first()),
         )
     }
 

@@ -17,6 +17,23 @@
     }
   },
   {
+    "name": "auth-session-device",
+    "wire": "{\"k\":\"auth\",\"session\":\"session-device-7\",\"device\":{\"installId\":\"0b6f3a4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b\",\"name\":\"Pixel 9\",\"manufacturer\":\"Google\",\"model\":\"Pixel 9\",\"platform\":\"android\",\"osVersion\":\"16\",\"appVersion\":\"0.5.19\"}}",
+    "expected": {
+      "k": "auth",
+      "session": "session-device-7",
+      "device": {
+        "installId": "0b6f3a4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b",
+        "name": "Pixel 9",
+        "manufacturer": "Google",
+        "model": "Pixel 9",
+        "platform": "android",
+        "osVersion": "16",
+        "appVersion": "0.5.19"
+      }
+    }
+  },
+  {
     "name": "hello-resume",
     "wire": "{\"k\":\"hello\",\"since\":40,\"epoch\":\"epoch-a\"}",
     "expected": {

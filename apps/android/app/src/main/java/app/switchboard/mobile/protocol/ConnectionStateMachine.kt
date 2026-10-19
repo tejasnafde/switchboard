@@ -48,13 +48,18 @@ data class ConnectionState(
 }
 
 sealed interface Credential {
-    data class Session(val token: String) : Credential {
+    /** [device] rides on every auth (device_identity_v1); null sends none. */
+    data class Session(
+        val token: String,
+        val device: DeviceIdentityPayload? = null,
+    ) : Credential {
         override fun toString(): String = "Session(token=[REDACTED])"
     }
 
     data class Pairing(
         val code: String,
         val deviceLabel: String,
+        val device: DeviceIdentityPayload? = null,
     ) : Credential {
         override fun toString(): String = "Pairing(code=[REDACTED], deviceLabel=$deviceLabel)"
     }
@@ -183,7 +188,9 @@ object ConnectionStateMachine {
                     )
                     is Credential.Session -> ConnectionTransition(
                         state.copy(phase = ConnectionPhase.Authenticating),
-                        listOf(ConnectionEffect.Send(WsFrame.Auth(session = credential.token))),
+                        listOf(
+                            ConnectionEffect.Send(WsFrame.Auth(session = credential.token, device = credential.device)),
+                        ),
                     )
                     is Credential.Pairing -> ConnectionTransition(
                         state.copy(phase = ConnectionPhase.Authenticating),
@@ -192,6 +199,7 @@ object ConnectionStateMachine {
                                 WsFrame.Auth(
                                     pairing = credential.code,
                                     label = credential.deviceLabel,
+                                    device = credential.device,
                                 ),
                             ),
                         ),
