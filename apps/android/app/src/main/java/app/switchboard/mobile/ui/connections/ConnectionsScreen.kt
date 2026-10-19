@@ -85,6 +85,7 @@ import app.switchboard.mobile.platform.google.GoogleAccountPresentation
 import app.switchboard.mobile.ui.components.InlineStatus
 import app.switchboard.mobile.ui.components.SectionLabel
 import app.switchboard.mobile.ui.components.StatusTone
+import app.switchboard.mobile.ui.demo.DemoBadge
 import app.switchboard.mobile.ui.demo.TryDemoButton
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
@@ -216,26 +217,35 @@ fun ConnectionsScreen(
     }
 
     removeRow?.let { row ->
-        AlertDialog(
-            onDismissRequest = { removeRow = null },
-            title = { Text("Remove machine?") },
-            text = { Text("\"${row.label}\" will be forgotten on this device.") },
-            dismissButton = {
-                TextButton(onClick = { removeRow = null }) { Text("Cancel") }
+        RemoveMachineDialog(
+            row = row,
+            onRemove = {
+                removeRow = null
+                onConnectionIntent(ConnectionIntent.Remove(row.id))
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        removeRow = null
-                        onConnectionIntent(ConnectionIntent.Remove(row.id))
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Red),
-                ) {
-                    Text("Remove")
-                }
-            },
+            onDismiss = { removeRow = null },
         )
     }
+}
+
+@Composable
+internal fun RemoveMachineDialog(row: ConnectionRowPresentation, onRemove: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remove machine?") },
+        text = { Text("\"${row.label}\" will be forgotten on this device.") },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onRemove,
+                colors = ButtonDefaults.textButtonColors(contentColor = Red),
+            ) {
+                Text("Remove")
+            }
+        },
+    )
 }
 
 @Composable
@@ -487,11 +497,12 @@ private fun MachineSectionHeader(label: String, summary: String? = null) {
     }
 }
 
+/** One machine row, shared by the Connections screen and Home. */
 @Composable
-private fun ConnectionRow(
+internal fun ConnectionRow(
     row: ConnectionRowPresentation,
     onOpen: () -> Unit,
-    onLongPress: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
@@ -520,7 +531,7 @@ private fun ConnectionRow(
                 indication = indication,
                 role = Role.Button,
                 onClickLabel = ConnectionsAccessibilityPolicy.clickLabel(row),
-                onLongClickLabel = ConnectionsAccessibilityPolicy.longClickLabel(row),
+                onLongClickLabel = onLongPress?.let { ConnectionsAccessibilityPolicy.longClickLabel(row) },
                 onClick = onOpen,
                 onLongClick = onLongPress,
             )
@@ -560,8 +571,10 @@ private fun ConnectionRow(
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f, fill = false),
                 )
+                DemoBadge(Modifier.padding(start = 8.dp))
+                Spacer(Modifier.weight(1f))
                 row.shortFingerprint?.let {
                     Text(
                         text = it,
@@ -623,7 +636,7 @@ private fun ConnectionRow(
 
 /** The amber hint under a row this build will not dial: the QR first, then Cloud IAP. Never a retry. */
 @Composable
-private fun RefusedHint(onScan: () -> Unit, onUseIap: () -> Unit) {
+internal fun RefusedHint(onScan: () -> Unit, onUseIap: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -658,7 +671,7 @@ private fun RefusedHint(onScan: () -> Unit, onUseIap: () -> Unit) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CertificateChangedSheet(
+internal fun CertificateChangedSheet(
     row: ConnectionRowPresentation,
     onScan: () -> Unit,
     onRemove: () -> Unit,
