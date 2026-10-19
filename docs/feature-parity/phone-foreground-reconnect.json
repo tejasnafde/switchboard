@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "phone-foreground-reconnect",
-  "summary": "A phone that returns to the foreground checks its socket and reconnects at once when it is not live: a ready socket gets a 3 s ping, a connection waiting out a backoff, parked for a network callback, or stopped by a handshake timeout dials now, and a handshake in flight gets a fresh timeout. Android also sends WebSocket pings every 15 s and checks its sockets when the default network changes. The desktop logs the close code and socket age of every phone disconnect.",
+  "summary": "A phone that returns to the foreground checks its socket and reconnects at once when it is not live: a ready socket gets a 3 s ping, a connection waiting out a backoff, parked for a network callback, or stopped by a handshake timeout dials now, and a handshake in flight gets a fresh timeout. Android also sends WebSocket pings every 15 s and checks its sockets when the default network changes. The desktop logs the close code and socket age of every phone disconnect. The wire protocol, hello/ready resume, epoch and replay buffer are unchanged; the client transport gains an optional resume(), and the Android pings are protocol frames that any desktop's ws server answers on its own.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -37,8 +37,7 @@
         "src/shared/ws-transport.ts",
         "src/shared/transport.ts",
         "tests/unit/ws-transport.test.ts"
-      ],
-      "notes": "The wire protocol, hello/ready resume, epoch and replay buffer are unchanged. The client transport gains an optional resume(); Android's WebSocket pings are protocol frames that the backend's ws server answers on its own, older desktops included."
+      ]
     },
     "storageDataMigration": {
       "status": "not_applicable",
