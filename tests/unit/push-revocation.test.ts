@@ -16,7 +16,9 @@ import { PushChannels } from '../../src/shared/ipc-channels'
 beforeEach(() => {
   createMigratedDb()
 })
-it('revoking a device deletes its push tokens and keeps other phones and legacy tokens', () => {
+// An ownerless token can be the revoked phone's own, registered before tokens
+// carried an owner, so it goes too. A live legacy phone re-registers on connect.
+it('revoking a device deletes its push tokens and every ownerless one, and keeps other phones', () => {
   const code = createPairingCode()
   redeemPairingCode(code.code, 'phone', ['chat'])
   const id = listSessions()[0].id
@@ -41,7 +43,7 @@ it('revoking a device deletes its push tokens and keeps other phones and legacy 
     },
   )
   revokeSession(id)
-  expect(listDevices().map((d) => d.token)).toEqual(['ExpoPushToken[legacy]', 'ExpoPushToken[second]'])
+  expect(listDevices().map((d) => d.token)).toEqual(['ExpoPushToken[second]'])
 })
 
 it('unregister is idempotent and persists the removal without deleting other devices', () => {

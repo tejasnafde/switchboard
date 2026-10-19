@@ -16,6 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { WsTransport } from '@shared/ws-transport'
 import { createLogger } from '@shared/logger'
 import { DEMO_CONNECTION_ID, DemoTransport } from '@shared/phone-demo/phone-demo'
+import { CONNECTION_SECURITY_COPY } from '@shared/connection-security'
 export { parsePairingUrl } from '../lib/pairing'
 import { SwitchboardClient } from '../lib/api'
 import { IapTransport, type IapResumeState } from '../lib/iap-transport'
@@ -322,7 +323,7 @@ export const useConnectionsStore = create<ConnectionsState>()(
                   [id]: transport.certificateChanged
                     ? CERTIFICATE_CHANGED_MESSAGE
                     : transport.authRejected
-                      ? 'token rejected - re-pair'
+                      ? CONNECTION_SECURITY_COPY.removed
                       : 'offline',
                 },
               }))

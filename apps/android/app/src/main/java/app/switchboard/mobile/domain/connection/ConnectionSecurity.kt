@@ -107,6 +107,7 @@ object ConnectionSecurityCopy {
     const val SCAN_QR_AGAIN = "Scan QR again"
     const val REMOVE_MACHINE = "Remove machine"
     const val NOT_NOW = "Not now"
+    const val REMOVED = "This computer removed this phone. Pair again."
 
     /** Keyed like the shared object. Android shows only these; the old-QR sheet is iOS only. */
     val all: Map<String, String> = linkedMapOf(
@@ -130,6 +131,7 @@ object ConnectionSecurityCopy {
         "scanQrAgain" to SCAN_QR_AGAIN,
         "removeMachine" to REMOVE_MACHINE,
         "notNow" to NOT_NOW,
+        "removed" to REMOVED,
     )
 
     /** A copy string with its `{name}` placeholders filled. */
