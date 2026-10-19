@@ -6,16 +6,19 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Build
+import android.util.Log
 import java.io.Closeable
 
 /** Application-scoped network monitor that deliberately ignores WAN validation. */
 class AndroidConnectivityMonitor private constructor(
     private val manager: ConnectivityManager,
     private val observer: (Boolean) -> Unit,
+    private val onRouteChanged: () -> Unit,
 ) : Closeable {
     private var closed = false
     private var registered = false
     private var lastReported: Boolean? = null
+    private var lastRoute: String? = null
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = reportCurrent()
         override fun onLost(network: Network) = reportCurrent()
@@ -47,11 +50,26 @@ class AndroidConnectivityMonitor private constructor(
             null
         }
         val reachable = NetworkReachabilityPolicy.isReachable(snapshot)
-        synchronized(this) {
-            if (closed || lastReported == reachable) return
-            lastReported = reachable
+        val route = try {
+            manager.activeNetwork?.toString()
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "could not read the default network", error)
+            null
         }
-        runCatching { observer(reachable) }
+        val (reachabilityChanged, routeChanged) = synchronized(this) {
+            if (closed) return
+            val routeMoved = NetworkReachabilityPolicy.routeChanged(lastRoute, route)
+            if (route != null) lastRoute = route
+            val changed = lastReported != reachable
+            lastReported = reachable
+            changed to routeMoved
+        }
+        if (reachabilityChanged) {
+            runCatching { observer(reachable) }.onFailure { Log.w(TAG, "network observer failed", it) }
+        }
+        if (routeChanged) {
+            runCatching(onRouteChanged).onFailure { Log.w(TAG, "network route observer failed", it) }
+        }
     }
 
     @Synchronized
@@ -63,13 +81,16 @@ class AndroidConnectivityMonitor private constructor(
     }
 
     companion object {
+        private const val TAG = "SbConnectivity"
+
         fun install(
             context: Context,
             observer: (Boolean) -> Unit,
+            onRouteChanged: () -> Unit = {},
         ): AndroidConnectivityMonitor {
             val manager = context.applicationContext
                 .getSystemService(ConnectivityManager::class.java)
-            return AndroidConnectivityMonitor(manager, observer).also { monitor ->
+            return AndroidConnectivityMonitor(manager, observer, onRouteChanged).also { monitor ->
                 runCatching(monitor::start).onFailure { runCatching { observer(true) } }
             }
         }

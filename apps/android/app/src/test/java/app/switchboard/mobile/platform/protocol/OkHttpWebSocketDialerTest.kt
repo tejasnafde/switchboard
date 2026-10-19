@@ -2,8 +2,12 @@ package app.switchboard.mobile.platform.protocol
 
 import app.switchboard.mobile.protocol.Credential
 import app.switchboard.mobile.protocol.DisconnectCause
+import java.net.ServerSocket
+import java.security.MessageDigest
+import java.util.Base64
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -34,6 +38,57 @@ class OkHttpWebSocketDialerTest {
 
                 assertEquals(expectedPath, server.takeRequest(3, TimeUnit.SECONDS)?.path)
             }
+        }
+    }
+
+    @Test
+    fun socketsPingSoAHalfOpenConnectionFailsAndSharesTheBaseDispatcher() {
+        val base = OkHttpClient()
+        assertEquals(OkHttpWebSocketDialer.PING_INTERVAL_MS.toInt(), OkHttpWebSocketDialer(base).client.pingIntervalMillis)
+        assertTrue(OkHttpWebSocketDialer(base).client.dispatcher === base.dispatcher)
+
+        // A peer that completes the upgrade and then goes silent, as a socket
+        // left behind by a network move does: no close, no error, no pong.
+        ServerSocket(0).use { listener ->
+            thread(isDaemon = true) {
+                runCatching {
+                    val peer = listener.accept()
+                    val request = peer.getInputStream().bufferedReader()
+                    val key = generateSequence { request.readLine() }
+                        .takeWhile { it.isNotEmpty() }
+                        .first { it.startsWith("Sec-WebSocket-Key:", ignoreCase = true) }
+                        .substringAfter(":").trim()
+                    val accept = Base64.getEncoder().encodeToString(
+                        MessageDigest.getInstance("SHA-1")
+                            .digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray()),
+                    )
+                    peer.getOutputStream().write(
+                        ("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n" +
+                            "Connection: Upgrade\r\nSec-WebSocket-Accept: $accept\r\n\r\n").toByteArray(),
+                    )
+                    peer.getOutputStream().flush()
+                    Thread.sleep(10_000)
+                }
+            }
+            val failed = CountDownLatch(1)
+            val opened = CountDownLatch(1)
+            OkHttpWebSocketDialer(base, pingIntervalMs = 200).open(
+                WebSocketTarget(
+                    deviceId = "phone",
+                    connectionId = "machine",
+                    endpoint = LineEndpoint.DirectWebSocket("ws://127.0.0.1:${listener.localPort}/socket"),
+                    credential = Credential.Session("session-secret"),
+                ),
+                object : LineCallbacks {
+                    override fun onOpen(connection: LineConnection) = opened.countDown()
+                    override fun onText(text: String) = Unit
+                    override fun onClosed(cause: DisconnectCause) = Unit
+                    override fun onFailure(error: Throwable) = failed.countDown()
+                },
+            )
+
+            assertTrue(opened.await(5, TimeUnit.SECONDS))
+            assertTrue(failed.await(5, TimeUnit.SECONDS))
         }
     }
 

@@ -7,11 +7,23 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class OkHttpWebSocketDialer(
-    private val client: OkHttpClient = OkHttpClient(),
+    baseClient: OkHttpClient = OkHttpClient(),
+    pingIntervalMs: Long = PING_INTERVAL_MS,
 ) : WebSocketDialer {
+    /**
+     * WebSocket protocol pings, answered by the backend's ws server on its own.
+     * A socket can die with no error (a Wi-Fi to cellular move, a router that
+     * forgets the flow, a desktop that slept), and the reader then blocks
+     * forever. An unanswered ping fails the socket, which redials.
+     */
+    internal val client: OkHttpClient = baseClient.newBuilder()
+        .pingInterval(pingIntervalMs, TimeUnit.MILLISECONDS)
+        .build()
+
     override fun open(
         target: WebSocketTarget,
         callbacks: WebSocketCallbacks,
@@ -85,7 +97,8 @@ class OkHttpWebSocketDialer(
         }
     }
 
-    private companion object {
+    internal companion object {
+        const val PING_INTERVAL_MS = 15_000L
         const val NORMAL_CLOSURE = 1000
         const val AUTHENTICATION_REJECTED_CLOSE_CODE = 4001
     }

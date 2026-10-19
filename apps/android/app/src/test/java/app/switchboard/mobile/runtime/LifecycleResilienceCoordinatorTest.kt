@@ -67,6 +67,27 @@ class LifecycleResilienceCoordinatorTest {
     }
 
     @Test
+    fun `a network move checks sockets only while the app is visible`() {
+        val calls = mutableListOf<String>()
+        val coordinator = LifecycleResilienceCoordinator(
+            clock = { 0 },
+            onNetworkChanged = {},
+            onForegroundAction = {},
+            wakeOutbox = {},
+            renewViewingLeases = {},
+            onNetworkRouteChanged = { calls += "route" },
+        )
+
+        coordinator.onNetworkRoute()
+        coordinator.onForeground()
+        coordinator.onNetworkRoute()
+        coordinator.onBackground()
+        coordinator.onNetworkRoute()
+
+        assertEquals(listOf("route"), calls)
+    }
+
+    @Test
     fun `viewing renewal hooks isolate failures and unregister cleanly`() {
         val calls = mutableListOf<String>()
         val hooks = ViewingLeaseRenewalHooks()

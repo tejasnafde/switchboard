@@ -75,6 +75,8 @@ class AuthenticatedWsCoordinator(
     private var retryAttempts = 0
     private var networkAvailable = true
     private var redialPending = false
+    /** A handshake timeout stops redials, but a foreground return retries once. */
+    private var handshakeTimedOut = false
     private var nextRequestId = 1L
     private var destroyed = false
     private val pending = linkedMapOf<Long, PendingRequest>()
@@ -117,6 +119,7 @@ class AuthenticatedWsCoordinator(
         cancelProbe()
         cancelHandshake()
         redialPending = false
+        handshakeTimedOut = false
         retryAttempts = 0
         drainPending(RpcFailure.ConnectionReplaced)
 
@@ -217,6 +220,43 @@ class AuthenticatedWsCoordinator(
                 }
             }
             drainDeferred()
+        }
+    }
+
+    /**
+     * Foreground return or a switch of the underlying network. The process may
+     * have been frozen, and Android destroys a frozen app's sockets, so never
+     * trust the state as it was left:
+     * - a ready socket gets a short ping and is replaced if it stays silent;
+     * - a connection waiting out a backoff, parked for a network callback, or
+     *   stopped by a handshake timeout dials now;
+     * - a handshake in flight gets a fresh timeout, because one armed before a
+     *   freeze fires at once on thaw (the executor clock keeps running while
+     *   the process is frozen) and a handshake timeout is otherwise terminal.
+     * Authentication rejection, a changed certificate and a user disconnect
+     * stay stopped.
+     */
+    fun resume(probeTimeoutMs: Long = DEFAULT_PROBE_TIMEOUT_MS) {
+        resumeLocked(probeTimeoutMs)
+        drainDeferred()
+    }
+
+    @Synchronized
+    private fun resumeLocked(probeTimeoutMs: Long) {
+        if (destroyed || target == null) return
+        val currentState = state ?: return
+        val connection = socket
+        when (currentState.phase) {
+            ConnectionPhase.Ready -> probeLocked(probeTimeoutMs)
+            ConnectionPhase.Disconnected -> {
+                if (connection != null || !(redialPending || handshakeTimedOut)) return
+                cancelRetry()
+                redialPending = false
+                handshakeTimedOut = false
+                retryAttempts = 0
+                dialCurrentGeneration()
+            }
+            else -> if (connection != null) armHandshakeTimeout(currentState.generation, connection)
         }
     }
 
@@ -339,6 +379,7 @@ class AuthenticatedWsCoordinator(
         cancelProbe()
         cancelHandshake()
         redialPending = false
+        handshakeTimedOut = false
         val currentState = state
         val previousSocket = socket
         socket = null
@@ -371,6 +412,7 @@ class AuthenticatedWsCoordinator(
         cancelProbe()
         cancelHandshake()
         redialPending = false
+        handshakeTimedOut = false
         val previousSocket = socket
         socket = null
         drainPending(RpcFailure.ServiceDestroyed)
@@ -485,6 +527,7 @@ class AuthenticatedWsCoordinator(
             cancelHandshake()
         }
         if (authenticationRejected) {
+            handshakeTimedOut = false
             val rejectedSocket = socket
             socket = null
             rejectedSocket?.close()
@@ -667,6 +710,7 @@ class AuthenticatedWsCoordinator(
         val previousSocket = socket
         socket = null
         cancelRetry()
+        handshakeTimedOut = false
         state = ConnectionStateMachine.reduce(
             currentState,
             ConnectionEvent.SocketClosed(
@@ -750,6 +794,7 @@ class AuthenticatedWsCoordinator(
                     return@synchronized
                 }
                 socket = null
+                handshakeTimedOut = true
                 val connectionId = currentState.generation.connectionId
                 defer { observer.onTransportFailure(connectionId, HandshakeTimeoutFailure()) }
                 applyTransition(
@@ -781,6 +826,14 @@ class AuthenticatedWsCoordinator(
         socket = null
         closed(generation, DisconnectCause.Network)
         connection.close()
+        // The probe already spent its timeout proving the socket dead; the user
+        // is looking at the screen, so dial now rather than after a backoff.
+        if (redialPending && networkAvailable && socket == null && state?.phase == ConnectionPhase.Disconnected) {
+            cancelRetry()
+            redialPending = false
+            retryAttempts = 0
+            dialCurrentGeneration()
+        }
     }
 
     private fun failPending(

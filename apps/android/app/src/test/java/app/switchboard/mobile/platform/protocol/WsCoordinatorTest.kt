@@ -591,10 +591,143 @@ class WsCoordinatorTest {
         fixture.coordinator.probe(timeoutMs = 3_000)
         fixture.scheduler.runTaskWithDelay(3_000)
         assertTrue(first.socket.closed)
-        assertEquals(listOf(1_000L), fixture.scheduler.activeTasks().map { it.delayMs })
+        // Dialled at once, not after a backoff.
+        assertEquals(2, fixture.dialer.calls.size)
+        assertTrue(fixture.scheduler.activeTasks().isEmpty())
 
         first.listener.onText(WsProtocol.encode(WsFrame.Pong(2)))
+        assertEquals(2, fixture.dialer.calls.size)
+        assertEquals(ConnectionPhase.Disconnected, fixture.coordinator.phase)
+    }
+
+    @Test
+    fun `resume probes a ready socket and replaces a silent one at once`() {
+        val fixture = Fixture()
+        val first = fixture.connectReady()
+        first.listener.onText(WsProtocol.encode(WsFrame.Ping(1)))
+
+        fixture.coordinator.resume()
+        assertTrue(WsProtocol.decode(first.socket.sent.last()) is WsFrame.Ping)
+        assertEquals(1, fixture.dialer.calls.size)
+
+        // Half-open after a freeze: the ping goes out and nothing comes back.
+        fixture.scheduler.runTaskWithDelay(3_000)
+
+        assertTrue(first.socket.closed)
+        assertEquals(2, fixture.dialer.calls.size)
+        val second = fixture.dialer.calls.last()
+        second.listener.onOpen(second.socket)
+        second.listener.onText(
+            WsProtocol.encode(WsFrame.Authed.Success(session = null, scopes = listOf("provider"))),
+        )
+        // The redial resumes from the saved cursor, so the backend replays what was missed.
+        assertEquals(WsFrame.Hello(ResumeCursor("epoch-a", 0)), WsProtocol.decode(second.socket.sent.last()))
+    }
+
+    @Test
+    fun `resume leaves an answering ready socket alone`() {
+        val fixture = Fixture()
+        val first = fixture.connectReady()
+        first.listener.onText(WsProtocol.encode(WsFrame.Ping(1)))
+
+        fixture.coordinator.resume()
+        first.listener.onText(WsProtocol.encode(WsFrame.Pong(2)))
+
+        assertTrue(fixture.scheduler.activeTasks().isEmpty())
+        assertFalse(first.socket.closed)
+        assertEquals(1, fixture.dialer.calls.size)
+        assertEquals(ConnectionPhase.Ready, fixture.coordinator.phase)
+    }
+
+    @Test
+    fun `resume dials now instead of waiting out a backoff`() {
+        val fixture = Fixture()
+        val first = fixture.connectReady()
+        // The socket died while the app was frozen; the error lands on thaw.
+        first.listener.onFailure(IllegalStateException("Software caused connection abort"))
         assertEquals(listOf(1_000L), fixture.scheduler.activeTasks().map { it.delayMs })
+
+        fixture.coordinator.resume()
+
+        assertEquals(2, fixture.dialer.calls.size)
+        assertTrue(fixture.scheduler.activeTasks().isEmpty())
+        // The cancelled backoff cannot dial a third time.
+        fixture.scheduler.runTaskEvenIfCancelled(1_000L)
+        assertEquals(2, fixture.dialer.calls.size)
+    }
+
+    @Test
+    fun `resume dials a connection parked for a network callback that never came`() {
+        val fixture = Fixture()
+        fixture.connectReady()
+        fixture.coordinator.setNetworkAvailable(false)
+        assertEquals(1, fixture.dialer.calls.size)
+
+        fixture.coordinator.resume()
+
+        assertEquals(2, fixture.dialer.calls.size)
+        // Still offline: a failed dial parks again rather than spinning on a timer.
+        fixture.dialer.calls.last().listener.onFailure(IllegalStateException("offline"))
+        assertTrue(fixture.scheduler.activeTasks().isEmpty())
+        fixture.coordinator.setNetworkAvailable(true)
+        assertEquals(3, fixture.dialer.calls.size)
+    }
+
+    @Test
+    fun `resume retries once after a handshake timeout`() {
+        val fixture = Fixture()
+        fixture.coordinator.connect(fixture.target())
+        val first = fixture.dialer.calls.single()
+        first.listener.onOpen(first.socket)
+        fixture.scheduler.runTaskWithDelay(15_000L)
+        assertEquals(ConnectionPhase.Disconnected, fixture.coordinator.phase)
+
+        fixture.coordinator.resume()
+        fixture.coordinator.resume()
+
+        assertEquals(2, fixture.dialer.calls.size)
+    }
+
+    @Test
+    fun `resume restarts a handshake timer armed before a freeze`() {
+        val fixture = Fixture()
+        fixture.coordinator.connect(fixture.target())
+        val call = fixture.dialer.calls.single()
+        call.listener.onOpen(call.socket)
+        val stale = fixture.scheduler.activeTasks().single()
+
+        fixture.coordinator.resume()
+
+        assertTrue(stale.cancelled)
+        assertEquals(listOf(15_000L), fixture.scheduler.activeTasks().map { it.delayMs })
+        assertEquals(1, fixture.dialer.calls.size)
+        assertFalse(call.socket.closed)
+    }
+
+    @Test
+    fun `resume never revives rejection disconnect destroy or a dial in flight`() {
+        val rejected = Fixture()
+        val call = rejected.connectReady()
+        call.listener.onText(WsProtocol.encode(WsFrame.Authed.Failure("rejected")))
+        rejected.coordinator.resume()
+        assertEquals(1, rejected.dialer.calls.size)
+
+        val disconnected = Fixture()
+        disconnected.connectReady()
+        disconnected.coordinator.disconnect()
+        disconnected.coordinator.resume()
+        assertEquals(1, disconnected.dialer.calls.size)
+
+        val destroyed = Fixture()
+        destroyed.connectReady()
+        destroyed.coordinator.destroy()
+        destroyed.coordinator.resume()
+        assertEquals(1, destroyed.dialer.calls.size)
+
+        val dialing = Fixture()
+        dialing.coordinator.connect(dialing.target())
+        dialing.coordinator.resume()
+        assertEquals(1, dialing.dialer.calls.size)
     }
 
     private fun runtimeEvent(type: String): JsonObject = JsonObject(

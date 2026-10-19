@@ -28,4 +28,12 @@ class NetworkReachabilityPolicyTest {
             ),
         )
     }
+
+    @Test
+    fun `only a move between two known default networks is a route change`() {
+        assertTrue(NetworkReachabilityPolicy.routeChanged(previous = "100", current = "101"))
+        assertFalse(NetworkReachabilityPolicy.routeChanged(previous = "100", current = "100"))
+        assertFalse(NetworkReachabilityPolicy.routeChanged(previous = null, current = "100"))
+        assertFalse(NetworkReachabilityPolicy.routeChanged(previous = "100", current = null))
+    }
 }

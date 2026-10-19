@@ -434,6 +434,7 @@ class NativeAndroidRuntime private constructor(
                 onForegroundAction = fleet::onForeground,
                 wakeOutbox = outbox::onFleetChanged,
                 renewViewingLeases = viewingLeaseRenewals::renewAll,
+                onNetworkRouteChanged = fleet::onNetworkRouteChanged,
             )
             visibilityTransition = { transition ->
                 when (transition) {
@@ -444,6 +445,7 @@ class NativeAndroidRuntime private constructor(
             val connectivityMonitor = AndroidConnectivityMonitor.install(
                 applicationContext,
                 lifecycleResilience::onNetworkAvailability,
+                lifecycleResilience::onNetworkRoute,
             )
             val startup = AndroidStartupRuntime.create(
                 context = applicationContext,

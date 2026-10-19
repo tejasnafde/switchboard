@@ -74,6 +74,32 @@ class AuthenticatedConnectionFleetCoordinatorFactoryTest {
     }
 
     @Test
+    fun `leased listeners keep receiving events after a redial inside the same lease`() {
+        val fixture = Fixture()
+        val coordinator = fixture.create()
+        coordinator.connect(target())
+        fixture.ready(fixture.dialer.calls.single())
+        val endpoint = requireNotNull(coordinator.endpoint)
+        val channelScopes = mutableListOf<TransportScope>()
+        val runtimeScopes = mutableListOf<TransportScope>()
+        endpoint.rpc.onChannelEvent("worktree-creation:progress") { scope, _ -> channelScopes += scope }
+        endpoint.rpc.onRuntimeEvent { scope, _ -> runtimeScopes += scope }
+
+        // The socket dies while backgrounded and the coordinator redials on its own.
+        fixture.dialer.calls.single().callbacks.onFailure(IllegalStateException("connection abort"))
+        fixture.scheduler.runNext()
+        val second = fixture.dialer.calls.last()
+        fixture.ready(second)
+        second.callbacks.onText(
+            WsProtocol.encode(WsFrame.Event("worktree-creation:progress", JsonArray(emptyList()), sequence = 1)),
+        )
+        second.callbacks.onText(WsProtocol.encode(runtimeFrame("thread-1")))
+
+        assertEquals(listOf(endpoint.scope), channelScopes)
+        assertEquals(listOf(endpoint.scope), runtimeScopes)
+    }
+
+    @Test
     fun firstDialsOfTwoFleetRebuildsExposeDifferentLeaseScopes() {
         val fixture = Fixture()
         val first = fixture.create(generation = 41)
