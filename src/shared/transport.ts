@@ -24,6 +24,9 @@ export interface Transport {
   /** Drop the current socket and re-dial immediately, skipping backoff. For
    *  when the socket is known-stale rather than suspected-stale. */
   forceReconnect?(): void
+  /** Foreground return: probe a live socket, or dial now if the transport is
+   *  waiting to reconnect. Falls back to `probe` where absent. */
+  resume?(timeoutMs?: number): void
   /** True only while a socket is actually open. Distinct from `isAlive`, which
    *  stays true across a reconnect so subscriptions survive. */
   isConnected?(): boolean

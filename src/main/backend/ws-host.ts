@@ -186,9 +186,15 @@ export class WsHost implements BackendHost {
         socket.on('close', () => clearTimeout(deadline))
       }
       socket.on('message', (data) => this.onMessage(socket, data.toString()))
-      socket.on('close', () => {
+      const connectedAt = Date.now()
+      // The close code and age tell a phone's own close (1000), a socket the
+      // phone OS destroyed while the app was frozen (1006, no heartbeat
+      // warning) and a heartbeat termination apart.
+      socket.on('close', (code: number) => {
         this.clients.delete(socket)
-        log.info(`client disconnected (${this.clients.size} total)`)
+        log.info(
+          `client disconnected (${this.clients.size} total, code ${code}, after ${Math.round((Date.now() - connectedAt) / 1000)}s)`,
+        )
       })
       socket.on('error', (err) => log.warn(`socket error: ${err.message}`))
     })

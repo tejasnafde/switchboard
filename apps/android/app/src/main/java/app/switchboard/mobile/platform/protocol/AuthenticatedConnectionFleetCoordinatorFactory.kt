@@ -139,8 +139,8 @@ private class AuthenticatedFleetCoordinator(
         coordinator.setNetworkAvailable(available)
     }
 
-    override fun probe() {
-        coordinator.probe()
+    override fun resume() {
+        coordinator.resume()
     }
 
     override fun disconnect() {
@@ -260,11 +260,12 @@ private class FleetLeasedRemoteRpc(
     override fun onRuntimeEvent(
         listener: (TransportScope, RuntimeEventPayload) -> Unit,
     ): Cancelable {
-        val capturedInternal = coordinator.currentScope ?: return Cancelable {}
+        if (coordinator.currentScope == null) return Cancelable {}
+        // Matched against the current generation at delivery, not the one at
+        // subscribe time: a redial inside this lease bumps the internal
+        // generation, and a captured one silently dropped every later event.
         return coordinator.onRuntimeEvent { eventScope, event ->
-            if (eventScope == capturedInternal && coordinator.currentScope == capturedInternal) {
-                listener(capturedInternal.toLease(), event)
-            }
+            if (eventScope == coordinator.currentScope) listener(eventScope.toLease(), event)
         }
     }
 
@@ -272,11 +273,9 @@ private class FleetLeasedRemoteRpc(
         channel: String,
         listener: (TransportScope, JsonArray) -> Unit,
     ): Cancelable {
-        val capturedInternal = coordinator.currentScope ?: return Cancelable {}
+        if (coordinator.currentScope == null) return Cancelable {}
         return coordinator.onChannelEvent(channel) { eventScope, args ->
-            if (eventScope == capturedInternal && coordinator.currentScope == capturedInternal) {
-                listener(capturedInternal.toLease(), args)
-            }
+            if (eventScope == coordinator.currentScope) listener(eventScope.toLease(), args)
         }
     }
 

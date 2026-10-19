@@ -8,4 +8,12 @@ data class NetworkSnapshot(
 object NetworkReachabilityPolicy {
     /** Null is still being determined; WAN validation is irrelevant to LAN. */
     fun isReachable(snapshot: NetworkSnapshot?): Boolean = snapshot?.hasTransport != false
+
+    /**
+     * The default network moved (Wi-Fi to cellular, one Wi-Fi to another). A
+     * socket dialled over the old one is dead without any error. Losing the
+     * network entirely, or getting one back, is the reachability signal's job.
+     */
+    fun routeChanged(previous: String?, current: String?): Boolean =
+        previous != null && current != null && previous != current
 }

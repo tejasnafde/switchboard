@@ -25,6 +25,7 @@ class LifecycleResilienceCoordinator(
     private val onForegroundAction: (ForegroundAction) -> Unit,
     private val wakeOutbox: () -> Unit,
     private val renewViewingLeases: () -> Unit,
+    private val onNetworkRouteChanged: () -> Unit = {},
 ) {
     private var backgroundedAtMs: Long? = null
     private var foreground = false
@@ -60,5 +61,13 @@ class LifecycleResilienceCoordinator(
         }
         runCatching { onNetworkChanged(available) }
         if (previous == false && available) runCatching(wakeOutbox)
+    }
+
+    /** The default network moved while still connected; a foreground app checks its sockets. */
+    fun onNetworkRoute() {
+        val visible = synchronized(this) { foreground }
+        // In the background the process is about to be frozen, and the next
+        // foreground return checks the sockets anyway.
+        if (visible) runCatching(onNetworkRouteChanged)
     }
 }

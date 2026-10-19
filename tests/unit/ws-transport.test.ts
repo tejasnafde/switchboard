@@ -386,6 +386,69 @@ describe('WsTransport (fake socket)', () => {
     t.close()
   })
 
+  describe('resume on foreground return', () => {
+    const frames = (sock: FakeSocket): string[] => sock.sent.map((s) => (JSON.parse(s) as { k: string }).k)
+
+    it('dials now instead of waiting out the backoff', async () => {
+      vi.useFakeTimers()
+      const { t, sock } = makeOpenTransport()
+      sock.fire('close')
+      expect(FakeSocket.instances).toHaveLength(1)
+
+      t.resume()
+
+      expect(FakeSocket.instances).toHaveLength(2)
+      // The cancelled backoff cannot dial a third socket.
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(FakeSocket.instances).toHaveLength(2)
+      t.close()
+    })
+
+    it('dials a transport parked offline when the online report never came', () => {
+      vi.useFakeTimers()
+      const { t, sock } = makeOpenTransport()
+      t.setOnline(false)
+      sock.fire('close')
+      expect(FakeSocket.instances).toHaveLength(1)
+
+      t.resume()
+
+      expect(FakeSocket.instances).toHaveLength(2)
+      t.close()
+    })
+
+    it('probes an open socket and redials at once when the probe goes unanswered', async () => {
+      vi.useFakeTimers()
+      const { t, sock } = makeOpenTransport()
+      sock.fire('message', { data: JSON.stringify({ k: 'ready', epoch: 'e', seq: 4, replayed: 0, gap: false }) })
+
+      t.resume()
+      expect(frames(sock).at(-1)).toBe('ping')
+      await vi.advanceTimersByTimeAsync(3_000)
+
+      expect(FakeSocket.instances).toHaveLength(2)
+      const next = FakeSocket.instances.at(-1)!
+      next.fire('open')
+      // The re-dial resumes from the last applied sequence and epoch.
+      const hello = next.sent
+        .map((s) => JSON.parse(s) as { k: string; since?: number; epoch?: string })
+        .find((f) => f.k === 'hello')
+      expect(hello).toMatchObject({ epoch: 'e' })
+      t.close()
+    })
+
+    it('leaves a first dial that is still in flight alone', () => {
+      vi.useFakeTimers()
+      vi.stubGlobal('WebSocket', FakeSocket)
+      const t = new WsTransport('ws://fake')
+
+      t.resume()
+
+      expect(FakeSocket.instances).toHaveLength(1)
+      t.close()
+    })
+  })
+
   it('treats ready as heartbeat proof, so a dead socket to an older backend still redials', async () => {
     // Every backend that sends ready also answers pings; gating on heartbeat_v1
     // left a phone on an older desktop with no dead-socket recovery at all.

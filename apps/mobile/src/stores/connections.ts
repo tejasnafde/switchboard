@@ -531,9 +531,12 @@ export function installLifecycleReconnect(): () => void {
     void drainOutbox()
     for (const [id, client] of clients) {
       const { transport } = client
-      // An IAP tunnel has a probe but no forced reconnect, so a long absence
-      // probes it rather than doing nothing.
+      // A short absence must not wait out a backoff either: resume dials a
+      // transport that is between attempts and probes one that looks open.
+      // An IAP tunnel has only a probe, so even a long absence probes it
+      // rather than doing nothing.
       if (action === 'reconnect' && transport.forceReconnect) transport.forceReconnect()
+      else if (transport.resume) transport.resume()
       else if (transport.probe) transport.probe()
       else useConnectionsStore.getState().connect(id)
     }

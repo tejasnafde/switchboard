@@ -1,0 +1,70 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "phone-foreground-reconnect",
+  "summary": "A phone that returns to the foreground checks its socket and reconnects at once when it is not live: a ready socket gets a 3 s ping, a connection waiting out a backoff, parked for a network callback, or stopped by a handshake timeout dials now, and a handshake in flight gets a fresh timeout. Android also sends WebSocket pings every 15 s and checks its sockets when the default network changes. The desktop logs the close code and socket age of every phone disconnect. The wire protocol, hello/ready resume, epoch and replay buffer are unchanged; the client transport gains an optional resume(), and the Android pings are protocol frames that any desktop's ws server answers on its own.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/backend/ws-host.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/connections.ts",
+        "apps/mobile/src/stores/__tests__/lifecycle-reconnect.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/protocol/AuthenticatedWsCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/protocol/AuthenticatedConnectionFleetCoordinatorFactory.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/protocol/OkHttpWebSocketDialer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/connection/ConnectionFleet.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/runtime/LifecycleResilienceCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/network/AndroidConnectivityMonitor.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/platform/protocol/WsCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/platform/protocol/OkHttpWebSocketDialerTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/connection/ConnectionFleetTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/ws-transport.ts",
+        "src/shared/transport.ts",
+        "tests/unit/ws-transport.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing stored changes. The resume cursor in Room and the Expo transport's in-memory cursor are read exactly as before."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "gradle :app:testDebugUnitTest (1103 tests): WsCoordinatorTest covers resume on a half-open ready socket, an answering socket, a pending backoff, a connection parked for a network callback, a handshake timeout, a stale handshake timer, and no revival after rejection, disconnect or destroy; a failed probe dials without a backoff.",
+      "OkHttpWebSocketDialerTest: a peer that completes the upgrade and then goes silent fails the socket through the ping; the ping client shares the base dispatcher.",
+      "AuthenticatedConnectionFleetCoordinatorFactoryTest: leased runtime and channel listeners keep receiving events after a redial inside the same lease.",
+      "ConnectionFleetTest, LifecycleResilienceCoordinatorTest, NetworkReachabilityPolicyTest: network route change resumes only desired connections while visible; a short foreground return restarts a connection whose start failed.",
+      "vitest tests/unit/ws-transport.test.ts: WsTransport.resume dials past a backoff and an offline park, probes an open socket and redials at once when unanswered, and leaves a first dial alone.",
+      "jest apps/mobile lifecycle-reconnect.test.ts: AppState active after a short absence calls resume, a long absence calls forceReconnect, a probe-only transport is probed.",
+      "Each new test was run against the old behaviour and failed (8 Android, 3 vitest).",
+      "gradle :app:lintDebug and :app:compileDebugAndroidTestKotlin pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No phone was attached. The freeze, socket destruction, Doze and Wi-Fi to cellular paths are covered by unit tests with fake sockets and timers, not on a device. The PR lists the phone steps.",
+      "The Expo change is JS only and was not run in an iOS build."
+    ]
+  }
+}

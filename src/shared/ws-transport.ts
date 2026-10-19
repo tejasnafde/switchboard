@@ -223,6 +223,42 @@ export class WsTransport implements Transport {
     // the dead path directly. Its real 'close' may still arrive, hence the
     // guard in onSocketDead - otherwise redialCount counts double.
     this.onSocketDead(this.ws, null)
+    // The socket is known dead, so the first re-dial skips the backoff.
+    if (this.reconnectTimer) this.redialNow()
+  }
+
+  /**
+   * Foreground return. JS timers do not run while the app is suspended, and
+   * the OS may have killed the socket meanwhile, so never trust the state as
+   * it was left: a live socket gets a probe, and a transport waiting out a
+   * backoff or parked for an online report that never came dials now. A dial
+   * already in flight is left to finish.
+   */
+  resume(timeoutMs = 3_000): void {
+    if (this.closed) return
+    if (this.open) {
+      this.probe(timeoutMs)
+      return
+    }
+    if (!this.reconnecting) return
+    if (this.reconnectTimer === null && this.online) return
+    this.redialNow()
+  }
+
+  private redialNow(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    if (this.ws !== this.deadSocket) {
+      try {
+        this.ws.close()
+      } catch (err) {
+        log.warn('closing a superseded socket on redial', err)
+      }
+    }
+    this.reconnectAttempt = 0
+    this.dial()
   }
 
   /** Round-trip a ping and reconnect if it goes unanswered. */

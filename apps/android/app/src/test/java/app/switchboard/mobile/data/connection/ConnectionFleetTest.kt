@@ -208,10 +208,38 @@ class ConnectionFleetTest {
         fixture.fleet.onForeground(ForegroundAction.Probe)
 
         assertTrue(a.networkStates.isEmpty())
-        assertEquals(0, a.probes)
+        assertEquals(0, a.resumes)
         assertEquals(listOf(false, true), b.networkStates)
-        assertEquals(1, b.probes)
+        assertEquals(1, b.resumes)
         assertEquals(2, fixture.factory.created.size)
+    }
+
+    @Test
+    fun `network route change checks every desired connection and skips explicit disconnects`() {
+        val fixture = Fixture(snapshot(ws("a"), ws("b"))).also { it.fleet.startupReady() }
+        val a = fixture.factory.latest("a")
+        val b = fixture.factory.latest("b")
+        fixture.fleet.disconnect("a")
+
+        fixture.fleet.onNetworkRouteChanged()
+
+        assertEquals(0, a.resumes)
+        assertEquals(1, b.resumes)
+        assertEquals(2, fixture.factory.created.size)
+    }
+
+    @Test
+    fun `short foreground return restarts a connection whose start failed`() {
+        var failing = true
+        val fixture = Fixture(snapshot(ws("a")), failCreate = { failing }).also { it.fleet.startupReady() }
+        assertTrue(fixture.factory.created.isEmpty())
+        assertEquals(ConnectionStatus.Error, fixture.fleet.statuses.value.getValue("a").status)
+
+        failing = false
+        fixture.fleet.onForeground(ForegroundAction.Probe)
+
+        assertEquals(1, fixture.factory.created.size)
+        assertEquals(ConnectionStatus.Connecting, fixture.fleet.statuses.value.getValue("a").status)
     }
 
     @Test
@@ -232,9 +260,10 @@ class ConnectionFleetTest {
     private class Fixture(
         initial: OfflineSnapshot,
         removeResult: ConnectionRemoveResult = ConnectionRemoveResult.Success,
+        failCreate: () -> Boolean = { false },
     ) {
         val source = MutableStateFlow<OfflineSnapshot?>(initial)
-        val factory = FakeCoordinatorFactory()
+        val factory = FakeCoordinatorFactory(failCreate)
         private val scope = CoroutineScope(Job() + Dispatchers.Unconfined)
         val fleet = ConnectionFleet(
             scope = scope,
@@ -254,14 +283,19 @@ class ConnectionFleetTest {
         )
     }
 
-    private class FakeCoordinatorFactory : ConnectionFleetCoordinatorFactory {
+    private class FakeCoordinatorFactory(
+        private val failCreate: () -> Boolean,
+    ) : ConnectionFleetCoordinatorFactory {
         val created = mutableListOf<FakeCoordinator>()
 
         override fun create(
             connectionId: String,
             generation: Long,
             onEvent: (ConnectionRuntimeEvent) -> Unit,
-        ): ConnectionFleetCoordinator = FakeCoordinator(connectionId, generation, onEvent).also(created::add)
+        ): ConnectionFleetCoordinator {
+            if (failCreate()) throw IllegalStateException("keystore locked")
+            return FakeCoordinator(connectionId, generation, onEvent).also(created::add)
+        }
 
         fun latest(connectionId: String): FakeCoordinator = created.last { it.connectionId == connectionId }
     }
@@ -277,7 +311,7 @@ class ConnectionFleetTest {
         val targets = mutableListOf<WebSocketTarget>()
         val calls = mutableListOf<String>()
         val networkStates = mutableListOf<Boolean>()
-        var probes = 0
+        var resumes = 0
         var disconnected = false
         var destroyed = false
 
@@ -291,8 +325,8 @@ class ConnectionFleetTest {
             networkStates += available
         }
 
-        override fun probe() {
-            probes += 1
+        override fun resume() {
+            resumes += 1
         }
 
         override fun disconnect() {

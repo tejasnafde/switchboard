@@ -36,7 +36,8 @@ interface ConnectionFleetCoordinator {
 
     fun connect(target: WebSocketTarget)
     fun setNetworkAvailable(available: Boolean) = Unit
-    fun probe() = Unit
+    /** Check a ready socket, or dial now if it is waiting to. See AuthenticatedWsCoordinator.resume. */
+    fun resume() = Unit
     fun disconnect()
     fun destroy()
 }
@@ -195,13 +196,27 @@ class ConnectionFleet(
         if (closed) return
         entries.values.filter(Entry::desiredConnected).forEach { entry ->
             when (action) {
-                ForegroundAction.Probe -> entry.coordinator?.probe()
+                ForegroundAction.Probe -> {
+                    // A connection whose start failed is retried on return, too.
+                    val coordinator = entry.coordinator
+                    if (coordinator == null) start(entry) else coordinator.resume()
+                }
                 ForegroundAction.Reconnect -> {
                     stop(entry)
                     start(entry)
                 }
             }
         }
+    }
+
+    /**
+     * The phone moved to another network (Wi-Fi to cellular, a new Wi-Fi). A
+     * socket bound to the old one is dead without any error, so check it now.
+     */
+    @Synchronized
+    fun onNetworkRouteChanged() {
+        if (closed) return
+        entries.values.filter(Entry::desiredConnected).forEach { entry -> entry.coordinator?.resume() }
     }
 
     @Synchronized
