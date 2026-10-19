@@ -23,7 +23,8 @@
         "apps/android/app/src/main/java/app/switchboard/mobile/runtime/AndroidDeviceIdentity.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/platform/protocol/AuthenticatedWsCoordinator.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/protocol/DeviceIdentityPayloadTest.kt",
-        "apps/android/app/src/test/java/app/switchboard/mobile/platform/protocol/WsCoordinatorTest.kt"
+        "apps/android/app/src/test/java/app/switchboard/mobile/platform/protocol/WsCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/runtime/NoBackupInstallIdStorageTest.kt"
       ]
     },
     "sharedBackendApi": {
@@ -61,7 +62,7 @@
     ],
     "hardware": [],
     "notExercised": [
-      "No physical phone run. iOS has no expo-device, so the name and model are the device class (iPhone, iPad). Android reads Settings.Global DEVICE_NAME, which some OEM builds leave empty; the model stands in. Android's install id is backed up with the app data, so a new phone restored from that backup claims the same install and its pairing replaces the old phone's session."
+      "No physical phone run. iOS has no expo-device, so the name and model are the device class (iPhone, iPad). Android reads Settings.Global DEVICE_NAME, which some OEM builds leave empty; the model stands in. Android keeps its install id out of backups, so a reinstall there gets a new id and the old row stays until it is revoked; iOS keeps its id in the keychain on this device only, so a reinstall keeps it."
     ]
   }
 }

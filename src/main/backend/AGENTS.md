@@ -135,6 +135,7 @@ refreshes `lastSeenAt` on traffic at most once a minute per connection
 `onlineSessionIds()` feeds the in-memory `online` flag of
 `mobile-pairing:devices`. All new view fields are optional. iOS stores its install
 id in the keychain with `WHEN_UNLOCKED_THIS_DEVICE_ONLY`, so it survives a
-reinstall but not a restore to another phone. Android uses the stored
-`StableDeviceIdentity.deviceId`, which Auto Backup can restore onto a new
-phone; that phone's pairing then replaces the old phone's session.
+reinstall but not a restore to another phone. Android mints its own in
+`noBackupFilesDir` (`NoBackupInstallIdStorage`), out of Auto Backup and device
+transfer for the same reason, so a reinstall there gets a new id and the old
+row stays until it is revoked. A failure to store it sends no identity.
