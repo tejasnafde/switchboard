@@ -89,6 +89,19 @@ describe('device session store', () => {
     sessions.setRevocationListener(null)
   })
 
+  it('still returns the new token when revoking the superseded session fails', () => {
+    pair('Old phone', PIXEL)
+    sessions.setRevocationListener(() => {
+      throw new Error('push settings could not be saved')
+    })
+    const code = sessions.createPairingCode()
+    const result = sessions.redeemPairingCode(code.code, 'New phone', ['chat'], { device: PIXEL })
+    expect(result.ok).toBe(true)
+    expect(result.session).toBeTruthy()
+    const views = sessions.listSessionViews()
+    expect(views.map((v) => v.label)).toEqual(['New phone'])
+  })
+
   it('reads sessions stored before device identity existed', () => {
     setSetting(
       'deviceSessions',

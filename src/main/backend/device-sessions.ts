@@ -168,7 +168,14 @@ export function redeemPairingCode(
     for (const old of existing) {
       if (old.identity?.installId !== installId || isRevoked(old)) continue
       log.info('a re-paired install replaces its earlier device session')
-      revokeSession(old.id, nowMs)
+      // Best effort: the new pairing has already succeeded, and the phone
+      // holds a one-time code it cannot use again. A failed cleanup of the old
+      // session must not take the minted token away from it.
+      try {
+        revokeSession(old.id, nowMs)
+      } catch (err) {
+        log.warn('could not finish revoking the superseded device session', err)
+      }
     }
   }
   return { ok: true, session: token, scopes }
