@@ -708,7 +708,13 @@ class AuthenticatedWsCoordinator(
             false
         }
         if (!verified) return false
-        target = currentTarget.copy(credential = Credential.Session(session))
+        // Keep the identity: it rides on every later session auth too.
+        val device = when (val credential = currentTarget.credential) {
+            is Credential.Pairing -> credential.device
+            is Credential.Session -> credential.device
+            is Credential.LegacySharedToken -> null
+        }
+        target = currentTarget.copy(credential = Credential.Session(session, device))
         if (currentTarget.credential is Credential.Pairing) {
             credentialStore.retireLegacyCredentials(currentTarget.connectionId)
         }

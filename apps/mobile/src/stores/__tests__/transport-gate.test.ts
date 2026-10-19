@@ -19,6 +19,11 @@ jest.mock('expo-application', () => ({
 }))
 jest.mock('expo-network', () => ({}))
 jest.mock('../../lib/google-auth', () => ({}))
+// Loaded, so connect() dials in the same tick and the dial check below holds.
+jest.mock('../../lib/device-identity', () => ({
+  loadDeviceIdentity: async () => null,
+  loadedDeviceIdentity: () => ({ identity: null }),
+}))
 
 const mockDialed: string[] = []
 jest.mock('../../lib/api', () => ({

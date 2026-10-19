@@ -3,7 +3,7 @@
  * window.api subset. One instance per paired backend. Channel names and event
  * types come from src/shared, so this stays in lockstep with the server.
  */
-import { WsTransport, type TransportSocket } from '@shared/ws-transport'
+import { WsTransport, type TransportSocket, type WsAuth } from '@shared/ws-transport'
 import type { Transport } from '@shared/transport'
 import {
   AppChannels,
@@ -137,7 +137,7 @@ export class SwitchboardClient {
   static overWs(
     url: string,
     token?: string,
-    auth?: { session?: string; pairing?: string; label?: string } | null,
+    auth?: WsAuth | null,
     createSocket?: (url: string) => TransportSocket,
   ): SwitchboardClient {
     // `auth=frame` tells the backend to expect in-band credentials rather than

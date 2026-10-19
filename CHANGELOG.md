@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Added
+- **Paired phones say who they are.** iOS and Android send an install id, the device name (or the model), manufacturer, model, platform, OS version and app version on the pairing auth and every reconnect (capability `device_identity_v1`). When the same install pairs again, the desktop revokes its old session (socket closed, push tokens removed) instead of keeping a duplicate row. While a phone stays connected the desktop refreshes its last-seen time at most once a minute, and it records the last remote address and whether the phone is online now. The device list returns these as extra optional fields; the Devices tab does not show them yet. Older phones and older desktops keep working. JS only on iOS (OTA lane).
+
 ### Changed
 - **Native Android 0.5.19 (versionCode 21), the first Play build.** It carries the foreground reconnect fix, the machine transport rows, loopback-only release cleartext and the revoked-phone message, and it replaces the 0.5.18 internal draft.
 

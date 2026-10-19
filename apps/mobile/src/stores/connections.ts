@@ -23,6 +23,7 @@ import { IapTransport, type IapResumeState } from '../lib/iap-transport'
 import { foregroundAction } from '../lib/app-lifecycle'
 import { CERTIFICATE_CHANGED_MESSAGE, pinnedTarget, PinnedWebSocket } from '../lib/pinned-websocket'
 import { storeBuildKnown, transportRefusal } from '../lib/transport-gate'
+import { loadDeviceIdentity, loadedDeviceIdentity } from '../lib/device-identity'
 import {
   deleteConnectionToken,
   loadConnectionSession,
@@ -232,6 +233,11 @@ export const useConnectionsStore = create<ConnectionsState>()(
             get().setStatus(id, 'error')
             return
           }
+          // Read once per launch, like the build type; it never rejects.
+          if ((config.session || config.pairing) && !loadedDeviceIdentity()) {
+            void loadDeviceIdentity().then(() => get().connect(id))
+            return
+          }
         }
         get().setStatus(id, 'connecting')
 
@@ -264,7 +270,12 @@ export const useConnectionsStore = create<ConnectionsState>()(
           // a connection paired before sessions existed.
           const auth =
             config.session || config.pairing
-              ? { session: config.session, pairing: config.pairing, label: config.label }
+              ? {
+                  session: config.session,
+                  pairing: config.pairing,
+                  label: config.label,
+                  device: loadedDeviceIdentity()?.identity ?? undefined,
+                }
               : null
           const target = pinnedTarget(config.url)
           const wsClient = SwitchboardClient.overWs(

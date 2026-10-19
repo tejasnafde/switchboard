@@ -116,3 +116,25 @@ reads as if Revoke did nothing); its tombstone stays in the store.
 A phone on the legacy shared token (`mobilePairing.token`) is not a device
 session: it is not listed and Revoke cannot cut it off. Phones show
 `CONNECTION_SECURITY_COPY.removed` on any 4001.
+
+## Device identity (`device_identity_v1`)
+
+Phones send `device { installId, name, manufacturer, model, platform,
+osVersion, appVersion }` (`src/shared/device-identity.ts`) on the pairing auth
+and on every session auth. They send it before they know the capability,
+because `ready` (which carries capabilities) only follows a successful auth; an
+older backend's `decodeFrame` rebuilds the auth frame from known keys and drops
+it. `decodeFrame` drops a malformed identity, never the credential. The
+identity and the normalised remote address (`lastAddress`) are stored on the
+session in the `deviceSessions` setting; rows from before have neither and
+stay valid. A pairing whose installId an unrevoked session holds revokes that
+session through `revokeSession` (socket closes, push tokens go). Only a
+pairing does this, because it already needs the one-time QR code. `WsHost`
+refreshes `lastSeenAt` on traffic at most once a minute per connection
+(`LAST_SEEN_REFRESH_MS`; the 15 s heartbeat pongs keep traffic flowing), and
+`onlineSessionIds()` feeds the in-memory `online` flag of
+`mobile-pairing:devices`. All new view fields are optional. iOS stores its install
+id in the keychain with `WHEN_UNLOCKED_THIS_DEVICE_ONLY`, so it survives a
+reinstall but not a restore to another phone. Android uses the stored
+`StableDeviceIdentity.deviceId`, which Auto Backup can restore onto a new
+phone; that phone's pairing then replaces the old phone's session.

@@ -10,6 +10,7 @@ import app.switchboard.mobile.domain.connection.ForegroundAction
 import app.switchboard.mobile.data.remote.RemoteRpc
 import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.platform.protocol.WebSocketTarget
+import app.switchboard.mobile.protocol.DeviceIdentityPayload
 import java.io.Closeable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -66,9 +67,10 @@ class DeviceConnectionFleetTargetResolver(
     private val resolver: NativeConnectionTargetResolver,
     private val deviceId: String,
     private val deviceLabel: String,
+    private val device: DeviceIdentityPayload? = null,
 ) : ConnectionFleetTargetResolver {
     override fun resolve(connectionId: String): ConnectionTargetResolution =
-        resolver.resolve(connectionId, deviceId, deviceLabel)
+        resolver.resolve(connectionId, deviceId, deviceLabel, device)
 }
 
 class ConnectionFleet(

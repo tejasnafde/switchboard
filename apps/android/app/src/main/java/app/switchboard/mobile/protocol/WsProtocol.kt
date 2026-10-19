@@ -57,6 +57,7 @@ sealed interface WsFrame {
         val session: String? = null,
         val pairing: String? = null,
         val label: String? = null,
+        val device: DeviceIdentityPayload? = null,
     ) : WsFrame
 
     sealed interface Authed : WsFrame {
@@ -134,6 +135,7 @@ fun WsFrame.toJson(): JsonObject {
             "session" to session?.let(::JsonString),
             "pairing" to pairing?.let(::JsonString),
             "label" to label?.let(::JsonString),
+            "device" to device?.toJson(),
         )
         is WsFrame.Authed.Success -> jsonObject(
             "k" to JsonString("authed"),
@@ -213,7 +215,12 @@ object WsProtocol {
                 val session = frame.stringOrNull("session")
                 val pairing = frame.stringOrNull("pairing")
                 if (session == null && pairing == null) return null
-                WsFrame.Auth(session, pairing, frame.stringOrNull("label"))
+                WsFrame.Auth(
+                    session,
+                    pairing,
+                    frame.stringOrNull("label"),
+                    (frame.values["device"] as? JsonObject)?.let(DeviceIdentityPayload::fromJson),
+                )
             }
             "authed" -> when (frame.booleanOrNull("ok")) {
                 true -> {
