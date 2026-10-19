@@ -53,8 +53,12 @@ function saveSessions(sessions: DeviceSession[]): void {
   setSetting(SESSIONS_KEY, JSON.stringify(sessions))
 }
 
+/** Revoked devices are left out: a row that stays after Revoke reads as if
+ *  Revoke did nothing. */
 export function listSessionViews(): DeviceSessionView[] {
-  return listSessions().map(toView)
+  return listSessions()
+    .filter((s) => !isRevoked(s))
+    .map(toView)
 }
 
 /** Mint a pairing code for the QR. Replaces any previous unused one. */
@@ -135,7 +139,7 @@ export function setRevocationListener(fn: ((id: string) => void) | null): void {
   onRevoked = fn
 }
 
-/** Tombstoned rather than deleted, so the list still shows what was removed. */
+/** Tombstoned: the store keeps when a device was revoked, the list hides it. */
 export function revokeSession(id: string, nowMs: number = Date.now()): boolean {
   const sessions = listSessions()
   const target = sessions.find((s) => s.id === id)

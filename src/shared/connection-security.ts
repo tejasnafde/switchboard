@@ -115,6 +115,7 @@ export const CONNECTION_SECURITY_COPY = {
   oldQrCloudIap: 'Connect through Cloud IAP',
   oldQrCloudIapBody: 'For a Google Cloud VM. Sign in with Google, then pick the instance.',
   cancel: 'Cancel',
+  removed: 'This computer removed this phone. Pair again.',
 } as const
 
 export type ConnectionSecurityCopyKey = keyof typeof CONNECTION_SECURITY_COPY

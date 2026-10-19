@@ -196,7 +196,7 @@ object ConnectionStatusReducer {
             is ConnectionRuntimeEvent.Stopped -> ConnectionRuntimeState(
                 generation = event.generation,
                 status = if (event.authenticationRejected) ConnectionStatus.Error else ConnectionStatus.Disconnected,
-                detail = if (event.authenticationRejected) "token rejected - re-pair" else "offline",
+                detail = if (event.authenticationRejected) ConnectionSecurityCopy.REMOVED else "offline",
             )
             is ConnectionRuntimeEvent.Disconnected -> ConnectionRuntimeState(
                 generation = event.generation,

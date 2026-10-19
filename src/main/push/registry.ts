@@ -88,11 +88,16 @@ export function unregisterDevice(token: string): void {
   log.info('unregistered push device')
 }
 
+/**
+ * Drops the revoked session's push tokens, and every token with no owner: a
+ * token registered before ownership tracking may belong to the revoked phone,
+ * and would keep notifying it. A live phone re-registers on its next connect.
+ */
 export function unregisterSessionDevices(deviceSessionId: string): void {
   const devices = listDevices()
-  const removed = devices.filter((d) => d.deviceSessionId === deviceSessionId)
+  const removed = devices.filter((d) => d.deviceSessionId === deviceSessionId || !d.deviceSessionId)
   if (removed.length === 0) return
-  saveDevices(devices.filter((d) => d.deviceSessionId !== deviceSessionId))
+  saveDevices(devices.filter((d) => !removed.includes(d)))
   for (const device of removed) viewing.delete(device.token)
   log.info('removed revoked session push tokens', { count: removed.length })
 }

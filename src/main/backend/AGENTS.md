@@ -95,6 +95,11 @@ never from client arguments. `revokeSession` deletes that session's push tokens
 and viewing leases before closing its live sockets. Socket revocation runs in
 `finally` even if push-settings persistence fails. The existing
 `push:unregister(token)` request is idempotent and is used by both phones before
-unpair teardown. Stored tokens from before ownership tracking remain compatible;
-re-registering on the upgraded backend adds their owner. Legacy
-shared-token and IAP registrations have no per-device session to revoke.
+unpair teardown. A token with no owner (registered before ownership tracking,
+or by a legacy shared-token or IAP phone) is deleted by ANY revoke, because it
+may be the revoked phone's; a phone that keeps access registers again on its
+next connect. `listSessionViews` leaves revoked sessions out (a row that stays
+reads as if Revoke did nothing); its tombstone stays in the store.
+A phone on the legacy shared token (`mobilePairing.token`) is not a device
+session: it is not listed and Revoke cannot cut it off. Phones show
+`CONNECTION_SECURITY_COPY.removed` on any 4001.

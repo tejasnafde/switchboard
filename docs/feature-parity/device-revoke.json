@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "device-revoke",
+  "summary": "Revoking a paired phone removes it from the desktop device list, drops its push tokens and every ownerless one, and the phone says \"This computer removed this phone. Pair again.\" instead of \"token rejected - re-pair\".",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/backend/device-sessions.ts",
+        "src/main/push/registry.ts",
+        "tests/unit/device-revoke-e2e.test.ts",
+        "tests/unit/push-revocation.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/connections.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/connection/ConnectionDecisions.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/connection/ConnectionSecurity.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/connection/ConnectionDecisionsTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/connection-security.ts",
+        "tests/fixtures/connection-security-copy.json",
+        "tests/unit/connection-security.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema or settings shape change. Revoked sessions keep their existing tombstone in the deviceSessions setting and are only left out of the device list; push token rows keep their shape."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, native dependency, deep link or update channel change. The iOS copy change is JS only (OTA lane), Android ships in its normal binary lane, the desktop in a normal release. The wire protocol and the 4001 close are unchanged, so older phones keep their old copy."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/device-revoke-e2e.test.ts pairs a phone over a real WebSocket against the real MobileEndpoint and SQLite store, revokes it, and checks the 4001 close, the refused reconnect, the push token removal and the device list. The list and push assertions fail without the fix.",
+      "Android :app:testDebugUnitTest for domain.connection and ui.connections, including the copy fixture check."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No physical phone run of the revoke. A phone on the legacy shared token (mobilePairing.token) is not a device session, is not listed, and is not cut off by Revoke."
+    ]
+  }
+}

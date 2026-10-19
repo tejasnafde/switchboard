@@ -28,5 +28,6 @@
   "oldQrScanAgainBody": "Update Switchboard on that computer first. Its new QR is in Settings, Devices & machines.",
   "oldQrCloudIap": "Connect through Cloud IAP",
   "oldQrCloudIapBody": "For a Google Cloud VM. Sign in with Google, then pick the instance.",
-  "cancel": "Cancel"
+  "cancel": "Cancel",
+  "removed": "This computer removed this phone. Pair again."
 }

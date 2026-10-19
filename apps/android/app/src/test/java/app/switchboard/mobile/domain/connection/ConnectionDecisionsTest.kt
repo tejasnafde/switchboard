@@ -116,7 +116,7 @@ class ConnectionDecisionsTest {
         assertEquals(ConnectionStatus.Connecting, retrying?.status)
         assertEquals("dropped (1006), retry 2", retrying?.detail)
         assertEquals(ConnectionStatus.Error, rejected?.status)
-        assertEquals("token rejected - re-pair", rejected?.detail)
+        assertEquals(ConnectionSecurityCopy.REMOVED, rejected?.detail)
     }
 
     @Test
