@@ -14,9 +14,7 @@
       "status": "implemented",
       "evidence": [
         "apps/mobile/src/stores/connections.ts",
-        "src/shared/ws-transport.ts",
-        "apps/mobile/src/stores/__tests__/lifecycle-reconnect.test.ts",
-        "tests/unit/ws-transport.test.ts"
+        "apps/mobile/src/stores/__tests__/lifecycle-reconnect.test.ts"
       ]
     },
     "nativeAndroid": {
@@ -34,8 +32,13 @@
       ]
     },
     "sharedBackendApi": {
-      "status": "not_applicable",
-      "reason": "The wire protocol, hello/ready resume, epoch and replay buffer are unchanged. Android's WebSocket pings are protocol-level frames that the backend's ws server answers on its own; older desktops answer them too."
+      "status": "implemented",
+      "evidence": [
+        "src/shared/ws-transport.ts",
+        "src/shared/transport.ts",
+        "tests/unit/ws-transport.test.ts"
+      ],
+      "notes": "The wire protocol, hello/ready resume, epoch and replay buffer are unchanged. The client transport gains an optional resume(); Android's WebSocket pings are protocol frames that the backend's ws server answers on its own, older desktops included."
     },
     "storageDataMigration": {
       "status": "not_applicable",
