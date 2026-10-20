@@ -29,8 +29,9 @@ export interface FaviconResult {
 }
 
 /**
- * Static probe list (see THIRD_PARTY_NOTICES.md), stored as path *segments* (not slash-joined strings) so we can `join(...)`
- * them onto the project root and get correct separators on every OS.
+ * Static probe list (see THIRD_PARTY_NOTICES.md), stored as path
+ * *segments* (not slash-joined strings) so we can `join(...)` them onto
+ * the project root and get correct separators on every OS.
  */
 const PROBE_SEGMENTS: ReadonlyArray<readonly string[]> = [
   // Root

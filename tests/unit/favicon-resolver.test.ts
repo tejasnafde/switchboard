@@ -1,8 +1,7 @@
 /**
- * Auto-detect a project's favicon for the sidebar leading icon. Probe
- * order: root, public/, app/, src/,
- * assets/, .idea/ - and falls back to scanning HTML `<link rel="icon">`
- * tags. Cross-platform: paths join via node:path, no hardcoded separators.
+ * Auto-detect a project's favicon for the sidebar leading icon. Probes
+ * root, public/, app/, src/, assets/, .idea/ in that order, then falls
+ * back to scanning HTML `<link rel="icon">` tags. Cross-platform: paths join via node:path, no hardcoded separators.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, utimesSync, statSync } from 'node:fs'
