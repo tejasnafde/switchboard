@@ -142,9 +142,11 @@ const BlockView = memo(function BlockView({ block }: { block: Block }): React.Re
 /**
  * Re-parsed on change: once per coalesced flush, not once per token. Closed
  * ```mermaid and ```chart blocks are drawn by ChatVisual; one still streaming
- * stays a code block until its fence closes. An ```html-live block is an
+ * stays a code block until its fence closes. A closed ```html-live block is an
  * HtmlLiveCard (a still image, never run here); `thread` lets it load the
- * image and offer Open on desktop.
+ * image and offer Open on desktop. An unclosed one stays a code block, like an
+ * unclosed ```mermaid fence: a finished message whose fence never closed
+ * cannot be told apart from one still streaming.
  */
 export const Markdown = memo(function Markdown({
   text,
@@ -164,13 +166,11 @@ export const Markdown = memo(function Markdown({
         Array.isArray(segment) ? (
           segment.map((block, i) => <BlockView key={`${s}.${i}`} block={block} />)
         ) : segment.kind === 'html-live' ? (
-          <HtmlLiveCard
-            key={`${s}:live`}
-            source={segment.source}
-            title={segment.title}
-            closed={segment.closed}
-            thread={thread}
-          />
+          segment.closed ? (
+            <HtmlLiveCard key={`${s}:live`} source={segment.source} title={segment.title} thread={thread} />
+          ) : (
+            <BlockView key={`${s}:code`} block={{ kind: 'code', lang: 'html-live', text: segment.source }} />
+          )
         ) : (
           <ChatVisual key={`${s}:${segment.source}`} kind={segment.kind} source={segment.source} />
         ),

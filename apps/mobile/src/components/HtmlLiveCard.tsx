@@ -43,17 +43,15 @@ const NO_IMAGE = 'No image yet. Your Mac makes one the next time it is online.'
 export function HtmlLiveCard({
   source,
   title,
-  closed,
   thread,
 }: {
   source: string
   title: string | null
-  closed: boolean
   thread?: MarkdownThread
 }): React.ReactElement {
   const client = thread ? getClient(thread.connectionId) : undefined
   const capable = client?.supportsCapability(HTML_LIVE_CAPABILITY) === true
-  const [image, setImage] = useState<ImageState>({ status: closed && capable ? 'loading' : 'none' })
+  const [image, setImage] = useState<ImageState>({ status: capable ? 'loading' : 'none' })
   const [showSource, setShowSource] = useState(false)
   const [copied, setCopied] = useState(false)
   const [opened, setOpened] = useState<string | null>(null)
@@ -63,10 +61,12 @@ export function HtmlLiveCard({
   const label = title ?? 'Live page'
 
   useEffect(() => {
-    if (!closed || !client || !capable || !thread) {
+    if (!client || !capable || !thread) {
       setImage({ status: 'none' })
       return
     }
+    setImage({ status: 'loading' })
+    setSize(null)
     let current = true
     void (async () => {
       try {
@@ -87,7 +87,7 @@ export function HtmlLiveCard({
     return () => {
       current = false
     }
-  }, [closed, client, capable, thread?.connectionId, source])
+  }, [client, capable, thread?.connectionId, source])
 
   useEffect(() => {
     if (image.status !== 'image') return
@@ -125,19 +125,6 @@ export function HtmlLiveCard({
         log.warn('open on desktop failed', error)
         setOpened('Could not reach your Mac')
       },
-    )
-  }
-
-  if (!closed) {
-    return (
-      <View style={styles.card}>
-        <View style={styles.header}>
-          <Text style={styles.title} numberOfLines={1}>
-            {label}
-          </Text>
-        </View>
-        <Text style={styles.muted}>Writing</Text>
-      </View>
     )
   }
 

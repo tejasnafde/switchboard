@@ -90,8 +90,9 @@ private fun decodeImage(dataUrl: String): ImageBitmap? {
 }
 
 /**
- * A ```html-live page. The phone never runs it: it shows the still image the
- * desktop stored, the source, and Open on desktop.
+ * A closed ```html-live page (an unclosed one renders as code). The phone
+ * never runs it: it shows the still image the desktop stored, the source,
+ * and Open on desktop.
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -100,9 +101,9 @@ fun HtmlLiveCard(segment: MessageSegment.HtmlLive) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val name = segment.title ?: "Live page"
-    val key = remember(segment.source, segment.closed) { if (segment.closed) HtmlLivePages.imageKey(segment.source) else null }
+    val key = remember(segment.source) { HtmlLivePages.imageKey(segment.source) }
     var image by remember(key) {
-        mutableStateOf<LiveImage>(key?.let { synchronized(bitmapCache) { bitmapCache[it] } }?.let(LiveImage::Shown) ?: LiveImage.Loading)
+        mutableStateOf<LiveImage>(synchronized(bitmapCache) { bitmapCache[key] }?.let(LiveImage::Shown) ?: LiveImage.Loading)
     }
     var showSource by remember { mutableStateOf(false) }
     var sheet by remember { mutableStateOf(false) }
@@ -111,7 +112,7 @@ fun HtmlLiveCard(segment: MessageSegment.HtmlLive) {
     val shown = (image as? LiveImage.Shown)?.bitmap
 
     LaunchedEffect(key, live) {
-        if (key == null || image is LiveImage.Shown) return@LaunchedEffect
+        if (image is LiveImage.Shown) return@LaunchedEffect
         val dataUrl = live?.load(key)?.image
         val bitmap = dataUrl?.let { withContext(Dispatchers.Default) { decodeImage(it) } }
         if (bitmap != null) synchronized(bitmapCache) { bitmapCache[key] = bitmap }
@@ -123,7 +124,6 @@ fun HtmlLiveCard(segment: MessageSegment.HtmlLive) {
             .fillMaxWidth()
             .background(SurfaceRaised)
             .combinedClickable(
-                enabled = segment.closed,
                 onClickLabel = if (shown != null) "View image" else null,
                 onLongClickLabel = "Show actions",
                 onClick = { if (shown != null) fullScreen = true },
@@ -138,15 +138,10 @@ fun HtmlLiveCard(segment: MessageSegment.HtmlLive) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(name, color = TextDim, fontSize = 12.sp, modifier = Modifier.weight(1f))
-            if (!segment.closed) {
-                Text("Writing", color = TextDim, fontSize = 12.sp, modifier = Modifier.padding(end = 10.dp))
-            } else {
-                TextButton(onClick = { showSource = !showSource }) {
-                    Text("Source", color = TextDim, fontSize = 12.sp)
-                }
+            TextButton(onClick = { showSource = !showSource }) {
+                Text("Source", color = TextDim, fontSize = 12.sp)
             }
         }
-        if (!segment.closed) return@Column
         if (showSource) {
             SourceText(segment.source)
         } else {

@@ -24,6 +24,7 @@ import {
   htmlLiveVerdict,
 } from '@shared/html-live'
 import { PREVIEW_PARTITION, blockedRequestLabel, formatPreviewBytes } from '@shared/html-preview'
+import { FilesChannels } from '@shared/ipc-channels'
 import { useAgentStore } from '../../../stores/agent-store'
 import { useDraftStore } from '../../../stores/draft-store'
 import { useLayoutStore } from '../../../stores/layout-store'
@@ -104,6 +105,34 @@ function useInView(): [React.RefObject<HTMLDivElement | null>, boolean] {
   return [ref, inView]
 }
 
+/**
+ * Whether Save as file's path is a file in this chat's folder now. The path is
+ * stored by page hash, so the same page in another chat, or a deleted file,
+ * must fall back to running the page rather than to a card for nothing.
+ */
+function useSavedFileExists(root: string | null, machineId: string | null, path: string | null): boolean {
+  const [found, setFound] = useState<string | null>(null)
+  const probe = root && path ? `${machineId ?? ''}\n${root}\n${path}` : null
+  useEffect(() => {
+    if (!root || !path || !probe) return
+    let current = true
+    type Resolved = { exists: boolean }
+    const request: Promise<Resolved> = machineId
+      ? window.api.routing.invokeOn<Resolved>(machineId, FilesChannels.RESOLVE, root, path)
+      : window.api.files.resolve(root, path)
+    request.then(
+      (res) => {
+        if (current && res?.exists) setFound(probe)
+      },
+      (err: unknown) => log.debug('saved live page resolve failed', err),
+    )
+    return () => {
+      current = false
+    }
+  }, [root, machineId, path, probe])
+  return probe !== null && found === probe
+}
+
 function WritingCard({ source, title }: { source: string; title: string | null }) {
   const bytes = new TextEncoder().encode(source).length
   const tail = source.split('\n').slice(-WRITING_TAIL_LINES).join('\n')
@@ -152,6 +181,7 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     return m && m !== 'local' ? m : null
   })
   const memory = useLivePageMemory(key)
+  const saved = useSavedFileExists(root, machineId, memory.savedPath) ? memory.savedPath : null
   const inPane = useLayoutStore(
     (s) => key !== null && s.rightPaneMode === 'preview' && s.htmlPreview?.live?.key === key,
   )
@@ -181,9 +211,9 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     return () => releaseFrame(id)
   }, [id])
   useEffect(() => {
-    setFrameWants(id, inView && !inPane && verdict.ok && !memory.savedPath)
-  }, [id, inView, inPane, verdict.ok, memory.savedPath])
-  const running = useFrameRunning(id) && verdict.ok && !inPane && !memory.savedPath
+    setFrameWants(id, inView && !inPane && verdict.ok && !saved)
+  }, [id, inView, inPane, verdict.ok, saved])
+  const running = useFrameRunning(id) && verdict.ok && !inPane && !saved
 
   // What the chat's backend already holds: a still image, or the saved file.
   useEffect(() => {
@@ -341,7 +371,7 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     useDraftStore.getState().appendDraft(sessionId, text)
   }
 
-  if (memory.savedPath && sessionId) return <HtmlFileCard path={memory.savedPath} sessionId={sessionId} />
+  if (saved && sessionId) return <HtmlFileCard path={saved} sessionId={sessionId} />
 
   const height = htmlLiveFrameHeight(contentHeight, expanded)
   const image = memory.image

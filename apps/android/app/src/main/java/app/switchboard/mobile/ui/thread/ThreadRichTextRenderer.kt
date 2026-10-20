@@ -33,28 +33,38 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.switchboard.mobile.domain.thread.ChatVisuals
+import app.switchboard.mobile.domain.thread.HtmlLivePages
 import app.switchboard.mobile.domain.thread.MessageSegment
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.GeistMono
 import app.switchboard.mobile.ui.theme.SurfaceRaised
 import app.switchboard.mobile.ui.theme.TextDim
 
+/**
+ * What each part of a message renders as: parsed markdown blocks, a visual,
+ * or a closed live page. Closed ```mermaid and ```chart blocks are drawn; one
+ * still streaming stays code. An unclosed ```html-live fence is also code: the
+ * renderer cannot tell a message still streaming from one that never closed it.
+ */
+internal fun renderedSegments(markdown: String): List<Any> =
+    ChatVisuals.splitVisualBlocks(markdown).map { segment ->
+        when (segment) {
+            is MessageSegment.Markdown -> ThreadRichTextParser.parse(segment.text)
+            is MessageSegment.Visual -> segment
+            is MessageSegment.HtmlLive -> if (segment.closed) {
+                segment
+            } else {
+                listOf(RichTextBlock.Code(HtmlLivePages.FENCE, segment.source))
+            }
+        }
+    }
+
 @Composable
 fun ThreadRichText(
     markdown: String,
     modifier: Modifier = Modifier,
 ) {
-    // Closed ```mermaid and ```chart blocks are drawn; one still streaming stays code.
-    // A ```html-live page is a card even while it is written (it shows "Writing").
-    val segments = remember(markdown) {
-        ChatVisuals.splitVisualBlocks(markdown).map { segment ->
-            when (segment) {
-                is MessageSegment.Markdown -> ThreadRichTextParser.parse(segment.text)
-                is MessageSegment.Visual -> segment
-                is MessageSegment.HtmlLive -> segment
-            }
-        }
-    }
+    val segments = remember(markdown) { renderedSegments(markdown) }
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),

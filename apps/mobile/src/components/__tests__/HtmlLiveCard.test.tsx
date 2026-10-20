@@ -49,7 +49,7 @@ beforeEach(() => {
 it('says there is no image yet when the backend has none', async () => {
   const client = fakeClient(true, null)
   jest.mocked(getClient).mockReturnValue(client as never)
-  const root = renderComponent(<HtmlLiveCard source={SOURCE} title="Latency" closed thread={THREAD} />)
+  const root = renderComponent(<HtmlLiveCard source={SOURCE} title="Latency" thread={THREAD} />)
   await flush()
   expect(client.htmlLiveLoad).toHaveBeenCalledWith(KEY)
   expect(root.texts()).toContain(NO_IMAGE)
@@ -59,7 +59,7 @@ it('says there is no image yet when the backend has none', async () => {
 it('shows the stored still image', async () => {
   const client = fakeClient(true, IMAGE)
   jest.mocked(getClient).mockReturnValue(client as never)
-  const root = renderComponent(<HtmlLiveCard source={SOURCE} title={null} closed thread={THREAD} />)
+  const root = renderComponent(<HtmlLiveCard source={SOURCE} title={null} thread={THREAD} />)
   await flush()
   const image = root.root.find((n) => n.props.testID === 'html-live-image' && typeof n.type === 'string')
   expect(image.props.source).toEqual({ uri: IMAGE })
@@ -70,7 +70,7 @@ it('shows the stored still image', async () => {
 it('crops a tall image and opens the whole one', async () => {
   const client = fakeClient(true, IMAGE)
   jest.mocked(getClient).mockReturnValue(client as never)
-  const root = renderComponent(<HtmlLiveCard source={SOURCE} title="Tall" closed thread={THREAD} />)
+  const root = renderComponent(<HtmlLiveCard source={SOURCE} title="Tall" thread={THREAD} />)
   await flush()
   const card = root.root.find((n) => typeof n.type === 'string' && typeof n.props.onLayout === 'function')
   act(() => card.props.onLayout({ nativeEvent: { layout: { width: 300, height: 0 } } }))
@@ -82,7 +82,7 @@ it('crops a tall image and opens the whole one', async () => {
 it('never calls the backend when it lacks the capability', async () => {
   const client = fakeClient(false, IMAGE)
   jest.mocked(getClient).mockReturnValue(client as never)
-  const root = renderComponent(<HtmlLiveCard source={SOURCE} title={null} closed thread={THREAD} />)
+  const root = renderComponent(<HtmlLiveCard source={SOURCE} title={null} thread={THREAD} />)
   await flush()
   act(() => root.byLabel('Show source').props.onPress())
   expect(root.allByLabel('Open on desktop')).toHaveLength(0)
@@ -95,7 +95,7 @@ it('never calls the backend when it lacks the capability', async () => {
 it('asks the desktop to open the page', async () => {
   const client = fakeClient(true, null)
   jest.mocked(getClient).mockReturnValue(client as never)
-  const root = renderComponent(<HtmlLiveCard source={SOURCE} title="Latency" closed thread={THREAD} />)
+  const root = renderComponent(<HtmlLiveCard source={SOURCE} title="Latency" thread={THREAD} />)
   await flush()
   act(() => root.byLabel('Show source').props.onPress())
   expect(root.texts()).toContain(SOURCE)
@@ -111,10 +111,12 @@ it('asks the desktop to open the page', async () => {
   expect(root.texts()).toContain('Opened on your Mac')
 })
 
-it('renders an html-live block in Markdown, still streaming or closed', async () => {
+it('renders an html-live block in Markdown, an unclosed one as code', async () => {
   jest.mocked(getClient).mockReturnValue(undefined)
   const streaming = renderComponent(<Markdown text={'Here:\n```html-live title="Chart"\n<b>hi</b>'} />)
-  expect(streaming.texts()).toContain('Writing')
+  expect(streaming.texts()).toContain('<b>hi</b>')
+  expect(streaming.texts()).not.toContain('Writing')
+  expect(streaming.texts()).not.toContain(NO_IMAGE)
   const closed = renderComponent(<Markdown text={'Here:\n```html-live title="Chart"\n<b>hi</b>\n```\nDone.'} />)
   await flush()
   expect(closed.texts()).toContain('Chart')
