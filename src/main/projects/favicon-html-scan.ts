@@ -28,7 +28,7 @@ import type { FaviconResult } from './favicon-resolver'
 // objects don't have to know which file the type lives in.
 export type { FaviconResult }
 
-/** Candidate files to scan, in priority order (matches t3code's list). */
+/** Candidate files to scan, in priority order. See THIRD_PARTY_NOTICES.md. */
 const CANDIDATE_HTML_FILES: ReadonlyArray<readonly string[]> = [
   ['index.html'],
   ['public', 'index.html'],

@@ -9,8 +9,8 @@ export interface ContextWindowUsage {
 
 /**
  * Circular SVG meter showing context window usage.
- * Modeled after T3 Code's ContextWindowMeter - renders as a small ring
- * with percentage in the center. Hover shows detailed tooltip.
+ * Renders as a small ring with percentage in the center. Hover shows
+ * detailed tooltip. See THIRD_PARTY_NOTICES.md.
  */
 export const ContextWindowMeter = memo(function ContextWindowMeter({ usage }: { usage: ContextWindowUsage }) {
   const percentage = contextPercent(usage.usedTokens, usage.maxTokens)
