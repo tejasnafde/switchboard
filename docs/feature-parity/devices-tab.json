@@ -47,7 +47,6 @@
     "storageDataMigration": {
       "status": "implemented",
       "evidence": [
-        "src/main/backend/mobile-server.ts",
         "tests/unit/device-rename.test.ts",
         "tests/unit/mobile-legacy-token-retired.test.ts"
       ]
