@@ -1,0 +1,123 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "inline-html-live",
+  "summary": "An agent's ```html-live title=\"...\" block is a small HTML page (fragment or full document, at most 128 KB of UTF-8) that the desktop runs inside the message, in a <webview> with exactly the HTML preview pane's sandbox: the sb-html-preview partition, will-attach-webview hardening (no preload, no Node, sandbox, context isolation), denied popups, no navigation off the page, refused permissions and downloads, the dead proxy, the request filter that cancels everything except the page's own sb-preview://<token> origin, and the pane's CSP. It runs only once its fence has closed and it has scrolled into view; while it streams the card says Writing. The frame fits the page's reported height between 120 and 480 px, with Show all past 480. It shows loading, the error list with Send to agent and Show source, the N blocked list (with a hint naming the bundled copy of a blocked library), and too-large or unknown-library refusals that never run. At most two frames run per window (the newest in view, or one started with Run); the others pause as their still image. Source and Copy source sit in the header. Open in pane moves the page to the preview pane (the message keeps the image and In pane, one running copy); Save as file under More in the pane writes it into the chat's folder under a free name and the block becomes the normal HTML file card. Bundled libraries are served at /_sb/ (Chart.js 4.5.1, D3 7.9.0 and Three.js 0.170.0 vendored unmodified in resources/sb-live with their licences; Mermaid from the app's own dependency); nothing else loads. After a page is quiet for 1 s the desktop captures it and stores the still image on the chat's backend, keyed by the SHA-256 of the block source (html_live_images_v1, admin scope to write). Phones never run agent scripts: they show that image (or No image yet), Source, Copy source and Open on desktop, which asks the backend to open the page in a desktop window's pane. Agents learn the block from one paragraph in the Switchboard MCP server's instructions.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/preview/preview-controller.ts",
+        "src/main/preview/preview-session.ts",
+        "src/preload/index.ts",
+        "src/renderer/components/chat/visuals/HtmlLiveFrame.tsx",
+        "src/renderer/components/chat/visuals/MessageMarkdown.tsx",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/components/preview/HtmlPreviewPane.tsx",
+        "src/renderer/services/html-live-frames.ts",
+        "src/renderer/services/html-live-theme.ts",
+        "src/renderer/services/html-live-save.ts",
+        "src/renderer/services/html-live-open-requests.ts",
+        "src/renderer/services/html-preview-open.ts",
+        "src/renderer/services/html-preview-console.ts",
+        "src/renderer/stores/layout-store.ts",
+        "src/renderer/App.tsx",
+        "src/main/provider/adapters/demo-adapter.ts",
+        "tests/unit/html-preview-sandbox.test.ts",
+        "e2e/html-live.e2e.mjs",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/snapshots/chat-live-chart-dark-darwin.png",
+        "e2e/snapshots/chat-live-chart-light-darwin.png",
+        "e2e/snapshots/chat-live-error-dark-darwin.png",
+        "e2e/snapshots/chat-live-error-light-darwin.png"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/components/HtmlLiveCard.tsx",
+        "apps/mobile/src/components/Markdown.tsx",
+        "apps/mobile/src/lib/html-live-key.ts",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/components/__tests__/HtmlLiveCard.test.tsx",
+        "apps/mobile/src/lib/__tests__/html-live-key.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ChatVisuals.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/HtmlLivePages.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/HtmlLiveImages.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/HtmlLiveCard.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadRichTextRenderer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/ChatVisualsFixturesTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/HtmlLivePagesTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/HtmlLiveImagesTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/html-live.ts",
+        "src/shared/chat-visuals.ts",
+        "src/shared/html-preview.ts",
+        "src/shared/ipc-channels.ts",
+        "src/shared/ws-protocol.ts",
+        "src/shared/device-auth.ts",
+        "src/main/ipc/html-live.ts",
+        "src/main/ipc/app.ts",
+        "src/main/mcp/switchboard-mcp-server.ts",
+        "tests/fixtures/visual-fence-cases.json",
+        "tests/unit/html-live.test.ts",
+        "tests/unit/html-live-backend.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/html-live-pages.ts",
+        "src/main/db/database.ts",
+        "tests/unit/html-live-backend.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "electron-builder.yml",
+        "resources/sb-live/README.md",
+        "tests/unit/html-live-libraries.test.ts",
+        ".oxfmtrc.json",
+        "src/shared/ws-protocol.ts",
+        "scripts/build-visual-host.mjs",
+        "apps/mobile/assets/visual-host/visual-host.html"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/html-live.test.ts: the fence and title rules, the 128 KB UTF-8 cap, library detection and the unknown-library refusal, the 120 to 480 px height rule and Show all, the two-frame running rule, the page wrapper (theme variables, import map, size reporter, unsafe theme values dropped), the store and request guards and the saved file name.",
+      "tests/unit/html-preview-sandbox.test.ts: inline documents get the pane CSP and serve nothing by path; only the listed /_sb/ libraries load; the network is cancelled and blamed on the asking frame; a closed frame's page loads nothing; inline frames survive the pane opening and closing; no popup, no navigation; the cap and unknown names are refused; a live page in the pane gets its libraries; leftover documents are bounded.",
+      "tests/unit/html-live-backend.test.ts (real migrated SQLite): image and saved path stored and merged, bad keys, non-image data and escaping paths refused, Open on desktop pushes OPEN_REQUEST, phones may read and open but not write.",
+      "tests/unit/html-live-libraries.test.ts: every vendored library matches its recorded SHA-256 and ships its licence; Mermaid comes from node_modules.",
+      "tests/fixtures/visual-fence-cases.json: new html-live cases run by tests/unit/chat-visuals.test.ts and the Android ChatVisualsFixturesTest.",
+      "tests/unit/visual-host-asset.test.ts: the phones' visual host bundles chat-visuals.ts, which now imports html-live.ts, so that file is an input and the committed page was rebuilt (the page itself is unchanged in behaviour).",
+      "SB_E2E_BACKGROUND=1 node e2e/html-live.e2e.mjs: from a real inline frame, network, loopback, file:// and parent-file fetches, an unknown /_sb/ name, the library folder, window.open and navigation are all blocked, Node and the app API are absent, /_sb/chart.js loads; Open in pane leaves one running copy and Close brings it back; a throwing page shows its error and Send to agent; the still image is stored under the source hash; at most two frames run; Save as file writes the page, the block becomes the file card and the saved page still loads Chart.js.",
+      "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens npm run test:e2e:visual: new chat-live-chart and chat-live-error baselines in Dark and Light (page masked, as the pane's), read; two runs pass without updating.",
+      "apps/mobile jest (172 tests) and tsc: the key vectors, No image yet, the image and its 480 px fold, no call without html_live_images_v1, the Open on desktop payload, Markdown with streaming and closed blocks.",
+      "Android ./gradlew :app:testDebugUnitTest (1125 tests) and :app:compileDebugKotlin: fixture cases with title and closed, key vectors, the capability gate and answer parsing.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The Expo app and native Android were not run on a device or emulator: the image fit, the zoom view, the long-press sheet and the accessibility labels are verified only by tests and compilation.",
+      "iOS was not run (no simulator on this Mac).",
+      "Open on desktop against a remote headless backend: the event path is the same router subscription the desktop uses for other pushes, but it was exercised only against the local backend.",
+      "A frame that never ran on any desktop shows No image yet on phones; the desktop does not render missing images offscreen when a phone asks."
+    ]
+  }
+}

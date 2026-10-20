@@ -6,6 +6,7 @@ import { FilesChannels } from '@shared/ipc-channels'
 import { isHtmlPreviewPath, splitPreviewPath, type PreviewOpenResult } from '@shared/html-preview'
 import { useAgentStore } from '../stores/agent-store'
 import { useLayoutStore, type HtmlPreviewTarget } from '../stores/layout-store'
+import { htmlLiveTheme } from './html-live-theme'
 
 interface SessionLike {
   id: string
@@ -57,6 +58,7 @@ export function htmlPreviewDisplay(target: HtmlPreviewTarget): { name: string; d
  * there) and loaded as content, so no local path is ever involved.
  */
 export async function loadHtmlPreview(target: HtmlPreviewTarget): Promise<PreviewOpenResult> {
+  if (target.live) return window.api.preview.open({ kind: 'live', source: target.live.source, theme: htmlLiveTheme() })
   if (!target.machineId) {
     return window.api.preview.open({ kind: 'file', root: target.root, filePath: htmlPreviewAbsolutePath(target) })
   }

@@ -48,6 +48,9 @@ export const BACKEND_CAPABILITIES = [
   /** `load-session-by-id` with `toolPreviews: true` shortens long tool calls
    *  (`ToolCall.preview`); `app:load-tool-call` serves one in full. */
   'history_tool_previews_v1',
+  /** `HtmlLiveChannels` LOAD / UPDATE / OPEN_ON_DESKTOP: the still image of
+   *  an ```html-live block, keyed by its source hash (`HTML_LIVE_CAPABILITY`). */
+  'html_live_images_v1',
   /** Both hosts answer application ping frames. WsHost also sends periodic pings. */
   'heartbeat_v1',
   /** A queued message is announced (`turn.queued` / `turn.dequeued`), listed

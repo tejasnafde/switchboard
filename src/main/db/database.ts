@@ -18,6 +18,7 @@ import { ensureAgentApprovalCardSchema } from './agent-approval-cards'
 import { ensureQueuedTurnRowsSchema } from './queued-turn-rows'
 import { ensureTurnCheckpointSchema } from './turn-checkpoints'
 import { ensureMergeBackSchema } from './merge-backs'
+import { ensureHtmlLivePagesSchema } from './html-live-pages'
 
 const log = createLogger('db')
 
@@ -30,6 +31,7 @@ export * from './bookmarks'
 export * from './worktree-links'
 export * from './pull-request-links'
 export * from './pull-request-hidden'
+export * from './html-live-pages'
 
 let db: Database.Database | null = null
 /** Set by the quit path: a write after it must fail, not reopen the file. */
@@ -670,6 +672,7 @@ function migrate(db: Database.Database): void {
   ensureQueuedTurnRowsSchema(db)
   ensureTurnCheckpointSchema(db)
   ensureMergeBackSchema(db)
+  ensureHtmlLivePagesSchema(db)
 
   log.info('database migrated')
 }

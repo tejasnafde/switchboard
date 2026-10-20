@@ -3,9 +3,11 @@
  * imports so the security rules are unit-tested directly. `preview-session.ts`
  * wires it to the real session, protocol and IPC.
  *
- * One document at a time (the pane has one webview). Every open mints a new
- * token; the page's origin is `sb-preview://<token>`, so a request from a
- * stale page, or for any other origin, is refused.
+ * The pane shows one document at a time; inline ```html-live frames in chat
+ * messages each hold their own (`openInline`). Every open mints a new token;
+ * the page's origin is `sb-preview://<token>`, so a request from a stale page,
+ * or for any other origin, is refused. `/_sb/<library>` on any document's
+ * origin is a bundled library (shared/html-live.ts), never a file.
  */
 import { randomBytes } from 'node:crypto'
 import { watch, type FSWatcher } from 'node:fs'
@@ -23,6 +25,13 @@ import {
   type PreviewOpenRequest,
   type PreviewOpenResult,
 } from '@shared/html-preview'
+import {
+  HTML_LIVE_DOCUMENT_NAME,
+  htmlLiveDocument,
+  htmlLiveVerdict,
+  isHtmlLiveLibrary,
+  type HtmlLiveTheme,
+} from '@shared/html-live'
 import { resolveWithinRepo } from '../ipc/files'
 import { createMainLogger } from '../logger'
 
@@ -34,6 +43,9 @@ export const PREVIEW_RELOAD_DEBOUNCE_MS = 250
 const MAX_BLOCKED_EVENTS = 50
 /** Largest asset served from the document's folder. */
 const MAX_ASSET_BYTES = 50 * 1024 * 1024
+/** Inline frame documents kept at once; the renderer closes its own, this
+ *  only bounds what a crashed or reloaded renderer leaves behind. */
+const MAX_INLINE_DOCUMENTS = 16
 
 /** Defense in depth behind the session's request filter: the page itself may
  *  not name any other origin either. */
@@ -74,6 +86,15 @@ const MIME: Record<string, string> = {
 type CurrentDocument =
   | { kind: 'file'; token: string; url: string; filePath: string; folder: string; realFolder: string }
   | { kind: 'content'; token: string; url: string; fileName: string; html: string }
+  | { kind: 'live'; token: string; url: string; html: string }
+
+/** Where a bundled /_sb/ library is on disk (an `HTML_LIVE_LIBRARIES` path), or null. */
+export type LiveLibraryResolver = (path: string) => string | null
+
+export interface InlineOpenRequest {
+  source: string
+  theme: HtmlLiveTheme
+}
 
 /** The parts of a guest WebContents the guards use. */
 export interface PreviewGuestContents {
@@ -84,6 +105,8 @@ export interface PreviewGuestContents {
 export interface PreviewRequestDetails {
   url: string
   resourceType?: string
+  /** URL of the frame that made the request, when Electron still knows it. */
+  frameUrl?: string | null
 }
 
 /**
@@ -111,11 +134,63 @@ function textResponse(status: number, body: string): Response {
 
 export class PreviewController {
   private doc: CurrentDocument | null = null
+  private readonly inline = new Map<string, Extract<CurrentDocument, { kind: 'live' }>>()
   private watcher: FSWatcher | null = null
   private reloadTimer: ReturnType<typeof setTimeout> | null = null
-  private blockedCount = 0
+  private readonly blockedCounts = new Map<string, number>()
 
-  constructor(private readonly emit: (event: PreviewEvent) => void) {}
+  constructor(
+    private readonly emit: (event: PreviewEvent) => void,
+    private readonly libraryFile: LiveLibraryResolver = () => null,
+  ) {}
+
+  /** The pane's document or an inline frame's, by token. */
+  private documentFor(token: string): CurrentDocument | null {
+    if (this.doc?.token === token) return this.doc
+    return this.inline.get(token) ?? null
+  }
+
+  /** The token of a live document a preview URL belongs to, or null. */
+  private tokenOfUrl(url: string | null | undefined): string | null {
+    if (!url?.startsWith(`${PREVIEW_SCHEME}:`)) return null
+    try {
+      const host = new URL(url).hostname
+      return this.documentFor(host) ? host : null
+    } catch (err) {
+      log.debug('preview URL did not parse', err)
+      return null
+    }
+  }
+
+  /** A live page's document, or the reason it does not run. */
+  private liveDocument(request: InlineOpenRequest): { html: string; bytes: number } | PreviewOpenResult {
+    const verdict = htmlLiveVerdict(request.source)
+    if (!verdict.ok) {
+      return verdict.reason === 'too-large'
+        ? { ok: false, error: 'too-large', bytes: verdict.bytes }
+        : { ok: false, error: 'failed', message: `Unknown library: ${verdict.names.join(', ')}` }
+    }
+    const html = htmlLiveDocument(request.source, request.theme)
+    return { html, bytes: Buffer.byteLength(html, 'utf8') }
+  }
+
+  /** An inline frame's document. Kept until `closeInline`, apart from the pane's. */
+  openInline(request: InlineOpenRequest): PreviewOpenResult {
+    if (typeof request?.source !== 'string') return { ok: false, error: 'failed', message: 'No page.' }
+    const built = this.liveDocument(request)
+    if ('ok' in built) return built
+    const token = randomBytes(12).toString('hex')
+    const url = previewDocumentUrl(token, HTML_LIVE_DOCUMENT_NAME)
+    this.inline.set(token, { kind: 'live', token, url, html: built.html })
+    while (this.inline.size > MAX_INLINE_DOCUMENTS) this.closeInline(this.inline.keys().next().value as string)
+    log.debug('inline page opened', { bytes: built.bytes, open: this.inline.size })
+    return { ok: true, url, token, bytes: built.bytes }
+  }
+
+  closeInline(token: string): void {
+    this.inline.delete(token)
+    this.blockedCounts.delete(token)
+  }
 
   get currentToken(): string | null {
     return this.doc?.token ?? null
@@ -128,6 +203,14 @@ export class PreviewController {
   async open(request: PreviewOpenRequest): Promise<PreviewOpenResult> {
     this.close()
     const token = randomBytes(12).toString('hex')
+    if (request.kind === 'live') {
+      const built = this.liveDocument(request)
+      if ('ok' in built) return built
+      const url = previewDocumentUrl(token, HTML_LIVE_DOCUMENT_NAME)
+      this.doc = { kind: 'live', token, url, html: built.html }
+      log.info('preview opened', { kind: 'live', bytes: built.bytes })
+      return { ok: true, url, token, bytes: built.bytes }
+    }
     if (request.kind === 'content') {
       const fileName = basename(request.fileName.replaceAll('\\', '/'))
       if (!isHtmlPreviewPath(fileName)) return { ok: false, error: 'not-html' }
@@ -168,13 +251,14 @@ export class PreviewController {
     return { ok: true, url, token, bytes }
   }
 
+  /** Drops the pane's document; inline frames keep theirs. */
   close(): void {
     if (this.reloadTimer) clearTimeout(this.reloadTimer)
     this.reloadTimer = null
     this.watcher?.close()
     this.watcher = null
+    if (this.doc) this.blockedCounts.delete(this.doc.token)
     this.doc = null
-    this.blockedCount = 0
   }
 
   /**
@@ -213,10 +297,12 @@ export class PreviewController {
 
   /** `session.webRequest.onBeforeRequest` body: true cancels the request. */
   shouldCancelRequest(details: PreviewRequestDetails): boolean {
-    if (previewRequestVerdict(details.url, this.currentToken) === 'allow') return false
-    const token = this.currentToken
-    if (token && this.blockedCount < MAX_BLOCKED_EVENTS && !details.url.startsWith('devtools:')) {
-      this.blockedCount++
+    if (previewRequestVerdict(details.url, this.tokenOfUrl(details.url)) === 'allow') return false
+    // Blame the page that asked; with no frame to go by, the pane's (as before inline frames).
+    const token = this.tokenOfUrl(details.frameUrl) ?? this.currentToken
+    const count = token ? (this.blockedCounts.get(token) ?? 0) : MAX_BLOCKED_EVENTS
+    if (token && count < MAX_BLOCKED_EVENTS && !details.url.startsWith('devtools:')) {
+      this.blockedCounts.set(token, count + 1)
       this.emit({ type: 'blocked', token, url: details.url })
     }
     return true
@@ -229,7 +315,9 @@ export class PreviewController {
       return { action: 'deny' }
     })
     const keepOnDocument = (event: { preventDefault(): void }, url: string): void => {
-      if (url === 'about:blank' || previewNavigationAllowed(url, this.currentUrl)) return
+      const token = this.tokenOfUrl(url)
+      const doc = token ? this.documentFor(token) : null
+      if (url === 'about:blank' || previewNavigationAllowed(url, doc?.url ?? null)) return
       event.preventDefault()
       log.info('preview navigation blocked')
     }
@@ -239,7 +327,6 @@ export class PreviewController {
 
   /** `protocol.handle(PREVIEW_SCHEME)` body. */
   async serve(requestUrl: string): Promise<Response> {
-    const doc = this.doc
     let parsed: URL
     try {
       parsed = new URL(requestUrl)
@@ -247,9 +334,20 @@ export class PreviewController {
       log.debug('preview request URL did not parse', err)
       return textResponse(400, 'Bad request')
     }
-    if (!doc || parsed.hostname !== doc.token) return textResponse(404, 'Not found')
+    const doc = this.documentFor(parsed.hostname)
+    if (!doc) return textResponse(404, 'Not found')
     const relPath = previewAssetRelativePath(parsed.pathname)
     if (!relPath) return textResponse(404, 'Not found')
+
+    // The bundled libraries, so a live page saved as a file still draws in the pane.
+    const library = relPath.startsWith('_sb/') ? relPath.slice(4) : null
+    if (library && isHtmlLiveLibrary(library)) return this.serveLibrary(library)
+    if (doc.kind === 'live') {
+      if (relPath !== HTML_LIVE_DOCUMENT_NAME) return textResponse(404, 'Not found')
+      return new Response(doc.html, {
+        headers: { 'content-type': MIME['.html'], 'content-security-policy': PREVIEW_CSP },
+      })
+    }
 
     if (doc.kind === 'content') {
       if (relPath !== doc.fileName) return textResponse(404, 'Not found')
@@ -271,6 +369,18 @@ export class PreviewController {
       return new Response(body, { headers })
     } catch (err) {
       log.warn('preview asset read failed', err)
+      return textResponse(404, 'Not found')
+    }
+  }
+
+  /** A bundled library (an `HTML_LIVE_LIBRARIES` path) from the app's own files. */
+  private async serveLibrary(path: string): Promise<Response> {
+    const file = this.libraryFile(path)
+    if (!file) return textResponse(404, 'Not found')
+    try {
+      return new Response(await fs.readFile(file), { headers: { 'content-type': MIME['.js'] } })
+    } catch (err) {
+      log.warn('bundled library read failed', { path, code: (err as NodeJS.ErrnoException).code })
       return textResponse(404, 'Not found')
     }
   }

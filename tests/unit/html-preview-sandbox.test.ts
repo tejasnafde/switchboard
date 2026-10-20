@@ -218,3 +218,122 @@ describe('html preview sandbox', () => {
     expect(events).toEqual([changed, changed, { type: 'missing', token }])
   }, 45_000)
 })
+
+describe('inline live frames (```html-live) in the same sandbox', () => {
+  const libs = join(process.cwd(), 'resources', 'sb-live')
+  const theme = {
+    scheme: 'dark' as const,
+    bg: '#000',
+    surface: '#111',
+    text: '#fff',
+    muted: '#999',
+    border: '#333',
+    accent: '#58a6ff',
+    success: '#3fb950',
+    warning: '#d29922',
+    error: '#f85149',
+    font: 'sans-serif',
+    mono: 'monospace',
+  }
+  let events: PreviewEvent[]
+  let ctl: PreviewController
+
+  beforeEach(() => {
+    events = []
+    ctl = new PreviewController(
+      (event) => events.push(event),
+      (path) => (path === 'mermaid.js' ? null : join(libs, ...path.split('/'))),
+    )
+  })
+
+  function openInline(source = '<script src="/_sb/chart.js"></script><canvas></canvas>') {
+    const result = ctl.openInline({ source, theme })
+    if (!result.ok) throw new Error(`inline open failed: ${result.error}`)
+    return result
+  }
+
+  it('serves the wrapped page with the pane CSP, and nothing by path', async () => {
+    const { url, token } = openInline()
+    expect(url).toBe(`sb-preview://${token}/index.html`)
+    const page = await ctl.serve(url)
+    expect(page.headers.get('content-security-policy')).toBe(PREVIEW_CSP)
+    const html = await page.text()
+    expect(html).toContain('--sb-accent:#58a6ff;')
+    expect(html).toContain('<canvas></canvas>')
+    for (const path of ['page.html', 'secret.txt', '../secret.txt', '%2e%2e/secret.txt', 'index.html/../x']) {
+      expect((await ctl.serve(`sb-preview://${token}/${path}`)).status, path).toBe(404)
+    }
+  })
+
+  it('loads only the bundled /_sb/ libraries', async () => {
+    const { token } = openInline()
+    const chart = await ctl.serve(`sb-preview://${token}/_sb/chart.js`)
+    expect(chart.status).toBe(200)
+    expect(chart.headers.get('content-type')).toContain('text/javascript')
+    expect((await chart.arrayBuffer()).byteLength).toBeGreaterThan(100_000)
+    expect((await ctl.serve(`sb-preview://${token}/_sb/three/addons/controls/OrbitControls.js`)).status).toBe(200)
+    for (const path of ['_sb/plotly.js', '_sb/../_sb/chart.js.map', '_sb/licenses/d3-LICENSE', '_sb/README.md']) {
+      expect((await ctl.serve(`sb-preview://${token}/${path}`)).status, path).toBe(404)
+    }
+  })
+
+  it('blocks the network and blames the frame that asked', () => {
+    const a = openInline()
+    const b = openInline('<p>b</p>')
+    expect(ctl.shouldCancelRequest({ url: a.url })).toBe(false)
+    expect(ctl.shouldCancelRequest({ url: `sb-preview://${b.token}/_sb/d3.js` })).toBe(false)
+    expect(ctl.shouldCancelRequest({ url: 'https://cdn.example.net/d3.js', frameUrl: b.url })).toBe(true)
+    expect(ctl.shouldCancelRequest({ url: 'wss://example.com/s', frameUrl: a.url })).toBe(true)
+    expect(events).toEqual([
+      { type: 'blocked', token: b.token, url: 'https://cdn.example.net/d3.js' },
+      { type: 'blocked', token: a.token, url: 'wss://example.com/s' },
+    ])
+    // A closed frame's page can load nothing more.
+    ctl.closeInline(a.token)
+    expect(ctl.shouldCancelRequest({ url: a.url })).toBe(true)
+    expect(ctl.shouldCancelRequest({ url: b.url })).toBe(false)
+  })
+
+  it('keeps inline frames when the pane opens and closes another page', async () => {
+    const inline = openInline()
+    const pane = await ctl.open({ kind: 'content', fileName: 'x.html', html: '<p>x</p>' })
+    if (!pane.ok) throw new Error('open failed')
+    ctl.close()
+    expect(ctl.shouldCancelRequest({ url: inline.url })).toBe(false)
+    expect(ctl.shouldCancelRequest({ url: pane.url })).toBe(true)
+  })
+
+  it('cannot open a window or navigate off its page', () => {
+    const { url, token } = openInline()
+    const guest = fakeGuest()
+    ctl.attachGuards(guest.contents)
+    expect(guest.open('https://example.com')).toEqual({ action: 'deny' })
+    expect(guest.navigate('will-navigate', 'https://example.com')).toBe(true)
+    expect(guest.navigate('will-navigate', `sb-preview://${token}/_sb/chart.js`)).toBe(true)
+    expect(guest.navigate('will-navigate', url)).toBe(false)
+  })
+
+  it('refuses a page over the cap or one that loads an unknown library', () => {
+    expect(ctl.openInline({ source: 'a'.repeat(128 * 1024 + 1), theme })).toMatchObject({
+      ok: false,
+      error: 'too-large',
+    })
+    expect(ctl.openInline({ source: '<script src="/_sb/plotly.js"></script>', theme })).toMatchObject({
+      ok: false,
+      error: 'failed',
+    })
+  })
+
+  it('moves a live page to the pane with its libraries', async () => {
+    const result = await ctl.open({ kind: 'live', source: '<script src="/_sb/d3.js"></script>', theme })
+    if (!result.ok) throw new Error('open failed')
+    expect((await ctl.serve(`sb-preview://${result.token}/_sb/d3.js`)).status).toBe(200)
+    expect((await ctl.serve(`sb-preview://${result.token}/other.html`)).status).toBe(404)
+  })
+
+  it('bounds the documents a crashed renderer can leave open', () => {
+    const first = openInline()
+    for (let i = 0; i < 16; i++) openInline()
+    expect(ctl.shouldCancelRequest({ url: first.url })).toBe(true)
+  })
+})

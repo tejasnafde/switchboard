@@ -3,11 +3,12 @@
  * its protocol, its request filter and the IPC the pane drives. Desktop only;
  * the policy itself lives in `preview-controller.ts`.
  */
-import { ipcMain, session, shell, webContents, type BrowserWindow, type Session, type WebContents } from 'electron'
+import { app, ipcMain, session, shell, webContents, type BrowserWindow, type Session, type WebContents } from 'electron'
 import { pathToFileURL } from 'node:url'
+import { existsSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
-import { isAbsolute } from 'node:path'
-import { PreviewChannels } from '@shared/ipc-channels'
+import { isAbsolute, join } from 'node:path'
+import { HtmlLiveChannels, PreviewChannels } from '@shared/ipc-channels'
 import {
   PREVIEW_PARTITION,
   PREVIEW_SCHEME,
@@ -15,7 +16,8 @@ import {
   type PreviewOpenRequest,
   type PreviewEvent,
 } from '@shared/html-preview'
-import { PreviewController } from './preview-controller'
+import { HTML_LIVE_MAX_IMAGE_CHARS } from '@shared/html-live'
+import { PreviewController, type InlineOpenRequest } from './preview-controller'
 import { createMainLogger } from '../logger'
 
 const log = createMainLogger('preview:session')
@@ -29,9 +31,39 @@ function emit(event: PreviewEvent): void {
   if (win && !win.isDestroyed()) win.webContents.send(PreviewChannels.EVENT, event)
 }
 
+let liveLibraryRoot: string | null | undefined
+
+/** `resources/sb-live` (extraResources when packaged), or the app's own mermaid copy. */
+function liveLibraryFile(path: string): string | null {
+  if (path === 'mermaid.js') {
+    try {
+      return require.resolve('mermaid/dist/mermaid.min.js')
+    } catch (err) {
+      log.warn('bundled mermaid not found', err)
+      return null
+    }
+  }
+  if (liveLibraryRoot === undefined) {
+    const candidates = [join(process.resourcesPath ?? '', 'sb-live'), join(app.getAppPath(), 'resources', 'sb-live')]
+    liveLibraryRoot = candidates.find((dir) => existsSync(dir)) ?? null
+    if (!liveLibraryRoot) log.warn('bundled live page libraries not found', { candidates: candidates.length })
+  }
+  return liveLibraryRoot ? join(liveLibraryRoot, ...path.split('/')) : null
+}
+
 function ensureController(): PreviewController {
-  controller ??= new PreviewController(emit)
+  controller ??= new PreviewController(emit, liveLibraryFile)
   return controller
+}
+
+/** The requesting frame's URL; Electron throws when the frame is already gone. */
+function requestFrameUrl(details: Electron.OnBeforeRequestListenerDetails): string | null {
+  try {
+    return details.frame?.url ?? null
+  } catch (err) {
+    log.debug('request frame gone', err)
+    return null
+  }
 }
 
 /** The preview partition's session, configured on first use. */
@@ -41,7 +73,7 @@ function ensurePreviewSession(): Session {
   const ctl = ensureController()
   ses.protocol.handle(PREVIEW_SCHEME, (request) => ctl.serve(request.url))
   ses.webRequest.onBeforeRequest((details, callback) => {
-    callback({ cancel: ctl.shouldCancelRequest(details) })
+    callback({ cancel: ctl.shouldCancelRequest({ url: details.url, frameUrl: requestFrameUrl(details) }) })
   })
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   ses.setPermissionCheckHandler(() => false)
@@ -97,6 +129,33 @@ export function registerHtmlPreviewHandlers(windowGetter: () => BrowserWindow | 
   ipcMain.handle(PreviewChannels.OPEN, (_event, request: PreviewOpenRequest) => {
     ensurePreviewSession()
     return ensureController().open(request)
+  })
+  ipcMain.removeHandler(HtmlLiveChannels.INLINE_OPEN)
+  ipcMain.handle(HtmlLiveChannels.INLINE_OPEN, (_event, request: InlineOpenRequest) => {
+    ensurePreviewSession()
+    return ensureController().openInline(request)
+  })
+  ipcMain.removeHandler(HtmlLiveChannels.INLINE_CLOSE)
+  ipcMain.handle(HtmlLiveChannels.INLINE_CLOSE, (_event, token: string) => {
+    if (typeof token === 'string') controller?.closeInline(token)
+    return { ok: true }
+  })
+  ipcMain.removeHandler(HtmlLiveChannels.INLINE_CAPTURE)
+  ipcMain.handle(HtmlLiveChannels.INLINE_CAPTURE, async (_event, webContentsId: number): Promise<string | null> => {
+    const guest = previewGuest(webContentsId)
+    if (!guest) return null
+    try {
+      const image = await guest.capturePage()
+      if (image.isEmpty()) return null
+      const png = image.toDataURL()
+      // A tall 2x frame can outgrow the stored image cap as PNG; JPEG fits.
+      return png.length <= HTML_LIVE_MAX_IMAGE_CHARS
+        ? png
+        : `data:image/jpeg;base64,${image.toJPEG(80).toString('base64')}`
+    } catch (err) {
+      log.warn('inline page capture failed', err)
+      return null
+    }
   })
   ipcMain.removeHandler(PreviewChannels.CLOSE)
   ipcMain.handle(PreviewChannels.CLOSE, () => {

@@ -24,6 +24,8 @@ import { useThemeStore } from '../../stores/theme-store'
 import { useDraftStore } from '../../stores/draft-store'
 import { htmlPreviewAbsolutePath, htmlPreviewDisplay, loadHtmlPreview } from '../../services/html-preview-open'
 import { cspBlockedUrl, previewConsoleLine, previewErrorsForAgent } from '../../services/html-preview-console'
+import { saveLivePage } from '../../services/html-live-save'
+import { htmlLiveVerdict } from '@shared/html-live'
 import { Button } from '../ui/button'
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from '../ui/menu'
 import { PreviewIcon, type PreviewIconName } from './preview-icons'
@@ -329,15 +331,48 @@ export function HtmlPreviewPane(): React.ReactElement {
   const sendErrorsToAgent = () => {
     if (!target?.sessionId) return
     const { dir, name } = htmlPreviewDisplay(target)
-    useDraftStore.getState().appendDraft(target.sessionId, previewErrorsForAgent(`${dir}${name}`, errors))
+    const what = target.live ? `the live page "${target.live.title ?? 'Live page'}"` : `${dir}${name}`
+    useDraftStore.getState().appendDraft(target.sessionId, previewErrorsForAgent(what, errors))
   }
   const dismissNotice = () => {
     localStorage.setItem(NOTICE_DISMISSED_KEY, 'true')
     setNoticeDismissed(true)
   }
 
-  const display = target ? htmlPreviewDisplay(target) : { name: '', dir: '' }
-  const local = target !== null && target.machineId === null
+  const saveAsFile = () => {
+    const key = target?.live?.key
+    if (!target || !key) return
+    // The pane may show another page by the time the write answers.
+    const stillShown = () => useLayoutStore.getState().htmlPreview?.live?.key === key
+    const fail = (message: string) => {
+      if (stillShown()) setErrors((prev) => [...prev, `Save as file failed: ${message}`])
+    }
+    void saveLivePage(target).then(
+      (result) => {
+        if (!result.ok) return fail(result.error)
+        if (!stillShown()) return
+        // The pane now shows the file, and the message shows its card.
+        const { live: _live, ...file } = target
+        useLayoutStore.getState().openHtmlPreview({ ...file, path: result.path })
+      },
+      (err: unknown) => {
+        log.warn('save as file failed', err)
+        fail(err instanceof Error ? err.message : String(err))
+      },
+    )
+  }
+
+  const live = target?.live ?? null
+  const liveVerdict = live ? htmlLiveVerdict(live.source) : null
+  const display = live
+    ? {
+        name: live.title ?? 'Live page',
+        dir: ['from the chat', ...(liveVerdict?.ok ? liveVerdict.libraries : [])].join(' · '),
+      }
+    : target
+      ? htmlPreviewDisplay(target)
+      : { name: '', dir: '' }
+  const local = target !== null && target.machineId === null && !live
   const failed = state.kind === 'error'
   const flipTheme = () => setPageTheme(colorScheme === 'dark' ? 'light' : 'dark')
 
@@ -433,22 +468,38 @@ export function HtmlPreviewPane(): React.ReactElement {
                   Open in browser
                 </MenuItem>
               )}
-              <MenuItem
-                onClick={() => {
-                  openInEditor()
-                  setMenuOpen(false)
-                }}
-              >
-                Open in editor
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  copyPath()
-                  setMenuOpen(false)
-                }}
-              >
-                Copy path
-              </MenuItem>
+              {live ? (
+                target?.root &&
+                target.sessionId && (
+                  <MenuItem
+                    onClick={() => {
+                      saveAsFile()
+                      setMenuOpen(false)
+                    }}
+                  >
+                    Save as file
+                  </MenuItem>
+                )
+              ) : (
+                <>
+                  <MenuItem
+                    onClick={() => {
+                      openInEditor()
+                      setMenuOpen(false)
+                    }}
+                  >
+                    Open in editor
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      copyPath()
+                      setMenuOpen(false)
+                    }}
+                  >
+                    Copy path
+                  </MenuItem>
+                </>
+              )}
               <MenuSeparator />
               <MenuLabel>Width</MenuLabel>
               {PREVIEW_WIDTHS.map((option) => (

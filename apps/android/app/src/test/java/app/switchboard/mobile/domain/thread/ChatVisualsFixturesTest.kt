@@ -38,6 +38,11 @@ class ChatVisualsFixturesTest {
                 segment as JsonObject
                 when (val kind = segment.str("kind")) {
                     "markdown" -> MessageSegment.Markdown(segment.str("text"))
+                    "html-live" -> MessageSegment.HtmlLive(
+                        segment.str("source"),
+                        segment.optStr("title"),
+                        (segment.values.getValue("closed") as JsonBoolean).value,
+                    )
                     else -> MessageSegment.Visual(VisualKind.entries.first { it.wire == kind }, segment.str("source"))
                 }
             }

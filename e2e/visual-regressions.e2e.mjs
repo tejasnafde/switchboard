@@ -1016,6 +1016,27 @@ async function captureThemeScreens(win, theme) {
   await paneClose.click()
   await paneClose.waitFor({ state: 'hidden', timeout: 10_000 })
 
+  // Two ```html-live pages (demo adapter "live page" script), Dark and Light:
+  // a Chart.js chart running in its frame and a D3 page that threw. The page
+  // is masked for the reason the preview pane's is (below).
+  if (theme !== 'Translucent') {
+    await editor.click()
+    await win.keyboard.type('Show the latency live page.')
+    await win.keyboard.press('Enter')
+    await win.getByRole('button', { name: 'Send', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
+    const liveChart = win.locator('[data-html-live]').filter({ hasText: 'p95 latency, Mon to Wed' }).last()
+    await liveChart.scrollIntoViewIfNeeded()
+    await win
+      .locator('[data-html-live="running"]')
+      .filter({ hasText: 'p95 latency, Mon to Wed' })
+      .waitFor({ timeout: 20_000 })
+    await snapScreen(win, 'chat-live-chart', theme, liveChart, [liveChart.locator('webview')])
+    const liveError = win.locator('[data-html-live]').filter({ hasText: 'Queue depth simulation' }).last()
+    await liveError.scrollIntoViewIfNeeded()
+    await liveError.getByText('1 error').waitFor({ timeout: 20_000 })
+    await snapScreen(win, 'chat-live-error', theme, liveError, [liveError.locator('webview')])
+  }
+
   // An agent-written .html file: the card after the Write call, then the page
   // in the sandboxed preview pane (demo adapter "pricing page" script).
   await editor.click()

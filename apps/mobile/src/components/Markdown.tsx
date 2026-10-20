@@ -7,6 +7,7 @@ import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { splitVisualBlocks } from '@shared/chat-visuals'
 import { parseMarkdown, type Block, type Inline } from '../lib/markdown'
 import { ChatVisual } from './ChatVisual'
+import { HtmlLiveCard, type MarkdownThread } from './HtmlLiveCard'
 import { colors, radius, space, type } from '../theme'
 
 function renderInlines(nodes: Inline[], keyPrefix = ''): React.ReactNode[] {
@@ -141,9 +142,17 @@ const BlockView = memo(function BlockView({ block }: { block: Block }): React.Re
 /**
  * Re-parsed on change: once per coalesced flush, not once per token. Closed
  * ```mermaid and ```chart blocks are drawn by ChatVisual; one still streaming
- * stays a code block until its fence closes.
+ * stays a code block until its fence closes. An ```html-live block is an
+ * HtmlLiveCard (a still image, never run here); `thread` lets it load the
+ * image and offer Open on desktop.
  */
-export const Markdown = memo(function Markdown({ text }: { text: string }): React.ReactElement {
+export const Markdown = memo(function Markdown({
+  text,
+  thread,
+}: {
+  text: string
+  thread?: MarkdownThread
+}): React.ReactElement {
   const segments = useMemo(
     () =>
       splitVisualBlocks(text).map((segment) => (segment.kind === 'markdown' ? parseMarkdown(segment.text) : segment)),
@@ -154,6 +163,14 @@ export const Markdown = memo(function Markdown({ text }: { text: string }): Reac
       {segments.map((segment, s) =>
         Array.isArray(segment) ? (
           segment.map((block, i) => <BlockView key={`${s}.${i}`} block={block} />)
+        ) : segment.kind === 'html-live' ? (
+          <HtmlLiveCard
+            key={`${s}:live`}
+            source={segment.source}
+            title={segment.title}
+            closed={segment.closed}
+            thread={thread}
+          />
         ) : (
           <ChatVisual key={`${s}:${segment.source}`} kind={segment.kind} source={segment.source} />
         ),

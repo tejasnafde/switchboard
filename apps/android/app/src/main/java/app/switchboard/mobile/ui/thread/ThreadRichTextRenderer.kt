@@ -45,11 +45,13 @@ fun ThreadRichText(
     modifier: Modifier = Modifier,
 ) {
     // Closed ```mermaid and ```chart blocks are drawn; one still streaming stays code.
+    // A ```html-live page is a card even while it is written (it shows "Writing").
     val segments = remember(markdown) {
         ChatVisuals.splitVisualBlocks(markdown).map { segment ->
             when (segment) {
                 is MessageSegment.Markdown -> ThreadRichTextParser.parse(segment.text)
                 is MessageSegment.Visual -> segment
+                is MessageSegment.HtmlLive -> segment
             }
         }
     }
@@ -60,6 +62,7 @@ fun ThreadRichText(
         segments.forEach { segment ->
             when (segment) {
                 is MessageSegment.Visual -> ChatVisualCard(segment.kind, segment.source)
+                is MessageSegment.HtmlLive -> HtmlLiveCard(segment)
                 is List<*> -> RichBlocks(segment.filterIsInstance<RichTextBlock>())
             }
         }

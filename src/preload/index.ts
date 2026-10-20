@@ -13,6 +13,7 @@ import {
   GitChannels,
   IdeChannels,
   PreviewChannels,
+  HtmlLiveChannels,
   KanbanChannels,
   MachineChannels,
   ProviderInstanceChannels,
@@ -28,6 +29,7 @@ import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { PeerLinkView } from '@shared/peer-links'
 import type { PreviewEvent, PreviewOpenRequest, PreviewOpenResult } from '@shared/html-preview'
+import type { HtmlLiveState, HtmlLiveTheme } from '@shared/html-live'
 import type { ReasoningEffort } from '@shared/models'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanWorktreeCreationIntent } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
@@ -942,6 +944,28 @@ const api = {
       transport.invoke(PreviewChannels.OPEN_EXTERNAL, filePath),
     onEvent: (callback: (event: PreviewEvent) => void) =>
       transport.on<[PreviewEvent]>(PreviewChannels.EVENT, (event) => callback(event)),
+    /** An inline ```html-live frame's document, apart from the pane's. */
+    openInline: (request: { source: string; theme: HtmlLiveTheme }): Promise<PreviewOpenResult> =>
+      transport.invoke(HtmlLiveChannels.INLINE_OPEN, request),
+    closeInline: (token: string): Promise<{ ok: boolean }> => transport.invoke(HtmlLiveChannels.INLINE_CLOSE, token),
+    captureInline: (webContentsId: number): Promise<string | null> =>
+      transport.invoke(HtmlLiveChannels.INLINE_CAPTURE, webContentsId),
+  },
+
+  // ─── Inline live pages: still images and Save as file, on the chat's machine ──
+  htmlLive: {
+    load: (machineId: string | null, key: string): Promise<HtmlLiveState> =>
+      router.invokeOn(machineId ?? 'local', HtmlLiveChannels.LOAD, key),
+    update: (
+      machineId: string | null,
+      key: string,
+      patch: { image?: string; savedPath?: string },
+    ): Promise<{ ok: boolean }> => router.invokeOn(machineId ?? 'local', HtmlLiveChannels.UPDATE, key, patch),
+    /** A phone asked a backend to open a page here; `machineId` is that backend's. */
+    onOpenRequest: (callback: (machineId: string, request: unknown) => void) =>
+      router.onWithSource<[unknown]>(HtmlLiveChannels.OPEN_REQUEST, (machineId, request) =>
+        callback(machineId, request),
+      ),
   },
 
   ide: {

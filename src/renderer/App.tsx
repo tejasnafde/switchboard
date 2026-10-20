@@ -11,6 +11,7 @@ import { useThemeStore } from './stores/theme-store'
 import { useTerminalStore } from './stores/terminal-store'
 import { useMachineStore } from './stores/machine-store'
 import { useTerminalLifecycle } from './hooks/useTerminalLifecycle'
+import { useHtmlLiveOpenRequests } from './services/html-live-open-requests'
 import { ResizeHandle } from './components/layout/ResizeHandle'
 import { Sidebar } from './components/sidebar/Sidebar'
 import { ChatWorkspacePanels } from './components/chat/ChatWorkspacePanels'
@@ -1511,6 +1512,8 @@ export function App() {
 
   // Terminal lifecycle - spawn/kill PTYs on session change
   useTerminalLifecycle()
+  // A phone's "Open on desktop" for an ```html-live page
+  useHtmlLiveOpenRequests()
 
   // Keyboard shortcuts
   useEffect(() => {

@@ -232,6 +232,26 @@ export const PreviewChannels = {
 } as const
 
 /**
+ * Inline live pages (```html-live, shared/html-live.ts). INLINE_OPEN,
+ * INLINE_CLOSE and INLINE_CAPTURE are desktop-only (an inline frame's document in the preview
+ * session). The rest run on the backend that holds the chat, under capability
+ * `html_live_images_v1`: LOAD `(key)` answers `HtmlLiveState`, UPDATE
+ * `(key, { image?, savedPath? })` stores the desktop's still image or the
+ * Save as file path, OPEN_ON_DESKTOP `(HtmlLiveOpenRequest)` from a phone
+ * pushes OPEN_REQUEST, which a desktop window answers by opening the pane.
+ */
+export const HtmlLiveChannels = {
+  INLINE_OPEN: 'preview:inline-open',
+  INLINE_CLOSE: 'preview:inline-close',
+  /** `(webContentsId)` -> a still image (data URL) of an inline frame, or null. */
+  INLINE_CAPTURE: 'preview:inline-capture',
+  LOAD: 'html-live:load',
+  UPDATE: 'html-live:update',
+  OPEN_ON_DESKTOP: 'html-live:open-on-desktop',
+  OPEN_REQUEST: 'html-live:open-request',
+} as const
+
+/**
  * Per-thread branch picker. `LIST_REFS` returns local + remote branches
  * annotated with which one is `current` and the absolute path of the
  * worktree (if any) each branch is checked out in. `SWITCH_REF` runs
