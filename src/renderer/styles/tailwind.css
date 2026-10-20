@@ -83,6 +83,9 @@
   --color-accent-foreground: var(--text-primary);
   --color-destructive: var(--error);
   --color-destructive-foreground: #fff;
+  /* Filled destructive buttons: white on --error (#f85149) is 3.4:1, on this 4.6:1.
+     One value for every theme, so tests/unit/destructive-fill-contrast.test.ts can read it. */
+  --color-destructive-fill: #da3633;
   --color-border: var(--border);
   --color-ring: var(--border-focus);
 

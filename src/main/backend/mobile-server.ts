@@ -2,13 +2,18 @@
  * The desktop's own WebSocket endpoint for paired phones, fanned into a
  * MultiHost beside the ElectronIpcHost so both share one session pool.
  *
- * The inner WsHost restarts at runtime so a token saved in Settings serves
+ * The inner WsHost restarts at runtime so a port saved in Settings serves
  * immediately, rather than a QR pointing at a dead port until the next launch;
- * registrations are replayed onto each new inner host. No token, no listener.
+ * registrations are replayed onto each new inner host. Off until enabled.
+ *
+ * Only device sessions authenticate here. The old shared token
+ * (`mobilePairing.token`) is retired: it is deleted on the first apply, and a
+ * phone that still dials with it is closed with 4001, which every phone shows
+ * as "This computer removed this phone. Pair again."
  */
 import { WebSocketServer } from 'ws'
 import type { MobilePairingStatus } from '@shared/types'
-import { getSetting } from '../db/database'
+import { getSetting, removeSetting } from '../db/database'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
 import { WsHost, wsServerOptions } from './ws-host'
@@ -21,7 +26,8 @@ import { PHONE_SCOPES } from '@shared/device-auth'
 const log = createLogger('backend:mobile-server')
 
 const ENABLED_KEY = 'mobilePairing.enabled'
-const TOKEN_KEY = 'mobilePairing.token'
+/** Retired: deleted on sight, never read as a credential. */
+const LEGACY_TOKEN_KEY = 'mobilePairing.token'
 const PORT_KEY = 'mobilePairing.port'
 const DEFAULT_PORT = 8765
 
@@ -29,8 +35,6 @@ const DEFAULT_PORT = 8765
 export type MobileEndpointStatus = MobilePairingStatus
 
 export class MobileEndpoint implements BackendHost {
-  /** Token the live listener was built with, to detect a real config change. */
-  private activeToken: string | null = null
   /** Whether the endpoint was last applied in the enabled state. */
   private activeEnabled = false
   /** Registrations recorded for replay onto each (re)started inner host. */
@@ -92,17 +96,19 @@ export class MobileEndpoint implements BackendHost {
   /**
    * Start or restart the listener from current settings; safe to call any time.
    * A restart terminates every connected phone, so it only happens when the
-   * token or port actually changed - Settings re-applies on each keystroke, and
+   * enabled flag or port actually changed - Settings re-applies on each keystroke, and
    * restarting per keystroke left phones stuck reconnecting.
    */
   apply(): MobileEndpointStatus {
-    const desiredToken = getSetting(TOKEN_KEY)
+    if (getSetting(LEGACY_TOKEN_KEY) !== null) {
+      removeSetting(LEGACY_TOKEN_KEY)
+      log.info('deleted the retired shared pairing token')
+    }
     const enabled = getSetting(ENABLED_KEY) === 'true'
     const desiredPort = Number(getSetting(PORT_KEY) ?? DEFAULT_PORT) || DEFAULT_PORT
     if (
       this.wss !== null &&
       this.state.listening &&
-      this.activeToken === desiredToken &&
       this.activeEnabled === enabled &&
       this.state.port === desiredPort
     ) {
@@ -111,19 +117,15 @@ export class MobileEndpoint implements BackendHost {
 
     this.close()
 
-    const token = desiredToken
-    // Device sessions are the current credential, so a shared token is no
-    // longer what turns the endpoint on. `enabled` is, and a listener with
-    // neither is simply off rather than open.
-    if (!token && !enabled) {
+    if (!enabled) {
       log.info('mobile endpoint off (Settings > Mobile to enable)')
       this.state = { listening: false, port: null, reason: 'not enabled' }
       return this.state
     }
     const port = desiredPort
 
-    // 0.0.0.0 so a phone on the LAN/tailnet can reach it; the token is the
-    // access control (same trust model as the headless server).
+    // 0.0.0.0 so a phone on the LAN/tailnet can reach it; the device session is the
+    // access control.
     //
     // maxPayload caps a single frame. `ws` defaults to 100 MB, which on a
     // listener bound to every interface is an easy way for one connection to
@@ -139,7 +141,8 @@ export class MobileEndpoint implements BackendHost {
     // credential runs commands rather than merely reads conversations.
     const inner = new WsHost(
       wss,
-      token ?? undefined,
+      // No shared token: a `?token=` dial is closed with 4001.
+      undefined,
       {
         redeem: (pairing, label, context) => redeemPairingCode(pairing, label, [...PHONE_SCOPES], context),
         authenticate: (session, context) => {
@@ -148,13 +151,10 @@ export class MobileEndpoint implements BackendHost {
         },
         touch: (sessionId) => touchSession(sessionId),
       },
-      // Bound to 0.0.0.0, so a connection must present a credential even when
-      // no shared token is configured. The default (trust everything) is only
-      // correct for loopback and the ssh tunnel.
+      // Bound to 0.0.0.0, so a connection must present a credential. The
+      // default (trust everything) is only correct for loopback and the ssh
+      // tunnel.
       true,
-      // Static, unrevocable and readable from the settings table, so it gets a
-      // phone's scopes: no shell, no pairing administration.
-      PHONE_SCOPES,
     )
     for (const [ch, fn] of this.handlerRegs) inner.handle(ch, fn)
     for (const [ch, fn] of this.listenerRegs) inner.on(ch, fn)
@@ -183,7 +183,6 @@ export class MobileEndpoint implements BackendHost {
 
     this.wss = wss
     this.inner = inner
-    this.activeToken = token
     this.activeEnabled = enabled
     // Optimistic until the 'listening'/'error' event lands - callers polling
     // status() right after apply() see the port they asked for.
@@ -199,7 +198,6 @@ export class MobileEndpoint implements BackendHost {
     // Or the heartbeat outlives the endpoint.
     this.inner?.dispose()
     this.inner = null
-    this.activeToken = null
     this.activeEnabled = false
     this.state = { listening: false, port: null, reason: 'stopped' }
     try {

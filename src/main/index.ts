@@ -48,7 +48,7 @@ import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machin
 import { registerFilesHandlers } from './ipc/files'
 import { ElectronIpcHost, type BackendHost } from './backend/host'
 import { MultiHost } from './backend/multi-host'
-import { createPairingCode, listSessionViews, revokeSession } from './backend/device-sessions'
+import { createPairingCode, listSessionViews, renameSession, revokeSession } from './backend/device-sessions'
 import { currentGoogleClient, googleClientStatus, setGoogleClient } from './google/client-config'
 import { mintGoogleCredentials } from './google/mint'
 import type { PartialClientConfig } from '@shared/google-oauth'
@@ -872,7 +872,7 @@ app.whenReady().then(() => {
 
   // Handlers migrating to the BackendHost seam (remote-ready); rest take the window.
   // The mobile endpoint is ALWAYS in the fan-out; whether it actually listens is
-  // decided by apply() from the saved token - and re-decided live whenever
+  // decided by apply() from the saved enabled flag - and re-decided live whenever
   // Settings > Mobile saves, so a fresh QR is never a lie about a dead port.
   mobileEndpoint = new MobileEndpoint()
   const backendHost: BackendHost = new MultiHost(new ElectronIpcHost(mainWindow), mobileEndpoint)
@@ -883,6 +883,10 @@ app.whenReady().then(() => {
   backendHost.handle(AppChannels.MOBILE_PAIRING_CODE, () => createPairingCode())
   backendHost.handle(AppChannels.MOBILE_DEVICES, () => listSessionViews(mobileEndpoint?.onlineSessionIds()))
   backendHost.handle(AppChannels.MOBILE_DEVICE_REVOKE, (id: string) => revokeSession(id))
+  backendHost.handle(AppChannels.MOBILE_DEVICE_RENAME, (id: unknown, name: unknown) => {
+    if (typeof id !== 'string' || (name !== null && typeof name !== 'string')) throw new Error('invalid rename request')
+    return renameSession(id, name)
+  })
   // Same scope, for a sharper reason: this one opens a browser on the desktop
   // and hands back a credential that grants cloud-platform access as the user.
   backendHost.handle(AppChannels.GOOGLE_CLIENT_STATUS, () => googleClientStatus())

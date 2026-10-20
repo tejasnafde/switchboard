@@ -28,6 +28,9 @@
 import { _electron as electron } from 'playwright'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { createServer } from 'node:net'
+import { WebSocket } from 'ws'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PNG } from 'pngjs'
@@ -797,6 +800,8 @@ async function captureThemeScreens(win, theme) {
       .click()
     await settings.locator('[data-account]').filter({ hasText: name }).waitFor({ state: 'detached' })
   }
+  // Light and dark only: the list is plain surfaces, nothing translucent-specific.
+  if (theme !== 'Translucent') await captureDevicesScreens(win, theme, settings)
   await win.keyboard.press('Escape')
   await settings.waitFor({ state: 'hidden' })
 
@@ -1051,6 +1056,152 @@ async function captureThemeScreens(win, theme) {
 
 // A deterministic IPC latch exercises the production UI while the demo
 // backend is waiting. Restored before releasing, including on test failure.
+const DAY_MS = 24 * 60 * 60_000
+
+function freePort() {
+  return new Promise((done) => {
+    const server = createServer().listen(0, '127.0.0.1', () => {
+      const { port } = server.address()
+      server.close(() => done(port))
+    })
+  })
+}
+
+/** A device session row as the backend stores it, for a phone that says who it is. */
+function seededDevice(id, identity, { lastSeenDaysAgo = 0, pairedDaysAgo, customName } = {}) {
+  return {
+    id,
+    tokenHash: createHash('sha256').update(`${id}-token`).digest('hex'),
+    label: identity.name,
+    scopes: ['chat'],
+    // Midday, so the paired date reads the same in every time zone.
+    createdAt: FROZEN_NOW - pairedDaysAgo * DAY_MS + 2 * 60 * 60_000,
+    lastSeenAt: FROZEN_NOW - lastSeenDaysAgo * DAY_MS,
+    identity: { installId: `${id}-0000-4000-8000-000000000000`, ...identity },
+    lastAddress: '192.168.1.40',
+    ...(customName ? { customName } : {}),
+  }
+}
+
+/** Authenticate a phone on the endpoint, so the list shows it online. */
+function connectPhone(port, session) {
+  return new Promise((done, fail) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/?auth=frame`)
+    ws.on('open', () =>
+      ws.send(JSON.stringify({ k: 'auth', session: `${session.id}-token`, device: session.identity })),
+    )
+    ws.on('message', (data) => {
+      const frame = JSON.parse(data.toString())
+      if (frame.k !== 'authed') return
+      if (frame.ok) done(ws)
+      else fail(new Error(`phone ${session.id} was refused: ${frame.error}`))
+    })
+    ws.on('error', fail)
+  })
+}
+
+/**
+ * Settings > Devices & machines with five paired phones: two online (real
+ * sockets on the endpoint), one seen three days ago, two inactive behind the
+ * fold. Then the renamed iPhone's Details.
+ */
+async function captureDevicesScreens(win, theme, settings) {
+  const pixel = seededDevice(
+    'pixel9',
+    {
+      name: "Tejas's Pixel 9",
+      manufacturer: 'Google',
+      model: 'Pixel 9',
+      platform: 'android',
+      osVersion: '16',
+      appVersion: '0.9.28',
+    },
+    { pairedDaysAgo: 18 },
+  )
+  const iphone = seededDevice(
+    'iphone16',
+    {
+      name: 'iPhone',
+      manufacturer: 'Apple',
+      model: 'iPhone 16',
+      platform: 'ios',
+      osVersion: '26.1',
+      appVersion: '0.9.28',
+    },
+    { pairedDaysAgo: 29, customName: "Tejas's iPhone" },
+  )
+  const sessions = [
+    pixel,
+    iphone,
+    seededDevice(
+      'galaxy',
+      {
+        name: 'Galaxy S24',
+        manufacturer: 'Samsung',
+        model: 'Galaxy S24',
+        platform: 'android',
+        osVersion: '15',
+        appVersion: '0.9.21',
+      },
+      { lastSeenDaysAgo: 3, pairedDaysAgo: 40 },
+    ),
+    seededDevice(
+      'oneplus',
+      {
+        name: 'OnePlus 12',
+        manufacturer: 'OnePlus',
+        model: 'CPH2583',
+        platform: 'android',
+        osVersion: '14',
+        appVersion: '0.9.12',
+      },
+      { lastSeenDaysAgo: 34, pairedDaysAgo: 55 },
+    ),
+    seededDevice(
+      'pixel7a',
+      {
+        name: 'Pixel 7a',
+        manufacturer: 'Google',
+        model: 'Pixel 7a',
+        platform: 'android',
+        osVersion: '15',
+        appVersion: '0.9.3',
+      },
+      { lastSeenDaysAgo: 52, pairedDaysAgo: 67 },
+    ),
+  ]
+  const port = await freePort()
+  await win.evaluate(
+    async ({ rows, port }) => {
+      await window.api.settings.set('deviceSessions', JSON.stringify(rows))
+      await window.api.settings.set('mobilePairing.host', '127.0.0.1')
+      await window.api.settings.set('mobilePairing.port', String(port))
+      await window.api.settings.set('mobilePairing.enabled', 'true')
+      await window.api.app.mobilePairingApply()
+    },
+    { rows: sessions, port },
+  )
+  // The iPhone first, so the Pixel is the newer of the two online rows.
+  const phones = []
+  for (const session of [iphone, pixel]) phones.push(await connectPhone(port, session))
+  try {
+    await settings.getByRole('button', { name: /^Devices & machines/ }).click()
+    const list = settings.getByTestId('paired-devices')
+    await list.getByText('Online now').waitFor({ state: 'visible' })
+    await list.getByText('Show 2 more inactive devices').waitFor({ state: 'visible' })
+    await snapScreen(win, 'settings-devices', theme, list)
+    await list.locator('[data-device-row="iphone16"]').getByRole('button', { name: 'Details' }).click()
+    await list.getByRole('region', { name: "Details for Tejas's iPhone" }).waitFor({ state: 'visible' })
+    await snapScreen(win, 'settings-devices-details', theme, list)
+  } finally {
+    for (const ws of phones) ws.terminate()
+    await win.evaluate(async () => {
+      await window.api.settings.set('mobilePairing.enabled', 'false')
+      await window.api.app.mobilePairingApply()
+    })
+  }
+}
+
 async function holdChatCall(channel) {
   await app.evaluate(({ ipcMain }, name) => {
     const original = ipcMain._invokeHandlers.get(name)

@@ -1,0 +1,74 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "devices-tab",
+  "summary": "Settings > Devices & machines lists paired devices with search, sort, Online now and Earlier groups, a fold for devices not seen in 30 days, per-device Details (last seen, address, system, app, install id, paired date) and Revoke (one device, or every inactive one after a confirm that lists them). A device can be renamed on the desktop; the name is stored on its backend session and replaces the reported name. The desktop endpoint no longer accepts the old shared pairing token: the stored value is deleted and a phone that still uses it is closed with 4001. The filled destructive button uses #da3633 app-wide.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/settings/PairedDevices.tsx",
+        "src/renderer/components/settings/MobilePairingTab.tsx",
+        "src/renderer/components/settings/device-list.ts",
+        "src/renderer/components/ui/button.tsx",
+        "src/renderer/components/ui/confirm.tsx",
+        "src/renderer/styles/tailwind.css",
+        "src/preload/index.ts",
+        "src/main/index.ts",
+        "tests/unit/device-list.test.ts",
+        "tests/unit/destructive-fill-contrast.test.ts",
+        "e2e/visual-regressions.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/connections.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/protocol/OkHttpWebSocketDialer.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/device-auth.ts",
+        "src/shared/ipc-channels.ts",
+        "src/main/backend/device-sessions.ts",
+        "src/main/backend/mobile-server.ts",
+        "tests/unit/device-rename.test.ts",
+        "tests/unit/mobile-legacy-token-retired.test.ts",
+        "tests/unit/mobile-endpoint-apply.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/backend/mobile-server.ts",
+        "tests/unit/device-rename.test.ts",
+        "tests/unit/mobile-legacy-token-retired.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Desktop release only. customName is an optional field on the device session JSON, so rows written before stay valid and an older desktop ignores it. Deleting mobilePairing.token is one-way by design: one user, no transition period, and a phone on it pairs again with a QR."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/device-list.test.ts: groups, search on name, model and platform, the 30-day fold, sort, relative and absolute dates.",
+      "tests/unit/device-rename.test.ts: rename, clear, length bound, a re-reported identity keeps the custom name, and a phone session cannot call mobile-pairing:rename.",
+      "tests/unit/mobile-legacy-token-retired.test.ts: through the real MobileEndpoint, the stored token is deleted on apply, a ?token= dial is closed with 4001, and a token alone does not start the endpoint. All three fail on the old endpoint.",
+      "tests/unit/destructive-fill-contrast.test.ts: white on the destructive fill reads at 4.5:1 or better.",
+      "Visual screens settings-devices and settings-devices-details in Dark and Light; confirm-dialog baselines refreshed for the new destructive fill.",
+      "Phones: only the refusal path applies and needs no code change. A phone still on the shared token is closed with 4001, which apps/mobile/src/stores/connections.ts and the Android OkHttpWebSocketDialer already show as \"This computer removed this phone. Pair again.\" The rename is desktop only and never reaches a phone."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No physical phone run of the 4001 path for a phone on the shared token; both phones already map any 4001 to the removed copy, which the device-revoke work verified."
+    ]
+  }
+}
