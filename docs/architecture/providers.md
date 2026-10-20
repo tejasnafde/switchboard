@@ -36,7 +36,7 @@ type RuntimeEvent =
 `durationMs` on `turn.completed` is what powers the "Worked for X.Xs" badge
 in `MessageBubble`. `numTurns` is the cumulative agent turn count from the
 SDK. `file.edited` is emitted once per changed file per turn (sourced from a
-git checkpoint diff - provider-agnostic); drives the Cursor-style in-chat
+git checkpoint diff - provider-agnostic); drives the in-chat
 diff card with per-hunk accept/reject. `model.variants` carries available
 thinking-budget tiers (`low`/`medium`/`high`/`max`) for models that support
 them (emitted by the OpenCode ACP adapter from `_meta.opencode.availableVariants`).
@@ -141,8 +141,7 @@ base64. Claude SDK passes this directly to the Anthropic API.
 ## Codex Adapter (`src/main/provider/adapters/codex-adapter.ts`)
 
 Spawns `codex app-server` per session and communicates via JSON-RPC 2.0
-over stdio. T3 Code is the reference implementation
-(`/tmp/t3code/apps/server/src/codexAppServerManager.ts`).
+over stdio.
 
 ### What's implemented today (Phase B complete)
 

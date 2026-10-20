@@ -999,9 +999,9 @@ export class ClaudeAdapter implements ProviderAdapter {
       //
       // Previous bug: we set `__user_answers` on updatedInput - the SDK's
       // AskUserQuestion tool doesn't know that field, so it fell back to
-      // its default (first option). T3 Code uses the same pattern as us
-      // here: return `allow` + updatedInput that contains a top-level
-      // `answers` object keyed by question id. The SDK tool picks that
+      // its default (first option). The fix: return `allow` +
+      // updatedInput that contains a top-level `answers` object keyed by
+      // question id. The SDK tool picks that
       // up and returns it as-is.
       if (toolName === 'AskUserQuestion') {
         const questions = parseQuestions(toolInput)

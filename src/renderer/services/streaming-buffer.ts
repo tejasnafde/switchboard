@@ -7,9 +7,8 @@
  * `applyContentText`, so an increment extends what is held and a full
  * snapshot replaces it. On
  * `turn.completed`, ChatPanel calls `drainTurn(threadId)` to flush
- * everything for that thread as a single batch - same UX as t3code's
- * server-side `delivery: "buffered"` mode but implemented renderer-side
- * because we don't have an orchestration layer to gate it server-side.
+ * everything for that thread as a single batch. It is buffered delivery,
+ * done renderer-side because no server-side layer gates it.
  *
  * The map insertion-order property of JS Maps is load-bearing: drainTurn
  * returns entries in the order their messageId first appeared, so a

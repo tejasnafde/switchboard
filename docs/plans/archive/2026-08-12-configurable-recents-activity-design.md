@@ -19,7 +19,7 @@ without generic blinking dots.
 
 ## Status Presentation
 
-Recents uses the same priority order as T3 Code's current sidebar model:
+Recents uses this priority order:
 
 1. Approval
 2. Input / question

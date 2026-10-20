@@ -591,15 +591,14 @@ needs to inspect SQLite manually.
 
 ## 2026-08-13 Final Upstream-Aligned Architecture Decision
 
-Reviewing T3 Code at `df19f6cfe3046dbbeb4073a3aac4c12f991b8fc7` and
-Omnigent at `321a766e59ccfc45771498aba99d2251918fbaa6` changed the
-implementation direction. Both systems create a logical conversation before a
+A review of other agent tools changed the implementation direction. The
+robust shape is to create a logical conversation before a
 provider starts, derive their normal sidebar exclusively from app-owned rows,
 and keep provider-native session IDs below that identity. Provider transcript
 scans are observability or explicit-import inputs, never sidebar roots.
 
 Switchboard will use the same shape while retaining ordered typed segments,
-which neither upstream system supports across a Claude-to-Codex transition.
+which survive a Claude-to-Codex transition.
 
 ### Authoritative Model
 
@@ -642,8 +641,7 @@ in Import/Recovery and are never silently merged, deleted, or resumed.
 
 When native resume material is missing, Switchboard preserves the durable
 visible history and records an explicit cold-continuation boundary. Native-file
-reconstruction from durable messages is a supported follow-up, modeled after
-Omnigent, but is not required to make the sidebar and history correct.
+reconstruction from durable messages is a supported follow-up, but is not required to make the sidebar and history correct.
 
 ### Minimal Schema Direction
 

@@ -1,7 +1,7 @@
 /**
  * Drop-in replacement for the chat input's `<textarea>`, but built on
  * Lexical so we can render inline pill chips at the caret position
- * (Cursor-style). The host (`ChatInput`) hands us a string body
+ * The host (`ChatInput`) hands us a string body
  * containing `[[pill:<id>]]` tokens; we hydrate the editor to render
  * pills as `PillNode` decorators in-place. On every edit we hand the
  * string body back via `onChange` so the existing draft-store, slash

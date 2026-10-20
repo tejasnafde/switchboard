@@ -1636,7 +1636,7 @@ export function ChatInput({
       )}
 
       {/* Rich text input - Lexical-backed contenteditable that renders
-          pill chips inline at the caret position (Cursor-style). The host
+          pill chips inline at the caret position. The host
           sees a plain string body with `[[pill:id]]` tokens; pillsById
           maps tokens to chip metadata + serialized content. */}
       <div className="relative flex" onKeyDownCapture={handleEditorKeyDown}>

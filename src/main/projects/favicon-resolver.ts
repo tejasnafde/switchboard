@@ -1,7 +1,7 @@
 /**
  * Auto-detect a project's favicon and return its absolute path + MIME so the
  * sidebar can render the project's own logo as its leading icon (vs. a
- * generic folder). Mirrors t3code's ProjectFaviconResolver:
+ * generic folder). Two steps:
  *
  *   1. Probe a fixed list of well-known paths in priority order
  *      (root → public/ → app/ → src/ → assets/ → .idea/).
@@ -29,9 +29,9 @@ export interface FaviconResult {
 }
 
 /**
- * Static probe list - same paths as t3code's ProjectFaviconResolver.ts:9–31,
- * stored as path *segments* (not slash-joined strings) so we can `join(...)`
- * them onto the project root and get correct separators on every OS.
+ * Static probe list (see THIRD_PARTY_NOTICES.md), stored as path
+ * *segments* (not slash-joined strings) so we can `join(...)` them onto
+ * the project root and get correct separators on every OS.
  */
 const PROBE_SEGMENTS: ReadonlyArray<readonly string[]> = [
   // Root

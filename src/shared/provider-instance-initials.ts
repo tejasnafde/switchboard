@@ -4,9 +4,6 @@
  * underscore-separated words; falls back to the first two characters of
  * a single-word name. Returns "??" for empty input so the badge is never
  * blank.
- *
- * Lifted from t3code's `providerInstanceInitials` helper to keep parity
- * with the picker UI we ported.
  */
 export function providerInstanceInitials(name: string): string {
   const cleaned = name.trim()

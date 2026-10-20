@@ -9,7 +9,7 @@ import { LoadingStatus } from '../ui/loading-status'
  *   2. Provider-instance picker (named credential set per kind)
  *   3. Model picker (with provider-prefix grouping + custom input)
  *
- * Layout (t3code-inspired):
+ * Layout:
  *   ┌─ trigger ─────────────────────────────────┐
  *   │ [accent dot/initials] agent · model       │ ▼
  *   └───────────────────────────────────────────┘

@@ -1,7 +1,7 @@
 /**
  * Deterministic worktree path scheme for the "new session in worktree
- * mode" flow (Plan B). Mirrors t3code's `worktreesDir/<repo>/<branch>`
- * but lands under switchboard's userData dir instead of inside the
+ * mode" flow (Plan B). The scheme is `worktreesDir/<repo>/<branch>`,
+ * under switchboard's userData dir instead of inside the
  * project tree - keeps things off TCC-protected paths (~/Desktop, etc.)
  * and avoids polluting users' working dirs.
  *

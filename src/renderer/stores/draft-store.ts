@@ -14,7 +14,7 @@ const PILLS_STORAGE_KEY = 'switchboard.draftPills'
  *   - `drafts[sessionId]`: free-form typed text (the textarea contents)
  *   - `pillsBySession[sessionId]`: ordered list of structured pills (file
  *     viewer selections, terminal selections, chat-message quotes) - these
- *     render as Cursor-style chips above the textarea and serialize back
+ *     render as chips above the textarea and serialize back
  *     into the message body when the user hits Send.
  *   - `imagesBySession[sessionId]`: pasted/dropped image attachments. NOT
  *     persisted - each holds a live File and an object URL, neither of which

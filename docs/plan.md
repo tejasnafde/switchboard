@@ -32,7 +32,7 @@ actually shipped:
   Desktop, Kanban, forks, React Native/iOS, and Android; durable identity,
   correlated progress, setup/sparse/startup receipts, and idempotent recovery
 - **Plan-mode hard-deny + read-only allow-list** (`decidePermission`)
-- **AskUserQuestion → QuestionCard** (T3-style interactive picker)
+- **AskUserQuestion → QuestionCard** (one question at a time, numbered shortcuts)
 - **ExitPlanMode → PlanCard** (markdown plan with Implement/Iterate buttons)
 - **Image pipeline** end-to-end (paste/drag/drop → SDK image blocks → persists on reload)
 - **Archive conversations** with global ID filter
@@ -46,7 +46,7 @@ actually shipped:
 - **LSP integration** - `typescript-language-server` + `pyright` for definition / references / hover / symbols
 - **Lexical chat input** - rich textarea with inline file/terminal/chat pill chips, `@`-mention file autocomplete
 - **Multi-instance provider credentials** - named credential sets per agent type (env or oauth_dir), switching from model picker
-- **In-chat diff review** (2026-06-02) - Cursor-style per-hunk accept/reject cards after each turn; git checkpoint diffing; provider-agnostic
+- **In-chat diff review** (2026-06-02) - Per-hunk accept/reject cards after each turn; git checkpoint diffing; provider-agnostic
 - **Project favicons** in sidebar via `sb-favicon://` custom protocol
 - **~790 unit tests** across 86 files
 
@@ -403,7 +403,7 @@ operator credential task rather than an implementation gap.
 
 1. **Ship incrementally.** Each phase is usable on its own. Don't wait for Phase 10 to use Phase 1.
 2. **TDD everything.** Use `/tdd` for every feature. Terminal IPC, JSONL parsing, YAML validation - all tested first.
-3. **Steal shamelessly.** Study t3code's agent spawning, cmux's design language, Warp's launch configs. Don't reinvent.
+3. **Reuse proven patterns.** Agents as subprocesses, terminal design language, declarative launch configs. Don't reinvent.
 4. **Keyboard-first.** Every action has a shortcut. Mouse is optional.
 5. **Don't build what you can import.** xterm.js, node-pty, marked, shiki, better-sqlite3 - leverage the ecosystem.
 6. **Config lives in the repo.** `.switchboard/workspace.yaml` is checked into git. New team member clones and goes.

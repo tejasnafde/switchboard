@@ -1,4 +1,4 @@
-/** Mirrors t3code's resume-compaction nudge: a Claude thread that is both
+/** Resume-compaction nudge: a Claude thread that is both
  *  token-heavy and stale is cheaper to continue after `/compact`. */
 export const COMPACTION_OFFER_MIN_TOKENS = 100_000
 export const COMPACTION_OFFER_MIN_IDLE_MS = 70 * 60_000

@@ -234,7 +234,7 @@ export function App() {
   )
 
   // Workbench selections: cmd+l appends a draft pill; cmd+k (intent 'edit')
-  // opens the quick prompt pre-filled with the selection - Cursor-style, but
+  // opens the quick prompt pre-filled with the selection, and
   // the edit runs through the active agent + in-chat diff review.
   const [ideEditContext, setIdeEditContext] = useState<{ sessionId: string; preview: string; full: string } | null>(
     null,

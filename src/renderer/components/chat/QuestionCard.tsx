@@ -12,7 +12,7 @@ interface QuestionCardProps {
 }
 
 /**
- * Interactive question UI (T3 Code style).
+ * Interactive question UI.
  * - One question shown at a time with "i/N" pagination
  * - Number keys 1-9 select options
  * - Single-select auto-advances 200ms after pick; multi-select waits for Next
@@ -82,7 +82,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
     setOtherTexts((prev) => prev.map((t, i) => (i === qIdx ? '' : t)))
     setOtherOpen((prev) => prev.map((v, i) => (i === qIdx ? false : v)))
 
-    // Single-select auto-advances after a short delay (T3 UX)
+    // Single-select auto-advances after a short delay
     if (!q.multiSelect && nextForQ.length > 0) {
       if (autoAdvanceRef.current) clearTimeout(autoAdvanceRef.current)
       autoAdvanceRef.current = setTimeout(() => {

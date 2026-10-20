@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "auto-runtime-mode",
-  "summary": "Add a fifth runtime mode, auto, where the provider's own reviewer approves routine actions (Claude permissionMode auto, Codex approvalsReviewer auto_review) and anything it declines still reaches the user's approval card. OpenCode has no reviewer and behaves as Supervised. Composer labels follow t3code: Supervised, Auto-accept edits, Auto, Full access, Plan.",
+  "summary": "Add a fifth runtime mode, auto, where the provider's own reviewer approves routine actions (Claude permissionMode auto, Codex approvalsReviewer auto_review) and anything it declines still reaches the user's approval card. OpenCode has no reviewer and behaves as Supervised. Composer labels: Supervised, Auto-accept edits, Auto, Full access, Plan.",
   "surfaces": {
     "desktop": {
       "status": "implemented",

@@ -34,6 +34,10 @@ reviews:
         Flag any em dash (U+2014) as a review blocker. This repo bans them in
         code, comments, UI copy, log strings, commit messages and docs.
         Use ` - `, a comma, or two sentences.
+        Describe behaviour, not its source: flag text that names another
+        product as the origin of an idea (for example "X-style" or
+        "borrowed from X"). Other projects are credited once, in the README
+        Acknowledgements. Licence notices in THIRD_PARTY_NOTICES.md stay.
     - path: 'src/main/**/*.ts'
       instructions: >-
         Every catch block that does not re-throw must log through the scoped

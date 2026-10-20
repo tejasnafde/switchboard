@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Changed
+- **Credits in one place.** Code comments, docs, tests and older CHANGELOG entries now describe behaviour instead of naming the projects an idea came from. The README has an Acknowledgements section, and `THIRD_PARTY_NOTICES.md` keeps the MIT notice for the three files that hold material from another project.
+
 ### Fixed
 - **Checked checkboxes and radio dots read in dark mode.** They use the same darker blue as the filled primary button, so the checkbox's white check mark reads at 4.5:1 or better.
 - **Two saves of one file in the same millisecond no longer share a temp file.** Each write now gets its own random temp name, so neither write fails or leaves a broken file.
@@ -310,7 +313,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 - **"Resume with less context" banner.** A Claude chat that holds 100k+ tokens, is idle, and whose last turn ended 70+ minutes ago offers a one-click `/compact`, on desktop and on the phone. The adapter already reported the SDK's compacting status and re-read usage afterwards; the banner only puts a button on that path. Both surfaces tick once a minute so a pane nobody touched can show it. On the phone the idle clock is `lastTurnAt`, recorded on `turn.completed`, because `updatedAt` is bumped by every event including the read receipt sent on open, which would have reset the clock the moment the banner became visible. Native Android is staged behind `compaction_offer_v1`.
 
 ### Changed
-- **Composer mode labels follow t3code**: Supervised, Auto-accept edits, Auto, Full access, Plan. The plan-mode denial copy names the new labels.
+- **Composer mode labels**: Supervised, Auto-accept edits, Auto, Full access, Plan. The plan-mode denial copy names the new labels.
 - **The bottom status bar no longer shows the agent dot, status word or provider instance.** The chat header already shows `thinking / ready / error / exited`, and the composer picker already shows the instance badge when more than one exists. The header now renders `error` in red. The bar keeps project name, session cost and terminal count.
 - **The context meter is hidden until the backend reports real usage.** It used to render a chars-divided-by-four estimate, which read "0" on every fresh chat.
 
@@ -939,7 +942,7 @@ The value is the agent deciding to hand context over, so that is what this adds.
 ## 0.8.14 - Context survives a provider switch; dictation learns your codebase
 
 ### Added
-- **Cross-provider context handoff.** Switching agent mid-chat (or forking a Codex/OpenCode conversation) used to start the new adapter with zero context. The next send now prefixes the wire message with a capped transcript replay ("Conversation so far: ..."), exactly once, marked by a `[[sb:context-handoff]]` pill. Your bubble shows only your own text (displayBody convention). The pending flag survives session-id rotation (`resolveRootThreadId`) and is cleared before the send fires, so no retry or reload can double-inject. Pattern borrowed from Databricks' omnigent project.
+- **Cross-provider context handoff.** Switching agent mid-chat (or forking a Codex/OpenCode conversation) used to start the new adapter with zero context. The next send now prefixes the wire message with a capped transcript replay ("Conversation so far: ..."), exactly once, marked by a `[[sb:context-handoff]]` pill. Your bubble shows only your own text (displayBody convention). The pending flag survives session-id rotation (`resolveRootThreadId`) and is cleared before the send fires, so no retry or reload can double-inject.
 - **Backend-corrected voice notes.** The phone keeps native STT as the instant draft, persists the raw 16 kHz WAV while recognizing, and ships it to the backend over the existing transport. The backend downloads whisper-server plus a ggml model to userData on first use (same lifecycle as code-server), spawns it on loopback, and biases transcription with an initial prompt built from the project's file list - which is exactly where native STT failed (file paths, identifiers). The draft is replaced only when untouched since recording stopped. JS-only on mobile: ships over the OTA lane. macOS backends without a prebuilt server binary fall back to PATH (`brew install whisper-cpp`).
 
 ### Fixed
@@ -1476,10 +1479,10 @@ mobile-only release.
 
 ---
 
-## 2026-06-02 — In-chat diff review (Cursor-style accept/reject) + editor/file-tree fixes
+## 2026-06-02 - In-chat diff review (per-hunk accept/reject) + editor/file-tree fixes
 
 ### Added
-- **Per-file diff cards in chat, with per-hunk accept/reject** — when an agent edits files during a turn, each changed file renders as its own inline card showing the unified diff with **Keep all / Reject all**, per-hunk **Revert**, and **Apply**. Works identically across **all three providers** (Claude Code, Codex, OpenCode) because the diff is derived from **git checkpoints**, not provider-specific tool payloads: a temp-index snapshot (`git add -A` → `write-tree`, never touching the user's index/HEAD) is taken before each turn and diffed against the working tree after `turn.completed`. Provider-agnostic, deterministic, modeled on the open-source `t3code` approach. New modules: `src/main/git/checkpoint.ts`, `src/main/provider/checkpoint-tracker.ts`, `src/renderer/components/chat/FileDiffCard.tsx` + `file-diff-resolve.ts`; new `file.edited` runtime event.
+- **Per-file diff cards in chat, with per-hunk accept/reject** - when an agent edits files during a turn, each changed file renders as its own inline card showing the unified diff with **Keep all / Reject all**, per-hunk **Revert**, and **Apply**. Works identically across **all three providers** (Claude Code, Codex, OpenCode) because the diff is derived from **git checkpoints**, not provider-specific tool payloads: a temp-index snapshot (`git add -A` → `write-tree`, never touching the user's index/HEAD) is taken before each turn and diffed against the working tree after `turn.completed`. Provider-agnostic and deterministic. New modules: `src/main/git/checkpoint.ts`, `src/main/provider/checkpoint-tracker.ts`, `src/renderer/components/chat/FileDiffCard.tsx` + `file-diff-resolve.ts`; new `file.edited` runtime event.
 - Diff rendering + accept/reject math is powered by **`@pierre/diffs`** (Apache-2.0). Reject reverts a hunk to its baseline; partial accept writes the resolved subset back via the existing atomic `files:write-file`. **Rejecting an agent-*added* file deletes it** (new `files:delete-file` IPC) rather than leaving an empty file — matching Cursor's revert semantics.
 - 30 new unit tests (checkpoint primitives incl. a real-git integration test, the turn tracker, the resolve/row helpers, the message keeper-list, and `deleteFileSafe`).
 
@@ -1664,7 +1667,7 @@ Images in chat were captured in the UI and saved to DB but **never sent to the a
 
 ### 2026-04-20 — QuestionCard rewrite + tool filter
 
-- Rewrote `QuestionCard.tsx` in T3-Code style: one question at a time with `i/N` pagination, number shortcuts 1-9, single-select auto-advance 200ms, multi-select waits for Next
+- Rewrote `QuestionCard.tsx`: one question at a time with `i/N` pagination, number shortcuts 1-9, single-select auto-advance 200ms, multi-select waits for Next
 - Suppressed `tool.started` emission for `AskUserQuestion` and `ExitPlanMode` (raw JSON tool block was rendering alongside the custom card)
 
 ### 2026-04-20 — Archive bug (two root causes)

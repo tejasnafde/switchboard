@@ -9,8 +9,7 @@
  *   - mtime-conflict detection: if `expectedMtimeMs` is supplied and
  *     the on-disk stat reports a newer mtime, refuse with
  *     `conflict: true` so the renderer can show "External edits
- *     detected - reload?" UX. Mirror's t3code's optimistic-concurrency
- *     pattern.
+ *     detected - reload?" UX. This is optimistic concurrency.
  *
  * Cross-platform: every path operation goes through `node:path` and
  * `node:fs/promises`. The rename goes through `replaceFile`, which retries

@@ -70,8 +70,8 @@ Switchboard/someday are personal projects, the target VMs are WORK VMs):
    approval.
 Token auth end-to-end in all paths.
 
-Reference exploration (t3code `pingdotgg/t3code`, and local `someday` / `scout`
-self-updating APKs) lives in `/Users/tejas/Desktop/projects/.repo-explore-t3code/`.
+Reference exploration of other agent apps and of the local `someday` / `scout`
+self-updating APKs was done outside this repo.
 
 ## Reaching work VMs: IAP, not SSH (2026-07-25)
 
@@ -187,7 +187,7 @@ by creating a dedicated `switchboard` GCP project with its own consent screen
 
 ## TL;DR
 
-- **Mobile app is feasible and cheaper than t3code's**, because the expensive
+- **Mobile app is feasible and cheap**, because the expensive
   part (a headless server serving agents/PTYs/git/fs over a WebSocket, with a
   transport-agnostic contract layer) is *already shipped* in Switchboard
   (`WsHost`, `src/shared/ws-*`, `WsTransport`). The new work is an RN UI, a
@@ -251,8 +251,8 @@ one.
 
 ### Phase 1 - RN chat client (`apps/mobile`, in-repo)
 
-Expo **managed** app (no custom native modules for v1 - that's what makes
-t3code's mobile "high" difficulty; we skip it). Chat-first.
+Expo **managed** app (no custom native modules for v1 - those are the
+"high" difficulty part; we skip them). Chat-first.
 
 - Workspace: add `apps/mobile` to the pnpm/npm workspace so it imports
   `@shared/*` directly (same alias the app uses).
@@ -263,8 +263,8 @@ t3code's mobile "high" difficulty; we skip it). Chat-first.
   list, (3) Thread view streaming `content` / `tool.started|completed|denied` /
   `plan.proposed` / `question.asked` / `file.edited` events into simple cards,
   plus a composer that calls `provider.sendTurn`.
-- **Explicitly out of scope for v1:** terminals (would need a native terminal a
-  la t3code's Ghostty bridge), the embedded IDE, Lexical pills, dual-chat.
+- **Explicitly out of scope for v1:** terminals (would need a native terminal
+  bridge), the embedded IDE, Lexical pills, dual-chat.
 - State: reuse the event shapes from `src/shared/provider-events.ts`; a thin
   Zustand store mirroring the desktop `agent-store` subset.
 
@@ -291,7 +291,7 @@ Flat list in fixed creation order; only moves at lifecycle transitions.
 - DB: add `settled_at` (+ optional `settled_override` = `'settled'|'active'|null`)
   to `conversations`, parallel to the existing `archived INTEGER`.
 - Pure `effectiveSettled(conversation, {now, autoSettleAfterDays, prState})` in
-  the renderer (unit-tested; mirror t3code's `threadSettled.ts` logic).
+  the renderer (unit-tested).
 - Sidebar partition render (active cards + collapsed settled tail) + a settings
   toggle, behind a flag until stable.
 - Server-authoritative settle state is only needed if the mobile app also shows

@@ -1,9 +1,6 @@
 # Switchboard Remote (SSH "Connect to Remote") - Implementation Plan
 
-> Reference impl: `pingdotgg/t3code` `packages/ssh` (cloned at `~/.cache/claude/repos/pingdotgg/t3code`).
-> **Caveat:** t3code's SSH layer is built on the Effect framework (`Effect.fn`, `ChildProcessSpawner`,
-> Effect Service/RPC). Switchboard does **not** use Effect - every "port" below is a *plain Node/TS rewrite*,
-> not a verbatim copy. No `ssh2`, no SFTP, no in-process SSH stack: SSH is only a port-forwarding transport.
+> Switchboard does **not** use the Effect framework: every component below is *plain Node/TS*. No `ssh2`, no SFTP, no in-process SSH stack: SSH is only a port-forwarding transport.
 
 ## Core insight
 
@@ -26,7 +23,7 @@ Desktop ──ssh -N -L 127.0.0.1:LOCAL:127.0.0.1:REMOTE host──► remote `n
 | 0 | Renderer transport abstraction (`Transport` iface + `IpcTransport`, no behavior change) | S (1d) | everything |
 | 1 | Backend extraction → `BackendHost` (handlers take a host, not `ipcMain`/`BrowserWindow`) | L (4–6d) | 1.5+ |
 | 1.5 | Standalone `server.ts` + `WsHost` + `WsTransport`; validate against `127.0.0.1` before any SSH | M (3–4d) | 2,4,5,6 |
-| 2 | SSH tunnel manager - plain-Node rewrite of t3code `tunnel.ts` (`-L`, `ExitOnForwardFailure`, `ServerAlive*`) | M (2–3d) | 6 |
+| 2 | SSH tunnel manager - plain Node (`-L`, `ExitOnForwardFailure`, `ServerAlive*`) | M (2–3d) | 6 |
 | 3 | Host discovery from `~/.ssh/config` (+`Include`) + `known_hosts` - no manual host-entry UI | S–M (2d) | UI |
 | 4 | Remote auto-launch script (POSIX `sh` over ssh stdin; node discovery nvm/volta/fnm/mise/asdf; install-and-serve) | M–L (3–5d) | 6 |
 | 5 | Pairing-token auth guarding the loopback WS port (token rides inside the SSH channel) | S (1–2d) | 6 |
@@ -47,7 +44,7 @@ Desktop ──ssh -N -L 127.0.0.1:LOCAL:127.0.0.1:REMOTE host──► remote `n
 
 ## Deferred to v2
 Relay/cloud hosted pairing; Tailscale endpoint provider; `known_hosts` TOFU prompt UI (rely on system ssh);
-password/askpass (assume key auth, `BatchMode`); direct `ws://` pre-existing-server mode; t3code's external/managed
+password/askpass (assume key auth, `BatchMode`); direct `ws://` pre-existing-server mode; external/managed
 dual-state reuse (simplify to single pid-file reuse).
 
 ## Critical files

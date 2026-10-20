@@ -1,5 +1,5 @@
 /**
- * Cursor-style per-file diff card rendered inline in the chat. One card per
+ * Per-file diff card rendered inline in the chat. One card per
  * file an agent changed during a turn (derived from a git checkpoint, so it
  * works for every provider). The user can keep or revert each hunk; on Apply
  * the resolved content is written back to disk.
