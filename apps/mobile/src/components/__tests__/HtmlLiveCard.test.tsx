@@ -19,7 +19,7 @@ jest.mock('expo-crypto', () => {
 jest.mock('../../stores/connections', () => ({ getClient: jest.fn() }))
 
 const SOURCE = '<script src="/_sb/chart.js"></script>\n<canvas id="c"></canvas>'
-const KEY = '9235215ba9292f8dd21fecf0305a4b7d067e4cb41901b6840e8a6f5f2551a065'
+const SOURCE_HASH = '9235215ba9292f8dd21fecf0305a4b7d067e4cb41901b6840e8a6f5f2551a065'
 const IMAGE = 'data:image/png;base64,iVBORw0KGgo='
 const THREAD = { connectionId: 'mac', threadId: 'thread-1' }
 const NO_IMAGE = 'No image yet. Your Mac makes one the next time it is online.'
@@ -51,7 +51,7 @@ it('says there is no image yet when the backend has none', async () => {
   jest.mocked(getClient).mockReturnValue(client as never)
   const root = renderComponent(<HtmlLiveCard source={SOURCE} title="Latency" thread={THREAD} />)
   await flush()
-  expect(client.htmlLiveLoad).toHaveBeenCalledWith(KEY)
+  expect(client.htmlLiveLoad).toHaveBeenCalledWith(SOURCE_HASH)
   expect(root.texts()).toContain(NO_IMAGE)
   expect(root.texts()).toContain('Latency')
 })
