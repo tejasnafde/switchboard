@@ -21,8 +21,8 @@ Procedure reference: the `app-store-publish` skill in `tejas-skills`.
 
 ## What ships
 
-- **Google Play:** the native Kotlin app in `apps/android`, package `app.switchboard.mobile`, from versionName 0.5.17 / versionCode 19. minSdk 24, targetSdk 36.
-- **Apple App Store:** the Expo app in `apps/mobile`, bundle ID `app.tn07.switchboard` (another developer holds `app.switchboard.mobile` at Apple, found 2026-10-17; the Android package keeps that name), from version 0.4.1. JS-only changes keep shipping over EAS Update; native changes need a build and a review.
+- **Google Play:** the native Kotlin app in `apps/android`, package `app.tn07.switchboard` (`app.switchboard.mobile` until 2026-10-21, see `docs/releasing.md`), from versionName 0.5.20 / versionCode 22. minSdk 24, targetSdk 36.
+- **Apple App Store:** the Expo app in `apps/mobile`, bundle ID `app.tn07.switchboard` (another developer holds `app.switchboard.mobile` at Apple, found 2026-10-17; Android moved to the same id on 2026-10-21), from version 0.4.1. JS-only changes keep shipping over EAS Update; native changes need a build and a review.
 - **macOS desktop:** the Electron app, signed with a Developer ID Application certificate and notarized. The signing code exists ("Credential-aware Desktop signing"); it needs the secrets.
 
 ## Work, in order

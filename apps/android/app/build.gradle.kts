@@ -10,12 +10,12 @@ plugins {
 }
 
 val productionKeystorePath = providers.environmentVariable("SWITCHBOARD_ANDROID_KEYSTORE_PATH").orNull
-val canonicalApplicationId = "app.switchboard.mobile"
+val canonicalApplicationId = "app.tn07.switchboard"
 val easProjectId = "efbb89d9-210f-4584-bf62-8186cd5fb476"
-val mobileGoogleServicesFile = rootProject.file("../mobile/google-services.json")
-val mobileGoogleServices = JsonSlurper().parse(mobileGoogleServicesFile) as Map<*, *>
-val firebaseProject = mobileGoogleServices["project_info"] as Map<*, *>
-val firebaseClient = (mobileGoogleServices["client"] as List<*>)
+val googleServicesFile = file("google-services.json")
+val googleServices = JsonSlurper().parse(googleServicesFile) as Map<*, *>
+val firebaseProject = googleServices["project_info"] as Map<*, *>
+val firebaseClient = (googleServices["client"] as List<*>)
     .map { it as Map<*, *> }
     .single { client ->
         val clientInfo = client["client_info"] as Map<*, *>

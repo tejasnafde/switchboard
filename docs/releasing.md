@@ -6,16 +6,19 @@ install instructions live in `README.md`.
 ## Native Android mobile release
 
 Google Play is the only channel for the native Android app
-(`apps/android`, package `app.switchboard.mobile`). The in-app APK updater and
+(`apps/android`, package `app.tn07.switchboard`, the same id as the iOS
+bundle). The in-app APK updater and
 the GitHub `mobile-v*` APK releases are retired: Play forbids apps that update
 themselves outside Play. The app requests no `REQUEST_INSTALL_PACKAGES`, and at
 each start it deletes what the updater stored (state and staged APKs).
 
 Prerequisites, done once by hand before the workflow can upload:
 
-1. Create the app record for `app.switchboard.mobile` in the Play Console
-   (done 2026-10-19, app id `4974044929379750357`). The Publishing API cannot
-   create an app.
+1. Create the app record for `app.tn07.switchboard` in the Play Console. The
+   Publishing API cannot create an app. Until 0.5.20 the package was
+   `app.switchboard.mobile` (record `4974044929379750357`, created
+   2026-10-19, internal track only, never published). It moved on 2026-10-21
+   to match iOS; that record stays unpublished and gets no more uploads.
 2. Invite the per-app publisher service account with release rights for this
    app only (done). Its key is `PLAY_SERVICE_ACCOUNT_JSON` below.
 
@@ -38,7 +41,7 @@ To release:
 The job runs the Android unit, lint and androidTest compile gate, builds a
 signed AAB (`bundleRelease`), and checks it with
 `scripts/verify-android-apk.mjs --aab` (pinned bundletool and `keytool`). It
-refuses the AAB unless the package is `app.switchboard.mobile`, the versionName
+refuses the AAB unless the package is `app.tn07.switchboard`, the versionName
 matches Gradle, the versions are above the native floor, the sole signer has
 SHA-256 fingerprint
 `BC:81:1E:37:12:C2:D5:7F:2B:6E:BD:A5:43:92:E6:2E:BD:2A:77:34:53:E5:0F:B3:75:E1:10:2D:B9:01:A8:F6`,
@@ -66,8 +69,9 @@ Repository secrets (the job fails with a named error when one is missing):
 - `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
   `ANDROID_KEY_PASSWORD`: the upload keystore.
 - `PLAY_SERVICE_ACCOUNT_JSON`: the JSON key of a per-app service account,
-  invited in the Play Console with release rights for `app.switchboard.mobile`
-  only.
+  invited in the Play Console with release rights for `app.tn07.switchboard`
+  only. The service account invited for the old record has no rights on the
+  new one until it is invited there too.
 
 React Native remains the iOS client. `mobile-ota.yml` publishes EAS updates
 with `--platform ios` only.

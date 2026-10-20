@@ -1,7 +1,7 @@
 package app.switchboard.mobile
 
 object AppContract {
-    const val RELEASE_APPLICATION_ID = "app.switchboard.mobile"
+    const val RELEASE_APPLICATION_ID = "app.tn07.switchboard"
     const val DEBUG_APPLICATION_ID_SUFFIX = ".native.dev"
     const val NOTIFICATION_CHANNEL_ID = "switchboard-agents"
     const val NOTIFICATION_CHANNEL_NAME = "Agent activity"

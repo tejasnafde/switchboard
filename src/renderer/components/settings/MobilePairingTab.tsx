@@ -33,7 +33,7 @@ const CUSTOM_HOST = '__custom__'
 // HOST serves the `ws` kind, TCP_PORT the `iap` one. Both, so neither silently fails.
 const SERVER_COMMAND = 'HOST=0.0.0.0 TCP_PORT=8766 npm run server'
 
-const PLAY_LISTING_URL = 'https://play.google.com/store/apps/details?id=app.switchboard.mobile'
+const PLAY_LISTING_URL = 'https://play.google.com/store/apps/details?id=app.tn07.switchboard'
 
 interface LanAddress {
   iface: string

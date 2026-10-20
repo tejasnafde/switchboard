@@ -20,8 +20,8 @@ class AppContractTest {
     }
 
     @Test
-    fun releaseIdentityMatchesTheInstalledReactNativeApp() {
-        assertEquals("app.switchboard.mobile", AppContract.RELEASE_APPLICATION_ID)
+    fun releaseIdentityMatchesTheIosBundleId() {
+        assertEquals("app.tn07.switchboard", AppContract.RELEASE_APPLICATION_ID)
         assertEquals(".native.dev", AppContract.DEBUG_APPLICATION_ID_SUFFIX)
     }
 

@@ -44,7 +44,7 @@ end and errors only. Devices report which thread they have open so they are not
 notified about the screen in the user's hand, and registration carries the
 client's connection id, echoed back so a tap knows which backend to open.
 Historical: while this Expo app also shipped on Android, its push needed FCM
-credentials on the EAS project (Android > FCM V1). That lane is retired. A new registry is created when a closed window is reopened, so
+credentials on the EAS project (Android > FCM V1). That lane is retired, and this app's `android.package` and `google-services.json` belong to it. Native Android still swaps its FCM token for an Expo token at exp.host, under package `app.tn07.switchboard` (the iOS bundle id; `app.switchboard.mobile` until 2026-10-21), so EAS needs an FCM V1 key assigned to that id. Its Firebase config is `apps/android/app/google-services.json`. A new registry is created when a closed window is reopened, so
 the notifier must be re-attached there.
 
 **Unpair push cleanup:** `connections.removeConnection` removes the saved config,

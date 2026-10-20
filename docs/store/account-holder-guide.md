@@ -19,12 +19,16 @@ Get these from Tejas:
 
 Use the GlycoCare organization account. Touch only the Switchboard app.
 
-Already done, do not repeat:
+The package is `app.tn07.switchboard` (the same id as the iOS app). Before
+the steps below:
 
-- The app exists: `Switchboard: Run Your Agents`, created 2026-10-19, app id
-  `4974044929379750357`.
-- The first AAB is on the internal testing track. CI uploaded it with the
-  per-app publisher service account, so that account already has access.
+- Create the app `Switchboard: Run Your Agents` for package
+  `app.tn07.switchboard` if Tejas has not created it yet.
+- Invite the per-app publisher service account to the new app with release
+  rights, so CI can upload the first AAB to the internal testing track.
+- Do not use the older record `4974044929379750357` (package
+  `app.switchboard.mobile`, created 2026-10-19). It stays unpublished. Leave
+  it as it is.
 
 1. **App access.** Policy > App content > App access. Select "All or some
    functionality is restricted". Add the instructions from "Store review

@@ -1,7 +1,7 @@
 # Google Play store listing: Switchboard
 
 Paste-ready text and files for Play Console > Grow > Store presence > Main
-store listing. Package `app.switchboard.mobile`, the native app in
+store listing. Package `app.tn07.switchboard`, the native app in
 `apps/android`. Decisions come from `docs/plans/2026-10-12-store-publishing.md`.
 The policy forms (Data safety, Content rating, App access) are in
 [`data-safety.md`](data-safety.md).

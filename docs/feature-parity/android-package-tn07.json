@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-package-tn07",
+  "summary": "The native Android app's applicationId changes from app.switchboard.mobile to app.tn07.switchboard, the iOS bundle id, so both stores use one id. Play gets a new app record; the old record (internal track only, never published) stays unpublished. The release build reads its own Firebase client from apps/android/app/google-services.json, and the AAB verifier and mobile-release.yml accept only the new package. The Kotlin namespace, versionCode 22 / versionName 0.5.20, the debug suffix .native.dev and the upload key are unchanged. A deliberate identity change: an installed app.switchboard.mobile build is a separate app, so the user installs the new one and pairs again. No migration, because only the developer holds the internal build.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/settings/MobilePairingTab.tsx"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The iOS bundle id is already app.tn07.switchboard (apps/mobile/app.json); only a note in apps/mobile/AGENTS.md changes, and apps/mobile/google-services.json and android.package belong to the retired Expo Android lane, left as they are."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        "apps/android/app/google-services.json",
+        "apps/android/app/src/main/java/app/switchboard/mobile/AppContract.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/AppContractTest.kt",
+        "apps/android/contract-tests/scaffold_contract_test.sh"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire protocol or backend change. Push registration sends the Expo token, which exp.host mints for the applicationId the phone reports; the backend never reads the package."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data format changes. Data in the old package's sandbox is not migrated: it is a different app on Android, and the only installed copy is the developer's internal build."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        ".github/workflows/mobile-release.yml",
+        "scripts/verify-android-apk.mjs",
+        "tests/unit/android-apk-verifier.test.ts",
+        "tests/unit/android-native-ci.test.ts",
+        "docs/releasing.md",
+        "docs/store/account-holder-guide.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "Android testDebugUnitTest and lintDebug pass.",
+      "apps/android/contract-tests/scaffold_contract_test.sh passes.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "A signed bundleRelease AAB with the new package and its verifier run (needs the upload keystore, in CI only).",
+      "The Play upload to the new app record (the record and the publisher service account invite are manual Console steps).",
+      "A real push to a release build: EAS needs the FCM V1 service-account key assigned to app.tn07.switchboard first."
+    ]
+  }
+}

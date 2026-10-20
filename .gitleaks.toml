@@ -20,7 +20,7 @@ targetRules = ["gcp-api-key", "generic-api-key"]
 # Path AND the api_key field, never the key itself: a copy of the key here is
 # reported by secret scanners as a second leak.
 condition = "AND"
-paths = ['''^apps/mobile/google-services\.json$''']
+paths = ['''^apps/mobile/google-services\.json$''', '''^apps/android/app/google-services\.json$''']
 regexTarget = "line"
 regexes = ['''"current_key"\s*:\s*"AIza''']
 
