@@ -9,7 +9,7 @@ import app.switchboard.mobile.protocol.JsonValue
 
 /**
  * Port of src/shared/chat-visuals.ts: which fenced blocks of a message are
- * drawn (```mermaid, ```chart) and the chart spec validator. Both suites run
+ * drawn (```mermaid, ```chart, ```html-live) and the chart spec validator. Both suites run
  * tests/fixtures/chart-spec-cases.json and tests/fixtures/visual-fence-cases.json,
  * so the error messages and the split are the same text on every client.
  */
@@ -18,6 +18,9 @@ enum class VisualKind(val wire: String) { MERMAID("mermaid"), CHART("chart") }
 sealed interface MessageSegment {
     data class Markdown(val text: String) : MessageSegment
     data class Visual(val kind: VisualKind, val source: String) : MessageSegment
+
+    /** A ```html-live page (shared/html-live.ts); `closed` is false only for a block still being written. */
+    data class HtmlLive(val source: String, val title: String?, val closed: Boolean) : MessageSegment
 }
 
 data class ChartSeries(val name: String, val values: List<Double>)
@@ -71,9 +74,18 @@ object ChatVisuals {
             }
             var close = i + 1
             while (close < lines.size && !closesFence(lines[close], fence)) close++
+            val live = if (visuals < MAX_VISUALS_PER_MESSAGE) HtmlLivePages.parseInfo(open.groupValues[2]) else null
+            val source = lines.subList(i + 1, close).joinToString("\n")
+            if (live != null && source.isNotBlank()) {
+                pushMarkdown(segments, lines.subList(textStart, i).joinToString("\n"))
+                segments += MessageSegment.HtmlLive(source, live.title, closed = close < lines.size)
+                visuals++
+                textStart = close + 1
+                i = close + 1
+                continue
+            }
             if (close >= lines.size) break
             val kind = visualKindOfInfo(open.groupValues[2])
-            val source = lines.subList(i + 1, close).joinToString("\n")
             if (kind != null && visuals < MAX_VISUALS_PER_MESSAGE && source.isNotBlank() &&
                 source.length <= MAX_VISUAL_SOURCE_CHARS
             ) {
@@ -85,7 +97,7 @@ object ChatVisuals {
             i = close + 1
         }
         if (segments.isEmpty()) return listOf(MessageSegment.Markdown(markdown))
-        pushMarkdown(segments, lines.subList(textStart, lines.size).joinToString("\n"))
+        if (textStart < lines.size) pushMarkdown(segments, lines.subList(textStart, lines.size).joinToString("\n"))
         return segments
     }
 

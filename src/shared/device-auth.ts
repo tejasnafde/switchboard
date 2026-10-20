@@ -11,7 +11,7 @@
  * surface runs an agent. This is a reduction in blast radius, not a sandbox.
  */
 import { KEYBOARD_OVERRIDES_SETTING } from './shortcuts'
-import { ProviderChannels, ProviderInstanceChannels, PullRequestWriteChannels } from './ipc-channels'
+import { HtmlLiveChannels, ProviderChannels, ProviderInstanceChannels, PullRequestWriteChannels } from './ipc-channels'
 import { governedSettingKey } from './project-settings'
 import { ACP_COMMAND_AGENT } from './acp-agents'
 import type { DeviceIdentity, DevicePlatform } from './device-identity'
@@ -62,6 +62,9 @@ const SCOPE_REQUIRED_CHANNELS: Partial<Record<DeviceScope, readonly string[]>> =
     // Spends a banked Codex reset on a paid account, and cannot be undone.
     // The phone has no confirm for it; the usage read stays open.
     ProviderInstanceChannels.CONSUME_RESET,
+    // The still image of a live page is what every phone shows for it. Only a
+    // desktop renders one; phones read it (LOAD) and ask a desktop to open it.
+    HtmlLiveChannels.UPDATE,
   ],
 }
 

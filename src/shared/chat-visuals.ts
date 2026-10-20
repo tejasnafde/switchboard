@@ -25,6 +25,8 @@
  * only numbers it formatted itself reach an attribute.
  */
 
+import { parseHtmlLiveInfo } from './html-live'
+
 export type VisualKind = 'mermaid' | 'chart'
 
 export const CHART_SPEC_VERSION = 1
@@ -55,7 +57,11 @@ export interface ChartSpec {
 
 export type ChartParse = { ok: true; spec: ChartSpec } | { ok: false; error: string }
 
-export type MessageSegment = { kind: 'markdown'; text: string } | { kind: VisualKind; source: string }
+export type MessageSegment =
+  | { kind: 'markdown'; text: string }
+  | { kind: VisualKind; source: string }
+  /** `closed: false` only for the last block of a message still being written. */
+  | { kind: 'html-live'; source: string; title: string | null; closed: boolean }
 
 /** The fence info string's first word, when it names a visual kind. */
 export function visualKindOfInfo(info: string): VisualKind | null {
@@ -70,6 +76,9 @@ const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/
  * (at most three spaces of indent, not inside another fence) that is CLOSED
  * becomes a visual, so a block still streaming stays code until its fence
  * closes. Oversized blocks and blocks past MAX_VISUALS_PER_MESSAGE stay code.
+ * An ```html-live block (shared/html-live.ts) has its own size rule, so any
+ * size becomes a segment, and an unclosed one at the end becomes a segment
+ * with `closed: false` (the desktop shows it as "Writing").
  * Returns one markdown segment when there is nothing to draw.
  */
 export function splitVisualBlocks(markdown: string): MessageSegment[] {
@@ -88,9 +97,18 @@ export function splitVisualBlocks(markdown: string): MessageSegment[] {
     const fence = open[1]
     let close = i + 1
     while (close < lines.length && !closesFence(lines[close], fence)) close++
+    const live = visuals < MAX_VISUALS_PER_MESSAGE ? parseHtmlLiveInfo(open[2]) : null
+    const source = lines.slice(i + 1, close).join('\n')
+    if (live && source.trim() !== '') {
+      pushMarkdown(segments, lines.slice(textStart, i).join('\n'))
+      segments.push({ kind: 'html-live', source, title: live.title, closed: close < lines.length })
+      visuals++
+      textStart = close + 1
+      i = close + 1
+      continue
+    }
     if (close >= lines.length) break // unclosed: the rest is one code block
     const kind = visualKindOfInfo(open[2])
-    const source = lines.slice(i + 1, close).join('\n')
     if (kind && visuals < MAX_VISUALS_PER_MESSAGE && source.trim() !== '' && source.length <= MAX_VISUAL_SOURCE_CHARS) {
       pushMarkdown(segments, lines.slice(textStart, i).join('\n'))
       segments.push({ kind, source })

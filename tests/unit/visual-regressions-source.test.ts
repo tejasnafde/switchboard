@@ -79,6 +79,8 @@ describe('visual regression harness safety', () => {
         'host-create-pr',
         'chat-diagram',
         'chat-chart',
+        'chat-live-chart',
+        'chat-live-error',
         'html-file-card',
         'html-preview',
         'subagents',

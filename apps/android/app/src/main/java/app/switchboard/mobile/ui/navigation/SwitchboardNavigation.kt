@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.data.remote.BrowseCoordinator
+import app.switchboard.mobile.data.remote.HtmlLiveImages
 import app.switchboard.mobile.data.remote.NewSessionClock
 import app.switchboard.mobile.data.remote.NewSessionCoordinator
 import app.switchboard.mobile.data.remote.NewSessionEnqueue
@@ -104,6 +105,7 @@ import app.switchboard.mobile.data.remote.MessageSearchState
 import app.switchboard.mobile.data.remote.GitContextCoordinator
 import app.switchboard.mobile.data.remote.ConversationForkWire
 import app.switchboard.mobile.ui.thread.ThreadLoadState
+import app.switchboard.mobile.ui.thread.LocalHtmlLive
 import app.switchboard.mobile.ui.thread.ThreadScreen
 import app.switchboard.mobile.ui.thread.ThreadComposerPresentation
 import app.switchboard.mobile.ui.thread.ThreadSessionScreen
@@ -1279,63 +1281,68 @@ private fun ConnectedThreadRoute(
         )
     }
 
-    ThreadSessionScreen(
-        coordinator = coordinator,
-        threadId = route.threadId,
-        title = route.title,
-        backendLabel = route.connectionLabel,
-        onBack = onBack,
-        onImagesSelected = { sources -> runtime.addComposerImages(composerKey, sources) },
-        onRemoveImage = { attachmentId -> runtime.removeComposerImage(composerKey, attachmentId) },
-        queuedTurns = queuedTurns,
-        onOutboxAction = { origin, action ->
-            runtime.performOutboxAction(composerKey, origin, action)
-        },
-        composerError = composerError,
-        gitContext = gitContext,
-        onRefreshGitContext = gitContextCoordinator::refresh,
-        viewingLeaseLifecycle = viewingLeaseLifecycle,
-        registerViewingLeaseRenewal = viewingRenewalRegistration,
-        onFork = { messageId, withWorktree ->
-            lease.client.loadSession(route.threadId) { loadedResponse ->
-                when (val loaded = loadedResponse.outcome) {
-                    is RemoteOutcome.Failure -> forkError = loaded.message
-                    is RemoteOutcome.Success -> {
-                        val message = loaded.value.messages.singleOrNull { it.id == messageId }
-                        if (message == null) {
-                            forkError = "The selected message is no longer a unique canonical fork anchor."
-                        } else {
-                            val request = ConversationForkWire.request(
-                                requestIdFor(messageId, withWorktree),
-                                route.threadId,
-                                message,
-                                withWorktree,
-                                System.currentTimeMillis(),
-                            )
-                            lease.client.getConversationFork(request) { priorResponse ->
-                                when (val prior = priorResponse.outcome) {
-                                    is RemoteOutcome.Failure -> forkError = prior.message
-                                    is RemoteOutcome.Success -> {
-                                        fun accept(outcome: ForkConversationOutcome) {
-                                            when (outcome) {
-                                                is ForkConversationOutcome.Completed -> completeFork(outcome.result.conversation)
-                                                is ForkConversationOutcome.ConfirmationRequired -> {
-                                                    pendingDirtyFork = PendingAndroidFork(
-                                                        message,
-                                                        outcome.dirtySource,
-                                                        request.requestId,
-                                                    )
+    val htmlLive = remember(lease.capabilities, route.threadId, lease.client) {
+        HtmlLiveImages(lease.capabilities, route.threadId, lease.client)
+    }
+    CompositionLocalProvider(LocalHtmlLive provides htmlLive) {
+        ThreadSessionScreen(
+            coordinator = coordinator,
+            threadId = route.threadId,
+            title = route.title,
+            backendLabel = route.connectionLabel,
+            onBack = onBack,
+            onImagesSelected = { sources -> runtime.addComposerImages(composerKey, sources) },
+            onRemoveImage = { attachmentId -> runtime.removeComposerImage(composerKey, attachmentId) },
+            queuedTurns = queuedTurns,
+            onOutboxAction = { origin, action ->
+                runtime.performOutboxAction(composerKey, origin, action)
+            },
+            composerError = composerError,
+            gitContext = gitContext,
+            onRefreshGitContext = gitContextCoordinator::refresh,
+            viewingLeaseLifecycle = viewingLeaseLifecycle,
+            registerViewingLeaseRenewal = viewingRenewalRegistration,
+            onFork = { messageId, withWorktree ->
+                lease.client.loadSession(route.threadId) { loadedResponse ->
+                    when (val loaded = loadedResponse.outcome) {
+                        is RemoteOutcome.Failure -> forkError = loaded.message
+                        is RemoteOutcome.Success -> {
+                            val message = loaded.value.messages.singleOrNull { it.id == messageId }
+                            if (message == null) {
+                                forkError = "The selected message is no longer a unique canonical fork anchor."
+                            } else {
+                                val request = ConversationForkWire.request(
+                                    requestIdFor(messageId, withWorktree),
+                                    route.threadId,
+                                    message,
+                                    withWorktree,
+                                    System.currentTimeMillis(),
+                                )
+                                lease.client.getConversationFork(request) { priorResponse ->
+                                    when (val prior = priorResponse.outcome) {
+                                        is RemoteOutcome.Failure -> forkError = prior.message
+                                        is RemoteOutcome.Success -> {
+                                            fun accept(outcome: ForkConversationOutcome) {
+                                                when (outcome) {
+                                                    is ForkConversationOutcome.Completed -> completeFork(outcome.result.conversation)
+                                                    is ForkConversationOutcome.ConfirmationRequired -> {
+                                                        pendingDirtyFork = PendingAndroidFork(
+                                                            message,
+                                                            outcome.dirtySource,
+                                                            request.requestId,
+                                                        )
+                                                    }
+                                                    is ForkConversationOutcome.Failed -> forkError = outcome.failureMessage()
                                                 }
-                                                is ForkConversationOutcome.Failed -> forkError = outcome.failureMessage()
                                             }
-                                        }
-                                        if (prior.value != null) {
-                                            accept(prior.value)
-                                        } else {
-                                            lease.client.forkConversation(request) { createdResponse ->
-                                                when (val created = createdResponse.outcome) {
-                                                    is RemoteOutcome.Failure -> forkError = created.message
-                                                    is RemoteOutcome.Success -> accept(created.value)
+                                            if (prior.value != null) {
+                                                accept(prior.value)
+                                            } else {
+                                                lease.client.forkConversation(request) { createdResponse ->
+                                                    when (val created = createdResponse.outcome) {
+                                                        is RemoteOutcome.Failure -> forkError = created.message
+                                                        is RemoteOutcome.Success -> accept(created.value)
+                                                    }
                                                 }
                                             }
                                         }
@@ -1345,9 +1352,9 @@ private fun ConnectedThreadRoute(
                         }
                     }
                 }
-            }
-        },
-    )
+            },
+        )
+    }
     pendingDirtyFork?.let { pending ->
         AlertDialog(
             onDismissRequest = { pendingDirtyFork = null },

@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Fixed
+- **Filled primary buttons read in dark mode.** The blue filled button (Continue, Sign in again, Open pull request, the composer send button) uses a darker blue of the same hue, so its white label reads at 4.6:1 in every theme instead of 2.5:1 in dark and translucent. Links, focus rings and chips keep the old blue.
+
 ### Security
 - **Device credential settings need the admin scope.** A paired phone can no longer read or write the settings rows that hold device sessions, the pairing code, the mobile endpoint settings, push tokens, OpenCode API keys or the OAuth client secret. Ordinary settings stay open to the phone, and the desktop is not affected.
 
@@ -16,6 +19,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 - **Native Android 0.5.20 (versionCode 22).** It adds device identity and the Home machine rows to the first Play build, and it replaces the 0.5.19 internal draft.
 
 ### Added
+- **Live pages in chat.** An agent can answer with a ```html-live block: a small page (charts with hover, a sortable table, a Three.js scene) that runs inside the message in the HTML preview's sandbox, with no network and only the bundled `/_sb/` libraries (Chart.js 4.5.1, D3 7.9.0, Three.js 0.170.0, Mermaid). It runs once the block closes and scrolls into view, fits its content between 120 and 480 px with Show all, shows errors (with Send to agent) and blocked requests, and refuses blocks over 128 KB. At most two run per window; the rest pause as a still image. Open in pane moves the page to the preview pane, where More > Save as file writes it into the chat's folder. Phones show the still image the desktop stored (capability `html_live_images_v1`), Source and Open on desktop, and never run the page.
 - **Paired phones say who they are.** iOS and Android send an install id, the device name (or the model), manufacturer, model, platform, OS version and app version on the pairing auth and every reconnect (capability `device_identity_v1`). When the same install pairs again, the desktop revokes its old session (socket closed, push tokens removed) instead of keeping a duplicate row. While a phone stays connected the desktop refreshes its last-seen time at most once a minute, and it records the last remote address and whether the phone is online now. The device list returns these as extra optional fields; the Devices tab does not show them yet. Older phones and older desktops keep working. JS only on iOS (OTA lane).
 
 ### Changed

@@ -21,6 +21,7 @@ export const VISUAL_HOST_OUT = join(root, 'apps/mobile/assets/visual-host/visual
 const INPUTS = [
   'src/visual-host/index.ts',
   'src/shared/chat-visuals.ts',
+  'src/shared/html-live.ts',
   'src/renderer/components/chat/visuals/diagram-render.ts',
   'scripts/build-visual-host.mjs',
 ]

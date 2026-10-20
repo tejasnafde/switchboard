@@ -26,3 +26,12 @@ export function cspBlockedUrl(message: string): { url: string; duplicate: boolea
   if (loaded) return { url: loaded[1], duplicate: true }
   return null
 }
+
+/** "Send to agent" draft for requests an inline live page tried and the sandbox blocked. */
+export function liveBlockedForAgent(name: string, labels: readonly string[]): string {
+  return [
+    `The live page "${name}" tried to load these, and the sandbox blocked them:`,
+    ...labels.map((label) => `- ${label}`),
+    'There is no network there: put the data inline, and load libraries only from /_sb/.',
+  ].join('\n')
+}

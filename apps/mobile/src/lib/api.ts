@@ -7,6 +7,7 @@ import { WsTransport, type TransportSocket, type WsAuth } from '@shared/ws-trans
 import type { Transport } from '@shared/transport'
 import {
   AppChannels,
+  HtmlLiveChannels,
   MachineChannels,
   ProviderChannels,
   ProviderInstanceChannels,
@@ -15,6 +16,7 @@ import {
   SttChannels,
   WorktreeCreationChannels,
 } from '@shared/ipc-channels'
+import type { HtmlLiveOpenRequest, HtmlLiveState } from '@shared/html-live'
 import type { SttTranscribeRequest, SttTranscribeResult } from '@shared/stt'
 import type {
   RuntimeEvent,
@@ -123,6 +125,16 @@ export class SwitchboardClient {
 
   supportsCapability(capability: string): boolean | undefined {
     return this.transport.supportsCapability?.(capability)
+  }
+
+  /** Gate: `HTML_LIVE_CAPABILITY`. The still image a desktop stored for this key. */
+  htmlLiveLoad(key: string): Promise<HtmlLiveState> {
+    return this.transport.invoke(HtmlLiveChannels.LOAD, key)
+  }
+
+  /** Gate: `HTML_LIVE_CAPABILITY`. Asks a desktop window to open the page in its pane. */
+  htmlLiveOpenOnDesktop(request: HtmlLiveOpenRequest): Promise<{ ok: boolean }> {
+    return this.transport.invoke(HtmlLiveChannels.OPEN_ON_DESKTOP, request)
   }
 
   /**
