@@ -20,7 +20,7 @@ import org.junit.Test
 class HtmlLiveImagesTest {
     private class FakeRemote(
         private val state: RemoteOutcome<HtmlLiveState> = RemoteOutcome.Success(HtmlLiveState("data:image/png;base64,AA==", null)),
-        private val opened: RemoteOutcome<Boolean> = RemoteOutcome.Success(true),
+        private val opened: RemoteOutcome<String> = RemoteOutcome.Success(HtmlLivePages.OPENED),
         private val reject: Boolean = false,
     ) : HtmlLiveRemote {
         val loads = mutableListOf<String>()
@@ -34,7 +34,7 @@ class HtmlLiveImagesTest {
             return accepted()
         }
 
-        override fun htmlLiveOpenOnDesktop(request: JsonObject, callback: (RemoteResponse<Boolean>) -> Unit): RequestSubmission {
+        override fun htmlLiveOpenOnDesktop(request: JsonObject, callback: (RemoteResponse<String>) -> Unit): RequestSubmission {
             opens += request
             if (reject) return RequestSubmission.Rejected(RpcFailure.ConnectionReplaced)
             callback(RemoteResponse(key, opened))
@@ -52,7 +52,7 @@ class HtmlLiveImagesTest {
         val images = HtmlLiveImages(emptySet(), "t1", remote)
         assertNull(images.load("k"))
         assertFalse(images.canOpenOnDesktop)
-        assertFalse(images.openOnDesktop("<b>x</b>", null))
+        assertEquals(HtmlLivePages.UNREACHABLE, images.openOnDesktop("<b>x</b>", null))
         assertTrue(remote.loads.isEmpty())
         assertTrue(remote.opens.isEmpty())
     }
@@ -74,10 +74,10 @@ class HtmlLiveImagesTest {
     fun openOnDesktopNeedsTheThreadAndSendsTheRequest() = runBlocking {
         val remote = FakeRemote()
         assertFalse(HtmlLiveImages(with, null, remote).canOpenOnDesktop)
-        assertTrue(HtmlLiveImages(with, "t1", remote).openOnDesktop("<b>x</b>", "T"))
+        assertEquals(HtmlLivePages.OPENED, HtmlLiveImages(with, "t1", remote).openOnDesktop("<b>x</b>", "T"))
         assertEquals(JsonString("t1"), remote.opens.single().values["conversationId"])
         assertEquals(JsonString("T"), remote.opens.single().values["title"])
-        assertFalse(HtmlLiveImages(with, "t1", FakeRemote(opened = RemoteOutcome.Failure("x"))).openOnDesktop("a", null))
-        assertFalse(HtmlLiveImages(with, "t1", FakeRemote(reject = true)).openOnDesktop("a", null))
+        assertEquals(HtmlLivePages.UNREACHABLE, HtmlLiveImages(with, "t1", FakeRemote(opened = RemoteOutcome.Failure("x"))).openOnDesktop("a", null))
+        assertEquals(HtmlLivePages.UNREACHABLE, HtmlLiveImages(with, "t1", FakeRemote(reject = true)).openOnDesktop("a", null))
     }
 }

@@ -8,8 +8,8 @@
  *     renderer can show "Reload from disk?" UX
  *   - creates the file if it doesn't exist (no expectedMtime needed)
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { writeFileSafe, deleteFileSafe } from '../../src/main/files/writing'
@@ -22,6 +22,23 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(tmp, { recursive: true, force: true })
+})
+
+describe('writeFileSafe concurrency', () => {
+  it('two writes of one path in the same millisecond both finish with one whole file and no temp left', async () => {
+    const abs = join(tmp, 'race.txt')
+    const a = 'a'.repeat(200_000)
+    const b = 'b'.repeat(200_000)
+    vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000)
+    try {
+      const results = await Promise.all([writeFileSafe(abs, a), writeFileSafe(abs, b)])
+      expect(results.map((r) => r.ok)).toEqual([true, true])
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect([a, b]).toContain(readFileSync(abs, 'utf8'))
+    expect(readdirSync(tmp)).toEqual(['race.txt'])
+  })
 })
 
 describe('deleteFileSafe', () => {

@@ -13,7 +13,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 interface HtmlLiveRemote {
     fun htmlLiveLoad(key: String, callback: (RemoteResponse<HtmlLiveState>) -> Unit): RequestSubmission
 
-    fun htmlLiveOpenOnDesktop(request: JsonObject, callback: (RemoteResponse<Boolean>) -> Unit): RequestSubmission
+    fun htmlLiveOpenOnDesktop(request: JsonObject, callback: (RemoteResponse<String>) -> Unit): RequestSubmission
 }
 
 /**
@@ -35,12 +35,12 @@ class HtmlLiveImages(
         return await(null) { done -> remote.htmlLiveLoad(key) { done((it.outcome as? RemoteOutcome.Success)?.value) } }
     }
 
-    /** Asks the desktop to open the page in its pane; true when it answered `{ ok: true }`. */
-    suspend fun openOnDesktop(source: String, title: String?): Boolean {
-        val conversationId = threadId?.takeIf { canOpenOnDesktop } ?: return false
-        return await(false) { done ->
+    /** Asks the desktop to open the page in its pane; answers the line to show (see [HtmlLivePages.decodeOpened]). */
+    suspend fun openOnDesktop(source: String, title: String?): String {
+        val conversationId = threadId?.takeIf { canOpenOnDesktop } ?: return HtmlLivePages.UNREACHABLE
+        return await(HtmlLivePages.UNREACHABLE) { done ->
             remote.htmlLiveOpenOnDesktop(HtmlLivePages.openRequest(conversationId, source, title)) {
-                done((it.outcome as? RemoteOutcome.Success)?.value == true)
+                done((it.outcome as? RemoteOutcome.Success)?.value ?: HtmlLivePages.UNREACHABLE)
             }
         }
     }

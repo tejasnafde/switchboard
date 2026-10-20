@@ -111,6 +111,21 @@ it('asks the desktop to open the page', async () => {
   expect(root.texts()).toContain('Opened on your Mac')
 })
 
+it('shows the backend refusal when the desktop rate-limits the open', async () => {
+  const limited = 'Too many open requests. Try again in 12 seconds.'
+  const client = fakeClient(true, null)
+  client.htmlLiveOpenOnDesktop.mockResolvedValue({ ok: false, error: limited } as never)
+  jest.mocked(getClient).mockReturnValue(client as never)
+  const root = renderComponent(<HtmlLiveCard source={SOURCE} title="Latency" thread={THREAD} />)
+  await flush()
+  act(() => root.byLabel('Show source').props.onPress())
+  await act(async () => {
+    root.byLabel('Open on desktop').props.onPress()
+  })
+  await flush()
+  expect(root.texts()).toContain(limited)
+})
+
 it('renders an html-live block in Markdown, an unclosed one as code', async () => {
   jest.mocked(getClient).mockReturnValue(undefined)
   const streaming = renderComponent(<Markdown text={'Here:\n```html-live title="Chart"\n<b>hi</b>'} />)

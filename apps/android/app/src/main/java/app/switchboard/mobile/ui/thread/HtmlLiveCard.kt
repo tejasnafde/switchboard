@@ -170,8 +170,7 @@ fun HtmlLiveCard(segment: MessageSegment.HtmlLive) {
                     sheet = false
                     result = null
                     scope.launch {
-                        val opened = live.openOnDesktop(segment.source, segment.title)
-                        result = if (opened) "Opened on your Mac" else "Could not reach your Mac"
+                        result = live.openOnDesktop(segment.source, segment.title)
                     }
                 }
             }

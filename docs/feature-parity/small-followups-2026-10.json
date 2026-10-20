@@ -1,0 +1,75 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "small-followups-2026-10",
+  "summary": "Four follow-ups: a paired phone may ask the desktop to open an inline live page at most 6 times a minute, the checked checkbox and the radio dot use the darker primary fill, the TcpHost test waits for every socket to close, and writeFileSafe gives each write its own temp file.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/ui/checkbox.tsx",
+        "src/renderer/components/ui/radio-group.tsx",
+        "src/main/files/writing.ts",
+        "tests/unit/primary-fill-contrast.test.ts",
+        "tests/unit/files-write.test.ts",
+        "tests/unit/tcp-host.test.ts",
+        "e2e/snapshots/add-agent-dark-darwin.png",
+        "e2e/snapshots/add-agent-light-darwin.png",
+        "e2e/snapshots/add-agent-translucent-darwin.png"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/assets/visual-host/visual-host.html",
+        "apps/mobile/src/components/HtmlLiveCard.tsx",
+        "apps/mobile/src/components/__tests__/HtmlLiveCard.test.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/HtmlLivePages.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/HtmlLiveImages.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/HtmlLiveCard.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/HtmlLivePagesTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/HtmlLiveImagesTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/html-live.ts",
+        "src/main/ipc/html-live.ts",
+        "src/main/mcp/agent-write-budget.ts",
+        "tests/unit/html-live-backend.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored. The rate limit window lives in memory and resets when the backend restarts, and the temp file name is never read back."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["CHANGELOG.md"],
+      "notes": "The OPEN_ON_DESKTOP answer gains an optional error field. An older phone reads only ok, so it shows its old 'Could not reach your Mac' line for a refused request. The iOS change is JS only (OTA lane); Android ships in the next Play release."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/html-live-backend.test.ts: a phone gets 6 opens, the 7th is refused with the wait in seconds, a second phone is not affected, and the desktop is never limited. Fails without the handler change.",
+      "tests/unit/primary-fill-contrast.test.ts: the checked checkbox and the radio dot paint bg-primary-fill. Fails without the class change.",
+      "tests/unit/tcp-host.test.ts: afterEach closes every socket on both ends, waits for each close event, then fails if anything logs in the next 20 ms. With the old afterEach that check failed 16 of 18 tests on 'client disconnected'. 30 consecutive runs of the file passed.",
+      "tests/unit/files-write.test.ts: two writeFileSafe calls on one path with Date.now pinned both succeed, the file holds one whole payload and no temp file remains. Fails with the old pid-and-millisecond name.",
+      "apps/mobile HtmlLiveCard.test.tsx (jest): a refused open shows the backend error line. Fails without the HtmlLiveCard change.",
+      "Android: HtmlLivePagesTest and HtmlLiveImagesTest pass under Gradle.",
+      "Visual screens: only the Add agent dialog's radio dot changed (6 by 6 pixels, #58a6ff or #2563eb to #1f6feb); the three add-agent baselines were refreshed and every other rewritten PNG reverted. Local verify runs under heavy machine load failed only on timing screens with no checkbox or radio (composer-chip-card hover card not open yet, chat-live-chart, chat-diagram); the macOS CI visual job is the deciding run."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No phone or emulator run: the refusal line on a real iPhone or Android device was not seen."
+    ]
+  }
+}

@@ -5,6 +5,9 @@
  */
 import { HtmlLiveChannels } from '@shared/ipc-channels'
 import {
+  HTML_LIVE_OPEN_LIMIT,
+  HTML_LIVE_OPEN_WINDOW_MS,
+  htmlLiveOpenLimitMessage,
   isHtmlLiveImage,
   isHtmlLiveImageKey,
   isHtmlLiveOpenRequest,
@@ -12,12 +15,17 @@ import {
   type HtmlLiveState,
 } from '@shared/html-live'
 import type { BackendHost } from '../backend/host'
+import { currentBackendRequestContext } from '../backend/request-context'
 import { getHtmlLivePage, updateHtmlLivePage } from '../db/database'
 import { createMainLogger } from '../logger'
+import { AgentWriteBudget } from '../mcp/agent-write-budget'
 
 const log = createMainLogger('ipc:html-live')
 
 export function registerHtmlLiveHandlers(host: BackendHost): void {
+  // The same sliding window as an agent's pull request writes, keyed by the phone's device session.
+  const openBudget = new AgentWriteBudget(HTML_LIVE_OPEN_LIMIT, HTML_LIVE_OPEN_WINDOW_MS)
+
   host.handle(HtmlLiveChannels.LOAD, (key: unknown): HtmlLiveState => {
     if (!isHtmlLiveImageKey(key)) return { image: null, savedPath: null }
     try {
@@ -44,8 +52,16 @@ export function registerHtmlLiveHandlers(host: BackendHost): void {
   })
 
   // A phone cannot run the page; a desktop window on this backend opens it in its pane.
-  host.handle(HtmlLiveChannels.OPEN_ON_DESKTOP, (request: unknown): { ok: boolean } => {
+  host.handle(HtmlLiveChannels.OPEN_ON_DESKTOP, (request: unknown): { ok: boolean; error?: string } => {
     if (!isHtmlLiveOpenRequest(request)) return { ok: false }
+    const context = currentBackendRequestContext()
+    if (context?.transport === 'remote') {
+      const charge = openBudget.take(context.deviceSessionId ?? context.clientScope)
+      if (!charge.ok) {
+        log.warn('live page open refused, rate limited', { waitS: charge.waitS })
+        return { ok: false, error: htmlLiveOpenLimitMessage(charge.waitS) }
+      }
+    }
     log.info('live page open requested', { bytes: Buffer.byteLength(request.source, 'utf8') })
     host.emit(HtmlLiveChannels.OPEN_REQUEST, request)
     return { ok: true }

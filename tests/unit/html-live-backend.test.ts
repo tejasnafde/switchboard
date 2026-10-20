@@ -5,6 +5,8 @@ import { HtmlLiveChannels } from '../../src/shared/ipc-channels'
 import { isChannelAllowed, FULL_SCOPES, PHONE_SCOPES } from '../../src/shared/device-auth'
 import { registerHtmlLiveHandlers } from '../../src/main/ipc/html-live'
 import type { BackendHost } from '../../src/main/backend/host'
+import { withBackendRequestContext } from '../../src/main/backend/request-context'
+import { HTML_LIVE_OPEN_LIMIT } from '../../src/shared/html-live'
 
 const KEY = 'a'.repeat(64)
 const PNG = 'data:image/png;base64,iVBORw0KGgo='
@@ -50,6 +52,25 @@ describe('html-live backend', () => {
     expect(h.call(HtmlLiveChannels.OPEN_ON_DESKTOP, request)).toEqual({ ok: true })
     expect(h.call(HtmlLiveChannels.OPEN_ON_DESKTOP, { conversationId: 'c' })).toEqual({ ok: false })
     expect(h.emitted).toEqual([[HtmlLiveChannels.OPEN_REQUEST, [request]]])
+  })
+
+  it('limits each phone to a few open requests a minute, and never the desktop', () => {
+    const request = { conversationId: 'conv-1', source: '<p>x</p>', title: null }
+    const from = (deviceSessionId: string) => () =>
+      withBackendRequestContext({ clientScope: 'c', transport: 'remote', deviceSessionId }, () =>
+        h.call(HtmlLiveChannels.OPEN_ON_DESKTOP, request),
+      )
+    const phoneA = from('session-a')
+    for (let i = 0; i < HTML_LIVE_OPEN_LIMIT; i++) expect(phoneA()).toEqual({ ok: true })
+    expect(phoneA()).toEqual({
+      ok: false,
+      error: expect.stringMatching(/^Too many open requests\. Try again in \d+ seconds\.$/),
+    })
+    expect(from('session-b')()).toEqual({ ok: true })
+    for (let i = 0; i < HTML_LIVE_OPEN_LIMIT + 2; i++) {
+      expect(h.call(HtmlLiveChannels.OPEN_ON_DESKTOP, request)).toEqual({ ok: true })
+    }
+    expect(h.emitted).toHaveLength(HTML_LIVE_OPEN_LIMIT + 1 + HTML_LIVE_OPEN_LIMIT + 2)
   })
 
   it('lets a phone read and open, but only a desktop store the image', () => {
