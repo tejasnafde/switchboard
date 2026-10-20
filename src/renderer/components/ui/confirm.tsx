@@ -18,6 +18,8 @@ export interface ConfirmOptions {
   destructive?: boolean
   /** Only the confirm button: a message to acknowledge, not a question. */
   notice?: boolean
+  /** What the answer acts on, one row each, under the body. */
+  items?: ReadonlyArray<{ label: string; detail?: string }>
 }
 
 interface PendingConfirm extends ConfirmOptions {
@@ -139,6 +141,16 @@ export function ConfirmHost() {
         >
           <AlertDialogTitle>{request.title}</AlertDialogTitle>
           {request.body && <AlertDialogDescription>{request.body}</AlertDialogDescription>}
+          {request.items && request.items.length > 0 && (
+            <ul className="mt-3 max-h-[240px] overflow-y-auto text-[13px]">
+              {request.items.map((item, i) => (
+                <li key={i} className="flex h-7 items-center justify-between gap-3">
+                  <span className="min-w-0 truncate">{item.label}</span>
+                  {item.detail && <span className="shrink-0 text-muted-foreground">{item.detail}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
           <div className="mt-5 flex justify-end gap-2">
             {!request.notice && (
               <AlertDialogCancel asChild>

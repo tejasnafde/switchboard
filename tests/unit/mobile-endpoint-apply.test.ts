@@ -1,7 +1,7 @@
 /**
  * The mobile pairing endpoint must not restart when nothing changed.
  *
- * Regression: the Settings tab re-applies on every edit to host, port or token.
+ * Regression: the Settings tab re-applies on every edit to host or port.
  * Because apply() closed the listener and terminate()d every client, editing
  * the host field kicked a connected phone off once per keystroke - it
  * reconnected, was killed by the next apply, and sat on "connecting" forever.
@@ -16,6 +16,7 @@ let created = 0
 vi.mock('../../src/main/db/database', () => ({
   getSetting: (k: string) => settings.get(k) ?? null,
   setSetting: (k: string, v: string) => void settings.set(k, v),
+  removeSetting: (k: string) => void settings.delete(k),
 }))
 
 vi.mock('ws', () => {
@@ -60,7 +61,7 @@ const { MobileEndpoint } = await import('../../src/main/backend/mobile-server')
 
 beforeEach(() => {
   settings.clear()
-  settings.set('mobilePairing.token', 'tok-1')
+  settings.set('mobilePairing.enabled', 'true')
   settings.set('mobilePairing.port', '8765')
   terminated.length = 0
   created = 0
@@ -105,18 +106,20 @@ describe('MobileEndpoint.apply', () => {
     expect(status.port).toBe(9000)
   })
 
-  it('restarts when the token is rotated, since old clients must re-auth', () => {
+  it('restarts when the endpoint is turned off and on, since old clients must re-auth', () => {
     const ep = new MobileEndpoint()
     ep.apply()
-    settings.set('mobilePairing.token', 'tok-2')
+    settings.set('mobilePairing.enabled', 'false')
+    expect(ep.apply()).toMatchObject({ listening: false })
+    settings.set('mobilePairing.enabled', 'true')
     ep.apply()
 
     expect(created).toBe(2)
     expect(terminated).toEqual(['port-8765'])
   })
 
-  it('stays off with no token, and does not start on repeated applies', () => {
-    settings.delete('mobilePairing.token')
+  it('stays off when not enabled, and does not start on repeated applies', () => {
+    settings.delete('mobilePairing.enabled')
     const ep = new MobileEndpoint()
     expect(ep.apply()).toMatchObject({ listening: false })
     ep.apply()

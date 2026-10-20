@@ -18,7 +18,7 @@ Three things beyond plain RPC, all driven by the phone case:
 - **A gap can hide a turn's end.** On `onResumeGap` the desktop also re-reads the backend's sessions (`provider:list-sessions`): a chat the backend no longer runs stops showing Working, and a displayed chat that is not mid-turn reloads its transcript (a newer gap on the same machine supersedes an older one). `provider:interrupt` answers `{ live }`; every client clears a running status on `live: false` (an older backend answers nothing, and the client keeps waiting for the closing event). A Stop or `STOP_SESSION` while `startSession` is in flight is recorded: the start stops the session as soon as it exists and rejects with `SESSION_START_STOPPED`, so the waiting turn is never submitted.
 - **Epoch.** `WsHost` mints a random `epoch` per process. A restarted server resets `seq` to 0, so without this a client holding a high cursor would silently discard every later event. A changed epoch, or an evicted cursor, answers `ready { gap: true }` and the client re-seeds via `onResumeGap` rather than showing a transcript with a hole in it.
 - **Liveness.** The host pings every 15s and terminates clients that stop answering; the client re-dials after 40s of silence and exposes `probe()`/`forceReconnect()`. A mobile socket dies with no FIN, so elapsed silence is the only signal a client that cannot send protocol pings has. Both sides require proof the peer speaks the heartbeat before acting on its silence, because a phone updates over OTA independently of the desktop it pairs with.
-- **Auth in a frame, not the URL** (`src/shared/device-auth.ts`, `src/main/backend/device-sessions.ts`). The QR carries a one-time pairing code (5 min); a device redeems it once for its own session, stored as a sha256 hash and revocable on its own. Scopes deny only what is dangerous (`terminal:*` and `mobile-pairing:*` for a phone, so a stolen phone credential can neither open a shell nor revoke your other devices) rather than allowing only what is listed - deny-by-default needs a hand-maintained channel list whose failure mode is a feature breaking silently for paired devices. Legacy `?token=` still works; `?auth=frame` declares in-band auth, and an unauthenticated socket is closed after 10s.
+- **Auth in a frame, not the URL** (`src/shared/device-auth.ts`, `src/main/backend/device-sessions.ts`). The QR carries a one-time pairing code (5 min); a device redeems it once for its own session, stored as a sha256 hash and revocable on its own. Scopes deny only what is dangerous (`terminal:*` and `mobile-pairing:*` for a phone, so a stolen phone credential can neither open a shell nor revoke your other devices) rather than allowing only what is listed - deny-by-default needs a hand-maintained channel list whose failure mode is a feature breaking silently for paired devices. The headless server's `SWITCHBOARD_TOKEN` still accepts `?token=`; the desktop's phone endpoint does not (see below). `?auth=frame` declares in-band auth, and an unauthenticated socket is closed after 10s.
 - **Credential settings rows are admin only, for reads and writes** (`ADMIN_ONLY_SETTING_FAMILIES` in `src/shared/device-auth.ts`, enforced by `isSettingsFrameAllowed` in both hosts). `settings:get`/`set`/`remove` are open channels, so the gate is per key: `deviceSessions`, `devicePairingCode`, `mobilePairing.*`, `pushTokens`, `opencode.env.*` and `google.clientSecret`. A name ending in `.` is a prefix family. A new settings key that holds a credential or a grant goes in that list; `tests/unit/settings-device-auth-gate.test.ts` pins it. The desktop's own IPC is not gated.
 - **TLS on the same port** (`tls.ts`, `src/shared/transport-security.ts`). The phone endpoint and the headless server mint one self-signed EC certificate per install (`<data dir>/tls/`, key 0600; hand-built DER because Node cannot create certificates) and serve it through `DualWebSocketServer`, which reads the first byte of each connection: a TLS handshake record goes to an https server, anything else to plain http, both feeding one `ws` server. The QR stays `ws://host:port?pair=<code>` plus `&fp=<sha256 hex>` (`withCertPin`), so a phone that predates this ignores `fp` and keeps ws://. A phone that pins dials wss:// on the same port and treats a different certificate as terminal (re-pair). Deleting `tls/` therefore breaks every pinned phone until it re-pairs. Store builds refuse plain ws:// to a non-loopback host (`cleartextRefusal`); loopback, `10.0.2.2` and the IAP tunnel keep their transport. The native Android release build is stricter: cleartext only to `localhost`, `127.0.0.1` and `::1` (`res/xml/network_security_config.xml` and `CleartextPolicy`, kept equal, the scaffold contract test refuses `10.0.2.2` there), because on a real phone `10.0.2.2` is an ordinary LAN address. Debug builds allow any host.
 - **Apple TLS verification**: `tests/unit/backend-apple-tls.test.ts` compiles a small Swift URLSessionWebSocketTask probe on macOS (requires `swiftc`) against the real `DualWebSocketServer` and persisted `loadOrCreateTlsIdentity` certificate. It checks matching and mismatching leaf SHA-256 pins, default TLS and forced TLS 1.2. `backend-tls.test.ts` splits a ClientHello after its first byte for TLS 1.2 and 1.3. A macOS CLI pass does not establish iPhone or Expo bridge compatibility. Preserve install certificates unless an actual incompatibility is reproduced; rotating one requires every paired phone to re-scan.
@@ -114,9 +114,25 @@ or by a legacy shared-token or IAP phone) is deleted by ANY revoke, because it
 may be the revoked phone's; a phone that keeps access registers again on its
 next connect. `listSessionViews` leaves revoked sessions out (a row that stays
 reads as if Revoke did nothing); its tombstone stays in the store.
-A phone on the legacy shared token (`mobilePairing.token`) is not a device
-session: it is not listed and Revoke cannot cut it off. Phones show
-`CONNECTION_SECURITY_COPY.removed` on any 4001.
+The desktop's phone endpoint (`MobileEndpoint`) accepts device sessions only.
+The old shared token (`mobilePairing.token`) is retired: `apply()` deletes the
+stored value, the endpoint starts only from `mobilePairing.enabled`, and a
+phone that still dials `?token=` is closed with 4001. Phones show
+`CONNECTION_SECURITY_COPY.removed` ("This computer removed this phone. Pair
+again.") on any 4001, so no phone change was needed
+(`mobile-legacy-token-retired.test.ts`).
+
+## Device names and the Devices tab
+
+A custom name (`customName`, optional, on the session row) is set from the
+desktop only, through `mobile-pairing:rename` (`renameSession`; null or blank
+clears it, bounded to 128 characters). It sits under the `admin` scope like
+every `mobile-pairing:` channel. A re-reported identity never overwrites it,
+and `deviceDisplayName` (custom, then reported, then the pairing label) is the
+one name the desktop shows. The Settings list rules (groups, search, the
+30-day inactive fold, relative and absolute dates) are pure, in
+`renderer/components/settings/device-list.ts`; nothing expires a device on its
+own, "Revoke inactive" asks first and lists what goes.
 
 ## Device identity (`device_identity_v1`)
 

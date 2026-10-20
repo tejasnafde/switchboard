@@ -208,6 +208,17 @@ export interface DeviceSession {
   identity?: DeviceIdentity
   /** Remote address of the latest authenticated connection. */
   lastAddress?: string
+  /** Set on the desktop; overrides the name the phone reports. */
+  customName?: string
+}
+
+/** Same bound as the reported identity fields. */
+export const DEVICE_NAME_MAX = 128
+
+/** What the desktop calls a device: the user's name, then the phone's own,
+ *  then the pairing label. */
+export function deviceDisplayName(view: Pick<DeviceSessionView, 'customName' | 'name' | 'label'>): string {
+  return view.customName || view.name || view.label
 }
 
 export function isRevoked(session: DeviceSession): boolean {
@@ -232,6 +243,7 @@ export interface DeviceSessionView {
   osVersion?: string
   appVersion?: string
   lastAddress?: string
+  customName?: string
   /** In memory only: an authenticated socket for this session is open now. */
   online?: boolean
 }
@@ -246,6 +258,7 @@ export function toView(session: DeviceSession, online = false): DeviceSessionVie
     lastSeenAt: session.lastSeenAt,
     revoked: isRevoked(session),
     ...(session.lastAddress ? { lastAddress: session.lastAddress } : {}),
+    ...(typeof session.customName === 'string' && session.customName ? { customName: session.customName } : {}),
     online,
   }
 }
