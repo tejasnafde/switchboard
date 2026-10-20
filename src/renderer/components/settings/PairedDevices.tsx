@@ -23,6 +23,7 @@ import {
   platformLabel,
   relativeTime,
   type DeviceSort,
+  renameValue,
 } from './device-list'
 
 const log = createRendererLogger('settings:paired-devices')
@@ -141,7 +142,9 @@ function NameRow({
   }, [editing])
 
   const save = (): void => {
-    void onRename(draft).then(() => setEditing(false))
+    const value = renameValue(draft, name, reported)
+    if (value === undefined) return setEditing(false)
+    void onRename(value).then(() => setEditing(false))
   }
 
   if (editing) {

@@ -98,3 +98,16 @@ export function absoluteDate(ms: number, withTime = false): string {
   const pad = (n: number): string => String(n).padStart(2, '0')
   return `${date}, ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
+
+/**
+ * What a Rename save should send: `undefined` for no call (the name did not
+ * change), `null` to clear the custom name (empty, or the phone's own name, so
+ * a later name the phone reports is not hidden by a stored copy), else the
+ * trimmed custom name.
+ */
+export function renameValue(draft: string, current: string, reported: string): string | null | undefined {
+  const next = draft.trim()
+  if (next === current) return undefined
+  if (next === '' || next === reported) return null
+  return next
+}

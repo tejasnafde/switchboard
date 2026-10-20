@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import type { DeviceSessionView } from '@shared/device-auth'
 import {
+  renameValue,
   INACTIVE_AFTER_MS,
   absoluteDate,
   groupDevices,
@@ -119,5 +120,19 @@ describe('dates', () => {
   it('reads absolute in Details and dialogs', () => {
     expect(absoluteDate(new Date(2026, 8, 16, 9, 5).getTime())).toBe('16 Sep 2026')
     expect(absoluteDate(new Date(2026, 9, 17, 9, 41).getTime(), true)).toBe('17 Oct 2026, 09:41')
+  })
+})
+
+describe('renameValue', () => {
+  it('makes no call when the name did not change', () => {
+    expect(renameValue('Pixel 9', 'Pixel 9', 'Pixel 9')).toBeUndefined()
+    expect(renameValue('  Work phone ', 'Work phone', 'Pixel 9')).toBeUndefined()
+  })
+  it('clears the custom name for an empty draft or the reported name', () => {
+    expect(renameValue('', 'Work phone', 'Pixel 9')).toBeNull()
+    expect(renameValue(' Pixel 9 ', 'Work phone', 'Pixel 9')).toBeNull()
+  })
+  it('stores a new trimmed name', () => {
+    expect(renameValue('  Tejas phone ', 'Pixel 9', 'Pixel 9')).toBe('Tejas phone')
   })
 })
