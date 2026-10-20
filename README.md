@@ -236,6 +236,19 @@ For the technical details:
 - [`docs/keybindings.md`](docs/keybindings.md) lists shortcuts.
 - [`docs/releasing.md`](docs/releasing.md) documents releases.
 
+## Acknowledgements
+
+Switchboard draws on ideas from other agent tools. Thank you to:
+
+- [T3 Code](https://github.com/pingdotgg/t3code): the multi-instance provider picker, the question card, the context meter and many workspace patterns.
+- [Omnigent](https://docs.databricks.com/aws/en/omnigent/) (Databricks): the cross-provider context handoff and the runner model for remote machines.
+- [vibe-kanban](https://github.com/BloopAI/vibe-kanban): the user-hosted relay design in the roadmap.
+- [cmux](https://github.com/manaflow-ai/cmux): the agent-aware terminal design language.
+- [Warp](https://www.warp.dev): declarative launch configurations.
+- [Cursor](https://cursor.com): inline context chips, in-chat diff review and the turn duration indicator.
+
+Code taken from other projects keeps its licence notice in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## License
 
 [MIT](LICENSE) © Tejas Nafde
