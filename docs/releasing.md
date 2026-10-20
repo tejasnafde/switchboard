@@ -12,23 +12,25 @@ the GitHub `mobile-v*` APK releases are retired: Play forbids apps that update
 themselves outside Play. The app requests no `REQUEST_INSTALL_PACKAGES`, and at
 each start it deletes what the updater stored (state and staged APKs).
 
-Prerequisites, done once by hand before the workflow can upload:
+Prerequisites, done once by hand before the workflow can upload (both done
+on 2026-10-21):
 
 1. Create the app record for `app.tn07.switchboard` in the Play Console. The
-   Publishing API cannot create an app. Until 0.5.20 the package was
-   `app.switchboard.mobile` (record `4974044929379750357`, created
-   2026-10-19, internal track only, never published). It moved on 2026-10-21
-   to match iOS; that record stays unpublished and gets no more uploads.
+   Publishing API cannot create an app. The record is `4972923558077941387`.
+   Until 0.5.20 the package was `app.switchboard.mobile` (record
+   `4974044929379750357`, created 2026-10-19, internal track only, never
+   published). It moved on 2026-10-21 to match iOS; that record stays
+   unpublished and gets no more uploads.
 2. Invite the per-app publisher service account to the `app.tn07.switchboard`
-   record with release rights for this app only. Do this before the first
-   release: the invite on the old record does not carry over. Its key is
-   `PLAY_SERVICE_ACCOUNT_JSON` below.
+   record with release rights for this app only. The invite on the old record
+   does not carry over. Its key is `PLAY_SERVICE_ACCOUNT_JSON` below.
 
 Once the record exists, the workflow uploads every AAB, the first one
-included: the first 0.5.18 bundle went to the internal track as a draft
-through the API on 2026-10-19, with no Console upload. Play App Signing is
-then on with a Google-generated app signing key; the workflow's key is the
-upload key.
+included. No Console upload comes first, whatever older Play docs say: the
+old record was empty too when the first 0.5.18 bundle went to its internal
+track as a draft through the API on 2026-10-19. Play App Signing is then on
+with a Google-generated app signing key; the workflow's key is the upload
+key. No AAB is on the new record yet.
 
 To release:
 

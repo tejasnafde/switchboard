@@ -19,13 +19,12 @@ Get these from Tejas:
 
 Use the GlycoCare organization account. Touch only the Switchboard app.
 
-The package is `app.tn07.switchboard` (the same id as the iOS app). Before
-the steps below:
+The package is `app.tn07.switchboard` (the same id as the iOS app). Its
+record is `4972923558077941387`, created 2026-10-21, and the per-app
+publisher service account already has release rights on it, so CI uploads
+the first AAB to the internal testing track. No Console upload is needed
+first.
 
-- Create the app `Switchboard: Run Your Agents` for package
-  `app.tn07.switchboard` if Tejas has not created it yet.
-- Invite the per-app publisher service account to the new app with release
-  rights, so CI can upload the first AAB to the internal testing track.
 - Do not use the older record `4974044929379750357` (package
   `app.switchboard.mobile`, created 2026-10-19). It stays unpublished. Leave
   it as it is.

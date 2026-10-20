@@ -1,4 +1,5 @@
 import groovy.json.JsonSlurper
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -98,6 +99,16 @@ android {
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+}
+
+// CI shows only the console, so a failed test prints its whole stack trace
+// there. The short form named only Preconditions.kt:26 for a Compose
+// precondition and hid which one failed.
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = TestExceptionFormat.FULL
     }
 }
 
