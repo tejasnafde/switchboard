@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Fixed
+- **Filled primary buttons read in dark mode.** The blue filled button (Continue, Sign in again, Open pull request, the composer send button) uses a darker blue of the same hue, so its white label reads at 4.6:1 in every theme instead of 2.5:1 in dark and translucent. Links, focus rings and chips keep the old blue.
+
 ### Security
 - **Device credential settings need the admin scope.** A paired phone can no longer read or write the settings rows that hold device sessions, the pairing code, the mobile endpoint settings, push tokens, OpenCode API keys or the OAuth client secret. Ordinary settings stay open to the phone, and the desktop is not affected.
 

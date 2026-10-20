@@ -1,0 +1,31 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "primary-fill-contrast",
+  "summary": "The filled primary button (ui/button default variant) paints a new fixed --color-primary-fill (#1f6feb, hover #1a5bc9) instead of --accent, so its white label reads at 4.6:1 (6.2:1 on hover) in dark, light and translucent. In dark and translucent it was 2.5:1. --accent itself is unchanged, so links, focus rings and chips keep their colour.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/styles/tailwind.css",
+        "src/renderer/components/ui/button.tsx",
+        "tests/unit/primary-fill-contrast.test.ts",
+        "e2e/snapshots"
+      ]
+    },
+    "reactNativeIos": { "status": "not_applicable", "reason": "Renderer-only Tailwind token for the desktop shadcn Button; the Expo app has its own palette and button components." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "Renderer-only Tailwind token for the desktop shadcn Button; the Android app uses its own Compose theme." },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "One CSS token in the renderer; no API change." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "Styling only; nothing is stored." },
+    "updateRelease": { "status": "not_applicable", "reason": "Ships with the next desktop release; no packaging change." }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/primary-fill-contrast.test.ts reads both fill tokens from tailwind.css, requires white on each at 4.5:1 or better, and checks the default variant paints them; it fails before the change.",
+      "Visual screens phase: 39 baselines with a filled primary button refreshed (each checked by pixel diff, a sample by eye), 16 noise baselines reverted, then two runs without updating passed.",
+      "npm run typecheck and npm test."
+    ],
+    "hardware": [],
+    "notExercised": ["Hover colour is not in any screenshot; only the contrast test covers it."]
+  }
+}
