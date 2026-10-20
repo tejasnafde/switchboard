@@ -349,3 +349,4 @@ Outputs to DevTools console with `[SB:scope]` prefix matching the main-process c
 ## Writing style
 
 - **No em dashes (U+2014) anywhere** - not in code, comments, UI copy, log messages, commit messages, PR descriptions, or docs. Use a hyphen with surrounding spaces (` - `), a comma, or two sentences instead. This is enforced repo-wide; a stray em dash is a review-blocker. (Arrows and middots are fine.)
+- **Describe behaviour, not its source; other projects are credited once in the README Acknowledgements.** Code, comments, docs, tests, CHANGELOG and parity manifests say what the code does, not which product it resembles. Code copied from another project keeps its licence notice in `THIRD_PARTY_NOTICES.md`.
