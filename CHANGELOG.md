@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Security
+- **Device credential settings need the admin scope.** A paired phone can no longer read or write the settings rows that hold device sessions, the pairing code, the mobile endpoint settings, push tokens, OpenCode API keys or the OAuth client secret. Ordinary settings stay open to the phone, and the desktop is not affected.
+
 ### Changed
 - **Native Android 0.5.20 (versionCode 22).** It adds device identity and the Home machine rows to the first Play build, and it replaces the 0.5.19 internal draft.
 

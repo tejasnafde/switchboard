@@ -105,7 +105,10 @@ export const AppChannels = {
   GOOGLE_CLIENT_STATUS: 'mobile-pairing:google-client-status',
   /** Save an OAuth client id/secret for minting. */
   GOOGLE_CLIENT_SET: 'mobile-pairing:google-client-set',
-  /** Key/value settings table shared by the desktop and the phone. */
+  /**
+   * Key/value settings table shared by the desktop and the phone. Reads of the
+   * device-credential rows (`ADMIN_ONLY_SETTING_FAMILIES`) need the admin scope.
+   */
   SETTINGS_GET: 'settings:get',
   /**
    * Writes are gated per KEY as well as per channel: two of these rows decide

@@ -280,8 +280,8 @@ export class WsHost implements BackendHost {
       return
     }
     // Arg-level, and next to the channel check rather than in the handler:
-    // `settings:set` is open to every device, but two of its keys decide what a
-    // session is ALLOWED to do, not merely how it looks.
+    // `settings:get` and `settings:set` are open to every device, but some keys
+    // decide what a session is ALLOWED to do, or hold a device credential.
     if (
       (frame.k === 'req' || frame.k === 'snd') &&
       state?.scopes &&

@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "settings-device-auth-gate",
+  "summary": "Refuse settings reads and writes of the device-credential rows (deviceSessions, devicePairingCode, mobilePairing.*, pushTokens, opencode.env.*, google.clientSecret) to a device session without the admin scope, at the same frame gate both remote hosts enforce.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop renderer reaches settings through ElectronIpcHost, which applies no device scopes, and a desktop dialing a remote backend authenticates with the backend token, which carries FULL_SCOPES. No desktop UI or behaviour changes."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "apps/mobile reads and writes only the chat default mode, default model and default instance settings through settings:get and settings:set. None of those keys is in a protected family, so the phone sees no change."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "apps/android reads only the default model and default instance settings (NewSessionCoordinator). None of those keys is in a protected family, so the app sees no change."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/device-auth.ts",
+        "src/main/backend/ws-host.ts",
+        "tests/unit/settings-device-auth-gate.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema change and no migration. The rows stay where they are; only who may reach them through the settings channels changes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, update channel or wire format change. The refusal uses the existing 'not permitted: protected setting' error frame."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/settings-device-auth-gate.test.ts drives a real WsHost: a chat-scoped device is refused settings:get, settings:set and settings:remove on every protected key, and the handler never runs; an admin-scoped device is allowed; ordinary keys stay open. The chat-scoped case failed before the fix (settings:set deviceSessions returned ok).",
+      "The same file iterates ADMIN_ONLY_SETTING_FAMILIES and pins its exact contents, so a dropped entry fails."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not exercised against a real paired phone; the phone apps do not use any protected key."
+    ]
+  }
+}
