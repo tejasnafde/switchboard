@@ -29,7 +29,9 @@
         "e2e/snapshots/chat-live-chart-dark-darwin.png",
         "e2e/snapshots/chat-live-chart-light-darwin.png",
         "e2e/snapshots/chat-live-error-dark-darwin.png",
-        "e2e/snapshots/chat-live-error-light-darwin.png"
+        "e2e/snapshots/chat-live-error-light-darwin.png",
+        "resources/sb-live/README.md",
+        "electron-builder.yml"
       ]
     },
     "reactNativeIos": {
@@ -89,12 +91,11 @@
       "status": "implemented",
       "evidence": [
         "electron-builder.yml",
-        "resources/sb-live/README.md",
         "tests/unit/html-live-libraries.test.ts",
-        ".oxfmtrc.json",
         "src/shared/ws-protocol.ts",
         "scripts/build-visual-host.mjs",
-        "apps/mobile/assets/visual-host/visual-host.html"
+        "apps/mobile/assets/visual-host/visual-host.html",
+        "CHANGELOG.md"
       ]
     }
   },
