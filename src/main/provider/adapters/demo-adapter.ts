@@ -33,6 +33,10 @@
  *                           paths (e2e/message-overflow.e2e.mjs)
  *   - text says "draw"   -> a ```mermaid diagram and a ```chart bar chart,
  *                           drawn in the chat (visual regression screens)
+ *   - text says "live page" -> two ```html-live pages: a Chart.js chart and a
+ *                           D3 page that throws (visual regression screens)
+ *   - text says "live probe" -> an ```html-live page that tries to leave the
+ *                           sandbox (e2e/html-live.e2e.mjs)
  *   - anything else      -> a short two-sentence reply
  *
  * With `SB_DEMO_CLAUDE_TRANSCRIPT_DIR` set, the claude adapter also appends a
@@ -196,6 +200,69 @@ const VISUALS_REPLY = [
   '',
   '```chart',
   '{"type":"bar","labels":["long chat","short chat"],"series":[{"name":"before","values":[3800,1100]},{"name":"after","values":[400,150]}],"yTitle":"ms"}',
+  '```',
+].join('\n')
+
+/** Two inline live pages: a chart that draws and a page that throws under what it drew. */
+const LIVE_PAGES_REPLY = [
+  'p95 went from about 180 ms to 320 ms after the v2.41.0 deploy on Tuesday, and came back after the hotfix.',
+  '',
+  '```html-live title="p95 latency, Mon to Wed"',
+  '<script src="/_sb/chart.js"></script>',
+  '<div style="height:240px"><canvas id="c"></canvas></div>',
+  '<script>',
+  'const css = getComputedStyle(document.documentElement)',
+  'const v = (n) => css.getPropertyValue(n).trim()',
+  "const hours = Array.from({ length: 72 }, (_, i) => ['Mon', 'Tue', 'Wed'][Math.floor(i / 24)] + ' ' + (i % 24) + ':00')",
+  'const p95 = hours.map((_, i) => (i >= 38 && i < 59 ? 320 : 180) + ((i * 37) % 23))',
+  'const p50 = hours.map((_, i) => 70 + ((i * 13) % 9))',
+  'new Chart(c, {',
+  "  type: 'line',",
+  '  data: { labels: hours, datasets: [',
+  "    { label: 'p95', data: p95, borderColor: v('--sb-accent'), pointRadius: 0, borderWidth: 2 },",
+  "    { label: 'p50', data: p50, borderColor: v('--sb-muted'), pointRadius: 0, borderWidth: 1.5 } ] },",
+  "  options: { animation: false, maintainAspectRatio: false, plugins: { legend: { labels: { color: v('--sb-muted') } } },",
+  "    scales: { x: { ticks: { color: v('--sb-muted'), maxTicksLimit: 6 }, grid: { color: v('--sb-border') } },",
+  "      y: { ticks: { color: v('--sb-muted') }, grid: { color: v('--sb-border') } } } },",
+  '})',
+  '</script>',
+  '```',
+  '',
+  'And the queue under that load:',
+  '',
+  '```html-live title="Queue depth simulation"',
+  '<script src="/_sb/d3.js"></script>',
+  '<p>Workers: 4 · arrivals: 120/s</p>',
+  '<script>',
+  'const y = d3.scaleLinear().domain([0, 400]).nice()',
+  'y.nice.ticksEvery(50)',
+  '</script>',
+  '```',
+].join('\n')
+
+/** An inline live page that tries every way out of the sandbox and logs each result. */
+const LIVE_PROBE_REPLY = [
+  'Probe page:',
+  '',
+  '```html-live title="Sandbox probe"',
+  '<p>probe</p>',
+  '<script>',
+  "const report = (m) => console.error('PROBE ' + m)",
+  "const attempt = (label, run) => run().then((ok) => report((ok ? 'LEAK ' : 'BLOCKED ') + label), () => report('BLOCKED ' + label))",
+  "attempt('network', () => fetch('https://example.com/x').then(() => true))",
+  "attempt('loopback', () => fetch('http://127.0.0.1:9/x').then(() => true))",
+  "attempt('parent-file', () => fetch('../secret.txt').then((r) => r.ok))",
+  "attempt('file-url', () => fetch('file:///etc/hosts').then(() => true))",
+  // Built at run time: a literal unknown /_sb/ name would stop the page from running at all.
+  "attempt('unknown-library', () => fetch('/_s' + 'b/plotly.js').then((r) => r.ok))",
+  "attempt('library-folder', () => fetch('/_s' + 'b/licenses/d3-LICENSE').then((r) => r.ok))",
+  "fetch('/_sb/chart.js').then((r) => report(r.ok ? 'ALLOWED library' : 'MISSING library'), () => report('MISSING library'))",
+  "const w = window.open('https://example.com/popup')",
+  "report(w ? 'LEAK window' : 'BLOCKED window')",
+  "report(typeof require === 'undefined' && typeof process === 'undefined' ? 'BLOCKED node' : 'LEAK node')",
+  "report(typeof window.api === 'undefined' ? 'BLOCKED app' : 'LEAK app')",
+  "setTimeout(() => { location.href = 'https://example.com/away'; setTimeout(() => report(location.protocol === 'sb-preview:' ? 'BLOCKED navigate' : 'LEAK navigate'), 500) }, 300)",
+  '</script>',
   '```',
 ].join('\n')
 
@@ -644,6 +711,10 @@ export class DemoAdapter implements ProviderAdapter {
       await this.say(threadId, turn, 'Final answer: the order holds.')
     } else if (/\bdraw\b/i.test(message)) {
       await this.say(threadId, turn, VISUALS_REPLY)
+    } else if (/\blive page\b/i.test(message)) {
+      await this.say(threadId, turn, LIVE_PAGES_REPLY)
+    } else if (/\blive probe\b/i.test(message)) {
+      await this.say(threadId, turn, LIVE_PROBE_REPLY)
     } else if (/pricing page/i.test(message)) {
       await this.say(threadId, turn, 'Here is a first pass, one self-contained file that follows the system theme.')
       const filePath = join(session.cwd, PRICING_PAGE_PATH)

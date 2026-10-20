@@ -1129,6 +1129,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
     [connectionId, threadId],
   )
 
+  const markdownThread = useMemo(() => ({ connectionId, threadId }), [connectionId, threadId])
+
   const renderItem = useCallback(
     ({ item }: { item: ThreadRow }) => {
       switch (item.kind) {
@@ -1185,6 +1187,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
           return (
             <TextItem
               item={item}
+              thread={markdownThread}
               onLongPress={
                 forkMessagesRef.current.has(item.id)
                   ? () => forkFromMessage(forkMessagesRef.current.get(item.id)!)
@@ -1262,6 +1265,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       }
     },
     [
+      markdownThread,
       decideApproval,
       phoneApprovesHostWrites,
       asyncApprovals,

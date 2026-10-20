@@ -551,6 +551,7 @@ export const MessageBubble = memo(function MessageBubble({
               ref={markdownRef}
               markdown={markdownContent}
               mutable={isMutable}
+              sessionId={sessionId}
               className="markdown-content"
               // Clip sideways only: a table's copy controls float just above
               // it, over the bubble's padding when the table comes first.

@@ -1,4 +1,5 @@
 import { perfSpan } from '../perf'
+import { registerHtmlLiveHandlers } from './html-live'
 import type { BackendHost } from '../backend/host'
 import { stat } from 'fs/promises'
 import { notifyConversationArchived, notifyWorktreeSwap, publishRuntimeEvent } from '../provider/provider-registry'
@@ -185,6 +186,7 @@ export interface AppHandlerDependencies {
 }
 
 export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependencies = {}): void {
+  registerHtmlLiveHandlers(host)
   setLaunchConfigEmitter((channel, ...args) => host.emit(channel, ...args))
 
   host.handle(AppChannels.SCAN_SESSIONS, async (projectPath: string) => {

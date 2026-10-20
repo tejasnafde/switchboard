@@ -8,6 +8,7 @@ import { stripDigest } from '@shared/agent-digest'
 import { summarizeTool, toolIcon } from '@shared/tool-summary'
 import { colors } from '../theme'
 import { Markdown } from '../components/Markdown'
+import type { MarkdownThread } from '../components/HtmlLiveCard'
 import type { FeedItem } from '../stores/chat'
 import { styles } from './thread-screen.styles'
 import type { HeldTurnActions } from '../lib/held-turns'
@@ -24,9 +25,11 @@ import { mergeBackRowDetails, mergeBackRowTitle } from '@shared/merge-back'
 export const TextItem = memo(function TextItem({
   item,
   onLongPress,
+  thread,
 }: {
   item: Extract<FeedItem, { kind: 'text' }>
   onLongPress?: () => void
+  thread?: MarkdownThread
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -46,7 +49,7 @@ export const TextItem = memo(function TextItem({
   if (item.stream === 'plan') {
     return (
       <View style={[styles.itemBlock, styles.planStreamBox]}>
-        <Markdown text={item.text} />
+        <Markdown text={item.text} thread={thread} />
       </View>
     )
   }
@@ -59,7 +62,7 @@ export const TextItem = memo(function TextItem({
           finished message that merely quotes the tag literally is not
           chopped off - only a message still streaming in hides a trailing
           partial/unclosed tag. */}
-      <Markdown text={stripDigest(item.text, { streaming: !item.done })} />
+      <Markdown text={stripDigest(item.text, { streaming: !item.done })} thread={thread} />
       {item.done && item.durationMs != null && (
         <Text style={styles.durationText}>Worked for {fmtDuration(item.durationMs)}</Text>
       )}

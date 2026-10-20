@@ -61,6 +61,8 @@ export interface HtmlPreviewTarget {
   /** The remote machine that holds the file, or null for this desktop. */
   machineId: string | null
   sessionId: string | null
+  /** An ```html-live page moved here from a message; `path` is then only its file name. */
+  live?: { key: string; source: string; title: string | null }
 }
 
 export interface PaneVisual {

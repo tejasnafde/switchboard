@@ -154,5 +154,85 @@
         "text": "```chartjs\n{}\n```"
       }
     ]
+  },
+  {
+    "id": "html-live-closed-with-title",
+    "markdown": "Look\n```html-live title=\"p95 latency\"\n<script src=\"/_sb/chart.js\"></script>\n<canvas id=\"c\"></canvas>\n```\nDone",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "Look"
+      },
+      {
+        "kind": "html-live",
+        "source": "<script src=\"/_sb/chart.js\"></script>\n<canvas id=\"c\"></canvas>",
+        "title": "p95 latency",
+        "closed": true
+      },
+      {
+        "kind": "markdown",
+        "text": "Done"
+      }
+    ]
+  },
+  {
+    "id": "html-live-still-streaming",
+    "markdown": "Writing:\n```html-live\n<div>\n<p>par",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "Writing:"
+      },
+      {
+        "kind": "html-live",
+        "source": "<div>\n<p>par",
+        "title": null,
+        "closed": false
+      }
+    ]
+  },
+  {
+    "id": "html-live-case-and-single-quotes",
+    "markdown": "~~~ HTML-Live title='Tide gauge'\n<b>x</b>\n~~~",
+    "expected": [
+      {
+        "kind": "html-live",
+        "source": "<b>x</b>",
+        "title": "Tide gauge",
+        "closed": true
+      }
+    ]
+  },
+  {
+    "id": "html-live-empty-title",
+    "markdown": "```html-live title=\"  \"\n<b>x</b>\n```",
+    "expected": [
+      {
+        "kind": "html-live",
+        "source": "<b>x</b>",
+        "title": null,
+        "closed": true
+      }
+    ]
+  },
+  {
+    "id": "html-live-empty-block",
+    "markdown": "```html-live\n\n```",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "```html-live\n\n```"
+      }
+    ]
+  },
+  {
+    "id": "html-other-language",
+    "markdown": "```html\n<b>x</b>\n```",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "```html\n<b>x</b>\n```"
+      }
+    ]
   }
 ]

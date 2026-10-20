@@ -28,3 +28,10 @@ regexes = ['''"current_key"\s*:\s*"AIza''']
 description = "Throwaway EC test key in PinnedTlsTest: minted by the desktop TLS code for the pinning test, it protects nothing"
 targetRules = ["private-key"]
 paths = ['''^apps/android/app/src/test/java/app/switchboard/mobile/platform/protocol/PinnedTlsTest\.kt$''']
+
+[[allowlists]]
+description = "HtmlLiveCard test: a sha256 source hash of a sample page, not a credential (the scanner matched the old constant name KEY)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^apps/mobile/src/components/__tests__/HtmlLiveCard\.test\.tsx$''']
+regexes = ['''9235215ba9292f8dd21fecf0305a4b7d067e4cb41901b6840e8a6f5f2551a065''']

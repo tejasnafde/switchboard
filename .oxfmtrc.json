@@ -19,6 +19,7 @@
     "docs/**",
     "e2e/snapshots/**",
     "tests/fixtures/**",
+    "resources/sb-live/**",
     "videos/dist/**",
     "out/**",
     "release/**",

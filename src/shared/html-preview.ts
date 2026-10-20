@@ -3,6 +3,7 @@
  * session) and the renderer (file chips, the preview pane). Pure: no fs, no
  * Electron.
  */
+import type { HtmlLiveTheme } from './html-live'
 
 /** Custom scheme the preview session serves documents and their assets from. */
 export const PREVIEW_SCHEME = 'sb-preview'
@@ -107,6 +108,8 @@ export type PreviewOpenRequest =
   | { kind: 'file'; root: string; filePath: string }
   /** A document read through a remote backend: served alone, never by path. */
   | { kind: 'content'; fileName: string; html: string }
+  /** An ```html-live page moved from a chat message: served with the /_sb/ libraries. */
+  | { kind: 'live'; source: string; theme: HtmlLiveTheme }
 
 export type PreviewOpenResult =
   | { ok: true; url: string; token: string; bytes: number }

@@ -45,6 +45,12 @@ const INSTRUCTIONS = [
   'Switchboard draws a ```mermaid block as a diagram, and a ```chart block holding JSON as a chart:',
   '{"type":"bar"|"line"|"table","labels":["a","b"],"series":[{"name":"s","values":[1,2]}]}, with optional',
   '"title", "xTitle" and "yTitle"; at most 50 labels and 8 series.',
+  'For something interactive (hover, sorting, toggles), write a ```html-live title="..." block holding a small HTML',
+  'page or fragment, at most 128 KB. The desktop runs it inside the message in a sandbox with no network, so put',
+  'the data inline and never fetch. The only scripts that load are /_sb/chart.js (Chart.js 4), /_sb/d3.js (D3 7),',
+  '/_sb/mermaid.js and Three.js as a module (import from "three" and "three/addons/controls/OrbitControls.js").',
+  'The page can read the app theme from the --sb-bg, --sb-text, --sb-muted, --sb-border and --sb-accent CSS',
+  'variables. Phones show a still image of it. For a larger page, write an .html file instead.',
 ].join(' ')
 
 /** What an adapter hands its agent to spawn the bridge. */

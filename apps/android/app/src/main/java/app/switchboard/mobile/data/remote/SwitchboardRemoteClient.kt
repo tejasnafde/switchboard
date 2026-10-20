@@ -42,6 +42,8 @@ import app.switchboard.mobile.domain.reviews.PrResult
 import app.switchboard.mobile.domain.reviews.PullRequestDecoders
 import app.switchboard.mobile.domain.reviews.RepoRef
 import app.switchboard.mobile.domain.thread.HostWriteResponse
+import app.switchboard.mobile.domain.thread.HtmlLivePages
+import app.switchboard.mobile.domain.thread.HtmlLiveState
 import app.switchboard.mobile.domain.thread.MergeBackActionResult
 import app.switchboard.mobile.domain.thread.MergeBackPreview
 import app.switchboard.mobile.domain.thread.PrLink
@@ -128,12 +130,15 @@ object BackendChannels {
     const val MergeBackSend = "provider:merge-back-send"
     const val MergeBackEdit = "provider:merge-back-edit"
     const val MergeBackDiscard = "provider:merge-back-discard"
+    /** Inline live pages (src/shared/html-live.ts); gated behind `html_live_images_v1`. */
+    const val HtmlLiveLoad = "html-live:load"
+    const val HtmlLiveOpenOnDesktop = "html-live:open-on-desktop"
 }
 
 class SwitchboardRemoteClient(
     val connectionId: String,
     private val rpc: RemoteRpc,
-) : MessageSearchRemote, GitContextRemote {
+) : MessageSearchRemote, GitContextRemote, HtmlLiveRemote {
     fun listIapTargets(callback: (RemoteResponse<List<IapDiscoveredTarget>>) -> Unit) =
         call(BackendChannels.ListIapTargets, decoder = RemoteDecoders::iapTargets, callback = callback)
 
@@ -840,6 +845,12 @@ class SwitchboardRemoteClient(
             ?: "Backend did not confirm the archive"
         error(reason)
     }
+
+    override fun htmlLiveLoad(key: String, callback: (RemoteResponse<HtmlLiveState>) -> Unit) =
+        call(BackendChannels.HtmlLiveLoad, array(JsonString(key)), HtmlLivePages::decodeState, callback)
+
+    override fun htmlLiveOpenOnDesktop(request: JsonObject, callback: (RemoteResponse<Boolean>) -> Unit) =
+        call(BackendChannels.HtmlLiveOpenOnDesktop, array(request), HtmlLivePages::decodeOpened, callback)
 
     private fun <T> call(
         channel: String,
