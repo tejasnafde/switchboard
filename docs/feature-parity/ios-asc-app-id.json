@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ios-asc-app-id",
+  "summary": "The EAS store submit profile names the App Store Connect app record created on 2026-10-20 (ascAppId 6824965919), so eas submit runs without an interactive prompt. Release tooling only; no app behaviour changes.",
+  "surfaces": {
+    "desktop": { "status": "not_applicable", "reason": "Only apps/mobile/eas.json changes." },
+    "reactNativeIos": { "status": "implemented", "evidence": ["apps/mobile/eas.json"] },
+    "nativeAndroid": { "status": "not_applicable", "reason": "The Android app ships through mobile-release.yml to Play, not EAS submit." },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "No protocol change." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "No stored data change." },
+    "updateRelease": { "status": "implemented", "evidence": ["apps/mobile/eas.json"] }
+  },
+  "verification": {
+    "automated": ["eas submit -p ios --profile store --id <build 3> --non-interactive uploaded build 3 to App Store Connect on 2026-10-20 with this value."],
+    "hardware": [],
+    "notExercised": ["Installing the TestFlight build on an iPhone."]
+  }
+}

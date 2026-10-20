@@ -39,7 +39,8 @@
         "ascApiKeyPath": "$ASC_API_KEY_PATH",
         "ascApiKeyId": "$ASC_API_KEY_ID",
         "ascApiKeyIssuerId": "$ASC_API_KEY_ISSUER_ID",
-        "appleTeamId": "4GHRM59326"
+        "appleTeamId": "4GHRM59326",
+        "ascAppId": "6824965919"
       }
     }
   }
