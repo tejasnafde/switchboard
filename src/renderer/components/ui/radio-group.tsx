@@ -25,7 +25,7 @@ export const RadioGroupCard = forwardRef<
     {...props}
   >
     {children}
-    <RadioGroupPrimitive.Indicator className="absolute top-2 right-2 size-1.5 rounded-full bg-primary" />
+    <RadioGroupPrimitive.Indicator className="absolute top-2 right-2 size-1.5 rounded-full bg-primary-fill" />
   </RadioGroupPrimitive.Item>
 ))
 RadioGroupCard.displayName = 'RadioGroupCard'

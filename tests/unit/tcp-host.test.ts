@@ -5,7 +5,7 @@
  * hazards that matter on a real socket: a frame split across TCP segments and
  * several frames arriving coalesced.
  */
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { createServer, connect, type Server, type Socket } from 'node:net'
 import type { AddressInfo } from 'node:net'
 import { TcpHost } from '../../src/main/backend/tcp-host'
@@ -14,20 +14,43 @@ import { TerminalChannels } from '../../src/shared/ipc-channels'
 import { BACKEND_CAPABILITIES } from '../../src/shared/ws-protocol'
 import type { DeviceScope } from '../../src/shared/device-auth'
 
-let server: Server | null = null
-let sock: Socket | null = null
+// Every listener, host and socket (both ends) a test opened: several tests open two.
+let servers: Server[] = []
+let hosts: TcpHost[] = []
+let socks: Socket[] = []
+let closes: Promise<void>[] = []
 
-afterEach(() => {
-  sock?.destroy()
-  server?.close()
-  sock = null
-  server = null
+/** Tracks a socket and its close event, listened for from the start so none is missed. */
+function track(socket: Socket): void {
+  socks.push(socket)
+  closes.push(new Promise((res) => socket.once('close', () => res())))
+}
+
+// Close everything and wait for each socket's close event, so TcpHost's
+// "client disconnected" line never logs after the file tears down (Ubuntu CI
+// failed on that). A server's own close callback fires before its sockets' close events.
+afterEach(async () => {
+  for (const s of socks) s.destroy()
+  for (const h of hosts) h.dispose()
+  await Promise.all([...closes, ...servers.map((s) => new Promise<void>((res) => s.close(() => res())))])
+  servers = []
+  hosts = []
+  socks = []
+  closes = []
+  const logs = [vi.spyOn(console, 'log'), vi.spyOn(console, 'warn'), vi.spyOn(console, 'debug')]
+  await new Promise((res) => setTimeout(res, 20))
+  for (const spy of logs) {
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
+  }
 })
 
 async function boot(token?: string, scopes?: readonly DeviceScope[]): Promise<{ host: TcpHost; port: number }> {
   const s = createServer()
-  server = s
+  servers.push(s)
+  s.on('connection', track)
   const host = new TcpHost(s, token, scopes)
+  hosts.push(host)
   await new Promise<void>((res) => s.listen(0, '127.0.0.1', () => res()))
   return { host, port: (s.address() as AddressInfo).port }
 }
@@ -65,7 +88,7 @@ function reader(socket: Socket): { lines: unknown[]; next: () => Promise<unknown
 
 async function dial(port: number): Promise<{ socket: Socket; r: ReturnType<typeof reader> }> {
   const socket = connect(port, '127.0.0.1')
-  sock = socket
+  track(socket)
   await new Promise<void>((res) => socket.on('connect', () => res()))
   return { socket, r: reader(socket) }
 }

@@ -3,7 +3,8 @@ import { AGENT_WRITE_BUDGET, AGENT_WRITE_WINDOW_MS } from '@shared/agent-host-wr
 /**
  * Pull request writes per chat inside a sliding window. Counted when a write
  * reaches its card, approved or not: an agent that keeps asking is the thing
- * this stops, and every ask interrupts the user.
+ * this stops, and every ask interrupts the user. `ipc/html-live.ts` reuses it
+ * per device session for a phone's Open on desktop requests.
  */
 export class AgentWriteBudget {
   private stamps = new Map<string, number[]>()
@@ -15,7 +16,7 @@ export class AgentWriteBudget {
   ) {}
 
   /** Charge one write, or return the refusal the model is shown. */
-  take(chatId: string): { ok: true } | { ok: false; message: string } {
+  take(chatId: string): { ok: true } | { ok: false; message: string; waitS: number } {
     const now = this.now()
     const recent = (this.stamps.get(chatId) ?? []).filter((t) => now - t < this.windowMs)
     if (recent.length >= this.limit) {
@@ -23,6 +24,7 @@ export class AgentWriteBudget {
       this.stamps.set(chatId, recent)
       return {
         ok: false,
+        waitS,
         message:
           `This chat has asked for ${this.limit} pull request writes in the last ${Math.round(this.windowMs / 60_000)} minutes, which is the limit. ` +
           `Nothing was sent. Tell the user what is left to do, or try again in ${waitS} seconds.`,

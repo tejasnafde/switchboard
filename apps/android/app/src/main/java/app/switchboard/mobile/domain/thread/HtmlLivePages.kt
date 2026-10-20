@@ -52,7 +52,15 @@ object HtmlLivePages {
         return HtmlLiveState(image, (obj.values["savedPath"] as? JsonString)?.value)
     }
 
-    fun decodeOpened(value: JsonValue?): Boolean = ((value as? JsonObject)?.values?.get("ok") as? JsonBoolean)?.value == true
+    const val OPENED = "Opened on your Mac"
+    const val UNREACHABLE = "Could not reach your Mac"
+
+    /** The line shown for an OPEN_ON_DESKTOP answer: the backend's own error (a rate limit) when it sends one. */
+    fun decodeOpened(value: JsonValue?): String {
+        val obj = value as? JsonObject ?: return UNREACHABLE
+        if ((obj.values["ok"] as? JsonBoolean)?.value == true) return OPENED
+        return (obj.values["error"] as? JsonString)?.value ?: UNREACHABLE
+    }
 
     /** `HtmlLiveOpenRequest`: what OPEN_ON_DESKTOP sends. */
     fun openRequest(conversationId: String, source: String, title: String?): JsonObject = JsonObject(

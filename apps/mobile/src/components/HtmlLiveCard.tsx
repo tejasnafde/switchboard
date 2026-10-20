@@ -120,7 +120,7 @@ export function HtmlLiveCard({
   const openOnDesktop = (): void => {
     if (!client || !thread) return
     client.htmlLiveOpenOnDesktop({ conversationId: thread.threadId, source, title }).then(
-      (answer) => setOpened(answer?.ok ? 'Opened on your Mac' : 'Could not reach your Mac'),
+      (answer) => setOpened(answer?.ok ? 'Opened on your Mac' : (answer?.error ?? 'Could not reach your Mac')),
       (error: unknown) => {
         log.warn('open on desktop failed', error)
         setOpened('Could not reach your Mac')

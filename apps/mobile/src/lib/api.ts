@@ -133,7 +133,7 @@ export class SwitchboardClient {
   }
 
   /** Gate: `HTML_LIVE_CAPABILITY`. Asks a desktop window to open the page in its pane. */
-  htmlLiveOpenOnDesktop(request: HtmlLiveOpenRequest): Promise<{ ok: boolean }> {
+  htmlLiveOpenOnDesktop(request: HtmlLiveOpenRequest): Promise<{ ok: boolean; error?: string }> {
     return this.transport.invoke(HtmlLiveChannels.OPEN_ON_DESKTOP, request)
   }
 

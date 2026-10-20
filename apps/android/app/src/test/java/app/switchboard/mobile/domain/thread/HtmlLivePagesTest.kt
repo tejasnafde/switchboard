@@ -4,9 +4,7 @@ import app.switchboard.mobile.protocol.JsonCodec
 import app.switchboard.mobile.protocol.JsonNull
 import app.switchboard.mobile.protocol.JsonString
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HtmlLivePagesTest {
@@ -48,9 +46,11 @@ class HtmlLivePagesTest {
 
     @Test
     fun openAnswerIsTrueOnlyForOk() {
-        assertTrue(HtmlLivePages.decodeOpened(JsonCodec.parse("""{"ok":true}""")))
-        assertFalse(HtmlLivePages.decodeOpened(JsonCodec.parse("""{"ok":false}""")))
-        assertFalse(HtmlLivePages.decodeOpened(null))
+        assertEquals(HtmlLivePages.OPENED, HtmlLivePages.decodeOpened(JsonCodec.parse("""{"ok":true}""")))
+        assertEquals(HtmlLivePages.UNREACHABLE, HtmlLivePages.decodeOpened(JsonCodec.parse("""{"ok":false}""")))
+        assertEquals(HtmlLivePages.UNREACHABLE, HtmlLivePages.decodeOpened(null))
+        val limited = """{"ok":false,"error":"Too many open requests. Try again in 12 seconds."}"""
+        assertEquals("Too many open requests. Try again in 12 seconds.", HtmlLivePages.decodeOpened(JsonCodec.parse(limited)))
     }
 
     @Test

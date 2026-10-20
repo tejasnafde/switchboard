@@ -849,7 +849,7 @@ class SwitchboardRemoteClient(
     override fun htmlLiveLoad(key: String, callback: (RemoteResponse<HtmlLiveState>) -> Unit) =
         call(BackendChannels.HtmlLiveLoad, array(JsonString(key)), HtmlLivePages::decodeState, callback)
 
-    override fun htmlLiveOpenOnDesktop(request: JsonObject, callback: (RemoteResponse<Boolean>) -> Unit) =
+    override fun htmlLiveOpenOnDesktop(request: JsonObject, callback: (RemoteResponse<String>) -> Unit) =
         call(BackendChannels.HtmlLiveOpenOnDesktop, array(request), HtmlLivePages::decodeOpened, callback)
 
     private fun <T> call(

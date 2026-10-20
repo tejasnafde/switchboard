@@ -16,6 +16,7 @@
  * `node:fs/promises`. The rename goes through `replaceFile`, which retries
  * it while Windows has the target locked.
  */
+import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { createMainLogger } from '../logger'
 import { TargetChangedError, replaceFile } from './replace-file'
@@ -117,7 +118,7 @@ export async function writeFileSafe(absPath: string, content: string, opts: Writ
     lateConflict = await conflictReason(absPath, opts, await statTarget(absPath))
     return lateConflict === null
   }
-  const tmp = `${absPath}.sb-tmp-${process.pid}-${Date.now()}`
+  const tmp = `${absPath}.sb-tmp-${process.pid}-${randomUUID()}`
   try {
     await replaceFile(absPath, finalContent, { log, tmp, stillSafe })
   } catch (err) {

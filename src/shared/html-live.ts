@@ -295,6 +295,15 @@ export interface HtmlLiveState {
   savedPath: string | null
 }
 
+/** Open on desktop requests one paired phone may send per window; the desktop's own are not counted. */
+export const HTML_LIVE_OPEN_LIMIT = 6
+export const HTML_LIVE_OPEN_WINDOW_MS = 60_000
+
+/** `OPEN_ON_DESKTOP` answer the phone shows when it asked too often. */
+export function htmlLiveOpenLimitMessage(waitS: number): string {
+  return `Too many open requests. Try again in ${waitS} seconds.`
+}
+
 /** `HtmlLiveChannels.OPEN_ON_DESKTOP` payload and the `OPEN_REQUEST` event. */
 export interface HtmlLiveOpenRequest {
   conversationId: string
