@@ -214,6 +214,9 @@ const api = {
     mobileDevices: (): Promise<DeviceSessionView[]> => transport.invoke(AppChannels.MOBILE_DEVICES),
     /** Cut off one device, leaving every other pairing intact. */
     mobileRevokeDevice: (id: string): Promise<boolean> => transport.invoke(AppChannels.MOBILE_DEVICE_REVOKE, id),
+    /** Name a device on this computer; null or blank restores the reported name. */
+    mobileRenameDevice: (id: string, name: string | null): Promise<boolean> =>
+      transport.invoke(AppChannels.MOBILE_DEVICE_RENAME, id, name),
     /** Whether an OAuth client is configured for minting, and from where. */
     googleClientStatus: (): Promise<GoogleClientStatus> => transport.invoke(AppChannels.GOOGLE_CLIENT_STATUS),
     googleSetClient: (config: PartialClientConfig): Promise<GoogleClientStatus> =>

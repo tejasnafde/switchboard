@@ -95,6 +95,8 @@ export const AppChannels = {
   MOBILE_DEVICES: 'mobile-pairing:devices',
   /** Revoke one device without disturbing the others. */
   MOBILE_DEVICE_REVOKE: 'mobile-pairing:revoke',
+  /** Name a device on this computer, or clear the name with null. */
+  MOBILE_DEVICE_RENAME: 'mobile-pairing:rename',
   /**
    * Run Google consent in a browser and return the credential blob for the
    * phone's QR. Desktop-only: the phone cannot complete this flow, which is the

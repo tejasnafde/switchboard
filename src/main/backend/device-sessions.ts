@@ -10,6 +10,7 @@ import {
   isPairingCodeUsable,
   isRevoked,
   toView,
+  DEVICE_NAME_MAX,
   PAIRING_CODE_TTL_MS,
   type DeviceScope,
   type DeviceSession,
@@ -209,6 +210,23 @@ export function touchSession(id: string, nowMs: number = Date.now()): boolean {
   const target = sessions.find((s) => s.id === id)
   if (!target || isRevoked(target)) return false
   saveSessions(sessions.map((s) => (s.id === id ? { ...s, lastSeenAt: nowMs } : s)))
+  return true
+}
+
+/**
+ * Name a device on this computer, or clear the name with null or blank text so
+ * the phone's reported name shows again. Stored on the session, so the phone
+ * never sees it and a re-reported identity does not overwrite it.
+ */
+export function renameSession(id: string, name: string | null): boolean {
+  const sessions = listSessions()
+  const target = sessions.find((s) => s.id === id)
+  if (!target || isRevoked(target)) return false
+  const trimmed = (name ?? '').trim().slice(0, DEVICE_NAME_MAX)
+  const { customName: _previous, ...rest } = target
+  const updated: DeviceSession = trimmed ? { ...rest, customName: trimmed } : rest
+  saveSessions(sessions.map((s) => (s.id === id ? updated : s)))
+  log.info(trimmed ? 'renamed a device session' : 'cleared a device session name')
   return true
 }
 

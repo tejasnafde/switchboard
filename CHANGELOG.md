@@ -5,6 +5,11 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Changed
+- **The Devices tab shows who is paired.** Settings > Devices & machines lists paired devices by last seen, with search (name, model, platform), sort, "Online now" and "Earlier" groups, and a "Show N more inactive devices" fold for devices not seen in 30 days. Details shows last seen, address and install ID (click to copy), system, app and paired date. Rename a device in Details: the name is stored on this computer only and replaces the reported one, with "Use reported name" to go back. Revoke is quiet until hover or focus, and "Revoke inactive (N)" lists what goes and what is kept before it asks. Nothing expires on its own.
+- **The old shared pairing token is retired.** The desktop deletes `mobilePairing.token`, no longer starts the phone endpoint from it, and closes a phone that still uses it with 4001, so the phone shows "This computer removed this phone. Pair again." The Token field and the legacy-device copy are gone. The VM server command no longer passes a token; the server mints its own.
+- **Filled destructive buttons use #da3633** in every theme, so white text reads at 4.6:1 (it was 3.4:1 on the dark error red).
+
+### Changed
 - **Native Android 0.5.20 (versionCode 22).** It adds device identity and the Home machine rows to the first Play build, and it replaces the 0.5.19 internal draft.
 
 ### Added

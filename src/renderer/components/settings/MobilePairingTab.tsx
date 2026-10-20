@@ -6,11 +6,6 @@
  * certificate: a phone that knows it dials wss:// on the same port, an older
  * one ignores it and keeps ws://. A phone redeems it once for a session of its
  * own, which can be revoked without disturbing any other device.
- *
- * The old shared token is still stored and still accepted, because a phone
- * paired before this existed holds it and clearing it would lock that phone
- * out with no way back. It has no part in the flow above and is retired per
- * device as each one re-pairs.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -20,6 +15,7 @@ import { withCertPin } from '@shared/transport-security'
 import type { DeviceSessionView } from '@shared/device-auth'
 import QRCode from 'qrcode'
 import { GoogleMintPanel } from './GoogleMintPanel'
+import { PairedDevices } from './PairedDevices'
 import { Combobox } from '../ui/combobox'
 import { createRendererLogger } from '../../logger'
 
@@ -28,27 +24,20 @@ const log = createRendererLogger('settings:mobile-pairing')
 const SETTINGS_KEYS = {
   host: 'mobilePairing.host',
   port: 'mobilePairing.port',
-  token: 'mobilePairing.token',
   enabled: 'mobilePairing.enabled',
 } as const
 
 const DEFAULT_PORT = '8765'
 const CUSTOM_HOST = '__custom__'
 
+// HOST serves the `ws` kind, TCP_PORT the `iap` one. Both, so neither silently fails.
+const SERVER_COMMAND = 'HOST=0.0.0.0 TCP_PORT=8766 npm run server'
+
 const PLAY_LISTING_URL = 'https://play.google.com/store/apps/details?id=app.switchboard.mobile'
 
 interface LanAddress {
   iface: string
   address: string
-}
-
-/** 24-char base64url token from 18 random bytes (24 base64 chars, no padding). */
-export function generatePairingToken(): string {
-  const bytes = new Uint8Array(18)
-  crypto.getRandomValues(bytes)
-  let binary = ''
-  for (const b of bytes) binary += String.fromCharCode(b)
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_')
 }
 
 /**
@@ -61,22 +50,7 @@ function InfoHint({ text }: { text: string }) {
     <span
       title={text}
       aria-label={text}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: '13px',
-        height: '13px',
-        marginLeft: '5px',
-        borderRadius: '50%',
-        border: '1px solid var(--border)',
-        color: 'var(--text-muted)',
-        fontSize: '9px',
-        lineHeight: 1,
-        cursor: 'help',
-        verticalAlign: 'middle',
-        flexShrink: 0,
-      }}
+      className="ml-[5px] inline-flex h-[13px] w-[13px] shrink-0 cursor-help items-center justify-center rounded-full border border-[var(--border)] align-middle text-[9px] leading-none text-[var(--text-muted)]"
     >
       ?
     </span>
@@ -92,7 +66,6 @@ export function MobilePairingTab() {
   const [lanAddrs, setLanAddrs] = useState<LanAddress[]>([])
   const [host, setHost] = useState('')
   const [port, setPort] = useState(DEFAULT_PORT)
-  const [token, setToken] = useState('')
   /** Live pairing code. Minted on demand, never persisted in this component. */
   const [pairing, setPairing] = useState<{ code: string; expiresAt: number } | null>(null)
   const [secondsLeft, setSecondsLeft] = useState(0)
@@ -116,20 +89,15 @@ export function MobilePairingTab() {
       window.api.app.lanAddresses(),
       window.api.settings.get(SETTINGS_KEYS.host),
       window.api.settings.get(SETTINGS_KEYS.port),
-      window.api.settings.get(SETTINGS_KEYS.token),
       window.api.settings.get(SETTINGS_KEYS.enabled),
     ])
-      .then(([addrs, savedHost, savedPort, savedToken, savedEnabled]) => {
+      .then(([addrs, savedHost, savedPort, savedEnabled]) => {
         if (cancelled) return
         setLanAddrs(addrs)
         const initialHost = savedHost ?? addrs[0]?.address ?? ''
         setHost(initialHost)
         setCustomHost(initialHost !== '' && !addrs.some((a) => a.address === initialHost))
         if (savedPort) setPort(savedPort)
-        // Do NOT mint a token here. Generating one on mount and persisting it
-        // below meant merely LOOKING at this tab opened a LAN listener with a
-        // static credential, on every future launch, with no way to turn it off.
-        setToken(savedToken ?? '')
         setEnabled(savedEnabled === 'true')
         setLoaded(true)
       })
@@ -144,14 +112,13 @@ export function MobilePairingTab() {
 
   // Persist on change (post-load only, so defaults don't clobber saved values),
   // then re-apply the endpoint so the QR is live the moment it renders - no
-  // restart. The endpoint reads token/port back from settings, hence the order.
+  // restart. The endpoint reads port and enabled back from settings, hence the order.
   useEffect(() => {
     if (!loaded) return
     let cancelled = false
     Promise.all([
       window.api.settings.set(SETTINGS_KEYS.host, host),
       window.api.settings.set(SETTINGS_KEYS.port, port),
-      window.api.settings.set(SETTINGS_KEYS.token, token),
       window.api.settings.set(SETTINGS_KEYS.enabled, enabled ? 'true' : 'false'),
     ])
       .then(() => window.api.app.mobilePairingApply())
@@ -162,12 +129,17 @@ export function MobilePairingTab() {
     return () => {
       cancelled = true
     }
-  }, [loaded, host, port, token, enabled])
+  }, [loaded, host, port, enabled])
 
+  // The poll and a revoke or rename can each start a refresh; only the latest may land.
+  const devicesRequest = useRef(0)
   const refreshDevices = useCallback(() => {
+    const request = ++devicesRequest.current
     window.api.app
       .mobileDevices()
-      .then(setDevices)
+      .then((list) => {
+        if (request === devicesRequest.current) setDevices(list)
+      })
       .catch((err: unknown) => log.warn('failed to list paired devices', err))
   }, [])
 
@@ -209,16 +181,6 @@ export function MobilePairingTab() {
     return () => clearInterval(timer)
   }, [pairing, refreshDevices])
 
-  const revoke = useCallback(
-    (id: string) => {
-      window.api.app
-        .mobileRevokeDevice(id)
-        .then(refreshDevices)
-        .catch((err: unknown) => log.warn('failed to revoke a device', err))
-    },
-    [refreshDevices],
-  )
-
   const pairingUrl = useMemo(() => {
     if (!host || !pairing || !isValidPort(port)) return null
     return withCertPin(`ws://${host}:${port}?pair=${pairing.code}`, endpoint?.fingerprint)
@@ -258,19 +220,15 @@ export function MobilePairingTab() {
     }
   }, [])
 
-  // HOST serves the `ws` kind, TCP_PORT the `iap` one. Both, so neither silently fails.
-  const serverCommand = token ? `SWITCHBOARD_TOKEN=${token} HOST=0.0.0.0 TCP_PORT=8766 npm run server` : null
-
   const copyCommand = useCallback(async () => {
-    if (!serverCommand) return
     try {
-      await navigator.clipboard.writeText(serverCommand)
+      await navigator.clipboard.writeText(SERVER_COMMAND)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
       log.warn('clipboard write failed', err)
     }
-  }, [serverCommand])
+  }, [])
 
   // Picking "Custom hostname" moves focus to its field, not back to the picker.
   const customHostInputRef = useRef<HTMLInputElement>(null)
@@ -298,52 +256,28 @@ export function MobilePairingTab() {
     [lanAddrs],
   )
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-    padding: '6px 8px',
-    borderRadius: '4px',
-    border: '1px solid var(--border)',
-    background: 'var(--bg-tertiary)',
-    color: 'var(--text-primary)',
-    fontSize: '12px',
-    fontFamily: 'var(--font-mono)',
-    outline: 'none',
-  }
-
-  const fieldLabelStyle: React.CSSProperties = {
-    fontSize: '11px',
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-    marginBottom: '4px',
-  }
+  const inputClass =
+    'w-full rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-2 py-1.5 font-[family-name:var(--font-mono)] text-[12px] text-[var(--text-primary)] outline-none'
+  const fieldLabelClass = 'mb-1 text-[11px] font-[500] text-[var(--text-secondary)]'
+  const canPair = enabled && !!host && isValidPort(port)
 
   return (
     <div>
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          fontSize: '12px',
-          color: 'var(--text-primary)',
-          marginBottom: '10px',
-          cursor: 'pointer',
-        }}
-      >
+      <label className="mb-2.5 flex cursor-pointer items-center gap-2 text-[12px] text-[var(--text-primary)]">
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
         Serve the mobile endpoint
         <InfoHint text="Opens a listener on the port below, reachable from your local network, so a paired phone sees the same chats and sessions as this window. Off by default: nothing listens until you turn it on, and turning it off stops it immediately. Paired devices keep their credentials and reconnect when it is on again." />
       </label>
-      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: 1.6 }}>
+      <div className="mb-3.5 text-[11px] leading-[1.6] text-[var(--text-muted)]">
         {enabled
           ? 'Scan the QR below from the mobile app to pair it with this computer.'
           : 'The endpoint is off. Nothing is listening.'}
       </div>
 
       {/* Connection fields */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
-        <div style={{ flex: 2, minWidth: 0 }}>
-          <div style={fieldLabelStyle}>Host</div>
+      <div className="mb-3.5 flex gap-2.5">
+        <div className="min-w-0 flex-[2]">
+          <div className={fieldLabelClass}>Host</div>
           <Combobox
             searchable={false}
             aria-label="Host"
@@ -365,86 +299,33 @@ export function MobilePairingTab() {
               value={host}
               onChange={(e) => setHost(e.target.value.trim())}
               placeholder="vm.tailnet-name.ts.net"
-              style={{ ...inputStyle, marginTop: '6px' }}
+              className={`${inputClass} mt-1.5`}
             />
           )}
         </div>
-        <div style={{ width: '90px', flexShrink: 0 }}>
-          <div style={fieldLabelStyle}>Port</div>
+        <div className="w-[90px] shrink-0">
+          <div className={fieldLabelClass}>Port</div>
           <input
             value={port}
             onChange={(e) => setPort(e.target.value.trim())}
             placeholder={DEFAULT_PORT}
-            style={inputStyle}
+            className={inputClass}
           />
-        </div>
-      </div>
-
-      <div style={{ marginBottom: '14px' }}>
-        <div style={fieldLabelStyle}>Token</div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <input
-            value={token}
-            onChange={(e) => setToken(e.target.value.trim())}
-            placeholder="Click Generate"
-            style={inputStyle}
-          />
-          <button
-            onClick={() => setToken(generatePairingToken())}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '4px',
-              border: '1px solid var(--border)',
-              background: 'var(--bg-tertiary)',
-              color: 'var(--text-primary)',
-              fontSize: '11.5px',
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
-          >
-            Generate
-          </button>
         </div>
       </div>
 
       {/* QR + pairing URL preview */}
-      <div
-        style={{
-          display: 'flex',
-          gap: '14px',
-          alignItems: 'center',
-          padding: '12px 14px',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius)',
-          background: 'var(--bg-tertiary)',
-          marginBottom: '14px',
-        }}
-      >
+      <div className="mb-3.5 flex items-center gap-3.5 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-tertiary)] px-3.5 py-3">
         {qrDataUrl ? (
           <img
             src={qrDataUrl}
             alt="Pairing QR code"
             width={140}
             height={140}
-            style={{ borderRadius: '4px', background: '#fff', flexShrink: 0 }}
+            className="shrink-0 rounded-[4px] bg-white"
           />
         ) : (
-          <div
-            style={{
-              width: '140px',
-              height: '140px',
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              border: '1px dashed var(--border)',
-              borderRadius: '4px',
-              fontSize: '10.5px',
-              color: 'var(--text-muted)',
-              textAlign: 'center',
-              padding: '8px',
-            }}
-          >
+          <div className="flex h-[140px] w-[140px] shrink-0 items-center justify-center rounded-[4px] border border-dashed border-[var(--border)] p-2 text-center text-[10.5px] text-[var(--text-muted)]">
             {!enabled
               ? 'Turn the endpoint on to pair'
               : !isValidPort(port)
@@ -454,61 +335,30 @@ export function MobilePairingTab() {
                   : 'Tap Show pairing QR'}
           </div>
         )}
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)' }}>Pairing URL</div>
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center gap-2">
+            <div className="text-[11px] font-[500] text-[var(--text-secondary)]">Pairing URL</div>
             <button
               onClick={startPairing}
-              disabled={!enabled || !host || !isValidPort(port)}
-              style={{
-                fontSize: '10.5px',
-                padding: '2px 8px',
-                borderRadius: '4px',
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                color: 'var(--text-secondary)',
-                cursor: host && isValidPort(port) ? 'pointer' : 'default',
-              }}
+              disabled={!canPair}
+              className={`rounded-[4px] border border-[var(--border)] bg-transparent px-2 py-0.5 text-[10.5px] text-[var(--text-secondary)] ${host && isValidPort(port) ? 'cursor-pointer' : 'cursor-default'}`}
             >
               {pairing ? 'New code' : 'Show pairing QR'}
             </button>
-            {pairing && (
-              <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>expires in {secondsLeft}s</span>
-            )}
+            {pairing && <span className="text-[10.5px] text-[var(--text-muted)]">expires in {secondsLeft}s</span>}
           </div>
-          <div
-            style={{
-              fontSize: '11px',
-              fontFamily: 'var(--font-mono)',
-              color: 'var(--text-primary)',
-              wordBreak: 'break-all',
-              lineHeight: 1.5,
-            }}
-          >
+          <div className="break-all font-[family-name:var(--font-mono)] text-[11px] leading-normal text-[var(--text-primary)]">
             {pairingUrl ?? '·'}
           </div>
-          <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.5 }}>
+          <div className="mt-1.5 text-[10.5px] leading-normal text-[var(--text-muted)]">
             Scan from the mobile app. The QR re-renders on every field change.
           </div>
           {endpoint && (
             <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                marginTop: '8px',
-                fontSize: '10.5px',
-                color: endpoint.listening ? 'var(--text-secondary)' : 'var(--error, #e5544a)',
-              }}
+              className={`mt-2 flex items-center gap-1.5 text-[10.5px] ${endpoint.listening ? 'text-[var(--text-secondary)]' : 'text-[var(--error,#e5544a)]'}`}
             >
               <span
-                style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '3px',
-                  flexShrink: 0,
-                  background: endpoint.listening ? 'var(--success, #3dd17a)' : 'var(--error, #e5544a)',
-                }}
+                className={`h-1.5 w-1.5 shrink-0 rounded-[3px] ${endpoint.listening ? 'bg-[var(--success,#3dd17a)]' : 'bg-[var(--error,#e5544a)]'}`}
               />
               {endpoint.listening
                 ? `Serving this QR on port ${endpoint.port}`
@@ -531,103 +381,37 @@ export function MobilePairingTab() {
       </div>
 
       {/* Paired devices */}
-      <div style={fieldLabelStyle}>
+      <div className={`${fieldLabelClass} mb-2 flex items-center`}>
         Paired devices
-        <InfoHint text="Each device holds a credential of its own. Revoking one cuts it off immediately and leaves every other device working. A device paired before this change still uses the old shared token and shows as legacy until it scans a new code." />
+        <InfoHint text="Each phone holds its own credential. Revoking one cuts it off at once and leaves the others working. A phone that has not connected for 30 days counts as inactive." />
       </div>
-      {devices.length === 0 ? (
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '14px' }}>
-          Nothing paired yet. Show the QR above and scan it from the phone.
-        </div>
-      ) : (
-        <div style={{ marginBottom: '14px' }}>
-          {devices.map((device) => (
-            <div
-              key={device.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '6px 0',
-                borderBottom: '1px solid var(--border)',
-                opacity: device.revoked ? 0.5 : 1,
-              }}
-            >
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: '11.5px', color: 'var(--text-primary)' }}>{device.label}</div>
-                <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
-                  {device.revoked ? 'revoked' : `last seen ${new Date(device.lastSeenAt).toLocaleString()}`}
-                  {' · '}
-                  {device.scopes.join(', ')}
-                </div>
-              </div>
-              {!device.revoked && (
-                <button
-                  onClick={() => revoke(device.id)}
-                  style={{
-                    fontSize: '10.5px',
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    border: '1px solid var(--border)',
-                    background: 'transparent',
-                    color: 'var(--error, #e5544a)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Revoke
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="mb-3.5">
+        <PairedDevices
+          devices={devices}
+          playListingUrl={PLAY_LISTING_URL}
+          canPair={canPair}
+          onShowPairing={startPairing}
+          onChanged={refreshDevices}
+        />
+      </div>
 
       {/* Server command */}
-      <div style={fieldLabelStyle}>Run on the target machine</div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: '8px',
-          padding: '10px 12px',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius)',
-          background: 'var(--bg-primary)',
-        }}
-      >
-        <code
-          style={{
-            flex: 1,
-            fontSize: '11px',
-            fontFamily: 'var(--font-mono)',
-            color: 'var(--text-primary)',
-            wordBreak: 'break-all',
-            lineHeight: 1.6,
-          }}
-        >
-          {serverCommand ?? 'Generate a token first.'}
+      <div className={fieldLabelClass}>Run on the target machine</div>
+      <div className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2.5">
+        <code className="flex-1 break-all font-[family-name:var(--font-mono)] text-[11px] leading-[1.6] text-[var(--text-primary)]">
+          {SERVER_COMMAND}
         </code>
         <button
           onClick={copyCommand}
-          disabled={!serverCommand}
-          style={{
-            padding: '4px 10px',
-            borderRadius: '4px',
-            border: '1px solid var(--border)',
-            background: 'var(--bg-tertiary)',
-            color: copied ? 'var(--success, #3dd17a)' : 'var(--text-primary)',
-            fontSize: '11px',
-            cursor: serverCommand ? 'pointer' : 'default',
-            flexShrink: 0,
-          }}
+          className={`shrink-0 cursor-pointer rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-2.5 py-1 text-[11px] ${copied ? 'text-[var(--success,#3dd17a)]' : 'text-[var(--text-primary)]'}`}
         >
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
-      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.6 }}>
+      <div className="mt-2 text-[10.5px] leading-[1.6] text-[var(--text-muted)]">
         Only for a machine with no Switchboard app running, such as a VM. Runs in the foreground, so start it under
         tmux, and pair from the QR it prints.
-        <InfoHint text="This computer needs no command: it serves the endpoint itself. On a VM, the server bundle (out/server/index.cjs) must be present first, and binding beyond loopback without SWITCHBOARD_TOKEN mints one and saves it to ~/.switchboard-server/token. TCP_PORT starts a second listener on 8766 speaking ndjson, which is what an IAP-tunnelled phone dials. Running it here as well would take the port and stop the app from serving." />
+        <InfoHint text="This computer needs no command: it serves the endpoint itself. On a VM, the server bundle (out/server/index.cjs) must be present first, and binding beyond loopback mints a token and saves it to ~/.switchboard-server/token. TCP_PORT starts a second listener on 8766 speaking ndjson, which is what an IAP-tunnelled phone dials. Running it here as well would take the port and stop the app from serving." />
       </div>
 
       {/* Android download: Google Play is the only channel */}
