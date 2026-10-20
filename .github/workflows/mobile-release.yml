@@ -28,7 +28,7 @@ on:
           - alpha
           - beta
       status:
-        description: Release status. Play accepts only draft releases while the app is unpublished. The first AAB must still be uploaded in the Play Console.
+        description: Release status. Play accepts only draft releases while the app is unpublished.
         type: choice
         default: completed
         options:
