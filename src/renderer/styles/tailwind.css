@@ -75,7 +75,6 @@
   --color-muted: var(--bg-tertiary);
   --color-muted-foreground: var(--text-secondary);
   --color-primary: var(--accent);
-  --color-primary-hover: var(--accent-hover);
   --color-primary-foreground: #fff;
   --color-secondary: var(--bg-tertiary);
   --color-secondary-foreground: var(--text-primary);
@@ -86,6 +85,11 @@
   /* Filled destructive buttons: white on --error (#f85149) is 3.4:1, on this 4.6:1.
      One value for every theme, so tests/unit/destructive-fill-contrast.test.ts can read it. */
   --color-destructive-fill: #da3633;
+  /* Filled primary buttons: white on the dark --accent (#58a6ff) is 2.5:1. The same
+     blue, darker: 4.6:1, and 6.2:1 on hover. One value for every theme, so
+     tests/unit/primary-fill-contrast.test.ts can read it. --accent stays as is. */
+  --color-primary-fill: #1f6feb;
+  --color-primary-fill-hover: #1a5bc9;
   --color-border: var(--border);
   --color-ring: var(--border-focus);
 
