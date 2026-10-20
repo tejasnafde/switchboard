@@ -19,8 +19,10 @@ Prerequisites, done once by hand before the workflow can upload:
    `app.switchboard.mobile` (record `4974044929379750357`, created
    2026-10-19, internal track only, never published). It moved on 2026-10-21
    to match iOS; that record stays unpublished and gets no more uploads.
-2. Invite the per-app publisher service account with release rights for this
-   app only (done). Its key is `PLAY_SERVICE_ACCOUNT_JSON` below.
+2. Invite the per-app publisher service account to the `app.tn07.switchboard`
+   record with release rights for this app only. Do this before the first
+   release: the invite on the old record does not carry over. Its key is
+   `PLAY_SERVICE_ACCOUNT_JSON` below.
 
 Once the record exists, the workflow uploads every AAB, the first one
 included: the first 0.5.18 bundle went to the internal track as a draft
