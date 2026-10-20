@@ -13,12 +13,17 @@ each start it deletes what the updater stored (state and staged APKs).
 
 Prerequisites, done once by hand before the workflow can upload:
 
-1. Create the app record for `app.switchboard.mobile` in the Play Console.
-2. Upload the first AAB through the Play Console (for example to the internal
-   testing track). The Play Publishing API only edits an app that already
-   exists and cannot create one, and its first upload needs a bundle that was
-   already uploaded through the Console. Build that AAB with the workflow (it
-   keeps the AAB as an artifact) or locally with the upload key.
+1. Create the app record for `app.switchboard.mobile` in the Play Console
+   (done 2026-10-19, app id `4974044929379750357`). The Publishing API cannot
+   create an app.
+2. Invite the per-app publisher service account with release rights for this
+   app only (done). Its key is `PLAY_SERVICE_ACCOUNT_JSON` below.
+
+Once the record exists, the workflow uploads every AAB, the first one
+included: the first 0.5.18 bundle went to the internal track as a draft
+through the API on 2026-10-19, with no Console upload. Play App Signing is
+then on with a Google-generated app signing key; the workflow's key is the
+upload key.
 
 To release:
 
@@ -27,7 +32,7 @@ To release:
 2. Dispatch `mobile-release.yml` by hand. Pick the track (`internal` by
    default, or `alpha` or `beta`) and the release status. Pick `draft` while
    the app is still unpublished in Play, which accepts only draft releases
-   then. A draft release does not replace the first Console upload above.
+   then.
 3. Promote the release to production in the Play Console when it is ready.
 
 The job runs the Android unit, lint and androidTest compile gate, builds a
