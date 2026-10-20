@@ -1,4 +1,5 @@
 import groovy.json.JsonSlurper
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -10,12 +11,12 @@ plugins {
 }
 
 val productionKeystorePath = providers.environmentVariable("SWITCHBOARD_ANDROID_KEYSTORE_PATH").orNull
-val canonicalApplicationId = "app.switchboard.mobile"
+val canonicalApplicationId = "app.tn07.switchboard"
 val easProjectId = "efbb89d9-210f-4584-bf62-8186cd5fb476"
-val mobileGoogleServicesFile = rootProject.file("../mobile/google-services.json")
-val mobileGoogleServices = JsonSlurper().parse(mobileGoogleServicesFile) as Map<*, *>
-val firebaseProject = mobileGoogleServices["project_info"] as Map<*, *>
-val firebaseClient = (mobileGoogleServices["client"] as List<*>)
+val googleServicesFile = file("google-services.json")
+val googleServices = JsonSlurper().parse(googleServicesFile) as Map<*, *>
+val firebaseProject = googleServices["project_info"] as Map<*, *>
+val firebaseClient = (googleServices["client"] as List<*>)
     .map { it as Map<*, *> }
     .single { client ->
         val clientInfo = client["client_info"] as Map<*, *>
@@ -98,6 +99,16 @@ android {
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+}
+
+// CI shows only the console, so a failed test prints its whole stack trace
+// there. The short form named only Preconditions.kt:26 for a Compose
+// precondition and hid which one failed.
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = TestExceptionFormat.FULL
     }
 }
 

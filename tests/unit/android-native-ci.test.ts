@@ -131,7 +131,7 @@ describe('native Android publishing lane', () => {
     expect(upload).toBeGreaterThan(verify)
     expect(steps[upload].uses).toMatch(/@[0-9a-f]{40}$/)
     expect(steps[upload].with.serviceAccountJsonPlainText).toBe('${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}')
-    expect(steps[upload].with.packageName).toBe('app.switchboard.mobile')
+    expect(steps[upload].with.packageName).toBe('app.tn07.switchboard')
     expect(parsed.on.workflow_dispatch.inputs.track.options).toEqual(['internal', 'alpha', 'beta'])
     expect(parsed.permissions).toEqual({ contents: 'read' })
     expect(workflow).toContain('sha256sum --check')

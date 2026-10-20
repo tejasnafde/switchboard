@@ -11,7 +11,7 @@ import org.junit.Test
 class ExpoPushTokenContractTest {
     private val identity = ExpoPushProjectIdentity(
         projectId = "efbb89d9-210f-4584-bf62-8186cd5fb476",
-        applicationId = "app.switchboard.mobile",
+        applicationId = "app.tn07.switchboard",
     )
 
     @Test
@@ -29,7 +29,7 @@ class ExpoPushTokenContractTest {
                 "type" to JsonString("fcm"),
                 "deviceId" to JsonString("a0b1c2d3-0000-4000-8000-000000000000"),
                 "development" to JsonBoolean(false),
-                "appId" to JsonString("app.switchboard.mobile"),
+                "appId" to JsonString("app.tn07.switchboard"),
                 "deviceToken" to JsonString("fcm-token"),
                 "projectId" to JsonString("efbb89d9-210f-4584-bf62-8186cd5fb476"),
             ),

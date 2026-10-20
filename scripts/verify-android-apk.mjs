@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export const CANONICAL_ANDROID_PACKAGE = 'app.switchboard.mobile'
+export const CANONICAL_ANDROID_PACKAGE = 'app.tn07.switchboard'
 export const CANONICAL_SIGNER_SHA256 =
   'BC:81:1E:37:12:C2:D5:7F:2B:6E:BD:A5:43:92:E6:2E:BD:2A:77:34:53:E5:0F:B3:75:E1:10:2D:B9:01:A8:F6'
 export const MINIMUM_NATIVE_VERSION_NAME = '0.5.0'

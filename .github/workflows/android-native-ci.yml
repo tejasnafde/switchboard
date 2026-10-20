@@ -65,6 +65,17 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug assembleRelease compileDebugAndroidTestKotlin
 
+      - name: Upload unit test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: |
+            apps/android/app/build/reports/tests/testDebugUnitTest/**
+            apps/android/app/build/test-results/testDebugUnitTest/**
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Locate Android build tools
         run: |
           set -euo pipefail

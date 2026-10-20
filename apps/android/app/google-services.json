@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "974343814740",
+    "project_id": "teejayproject",
+    "storage_bucket": "teejayproject.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:974343814740:android:7593e4ecd92e59353e37c1",
+        "android_client_info": {
+          "package_name": "app.tn07.switchboard"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "974343814740-ep0esb453q5tu6sta0c10ntkt43j466q.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAFcw4aNehZAhReL4sGMCNxtnqQu8NrAXM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "974343814740-0grpoovl4e9ku6h8ccc7s7v3ffa3maf7.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "974343814740-vkg5ts1i10pn0hu9h5gnupnru74ml1j7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "app.tn07.scout"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

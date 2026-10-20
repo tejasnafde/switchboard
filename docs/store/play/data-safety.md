@@ -1,7 +1,7 @@
 # Google Play policy answers: Switchboard
 
 Answers for Play Console > Policy > App content, for the native Android app
-(`apps/android`, package `app.switchboard.mobile`) as built for release.
+(`apps/android`, package `app.tn07.switchboard`) as built for release.
 Every answer is traced to code below; Kotlin paths are under
 `apps/android/app/src/main/java/app/switchboard/mobile/`. The privacy policy at
 `https://tn07.dev/privacy` states the same facts. Listing text and graphics are

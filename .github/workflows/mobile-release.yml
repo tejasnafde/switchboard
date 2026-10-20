@@ -10,7 +10,7 @@
 #   ANDROID_KEY_ALIAS
 #   ANDROID_KEY_PASSWORD
 #   PLAY_SERVICE_ACCOUNT_JSON   JSON key of a service account invited in the
-#                               Play Console for app.switchboard.mobile only
+#                               Play Console for app.tn07.switchboard only
 #
 # React Native iOS continues to use mobile-ota.yml. This lane never invokes EAS
 # and uploads nothing until package, version, signer and permission checks pass.
@@ -138,7 +138,7 @@ jobs:
           set -euo pipefail
           OUTPUT="$(node ../../scripts/verify-android-apk.mjs --aab "$GITHUB_WORKSPACE/$RELEASE_AAB")"
           echo "$OUTPUT"
-          if ! grep -qF "Verified Android release AAB: app.switchboard.mobile ${{ steps.version.outputs.version }} (" <<< "$OUTPUT"; then
+          if ! grep -qF "Verified Android release AAB: app.tn07.switchboard ${{ steps.version.outputs.version }} (" <<< "$OUTPUT"; then
             echo "::error::AAB versionName does not match ${{ steps.version.outputs.version }}"
             exit 1
           fi
@@ -156,7 +156,7 @@ jobs:
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: app.switchboard.mobile
+          packageName: app.tn07.switchboard
           releaseFiles: ${{ env.RELEASE_AAB }}
           track: ${{ inputs.track }}
           status: ${{ inputs.status }}

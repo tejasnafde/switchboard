@@ -33,19 +33,19 @@ function runVerifier(args: string[], env: Record<string, string> = {}) {
 describe('Android APK release verifier', () => {
   test('parses package identity and version metadata from aapt badging', () => {
     const metadata = parseAaptBadging(
-      "package: name='app.switchboard.mobile' versionCode='2' versionName='0.5.0' compileSdkVersion='36'\n" +
+      "package: name='app.tn07.switchboard' versionCode='2' versionName='0.5.0' compileSdkVersion='36'\n" +
         "sdkVersion:'24'\ntargetSdkVersion:'36'\n",
     )
 
     expect(metadata).toEqual({
-      packageName: 'app.switchboard.mobile',
+      packageName: 'app.tn07.switchboard',
       versionCode: 2,
       versionName: '0.5.0',
     })
   })
 
   test('rejects incomplete aapt badging instead of inventing defaults', () => {
-    expect(() => parseAaptBadging("package: name='app.switchboard.mobile' versionCode='2'\n")).toThrow('versionName')
+    expect(() => parseAaptBadging("package: name='app.tn07.switchboard' versionCode='2'\n")).toThrow('versionName')
   })
 
   test('normalizes the single signer SHA-256 reported by apksigner', () => {
@@ -98,7 +98,7 @@ describe('Android APK release verifier', () => {
   test('rejects a parallel package even when every other field is valid', () => {
     expect(() =>
       verifyApkEvidence({
-        packageName: 'app.switchboard.mobile.native.dev',
+        packageName: 'app.tn07.switchboard.native.dev',
         versionCode: 2,
         versionName: '0.5.0',
         signerSha256: [CANONICAL_SIGNER_SHA256],
@@ -106,7 +106,7 @@ describe('Android APK release verifier', () => {
         checksum: { sha256: digest, filename: 'switchboard-0.5.0.apk' },
         apkFilename: 'switchboard-0.5.0.apk',
       }),
-    ).toThrow('package must be app.switchboard.mobile')
+    ).toThrow('package must be app.tn07.switchboard')
   })
 
   test('rejects version names and codes below the native upgrade floor', () => {
@@ -154,19 +154,19 @@ describe('Android APK release verifier', () => {
   describe('release AAB', () => {
     const manifest = (permissions: string[]) =>
       '<manifest xmlns:android="http://schemas.android.com/apk/res/android" android:compileSdkVersion="36" ' +
-      'android:versionCode="21" android:versionName="0.5.19" package="app.switchboard.mobile">\n' +
+      'android:versionCode="21" android:versionName="0.5.19" package="app.tn07.switchboard">\n' +
       '  <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36"/>\n' +
       permissions.map((name) => `  <uses-permission android:name="${name}"/>\n`).join('') +
       '</manifest>\n'
 
     test('reads identity and permissions from bundletool manifest XML', () => {
       expect(parseBundleManifest(manifest(['android.permission.INTERNET', 'android.permission.CAMERA']))).toEqual({
-        packageName: 'app.switchboard.mobile',
+        packageName: 'app.tn07.switchboard',
         versionCode: 21,
         versionName: '0.5.19',
         permissions: ['android.permission.INTERNET', 'android.permission.CAMERA'],
       })
-      expect(() => parseBundleManifest('<manifest package="app.switchboard.mobile">')).toThrow('versionCode')
+      expect(() => parseBundleManifest('<manifest package="app.tn07.switchboard">')).toThrow('versionCode')
       const withTag = (tag: string) => manifest([]).replace('</manifest>', `${tag}</manifest>`)
       expect(parseBundleManifest(withTag("<uses-permission android:name='x'/>")).permissions).toEqual(['x'])
       expect(() => parseBundleManifest(withTag('<uses-permission android:maxSdkVersion="28"/>'))).toThrow(
@@ -212,7 +212,7 @@ describe('Android APK release verifier', () => {
       writeFileSync(apk, 'unsigned apk fixture')
       writeFileSync(
         aapt,
-        "#!/bin/sh\nprintf \"package: name='app.switchboard.mobile' versionCode='2' versionName='0.5.0'\\n\"\n",
+        "#!/bin/sh\nprintf \"package: name='app.tn07.switchboard' versionCode='2' versionName='0.5.0'\\n\"\n",
       )
       chmodSync(aapt, 0o755)
 
@@ -234,7 +234,7 @@ describe('Android APK release verifier', () => {
       writeFileSync(apk, 'previous signed apk fixture')
       writeFileSync(
         aapt,
-        "#!/bin/sh\nprintf \"package: name='app.switchboard.mobile' versionCode='2' versionName='0.5.0'\\n\"\n",
+        "#!/bin/sh\nprintf \"package: name='app.tn07.switchboard' versionCode='2' versionName='0.5.0'\\n\"\n",
       )
       writeFileSync(
         apksigner,
@@ -264,7 +264,7 @@ describe('Android APK release verifier', () => {
       writeFileSync(apk, 'previous signed apk fixture')
       writeFileSync(
         aapt,
-        "#!/bin/sh\nprintf \"package: name='app.switchboard.mobile' versionCode='2' versionName='0.5.0'\\n\"\n",
+        "#!/bin/sh\nprintf \"package: name='app.tn07.switchboard' versionCode='2' versionName='0.5.0'\\n\"\n",
       )
       writeFileSync(apksigner, `#!/bin/sh\nprintf "Signer #1 certificate SHA-256 digest: ${'F'.repeat(64)}\\n"\n`)
       chmodSync(aapt, 0o755)
@@ -291,7 +291,7 @@ describe('Android APK release verifier', () => {
       writeFileSync(apk, 'signed apk fixture')
       writeFileSync(
         aapt,
-        "#!/bin/sh\nprintf \"package: name='app.switchboard.mobile' versionCode='2' versionName='0.5.0'\\n\"\n",
+        "#!/bin/sh\nprintf \"package: name='app.tn07.switchboard' versionCode='2' versionName='0.5.0'\\n\"\n",
       )
       writeFileSync(
         apksigner,
@@ -322,7 +322,7 @@ describe('Android APK release verifier', () => {
       writeFileSync(checksum, `${sha256}  switchboard-0.5.0.apk\n`)
       writeFileSync(
         aapt,
-        "#!/bin/sh\nprintf \"package: name='app.switchboard.mobile' versionCode='2' versionName='0.5.0'\\n\"\n",
+        "#!/bin/sh\nprintf \"package: name='app.tn07.switchboard' versionCode='2' versionName='0.5.0'\\n\"\n",
       )
       writeFileSync(
         apksigner,

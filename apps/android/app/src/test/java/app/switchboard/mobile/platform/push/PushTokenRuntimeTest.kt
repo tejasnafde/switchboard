@@ -115,6 +115,6 @@ class PushTokenRuntimeTest {
     }
 
     private companion object {
-        val identity = ExpoPushProjectIdentity("project", "app.switchboard.mobile")
+        val identity = ExpoPushProjectIdentity("project", "app.tn07.switchboard")
     }
 }
