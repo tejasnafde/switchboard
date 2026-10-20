@@ -1087,16 +1087,23 @@ function seededDevice(id, identity, { lastSeenDaysAgo = 0, pairedDaysAgo, custom
 function connectPhone(port, session) {
   return new Promise((done, fail) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/?auth=frame`)
+    const settle = (error) => {
+      clearTimeout(timer)
+      if (!error) return done(ws)
+      ws.terminate()
+      fail(error)
+    }
+    const timer = setTimeout(() => settle(new Error(`phone ${session.id} did not authenticate in 10 s`)), 10_000)
     ws.on('open', () =>
       ws.send(JSON.stringify({ k: 'auth', session: `${session.id}-token`, device: session.identity })),
     )
     ws.on('message', (data) => {
       const frame = JSON.parse(data.toString())
       if (frame.k !== 'authed') return
-      if (frame.ok) done(ws)
-      else fail(new Error(`phone ${session.id} was refused: ${frame.error}`))
+      settle(frame.ok ? null : new Error(`phone ${session.id} was refused: ${frame.error}`))
     })
-    ws.on('error', fail)
+    ws.on('error', settle)
+    ws.on('close', (code) => settle(new Error(`phone ${session.id} closed (${code}) before authenticating`)))
   })
 }
 
@@ -1183,8 +1190,8 @@ async function captureDevicesScreens(win, theme, settings) {
   )
   // The iPhone first, so the Pixel is the newer of the two online rows.
   const phones = []
-  for (const session of [iphone, pixel]) phones.push(await connectPhone(port, session))
   try {
+    for (const session of [iphone, pixel]) phones.push(await connectPhone(port, session))
     await settings.getByRole('button', { name: /^Devices & machines/ }).click()
     const list = settings.getByTestId('paired-devices')
     await list.getByText('Online now').waitFor({ state: 'visible' })
