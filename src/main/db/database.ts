@@ -376,8 +376,7 @@ function migrate(db: Database.Database): void {
   // user sees as one chat. This table maps each child session_id to its
   // root thread id (the stable id the user renamed, archived, etc.).
   //
-  // Pattern borrowed from T3 Code's `projection_thread_sessions` spec -
-  // "never overload orchestration thread id as Claude thread id."
+  // Rule: never reuse the app's thread id as a Claude session id.
   db.exec(`
     CREATE TABLE IF NOT EXISTS thread_sessions (
       claude_session_id TEXT PRIMARY KEY,

@@ -37,7 +37,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - `model.variants` · available model variants + current selection
 - `plan.proposed` · ExitPlanMode intercept → PlanCard
 - `question.asked` / `question.answered` · AskUserQuestion intercept → QuestionCard
-- `file.edited` · **2026-06-02**: one event per changed file per turn, sourced from a git checkpoint diff (provider-agnostic) - drives the Cursor-style in-chat diff card with per-hunk accept/reject
+- `file.edited` · **2026-06-02**: one event per changed file per turn, sourced from a git checkpoint diff (provider-agnostic) - drives the in-chat diff card with per-hunk accept/reject
 - `request.expired` · the provider can no longer take an answer for an open approval or question (its session errored, stopped or restarted). Clients replace the card with a notice naming the reason, recovery closes cards the backend no longer lists, and `RESPOND_TO_REQUEST` / `ANSWER_QUESTION` refuse a request the registry no longer holds (`REQUEST_EXPIRED`) instead of returning silently
 - `error` · adapter-level error surfaced to chat
 
@@ -64,7 +64,7 @@ A Claude subagent's work belongs to the Agent/Task call that started it. The ada
 1. Agent calls `AskUserQuestion` or `ExitPlanMode` (both in `CUSTOM_UI_TOOLS`) - raw `tool.started` is suppressed
 2. SDK fires `canUseTool` → our handler intercepts, emits `question.asked` / `plan.proposed`
 3. ChatPanel appends a message with `question` or `plan` attachment
-4. `MessageBubble` routes to `QuestionCard` (T3-style, numbered shortcuts 1-9, auto-advance) or `PlanCard` (markdown + Implement/Iterate buttons)
+4. `MessageBubble` routes to `QuestionCard` (one question at a time, numbered shortcuts 1-9, auto-advance) or `PlanCard` (markdown + Implement/Iterate buttons)
 5. User answers → `provider.answerQuestion(threadId, requestId, answers)` resolves the blocked Promise
 6. `canUseTool` returns allow + `updatedInput` with the answer payload
 

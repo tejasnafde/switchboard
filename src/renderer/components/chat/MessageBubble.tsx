@@ -603,7 +603,7 @@ export const MessageBubble = memo(function MessageBubble({
           />
         )}
 
-        {/* Per-file diff card with accept/reject (Cursor-style) */}
+        {/* Per-file diff card with accept/reject */}
         {message.fileDiff && (
           <FileDiffCard
             fileDiff={message.fileDiff}
@@ -655,7 +655,7 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         )}
 
-        {/* Per-turn duration ("Worked for 1.4s") - Cursor-style indicator
+        {/* Per-turn duration ("Worked for 1.4s"), an indicator
             shown only on the last assistant message of a completed turn. */}
         {!hideTurnDuration && message.role === 'assistant' && typeof message.turnDurationMs === 'number' && (
           <div

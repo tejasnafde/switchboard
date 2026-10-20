@@ -313,7 +313,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       // Token usage comes from context_window events only - this event's
       // usedTokens is input_tokens sans cache reads, misleadingly tiny.
       // Stamp wall-clock duration on the last assistant message so the
-      // bubble can render "Worked for X.Xs" Cursor-style.
+      // bubble can render "Worked for X.Xs".
       if (event.durationMs !== undefined) {
         const store = useAgentStore.getState()
         const sessForDur = store.sessions.find((s) => s.id === tid)

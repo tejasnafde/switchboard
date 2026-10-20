@@ -1,5 +1,5 @@
 /**
- * Cursor-style update toast, rendered app-level in App.tsx. Appears
+ * Update toast, rendered app-level in App.tsx. Appears
  * bottom-right when the auto-updater reports `downloaded`. "Restart"
  * quits into the new version; "Later" hides it for this session (per
  * version, so a newer download re-surfaces it).

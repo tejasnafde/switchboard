@@ -12,9 +12,9 @@ Modern AI-assisted development has fractured the developer's attention across at
 
 **The Agent TUI** (Claude Code, Codex CLI) - powerful coding agents that run in a terminal, maintain rich conversation histories (JSONL in `~/.claude/projects/` and `~/.codex/sessions/`), but have zero awareness of your other running processes. You can't say "look at this error in my frontend terminal" - you have to copy-paste it.
 
-**The Terminal Multiplexer** (tmux, cmux) - where your actual services run: frontend dev server, backend, DB tunnels, log tails. tmux is battle-tested but blind to agents. cmux (Fdds agent-aware notifications, vertical tabs, and a socket API, but it's still *just* a terminal - no chat UI, no conversation persistence across sessions, no declarative project layouts.
+**The Terminal Multiplexer** (tmux and agent-aware terminals) - where your actual services run: frontend dev server, backend, DB tunnels, log tails. tmux is battle-tested but blind to agents. Agent-aware terminals add notifications, vertical tabs, and a socket API, but they are still *just* terminals - no chat UI, no conversation persistence across sessions, no declarative project layouts.
 
-**The Launch Config** (Warp YAML) - the only tool that lets you declaratively define "for this project, open these tabs with these commands." But it's Warp-only, has no agent/chat integration, and the configs don't travel with the repo.
+**The Launch Config** (terminal launch YAML) - the only kind of tool that lets you declaratively define "for this project, open these tabs with these commands." But it is tied to one terminal, has no agent/chat integration, and the configs don't travel with the repo.
 
 The result: you `⌘-Tab` between 3-4 apps constantly. Your agent can't see your terminal output. Your terminal can't see your agent's reasoning. Your conversation history is scattered across `~/.claude/`, `~/.codex/`, and Cursor's SQLite. When you switch repos, you start from scratch. When you resume tomorrow, you reconstruct the layout manually.
 
@@ -22,9 +22,9 @@ The result: you `⌘-Tab` between 3-4 apps constantly. Your agent can't see your
 
 ---
 
-## The Gap: Where dpcode, cmux, and t3code rt
+## The Gap: Where existing tools stop
 
-| Capability | cmux | t3code / dpcode | Warp | **Switchboard** |
+| Capability | Agent-aware terminal | Agent chat GUI | Terminal with launch configs | **Switchboard** |
 |---|---|---|---|---|
 | Terminal multiplexing | ✅ Split panes, vertical tabs | ❌ No terminals | ✅ Tabs + splits | ✅ |
 | Agent chat UI | ❌ Raw TUI only | ✅ Web GUI for Codex/Claude | ❌ | ✅ |
@@ -35,9 +35,9 @@ The result: you `⌘-Tab` between 3-4 apps constantly. Your agent can't see your
 | Per-project workspace persistence | ❌ | Partial (thread per project) | ❌ (session restore) | ✅ |
 | Conversation history browsing | ❌ | Partial | ❌ | ✅ Unified across agents |
 
-**dpcode specifically**: It's a T3 Code fork with 1,129 commits, ~130 stars, single contributor. It adds Claude Code support alongside Codex. But its TODO reveals where it actuallre no terminals, no split panes, no layout persistence, no conversation import. It's a chat GUI wrapper, not a workspace. The delta from dpcode to what we want is enormous - it would need a ground-up rearchitecture to become a multiplexed workspace rather than a chat app.
+**Agent chat GUIs**: They wrap Codex and Claude Code in a rendered chat, but have no terminals, no split panes, no layout persistence, and no conversation import. They are chat wrappers, not workspaces. Turning one into a multiplexed workspace would need a ground-up rearchitecture.
 
-**cmux specifically**: Closest to the terminal side of the vision. Native macOS (Swift/AppKit + libghostty), socket API for automation, agent notification rings, embedded browser. But it has no chat UI - you see agent TUI output in a terminal pane, not rendered markdown. No conversation import. Layout persistence is manual or via the community `terminals.json` hack, not a first-class feature. It's an *agent-aware terminal*, not an *agent workspace*.
+**Agent-aware terminals**: Closest to the terminal side of the vision: native terminal rendering, a socket API for automation, agent notification rings, sometimes an embedded browser. But there is no chat UI - you see agent TUI output in a terminal pane, not rendered markdown. No conversation import. Layout persistence is manual or a community workaround, not a first-class feature. They are *agent-aware terminals*, not *agent workspaces*.
 
 ---
 
@@ -69,7 +69,7 @@ One window. One project. Everything connected.
 └──────────┴───âhitecture: Building Blocks to Glue Together
 
 ### Layer 1 - Terminal Engine
-**libghostty** (or xterm.js for cross-platform). cmux proved libghostty works beautifully for this. The terminal panes are real PTY sessions - they run your dev server, your DB tunnel, your log tail. Each pane has a label, a status indicator, and the ability to capture selected text as structured context.
+**libghostty** (or xterm.js for cross-platform). libghostty is known to work well for agent-aware terminals. The terminal panes are real PTY sessions - they run your dev server, your DB tunnel, your log tail. Each pane has a label, a status indicator, and the ability to capture selected text as structured context.
 
 ### Layer 2 - Agent Runtime Bridge
 Don't rebuild Claude Code or Codex. Spawn them as subses in terminal panes, but intercept their I/O via the existing protocols:
@@ -128,12 +128,12 @@ on_start:
   - then: backend
 ```
 
-This is the Warp Launch Config concept, but project-portable and agent-aware. Check it into git. New team member clones, runs `switchboard`, gets the full workspace.
+This is a terminal launch config, but project-portable and agent-aware. Check it into git. New team member clones, runs `switchboard`, gets the full workspace.
 
 ### Layer 5 - Context Bridge (the ⌘+L interaction)
 
 The core UX innovation. When you select text in a terminal pane:
-- `⌘+L` - append to the current chat as context (like Cursor's behavior)
+- `⌘+L` - append to the current chat as context
 - `⌘+K` inline quick-prompt with that context
 - The context carries metadata: which pane, what command was running, timestamp
 
@@ -141,17 +141,17 @@ This means the agent can reason about: "The error in your backend pane at 14:32 
 
 ### Layer 6 - Electron/Tauri Shell
 
-Package as a desktop app. Electron is the pragmatic choice (dpcode/t3code already use it, xterm.js is native). Tauri is lighter but would need a Rust terminal implementation. Given the goal is shipping fast, Electron + xterm.js + React is the path - fork from dpcode's shell but gut the internals.
+Package as a desktop app. Electron is the pragmatic choice (agent chat GUIs already use it, xterm.js is native). Tauri is lighter but would need a Rust terminal implementation. Given the goal is shipping fast, Electron + xterm.js + React is the path.
 
 ---
 
 ## Build vs. Fork Decision
 
-**Don't fork dpcode.** It's too far from the target. dpcode is a chat GUI that wraps agent CLIs. Switchboard is a workspace multiplexer that happens ave a chat as its primary surface. The architecture is inverted.
+**Don't fork an agent chat GUI.** It's too far from the target. A chat GUI wraps agent CLIs. Switchboard is a workspace multiplexer that has a chat as its primary surface. The architecture is inverted.
 
-**Do steal from cmux's design language** - vertical tabs, notification rings, status indicators. But implement in Electron, not native Swift, for cross-platform reach and faster iteration.
+**Use the agent-aware terminal design language** - vertical tabs, notification rings, status indicators. But implement in Electron, not native Swift, for cross-platform reach and faster iteration.
 
-**Do study t3code's agent spawning** - it solved the "wrap Claude Code / Codex as a subprocess and render their output" problem. Extract that pattern.
+**Wrap the agents as subprocesses** - spawn Claude Code / Codex as a subprocess and render their output as chat.
 
 **Build on these exng libraries:**
 - `xterm.js` - terminal rendering

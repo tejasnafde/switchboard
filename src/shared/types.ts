@@ -249,7 +249,7 @@ export interface QuestionAttachment {
 
 /**
  * A per-file diff card derived from a git checkpoint around a turn. Rendered
- * inline in the chat (one card per edited file) with Cursor-style per-hunk
+ * inline in the chat (one card per edited file) with per-hunk
  * accept/reject. The agent has already written `newContent` to disk; the card
  * lets the user keep or revert all-or-part of it.
  */
@@ -319,8 +319,7 @@ export interface ChatMessage {
   /**
    * Wall-clock duration of the assistant turn that produced this message,
    * in ms. Set on the LAST assistant message of a turn when `turn.completed`
-   * fires. Rendered by MessageBubble as "Worked for X.Xs" under the bubble,
-   * Cursor-style.
+   * fires. Rendered by MessageBubble as "Worked for X.Xs" under the bubble.
    */
   turnDurationMs?: number
   /**

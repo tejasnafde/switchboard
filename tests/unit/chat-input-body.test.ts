@@ -4,7 +4,7 @@
  * Why these exist as pure functions:
  *   - The ChatInput surface is about to flip from `<textarea>` to a
  *     contenteditable div so we can render inline pill chips at the
- *     caret position (Cursor-style). Most of the failure modes live in
+ *     caret position. Most of the failure modes live in
  *     the *text representation* - pill tokens, caret arithmetic, and
  *     the wire serialization on Send. Keeping those pure means the
  *     contenteditable surface only owns DOM concerns; the data layer

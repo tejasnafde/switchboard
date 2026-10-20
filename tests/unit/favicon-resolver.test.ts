@@ -1,6 +1,6 @@
 /**
- * Auto-detect a project's favicon for the sidebar leading icon. Mirrors
- * t3code's ProjectFaviconResolver probe order - root, public/, app/, src/,
+ * Auto-detect a project's favicon for the sidebar leading icon. Probe
+ * order: root, public/, app/, src/,
  * assets/, .idea/ - and falls back to scanning HTML `<link rel="icon">`
  * tags. Cross-platform: paths join via node:path, no hardcoded separators.
  */

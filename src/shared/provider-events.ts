@@ -708,7 +708,7 @@ export interface RuntimeTurnCompletedEvent {
    * Wall-clock duration of the turn in milliseconds, measured from when the
    * adapter accepted the user message to when the agent finished responding.
    * Optional - adapters that can't measure (e.g. legacy paths) omit it.
-   * Rendered by MessageBubble as "Worked for X.Xs" Cursor-style.
+   * Rendered by MessageBubble as "Worked for X.Xs".
    */
   durationMs?: number
 }
@@ -919,7 +919,7 @@ export interface RuntimeQuestionAnsweredEvent {
  * Emitted once per file changed during a turn, derived from a git checkpoint
  * diff (start-of-turn snapshot vs end-of-turn working tree). Provider-agnostic
  * - git is the source of truth, so this fires identically for Claude / Codex /
- * OpenCode regardless of how each surfaces its edits. Drives the Cursor-style
+ * OpenCode regardless of how each surfaces its edits. Drives the
  * in-chat diff card with per-hunk accept/reject.
  */
 export interface RuntimeFileEditedEvent {

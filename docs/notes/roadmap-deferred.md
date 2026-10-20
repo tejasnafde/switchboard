@@ -65,13 +65,10 @@ side of the work is straightforward: add a `kanban_cards.slack_thread_ts`
 column, an "Inbox" column to the kanban, and a webhook listener that we
 can wire up to either transport later.
 
-**Reference.** vibe-kanban's `crates/relay-*` family
-(`relay-client`, `relay-control`, `relay-hosts`, `relay-protocol`,
-`relay-tunnel`, `relay-tunnel-core`, `relay-types`, `relay-webrtc`,
-`relay-ws`) is a complete reference implementation of the user-hosted
-tunnel option in Rust. Worth reading before committing to a design.
-Repo: <https://github.com/BloopAI/vibe-kanban> (note: project is
-sunsetting per their README, but the code is up).
+**Reference.** A user-hosted tunnel needs a client, a control channel,
+a host registry, a wire protocol, the tunnel itself (WebSocket, with
+WebRTC as an option) and shared types. Design each part before
+committing to a transport.
 
 ---
 
@@ -98,9 +95,8 @@ architectural calls.
 2. Apple Developer account + TestFlight setup.
 3. Pairing-token auth design.
 
-**Reference.** Same `relay-*` crates from vibe-kanban. Their
-`crates/tauri-app` is the closest analog to a desktop-paired mobile
-controller, though Tauri is the wrong stack for our needs.
+**Reference.** The same relay parts as above. A desktop-paired mobile
+controller sits on top of them.
 
 ---
 
@@ -185,7 +181,7 @@ ships first. Adapter changes to accept an `instanceId` at
 
 ---
 
-## 5. Multi-instance provider picker (t3code-style) - ✅ SHIPPED
+## 5. Multi-instance provider picker - ✅ SHIPPED
 
 > **Update (2026-06-01):** This shipped. `provider_instances` table +
 > `ipc/provider-instances.ts` + `UnifiedProviderPicker` + Settings →
@@ -200,7 +196,7 @@ Users with multiple Codex accounts (`codex-work`, `codex-personal`,
 `codex-frontier`) currently have to swap shell environments to use
 them.
 
-t3code solves this with **multiple named instances per driver kind**:
+The answer is **multiple named instances per driver kind**:
 each instance has its own display name, accent color, env vars, and
 shows up in a sidebar of icon-rounds (CW / CF / CP) above the model
 picker. See the screenshot the user shared 2026-05-04 for the
@@ -213,8 +209,8 @@ visible models.
 - `provider_instances` table in settings DB: `(id, agent_type,
   display_name, accent_color, env_json, created_at)`. Multiple rows per
   `agent_type` allowed.
-- Settings → Providers gets a list-of-instances UI (modeled after
-  t3code's `ProviderInstanceCard.tsx`).
+- Settings → Providers gets a list-of-instances UI (one card per
+  instance).
 - Model picker dropdown becomes two-pane: left rail of instances for
   the active agent type, right pane of models for the selected
   instance.
@@ -236,14 +232,9 @@ auto-rotation. Picker first, rotation as a v2.
 migrations) + a pass over each adapter to thread `instanceId` through
 `startSession`.
 
-**Reference.** t3code:
-`apps/web/src/components/settings/ProviderInstanceCard.tsx`,
-`packages/contracts/src/providerInstance.ts`. The cursor adapter from
-vibe-kanban (`/tmp/vibe-kanban/crates/executors/src/executors/cursor.rs`,
-`resolve_cursor_model_name`) is worth yoinking specifically for its
-`(base_model, reasoning) → full_model_id` mapping table - covers ~30
-cursor variants and is the kind of registry we'll want once instances
-multiply.
+**Reference.** Once instances multiply we will want a
+`(base_model, reasoning) → full_model_id` mapping table, so that each
+model and reasoning pair resolves to one full model id.
 
 ---
 
@@ -251,7 +242,7 @@ multiply.
 
 **Not in the first app release.** Recorded 2026-08-02.
 
-T3 Code and Codex both moved their desktop sidebar from a static tree of
+Agent desktop apps are moving their sidebar from a static tree of
 folders/chats/repos to an attention model: whatever needs you bubbles up,
 everything settled drops away. The case for it is much stronger on MOBILE,
 where reaching a chat costs four screens (Connections → Projects →
@@ -264,14 +255,14 @@ question / done / error, which is exactly the ordering a list would want. The
 same classifier can drive the UI, which also keeps the list and the
 notifications from ever disagreeing.
 
-Three things to get right, all learned from looking at theirs:
+Three things to get right:
 
 - **Segment, do not re-sort.** Sorting the whole list by attention destroys
   spatial memory - "my repo is third from the top" is real muscle memory, and
   a list that reorders under you is worse than a static one. Pin an attention
   section above a stable list instead.
-- **"Settled" needs a definition.** T3 has an explicit `thread.settled` event.
-  We have no such concept, and inferring it from `turn.completed` is wrong for
+- **"Settled" needs a definition.** An explicit `thread.settled` event would
+  do it. We have no such concept, and inferring it from `turn.completed` is wrong for
   a thread whose last turn ended in an error or an unanswered question. This is
   the actual work; the sorting is the easy part.
 - **On mobile it should REPLACE the middle levels for the default path**, not
@@ -424,8 +415,8 @@ from these notes rather than looking for a branch.
 Today `WsHost` keeps replayable events in a bounded in-memory
 `EventReplayBuffer` and mints a random `epoch` per process, so a server
 RESTART forces every client into a full re-seed (`ready { gap: true }`).
-t3code persists events in SQLite with monotonic sequences and resumes with
-`afterSequence`, which survives restarts and deletes the epoch/gap machinery
+Persisting events in SQLite with monotonic sequences and resuming with
+`afterSequence` survives restarts and deletes the epoch/gap machinery
 for the common case.
 
 Design constraints worked out already:
@@ -453,12 +444,5 @@ two-runner rule. JS only, so it stays on the OTA lane.
 
 ## Reference index
 
-- vibe-kanban: <https://github.com/BloopAI/vibe-kanban> (sunsetting,
-  but the relay/workspace code is the most complete public reference
-  for desktop-paired-with-cloud agent harnesses).
-- t3code: <https://github.com/pingdotgg/t3code> (multi-instance
-  provider config; see
-  `apps/web/src/components/settings/ProviderInstanceCard.tsx` and
-  `packages/contracts/src/providerInstance.ts`).
-- Cursor adapter (worth yoinking model+reasoning matrix from):
-  `/tmp/vibe-kanban/crates/executors/src/executors/cursor.rs`.
+Other projects that informed this roadmap are credited in the README
+(Acknowledgements).

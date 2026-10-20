@@ -3,8 +3,8 @@
  */
 
 /**
- * Human-friendly turn duration. Same rough vocabulary as Cursor's "Worked for
- * 2s" indicator. We choose 1-decimal seconds under a minute so quick turns
+ * Human-friendly turn duration for the "Worked for 2s" indicator.
+ * We choose 1-decimal seconds under a minute so quick turns
  * feel responsive; minutes/hours get integer parts only.
  *
  *   200    → "0.2s"

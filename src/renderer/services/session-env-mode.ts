@@ -1,6 +1,5 @@
 /**
- * Per-Settings preference for "default workspace mode for new sessions".
- * Mirrors the t3code `defaultThreadEnvMode` setting:
+ * Per-Settings preference for "default workspace mode for new sessions":
  *
  *   - 'local'    → new sessions run in the project root cwd (current behavior)
  *   - 'worktree' → new sessions get a fresh `git worktree` off HEAD; the

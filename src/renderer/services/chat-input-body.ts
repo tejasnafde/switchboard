@@ -1,7 +1,7 @@
 /**
  * Pure helpers behind ChatInput's pill-aware text body.
  *
- * The chat input renders inline pill chips (Cursor-style) at arbitrary
+ * The chat input renders inline pill chips at arbitrary
  * caret positions. To keep the data layer testable without a DOM, we
  * represent each pill as a token of the form:
  *

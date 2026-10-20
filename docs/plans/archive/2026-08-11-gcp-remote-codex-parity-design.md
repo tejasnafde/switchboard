@@ -71,8 +71,8 @@ owns provider processes, credentials, session state, terminals, files, git,
 and the database. Remoteness remains a connection-layer concern; provider
 adapters do not learn SSH.
 
-This matches the useful core of T3 Code's remote model and Omnigent's runner
-model without adding a plugin system or a second control plane.
+One backend owns the work and clients connect to it, with no plugin system and
+no second control plane.
 
 ### Machine transport
 

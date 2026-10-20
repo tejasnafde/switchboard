@@ -2,7 +2,7 @@
 
 ## Goal
 
-Create a complete, reviewable mock set before changing the native Android app. The mocks use the official T3 Code mobile app as an information-hierarchy reference while retaining Switchboard's identity, backend concepts, voice input, image attachments, pairing, Google account flow, and APK self-update lifecycle.
+Create a complete, reviewable mock set before changing the native Android app. The mocks use a calm information hierarchy while retaining Switchboard's identity, backend concepts, voice input, image attachments, pairing, Google account flow, and APK self-update lifecycle.
 
 ## Direction
 
@@ -28,7 +28,7 @@ The review board covers connections, QR/manual pairing, projects, thread list, n
 
 ## Reference boundaries
 
-We adopt T3 Code's calm hierarchy, contextual status, compact composer, full-page Android pickers, and measured-space responsiveness. We do not copy its branding, content, or architecture. Switchboard keeps its canonical mark, blue accent, system compatibility contracts, and product-specific capabilities.
+We adopt a calm hierarchy, contextual status, compact composer, full-page Android pickers, and measured-space responsiveness. We do not copy any other product's branding, content, or architecture. Switchboard keeps its canonical mark, blue accent, system compatibility contracts, and product-specific capabilities.
 
 ## Review gate
 

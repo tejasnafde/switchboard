@@ -645,7 +645,7 @@ export function ChatPanel({
       }
       if (fd.noRevert) throw new Error(fileDiffNoRevertMessage(fd.noRevert))
       // Rejecting an agent-*added* file means it shouldn't exist - delete it
-      // rather than leaving a stray empty file (matches Cursor's revert).
+      // rather than leaving a stray empty file.
       // Only over what the agent wrote: a card reopened from history may be
       // older than later edits to the same file.
       const writeBack =

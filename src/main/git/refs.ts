@@ -3,8 +3,7 @@
  *
  *   - listRefs(cwd): enumerate every local + remote-tracking branch and
  *     annotate each with whether it already has an associated worktree
- *     (so the picker can reuse vs. checkout). Mirrors the t3code
- *     api.vcs.listRefs shape.
+ *     (so the picker can reuse vs. checkout).
  *   - switchRef(cwd, refName): `git checkout <ref>` after validating the
  *     ref name so we never pass `-rf` or `..` to git.
  *   - getCurrentBranch(cwd): used by the trigger chip to render `main ▾`.

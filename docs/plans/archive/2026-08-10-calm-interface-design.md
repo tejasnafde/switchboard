@@ -36,7 +36,7 @@ center.
 
 The approved reference artifact is
 `docs/demos/calm-workspace-mock.html`, with solid and Crystal Glass screenshots beside
-it. T3 Code informed the structural restraint: flat assistant prose, compact tool
+it. The design keeps structural restraint: flat assistant prose, compact tool
 disclosures, turn-level changed-file grouping, plain breadcrumbs, and neutral sidebar
 surfaces. Its colored status labels, dots, plan telemetry, file chips, and pill-heavy
 composer are explicitly not adopted.
@@ -120,7 +120,7 @@ runtime state remains directly visible:
   selection, context usage, or slash commands.
 - No mobile redesign in this change.
 - No first-run onboarding redesign in this change.
-- No attempt to copy T3 Code's visual identity.
+- No attempt to copy another product's visual identity.
 
 ## Regression Contracts
 
