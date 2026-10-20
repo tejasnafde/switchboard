@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Security
+- **Device credential settings need the admin scope.** A paired phone can no longer read or write the settings rows that hold device sessions, the pairing code, the mobile endpoint settings, push tokens, OpenCode API keys or the OAuth client secret. Ordinary settings stay open to the phone, and the desktop is not affected.
+
 ### Changed
 - **The Devices tab shows who is paired.** Settings > Devices & machines lists paired devices by last seen, with search (name, model, platform), sort, "Online now" and "Earlier" groups, and a "Show N more inactive devices" fold for devices not seen in 30 days. Details shows last seen, address and install ID (click to copy), system, app and paired date. Rename a device in Details: the name is stored on this computer only and replaces the reported one, with "Use reported name" to go back. Revoke is quiet until hover or focus, and "Revoke inactive (N)" lists what goes and what is kept before it asks. Nothing expires on its own.
 - **The old shared pairing token is retired.** The desktop deletes `mobilePairing.token`, no longer starts the phone endpoint from it, and closes a phone that still uses it with 4001, so the phone shows "This computer removed this phone. Pair again." The Token field and the legacy-device copy are gone. The VM server command no longer passes a token; the server mints its own.

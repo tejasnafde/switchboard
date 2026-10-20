@@ -72,25 +72,56 @@ const SCOPE_REQUIRED_CHANNELS: Partial<Record<DeviceScope, readonly string[]>> =
  * also holds the mode a session starts in when the client did not
  * say (the phone routinely does not) and the OAuth client consent runs against.
  * Writable, those let a stolen phone credential grant itself full access.
- * Reads stay open: neither is a secret and the phone seeds its picker from one.
+ * Reads stay open for these: the phone seeds its picker from the mode. The
+ * credential rows are in `ADMIN_ONLY_SETTING_FAMILIES`, gated for reads too.
  * The desktop's keyboard shortcuts are not a phone's to change either: the
  * phone has no Keyboard page, and a rebind moves keys under the user's hands.
  */
 const ADMIN_ONLY_SETTING_KEYS: readonly string[] = [
   'chat.defaultRuntimeMode',
   'google.clientId',
-  'google.clientSecret',
   KEYBOARD_OVERRIDES_SETTING,
 ]
+
+/**
+ * Settings rows a chat-scoped device must neither READ nor WRITE, because they
+ * hold device credentials or grant access. Writable, `deviceSessions` lets a
+ * phone mint itself a session with every scope; readable, `devicePairingCode`
+ * lets it pair another device. A name ending in `.` covers the whole family,
+ * so a new `mobilePairing.*` or `opencode.env.*` key is protected on arrival.
+ * The owners read and write these rows directly, never through `settings:*`.
+ */
+export const ADMIN_ONLY_SETTING_FAMILIES: readonly string[] = [
+  'deviceSessions', // device-sessions.ts: token hashes, scopes, install ids, addresses
+  'devicePairingCode', // device-sessions.ts: the live one-time pairing code
+  'mobilePairing.', // mobile-server.ts: the endpoint switch, port and legacy shared token
+  'pushTokens', // push/registry.ts: every paired device's push token
+  'opencode.env.', // opencode/env.ts: provider API keys injected into OpenCode
+  'google.clientSecret',
+]
+
+function inProtectedFamily(key: string): boolean {
+  return ADMIN_ONLY_SETTING_FAMILIES.some((family) => (family.endsWith('.') ? key.startsWith(family) : key === family))
+}
+
+function adminOnly(scopes: readonly DeviceScope[], key: unknown, keys: readonly string[]): boolean {
+  if (typeof key !== 'string') return true // shape errors belong to the handler
+  const governed = governedSettingKey(key)
+  if (!keys.includes(governed) && !inProtectedFamily(governed)) return true
+  return scopes.includes('admin')
+}
 
 /** Arg-level, because the channel is legitimately open. Enforced beside the
  *  channel check so no other route reaches the row. A project override is
  *  gated as the setting it overrides: one project's default mode grants as
  *  much as the machine's. */
 export function isSettingWriteAllowed(scopes: readonly DeviceScope[], key: unknown): boolean {
-  if (typeof key !== 'string') return true // shape errors belong to the handler
-  if (!ADMIN_ONLY_SETTING_KEYS.includes(governedSettingKey(key))) return true
-  return scopes.includes('admin')
+  return adminOnly(scopes, key, ADMIN_ONLY_SETTING_KEYS)
+}
+
+/** Reads of the credential families only; the other admin-only keys stay readable. */
+export function isSettingReadAllowed(scopes: readonly DeviceScope[], key: unknown): boolean {
+  return adminOnly(scopes, key, [])
 }
 
 /**
@@ -105,11 +136,13 @@ export function isAccountWriteAllowed(scopes: readonly DeviceScope[], input: unk
   return scopes.includes('terminal')
 }
 
-/** The frame-level form both hosts enforce: removing a protected key is a write too. */
+/** The frame-level form both hosts enforce: removing a protected key is a write too,
+ *  and reading a credential family is gated like writing it. */
 export function isSettingsFrameAllowed(scopes: readonly DeviceScope[], channel: string, args: unknown): boolean {
   const list = Array.isArray(args) ? args : []
   if (channel === ProviderInstanceChannels.UPSERT) return isAccountWriteAllowed(scopes, list[0])
   if (channel === 'settings:set' || channel === 'settings:remove') return isSettingWriteAllowed(scopes, list[0])
+  if (channel === 'settings:get') return isSettingReadAllowed(scopes, list[0])
   // (projectPath, settingKey, value?)
   if (channel === 'settings:project-override-set' || channel === 'settings:project-override-remove') {
     return isSettingWriteAllowed(scopes, list[1])
