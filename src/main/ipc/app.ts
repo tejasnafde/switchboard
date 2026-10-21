@@ -585,7 +585,8 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
           : await loadConversationHistory(conversationId, row.project_path)
         // Lazy backfill for chats whose last turn ended before the column existed.
         // Skipped mid-turn: the history's newest text is not a finished turn yet.
-        if (!(rootRow ?? row).status_line && !deps.isTurnInFlight?.(conversationId)) {
+        // Skipped for an older page: its newest text is not the chat's last turn.
+        if (!(rootRow ?? row).status_line && !opts?.beforeId && !deps.isTurnInFlight?.(conversationId)) {
           const statusLine = sessionPreviewLine(history.messages)
           try {
             // Mounted lists refresh on this, as they do after a turn stores one.

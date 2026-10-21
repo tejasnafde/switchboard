@@ -281,6 +281,7 @@ export function MessageList({
   const hasOlderRef = useRef(hasOlderHistory)
   hasOlderRef.current = hasOlderHistory
   const loadingOlderRef = useRef(false)
+  const intentSpentAtRef = useRef<number | undefined>(undefined)
 
   const maybeLoadOlder = useCallback(
     (intent = false) => {
@@ -295,9 +296,11 @@ export function MessageList({
           hasOlder: hasOlderRef.current,
           loading: loadingOlderRef.current,
           intent,
+          intentSpentAt: intentSpentAtRef.current,
         })
       )
         return
+      if (intent) intentSpentAtRef.current = turnsLengthRef.current
       loadingOlderRef.current = true
       void loadOlderHistory(sessionId).finally(() => {
         loadingOlderRef.current = false

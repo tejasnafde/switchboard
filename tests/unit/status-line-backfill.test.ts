@@ -101,6 +101,14 @@ describe('status line backfill on history load', () => {
     expect(emitted).toHaveLength(0)
   })
 
+  it('does not backfill from an older page', async () => {
+    rows.set('c1', { id: 'c1', project_path: '/repo', agent_type: 'claude-code', title: 'Chat', status_line: null })
+    history.push({ id: 'u2', role: 'user', content: 'and stop', timestamp: 3 })
+    await loadById(false, { window: true, limit: 1, beforeId: 'u2' })
+    expect(stored).toHaveLength(0)
+    expect(emitted).toHaveLength(0)
+  })
+
   it('leaves a stored line alone', async () => {
     rows.set('c1', {
       id: 'c1',

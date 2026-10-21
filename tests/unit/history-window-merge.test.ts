@@ -127,4 +127,23 @@ describe('mergeHistoryWindow', () => {
       mergeHistoryWindow(disk, memoryRows(stored), { limit: 20 }).messages.at(-1)?.id,
     )
   })
+
+  it('pages through messages that share a timestamp with the cursor', () => {
+    const disk: ChatMessage[] = [
+      { id: 'u1', role: 'user', content: 'q', timestamp: 1 },
+      { id: 'a1', role: 'assistant', content: 'r1', timestamp: 2 },
+      ...[2, 3, 4, 5].map((n) => ({ id: `a${n}`, role: 'assistant' as const, content: `r${n}`, timestamp: 3 })),
+    ]
+    for (const limit of [1, 3]) {
+      const seen: string[] = []
+      let beforeId: string | undefined
+      do {
+        const page = mergeHistoryWindow(disk, memoryRows([]), { limit, beforeId })
+        expect(page.messages.length).toBeGreaterThan(0)
+        seen.unshift(...page.messages.map((message) => message.id))
+        beforeId = page.nextBeforeId ?? undefined
+      } while (beforeId)
+      expect(seen).toEqual(['u1', 'a1', 'a2', 'a3', 'a4', 'a5'])
+    }
+  })
 })

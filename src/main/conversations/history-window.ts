@@ -68,8 +68,13 @@ export function mergeHistoryWindow(
   }
   const upper = cursorAt ?? Infinity
 
+  // Ties at the cursor's timestamp count only up to the cursor in transcript order.
+  const cursorIndex = cursorId ? disk.findIndex((message) => message.id === cursorId) : -1
   const diskAtOrBefore = disk
-    .filter((message) => message.timestamp <= upper)
+    .filter(
+      (message, index) =>
+        message.timestamp < upper || (message.timestamp === upper && (cursorIndex < 0 || index <= cursorIndex)),
+    )
     .map((message) => message.timestamp)
     .sort((a, b) => b - a)
   // The cursor row itself is among the rows at its timestamp.
@@ -125,6 +130,8 @@ export function mergeHistoryWindow(
   }
   let start = end
   while (start > 0 && end - start < limit && merged[start - 1].timestamp >= oldest) start--
+  // Never an empty older page while older rows remain: the client would stop paging.
+  if (start === end) start = Math.max(0, end - limit)
   const truncated =
     start > 0 || disk.some((message) => message.timestamp < from) || (from > -Infinity && rows.hasRowBefore(from))
   const messages = merged.slice(start, end)

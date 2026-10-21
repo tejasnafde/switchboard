@@ -53,12 +53,15 @@ export interface OlderLoadState {
   loading: boolean
   /** The pointer is near the top of the list, or the list took focus. */
   intent?: boolean
+  /** An intent load already ran for this many loaded turns; a failed one is not retried on every pointer move. */
+  intentSpentAt?: number
 }
 
 /** Whether to fetch the previous window now, whichever of the two prefetch points comes first. */
 export function shouldLoadOlder(state: OlderLoadState): boolean {
   if (!state.hasOlder || state.loading) return false
-  if (state.scrollTop <= (state.intent ? PREFETCH_OLDER_INTENT_PX : PREFETCH_OLDER_PX)) return true
+  const intent = state.intent && state.intentSpentAt !== state.turnCount
+  if (state.scrollTop <= (intent ? PREFETCH_OLDER_INTENT_PX : PREFETCH_OLDER_PX)) return true
   return state.firstVisibleTurn !== null && state.firstVisibleTurn < state.turnCount * PREFETCH_OLDER_TURN_SHARE
 }
 

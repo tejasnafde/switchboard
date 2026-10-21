@@ -63,6 +63,13 @@ describe('desktop history window', () => {
     expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_INTENT_PX, intent: false })).toBe(false)
   })
 
+  it('runs one intent prefetch per loaded window, so a failed one is not retried on every pointer move', () => {
+    const state = { firstVisibleTurn: 30, turnCount: 40, hasOlder: true, loading: false, intent: true }
+    expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_INTENT_PX, intentSpentAt: 40 })).toBe(false)
+    expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_INTENT_PX, intentSpentAt: 30 })).toBe(true)
+    expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_PX, intentSpentAt: 40 })).toBe(true)
+  })
+
   it('prefetches once the first turn in view is among the oldest quarter, however far down that is', () => {
     const state = { scrollTop: 50_000, turnCount: 40, hasOlder: true, loading: false }
     expect(shouldLoadOlder({ ...state, firstVisibleTurn: 9 })).toBe(true)
