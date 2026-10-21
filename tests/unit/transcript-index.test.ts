@@ -252,4 +252,38 @@ describe('transcript index', () => {
     expect(copies).toHaveLength(2)
     expect(copies![1].materialize([0])[0].content).toBe('prompt Z')
   })
+
+  it('treats a file removed after the open as stale', async () => {
+    const path = transcript('removed', 5)
+    const disk = await indexed([path])
+    rmSync(path)
+    expect(() => disk.materialize([0])).toThrow(StaleTranscriptIndexError)
+  })
+
+  it('applies a result in a last line with no line break, as a full parse does', async () => {
+    const path = transcript('tail-result', 5)
+    appendFileSync(
+      path,
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'tail-call',
+        timestamp: iso(900),
+        message: { content: [{ type: 'tool_use', id: 'tc', name: 'Bash', input: {} }] },
+      }) + '\n',
+    )
+    await indexed([path])
+    appendFileSync(
+      path,
+      JSON.stringify({
+        type: 'user',
+        uuid: 'tail-result-line',
+        timestamp: iso(901),
+        message: { content: [{ type: 'tool_result', tool_use_id: 'tc', content: 'no', is_error: true }] },
+      }),
+    )
+    const disk = await indexed([path])
+    const call = disk.materialize([disk.metas.findIndex((message) => message.id === 'tail-call')])[0]
+    expect(call.toolCalls?.[0].isError).toBe(true)
+    expect(pages(disk, 4)).toEqual(pages(await full(path), 4))
+  })
 })

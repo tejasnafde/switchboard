@@ -127,11 +127,14 @@ export async function openIndexedCopies(
 /** Drop a transcript's index after a slice did not match it. */
 export async function forgetTranscriptIndex(path: string, source: JsonlSource): Promise<void> {
   const key = keyOf(path, source)
-  memory.delete(key)
-  await writes.get(key)
-  await rm(indexFile(key), { force: true }).catch((err) =>
-    log.warn('could not remove a stale transcript index', { path, err }),
-  )
+  // Under the open lock, so an open in flight cannot put the stale index back.
+  await withLock(key, async () => {
+    memory.delete(key)
+    await writes.get(key)
+    await rm(indexFile(key), { force: true }).catch((err) =>
+      log.warn('could not remove a stale transcript index', { path, err }),
+    )
+  })
 }
 
 interface Opened {
@@ -165,14 +168,18 @@ async function openIndex(
   prefixSizes: readonly number[] = [],
 ): Promise<Opened | null> {
   const key = keyOf(path, source)
-  const before = locks.get(key) ?? Promise.resolve()
   // Two opens of one file at once would append the same lines twice.
-  const run = before.then(() => openUnlocked(key, path, source, timing, prefixSizes, true))
-  locks.set(key, run)
+  return withLock(key, () => openUnlocked(key, path, source, timing, prefixSizes, true))
+}
+
+async function withLock<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const run = (locks.get(key) ?? Promise.resolve()).then(task)
+  const settled = run.catch(() => undefined)
+  locks.set(key, settled)
   try {
     return await run
   } finally {
-    if (locks.get(key) === run) locks.delete(key)
+    if (locks.get(key) === settled) locks.delete(key)
   }
 }
 
@@ -236,7 +243,7 @@ async function openUnlocked(
     memory.set(key, index)
     if (memory.size > MAX_IN_MEMORY) memory.delete(memory.keys().next().value!)
     if (changed) persist(key, index)
-    return { index, transcript: transcriptOf(index, scan.tail, timing), digests: scan.digests }
+    return { index, transcript: transcriptOf(index, scan, timing), digests: scan.digests }
   } catch (err) {
     log.warn('failed to index session jsonl', { path, err })
     return null
@@ -252,6 +259,8 @@ interface Scan {
   pending: Array<[string, string]>
   /** Messages of a last line with no line break yet. */
   tail: ChatMessage[]
+  /** Results in that line, by call id, as `results` holds them. */
+  tailResults: Record<string, [number, number]>
   digests: Map<number, string>
 }
 
@@ -273,6 +282,7 @@ async function scanLines(
     results: {},
     pending: [],
     tail: [],
+    tailResults: {},
     digests: new Map(),
   }
   let lineStart = from
@@ -320,7 +330,12 @@ async function scanLines(
   scan.end = carryAt
   scan.pending = parser.pendingToolCalls().map((call) => [call.id, call.name])
   if (carry) {
+    // The line a full parse would flush last, with the same pending calls.
     const tail = new JsonlParser((message) => scan.tail.push(message), source)
+    tail.seedToolCalls(scan.pending.map(([id, name]) => ({ id, name, input: '' })))
+    tail.onToolResult = (id) => {
+      scan.tailResults[id] = [scan.end, size]
+    }
     tail.line(carry.toString('utf8'))
   }
   if (hasher) scan.digests = hasher.digests
@@ -365,7 +380,8 @@ class PrefixDigests {
   }
 }
 
-function transcriptOf(index: TranscriptIndex, tail: ChatMessage[], timing: ChatLoadTiming): IndexedTranscript {
+function transcriptOf(index: TranscriptIndex, scan: Scan, timing: ChatLoadTiming): IndexedTranscript {
+  const { tail, tailResults } = scan
   const count = index.messages.length
   return {
     path: index.path,
@@ -374,7 +390,7 @@ function transcriptOf(index: TranscriptIndex, tail: ChatMessage[], timing: ChatL
       const found = new Map<number, ChatMessage>()
       for (const position of positions) if (position >= count) found.set(position, tail[position - count])
       const indexed = [...new Set(positions.filter((position) => position < count))].sort((a, b) => a - b)
-      if (indexed.length > 0) readSlices(index, indexed, found, timing)
+      if (indexed.length > 0) readSlices(index, tailResults, indexed, found, timing)
       return positions.map((position) => found.get(position)!)
     },
   }
@@ -387,17 +403,33 @@ function transcriptOf(index: TranscriptIndex, tail: ChatMessage[], timing: ChatL
  */
 function readSlices(
   index: TranscriptIndex,
+  tailResults: Record<string, [number, number]>,
   positions: number[],
   found: Map<number, ChatMessage>,
   timing: ChatLoadTiming,
 ): void {
   const start = performance.now()
   let parseMs = 0
-  const fd = openSync(index.path, 'r')
+  // A file moved or removed since the open is stale too: the caller parses in full.
+  const stale = (err?: unknown) => {
+    if (err) log.info('session jsonl unreadable after its index opened', { path: index.path, err })
+    return new StaleTranscriptIndexError(index.path, index.source)
+  }
+  let fd: number
+  try {
+    fd = openSync(index.path, 'r')
+  } catch (err) {
+    throw stale(err)
+  }
   const readLine = (from: number, to: number): string => {
     const buffer = Buffer.alloc(to - from)
-    if (readSync(fd, buffer, 0, buffer.length, from) !== buffer.length)
-      throw new StaleTranscriptIndexError(index.path, index.source)
+    let read: number
+    try {
+      read = readSync(fd, buffer, 0, buffer.length, from)
+    } catch (err) {
+      throw stale(err)
+    }
+    if (read !== buffer.length) throw stale()
     timing.diskBytes += buffer.length
     return buffer.toString('utf8')
   }
@@ -414,11 +446,11 @@ function readSlices(
       const parser = new JsonlParser((message) => collecting && parsed.push(message), index.source)
       parser.feed(text)
       parser.flush()
-      if (parsed.length !== to - from + 1) throw new StaleTranscriptIndexError(index.path, index.source)
+      if (parsed.length !== to - from + 1) throw stale()
       // Results after the slice still mark its calls, as in a full parse.
       const resultLines = new Map<number, number>()
       for (const call of parser.pendingToolCalls()) {
-        const range = index.results[call.id]
+        const range = index.results[call.id] ?? tailResults[call.id]
         if (range && range[0] >= index.ends[to]) resultLines.set(range[0], range[1])
       }
       collecting = false
@@ -431,8 +463,7 @@ function readSlices(
         const position = positions[at]
         const meta = index.messages[position]
         const message = parsed[position - from]
-        if (message.id !== meta.id && !GENERATED_ID.test(meta.id))
-          throw new StaleTranscriptIndexError(index.path, index.source)
+        if (message.id !== meta.id && !GENERATED_ID.test(meta.id)) throw stale()
         found.set(
           position,
           message.id === meta.id && message.timestamp === meta.timestamp

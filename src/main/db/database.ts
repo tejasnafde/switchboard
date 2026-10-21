@@ -702,14 +702,29 @@ export function runSlowMigrations(): void {
  */
 function runSlowMigrationsOn(db: Database.Database): void {
   const span = perfSpan('db.migrate-slow')
+  // A failed build must not fail the open: getDb would treat a corrupt page
+  // here as a corrupt database and move it aside.
+  const createIndex = (name: string, sql: string) => {
+    try {
+      db.exec(sql)
+    } catch (err) {
+      log.warn(`could not create ${name}, queries run without it`, err)
+    }
+  }
   // The few user rows `getDisplayBodyEnrichments` reads; without it every
   // open read each row of the chat (250 ms for 14,600 rows).
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_enrichable ON messages(conversation_id)
-    WHERE role = 'user' AND (display_body IS NOT NULL OR images IS NOT NULL)`)
+  createIndex(
+    'idx_messages_enrichable',
+    `CREATE INDEX IF NOT EXISTS idx_messages_enrichable ON messages(conversation_id)
+      WHERE role = 'user' AND (display_body IS NOT NULL OR images IS NOT NULL)`,
+  )
   // recoverUndispatchedTurns runs at every start, and completed rows keep their
   // envelopes, so its scan read 100 MB to find no row.
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_turn_acceptances_reserved
-    ON mobile_turn_acceptances(state) WHERE state = 'reserved'`)
+  createIndex(
+    'idx_turn_acceptances_reserved',
+    `CREATE INDEX IF NOT EXISTS idx_turn_acceptances_reserved
+      ON mobile_turn_acceptances(state) WHERE state = 'reserved'`,
+  )
   // Rebuild the FTS index from existing messages, once: the triggers keep it in
   // step after that. Both counts scan their whole table, about 4 s on a 1 GB
   // database at every start, so a marker row records that the check passed.
