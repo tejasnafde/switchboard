@@ -30,6 +30,7 @@
 
 import { AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX, parseRotationMarker } from './rotation-marker'
 import { agentLabel, isAgentProvider, type AgentProvider } from './types'
+import { stripSenderLine } from './sender-line'
 
 export const HANDOFF_PREAMBLE_HEADER = 'Conversation so far:'
 /** Header of a delta handoff: the target already holds what came before. */
@@ -231,9 +232,15 @@ export function answeredHistory<T extends HandoffSourceMessage>(messages: Readon
   return messages.slice(0, end)
 }
 
-/** `message` with `preamble` in front, replacing any preamble it already carried. */
+/**
+ * `message` with `preamble` in front, replacing any preamble it already
+ * carried. A leading sender line stays first, where the transcript parser
+ * strips it.
+ */
 export function withHandoffPreamble(message: string, preamble: string): string {
-  return `${preamble}\n\n${stripHandoffPreamble(message)}`
+  const body = stripSenderLine(message)
+  const senderLine = message.slice(0, message.length - body.length)
+  return `${senderLine}${preamble}\n\n${stripHandoffPreamble(body)}`
 }
 
 /**

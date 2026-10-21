@@ -68,6 +68,10 @@ A Claude subagent's work belongs to the Agent/Task call that started it. The ada
 5. User answers → `provider.answerQuestion(threadId, requestId, answers)` resolves the blocked Promise
 6. `canUseTool` returns allow + `updatedInput` with the answer payload
 
+## Sender line (2026-10-21)
+
+`submitClientUserTurn` (SUBMIT_USER_TURN and the legacy SEND_TURN) puts one `<switchboard-sender>` line in front of the text the adapter gets: surface, device, the machine that runs the agent, and whether its localhost reaches the user (`shared/sender-line.ts`, `sender-context.ts`, from the request context the host set, never from the turn). A line the client sent is stripped first. The stored turn never holds it; the JSONL parser and the session scanner strip it on read, so no client sees it. No line for a slash command or for a turn the backend sends itself. A test fake that asserts exact provider text strips it with `stripSenderLine`. Plan: `docs/plans/2026-10-21-sender-line.md`.
+
 ## Cross-session messaging (`/send-to` + agent-initiated sends)
 
 One session hands a self-contained summary to another on the SAME backend. Two entry points, ONE delivery method - `ProviderRegistry.deliverPeerMessage(input)`:

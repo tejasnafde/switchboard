@@ -78,6 +78,7 @@ import {
   type AcpModeIds,
   type AcpModelInfo,
 } from './session-config'
+import { stripSenderLine } from '@shared/sender-line'
 
 const log = createLogger('provider:acp')
 const LOG_PAYLOAD_LIMIT = 4000
@@ -837,8 +838,8 @@ export class AcpAdapter implements ProviderAdapter {
     // Hold the slot across the mode await below, or a queued send arriving
     // now would start its own prompt ahead of this one.
     active.startingPrompt = true
-    // The title and first-prompt hook use what the user typed, never the history preamble.
-    const userText = message
+    // The title and first-prompt hook use what the user typed, never the history preamble or sender line.
+    const userText = stripSenderLine(message)
     message = await withVisibleHistory(active, threadId, message)
 
     if (runtimeMode && runtimeMode !== active.session.runtimeMode) {

@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import './helpers/registry-session-mocks'
+import { stripSenderLine } from '../../src/shared/sender-line'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -251,7 +252,7 @@ class MockEchoAdapter implements ProviderAdapter {
       type: 'content',
       threadId,
       messageId: `m${++this.turn}`,
-      text: `[${this.model.get(threadId)}] echo: ${message}`,
+      text: `[${this.model.get(threadId)}] echo: ${stripSenderLine(message)}`,
       streamKind: 'assistant',
     })
     onEvent({ type: 'turn.completed', threadId })

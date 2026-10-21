@@ -68,6 +68,8 @@ import {
   clearConversationPendingHandoff,
 } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
+import { stripSenderLine, withSenderLine } from '@shared/sender-line'
+import { senderLineForTurn } from './sender-context'
 import {
   currentBackendRequestContext,
   hashClientScope,
@@ -395,6 +397,7 @@ export class ProviderRegistry implements PeerToolHost {
 
   /** Breaks same-millisecond id collisions, which INSERT OR REPLACE would eat. */
   private savedMessageSeq = 0
+  private senderLineTurns = 0
 
   /**
    * Size, rate and duplicate limits for session-to-session messages. Held by
@@ -2002,7 +2005,45 @@ export class ProviderRegistry implements PeerToolHost {
     }
   }
 
-  private async submitAtomicUserTurn(input: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> {
+  /**
+   * A turn a client sent. Any sender line it carries is dropped and the
+   * backend's own goes to the provider in its place.
+   */
+  private submitClientUserTurn(input: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> {
+    if (typeof input?.providerText !== 'string') return this.submitAtomicUserTurn(input)
+    const providerText = stripSenderLine(input.providerText)
+    const turn = providerText === input.providerText ? input : { ...input, providerText }
+    return this.submitAtomicUserTurn(turn, senderLineForTurn(providerText))
+  }
+
+  /** Sends `text` to the adapter, with `senderLine` in front when there is one. */
+  private async dispatchToAdapter(
+    adapter: ProviderAdapter,
+    threadId: string,
+    text: string,
+    senderLine: string | null,
+    send: (text: string) => Promise<void>,
+  ): Promise<void> {
+    if (senderLine) this.senderLineTurns++
+    const span = perfSpan('turn.dispatch', {
+      thread: threadId,
+      provider: adapter.provider,
+      senderLineBytes: senderLine ? Buffer.byteLength(senderLine) : 0,
+      senderLineTurns: this.senderLineTurns,
+    })
+    try {
+      await send(senderLine ? withSenderLine(text, senderLine) : text)
+      span.end({ outcome: 'sent' })
+    } catch (error) {
+      span.end({ outcome: 'failed' })
+      throw error
+    }
+  }
+
+  private async submitAtomicUserTurn(
+    input: UserTurnSubmissionV1,
+    senderLine: string | null = null,
+  ): Promise<UserTurnSubmissionResult> {
     const threadId = input.threadId
     if (this.switchingSessions.has(threadId)) {
       return rejectedAtomicTurn('Session queue full while a profile switch is in progress')
@@ -2109,7 +2150,9 @@ export class ProviderRegistry implements PeerToolHost {
           // After finalize, so a fork summary follows any handoff preamble.
           const providerText = mergeBack ? mergeBack.apply(turn.providerText) : turn.providerText
           try {
-            await adapter.sendTurn(threadId, providerText, input.runtimeMode, input.images, input.delivery, queuedId)
+            await this.dispatchToAdapter(adapter, threadId, providerText, senderLine, (text) =>
+              adapter.sendTurn(threadId, text, input.runtimeMode, input.images, input.delivery, queuedId),
+            )
           } catch (error) {
             mergeBack?.release()
             if (startsNewProviderTurn) this.finishOutstandingTurn(threadId)
@@ -2216,7 +2259,7 @@ export class ProviderRegistry implements PeerToolHost {
     })
 
     this.host.handle(ProviderChannels.SUBMIT_USER_TURN, async (input: UserTurnSubmissionV1) =>
-      this.submitAtomicUserTurn(input),
+      this.submitClientUserTurn(input),
     )
     this.host.handle(ProviderChannels.RESOLVE_USER_TURN, async (input: UserTurnResolutionV1) => {
       if (!this.atomicTurnSubmission.resolve) throw new Error('turn resolution is unavailable')
@@ -2972,8 +3015,9 @@ export class ProviderRegistry implements PeerToolHost {
         images?: Array<{ url: string; mimeType?: string }>,
         origin?: string,
       ): Promise<TurnAcceptanceResult | undefined> => {
+        if (typeof message === 'string') message = stripSenderLine(message)
         if (origin) {
-          const result = await this.submitAtomicUserTurn({
+          const result = await this.submitClientUserTurn({
             version: 1,
             threadId,
             origin,
@@ -3047,7 +3091,9 @@ export class ProviderRegistry implements PeerToolHost {
             releasePreparation()
             const modeBefore = adapter.runtimeModeOf?.(threadId)
             try {
-              await adapter.sendTurn(threadId, message, runtimeMode, acceptedImages)
+              await this.dispatchToAdapter(adapter, threadId, message, senderLineForTurn(message), (text) =>
+                adapter.sendTurn(threadId, text, runtimeMode, acceptedImages),
+              )
             } catch (error) {
               if (startsNewProviderTurn) this.finishOutstandingTurn(threadId)
               // Once the provider call starts, a generic failure is ambiguous. It

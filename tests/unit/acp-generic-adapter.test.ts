@@ -225,6 +225,26 @@ describe('generic ACP adapter over the protocol', () => {
     expect(firstPrompts).toEqual(['fix the bug'])
   })
 
+  it('hands the first-prompt hook the text without the sender line', async () => {
+    const firstPrompts: string[] = []
+    const { AcpAdapter } = await import('../../src/main/provider/adapters/acp/acp-adapter')
+    const { genericAcpLaunchConfig } = await import('../../src/main/provider/adapters/acp/agents')
+    const { formatSenderLine, withSenderLine } = await import('../../src/shared/sender-line')
+    const adapter = new AcpAdapter({
+      ...genericAcpLaunchConfig('gemini'),
+      onFirstPrompt: async ({ message }) => {
+        firstPrompts.push(message)
+      },
+    })
+    await adapter.startSession(
+      { threadId: 'chat-1', provider: 'gemini', cwd: '/tmp/project', runtimeMode: 'full-access' },
+      () => {},
+    )
+    const line = formatSenderLine({ surface: 'desktop', localhostReachesUser: true })
+    await adapter.sendTurn('chat-1', withSenderLine('fix the bug', line))
+    expect(firstPrompts).toEqual(['fix the bug'])
+  })
+
   it('maps plan onto the advertised plan mode and back to the mode it started in', async () => {
     const adapter = await startGemini([])
     await adapter.setRuntimeMode('chat-1', 'plan')

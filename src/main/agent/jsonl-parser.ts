@@ -1,6 +1,7 @@
 import type { ChatMessage, ToolCall, MessageImage } from '@shared/types'
 import { createHash } from 'crypto'
 import { visibleUserMessageText } from '@shared/provider-events'
+import { stripSenderLine } from '@shared/sender-line'
 import { compactSummaryText } from '@shared/synthetic-message'
 import { isSubagentToolName } from '@shared/subagent-steps'
 
@@ -110,7 +111,8 @@ export class JsonlParser {
 
       case 'user': {
         this.noteToolResults(event.message)
-        const text = extractContent(event.message)
+        // The backend's sender line went to the agent only.
+        const text = stripSenderLine(extractContent(event.message))
         // The summary a /compact leaves folds into one row.
         const content = event.isCompactSummary === true ? compactSummaryText(text) : text
         const images = extractImages(event.message)
@@ -301,7 +303,8 @@ export function normalizeCodexEvent(event: Record<string, unknown>): ChatMessage
   // (permissions preamble, AGENTS.md, etc.), not real conversation turns.
   if (role !== 'user' && role !== 'assistant') return null
 
-  const content = extractCodexText(payload.content)
+  const text = extractCodexText(payload.content)
+  const content = role === 'user' ? stripSenderLine(text) : text
   const images = role === 'user' ? extractCodexImages(payload.content) : []
   if (role === 'assistant' && !content) return null
   if (role === 'user' && images.length === 0 && (!content || visibleUserMessageText(content) === null)) return null

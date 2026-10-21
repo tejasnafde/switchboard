@@ -180,7 +180,7 @@ export class TcpHost implements BackendHost {
       }
       try {
         const result = await withBackendRequestContext(
-          { clientScope: client.clientScope, transport: 'remote', deviceScopes: this.deviceScopes },
+          { clientScope: client.clientScope, transport: 'remote', deviceScopes: this.deviceScopes, remoteHost: 'tcp' },
           () => handler(...frame.args),
         )
         this.write(client, { k: 'res', id: frame.id, ok: true, result })
@@ -197,7 +197,12 @@ export class TcpHost implements BackendHost {
       if (fns)
         for (const fn of fns) {
           withBackendRequestContext(
-            { clientScope: client.clientScope, transport: 'remote', deviceScopes: this.deviceScopes },
+            {
+              clientScope: client.clientScope,
+              transport: 'remote',
+              deviceScopes: this.deviceScopes,
+              remoteHost: 'tcp',
+            },
             () => fn(...frame.args),
           )
         }
