@@ -243,7 +243,7 @@ async function loadJsonlSnapshot(
   return entry
 }
 
-interface FileState {
+export interface FileState {
   mtimeMs: number
   size: number
   ctimeMs: number
@@ -251,12 +251,12 @@ interface FileState {
   dev: number
 }
 
-function sameState(a: FileState, b: FileState): boolean {
+export function sameState(a: FileState, b: FileState): boolean {
   return a.mtimeMs === b.mtimeMs && a.size === b.size && a.ctimeMs === b.ctimeMs && a.ino === b.ino && a.dev === b.dev
 }
 
 /** A file that vanished after its hash is a miss, not a rejected load. */
-async function statOrNull(filePath: string): Promise<FileState | null> {
+export async function statOrNull(filePath: string): Promise<FileState | null> {
   try {
     return await stat(filePath)
   } catch (err) {
@@ -268,7 +268,7 @@ async function statOrNull(filePath: string): Promise<FileState | null> {
 }
 
 /** sha256 of the `GUARD_BYTES` before `end`, plus `end` itself; null when the file is shorter. */
-async function guardOf(filePath: string, end: number): Promise<string | null> {
+export async function guardOf(filePath: string, end: number): Promise<string | null> {
   const start = Math.max(0, end - GUARD_BYTES)
   const buffer = Buffer.alloc(end - start)
   let file
@@ -286,7 +286,7 @@ async function guardOf(filePath: string, end: number): Promise<string | null> {
 }
 
 /** sha256 of the first `size` bytes, or null when the file is shorter or unreadable. */
-async function hashRange(filePath: string, size: number): Promise<string | null> {
+export async function hashRange(filePath: string, size: number): Promise<string | null> {
   const hash = createHash('sha256')
   let read = 0
   try {

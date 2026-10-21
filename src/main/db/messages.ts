@@ -293,22 +293,41 @@ export interface DisplayBodyEnrichment {
   pillsMeta?: string
   images?: string
 }
-export function getDisplayBodyEnrichments(conversationId: string): Map<string, DisplayBodyEnrichment> {
-  const rows = getDb()
+/**
+ * The newest stored enrichment per user content, only for `contents` when given.
+ * The candidates are read first by id and content alone: the heavy columns sit
+ * after a row's base64 images, so reading them for every row read 27 MB for one
+ * long chat. Last write wins by `(timestamp, rowid)`, as before.
+ */
+export function getDisplayBodyEnrichments(
+  conversationId: string,
+  contents?: ReadonlySet<string>,
+): Map<string, DisplayBodyEnrichment> {
+  const db = getDb()
+  const candidates = db
     .prepare(
-      `SELECT content, display_body, pills_meta, images
+      `SELECT rowid, content
        FROM messages
       WHERE conversation_id = ?
         AND role = 'user'
-        AND (display_body IS NOT NULL OR images IS NOT NULL)
-      ORDER BY timestamp, rowid`,
+        AND (display_body IS NOT NULL OR images IS NOT NULL)`,
     )
-    .all(conversationId) as Array<{
+    .all(conversationId) as Array<{ rowid: number; content: string }>
+  const rowids = candidates.filter((row) => !contents || contents.has(row.content)).map((row) => row.rowid)
+  const rows = db
+    .prepare(
+      `SELECT rowid, timestamp, content, display_body, pills_meta, images
+         FROM messages WHERE rowid IN (SELECT value FROM json_each(?))`,
+    )
+    .all(JSON.stringify(rowids)) as Array<{
+    rowid: number
+    timestamp: number
     content: string
     display_body: string | null
     pills_meta: string | null
     images: string | null
   }>
+  rows.sort((a, b) => a.timestamp - b.timestamp || a.rowid - b.rowid)
   const out = new Map<string, DisplayBodyEnrichment>()
   for (const r of rows) {
     out.set(r.content, {

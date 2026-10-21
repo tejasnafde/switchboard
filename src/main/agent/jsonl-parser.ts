@@ -30,6 +30,8 @@ export class JsonlParser {
   private source: JsonlSource
   /** Calls already emitted, so a later result can mark them (see `noteToolResults`). */
   private toolCalls = new Map<string, ToolCall>()
+  /** Called when a result changes its call (an error, or a subagent's report). */
+  onToolResult?: (callId: string) => void
 
   constructor(onMessage: (message: ChatMessage) => void, source: JsonlSource = 'claude-code') {
     this.onMessage = onMessage
@@ -60,6 +62,13 @@ export class JsonlParser {
       if (!trimmed) continue
       this.parseLine(trimmed)
     }
+  }
+
+  /** One complete line, without its line break. */
+  line(text: string): void {
+    this.lineCount += 1
+    const trimmed = text.trim()
+    if (trimmed) this.parseLine(trimmed)
   }
 
   /** Flush any remaining buffered data */
@@ -173,6 +182,7 @@ export class JsonlParser {
       this.toolCalls.delete(block.tool_use_id)
       if (block.is_error === true) call.isError = true
       if (isSubagentToolName(call.name)) call.output = toolResultText(block.content)
+      if (block.is_error === true || isSubagentToolName(call.name)) this.onToolResult?.(call.id)
     }
   }
 }

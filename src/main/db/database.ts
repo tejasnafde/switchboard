@@ -119,7 +119,8 @@ function notifyDbReset(backupPath: string): void {
   }
 }
 
-function migrate(db: Database.Database): void {
+/** Exported for tests; `getDb()` runs it. */
+export function migrate(db: Database.Database): void {
   const span = perfSpan('db.migrate')
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
@@ -236,10 +237,6 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'pills_meta')) {
       db.exec('ALTER TABLE messages ADD COLUMN pills_meta TEXT')
     }
-    // The few user rows `getDisplayBodyEnrichments` reads; without it every
-    // open read each row of the chat (250 ms for 14,600 rows).
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_enrichable ON messages(conversation_id)
-      WHERE role = 'user' AND (display_body IS NOT NULL OR images IS NOT NULL)`)
   } catch (err) {
     log.warn('messages table migration failed (images/display_body/pills_meta columns)', err)
   }
@@ -591,22 +588,6 @@ function migrate(db: Database.Database): void {
     db.exec('ALTER TABLE conversations ADD COLUMN status_line TEXT')
   }
 
-  // Rebuild FTS index from existing messages
-  try {
-    const ftsCount = (db.prepare('SELECT count(*) as c FROM messages_fts').get() as { c: number } | undefined)?.c ?? 0
-    const msgCount =
-      (db.prepare("SELECT count(*) as c FROM messages WHERE content != ''").get() as { c: number } | undefined)?.c ?? 0
-    if (ftsCount < msgCount) {
-      db.exec('DELETE FROM messages_fts;')
-      db.exec(`
-        INSERT INTO messages_fts(rowid, content, conversation_id, role)
-          SELECT rowid, content, conversation_id, role FROM messages WHERE content != '';
-      `)
-    }
-  } catch (err) {
-    log.warn('FTS index rebuild failed - search may miss recent messages until next launch', err)
-  }
-
   db.exec(`
     CREATE TABLE IF NOT EXISTS machines (
       id          TEXT PRIMARY KEY,
@@ -684,9 +665,74 @@ function migrate(db: Database.Database): void {
   ensureHtmlLivePagesSchema(db)
   ensureHubSchema(db)
   ensureLimitResumesSchema(db)
+  if (deferSlowMigrations) pendingSlowMigrations = true
+  else runSlowMigrationsOn(db)
 
   span.end()
   log.info('database migrated')
+}
+
+let deferSlowMigrations = false
+let pendingSlowMigrations = false
+
+/**
+ * The desktop calls this before the first `getDb()`, then `runSlowMigrations()`
+ * once its window shows. Other hosts run the slow steps inside `migrate`.
+ */
+export function deferSlowMigrationsUntilWindow(): void {
+  deferSlowMigrations = true
+}
+
+export function runSlowMigrations(): void {
+  if (!pendingSlowMigrations) return
+  pendingSlowMigrations = false
+  try {
+    runSlowMigrationsOn(getDb())
+  } catch (err) {
+    log.warn('slow migrations failed, they run again at the next start', err)
+  }
+}
+
+/**
+ * One-time steps that scan a large table: an index on `messages` or on
+ * `mobile_turn_acceptances`, the FTS backfill. Each is instant once done, but
+ * the first run took seconds on a 1 GB database and kept the window from
+ * showing. Put a new index on a large table here, not in `migrate`. Queries
+ * work without these indexes, only slower.
+ */
+function runSlowMigrationsOn(db: Database.Database): void {
+  const span = perfSpan('db.migrate-slow')
+  // The few user rows `getDisplayBodyEnrichments` reads; without it every
+  // open read each row of the chat (250 ms for 14,600 rows).
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_enrichable ON messages(conversation_id)
+    WHERE role = 'user' AND (display_body IS NOT NULL OR images IS NOT NULL)`)
+  // recoverUndispatchedTurns runs at every start, and completed rows keep their
+  // envelopes, so its scan read 100 MB to find no row.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_turn_acceptances_reserved
+    ON mobile_turn_acceptances(state) WHERE state = 'reserved'`)
+  // Rebuild the FTS index from existing messages, once: the triggers keep it in
+  // step after that. Both counts scan their whole table, about 4 s on a 1 GB
+  // database at every start, so a marker row records that the check passed.
+  try {
+    db.exec('CREATE TABLE IF NOT EXISTS db_markers (name TEXT PRIMARY KEY) WITHOUT ROWID')
+    if (!db.prepare("SELECT 1 FROM db_markers WHERE name = 'fts_backfilled'").get()) {
+      const ftsCount = (db.prepare('SELECT count(*) as c FROM messages_fts').get() as { c: number } | undefined)?.c ?? 0
+      const msgCount =
+        (db.prepare("SELECT count(*) as c FROM messages WHERE content != ''").get() as { c: number } | undefined)?.c ??
+        0
+      if (ftsCount < msgCount) {
+        db.exec('DELETE FROM messages_fts;')
+        db.exec(`
+            INSERT INTO messages_fts(rowid, content, conversation_id, role)
+              SELECT rowid, content, conversation_id, role FROM messages WHERE content != '';
+          `)
+      }
+      db.exec("INSERT OR IGNORE INTO db_markers (name) VALUES ('fts_backfilled')")
+    }
+  } catch (err) {
+    log.warn('FTS index rebuild failed - search may miss recent messages until next launch', err)
+  }
+  span.end()
 }
 
 /**

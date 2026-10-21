@@ -20,7 +20,19 @@ import { loadSubagentSteps } from '../agent/subagent-transcripts'
 import { createMainLogger } from '../logger'
 import { mergeConversationMessages } from '../agent/dedupe-messages'
 import { enrichMessagesWithDisplayBody } from '../ipc/enrich-display-body'
-import { mergeHistoryWindow, type MergedWindow, type MergeWindowRequest } from './history-window'
+import {
+  mergeHistoryWindow,
+  windowDiskOf,
+  type MergedWindow,
+  type MergeWindowRequest,
+  type WindowDisk,
+} from './history-window'
+import {
+  forgetTranscriptIndex,
+  openIndexedCopies,
+  StaleTranscriptIndexError,
+  type IndexedTranscript,
+} from '../agent/transcript-index'
 import { isForkableCanonicalMessage, type CanonicalForkMessage, type ForkMessageProvenance } from './fork-anchor'
 
 const log = createMainLogger('conversations:history')
@@ -46,6 +58,8 @@ function emptyTiming(): ChatLoadTiming {
     diskLines: 0,
     cacheHits: 0,
     prefixSkips: 0,
+    hashMs: 0,
+    indexHits: 0,
   }
 }
 
@@ -57,8 +71,7 @@ interface DiskHistory {
   sources: unknown[]
 }
 
-async function loadDiskHistory(conversationId: string, timing: ChatLoadTiming): Promise<DiskHistory> {
-  const metadataStart = performance.now()
+function sessionIdsOf(conversationId: string) {
   const familyIds = threadFamilyIds(conversationId)
   const legacySessionHints = conversationSessionHints(conversationId)
   const segments = listConversationSegments(conversationId)
@@ -67,28 +80,35 @@ async function loadDiskHistory(conversationId: string, timing: ChatLoadTiming): 
     ...legacySessionHints,
     ...segments.map((segment) => segment.provider_session_id),
   ])
-  const diskMessages: ChatMessage[] = []
-  const provenanceByMessageId = new Map<string, ForkMessageProvenance>()
-  const sources: unknown[] = []
-
   const claudeIds = new Set([
     ...familyIds,
     ...legacySessionHints,
     ...segments.filter((segment) => segment.provider === 'claude-code').map((segment) => segment.provider_session_id),
   ])
+  return { familyIds, knownSessionIds, claudeIds }
+}
+
+/** Every profile copy of a Claude session, most complete first. */
+function claudeCopyPaths(sessionId: string): string[] {
+  return claudeCandidateDirs()
+    .flatMap((baseDir) => listClaudeSessionCopies(baseDir, sessionId))
+    .sort(compareSessionCopies)
+    .map((copy) => copy.path)
+}
+
+async function loadDiskHistory(conversationId: string, timing: ChatLoadTiming): Promise<DiskHistory> {
+  const metadataStart = performance.now()
+  const { familyIds, knownSessionIds, claudeIds } = sessionIdsOf(conversationId)
+  const diskMessages: ChatMessage[] = []
+  const provenanceByMessageId = new Map<string, ForkMessageProvenance>()
+  const sources: unknown[] = []
   timing.dbMs += performance.now() - metadataStart
   const diskStart = performance.now()
   for (const sessionId of claudeIds) {
     // Profile switches leave older copies that are byte prefixes of the
     // newest one; loadJsonlCopies proves that by hash and parses one.
-    const copies = claudeCandidateDirs()
-      .flatMap((baseDir) => listClaudeSessionCopies(baseDir, sessionId))
-      .sort(compareSessionCopies)
-    for (const { messages } of await loadJsonlCopies(
-      copies.map((copy) => copy.path),
-      'claude-code',
-      timing,
-    )) {
+    const paths = claudeCopyPaths(sessionId)
+    for (const { messages } of await loadJsonlCopies(paths, 'claude-code', timing)) {
       sources.push(messages)
       diskMessages.push(...messages)
       for (const message of messages) {
@@ -100,13 +120,7 @@ async function loadDiskHistory(conversationId: string, timing: ChatLoadTiming): 
       }
     }
     // A subagent's steps live in transcripts of their own, beside the session's.
-    diskMessages.push(
-      ...(await loadSubagentSteps(
-        copies.map((copy) => copy.path),
-        timing,
-        sources,
-      )),
-    )
+    diskMessages.push(...(await loadSubagentSteps(paths, timing, sources)))
   }
 
   const codexSessions = await scanCodexSessionCopies(knownSessionIds, codexCandidateDirs())
@@ -190,42 +204,153 @@ export interface ConversationHistoryWindow extends Omit<MergedWindow, 'rowsRead'
 }
 
 /**
- * One window of the merged history, read without the full history: the
- * transcripts come from the parse cache, and SQLite rows only near the window
+ * One window of the merged history, read without the full history: each
+ * transcript through its byte-offset index (`transcript-index.ts`), so only
+ * the lines near the window are parsed, and SQLite rows only near the window
  * (see `mergeHistoryWindow`). Every older page costs the same.
  */
 export async function loadConversationHistoryWindow(
   conversationId: string,
   request: MergeWindowRequest,
 ): Promise<ConversationHistoryWindow> {
+  try {
+    return await loadWindow(conversationId, request, true)
+  } catch (err) {
+    if (!(err instanceof StaleTranscriptIndexError)) throw err
+    log.warn('transcript index did not match its file, parsing it in full', { conversationId })
+    await forgetTranscriptIndex(err.path, err.source)
+    return loadWindow(conversationId, request, false)
+  }
+}
+
+async function loadWindow(
+  conversationId: string,
+  request: MergeWindowRequest,
+  indexed: boolean,
+): Promise<ConversationHistoryWindow> {
   const timing = emptyTiming()
-  const { familyIds, diskMessages } = await loadDiskHistory(conversationId, timing)
+  const { familyIds, disk } = indexed
+    ? await loadIndexedDisk(conversationId, timing)
+    : await loadDiskHistory(conversationId, timing).then((history) => ({
+        familyIds: history.familyIds,
+        disk: windowDiskOf(history.diskMessages),
+      }))
   const start = performance.now()
   let readMs = 0
   const rows = messageWindowRows(familyIds, (ms) => (readMs += ms))
-  const { rowsRead, ...window } = mergeHistoryWindow(diskMessages, rows, request)
+  const diskBefore = { readMs: timing.readMs, parseMs: timing.parseMs }
+  const { rowsRead, ...window } = mergeHistoryWindow(disk, rows, request)
+  // Materializing the window's transcript lines happens inside the merge.
+  const sliceMs = timing.readMs - diskBefore.readMs + timing.parseMs - diskBefore.parseMs
+  timing.diskMs += sliceMs
   const enrichStart = performance.now()
   timing.dbMs += readMs
-  timing.mergeMs = enrichStart - start - readMs
-  const enrichments = displayBodyEnrichments(familyIds)
+  timing.mergeMs = enrichStart - start - readMs - sliceMs
+  const enrichments = displayBodyEnrichments(familyIds, userContents(window.messages))
   const messages = enrichMessagesWithDisplayBody(window.messages, enrichments)
   timing.enrichMs = performance.now() - enrichStart
   return {
     ...window,
     messages,
     familyIds,
-    diskMessageCount: diskMessages.length,
+    diskMessageCount: disk.metas.length,
     databaseMessageCount: rowsRead,
     timing,
   }
 }
 
-function displayBodyEnrichments(familyIds: readonly string[]) {
+/**
+ * The transcripts `loadDiskHistory` reads, in the same order, as a lazy view:
+ * indexed copies give ids and times, and parse lines only when materialized.
+ * A copy set that cannot be indexed is parsed in full, as before.
+ */
+async function loadIndexedDisk(
+  conversationId: string,
+  timing: ChatLoadTiming,
+): Promise<{ familyIds: string[]; disk: WindowDisk }> {
+  const metadataStart = performance.now()
+  const { familyIds, knownSessionIds, claudeIds } = sessionIdsOf(conversationId)
+  timing.dbMs += performance.now() - metadataStart
+  const diskStart = performance.now()
+  const parts: WindowDisk[] = []
+  const addCopies = async (paths: string[], source: 'claude-code' | 'codex', skip = 0) => {
+    const indexed = await openIndexedCopies(paths, source, timing)
+    if (indexed) {
+      for (const transcript of indexed) parts.push(skipped(transcriptDisk(transcript), skip))
+      return
+    }
+    for (const { messages } of await loadJsonlCopies(paths, source, timing)) {
+      parts.push(windowDiskOf(skip > 0 ? messages.slice(skip) : messages))
+    }
+  }
+  for (const sessionId of claudeIds) {
+    const paths = claudeCopyPaths(sessionId)
+    await addCopies(paths, 'claude-code')
+    parts.push(windowDiskOf(await loadSubagentSteps(paths, timing, [])))
+  }
+  const codexSessions = await scanCodexSessionCopies(knownSessionIds, codexCandidateDirs())
+  const forkReceipt = codexSessions.length > 0 ? getNativeForkResume(conversationId) : undefined
+  for (const [sessionId, paths] of codexCopiesById(codexSessions, knownSessionIds)) {
+    const skip =
+      forkReceipt?.provider === 'codex' && forkReceipt.sessionId === sessionId
+        ? (forkReceipt.copiedMessageCount ?? 0)
+        : 0
+    await addCopies(await largestFirst(paths), 'codex', skip)
+  }
+  timing.diskMs = performance.now() - diskStart
+  return { familyIds, disk: concatDisks(parts) }
+}
+
+function transcriptDisk(transcript: IndexedTranscript): WindowDisk {
+  return { metas: transcript.messages, materialize: transcript.materialize }
+}
+
+/** Drop the first `skip` messages, as `loadDiskHistory` slices a native fork's copied prefix. */
+function skipped(disk: WindowDisk, skip: number): WindowDisk {
+  if (skip <= 0) return disk
+  return {
+    metas: disk.metas.slice(skip),
+    materialize: (positions) => disk.materialize(positions.map((at) => at + skip)),
+  }
+}
+
+function concatDisks(parts: WindowDisk[]): WindowDisk {
+  if (parts.length === 1) return parts[0]
+  const starts: number[] = []
+  const metas: WindowDisk['metas'][number][] = []
+  for (const part of parts) {
+    starts.push(metas.length)
+    metas.push(...part.metas)
+  }
+  return {
+    metas,
+    materialize: (positions) => {
+      const byPart = new Map<number, number[]>()
+      for (const at of positions) {
+        let part = starts.length - 1
+        while (starts[part] > at) part--
+        byPart.set(part, [...(byPart.get(part) ?? []), at])
+      }
+      const found = new Map<number, ChatMessage>()
+      for (const [part, list] of byPart) {
+        const messages = parts[part].materialize(list.map((at) => at - starts[part]))
+        list.forEach((at, index) => found.set(at, messages[index]))
+      }
+      return positions.map((at) => found.get(at)!)
+    },
+  }
+}
+
+function displayBodyEnrichments(familyIds: readonly string[], contents?: ReadonlySet<string>) {
   const enrichments = new Map()
   for (const id of familyIds) {
-    for (const [content, enrichment] of getDisplayBodyEnrichments(id)) enrichments.set(content, enrichment)
+    for (const [content, enrichment] of getDisplayBodyEnrichments(id, contents)) enrichments.set(content, enrichment)
   }
   return enrichments
+}
+
+function userContents(messages: readonly ChatMessage[]): Set<string> {
+  return new Set(messages.filter((message) => message.role === 'user').map((message) => message.content))
 }
 
 // ponytail: bounded by chats and total messages, not bytes. The strings are
