@@ -60,8 +60,9 @@ export interface OlderLoadState {
 /** Whether to fetch the previous window now, whichever of the two prefetch points comes first. */
 export function shouldLoadOlder(state: OlderLoadState): boolean {
   if (!state.hasOlder || state.loading) return false
-  const intent = state.intent && state.intentSpentAt !== state.turnCount
-  if (state.scrollTop <= (intent ? PREFETCH_OLDER_INTENT_PX : PREFETCH_OLDER_PX)) return true
+  // Only a scroll retries; a pointer move or focus fires once per loaded window.
+  if (state.intent && state.intentSpentAt === state.turnCount) return false
+  if (state.scrollTop <= (state.intent ? PREFETCH_OLDER_INTENT_PX : PREFETCH_OLDER_PX)) return true
   return state.firstVisibleTurn !== null && state.firstVisibleTurn < state.turnCount * PREFETCH_OLDER_TURN_SHARE
 }
 

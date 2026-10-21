@@ -67,7 +67,8 @@ describe('desktop history window', () => {
     const state = { firstVisibleTurn: 30, turnCount: 40, hasOlder: true, loading: false, intent: true }
     expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_INTENT_PX, intentSpentAt: 40 })).toBe(false)
     expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_INTENT_PX, intentSpentAt: 30 })).toBe(true)
-    expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_PX, intentSpentAt: 40 })).toBe(true)
+    expect(shouldLoadOlder({ ...state, scrollTop: 0, intentSpentAt: 40 })).toBe(false)
+    expect(shouldLoadOlder({ ...state, scrollTop: 0, intent: false, intentSpentAt: 40 })).toBe(true)
   })
 
   it('prefetches once the first turn in view is among the oldest quarter, however far down that is', () => {
