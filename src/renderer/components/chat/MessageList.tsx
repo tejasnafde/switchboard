@@ -30,7 +30,7 @@ import {
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 import { SubagentRow } from './SubagentRow'
 import { groupChatSubagents, subagentCallsOf } from './subagent-messages'
-import { shouldLoadOlder, turnIndexHolding } from '../../services/history-window'
+import { PREFETCH_OLDER_POINTER_SHARE, shouldLoadOlder, turnIndexHolding } from '../../services/history-window'
 import { loadOlderHistory } from '../../services/history-loader'
 import { keepViewOnRowResize } from '../../services/row-resize-scroll'
 import { messageSearchTerms } from '@shared/message-search'
@@ -288,26 +288,33 @@ export function MessageList({
   const hasOlderRef = useRef(hasOlderHistory)
   hasOlderRef.current = hasOlderHistory
   const loadingOlderRef = useRef(false)
+  const intentSpentAtRef = useRef<number | undefined>(undefined)
 
-  const maybeLoadOlder = useCallback(() => {
-    const container = containerRef.current
-    if (!container || !sessionId || programmaticScrollRef.current) return
-    const first = virtualizer.getVirtualItems().find((item) => item.end > container.scrollTop)
-    if (
-      !shouldLoadOlder({
-        scrollTop: container.scrollTop,
-        firstVisibleTurn: first?.index ?? null,
-        turnCount: turnsLengthRef.current,
-        hasOlder: hasOlderRef.current,
-        loading: loadingOlderRef.current,
+  const maybeLoadOlder = useCallback(
+    (intent = false) => {
+      const container = containerRef.current
+      if (!container || !sessionId || programmaticScrollRef.current) return
+      const first = virtualizer.getVirtualItems().find((item) => item.end > container.scrollTop)
+      if (
+        !shouldLoadOlder({
+          scrollTop: container.scrollTop,
+          firstVisibleTurn: first?.index ?? null,
+          turnCount: turnsLengthRef.current,
+          hasOlder: hasOlderRef.current,
+          loading: loadingOlderRef.current,
+          intent,
+          intentSpentAt: intentSpentAtRef.current,
+        })
+      )
+        return
+      if (intent) intentSpentAtRef.current = turnsLengthRef.current
+      loadingOlderRef.current = true
+      void loadOlderHistory(sessionId).finally(() => {
+        loadingOlderRef.current = false
       })
-    )
-      return
-    loadingOlderRef.current = true
-    void loadOlderHistory(sessionId).finally(() => {
-      loadingOlderRef.current = false
-    })
-  }, [sessionId, virtualizer])
+    },
+    [sessionId, virtualizer],
+  )
 
   const handleScroll = useCallback(() => {
     const container = containerRef.current
@@ -648,6 +655,11 @@ export function MessageList({
       onPointerDown={() => {
         programmaticScrollRef.current = false
       }}
+      onPointerMove={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect()
+        if (event.clientY - rect.top < rect.height * PREFETCH_OLDER_POINTER_SHARE) maybeLoadOlder(true)
+      }}
+      onFocus={() => maybeLoadOlder(true)}
       // NOTE: deliberately NOT using `contain: strict` - it creates a new
       // containing block for `position: fixed` descendants, which breaks
       // the MessageBubble image lightbox (clips to the scroll container

@@ -9,6 +9,7 @@ import {
   getNativeForkResume,
   listConversationSegments,
   messageRowsToChatMessages,
+  messageWindowRows,
   threadFamilyIds,
 } from '../db/database'
 import { compareSessionCopies, listClaudeSessionCopies, claudeCandidateDirs } from '../provider/claude-session-migrate'
@@ -19,6 +20,7 @@ import { loadSubagentSteps } from '../agent/subagent-transcripts'
 import { createMainLogger } from '../logger'
 import { mergeConversationMessages } from '../agent/dedupe-messages'
 import { enrichMessagesWithDisplayBody } from '../ipc/enrich-display-body'
+import { mergeHistoryWindow, type MergedWindow, type MergeWindowRequest } from './history-window'
 import { isForkableCanonicalMessage, type CanonicalForkMessage, type ForkMessageProvenance } from './fork-anchor'
 
 const log = createMainLogger('conversations:history')
@@ -32,11 +34,8 @@ export interface ConversationHistory {
   timing: ChatLoadTiming
 }
 
-export async function loadConversationHistory(
-  conversationId: string,
-  _projectPath: string,
-): Promise<ConversationHistory> {
-  const timing: ChatLoadTiming = {
+function emptyTiming(): ChatLoadTiming {
+  return {
     readMs: 0,
     parseMs: 0,
     diskMs: 0,
@@ -48,6 +47,17 @@ export async function loadConversationHistory(
     cacheHits: 0,
     prefixSkips: 0,
   }
+}
+
+interface DiskHistory {
+  familyIds: string[]
+  diskMessages: ChatMessage[]
+  provenanceByMessageId: Map<string, ForkMessageProvenance>
+  /** The parse cache hands back the same array while a file is unchanged. */
+  sources: unknown[]
+}
+
+async function loadDiskHistory(conversationId: string, timing: ChatLoadTiming): Promise<DiskHistory> {
   const metadataStart = performance.now()
   const familyIds = threadFamilyIds(conversationId)
   const legacySessionHints = conversationSessionHints(conversationId)
@@ -59,7 +69,6 @@ export async function loadConversationHistory(
   ])
   const diskMessages: ChatMessage[] = []
   const provenanceByMessageId = new Map<string, ForkMessageProvenance>()
-  // The parse cache hands back the same array while a file is unchanged.
   const sources: unknown[] = []
 
   const claudeIds = new Set([
@@ -126,6 +135,15 @@ export async function loadConversationHistory(
   }
 
   timing.diskMs = performance.now() - diskStart
+  return { familyIds, diskMessages, provenanceByMessageId, sources }
+}
+
+export async function loadConversationHistory(
+  conversationId: string,
+  _projectPath: string,
+): Promise<ConversationHistory> {
+  const timing = emptyTiming()
+  const { familyIds, diskMessages, provenanceByMessageId, sources } = await loadDiskHistory(conversationId, timing)
   const dbStart = performance.now()
   // Read before the rows: a write landing in between leaves the memo one
   // revision behind, so the next open rebuilds instead of trusting it.
@@ -140,12 +158,7 @@ export async function loadConversationHistory(
     return { ...memo.history, timing }
   }
   const databaseMessages = familyIds.flatMap((id) => messageRowsToChatMessages(getMessagesForConversation(id)))
-  const enrichments = new Map()
-  for (const id of familyIds) {
-    for (const [content, enrichment] of getDisplayBodyEnrichments(id)) {
-      enrichments.set(content, enrichment)
-    }
-  }
+  const enrichments = displayBodyEnrichments(familyIds)
   timing.dbMs += performance.now() - dbStart
   const mergeStart = performance.now()
   const merged = mergeConversationMessages(diskMessages, databaseMessages)
@@ -167,6 +180,52 @@ export async function loadConversationHistory(
   }
   rememberMergedHistory(conversationId, key, history)
   return { ...history, timing }
+}
+
+export interface ConversationHistoryWindow extends Omit<MergedWindow, 'rowsRead'> {
+  familyIds: string[]
+  diskMessageCount: number
+  databaseMessageCount: number
+  timing: ChatLoadTiming
+}
+
+/**
+ * One window of the merged history, read without the full history: the
+ * transcripts come from the parse cache, and SQLite rows only near the window
+ * (see `mergeHistoryWindow`). Every older page costs the same.
+ */
+export async function loadConversationHistoryWindow(
+  conversationId: string,
+  request: MergeWindowRequest,
+): Promise<ConversationHistoryWindow> {
+  const timing = emptyTiming()
+  const { familyIds, diskMessages } = await loadDiskHistory(conversationId, timing)
+  const start = performance.now()
+  let readMs = 0
+  const rows = messageWindowRows(familyIds, (ms) => (readMs += ms))
+  const { rowsRead, ...window } = mergeHistoryWindow(diskMessages, rows, request)
+  const enrichStart = performance.now()
+  timing.dbMs += readMs
+  timing.mergeMs = enrichStart - start - readMs
+  const enrichments = displayBodyEnrichments(familyIds)
+  const messages = enrichMessagesWithDisplayBody(window.messages, enrichments)
+  timing.enrichMs = performance.now() - enrichStart
+  return {
+    ...window,
+    messages,
+    familyIds,
+    diskMessageCount: diskMessages.length,
+    databaseMessageCount: rowsRead,
+    timing,
+  }
+}
+
+function displayBodyEnrichments(familyIds: readonly string[]) {
+  const enrichments = new Map()
+  for (const id of familyIds) {
+    for (const [content, enrichment] of getDisplayBodyEnrichments(id)) enrichments.set(content, enrichment)
+  }
+  return enrichments
 }
 
 // ponytail: bounded by chats and total messages, not bytes. The strings are

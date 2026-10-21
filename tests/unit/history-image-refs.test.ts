@@ -1,6 +1,7 @@
 /** Windowed history sends images by reference only when asked, and serves the bytes back. */
 import { describe, expect, it, vi } from 'vitest'
 import { dataUrlBytes, imagesByReference } from '../../src/shared/history-image-refs'
+import { historyWindow } from '../../src/shared/phone-history-window'
 import type { ChatMessage } from '../../src/shared/types'
 
 const png = `data:image/png;base64,${Buffer.from('0123456789').toString('base64')}`
@@ -28,10 +29,19 @@ vi.mock('../../src/main/db/database', async (importOriginal) => ({
   getConversationForkMetadata: () => null,
 }))
 vi.mock('../../src/main/conversations/history', () => ({
-  loadConversationHistory: async () => {
+  loadConversationHistoryWindow: async (
+    _id: string,
+    request: { limit?: number; beforeId?: string; throughId?: string },
+  ) => {
     loads.count += 1
     await Promise.resolve()
-    return { messages: history, diskMessageCount: 2, databaseMessageCount: 0, familyIds: ['c1'] }
+    const counts = { diskMessageCount: 2, databaseMessageCount: 0, familyIds: ['c1'], timing: {} }
+    if (request.throughId) return { messages: history.filter((m) => m.id === request.throughId), ...counts }
+    return { ...historyWindow(history, request), ...counts }
+  },
+  // Windowed loads and misses never read the full history.
+  loadConversationHistory: async () => {
+    throw new Error('full history read')
   },
 }))
 
@@ -89,20 +99,5 @@ describe('load-session-by-id image references', () => {
     expect(loads.count).toBe(before + 1)
     expect(await map.get(AppChannels.LOAD_HISTORY_IMAGE)!('c2', 'nope', 0)).toEqual({ url: null })
     expect(await map.get(AppChannels.LOAD_HISTORY_IMAGE)!('gone', 'u1', 0)).toEqual({ url: null })
-  })
-
-  it('shares one history read between images that miss at the same time', async () => {
-    const map = handlers()
-    const before = loads.count
-    const answers = await Promise.all([
-      map.get(AppChannels.LOAD_HISTORY_IMAGE)!('c3', 'nope', 0),
-      map.get(AppChannels.LOAD_HISTORY_IMAGE)!('c3', 'nope', 1),
-      map.get(AppChannels.LOAD_HISTORY_IMAGE)!('c4', 'nope', 2),
-    ])
-    expect(answers).toEqual([{ url: null }, { url: null }, { url: null }])
-    expect(loads.count).toBe(before + 1)
-    // A later miss reads again: only reads in flight are shared.
-    await map.get(AppChannels.LOAD_HISTORY_IMAGE)!('c3', 'nope', 0)
-    expect(loads.count).toBe(before + 2)
   })
 })

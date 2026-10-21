@@ -6,6 +6,7 @@ import {
   rebaseOnNewest,
   shouldLoadOlder,
   turnIndexHolding,
+  PREFETCH_OLDER_INTENT_PX,
   PREFETCH_OLDER_PX,
 } from '../../src/renderer/services/history-window'
 import { historyWindow } from '../../src/shared/phone-history-window'
@@ -53,6 +54,21 @@ describe('desktop history window', () => {
     const state = { firstVisibleTurn: 30, turnCount: 40, hasOlder: true, loading: false }
     expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_PX })).toBe(true)
     expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_PX + 1 })).toBe(false)
+  })
+
+  it('prefetches from twice as far when the pointer nears the top or the list takes focus', () => {
+    const state = { firstVisibleTurn: 30, turnCount: 40, hasOlder: true, loading: false, intent: true }
+    expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_INTENT_PX })).toBe(true)
+    expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_INTENT_PX + 1 })).toBe(false)
+    expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_INTENT_PX, intent: false })).toBe(false)
+  })
+
+  it('runs one intent prefetch per loaded window, so a failed one is not retried on every pointer move', () => {
+    const state = { firstVisibleTurn: 30, turnCount: 40, hasOlder: true, loading: false, intent: true }
+    expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_INTENT_PX, intentSpentAt: 40 })).toBe(false)
+    expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_INTENT_PX, intentSpentAt: 30 })).toBe(true)
+    expect(shouldLoadOlder({ ...state, scrollTop: 0, intentSpentAt: 40 })).toBe(false)
+    expect(shouldLoadOlder({ ...state, scrollTop: 0, intent: false, intentSpentAt: 40 })).toBe(true)
   })
 
   it('prefetches once the first turn in view is among the oldest quarter, however far down that is', () => {

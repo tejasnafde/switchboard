@@ -33,9 +33,19 @@ function finishChatOpen(thread: string, messages: ChatMessage[]) {
   if (!open || open.thread !== thread || open.messages !== messages) return
   requestAnimationFrame(() => {
     if (pending !== open || committed.get(thread) !== messages) return
-    open.span.end({ ...open.fields, messages: messages.length, outcome: 'rendered' })
+    open.span.end({ ...open.fields, messages: messages.length, ...rendererHeap(), outcome: 'rendered' })
     pending = undefined
   })
+}
+
+/** Chromium's JS heap of this renderer (`performance.memory`, absent elsewhere), in MiB. */
+function rendererHeap(): PerfFields {
+  const memory = (performance as Performance & { memory?: { usedJSHeapSize: number; totalJSHeapSize: number } }).memory
+  if (!memory) return {}
+  return {
+    heapUsedMb: Math.round(memory.usedJSHeapSize / 1048576),
+    heapTotalMb: Math.round(memory.totalJSHeapSize / 1048576),
+  }
 }
 
 export function chatMessagesCommitted(thread: string, messages: ChatMessage[], visible = true) {

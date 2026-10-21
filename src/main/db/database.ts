@@ -236,6 +236,10 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'pills_meta')) {
       db.exec('ALTER TABLE messages ADD COLUMN pills_meta TEXT')
     }
+    // The few user rows `getDisplayBodyEnrichments` reads; without it every
+    // open read each row of the chat (250 ms for 14,600 rows).
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_enrichable ON messages(conversation_id)
+      WHERE role = 'user' AND (display_body IS NOT NULL OR images IS NOT NULL)`)
   } catch (err) {
     log.warn('messages table migration failed (images/display_body/pills_meta columns)', err)
   }

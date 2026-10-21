@@ -210,19 +210,51 @@ it('stops after one retry and returns null if the file keeps changing', async ()
   }
 })
 
-it('evicts the least recently used entry after 24 paths', async () => {
+it('evicts the least recently used entry after 256 paths', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'sb-jsonl-cache-'))
   clearJsonlCache()
   try {
     const path = join(dir, '0.jsonl')
     await writeFile(path, line('one', '2026-01-01T00:00:00Z'))
     const first = await loadJsonlCached(path, 'claude-code')
-    for (let i = 1; i < 25; i++) {
+    for (let i = 1; i < 257; i++) {
       const next = join(dir, `${i}.jsonl`)
       await writeFile(next, line('one', '2026-01-01T00:00:00Z'))
       await loadJsonlCached(next, 'claude-code')
     }
     expect(await loadJsonlCached(path, 'claude-code')).not.toBe(first)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+it('parses only appended bytes after two chats with many subagent transcripts load', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'sb-jsonl-cache-'))
+  try {
+    const head = join(dir, 'head.jsonl')
+    await writeFile(head, line('one', '2026-01-01T00:00:00Z'))
+    await loadJsonlCached(head, 'claude-code')
+    for (let i = 0; i < 40; i++) {
+      const subagent = join(dir, `agent-${i}.jsonl`)
+      await writeFile(subagent, line('step', '2026-01-01T00:00:00Z'))
+      await loadJsonlCached(subagent, 'claude-code')
+    }
+    const added = line('two', '2026-01-01T00:00:01Z')
+    await appendFile(head, added)
+    const timing = {
+      readMs: 0,
+      parseMs: 0,
+      diskMs: 0,
+      dbMs: 0,
+      mergeMs: 0,
+      enrichMs: 0,
+      diskBytes: 0,
+      diskLines: 0,
+      cacheHits: 0,
+      prefixSkips: 0,
+    }
+    expect((await loadJsonlCached(head, 'claude-code', timing))?.length).toBe(2)
+    expect(timing.diskBytes).toBe(Buffer.byteLength(added))
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -239,6 +271,43 @@ it('keys the cache by both parser source and path and invalidates truncation', a
     expect(await loadJsonlCached(path, 'claude-code')).toEqual([])
     await rm(path)
     expect(await loadJsonlCached(path, 'claude-code')).toBeNull()
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+it('marks a cached tool call from a result in appended bytes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'sb-jsonl-cache-'))
+  try {
+    const path = join(dir, 'tools.jsonl')
+    const toolUse = (id: string, name: string) =>
+      JSON.stringify({
+        type: 'assistant',
+        timestamp: '2026-01-01T00:00:00Z',
+        message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input: {} }] },
+      }) + '\n'
+    await writeFile(path, toolUse('t1', 'Bash') + toolUse('t2', 'Agent'))
+    expect((await loadJsonlCached(path, 'claude-code'))?.length).toBe(2)
+    await appendFile(
+      path,
+      JSON.stringify({
+        type: 'user',
+        timestamp: '2026-01-01T00:00:01Z',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 't1', is_error: true, content: 'boom' },
+            { type: 'tool_result', tool_use_id: 't2', content: [{ type: 'text', text: 'report' }] },
+          ],
+        },
+      }) + '\n',
+    )
+    const appended = await loadJsonlCached(path, 'claude-code')
+    clearJsonlCache()
+    const full = await loadJsonlCached(path, 'claude-code')
+    expect(appended?.map((m) => m.toolCalls)).toEqual(full?.map((m) => m.toolCalls))
+    expect(full?.[0].toolCalls?.[0].isError).toBe(true)
+    expect(full?.[1].toolCalls?.[0].output).toBe('report')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

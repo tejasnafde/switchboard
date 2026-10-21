@@ -26,10 +26,20 @@ vi.mock('../../src/main/db/database', async (importOriginal) => ({
     return writeTakes
   },
 }))
+import { historyWindow } from '../../src/shared/phone-history-window'
 vi.mock('../../src/main/conversations/history', () => ({
   loadConversationHistory: async () => {
     if (historyError) throw new Error('history read failed')
     return { messages: history, diskMessageCount: history.length, databaseMessageCount: 0, familyIds: ['c1'] }
+  },
+  loadConversationHistoryWindow: async (_id: string, request: { limit?: number; beforeId?: string }) => {
+    if (historyError) throw new Error('history read failed')
+    return {
+      ...historyWindow(history, request),
+      diskMessageCount: history.length,
+      databaseMessageCount: 0,
+      familyIds: ['c1'],
+    }
   },
 }))
 
@@ -87,6 +97,14 @@ describe('status line backfill on history load', () => {
   it('does not backfill from a turn that is still running', async () => {
     rows.set('c1', { id: 'c1', project_path: '/repo', agent_type: 'claude-code', title: 'Chat', status_line: null })
     await loadById(true)
+    expect(stored).toHaveLength(0)
+    expect(emitted).toHaveLength(0)
+  })
+
+  it('does not backfill from an older page', async () => {
+    rows.set('c1', { id: 'c1', project_path: '/repo', agent_type: 'claude-code', title: 'Chat', status_line: null })
+    history.push({ id: 'u2', role: 'user', content: 'and stop', timestamp: 3 })
+    await loadById(false, { window: true, limit: 1, beforeId: 'u2' })
     expect(stored).toHaveLength(0)
     expect(emitted).toHaveLength(0)
   })

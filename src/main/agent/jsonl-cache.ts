@@ -3,13 +3,13 @@
  *
  * Session JSONLs are append-only (Claude/Codex rotate to NEW files instead
  * of rewriting), but replacements and rewrites are possible. Size, mtime,
- * ctime, device and inode find a candidate, and a content hash confirms it
- * (metadata alone misses a same-size rewrite); a changing read is never cached.
- * A file that grew past a cached state is parsed from the old end only when
- * its old bytes still hash to the cached digest.
- * Every session open used to
- * re-read and re-parse the full transcript from scratch - tens of MB for
- * long compaction-rotated threads - on every sidebar click.
+ * ctime, device and inode find a candidate, and a hash of the last 64 KiB
+ * before the cached end confirms it (metadata alone misses a same-size
+ * rewrite); a changing read is never cached. A file that grew past a cached
+ * state is parsed from the old end only when that guard still matches, so a
+ * reopen reads the guard and the new bytes, never the whole file.
+ * ponytail: a rewrite that keeps every stat field and the last 64 KiB is
+ * served stale; hash the whole file off the open path if that ever happens.
  *
  * Bounded LRU: parsed histories can be large (base64 images ride along), so
  * only the most recently used files stay resident.
@@ -17,45 +17,52 @@
  * Callers MUST NOT mutate the returned array - it is shared across hits.
  */
 import type { ChatLoadTiming } from '@shared/perf-chat'
-import { stat } from 'node:fs/promises'
+import { open, stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
-import type { ChatMessage } from '@shared/types'
+import type { ChatMessage, ToolCall } from '@shared/types'
 import { createMainLogger } from '../logger'
 import { retainedJsonBytes } from './jsonl-memory'
 import { JsonlParser } from './jsonl-parser'
 
 const log = createMainLogger('agent:jsonl-cache')
 
-const MAX_ENTRIES = 24
+// A long chat brings one entry per subagent transcript (16 seen), so a small
+// cap evicted the session's own head when the user switched between two chats.
+const MAX_ENTRIES = 256
 // Count retained messages, not ignored tool-result records in the raw file.
 const MAX_TOTAL_BYTES = 128 * 1024 * 1024
-// Every open hashes each copy in full; 64 KiB reads made that 4x slower.
+// A prefix proof hashes a copy in full; 64 KiB reads made that 4x slower.
 const READ_CHUNK_BYTES = 1024 * 1024
+/** Bytes before the cached end that must still match for a hit or an append. */
+export const GUARD_BYTES = 64 * 1024
 
-interface CacheEntry {
-  mtimeMs: number
-  size: number
-  ctimeMs: number
-  ino: number
-  dev: number
-  digest: string
+interface CacheEntry extends FileState {
+  guard: string
   /** The cached bytes end on a line break, so new bytes start a new line. */
   endsWithNewline: boolean
   messages: ChatMessage[]
+  /** Tool calls with no result yet; an append parse is seeded with them so a later result still marks its call. */
+  pendingToolCalls: ToolCall[]
   retainedBytes: number
+  /** New on every full parse; an append keeps it, so a copy proven a prefix stays proven. */
+  lineage: number
 }
 
 const cache = new Map<string, CacheEntry>() // Map insertion order = LRU order
 let totalBytes = 0
+let nextLineage = 1
+/** Copies proven a byte prefix of a head copy, by copy path. */
+const provenPrefixes = new Map<string, { copy: FileState; head: string; lineage: number }>()
 
-function evict(): void {
-  while (cache.size > MAX_ENTRIES || totalBytes > MAX_TOTAL_BYTES) {
-    const oldest = cache.entries().next().value
-    if (!oldest) break
-    cache.delete(oldest[0])
-    totalBytes -= oldest[1].retainedBytes
+/** Oldest first, never `keep`: one chat over the byte budget must still hit on its next open. */
+function evict(keep: string): void {
+  for (const [key, entry] of cache) {
+    if (cache.size <= MAX_ENTRIES && totalBytes <= MAX_TOTAL_BYTES) break
+    if (key === keep) continue
+    cache.delete(key)
+    totalBytes -= entry.retainedBytes
   }
 }
 
@@ -70,14 +77,15 @@ export async function loadJsonlCached(
   source: 'claude-code' | 'codex',
   timing?: ChatLoadTiming,
 ): Promise<ChatMessage[] | null> {
-  return (await loadJsonlSnapshot(filePath, source, timing, true, []))?.messages ?? null
+  return (await loadJsonlSnapshot(filePath, source, timing, true))?.messages ?? null
 }
 
 /**
  * Parse copies of ONE session (profile copies of the same `<id>.jsonl`),
  * most complete first. A smaller copy whose bytes hash equal to the same-length
  * prefix of the first one holds no line the first does not, so it is skipped
- * instead of parsed. Anything not proven a prefix is parsed as before.
+ * instead of parsed. The proof is kept while the copy is unchanged and the
+ * first copy only grew. Anything not proven a prefix is parsed as before.
  * Returns one message array per copy that was parsed, in input order.
  */
 export async function loadJsonlCopies(
@@ -87,22 +95,14 @@ export async function loadJsonlCopies(
 ): Promise<Array<{ path: string; messages: ChatMessage[] }>> {
   const [first, ...rest] = filePaths
   if (!first) return []
-  const sizes = new Map<string, number>()
-  for (const path of rest) {
-    const st = await statOrNull(path)
-    if (st) sizes.set(path, st.size)
-  }
   const out: Array<{ path: string; messages: ChatMessage[] }> = []
-  const head = await loadJsonlSnapshot(first, source, timing, true, [...sizes.values()])
+  const head = await loadJsonlSnapshot(first, source, timing, true)
   if (head) out.push({ path: first, messages: head.messages })
   for (const path of rest) {
-    if (head && sizes.has(path)) {
-      const copy = await hashFile(path, [])
-      const prefix = copy && head.prefixes.get(copy.size)
-      if (prefix && prefix === copy.digest) {
-        if (timing) timing.prefixSkips += 1
-        continue
-      }
+    const st = head ? await statOrNull(path) : null
+    if (head && st && (await provenPrefix(path, st, first, head))) {
+      if (timing) timing.prefixSkips += 1
+      continue
     }
     const messages = await loadJsonlCached(path, source, timing)
     if (messages) out.push({ path, messages })
@@ -110,10 +110,16 @@ export async function loadJsonlCopies(
   return out
 }
 
-interface Snapshot {
-  messages: ChatMessage[]
-  /** sha256 of the first N bytes, for each requested N the file reaches. */
-  prefixes: Map<number, string>
+async function provenPrefix(path: string, st: FileState, headPath: string, head: CacheEntry): Promise<boolean> {
+  const memo = provenPrefixes.get(path)
+  if (memo && memo.head === headPath && memo.lineage === head.lineage && sameState(memo.copy, st)) return true
+  if (st.size > head.size) return false
+  const copy = await hashRange(path, st.size)
+  if (!copy || copy !== (await hashRange(headPath, st.size))) return false
+  provenPrefixes.delete(path)
+  provenPrefixes.set(path, { copy: st, head: headPath, lineage: head.lineage })
+  if (provenPrefixes.size > MAX_ENTRIES) provenPrefixes.delete(provenPrefixes.keys().next().value!)
+  return true
 }
 
 async function loadJsonlSnapshot(
@@ -121,9 +127,8 @@ async function loadJsonlSnapshot(
   source: 'claude-code' | 'codex',
   timing: ChatLoadTiming | undefined,
   retry: boolean,
-  prefixSizes: number[],
   append = true,
-): Promise<Snapshot | null> {
+): Promise<CacheEntry | null> {
   let st
   try {
     st = await stat(filePath)
@@ -140,10 +145,9 @@ async function loadJsonlSnapshot(
   const key = `${source}\0${filePath}`
   const hit = cache.get(key)
   // Metadata alone misses a same-size rewrite that keeps the old mtime (seen
-  // on Windows), so a hit also re-hashes the bytes. That skips the parse,
+  // on Windows), so a hit also checks the guard bytes. That skips the parse,
   // which is most of the cost.
-  const hashed = hit && sameState(hit, st) ? await hashFile(filePath, prefixSizes) : null
-  if (hit && hashed?.digest === hit.digest) {
+  if (hit && sameState(hit, st) && (await guardOf(filePath, hit.size)) === hit.guard) {
     const now = await statOrNull(filePath)
     if (!now) return null
     if (sameState(hit, now)) {
@@ -151,57 +155,59 @@ async function loadJsonlSnapshot(
       cache.delete(key)
       cache.set(key, hit)
       if (timing) timing.cacheHits += 1
-      return { messages: hit.messages, prefixes: hashed.prefixes }
+      return hit
     }
   }
 
   // The open chat's transcript grows every turn. When it grew past a cached
-  // state that ended on a line break, parse only the new bytes, and only once
-  // the old bytes hash to the cached digest. Anything else parses in full.
-  const base =
-    append && hit?.endsWithNewline && hit.ino === st.ino && hit.dev === st.dev && st.size > hit.size ? hit : undefined
+  // state that ended on a line break and the guard before the old end still
+  // matches, parse only the new bytes. Anything else parses in full.
+  const grew = append && hit?.endsWithNewline && hit.ino === st.ino && hit.dev === st.dev && st.size > hit.size
+  const base = grew && (await guardOf(filePath, hit.size)) === hit.guard ? hit : undefined
+  if (grew && !base) log.info('session jsonl changed before its cached end, parsing it in full', { filePath })
   const appendFrom = base?.size ?? 0
   let messages: ChatMessage[]
-  let digest: string
-  let prefixes: Map<number, string>
+  let guard: string | null
   let endsWithNewline = false
+  let pendingToolCalls: ToolCall[]
   try {
     const readStart = performance.now()
     let parseMs = 0
     messages = []
     const parser = new JsonlParser((msg) => messages.push(msg), source)
-    const hash = new PrefixHasher(base ? [...prefixSizes, appendFrom] : prefixSizes)
+    if (base) parser.seedToolCalls(base.pendingToolCalls)
     const decoder = new StringDecoder('utf8')
-    for await (const raw of createReadStream(filePath, { highWaterMark: READ_CHUNK_BYTES })) {
+    let read = 0
+    // `end` is inclusive; stopping at the stat'd size keeps a write landing
+    // mid-read out of this parse (the state check below retries it).
+    const chunks =
+      st.size > appendFrom
+        ? createReadStream(filePath, { start: appendFrom, end: st.size - 1, highWaterMark: READ_CHUNK_BYTES })
+        : []
+    for await (const raw of chunks) {
       const chunk = raw as Buffer
-      const skip = Math.min(chunk.length, Math.max(0, appendFrom - hash.size))
-      hash.update(chunk)
+      read += chunk.length
       if (chunk.length > 0) endsWithNewline = chunk[chunk.length - 1] === 0x0a
-      if (skip === chunk.length) continue
       const parseStart = performance.now()
-      parser.feed(decoder.write(chunk.subarray(skip)))
+      parser.feed(decoder.write(chunk))
       parseMs += performance.now() - parseStart
-    }
-    digest = hash.digest()
-    prefixes = hash.prefixes
-    if (base && prefixes.get(appendFrom) !== base.digest) {
-      log.info('session jsonl changed before its cached end, parsing it in full', { filePath })
-      return await loadJsonlSnapshot(filePath, source, timing, retry, prefixSizes, false)
     }
     const flushStart = performance.now()
     parser.feed(decoder.end())
     parser.flush()
+    pendingToolCalls = parser.pendingToolCalls()
     parseMs += performance.now() - flushStart
     if (timing) {
       timing.readMs += performance.now() - readStart - parseMs
       timing.parseMs += parseMs
-      timing.diskBytes += st.size - appendFrom
+      timing.diskBytes += read
       timing.diskLines += parser.lineCount
     }
+    guard = await guardOf(filePath, st.size)
     const after = await stat(filePath)
-    if (!sameState(st, after)) {
+    if (guard === null || read !== st.size - appendFrom || !sameState(st, after)) {
       log.warn('session jsonl changed during read', { filePath, retry })
-      return retry ? loadJsonlSnapshot(filePath, source, timing, false, prefixSizes, append) : null
+      return retry ? loadJsonlSnapshot(filePath, source, timing, false, append) : null
     }
   } catch (err) {
     // A fragment that stats OK but fails to read (EACCES, deleted in the
@@ -218,24 +224,32 @@ async function loadJsonlSnapshot(
   }
   const parsedBytes = retainedJsonBytes(messages)
   if (base) messages = base.messages.concat(messages)
-  const retainedBytes = (base?.retainedBytes ?? 0) + parsedBytes
-  cache.set(key, {
-    retainedBytes,
+  const entry: CacheEntry = {
+    retainedBytes: (base?.retainedBytes ?? 0) + parsedBytes,
     mtimeMs: st.mtimeMs,
     size: st.size,
     ctimeMs: st.ctimeMs,
     ino: st.ino,
     dev: st.dev,
-    digest,
+    guard,
     endsWithNewline,
     messages,
-  })
-  totalBytes += retainedBytes
-  evict()
-  return { messages, prefixes }
+    pendingToolCalls,
+    lineage: base?.lineage ?? nextLineage++,
+  }
+  cache.set(key, entry)
+  totalBytes += entry.retainedBytes
+  evict(key)
+  return entry
 }
 
-type FileState = Pick<CacheEntry, 'mtimeMs' | 'size' | 'ctimeMs' | 'ino' | 'dev'>
+interface FileState {
+  mtimeMs: number
+  size: number
+  ctimeMs: number
+  ino: number
+  dev: number
+}
 
 function sameState(a: FileState, b: FileState): boolean {
   return a.mtimeMs === b.mtimeMs && a.size === b.size && a.ctimeMs === b.ctimeMs && a.ino === b.ino && a.dev === b.dev
@@ -253,60 +267,45 @@ async function statOrNull(filePath: string): Promise<FileState | null> {
   }
 }
 
-async function hashFile(
-  filePath: string,
-  prefixSizes: number[],
-): Promise<{ digest: string; size: number; prefixes: Map<number, string> } | null> {
-  const hash = new PrefixHasher(prefixSizes)
+/** sha256 of the `GUARD_BYTES` before `end`, plus `end` itself; null when the file is shorter. */
+async function guardOf(filePath: string, end: number): Promise<string | null> {
+  const start = Math.max(0, end - GUARD_BYTES)
+  const buffer = Buffer.alloc(end - start)
+  let file
   try {
-    for await (const chunk of createReadStream(filePath, { highWaterMark: READ_CHUNK_BYTES }))
-      hash.update(chunk as Buffer)
+    file = await open(filePath, 'r')
+    const { bytesRead } = await file.read(buffer, 0, buffer.length, start)
+    if (bytesRead !== buffer.length) return null
+  } catch (err) {
+    log.warn('session jsonl guard read failed', { filePath, err })
+    return null
+  } finally {
+    await file?.close()
+  }
+  return createHash('sha256').update(buffer).update(String(end)).digest('hex')
+}
+
+/** sha256 of the first `size` bytes, or null when the file is shorter or unreadable. */
+async function hashRange(filePath: string, size: number): Promise<string | null> {
+  const hash = createHash('sha256')
+  let read = 0
+  try {
+    if (size > 0) {
+      for await (const chunk of createReadStream(filePath, { end: size - 1, highWaterMark: READ_CHUNK_BYTES })) {
+        hash.update(chunk as Buffer)
+        read += (chunk as Buffer).length
+      }
+    }
   } catch (err) {
     log.warn('session jsonl hash failed', { filePath, err })
     return null
   }
-  return { size: hash.size, digest: hash.digest(), prefixes: hash.prefixes }
-}
-
-/** sha256 of a byte stream, plus the digest of each requested prefix length. */
-export class PrefixHasher {
-  readonly prefixes = new Map<number, string>()
-  size = 0
-  private readonly hash = createHash('sha256')
-  private readonly pending: number[]
-
-  constructor(prefixSizes: readonly number[]) {
-    this.pending = [...new Set(prefixSizes)].sort((a, b) => a - b)
-    this.take()
-  }
-
-  update(chunk: Buffer): void {
-    let used = 0
-    while (this.pending.length > 0 && this.pending[0] <= this.size + chunk.length - used) {
-      const cut = this.pending[0] - this.size
-      this.hash.update(chunk.subarray(used, used + cut))
-      this.size += cut
-      used += cut
-      this.take()
-    }
-    this.hash.update(chunk.subarray(used))
-    this.size += chunk.length - used
-  }
-
-  digest(): string {
-    return this.hash.digest('hex')
-  }
-
-  private take(): void {
-    while (this.pending[0] === this.size) {
-      this.prefixes.set(this.size, this.hash.copy().digest('hex'))
-      this.pending.shift()
-    }
-  }
+  return read === size ? hash.digest('hex') : null
 }
 
 /** Test seam. */
 export function clearJsonlCache(): void {
   cache.clear()
+  provenPrefixes.clear()
   totalBytes = 0
 }

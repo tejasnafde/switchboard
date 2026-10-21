@@ -80,7 +80,8 @@ import {
 } from '../db/database'
 import { claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
-import { loadConversationHistory, mergedHistoryMessages } from '../conversations/history'
+import { loadConversationHistory, loadConversationHistoryWindow, mergedHistoryMessages } from '../conversations/history'
+import { capWindowBytes } from '../conversations/history-window'
 import { sessionPreviewLine } from '@shared/turn-preview'
 import { loadJsonlCached } from '../agent/jsonl-cache'
 import { getConversationForkCoordinator } from '../conversations/conversation-fork-runtime'
@@ -117,10 +118,9 @@ const log = createLogger('ipc:app')
 // Data handlers - transport-agnostic, run on either ElectronIpcHost or WsHost.
 // Native-dialog / window / app-lifecycle handlers live in app-desktop.ts.
 /**
- * Tail-slice an assembled history for clients that cannot afford the whole
- * thing. Fragments still have to be parsed in full to dedupe and order them, so
- * this saves WIRE bytes, not parse time - which is the cost that matters for the
- * mobile client pulling a 2800-message thread over a WebSocket.
+ * Tail-slice an assembled history for a caller that asks `limit` without a
+ * window (phones before `history_window_v1`). A window request is read by
+ * `loadConversationHistoryWindow` instead and never assembles the full history.
  *
  * `total` and `truncated` travel with the result so the caller can SAY it is
  * showing a window instead of silently pretending the thread is short. Omitting
@@ -131,15 +131,26 @@ function capTail<T extends { messages: ChatMessage[] }>(
   opts?: HistoryLoadOptions,
   imageThreadId?: string,
 ): T & { total: number; truncated: boolean } {
-  const capped = capMessages(result, opts)
-  const previewed = opts?.toolPreviews ? { ...capped, messages: toolCallsByPreview(capped.messages) } : capped
-  if (!opts?.imageRefs || !imageThreadId) return previewed
-  return {
-    ...previewed,
-    messages: imagesByReference(previewed.messages, (messageId, index, url) =>
-      rememberHistoryImage(imageThreadId, messageId, index, url),
-    ),
-  }
+  return presentHistory(capMessages(result, opts), opts, imageThreadId)
+}
+
+/** Tool previews and image references as asked, then a window's byte cap. */
+function presentHistory<T extends { messages: ChatMessage[]; truncated: boolean; nextBeforeId?: string | null }>(
+  result: T,
+  opts?: HistoryLoadOptions,
+  imageThreadId?: string,
+): T {
+  const previewed = opts?.toolPreviews ? { ...result, messages: toolCallsByPreview(result.messages) } : result
+  const referenced =
+    opts?.imageRefs && imageThreadId
+      ? {
+          ...previewed,
+          messages: imagesByReference(previewed.messages, (messageId, index, url) =>
+            rememberHistoryImage(imageThreadId, messageId, index, url),
+          ),
+        }
+      : previewed
+  return opts?.window ? capWindowBytes(referenced) : referenced
 }
 
 function capMessages<T extends { messages: ChatMessage[] }>(
@@ -569,10 +580,13 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
       }
 
       try {
-        const history = await loadConversationHistory(conversationId, row.project_path)
+        const history = opts?.window
+          ? await loadConversationHistoryWindow(conversationId, { limit: opts.limit, beforeId: opts.beforeId })
+          : await loadConversationHistory(conversationId, row.project_path)
         // Lazy backfill for chats whose last turn ended before the column existed.
         // Skipped mid-turn: the history's newest text is not a finished turn yet.
-        if (!(rootRow ?? row).status_line && !deps.isTurnInFlight?.(conversationId)) {
+        // Skipped for an older page: its newest text is not the chat's last turn.
+        if (!(rootRow ?? row).status_line && !opts?.beforeId && !deps.isTurnInFlight?.(conversationId)) {
           const statusLine = sessionPreviewLine(history.messages)
           try {
             // Mounted lists refresh on this, as they do after a turn stores one.
@@ -588,8 +602,23 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
             `(${history.diskMessageCount} disk, ${history.databaseMessageCount} DB) ` +
             `across ${history.familyIds.length} family id(s)`,
         )
+        const shown =
+          'nextBeforeId' in history
+            ? presentHistory(
+                {
+                  messages: history.messages,
+                  meta,
+                  total: history.total,
+                  truncated: history.truncated,
+                  nextBeforeId: history.nextBeforeId,
+                  cursorReset: history.cursorReset,
+                },
+                opts,
+                rootThreadId,
+              )
+            : capTail({ messages: history.messages, meta }, opts, rootThreadId)
         const response = {
-          ...capTail({ messages: history.messages, meta }, opts, rootThreadId),
+          ...shown,
           timing: history.timing,
           loadStatus: 'loaded' as const,
         }
@@ -610,22 +639,9 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     },
   )
 
-  // Full-history reads started for an image or tool call miss, by root thread,
-  // so a burst of thumbnails scrolling into view shares one read.
-  const missHistoryLoads = new Map<string, Promise<ChatMessage[]>>()
-  const historyForMisses = (
-    rootThreadId: string,
-    conversationId: string,
-    projectPath: string,
-  ): Promise<ChatMessage[]> => {
-    const running = missHistoryLoads.get(rootThreadId)
-    if (running) return running
-    const next = loadConversationHistory(conversationId, projectPath)
-      .then((history) => history.messages)
-      .finally(() => missHistoryLoads.delete(rootThreadId))
-    missHistoryLoads.set(rootThreadId, next)
-    return next
-  }
+  // One message read through the window path, for an image or tool call miss.
+  const historyMessage = async (conversationId: string, messageId: string): Promise<ChatMessage | undefined> =>
+    (await loadConversationHistoryWindow(conversationId, { throughId: messageId })).messages[0]
 
   // The bytes of one image a windowed load sent by reference (`imageRefs`).
   host.handle(
@@ -638,8 +654,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
       const remembered = rememberedHistoryImage(rootThreadId, messageId, index)
       if (remembered) return { url: remembered }
       try {
-        const messages = await historyForMisses(rootThreadId, conversationId, row.project_path)
-        const url = messages.find((message) => message.id === messageId)?.images?.[index]?.url ?? null
+        const url = (await historyMessage(conversationId, messageId))?.images?.[index]?.url ?? null
         if (url) rememberHistoryImage(rootThreadId, messageId, index, url)
         return { url }
       } catch (err) {
@@ -663,7 +678,8 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
       const remembered = find(mergedHistoryMessages(conversationId) ?? [])
       if (remembered?.output !== undefined) return { toolCall: remembered }
       try {
-        return { toolCall: find(await historyForMisses(resolveRootThreadId(row.id), conversationId, row.project_path)) }
+        const message = await historyMessage(conversationId, messageId)
+        return { toolCall: find(message ? [message] : []) }
       } catch (err) {
         log.warn(`tool call load failed for ${conversationId}: ${err}`)
         return { toolCall: null }
