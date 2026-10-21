@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
+import { drain, until } from './helpers/wait'
 import './helpers/registry-session-mocks'
 
 vi.mock('../../src/main/db/provider-instances', () => ({
@@ -228,7 +229,12 @@ function setup(store: ApprovalCardStore<AgentWritePlan> = memoryApprovalCardStor
   return { host, adapter, registry, broker, start, openCard, answer, resultTurns, rows }
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+/** The registry publishes `approval.result` last, after the row is saved and the result delivered or held. */
+const resultPublished = (host: FakeHost, ...requestIds: string[]) =>
+  until(() => {
+    for (const requestId of requestIds)
+      expect(host.events).toContainEqual(expect.objectContaining({ type: 'approval.result', requestId }))
+  })
 
 afterEach(async () => {
   for (const registry of registries.splice(0)) await registry.stopAll()
@@ -243,7 +249,7 @@ describe('an approved card', () => {
       { type: 'request.opened', requestId: id },
     ])
     await s.answer('hub', id, 'approve')
-    await settle()
+    await resultPublished(s.host, id)
 
     expect(s.adapter.turns.filter((t) => t.threadId === 'w1')).toHaveLength(1)
     const [turn] = s.resultTurns('hub')
@@ -267,7 +273,7 @@ describe('an approved card', () => {
     await s.start('hub', 'w1')
     const id = s.openCard('hub', 'w1')
     await s.answer('hub', id, 'approve', { quiet: true })
-    await settle()
+    await resultPublished(s.host, id)
     expect(s.adapter.turns.filter((t) => t.threadId === 'w1')).toHaveLength(1)
     expect(s.resultTurns('hub')).toEqual([])
     expect(s.rows('hub')).toEqual([expect.objectContaining({ outcome: 'done', delivery: 'none' })])
@@ -285,7 +291,7 @@ describe('an approved card', () => {
     })
     const id = s.openCard('hub', 'w1')
     await s.answer('hub', id, 'deny')
-    await settle()
+    await resultPublished(s.host, id)
     const [turn] = s.resultTurns('hub')
     expect(turn.delivery).toBe('queue')
     expect(turn.message).toContain('The user declined')
@@ -303,7 +309,7 @@ describe('other ways a card closes', () => {
     expect(s.broker.withdraw('hub', withdrawn)).toEqual({ ok: true })
     const stopped = s.openCard('hub', 'w1', 'three')
     await s.host.invoke(ProviderChannels.STOP_SESSION, 'hub')
-    await settle()
+    await resultPublished(s.host, dismissed, withdrawn, stopped)
     expect(s.resultTurns('hub')).toEqual([])
     expect(s.adapter.turns.filter((t) => t.threadId === 'w1')).toEqual([])
     expect(s.rows('hub').map((r) => [r.requestId, r.outcome, r.delivery])).toEqual([
@@ -332,7 +338,7 @@ describe('a result turn is not the user speaking', () => {
 
     const id = s.openCard('hub', 'w3')
     await s.answer('hub', id, 'deny')
-    await settle()
+    await resultPublished(s.host, id)
     expect(s.resultTurns('hub')).toHaveLength(1)
 
     // A user turn would have reset both. The result turn did not.
@@ -360,11 +366,12 @@ describe('a chat that is not running, and a restart', () => {
     await s.start('w1')
     const id = s.openCard('away', 'w1')
     await s.answer('away', id, 'approve')
-    await settle()
+    await resultPublished(s.host, id)
     expect(s.rows('away')).toEqual([expect.objectContaining({ outcome: 'done', delivery: 'hold' })])
     expect(s.resultTurns('away')).toEqual([])
     await s.start('away')
-    await settle()
+    await until(() => expect(s.resultTurns('away')).not.toEqual([]))
+    await drain()
     expect(s.resultTurns('away')).toHaveLength(1)
     expect(s.resultTurns('away')[0].message).toContain('Delivered to session w1')
   })
@@ -382,7 +389,7 @@ describe('a chat that is not running, and a restart', () => {
       { type: 'request.opened', requestId: id },
     ])
     await after.answer('hub', id, 'approve')
-    await settle()
+    await resultPublished(after.host, id)
     expect(after.adapter.turns.filter((t) => t.threadId === 'w1')).toHaveLength(1)
     expect(after.resultTurns('hub')).toHaveLength(1)
   })
@@ -427,12 +434,14 @@ describe('a card answered while the session is changing profiles', () => {
     })
     await adapter.targetEntered
     await host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 'hub', opened.requestId, 'deny', {})
-    await settle()
+    await resultPublished(host, opened.requestId)
     const heldDuring = adapter.turns.length
     release()
     const result = await switched
-    await settle()
-    const results = adapter.turns.filter((t) => t.message.startsWith(`<${APPROVAL_RESULT_TAG}>`))
+    const delivered = () => adapter.turns.filter((t) => t.message.startsWith(`<${APPROVAL_RESULT_TAG}>`))
+    await until(() => expect(delivered()).not.toEqual([]))
+    await drain()
+    const results = delivered()
     return { heldDuring, result, results, rows: saved.flatMap((m) => parseApprovalResultMarker(m.content) ?? []) }
   }
 

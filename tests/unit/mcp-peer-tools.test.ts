@@ -5,6 +5,7 @@
  * does not hold the call: the tool says it is queued, and the approval sends.
  */
 import { describe, expect, it, vi } from 'vitest'
+import { until } from './helpers/wait'
 import { AgentApprovalBroker } from '../../src/main/mcp/agent-approvals'
 import { buildPeerMcpTools, runPeerSendPlan, type PeerSendPlan } from '../../src/main/mcp/peer-mcp-tools'
 import type { McpTool } from '../../src/main/mcp/mcp-session'
@@ -15,6 +16,7 @@ import type { RuntimeEvent, RuntimeMode } from '../../src/shared/provider-events
 function setup(mode: RuntimeMode, decision?: 'approve' | 'deny', linked = false) {
   const events: RuntimeEvent[] = []
   const delivered: PeerMessageInput[] = []
+  const sends: Array<Promise<unknown>> = []
   const peers: PeerToolHost = {
     listPeerSessions: vi.fn(() => [
       { sessionId: 's2', title: 'Other', folder: '/p', provider: 'codex' as const, midTurn: false, linked },
@@ -35,9 +37,11 @@ function setup(mode: RuntimeMode, decision?: 'approve' | 'deny', linked = false)
     },
     onClosed: (card, close) => {
       if (close.kind === 'approve')
-        void runPeerSendPlan(
-          { threadId: 't1', runtimeMode: () => mode, publish: (e) => events.push(e), peers },
-          card.plan as PeerSendPlan,
+        sends.push(
+          runPeerSendPlan(
+            { threadId: 't1', runtimeMode: () => mode, publish: (e) => events.push(e), peers },
+            card.plan as PeerSendPlan,
+          ),
         )
     },
   })
@@ -50,19 +54,19 @@ function setup(mode: RuntimeMode, decision?: 'approve' | 'deny', linked = false)
     peers,
   })
   const signal = new AbortController().signal
-  return { list, send: settled(rawSend), events, delivered, peers, signal }
-}
-
-/** The tool, plus a tick for a card answered as it opened to run its send. */
-function settled(tool: McpTool): McpTool {
-  return {
-    ...tool,
+  /** The tool, then waits for a card answered as it opened to close and run its send. */
+  const send: McpTool = {
+    ...rawSend,
     call: async (args, ctx) => {
-      const r = await tool.call(args, ctx)
-      await new Promise((resolve) => setTimeout(resolve, 0))
+      const r = await rawSend.call(args, ctx)
+      if (decision && events.some((e) => e.type === 'request.opened')) {
+        await until(() => expect(events.map((e) => e.type)).toContain('request.closed'))
+        await Promise.all(sends)
+      }
       return r
     },
   }
+  return { list, send, events, delivered, peers, signal }
 }
 
 const args = { sessionId: 's2', message: 'the migration landed' }
@@ -148,7 +152,7 @@ describe('send_agent_message', () => {
       peers,
     })
     await send.call(args, { signal: new AbortController().signal })
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await until(() => expect(results).toHaveLength(1))
     expect((await results[0]).isError).toBe(true)
     expect(delivered).toEqual([])
     expect(events).toContainEqual(expect.objectContaining({ type: 'tool.denied', mode: 'plan' }))

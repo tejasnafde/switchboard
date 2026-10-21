@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { McpSession, toolText, type McpTool } from '../../src/main/mcp/mcp-session'
 import { McpTokens } from '../../src/main/mcp/mcp-tokens'
 
@@ -22,6 +22,10 @@ const echo: McpTool = {
 }
 
 const tick = () => new Promise((resolve) => setImmediate(resolve))
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 describe('McpSession', () => {
   it('echoes a protocol version it knows and falls back to its newest otherwise', () => {
@@ -111,6 +115,7 @@ describe('McpSession', () => {
   })
 
   it('reports progress on a waiting call that carries a progress token, and stops when it ends', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     let finish: () => void = () => {}
     const slow: McpTool = {
       ...echo,
@@ -128,7 +133,7 @@ describe('McpSession', () => {
       progressIntervalMs: 5,
     })
     s.handle({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'echo', _meta: { progressToken: 'p1' } } })
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await vi.advanceTimersByTimeAsync(30)
     const progress = sent
       .filter((m) => m.method === 'notifications/progress')
       .map((m) => m.params as { progressToken: string; progress: number })
@@ -138,12 +143,14 @@ describe('McpSession', () => {
     finish()
     await tick()
     const count = sent.length
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(20)
     expect(sent.length).toBe(count)
     expect(sent.at(-1)).toMatchObject({ id: 4, result: { content: [{ text: 'done' }] } })
   })
 
   it('sends no progress for a call without a token', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     const sent: unknown[] = []
     const s = new McpSession({
       serverName: 's',
@@ -153,7 +160,7 @@ describe('McpSession', () => {
       progressIntervalMs: 5,
     })
     s.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'echo' } })
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await vi.advanceTimersByTimeAsync(20)
     expect(sent).toEqual([])
     s.close()
   })
