@@ -11,6 +11,7 @@ export const PERF_THRESHOLDS = {
   'provider.start': 1000,
   'provider.first-event': 1000,
   'turn.first-content': 1000,
+  'turn.dispatch': 1000,
   'transcript.compare': 1000,
   'transcript.copy': 1000,
   'handoff.build': 300,

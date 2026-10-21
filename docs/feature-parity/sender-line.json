@@ -1,0 +1,59 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "sender-line",
+  "summary": "The backend puts one sender line in front of each user turn it sends to the provider: the surface that sent it, the paired device, the machine that runs the agent, and whether localhost on that machine reaches the user. It comes from the authenticated connection, replaces any line a client sends, and is never stored or shown.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/sender-context.ts",
+        "src/main/agent/jsonl-parser.ts",
+        "src/main/projects/session-scanner.ts",
+        "tests/unit/sender-line-registry.test.ts",
+        "tests/unit/sender-line.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The backend stamps the line from the connection's device session, so the Expo app sends nothing new. The phone never receives the line: the stored turn does not hold it and the backend's transcript parser strips it before history goes over the wire."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The backend stamps the line from the connection's device session, so the Android app sends nothing new. The phone never receives the line: the stored turn does not hold it and the backend's transcript parser strips it before history goes over the wire, so SyntheticUserMessage needs no new block."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/sender-line.ts",
+        "src/main/backend/request-context.ts",
+        "src/main/backend/ws-host.ts",
+        "src/main/backend/tcp-host.ts",
+        "src/shared/perf-timing.ts",
+        "tests/unit/sender-line.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema or stored-data change. The stored user turn keeps the text the client sent, without the line. Provider transcripts written after this change hold the line, and the parser strips it on read."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["docs/plans/2026-10-21-sender-line.md"]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/sender-line-registry.test.ts drives SUBMIT_USER_TURN and the legacy SEND_TURN through the real ProviderRegistry: a desktop turn and a paired Android phone turn each reach the adapter with one line and are stored without it, a line the client forged is replaced by the backend's, a slash command goes out as typed, and the turn.dispatch perf span carries the line's byte size and the running count of stamped turns.",
+      "tests/unit/sender-line.test.ts pins the surface rules (desktop, iOS, Android, another client, desktop through an SSH tunnel), the 200 character bound against hostile device names, and that a Claude or Codex transcript line with the line parses back to the stored text and merges with the stored row into one message.",
+      "npm run typecheck and vitest passed; see the PR body for counts."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live provider run: no real Claude, Codex or ACP agent was given a stamped turn on this branch. The adapters receive the line as ordinary prompt text.",
+      "No phone or SSH machine was connected. The phone and SSH cases are covered by request-context unit tests only.",
+      "Turns the backend sends itself (peer messages, approval results, startup prompts of a new worktree, resumed queued messages) get no line by design."
+    ]
+  }
+}
