@@ -278,7 +278,7 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
   useEffect(() => {
     setErrors([])
     setBlocked([])
-  }, [source])
+  }, [source, themeClass])
 
   const addBlocked = useCallback((url: string) => {
     const blockedLabel = blockedRequestLabel(url)

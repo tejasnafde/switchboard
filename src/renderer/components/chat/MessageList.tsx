@@ -274,6 +274,11 @@ export function MessageList({
     scrollCorrectedRef.current = true
     return false
   }
+  // keepViewOnRowResize writes room for a growth to the DOM, and React skips the
+  // style when the total equals the one it last rendered: put the real total back.
+  useLayoutEffect(() => {
+    if (contentRef.current) contentRef.current.style.height = `${virtualizer.getTotalSize()}px`
+  })
 
   // The first row in view, so rows added above it (an older history window)
   // do not move what the user is reading.
