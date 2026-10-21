@@ -94,7 +94,7 @@ import {
 import { PREVIEW_SCHEME } from '@shared/html-preview'
 import { createMainLogger } from './logger'
 import { warmShellEnv } from './shell-env'
-import { attachRendererCrashRecovery, CRASH_RELOAD_URL } from './renderer-crash-recovery'
+import { attachRendererCrashRecovery, CRASH_RELOAD_URL, isCrashPage } from './renderer-crash-recovery'
 import { createDefaultWorktreeCreationRuntime, type WorktreeCreationRuntime } from './worktree-creation/runtime'
 
 const log = createMainLogger('tour')
@@ -192,7 +192,9 @@ async function confirmReload(force: boolean): Promise<void> {
     })
     if (response === 0) {
       menuLog.info('renderer reload confirmed', { force })
-      if (force) win.webContents.reloadIgnoringCache()
+      // Reloading the crash page would only show it again.
+      if (isCrashPage(win)) loadRenderer(win)
+      else if (force) win.webContents.reloadIgnoringCache()
       else win.webContents.reload()
     }
   } finally {

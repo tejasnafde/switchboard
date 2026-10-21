@@ -35,15 +35,19 @@ export function createReloadLimiter(
 export const CRASH_PAGE_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Switchboard</title>
 <style>body{font:14px system-ui,sans-serif;background:#0a0a0a;color:#e5e5e5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
 main{max-width:420px;text-align:center}button{font:inherit;padding:6px 16px;margin-top:12px}</style></head>
-<body><main><h1>The window stopped responding</h1>
+<body><main><h1>The window crashed</h1>
 <p>It crashed several times in one minute. Running agents keep working. Reload to try again.</p>
 <button onclick="location.href='${CRASH_RELOAD_URL}'">Reload</button></main></body></html>`
+
+/** The app itself never loads a data: URL into its window, so one is the crash page. */
+export function isCrashPage(window: BrowserWindow): boolean {
+  return window.webContents.getURL().startsWith('data:')
+}
 
 /**
  * Reloads the window after a renderer crash, at most MAX_RELOADS times per
  * RELOAD_WINDOW_MS. Past the limit it shows a plain error page whose Reload
  * button runs `load`. Agents live in the main process, so they keep running.
- * Register before any other `will-navigate` handler on the window.
  */
 export function attachRendererCrashRecovery(
   window: BrowserWindow,
@@ -69,6 +73,8 @@ export function attachRendererCrashRecovery(
   contents.on('will-navigate', (event, url) => {
     if (url !== CRASH_RELOAD_URL) return
     event.preventDefault()
+    // A link to the sentinel inside the app (say, in a chat message) must not reload it.
+    if (!isCrashPage(window)) return
     log.info('reload from crash page')
     load()
   })

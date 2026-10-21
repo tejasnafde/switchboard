@@ -15,7 +15,14 @@ import {
 } from '../../src/main/renderer-crash-recovery'
 
 function fakeWindow() {
-  const contents = Object.assign(new EventEmitter(), { reload: vi.fn(), loadURL: vi.fn(async () => {}) })
+  let url = 'file:///app/index.html'
+  const contents = Object.assign(new EventEmitter(), {
+    reload: vi.fn(),
+    loadURL: vi.fn(async (next: string) => {
+      url = next
+    }),
+    getURL: () => url,
+  })
   const window = { webContents: contents, isDestroyed: () => false } as unknown as BrowserWindow
   const gone = (reason: string) => contents.emit('render-process-gone', {}, { reason, exitCode: 1 })
   return { window, contents, gone }
@@ -87,6 +94,23 @@ describe('attachRendererCrashRecovery', () => {
     b.gone('oom')
     expect(b.contents.reload).toHaveBeenCalledTimes(1)
     expect(b.contents.loadURL).not.toHaveBeenCalled()
+  })
+
+  it('does not reload from a link to the sentinel inside the app', () => {
+    const { window, contents } = fakeWindow()
+    const load = vi.fn()
+    attachRendererCrashRecovery(window, load)
+    contents.emit('will-navigate', { preventDefault: vi.fn() }, CRASH_RELOAD_URL)
+    expect(load).not.toHaveBeenCalled()
+  })
+
+  it('does nothing for a destroyed window', () => {
+    const { contents, gone } = fakeWindow()
+    const window = { webContents: contents, isDestroyed: () => true } as unknown as BrowserWindow
+    attachRendererCrashRecovery(window, vi.fn())
+    gone('crashed')
+    expect(contents.reload).not.toHaveBeenCalled()
+    expect(contents.loadURL).not.toHaveBeenCalled()
   })
 
   it('leaves other navigations alone', () => {
