@@ -210,19 +210,51 @@ it('stops after one retry and returns null if the file keeps changing', async ()
   }
 })
 
-it('evicts the least recently used entry after 24 paths', async () => {
+it('evicts the least recently used entry after 256 paths', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'sb-jsonl-cache-'))
   clearJsonlCache()
   try {
     const path = join(dir, '0.jsonl')
     await writeFile(path, line('one', '2026-01-01T00:00:00Z'))
     const first = await loadJsonlCached(path, 'claude-code')
-    for (let i = 1; i < 25; i++) {
+    for (let i = 1; i < 257; i++) {
       const next = join(dir, `${i}.jsonl`)
       await writeFile(next, line('one', '2026-01-01T00:00:00Z'))
       await loadJsonlCached(next, 'claude-code')
     }
     expect(await loadJsonlCached(path, 'claude-code')).not.toBe(first)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+it('parses only appended bytes after two chats with many subagent transcripts load', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'sb-jsonl-cache-'))
+  try {
+    const head = join(dir, 'head.jsonl')
+    await writeFile(head, line('one', '2026-01-01T00:00:00Z'))
+    await loadJsonlCached(head, 'claude-code')
+    for (let i = 0; i < 40; i++) {
+      const subagent = join(dir, `agent-${i}.jsonl`)
+      await writeFile(subagent, line('step', '2026-01-01T00:00:00Z'))
+      await loadJsonlCached(subagent, 'claude-code')
+    }
+    const added = line('two', '2026-01-01T00:00:01Z')
+    await appendFile(head, added)
+    const timing = {
+      readMs: 0,
+      parseMs: 0,
+      diskMs: 0,
+      dbMs: 0,
+      mergeMs: 0,
+      enrichMs: 0,
+      diskBytes: 0,
+      diskLines: 0,
+      cacheHits: 0,
+      prefixSkips: 0,
+    }
+    expect((await loadJsonlCached(head, 'claude-code', timing))?.length).toBe(2)
+    expect(timing.diskBytes).toBe(Buffer.byteLength(added))
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

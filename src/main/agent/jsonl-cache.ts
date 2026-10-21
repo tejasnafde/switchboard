@@ -28,7 +28,9 @@ import { JsonlParser } from './jsonl-parser'
 
 const log = createMainLogger('agent:jsonl-cache')
 
-const MAX_ENTRIES = 24
+// A long chat brings one entry per subagent transcript (16 seen), so a small
+// cap evicted the session's own head when the user switched between two chats.
+const MAX_ENTRIES = 256
 // Count retained messages, not ignored tool-result records in the raw file.
 const MAX_TOTAL_BYTES = 128 * 1024 * 1024
 // Every open hashes each copy in full; 64 KiB reads made that 4x slower.
