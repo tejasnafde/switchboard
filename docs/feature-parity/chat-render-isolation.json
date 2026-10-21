@@ -1,0 +1,64 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "chat-render-isolation",
+  "summary": "Stop needless desktop renderer renders. The composer and the closed command palette select only the session fields they show, so a chat streaming in one session does not re-render them for another. agent-store updateStatus, setActiveSession and markSessionRead, and the chat workspace selection, return the state unchanged when nothing changes. App, TerminalWindow, TerminalStrip, KanbanView and CommandPalette select store fields instead of subscribing to a whole store. Sidebar, remote machine, recent session and landing rows show their time through RelativeTimeLabel, which re-renders from one shared minute interval (started by the first label, stopped by the last), so the labels stay current and the rows never read the clock. A dev-only render counter (useRenderCount, window.__sbRenderCounts) measures it and is dropped from production builds.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/services/render-counter.ts",
+        "src/renderer/components/sidebar/RelativeTimeLabel.tsx",
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/CommandPalette.tsx",
+        "src/renderer/stores/agent-store.ts",
+        "src/renderer/stores/layout-store.ts",
+        "src/renderer/App.tsx",
+        "src/renderer/components/terminal/TerminalWindow.tsx",
+        "src/renderer/components/terminal/TerminalStrip.tsx",
+        "src/renderer/components/kanban/KanbanView.tsx",
+        "tests/unit/render-counter.test.ts",
+        "tests/unit/chat-render-isolation.test.ts",
+        "tests/unit/agent-store-noop-writes.test.ts",
+        "tests/unit/relative-time-label.test.ts",
+        "tests/unit/store-subscription-shape.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app has its own stores and components in apps/mobile; none of the changed renderer files or stores are shared with it."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android app is Kotlin under apps/android and does not use the React renderer or its zustand stores."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No IPC, WebSocket protocol or backend change; only renderer subscriptions and store reducers change."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing stored changes; the store state shapes are the same."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/chat-render-isolation.test.ts mounts a real ChatInput and CommandPalette on the real agent store and streams 100 updates into another chat: zero renders. Without the fix it counts 100 for each.",
+      "tests/unit/agent-store-noop-writes.test.ts pins that same-value updateStatus, setActiveSession, markSessionRead and chat selection keep the store state object.",
+      "tests/unit/relative-time-label.test.ts uses fake timers: two labels share one interval, a minute tick updates both labels without re-rendering their rows, and the interval stops after the last label unmounts.",
+      "tests/unit/store-subscription-shape.test.ts fails on any bare useXStore() call in src/renderer and on a sidebar row calling formatRelativeTime.",
+      "A scratch jsdom run that mounts the whole App with the real stores recorded render counts before and after; the numbers are in the pull request description."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The render counts were taken in jsdom, not in the running Electron app.",
+      "A chat split drag still re-renders both chat panels, because ChatWorkspacePanels reads the split ratio; that is left for a later change."
+    ]
+  }
+}

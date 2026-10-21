@@ -20,11 +20,11 @@ import { MachineLayer } from './MachineLayer'
 import { AddMachineModal } from './AddMachineModal'
 import { ProjectFavicon } from './ProjectFavicon'
 import { NativeSessionImportModal } from './NativeSessionImportModal'
+import { RelativeTimeLabel } from './RelativeTimeLabel'
 import {
   groupProjectsByWorkspace,
   applySidebarFilter,
   colorTokenForWorkspace,
-  formatRelativeTime,
   type WorkspaceGroup,
 } from './sidebar-helpers'
 import type { Workspace } from '@shared/types'
@@ -870,7 +870,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                             </span>
                           )}
                           <UnreadBadge sessionId={s.id} />
-                          <span className="sidebar-thread-time">{formatRelativeTime(s.startedAt)}</span>
+                          <RelativeTimeLabel className="sidebar-thread-time" timestamp={s.startedAt} />
                         </button>
                         <button
                           className="sidebar-thread-archive"
@@ -1897,7 +1897,7 @@ function SavedItem({
           <span className="sidebar-saved-session">{bookmark.sessionTitle}</span>
         </span>
         <span className="sidebar-saved-excerpt">{bookmark.contentExcerpt}</span>
-        <span className="sidebar-saved-time">{formatRelativeTime(bookmark.savedAt)}</span>
+        <RelativeTimeLabel className="sidebar-saved-time" timestamp={bookmark.savedAt} />
       </button>
       <button
         type="button"

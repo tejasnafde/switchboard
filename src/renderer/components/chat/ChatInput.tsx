@@ -32,6 +32,7 @@ import { effortControlFor, effortPick } from '@shared/effort'
 import { sessionCostLabel } from '@shared/format'
 import { defaultInstanceId, type AgentType, type ProviderSkill } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
+import { useShallow } from 'zustand/react/shallow'
 import { describeRelocationOutcome } from '../../services/execution-root-relocation'
 import type { RelocationReason } from '@shared/execution-root-relocation'
 import { UnifiedProviderPicker } from './UnifiedProviderPicker'
@@ -1061,7 +1062,17 @@ export function ChatInput({
   // Resolve the agent's real cwd (worktree over parent checkout) - scopes the
   // at-menu file listing AND the BranchPicker, so a worktree session's branch
   // switch can't flip HEAD in the shared parent repo.
-  const sessionsForRepo = useAgentStore((s) => s.sessions)
+  const repoFields = useAgentStore(
+    useShallow((st) => {
+      const s = st.sessions.find((sess) => sess.id === sessionId)
+      return {
+        worktreePath: s?.worktreePath,
+        projectPath: s?.projectPath,
+        worktreeBranch: s?.worktreeBranch,
+        driftSuggestion: s?.driftSuggestion,
+      }
+    }),
+  )
   // Held in a ref so the memoized orphan-heal callback can reach it without
   // depending on the whole relocation closure.
   const swapWorktreePointerRef = useRef<
@@ -1127,19 +1138,14 @@ export function ChatInput({
   swapWorktreePointerRef.current = swapWorktreePointer
 
   const draftOptions = useAgentStore((st) => st.sessions.find((x) => x.id === sessionId)?.draft)
-  const { repoRoot, driftSuggestion, orphanedPath, orphanedBranch } = useMemo(() => {
-    const s = sessionsForRepo.find((sess) => sess.id === sessionId)
-    return {
-      repoRoot: s?.worktreePath ?? s?.projectPath ?? null,
-      driftSuggestion: s?.driftSuggestion ?? null,
-      // Only a WORKTREE pointer can be healed by falling back to the clone;
-      // a missing projectPath has nowhere to fall back to. Strings, not an
-      // object: this feeds `onCwdMissing`, and a fresh object per store commit
-      // re-ran BranchPicker's effect - a git spawn per frame while streaming.
-      orphanedPath: s?.worktreePath ?? null,
-      orphanedBranch: s?.worktreeBranch ?? null,
-    }
-  }, [sessionsForRepo, sessionId])
+  const repoRoot = repoFields.worktreePath ?? repoFields.projectPath ?? null
+  const driftSuggestion = repoFields.driftSuggestion ?? null
+  // Only a WORKTREE pointer can be healed by falling back to the clone;
+  // a missing projectPath has nowhere to fall back to. Strings, not an
+  // object: this feeds `onCwdMissing`, and a fresh object per store commit
+  // re-ran BranchPicker's effect - a git spawn per frame while streaming.
+  const orphanedPath = repoFields.worktreePath ?? null
+  const orphanedBranch = repoFields.worktreeBranch ?? null
 
   // The session's worktree was deleted out from under it (agents clean up
   // after merges): reset the pointer to the main clone so the chip, IDE

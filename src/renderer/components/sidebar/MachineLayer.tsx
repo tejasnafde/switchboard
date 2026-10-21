@@ -15,7 +15,7 @@ import { useMachineStore } from '../../stores/machine-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { buildMachineList, type MachineNode } from './machine-list'
 import { syncedAgoLabel, cachedProjects } from './machine-snapshot'
-import { formatRelativeTime } from './sidebar-helpers'
+import { RelativeTimeLabel } from './RelativeTimeLabel'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { ProjectFavicon } from './ProjectFavicon'
 import { AddRemoteProjectModal } from './AddRemoteProjectModal'
@@ -163,7 +163,7 @@ function RemoteProject({
                 >
                   <span className="sidebar-thread-title">{s.title}</span>
                   <UnreadBadge sessionId={s.id} />
-                  <span className="sidebar-thread-time">{formatRelativeTime(s.startedAt)}</span>
+                  <RelativeTimeLabel className="sidebar-thread-time" timestamp={s.startedAt} />
                 </button>
               </div>
             )

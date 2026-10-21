@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useTerminalStore } from '../../stores/terminal-store'
+import { useShallow } from 'zustand/react/shallow'
 import { useAgentStore } from '../../stores/agent-store'
 import { TerminalPane } from './TerminalPane'
 import { destroyTerminal, focusTerminal } from '../../services/terminal-registry'
@@ -23,7 +24,15 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
   useRenderCount('TerminalWindow')
   const activePaneId = window.activePaneId
   const activePane = panes[activePaneId]
-  const { setActivePane, removePane, removeWindow, addPaneToWindow, updatePaneLabel } = useTerminalStore()
+  const { setActivePane, removePane, removeWindow, addPaneToWindow, updatePaneLabel } = useTerminalStore(
+    useShallow((s) => ({
+      setActivePane: s.setActivePane,
+      removePane: s.removePane,
+      removeWindow: s.removeWindow,
+      addPaneToWindow: s.addPaneToWindow,
+      updatePaneLabel: s.updatePaneLabel,
+    })),
+  )
 
   const [tabsOpen, setTabsOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)

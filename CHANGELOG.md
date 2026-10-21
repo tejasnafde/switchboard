@@ -8,6 +8,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 - **Credits in one place.** Code comments, docs, tests and older CHANGELOG entries now describe behaviour instead of naming the projects an idea came from. The README has an Acknowledgements section, and `THIRD_PARTY_NOTICES.md` keeps the MIT notice for the three files that hold material from another project.
 
 ### Fixed
+- **A streaming chat no longer re-renders the rest of the window.** The other chat's composer and the closed command palette stop re-rendering on every token. A status or selection that does not change no longer counts as a change. A chat split drag, a kanban update, a terminal write in another chat or a theme change no longer re-renders the whole window. Sidebar times now update every minute instead of only when something else redraws the sidebar.
 - **Checked checkboxes and radio dots read in dark mode.** They use the same darker blue as the filled primary button, so the checkbox's white check mark reads at 4.5:1 or better.
 - **Two saves of one file in the same millisecond no longer share a temp file.** Each write now gets its own random temp name, so neither write fails or leaves a broken file.
 - **The TcpHost tests no longer log after teardown.** They wait for every socket to close, which fixes a flaky Ubuntu CI failure.

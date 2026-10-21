@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { RecentSessionItem } from './recent-sessions'
-import { formatRelativeTime } from './sidebar-helpers'
+import { RelativeTimeLabel } from './RelativeTimeLabel'
 import { DEFAULT_RECENT_SESSION_LIMIT, type RecentSessionLimit } from './recent-session-limit'
 import { RECENT_DOT_LABELS, groupRecentSessions, recentDot } from './recent-groups'
 import { useRenderCount } from '../../services/render-counter'
@@ -52,7 +52,7 @@ export function RecentSessionsSection({
                     title={RECENT_DOT_LABELS[dot]}
                   />
                   <span className="sidebar-recent-title">{item.session.title}</span>
-                  <span className="sidebar-recent-detail">{formatRelativeTime(item.session.startedAt)}</span>
+                  <RelativeTimeLabel className="sidebar-recent-detail" timestamp={item.session.startedAt} />
                 </span>
                 <span className="sidebar-recent-status" title={item.statusLine}>
                   {item.statusLine}

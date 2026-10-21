@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useRef } from 'react'
 import { useTerminalStore } from '../../stores/terminal-store'
+import { useShallow } from 'zustand/react/shallow'
 import { useAgentStore } from '../../stores/agent-store'
 import { TerminalWindow } from './TerminalWindow'
 import { PaneResizeHandle } from './PaneResizeHandle'
@@ -22,7 +23,14 @@ export function TerminalStrip() {
   useRenderCount('TerminalStrip')
   const activeSessionId = useTerminalStore((s) => s.activeSessionId)
   const layout = useTerminalStore((s) => (s.activeSessionId ? s.getLayout(s.activeSessionId) : null))
-  const { addWindow, splitActiveWindow, addPaneToActiveWindow, setActiveWindow } = useTerminalStore()
+  const { addWindow, splitActiveWindow, addPaneToActiveWindow, setActiveWindow } = useTerminalStore(
+    useShallow((s) => ({
+      addWindow: s.addWindow,
+      splitActiveWindow: s.splitActiveWindow,
+      addPaneToActiveWindow: s.addPaneToActiveWindow,
+      setActiveWindow: s.setActiveWindow,
+    })),
+  )
 
   // Flex ratios for rows (row resizing)
   const rowRatiosRef = useRef<Map<string, number>>(new Map())

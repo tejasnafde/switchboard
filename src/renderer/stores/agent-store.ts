@@ -378,6 +378,12 @@ interface AgentStore {
   clearChatFind: () => void
 }
 
+/** `sessions` with session `id`'s unread count zeroed; the same array when it already is. */
+export function clearUnread(sessions: AgentSession[], id: string | null): AgentSession[] {
+  if (!sessions.some((s) => s.id === id && s.unreadCount !== 0)) return sessions
+  return sessions.map((s) => (s.id === id ? { ...s, unreadCount: 0 } : s))
+}
+
 export const useAgentStore = create<AgentStore>((set, get) => ({
   sessions: [],
   activeSessionId: null,
@@ -425,21 +431,24 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   setActiveSession: (id) => {
     if (selectRuntimeChatSession(id)) return
-    set((state) => ({
-      activeSessionId: id,
-      sessions: state.sessions.map((s) => (s.id === id ? { ...s, unreadCount: 0 } : s)),
-    }))
+    set((state) => {
+      const sessions = clearUnread(state.sessions, id)
+      return state.activeSessionId === id && sessions === state.sessions ? state : { activeSessionId: id, sessions }
+    })
   },
 
   markSessionRead: (id) =>
-    set((state) => ({
-      sessions: state.sessions.map((s) => (s.id === id && s.unreadCount !== 0 ? { ...s, unreadCount: 0 } : s)),
-    })),
+    set((state) => {
+      const sessions = clearUnread(state.sessions, id)
+      return sessions === state.sessions ? state : { sessions }
+    }),
 
   updateStatus: (id, status) =>
-    set((state) => ({
-      sessions: state.sessions.map((s) => (s.id === id ? { ...s, status } : s)),
-    })),
+    set((state) =>
+      state.sessions.some((s) => s.id === id && s.status !== status)
+        ? { sessions: state.sessions.map((s) => (s.id === id ? { ...s, status } : s)) }
+        : state,
+    ),
 
   resetRunningSessionsForMachine: (machineId) =>
     set((state) => ({

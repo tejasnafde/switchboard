@@ -29,7 +29,7 @@ import {
 } from '../../services/chat-landing'
 import { Combobox, type ComboboxOption } from '../ui/combobox'
 import { ProjectFavicon } from '../sidebar/ProjectFavicon'
-import { formatRelativeTime } from '../sidebar/sidebar-helpers'
+import { RelativeTimeLabel } from '../sidebar/RelativeTimeLabel'
 import { ChatPanel } from './ChatPanel'
 import { createRendererLogger } from '../../logger'
 
@@ -338,7 +338,7 @@ export function ChatLanding({
                     <ProjectFavicon projectPath={chat.projectPath} size={14} />
                     <span className="chat-landing-recent-title">{chat.session.title}</span>
                     <span className="chat-landing-recent-meta">
-                      {chat.projectName} · {formatRelativeTime(chat.session.startedAt)}
+                      {chat.projectName} · <RelativeTimeLabel timestamp={chat.session.startedAt} />
                     </span>
                   </button>
                 ))}
