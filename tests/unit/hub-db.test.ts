@@ -84,6 +84,15 @@ describe('hub tables', () => {
     expect(openChildParentId('agent_unknown')).toBeNull()
   })
 
+  it('stores an undefined optional field as null and leaves it alone in an update', () => {
+    insertHubChild({ ...child('agent_c1', 0), branch: undefined, depsJson: undefined })
+    expect(getHubChild('agent_c1')).toMatchObject({ branch: null, depsJson: null })
+    updateHubChild('agent_c1', { branch: 'b', phase: 'open' })
+    updateHubChild('agent_c1', { branch: undefined, settledAt: 7 })
+    expect(getHubChild('agent_c1')).toMatchObject({ branch: 'b', phase: 'open', settledAt: 7 })
+    updateHubChild('agent_c1', { branch: undefined })
+  })
+
   it('keeps wakes pending until a revision delivers them, once', () => {
     const pointer = { childId: 'agent_c1', toolCallId: 'tc1', at: 1 }
     insertHubWake({ id: 'w1', parentId: 'agent_parent', childId: 'agent_c1', kind: 'report', summary: 'Done', pointer })

@@ -126,10 +126,16 @@ export function readHubSettings(getSetting: SettingReader): HubSettings {
 
 // ─── Permissions ────────────────────────────────────────────────
 
-/** A child never gets more access than its parent: the lower of the two modes. */
+/**
+ * A child never gets more access than its parent: the lower of the two modes.
+ * The request comes from an agent tool call, so an unknown mode fails closed.
+ */
 export function grantedMode(requested: RuntimeMode | undefined, parent: RuntimeMode): RuntimeMode {
+  const p = RUNTIME_MODES.indexOf(parent)
+  if (p < 0) return RUNTIME_MODES[0]!
   if (!requested) return parent
-  return RUNTIME_MODES.indexOf(requested) < RUNTIME_MODES.indexOf(parent) ? requested : parent
+  const r = RUNTIME_MODES.indexOf(requested)
+  return r >= 0 && r < p ? requested : parent
 }
 
 /**

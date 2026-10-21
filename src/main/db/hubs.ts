@@ -279,13 +279,13 @@ export function insertHubChild(c: NewHubChild): void {
          @now, @now)`,
     )
     .run({
-      branch: null,
-      baseRef: null,
-      baseSha: null,
-      providerInstanceId: null,
-      requestedModel: null,
-      depsJson: null,
       ...c,
+      branch: c.branch ?? null,
+      baseRef: c.baseRef ?? null,
+      baseSha: c.baseSha ?? null,
+      providerInstanceId: c.providerInstanceId ?? null,
+      requestedModel: c.requestedModel ?? null,
+      depsJson: c.depsJson ?? null,
       childId: resolveRootThreadId(c.childId),
       parentId: resolveRootThreadId(c.parentId),
       creationId: `${c.batchId}-${c.ordinal}`,
@@ -349,12 +349,19 @@ const CHILD_COLUMNS: Record<keyof HubChildPatch, string> = {
 }
 
 export function updateHubChild(childId: string, patch: HubChildPatch): void {
-  const keys = (Object.keys(patch) as Array<keyof HubChildPatch>).filter((k) => k in CHILD_COLUMNS)
+  // better-sqlite3 cannot bind undefined, so an undefined field is left as it is.
+  const keys = (Object.keys(patch) as Array<keyof HubChildPatch>).filter(
+    (k) => k in CHILD_COLUMNS && patch[k] !== undefined,
+  )
   if (keys.length === 0) return
   const sets = keys.map((k) => `${CHILD_COLUMNS[k]} = @${k}`).join(', ')
   getDb()
     .prepare(`UPDATE hub_children SET ${sets}, updated_at = @now WHERE child_id = @childId`)
-    .run({ ...patch, now: Date.now(), childId: resolveRootThreadId(childId) })
+    .run({
+      ...Object.fromEntries(keys.map((k) => [k, patch[k]])),
+      now: Date.now(),
+      childId: resolveRootThreadId(childId),
+    })
 }
 
 // ─── hub_wakes ──────────────────────────────────────────────────
