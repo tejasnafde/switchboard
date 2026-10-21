@@ -1,0 +1,65 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "cold-chat-open",
+  "summary": "A history window reads each transcript through a byte-offset index kept in the app data folder (transcript-index.ts): ids, roles, times and line ranges of every message, plus the result lines that change a tool call. The index is validated by inode, device and the sha256 of the 64 KiB before its end, extended with only the new bytes, and rebuilt from byte 0 on any other change; a slice that does not match it falls back to a full parse. Prefix proofs of profile copies are kept in the head's index while the copy's stat is unchanged, so a start after a restart hashes no copy. The pill and image enrichment reads only the rows matching the window's user messages, and reads the heavy columns only for those. Startup no longer counts the FTS rows on every start (a marker row records the check), a partial index serves the reserved-turn cleanup, and one-time index builds on large tables run after the desktop window loads.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/index.ts",
+        "src/main/db/database.ts",
+        "tests/unit/db-startup-migrations.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app sends the same window requests and gets the same fields; only the backend's way of reading the transcript changes. The window contents equal the previous ones (history-window-indexed.test.ts compares them with the full history)."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Android sends the same window requests and gets the same fields and cursors; only how the backend reads the transcript and the enrichment rows changes."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/agent/transcript-index.ts",
+        "src/main/agent/jsonl-parser.ts",
+        "src/main/conversations/history.ts",
+        "src/main/conversations/history-window.ts",
+        "src/main/db/messages.ts",
+        "tests/unit/transcript-index.test.ts",
+        "tests/unit/history-window-indexed.test.ts",
+        "tests/unit/history-window-merge.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts",
+        "tests/unit/db-startup-migrations.test.ts",
+        "tests/unit/v0835-upgrade.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md",
+        "docs/feature-parity/cold-chat-open.json"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/transcript-index.test.ts: pages through the index equal pages from a full parse, including an error result and a subagent report that arrive after the slice; a restart reads under a quarter of the file; an append reads only the new bytes and its result still marks an indexed call; a partial last line is parsed and later indexed; a change before the indexed end rebuilds; a mismatched slice throws; a prefix proof survives a restart with no hashing and is redone when the copy's stat changes; a copy that is not a prefix is indexed on its own.",
+      "tests/unit/history-window-indexed.test.ts: through loadConversationHistoryWindow with a real SQLite schema, the newest window and an older page equal the same windows of the full merged history, pill enrichment included, and a stale index falls back to a full parse and is rebuilt.",
+      "tests/unit/db-startup-migrations.test.ts: a second migrate runs no count query, FTS still backfills without the marker, the slow steps wait for runSlowMigrations, and the enrichment filter keeps last-write-wins.",
+      "Scratch bench on a copy of the real DB (1.1 GB) and the real 263 MB transcript with 5 profile copies: cold open after a restart 4,676 ms to 149 ms (diskMs 4,193 to 139, of which 2,500 ms was sha256 of the copies), first open that builds the index 2,629 ms, warm 60 ms to 40 ms, enrichMs cold 432 to 47 and warm 25 to 3, db.migrate every start 5,165 ms to 22 ms."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No run in the built app or on a phone; the bench calls the real loaders under vitest with the OS page cache warm.",
+      "The one-time slow migrations after the window loads were not timed in the built app; they hold the main process for their duration (about 4 s once on the 1 GB database)."
+    ]
+  }
+}

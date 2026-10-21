@@ -40,7 +40,8 @@ and `cursorReset` (a removed cursor returns a fresh tail). Phones feature-detect
 Callers without `window` keep the original contract.
 A window request never builds the full history: `loadConversationHistoryWindow`
 (`conversations/history-window.ts`, `mergeHistoryWindow`) takes the transcripts
-from the parse cache and reads SQLite rows by index range only, from one whole
+through their byte-offset index (`agent/transcript-index.ts`), materializing
+only the lines near the window, and reads SQLite rows by index range only, from one whole
 turn before the window to one turn after it, plus the rows that share an id
 with a transcript line in that range (`messageWindowRows` in `db/messages.ts`),
 then merges and enriches only those. An assistant row matches only inside its

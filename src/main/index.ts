@@ -83,7 +83,16 @@ import { closeAllLaunchConfigWatchers } from './launch-config/launch-config-stor
 import { closeAllHeadWatchers } from './git/head-watcher'
 import { ProviderRegistry } from './provider/provider-registry'
 import { disposeUsageProbes } from './provider/usage'
-import { getDb, closeDb, getSetting, setSetting, getProjects, reopenDbAfterAbortedQuit } from './db/database'
+import {
+  getDb,
+  closeDb,
+  getSetting,
+  setSetting,
+  getProjects,
+  reopenDbAfterAbortedQuit,
+  deferSlowMigrationsUntilWindow,
+  runSlowMigrations,
+} from './db/database'
 import { registerFaviconProtocol } from './protocol/sb-favicon'
 import {
   attachPreviewGuestGuards,
@@ -834,6 +843,7 @@ app.whenReady().then(() => {
   // recreates); if it still throws the disk itself is broken - tell the
   // user and quit instead of idling forever with no window.
   try {
+    deferSlowMigrationsUntilWindow()
     getDb()
   } catch (err) {
     crashLog.error('fatal: database unavailable', err)
@@ -869,6 +879,9 @@ app.whenReady().then(() => {
   applyKeyboardOverrides()
 
   mainWindow = createWindow()
+  // The window paints and loads its first lists before a one-time index build
+  // holds the main process.
+  mainWindow.webContents.once('did-finish-load', () => setTimeout(runSlowMigrations, 2000))
 
   // Handlers migrating to the BackendHost seam (remote-ready); rest take the window.
   // The mobile endpoint is ALWAYS in the fan-out; whether it actually listens is
