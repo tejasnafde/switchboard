@@ -31,8 +31,6 @@ import { Icon, ROW_ICON } from './review-ui'
 
 const log = createRendererLogger('reviews:chat-header')
 
-const SHOW_MORE = '__show-more'
-
 function useChatLinks(sessionId: string): PrLink[] {
   const [links, setLinks] = useState<PrLink[]>([])
   useEffect(() => {
@@ -122,6 +120,46 @@ export function LinkedPrControl({ sessionId }: { sessionId: string }) {
     useLayoutStore.getState().setAppView('reviews')
   }
 
+  // One keyed list, so expanding turns "Show N more" into the first hidden row
+  // in place: a selected cmdk item that unmounts sends the selection back to
+  // the first row.
+  const items = shown.map((row) => (
+    <Command.Item
+      key={row.key}
+      value={row.key}
+      data-linked-pr-row={row.key}
+      title={rowTooltip(row)}
+      onSelect={() => openInReviews(row.key)}
+      className="flex cursor-pointer items-center gap-2 rounded-[5px] px-2 py-[5px] data-[selected=true]:bg-[var(--bg-hover)]"
+    >
+      <StateDot row={row} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[12px] text-[var(--text-primary)]">{rowTitle(row)}</div>
+        <div className="truncate text-[11px] text-[var(--text-secondary)]">
+          {rowDetail(row, multiRepo).map((part, i) => (
+            <Fragment key={i}>
+              {i > 0 && ' · '}
+              <span className={cn(part.bad && 'text-[var(--error)]')}>{part.text}</span>
+            </Fragment>
+          ))}
+        </div>
+      </div>
+    </Command.Item>
+  ))
+  if (hidden > 0) {
+    const next = matches[shown.length]
+    items.push(
+      <Command.Item
+        key={next.key}
+        value={next.key}
+        onSelect={() => setShowAll(true)}
+        className="cursor-pointer rounded-[5px] px-2 py-[5px] text-[12px] text-[var(--text-secondary)] data-[selected=true]:bg-[var(--bg-hover)] data-[selected=true]:text-[var(--text-primary)]"
+      >
+        Show {hidden} more
+      </Command.Item>,
+    )
+  }
+
   return (
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
@@ -164,6 +202,8 @@ export function LinkedPrControl({ sessionId }: { sessionId: string }) {
               No matches.{' '}
               <button
                 type="button"
+                // cmdk's Enter handler would otherwise swallow the key.
+                onKeyDown={(event) => event.stopPropagation()}
                 onClick={() => {
                   search('')
                   inputRef.current?.focus()
@@ -173,38 +213,7 @@ export function LinkedPrControl({ sessionId }: { sessionId: string }) {
                 Clear
               </button>
             </Command.Empty>
-            {shown.map((row) => (
-              <Command.Item
-                key={row.key}
-                value={row.key}
-                data-linked-pr-row={row.key}
-                title={rowTooltip(row)}
-                onSelect={() => openInReviews(row.key)}
-                className="flex cursor-pointer items-center gap-2 rounded-[5px] px-2 py-[5px] data-[selected=true]:bg-[var(--bg-hover)]"
-              >
-                <StateDot row={row} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[12px] text-[var(--text-primary)]">{rowTitle(row)}</div>
-                  <div className="truncate text-[11px] text-[var(--text-secondary)]">
-                    {rowDetail(row, multiRepo).map((part, i) => (
-                      <Fragment key={i}>
-                        {i > 0 && ' · '}
-                        <span className={cn(part.bad && 'text-[var(--error)]')}>{part.text}</span>
-                      </Fragment>
-                    ))}
-                  </div>
-                </div>
-              </Command.Item>
-            ))}
-            {hidden > 0 && (
-              <Command.Item
-                value={SHOW_MORE}
-                onSelect={() => setShowAll(true)}
-                className="cursor-pointer rounded-[5px] px-2 py-[5px] text-[12px] text-[var(--text-secondary)] data-[selected=true]:bg-[var(--bg-hover)] data-[selected=true]:text-[var(--text-primary)]"
-              >
-                Show {hidden} more
-              </Command.Item>
-            )}
+            {items}
           </Command.List>
         </Command>
       </PopoverContent>

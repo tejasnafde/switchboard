@@ -57,6 +57,16 @@ async function launch() {
 let { app, win } = await launch()
 await app.close()
 seedDatabase(db, project, side, { linkPullRequest: true })
+// Eleven older links the demo list does not hold, so the picker caps at ten
+// rows and offers "Show 2 more".
+execFileSync('sqlite3', [
+  db,
+  Array.from(
+    { length: 11 },
+    (_, i) =>
+      `INSERT INTO conversation_pull_requests (conversation_id, host, owner, repo, number, source, linked_at) VALUES ('promo-context', 'bitbucket', 'geoiq', 'ssg-bot-v2', ${i + 1}, 'auto', ${Date.now() - 200000 - i});`,
+  ).join('\n'),
+])
 ;({ app, win } = await launch())
 
 const results = []
@@ -97,7 +107,7 @@ try {
   await win.waitForTimeout(400)
   check(
     'wide header: linked count shown, whole title',
-    (await linkedShown()) && (await header.innerText()).includes('1 linked') && (await titleFits()),
+    (await linkedShown()) && (await header.innerText()).includes('12 linked') && (await titleFits()),
   )
   await app.evaluate(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h), size)
   await win.waitForTimeout(400)
@@ -114,19 +124,42 @@ try {
   )
   await win.keyboard.type('nothing like this')
   await picker.getByText('No matches.').waitFor({ state: 'visible' })
-  await picker.getByRole('button', { name: 'Clear' }).click()
+  await picker.getByRole('button', { name: 'Clear' }).focus()
+  await win.keyboard.press('Enter')
   await prRow.waitFor({ state: 'visible' })
   await win.keyboard.type('build failed')
   await prRow.waitFor({ state: 'visible' })
   await win.keyboard.press('Escape')
   await picker.waitFor({ state: 'hidden' })
-  check('Escape returns focus to the chip', await header.evaluate((el) => el === document.activeElement))
+  // Radix moves focus back a tick after the popover unmounts.
+  const chipFocused = () =>
+    win
+      .waitForFunction(() => document.activeElement?.hasAttribute('data-linked-pr'), null, { timeout: 2000 })
+      .then(() => true)
+      .catch(() => false)
+  check('Escape returns focus to the chip', await chipFocused())
 
   await win.keyboard.press('Enter')
   await prRow.waitFor({ state: 'visible' })
   await win.keyboard.press('ArrowDown')
   await win.keyboard.press('ArrowUp')
   check('arrows select the row', (await prRow.getAttribute('data-selected')) === 'true')
+  const rowCount = () => picker.locator('[data-linked-pr-row]').count()
+  check('ten rows, then Show N more', (await rowCount()) === 10 && (await picker.getByText('Show 2 more').isVisible()))
+  await win.keyboard.press('ArrowUp')
+  await win.keyboard.press('Enter')
+  await picker.getByText('Show 2 more').waitFor({ state: 'hidden' })
+  const eleventh = picker.locator('[data-linked-pr-row]').nth(10)
+  check(
+    'Show more lists every row and selects the first new one',
+    (await rowCount()) === 12 && (await eleventh.getAttribute('data-selected')) === 'true',
+    `${await rowCount()} rows, selected: ${await picker.locator('[data-selected="true"]').getAttribute('data-value')}`,
+  )
+  await win.keyboard.press('Escape')
+  await picker.waitFor({ state: 'hidden' })
+  await chipFocused()
+  await win.keyboard.press('Enter')
+  await prRow.waitFor({ state: 'visible' })
   await win.keyboard.press('Enter')
   await reviews()
     .getByText('Replaces the fixed 30 s retry', { exact: false })
@@ -200,11 +233,13 @@ try {
   await unlink.waitFor({ state: 'hidden', timeout: 10_000 })
   check(
     'unlink removes the stored link',
-    q("SELECT unlinked_at IS NOT NULL FROM conversation_pull_requests WHERE conversation_id = 'promo-context'") === '1',
+    q(
+      "SELECT unlinked_at IS NOT NULL FROM conversation_pull_requests WHERE conversation_id = 'promo-context' AND number = 612",
+    ) === '1',
   )
   await win.getByRole('button', { name: 'Chats', exact: true }).click()
-  await win.locator('[data-linked-pr]').waitFor({ state: 'hidden', timeout: 10_000 })
-  check('chat header drops the unlinked PR', !(await win.locator('[data-linked-pr]').isVisible()))
+  await header.filter({ hasText: '0 open' }).waitFor({ state: 'visible', timeout: 10_000 })
+  check('chat header drops the unlinked PR', (await header.innerText()).includes('0 open'))
 
   // Selected diff lines with no linked chat: the dialog asks. The demo PR's
   // repository is no local project's, so it has no chat to offer (and a chat of
