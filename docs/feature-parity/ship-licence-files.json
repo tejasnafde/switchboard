@@ -34,8 +34,7 @@
   },
   "verification": {
     "automated": [
-      "tests/unit/licence-files-packaged.test.ts checks that the effective extraResources of electron-builder.yml and electron-builder.signed.yml (base plus overlay, the way extends appends arrays) copy both files, and that both files exist at the repo root. It fails when either entry is removed.",
-      "app-builder-lib getConfig resolves both configs to an extraResources list that ends with the LICENSE and THIRD_PARTY_NOTICES.md entries."
+      "tests/unit/licence-files-packaged.test.ts checks that the effective extraResources of electron-builder.yml and electron-builder.signed.yml (base plus overlay, the way extends appends arrays) copy both files, and that both files exist at the repo root. It fails when either entry is removed."
     ],
     "hardware": [],
     "notExercised": [
