@@ -21,7 +21,7 @@ import { open, stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
-import type { ChatMessage } from '@shared/types'
+import type { ChatMessage, ToolCall } from '@shared/types'
 import { createMainLogger } from '../logger'
 import { retainedJsonBytes } from './jsonl-memory'
 import { JsonlParser } from './jsonl-parser'
@@ -43,6 +43,8 @@ interface CacheEntry extends FileState {
   /** The cached bytes end on a line break, so new bytes start a new line. */
   endsWithNewline: boolean
   messages: ChatMessage[]
+  /** Tool calls with no result yet; an append parse is seeded with them so a later result still marks its call. */
+  pendingToolCalls: ToolCall[]
   retainedBytes: number
   /** New on every full parse; an append keeps it, so a copy proven a prefix stays proven. */
   lineage: number
@@ -167,11 +169,13 @@ async function loadJsonlSnapshot(
   let messages: ChatMessage[]
   let guard: string | null
   let endsWithNewline = false
+  let pendingToolCalls: ToolCall[]
   try {
     const readStart = performance.now()
     let parseMs = 0
     messages = []
     const parser = new JsonlParser((msg) => messages.push(msg), source)
+    if (base) parser.seedToolCalls(base.pendingToolCalls)
     const decoder = new StringDecoder('utf8')
     let read = 0
     // `end` is inclusive; stopping at the stat'd size keeps a write landing
@@ -191,6 +195,7 @@ async function loadJsonlSnapshot(
     const flushStart = performance.now()
     parser.feed(decoder.end())
     parser.flush()
+    pendingToolCalls = parser.pendingToolCalls()
     parseMs += performance.now() - flushStart
     if (timing) {
       timing.readMs += performance.now() - readStart - parseMs
@@ -229,6 +234,7 @@ async function loadJsonlSnapshot(
     guard,
     endsWithNewline,
     messages,
+    pendingToolCalls,
     lineage: base?.lineage ?? nextLineage++,
   }
   cache.set(key, entry)

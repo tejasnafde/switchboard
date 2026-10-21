@@ -36,6 +36,16 @@ export class JsonlParser {
     this.source = source
   }
 
+  /** Calls whose result has not arrived yet, so a parse of later bytes can resume from them. */
+  pendingToolCalls(): ToolCall[] {
+    return [...this.toolCalls.values()]
+  }
+
+  /** Resume from `pendingToolCalls()` of a parse of the earlier bytes; a result then marks the cached call. */
+  seedToolCalls(calls: readonly ToolCall[]): void {
+    for (const call of calls) this.toolCalls.set(call.id, call)
+  }
+
   /** Feed raw string data (may contain partial lines) */
   feed(chunk: string): void {
     this.buffer += chunk

@@ -275,3 +275,40 @@ it('keys the cache by both parser source and path and invalidates truncation', a
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+it('marks a cached tool call from a result in appended bytes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'sb-jsonl-cache-'))
+  try {
+    const path = join(dir, 'tools.jsonl')
+    const toolUse = (id: string, name: string) =>
+      JSON.stringify({
+        type: 'assistant',
+        timestamp: '2026-01-01T00:00:00Z',
+        message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input: {} }] },
+      }) + '\n'
+    await writeFile(path, toolUse('t1', 'Bash') + toolUse('t2', 'Agent'))
+    expect((await loadJsonlCached(path, 'claude-code'))?.length).toBe(2)
+    await appendFile(
+      path,
+      JSON.stringify({
+        type: 'user',
+        timestamp: '2026-01-01T00:00:01Z',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 't1', is_error: true, content: 'boom' },
+            { type: 'tool_result', tool_use_id: 't2', content: [{ type: 'text', text: 'report' }] },
+          ],
+        },
+      }) + '\n',
+    )
+    const appended = await loadJsonlCached(path, 'claude-code')
+    clearJsonlCache()
+    const full = await loadJsonlCached(path, 'claude-code')
+    expect(appended?.map((m) => m.toolCalls)).toEqual(full?.map((m) => m.toolCalls))
+    expect(full?.[0].toolCalls?.[0].isError).toBe(true)
+    expect(full?.[1].toolCalls?.[0].output).toBe('report')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
