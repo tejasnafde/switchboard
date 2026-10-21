@@ -3,6 +3,7 @@ import { latestOpenTicket, useChatWaitStore } from './stores/chat-wait-store'
 import { beginChatOpen } from './services/perf-chat-open'
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse, paneMaxWidth, selectCompanionSessionId } from './stores/layout-store'
+import { useShallow } from 'zustand/react/shallow'
 import { useAgentStore, setStoreDefaultRuntimeMode, runtimeModeToSend, type RuntimeMode } from './stores/agent-store'
 import { classifyCloseFocus, type ClosestEl } from './close-focus'
 import { useBookmarkStore } from './stores/bookmark-store'
@@ -97,6 +98,7 @@ import {
   primaryShowsLanding,
   readRememberedPick,
 } from './services/chat-landing'
+import { useRenderCount } from './services/render-counter'
 
 const log = createRendererLogger('app')
 
@@ -115,6 +117,7 @@ function toggleDualChatWorkspace(openPicker: () => void): void {
  * Resize handles manipulate DOM directly during drag.
  */
 export function App() {
+  useRenderCount('App')
   const sidebarRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<HTMLDivElement>(null)
   // Chat column wrapper - the resize target while data scientist mode has
@@ -143,7 +146,25 @@ export function App() {
     paneVisual,
     appView,
     dataScienceMode,
-  } = useLayoutStore()
+  } = useLayoutStore(
+    useShallow((s) => ({
+      sidebarWidth: s.sidebarWidth,
+      terminalWidth: s.terminalWidth,
+      sidebarVisible: s.sidebarVisible,
+      terminalVisible: s.terminalVisible,
+      toggleSidebar: s.toggleSidebar,
+      toggleTerminal: s.toggleTerminal,
+      setSidebarWidth: s.setSidebarWidth,
+      setTerminalWidth: s.setTerminalWidth,
+      registerSidebarEl: s.registerSidebarEl,
+      registerTerminalEl: s.registerTerminalEl,
+      rightPaneMode: s.rightPaneMode,
+      toggleRightPaneMode: s.toggleRightPaneMode,
+      paneVisual: s.paneVisual,
+      appView: s.appView,
+      dataScienceMode: s.dataScienceMode,
+    })),
+  )
 
   // Track viewport width so the panes' max width can be viewport-relative
   // (no fixed cap) while still keeping the chat + the opposite pane's handle
@@ -166,7 +187,7 @@ export function App() {
   const setMessages = useAgentStore((s) => s.setMessages)
   const clearMessages = useAgentStore((s) => s.clearMessages)
   const setTitle = useAgentStore((s) => s.setTitle)
-  const { loadSavedTheme } = useThemeStore()
+  const loadSavedTheme = useThemeStore((s) => s.loadSavedTheme)
   const [settingsPage, setSettingsPage] = useState<SettingsPageId | null>(null)
   const settingsOpen = settingsPage !== null
   const [paletteOpen, setPaletteOpen] = useState(false)

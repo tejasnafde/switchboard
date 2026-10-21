@@ -38,6 +38,7 @@ import {
 } from '@dnd-kit/core'
 import { useAgentStore } from '../../stores/agent-store'
 import { useKanbanStore } from '../../stores/kanban-store'
+import { useShallow } from 'zustand/react/shallow'
 import { sessionPreviewLine } from '@shared/turn-preview'
 import { describeKanbanWorktreeCreation } from './kanban-worktree-presentation'
 import { useLayoutStore } from '../../stores/layout-store'
@@ -51,6 +52,7 @@ import { launchCardChat } from './card-launch'
 import { createRendererLogger } from '../../logger'
 import { Combobox } from '../ui/combobox'
 import { Toolbar } from '../ui/toolbar'
+import { useRenderCount } from '../../services/render-counter'
 
 const log = createRendererLogger('kanban:view')
 
@@ -66,13 +68,21 @@ const UNGROUPED = '__ungrouped__'
 const ALL = '__all__'
 
 export function KanbanView(): React.ReactElement {
+  useRenderCount('KanbanView')
   const workspaceFilter = useLayoutStore((s) => s.kanbanWorkspaceFilter)
   const projectFilter = useLayoutStore((s) => s.kanbanProjectFilter)
   const setWorkspaceFilter = useLayoutStore((s) => s.setKanbanWorkspaceFilter)
   const setProjectFilter = useLayoutStore((s) => s.setKanbanProjectFilter)
   const setAppView = useLayoutStore((s) => s.setAppView)
 
-  const { byProject, hydrate, move, reconcileWorktreeProgress } = useKanbanStore()
+  const { byProject, hydrate, move, reconcileWorktreeProgress } = useKanbanStore(
+    useShallow((s) => ({
+      byProject: s.byProject,
+      hydrate: s.hydrate,
+      move: s.move,
+      reconcileWorktreeProgress: s.reconcileWorktreeProgress,
+    })),
+  )
 
   const [projects, setProjects] = useState<Project[]>([])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])

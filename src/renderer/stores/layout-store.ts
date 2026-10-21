@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { createRendererLogger } from '../logger'
-import { useAgentStore } from './agent-store'
+import { clearUnread, useAgentStore } from './agent-store'
 import { SETTING_SHOW_FILE_DIFFS } from '@shared/project-settings'
 import type { VisualKind } from '@shared/chat-visuals'
 import { FOLLOW_UP_DEFAULT_KEY, parseFollowUpDefault, type TurnDelivery } from '@shared/turn-delivery'
@@ -251,12 +251,12 @@ function applyChatWorkspaceEvent(event: ChatWorkspaceEvent): void {
     focusedChatSlot: next.focusedSlot,
     chatSplitRatio: next.splitRatio,
   })
-  useAgentStore.setState((state) => ({
-    activeSessionId: next.primarySessionId,
-    sessions: state.sessions.map((session) =>
-      session.id === next.primarySessionId && session.unreadCount !== 0 ? { ...session, unreadCount: 0 } : session,
-    ),
-  }))
+  useAgentStore.setState((state) => {
+    const sessions = clearUnread(state.sessions, next.primarySessionId)
+    return state.activeSessionId === next.primarySessionId && sessions === state.sessions
+      ? state
+      : { activeSessionId: next.primarySessionId, sessions }
+  })
 }
 
 function persistList(key: string, list: string[]): void {

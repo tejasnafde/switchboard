@@ -2,12 +2,14 @@ import { useMemo, useRef } from 'react'
 import { Command } from 'cmdk'
 import { useLayoutStore } from '../stores/layout-store'
 import { useAgentStore } from '../stores/agent-store'
+import { useShallow } from 'zustand/react/shallow'
 import { useTerminalStore } from '../stores/terminal-store'
 import { sessionExecutionRootPath } from '../services/execution-root'
 import { useThemeStore, type ThemeName } from '../stores/theme-store'
 import { createRendererLogger } from '../logger'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { shortcutLabel } from '@shared/shortcuts'
+import { useRenderCount } from '../services/render-counter'
 
 const log = createRendererLogger('command-palette')
 
@@ -315,8 +317,14 @@ export function CommandPalette({
   onContextBridge,
   onNewChat,
 }: CommandPaletteProps) {
-  const { setTheme } = useThemeStore()
-  const sessions = useAgentStore((s) => s.sessions)
+  useRenderCount('CommandPalette')
+  const setTheme = useThemeStore((s) => s.setTheme)
+  // Ids and labels, not the session objects: the palette stays mounted while
+  // closed, and the objects change on every streamed token.
+  const sessionIds = useAgentStore(useShallow((s) => s.sessions.map((x) => x.id)))
+  const sessionLabels = useAgentStore(
+    useShallow((s) => s.sessions.map((x) => x.title ?? x.projectPath?.split('/').pop() ?? x.id.slice(0, 12))),
+  )
   const selectChatSession = useLayoutStore((s) => s.selectChatSession)
 
   const commands = useMemo(
@@ -400,17 +408,17 @@ export function CommandPalette({
               ))}
             </Command.Group>
 
-            {sessions.length > 0 && (
+            {sessionIds.length > 0 && (
               <Command.Group heading="Sessions" className={groupHeadingClass}>
-                {sessions.map((s) => (
+                {sessionIds.map((id, i) => (
                   <PaletteItem
-                    key={s.id}
+                    key={id}
                     onSelect={() => {
-                      selectChatSession(s.id)
+                      selectChatSession(id)
                       onClose()
                     }}
                   >
-                    Switch to: {s.title ?? s.projectPath?.split('/').pop() ?? s.id.slice(0, 12)}
+                    Switch to: {sessionLabels[i]}
                   </PaletteItem>
                 ))}
               </Command.Group>

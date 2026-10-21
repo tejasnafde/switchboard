@@ -20,11 +20,11 @@ import { MachineLayer } from './MachineLayer'
 import { AddMachineModal } from './AddMachineModal'
 import { ProjectFavicon } from './ProjectFavicon'
 import { NativeSessionImportModal } from './NativeSessionImportModal'
+import { RelativeTimeLabel } from './RelativeTimeLabel'
 import {
   groupProjectsByWorkspace,
   applySidebarFilter,
   colorTokenForWorkspace,
-  formatRelativeTime,
   type WorkspaceGroup,
 } from './sidebar-helpers'
 import type { Workspace } from '@shared/types'
@@ -48,6 +48,7 @@ import {
 import type { Project, SessionSummary, Bookmark, ChatMessage } from '@shared/types'
 import { confirm } from '../ui/confirm'
 import { historyScanSummary, type PrHistoryScanResult } from '@shared/pull-request-links'
+import { useRenderCount } from '../../services/render-counter'
 
 interface SidebarProps {
   onSessionSelect?: (session: SessionSummary, projectPath: string, machineId?: string) => void
@@ -88,6 +89,7 @@ function SortableProject({
 // ── Main Sidebar ─────────────────────────────────────────────────
 
 export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewChat }: SidebarProps) {
+  useRenderCount('Sidebar')
   const [projects, setProjects] = useState<Project[]>([])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [scanning, setScanning] = useState<string | null>(null)
@@ -868,7 +870,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                             </span>
                           )}
                           <UnreadBadge sessionId={s.id} />
-                          <span className="sidebar-thread-time">{formatRelativeTime(s.startedAt)}</span>
+                          <RelativeTimeLabel className="sidebar-thread-time" timestamp={s.startedAt} />
                         </button>
                         <button
                           className="sidebar-thread-archive"
@@ -1895,7 +1897,7 @@ function SavedItem({
           <span className="sidebar-saved-session">{bookmark.sessionTitle}</span>
         </span>
         <span className="sidebar-saved-excerpt">{bookmark.contentExcerpt}</span>
-        <span className="sidebar-saved-time">{formatRelativeTime(bookmark.savedAt)}</span>
+        <RelativeTimeLabel className="sidebar-saved-time" timestamp={bookmark.savedAt} />
       </button>
       <button
         type="button"

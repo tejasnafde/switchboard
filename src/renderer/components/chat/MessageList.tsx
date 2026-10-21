@@ -35,6 +35,7 @@ import { loadOlderHistory } from '../../services/history-loader'
 import { keepViewOnRowResize } from '../../services/row-resize-scroll'
 import { messageSearchTerms } from '@shared/message-search'
 import { cn } from '../../lib/utils'
+import { useRenderCount } from '../../services/render-counter'
 
 const NO_MESSAGES: readonly ChatMessage[] = []
 
@@ -189,6 +190,7 @@ export function MessageList({
   onPlanAction,
   onFileDiffResolve,
 }: MessageListProps) {
+  useRenderCount('MessageList')
   useLayoutEffect(() => {
     if (sessionId) chatMessagesCommitted(sessionId, messages, visible)
   })

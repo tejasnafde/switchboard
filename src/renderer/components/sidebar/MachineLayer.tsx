@@ -15,11 +15,12 @@ import { useMachineStore } from '../../stores/machine-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { buildMachineList, type MachineNode } from './machine-list'
 import { syncedAgoLabel, cachedProjects } from './machine-snapshot'
-import { formatRelativeTime } from './sidebar-helpers'
+import { RelativeTimeLabel } from './RelativeTimeLabel'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { ProjectFavicon } from './ProjectFavicon'
 import { AddRemoteProjectModal } from './AddRemoteProjectModal'
 import { confirm } from '../ui/confirm'
+import { useRenderCount } from '../../services/render-counter'
 
 function SortableMachine({
   id,
@@ -162,7 +163,7 @@ function RemoteProject({
                 >
                   <span className="sidebar-thread-title">{s.title}</span>
                   <UnreadBadge sessionId={s.id} />
-                  <span className="sidebar-thread-time">{formatRelativeTime(s.startedAt)}</span>
+                  <RelativeTimeLabel className="sidebar-thread-time" timestamp={s.startedAt} />
                 </button>
               </div>
             )
@@ -192,6 +193,7 @@ export function MachineLayer({
   onNewRemoteChat?: (machineId: string, projectPath: string) => void
   onSessionContextMenu?: (e: MouseEvent, machineId: string, projectPath: string, session: SessionSummary) => void
 }) {
+  useRenderCount('MachineLayer')
   const remotes = useMachineStore((s) => s.remotes)
   const connections = useMachineStore((s) => s.connections)
   const collapsed = useMachineStore((s) => s.collapsed)

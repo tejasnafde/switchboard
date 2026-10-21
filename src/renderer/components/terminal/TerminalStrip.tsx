@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useRef } from 'react'
 import { useTerminalStore } from '../../stores/terminal-store'
+import { useShallow } from 'zustand/react/shallow'
 import { useAgentStore } from '../../stores/agent-store'
 import { TerminalWindow } from './TerminalWindow'
 import { PaneResizeHandle } from './PaneResizeHandle'
@@ -7,6 +8,7 @@ import { focusTerminal } from '../../services/terminal-registry'
 import { LaunchConfigPicker } from './LaunchConfigPicker'
 import { sessionExecutionRootPath } from '../../services/execution-root'
 import { terminalCountLabel } from '@shared/format'
+import { useRenderCount } from '../../services/render-counter'
 
 /** Where a new pane opens. The session's CURRENT root, so a followed
  *  worktree is picked up instead of the parent checkout. */
@@ -18,9 +20,17 @@ function getSessionCwd(sessionId: string | null): string | undefined {
  * TerminalGrid - rows of windows. Each window holds stacked panes (tabs).
  */
 export function TerminalStrip() {
+  useRenderCount('TerminalStrip')
   const activeSessionId = useTerminalStore((s) => s.activeSessionId)
   const layout = useTerminalStore((s) => (s.activeSessionId ? s.getLayout(s.activeSessionId) : null))
-  const { addWindow, splitActiveWindow, addPaneToActiveWindow, setActiveWindow } = useTerminalStore()
+  const { addWindow, splitActiveWindow, addPaneToActiveWindow, setActiveWindow } = useTerminalStore(
+    useShallow((s) => ({
+      addWindow: s.addWindow,
+      splitActiveWindow: s.splitActiveWindow,
+      addPaneToActiveWindow: s.addPaneToActiveWindow,
+      setActiveWindow: s.setActiveWindow,
+    })),
+  )
 
   // Flex ratios for rows (row resizing)
   const rowRatiosRef = useRef<Map<string, number>>(new Map())

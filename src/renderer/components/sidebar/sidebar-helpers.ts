@@ -11,9 +11,6 @@ import type { WorkspaceGroup } from '@shared/project-grouping'
 
 export { groupProjectsByWorkspace, colorTokenForWorkspace, type WorkspaceGroup } from '@shared/project-grouping'
 
-/** Compact "now / 5m / 3h / 2d / 4w / 3mo" stamp for sidebar thread rows. */
-export { formatRelativeTime } from '@shared/format'
-
 export interface FilteredTree {
   groups: WorkspaceGroup[]
   /** workspace ids that should auto-expand because they contain matches */
