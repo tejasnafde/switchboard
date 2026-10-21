@@ -1,5 +1,5 @@
 {
-  "note": "Cases only. Each adapter must classify these from PR 2 on; the adapters do not read this file yet.",
+  "note": "One case per limit bug. limit-classification.test.ts runs the Claude and Codex cases through their adapters, acp-generic-adapter.test.ts the ACP case.",
   "cases": [
     {
       "name": "claude rate_limit_event rejected with a reset",

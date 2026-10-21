@@ -7,9 +7,11 @@
  * held queue follows. Quick repeat failures count in `streak`, and the third
  * one gives up. Stop, archive, settle, Cancel and a move disarm the row.
  *
- * Nothing reads this module outside tests until the auto-resume runner lands.
+ * The adapters use the classifiers below to mark a limited turn's end; the
+ * rest is read only by tests until the auto-resume runner lands.
  */
 import { runSlotFree, type HubRunningChild } from './hub'
+import { unixSecondsToMs } from './provider-usage'
 
 /**
  * Staged flag `limit_auto_resume`. Off until auto-resume ships on every
@@ -88,6 +90,65 @@ export function limitState(limited: boolean, row: LimitResumeRowView | null): Li
 
 /** How a turn's end was classified. Only `usage_limit` can arm. */
 export type TurnLimitClass = 'usage_limit' | 'context_full' | 'other'
+
+/**
+ * What an adapter puts on `turn.completed` when the turn ended on a usage
+ * limit or a full context window. No `limit` on the event means `other`.
+ * `resetAt` is epoch ms.
+ */
+export interface TurnLimit {
+  limitClass: Exclude<TurnLimitClass, 'other'>
+  resetAt: number | null
+}
+
+/** Within one turn a usage limit stays: a later empty success or error does not replace it. */
+export function mergeTurnLimit(prev: TurnLimit | null | undefined, next: TurnLimit | null): TurnLimit | null {
+  return prev?.limitClass === 'usage_limit' ? prev : (next ?? prev ?? null)
+}
+
+/** Claude: every `rate_limit_event` rejection is a usage limit, with or without a reset. */
+export function claudeRejectionLimit(resetsAtSeconds: unknown): TurnLimit {
+  return { limitClass: 'usage_limit', resetAt: unixSecondsToMs(resetsAtSeconds) }
+}
+
+/** `TurnError` of the Codex app-server, as far as classification reads it. */
+export interface CodexTurnErrorView {
+  message?: string
+  codexErrorInfo?: unknown
+}
+
+const CODEX_LIMIT_INFOS = new Set(['usageLimitExceeded', 'rateLimitExceeded'])
+
+/**
+ * Codex: a final error (no retry left) is a usage limit when the server says
+ * so, when the retries ended on a 429, or when a gateway names a usage limit.
+ * A full context window is `context_full`. Anything else is `other` (null).
+ */
+export function codexErrorLimit(error: CodexTurnErrorView | null | undefined): TurnLimit | null {
+  if (!error) return null
+  const info = error.codexErrorInfo
+  const message = error.message ?? ''
+  if (info === 'contextWindowExceeded') return { limitClass: 'context_full', resetAt: null }
+  // Object variants carry the HTTP status, e.g. `responseTooManyFailedAttempts`.
+  const status429 =
+    typeof info === 'object' &&
+    info !== null &&
+    Object.values(info).some((v: { httpStatusCode?: unknown } | null) => v?.httpStatusCode === 429)
+  const limited =
+    (typeof info === 'string' && CODEX_LIMIT_INFOS.has(info)) ||
+    status429 ||
+    /\b429 Too Many Requests\b/i.test(message) ||
+    /\busage limit\b/i.test(message)
+  return limited ? { limitClass: 'usage_limit', resetAt: resetInMessage(message) } : null
+}
+
+/** "try again at 2026-10-21T15:40:00Z": only a full ISO time with a zone counts. */
+function resetInMessage(message: string): number | null {
+  const match = /try again at (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2}))/i.exec(message)
+  if (!match) return null
+  const ms = Date.parse(match[1])
+  return Number.isFinite(ms) ? ms : null
+}
 
 export type ArmDecision =
   | { arm: true }

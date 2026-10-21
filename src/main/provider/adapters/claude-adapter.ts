@@ -144,7 +144,14 @@ import type {
 } from '../types'
 import type { ProviderSkill } from '@shared/types'
 import { formatClaudeAuthStatus } from '@shared/provider-auth-format'
-import { buildRateLimitMessage, classifyOverageScope, isOverageRejection } from '@shared/claude-rate-limit'
+import {
+  buildRateLimitMessage,
+  classifyOverageScope,
+  isOverageRejection,
+  reportedModel,
+  SYNTHETIC_MODEL,
+} from '@shared/claude-rate-limit'
+import { claudeRejectionLimit, mergeTurnLimit, type TurnLimit } from '@shared/limit-resume'
 import { unixSecondsToMs } from '@shared/provider-usage'
 
 const log = createLogger('provider:claude')
@@ -697,6 +704,8 @@ interface ActiveSession {
   resumedNative: boolean
   /** The CLI said "Prompt is too long" for the running turn; its `result` decides what follows. */
   promptTooLongSeen?: boolean
+  /** The limit the current turn ended on. Kept until the next turn starts, so a late empty `result` carries it too. */
+  turnLimit?: TurnLimit | null
   /**
    * The running turn hit the context window: `/compact` was sent, and the
    * turn's own messages go again once it ends (see recoverPromptTooLong).
@@ -862,6 +871,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     // this one applies its mode still sees a turn in progress.
     if (!queued) {
       active.turnStartedAt = Date.now()
+      active.turnLimit = null
       active.watchdog.turnStarted(Date.now())
     }
 
@@ -1529,6 +1539,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       return
     }
     active.turnStartedAt = Date.now()
+    active.turnLimit = null
     active.watchdog.turnStarted(Date.now())
     active.session.status = 'running'
     active.onEvent({ type: 'status', threadId, status: 'running', newTurn: true })
@@ -1711,6 +1722,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         reason: 'started',
       })
     active.turnStartedAt = Date.now()
+    active.turnLimit = null
     active.watchdog.turnStarted(Date.now())
     active.session.status = 'running'
     active.onEvent({ type: 'status', threadId: active.session.threadId, status: 'running' })
@@ -1952,13 +1964,13 @@ export class ClaudeAdapter implements ProviderAdapter {
             active.query
               .getContextUsage()
               .then((ctx) => {
-                if (ctx.model) active.lastKnownModel = ctx.model
+                if (reportedModel(ctx.model)) active.lastKnownModel = ctx.model
                 active.onEvent({
                   type: 'context_window',
                   threadId,
                   usedTokens: ctx.totalTokens,
                   maxTokens: ctx.maxTokens,
-                  ...(ctx.model ? { model: ctx.model } : {}),
+                  ...(reportedModel(ctx.model) ? { model: ctx.model } : {}),
                 })
               })
               .catch((err) => {
@@ -2004,13 +2016,13 @@ export class ClaudeAdapter implements ProviderAdapter {
             active.query
               .getContextUsage()
               .then((ctx) => {
-                if (ctx.model) active.lastKnownModel = ctx.model
+                if (reportedModel(ctx.model)) active.lastKnownModel = ctx.model
                 active.onEvent({
                   type: 'context_window',
                   threadId,
                   usedTokens: ctx.totalTokens,
                   maxTokens: ctx.maxTokens,
-                  ...(ctx.model ? { model: ctx.model } : {}),
+                  ...(reportedModel(ctx.model) ? { model: ctx.model } : {}),
                 })
               })
               .catch((err) => {
@@ -2150,7 +2162,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         // with no reply and no error at all (captured 2026-08-05).
         // Sidechain errors stay out: a subagent's transient 529 is not the
         // parent turn's failure, and the parent often recovers from it.
-        if (errMsg.error || errMsg.message?.model === '<synthetic>') {
+        if (errMsg.error || errMsg.message?.model === SYNTHETIC_MODEL) {
           if (errMsg.error && errMsg.error !== 'rate_limit' && !errMsg.parent_tool_use_id) {
             const text = (errMsg.message?.content ?? [])
               .filter((b) => b.type === 'text' && b.text)
@@ -2275,6 +2287,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         const unanswered = tooLong ? active.prompt.pendingMessages() : []
         active.prompt.answered(new Set(active.queuedTurns.map((turn) => turn.sdkMessage)))
         if (this.recoverPromptTooLong(threadId, active, result as { is_error?: boolean }, tooLong, unanswered)) break
+        const limit = mergeTurnLimit(active.turnLimit, tooLong ? { limitClass: 'context_full', resetAt: null } : null)
 
         const durationMs = takeTurnDuration(active)
         active.watchdog.turnEnded()
@@ -2298,6 +2311,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           numTurns: result.num_turns,
           usedTokens: result.usage?.input_tokens,
           ...(durationMs !== undefined ? { durationMs } : {}),
+          ...(limit ? { limit } : {}),
         })
 
         if (result.session_id) {
@@ -2309,13 +2323,13 @@ export class ClaudeAdapter implements ProviderAdapter {
           active.query
             .getContextUsage()
             .then((ctx) => {
-              if (ctx.model) active.lastKnownModel = ctx.model
+              if (reportedModel(ctx.model)) active.lastKnownModel = ctx.model
               active.onEvent({
                 type: 'context_window',
                 threadId,
                 usedTokens: ctx.totalTokens,
                 maxTokens: ctx.maxTokens,
-                ...(ctx.model ? { model: ctx.model } : {}),
+                ...(reportedModel(ctx.model) ? { model: ctx.model } : {}),
               })
               log.info(
                 `context: ${ctx.totalTokens}/${ctx.maxTokens} (${Math.round(ctx.percentage)}%) model=${ctx.model}`,
@@ -2381,6 +2395,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           // this is the "no response, nothing" symptom from the 2026-07-25
           // investigation. Mirror the `result` case: clear turn state and emit
           // turn.completed, then flag the error status.
+          active.turnLimit = mergeTurnLimit(active.turnLimit, claudeRejectionLimit(rl.resetsAt))
           const durationMs = takeTurnDuration(active)
           active.watchdog.turnEnded()
           this.holdQueuedTurns(active, 'The usage limit was reached.')
@@ -2391,6 +2406,7 @@ export class ClaudeAdapter implements ProviderAdapter {
             type: 'turn.completed',
             threadId,
             ...(durationMs !== undefined ? { durationMs } : {}),
+            ...(active.turnLimit ? { limit: active.turnLimit } : {}),
           })
           active.onEvent({ type: 'status', threadId, status: 'error' })
           // Log the FULL rate_limit_info. The old line dropped everything except

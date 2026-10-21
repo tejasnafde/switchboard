@@ -17,6 +17,14 @@ export interface ClaudeRateLimitInfo {
   isUsingOverage?: boolean
 }
 
+/** The model name the CLI writes on its own error and limit messages. Never a real model. */
+export const SYNTHETIC_MODEL = '<synthetic>'
+
+/** A model id fit to show or record, or null for none or the synthetic one. */
+export function reportedModel(model: string | null | undefined): string | null {
+  return model && model !== SYNTHETIC_MODEL ? model : null
+}
+
 /** Whether switching credentials can help. */
 export type OverageScope =
   /** Org, group or seat-tier wide, so sibling instances are blocked too. */

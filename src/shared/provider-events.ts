@@ -20,6 +20,7 @@ import { splitSyntheticUserText } from './synthetic-message'
 import type { AgentProvider } from './types'
 import { GENERIC_ACP_AGENTS, type GenericAcpAgent } from './acp-agents'
 import type { QueuedTurnExit } from './turn-delivery'
+import type { TurnLimit } from './limit-resume'
 import type { FollowSuggestionMode } from './follow-suggestions'
 
 export type ProviderSessionStatus = 'connecting' | 'idle' | 'running' | 'error' | 'stopped'
@@ -711,6 +712,8 @@ export interface RuntimeTurnCompletedEvent {
    * Rendered by MessageBubble as "Worked for X.Xs".
    */
   durationMs?: number
+  /** Set when the turn ended on a usage limit or a full context window (`shared/limit-resume.ts`). */
+  limit?: TurnLimit
 }
 
 /**
