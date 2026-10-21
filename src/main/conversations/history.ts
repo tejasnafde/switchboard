@@ -329,7 +329,9 @@ function concatDisks(parts: WindowDisk[]): WindowDisk {
       for (const at of positions) {
         let part = starts.length - 1
         while (starts[part] > at) part--
-        byPart.set(part, [...(byPart.get(part) ?? []), at])
+        const list = byPart.get(part)
+        if (list) list.push(at)
+        else byPart.set(part, [at])
       }
       const found = new Map<number, ChatMessage>()
       for (const [part, list] of byPart) {

@@ -723,9 +723,9 @@ function runSlowMigrationsOn(db: Database.Database): void {
       if (ftsCount < msgCount) {
         db.exec('DELETE FROM messages_fts;')
         db.exec(`
-            INSERT INTO messages_fts(rowid, content, conversation_id, role)
-              SELECT rowid, content, conversation_id, role FROM messages WHERE content != '';
-          `)
+          INSERT INTO messages_fts(rowid, content, conversation_id, role)
+            SELECT rowid, content, conversation_id, role FROM messages WHERE content != '';
+        `)
       }
       db.exec("INSERT OR IGNORE INTO db_markers (name) VALUES ('fts_backfilled')")
     }

@@ -44,7 +44,7 @@ export interface MergeWindowRequest {
  * full message only for the positions the merge asks for.
  */
 export interface WindowDisk {
-  /** In transcript order; a repeated id keeps its first position. */
+  /** In transcript order; the merge keeps the first copy of a repeated id. */
   metas: readonly Pick<ChatMessage, 'id' | 'role' | 'timestamp'>[]
   /** The full messages at these positions of `metas`, in the order given. */
   materialize(positions: readonly number[]): ChatMessage[]
@@ -86,11 +86,8 @@ export function mergeHistoryWindow(
   })
   const cursorId = request.throughId ?? request.beforeId
   const cursorPosition = cursorId ? diskById.get(cursorId) : undefined
-  const cursorAt = cursorId
-    ? cursorPosition !== undefined
-      ? metas[cursorPosition].timestamp
-      : rows.timestampOf(cursorId)
-    : undefined
+  const cursorAt =
+    cursorPosition !== undefined ? metas[cursorPosition].timestamp : cursorId ? rows.timestampOf(cursorId) : undefined
   if (cursorId && cursorAt === undefined) {
     if (request.throughId) return emptyWindow(disk.length, rows)
     return { ...mergeHistoryWindow(source, rows, { limit }), cursorReset: true }
