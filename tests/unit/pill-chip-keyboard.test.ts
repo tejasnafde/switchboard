@@ -49,11 +49,11 @@ function editorOf(): LexicalEditor {
 
 const chip = () => container.querySelector<HTMLElement>('[data-pill-chip][data-pill-id="p1"]')
 
+/** Lexical commits the key's update in a microtask the keydown queues, so it lands before act returns. */
 async function press(key: string): Promise<void> {
   const el = container.querySelector('[contenteditable="true"]') as HTMLElement
   await act(async () => {
     el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
-    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 }
 
@@ -93,9 +93,6 @@ beforeEach(async () => {
       }),
     ),
   )
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  })
 })
 
 afterEach(() => {

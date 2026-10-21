@@ -23,11 +23,14 @@ beforeEach(() => {
 afterEach(async () => {
   act(() => root.unmount())
   container.remove()
-  // Radix hands focus back from a setTimeout after the dialog unmounts. Let it
-  // run here, or on a loaded machine it fires inside the next test and
-  // consumes the focus target that test just recorded.
-  await new Promise((resolve) => setTimeout(resolve, 20))
+  // Radix hands focus back from a 0 ms setTimeout after the dialog unmounts.
+  // Let it run here, or it fires inside the next test and consumes the focus
+  // target that test just recorded.
+  await afterRadixFocusReturn()
 })
+
+/** Timers of equal delay run in the order they were set, so this one runs after Radix's. */
+const afterRadixFocusReturn = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const dialog = () => document.querySelector('[role="alertdialog"]')
 const button = (name: string) => {
@@ -90,9 +93,7 @@ describe('confirm', () => {
     })
     await vi.waitFor(() => expect(dialog()?.textContent).toContain('Second?'))
     // The first close must not pull focus out of the second dialog.
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20))
-    })
+    await act(afterRadixFocusReturn)
     expect(dialog()?.contains(document.activeElement)).toBe(true)
     await act(async () => button('Cancel').click())
     await chained

@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { drain, until } from './helpers/wait'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -147,14 +148,23 @@ describe('Claude keychain reads are shared by service', () => {
     const { reader, runSecurity } = setup({ [serviceA]: { payload: credential } })
     let inFlight = 0
     let most = 0
+    let release!: () => void
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
     const inner = runSecurity.getMockImplementation()!
     runSecurity.mockImplementation(async (service: string, account: string | undefined) => {
       most = Math.max(most, ++inFlight)
-      await new Promise((r) => setTimeout(r, 5))
+      await gate
       inFlight--
       return inner(service, account)
     })
-    await Promise.all([reader.read(dirA), reader.read(dirA, { fresh: true })])
+    const both = Promise.all([reader.read(dirA), reader.read(dirA, { fresh: true })])
+    // Hold the first read open, and give the fresh one every chance to start beside it.
+    await until(() => expect(runSecurity).toHaveBeenCalled())
+    await drain()
+    release()
+    await both
     expect(most).toBe(1)
     expect(runSecurity.mock.calls.filter(([s]) => s === serviceA)).toHaveLength(2)
   })
@@ -175,7 +185,7 @@ describe('Claude keychain reads are shared by service', () => {
         return inner(service, account)
       })
       const pending = reader.read(dirA, { owner: 'a' })
-      await new Promise((r) => setTimeout(r, 0))
+      await until(() => expect(runSecurity).toHaveBeenCalledTimes(1))
       forget(reader)
       // Asked after the edit: waits for the old read, then reads again.
       const after = reader.read(dirA, { owner: 'a' })

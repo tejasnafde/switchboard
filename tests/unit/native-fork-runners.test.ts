@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { until } from './helpers/wait'
 import { createNativeForkRunners } from '../../src/main/conversations/native-fork-runners'
 import { isUnsupportedMethodError } from '../../src/main/conversations/native-fork'
 import { OpencodeUnsupportedVersionError } from '../../src/main/provider/adapters/opencode/version'
@@ -171,7 +172,6 @@ describe('native fork runners', () => {
       }
     }
     expect(alive()).toBe(true)
-    await new Promise((done) => setTimeout(done, 2500))
-    expect(alive()).toBe(false)
+    await until(() => expect(alive()).toBe(false))
   })
 })

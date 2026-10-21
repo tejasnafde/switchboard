@@ -52,6 +52,7 @@ vi.mock('../../src/main/db/database', () => ({
   getSetting: () => null,
 }))
 
+import { until } from './helpers/wait'
 import { WsHost } from '../../src/main/backend/ws-host'
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
 import { WsTransport } from '../../src/shared/ws-transport'
@@ -120,8 +121,6 @@ async function setup() {
   return { cwd, events, adapter, registry }
 }
 
-const flush = () => new Promise((r) => setTimeout(r, 40))
-
 /** Every session this suite messages between, started and ready to receive. */
 async function startAll(cwd: string, ids: string[] = ['sender', 'target']) {
   for (const threadId of ids) {
@@ -168,9 +167,8 @@ describe('list_agent_sessions against the registry', () => {
 
     adapter.hangTurn = true
     await client!.invoke(ProviderChannels.SEND_TURN, 'target', 'a long running turn')
-    await flush()
 
-    expect(text(await toolsFor('sender').listSessions())).toContain('"midTurn": true')
+    await until(async () => expect(text(await toolsFor('sender').listSessions())).toContain('"midTurn": true'))
   })
 })
 
@@ -199,9 +197,12 @@ describe('send_agent_message against the registry', () => {
     const { cwd, events } = await setup()
     await startAll(cwd)
     await toolsFor('sender').sendMessage({ sessionId: 'target', message: 'ready' })
-    await flush()
 
-    const received = events.find((e) => e.type === 'peer.message' && 'direction' in e && e.direction === 'received')
+    const received = await until(() => {
+      const found = events.find((e) => e.type === 'peer.message' && 'direction' in e && e.direction === 'received')
+      expect(found).toBeDefined()
+      return found
+    })
     expect(received).toMatchObject({ peerLabel: 'Docs pass', initiator: 'agent' })
   })
 
@@ -210,9 +211,12 @@ describe('send_agent_message against the registry', () => {
     const { cwd } = await setup()
     await startAll(cwd)
     await toolsFor('sender').sendMessage({ sessionId: 'target', message: 'ready' })
-    await flush()
 
-    const marker = saved.find((m) => m.conversationId === 'sender' && m.role === 'system')
+    const marker = await until(() => {
+      const found = saved.find((m) => m.conversationId === 'sender' && m.role === 'system')
+      expect(found).toBeDefined()
+      return found
+    })
     expect(marker?.content).toBe(`${PEER_AGENT_SENT_MARKER_PREFIX} Docs pass → API refactor`)
   })
 
@@ -239,13 +243,17 @@ describe('hop depth', () => {
   // A -> B -> A is the failure this guard exists for: it stays inside every
   // per-pair rate limit while burning tokens with nobody watching.
   it('refuses a send from a session that is acting on a peer message', async () => {
-    const { cwd, adapter } = await setup()
+    const { cwd, events, adapter } = await setup()
     await startAll(cwd)
 
     await client!.invoke(ProviderChannels.SEND_TURN, 'sender', 'look into the auth migration')
-    await flush()
+    await until(() =>
+      expect(events).toContainEqual(expect.objectContaining({ type: 'turn.completed', threadId: 'sender' })),
+    )
     await toolsFor('sender').sendMessage({ sessionId: 'target', message: 'the migration landed' })
-    await flush()
+    await until(() =>
+      expect(events).toContainEqual(expect.objectContaining({ type: 'turn.completed', threadId: 'target' })),
+    )
     expect(adapter.turns).toHaveLength(2)
 
     const back = await toolsFor('target').sendMessage({ sessionId: 'sender', message: 'thanks, and also' })
@@ -257,7 +265,7 @@ describe('hop depth', () => {
   // Depth counts AGENT hops, so a message the user typed leaves the recipient
   // free to hand its own finding on.
   it('leaves a user-initiated recipient free to send', async () => {
-    const { cwd, adapter } = await setup()
+    const { cwd, events, adapter } = await setup()
     await startAll(cwd, ['sender', 'target', 'second'])
 
     await client!.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, {
@@ -266,7 +274,9 @@ describe('hop depth', () => {
       targetThreadId: 'target',
       text: 'have a look at the migration',
     })
-    await flush()
+    await until(() =>
+      expect(events).toContainEqual(expect.objectContaining({ type: 'turn.completed', threadId: 'target' })),
+    )
 
     const on = await toolsFor('target').sendMessage({ sessionId: 'second', message: 'the schema moved' })
     expect(on.isError).toBeFalsy()
@@ -314,7 +324,7 @@ describe('per-sender budget', () => {
         })
       }
     }
-    await flush()
+    await until(() => expect(adapter.turns).toHaveLength(PEER_AGENT_SEND_BUDGET))
     const out = await toolsFor('sender').sendMessage({ sessionId: 'target', message: 'and one from me' })
     expect(out.isError).toBeFalsy()
     expect(adapter.turns).toHaveLength(PEER_AGENT_SEND_BUDGET + 1)
@@ -336,9 +346,8 @@ describe('both entry points share one delivery method', () => {
       text: 'typed by the user',
     })
     await toolsFor('sender').sendMessage({ sessionId: 'target', message: 'chosen by the agent' })
-    await flush()
 
-    expect(spy).toHaveBeenCalledTimes(2)
+    await until(() => expect(spy).toHaveBeenCalledTimes(2))
     expect(spy.mock.calls[0][0]).toMatchObject({ initiator: 'user', text: 'typed by the user' })
     expect(spy.mock.calls[1][0]).toMatchObject({ initiator: 'agent', text: 'chosen by the agent' })
   })

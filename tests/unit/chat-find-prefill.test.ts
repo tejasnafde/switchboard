@@ -60,6 +60,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   act(() => root?.unmount())
   root = null
   document.body.innerHTML = ''
@@ -116,13 +117,14 @@ describe('chat find prefill from message search', () => {
   })
 
   it('replaces the text of a bar that is already open', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: 1_000 })
     await render(messages)
     await act(async () => {
       useAgentStore.getState().requestChatFind('s1', 'unrelated', 'm2')
     })
     expect(document.querySelector('input')?.value).toBe('unrelated')
     // Two requests in one millisecond would share a stamp and not remount the bar.
-    await new Promise((resolve) => setTimeout(resolve, 2))
+    vi.setSystemTime(1_002)
     await act(async () => {
       useAgentStore.getState().requestChatFind('s1', 'jitter', 'm1')
     })

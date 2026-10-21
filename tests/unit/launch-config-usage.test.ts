@@ -4,7 +4,7 @@
  * Recency desc, then `default` first, then alphabetical for the
  * remaining no-recorded-use bucket.
  */
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { sortLaunchConfigsByRecency, recordLaunchConfigUsage } from '../../src/renderer/services/launch-config-usage'
 
 // Minimal localStorage shim so the helper runs under Node.
@@ -41,9 +41,14 @@ describe('sortLaunchConfigsByRecency', () => {
   })
 
   it('sorts most-recently-used first', async () => {
-    recordLaunchConfigUsage('/proj', 'apple')
-    await new Promise((r) => setTimeout(r, 2)) // ensure distinct ms
-    recordLaunchConfigUsage('/proj', 'zebra') // most recent
+    vi.useFakeTimers({ toFake: ['Date'], now: 1_000 })
+    try {
+      recordLaunchConfigUsage('/proj', 'apple')
+      vi.setSystemTime(1_001)
+      recordLaunchConfigUsage('/proj', 'zebra') // most recent
+    } finally {
+      vi.useRealTimers()
+    }
     const out = sortLaunchConfigsByRecency(['default', 'apple', 'zebra', 'mango'], '/proj')
     expect(out.slice(0, 2)).toEqual(['zebra', 'apple'])
     // Unused names trail; `default` comes before `mango` in that bucket.

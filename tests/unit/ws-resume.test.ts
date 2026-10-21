@@ -7,6 +7,7 @@
  * while the phone was backgrounded was lost with no way to notice.
  */
 import { describe, it, expect, afterEach } from 'vitest'
+import { until } from './helpers/wait'
 import { WebSocketServer, type AddressInfo } from 'ws'
 import { WsHost } from '../../src/main/backend/ws-host'
 import { WsTransport } from '../../src/shared/ws-transport'
@@ -32,7 +33,19 @@ function dropClients(): void {
   for (const c of wss!.clients) c.terminate()
 }
 
-const settle = (ms = 120) => new Promise((r) => setTimeout(r, ms))
+/**
+ * Resolves once the client has reconnected and been answered a request. The
+ * host handles frames in order, so by then it has sent the replay and `ready`
+ * for the client's hello. Call before the drop, so the reconnect is not missed.
+ */
+async function reconnected(c: WsTransport): Promise<void> {
+  await new Promise<void>((resolve) => {
+    c.onStateChange = (state) => {
+      if (state === 'connected') resolve()
+    }
+  })
+  await c.invoke('__ready__').catch(() => {})
+}
 
 afterEach(async () => {
   client?.close()
@@ -50,15 +63,15 @@ describe('event resume', () => {
     await client.invoke('__ready__').catch(() => {})
 
     host.emit('provider:event', 1)
-    await settle()
-    expect(seen).toEqual([1])
+    await until(() => expect(seen).toEqual([1]))
 
+    const back = reconnected(client)
     dropClients()
     // Emitted with nobody listening - previously lost for good.
     host.emit('provider:event', 2)
     host.emit('provider:event', 3)
 
-    await settle(900)
+    await back
     expect(seen).toEqual([1, 2, 3])
   })
 
@@ -70,11 +83,11 @@ describe('event resume', () => {
     client = new WsTransport(url)
     client.on('provider:event', (n) => seen.push(n as number))
     await client.invoke('__ready__').catch(() => {})
-    await settle()
 
+    const back = reconnected(client)
     dropClients()
     host.emit('provider:event', 3)
-    await settle(900)
+    await back
     expect(seen).toEqual([3])
   })
 
@@ -87,9 +100,10 @@ describe('event resume', () => {
 
     host.emit('provider:event', 1)
     host.emit('provider:event', 2)
-    await settle()
+    await until(() => expect(seen).toEqual([1, 2]))
+    const back = reconnected(client)
     dropClients()
-    await settle(900)
+    await back
 
     expect(seen).toEqual([1, 2])
   })
@@ -101,13 +115,16 @@ describe('event resume', () => {
     client.onResumeGap = () => gaps++
     await client.invoke('__ready__').catch(() => {})
 
+    const seen: number[] = []
+    client.on('provider:event', (n) => seen.push(n as number))
     host.emit('provider:event', 1)
-    await settle()
+    await until(() => expect(seen).toEqual([1]))
+    const back = reconnected(client)
     dropClients()
     // Overflow the buffer so the client's cursor is no longer covered.
     for (let i = 0; i < 2_100; i++) host.emit('provider:event', i)
 
-    await settle(900)
+    await back
     expect(gaps).toBe(1)
   })
 
@@ -122,20 +139,19 @@ describe('event resume', () => {
 
     host.emit('provider:event', 1)
     host.emit('provider:event', 2)
-    await settle()
-    expect(seen).toEqual([1, 2])
+    await until(() => expect(seen).toEqual([1, 2]))
 
     // Replace the host on the same server: a fresh epoch and seq starting at 0.
     // Without epoch handling the client's cursor of 2 would swallow the next
     // two events forever.
     const restarted = new WsHost(wss!)
+    const back = reconnected(client)
     for (const c of wss!.clients) c.terminate()
-    await settle(900)
+    await back
     restarted.emit('provider:event', 7)
-    await settle()
+    await until(() => expect(seen).toContain(7))
 
     expect(gaps).toBe(1)
-    expect(seen).toContain(7)
   })
 
   // The server broadcasts to a newly accepted socket before it gets round to
@@ -151,7 +167,8 @@ describe('event resume', () => {
     await client.invoke('__ready__').catch(() => {})
 
     host.emit('provider:event', 1)
-    await settle()
+    await until(() => expect(seen).toEqual([1]))
+    const back = reconnected(client)
     dropClients()
     host.emit('provider:event', 2)
     host.emit('provider:event', 3)
@@ -160,7 +177,7 @@ describe('event resume', () => {
     // replay the reconnect is about to request.
     wss!.on('connection', () => host.emit('provider:event', 99))
 
-    await settle(1_200)
+    await back
     expect(seen).toEqual([1, 2, 3, 99])
   })
 
@@ -185,7 +202,8 @@ describe('event resume', () => {
     })
     host.emit('terminal:output', 'noise')
     host.emit('provider:event', 'signal')
-    await settle()
+    // Sent in order, so the noise is in by the time the signal is.
+    await until(() => expect(frames.map((f) => f.ch)).toContain('provider:event'))
     raw.close()
 
     expect(frames.find((f) => f.ch === 'terminal:output')?.seq).toBeUndefined()
@@ -211,10 +229,13 @@ describe('unauthenticated clients', () => {
     await new Promise((r) => raw.addEventListener('open', r))
     raw.addEventListener('message', (ev: MessageEvent) => frames.push(String(ev.data)))
 
-    // Ask to be replayed everything, then wait for live traffic.
+    // Ask to be replayed everything, then wait for live traffic. The host
+    // answers frames in order, so anything it sent this socket lands before
+    // the refusal of the request that follows.
     raw.send(JSON.stringify({ k: 'hello', since: 0 }))
     host.emit('provider:event', 'secret')
-    await settle(200)
+    raw.send(JSON.stringify({ k: 'req', id: 1, ch: 'probe', args: [] }))
+    await until(() => expect(frames.map((f) => decodeFrame(f)?.k)).toContain('res'))
     raw.close()
 
     const kinds = frames.map((f) => decodeFrame(f)?.k)

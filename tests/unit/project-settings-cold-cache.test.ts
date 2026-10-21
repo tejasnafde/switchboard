@@ -6,6 +6,7 @@
  * value picked once at creation now waits for the project's overrides.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { drain } from './helpers/wait'
 import {
   useAgentStore,
   setStoreDefaultRuntimeMode,
@@ -30,7 +31,7 @@ beforeEach(() => {
   invalidateSessionEnvModeCache()
   // The backend answers after a round trip, as over IPC.
   projectOverrides = vi.fn(async (paths: string[]) => {
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    await drain()
     return Object.fromEntries(
       paths.map((path) => [
         path,

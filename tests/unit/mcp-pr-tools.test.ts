@@ -5,6 +5,7 @@
  * what is posted, with the marker line, and every refusal is isError output.
  */
 import { describe, expect, it, vi } from 'vitest'
+import { until } from './helpers/wait'
 import { AgentApprovalBroker, type AgentApprovalAnswer } from '../../src/main/mcp/agent-approvals'
 import { parseHostWriteResponse, type HostWriteResponse } from '../../src/shared/agent-host-writes'
 import { declinedResultText } from '../../src/shared/agent-approval-cards'
@@ -174,6 +175,7 @@ function setup(
   const events: RuntimeEvent[] = []
   const refusals: AgentApprovalAnswer[] = []
   const results: Array<Promise<McpToolResult>> = []
+  const answered = new Set<string>()
   const { access, calls } = fakeAccess(opts.linked, opts.detail, opts.files)
   let mode: RuntimeMode = opts.mode ?? 'sandbox'
   const runContext = {
@@ -197,6 +199,7 @@ function setup(
       if (e.type !== 'request.opened') return
       const outcome = opts.answer?.(e)
       if (!outcome) return
+      answered.add(e.requestId)
       queueMicrotask(() => {
         const answer = approvals.respond(
           't1',
@@ -225,9 +228,11 @@ function setup(
   const tool = (name: string): McpTool => tools.find((t) => t.name === name)!
   const call = async (name: string, args: Record<string, unknown>): Promise<McpToolResult> => {
     const before = results.length
+    const eventsBefore = events.length
     const queued = await tool(name).call(args, { signal: new AbortController().signal })
     if (queued.isError || !queued.content[0].text.startsWith('Queued for')) return queued
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    const card = events.slice(eventsBefore).find((e) => e.type === 'request.opened')
+    if (card && answered.has(card.requestId)) await until(() => expect(results.length).toBeGreaterThan(before))
     return results[before] ?? queued
   }
   return {
@@ -488,8 +493,7 @@ describe('a card the agent does not wait on', () => {
     expect(
       approvals.respond('t1', card.requestId, 'approve', {}, { mayApproveHostWrite: true, label: 'test' }),
     ).toEqual({ ok: true })
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(calls.map((c) => c.op)).toEqual(['reply'])
+    await until(() => expect(calls.map((c) => c.op)).toEqual(['reply']))
   })
 })
 

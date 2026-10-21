@@ -164,6 +164,7 @@ vi.mock('../../src/main/provider/codex-session-migrate', async (importOriginal) 
   }
 })
 
+import { drain, until } from './helpers/wait'
 import { WsHost } from '../../src/main/backend/ws-host'
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
 import { WsTransport } from '../../src/shared/ws-transport'
@@ -574,8 +575,6 @@ async function setup(
   return { cwd, events, atomicDb }
 }
 
-const flush = () => new Promise((r) => setTimeout(r, 40))
-
 afterEach(async () => {
   allowUserTurnPersistence = true
   conversationExists = true
@@ -624,11 +623,18 @@ describe('provider switching over the WebSocket boundary', () => {
 
     const start = client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
     await adapter.startEntered
+    const sendReceived = new Promise<void>((resolve) =>
+      [...wss!.clients][0].on('message', (data) => {
+        if (String(data).includes(ProviderChannels.SEND_TURN)) resolve()
+      }),
+    )
     const send = client!.invoke(ProviderChannels.SEND_TURN, 't1', 'attached image').then(
       () => ({ ok: true as const }),
       (error: unknown) => ({ ok: false as const, error }),
     )
-    await flush()
+    // The backend has the send; one turn lets its handler reach the wait on the start.
+    await sendReceived
+    await drain()
 
     adapter.finishStart()
     await expect(start).resolves.toMatchObject({ threadId: 't1' })
@@ -665,7 +671,7 @@ describe('provider switching over the WebSocket boundary', () => {
     expect(session.instanceId).toBe('claude-work')
 
     await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'hello')
-    await flush()
+    await until(() => expect(events.some((e) => e.type === 'turn.completed')).toBe(true))
 
     const content = events.find((e) => e.type === 'content')
     expect(content && 'text' in content ? content.text : '').toBe('[sonnet] echo: hello')
@@ -706,7 +712,8 @@ describe('provider switching over the WebSocket boundary', () => {
       status: 'accepted',
     })
     expect(seen).toEqual([envelope])
-    await flush()
+    await until(() => expect(events.filter((event) => event.type === 'turn.completed')).toHaveLength(1))
+    await drain()
     expect(events.filter((event) => event.type === 'turn.completed')).toHaveLength(1)
   })
 
@@ -762,7 +769,10 @@ describe('provider switching over the WebSocket boundary', () => {
         providerText: 'continue after rotation',
       }),
     ).resolves.toMatchObject({ status: 'accepted' })
-    await flush()
+    await until(() => {
+      expect(atomicDb!.prepare("SELECT conversation_id FROM messages WHERE role = 'user'").get()).toBeDefined()
+      expect(events.find((event) => event.type === 'user.message')).toBeDefined()
+    })
 
     expect(atomicDb!.prepare("SELECT conversation_id FROM messages WHERE role = 'user'").get()).toEqual({
       conversation_id: 't1',
@@ -784,7 +794,7 @@ describe('provider switching over the WebSocket boundary', () => {
       undefined,
       'o-1',
     )
-    await flush()
+    await until(() => expect(atomicDb!.prepare("SELECT id FROM messages WHERE role = 'user'").get()).toBeDefined())
 
     const turn = atomicDb!
       .prepare(`
@@ -902,7 +912,7 @@ describe('provider switching over the WebSocket boundary', () => {
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
     const images = [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }]
     await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'context wrapper\n\nshow this', undefined, images, 'o-image')
-    await flush()
+    await until(() => expect(events.find((event) => event.type === 'user.message')).toBeDefined())
 
     expect(events.find((event) => event.type === 'user.message')).toMatchObject({
       type: 'user.message',
@@ -998,7 +1008,7 @@ describe('provider switching over the WebSocket boundary', () => {
     saved.length = 0
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
     await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'opening turn')
-    await flush()
+    await until(() => expect(saved.find((m) => m.role === 'user')).toBeDefined())
 
     const turn = saved.find((m) => m.role === 'user')
     expect(turn?.content).toBe('opening turn')
@@ -1011,7 +1021,7 @@ describe('provider switching over the WebSocket boundary', () => {
 
     await client!.invoke(ProviderChannels.SET_MODEL, 't1', 'opus')
     await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'after switch')
-    await flush()
+    await until(() => expect(events.some((e) => e.type === 'turn.completed')).toBe(true))
 
     const texts = events.filter((e) => e.type === 'content').map((e) => ('text' in e ? e.text : ''))
     expect(texts).toContain('[opus] echo: after switch')
@@ -1264,7 +1274,9 @@ describe('provider switching over the WebSocket boundary', () => {
       expectedCurrentInstanceId: 'claude-work',
     })
     adapter.publishFromRetiredExecution('t1')
-    await flush()
+    // A dropped event leaves no trace. The backend answers in order, so once this
+    // reply is in, a forwarded retired event would already be here.
+    await client!.invoke(ProviderChannels.IS_AVAILABLE, 'claude')
 
     expect(events).not.toContainEqual(expect.objectContaining({ messageId: 'retired-content' }))
   })

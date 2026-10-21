@@ -8,6 +8,7 @@
  * answer tells the agent not to try again.
  */
 import { describe, expect, it, vi } from 'vitest'
+import { until } from './helpers/wait'
 import { AgentApprovalBroker } from '../../src/main/mcp/agent-approvals'
 import { AgentWriteBudget } from '../../src/main/mcp/agent-write-budget'
 import {
@@ -109,6 +110,7 @@ function setup(opts: Options = {}) {
   } as unknown as AgentPullRequestAccess
   let mode: RuntimeMode = opts.mode ?? 'sandbox'
   const results: Array<Promise<McpToolResult>> = []
+  const answered = new Set<string>()
   const runContext = {
     threadId: 't1',
     chatId: 'root-1',
@@ -130,6 +132,7 @@ function setup(opts: Options = {}) {
       if (e.type !== 'request.opened') return
       const outcome = opts.answer?.(e)
       if (!outcome) return
+      answered.add(e.requestId)
       queueMicrotask(() =>
         approvals.respond('t1', e.requestId, outcome.decision, outcome.decision === 'approve' ? outcome.response : {}, {
           mayApproveHostWrite: true,
@@ -153,9 +156,11 @@ function setup(opts: Options = {}) {
   /** Follows a queued card through to the result the agent is later told. */
   const call = async (args: Record<string, unknown>, signal = new AbortController().signal): Promise<McpToolResult> => {
     const before = results.length
+    const eventsBefore = events.length
     const queued = await tool.call(args, { signal })
     if (queued.isError || !queued.content[0].text.startsWith('Queued for')) return queued
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    const card = events.slice(eventsBefore).find((e) => e.type === 'request.opened')
+    if (card && answered.has(card.requestId)) await until(() => expect(results.length).toBeGreaterThan(before))
     return results[before] ?? queued
   }
   return {
