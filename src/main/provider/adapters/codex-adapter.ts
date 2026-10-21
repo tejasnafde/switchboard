@@ -1015,6 +1015,7 @@ export class CodexAdapter implements ProviderAdapter {
 
     active.session.status = 'running'
     active.turnStartedAt = Date.now()
+    active.turnLimit = null
     active.onEvent({ type: 'status', threadId, status: 'running' })
 
     const approvalPolicy = RUNTIME_MODE_TO_CODEX_POLICY[active.session.runtimeMode] ?? 'on-request'
@@ -1905,7 +1906,9 @@ export class CodexAdapter implements ProviderAdapter {
         })
       } else {
         log.error(`codex error notification: ${message}`, notification.params ?? {})
-        active.turnLimit = mergeTurnLimit(active.turnLimit, codexErrorLimit(notification.params?.error))
+        // A late error of a turn Stop interrupted must not mark the turn after it.
+        if (!active.activeTurnId || turnId === active.activeTurnId)
+          active.turnLimit = mergeTurnLimit(active.turnLimit, codexErrorLimit(notification.params?.error))
         active.onEvent({
           type: 'error',
           threadId,

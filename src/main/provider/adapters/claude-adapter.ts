@@ -2395,7 +2395,9 @@ export class ClaudeAdapter implements ProviderAdapter {
           // this is the "no response, nothing" symptom from the 2026-07-25
           // investigation. Mirror the `result` case: clear turn state and emit
           // turn.completed, then flag the error status.
-          active.turnLimit = mergeTurnLimit(active.turnLimit, claudeRejectionLimit(rl.resetsAt))
+          // A rejection while idle ends no turn of ours, so it must not arm a resume.
+          if (active.turnStartedAt != null || active.awaitingNextTurn)
+            active.turnLimit = mergeTurnLimit(active.turnLimit, claudeRejectionLimit(rl.resetsAt))
           const durationMs = takeTurnDuration(active)
           active.watchdog.turnEnded()
           this.holdQueuedTurns(active, 'The usage limit was reached.')

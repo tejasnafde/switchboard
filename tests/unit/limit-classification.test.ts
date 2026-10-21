@@ -128,3 +128,32 @@ describe('limit helpers', () => {
     expect(reportedModel('claude-opus-4-1')).toBe('claude-opus-4-1')
   })
 })
+
+describe('a limit stays on its own turn', () => {
+  it('claude: a rejection while idle carries no limit', () => {
+    const events: RuntimeEvent[] = []
+    const active = { ...claudeActive((e) => events.push(e)), turnStartedAt: null }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(new ClaudeAdapter() as any).handleSDKMessage('t', active, {
+      type: 'rate_limit_event',
+      rate_limit_info: { status: 'rejected', resetsAt: 1761045600 },
+    })
+    expect(lastTurnEnd(events)?.limit).toBeUndefined()
+  })
+
+  it('codex: a late limit error of a stopped turn does not mark the running one', () => {
+    const events: RuntimeEvent[] = []
+    const active = codexActive((e) => events.push(e))
+    const adapter = new CodexAdapter()
+    const frames = [
+      {
+        method: 'error',
+        params: { turnId: 'turn-0', error: { message: 'x', codexErrorInfo: 'usageLimitExceeded' }, willRetry: false },
+      },
+      { method: 'turn/completed', params: { turn: { id: 'turn-1', status: 'failed' } } },
+    ]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const frame of frames) (adapter as any).handleNotification('t', active, frame)
+    expect(lastTurnEnd(events)?.limit).toBeUndefined()
+  })
+})
