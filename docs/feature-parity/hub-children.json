@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "hub-children",
+  "summary": "Foundations for child chats, behind the staged flag hub_children (HUB_CHILDREN_ENABLED in src/shared/hub.ts, false; SB_HUB_CHILDREN=1 or the backend setting labs.hub_children turns it on). Any chat can become a parent; there is no chat type and no column on conversations. This change adds the tables hub_parents, hub_batches, hub_children and hub_wakes (a wake holds a summary and a pointer into the child's transcript, never a report body), their CRUD with every conversation id resolved to its root, the hub.* settings with defaults and ranges (no UI yet), and the pure rules childState, parentState, grantedMode, hubNeedsCard (a card only in plan and supervised modes), runSlotFree, wakeBatchDecision, the pointer parser and the brief and update wrappers, with shared fixtures. Nothing reads the flag outside tests, so no behaviour changes. The migration time is logged through the db.migrate perf span.",
+  "surfaces": {
+    "desktop": {
+      "status": "staged",
+      "flag": "hub_children",
+      "followUpRelease": "The release that turns hub_children on by default (HUB_CHILDREN_ENABLED true), after children ship on desktop, Expo and Android and one hub runs end to end on the beta channel.",
+      "evidence": [
+        "src/shared/hub.ts",
+        "tests/unit/hub-rules.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "hub_children",
+      "followUpRelease": "The release that turns hub_children on by default (HUB_CHILDREN_ENABLED true), after children ship on desktop, Expo and Android and one hub runs end to end on the beta channel."
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "hub_children",
+      "followUpRelease": "The release that turns hub_children on by default (HUB_CHILDREN_ENABLED true), after children ship on desktop, Expo and Android and one hub runs end to end on the beta channel."
+    },
+    "sharedBackendApi": {
+      "status": "staged",
+      "flag": "hub_children",
+      "followUpRelease": "The release that turns hub_children on by default (HUB_CHILDREN_ENABLED true), after children ship on desktop, Expo and Android and one hub runs end to end on the beta channel.",
+      "evidence": [
+        "src/shared/hub.ts",
+        "tests/fixtures/hub-cases.json"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/hubs.ts",
+        "src/main/db/database.ts",
+        "tests/unit/hub-db.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "staged",
+      "flag": "hub_children",
+      "followUpRelease": "The release that turns hub_children on by default (HUB_CHILDREN_ENABLED true), after children ship on desktop, Expo and Android and one hub runs end to end on the beta channel. The labs switch reaches beta users first. This change touches no package identity, signing, deep link or native module, and its migration is additive, so an older build opens a migrated database."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/hub-rules.test.ts tests/unit/hub-db.test.ts --maxWorkers=2: childState, parentState, grantedMode, hubNeedsCard, runSlotFree and wakeBatchDecision pass every case in tests/fixtures/hub-cases.json; the flag helper is off by default and on with SB_HUB_CHILDREN=1 or labs.hub_children; readHubSettings keeps in-range values and falls back to defaults; hub_parents, hub_batches, hub_children and hub_wakes CRUD, the open-child lookup by child_id, wake delivery once per wake, and a rotated Claude id resolving to its root conversation.",
+      "A copy of a real 1.1 GB desktop database migrated with this build (five new tables, no other change), and the migrate code of origin/main then opened the migrated file."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Nothing reads the flag, the settings or the tables yet, so no chat behaves differently. Tools, cards, the children UI and the phone screens come in later PRs.",
+      "The Android port of hub-cases.json is not written yet."
+    ]
+  }
+}

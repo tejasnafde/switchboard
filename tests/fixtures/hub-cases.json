@@ -1,0 +1,805 @@
+{
+  "childState": [
+    {
+      "name": "settled wins over everything",
+      "input": {
+        "phase": "settled",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": true,
+        "running": true,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": null,
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "settled"
+      }
+    },
+    {
+      "name": "failed start",
+      "input": {
+        "phase": "failed_start",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": null,
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "failed"
+      }
+    },
+    {
+      "name": "phase starting",
+      "input": {
+        "phase": "starting",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": null,
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "starting"
+      }
+    },
+    {
+      "name": "dependencies not ready",
+      "input": {
+        "phase": "open",
+        "depsReady": false,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": true,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": null,
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "starting"
+      }
+    },
+    {
+      "name": "waiting for a run slot",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": true,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": null,
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "starting"
+      }
+    },
+    {
+      "name": "session not known to the client yet",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": false,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": null,
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "starting"
+      }
+    },
+    {
+      "name": "blocking request beats running",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": true,
+        "running": true,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": null,
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "needs_you"
+      }
+    },
+    {
+      "name": "running turn",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": true,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": null,
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "working"
+      }
+    },
+    {
+      "name": "native subagent still running",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": true,
+        "limit": "none",
+        "lastWake": null,
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "working"
+      }
+    },
+    {
+      "name": "reported while subagents run",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": true,
+        "limit": "none",
+        "lastWake": "report",
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "working",
+        "reported": true
+      }
+    },
+    {
+      "name": "own turn running after a report is plain working",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": true,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": "report",
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "working"
+      }
+    },
+    {
+      "name": "limited and armed",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": false,
+        "limit": "armed",
+        "lastWake": "limited",
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "limited"
+      }
+    },
+    {
+      "name": "limited with no reset time",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": false,
+        "limit": "no_reset",
+        "lastWake": null,
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "limited"
+      }
+    },
+    {
+      "name": "gave up counts as limited",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": false,
+        "limit": "gave_up",
+        "lastWake": null,
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "limited"
+      }
+    },
+    {
+      "name": "asked the hub",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": "question",
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "asked_hub"
+      }
+    },
+    {
+      "name": "question answered by the parent",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": "question",
+        "parentRepliedSinceWake": true
+      },
+      "expected": {
+        "state": "paused"
+      }
+    },
+    {
+      "name": "result ready",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": "report",
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "result_ready"
+      }
+    },
+    {
+      "name": "blocked",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": "blocked",
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "blocked"
+      }
+    },
+    {
+      "name": "failed wake",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": "failed",
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "failed"
+      }
+    },
+    {
+      "name": "stopped without a report",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": "stopped",
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "paused"
+      }
+    },
+    {
+      "name": "nothing happened yet",
+      "input": {
+        "phase": "open",
+        "depsReady": true,
+        "waitingForSlot": false,
+        "sessionKnown": true,
+        "blockingRequest": false,
+        "running": false,
+        "nativeSubagentsRunning": false,
+        "limit": "none",
+        "lastWake": null,
+        "parentRepliedSinceWake": false
+      },
+      "expected": {
+        "state": "paused"
+      }
+    }
+  ],
+  "parentState": [
+    {
+      "name": "no children",
+      "input": {
+        "ownTurnRunning": false,
+        "ownLimit": "none",
+        "heldWakes": 0,
+        "children": []
+      },
+      "expected": null
+    },
+    {
+      "name": "only settled children",
+      "input": {
+        "ownTurnRunning": false,
+        "ownLimit": "none",
+        "heldWakes": 0,
+        "children": [
+          {
+            "state": "settled",
+            "limit": "none"
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "name": "own turn running",
+      "input": {
+        "ownTurnRunning": true,
+        "ownLimit": "none",
+        "heldWakes": 0,
+        "children": [
+          {
+            "state": "working",
+            "limit": "none"
+          }
+        ]
+      },
+      "expected": "working"
+    },
+    {
+      "name": "own limit",
+      "input": {
+        "ownTurnRunning": false,
+        "ownLimit": "armed",
+        "heldWakes": 0,
+        "children": [
+          {
+            "state": "working",
+            "limit": "none"
+          }
+        ]
+      },
+      "expected": "limited"
+    },
+    {
+      "name": "held wakes",
+      "input": {
+        "ownTurnRunning": false,
+        "ownLimit": "none",
+        "heldWakes": 2,
+        "children": [
+          {
+            "state": "result_ready",
+            "limit": "none"
+          }
+        ]
+      },
+      "expected": "updates_ready"
+    },
+    {
+      "name": "a child working",
+      "input": {
+        "ownTurnRunning": false,
+        "ownLimit": "none",
+        "heldWakes": 0,
+        "children": [
+          {
+            "state": "result_ready",
+            "limit": "none"
+          },
+          {
+            "state": "working",
+            "limit": "none"
+          }
+        ]
+      },
+      "expected": "waiting"
+    },
+    {
+      "name": "a child asked the hub",
+      "input": {
+        "ownTurnRunning": false,
+        "ownLimit": "none",
+        "heldWakes": 0,
+        "children": [
+          {
+            "state": "asked_hub",
+            "limit": "none"
+          }
+        ]
+      },
+      "expected": "waiting"
+    },
+    {
+      "name": "a child limited and armed",
+      "input": {
+        "ownTurnRunning": false,
+        "ownLimit": "none",
+        "heldWakes": 0,
+        "children": [
+          {
+            "state": "limited",
+            "limit": "armed"
+          }
+        ]
+      },
+      "expected": "waiting"
+    },
+    {
+      "name": "a child limited, gave up",
+      "input": {
+        "ownTurnRunning": false,
+        "ownLimit": "none",
+        "heldWakes": 0,
+        "children": [
+          {
+            "state": "limited",
+            "limit": "gave_up"
+          },
+          {
+            "state": "result_ready",
+            "limit": "none"
+          }
+        ]
+      },
+      "expected": "idle"
+    },
+    {
+      "name": "every child reported or settled",
+      "input": {
+        "ownTurnRunning": false,
+        "ownLimit": "none",
+        "heldWakes": 0,
+        "children": [
+          {
+            "state": "result_ready",
+            "limit": "none"
+          },
+          {
+            "state": "settled",
+            "limit": "none"
+          }
+        ]
+      },
+      "expected": "done"
+    },
+    {
+      "name": "a child paused",
+      "input": {
+        "ownTurnRunning": false,
+        "ownLimit": "none",
+        "heldWakes": 0,
+        "children": [
+          {
+            "state": "result_ready",
+            "limit": "none"
+          },
+          {
+            "state": "paused",
+            "limit": "none"
+          }
+        ]
+      },
+      "expected": "idle"
+    }
+  ],
+  "grantedMode": [
+    {
+      "name": "no request takes the parent mode",
+      "input": {
+        "requested": null,
+        "parent": "accept-edits"
+      },
+      "expected": "accept-edits"
+    },
+    {
+      "name": "lower request stays",
+      "input": {
+        "requested": "plan",
+        "parent": "full-access"
+      },
+      "expected": "plan"
+    },
+    {
+      "name": "higher request is capped",
+      "input": {
+        "requested": "full-access",
+        "parent": "sandbox"
+      },
+      "expected": "sandbox"
+    },
+    {
+      "name": "auto under full access",
+      "input": {
+        "requested": "auto",
+        "parent": "full-access"
+      },
+      "expected": "auto"
+    },
+    {
+      "name": "equal",
+      "input": {
+        "requested": "auto",
+        "parent": "auto"
+      },
+      "expected": "auto"
+    }
+  ],
+  "needsCard": [
+    {
+      "mode": "plan",
+      "expected": true
+    },
+    {
+      "mode": "sandbox",
+      "expected": true
+    },
+    {
+      "mode": "accept-edits",
+      "expected": false
+    },
+    {
+      "mode": "auto",
+      "expected": false
+    },
+    {
+      "mode": "full-access",
+      "expected": false
+    }
+  ],
+  "runSlotFree": [
+    {
+      "name": "empty",
+      "input": {
+        "slot": {
+          "providerInstanceId": "a",
+          "parentId": "p1"
+        },
+        "running": [],
+        "perInstance": 3,
+        "perParent": 6
+      },
+      "expected": true
+    },
+    {
+      "name": "instance full",
+      "input": {
+        "slot": {
+          "providerInstanceId": "a",
+          "parentId": "p1"
+        },
+        "running": [
+          {
+            "providerInstanceId": "a",
+            "parentId": "p1"
+          },
+          {
+            "providerInstanceId": "a",
+            "parentId": "p2"
+          },
+          {
+            "providerInstanceId": "a",
+            "parentId": "p3"
+          }
+        ],
+        "perInstance": 3,
+        "perParent": 6
+      },
+      "expected": false
+    },
+    {
+      "name": "other instance free",
+      "input": {
+        "slot": {
+          "providerInstanceId": "b",
+          "parentId": "p1"
+        },
+        "running": [
+          {
+            "providerInstanceId": "a",
+            "parentId": "p1"
+          },
+          {
+            "providerInstanceId": "a",
+            "parentId": "p1"
+          },
+          {
+            "providerInstanceId": "a",
+            "parentId": "p1"
+          }
+        ],
+        "perInstance": 3,
+        "perParent": 6
+      },
+      "expected": true
+    },
+    {
+      "name": "parent full",
+      "input": {
+        "slot": {
+          "providerInstanceId": "c",
+          "parentId": "p1"
+        },
+        "running": [
+          {
+            "providerInstanceId": "a",
+            "parentId": "p1"
+          },
+          {
+            "providerInstanceId": "b",
+            "parentId": "p1"
+          }
+        ],
+        "perInstance": 3,
+        "perParent": 2
+      },
+      "expected": false
+    }
+  ],
+  "wakeBatch": [
+    {
+      "name": "nothing pending",
+      "input": {
+        "pending": 0,
+        "newestAt": 1000,
+        "now": 20000,
+        "parentIdle": true,
+        "held": false,
+        "sentInLastHour": 0
+      },
+      "expected": {
+        "action": "wait",
+        "until": null
+      }
+    },
+    {
+      "name": "held",
+      "input": {
+        "pending": 1,
+        "newestAt": 1000,
+        "now": 20000,
+        "parentIdle": true,
+        "held": true,
+        "sentInLastHour": 0
+      },
+      "expected": {
+        "action": "hold",
+        "reason": "held"
+      }
+    },
+    {
+      "name": "over budget",
+      "input": {
+        "pending": 1,
+        "newestAt": 1000,
+        "now": 20000,
+        "parentIdle": true,
+        "held": false,
+        "sentInLastHour": 30
+      },
+      "expected": {
+        "action": "hold",
+        "reason": "budget"
+      }
+    },
+    {
+      "name": "parent busy",
+      "input": {
+        "pending": 1,
+        "newestAt": 1000,
+        "now": 20000,
+        "parentIdle": false,
+        "held": false,
+        "sentInLastHour": 0
+      },
+      "expected": {
+        "action": "wait",
+        "until": null
+      }
+    },
+    {
+      "name": "quiet period not over",
+      "input": {
+        "pending": 1,
+        "newestAt": 1000,
+        "now": 10000,
+        "parentIdle": true,
+        "held": false,
+        "sentInLastHour": 0
+      },
+      "expected": {
+        "action": "wait",
+        "until": 16000
+      }
+    },
+    {
+      "name": "send after 15 s quiet",
+      "input": {
+        "pending": 1,
+        "newestAt": 1000,
+        "now": 16000,
+        "parentIdle": true,
+        "held": false,
+        "sentInLastHour": 0
+      },
+      "expected": {
+        "action": "send"
+      }
+    }
+  ]
+}
