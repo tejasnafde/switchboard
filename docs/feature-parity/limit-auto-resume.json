@@ -1,0 +1,61 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "limit-auto-resume",
+  "summary": "Foundations for auto-resume after a usage limit, for every chat, behind the staged flag limit_auto_resume (LIMIT_AUTO_RESUME_ENABLED in src/shared/limit-resume.ts, false; SB_LIMIT_AUTO_RESUME=1 or the backend setting labs.limit_auto_resume turns it on). This change adds the limit_resumes table (one row per root conversation: instance, limited turn, reset time, state, request id, streak, disarm reason), its CRUD, the setting chats.autoResumeAfterLimit (on by default, no UI yet), and the pure rules limitState, shouldArm, fireChecks, nextStreak and the resume turn wrapper, with shared fixtures. Nothing reads the flag outside tests, so no behaviour changes. The migration time is logged through the db.migrate perf span.",
+  "surfaces": {
+    "desktop": {
+      "status": "staged",
+      "flag": "limit_auto_resume",
+      "followUpRelease": "The release that turns limit_auto_resume on by default (LIMIT_AUTO_RESUME_ENABLED true), after the desktop runner, the Expo and the Android Limited rows ship and beta users run it for a week.",
+      "evidence": [
+        "src/shared/limit-resume.ts",
+        "tests/unit/limit-resume-rules.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "limit_auto_resume",
+      "followUpRelease": "The release that turns limit_auto_resume on by default (LIMIT_AUTO_RESUME_ENABLED true), after the desktop runner, the Expo and the Android Limited rows ship and beta users run it for a week."
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "limit_auto_resume",
+      "followUpRelease": "The release that turns limit_auto_resume on by default (LIMIT_AUTO_RESUME_ENABLED true), after the desktop runner, the Expo and the Android Limited rows ship and beta users run it for a week."
+    },
+    "sharedBackendApi": {
+      "status": "staged",
+      "flag": "limit_auto_resume",
+      "followUpRelease": "The release that turns limit_auto_resume on by default (LIMIT_AUTO_RESUME_ENABLED true), after the desktop runner, the Expo and the Android Limited rows ship and beta users run it for a week.",
+      "evidence": [
+        "src/shared/limit-resume.ts",
+        "tests/fixtures/limit-resume-cases.json",
+        "tests/fixtures/limit-classification-cases.json"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/limit-resumes.ts",
+        "src/main/db/database.ts",
+        "tests/unit/hub-db.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "staged",
+      "flag": "limit_auto_resume",
+      "followUpRelease": "The release that turns limit_auto_resume on by default (LIMIT_AUTO_RESUME_ENABLED true), after the desktop runner, the Expo and the Android Limited rows ship and beta users run it for a week. The labs switch reaches beta users first. This change touches no package identity, signing, deep link or native module, and its migration is additive, so an older build opens a migrated database."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/limit-resume-rules.test.ts tests/unit/hub-db.test.ts --maxWorkers=2: limitState, shouldArm, fireChecks and nextStreak pass every case in tests/fixtures/limit-resume-cases.json; the flag helper is off by default and on with SB_LIMIT_AUTO_RESUME=1 or labs.limit_auto_resume; limit_resumes arms, fires once per request id, disarms durably, keeps the streak and keys a rotated Claude id by its root conversation.",
+      "A copy of a real 1.1 GB desktop database migrated with this build (five new tables, no other change), and the migrate code of origin/main then opened the migrated file."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Nothing reads the flag, the setting or the table yet, so no chat behaves differently. The runner, the Limited row and the phone rows come in later PRs.",
+      "limit-classification-cases.json holds cases only. No adapter classifies them yet."
+    ]
+  }
+}

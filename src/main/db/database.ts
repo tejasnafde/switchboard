@@ -19,6 +19,9 @@ import { ensureQueuedTurnRowsSchema } from './queued-turn-rows'
 import { ensureTurnCheckpointSchema } from './turn-checkpoints'
 import { ensureMergeBackSchema } from './merge-backs'
 import { ensureHtmlLivePagesSchema } from './html-live-pages'
+import { ensureHubSchema } from './hubs'
+import { ensureLimitResumesSchema } from './limit-resumes'
+import { perfSpan } from '../perf'
 
 const log = createLogger('db')
 
@@ -32,6 +35,8 @@ export * from './worktree-links'
 export * from './pull-request-links'
 export * from './pull-request-hidden'
 export * from './html-live-pages'
+export * from './hubs'
+export * from './limit-resumes'
 
 let db: Database.Database | null = null
 /** Set by the quit path: a write after it must fail, not reopen the file. */
@@ -115,6 +120,7 @@ function notifyDbReset(backupPath: string): void {
 }
 
 function migrate(db: Database.Database): void {
+  const span = perfSpan('db.migrate')
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
       path TEXT PRIMARY KEY,
@@ -676,7 +682,10 @@ function migrate(db: Database.Database): void {
   ensureTurnCheckpointSchema(db)
   ensureMergeBackSchema(db)
   ensureHtmlLivePagesSchema(db)
+  ensureHubSchema(db)
+  ensureLimitResumesSchema(db)
 
+  span.end()
   log.info('database migrated')
 }
 
