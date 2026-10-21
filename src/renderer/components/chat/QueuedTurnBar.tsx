@@ -7,6 +7,9 @@
  * After Stop, or a failed or usage-limited turn, the queue is held: nothing starts
  * until Resume. A message that could not start stays marked "Not sent" until
  * Cancel takes it back.
+ *
+ * A `local` entry is held by this renderer while the chat opens or switches
+ * (services/held-sends): it has no Send now, and Cancel takes it back here.
  */
 import { useState } from 'react'
 import { promoteUnavailableReason } from '@shared/turn-delivery'
@@ -14,6 +17,7 @@ import { Button } from '../ui/button'
 import { useAgentStore } from '../../stores/agent-store'
 import { useDraftStore } from '../../stores/draft-store'
 import { focusComposer } from '../../services/composer-registry'
+import { cancelHeldSend } from '../../services/held-sends'
 import { createRendererLogger } from '../../logger'
 import { ArrowUpIcon, ClockIcon, CloseIcon } from './chat-icons'
 
@@ -33,9 +37,14 @@ export function QueuedTurnBar({
   const entry = useAgentStore((st) => st.sessions.find((s) => s.id === sessionId)?.queuedTurns?.[messageId])
   const failed = entry?.failed
   const held = !failed && entry?.held === true
+  const local = entry?.local === true
   const promoteBlocked = promoteUnavailableReason(provider)
 
   const act = async (action: 'promote' | 'cancel' | 'resume') => {
+    if (local && action === 'cancel') {
+      cancelHeldSend(sessionId, messageId)
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -66,7 +75,13 @@ export function QueuedTurnBar({
   }
 
   const label = failed ? 'Not sent' : held ? 'Held' : 'Queued'
-  const note = failed ?? (held ? 'held after a stop or a failed turn; Resume sends the queue' : 'runs after this turn')
+  const note =
+    failed ??
+    (held
+      ? 'held after a stop or a failed turn; Resume sends the queue'
+      : local
+        ? 'sends when the chat is ready'
+        : 'runs after this turn')
 
   return (
     <div
@@ -95,7 +110,7 @@ export function QueuedTurnBar({
             <ArrowUpIcon size={13} />
           </Button>
         )}
-        {!failed && !held && (
+        {!failed && !held && !local && (
           <Button
             variant="ghost"
             size="icon-xs"
