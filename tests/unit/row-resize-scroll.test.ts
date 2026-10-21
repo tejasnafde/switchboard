@@ -47,4 +47,18 @@ describe('keepViewOnRowResize', () => {
     keepViewOnRowResize(container, content, 900, 25)
     expect(container.scrollTop).toBe(1400)
   })
+
+  it('adds up two growths before the list renders its new height', () => {
+    const { container, content } = scrollBox(2000, 600, 1400)
+    keepViewOnRowResize(container, content, 900, 25)
+    keepViewOnRowResize(container, content, 300, 10)
+    expect(content.style.height).toBe('2035px')
+    expect(container.scrollTop).toBe(1435)
+  })
+
+  it('still moves the scroll when the content is not mounted', () => {
+    const { container } = scrollBox(2000, 600, 1000)
+    expect(keepViewOnRowResize(container, null, 900, 25)).toBe(true)
+    expect(container.scrollTop).toBe(1025)
+  })
 })

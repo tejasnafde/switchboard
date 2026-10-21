@@ -280,6 +280,12 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     setBlocked([])
   }, [source, themeClass])
 
+  // Another page must not inherit the old page's height for its still image box.
+  useEffect(() => {
+    setContentHeight(0)
+    setExpanded(false)
+  }, [source])
+
   const addBlocked = useCallback((url: string) => {
     const blockedLabel = blockedRequestLabel(url)
     setBlocked((prev) => (prev.includes(blockedLabel) || prev.length >= 50 ? prev : [...prev, blockedLabel]))
