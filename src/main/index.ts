@@ -103,6 +103,7 @@ import {
 import { PREVIEW_SCHEME } from '@shared/html-preview'
 import { createMainLogger } from './logger'
 import { warmShellEnv } from './shell-env'
+import { attachRendererCrashRecovery, CRASH_RELOAD_URL, isCrashPage } from './renderer-crash-recovery'
 import { createDefaultWorktreeCreationRuntime, type WorktreeCreationRuntime } from './worktree-creation/runtime'
 
 const log = createMainLogger('tour')
@@ -200,7 +201,9 @@ async function confirmReload(force: boolean): Promise<void> {
     })
     if (response === 0) {
       menuLog.info('renderer reload confirmed', { force })
-      if (force) win.webContents.reloadIgnoringCache()
+      // Reloading the crash page would only show it again.
+      if (isCrashPage(win)) loadRenderer(win)
+      else if (force) win.webContents.reloadIgnoringCache()
       else win.webContents.reload()
     }
   } finally {
@@ -503,6 +506,14 @@ if (e2eBackground) {
   app.commandLine.appendSwitch('disable-renderer-backgrounding')
 }
 
+function loadRenderer(window: BrowserWindow): void {
+  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
+    window.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  } else {
+    window.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
 function createWindow(): BrowserWindow {
   const iconPath = join(app.getAppPath(), 'resources/icons/switchboard-logo-1024.png')
 
@@ -587,11 +598,14 @@ function createWindow(): BrowserWindow {
     hardenPreviewWebviewPreferences(webPreferences, params),
   )
 
+  attachRendererCrashRecovery(window, () => loadRenderer(window))
+
   // Intercept in-page navigation (e.g., clicking a <a href="https://..."> link)
   // and open in the default browser instead of hijacking the app.
   window.webContents.on('will-navigate', (event, url) => {
     const currentUrl = window.webContents.getURL()
     // Allow Vite HMR navigation within the app origin
+    if (url === CRASH_RELOAD_URL) return
     if (url.startsWith(currentUrl.split('#')[0]) || url.startsWith('http://localhost')) return
     event.preventDefault()
     shell.openExternal(url)
@@ -681,11 +695,7 @@ function createWindow(): BrowserWindow {
     }
   })
 
-  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
-    window.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    window.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  loadRenderer(window)
 
   return window
 }
