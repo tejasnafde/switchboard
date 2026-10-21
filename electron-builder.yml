@@ -63,6 +63,13 @@ extraResources:
   # (main/preview/). Resolved from `process.resourcesPath/sb-live`.
   - from: resources/sb-live
     to: sb-live
+  # Our MIT licence and the notices of the projects we copied code from, at
+  # <Resources>/LICENSE and <Resources>/THIRD_PARTY_NOTICES.md. The signed
+  # config inherits this list through `extends`, which appends arrays.
+  - from: LICENSE
+    to: LICENSE
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
 # Pull in node-pty and better-sqlite3 native builds. `asarUnpack` keeps
 # their .node binaries outside the asar archive so Electron can load them.
 asarUnpack:

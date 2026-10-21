@@ -1,0 +1,44 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ship-licence-files",
+  "summary": "Copy LICENSE and THIRD_PARTY_NOTICES.md into the packaged desktop app's Resources folder, so every installed build carries the MIT notices of the code it contains.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "No runtime code reads the files. They are packaging-only extraResources; src/main, src/preload and src/renderer are untouched."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "apps/mobile is untouched. The iOS app is built by EAS and contains none of the desktop files the notices cover."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "apps/android is untouched. The Android app is built by Gradle and contains none of the desktop files the notices cover."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire protocol, IPC channel or handler changes. src/shared and src/server are untouched."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema, migration or persisted-state changes."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "electron-builder.yml",
+        "tests/unit/licence-files-packaged.test.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/licence-files-packaged.test.ts checks that the effective extraResources of electron-builder.yml and electron-builder.signed.yml (base plus overlay, the way extends appends arrays) copy both files, and that both files exist at the repo root. It fails when either entry is removed."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No packaged build was produced locally, so the files were not seen inside a .app, NSIS install or AppImage. The next release-build.yml run is the first packaged proof."
+    ]
+  }
+}
