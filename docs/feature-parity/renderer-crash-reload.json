@@ -1,0 +1,45 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "renderer-crash-reload",
+  "summary": "When the desktop window's renderer process crashes, runs out of memory or exits abnormally, reload the window automatically, at most 3 times per minute per window. After that, show a plain error page with a Reload button. Every renderer exit is logged with its reason.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/renderer-crash-recovery.ts",
+        "src/main/index.ts",
+        "tests/unit/renderer-crash-recovery.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The phone app has no Electron renderer process. A crash there ends the whole app process, and the operating system restarts it; there is no separate window process to reload."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android app has no Electron renderer process. A crash ends the app process and Android restarts it; there is no separate window process to reload."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "The recovery runs in the desktop main process against its own BrowserWindow. No wire message, IPC channel or backend contract changes. Agents run in the main process and keep running through the reload."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored. The reload count lives in memory per window and resets with the app."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships in the normal desktop build with no flag, new setting or packaging change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/renderer-crash-recovery.test.ts pins the sliding limit (3 per 60 s, freed as the oldest reload ages out), a reload for crashed, oom and abnormal-exit, no reload for clean-exit, killed, launch-failed and integrity-failure, a log line with the reason for every exit, the error page on the 4th crash, its Reload button running the app load, and a separate count per window."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No real renderer crash was forced in a running app (for example with forcefullyCrashRenderer). The Electron event wiring is covered only through a fake webContents."
+    ]
+  }
+}
