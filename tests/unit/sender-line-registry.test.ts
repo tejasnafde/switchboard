@@ -3,6 +3,7 @@
  * authenticated connection. The provider gets it; the stored turn does not.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { tmpdir } from 'node:os'
 import './helpers/registry-session-mocks'
 
 const state = vi.hoisted(() => ({
@@ -152,7 +153,7 @@ async function setup() {
   const adapter = new FakeAdapter()
   const registry = new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, submission)
   registry.registerIpcHandlers()
-  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
+  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: tmpdir() })
   const submit = (providerText: string) =>
     host.invoke(ProviderChannels.SUBMIT_USER_TURN, {
       version: 1,
