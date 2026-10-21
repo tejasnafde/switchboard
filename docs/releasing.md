@@ -5,12 +5,21 @@ install instructions live in `README.md`.
 
 ## Native Android mobile release
 
-Google Play is the only channel for the native Android app
+Google Play is the main channel for the native Android app
 (`apps/android`, package `app.tn07.switchboard`, the same id as the iOS
-bundle). The in-app APK updater and
-the GitHub `mobile-v*` APK releases are retired: Play forbids apps that update
+bundle). The in-app APK updater is retired: Play forbids apps that update
 themselves outside Play. The app requests no `REQUEST_INSTALL_PACKAGES`, and at
 each start it deletes what the updater stored (state and staged APKs).
+
+A sideload APK is still available on request, without any in-app update path.
+Dispatch `mobile-release.yml` with `apk` on (and `play` off to skip the Play
+upload). bundletool builds a universal APK from the verified AAB and signs it
+with the upload key. The verifier checks it, and the `publish-apk` job
+publishes it as the GitHub release `mobile-v<version>`, never marked latest,
+so desktop auto-update is not affected. The job refuses a version that already
+has a release. `https://switchboard.tn07.dev/apk` (Worker `switchboard-apk` in
+`tn07-site`) redirects to the newest release that has an `.apk` asset, so it
+needs no change.
 
 Prerequisites, done once by hand before the workflow can upload (both done
 on 2026-10-21):
@@ -37,7 +46,7 @@ To release:
 1. Increment `versionCode` and `versionName` in
    `apps/android/app/build.gradle.kts` and merge to main.
 2. Dispatch `mobile-release.yml` by hand. Pick the track (`internal` by
-   default, or `alpha` or `beta`) and the release status. Pick `draft` while
+   default, or `alpha` or `beta`) and the release status, and leave `play` on. Pick `draft` while
    the app is still unpublished in Play, which accepts only draft releases
    then.
 3. Promote the release to production in the Play Console when it is ready.

@@ -1,0 +1,47 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-sideload-apk",
+  "summary": "mobile-release.yml can publish a sideload APK for app.tn07.switchboard on request. bundletool builds a universal APK from the verified AAB, signs it with the upload key, the verifier checks package, version, signer and checksum, and a separate job with contents write publishes it as the non-latest GitHub release mobile-v<version>. switchboard.tn07.dev/apk already redirects to the newest release with an .apk asset. A new play input lets a dispatch skip the Play upload.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "No desktop code reads mobile releases. The new release is created with --latest=false, so electron-updater keeps resolving the desktop release as latest."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "apps/mobile is untouched. iOS ships through EAS and mobile-ota.yml, which this change does not touch."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "apps/android source is untouched. The APK is built from the same AAB that goes to Play, and the app has no in-app updater that could read the new release."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire protocol, IPC channel or handler changes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes. A sideload install is signed with the upload key and cannot upgrade a Play install or the old app.switchboard.mobile package; docs/releasing.md already says to uninstall first."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        ".github/workflows/mobile-release.yml",
+        "tests/unit/android-native-ci.test.ts",
+        "docs/releasing.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/android-native-ci.test.ts checks that the APK lane is opt-in, runs after the AAB verifier, is verified itself with --checksum, passes keystore passwords as files, publishes only from a needs-release job with contents write, and never marks the release latest. It also checks that the Play upload is gated on the play input.",
+      "actionlint passes on mobile-release.yml."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The workflow has not been dispatched with apk on, so bundletool build-apks with the CI keystore, the verifier on the universal APK, and gh release create have not run in CI yet.",
+      "The universal APK has not been installed on a device."
+    ]
+  }
+}
