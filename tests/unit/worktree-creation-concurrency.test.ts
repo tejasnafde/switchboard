@@ -286,7 +286,8 @@ async function startsBeforeRelease(started: Promise<void>): Promise<boolean> {
   void started.then(() => {
     didStart = true
   })
-  return until(() => expect(didStart).toBe(true)).then(
+  // Well inside the test timeout, so a held start fails as `false`, not as a timeout.
+  return until(() => expect(didStart).toBe(true), 1000).then(
     () => true,
     () => false,
   )

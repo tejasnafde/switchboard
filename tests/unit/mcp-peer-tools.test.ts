@@ -58,9 +58,11 @@ function setup(mode: RuntimeMode, decision?: 'approve' | 'deny', linked = false)
   const send: McpTool = {
     ...rawSend,
     call: async (args, ctx) => {
+      const before = events.length
       const r = await rawSend.call(args, ctx)
-      if (decision && events.some((e) => e.type === 'request.opened')) {
-        await until(() => expect(events.map((e) => e.type)).toContain('request.closed'))
+      const mine = () => events.slice(before).map((e) => e.type)
+      if (decision && mine().includes('request.opened')) {
+        await until(() => expect(mine()).toContain('request.closed'))
         await Promise.all(sends)
       }
       return r

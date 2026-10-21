@@ -42,10 +42,13 @@ describe('sortLaunchConfigsByRecency', () => {
 
   it('sorts most-recently-used first', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: 1_000 })
-    recordLaunchConfigUsage('/proj', 'apple')
-    vi.setSystemTime(1_001)
-    recordLaunchConfigUsage('/proj', 'zebra') // most recent
-    vi.useRealTimers()
+    try {
+      recordLaunchConfigUsage('/proj', 'apple')
+      vi.setSystemTime(1_001)
+      recordLaunchConfigUsage('/proj', 'zebra') // most recent
+    } finally {
+      vi.useRealTimers()
+    }
     const out = sortLaunchConfigsByRecency(['default', 'apple', 'zebra', 'mango'], '/proj')
     expect(out.slice(0, 2)).toEqual(['zebra', 'apple'])
     // Unused names trail; `default` comes before `mango` in that bucket.
