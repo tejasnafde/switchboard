@@ -664,7 +664,10 @@ async function captureThemeScreens(win, theme) {
   const sidebar = win.locator('.sidebar-root')
   // The seeded link to #612 (linkPullRequest) shows in the chat header once the demo PR list is read,
   // then its picker opens over the header.
-  await win.locator('[data-linked-pr][data-status-tone="bad"]').first().waitFor({ state: 'visible', timeout: 20_000 })
+  await win
+    .locator('[data-linked-pr]:not([data-status-tone="dim"])')
+    .first()
+    .waitFor({ state: 'visible', timeout: 20_000 })
   await snapScreen(win, 'chat', theme, win, [turnTimes, sidebar])
   await win.locator('[data-linked-pr]').first().click()
   const linkedPrs = win.getByRole('dialog', { name: 'Linked pull requests' })

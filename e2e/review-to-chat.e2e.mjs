@@ -81,7 +81,7 @@ try {
   await win.locator('.sidebar-recent-row').filter({ hasText: CHAT }).first().click()
   await win.locator('.chat-identity-title').filter({ hasText: CHAT }).waitFor({ state: 'visible' })
   const header = win.locator('[data-linked-pr]')
-  await win.locator('[data-linked-pr][data-status-tone="bad"]').waitFor({ state: 'visible', timeout: 20_000 })
+  await win.locator('[data-linked-pr]:not([data-status-tone="dim"])').waitFor({ state: 'visible', timeout: 20_000 })
   check('chat header counts the linked PR', (await header.innerText()).includes('1 open'), await header.innerText())
   // The title wins: at the default width the chip shows only the open count,
   // in a wide header it adds the linked count, and the title is never cut.
