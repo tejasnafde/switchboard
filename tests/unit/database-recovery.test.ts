@@ -59,6 +59,7 @@ vi.mock('node:fs', async (importOriginal) => {
 
 vi.mock('../../src/main/logger', () => ({
   createMainLogger: () => ({
+    debug: () => undefined,
     info: () => undefined,
     warn: () => undefined,
     error: () => undefined,

@@ -1,0 +1,841 @@
+{
+  "limitState": [
+    {
+      "name": "not limited, no row",
+      "input": {
+        "limited": false,
+        "row": null
+      },
+      "expected": {
+        "kind": "none"
+      }
+    },
+    {
+      "name": "limited, armed",
+      "input": {
+        "limited": true,
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        }
+      },
+      "expected": {
+        "kind": "armed",
+        "resetAt": 100000
+      }
+    },
+    {
+      "name": "limited, disarmed",
+      "input": {
+        "limited": true,
+        "row": {
+          "state": "disarmed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        }
+      },
+      "expected": {
+        "kind": "disarmed"
+      }
+    },
+    {
+      "name": "limited, no row",
+      "input": {
+        "limited": true,
+        "row": null
+      },
+      "expected": {
+        "kind": "no_reset"
+      }
+    },
+    {
+      "name": "limited again after a fire with no reset",
+      "input": {
+        "limited": true,
+        "row": {
+          "state": "fired",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        }
+      },
+      "expected": {
+        "kind": "no_reset"
+      }
+    },
+    {
+      "name": "gave up shows while the queue is held",
+      "input": {
+        "limited": true,
+        "row": {
+          "state": "gave_up",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        }
+      },
+      "expected": {
+        "kind": "gave_up"
+      }
+    },
+    {
+      "name": "not limited, stale armed row",
+      "input": {
+        "limited": false,
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        }
+      },
+      "expected": {
+        "kind": "none"
+      }
+    },
+    {
+      "name": "gave up clears once the chat is not limited",
+      "input": {
+        "limited": false,
+        "row": {
+          "state": "gave_up",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        }
+      },
+      "expected": {
+        "kind": "none"
+      }
+    }
+  ],
+  "shouldArm": [
+    {
+      "name": "usage limit with a reset arms",
+      "input": {
+        "limitClass": "usage_limit",
+        "resetAt": 100000,
+        "turnId": "t2",
+        "turnEndedAt": 50000,
+        "settingOn": true,
+        "row": null
+      },
+      "expected": {
+        "arm": true
+      }
+    },
+    {
+      "name": "context full never arms",
+      "input": {
+        "limitClass": "context_full",
+        "resetAt": 100000,
+        "turnId": "t2",
+        "turnEndedAt": 50000,
+        "settingOn": true,
+        "row": null
+      },
+      "expected": {
+        "arm": false,
+        "reason": "not_limit"
+      }
+    },
+    {
+      "name": "unknown error never arms",
+      "input": {
+        "limitClass": "other",
+        "resetAt": 100000,
+        "turnId": "t2",
+        "turnEndedAt": 50000,
+        "settingOn": true,
+        "row": null
+      },
+      "expected": {
+        "arm": false,
+        "reason": "not_limit"
+      }
+    },
+    {
+      "name": "no reset time",
+      "input": {
+        "limitClass": "usage_limit",
+        "resetAt": null,
+        "turnId": "t2",
+        "turnEndedAt": 50000,
+        "settingOn": true,
+        "row": null
+      },
+      "expected": {
+        "arm": false,
+        "reason": "no_reset"
+      }
+    },
+    {
+      "name": "reset not after the turn end",
+      "input": {
+        "limitClass": "usage_limit",
+        "resetAt": 50000,
+        "turnId": "t2",
+        "turnEndedAt": 50000,
+        "settingOn": true,
+        "row": null
+      },
+      "expected": {
+        "arm": false,
+        "reason": "reset_not_after_end"
+      }
+    },
+    {
+      "name": "setting off",
+      "input": {
+        "limitClass": "usage_limit",
+        "resetAt": 100000,
+        "turnId": "t2",
+        "turnEndedAt": 50000,
+        "settingOn": false,
+        "row": null
+      },
+      "expected": {
+        "arm": false,
+        "reason": "setting_off"
+      }
+    },
+    {
+      "name": "disarmed for this limit",
+      "input": {
+        "limitClass": "usage_limit",
+        "resetAt": 100000,
+        "turnId": "t2",
+        "turnEndedAt": 50000,
+        "settingOn": true,
+        "row": {
+          "state": "disarmed",
+          "limitedTurnId": "t2",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        }
+      },
+      "expected": {
+        "arm": false,
+        "reason": "disarmed"
+      }
+    },
+    {
+      "name": "disarmed for an older limit arms again",
+      "input": {
+        "limitClass": "usage_limit",
+        "resetAt": 100000,
+        "turnId": "t2",
+        "turnEndedAt": 50000,
+        "settingOn": true,
+        "row": {
+          "state": "disarmed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        }
+      },
+      "expected": {
+        "arm": true
+      }
+    }
+  ],
+  "fireChecks": [
+    {
+      "name": "all checks pass",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 200000,
+        "manual": false,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": true
+        },
+        "child": null
+      },
+      "expected": {
+        "action": "fire"
+      }
+    },
+    {
+      "name": "no row",
+      "input": {
+        "row": null,
+        "requestId": "r1",
+        "now": 200000,
+        "manual": false,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": true
+        },
+        "child": null
+      },
+      "expected": {
+        "action": "drop",
+        "reason": "stale"
+      }
+    },
+    {
+      "name": "disarmed row",
+      "input": {
+        "row": {
+          "state": "disarmed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 200000,
+        "manual": false,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": true
+        },
+        "child": null
+      },
+      "expected": {
+        "action": "drop",
+        "reason": "stale"
+      }
+    },
+    {
+      "name": "request id changed by a re-arm",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r0",
+        "now": 200000,
+        "manual": false,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": true
+        },
+        "child": null
+      },
+      "expected": {
+        "action": "drop",
+        "reason": "stale"
+      }
+    },
+    {
+      "name": "before reset plus 60 s",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 159999,
+        "manual": false,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": true
+        },
+        "child": null
+      },
+      "expected": {
+        "action": "wait",
+        "reason": "early"
+      }
+    },
+    {
+      "name": "resume now skips the clock",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 0,
+        "manual": true,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": true
+        },
+        "child": null
+      },
+      "expected": {
+        "action": "fire"
+      }
+    },
+    {
+      "name": "archived",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 200000,
+        "manual": false,
+        "archived": true,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": true
+        },
+        "child": null
+      },
+      "expected": {
+        "action": "drop",
+        "reason": "archived"
+      }
+    },
+    {
+      "name": "child settled",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 200000,
+        "manual": false,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": true
+        },
+        "child": {
+          "settled": true,
+          "parentHeld": false,
+          "slot": {
+            "providerInstanceId": "i1",
+            "parentId": "p1"
+          },
+          "running": [],
+          "perInstance": 3,
+          "perParent": 6
+        }
+      },
+      "expected": {
+        "action": "drop",
+        "reason": "settled"
+      }
+    },
+    {
+      "name": "parent held",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 200000,
+        "manual": false,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": true
+        },
+        "child": {
+          "settled": false,
+          "parentHeld": true,
+          "slot": {
+            "providerInstanceId": "i1",
+            "parentId": "p1"
+          },
+          "running": [],
+          "perInstance": 3,
+          "perParent": 6
+        }
+      },
+      "expected": {
+        "action": "drop",
+        "reason": "parent_held"
+      }
+    },
+    {
+      "name": "a card waits for the user",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 200000,
+        "manual": false,
+        "archived": false,
+        "liveRequestForUser": true,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": true
+        },
+        "child": null
+      },
+      "expected": {
+        "action": "wait",
+        "reason": "needs_you"
+      }
+    },
+    {
+      "name": "instance switched",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 200000,
+        "manual": false,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i2",
+        "probe": {
+          "open": true
+        },
+        "child": null
+      },
+      "expected": {
+        "action": "drop",
+        "reason": "instance_changed"
+      }
+    },
+    {
+      "name": "probe closed with a new reset",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 200000,
+        "manual": false,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": false,
+          "resetAt": 300000
+        },
+        "child": null
+      },
+      "expected": {
+        "action": "rearm",
+        "resetAt": 300000
+      }
+    },
+    {
+      "name": "probe closed with no reset",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 200000,
+        "manual": false,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": false,
+          "resetAt": null
+        },
+        "child": null
+      },
+      "expected": {
+        "action": "drop",
+        "reason": "no_reset"
+      }
+    },
+    {
+      "name": "child with no free slot",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 200000,
+        "manual": false,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": true
+        },
+        "child": {
+          "settled": false,
+          "parentHeld": false,
+          "slot": {
+            "providerInstanceId": "i1",
+            "parentId": "p1"
+          },
+          "running": [
+            {
+              "providerInstanceId": "i1",
+              "parentId": "p2"
+            }
+          ],
+          "perInstance": 1,
+          "perParent": 6
+        }
+      },
+      "expected": {
+        "action": "wait",
+        "reason": "no_slot"
+      }
+    },
+    {
+      "name": "child with a free slot",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 200000,
+        "manual": false,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": true
+        },
+        "child": {
+          "settled": false,
+          "parentHeld": false,
+          "slot": {
+            "providerInstanceId": "i1",
+            "parentId": "p1"
+          },
+          "running": [],
+          "perInstance": 3,
+          "perParent": 6
+        }
+      },
+      "expected": {
+        "action": "fire"
+      }
+    },
+    {
+      "name": "resume now with the window still closed keeps the row",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 0,
+        "manual": true,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": false,
+          "resetAt": 300000
+        },
+        "child": null
+      },
+      "expected": {
+        "action": "wait",
+        "reason": "closed"
+      }
+    },
+    {
+      "name": "resume now with no reset time keeps the row",
+      "input": {
+        "row": {
+          "state": "armed",
+          "limitedTurnId": "t1",
+          "resetAt": 100000,
+          "requestId": "r1",
+          "streak": 0,
+          "providerInstanceId": "i1"
+        },
+        "requestId": "r1",
+        "now": 200000,
+        "manual": true,
+        "archived": false,
+        "liveRequestForUser": false,
+        "currentInstanceId": "i1",
+        "probe": {
+          "open": false,
+          "resetAt": null
+        },
+        "child": null
+      },
+      "expected": {
+        "action": "wait",
+        "reason": "closed"
+      }
+    }
+  ],
+  "nextStreak": [
+    {
+      "name": "quick limit counts",
+      "input": {
+        "streak": 0,
+        "startedAt": 0,
+        "endedAt": 60000,
+        "outcome": "limited"
+      },
+      "expected": {
+        "streak": 1,
+        "gaveUp": false
+      }
+    },
+    {
+      "name": "quick failure counts",
+      "input": {
+        "streak": 1,
+        "startedAt": 0,
+        "endedAt": 60000,
+        "outcome": "failed"
+      },
+      "expected": {
+        "streak": 2,
+        "gaveUp": false
+      }
+    },
+    {
+      "name": "third quick failure gives up",
+      "input": {
+        "streak": 2,
+        "startedAt": 0,
+        "endedAt": 60000,
+        "outcome": "limited"
+      },
+      "expected": {
+        "streak": 3,
+        "gaveUp": true
+      }
+    },
+    {
+      "name": "normal end resets",
+      "input": {
+        "streak": 2,
+        "startedAt": 0,
+        "endedAt": 60000,
+        "outcome": "ok"
+      },
+      "expected": {
+        "streak": 0,
+        "gaveUp": false
+      }
+    },
+    {
+      "name": "long run resets",
+      "input": {
+        "streak": 2,
+        "startedAt": 0,
+        "endedAt": 300000,
+        "outcome": "limited"
+      },
+      "expected": {
+        "streak": 0,
+        "gaveUp": false
+      }
+    },
+    {
+      "name": "closed probe re-arm counts",
+      "input": {
+        "streak": 1,
+        "startedAt": 0,
+        "endedAt": 0,
+        "outcome": "limited"
+      },
+      "expected": {
+        "streak": 2,
+        "gaveUp": false
+      }
+    }
+  ]
+}
