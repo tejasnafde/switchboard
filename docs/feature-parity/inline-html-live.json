@@ -15,6 +15,9 @@
         "src/renderer/components/chat/MessageBubble.tsx",
         "src/renderer/components/preview/HtmlPreviewPane.tsx",
         "src/renderer/services/html-live-frames.ts",
+        "src/renderer/services/row-resize-scroll.ts",
+        "src/renderer/components/chat/MessageList.tsx",
+        "tests/unit/row-resize-scroll.test.ts",
         "src/renderer/services/html-live-theme.ts",
         "src/renderer/services/html-live-save.ts",
         "src/renderer/services/html-live-open-requests.ts",
@@ -108,6 +111,8 @@
       "tests/fixtures/visual-fence-cases.json: new html-live cases run by tests/unit/chat-visuals.test.ts and the Android ChatVisualsFixturesTest.",
       "tests/unit/visual-host-asset.test.ts: the phones' visual host bundles chat-visuals.ts, which now imports html-live.ts, so that file is an input and the committed page was rebuilt (the page itself is unchanged in behaviour).",
       "SB_E2E_BACKGROUND=1 node e2e/html-live.e2e.mjs: from a real inline frame, network, loopback, file:// and parent-file fetches, an unknown /_sb/ name, the library folder, window.open and navigation are all blocked, Node and the app API are absent, /_sb/chart.js loads; Open in pane leaves one running copy and Close brings it back; a throwing page shows its error and Send to agent; the still image is stored under the source hash; at most two frames run; Save as file writes the page, the block becomes the file card and the saved page still loads Chart.js.",
+      "tests/unit/html-live.test.ts and tests/unit/row-resize-scroll.test.ts (2026-10-21, scroll jitter): a paused frame's still image box is the running frame's height, so a swap between the page and its image keeps the frame's size; a row above the view that grows at the bottom of the list moves the scroll by its growth instead of being clamped (the frame at the top edge came back into view and swapped again).",
+      "SB_E2E_BACKGROUND=1 node e2e/html-live.e2e.mjs (2026-10-21): a frame taller than 480 px whose bottom sits 0, 1, 6 or 12 px above the top of a chat scrolled to the bottom keeps one height while it pauses, and the list settles at the bottom. The same checks fail on the code before the fix (the frame went 539 to 514 or 220 px and the list jumped up to 638 px). The phones' visual host page was rebuilt because it bundles html-live.ts; the new helper is unused there, so phone behaviour is unchanged.",
       "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens npm run test:e2e:visual: new chat-live-chart and chat-live-error baselines in Dark and Light (page masked, as the pane's), read; two runs pass without updating.",
       "apps/mobile jest (172 tests) and tsc: the key vectors, No image yet, the image and its 480 px fold, no call without html_live_images_v1, the Open on desktop payload, Markdown with streaming and closed blocks.",
       "Android ./gradlew :app:testDebugUnitTest (1125 tests) and :app:compileDebugKotlin: fixture cases with title and closed, key vectors, the capability gate and answer parsing.",
@@ -118,6 +123,7 @@
       "The Expo app and native Android were not run on a device or emulator: the image fit, the zoom view, the long-press sheet and the accessibility labels are verified only by tests and compilation.",
       "iOS was not run (no simulator on this Mac).",
       "Open on desktop against a remote headless backend: the event path is the same router subscription the desktop uses for other pushes, but it was exercised only against the local backend.",
+      "The jitter fix changes the desktop only: phones show the still image and never run the page, so they have no running-to-paused swap. A frame that never ran in this window still takes its first height when it first runs. An expanded frame that pauses keeps its expanded height, but its still image is the folded 480 px capture, so the box under the image is empty (deferred: cosmetic, no scroll movement).",
       "A frame that never ran on any desktop shows No image yet on phones; the desktop does not render missing images offscreen when a phone asks."
     ]
   }
