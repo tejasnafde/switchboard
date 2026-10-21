@@ -25,6 +25,16 @@ provider. The agent then knows who is typing and where a localhost URL works.
 - Measurement: the `turn.dispatch` perf span carries `senderLineBytes` and
   `senderLineTurns` (stamped turns since the backend started).
 
+## Review deferrals
+
+- A phone on the IAP TCP host has no device session, so its line says
+  "another client". Naming it needs a device identity on that connection.
+- On an SSH machine the name is the OS host name, not the name the user gave
+  the machine in Switchboard. Passing that name needs a provisioning change.
+- A client can still type a sender tag in the middle of its own text. The
+  backend line is always first and comes from the connection; the text after
+  it is the user's own, and rewriting it would change what the user sent.
+
 ## TODO
 
 - Add a dev-server note when the backend knows one (ports and URLs a local dev

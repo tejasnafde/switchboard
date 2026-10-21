@@ -8,6 +8,7 @@ import {
 } from '../../src/shared/sender-line'
 import { resolveSenderContext, type SenderEnvironment } from '../../src/main/provider/sender-context'
 import type { DeviceSession } from '../../src/shared/device-auth'
+import { buildHandoffPreamble, stripHandoffPreamble, withHandoffPreamble } from '../../src/shared/handoff'
 import { JsonlParser } from '../../src/main/agent/jsonl-parser'
 import { mergeConversationMessages } from '../../src/main/agent/dedupe-messages'
 import type { ChatMessage } from '../../src/shared/types'
@@ -118,6 +119,15 @@ describe('stripSenderLine', () => {
   it('skips slash commands', () => {
     expect(takesSenderLine('  /compact')).toBe(false)
     expect(takesSenderLine('a/b')).toBe(true)
+  })
+
+  it('stays first when a resume puts the visible history in front', () => {
+    const sent = withHandoffPreamble(
+      withSenderLine('make it blue', line),
+      buildHandoffPreamble([{ role: 'user', content: 'earlier' }])!,
+    )
+    expect(sent.startsWith(line)).toBe(true)
+    expect(stripHandoffPreamble(stripSenderLine(sent))).toBe('make it blue')
   })
 
   it('is gone from a reloaded Claude or Codex transcript, which then pairs with the stored row', () => {
