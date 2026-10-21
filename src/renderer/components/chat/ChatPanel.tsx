@@ -1,5 +1,6 @@
 import { cn } from '../../lib/utils'
 import { useChatWaitStore } from '../../stores/chat-wait-store'
+import { cancelHeldSends, holdSend, sendMustWait, settleHeldSends } from '../../services/held-sends'
 import { LoadingStatus } from '../ui/loading-status'
 import { ChatSkeleton } from '../ui/chat-skeleton'
 import { perfSpan } from '../../perf'
@@ -440,7 +441,10 @@ export function ChatPanel({
               body: 'The current profile is still active. Start the selected profile as a fresh native session and carry the visible conversation into the next turn?',
               confirmLabel: 'Start fresh',
             })
-            if (!startFresh) return
+            if (!startFresh) {
+              cancelHeldSends(sessionId)
+              return
+            }
             result = await window.api.provider.switchInstance(sessionId, {
               targetInstanceId: nextInstanceId,
               expectedCurrentInstanceId: prevInstanceId ?? null,
@@ -791,12 +795,12 @@ export function ChatPanel({
       },
     ): Promise<ChatSendResult> => {
       if (!sessionId) return { accepted: false, error: 'This chat is no longer available.' }
-      const pendingWait = useChatWaitStore.getState().waits[sessionId]
-      if (opening || pendingWait?.pending)
-        return {
-          accepted: false,
-          error: `${pendingWait?.label ?? 'Loading conversation...'} Your draft is held. Send when ready.`,
-        }
+      // Still opening or switching: hold the message as a queued row and send
+      // it when the wait ends (services/held-sends).
+      if (sendMustWait(opening !== undefined, useChatWaitStore.getState().waits[sessionId])) {
+        holdSend(sessionId, { message, delivery, images, extras })
+        return { accepted: true }
+      }
       // A draft has no conversation yet: the first send creates one and the
       // message follows it there (services/draftChat).
       if (isDraftSessionId(sessionId)) {
@@ -1206,6 +1210,30 @@ export function ChatPanel({
   )
   handleSendRef.current = handleSend
 
+  // Send what was held during the wait once it ends, or hand it back to the
+  // composer when the wait failed.
+  const waitPending = wait?.pending === true
+  const waitFailed = wait?.error === true
+  const openingRef = useRef(false)
+  openingRef.current = opening !== undefined
+  useEffect(() => {
+    if (!sessionId) return
+    void settleHeldSends(
+      sessionId,
+      () => ({ opening: openingRef.current, wait: useChatWaitStore.getState().waits[sessionId] }),
+      (...args) => handleSendRef.current?.(...args) ?? Promise.resolve({ accepted: false, error: 'This chat closed.' }),
+      (error, ambiguous) =>
+        appendMessage(sessionId, {
+          id: `error_${Date.now()}`,
+          role: 'system',
+          content: ambiguous
+            ? `A queued message may not have been delivered and is back in the composer. Check the chat before you send it again: ${error}`
+            : `A queued message was not sent and is back in the composer: ${error}`,
+          timestamp: Date.now(),
+        }),
+    )
+  }, [sessionId, opening, waitPending, waitFailed, appendMessage])
+
   const {
     panelRef,
     searchOpen,
@@ -1294,6 +1322,8 @@ export function ChatPanel({
         isRunning={status === 'running' || status === 'thinking'}
         onInterrupt={async () => {
           if (!sessionId) return
+          // Stop takes back what is held for a switch or open, as Cancel does.
+          if (cancelHeldSends(sessionId) && !providerStartedRef.current.has(sessionId)) return
           // No provider session was ever started (e.g. startSession failed) -
           // there is nothing in main to interrupt and no event will ever
           // arrive, so clear the stuck status locally instead of no-oping.

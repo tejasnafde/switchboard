@@ -21,6 +21,7 @@ import {
   htmlLiveFrameHeight,
   htmlLiveHeightFromConsole,
   htmlLiveRejection,
+  htmlLiveStillHeight,
   htmlLiveVerdict,
 } from '@shared/html-live'
 import { PREVIEW_PARTITION, blockedRequestLabel, formatPreviewBytes } from '@shared/html-preview'
@@ -241,8 +242,6 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     let current = true
     let token: string | null = null
     setLoading(true)
-    setErrors([])
-    setBlocked([])
     setOpenError(null)
     capturedRef.current = false
     window.api.preview.openInline({ source, theme: htmlLiveTheme() }).then(
@@ -273,6 +272,19 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
         void window.api.preview.closeInline(token).catch((err: unknown) => log.warn('inline close failed', err))
     }
   }, [running, source, themeClass])
+
+  // The error and blocked lists outlive a pause and a rerun of the same page,
+  // so a swap between the page and its still image keeps the frame's size.
+  useEffect(() => {
+    setErrors([])
+    setBlocked([])
+  }, [source, themeClass])
+
+  // Another page must not inherit the old page's height for its still image box.
+  useEffect(() => {
+    setContentHeight(0)
+    setExpanded(false)
+  }, [source])
 
   const addBlocked = useCallback((url: string) => {
     const blockedLabel = blockedRequestLabel(url)
@@ -334,7 +346,7 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
           return
         }
         const line = previewConsoleLine(e.message, e.line)
-        setErrors((prev) => (prev.length >= 20 ? prev : [...prev, line]))
+        setErrors((prev) => (prev.includes(line) || prev.length >= 20 ? prev : [...prev, line]))
       })
     },
     [addBlocked, armQuiet],
@@ -374,6 +386,20 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
   if (saved && sessionId) return <HtmlFileCard path={saved} sessionId={sessionId} />
 
   const height = htmlLiveFrameHeight(contentHeight, expanded)
+  const stillHeight = htmlLiveStillHeight(contentHeight, expanded)
+  // Shown under the page and under its still image alike, so a swap keeps the frame's size.
+  const foldBar = !expanded && htmlLiveFolds(contentHeight) && (
+    <button
+      type="button"
+      className="block w-full border-t border-[var(--border)] py-[5px] text-center text-[11.5px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+      onClick={() => {
+        setExpanded(true)
+        if (!running) runFrame(id)
+      }}
+    >
+      Show all · {Math.ceil(contentHeight)} px
+    </button>
+  )
   const image = memory.image
   const state = !verdict.ok
     ? 'rejected'
@@ -468,15 +494,7 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
               {openError}
             </div>
           )}
-          {!expanded && htmlLiveFolds(contentHeight) && (
-            <button
-              type="button"
-              className="block w-full border-t border-[var(--border)] py-[5px] text-center text-[11.5px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-              onClick={() => setExpanded(true)}
-            >
-              Show all · {Math.ceil(contentHeight)} px
-            </button>
-          )}
+          {foldBar}
         </div>
       ) : showSource ? null : inPane ? (
         <div className="flex items-center gap-[10px] p-[10px] text-[12px] text-[var(--text-secondary)]">
@@ -495,28 +513,37 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
         </div>
       ) : (
         verdict.ok && (
-          <div className="relative flex min-h-[120px] items-center justify-center">
-            {image ? (
-              <img
-                src={image}
-                alt={`${label}, still image`}
-                className="block max-h-[480px] w-full object-cover object-top"
-              />
-            ) : (
-              <span className="text-[12px] text-[var(--text-muted)]">Paused</span>
-            )}
-            <button
-              type="button"
-              className="absolute inline-flex items-center gap-[6px] rounded-[6px] border border-[var(--border-strong)] bg-[var(--bg-tertiary)] px-[10px] py-[4px] text-[12px] text-[var(--text-primary)] shadow-sm hover:bg-[var(--bg-hover)]"
-              onClick={() => runFrame(id)}
+          <>
+            <div
+              className="relative flex min-h-[120px] items-center justify-center overflow-hidden"
+              style={stillHeight === null ? undefined : { height: stillHeight }}
             >
-              Run
-            </button>
-          </div>
+              {image ? (
+                <img
+                  src={image}
+                  alt={`${label}, still image`}
+                  className={cn(
+                    'block w-full',
+                    stillHeight === null ? 'max-h-[480px] object-cover object-top' : 'absolute top-0 left-0',
+                  )}
+                />
+              ) : (
+                <span className="text-[12px] text-[var(--text-muted)]">Paused</span>
+              )}
+              <button
+                type="button"
+                className="absolute inline-flex items-center gap-[6px] rounded-[6px] border border-[var(--border-strong)] bg-[var(--bg-tertiary)] px-[10px] py-[4px] text-[12px] text-[var(--text-primary)] shadow-sm hover:bg-[var(--bg-hover)]"
+                onClick={() => runFrame(id)}
+              >
+                Run
+              </button>
+            </div>
+            {foldBar}
+          </>
         )
       )}
 
-      {!showSource && running && (errors.length > 0 || blocked.length > 0) && (
+      {!showSource && !inPane && verdict.ok && (errors.length > 0 || blocked.length > 0) && (
         <div className="border-t border-[var(--border)] px-[10px] py-[7px] font-[family-name:var(--font-mono)] text-[11px] leading-[1.7]">
           {errors.map((line, i) => (
             <div key={`e${i}`} className="text-[var(--error)]">

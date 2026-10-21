@@ -6,6 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
+import { stripSenderLine } from '../../src/shared/sender-line'
 
 vi.mock('../../src/main/perf', () => ({ perfSpan: () => ({ end: () => {} }) }))
 
@@ -112,7 +113,7 @@ class FakeAdapter implements ProviderAdapter {
     }
   }
   async sendTurn(_threadId: string, message: string): Promise<void> {
-    this.sent.push(message)
+    this.sent.push(stripSenderLine(message))
   }
   resumedNativeSession(): boolean {
     return this.resumed

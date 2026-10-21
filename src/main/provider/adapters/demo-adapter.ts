@@ -37,6 +37,8 @@
  *                           D3 page that throws (visual regression screens)
  *   - text says "live probe" -> an ```html-live page that tries to leave the
  *                           sandbox (e2e/html-live.e2e.mjs)
+ *   - text says "tall live page" -> an ```html-live page taller than the
+ *                           folded frame, then text under it (e2e/html-live.e2e.mjs)
  *   - anything else      -> a short two-sentence reply
  *
  * With `SB_DEMO_CLAUDE_TRANSCRIPT_DIR` set, the claude adapter also appends a
@@ -238,6 +240,20 @@ const LIVE_PAGES_REPLY = [
   'y.nice.ticksEvery(50)',
   '</script>',
   '```',
+].join('\n')
+
+/** An inline live page taller than the folded frame, with text under it to scroll past. */
+const LIVE_TALL_REPLY = [
+  'The full incident timeline:',
+  '',
+  '```html-live title="Incident timeline"',
+  '<div style="height:720px;background:linear-gradient(var(--sb-accent),var(--sb-bg))"></div>',
+  '```',
+  '',
+  ...Array.from(
+    { length: 12 },
+    (_, i) => `${i + 1}. Step ${i + 1} of the follow-up, written out so the reply runs past the page.`,
+  ),
 ].join('\n')
 
 /** An inline live page that tries every way out of the sandbox and logs each result. */
@@ -711,6 +727,8 @@ export class DemoAdapter implements ProviderAdapter {
       await this.say(threadId, turn, 'Final answer: the order holds.')
     } else if (/\bdraw\b/i.test(message)) {
       await this.say(threadId, turn, VISUALS_REPLY)
+    } else if (/\btall live page\b/i.test(message)) {
+      await this.say(threadId, turn, LIVE_TALL_REPLY)
     } else if (/\blive page\b/i.test(message)) {
       await this.say(threadId, turn, LIVE_PAGES_REPLY)
     } else if (/\blive probe\b/i.test(message)) {

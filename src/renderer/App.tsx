@@ -25,6 +25,7 @@ import { KanbanView } from './components/kanban/KanbanView'
 import { ReviewsView } from './components/reviews/ReviewsView'
 import { registerReviewChatOpener } from './components/reviews/review-to-chat'
 import { registerPillChatOpener } from './services/pill-chip-open'
+import { moveHeldSends } from './services/held-sends'
 import { openPillSourceChat } from './services/pill-chat-opener'
 import { SettingsPage } from './components/SettingsPage'
 import type { SettingsPageId } from './components/settings/settings-rows'
@@ -1244,6 +1245,7 @@ export function App() {
             drafts.restoreDraftPayloadIfEmpty(session.id, held)
             setAppToast('Your draft is kept under the original chat id because the live chat already has a draft.')
           }
+          moveHeldSends(session.id, targetId)
           const live = useAgentStore.getState().sessions.find((s) => s.id === targetId)
           window.api.routing.bind(targetId, live?.machineId ?? effectiveMachineId)
           // A session adopted at startup was created without a revision, and
