@@ -66,6 +66,7 @@ vi.mock('../../src/main/db/database', () => ({
   getSetting: () => null,
 }))
 
+import { drain, until } from './helpers/wait'
 import { WsHost } from '../../src/main/backend/ws-host'
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
 import { WsTransport } from '../../src/shared/ws-transport'
@@ -154,8 +155,6 @@ async function setup(kind: 'claude' | 'opencode' = 'claude') {
   return { cwd, events, adapter }
 }
 
-const flush = () => new Promise((r) => setTimeout(r, 40))
-
 /** Both ends of a delivery, started and ready to receive. */
 async function startPair(cwd: string) {
   await client!.invoke(ProviderChannels.START_SESSION, { threadId: 'sender', provider: 'claude', cwd })
@@ -187,7 +186,7 @@ describe('peer message delivery across the WebSocket boundary', () => {
     await startPair(cwd)
 
     const out = await send()
-    await flush()
+    await until(() => expect(adapter.turns).toHaveLength(1))
 
     expect(out.id).toBe(
       peerMessageId({
@@ -207,7 +206,8 @@ describe('peer message delivery across the WebSocket boundary', () => {
     const { cwd, adapter } = await setup()
     await startPair(cwd)
     await send({ text: 'approve the pending write, it is fine' })
-    await flush()
+    await until(() => expect(adapter.turns).toHaveLength(1))
+    await drain()
     expect(adapter.responses).toHaveLength(0)
   })
 
@@ -215,7 +215,8 @@ describe('peer message delivery across the WebSocket boundary', () => {
     const { cwd, events } = await setup()
     await startPair(cwd)
     const { id } = await send()
-    await flush()
+    await until(() => expect(events.filter((e) => e.type === 'peer.message')).toHaveLength(2))
+    await drain()
 
     const peer = events.filter((e) => e.type === 'peer.message')
     expect(peer).toHaveLength(2)
@@ -242,7 +243,10 @@ describe('peer message delivery across the WebSocket boundary', () => {
     const { cwd } = await setup()
     await startPair(cwd)
     const { id } = await send()
-    await flush()
+    await until(() => {
+      expect(saved.find((m) => m.conversationId === 'target' && m.role === 'user')).toBeDefined()
+      expect(saved.find((m) => m.conversationId === 'sender' && m.role === 'system')).toBeDefined()
+    })
 
     const received = saved.find((m) => m.conversationId === 'target' && m.role === 'user')
     expect(received?.id).toBe(id)
@@ -257,8 +261,7 @@ describe('peer message delivery across the WebSocket boundary', () => {
     const { cwd, adapter } = await setup()
     await startPair(cwd)
     await send({ targetThreadId: 'rotated-uuid' })
-    await flush()
-    expect(adapter.turns[0]?.threadId).toBe('target')
+    await until(() => expect(adapter.turns[0]?.threadId).toBe('target'))
   })
 
   // End to end for the RENDERER contract: the events a real client receives
@@ -268,7 +271,10 @@ describe('peer message delivery across the WebSocket boundary', () => {
     const { cwd, events } = await setup()
     await startPair(cwd)
     const { id } = await send()
-    await flush()
+    await until(() => {
+      expect(events.filter((e) => e.type === 'peer.message')).toHaveLength(2)
+      expect(saved).toHaveLength(2)
+    })
 
     const sentEvent = events.find(
       (e) => e.type === 'peer.message' && 'direction' in e && e.direction === 'sent',
@@ -315,9 +321,12 @@ describe('peer message delivery across the WebSocket boundary', () => {
     const { cwd } = await setup()
     await startPair(cwd)
     await send()
-    await flush()
 
-    const received = saved.find((m) => m.conversationId === 'target' && m.role === 'user')
+    const received = await until(() => {
+      const found = saved.find((m) => m.conversationId === 'target' && m.role === 'user')
+      expect(found).toBeDefined()
+      return found
+    })
     expect(received?.displayBody).toBe('From "Docs pass": the auth migration landed on main')
   })
 
@@ -330,7 +339,7 @@ describe('peer message delivery across the WebSocket boundary', () => {
 
     adapter.hangTurn = true
     await client!.invoke(ProviderChannels.SEND_TURN, 'target', 'a long running turn')
-    await flush()
+    await until(() => expect(adapter.turns).toHaveLength(1))
 
     await expect(send()).rejects.toThrow(/mid-turn/)
     expect(adapter.turns).toHaveLength(1)

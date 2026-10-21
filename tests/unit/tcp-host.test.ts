@@ -6,6 +6,7 @@
  * several frames arriving coalesced.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest'
+import { until } from './helpers/wait'
 import { createServer, connect, type Server, type Socket } from 'node:net'
 import type { AddressInfo } from 'node:net'
 import { TcpHost } from '../../src/main/backend/tcp-host'
@@ -38,7 +39,8 @@ afterEach(async () => {
   socks = []
   closes = []
   const logs = [vi.spyOn(console, 'log'), vi.spyOn(console, 'warn'), vi.spyOn(console, 'debug')]
-  await new Promise((res) => setTimeout(res, 20))
+  // Every close event has fired; one more event-loop turn catches a line logged after them.
+  await new Promise((res) => setImmediate(res))
   for (const spy of logs) {
     expect(spy).not.toHaveBeenCalled()
     spy.mockRestore()
@@ -204,8 +206,7 @@ describe('TcpHost framing', () => {
     host.on('provider:client-event', (v: unknown) => got.push(v))
     const { socket, r } = await dial(port)
     socket.write(JSON.stringify({ k: 'snd', ch: 'provider:client-event', args: ['payload'] }) + '\n')
-    await new Promise((res) => setTimeout(res, 30))
-    expect(got).toEqual(['payload'])
+    await until(() => expect(got).toEqual(['payload']))
 
     host.emit('provider:event', { type: 'content', threadId: 't1' })
     expect(await r.next()).toMatchObject({ k: 'evt', ch: 'provider:event' })
@@ -213,10 +214,12 @@ describe('TcpHost framing', () => {
 
   it('emit never reaches an unauthenticated socket', async () => {
     const { host, port } = await boot('s3cret')
-    const { r } = await dial(port)
+    const { socket, r } = await dial(port)
     host.emit('provider:event', { secret: true })
-    await new Promise((res) => setTimeout(res, 40))
-    expect(r.lines).toHaveLength(0)
+    // The stream is ordered: an event sent before the auth would arrive before its reply.
+    socket.write(JSON.stringify({ k: 'auth', token: 's3cret' }) + '\n')
+    expect(await r.next()).toMatchObject({ ok: true, result: 'authed' })
+    expect(await r.next()).toMatchObject({ k: 'ready' })
   })
 
   it('filters outbound events through the authenticated device scopes', async () => {
@@ -227,11 +230,10 @@ describe('TcpHost framing', () => {
     expect(await r.next()).toMatchObject({ k: 'res', id: 1, ok: true })
 
     host.emit(TerminalChannels.OUTPUT, 'terminal-1', 'secret output')
-    await new Promise((res) => setTimeout(res, 30))
-    expect(r.lines).toHaveLength(0)
-
+    // The stream is ordered: had the terminal output gone out, it would arrive first.
     host.emit('provider:event', { type: 'content', threadId: 'thread-1' })
     expect(await r.next()).toMatchObject({ k: 'evt', ch: 'provider:event' })
+    expect(r.lines).toHaveLength(0)
   })
 })
 
@@ -300,8 +302,11 @@ describe('TcpHost resume', () => {
 
   it('terminal output takes no sequence number', async () => {
     const { host, port } = await boot(undefined, ['chat', 'terminal'])
-    const { r } = await dial(port)
-    await new Promise((res) => setTimeout(res, 30))
+    host.handle('probe', () => 'ready')
+    const { socket, r } = await dial(port)
+    // A round trip proves the host has registered the client before the emit.
+    socket.write(JSON.stringify({ k: 'req', id: 1, ch: 'probe', args: [] }) + '\n')
+    expect(await r.next()).toMatchObject({ k: 'res', id: 1, ok: true })
     host.emit(TerminalChannels.OUTPUT, 'x')
     expect(await r.next()).not.toHaveProperty('seq')
   })

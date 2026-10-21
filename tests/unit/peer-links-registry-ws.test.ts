@@ -65,6 +65,7 @@ vi.mock('../../src/main/db/database', () => ({
   getSetting: (key: string) => settings.get(key) ?? null,
 }))
 
+import { drain, until } from './helpers/wait'
 import { WsHost } from '../../src/main/backend/ws-host'
 import { ProviderRegistry, notifyConversationArchived } from '../../src/main/provider/provider-registry'
 import { WsTransport } from '../../src/shared/ws-transport'
@@ -148,8 +149,6 @@ async function setup() {
   return { cwd, events, linkChanges, adapter, registry }
 }
 
-const flush = () => new Promise((r) => setTimeout(r, 40))
-
 /** Every session this suite messages between, started and ready to receive. */
 async function startAll(cwd: string, ids: string[] = ['hub', 'w1', 'w2', 'w3', 'outsider']) {
   for (const threadId of ids) {
@@ -198,8 +197,7 @@ describe('linking', () => {
     const mine = await link('hub', 'w1')
     expect(mine).toMatchObject([{ peerThreadId: 'w1', title: 'Worker A', used: 0, budget: PEER_LINK_MESSAGE_BUDGET }])
     expect(await linksOf('w1')).toMatchObject([{ peerThreadId: 'hub', title: 'Lead' }])
-    await flush()
-    expect(linkChanges.at(-1)?.threadIds.sort()).toEqual(['hub', 'w1'])
+    await until(() => expect(linkChanges.at(-1)?.threadIds.sort()).toEqual(['hub', 'w1']))
   })
 
   it('gives a link without a time the Link duration setting, and one with a time its own', async () => {
@@ -313,8 +311,7 @@ describe('the edge budget', () => {
 
     // The user typing in the WORKER renews the edge for the hub too.
     await client!.invoke(ProviderChannels.SEND_TURN, 'w1', 'keep going')
-    await flush()
-    expect((await linksOf('hub'))[0].used).toBe(0)
+    await until(async () => expect((await linksOf('hub'))[0].used).toBe(0))
     expect((await toolsFor('hub').sendMessage({ sessionId: 'w1', message: 'one more' })).isError).toBeFalsy()
   })
 
@@ -348,9 +345,10 @@ describe('unlinking', () => {
     await link('hub', 'w1')
     await link('hub', 'w2')
     await client!.invoke(ProviderChannels.STOP_SESSION, 'w1')
-    await flush()
-    expect((await linksOf('hub')).map((l) => l.peerThreadId)).toEqual(['w2'])
-    expect(linkChanges.at(-1)?.threadIds.sort()).toEqual(['hub', 'w1'])
+    await until(async () => {
+      expect((await linksOf('hub')).map((l) => l.peerThreadId)).toEqual(['w2'])
+      expect(linkChanges.at(-1)?.threadIds.sort()).toEqual(['hub', 'w1'])
+    })
   })
 
   it('happens when either session is archived', async () => {
@@ -397,7 +395,8 @@ describe('a budget running out never loses the message', () => {
     const { events } = await spentLink()
     await toolsFor('w1').sendMessage({ sessionId: 'hub', message: 'here is my whole finding' })
     await toolsFor('w1').sendMessage({ sessionId: 'hub', message: 'and a second one' })
-    await flush()
+    await until(() => expect(undelivered(events)).toHaveLength(2))
+    await drain()
 
     const rows = saved
       .filter((m) => m.conversationId === 'w1' && m.role === 'system')
@@ -416,7 +415,7 @@ describe('a budget running out never loses the message', () => {
   it('delivers it when the user presses Send, renews the link, and marks the row sent', async () => {
     const { adapter, events } = await spentLink()
     await toolsFor('w1').sendMessage({ sessionId: 'hub', message: 'here is my whole finding' })
-    await flush()
+    await until(() => expect(undelivered(events)).toHaveLength(1))
     const id = undelivered(events)[0].messageId
 
     await client!.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, {
@@ -426,7 +425,7 @@ describe('a budget running out never loses the message', () => {
       text: 'here is my whole finding',
       undeliveredId: id,
     })
-    await flush()
+    await until(() => expect(undelivered(events).at(-1)).toMatchObject({ messageId: id, sent: true, notify: false }))
 
     expect(adapter.turns.at(-1)?.threadId).toBe('hub')
     expect((await linksOf('hub'))[0].used).toBe(0)
@@ -437,7 +436,7 @@ describe('a budget running out never loses the message', () => {
   it('does not mark a row sent when something else was delivered', async () => {
     const { events } = await spentLink()
     await toolsFor('w1').sendMessage({ sessionId: 'hub', message: 'the real finding' })
-    await flush()
+    await until(() => expect(undelivered(events)).toHaveLength(1))
     const id = undelivered(events)[0].messageId
     await client!.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, {
       fromThreadId: 'w1',
@@ -517,7 +516,9 @@ describe('a link changing while the send is prepared', () => {
     )
 
     const out = await toolsFor('hub').sendMessage({ sessionId: 'w1', message: 'the plan', requireLink: true })
-    await flush()
+    // The withdrawn send publishes one quiet peer.undelivered; once it is in, nothing else is coming.
+    await until(() => expect(events.some((e) => e.type === 'peer.undelivered')).toBe(true))
+    await drain()
 
     expect(out.isError).toBe(true)
     expect(text(out)).toMatch(/removed the link/i)

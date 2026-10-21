@@ -42,7 +42,10 @@ async function fresh() {
   return { ...service, label: (id: string) => shortcuts.shortcutLabel(id, 'mac') }
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 beforeEach(() => {
   db = null
@@ -79,9 +82,12 @@ describe('renderer shortcut overrides', () => {
     db = JSON.stringify({ 'chat.new': ['Mod+Shift+U'], 'app.search': [], 'from.newer-build': ['Mod+Shift+Y'] })
     const s = await fresh()
     await s.loadKeyboardOverrides()
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
     setDelays = [30, 0]
     // What Reset all does: one write per changed row, fired together.
-    await Promise.all([s.setKeyboardOverride('chat.new', null), s.setKeyboardOverride('app.search', null)])
+    const writes = Promise.all([s.setKeyboardOverride('chat.new', null), s.setKeyboardOverride('app.search', null)])
+    await vi.runAllTimersAsync()
+    await writes
     expect(maxInFlight).toBe(1)
     expect(JSON.parse(db!)).toEqual({ 'from.newer-build': ['Mod+Shift+Y'] })
     expect(s.label('chat.new')).toBe('⌘⇧O')

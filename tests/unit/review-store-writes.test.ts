@@ -4,6 +4,7 @@
  * after a write that keeps the shown tabs until the fresh answer arrives.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { drain, until } from './helpers/wait'
 import {
   prKey,
   rollupChecks,
@@ -235,9 +236,11 @@ describe('afterWrite', () => {
     answer({ ok: true, data: list(2) })
     await inFlight
     await vi.waitFor(() => expect(s.getState().list?.prs[0].updatedAt).toBe(3))
-    await new Promise((r) => setTimeout(r, 0))
-    const c = s.getState().resources[key]?.conversations
-    expect(c?.status === 'ok' && c.data[0].resolved).toBe(true)
+    await until(() => {
+      const c = s.getState().resources[key]?.conversations
+      expect(c?.status === 'ok' && c.data[0].resolved).toBe(true)
+    })
+    await drain()
     expect(listCalls).toHaveBeenCalledTimes(2)
     expect(s.getState().stale).toBe(false)
   })

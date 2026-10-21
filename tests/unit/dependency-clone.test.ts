@@ -13,6 +13,7 @@
  * staging dir and never retries with a plain recursive copy.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { until } from './helpers/wait'
 import { mkdtemp, mkdir, rm, access, readdir, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir, platform as osPlatform } from 'node:os'
 import { join } from 'node:path'
@@ -486,11 +487,7 @@ describe('cloneDependencyDirsInBackground', () => {
       // Poll instead of assuming a fixed number of ticks, since the
       // chain crosses real fs I/O (pathExists) as well as microtasks.
       const dst = join(worktreeRoot, DEPENDENCY_DIR_NAME)
-      const deadline = Date.now() + 1000
-      while (!(await exists(dst)) && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 10))
-      }
-      expect(await exists(dst)).toBe(true)
+      await until(async () => expect(await exists(dst)).toBe(true))
       expect(calls).toBe(1)
     } finally {
       await rm(root, { recursive: true, force: true })

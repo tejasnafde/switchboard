@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { drain, until } from './helpers/wait'
 import type { ProviderUsage } from '../../src/shared/provider-usage'
 import type { ProviderInstance } from '../../src/shared/types'
 
@@ -30,7 +31,6 @@ const reading = (id: string, message: string): ProviderUsage => ({
 })
 const inst = (updatedAt: number, id = 'a') =>
   ({ id, agentType: 'claude-code', enabled: true, updatedAt }) as ProviderInstance
-const flush = () => new Promise((r) => setTimeout(r, 0))
 
 describe('provider-instance-store usage reads', () => {
   beforeEach(() => {
@@ -47,15 +47,14 @@ describe('provider-instance-store usage reads', () => {
     expect(calls).toHaveLength(1)
 
     calls[0].resolve(reading('a', 'old credential'))
-    await flush()
-    expect(calls).toHaveLength(2)
+    await until(() => expect(calls).toHaveLength(2))
     expect(calls[1].opts).toEqual({ force: true, refreshWithTurn: undefined })
     expect(store.getState().usageLoading.a).toBe(true)
 
     calls[1].resolve(reading('a', 'new credential'))
-    await flush()
+    await until(() => expect(store.getState().usages.a?.message).toBe('new credential'))
+    await drain()
     expect(calls).toHaveLength(2)
-    expect(store.getState().usages.a.message).toBe('new credential')
     expect(store.getState().usageLoading.a).toBeUndefined()
   })
 
@@ -65,7 +64,8 @@ describe('provider-instance-store usage reads', () => {
     void store.loadUsage('b', { refreshWithTurn: true })
     void store.loadUsage('b', { force: true })
     calls[0].resolve(reading('b', 'first'))
-    await flush()
+    await until(() => expect(calls).toHaveLength(2))
+    await drain()
     expect(calls.map((c) => c.opts)).toEqual([undefined, { force: true, refreshWithTurn: true }])
   })
 
@@ -93,12 +93,15 @@ describe('provider-instance-store usage reads', () => {
       ['v2', undefined],
     ])
     for (const c of calls) c.resolve(reading(c.id, 'read'))
-    await flush()
+    await until(() => {
+      expect(store.getState().usageLoading.v1).toBeUndefined()
+      expect(store.getState().usageLoading.v2).toBeUndefined()
+    })
 
     visit()
     expect(calls.map((c) => c.id)).toEqual(['v1', 'v2', 'v1', 'v2'])
     expect(calls.slice(2).map((c) => c.opts)).toEqual([undefined, undefined])
     for (const c of calls.slice(2)) c.resolve(reading(c.id, 'read'))
-    await flush()
+    await drain()
   })
 })

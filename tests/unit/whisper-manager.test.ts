@@ -3,7 +3,7 @@
  * boot, EADDRINUSE retry-once, crash-then-respawn, idle shutdown. All deps are
  * injected, so no binary and no sockets.
  */
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import {
   buildWhisperServerArgs,
   WhisperServerManager,
@@ -43,6 +43,10 @@ function makeHarness(opts: { healthy?: (attempt: number) => boolean } = {}) {
   }
   return { children, spawn, deps, allocate: deps.allocatePort as ReturnType<typeof vi.fn> }
 }
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 const cfg = { binaryPath: '/bin/whisper-server', modelPath: '/models/m.bin', env: {} }
 
@@ -120,9 +124,12 @@ describe('WhisperServerManager', () => {
   it('stops itself after the idle window and does not report that as a crash', async () => {
     const h = makeHarness()
     const onExit = vi.fn()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const mgr = new WhisperServerManager(h.deps, { ...cfg, onExit, idleStopMs: 5 })
     await mgr.ensureStarted()
-    await new Promise((resolve) => setTimeout(resolve, 40))
+    await vi.advanceTimersByTimeAsync(4)
+    expect(h.children[0].killed).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
     expect(h.children[0].killed).toBe(true)
     expect(mgr.status).toBe('stopped')
     expect(onExit).not.toHaveBeenCalled()
@@ -130,13 +137,15 @@ describe('WhisperServerManager', () => {
 
   it('touch() defers the idle stop', async () => {
     const h = makeHarness()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const mgr = new WhisperServerManager(h.deps, { ...cfg, idleStopMs: 50 })
     await mgr.ensureStarted()
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await vi.advanceTimersByTimeAsync(30)
     mgr.touch()
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await vi.advanceTimersByTimeAsync(30)
     expect(h.children[0].killed).toBe(false)
-    mgr.stop()
+    await vi.advanceTimersByTimeAsync(20)
     expect(h.children[0].killed).toBe(true)
+    expect(mgr.status).toBe('stopped')
   })
 })

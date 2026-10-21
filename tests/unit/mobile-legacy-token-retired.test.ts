@@ -6,7 +6,8 @@
 import { createMigratedDb } from './helpers/test-db'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { WebSocket } from 'ws'
-import { createServer, type AddressInfo } from 'node:net'
+import { connect, createServer, type AddressInfo } from 'node:net'
+import { until } from './helpers/wait'
 
 vi.mock('../../src/main/logger', () => ({
   createMainLogger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
@@ -62,8 +63,20 @@ beforeEach(async () => {
   endpoint = new MobileEndpoint()
   endpoint.handle('probe', () => 'ok')
   endpoint.apply()
-  await new Promise((r) => setTimeout(r, 50))
+  await until(() => accepts(port))
 })
+
+/** Resolves once something accepts a TCP connection on `port`. */
+function accepts(port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, '127.0.0.1')
+    socket.once('connect', () => {
+      socket.destroy()
+      resolve()
+    })
+    socket.once('error', reject)
+  })
+}
 
 afterEach(() => endpoint.close())
 

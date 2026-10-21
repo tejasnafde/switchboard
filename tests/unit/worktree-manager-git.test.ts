@@ -4,6 +4,7 @@
  * lives in a temp dir removed after each test.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { drain, until } from './helpers/wait'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -422,14 +423,22 @@ describe('WorktreeSizeCache', () => {
   it('runs at most two probes at once', async () => {
     let running = 0
     let peak = 0
+    const releases: Array<() => void> = []
     const cache = new WorktreeSizeCache(async () => {
       running += 1
       peak = Math.max(peak, running)
-      await new Promise((r) => setTimeout(r, 5))
+      await new Promise<void>((r) => releases.push(r))
       running -= 1
       return 1
     })
-    await Promise.all(['/1', '/2', '/3', '/4', '/5'].map((p) => cache.get(p)))
+    const all = Promise.all(['/1', '/2', '/3', '/4', '/5'].map((p) => cache.get(p)))
+    // Each probe holds until released one at a time, so a third would start beside the first two.
+    for (let done = 0; done < 5; done++) {
+      await until(() => expect(releases.length).toBeGreaterThan(done))
+      await drain()
+      releases[done]()
+    }
+    await all
     expect(peak).toBe(2)
   })
 

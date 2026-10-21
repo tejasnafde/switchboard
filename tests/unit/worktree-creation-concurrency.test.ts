@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
+import { until } from './helpers/wait'
 import type { WorktreeCreationRequest } from '../../src/shared/worktree-creation'
 import { ensureWorktreeCreationSchema, SqliteWorktreeCreationStore } from '../../src/main/db/worktree-creation'
 import type {
@@ -279,11 +280,16 @@ function fixture(overrides: Partial<WorktreeCreationServiceOptions> = {}) {
   return { db, events, store, git, service, close: () => db.close() }
 }
 
-async function startsBeforeRelease(started: Promise<void>, timeoutMs = 100): Promise<boolean> {
-  return Promise.race([
-    started.then(() => true),
-    new Promise<false>((resolve) => setTimeout(() => resolve(false), timeoutMs)),
-  ])
+/** True once `started` resolves; false if it is still held back when `until` gives up. */
+async function startsBeforeRelease(started: Promise<void>): Promise<boolean> {
+  let didStart = false
+  void started.then(() => {
+    didStart = true
+  })
+  return until(() => expect(didStart).toBe(true)).then(
+    () => true,
+    () => false,
+  )
 }
 
 describe('WorktreeCreationService repository concurrency', () => {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { drain, until } from './helpers/wait'
 import type { ProviderUsage } from '../../src/shared/provider-usage'
 
 /**
@@ -50,7 +51,6 @@ const reading = (message: string): ProviderUsage => ({
   message,
   fetchedAtMs: Date.now(),
 })
-const flush = () => new Promise((r) => setTimeout(r, 0))
 
 describe('usage probes for one instance', () => {
   beforeEach(() => {
@@ -63,13 +63,12 @@ describe('usage probes for one instance', () => {
   it('runs a forced request after an unforced probe in flight, not beside it or on its result', async () => {
     const plain = fetchInstanceUsage('a')
     const forced = fetchInstanceUsage('a', { force: true })
-    await flush()
+    await drain()
     expect(probes).toHaveLength(1)
 
     probes[0].resolve(reading('plain'))
     expect((await plain).message).toBe('plain')
-    await flush()
-    expect(probes).toHaveLength(2)
+    await until(() => expect(probes).toHaveLength(2))
     expect(probes[1].opts.force).toBe(true)
 
     probes[1].resolve(reading('forced'))
@@ -82,7 +81,7 @@ describe('usage probes for one instance', () => {
     const forced = fetchInstanceUsage('a', { force: true })
     const plain = fetchInstanceUsage('a')
     const again = fetchInstanceUsage('a', { refreshWithTurn: true })
-    await flush()
+    await drain()
     expect(probes).toHaveLength(1)
     probes[0].resolve(reading('turn'))
     const results = await Promise.all([turn, forced, plain, again])
@@ -92,11 +91,10 @@ describe('usage probes for one instance', () => {
   it('runs one probe for several forced requests waiting on the same older probe', async () => {
     const plain = fetchInstanceUsage('a')
     const forced = [fetchInstanceUsage('a', { force: true }), fetchInstanceUsage('a', { force: true })]
-    await flush()
+    await until(() => expect(probes).toHaveLength(1))
     probes[0].resolve(reading('plain'))
     await plain
-    await flush()
-    expect(probes).toHaveLength(2)
+    await until(() => expect(probes).toHaveLength(2))
     probes[1].resolve(reading('forced'))
     expect((await Promise.all(forced)).map((r) => r.message)).toEqual(['forced', 'forced'])
     expect(most).toBe(1)
@@ -109,17 +107,16 @@ describe('usage probes for one instance', () => {
       most = 0
       invalidateUsage()
       const before = fetchInstanceUsage('a')
-      await flush()
+      await until(() => expect(probes).toHaveLength(1))
       edit()
       // Asked after the edit, even unforced: waits, then probes the new credential.
       const after = fetchInstanceUsage('a')
-      await flush()
+      await drain()
       expect(probes).toHaveLength(1)
 
       probes[0].resolve(reading('old account'))
       expect((await before).message).toBe('old account')
-      await flush()
-      expect(probes).toHaveLength(2)
+      await until(() => expect(probes).toHaveLength(2))
       probes[1].resolve(reading('new account'))
       expect((await after).message).toBe('new account')
       expect(most).toBe(1)
@@ -132,13 +129,12 @@ describe('usage probes for one instance', () => {
 
   it('does not let a probe that was in flight during an edit fill the cache', async () => {
     const before = fetchInstanceUsage('a')
-    await flush()
+    await until(() => expect(probes).toHaveLength(1))
     invalidateUsage('a')
     probes[0].resolve(reading('old account'))
     await before
     const next = fetchInstanceUsage('a')
-    await flush()
-    expect(probes).toHaveLength(2)
+    await until(() => expect(probes).toHaveLength(2))
     probes[1].resolve(reading('new account'))
     expect((await next).message).toBe('new account')
   })
