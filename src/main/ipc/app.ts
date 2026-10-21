@@ -118,10 +118,9 @@ const log = createLogger('ipc:app')
 // Data handlers - transport-agnostic, run on either ElectronIpcHost or WsHost.
 // Native-dialog / window / app-lifecycle handlers live in app-desktop.ts.
 /**
- * Tail-slice an assembled history for clients that cannot afford the whole
- * thing. Fragments still have to be parsed in full to dedupe and order them, so
- * this saves WIRE bytes, not parse time - which is the cost that matters for the
- * mobile client pulling a 2800-message thread over a WebSocket.
+ * Tail-slice an assembled history for a caller that asks `limit` without a
+ * window (phones before `history_window_v1`). A window request is read by
+ * `loadConversationHistoryWindow` instead and never assembles the full history.
  *
  * `total` and `truncated` travel with the result so the caller can SAY it is
  * showing a window instead of silently pretending the thread is short. Omitting

@@ -130,7 +130,7 @@ export function getMessagesForConversation(conversationId: string): MessageRow[]
     .all(conversationId) as MessageRow[]
 }
 
-// SQLite compares a bound Infinity, but keep the bounds plain numbers.
+// The window passes open ends as +-Infinity; bind finite numbers.
 const bound = (at: number) => Math.max(-Number.MAX_VALUE, Math.min(Number.MAX_VALUE, at))
 
 /**
