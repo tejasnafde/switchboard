@@ -5,6 +5,7 @@ import { TerminalPane } from './TerminalPane'
 import { destroyTerminal, focusTerminal } from '../../services/terminal-registry'
 import { sessionExecutionRootPath } from '../../services/execution-root'
 import type { WindowState, PaneState } from '../../stores/terminal-store'
+import { useRenderCount } from '../../services/render-counter'
 
 interface TerminalWindowProps {
   sessionId: string
@@ -19,6 +20,7 @@ interface TerminalWindowProps {
  * Other panes in the stack stay alive in the terminal-registry.
  */
 export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFocusWindow }: TerminalWindowProps) {
+  useRenderCount('TerminalWindow')
   const activePaneId = window.activePaneId
   const activePane = panes[activePaneId]
   const { setActivePane, removePane, removeWindow, addPaneToWindow, updatePaneLabel } = useTerminalStore()

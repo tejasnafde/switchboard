@@ -3,6 +3,7 @@ import type { RecentSessionItem } from './recent-sessions'
 import { formatRelativeTime } from './sidebar-helpers'
 import { DEFAULT_RECENT_SESSION_LIMIT, type RecentSessionLimit } from './recent-session-limit'
 import { RECENT_DOT_LABELS, groupRecentSessions, recentDot } from './recent-groups'
+import { useRenderCount } from '../../services/render-counter'
 
 export function RecentSessionsSection({
   items,
@@ -17,6 +18,7 @@ export function RecentSessionsSection({
   displayedSessionIds?: readonly (string | null)[]
   onSelect: (item: RecentSessionItem) => void
 }) {
+  useRenderCount('RecentSessionsSection')
   const [revealedCount, setRevealedCount] = useState(0)
   useEffect(() => setRevealedCount(0), [initialLimit])
   if (items.length === 0) return null

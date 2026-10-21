@@ -48,6 +48,7 @@ import {
 import type { Project, SessionSummary, Bookmark, ChatMessage } from '@shared/types'
 import { confirm } from '../ui/confirm'
 import { historyScanSummary, type PrHistoryScanResult } from '@shared/pull-request-links'
+import { useRenderCount } from '../../services/render-counter'
 
 interface SidebarProps {
   onSessionSelect?: (session: SessionSummary, projectPath: string, machineId?: string) => void
@@ -88,6 +89,7 @@ function SortableProject({
 // ── Main Sidebar ─────────────────────────────────────────────────
 
 export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewChat }: SidebarProps) {
+  useRenderCount('Sidebar')
   const [projects, setProjects] = useState<Project[]>([])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [scanning, setScanning] = useState<string | null>(null)

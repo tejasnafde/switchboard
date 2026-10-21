@@ -51,6 +51,7 @@ import { launchCardChat } from './card-launch'
 import { createRendererLogger } from '../../logger'
 import { Combobox } from '../ui/combobox'
 import { Toolbar } from '../ui/toolbar'
+import { useRenderCount } from '../../services/render-counter'
 
 const log = createRendererLogger('kanban:view')
 
@@ -66,6 +67,7 @@ const UNGROUPED = '__ungrouped__'
 const ALL = '__all__'
 
 export function KanbanView(): React.ReactElement {
+  useRenderCount('KanbanView')
   const workspaceFilter = useLayoutStore((s) => s.kanbanWorkspaceFilter)
   const projectFilter = useLayoutStore((s) => s.kanbanProjectFilter)
   const setWorkspaceFilter = useLayoutStore((s) => s.setKanbanWorkspaceFilter)

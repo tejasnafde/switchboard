@@ -77,6 +77,7 @@ import { registerComposer } from '../../services/composer-registry'
 import type { RuntimeMode, UserMessagePillsMeta } from '@shared/provider-events'
 import { Button } from '../ui/button'
 import { confirm } from '../ui/confirm'
+import { useRenderCount } from '../../services/render-counter'
 
 export type ChatSendResult =
   | { accepted: true }
@@ -233,6 +234,7 @@ export function ChatInput({
   onMergeBack,
   leadingControl,
 }: ChatInputProps) {
+  useRenderCount('ChatInput')
   // Static fallback list - used until a dynamic fetch returns (OpenCode
   // shells out to `opencode models`; Claude asks the live SDK query).
   // Prevents the dropdown from being empty on first render.

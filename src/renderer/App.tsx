@@ -96,6 +96,7 @@ import {
   primaryShowsLanding,
   readRememberedPick,
 } from './services/chat-landing'
+import { useRenderCount } from './services/render-counter'
 
 const log = createRendererLogger('app')
 
@@ -114,6 +115,7 @@ function toggleDualChatWorkspace(openPicker: () => void): void {
  * Resize handles manipulate DOM directly during drag.
  */
 export function App() {
+  useRenderCount('App')
   const sidebarRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<HTMLDivElement>(null)
   // Chat column wrapper - the resize target while data scientist mode has

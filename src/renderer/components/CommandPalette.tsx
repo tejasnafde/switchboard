@@ -8,6 +8,7 @@ import { useThemeStore, type ThemeName } from '../stores/theme-store'
 import { createRendererLogger } from '../logger'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { shortcutLabel } from '@shared/shortcuts'
+import { useRenderCount } from '../services/render-counter'
 
 const log = createRendererLogger('command-palette')
 
@@ -315,6 +316,7 @@ export function CommandPalette({
   onContextBridge,
   onNewChat,
 }: CommandPaletteProps) {
+  useRenderCount('CommandPalette')
   const { setTheme } = useThemeStore()
   const sessions = useAgentStore((s) => s.sessions)
   const selectChatSession = useLayoutStore((s) => s.selectChatSession)

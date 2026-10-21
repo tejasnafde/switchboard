@@ -20,6 +20,7 @@ import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { ProjectFavicon } from './ProjectFavicon'
 import { AddRemoteProjectModal } from './AddRemoteProjectModal'
 import { confirm } from '../ui/confirm'
+import { useRenderCount } from '../../services/render-counter'
 
 function SortableMachine({
   id,
@@ -192,6 +193,7 @@ export function MachineLayer({
   onNewRemoteChat?: (machineId: string, projectPath: string) => void
   onSessionContextMenu?: (e: MouseEvent, machineId: string, projectPath: string, session: SessionSummary) => void
 }) {
+  useRenderCount('MachineLayer')
   const remotes = useMachineStore((s) => s.remotes)
   const connections = useMachineStore((s) => s.connections)
   const collapsed = useMachineStore((s) => s.collapsed)
