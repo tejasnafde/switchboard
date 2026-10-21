@@ -1,0 +1,72 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "windowed-history-reads",
+  "summary": "A history window no longer builds the full history. A cache hit or an append checks a 64 KiB guard before the cached end instead of hashing the whole transcript, and an append reads only the new bytes; a prefix proof for a profile copy is kept while the newest copy only grows, and the cache never evicts the entry it just added. A window request reads SQLite rows by index range near the window (one turn before to one turn after, plus rows sharing an id with a transcript line there) and merges and enriches only those, so every older page costs the same. A window is capped at 1 MiB of JSON (at least one row), and image and tool call misses read one message the same way. A partial index serves the pill and image enrichment rows. The desktop also prefetches the older window from twice as far while the pointer is in the top fifth of the list or the list has focus, and the chat.open span reports the renderer heap.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/services/history-window.ts",
+        "src/renderer/components/chat/MessageList.tsx",
+        "src/renderer/services/perf-chat-open.ts",
+        "tests/unit/desktop-history-window.test.ts",
+        "tests/unit/perf-chat-open.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app already sends window requests and pages with nextBeforeId (ThreadScreen.tsx), so the same fields arrive. A window over 1 MiB now holds fewer than 200 rows with nextBeforeId set to its first row, which the existing older-page path follows. total is an estimate in window mode; Expo reads it only for the legacy banner shown when nextBeforeId is absent, which a window never omits."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Android already sends window requests and pages with nextBeforeId (ThreadSessionCoordinator.kt), so the wire contract is unchanged. A shorter window under the byte cap pages on through the same cursor, and total is read only for the legacy banner when nextBeforeId is absent. A resume gap reloads through the same window request, so it is bounded too."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/agent/jsonl-cache.ts",
+        "src/main/conversations/history.ts",
+        "src/main/conversations/history-window.ts",
+        "src/main/db/messages.ts",
+        "src/main/ipc/app.ts",
+        "src/shared/phone-history-window.ts",
+        "tests/unit/jsonl-cache-guard.test.ts",
+        "tests/unit/jsonl-copies.test.ts",
+        "tests/unit/history-window-merge.test.ts",
+        "tests/unit/history-window-sql.test.ts",
+        "tests/unit/chat-load-payload-ceiling.test.ts",
+        "tests/unit/history-image-refs.test.ts",
+        "tests/unit/history-tool-previews.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts",
+        "tests/unit/history-window-sql.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md",
+        "docs/feature-parity/windowed-history-reads.json"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/jsonl-cache-guard.test.ts: a hit streams nothing, an append streams only from the old end, a change inside the guard parses in full, an entry over the byte budget stays cached, and a prefix proof survives the newest copy growing (the first four fail on the previous cache).",
+      "tests/unit/history-window-merge.test.ts: five seeded long chats with same-id, other-id and turn-end stored copies, tool rows, markers and lost turns page identically through the window merge and through the full merge at limits 1, 7, 50 and 200, also with no transcript and a short one; the newest window reads under a quarter of the rows.",
+      "tests/unit/history-window-sql.test.ts: the SQLite reads page a two-conversation family with shuffled storage order and equal timestamps exactly like the full read.",
+      "tests/unit/chat-load-payload-ceiling.test.ts: a 600-turn chat with 30 KB tool outputs and 200 KB images keeps the desktop window and an older page under 400 KB, a phone window under 1.06 MiB (4.59 MB without the cap), and rows read per window under 1,000.",
+      "Copy of the worst real chat (256 MB transcript, 9,624 transcript and 14,605 stored rows) in a scratch dir, warm: cache hit 155 ms to 11 ms, reopen after an append 127 ms to 3 ms, window open 515 to 2,009 ms to 47 to 63 ms, older page 77 ms; rows read 14,605 to 339."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No phone run: phone requests and response fields are unchanged; only the row count of a window over 1 MiB changes.",
+      "The pointer and focus prefetch was not driven in the built app; the trigger rule is unit-tested."
+    ]
+  }
+}

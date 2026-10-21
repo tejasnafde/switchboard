@@ -8,6 +8,7 @@ import {
 } from '../../src/shared/history-tool-previews'
 import { summarizeTool } from '../../src/shared/tool-summary'
 import { holdsWholeHistory } from '../../src/renderer/services/history-window'
+import { historyWindow } from '../../src/shared/phone-history-window'
 import type { ChatMessage, ToolCall } from '../../src/shared/types'
 
 const bash: ToolCall = {
@@ -41,6 +42,16 @@ vi.mock('../../src/main/db/database', async (importOriginal) => ({
   getConversationForkMetadata: () => null,
 }))
 vi.mock('../../src/main/conversations/history', () => ({
+  loadConversationHistoryWindow: async (
+    _id: string,
+    request: { limit?: number; beforeId?: string; throughId?: string },
+  ) => {
+    memo.loads += 1
+    await Promise.resolve()
+    const counts = { diskMessageCount: 2, databaseMessageCount: 0, familyIds: ['c1'], timing: {} }
+    if (request.throughId) return { messages: history.filter((m) => m.id === request.throughId), ...counts }
+    return { ...historyWindow(history, request), ...counts }
+  },
   loadConversationHistory: async () => {
     memo.loads += 1
     return { messages: history, diskMessageCount: 2, databaseMessageCount: 0, familyIds: ['c1'] }

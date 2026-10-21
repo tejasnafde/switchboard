@@ -5,6 +5,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Changed
+- **Long chats open fast.** A chat window reads only the stored rows near it, and a reopen reads only the new bytes of a transcript, never the whole file. On a 256 MB transcript a warm open takes about 50 ms instead of 0.5 to 2 s, and every older page costs about the same. A window is capped at 1 MiB, so a phone may get fewer rows per page and loads the rest as it scrolls. The desktop starts loading older messages earlier when the pointer moves to the top of the list.
 - **Credits in one place.** Code comments, docs, tests and older CHANGELOG entries now describe behaviour instead of naming the projects an idea came from. The README has an Acknowledgements section, and `THIRD_PARTY_NOTICES.md` keeps the MIT notice for the three files that hold material from another project.
 
 ### Fixed

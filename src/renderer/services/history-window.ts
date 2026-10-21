@@ -7,6 +7,10 @@ export const DESKTOP_HISTORY_WINDOW = 200
  * screens, so the window lands before the user reaches the oldest row.
  */
 export const PREFETCH_OLDER_PX = 3000
+/** Twice as far when the pointer moves to the top of the list or the list takes focus. */
+export const PREFETCH_OLDER_INTENT_PX = 2 * PREFETCH_OLDER_PX
+/** The top share of the list where the pointer signals a scroll up. */
+export const PREFETCH_OLDER_POINTER_SHARE = 0.2
 /** Or as soon as the first turn in view is among this oldest share of the loaded turns. */
 export const PREFETCH_OLDER_TURN_SHARE = 0.25
 
@@ -47,12 +51,14 @@ export interface OlderLoadState {
   turnCount: number
   hasOlder: boolean
   loading: boolean
+  /** The pointer is near the top of the list, or the list took focus. */
+  intent?: boolean
 }
 
 /** Whether to fetch the previous window now, whichever of the two prefetch points comes first. */
 export function shouldLoadOlder(state: OlderLoadState): boolean {
   if (!state.hasOlder || state.loading) return false
-  if (state.scrollTop <= PREFETCH_OLDER_PX) return true
+  if (state.scrollTop <= (state.intent ? PREFETCH_OLDER_INTENT_PX : PREFETCH_OLDER_PX)) return true
   return state.firstVisibleTurn !== null && state.firstVisibleTurn < state.turnCount * PREFETCH_OLDER_TURN_SHARE
 }
 

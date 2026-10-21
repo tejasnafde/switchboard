@@ -26,10 +26,20 @@ vi.mock('../../src/main/db/database', async (importOriginal) => ({
     return writeTakes
   },
 }))
+import { historyWindow } from '../../src/shared/phone-history-window'
 vi.mock('../../src/main/conversations/history', () => ({
   loadConversationHistory: async () => {
     if (historyError) throw new Error('history read failed')
     return { messages: history, diskMessageCount: history.length, databaseMessageCount: 0, familyIds: ['c1'] }
+  },
+  loadConversationHistoryWindow: async (_id: string, request: { limit?: number; beforeId?: string }) => {
+    if (historyError) throw new Error('history read failed')
+    return {
+      ...historyWindow(history, request),
+      diskMessageCount: history.length,
+      databaseMessageCount: 0,
+      familyIds: ['c1'],
+    }
   },
 }))
 

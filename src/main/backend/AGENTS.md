@@ -38,12 +38,30 @@ returns at most 200 chronological rows, `total`, `truncated`,
 and `cursorReset` (a removed cursor returns a fresh tail). Phones feature-detect
 `history_window_v1`; an older backend still gets the legacy `{ limit }` call.
 Callers without `window` keep the original contract.
-This bounds wire rows, not JSONL parsing. Keep parse caching separate.
+A window request never builds the full history: `loadConversationHistoryWindow`
+(`conversations/history-window.ts`, `mergeHistoryWindow`) takes the transcripts
+from the parse cache and reads SQLite rows by index range only, from one whole
+turn before the window to one turn after it, plus the rows that share an id
+with a transcript line in that range (`messageWindowRows` in `db/messages.ts`),
+then merges and enriches only those. An assistant row matches only inside its
+turn and a user row within a minute, so the result equals the same window cut
+from the full merge (`history-window-merge.test.ts`, `history-window-sql.test.ts`
+page both and compare). Every older page costs the same. In window mode `total`
+is an estimate (the larger of the transcript and stored counts). A window is
+also capped at 1 MiB of JSON (`capWindowBytes`, at least one row), so a phone
+that takes whole tool calls may get fewer than 200 rows and pages on through
+`nextBeforeId`; `chat-load-payload-ceiling.test.ts` fails CI when a window or
+an older page grows past its ceiling. `app:load-history-image` and
+`app:load-tool-call` misses read one message the same way (`throughId`).
+Full-history readers, on purpose: fork (anchors need every row), the handoff
+preamble and the merge-back summary (`provider-registry.ts`), and the desktop's
+`ensureFullHistory` (cmd+F, global search, export, a jump to an old row).
 The desktop opens every chat with the newest 200 rows (`NEWEST_HISTORY_WINDOW`
 in `renderer/services/history-loader.ts`), keeps the session's
 `olderHistoryCursor`, and prefetches the previous window (`shouldLoadOlder` in
 `renderer/services/history-window.ts`: the first turn in view is among the
-oldest quarter of the loaded turns, or within 3,000 px of the top), keeping
+oldest quarter of the loaded turns, or within 3,000 px of the top, or 6,000 px
+while the pointer is in the top fifth of the list or the list has focus), keeping
 the row in view in place. `MessageList` applies a size correction above the
 view itself and re-renders in the same frame (the virtualizer's own correction
 re-rendered a frame late, which painted the jump), and after a prepend renders

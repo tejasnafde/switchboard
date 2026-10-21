@@ -5,6 +5,7 @@ import type { ChatMessage, FileDiffAttachment, ToolCall } from '@shared/types'
 import { getDb } from './database'
 import { threadFamilyIds } from './conversations'
 import { parsePersistedPillsMeta } from '../provider/pill-metadata'
+import type { WindowRows } from '../conversations/history-window'
 
 const log = createLogger('db')
 
@@ -125,8 +126,114 @@ export interface MessageRow {
 
 export function getMessagesForConversation(conversationId: string): MessageRow[] {
   return getDb()
-    .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC')
+    .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC, rowid ASC')
     .all(conversationId) as MessageRow[]
+}
+
+// SQLite compares a bound Infinity, but keep the bounds plain numbers.
+const bound = (at: number) => Math.max(-Number.MAX_VALUE, Math.min(Number.MAX_VALUE, at))
+
+/**
+ * Index-range reads of a conversation family's rows for one history window,
+ * in the order `familyIds.flatMap(getMessagesForConversation)` then a stable
+ * sort by time gives: time, then family order, then storage order.
+ * `onRead` receives the milliseconds each read took.
+ */
+export function messageWindowRows(familyIds: readonly string[], onRead?: (ms: number) => void): WindowRows {
+  const db = getDb()
+  const timed = <T>(read: () => T): T => {
+    const start = performance.now()
+    try {
+      return read()
+    } finally {
+      onRead?.(performance.now() - start)
+    }
+  }
+  const each = <T>(sql: string, args: (id: string) => unknown[]): T[] => {
+    const statement = db.prepare(sql)
+    return familyIds.flatMap((id) => statement.all(...args(id)) as T[])
+  }
+  const times = (rows: Array<{ timestamp: number }>) => rows.map((row) => row.timestamp)
+  return {
+    newestTimestamps: (at, count) =>
+      timed(() =>
+        times(
+          each(
+            'SELECT timestamp FROM messages WHERE conversation_id = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT ?',
+            (id) => [id, bound(at), count],
+          ),
+        )
+          .sort((a, b) => b - a)
+          .slice(0, count),
+      ),
+    userTimestampsBefore: (at, count) =>
+      timed(() =>
+        times(
+          each(
+            "SELECT timestamp FROM messages WHERE conversation_id = ? AND role = 'user' AND timestamp <= ? ORDER BY timestamp DESC LIMIT ?",
+            (id) => [id, bound(at), count],
+          ),
+        ),
+      ),
+    userTimestampsAfter: (at, count) =>
+      timed(() =>
+        times(
+          each(
+            "SELECT timestamp FROM messages WHERE conversation_id = ? AND role = 'user' AND timestamp > ? ORDER BY timestamp ASC LIMIT ?",
+            (id) => [id, bound(at), count],
+          ),
+        ),
+      ),
+    read: (from, to, ids) =>
+      timed(() => {
+        const family = new Map(familyIds.map((id, index) => [id, index]))
+        const byId = new Map<string, MessageRow & { sb_rowid: number }>()
+        const add = (rows: Array<MessageRow & { sb_rowid: number }>) => {
+          for (const row of rows) byId.set(row.id, row)
+        }
+        add(
+          each(
+            'SELECT rowid AS sb_rowid, * FROM messages WHERE conversation_id = ? AND timestamp BETWEEN ? AND ?',
+            (id) => [id, bound(from), bound(to)],
+          ),
+        )
+        if (ids.length > 0) {
+          // By primary key: with a conversation filter the planner scans the conversation instead.
+          const rows = db
+            .prepare('SELECT rowid AS sb_rowid, * FROM messages WHERE id IN (SELECT value FROM json_each(?))')
+            .all(JSON.stringify(ids)) as Array<MessageRow & { sb_rowid: number }>
+          add(rows.filter((row) => family.has(row.conversation_id)))
+        }
+        const rows = [...byId.values()].sort(
+          (a, b) =>
+            a.timestamp - b.timestamp ||
+            family.get(a.conversation_id)! - family.get(b.conversation_id)! ||
+            a.sb_rowid - b.sb_rowid,
+        )
+        return messageRowsToChatMessages(rows)
+      }),
+    timestampOf: (id) =>
+      timed(
+        () =>
+          each<{ timestamp: number }>(
+            'SELECT timestamp FROM messages WHERE conversation_id = ? AND id = ?',
+            (family) => [family, id],
+          )[0]?.timestamp,
+      ),
+    hasRowBefore: (at) =>
+      timed(
+        () =>
+          each('SELECT 1 FROM messages WHERE conversation_id = ? AND timestamp < ? LIMIT 1', (id) => [id, bound(at)])
+            .length > 0,
+      ),
+    count: () =>
+      timed(() =>
+        each<{ n: number }>('SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?', (id) => [id]).reduce(
+          (sum, row) => sum + row.n,
+          0,
+        ),
+      ),
+  }
 }
 
 /** Each conversation's `message_revisions` counter, 0 when it has none yet. */
@@ -193,7 +300,8 @@ export function getDisplayBodyEnrichments(conversationId: string): Map<string, D
        FROM messages
       WHERE conversation_id = ?
         AND role = 'user'
-        AND (display_body IS NOT NULL OR images IS NOT NULL)`,
+        AND (display_body IS NOT NULL OR images IS NOT NULL)
+      ORDER BY timestamp, rowid`,
     )
     .all(conversationId) as Array<{
     content: string

@@ -23,6 +23,17 @@ describe('chat open through first committed message list', () => {
     frames[0](0)
     expect(end).toHaveBeenCalledWith({ readMs: 44, messages: 1, outcome: 'rendered' })
   })
+  it('reports the renderer heap when the engine exposes it', () => {
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => callback(0))
+    vi.stubGlobal('performance', {
+      ...performance,
+      memory: { usedJSHeapSize: 300 * 1048576, totalJSHeapSize: 512 * 1048576 },
+    })
+    const messages = [{ id: 'a', role: 'assistant' as const, content: 'one', timestamp: 1 }]
+    beginChatOpen('t').ready('t', messages)
+    chatMessagesCommitted('t', messages)
+    expect(end).toHaveBeenCalledWith({ messages: 1, heapUsedMb: 300, heapTotalMb: 512, outcome: 'rendered' })
+  })
   it('handles cached lists that already committed before load finishes', () => {
     const frames: FrameRequestCallback[] = []
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
