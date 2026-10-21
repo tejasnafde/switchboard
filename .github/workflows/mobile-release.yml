@@ -12,6 +12,14 @@
 #   PLAY_SERVICE_ACCOUNT_JSON   JSON key of a service account invited in the
 #                               Play Console for app.tn07.switchboard only
 #
+# With the `apk` input it also publishes a sideload APK as the GitHub release
+# mobile-v<version>. bundletool builds a universal APK from the verified AAB and
+# signs it with the same upload key, so it never upgrades a Play install (Play
+# re-signs those with its own key). https://switchboard.tn07.dev/apk redirects
+# to the newest release that has an .apk asset (Worker switchboard-apk in
+# tn07-site). The release is never marked latest, so desktop auto-update keeps
+# reading the desktop release.
+#
 # React Native iOS continues to use mobile-ota.yml. This lane never invokes EAS
 # and uploads nothing until package, version, signer and permission checks pass.
 name: Mobile Release (Native Android, Google Play)
@@ -34,6 +42,14 @@ on:
         options:
           - completed
           - draft
+      play:
+        description: Upload the AAB to the Play track.
+        type: boolean
+        default: true
+      apk:
+        description: Also publish a sideload APK as the GitHub release mobile-v<version>.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -55,6 +71,8 @@ jobs:
     name: Build, verify, and upload the native AAB
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout
@@ -93,6 +111,23 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Refuse an existing APK release
+        if: inputs.apk
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="mobile-v${{ steps.version.outputs.version }}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2> "$RUNNER_TEMP/release-view.err"; then
+            echo "::error::Release $TAG already exists; increment versionName and versionCode"
+            exit 1
+          fi
+          if ! grep -qx 'release not found' "$RUNNER_TEMP/release-view.err"; then
+            cat "$RUNNER_TEMP/release-view.err"
+            echo "::error::Could not check whether release $TAG exists"
+            exit 1
+          fi
+
       - name: Restore upload keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -103,7 +138,7 @@ jobs:
             echo "::error::ANDROID_KEYSTORE_BASE64 is not configured"
             exit 1
           fi
-          if [[ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]]; then
+          if [[ "${{ inputs.play }}" == "true" && -z "$PLAY_SERVICE_ACCOUNT_JSON" ]]; then
             echo "::error::PLAY_SERVICE_ACCOUNT_JSON is not configured"
             exit 1
           fi
@@ -153,6 +188,7 @@ jobs:
       # Play refuses a versionCode it has already seen, so it enforces the
       # monotonic version itself.
       - name: Upload to Google Play
+        if: inputs.play
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
@@ -160,3 +196,95 @@ jobs:
           releaseFiles: ${{ env.RELEASE_AAB }}
           track: ${{ inputs.track }}
           status: ${{ inputs.status }}
+
+      - name: Build the universal APK from the AAB
+        if: inputs.apk
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          trap 'rm -f "$RUNNER_TEMP/ks-pass" "$RUNNER_TEMP/key-pass"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_PASSWORD" > "$RUNNER_TEMP/ks-pass"
+          printf '%s' "$ANDROID_KEY_PASSWORD" > "$RUNNER_TEMP/key-pass"
+          java -jar "$BUNDLETOOL_JAR" build-apks --mode=universal \
+            --bundle="$GITHUB_WORKSPACE/$RELEASE_AAB" \
+            --output="$RUNNER_TEMP/switchboard.apks" \
+            --ks="$RUNNER_TEMP/switchboard-production.jks" \
+            --ks-pass="file:$RUNNER_TEMP/ks-pass" \
+            --ks-key-alias="$ANDROID_KEY_ALIAS" \
+            --key-pass="file:$RUNNER_TEMP/key-pass"
+          RELEASE_APK="switchboard-${{ steps.version.outputs.version }}.apk"
+          unzip -p "$RUNNER_TEMP/switchboard.apks" universal.apk > "$RELEASE_APK"
+          sha256sum "$RELEASE_APK" > "$RELEASE_APK.sha256"
+          echo "RELEASE_APK=$RELEASE_APK" >> "$GITHUB_ENV"
+
+      - name: Locate Android build tools
+        if: inputs.apk
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          BUILD_TOOLS="$(find "$SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          if [[ ! -x "$BUILD_TOOLS/aapt2" || ! -x "$BUILD_TOOLS/apksigner" ]]; then
+            echo "::error::aapt2 or apksigner is unavailable under $SDK_ROOT/build-tools"
+            exit 1
+          fi
+          echo "AAPT2=$BUILD_TOOLS/aapt2" >> "$GITHUB_ENV"
+          echo "APKSIGNER=$BUILD_TOOLS/apksigner" >> "$GITHUB_ENV"
+
+      - name: Verify the APK package, version, signer, and checksum
+        if: inputs.apk
+        run: |
+          set -euo pipefail
+          OUTPUT="$(node ../../scripts/verify-android-apk.mjs --apk "$RELEASE_APK" --checksum "$RELEASE_APK.sha256")"
+          echo "$OUTPUT"
+          if ! grep -qF "Verified Android release APK: app.tn07.switchboard ${{ steps.version.outputs.version }} (" <<< "$OUTPUT"; then
+            echo "::error::APK versionName does not match ${{ steps.version.outputs.version }}"
+            exit 1
+          fi
+
+      - name: Keep the APK for the publish job
+        if: inputs.apk
+        uses: actions/upload-artifact@v4
+        with:
+          name: switchboard-${{ steps.version.outputs.version }}-apk
+          path: |
+            apps/android/${{ env.RELEASE_APK }}
+            apps/android/${{ env.RELEASE_APK }}.sha256
+          retention-days: 90
+
+  # The only job that can write to the repository: it publishes the verified
+  # APK and nothing else.
+  publish-apk:
+    name: Publish the sideload APK
+    needs: release
+    if: inputs.apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Download the verified APK
+        uses: actions/download-artifact@v4
+        with:
+          name: switchboard-${{ needs.release.outputs.version }}-apk
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          sha256sum --check "switchboard-$VERSION.apk.sha256"
+          gh release create "mobile-v$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Switchboard Android $VERSION (sideload APK)" \
+            --notes "Sideload APK for app.tn07.switchboard $VERSION, signed with the upload key. It cannot upgrade a Google Play install: uninstall that first." \
+            --latest=false \
+            "switchboard-$VERSION.apk" "switchboard-$VERSION.apk.sha256"

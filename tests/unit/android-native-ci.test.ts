@@ -110,7 +110,7 @@ describe('native Android publishing lane', () => {
     expect(workflow).toContain(
       './gradlew --no-daemon testDebugUnitTest lintDebug bundleRelease compileDebugAndroidTestKotlin',
     )
-    expect(workflow).not.toMatch(/assembleRelease|\.apk\b|eas build|expo-github-action|EXPO_TOKEN/i)
+    expect(workflow).not.toMatch(/assembleRelease|eas build|expo-github-action|EXPO_TOKEN/i)
   })
 
   test('cannot publish merely because main changed', () => {
@@ -120,7 +120,7 @@ describe('native Android publishing lane', () => {
     expect(workflow).not.toContain('  push:\n')
   })
 
-  test('verifies the AAB before uploading it to a Play test track, and never to GitHub releases', () => {
+  test('verifies the AAB before uploading it to a Play test track', () => {
     const workflow = readFileSync(releaseWorkflowPath, 'utf8')
     const parsed = parseYaml(workflow) as any
     const steps = parsed.jobs.release.steps as any[]
@@ -132,10 +132,44 @@ describe('native Android publishing lane', () => {
     expect(steps[upload].uses).toMatch(/@[0-9a-f]{40}$/)
     expect(steps[upload].with.serviceAccountJsonPlainText).toBe('${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}')
     expect(steps[upload].with.packageName).toBe('app.tn07.switchboard')
+    expect(steps[upload].if).toBe('inputs.play')
     expect(parsed.on.workflow_dispatch.inputs.track.options).toEqual(['internal', 'alpha', 'beta'])
+    expect(parsed.on.workflow_dispatch.inputs.play.default).toBe(true)
     expect(parsed.permissions).toEqual({ contents: 'read' })
+    expect(parsed.jobs.release.permissions).toBeUndefined()
     expect(workflow).toContain('sha256sum --check')
-    expect(workflow).not.toMatch(/gh release/)
+  })
+
+  test('publishes a sideload APK only on request, built from the verified AAB and verified itself', () => {
+    const parsed = parseYaml(readFileSync(releaseWorkflowPath, 'utf8')) as any
+    const steps = parsed.jobs.release.steps as any[]
+    const index = (needle: string) => steps.findIndex((step) => String(step.run ?? '').includes(needle))
+    const verifyAab = index('verify-android-apk.mjs --aab')
+    const buildApk = index('build-apks --mode=universal')
+    const verifyApk = index('verify-android-apk.mjs --apk "$RELEASE_APK" --checksum')
+
+    expect(parsed.on.workflow_dispatch.inputs.apk.default).toBe(false)
+    expect(buildApk).toBeGreaterThan(verifyAab)
+    expect(verifyApk).toBeGreaterThan(buildApk)
+    for (const step of [steps[buildApk], steps[verifyApk]]) expect(step.if).toBe('inputs.apk')
+    expect(steps[buildApk].run).toContain('--ks-pass="file:')
+    expect(steps[buildApk].run).not.toMatch(/pass:\$/)
+
+    const keepApk = steps.find((step) => String(step.with?.name ?? '').endsWith('-apk'))
+    expect(keepApk.if).toBe('inputs.apk')
+    expect(keepApk.with.name).toBe('switchboard-${{ steps.version.outputs.version }}-apk')
+
+    const publish = parsed.jobs['publish-apk']
+    expect(publish.needs).toBe('release')
+    expect(publish.if).toBe('inputs.apk')
+    expect(publish.permissions).toEqual({ contents: 'write' })
+    expect(publish.defaults.run['working-directory']).toBe('.')
+    expect(publish.steps[0].with.name).toBe('switchboard-${{ needs.release.outputs.version }}-apk')
+    const create = publish.steps.map((step: any) => String(step.run ?? '')).join('\n')
+    expect(create.indexOf('sha256sum --check')).toBeGreaterThanOrEqual(0)
+    expect(create.indexOf('gh release create "mobile-v$VERSION"')).toBeGreaterThan(create.indexOf('sha256sum --check'))
+    // A mobile release marked latest would hide the desktop release from electron-updater.
+    expect(create).toContain('--latest=false')
   })
 
   test('release signing is opt-in locally but complete credentials are mandatory once selected', () => {
