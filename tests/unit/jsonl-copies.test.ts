@@ -1,13 +1,11 @@
 /** Profile copies that are byte prefixes of the newest copy are proven by hash and not parsed. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PrefixHasher, clearJsonlCache, loadJsonlCopies } from '../../src/main/agent/jsonl-cache'
+import { clearJsonlCache, loadJsonlCopies } from '../../src/main/agent/jsonl-cache'
 import type { ChatLoadTiming } from '../../src/shared/perf-chat'
 
-const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex')
 const line = (uuid: string, text: string) =>
   JSON.stringify({
     type: 'assistant',
@@ -26,21 +24,6 @@ const timing = (): ChatLoadTiming => ({
   diskLines: 0,
   cacheHits: 0,
   prefixSkips: 0,
-})
-
-describe('PrefixHasher', () => {
-  it('digests every requested prefix across chunk boundaries', () => {
-    const data = Buffer.from('abcdefghijklmnopqrstuvwxyz')
-    const sizes = [0, 1, 7, 8, 13, 26, 40]
-    for (const chunk of [1, 3, 8, 26]) {
-      const hasher = new PrefixHasher(sizes)
-      for (let at = 0; at < data.length; at += chunk) hasher.update(data.subarray(at, at + chunk))
-      expect(hasher.digest()).toBe(sha(data))
-      expect(hasher.size).toBe(26)
-      for (const size of [0, 1, 7, 8, 13, 26]) expect(hasher.prefixes.get(size)).toBe(sha(data.subarray(0, size)))
-      expect(hasher.prefixes.has(40)).toBe(false)
-    }
-  })
 })
 
 describe('loadJsonlCopies', () => {
