@@ -11,6 +11,8 @@ export interface BackendRequestContext {
   deviceScopes?: readonly DeviceScope[]
   /** The paired device session (not its token), when the client redeemed one. */
   deviceSessionId?: string
+  /** Which remote host took the request: the WebSocket host or the IAP TCP host. */
+  remoteHost?: 'ws' | 'tcp'
 }
 
 const requestContext = new AsyncLocalStorage<BackendRequestContext>()

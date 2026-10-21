@@ -128,6 +128,15 @@ export function htmlLiveFrameHeight(contentHeight: number, expanded: boolean): n
   return Math.min(max, Math.max(HTML_LIVE_MIN_HEIGHT, height))
 }
 
+/**
+ * A paused frame's still image box: the running frame's height once the page
+ * has reported one, so a swap between the page and its still image never
+ * changes the frame's size. Null before the page has run in this window.
+ */
+export function htmlLiveStillHeight(contentHeight: number, expanded: boolean): number | null {
+  return contentHeight > 0 ? htmlLiveFrameHeight(contentHeight, expanded) : null
+}
+
 /** The page is taller than the folded frame, so "Show all" is offered. */
 export function htmlLiveFolds(contentHeight: number): boolean {
   return contentHeight > HTML_LIVE_MAX_HEIGHT

@@ -9,6 +9,7 @@ import {
   htmlLiveHeightFromConsole,
   htmlLiveLibraryRefs,
   htmlLiveRejection,
+  htmlLiveStillHeight,
   htmlLiveVerdict,
   isHtmlLiveImage,
   isHtmlLiveImageKey,
@@ -160,5 +161,22 @@ describe('htmlLiveFileName', () => {
     expect(htmlLiveFileName(null)).toBe('live-page.html')
     const taken = new Set(['chart.html', 'chart-2.html'])
     expect(htmlLiveFileName('Chart', (name) => taken.has(name))).toBe('chart-3.html')
+  })
+})
+
+describe('htmlLiveStillHeight', () => {
+  // Pausing or running a frame must not change its size: at the top edge of
+  // the list a size change moved the scroll, which moved the frame back
+  // across the in-view edge, which swapped it again.
+  it('is the running frame height once the page has reported one', () => {
+    for (const content of [40, 300.2, 480, 812]) {
+      for (const expanded of [false, true]) {
+        expect(htmlLiveStillHeight(content, expanded)).toBe(htmlLiveFrameHeight(content, expanded))
+      }
+    }
+  })
+
+  it('is unknown before the page has run here', () => {
+    expect(htmlLiveStillHeight(0, false)).toBeNull()
   })
 })

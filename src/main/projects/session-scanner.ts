@@ -3,6 +3,7 @@ import { join, basename, resolve } from 'path'
 import { homedir } from 'os'
 import { generateTitle } from '@shared/auto-title'
 import { userTypedText } from '@shared/synthetic-message'
+import { stripSenderLine } from '@shared/sender-line'
 import type { SessionSummary, SessionSource } from '@shared/types'
 import { createMainLogger } from '../logger'
 import { scanCursorSessions } from '../cursor/store'
@@ -151,7 +152,7 @@ async function scanClaudeProjectsDir(
                     .join('\n')
                 : ''
           // A background-task notification or interrupt marker is not a title.
-          const text = userTypedText(raw)
+          const text = userTypedText(stripSenderLine(raw))
           if (!text) continue
           title = generateTitle(text)
           break

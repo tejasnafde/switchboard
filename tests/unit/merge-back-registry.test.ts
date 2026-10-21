@@ -6,6 +6,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import './helpers/registry-session-mocks'
+import { stripSenderLine } from '../../src/shared/sender-line'
 
 const db = new Database(':memory:')
 db.exec(`
@@ -120,7 +121,7 @@ class RecordingAdapter implements ProviderAdapter {
       this.failNext = false
       throw new Error('connection dropped')
     }
-    this.sent.push(text)
+    this.sent.push(stripSenderLine(text))
     if (this.failAfterSend) this.modeReadFails = true
     if (delivery === 'queue' && this.running && queuedId) {
       this.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })

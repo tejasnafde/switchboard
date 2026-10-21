@@ -1,0 +1,50 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "linked-pr-picker",
+  "summary": "The desktop chat header's linked pull request control becomes a searchable picker. The chip reads \"N open · M linked\" (the linked count only in a wide header) with the status-tone icon of an open PR with a failed build, else of the newest PR. Its popover has one search field that matches the number, title, branch, repository and state words (open, merged, closed, draft, build failed, checks running). Rows show the PR title, then \"#n · state\" and draft, build failed, checks running and open conversations; the repository only when the chat links PRs of more than one repository; how it was linked only when not automatic (the tooltip always names it, with the branch). A dot marks open and draft PRs. Open PRs come first, then the newest. Ten rows show, then \"Show N more\". No match shows \"No matches. Clear\". Arrows move, Enter opens the PR in Reviews, Escape closes and returns focus to the chip. Titles come from the Reviews list already in the renderer: no new request.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/reviews/LinkedPrControl.tsx",
+        "src/renderer/components/reviews/linked-pr-picker.ts",
+        "tests/unit/linked-pr-picker.test.ts",
+        "e2e/review-to-chat.e2e.mjs",
+        "e2e/visual-regressions.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The phone has no chat header picker. Its thread shows every linked PR as one line in PrLinksBanner (state, provenance, repository, Unlink), scrolled inside a capped height, and it opens PRs from its own Reviews tab. This change only redraws the desktop header control; the banner, its row text and the links API are unchanged."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Same as iOS: ThreadScreen lists the links through PrLinkRows with Unlink and no picker or search. The row text rules it shares with the desktop (phoneLinkRowText, tests/fixtures/pr-link-rows.json) are unchanged."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No channel, payload or shared helper changes. The picker reads pull-requests:links and the Reviews list the renderer already holds."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored. The search text and the expanded list reset when the popover closes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Renderer-only change shipped in the next desktop build. No package identity, signing, deep link, permission or update channel change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/linked-pr-picker.test.ts: open PRs first then newest (link time for a PR the list lacks, the link's newer state wins); row title and detail text, repository only across repositories, link source only when not automatic, tooltip; search by number, #number, title, branch, state words and several words; the ten-row cap and Show N more; chip counts and icon row.",
+      "e2e/review-to-chat.e2e.mjs: the chip shows the open count, the popover lists #612 with its title, with eleven extra seeded links it shows ten rows and Show 2 more, Enter on Show more lists all twelve and selects the eleventh; a search with no match shows Clear, which Enter activates; arrows and Enter open #612 in Reviews; Escape returns focus to the chip.",
+      "e2e/visual-regressions.e2e.mjs: chat header baselines refreshed and a new linked-pr-picker shot in Dark, Light and Translucent.",
+      "npm run typecheck and vitest green."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not tried against a real GitHub or Bitbucket account; the demo PR list and seeded links stand in for one."
+    ]
+  }
+}

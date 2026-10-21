@@ -322,6 +322,7 @@ export class WsHost implements BackendHost {
             transport: 'remote',
             deviceScopes: state!.scopes!,
             deviceSessionId: state!.sessionId,
+            remoteHost: 'ws',
           },
           () => handler(...frame.args),
         )
@@ -344,6 +345,7 @@ export class WsHost implements BackendHost {
               transport: 'remote',
               deviceScopes: state!.scopes!,
               deviceSessionId: state!.sessionId,
+              remoteHost: 'ws',
             },
             () => fn(...frame.args),
           )

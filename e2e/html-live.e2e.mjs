@@ -5,7 +5,8 @@
  * a window, navigate away, read files and load an unknown /_sb/ name, and
  * checks for Node and the app API. Every attempt must fail, and only the
  * bundled /_sb/ libraries load. Then Open in pane moves the page (one running
- * copy), at most two frames run at once, and the still image is stored.
+ * copy), at most two frames run at once, the still image is stored, and a
+ * frame at the top edge of a chat scrolled to the bottom does not jitter.
  *
  *   npm run build:fast && SB_E2E_BACKGROUND=1 node e2e/html-live.e2e.mjs
  *
@@ -236,6 +237,66 @@ try {
   const paneText = (await pane.textContent()) ?? ''
   check(!/error|blocked/.test(paneText), `the saved page still loads its library (${paneText.slice(0, 120)})`)
   if (shots) await win.screenshot({ path: join(shots, 'saved.png') })
+  await pane.getByRole('button', { name: 'Close preview' }).click()
+
+  // ── A frame at the top edge of a chat scrolled to the bottom holds still ──
+  // Scrolling it out swaps the page for its still image; the size must not
+  // change, or the scroll correction brings it back into view and it swaps again.
+  await send('Show the tall live page.')
+  const tall = win.locator('[data-html-live]').filter({ hasText: 'Incident timeline' }).last()
+  await tall.scrollIntoViewIfNeeded()
+  await tall.locator('webview').waitFor({ state: 'attached', timeout: 20_000 })
+  await tall.getByRole('button', { name: /^Show all/ }).waitFor({ timeout: 10_000 })
+  await win.waitForTimeout(2500)
+  const list = win.locator('[data-chat-panel] [data-message-list-scroll]')
+  for (const edge of [0, -1, -6, -12]) {
+    // Size the list so that, scrolled to the bottom, the frame's bottom sits `edge` px below its top.
+    await list.evaluate(async (el, edge) => {
+      el.style.maxHeight = ''
+      el.scrollTop = el.scrollHeight
+      await new Promise((r) => setTimeout(r, 300))
+      const frame = [...el.querySelectorAll('[data-html-live]')].findLast((f) =>
+        f.textContent.includes('Incident timeline'),
+      )
+      const bottom = frame.getBoundingClientRect().bottom - el.getBoundingClientRect().top
+      el.style.maxHeight = `${el.clientHeight - (bottom - edge)}px`
+      el.scrollTop = el.scrollHeight - el.clientHeight - 600
+    }, edge)
+    await win.waitForTimeout(800)
+    const box = await list.boundingBox()
+    await win.mouse.move(box.x + box.width / 2, box.y + 40)
+    const sampled = list.evaluate(async (el) => {
+      const samples = []
+      const t0 = performance.now()
+      while (performance.now() - t0 < 4000) {
+        await new Promise((r) => requestAnimationFrame(r))
+        const frame = [...el.querySelectorAll('[data-html-live]')].findLast((f) =>
+          f.textContent.includes('Incident timeline'),
+        )
+        samples.push({
+          top: el.scrollTop,
+          gap: el.scrollHeight - el.scrollTop - el.clientHeight,
+          height: Math.round(frame.getBoundingClientRect().height),
+          state: frame.getAttribute('data-html-live'),
+        })
+      }
+      return samples
+    })
+    for (let i = 0; i < 12; i++) {
+      await win.mouse.wheel(0, 80)
+      await win.waitForTimeout(30)
+    }
+    const samples = await sampled
+    const heights = new Set(samples.map((x) => x.height))
+    const settled = samples.slice(-60)
+    const last = samples[samples.length - 1]
+    check(heights.size === 1, `edge ${edge}: the frame keeps its size across the swap (${[...heights].join(', ')})`)
+    check(
+      new Set(settled.map((x) => x.top)).size === 1 && last.gap <= 1,
+      `edge ${edge}: the list settles at the bottom (gap ${Math.round(last.gap)}, ${last.state})`,
+    )
+  }
+  await list.evaluate((el) => (el.style.maxHeight = ''))
 } catch (err) {
   console.error(err)
   failures++

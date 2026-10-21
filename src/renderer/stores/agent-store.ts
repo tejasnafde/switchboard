@@ -36,6 +36,18 @@ const log = createRendererLogger('store:agent')
 import type { RuntimeMode } from '@shared/provider-events'
 export type { RuntimeMode }
 
+export type DesktopQueuedTurn = QueuedTurnSummary & { local?: true }
+
+/** Carry this renderer's held sends over a backend seed or event. */
+function keepLocalQueuedTurns(
+  previous: Readonly<Record<string, DesktopQueuedTurn>> | undefined,
+  next: QueuedTurnsByMessage,
+): Readonly<Record<string, DesktopQueuedTurn>> {
+  const local = Object.values(previous ?? {}).filter((turn) => turn.local && !(turn.messageId in next))
+  if (local.length === 0) return next
+  return { ...next, ...Object.fromEntries(local.map((turn) => [turn.messageId, turn])) }
+}
+
 /**
  * Module-level "last chosen" runtime mode used as the default seed when a
  * new session is created and the caller doesn't pass an explicit mode. This
@@ -173,9 +185,11 @@ interface AgentSession {
   /**
    * Messages the backend holds until the running turn ends, keyed by their
    * chat row id. Seeded from `provider.listQueuedTurns`, advanced by
-   * `turn.queued` / `turn.dequeued`.
+   * `turn.queued` / `turn.dequeued`. A `local` entry is held by this renderer
+   * until the chat finishes opening or switching (services/held-sends); the
+   * backend never saw it, so seeds and events leave it alone.
    */
-  queuedTurns?: QueuedTurnsByMessage
+  queuedTurns?: Readonly<Record<string, DesktopQueuedTurn>>
   /** Bumped by every queued-turn event, so a recovery can tell it raced one. */
   queuedTurnRevision?: number
   /** Display title (user-editable, auto-generated from first message) */
@@ -320,6 +334,8 @@ interface AgentStore {
   trackPendingRequestEvent: (event: RuntimeEvent) => void
   setQueuedTurns: (sessionId: string, turns: readonly QueuedTurnSummary[]) => void
   trackQueuedTurnEvent: (event: RuntimeEvent) => void
+  /** Mark or unmark a row as held by this renderer (services/held-sends). */
+  setLocalQueuedTurn: (sessionId: string, messageId: string, turn: DesktopQueuedTurn | null) => void
   getActiveSession: () => AgentSession | undefined
   setTitle: (sessionId: string, title: string) => void
   setRuntimeMode: (sessionId: string, mode: RuntimeMode) => void
@@ -577,7 +593,21 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   setQueuedTurns: (sessionId, turns) =>
     set((state) => ({
-      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, queuedTurns: seedQueuedTurns(turns) } : s)),
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, queuedTurns: keepLocalQueuedTurns(s.queuedTurns, seedQueuedTurns(turns)) } : s,
+      ),
+    })),
+
+  setLocalQueuedTurn: (sessionId, messageId, turn) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId) return s
+        const queuedTurns = { ...s.queuedTurns }
+        if (turn) queuedTurns[messageId] = turn
+        else if (messageId in queuedTurns) delete queuedTurns[messageId]
+        else return s
+        return { ...s, queuedTurns }
+      }),
     })),
 
   trackQueuedTurnEvent: (event) => {
@@ -594,7 +624,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         if (s.id !== event.threadId) return s
         const revision = event.type === 'status' ? s.queuedTurnRevision : (s.queuedTurnRevision ?? 0) + 1
         const current = s.queuedTurns ?? NO_QUEUED_TURNS
-        const next = applyQueuedTurnEvent(current, event)
+        const next = keepLocalQueuedTurns(current, applyQueuedTurnEvent(current, event))
         // A cancelled or dropped message never reached the agent, so its row
         // goes too, on every client (the backend replaced the stored copy).
         const cancelled =
