@@ -48,6 +48,7 @@ describe('visual regression harness safety', () => {
         'landing',
         'message-search',
         'chat',
+        'linked-pr-picker',
         'sidebar',
         'sidebar-needs-you',
         'command-palette',

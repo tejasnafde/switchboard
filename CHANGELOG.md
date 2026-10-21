@@ -5,6 +5,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Changed
+- **Linked pull request picker.** The chat header chip reads "2 open · 106 linked" and opens a searchable list: the PR title first, then the number, state and what it needs, open PRs first, ten at a time. Search matches the number, title, branch and state words such as merged, draft or build failed. Arrows and Enter open a PR in Reviews.
 - **Credits in one place.** Code comments, docs, tests and older CHANGELOG entries now describe behaviour instead of naming the projects an idea came from. The README has an Acknowledgements section, and `THIRD_PARTY_NOTICES.md` keeps the MIT notice for the three files that hold material from another project.
 
 ### Fixed

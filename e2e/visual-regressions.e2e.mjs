@@ -662,9 +662,16 @@ async function captureThemeScreens(win, theme) {
   // The sidebar has baselines of its own, so the full-window screens mask
   // it: a sidebar change then moves only the sidebar baselines.
   const sidebar = win.locator('.sidebar-root')
-  // The seeded link to #612 (linkPullRequest) shows in the chat header once the demo PR list is read.
-  await win.locator('[data-linked-pr][title*="build failed"]').first().waitFor({ state: 'visible', timeout: 20_000 })
+  // The seeded link to #612 (linkPullRequest) shows in the chat header once the demo PR list is read,
+  // then its picker opens over the header.
+  await win.locator('[data-linked-pr][data-status-tone="bad"]').first().waitFor({ state: 'visible', timeout: 20_000 })
   await snapScreen(win, 'chat', theme, win, [turnTimes, sidebar])
+  await win.locator('[data-linked-pr]').first().click()
+  const linkedPrs = win.getByRole('dialog', { name: 'Linked pull requests' })
+  await linkedPrs.locator('[data-linked-pr-row]').first().waitFor({ state: 'visible' })
+  await snapScreen(win, 'linked-pr-picker', theme, linkedPrs)
+  await win.keyboard.press('Escape')
+  await linkedPrs.waitFor({ state: 'hidden' })
   await snapScreen(win, 'sidebar', theme, sidebar)
   await captureFooterWidths(win, theme, win.locator('.chat-composer').first())
 

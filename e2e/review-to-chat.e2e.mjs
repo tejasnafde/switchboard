@@ -81,34 +81,58 @@ try {
   await win.locator('.sidebar-recent-row').filter({ hasText: CHAT }).first().click()
   await win.locator('.chat-identity-title').filter({ hasText: CHAT }).waitFor({ state: 'visible' })
   const header = win.locator('[data-linked-pr]')
-  await win.locator('[data-linked-pr][title*="build failed"]').waitFor({ state: 'visible', timeout: 20_000 })
-  check('chat header shows the linked PR', (await header.innerText()).includes('#612'), await header.innerText())
-  // The title wins: at the default width the control is compact (icon + number),
-  // in a wide header it carries the phrase, and the title is never cut.
+  await win.locator('[data-linked-pr][data-status-tone="bad"]').waitFor({ state: 'visible', timeout: 20_000 })
+  check('chat header counts the linked PR', (await header.innerText()).includes('1 open'), await header.innerText())
+  // The title wins: at the default width the chip shows only the open count,
+  // in a wide header it adds the linked count, and the title is never cut.
   const titleFits = () =>
     win
       .locator('.chat-identity-title')
       .first()
       .evaluate((el) => el.scrollWidth <= el.clientWidth)
-  const phraseShown = () => header.locator('span.truncate').isVisible()
-  check('default width: compact control, whole title', !(await phraseShown()) && (await titleFits()))
+  const linkedShown = () => header.locator('span.truncate').isVisible()
+  check('default width: compact chip, whole title', !(await linkedShown()) && (await titleFits()))
   const size = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getSize())
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1900, 900))
   await win.waitForTimeout(400)
   check(
-    'wide header: phrase shown, whole title',
-    (await phraseShown()) && (await header.innerText()).includes('build failed') && (await titleFits()),
+    'wide header: linked count shown, whole title',
+    (await linkedShown()) && (await header.innerText()).includes('1 linked') && (await titleFits()),
   )
   await app.evaluate(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h), size)
   await win.waitForTimeout(400)
 
+  const picker = win.getByRole('dialog', { name: 'Linked pull requests' })
+  const prRow = picker.locator('[data-linked-pr-row$="#612"]')
   await header.click()
-  await win.getByRole('button', { name: 'Open in Reviews' }).click()
+  await prRow.waitFor({ state: 'visible' })
+  const rowText = await prRow.innerText()
+  check(
+    'picker row: title first, then number, state and phrase',
+    rowText.startsWith('Jittered backoff for the SSG sync worker') && rowText.includes('#612 · open · build failed'),
+    rowText,
+  )
+  await win.keyboard.type('nothing like this')
+  await picker.getByText('No matches.').waitFor({ state: 'visible' })
+  await picker.getByRole('button', { name: 'Clear' }).click()
+  await prRow.waitFor({ state: 'visible' })
+  await win.keyboard.type('build failed')
+  await prRow.waitFor({ state: 'visible' })
+  await win.keyboard.press('Escape')
+  await picker.waitFor({ state: 'hidden' })
+  check('Escape returns focus to the chip', await header.evaluate((el) => el === document.activeElement))
+
+  await win.keyboard.press('Enter')
+  await prRow.waitFor({ state: 'visible' })
+  await win.keyboard.press('ArrowDown')
+  await win.keyboard.press('ArrowUp')
+  check('arrows select the row', (await prRow.getAttribute('data-selected')) === 'true')
+  await win.keyboard.press('Enter')
   await reviews()
     .getByText('Replaces the fixed 30 s retry', { exact: false })
     .waitFor({ state: 'visible', timeout: 20_000 })
   check(
-    'Open in Reviews selects the PR',
+    'Enter opens the PR in Reviews',
     await reviews().locator('[data-pr-row*="#612"][aria-current="true"]').isVisible(),
   )
 
