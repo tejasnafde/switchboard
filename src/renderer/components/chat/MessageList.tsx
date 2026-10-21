@@ -32,6 +32,7 @@ import { SubagentRow } from './SubagentRow'
 import { groupChatSubagents, subagentCallsOf } from './subagent-messages'
 import { shouldLoadOlder, turnIndexHolding } from '../../services/history-window'
 import { loadOlderHistory } from '../../services/history-loader'
+import { keepViewOnRowResize } from '../../services/row-resize-scroll'
 import { messageSearchTerms } from '@shared/message-search'
 import { cn } from '../../lib/utils'
 
@@ -268,8 +269,7 @@ export function MessageList({
   // scroll position set since (the anchor restore below).
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) => {
     const container = instance.scrollElement
-    if (!container || item.start >= container.scrollTop) return false
-    container.scrollTop += delta
+    if (!container || !keepViewOnRowResize(container, contentRef.current, item.start, delta)) return false
     instance.scrollOffset = container.scrollTop
     scrollCorrectedRef.current = true
     return false
