@@ -1,0 +1,56 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "queue-during-switch",
+  "summary": "Desktop: a message sent while its chat is still opening, switching provider instance (\"Switching to <profile>...\") or starting its agent is no longer refused with a red \"Your draft is held. Send when ready.\" error. It is accepted at once and shown as a queued row (the existing Queued bar, with \"sends when the chat is ready\" and Cancel; no Send now). When the wait ends the held messages are sent in order, each once and with queue delivery, so none steers into the turn before it; a message held while they go out joins the end. When the open resolves to the chat's live root id, the held messages move with it. Images and pills go through the same send call. When the switch or open fails, the messages go back to the composer (text as the agent would read it, pills expanded, images kept) and the failure shows in the wait banner then, also when no pane shows the chat. A declined \"Start fresh\" during a switch also returns them. A send the chat refuses after the wait goes back to the composer with the ones after it, and a system row says why. Cancel on the row, or Stop, takes the messages back. Held messages live in a renderer service, so a pane that closes during the wait does not lose them.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/services/held-sends.ts",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/QueuedTurnBar.tsx",
+        "src/renderer/stores/agent-store.ts",
+        "tests/unit/held-sends.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "mobile_queue_during_wait",
+      "followUpRelease": "A later Expo OTA release. The phone still refuses a send while the thread loads or rotates its provider (blockedSendReason in apps/mobile/src/lib/composer.ts: \"Message not sent. Your draft and attachments are kept; tap Send when ready.\"). That is safe, the draft is kept, but it is the behaviour this change removes on the desktop. The phone has its own queued-message path (QueuedMessage in stores) that the follow-up should hold these sends in. Nothing ships on the phone in this change, so the flag gates nothing yet.",
+      "evidence": ["apps/mobile/src/lib/composer.ts", "apps/mobile/src/screens/ThreadScreen.tsx"]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "native_queue_during_wait",
+      "followUpRelease": "A later native Android release. ThreadSessionCoordinator returns ComposerSubmitResult.Busy while profiles.changing, so the composer keeps the draft and nothing is sent. The follow-up should hold the send in the coordinator's outbox and release it when the profile change settles. Nothing ships on Android in this change, so the flag gates nothing yet.",
+      "evidence": ["apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt"]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire, IPC or backend change. The renderer holds the message and later sends it with the existing submit-user-turn call and queue delivery."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing new is stored. A held message is in renderer memory only until it is sent; a quit during the wait loses it, as a refused send's composer state was not stored either beyond the draft text."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships with the next desktop build. No native module, permission, signing, package identity or update channel change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/held-sends.test.ts: a held send shows as a local queued row that survives a backend seed and a stopped status; nothing is sent while the switch is pending or the chat opens; after the wait each message is sent once and in order, each with queue delivery; a failed switch returns the messages to the composer without sending; a refused send and the ones after it go back with the error reported; images and pills reach the send call, and on failure the pill text comes back expanded and the images come back; Cancel and Stop take messages back.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not driven in the built app: a real profile switch with messages sent during it. The ChatPanel effect that settles held sends is covered only through the service it calls.",
+      "While a chat is still opening its message list is hidden, so the queued row is not visible until the open ends and the message is sent.",
+      "A refused held send returns pills as expanded text, not chips, the same as Cancel on a backend-queued message.",
+      "Held image object URLs of a chat that is never shown again stay until the renderer reloads.",
+      "Phones: nothing changed."
+    ]
+  }
+}

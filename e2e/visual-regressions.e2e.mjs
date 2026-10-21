@@ -1281,8 +1281,8 @@ async function captureChatWaitScreens(win, theme) {
     if (await panel.locator('.message-list').count()) throw new Error('Previous messages remained during chat open')
     const input = panel.locator('[contenteditable="true"]')
     await input.click()
+    // Typed, not sent: a load must never clear it.
     await win.keyboard.type('Keep this draft while loading.')
-    await win.keyboard.press('Enter')
     if (!(await input.textContent()).includes('Keep this draft')) throw new Error('Loading cleared the composer draft')
     await snapScreen(win, 'chat-loading', theme, panel)
   } finally {
@@ -1290,6 +1290,8 @@ async function captureChatWaitScreens(win, theme) {
   }
   await panel.getByRole('status').filter({ hasText: 'Loading conversation...' }).waitFor({ state: 'hidden' })
   const input = panel.locator('[contenteditable="true"]')
+  if (!(await input.textContent()).includes('Keep this draft'))
+    throw new Error('The finished load cleared the composer draft')
   await input.click()
   await win.keyboard.press('ControlOrMeta+A')
   await win.keyboard.press('Backspace')
@@ -1313,6 +1315,24 @@ async function captureChatWaitScreens(win, theme) {
     // The picker closes on a profile click; the switch shows on its trigger and the composer.
     await picker.waitFor({ state: 'hidden' })
     await snapScreen(win, 'chat-profile-switch', theme, panel)
+    // A send during the switch is queued: the composer empties and a queued
+    // row shows the message. Cancel puts it back, so nothing is sent here.
+    await input.click()
+    await win.keyboard.type('Queue this during the switch.')
+    await win.keyboard.press('Enter')
+    const queued = panel.locator('[data-queued-turn]').filter({ hasText: 'sends when the chat is ready' })
+    await queued.waitFor({ state: 'visible', timeout: 5_000 })
+    const queuedBubble = panel.getByText('Queue this during the switch.', { exact: true })
+    if (!(await queuedBubble.count())) throw new Error('The queued row does not show the sent message')
+    if ((await input.textContent()).includes('Queue this'))
+      throw new Error('A queued send left its text in the composer')
+    await queued.getByRole('button', { name: 'Cancel' }).click()
+    await queued.waitFor({ state: 'hidden' })
+    if (!(await input.textContent()).includes('Queue this during the switch.'))
+      throw new Error('Cancel did not return the queued message to the composer')
+    await input.click()
+    await win.keyboard.press('ControlOrMeta+A')
+    await win.keyboard.press('Backspace')
   } finally {
     await release()
   }
