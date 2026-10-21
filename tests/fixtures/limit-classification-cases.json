@@ -1,0 +1,190 @@
+{
+  "note": "Cases only. Each adapter must classify these from PR 2 on; the adapters do not read this file yet.",
+  "cases": [
+    {
+      "name": "claude rate_limit_event rejected with a reset",
+      "provider": "claude",
+      "events": [
+        {
+          "type": "rate_limit_event",
+          "rate_limit_info": {
+            "status": "rejected",
+            "rateLimitType": "five_hour",
+            "resetsAt": 1761045600
+          }
+        }
+      ],
+      "expected": {
+        "limitClass": "usage_limit",
+        "resetAt": 1761045600000
+      }
+    },
+    {
+      "name": "claude rejection with no reset time",
+      "provider": "claude",
+      "events": [
+        {
+          "type": "rate_limit_event",
+          "rate_limit_info": {
+            "status": "rejected"
+          }
+        }
+      ],
+      "expected": {
+        "limitClass": "usage_limit",
+        "resetAt": null
+      }
+    },
+    {
+      "name": "codex 429 after retries are exhausted is a limit",
+      "provider": "codex",
+      "events": [
+        {
+          "method": "error",
+          "params": {
+            "error": {
+              "message": "exceeded retry limit, last status: 429 Too Many Requests",
+              "codexErrorInfo": "usageLimitExceeded"
+            },
+            "willRetry": false
+          }
+        }
+      ],
+      "expected": {
+        "limitClass": "usage_limit",
+        "resetAt": null
+      }
+    },
+    {
+      "name": "gateway 503 with a reset time is a limit",
+      "provider": "codex",
+      "events": [
+        {
+          "method": "error",
+          "params": {
+            "error": {
+              "message": "503 Service Unavailable: usage limit reached, try again at 2026-10-21T15:40:00Z"
+            },
+            "willRetry": false
+          }
+        }
+      ],
+      "expected": {
+        "limitClass": "usage_limit",
+        "resetAt": 1792597200000
+      }
+    },
+    {
+      "name": "a limit followed by an empty success stays a limit",
+      "provider": "claude",
+      "events": [
+        {
+          "type": "rate_limit_event",
+          "rate_limit_info": {
+            "status": "rejected",
+            "resetsAt": 1761045600
+          }
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "result": "",
+          "is_error": false
+        }
+      ],
+      "expected": {
+        "limitClass": "usage_limit",
+        "resetAt": 1761045600000
+      }
+    },
+    {
+      "name": "a /compact stopped by the limit is a limit",
+      "provider": "claude",
+      "events": [
+        {
+          "type": "system",
+          "subtype": "compact_boundary",
+          "status": "started"
+        },
+        {
+          "type": "rate_limit_event",
+          "rate_limit_info": {
+            "status": "rejected",
+            "resetsAt": 1761045600
+          }
+        }
+      ],
+      "expected": {
+        "limitClass": "usage_limit",
+        "resetAt": 1761045600000
+      }
+    },
+    {
+      "name": "a full context window is not a limit",
+      "provider": "claude",
+      "events": [
+        {
+          "type": "result",
+          "subtype": "error_during_execution",
+          "is_error": true,
+          "result": "Prompt is too long"
+        }
+      ],
+      "expected": {
+        "limitClass": "context_full",
+        "resetAt": null
+      }
+    },
+    {
+      "name": "an unknown ACP quota error stays failed",
+      "provider": "gemini",
+      "events": [
+        {
+          "error": {
+            "code": -32603,
+            "message": "Quota exceeded for quota metric"
+          }
+        }
+      ],
+      "expected": {
+        "limitClass": "other",
+        "resetAt": null
+      }
+    },
+    {
+      "name": "a synthetic model name is never shown and adds no tokens",
+      "provider": "claude",
+      "events": [
+        {
+          "type": "assistant",
+          "message": {
+            "model": "<synthetic>",
+            "content": [
+              {
+                "type": "text",
+                "text": "You've hit your limit"
+              }
+            ],
+            "usage": {
+              "input_tokens": 0,
+              "output_tokens": 0
+            }
+          }
+        },
+        {
+          "type": "rate_limit_event",
+          "rate_limit_info": {
+            "status": "rejected",
+            "resetsAt": 1761045600
+          }
+        }
+      ],
+      "expected": {
+        "limitClass": "usage_limit",
+        "resetAt": 1761045600000,
+        "model": null,
+        "tokens": 0
+      }
+    }
+  ]
+}
