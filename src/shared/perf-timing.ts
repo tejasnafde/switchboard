@@ -14,6 +14,7 @@ export const PERF_THRESHOLDS = {
   'transcript.compare': 1000,
   'transcript.copy': 1000,
   'handoff.build': 300,
+  'db.migrate': 1000,
   ipc: 200,
 } as const
 

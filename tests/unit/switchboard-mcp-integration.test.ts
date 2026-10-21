@@ -76,7 +76,12 @@ import type { RuntimeEvent } from '../../src/shared/provider-events'
 import type { PrRef } from '../../src/shared/pull-requests'
 
 const bridgeDir = mkdtempSync(join(tmpdir(), 'sb-mcp-test-'))
-afterAll(() => rmSync(bridgeDir, { recursive: true, force: true }))
+// START_SESSION checks the cwd exists, and '/tmp' is not a folder on Windows.
+const projectDir = mkdtempSync(join(tmpdir(), 'sb-mcp-project-'))
+afterAll(() => {
+  rmSync(bridgeDir, { recursive: true, force: true })
+  rmSync(projectDir, { recursive: true, force: true })
+})
 
 /** A minimal MCP client over the bridge's stdio, as an agent would run it. */
 class BridgeClient {
@@ -283,7 +288,7 @@ describe('through the provider registry', () => {
     await host.invoke(ProviderChannels.START_SESSION, {
       threadId: 't1',
       provider: 'codex',
-      cwd: '/tmp',
+      cwd: projectDir,
       runtimeMode: 'full-access',
     })
 
@@ -375,7 +380,7 @@ describe('through the provider registry', () => {
     await host.invoke(ProviderChannels.START_SESSION, {
       threadId: 't3',
       provider: 'codex',
-      cwd: '/tmp',
+      cwd: projectDir,
       runtimeMode: 'full-access',
     })
     const client = connect(adapter.launches[0]!)
@@ -411,7 +416,7 @@ describe('through the provider registry', () => {
     const server = new SwitchboardMcpServer({ bridgeDir: () => bridgeDir })
     const registry = new ProviderRegistry(host, new Map([['codex', adapter]]), undefined, undefined, server)
     registry.registerIpcHandlers()
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 't2', provider: 'codex', cwd: '/tmp' })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 't2', provider: 'codex', cwd: projectDir })
     const client = connect(adapter.launches[0]!)
     await client.request('initialize', {})
     void client.request('tools/call', { name: 'reply_to_conversation', arguments: { conversationId: 'T1', text: 'x' } })
