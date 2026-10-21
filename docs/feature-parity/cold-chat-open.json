@@ -37,7 +37,6 @@
       "status": "implemented",
       "evidence": [
         "src/main/db/database.ts",
-        "src/main/agent/transcript-index.ts",
         "tests/unit/db-startup-migrations.test.ts",
         "tests/unit/v0835-upgrade.test.ts"
       ]
