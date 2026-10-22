@@ -66,6 +66,7 @@
 @source '../components/SettingsPage.tsx';
 @source '../components/settings';
 @source '../components/reviews';
+@source '../components/sidebar/OpenOnMachineDialog.tsx';
 
 @theme inline {
   --spacing: 0.25rem;

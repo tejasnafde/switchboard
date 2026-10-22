@@ -28,6 +28,7 @@ import { rankAndFilterRefs, decideSwitchAction, type Ref } from './branch-picker
 import { followSuggestionsOff } from '@shared/follow-suggestions'
 import { ChipCaret, chipClass, chipValueClass } from '../ui/chip'
 import { BranchIcon } from './FooterIcons'
+import { useProjectCloneStore } from '../../services/project-clone'
 
 const log = createRendererLogger('chat:branch-picker')
 
@@ -85,6 +86,12 @@ export function useCurrentBranch(cwd: string | null, onCwdMissing?: () => void):
       setIsGitRepo(!/not a git repository/i.test(res.error))
     }
   }, [cwd, onCwdMissing])
+
+  // A clone that ended in this folder turns a cached "not a git repository" into a branch.
+  const cloneReady = useProjectCloneStore((s) => (cwd ? (s.readyVersion[cwd] ?? 0) : 0))
+  useEffect(() => {
+    if (cloneReady) void refresh()
+  }, [cloneReady, refresh])
 
   useEffect(() => {
     refresh()

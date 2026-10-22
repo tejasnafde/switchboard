@@ -31,7 +31,8 @@ export const FULL_SCOPES: readonly DeviceScope[] = ['chat', 'terminal', 'admin']
  * channel, and missing one breaks a feature silently for paired devices only.
  */
 const SCOPE_REQUIRED_PREFIXES: Record<DeviceScope, readonly string[]> = {
-  terminal: ['terminal:'],
+  // A clone runs git with a caller's URL; ignored-file reads and writes carry secrets.
+  terminal: ['terminal:', 'project-clone:'],
   // Without this, a paired device could mint itself another session and revoke
   // every other device. Revocation must be out of reach of a revocable credential.
   // Source control accounts hold a host token. Status is gated too: it names

@@ -49,6 +49,7 @@ import type { Project, SessionSummary, Bookmark, ChatMessage } from '@shared/typ
 import { confirm } from '../ui/confirm'
 import { historyScanSummary, type PrHistoryScanResult } from '@shared/pull-request-links'
 import { useRenderCount } from '../../services/render-counter'
+import { OpenOnMachineDialog, type OpenOnMachineTarget } from './OpenOnMachineDialog'
 
 interface SidebarProps {
   onSessionSelect?: (session: SessionSummary, projectPath: string, machineId?: string) => void
@@ -186,6 +187,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     projectPath: string
     session: SessionSummary
   } | null>(null)
+  const [openOnMachine, setOpenOnMachine] = useState<OpenOnMachineTarget | null>(null)
   const [projectMenu, setProjectMenu] = useState<{
     x: number
     y: number
@@ -1560,6 +1562,17 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
               },
             },
             {
+              label: 'Open on another machine…',
+              onClick: () => {
+                setOpenOnMachine({
+                  machineId: 'local',
+                  projectPath: projectMenu.project.path,
+                  projectName: projectMenu.project.name,
+                })
+                setProjectMenu(null)
+              },
+            },
+            {
               label: 'Import or recover conversations…',
               onClick: () => {
                 void handleScan(projectMenu.project.path)
@@ -1584,6 +1597,8 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
           ]}
         />
       )}
+
+      {openOnMachine && <OpenOnMachineDialog project={openOnMachine} onClose={() => setOpenOnMachine(null)} />}
 
       {/* Workspace manager modal - rename / recolor / delete */}
       {managerOpen && (

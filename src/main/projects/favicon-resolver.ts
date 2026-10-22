@@ -79,6 +79,11 @@ interface CacheEntry {
 }
 const cache = new Map<string, CacheEntry>()
 
+/** Drop a cached answer, such as "no favicon" for a folder a clone just filled. */
+export function forgetProjectFavicon(projectPath: string): void {
+  cache.delete(projectPath)
+}
+
 /** Test hook - wipe the module-level cache between tests. */
 export function __clearFaviconCacheForTests(): void {
   cache.clear()
