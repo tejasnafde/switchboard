@@ -103,7 +103,8 @@ describe('open a project on another machine (local bare repos)', () => {
 
     expect(await done).toEqual({ phase: 'done', branch: 'feat' })
     expect(cloneStatus(dest)).toEqual({ phase: 'done', branch: 'feat' })
-    expect(readFileSync(join(dest, 'feature.txt'), 'utf8')).toBe('only on the fork\n')
+    // Git on Windows may check out CRLF (core.autocrlf).
+    expect(readFileSync(join(dest, 'feature.txt'), 'utf8').replace(/\r\n/g, '\n')).toBe('only on the fork\n')
 
     const read = await readIgnoredFile(source, '.env')
     if (!read.ok) throw new Error(read.error)

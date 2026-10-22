@@ -167,6 +167,7 @@ export async function startClone(request: CloneRequest, deps: CloneDeps): Promis
     // mkdir without recursive fails on an existing folder, which claims the name.
     await fs.mkdir(dest)
   } catch (err) {
+    log.warn('creating the clone folder failed', { dest, err: (err as Error).message })
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
       return { ok: false, error: `${dest} already exists on this machine. Add it as a project, or remove it first.` }
     }
