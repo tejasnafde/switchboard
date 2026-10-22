@@ -90,6 +90,12 @@ class OutboxRuntime(
 
     fun beginEdit(origin: String): QueuedTurn? = coordinator.beginEdit(origin)
 
+    fun holdThread(connectionId: String, threadId: String, held: Boolean) =
+        coordinator.holdThread(connectionId, threadId, held)
+
+    fun withdraw(origin: String, adopt: (QueuedTurn) -> Unit): QueuedTurn? =
+        coordinator.withdraw(origin, adopt).also { if (it != null) publish() }
+
     fun replace(origin: String, draft: OutgoingTurnDraft): EnqueueResult =
         if (!hydrated) EnqueueResult.StorageFailure("Outbox is still loading")
         else coordinator.replace(origin, draft).also { publish() }

@@ -25,7 +25,7 @@ import {
   type QueuedMessage,
   queuedTurnBody,
 } from '../lib/outbox-model'
-import { loadQueued, removeQueued, saveQueued } from '../lib/outbox-storage'
+import { deleteQueued, loadQueued, removeQueued, saveQueued } from '../lib/outbox-storage'
 import { getClient } from './connections'
 import { chatCacheReady, useChatStore, threadKey } from './chat'
 import { prepareMobileHandoffTurn } from '../lib/handoff-turn'
@@ -48,6 +48,40 @@ export const useOutboxStore = create<OutboxState>((set) => ({
 
 /** Earliest retry per message. Runtime only: a restart starts from zero. */
 const retryNotBefore = new Map<string, number>()
+
+/** Chats still opening or switching provider (thread keys). Runtime only. */
+const heldThreads = new Set<string>()
+
+/** Hold a chat's messages until its open or provider switch ends. */
+export function holdThread(connectionId: string, threadId: string): void {
+  heldThreads.add(threadKey(connectionId, threadId))
+}
+
+/** The wait ended: send what it held. */
+export function releaseThread(connectionId: string, threadId: string): void {
+  if (heldThreads.delete(threadKey(connectionId, threadId))) void drain()
+}
+
+/**
+ * Take messages back out of the queue after a failed open or switch. Only
+ * ones never attempted: they were held from the moment they were queued.
+ */
+export async function withdrawQueued(messageIds: readonly string[]): Promise<QueuedMessage[]> {
+  const taken = useOutboxStore
+    .getState()
+    .messages.filter((m) => messageIds.includes(m.messageId) && m.attempts === 0 && !m.deliveryState)
+  if (taken.length === 0) return []
+  useOutboxStore.setState((s) => ({ messages: s.messages.filter((m) => !taken.includes(m)) }))
+  const deleted = await Promise.allSettled(taken.map((m) => deleteQueued(m.messageId)))
+  // One still on disk would go out at the next launch: keep it queued rather than return it too.
+  const stuck = taken.filter((_, i) => deleted[i].status === 'rejected')
+  if (stuck.length > 0) {
+    log.warn(`could not withdraw ${stuck.length} held message(s); they stay queued`)
+    useOutboxStore.setState((s) => ({ messages: [...s.messages, ...stuck] }))
+    void drain()
+  }
+  return taken.filter((m) => !stuck.includes(m))
+}
 
 /** Messages the user is still waiting on for a given thread, oldest first. */
 export function queuedFor(connectionId: string, threadId: string): QueuedMessage[] {
@@ -155,6 +189,8 @@ export async function hydrateOutbox(): Promise<void> {
 }
 
 let draining = false
+/** A drain asked for while one runs: its pass may already have skipped a message (a hold just released). */
+let drainAgain = false
 let retryTimer: ReturnType<typeof setTimeout> | null = null
 
 /**
@@ -165,20 +201,26 @@ let retryTimer: ReturnType<typeof setTimeout> | null = null
  * typed offline all go out when signal returns rather than one.
  */
 export async function drain(): Promise<void> {
-  if (draining) return
+  if (draining) {
+    drainAgain = true
+    return
+  }
   draining = true
   try {
-    // Tracks messages ATTEMPTED, not queue length: one enqueued mid-delivery
-    // keeps the length flat, and a length check would never try it.
-    const attempted = new Set<string>()
-    for (;;) {
-      const heads = nextPerThread().filter((m) => !attempted.has(m.messageId))
-      if (heads.length === 0) break
-      for (const message of heads) {
-        attempted.add(message.messageId)
-        await deliver(message)
+    do {
+      drainAgain = false
+      // Tracks messages ATTEMPTED, not queue length: one enqueued mid-delivery
+      // keeps the length flat, and a length check would never try it.
+      const attempted = new Set<string>()
+      for (;;) {
+        const heads = nextPerThread().filter((m) => !attempted.has(m.messageId))
+        if (heads.length === 0) break
+        for (const message of heads) {
+          attempted.add(message.messageId)
+          await deliver(message)
+        }
       }
-    }
+    } while (drainAgain)
   } finally {
     draining = false
     scheduleRetry()
@@ -233,6 +275,7 @@ async function deliver(message: QueuedMessage): Promise<void> {
     // Always true today: the thread row is never removed by the app.
     threadExists: true,
     editing: useOutboxStore.getState().editingId === message.messageId,
+    holding: heldThreads.has(threadKey(message.connectionId, message.threadId)),
     nowMs: Date.now(),
     retryNotBeforeMs: retryNotBefore.get(message.messageId) ?? 0,
   })

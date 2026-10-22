@@ -52,7 +52,10 @@ import {
   completeRejectedEdit,
   drain,
   enqueue,
+  holdThread,
   openRejectedForEdit,
+  releaseThread,
+  withdrawQueued,
   queuedFor,
   useOutboxStore,
   abandonAmbiguous,
@@ -84,7 +87,7 @@ import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
 import { DEMO_STRIP_HEIGHT } from '../components/DemoStrip'
 import { DEMO_LABEL, NOT_IN_DEMO, isDemoConnection } from '@shared/phone-demo/phone-demo'
-import { outboxPresentation, recoverRejectedDraft } from '../lib/outbox-model'
+import { outboxPresentation, recoverRejectedDraft, returnedDraft } from '../lib/outbox-model'
 import { forgetMobileForkRequest, mobileForkRequest } from '../lib/conversation-fork'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { HOST_WRITE_PHONE_APPROVAL_CAPABILITY } from '@shared/host-write-phone'
@@ -167,6 +170,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const [loadLabel, setLoadLabel] = useState<string | null>(isNew ? null : 'Loading conversation...')
   const [waitError, setWaitError] = useState<string | null>(null)
   const rotatingRef = useRef(false)
+  /** Messages sent while the chat opens or switches provider; the outbox holds them until it ends. */
+  const heldIdsRef = useRef<string[]>([])
   const [forkMetadata, setForkMetadata] = useState<ForkLineageMetadata | null>(thread.historyMeta?.forkMetadata ?? null)
   const olderLoadingRef = useRef(false)
   const [olderLoading, setOlderLoading] = useState(false)
@@ -535,6 +540,37 @@ export default function ThreadScreen({ route, navigation }: Props) {
     }
   }, [connectionId])
 
+  /** The open or switch failed or was declined: the messages it held go back to the composer. */
+  const returnHeld = useCallback(async () => {
+    const ids = heldIdsRef.current
+    heldIdsRef.current = []
+    const back = await withdrawQueued(ids)
+    if (back.length === 0) return
+    for (const message of back) useChatStore.getState().removeUserMessage(key, echoMessageId(message.messageId))
+    const restored = returnedDraft(draftRef.current, back)
+    setDraft(restored.text)
+    setAttachments((prev) => [...prev, ...restored.images])
+    usePrefsStore.getState().rememberDraft(key, restored.text)
+    const pill = back.find((message) => message.reviewPill)?.reviewPill
+    if (pill) usePrefsStore.getState().setReviewPill(key, pill)
+  }, [key])
+
+  const waiting = Boolean(loadLabel) || rotating
+  useEffect(() => {
+    if (waiting) {
+      holdThread(connectionId, threadId)
+      return
+    }
+    if (waitError && heldIdsRef.current.length > 0) {
+      void returnHeld().finally(() => releaseThread(connectionId, threadId))
+      return
+    }
+    heldIdsRef.current = []
+    releaseThread(connectionId, threadId)
+  }, [waiting, waitError, connectionId, threadId, returnHeld])
+  // Leaving the chat mid-wait must not strand its messages.
+  useEffect(() => () => releaseThread(connectionId, threadId), [connectionId, threadId])
+
   /** Rotate providers, or transactionally rotate credentials within one provider. */
   const rotateProfile = useCallback(
     (nextProvider: ProviderKind, nextInstanceId?: string) => {
@@ -567,7 +603,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
                   )
                 }),
             })
-            if (!rotation.applied) return
+            if (!rotation.applied) {
+              void returnHeld()
+              return
+            }
           } else {
             await client.stopSession(threadId)
             await client.startSession({
@@ -592,7 +631,18 @@ export default function ThreadScreen({ route, navigation }: Props) {
         }
       })()
     },
-    [connectionId, threadId, projectPath, worktreePath, provider, instanceId, reportError, instances, loadLabel],
+    [
+      connectionId,
+      threadId,
+      projectPath,
+      worktreePath,
+      provider,
+      instanceId,
+      reportError,
+      instances,
+      loadLabel,
+      returnHeld,
+    ],
   )
 
   useEffect(() => {
@@ -706,12 +756,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // `textOverride` is for one-tap actions like the Compact banner: it sends
   // that text alone and leaves the user's draft and attachments untouched.
   const send = (textOverride?: string) => {
-    const blocked = blockedSendReason(loadLabel, rotatingRef.current)
-    if (blocked) {
-      log.info('send blocked by conversation wait', { threadId, reason: blocked })
-      reportError(new Error(blocked))
-      return
-    }
+    // Still opening or switching: queue it now, the outbox sends it when that ends.
+    const held = Boolean(blockedSendReason(loadLabel, rotatingRef.current))
     const text = (textOverride ?? draft).trim()
     // Only the user's own send carries the review pill, never a one-tap override.
     const pill = textOverride ? undefined : reviewPill
@@ -749,6 +795,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
       ...(pill ? { reviewPill: pill } : {}),
     })
     setFlipNext(false)
+    if (held) {
+      holdThread(connectionId, threadId)
+      heldIdsRef.current.push(turn.queued.messageId)
+    }
     // Title from the first message, as the desktop does. `isNew` matters: an
     // existing chat whose items were emptied by /clear, or one whose history
     // has not loaded yet, also has no user items - titling those would
@@ -1455,7 +1505,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       )}
 
       {(switchLabel || loadLabel) && (
-        <ThreadWaitStatus label={`${switchLabel ?? loadLabel} Your draft is kept; tap Send when ready.`} />
+        <ThreadWaitStatus label={`${switchLabel ?? loadLabel} Messages you send now go out when it is ready.`} />
       )}
       {waitError && <ThreadWaitStatus label={waitError} error />}
 
