@@ -1,8 +1,9 @@
 /**
  * The Limited row of any chat (flag `limit_auto_resume`): "Usage limit.
  * Resumes 15:40." over what happens next, with Resume now and Cancel
- * auto-resume while a resume is armed, or why none is. Read from the backend on open and on every
- * `limit-resume.changed`, so every client shows the same row.
+ * auto-resume while a resume is armed, or why none is. Read from the backend
+ * on open and on every `limit-resume.changed`, so every client shows the same
+ * row.
  */
 import { useEffect, useState } from 'react'
 import { limitStateDetail, limitStateText, type LimitState } from '@shared/limit-resume'

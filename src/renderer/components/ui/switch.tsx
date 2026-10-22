@@ -5,9 +5,8 @@ import { cn } from '../../lib/utils'
 export function Switch({
   checked,
   onCheckedChange,
-  className,
   ...props
-}: Omit<ComponentPropsWithoutRef<'button'>, 'onClick' | 'role' | 'type'> & {
+}: Omit<ComponentPropsWithoutRef<'button'>, 'className' | 'onClick' | 'role' | 'type'> & {
   checked: boolean
   onCheckedChange: (checked: boolean) => void
 }) {
@@ -20,7 +19,6 @@ export function Switch({
       className={cn(
         'relative h-[18px] w-8 shrink-0 cursor-pointer rounded-full border-0 p-0 outline-none transition-colors duration-100 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50',
         checked ? 'bg-[var(--accent)]' : 'bg-[rgba(128,128,128,0.35)]',
-        className,
       )}
       {...props}
     >

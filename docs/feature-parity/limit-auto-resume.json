@@ -7,7 +7,7 @@
     "desktop": {
       "status": "staged",
       "flag": "limit_auto_resume",
-      "followUpRelease": "The release that turns limit_auto_resume on by default (LIMIT_AUTO_RESUME_ENABLED true), after the desktop runner, the Expo and the Android Limited rows ship and beta users run it for a week.",
+      "followUpRelease": "The release that turns limit_auto_resume on by default (LIMIT_AUTO_RESUME_ENABLED true), after the desktop runner, the Expo and the Android Limited rows ship and beta users run it for a week. That release also drops the settingRows() filter on SETTING_ROW.autoResumeAfterLimit and adds chats.autoResumeAfterLimit to FILE_SETTINGS in settings.json sync.",
       "evidence": [
         "src/shared/limit-resume.ts",
         "tests/unit/limit-resume-rules.test.ts",
@@ -75,14 +75,16 @@
       "npx vitest run tests/unit/limit-classification.test.ts tests/unit/acp-generic-adapter.test.ts tests/unit/codex-protocol-schema.test.ts: every case of tests/fixtures/limit-classification-cases.json passes through the real Claude adapter (SDK messages), the real Codex adapter (app-server notifications, then a failed turn/completed) and the generic ACP adapter for Gemini (a fake agent whose prompt fails with a quota error, which stays other). A full context window is context_full, not a limit; a limit followed by an empty success stays a limit; the synthetic model is never recorded and adds no tokens. The Codex fields read (error.codexErrorInfo, turn.error.codexErrorInfo) are in the app-server schema fixture.",
       "tests/unit/limit-classification.test.ts also checks that a Claude rejection while no turn runs carries no limit, and that a late Codex limit error of a stopped turn does not mark the running turn. Full suite: npx vitest run --maxWorkers=2, 7062 passed, 4 skipped; npm run typecheck green.",
       "npx vitest run tests/unit/limit-resumer.test.ts tests/unit/provider-registry-limit-resume.test.ts --maxWorkers=2 (fake clock, real migrated database): a chat limited with a reset in 2 minutes resumes by itself a minute after the reset; Stop before the reset means no resume, also after a restart; an armed row's timer is rebuilt at startup; 3 quick failures give up; a resumed turn that ends normally resets the streak; Resume now with the window still closed keeps the row armed; a closed window at the reset re-arms to the new reset; setting off or flag off arms nothing; no reset time asks for a manual resume; a full context window is not a limit; a normal turn end before the reset disarms; one limited turn that ends twice arms once; an open card or a chat that is not running delays the fire; another account disarms; a failed send arms again; a fire that finds a turn running tries again later; a Stop between a limit and its late second end keeps the row disarmed; a new limit starts its streak at 0. In the registry, with the limited turn and a queued message both counted as outstanding, Resume now sends the resume turn as a turn of its own (not queued) before the held queue resumes, and stores and publishes the resume row.",
-      "Full gate: npm run typecheck green; npx vitest run --maxWorkers=2, 7126 passed, 4 skipped."
+      "Full gate: npm run typecheck green; npx vitest run --maxWorkers=2, 7126 passed, 4 skipped.",
+      "Limited row polish: npx vitest run tests/unit/limit-resumer.test.ts tests/unit/settings-rows.test.ts tests/unit/settings-page-render.test.ts --maxWorkers=2 (limitStateDetail for every state; the auto-resume row stays out of search and is still bound while the flag is off). SB_VISUAL_SCOPE=screens npm run test:e2e:visual passes unchanged, so the shared Switch paints the Settings switches as before."
     ],
     "hardware": [],
     "notExercised": [
       "No live usage limit was hit on Claude, Codex or an ACP agent: the runner was checked with a fake adapter and a fake clock, and the classification cases are captured or constructed frames.",
       "A chat whose session is not running at the reset (after a restart, or a closed chat) resumes only when its session starts again; restart recovery is a later change.",
       "A message you send while the chat is idle and limited runs at once (today's behaviour) instead of joining the held queue; a message queued behind the limited turn does run after the resume turn.",
-      "The phone Limited rows come in later changes; on a phone the stored resume row shows as a notice."
+      "The phone Limited rows come in later changes; on a phone the stored resume row shows as a notice.",
+      "No screenshot shows the restyled Limited row or the Usage limits section: both show only while the flag is on, and the screenshot run keeps it off."
     ]
   }
 }
