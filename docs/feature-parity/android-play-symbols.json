@@ -1,0 +1,48 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-play-symbols",
+  "summary": "The native Android release build writes the symbol tables of its bundled native libraries into the AAB (ndk.debugSymbolLevel SYMBOL_TABLE), so Play can symbolicate native crash reports. mobile-release.yml fails when the AAB has no BUNDLE-METADATA debug symbols, and uploads the R8 mapping.txt to Play when one exists (R8 is off today, so none is uploaded). No app behaviour changes.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Only the native Android release build and its workflow change; the desktop app is not touched."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo iOS app and its OTA lane are not touched."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No backend or wire protocol change."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes; the symbols live only in the AAB metadata that Play reads."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        ".github/workflows/mobile-release.yml",
+        "tests/unit/android-native-ci.test.ts",
+        "docs/releasing.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/android-native-ci.test.ts checks the symbol level, the BUNDLE-METADATA check and the mapping upload in the workflow."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "A signed bundleRelease AAB and the Play upload (the upload keystore and PLAY_SERVICE_ACCOUNT_JSON exist only in CI).",
+      "A symbolicated native crash report in the Play Console."
+    ]
+  }
+}
