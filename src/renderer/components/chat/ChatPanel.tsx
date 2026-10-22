@@ -1574,7 +1574,7 @@ export function ChatPanel({
               <ChatSkeleton label="Loading conversation..." />
               {/* The list is hidden while the chat opens, so its queued rows show here. */}
               {heldSends.length > 0 && sessionId && (
-                <div className="flex shrink-0 flex-col items-end gap-[8px] px-6 pb-3">
+                <div className="flex max-h-[40%] shrink-0 flex-col items-end gap-[8px] overflow-y-auto px-6 pb-3">
                   {heldSends.map((send) => (
                     <div
                       key={send.messageId}
