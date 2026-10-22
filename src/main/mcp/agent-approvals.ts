@@ -9,17 +9,19 @@
  * broker minted instead of to the adapter.
  *
  * The tool call does not wait for the answer (`shared/agent-approval-cards.ts`):
- * the card is stored with the write it would run (`plan`) and stays open, with
- * no time limit and across a restart, until the user answers or dismisses it,
- * the agent withdraws it, or the user stops or archives the chat. Every card
- * closes exactly once, and only an approval runs its write, which `onClosed`
- * does.
+ * the card is stored with the write it would run (`plan`) and stays open,
+ * across a restart, until the user answers or dismisses it, the agent
+ * withdraws it, or the user stops or archives the chat. A card nobody answers
+ * closes after `AGENT_CARD_MAX_AGE_MS`: `expireOld` runs at startup and
+ * whenever a card is opened, recovered or answered. Every card closes exactly
+ * once, and only an approval runs its write, which `onClosed` does.
  */
 import { randomBytes } from 'node:crypto'
 import type { ApprovalDecision, RuntimeEvent, RuntimeRequestOpenedEvent } from '@shared/provider-events'
 import type { HostWriteCard, HostWriteResponse } from '@shared/agent-host-writes'
 import {
   AGENT_APPROVAL_ID_PREFIX,
+  AGENT_CARD_LIFETIME_TEXT,
   ApprovalCardBook,
   isAgentApprovalCardId,
   closeFromAnswer,
@@ -83,6 +85,7 @@ export class AgentApprovalBroker {
   }
 
   open(req: AgentApprovalRequest): AgentApprovalOpened {
+    this.expireOld()
     const problem = this.book.openProblem(req.chatId)
     if (problem) return { ok: false, message: problem }
     const requestId = `${AGENT_APPROVAL_ID_PREFIX}${Date.now()}_${randomBytes(4).toString('hex')}`
@@ -91,7 +94,7 @@ export class AgentApprovalBroker {
       chatId: req.chatId,
       threadId: req.threadId,
       toolName: req.toolName,
-      detail: req.detail,
+      detail: `${req.detail}\n\n${AGENT_CARD_LIFETIME_TEXT}`,
       hostWrite: req.hostWrite ?? null,
       plan: req.plan,
       openedAt: this.deps.now?.() ?? Date.now(),
@@ -103,6 +106,7 @@ export class AgentApprovalBroker {
 
   /** The chat's open cards as their `request.opened` events, for a client recovering them. */
   pendingEvents(chatId: string): RuntimeRequestOpenedEvent[] {
+    this.expireOld()
     return this.book.forChat(chatId).map(openedEvent)
   }
 
@@ -123,6 +127,7 @@ export class AgentApprovalBroker {
     response: HostWriteResponse,
     approver: { mayApproveHostWrite: boolean; mustProveShown?: boolean; label: string },
   ): AgentApprovalAnswer {
+    this.expireOld()
     const card = this.book.get(requestId)
     if (!card) return { ok: false, message: 'That request is no longer open.' }
     const same = this.deps.sameChat ?? ((a, b) => a === b)
@@ -162,10 +167,15 @@ export class AgentApprovalBroker {
     for (const card of this.book.forChat(chatId)) this.close(card.requestId, { kind: 'stopped' }, {})
   }
 
+  /** Close every card past the safety cap. Nothing it would have written is sent. */
+  expireOld(nowMs = this.deps.now?.() ?? Date.now()): void {
+    for (const card of this.book.olderThan(nowMs)) this.close(card.requestId, { kind: 'expired' }, {})
+  }
+
   private close(requestId: string, close: ApprovalCardClose, response: HostWriteResponse, answeredOn?: string): void {
     const card = this.book.take(requestId)
     if (!card) return
-    if (close.kind === 'stopped' || close.kind === 'withdrawn')
+    if (close.kind === 'stopped' || close.kind === 'withdrawn' || close.kind === 'expired')
       log.info(`card ${requestId} closed without an answer: ${close.kind}`)
     const decision: ApprovalDecision = close.kind === 'approve' ? 'approve' : 'deny'
     this.deps.publish({ type: 'request.closed', threadId: card.threadId, requestId, decision })

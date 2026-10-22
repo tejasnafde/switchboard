@@ -638,6 +638,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
           reason: event.reason,
           text: event.text,
           sent: event.sent,
+          ...(event.held ? { held: true } : {}),
         },
       }
       const at = t.items.findIndex((i) => i.id === item.id)

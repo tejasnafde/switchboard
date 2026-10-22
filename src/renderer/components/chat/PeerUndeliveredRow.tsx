@@ -5,6 +5,7 @@
  */
 import { useState } from 'react'
 import { peerUndeliveredHeading, type PeerUndelivered } from '@shared/peer-links'
+import { peerUndeliveredReasonText } from '@shared/system-markers'
 import { useAgentStore } from '../../stores/agent-store'
 import { createRendererLogger } from '../../logger'
 import { Button } from '../ui/button'
@@ -55,10 +56,11 @@ export function PeerUndeliveredRow({
         </span>
         {!row.sent && (
           <Button variant="outline" size="sm" disabled={sending || !sessionId} onClick={() => void send()}>
-            {sending ? 'Sending…' : 'Send'}
+            {sending ? 'Sending…' : row.held ? 'Send now' : 'Send'}
           </Button>
         )}
       </div>
+      {row.held && !row.sent && <div className="mt-1 text-[var(--text-muted)]">{peerUndeliveredReasonText(row)}</div>}
       <div className="mt-1 max-h-[160px] overflow-auto whitespace-pre-wrap break-words">{row.text}</div>
       {error && (
         <div role="alert" className="mt-1 text-[var(--error)]">

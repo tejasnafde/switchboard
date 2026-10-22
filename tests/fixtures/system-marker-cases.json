@@ -42,6 +42,21 @@
     }
   },
   {
+    "id": "undelivered-held",
+    "content": "[[sb:peer-undelivered]] {\"to\":\"agent_1\",\"toLabel\":\"Docs\",\"reason\":\"link-expired\",\"text\":\"hi\",\"sent\":false,\"held\":true}",
+    "expected": {
+      "kind": "peer-undelivered",
+      "row": {
+        "to": "agent_1",
+        "toLabel": "Docs",
+        "reason": "link-expired",
+        "text": "hi",
+        "sent": false,
+        "held": true
+      }
+    }
+  },
+  {
     "id": "undelivered-bad-reason",
     "content": "[[sb:peer-undelivered]] {\"to\": \"a\", \"toLabel\": \"B\", \"reason\": \"nope\", \"text\": \"x\"}",
     "expected": {
@@ -74,6 +89,15 @@
     "expected": {
       "kind": "notice",
       "title": "Message another session · Dismissed",
+      "body": "Nothing was sent."
+    }
+  },
+  {
+    "id": "approval-result-expired",
+    "content": "[[sb:approval-result]] {\"requestId\": \"sbmcp_4\", \"title\": \"Open a pull request\", \"outcome\": \"expired\", \"text\": \"Nothing was sent.\", \"delivery\": \"none\"}",
+    "expected": {
+      "kind": "notice",
+      "title": "Open a pull request · Closed after 7 days without an answer",
       "body": "Nothing was sent."
     }
   },

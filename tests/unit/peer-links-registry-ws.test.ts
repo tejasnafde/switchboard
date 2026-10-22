@@ -593,3 +593,123 @@ describe('a link changing while the send is prepared', () => {
     expect((await linksOf('hub'))[0].used).toBe(0)
   })
 })
+
+describe('a link out of time holds the message', () => {
+  const undelivered = (events: RuntimeEvent[]) =>
+    events.filter((e): e is Extract<RuntimeEvent, { type: 'peer.undelivered' }> => e.type === 'peer.undelivered')
+  const toHub = (adapter: RecordingAdapter) => adapter.turns.filter((t) => t.threadId === 'hub')
+
+  async function expiredLink() {
+    const ctx = await setup()
+    await startAll(ctx.cwd, ['hub', 'w1'])
+    await link('hub', 'w1')
+    const clock = fakeClock()
+    clock.advance(PEER_LINK_WINDOW_MS)
+    const out = await toolsFor('w1').sendMessage({ sessionId: 'hub', message: 'the finding' })
+    return { ...ctx, out }
+  }
+
+  it('tells the agent it is held, not lost, and shows the row as held', async () => {
+    const { out, adapter, events } = await expiredLink()
+    expect(out.isError).toBeFalsy()
+    expect(text(out)).toContain('Switchboard is holding this message')
+    expect(text(out)).toContain('Do not send it again')
+    expect(toHub(adapter)).toEqual([])
+    await until(() => expect(undelivered(events)).toHaveLength(1))
+    expect(undelivered(events)[0]).toMatchObject({ held: true, sent: false, reason: 'link-expired' })
+    const row = saved.find((m) => m.id === undelivered(events)[0].messageId)!
+    expect(parseUndeliveredMarker(row.content)).toMatchObject({ held: true, sent: false })
+  })
+
+  it('delivers it when the user renews the link by typing in either chat, and marks the row delivered', async () => {
+    const { adapter, events } = await expiredLink()
+    await until(() => expect(undelivered(events)).toHaveLength(1))
+    const id = undelivered(events)[0].messageId
+    await client!.invoke(ProviderChannels.SEND_TURN, 'w1', 'keep going')
+    await until(() =>
+      expect(
+        toHub(adapter)
+          .map((t) => t.message)
+          .join(),
+      ).toContain('the finding'),
+    )
+    await until(() => expect(undelivered(events).at(-1)).toMatchObject({ messageId: id, sent: true, held: true }))
+    expect(parseUndeliveredMarker(saved.find((m) => m.id === id)!.content)).toMatchObject({ sent: true, held: true })
+    // Delivered once: a second renewal sends nothing more.
+    await client!.invoke(ProviderChannels.SEND_TURN, 'hub', 'thanks')
+    await drain()
+    expect(toHub(adapter).filter((t) => t.message.includes('the finding'))).toHaveLength(1)
+  })
+
+  it('delivers it when the target chat starts again, even with the link gone', async () => {
+    const { adapter, cwd } = await expiredLink()
+    await client!.invoke(ProviderChannels.STOP_SESSION, 'hub')
+    expect(toHub(adapter)).toEqual([])
+    await startAll(cwd, ['hub'])
+    await until(() =>
+      expect(
+        toHub(adapter)
+          .map((t) => t.message)
+          .join(),
+      ).toContain('the finding'),
+    )
+  })
+
+  it('keeps it held while the target is not running, and sends it once the user sends it by hand', async () => {
+    const { adapter, events } = await expiredLink()
+    await until(() => expect(undelivered(events)).toHaveLength(1))
+    const id = undelivered(events)[0].messageId
+    await client!.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, {
+      fromThreadId: 'w1',
+      fromLabel: 'Worker A',
+      targetThreadId: 'hub',
+      text: 'the finding',
+      undeliveredId: id,
+    })
+    await until(() => expect(undelivered(events).at(-1)).toMatchObject({ messageId: id, sent: true }))
+    expect(undelivered(events).at(-1)?.held).toBeUndefined()
+    await client!.invoke(ProviderChannels.SEND_TURN, 'hub', 'go on')
+    await drain()
+    expect(toHub(adapter).filter((t) => t.message.includes('the finding'))).toHaveLength(1)
+  })
+
+  it('holds at most three per sender and target, and refuses the rest as before', async () => {
+    const { adapter } = await expiredLink()
+    for (const m of ['two', 'three'])
+      expect((await toolsFor('w1').sendMessage({ sessionId: 'hub', message: m })).isError).toBeFalsy()
+    const fourth = await toolsFor('w1').sendMessage({ sessionId: 'hub', message: 'four' })
+    expect(fourth.isError).toBe(true)
+    expect(text(fourth)).toMatch(/NOT delivered/)
+    await client!.invoke(ProviderChannels.SEND_TURN, 'w1', 'keep going')
+    await until(() => expect(toHub(adapter)).toHaveLength(3))
+    await drain()
+    expect(toHub(adapter).some((t) => t.message.includes('four'))).toBe(false)
+  })
+
+  it('stops holding when the user unlinks: the row is an ordinary Not delivered row, and nothing goes out', async () => {
+    const { adapter, events, cwd } = await expiredLink()
+    await until(() => expect(undelivered(events)).toHaveLength(1))
+    const id = undelivered(events)[0].messageId
+    await client!.invoke(ProviderChannels.UNLINK_PEER, { threadId: 'hub', peerThreadId: 'w1' })
+    await until(() => expect(undelivered(events).at(-1)).toMatchObject({ messageId: id, reason: 'link-removed' }))
+    expect(undelivered(events).at(-1)?.held).toBeUndefined()
+    expect(parseUndeliveredMarker(saved.find((m) => m.id === id)!.content)).toMatchObject({
+      reason: 'link-removed',
+      sent: false,
+    })
+    await client!.invoke(ProviderChannels.STOP_SESSION, 'hub')
+    await startAll(cwd, ['hub'])
+    await drain()
+    expect(toHub(adapter)).toEqual([])
+  })
+
+  it('still refuses a send once the message budget is spent', async () => {
+    const { cwd } = await setup()
+    await startAll(cwd, ['hub', 'w1'])
+    await link('hub', 'w1', 1)
+    await toolsFor('hub').sendMessage({ sessionId: 'w1', message: 'first' })
+    const over = await toolsFor('w1').sendMessage({ sessionId: 'hub', message: 'second' })
+    expect(over.isError).toBe(true)
+    expect(text(over)).toMatch(/NOT delivered/)
+  })
+})

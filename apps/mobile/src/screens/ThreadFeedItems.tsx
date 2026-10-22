@@ -17,6 +17,7 @@ import { approvalActions, offersQuiet, quietLabel, quietly } from '../lib/approv
 import { hostWriteTitle, type HostWriteResponse } from '@shared/agent-host-writes'
 import { PR_HOST_LABEL } from '@shared/pull-requests'
 import { peerUndeliveredHeading } from '@shared/peer-links'
+import { AGENT_CARD_LIFETIME_TEXT } from '@shared/agent-approval-cards'
 import { peerUndeliveredReasonText } from '@shared/system-markers'
 import { mergeBackRowDetails, mergeBackRowTitle } from '@shared/merge-back'
 
@@ -198,6 +199,7 @@ export const ApprovalItem = memo(function ApprovalItem({
       {pending && actions.kind === 'deny-only' && (
         <Text style={styles.toolOutput}>Approve this on the desktop. You can deny it here.</Text>
       )}
+      {pending && actions.kind === 'host-write' && <Text style={styles.toolOutput}>{AGENT_CARD_LIFETIME_TEXT}</Text>}
       {pending && actions.kind === 'host-write' && (
         <Text style={styles.toolOutput}>
           {hidden ? 'Show the full draft to approve it.' : 'Posts as shown. Edit on the desktop.'}
@@ -472,7 +474,7 @@ export function PeerUndeliveredItem({
   return (
     <View style={styles.undeliveredCard} testID="peer-undelivered-row">
       <Text style={styles.undeliveredTitle}>
-        {row.sent ? peerUndeliveredHeading(row) : `Not delivered to ${row.toLabel}`}
+        {row.sent || row.held ? peerUndeliveredHeading(row) : `Not delivered to ${row.toLabel}`}
       </Text>
       {!row.sent && <Text style={styles.undeliveredReason}>{peerUndeliveredReasonText(row)}</Text>}
       <Text
