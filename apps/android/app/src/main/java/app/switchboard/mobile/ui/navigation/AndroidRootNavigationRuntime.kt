@@ -1,7 +1,9 @@
 package app.switchboard.mobile.ui.navigation
 
 import app.switchboard.mobile.data.connection.ConnectionFleet
+import app.switchboard.mobile.data.composer.ComposerAttachmentStageResult
 import app.switchboard.mobile.data.outbox.OutboxRuntime
+import app.switchboard.mobile.data.thread.WithdrawnTurn
 import app.switchboard.mobile.data.remote.ReadyClientLease
 import app.switchboard.mobile.data.remote.ReadyClientRegistry
 import app.switchboard.mobile.data.remote.BrowseSnapshotStore
@@ -20,6 +22,7 @@ import app.switchboard.mobile.domain.iap.IapTargetSelection
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
+import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.ComposerImageSource
@@ -113,6 +116,26 @@ class AndroidRootNavigationRuntime(
 
     override fun replaceQueued(origin: String, draft: OutgoingTurnDraft): EnqueueResult =
         outbox.replace(origin, draft)
+
+    override fun holdQueued(connectionId: String, threadId: String, held: Boolean) =
+        outbox.holdThread(connectionId, threadId, held)
+
+    override fun withdrawQueued(origin: String, existing: List<ComposerAttachment>): WithdrawnTurn? {
+        var restaged: ComposerAttachmentStageResult? = null
+        val turn = outbox.withdraw(origin) { turn ->
+            if (turn.attachments.isNotEmpty()) restaged = composer.restageImages(turn.attachments, existing)
+        } ?: return null
+        return when (val result = restaged) {
+            null -> WithdrawnTurn(turn)
+            is ComposerAttachmentStageResult.Failure ->
+                WithdrawnTurn(turn, attachmentError = "Images could not be restored: ${result.reason}")
+            is ComposerAttachmentStageResult.Success -> WithdrawnTurn(
+                turn,
+                attachments = result.attachments,
+                attachmentError = result.refused.takeIf { it.isNotEmpty() }?.joinToString("\n"),
+            )
+        }
+    }
 
     override fun saveComposerDraft(draft: ComposerDraft) = composer.save(draft)
 

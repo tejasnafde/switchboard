@@ -1214,6 +1214,14 @@ private fun ConnectedThreadRoute(
                     origin: String,
                     draft: app.switchboard.mobile.domain.outbox.OutgoingTurnDraft,
                 ) = runtime.replaceQueued(origin, draft)
+
+                override fun hold(connectionId: String, threadId: String, held: Boolean) =
+                    runtime.holdQueued(connectionId, threadId, held)
+
+                override fun withdraw(
+                    origin: String,
+                    existing: List<app.switchboard.mobile.domain.composer.ComposerAttachment>,
+                ) = runtime.withdrawQueued(origin, existing)
             },
             clock = ThreadSessionClock(System::currentTimeMillis),
             initialComposer = savedDraft,

@@ -199,19 +199,30 @@ export function outboxPresentation(message: QueuedMessage): {
   return { state: 'queued', label: 'Waiting to send' }
 }
 
-export function recoverRejectedDraft(message: QueuedMessage): {
-  text: string
-  images: Array<{ id: string; previewUri: string; url: string; mimeType: string }>
-} | null {
+type DraftImage = { id: string; previewUri: string; url: string; mimeType: string }
+
+function draftImages(message: QueuedMessage): DraftImage[] {
+  return (message.images ?? []).map((image, index) => ({
+    id: `recovered-${message.messageId}-${index}`,
+    previewUri: image.url,
+    url: image.url,
+    mimeType: image.mimeType ?? 'image/png',
+  }))
+}
+
+export function recoverRejectedDraft(message: QueuedMessage): { text: string; images: DraftImage[] } | null {
   if (!message.blockedReason) return null
+  return { text: message.text, images: draftImages(message) }
+}
+
+/** Messages held through a failed open or switch, put back after what the composer holds. */
+export function returnedDraft(
+  draft: string,
+  messages: readonly QueuedMessage[],
+): { text: string; images: DraftImage[] } {
   return {
-    text: message.text,
-    images: (message.images ?? []).map((image, index) => ({
-      id: `recovered-${message.messageId}-${index}`,
-      previewUri: image.url,
-      url: image.url,
-      mimeType: image.mimeType ?? 'image/png',
-    })),
+    text: [draft, ...messages.map((message) => message.text)].filter((part) => part.trim()).join('\n\n'),
+    images: messages.flatMap(draftImages),
   }
 }
 
@@ -263,12 +274,14 @@ export function deliveryAction(input: {
   threadExists: boolean
   /** True while the user has this message open in the composer for editing. */
   editing: boolean
+  /** True while the chat opens or switches provider: it sends when that ends. */
+  holding?: boolean
   nowMs: number
   /** When the next attempt is allowed, from the backoff. */
   retryNotBeforeMs: number
 }): DeliveryAction {
   if (!input.threadExists) return 'drop'
-  if (input.editing) return 'wait'
+  if (input.editing || input.holding) return 'wait'
   if (!input.connected || input.threadBusy) return 'wait'
   if (input.nowMs < input.retryNotBeforeMs) return 'wait'
   return 'send'

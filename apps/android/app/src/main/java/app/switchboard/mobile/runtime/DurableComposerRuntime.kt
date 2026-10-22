@@ -1,8 +1,10 @@
 package app.switchboard.mobile.runtime
 
+import app.switchboard.mobile.data.composer.ComposerAttachmentStageResult
 import app.switchboard.mobile.data.composer.ComposerDraftCoordinator
 import app.switchboard.mobile.data.composer.ComposerDraftMutation
 import app.switchboard.mobile.data.outbox.OutboxRuntime
+import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.ComposerImageSource
@@ -10,6 +12,7 @@ import app.switchboard.mobile.domain.outbox.AttachmentDraft
 import app.switchboard.mobile.domain.outbox.EnqueueResult
 import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
 import app.switchboard.mobile.domain.outbox.QueuedTurn
+import app.switchboard.mobile.domain.outbox.StagedAttachment
 import java.io.Closeable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -69,6 +72,22 @@ class DurableComposerRuntime(
             recordResult(key, result)
         }
     }
+
+    /** Copies a withdrawn turn's images back into draft storage, on the caller's thread. */
+    fun restageImages(
+        attachments: List<StagedAttachment>,
+        existing: List<ComposerAttachment>,
+    ): ComposerAttachmentStageResult = coordinator.stageImages(
+        sources = attachments.mapIndexed { index, attachment ->
+            ComposerImageSource(
+                contentUri = "",
+                mimeType = attachment.mimeType,
+                displayName = "Image ${existing.size + index + 1}",
+                privateSourcePath = attachment.privateUri,
+            )
+        },
+        existing = existing,
+    )
 
     fun retry(origin: String) {
         worker.execute { outbox.retry(origin) }

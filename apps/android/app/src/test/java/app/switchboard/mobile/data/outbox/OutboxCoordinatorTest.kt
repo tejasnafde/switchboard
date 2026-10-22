@@ -93,6 +93,58 @@ class OutboxCoordinatorTest {
     }
 
     @Test
+    fun heldThreadKeepsItsTurnsUntilReleasedThenSendsThemInOrderOnce() {
+        val fixture = Fixture()
+        fixture.sender.synchronousOutcome = SendOutcome.Accepted(SendReceipt.legacy())
+        fixture.coordinator.holdThread("mac-a", "thread-a", true)
+
+        fixture.coordinator.enqueue(draft("thread-a", text = "A1"))
+        fixture.coordinator.enqueue(draft("thread-a", text = "A2"))
+        fixture.coordinator.enqueue(draft("thread-b", text = "B1"))
+        fixture.coordinator.pump()
+        assertEquals(listOf("B1"), fixture.sender.sent.map { it.text })
+
+        fixture.coordinator.holdThread("mac-a", "thread-a", false)
+        fixture.coordinator.holdThread("mac-a", "thread-a", false)
+        assertEquals(listOf("B1", "A1", "A2"), fixture.sender.sent.map { it.text })
+        assertTrue(fixture.coordinator.records().isEmpty())
+    }
+
+    @Test
+    fun withdrawRemovesAnUnsentTurnAndHandsOverItsFilesBeforeDiscarding() {
+        val fixture = Fixture()
+        fixture.coordinator.holdThread("mac-a", "thread-a", true)
+        fixture.coordinator.enqueue(
+            draft("thread-a", attachments = listOf(AttachmentDraft("content://photo", "image/png"))),
+        )
+
+        val withdrawn = fixture.coordinator.withdraw("origin-1") { fixture.log += "adopt:${it.origin}" }
+
+        assertEquals("origin-1", withdrawn?.origin)
+        assertTrue(fixture.store.rows.isEmpty())
+        assertTrue(fixture.coordinator.records().isEmpty())
+        assertTrue(fixture.log.indexOf("adopt:origin-1") < fixture.log.indexOf("discard:private://photo"))
+        fixture.coordinator.holdThread("mac-a", "thread-a", false)
+        assertTrue(fixture.sender.sent.isEmpty())
+    }
+
+    @Test
+    fun withdrawRefusesATurnInFlightOrOneTheStoreCannotDelete() {
+        val fixture = Fixture()
+        fixture.coordinator.enqueue(draft("thread-a", text = "A1"))
+        assertEquals(null, fixture.coordinator.withdraw("origin-1"))
+        assertEquals(1, fixture.coordinator.records().size)
+
+        fixture.coordinator.holdThread("mac-a", "thread-b", true)
+        fixture.coordinator.enqueue(draft("thread-b", text = "B1"))
+        fixture.store.failDelete = true
+        assertEquals(null, fixture.coordinator.withdraw("origin-2"))
+        fixture.store.failDelete = false
+        fixture.coordinator.holdThread("mac-a", "thread-b", false)
+        assertEquals(listOf("A1", "B1"), fixture.sender.sent.map { it.text })
+    }
+
+    @Test
     fun retryableFailurePersistsAttemptAndDeadlineBeforeScheduling() {
         val fixture = Fixture()
         fixture.coordinator.enqueue(draft("thread-a"))

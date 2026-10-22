@@ -307,9 +307,6 @@ class ThreadSessionCoordinatorTest {
         )
         assertTrue(coordinator.state.value.profiles.changing)
         assertEquals("Switching to Tejas...", coordinator.state.value.controlMessage)
-        coordinator.updateDraft("Keep my draft")
-        assertEquals(ComposerSubmitResult.Busy, coordinator.submit())
-        assertEquals("Keep my draft", coordinator.state.value.composer.draft)
 
         remote.completeProfileSwitch(
             success(
@@ -327,6 +324,127 @@ class ThreadSessionCoordinatorTest {
         assertEquals("codex-tejas", coordinator.state.value.profiles.selectedInstanceId)
         assertFalse(coordinator.state.value.profiles.changing)
         assertEquals(1, remote.startedSessions.size)
+    }
+
+    @Test
+    fun `a send during a profile switch is queued and delivered once after it succeeds`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val enqueue = HoldingEnqueuePort()
+        val coordinator = switchingCoordinator(remote, enqueue)
+
+        coordinator.updateDraft("first")
+        assertTrue(coordinator.submit() is ComposerSubmitResult.Durable)
+        assertTrue(coordinator.submitText("second") is ComposerSubmitResult.Durable)
+
+        assertEquals("", coordinator.state.value.composer.draft)
+        assertEquals(listOf("remote_origin-1", "remote_origin-2"), coordinator.currentThread()?.feed?.map(FeedItem::id))
+        assertTrue(enqueue.sent.isEmpty())
+
+        remote.completeProfileSwitch(
+            success(
+                "switch-profile",
+                ProviderInstanceSwitchResult.Success(
+                    threadId = "thread-1",
+                    provider = "codex",
+                    previousInstanceId = "codex-work",
+                    instanceId = "codex-tejas",
+                    instanceName = "Tejas",
+                    continuity = "preserved",
+                ),
+            ),
+        )
+
+        assertEquals(listOf("origin-1", "origin-2"), enqueue.sent)
+        assertEquals(listOf(true, false), enqueue.holds)
+        coordinator.close()
+        assertEquals(listOf("origin-1", "origin-2"), enqueue.sent)
+    }
+
+    @Test
+    fun `a failed profile switch returns the held sends to the draft and never sends them`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val enqueue = HoldingEnqueuePort()
+        val persistence = FakeComposerPersistence()
+        val coordinator = switchingCoordinator(remote, enqueue, persistence)
+        val image = ComposerAttachment("img", "/private/drafts/img", "image/png", "Image 1")
+        enqueue.restoredAttachments = listOf(image)
+
+        coordinator.updateDraft("first")
+        coordinator.submit()
+        coordinator.submitText("second")
+        coordinator.updateDraft("still typing")
+
+        remote.completeProfileSwitch(failure("switch-profile", "profile is offline"))
+
+        val composer = coordinator.state.value.composer
+        assertEquals("still typing\n\nfirst\n\nsecond", composer.draft)
+        assertEquals(listOf(image, image), composer.attachments)
+        assertEquals("still typing\n\nfirst\n\nsecond", persistence.saved.last().text)
+        assertEquals(emptyList<String>(), coordinator.currentThread()?.feed?.map(FeedItem::id))
+        assertTrue(enqueue.queued.isEmpty())
+        assertTrue(enqueue.sent.isEmpty())
+        assertEquals(listOf(true, false), enqueue.holds)
+        assertEquals("profile is offline", coordinator.state.value.profiles.error)
+    }
+
+    @Test
+    fun `a switch the backend refuses also returns the held sends`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val enqueue = HoldingEnqueuePort()
+        val coordinator = switchingCoordinator(remote, enqueue)
+        coordinator.updateDraft("first")
+        coordinator.submit()
+
+        remote.completeProfileSwitch(
+            success(
+                "switch-profile",
+                ProviderInstanceSwitchResult.Failure(
+                    code = "switch_failed",
+                    message = "refused",
+                    currentInstanceId = "codex-work",
+                    rolledBack = true,
+                ),
+            ),
+        )
+
+        assertEquals("first", coordinator.state.value.composer.draft)
+        assertTrue(enqueue.sent.isEmpty())
+    }
+
+    @Test
+    fun `leaving the chat mid-switch releases the held sends`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val enqueue = HoldingEnqueuePort()
+        val coordinator = switchingCoordinator(remote, enqueue)
+        coordinator.updateDraft("first")
+        coordinator.submit()
+
+        coordinator.close()
+        assertEquals(listOf("origin-1"), enqueue.sent)
+
+        remote.completeProfileSwitch(failure("switch-profile", "late"))
+        assertEquals(listOf("origin-1"), enqueue.sent)
+        assertEquals(listOf(true, false), enqueue.holds)
+    }
+
+    private fun switchingCoordinator(
+        remote: FakeThreadSessionRemote,
+        enqueue: ThreadEnqueuePort,
+        composerPersistence: ThreadComposerPersistence = FakeComposerPersistence(),
+    ): ThreadSessionCoordinator {
+        val coordinator = coordinator(
+            remote,
+            cached = ThreadState(status = "idle", provider = "codex", instanceId = "codex-work"),
+            enqueue = enqueue,
+            composerPersistence = composerPersistence,
+        )
+        coordinator.start()
+        remote.completeProfiles(
+            success("profiles", listOf(providerInstance("codex-work", "Work"), providerInstance("codex-tejas", "Tejas"))),
+        )
+        coordinator.selectProfile("codex-tejas")
+        assertTrue(coordinator.state.value.profiles.changing)
+        return coordinator
     }
 
     @Test
@@ -1775,6 +1893,54 @@ private class FakeEnqueuePort : ThreadEnqueuePort {
     override fun enqueue(draft: OutgoingTurnDraft): EnqueueResult {
         drafts += draft
         return results.removeFirstOrNull() ?: EnqueueResult.StorageFailure("not configured")
+    }
+}
+
+/** A small outbox: turns wait while held and are sent, in order, when released. */
+private class HoldingEnqueuePort : ThreadEnqueuePort {
+    val queued = mutableListOf<QueuedTurn>()
+    val sent = mutableListOf<String>()
+    val holds = mutableListOf<Boolean>()
+    var restoredAttachments: List<ComposerAttachment> = emptyList()
+    private var held = false
+    private var next = 1
+
+    override fun enqueue(draft: OutgoingTurnDraft): EnqueueResult {
+        val origin = "origin-${next++}"
+        val turn = QueuedTurn(
+            connectionId = draft.connectionId,
+            threadId = draft.threadId,
+            origin = origin,
+            bubbleId = "remote_$origin",
+            text = draft.text,
+            attachments = emptyList(),
+            runtimeMode = draft.runtimeMode,
+            createdAtMs = draft.createdAtMs,
+            attempts = 0,
+            nextAttemptAtMs = 0,
+            deliveryState = OutboxDeliveryState.Pending,
+        )
+        queued += turn
+        deliver()
+        return EnqueueResult.Durable(turn)
+    }
+
+    override fun hold(connectionId: String, threadId: String, held: Boolean) {
+        holds += held
+        this.held = held
+        deliver()
+    }
+
+    override fun withdraw(origin: String, existing: List<ComposerAttachment>): WithdrawnTurn? {
+        val turn = queued.firstOrNull { it.origin == origin } ?: return null
+        queued -= turn
+        return WithdrawnTurn(turn, restoredAttachments)
+    }
+
+    private fun deliver() {
+        if (held) return
+        sent += queued.map(QueuedTurn::origin)
+        queued.clear()
     }
 }
 
