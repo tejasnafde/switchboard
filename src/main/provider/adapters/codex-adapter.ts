@@ -6,6 +6,7 @@
  */
 
 import type { TurnDelivery } from '@shared/turn-delivery'
+import { codexErrorLimit, mergeTurnLimit, type TurnLimit } from '@shared/limit-resume'
 import { AGENT_DIGEST_PROMPT_RULE } from '@shared/agent-digest'
 import { withVisibleHistory, type VisibleHistoryState } from '../visible-history'
 import { takeTurnDuration } from '../turn-duration'
@@ -256,6 +257,8 @@ interface ActiveSession extends VisibleHistoryState {
   }>
   /** Nothing queued starts until the user resumes: a turn failed (see holdQueue). */
   queueHeld: boolean
+  /** From the running turn's final `error` notification; its turn/completed carries it. */
+  turnLimit?: TurnLimit | null
   /** Active codex turn id (from turn/start response or turn/started); null
    * when idle. Required as `expectedTurnId` to steer a running turn. */
   activeTurnId: string | null
@@ -1012,6 +1015,7 @@ export class CodexAdapter implements ProviderAdapter {
 
     active.session.status = 'running'
     active.turnStartedAt = Date.now()
+    active.turnLimit = null
     active.onEvent({ type: 'status', threadId, status: 'running' })
 
     const approvalPolicy = RUNTIME_MODE_TO_CODEX_POLICY[active.session.runtimeMode] ?? 'on-request'
@@ -1902,6 +1906,10 @@ export class CodexAdapter implements ProviderAdapter {
         })
       } else {
         log.error(`codex error notification: ${message}`, notification.params ?? {})
+        // A late error of a turn Stop interrupted must not mark the turn after it.
+        const stoppedTurn = typeof turnId === 'string' && active.stoppedTurnIds.has(turnId)
+        if (!stoppedTurn && (!active.activeTurnId || turnId === active.activeTurnId))
+          active.turnLimit = mergeTurnLimit(active.turnLimit, codexErrorLimit(notification.params?.error))
         active.onEvent({
           type: 'error',
           threadId,
@@ -1942,11 +1950,13 @@ export class CodexAdapter implements ProviderAdapter {
         // until turn.completed. The queue behind it is held, not started.
         this.holdQueue(threadId, active, message)
         const durationMs = takeTurnDuration(active)
+        const limit = mergeTurnLimit(active.turnLimit, codexErrorLimit(notification.params?.turn?.error))
         active.onEvent({
           type: 'turn.completed',
           threadId,
           ...(typeof turnId === 'string' ? { turnId } : {}),
           ...(durationMs !== undefined ? { durationMs } : {}),
+          ...(limit ? { limit } : {}),
         })
         active.onEvent({ type: 'status', threadId, status: 'error' })
       } else {
@@ -1962,6 +1972,7 @@ export class CodexAdapter implements ProviderAdapter {
         })
         active.onEvent({ type: 'status', threadId, status: 'idle' })
       }
+      active.turnLimit = null
       // Per-turn accumulators - all content is flushed to the renderer by now,
       // so drop it instead of growing these maps for the whole session (mirrors
       // the Claude/OpenCode adapters).

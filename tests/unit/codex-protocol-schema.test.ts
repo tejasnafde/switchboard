@@ -83,7 +83,7 @@ const NOTIFICATION_READS: Record<string, string[]> = {
     'tokenUsage.modelContextWindow',
   ],
   'turn/started': ['turn.id'],
-  'turn/completed': ['turn.id', 'turn.status', 'turn.error.message'],
+  'turn/completed': ['turn.id', 'turn.status', 'turn.error.message', 'turn.error.codexErrorInfo'],
   'turn/plan/updated': ['turnId', 'plan[].step', 'plan[].status'],
   'item/started': ['item.id', 'item.type'],
   'item/completed': [
@@ -124,7 +124,7 @@ const NOTIFICATION_READS: Record<string, string[]> = {
   'item/reasoning/textDelta': ['itemId', 'delta'],
   'item/commandExecution/outputDelta': ['itemId', 'delta'],
   'item/fileChange/patchUpdated': ['itemId', 'changes[].path', 'changes[].diff'],
-  error: ['error.message', 'turnId', 'willRetry'],
+  error: ['error.message', 'error.codexErrorInfo', 'turnId', 'willRetry'],
 }
 
 function missingReads(table: Record<string, string[]>, refOf: (method: string) => string | null | undefined) {

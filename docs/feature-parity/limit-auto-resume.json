@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "limit-auto-resume",
-  "summary": "Foundations for auto-resume after a usage limit, for every chat, behind the staged flag limit_auto_resume (LIMIT_AUTO_RESUME_ENABLED in src/shared/limit-resume.ts, false; SB_LIMIT_AUTO_RESUME=1 or the backend setting labs.limit_auto_resume turns it on). This change adds the limit_resumes table (one row per root conversation: instance, limited turn, reset time, state, request id, streak, disarm reason), its CRUD, the setting chats.autoResumeAfterLimit (on by default, no UI yet), and the pure rules limitState, shouldArm, fireChecks, nextStreak and the resume turn wrapper, with shared fixtures. Nothing reads the flag outside tests, so no behaviour changes. The migration time is logged through the db.migrate perf span.",
+  "summary": "Foundations for auto-resume after a usage limit, for every chat, behind the staged flag limit_auto_resume (LIMIT_AUTO_RESUME_ENABLED in src/shared/limit-resume.ts, false; SB_LIMIT_AUTO_RESUME=1 or the backend setting labs.limit_auto_resume turns it on). This change adds the limit_resumes table (one row per root conversation: instance, limited turn, reset time, state, request id, streak, disarm reason), its CRUD, the setting chats.autoResumeAfterLimit (on by default, no UI yet), and the pure rules limitState, shouldArm, fireChecks, nextStreak and the resume turn wrapper, with shared fixtures. Nothing reads the flag outside tests, so no behaviour changes. The migration time is logged through the db.migrate perf span. Limit classification: the Claude and Codex adapters put an optional limit { limitClass, resetAt } on the end event of a turn that ended on a usage limit or a full context window (no limit means other), the registry logs one 'turn limit' counter line per such turn, and the synthetic model name the Claude CLI writes on its limit messages is never recorded or shown as the model. Nothing reads the limit field yet, so no chat behaves differently.",
   "surfaces": {
     "desktop": {
       "status": "staged",
@@ -10,18 +10,22 @@
       "followUpRelease": "The release that turns limit_auto_resume on by default (LIMIT_AUTO_RESUME_ENABLED true), after the desktop runner, the Expo and the Android Limited rows ship and beta users run it for a week.",
       "evidence": [
         "src/shared/limit-resume.ts",
-        "tests/unit/limit-resume-rules.test.ts"
+        "tests/unit/limit-resume-rules.test.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/adapters/codex-adapter.ts",
+        "tests/unit/limit-classification.test.ts",
+        "tests/unit/acp-generic-adapter.test.ts"
       ]
     },
     "reactNativeIos": {
       "status": "staged",
       "flag": "limit_auto_resume",
-      "followUpRelease": "The release that turns limit_auto_resume on by default (LIMIT_AUTO_RESUME_ENABLED true), after the desktop runner, the Expo and the Android Limited rows ship and beta users run it for a week."
+      "followUpRelease": "The release that turns limit_auto_resume on by default (LIMIT_AUTO_RESUME_ENABLED true), after the desktop runner, the Expo and the Android Limited rows ship and beta users run it for a week. The optional limit field on turn.completed is ignored by the Expo app until then."
     },
     "nativeAndroid": {
       "status": "staged",
       "flag": "limit_auto_resume",
-      "followUpRelease": "The release that turns limit_auto_resume on by default (LIMIT_AUTO_RESUME_ENABLED true), after the desktop runner, the Expo and the Android Limited rows ship and beta users run it for a week."
+      "followUpRelease": "The release that turns limit_auto_resume on by default (LIMIT_AUTO_RESUME_ENABLED true), after the desktop runner, the Expo and the Android Limited rows ship and beta users run it for a week. The Android app reads turn.completed by field, so the optional limit field is ignored until then."
     },
     "sharedBackendApi": {
       "status": "staged",
@@ -30,7 +34,8 @@
       "evidence": [
         "src/shared/limit-resume.ts",
         "tests/fixtures/limit-resume-cases.json",
-        "tests/fixtures/limit-classification-cases.json"
+        "tests/fixtures/limit-classification-cases.json",
+        "src/shared/provider-events.ts"
       ]
     },
     "storageDataMigration": {
@@ -50,12 +55,14 @@
   "verification": {
     "automated": [
       "npx vitest run tests/unit/limit-resume-rules.test.ts tests/unit/hub-db.test.ts --maxWorkers=2: limitState, shouldArm, fireChecks and nextStreak pass every case in tests/fixtures/limit-resume-cases.json; the flag helper is off by default and on with SB_LIMIT_AUTO_RESUME=1 or labs.limit_auto_resume; limit_resumes arms, fires once per request id, disarms durably, keeps the streak and keys a rotated Claude id by its root conversation.",
-      "A copy of a real 1.1 GB desktop database migrated with this build (five new tables, no other change), and the migrate code of origin/main then opened the migrated file."
+      "A copy of a real 1.1 GB desktop database migrated with this build (five new tables, no other change), and the migrate code of origin/main then opened the migrated file.",
+      "npx vitest run tests/unit/limit-classification.test.ts tests/unit/acp-generic-adapter.test.ts tests/unit/codex-protocol-schema.test.ts: every case of tests/fixtures/limit-classification-cases.json passes through the real Claude adapter (SDK messages), the real Codex adapter (app-server notifications, then a failed turn/completed) and the generic ACP adapter for Gemini (a fake agent whose prompt fails with a quota error, which stays other). A full context window is context_full, not a limit; a limit followed by an empty success stays a limit; the synthetic model is never recorded and adds no tokens. The Codex fields read (error.codexErrorInfo, turn.error.codexErrorInfo) are in the app-server schema fixture.",
+      "tests/unit/limit-classification.test.ts also checks that a Claude rejection while no turn runs carries no limit, and that a late Codex limit error of a stopped turn does not mark the running turn. Full suite: npx vitest run --maxWorkers=2, 7062 passed, 4 skipped; npm run typecheck green."
     ],
     "hardware": [],
     "notExercised": [
-      "Nothing reads the flag, the setting or the table yet, so no chat behaves differently. The runner, the Limited row and the phone rows come in later PRs.",
-      "limit-classification-cases.json holds cases only. No adapter classifies them yet."
+      "Nothing reads the flag, the setting, the table or the limit field yet, so no chat behaves differently. The runner, the Limited row and the phone rows come in later PRs.",
+      "No live usage limit was hit on Claude, Codex or an ACP agent for this change: the cases are captured or constructed frames. The limit field on turn.completed was not checked on a phone."
     ]
   }
 }

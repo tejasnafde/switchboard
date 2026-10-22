@@ -4,6 +4,8 @@
  * request and notification crosses the same ndjson framing a real CLI uses.
  * No agent CLI is run.
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { PassThrough, Readable, Writable } from 'node:stream'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -29,6 +31,8 @@ interface FakeAgentState {
   hangOnInitialize: boolean
   /** The most recently spawned fake child, so a test can assert it was killed. */
   lastChild: (EventEmitter & { kill: ReturnType<typeof vi.fn> }) | null
+  /** Set: `prompt` fails with this JSON-RPC error. */
+  promptError?: { code: number; message: string }
 }
 
 const fake = vi.hoisted(() => ({
@@ -99,6 +103,7 @@ function fakeAgent(conn: AgentSideConnection, state: FakeAgentState): Agent {
     },
     async prompt(params) {
       state.calls.push('prompt')
+      if (state.promptError) throw new RequestError(state.promptError.code, state.promptError.message)
       await conn.sessionUpdate({
         sessionId: params.sessionId,
         update: { sessionUpdate: 'agent_message_chunk', messageId: 'm1', content: { type: 'text', text: 'hello' } },
@@ -383,5 +388,29 @@ describe('generic ACP adapter over the protocol', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('limit classification (tests/fixtures/limit-classification-cases.json)', () => {
+  const { cases } = JSON.parse(
+    readFileSync(join(__dirname, '../fixtures/limit-classification-cases.json'), 'utf8'),
+  ) as {
+    cases: Array<{
+      name: string
+      provider: string
+      events: Array<{ error: { code: number; message: string } }>
+      expected: { limitClass: string }
+    }>
+  }
+
+  it.each(cases.filter((c) => c.provider === 'gemini'))('$name', async ({ events: frames, expected }) => {
+    fake.state!.promptError = frames[0].error
+    const events: RuntimeEvent[] = []
+    const adapter = await startGemini(events)
+    await adapter.sendTurn('chat-1', 'hi')
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'turn.completed')).toBe(true))
+    const done = events.find((e) => e.type === 'turn.completed') as Extract<RuntimeEvent, { type: 'turn.completed' }>
+    expect(done.limit?.limitClass ?? 'other').toBe(expected.limitClass)
+    expect(events).toContainEqual(expect.objectContaining({ type: 'error' }))
   })
 })

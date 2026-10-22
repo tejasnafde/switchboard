@@ -1770,6 +1770,16 @@ export class ProviderRegistry implements PeerToolHost {
       this.checkpoints.noteToolCompleted(event.threadId, event.toolId, event.writtenPaths)
     if (event.type === 'turn.dequeued' && event.reason === 'started') this.checkpoints.startQueuedTurn(event.threadId)
     if (event.type === 'turn.completed') this.finishOutstandingTurn(event.threadId)
+    // Counter for limit classification: one line per turn that ended on a
+    // usage limit or a full context, so auto-resume arms can be counted per provider.
+    if (event.type === 'turn.completed' && event.limit) {
+      log.info('turn limit', {
+        threadId: event.threadId,
+        provider: this.sessionAdapters.get(event.threadId)?.provider,
+        limitClass: event.limit.limitClass,
+        hasReset: event.limit.resetAt !== null,
+      })
+    }
     this.bus.publish(event)
     if (event.type === 'turn.dequeued') {
       // A promoted message joins the running turn, whose mode stands.
