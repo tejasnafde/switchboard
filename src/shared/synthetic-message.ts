@@ -133,6 +133,9 @@ const BLOCKS: readonly Block[] = [
   // A Switchboard approval result (shared/agent-approval-cards.ts). The chat
   // shows its own system row for it, so the turn the agent got renders nothing.
   { start: '<switchboard-approval-result>', end: '</switchboard-approval-result>' },
+  // A resume after a usage limit (shared/limit-resume.ts): the chat shows its
+  // own `[[sb:limit-resume]]` row for it.
+  { start: '<switchboard-limit-resume>', end: '</switchboard-limit-resume>' },
   // A fork's merge-back (shared/merge-back.ts): the parent shows its own
   // delivered row for it, so only what the user typed after it stays a bubble.
   { start: '<switchboard-fork-merge-back>', end: '</switchboard-fork-merge-back>' },

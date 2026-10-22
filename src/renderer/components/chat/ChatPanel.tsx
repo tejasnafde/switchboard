@@ -4,6 +4,7 @@ import { isProjectCloning, waitForProjectClone } from '../../services/project-cl
 import { cancelHeldSends, holdSend, sendMustWait, settleHeldSends, useHeldSends } from '../../services/held-sends'
 import { queuedTurnComposerText } from '@shared/queued-turns'
 import { QueuedTurnBar } from './QueuedTurnBar'
+import { LimitResumeRow } from './LimitResumeRow'
 import { LoadingStatus } from '../ui/loading-status'
 import { ChatSkeleton } from '../ui/chat-skeleton'
 import { perfSpan } from '../../perf'
@@ -1604,6 +1605,7 @@ export function ChatPanel({
             />
           )}
 
+          {sessionId && <LimitResumeRow sessionId={sessionId} />}
           {composer}
         </>
       )}

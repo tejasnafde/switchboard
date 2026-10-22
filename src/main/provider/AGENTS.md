@@ -42,6 +42,16 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - `request.expired` · the provider can no longer take an answer for an open approval or question (its session errored, stopped or restarted). Clients replace the card with a notice naming the reason, recovery closes cards the backend no longer lists, and `RESPOND_TO_REQUEST` / `ANSWER_QUESTION` refuse a request the registry no longer holds (`REQUEST_EXPIRED`) instead of returning silently
 - `error` · adapter-level error surfaced to chat
 
+## Auto-resume after a usage limit (flag `limit_auto_resume`, 2026-10-22)
+
+`limit-resume.ts` (`LimitResumer`, one per production registry; tests that inject adapters pass `limitResume = true` to get one) runs the pure rules of `shared/limit-resume.ts`. The registry calls `onTurnEnded` after it publishes each `turn.completed`, so a usage-limited end with a reset arms the root conversation's `limit_resumes` row with a new request id and one timer at the reset plus a minute (rebuilt by `start()` at construction). The fire checks the cheap things first and reads usage (`fetchInstanceUsage`, unforced, so it can share the 45 s cache) only when they pass; a reading it cannot use counts as open, since the turn itself is the test. It sends `limitResumeTurn()` through `sendApprovalResultTurn` (no `turnDepth` reset, no link renewal) and then `resumeQueuedTurns`, so the held queue runs behind the resume turn in enqueue order. Traps:
+
+- The fire waits while a turn runs or is being prepared (you sent one): that turn's end decides. A normal end before the reset disarms with `ran`; another limit arms again.
+- A chat with no running session at fire time waits for `onSessionStarted` (called with the held approval result flush). The runner never starts a session itself.
+- Disarm is durable: `INTERRUPT` (the Stop button) disarms `stop`, `notifyConversationArchived` disarms `archive`, the row's Cancel `cancel`. `STOP_SESSION` does not: closing a chat or switching agents also sends it.
+- The resume turn's block is dropped by `splitSyntheticUserText` (and the Kotlin port); the chat shows the stored `[[sb:limit-resume]]` row, published live on `limit-resume.changed` with the row's `state` (`LimitState`).
+- Measured: every fire ends a `limit-resume.fire` perf span with its outcome (threshold 0, so all are logged); `limit resume armed`, `not armed`, `disarmed` and `outcome` info lines count arms, skips, disarms and resume success.
+
 ## Subagent steps (2026-10-12)
 
 A Claude subagent's work belongs to the Agent/Task call that started it. The adapter passes the SDK's `parent_tool_use_id` on as `parentToolCallId` on that subagent's `tool.started`, `tool.completed` and `content` events, and the tool-use id on `task.notification` (`toolUseId`, written into the notice text as `<tool-use-id>`). A subagent's `stream_event` frames are dropped (they would land in the parent's open message), and its blocks never touch the parent's `currentMessageId`, since a background subagent runs while the parent streams. The SDK forwards a subagent's text only with `forwardSubagentText`, which is off, so live rows hold its tool calls and notices.

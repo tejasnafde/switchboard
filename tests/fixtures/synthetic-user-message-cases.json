@@ -153,5 +153,13 @@
       "rows": [],
       "userText": "now wire it in"
     }
+  },
+  {
+    "id": "limit-resume-turn",
+    "text": "<switchboard-limit-resume>\nUsage limit reset. Continue the task where you left off.\n</switchboard-limit-resume>",
+    "expected": {
+      "rows": [],
+      "userText": ""
+    }
   }
 ]

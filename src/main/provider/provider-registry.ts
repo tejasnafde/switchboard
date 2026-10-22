@@ -2,6 +2,7 @@
  * Provider registry - manages adapter instances and routes operations.
  */
 
+import { randomUUID } from 'node:crypto'
 import type { PerfSpan } from '@shared/perf-timing'
 import { perfSpan } from '../perf'
 import type { BackendHost } from '../backend/host'
@@ -52,6 +53,7 @@ import {
   recordThreadSession,
   updateConversationSessionId,
   saveMessageIfAbsent,
+  isConversationArchived,
   saveActivityMessageIfAbsent,
   setConversationStatusLine,
   threadFamilyIds,
@@ -68,6 +70,14 @@ import {
   clearConversationPendingHandoff,
 } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
+import {
+  autoResumeAfterLimitOn,
+  limitAutoResumeEnabled,
+  limitResumeMarker,
+  limitResumeTurn,
+  type LimitState,
+} from '@shared/limit-resume'
+import { LimitResumer, type LimitResumeHost } from './limit-resume'
 import { stripSenderLine, withSenderLine } from '@shared/sender-line'
 import { senderLineForTurn } from './sender-context'
 import {
@@ -337,6 +347,7 @@ export class ProviderRegistry implements PeerToolHost {
     // Tests get none unless they pass one.
     queuedRows: QueuedTurnRowStore | null = adapters ? null : sqliteQueuedTurnRowStore(() => getDb()),
     turnCheckpoints: TurnCheckpointStore | null = adapters ? null : sqliteTurnCheckpointStore(() => getDb()),
+    limitResume = !adapters,
   ) {
     this.switchboardMcp = switchboardMcp
     this.approvalStore = approvalStore
@@ -380,6 +391,58 @@ export class ProviderRegistry implements PeerToolHost {
     // Invalid mirror edits are fs-watch findings with no tool result to ride
     // on - surface them in chat as error events through this registry's bus.
     notebookManager.setPublisher((event) => this.publish(event))
+    this.limitResumer = limitResume ? new LimitResumer(this.limitResumeHost()) : null
+    this.limitResumer?.start()
+  }
+
+  private limitResumeHost(): LimitResumeHost {
+    return {
+      enabled: () => {
+        try {
+          return limitAutoResumeEnabled(process.env, getSetting)
+        } catch (err) {
+          log.warn('could not read the auto-resume flag; it counts as off', err)
+          return false
+        }
+      },
+      settingOn: () => autoResumeAfterLimitOn(getSetting),
+      liveThread: (conversationId) => this.liveSessionId(conversationId),
+      busy: (threadId) => this.hasOutstandingTurn(threadId) || this.preparingTurns.has(threadId),
+      needsYou: (threadId) => this.getPendingRequests(threadId).length > 0,
+      instanceOf: (threadId) => this.sessionDescriptors.get(threadId)?.instanceId ?? null,
+      archived: (conversationId) => isConversationArchived(conversationId),
+      usage: async (instanceId) => (await import('./usage')).fetchInstanceUsage(instanceId),
+      sendResume: (threadId) => this.sendLimitResume(threadId),
+      changed: (conversationId, state, resumed) => this.publishLimitResume(conversationId, state, resumed),
+    }
+  }
+
+  /** The resume turn, through the approval result path, then the held queue behind it in enqueue order. */
+  private async sendLimitResume(threadId: string): Promise<boolean> {
+    if (!(await this.sendApprovalResultTurn(threadId, limitResumeTurn(), `limit-resume-${randomUUID()}`))) return false
+    await this.resumeQueuedTurns(threadId)
+    return true
+  }
+
+  private publishLimitResume(conversationId: string, state: LimitState, resumed: boolean): void {
+    let row: { messageId: string; content: string; at: number } | undefined
+    if (resumed) {
+      const at = Date.now()
+      const messageId = `limitresume_${at}_${++this.savedMessageSeq}`
+      const content = limitResumeMarker()
+      try {
+        if (saveMessageIfAbsent(messageId, conversationId, 'system', content, undefined, undefined, at))
+          row = { messageId, content, at }
+      } catch (err) {
+        log.warn(`could not store the resume row of ${conversationId}`, err)
+      }
+    }
+    this.bus.publish({
+      type: 'limit-resume.changed',
+      threadId: this.liveSessionId(conversationId) ?? conversationId,
+      state,
+      ...(row ? { row } : {}),
+    })
   }
 
   getAdapter(provider: ProviderKind): ProviderAdapter | undefined {
@@ -427,6 +490,8 @@ export class ProviderRegistry implements PeerToolHost {
    * agent's turn and a restart (`shared/agent-approval-cards.ts`).
    */
   private readonly agentApprovals: AgentApprovalBroker
+  /** Auto-resume after a usage limit; null in tests that inject adapters. */
+  readonly limitResumer: LimitResumer | null
   private readonly approvalStore: ApprovalCardStore<AgentWritePlan>
   private readonly queuedRows: QueuedTurnRowStore | null
 
@@ -1781,6 +1846,9 @@ export class ProviderRegistry implements PeerToolHost {
       })
     }
     this.bus.publish(event)
+    // After the event itself, so clients see the turn end before its Limited row.
+    if (event.type === 'error') this.limitResumer?.onError(event.threadId)
+    if (event.type === 'turn.completed') this.limitResumer?.onTurnEnded(event.threadId, event.limit, event.turnId)
     if (event.type === 'turn.dequeued') {
       // A promoted message joins the running turn, whose mode stands.
       const held = this.heldTurnModes.get(event.messageId)
@@ -2737,7 +2805,10 @@ export class ProviderRegistry implements PeerToolHost {
           // Results of cards answered while the chat was not running. A start
           // inside a profile switch or relocation (gated, or a rollback) is
           // skipped here; that flow flushes once it settles.
-          if (!eventGate) this.flushHeldApprovalResultsLater(opts.threadId)
+          if (!eventGate) {
+            this.flushHeldApprovalResultsLater(opts.threadId)
+            this.limitResumer?.onSessionStarted(opts.threadId)
+          }
           resolveStart(session)
           return session
         } catch (err) {
@@ -3180,6 +3251,7 @@ export class ProviderRegistry implements PeerToolHost {
         return { live: false }
       }
       const live = this.hasOutstandingTurn(threadId) || this.sessionStatus.get(threadId) === 'running'
+      this.limitResumer?.disarm(threadId, 'stop')
       await adapter.interruptTurn(threadId)
       return { live }
     })
@@ -3307,6 +3379,19 @@ export class ProviderRegistry implements PeerToolHost {
     )
     this.host.handle(ProviderChannels.LIST_QUEUED_TURNS, (threadId: string) => this.listQueuedTurns(threadId))
     this.host.handle(ProviderChannels.RESUME_QUEUED_TURNS, (threadId: string) => this.resumeQueuedTurns(threadId))
+    this.host.handle(ProviderChannels.LIMIT_RESUME_ENABLED, () => Boolean(this.limitResumer?.enabled()))
+    this.host.handle(
+      ProviderChannels.LIMIT_RESUME_GET,
+      (threadId: string): LimitState => this.limitResumer?.view(threadId) ?? { kind: 'none' },
+    )
+    this.host.handle(ProviderChannels.LIMIT_RESUME_CANCEL, (threadId: string) => {
+      this.limitResumer?.disarm(threadId, 'cancel')
+    })
+    this.host.handle(
+      ProviderChannels.LIMIT_RESUME_NOW,
+      async (threadId: string) =>
+        (await this.limitResumer?.resumeNow(threadId)) ?? { ok: false, message: 'Auto-resume is off.' },
+    )
     this.host.handle(ProviderChannels.PROMOTE_QUEUED_TURN, (threadId: string, messageId: string) =>
       this.actOnQueuedTurn('promote', threadId, messageId),
     )
@@ -3343,6 +3428,7 @@ export class ProviderRegistry implements PeerToolHost {
     this.firstEventSpans.clear()
     this.firstContentSpans.clear()
     this.firstTurnSent.clear()
+    this.limitResumer?.dispose()
     // Open approval cards stay in the store: a quit or a closed window is not an answer.
     for (const threadId of this.sessionAdapters.keys()) this.switchboardMcp?.close(threadId)
     for (const [threadId, adapter] of this.sessionAdapters) {
@@ -3373,6 +3459,7 @@ export function notifyWorktreeSwap(threadId: string, cwd: string | null): void {
 export function notifyConversationArchived(conversationId: string): void {
   activeRegistry?.dropPeerLinks(conversationId)
   activeRegistry?.closeAgentCards(conversationId)
+  activeRegistry?.limitResumer?.disarm(conversationId, 'archive')
 }
 
 /**

@@ -7,8 +7,8 @@
  * held queue follows. Quick repeat failures count in `streak`, and the third
  * one gives up. Stop, archive, settle, Cancel and a move disarm the row.
  *
- * The adapters use the classifiers below to mark a limited turn's end; the
- * rest is read only by tests until the auto-resume runner lands.
+ * The adapters use the classifiers below to mark a limited turn's end, and
+ * `src/main/provider/limit-resume.ts` runs the rest on the desktop backend.
  */
 import { runSlotFree, type HubRunningChild } from './hub'
 import { unixSecondsToMs } from './provider-usage'
@@ -57,6 +57,10 @@ export type LimitDisarmReason =
   | 'cancel'
   | 'new_brief'
   | 'moved'
+  /** A turn ended normally before the reset, so the chat is no longer limited. */
+  | 'ran'
+  /** The probe at the reset said the window is still closed and gave no new reset. */
+  | 'no_reset'
 
 /** The fields of a `limit_resumes` row the rules read. */
 export interface LimitResumeRowView {
@@ -251,4 +255,28 @@ export const LIMIT_RESUME_CLOSE = '</switchboard-limit-resume>'
 /** The resume turn's text. Every surface's synthetic split drops the block and shows a row. */
 export function limitResumeTurn(): string {
   return `${LIMIT_RESUME_OPEN}\nUsage limit reset. Continue the task where you left off.\n${LIMIT_RESUME_CLOSE}`
+}
+
+/** The stored system row a resume leaves in the chat. */
+export const LIMIT_RESUME_MARKER_PREFIX = '[[sb:limit-resume]]'
+export const LIMIT_RESUME_MARKER_TEXT = 'Usage limit reset. Resumed the chat.'
+
+export function limitResumeMarker(): string {
+  return `${LIMIT_RESUME_MARKER_PREFIX} ${LIMIT_RESUME_MARKER_TEXT}`
+}
+
+/** The Limited row's text. `formatTime` turns epoch ms into "15:40". */
+export function limitStateText(state: LimitState, formatTime: (ms: number) => string): string | null {
+  switch (state.kind) {
+    case 'none':
+      return null
+    case 'armed':
+      return `Usage limit. Resumes ${formatTime(state.resetAt)}.`
+    case 'disarmed':
+      return 'Usage limit. Auto-resume off.'
+    case 'gave_up':
+      return `Usage limit. Gave up after ${LIMIT_RESUME_MAX_STREAK} tries.`
+    case 'no_reset':
+      return 'Usage limit. No reset time, resume by hand.'
+  }
 }

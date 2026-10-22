@@ -27,6 +27,7 @@ import {
   SETTING_DEFAULT_INSTANCE_ID,
 } from '@shared/session-defaults'
 import { defaultModelFor, modelsForAgent } from '@shared/models'
+import { AUTO_RESUME_AFTER_LIMIT_SETTING } from '@shared/limit-resume'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import type { ProviderInstanceUpsertInput } from '../../../preload'
 import { credentialHomeDisplay, defaultAuthModeForNewInstance } from '../../shared/provider-instance-display'
@@ -67,6 +68,7 @@ const TONE_COLOR: Record<BarTone, string> = {
 
 const SETTING_KEYS = [
   SETTING_DEFAULT_INSTANCE_ID,
+  AUTO_RESUME_AFTER_LIMIT_SETTING,
   ...AGENT_PROVIDERS.flatMap((kind) => [defaultInstanceSettingKey(kind), defaultModelSettingKey(kind)]),
 ]
 
@@ -103,6 +105,7 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
   const [adding, setAdding] = useState(false)
   const [added, setAdded] = useState<string | null>(null)
   const [stored, setStored] = useState<Record<string, string>>({})
+  const [autoResumeShown, setAutoResumeShown] = useState(false)
 
   // The settings read can land after the page closes. The effect body
   // re-arms the flag because StrictMode runs mount, cleanup, mount.
@@ -126,6 +129,16 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
       // A pick made before the read landed wins.
       setStored((prev) => ({ ...values, ...prev }))
     })
+  }, [])
+
+  // Shown only while the staged flag limit_auto_resume is on.
+  useEffect(() => {
+    window.api.provider
+      .limitResumeEnabled()
+      .then((on) => {
+        if (mounted.current) setAutoResumeShown(on)
+      })
+      .catch((err: unknown) => log.warn('reading the auto-resume flag failed', err))
   }, [])
 
   const writeSetting = useCallback((key: string, value: string) => {
@@ -214,6 +227,13 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
         })}
       </Anchor>
 
+      {autoResumeShown && (
+        <AutoResumeSwitch
+          on={stored[AUTO_RESUME_AFTER_LIMIT_SETTING] !== 'false'}
+          onChange={(on) => writeSetting(AUTO_RESUME_AFTER_LIMIT_SETTING, String(on))}
+        />
+      )}
+
       <Anchor def={SETTING_ROW.addAccount}>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
@@ -247,6 +267,42 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
           }}
         />
       )}
+    </div>
+  )
+}
+
+// ponytail: no SETTING_ROW (search) entry while the row hides behind the flag; add one when it ships on.
+function AutoResumeSwitch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <div className="mb-[18px] flex items-start gap-3">
+      <div className="flex-1">
+        <div id="auto-resume-label" className="text-[13px] text-[var(--text-primary)]">
+          Resume after a usage limit resets
+        </div>
+        <div className="mt-[2px] text-[12px] text-[var(--text-secondary)]">
+          A chat stopped by a usage limit continues by itself at the reset time. It gives up after 3 quick failures.
+          Stop always cancels it.
+        </div>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-labelledby="auto-resume-label"
+        onClick={() => onChange(!on)}
+        className={cn(
+          'relative h-[18px] w-8 shrink-0 cursor-pointer rounded-full border-0 p-0 outline-none transition-colors duration-100 focus-visible:ring-2 focus-visible:ring-ring',
+          on ? 'bg-[var(--accent)]' : 'bg-[rgba(128,128,128,0.35)]',
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className={cn(
+            'absolute left-[2px] top-[2px] size-[14px] rounded-full bg-[#fff] shadow-[0_1px_2px_rgba(0,0,0,0.3)] transition-transform duration-100',
+            on && 'translate-x-[14px]',
+          )}
+        />
+      </button>
     </div>
   )
 }
