@@ -3,11 +3,15 @@ import { createMainLogger } from './logger'
 
 const log = createMainLogger('app:renderer-crash')
 
-/** Reasons that leave a blank window. `clean-exit` and `killed` are deliberate. */
+/**
+ * Reasons that leave a blank window. `killed` is included: macOS reports a
+ * memory-pressure kill that way. `clean-exit` is deliberate.
+ */
 export const RELOAD_REASONS: ReadonlySet<RenderProcessGoneDetails['reason']> = new Set([
   'crashed',
   'oom',
   'abnormal-exit',
+  'killed',
 ])
 
 export const MAX_RELOADS = 3
@@ -53,12 +57,14 @@ export function attachRendererCrashRecovery(
   window: BrowserWindow,
   load: () => void,
   now: () => number = Date.now,
+  isQuitting: () => boolean = () => false,
 ): void {
   const allowReload = createReloadLimiter(now)
   const contents = window.webContents
   contents.on('render-process-gone', (_event, details) => {
     const fields = { reason: details.reason, exitCode: details.exitCode }
-    if (!RELOAD_REASONS.has(details.reason) || window.isDestroyed()) {
+    // A quit can kill the renderer while the window still stands.
+    if (!RELOAD_REASONS.has(details.reason) || window.isDestroyed() || isQuitting()) {
       log.warn('renderer gone, no reload', fields)
       return
     }

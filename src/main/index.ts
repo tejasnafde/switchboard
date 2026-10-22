@@ -598,7 +598,12 @@ function createWindow(): BrowserWindow {
     hardenPreviewWebviewPreferences(webPreferences, params),
   )
 
-  attachRendererCrashRecovery(window, () => loadRenderer(window))
+  attachRendererCrashRecovery(
+    window,
+    () => loadRenderer(window),
+    Date.now,
+    () => quitCoordinator.isQuitting,
+  )
 
   // Intercept in-page navigation (e.g., clicking a <a href="https://..."> link)
   // and open in the default browser instead of hijacking the app.

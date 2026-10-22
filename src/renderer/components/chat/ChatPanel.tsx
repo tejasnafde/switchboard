@@ -1,6 +1,8 @@
 import { cn } from '../../lib/utils'
 import { useChatWaitStore } from '../../stores/chat-wait-store'
-import { cancelHeldSends, holdSend, sendMustWait, settleHeldSends } from '../../services/held-sends'
+import { cancelHeldSends, holdSend, sendMustWait, settleHeldSends, useHeldSends } from '../../services/held-sends'
+import { queuedTurnComposerText } from '@shared/queued-turns'
+import { QueuedTurnBar } from './QueuedTurnBar'
 import { LoadingStatus } from '../ui/loading-status'
 import { ChatSkeleton } from '../ui/chat-skeleton'
 import { perfSpan } from '../../perf'
@@ -1215,6 +1217,7 @@ export function ChatPanel({
   const waitPending = wait?.pending === true
   const waitFailed = wait?.error === true
   const openingRef = useRef(false)
+  const heldSends = useHeldSends(sessionId)
   openingRef.current = opening !== undefined
   useEffect(() => {
     if (!sessionId) return
@@ -1561,7 +1564,25 @@ export function ChatPanel({
             {wait?.pending ? wait.label : ''}
           </span>
           {opening ? (
-            <ChatSkeleton label="Loading conversation..." />
+            <>
+              <ChatSkeleton label="Loading conversation..." />
+              {/* The list is hidden while the chat opens, so its queued rows show here. */}
+              {heldSends.length > 0 && sessionId && (
+                <div className="flex shrink-0 flex-col items-end gap-[8px] px-6 pb-3">
+                  {heldSends.map((send) => (
+                    <div
+                      key={send.messageId}
+                      className="max-w-[80%] rounded-[10px] bg-[var(--bg-tertiary)] px-[12px] py-[8px] text-[13px] text-[var(--text-primary)]"
+                    >
+                      <div className="line-clamp-3 whitespace-pre-wrap break-words">
+                        {queuedTurnComposerText(send.message, send.extras?.displayBody, send.extras?.pillsMeta)}
+                      </div>
+                      <QueuedTurnBar sessionId={sessionId} messageId={send.messageId} provider={agentType} local />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           ) : (
             <MessageList
               messages={messages}

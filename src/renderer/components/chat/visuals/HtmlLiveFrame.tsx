@@ -200,7 +200,10 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
   const [backendHasImage, setBackendHasImage] = useState(false)
   const webviewRef = useRef<GuestWebview | null>(null)
   const quietTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const capturedRef = useRef(false)
+  // The frame height the still image was taken at: a new height takes a new one,
+  // so the paused box (the running height) always matches its image.
+  const capturedHeightRef = useRef<number | null>(null)
+  const frameHeightRef = useRef(0)
   const tokenRef = useRef<string | null>(null)
 
   const label = title ?? 'Live page'
@@ -243,7 +246,7 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     let token: string | null = null
     setLoading(true)
     setOpenError(null)
-    capturedRef.current = false
+    capturedHeightRef.current = null
     window.api.preview.openInline({ source, theme: htmlLiveTheme() }).then(
       (result) => {
         if (!result.ok) {
@@ -299,8 +302,9 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
 
   const capture = useCallback(async () => {
     const wcId = webviewRef.current?.getWebContentsId?.()
-    if (wcId === undefined || !key || capturedRef.current) return
-    capturedRef.current = true
+    const frameHeight = frameHeightRef.current
+    if (wcId === undefined || !key || capturedHeightRef.current === frameHeight) return
+    capturedHeightRef.current = frameHeight
     const image = await window.api.preview.captureInline(wcId)
     if (!image) return
     rememberImage(key, image)
@@ -320,6 +324,10 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
       captureRef.current().catch((err: unknown) => log.warn('live page capture failed', err))
     }, HTML_LIVE_QUIET_MS)
   }, [])
+  // Show all grows the frame with no new content height: take the still image again.
+  useEffect(() => {
+    if (expanded) armQuiet()
+  }, [expanded, armQuiet])
 
   const setWebviewRef = useCallback(
     (el: HTMLElement | null) => {
@@ -386,6 +394,7 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
   if (saved && sessionId) return <HtmlFileCard path={saved} sessionId={sessionId} />
 
   const height = htmlLiveFrameHeight(contentHeight, expanded)
+  frameHeightRef.current = height
   const stillHeight = htmlLiveStillHeight(contentHeight, expanded)
   // Shown under the page and under its still image alike, so a swap keeps the frame's size.
   const foldBar = !expanded && htmlLiveFolds(contentHeight) && (
