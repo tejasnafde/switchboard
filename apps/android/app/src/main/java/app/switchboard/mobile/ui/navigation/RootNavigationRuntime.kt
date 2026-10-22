@@ -79,6 +79,13 @@ interface RootNavigationRuntime {
 
     fun replaceQueued(origin: String, draft: OutgoingTurnDraft): EnqueueResult = enqueue(draft)
 
+    fun holdQueued(connectionId: String, threadId: String, held: Boolean) = Unit
+
+    fun withdrawQueued(
+        origin: String,
+        existing: List<app.switchboard.mobile.domain.composer.ComposerAttachment>,
+    ): app.switchboard.mobile.data.thread.WithdrawnTurn? = null
+
     fun saveComposerDraft(draft: ComposerDraft) = Unit
 
     fun addComposerImages(key: ComposerDraftKey, sources: List<ComposerImageSource>) = Unit

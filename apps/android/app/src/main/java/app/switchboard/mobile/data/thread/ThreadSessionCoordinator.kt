@@ -246,7 +246,20 @@ fun interface ThreadEnqueuePort {
     fun enqueue(draft: OutgoingTurnDraft): EnqueueResult
 
     fun replace(origin: String, draft: OutgoingTurnDraft): EnqueueResult = enqueue(draft)
+
+    /** Holds or releases delivery of the thread's queued turns. In memory only. */
+    fun hold(connectionId: String, threadId: String, held: Boolean) = Unit
+
+    /** Takes a turn that was never sent back out of the outbox; null when it cannot be. */
+    fun withdraw(origin: String, existing: List<ComposerAttachment>): WithdrawnTurn? = null
 }
+
+/** A queued turn returned to the composer, with its images staged as draft attachments. */
+data class WithdrawnTurn(
+    val turn: app.switchboard.mobile.domain.outbox.QueuedTurn,
+    val attachments: List<ComposerAttachment> = emptyList(),
+    val attachmentError: String? = null,
+)
 
 interface ThreadComposerPersistence {
     fun save(draft: ComposerDraft)
@@ -765,6 +778,9 @@ class ThreadSessionCoordinator(
     private val pendingUndeliveredIds = mutableSetOf<String>()
     private val pendingPlanOrigins = mutableMapOf<String, String>()
     private val optimisticTurns = linkedMapOf<String, app.switchboard.mobile.domain.outbox.QueuedTurn>()
+    /** Turns sent while a profile switch is in flight; delivery waits for it to settle. */
+    private val switchHeldOrigins = mutableListOf<String>()
+    private var holdingForSwitch = false
 
     @Synchronized
     fun start() {
@@ -895,12 +911,13 @@ class ThreadSessionCoordinator(
 
     @Synchronized
     fun submit(): ComposerSubmitResult {
-        if (composer.submitting || profiles.changing) return ComposerSubmitResult.Busy
+        if (composer.submitting) return ComposerSubmitResult.Busy
         val text = composer.draft.trim()
         val pill = composer.reviewPill
         if (text.isEmpty() && composer.attachments.isEmpty() && pill == null) return ComposerSubmitResult.Empty
         composer = composer.copy(submitting = true, error = null)
         publish()
+        holdIfSwitching()
         val thread = currentThread()
         val result = enqueueDraft(
             text = text,
@@ -918,6 +935,7 @@ class ThreadSessionCoordinator(
         return when (result) {
             is EnqueueResult.Durable -> {
                 addOptimistic(result.turn)
+                noteHeld(result.turn.origin)
                 pickedMode = null
                 if (pill != null) {
                     reviewPills?.clear(composerKey)
@@ -960,11 +978,12 @@ class ThreadSessionCoordinator(
         // Same reentrancy guard as submit(): a second tap (e.g. the compaction-offer
         // banner's Compact button) while one of these is already in flight must not
         // enqueue a second turn.
-        if (composer.submitting || profiles.changing) return ComposerSubmitResult.Busy
+        if (composer.submitting) return ComposerSubmitResult.Busy
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return ComposerSubmitResult.Empty
         composer = composer.copy(submitting = true, error = null)
         publish()
+        holdIfSwitching()
         val result = enqueueDraft(
             text = trimmed,
             mode = pickedMode,
@@ -974,6 +993,7 @@ class ThreadSessionCoordinator(
         return when (result) {
             is EnqueueResult.Durable -> {
                 addOptimistic(result.turn)
+                noteHeld(result.turn.origin)
                 pickedMode = null
                 composer = composer.copy(submitting = false, error = null)
                 publish()
@@ -1151,44 +1171,55 @@ class ThreadSessionCoordinator(
         val request = ++profileChangeRequest
         profiles = profiles.copy(changing = true, switchingTo = target.displayName.ifBlank { target.id }, error = null)
         publish()
-        remote.switchInstance(
-            threadId,
-            ProviderInstanceSwitchRequest(
-                targetInstanceId = target.id,
-                expectedCurrentInstanceId = profiles.selectedInstanceId,
-            ),
-        ) { response ->
-            synchronized(this) {
-                if (!accepts(response, request, profileChangeRequest)) return@synchronized
-                var switched = false
-                profiles = when (val outcome = response.outcome) {
-                    is RemoteOutcome.Failure -> profiles.copy(
-                        changing = false,
-                        error = outcome.message,
-                    )
-                    is RemoteOutcome.Success -> when (val result = outcome.value) {
-                        is ProviderInstanceSwitchResult.Success -> profiles.copy(
-                            selectedInstanceId = result.instanceId,
+        // A throw would leave the switch pending, and sends held behind it, for good.
+        try {
+            remote.switchInstance(
+                threadId,
+                ProviderInstanceSwitchRequest(
+                    targetInstanceId = target.id,
+                    expectedCurrentInstanceId = profiles.selectedInstanceId,
+                ),
+            ) { response ->
+                synchronized(this) {
+                    if (!accepts(response, request, profileChangeRequest)) return@synchronized
+                    var switched = false
+                    profiles = when (val outcome = response.outcome) {
+                        is RemoteOutcome.Failure -> profiles.copy(
                             changing = false,
-                            error = null,
-                        ).also { switched = true }
-                        is ProviderInstanceSwitchResult.Failure -> profiles.copy(
-                            selectedInstanceId = if (result.rolledBack == false) {
-                                result.currentInstanceId
-                            } else {
-                                result.currentInstanceId ?: profiles.selectedInstanceId
-                            },
-                            changing = false,
-                            error = result.message,
+                            error = outcome.message,
                         )
+                        is RemoteOutcome.Success -> when (val result = outcome.value) {
+                            is ProviderInstanceSwitchResult.Success -> profiles.copy(
+                                selectedInstanceId = result.instanceId,
+                                changing = false,
+                                error = null,
+                            ).also { switched = true }
+                            is ProviderInstanceSwitchResult.Failure -> profiles.copy(
+                                selectedInstanceId = if (result.rolledBack == false) {
+                                    result.currentInstanceId
+                                } else {
+                                    result.currentInstanceId ?: profiles.selectedInstanceId
+                                },
+                                changing = false,
+                                error = result.message,
+                            )
+                        }
+                    }
+                    if (!switched) returnHeldTurns()
+                    releaseSwitchHold()
+                    publish()
+                    if (switched) {
+                        loadSkills()
+                        refreshModels()
                     }
                 }
-                publish()
-                if (switched) {
-                    loadSkills()
-                    refreshModels()
-                }
             }
+        } catch (error: RuntimeException) {
+            if (request != profileChangeRequest) return
+            profiles = profiles.copy(changing = false, error = error.message ?: "Could not switch profile")
+            returnHeldTurns()
+            releaseSwitchHold()
+            publish()
         }
     }
 
@@ -1398,6 +1429,8 @@ class ThreadSessionCoordinator(
         gapSubscription = null
         subscription = null
         prLinksSubscription = null
+        // Leaving mid-switch delivers the held turns rather than stranding them.
+        releaseSwitchHold()
         reduce(ThreadAction.SetViewing(scope.connectionId, threadId, false))
     }
 
@@ -1828,6 +1861,62 @@ class ThreadSessionCoordinator(
         editingOrigin?.let { enqueue.replace(it, draft) } ?: enqueue.enqueue(draft)
     } catch (error: RuntimeException) {
         EnqueueResult.StorageFailure(error.message ?: "Could not save message")
+    }
+
+    private fun holdIfSwitching() {
+        if (!profiles.changing || holdingForSwitch) return
+        holdingForSwitch = true
+        enqueue.hold(scope.connectionId, threadId, true)
+    }
+
+    private fun noteHeld(origin: String) {
+        if (holdingForSwitch && origin !in switchHeldOrigins) switchHeldOrigins += origin
+    }
+
+    private fun releaseSwitchHold() {
+        switchHeldOrigins.clear()
+        if (!holdingForSwitch) return
+        holdingForSwitch = false
+        enqueue.hold(scope.connectionId, threadId, false)
+    }
+
+    /**
+     * The switch failed, so the turns sent during it come back to the composer
+     * instead of reaching the old profile. A turn the outbox will not give back
+     * is left to deliver once the hold is released.
+     */
+    private fun returnHeldTurns() {
+        val withdrawn = mutableListOf<WithdrawnTurn>()
+        switchHeldOrigins.forEach { origin ->
+            val existing = composer.attachments + withdrawn.flatMap(WithdrawnTurn::attachments)
+            enqueue.withdraw(origin, existing)?.let(withdrawn::add)
+        }
+        if (withdrawn.isEmpty()) return
+        val origins = withdrawn.mapTo(mutableSetOf()) { it.turn.origin }
+        val bubbles = withdrawn.mapTo(mutableSetOf()) { it.turn.bubbleId }
+        origins.forEach(optimisticTurns::remove)
+        pendingPlanOrigins.entries.removeAll { it.value in origins }
+        currentThread()?.let { current ->
+            store = store.copy(threads = store.threads + (key to current.copy(feed = current.feed.filterNot { it.id in bubbles })))
+            load = when (val currentLoad = load) {
+                is ThreadSessionLoad.Loading -> currentLoad.copy(cached = currentThread())
+                is ThreadSessionLoad.Failed -> currentLoad.copy(cached = currentThread())
+                is ThreadSessionLoad.Ready -> currentLoad.copy(thread = requireNotNull(currentThread()))
+            }
+        }
+        if (pickedMode == null) {
+            pickedMode = withdrawn.firstNotNullOfOrNull { it.turn.runtimeMode.toRuntimeModeOrNull() }
+            pickedMode?.let { composer = composer.copy(runtimeMode = it) }
+        }
+        composer = composer.copy(
+            draft = (listOf(composer.draft) + withdrawn.map { it.turn.text })
+                .filter(String::isNotBlank)
+                .joinToString("\n\n"),
+            attachments = composer.attachments + withdrawn.flatMap(WithdrawnTurn::attachments),
+            error = withdrawn.firstNotNullOfOrNull(WithdrawnTurn::attachmentError),
+        )
+        composerHasUnacknowledgedLocalChanges = true
+        persistComposer()
     }
 
     private fun submitFailed(message: String): ComposerSubmitResult.Failed {
