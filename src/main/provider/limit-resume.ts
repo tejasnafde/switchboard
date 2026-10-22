@@ -43,6 +43,8 @@ const log = createMainLogger('provider:limit-resume')
 
 /** How long a fire that waits for an open card, or for a failed send, tries again after. */
 const RETRY_MS = 5 * 60_000
+/** A second end with the same reset this soon after a limit is the same turn (a Claude rejection, then its late empty result). */
+const SAME_LIMIT_MS = 30_000
 /** setTimeout's ceiling; a later reset fires early, finds it early and sets the next timer. */
 const MAX_TIMER_MS = 2 ** 31 - 1
 
@@ -85,7 +87,7 @@ export class LimitResumer {
   /** Chats whose last turn ended on a usage limit: that turn's id and why it did not arm. */
   private readonly limited = new Map<
     string,
-    { turnId: string; skipped?: Exclude<ArmDecision, { arm: true }>['reason'] }
+    { turnId: string; resetAt: number | null; endedAt: number; skipped?: Exclude<ArmDecision, { arm: true }>['reason'] }
   >()
   /** A resume turn on its way: when it started, and whether it reported an error. */
   private readonly resumed = new Map<string, { startedAt: number; failed: boolean }>()
@@ -141,7 +143,11 @@ export class LimitResumer {
       setLimitResumeStreak(id, streak.streak, streak.gaveUp)
       log.info('limit resume outcome', { conversationId: id, outcome, streak: streak.streak, gaveUp: streak.gaveUp })
       if (streak.gaveUp) {
-        this.limited.set(id, { turnId: turnId ?? `turn_${this.now()}` })
+        this.limited.set(id, {
+          turnId: turnId ?? `turn_${this.now()}`,
+          resetAt: limit?.resetAt ?? null,
+          endedAt: this.now(),
+        })
         this.clearTimer(id)
         this.notify(id, false)
         return
@@ -162,10 +168,14 @@ export class LimitResumer {
       return
     }
 
-    // A Claude rejection followed by a late empty result ends one turn twice: arm once.
+    // A Claude rejection followed by a late empty result ends one turn twice:
+    // arm once, and never again after a Stop in between. Claude ends carry no
+    // turn id, so the same reset moments later stands for the same turn.
     const resetAt = limit.resetAt
-    if (row?.state === 'armed' && row.resetAt === resetAt && this.limited.has(id)) return
+    const previous = this.limited.get(id)
+    if (previous && previous.resetAt === resetAt && this.now() - previous.endedAt < SAME_LIMIT_MS) return
     const limitedTurnId = turnId ?? `turn_${this.now()}`
+    const mark = { turnId: limitedTurnId, resetAt, endedAt: this.now() }
     const decision = shouldArm({
       limitClass: 'usage_limit',
       resetAt,
@@ -175,7 +185,7 @@ export class LimitResumer {
       row,
     })
     if (!decision.arm) {
-      this.limited.set(id, { turnId: limitedTurnId, skipped: decision.reason })
+      this.limited.set(id, { ...mark, skipped: decision.reason })
       log.info('limit resume not armed', { conversationId: id, reason: decision.reason })
       this.notify(id, false)
       return
@@ -188,7 +198,9 @@ export class LimitResumer {
       resetAt: resetAt!,
       requestId,
     })
-    this.limited.set(id, { turnId: limitedTurnId })
+    // A new limit starts a new count; only resumes of one limit add up.
+    if (!resumed) setLimitResumeStreak(id, 0, false)
+    this.limited.set(id, mark)
     this.schedule(id, requestId, resetAt! + LIMIT_RESUME_FIRE_DELAY_MS)
     log.info('limit resume armed', { conversationId: id, resetAt })
     this.notify(id, false)
@@ -300,7 +312,10 @@ export class LimitResumer {
     // again (onSessionStarted); restarting the session here is restart recovery's job.
     if (!live) return refuse('not_running', 'The chat is not running. Send a message to continue.')
     // A turn already runs (you sent one): its end decides, disarming or arming again.
-    if (this.host.busy(live)) return refuse('busy', 'The chat is running a turn.')
+    if (this.host.busy(live)) {
+      if (!manual) this.schedule(id, requestId, this.now() + RETRY_MS)
+      return refuse('busy', 'The chat is running a turn.')
+    }
 
     const checks = (probe: UsageProbe) =>
       fireChecks({

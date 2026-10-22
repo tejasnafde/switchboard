@@ -407,7 +407,8 @@ export class ProviderRegistry implements PeerToolHost {
       },
       settingOn: () => autoResumeAfterLimitOn(getSetting),
       liveThread: (conversationId) => this.liveSessionId(conversationId),
-      busy: (threadId) => this.hasOutstandingTurn(threadId) || this.preparingTurns.has(threadId),
+      // Not hasOutstandingTurn: messages held behind the limited turn still count there.
+      busy: (threadId) => this.sessionStatus.get(threadId) === 'running' || this.preparingTurns.has(threadId),
       needsYou: (threadId) => this.getPendingRequests(threadId).length > 0,
       instanceOf: (threadId) => this.sessionDescriptors.get(threadId)?.instanceId ?? null,
       archived: (conversationId) => isConversationArchived(conversationId),
@@ -419,7 +420,9 @@ export class ProviderRegistry implements PeerToolHost {
 
   /** The resume turn, through the approval result path, then the held queue behind it in enqueue order. */
   private async sendLimitResume(threadId: string): Promise<boolean> {
-    if (!(await this.sendApprovalResultTurn(threadId, limitResumeTurn(), `limit-resume-${randomUUID()}`))) return false
+    // A turn of its own, never queued behind the held messages it must run before.
+    if (!(await this.sendApprovalResultTurn(threadId, limitResumeTurn(), `limit-resume-${randomUUID()}`, false)))
+      return false
     await this.resumeQueuedTurns(threadId)
     return true
   }
@@ -1517,7 +1520,12 @@ export class ProviderRegistry implements PeerToolHost {
    * outstanding turn) and none of a human one: `turnDepth`, links and pending
    * plans are untouched. False when the adapter refused it.
    */
-  private async sendApprovalResultTurn(threadId: string, body: string, requestId: string): Promise<boolean> {
+  private async sendApprovalResultTurn(
+    threadId: string,
+    body: string,
+    requestId: string,
+    queueBehindTurn?: boolean,
+  ): Promise<boolean> {
     const adapter = this.sessionAdapters.get(threadId)
     if (!adapter) return false
     this.beginPreparingTurn(threadId)
@@ -1528,7 +1536,7 @@ export class ProviderRegistry implements PeerToolHost {
       this.finishPreparingTurn(threadId)
     }
     try {
-      const midTurn = this.hasOutstandingTurn(threadId)
+      const midTurn = queueBehindTurn ?? this.hasOutstandingTurn(threadId)
       const cwd = this.sessionCwd.get(threadId)
       if (!midTurn && cwd) await this.checkpoints.beginTurn(threadId, cwd)
       if (this.sessionAdapters.get(threadId) !== adapter) return false

@@ -111,8 +111,14 @@ class Adapter implements ProviderAdapter {
       createdAt: 0,
     }
   }
-  async sendTurn(_threadId: string, message: string): Promise<void> {
-    this.calls.push(`send:${message}`)
+  async sendTurn(
+    _threadId: string,
+    message: string,
+    _mode?: unknown,
+    _images?: unknown,
+    delivery?: string,
+  ): Promise<void> {
+    this.calls.push(`send:${delivery ?? 'turn'}:${message}`)
   }
   async respondToRequest(): Promise<void> {}
   async interruptTurn(): Promise<void> {}
@@ -144,16 +150,21 @@ describe('auto-resume in the registry', () => {
     )
     registry.registerIpcHandlers()
     await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
+    // The running turn, and a message queued behind it: both counted as outstanding.
+    adapter.onEvent({ type: 'status', threadId: 't1', status: 'running', newTurn: true })
+    adapter.onEvent({ type: 'status', threadId: 't1', status: 'running', newTurn: true })
     adapter.onEvent({ type: 'turn.queued', threadId: 't1', messageId: 'm1', text: 'next', queuedAt: 1 })
     const resetAt = Date.now() + 120_000
     adapter.onEvent({ type: 'turn.completed', threadId: 't1', limit: { limitClass: 'usage_limit', resetAt } })
     adapter.onEvent({ type: 'turn.queue-held', threadId: 't1', held: true, reason: 'limit' })
+    adapter.onEvent({ type: 'status', threadId: 't1', status: 'error' })
 
     expect(rows.get('t1')).toMatchObject({ state: 'armed', resetAt, providerInstanceId: 'claude-code-default' })
     expect(await host.invoke(ProviderChannels.LIMIT_RESUME_GET, 't1')).toEqual({ kind: 'armed', resetAt })
 
     expect(await host.invoke(ProviderChannels.LIMIT_RESUME_NOW, 't1')).toEqual({ ok: true })
-    expect(adapter.calls).toEqual([`send:${limitResumeTurn()}`, 'resume-queue'])
+    // Its own turn, not queued behind the held message, which follows it.
+    expect(adapter.calls).toEqual([`send:turn:${limitResumeTurn()}`, 'resume-queue'])
     expect(saved).toContain(`system:${limitResumeMarker()}`)
     const events = host.emitted.filter(([c]) => c === ProviderChannels.EVENT).map(([, e]) => e as RuntimeEvent)
     expect(events.at(-1)).toMatchObject({

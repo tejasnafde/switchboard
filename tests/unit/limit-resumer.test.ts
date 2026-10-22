@@ -1,6 +1,6 @@
 import { createMigratedDb } from './helpers/test-db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { armLimitResume, getLimitResume } from '../../src/main/db/database'
+import { armLimitResume, getLimitResume, setLimitResumeStreak } from '../../src/main/db/database'
 import { LimitResumer, usageProbe, type LimitResumeHost } from '../../src/main/provider/limit-resume'
 import type { ProviderUsage } from '../../src/shared/provider-usage'
 import { limitResumeMarker, limitStateText, type LimitState } from '../../src/shared/limit-resume'
@@ -199,6 +199,38 @@ describe('LimitResumer', () => {
     const first = getLimitResume('c1')!.requestId
     resumer.onTurnEnded('c1', limited(), undefined)
     expect(getLimitResume('c1')!.requestId).toBe(first)
+  })
+
+  it('a Stop between a limit and its late second end keeps the row disarmed', async () => {
+    resumer.onTurnEnded('c1', limited(), undefined)
+    resumer.disarm('c1', 'stop')
+    resumer.onTurnEnded('c1', limited(), undefined)
+    expect(getLimitResume('c1')).toMatchObject({ state: 'disarmed', disarmReason: 'stop' })
+    await vi.advanceTimersByTimeAsync(10 * MIN)
+    expect(host.sent).toEqual([])
+  })
+
+  it('a new limit starts its streak at 0', () => {
+    armLimitResume({
+      conversationId: 'c1',
+      providerInstanceId: 'i1',
+      limitedTurnId: 't',
+      resetAt: RESET,
+      requestId: 'r',
+    })
+    setLimitResumeStreak('c1', 2, false)
+    resumer.onTurnEnded('c1', limited(RESET + MIN), 'turn9')
+    expect(getLimitResume('c1')).toMatchObject({ state: 'armed', streak: 0 })
+  })
+
+  it('a fire that finds a turn running tries again later', async () => {
+    resumer.onTurnEnded('c1', limited(), 'turn1')
+    host.turnRunning = true
+    await vi.advanceTimersByTimeAsync(3 * MIN)
+    expect(host.sent).toEqual([])
+    host.turnRunning = false
+    await vi.advanceTimersByTimeAsync(5 * MIN)
+    expect(host.sent).toEqual(['c1'])
   })
 
   it('waits while a card is open, and for the session when the chat is not running', async () => {
