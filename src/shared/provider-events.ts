@@ -274,6 +274,8 @@ export interface RuntimeLimitResumeChangedEvent {
   threadId: string
   state: LimitState
   row?: { messageId: string; content: string; at: number }
+  /** Set only on the change that gave up after the third quick failure; the backend pushes for it. */
+  gaveUp?: boolean
 }
 
 /**
