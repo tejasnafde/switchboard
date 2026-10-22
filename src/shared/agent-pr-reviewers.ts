@@ -4,7 +4,7 @@
  * and how each one is matched against the repository's reviewer candidates.
  * A name matches exactly (case aside) on a candidate's id, login, display
  * name or an email the host listed. Without an exact match, the one person
- * whose name holds it (or is held by it) is taken; the card shows who, and
+ * whose name holds it is taken; the card shows who, and
  * the user may remove them. Several such people are refused with the list,
  * and any other name is refused with the close candidates. Pure, so the
  * tool, the service and the tests share it.
@@ -105,14 +105,18 @@ function closeTo(name: string, candidates: readonly PrReviewerCandidate[]): PrRe
   )
 }
 
-/** Candidates whose id, login, display name or team slug holds the name, or is held by it. Never by email. */
+/**
+ * Candidates whose id, login, display name or team slug holds the name. Never
+ * the reverse: "Alex Kumar" holds the login "alex" without naming that person.
+ * Never by email.
+ */
 function containing(name: string, candidates: readonly PrReviewerCandidate[]): PrReviewerCandidate[] {
   const q = normalize(name)
   return candidates.filter((c) =>
     [c.id, c.person.login, c.person.displayName, c.kind === 'team' ? c.id.replace(/^team:/, '') : '']
       .filter(Boolean)
       .map(normalize)
-      .some((k) => (q.length >= 3 && k.includes(q)) || (k.length >= 3 && q.includes(k))),
+      .some((k) => q.length >= 3 && k.includes(q)),
   )
 }
 

@@ -80,7 +80,9 @@ describe('resolveReviewers', () => {
 
   it('never takes a close candidate by a shared word or an email', () => {
     const team = [user('abrown', 'abrown', 'Alex Brown'), user('sj', 'sam.jones', 'Sam Jones', 'x@geoiq.io')]
-    for (const name of ['Alex Kumar', 'geoiq reviewer']) {
+    const held = [user('alex', 'alex', 'alex'), user('geoiq', 'geoiq', 'geoiq')]
+    for (const name of ['Alex Kumar', 'geoiq reviewer', 'someone@geoiq.io']) {
+      expect(resolveReviewers('github', [name], held, ME).ok, `held: ${name}`).toBe(false)
       const r = resolveReviewers('github', [name], [...team, ...GH], ME)
       expect(r.ok, name).toBe(false)
     }

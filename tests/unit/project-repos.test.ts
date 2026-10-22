@@ -24,7 +24,7 @@ import {
   type ScanEntry,
 } from '../../src/shared/project-repos'
 import { isWithinFolder, resolveRepoDir, scanChildRepoDirs } from '../../src/main/pull-requests/project-repos'
-import type { GitRun } from '../../src/main/pull-requests/branch-check'
+import { GIT_LOCATION_VARS, type GitRun } from '../../src/main/pull-requests/branch-check'
 import type { RepoRef } from '../../src/shared/pull-requests'
 
 const APP: RepoRef = { host: 'github', owner: 'acme', name: 'app' }
@@ -217,13 +217,16 @@ describe('on disk', () => {
 })
 
 describe('a worktree outside the project folder', () => {
-  const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'sb-project-wt-')))
+  // The native realpath expands a Windows 8.3 short name (RUNNER~1), as fs/promises does.
+  const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'sb-project-wt-')))
   afterAll(() => rmSync(root, { recursive: true, force: true }))
   const project = path.join(root, 'ssg')
   const core = path.join(project, 'core')
   const other = path.join(root, 'other')
+  const gitEnv: NodeJS.ProcessEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: '1' }
+  for (const name of GIT_LOCATION_VARS) delete gitEnv[name]
   const git = (cwd: string, ...args: string[]) =>
-    execFileSync('git', ['-C', cwd, ...args], { stdio: 'pipe', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1' } })
+    execFileSync('git', ['-C', cwd, ...args], { stdio: 'pipe', env: gitEnv })
   for (const repo of [core, other]) {
     mkdirSync(repo, { recursive: true })
     git(repo, 'init', '-q', '-b', 'main')
