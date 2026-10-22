@@ -130,6 +130,12 @@ class ComposerDraftCoordinator(
         }
     }
 
+    /** Copies images into draft storage without saving a draft; the caller saves them with one. */
+    fun stageImages(
+        sources: List<ComposerImageSource>,
+        existing: List<ComposerAttachment>,
+    ): ComposerAttachmentStageResult = stager.stage(sources, existing)
+
     @Synchronized
     fun removeImage(key: ComposerDraftKey, attachmentId: String): ComposerDraftMutation {
         val current = mutableDrafts.value[key] ?: return ComposerDraftMutation.Success

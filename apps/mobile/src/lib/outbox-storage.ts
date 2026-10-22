@@ -33,9 +33,14 @@ export async function saveQueued(message: QueuedMessage): Promise<void> {
   await AsyncStorage.setItem(keyFor(message.messageId), JSON.stringify(message))
 }
 
+/** Throws when the entry stays on disk, where the next launch would send it. */
+export async function deleteQueued(messageId: string): Promise<void> {
+  await AsyncStorage.removeItem(keyFor(messageId))
+}
+
 export async function removeQueued(messageId: string): Promise<void> {
   try {
-    await AsyncStorage.removeItem(keyFor(messageId))
+    await deleteQueued(messageId)
   } catch (err) {
     // A delivered message left on disk is re-sent next launch; the stable
     // messageId is what stops that being a duplicate.

@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "queue-during-switch",
-  "summary": "Desktop: a message sent while its chat is still opening, switching provider instance (\"Switching to <profile>...\") or starting its agent is no longer refused with a red \"Your draft is held. Send when ready.\" error. It is accepted at once and shown as a queued row (the existing Queued bar, with \"sends when the chat is ready\" and Cancel; no Send now). When the wait ends the held messages are sent in order, each once and with queue delivery, so none steers into the turn before it; a message held while they go out joins the end. When the open resolves to the chat's live root id, the held messages move with it. Images and pills go through the same send call. When the switch or open fails, the messages go back to the composer (text as the agent would read it, pills expanded, images kept) and the failure shows in the wait banner then, also when no pane shows the chat. A declined \"Start fresh\" during a switch also returns them. A send the chat refuses after the wait goes back to the composer with the ones after it, and a system row says why. Cancel on the row, or Stop, takes the messages back. Held messages live in a renderer service, so a pane that closes during the wait does not lose them.",
+  "summary": "Desktop: a message sent while its chat is still opening, switching provider instance (\"Switching to <profile>...\") or starting its agent is no longer refused with a red \"Your draft is held. Send when ready.\" error. It is accepted at once and shown as a queued row (the existing Queued bar, with \"sends when the chat is ready\" and Cancel; no Send now). When the wait ends the held messages are sent in order, each once and with queue delivery, so none steers into the turn before it; a message held while they go out joins the end. When the open resolves to the chat's live root id, the held messages move with it. Images and pills go through the same send call. When the switch or open fails, the messages go back to the composer (text as the agent would read it, pills expanded, images kept) and the failure shows in the wait banner then, also when no pane shows the chat. A declined \"Start fresh\" during a switch also returns them. A send the chat refuses after the wait goes back to the composer with the ones after it, and a system row says why. Cancel on the row, or Stop, takes the messages back. Held messages live in a renderer service, so a pane that closes during the wait does not lose them. Phones: the Expo app (while a thread loads, starts its agent or switches provider) and native Android (while a profile switch is in flight) now do the same. The message goes into the phone's durable outbox at once and shows as a queued bubble; the outbox holds that thread's delivery until the wait ends, then sends in order, each once. A failed wait (or a declined Start fresh on the Expo app) withdraws the held messages from the outbox and puts them back in the composer with their images. Leaving the chat during the wait releases the hold, and a hold never survives an app restart.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -15,16 +15,24 @@
       ]
     },
     "reactNativeIos": {
-      "status": "staged",
-      "flag": "mobile_queue_during_wait",
-      "followUpRelease": "A later Expo OTA release. The phone still refuses a send while the thread loads or rotates its provider (blockedSendReason in apps/mobile/src/lib/composer.ts: \"Message not sent. Your draft and attachments are kept; tap Send when ready.\"). That is safe, the draft is kept, but it is the behaviour this change removes on the desktop. The phone has its own queued-message path (QueuedMessage in stores) that the follow-up should hold these sends in. Nothing ships on the phone in this change, so the flag gates nothing yet.",
-      "evidence": ["apps/mobile/src/lib/composer.ts", "apps/mobile/src/screens/ThreadScreen.tsx"]
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/outbox.ts",
+        "apps/mobile/src/lib/outbox-model.ts",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/stores/__tests__/outbox-hold.test.ts",
+        "tests/unit/mobile-outbox.test.ts"
+      ]
     },
     "nativeAndroid": {
-      "status": "staged",
-      "flag": "native_queue_during_wait",
-      "followUpRelease": "A later native Android release. ThreadSessionCoordinator returns ComposerSubmitResult.Busy while profiles.changing, so the composer keeps the draft and nothing is sent. The follow-up should hold the send in the coordinator's outbox and release it when the profile change settles. Nothing ships on Android in this change, so the flag gates nothing yet.",
-      "evidence": ["apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt"]
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/OutboxCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/AndroidRootNavigationRuntime.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/outbox/OutboxCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinatorTest.kt"
+      ]
     },
     "sharedBackendApi": {
       "status": "not_applicable",
@@ -42,7 +50,10 @@
   "verification": {
     "automated": [
       "tests/unit/held-sends.test.ts: a held send shows as a local queued row that survives a backend seed and a stopped status; nothing is sent while the switch is pending or the chat opens; after the wait each message is sent once and in order, each with queue delivery; a failed switch returns the messages to the composer without sending; a refused send and the ones after it go back with the error reported; images and pills reach the send call, and on failure the pill text comes back expanded and the images come back; Cancel and Stop take messages back.",
-      "npm run typecheck and npm test pass."
+      "npm run typecheck and npm test pass.",
+      "apps/mobile/src/stores/__tests__/outbox-hold.test.ts (jest): a held thread sends nothing until released, then each message once and in order; a withdrawn message leaves the queue and is never sent. tests/unit/mobile-outbox.test.ts: deliveryAction waits while holding; returnedDraft puts held messages after the draft with their images.",
+      "OutboxCoordinatorTest and ThreadSessionCoordinatorTest (Android JVM): hold and release, withdraw and its refusals (sent, in flight, editing); a submit during a profile switch is durable and not sent until the switch succeeds, then sent once; after a failed switch (transport failure or a switch result failure) it returns to the draft and is never sent; closing the chat during the switch releases the hold.",
+      "./gradlew --no-daemon --max-workers=2 testDebugUnitTest lintDebug passes; npm test --prefix apps/mobile passes."
     ],
     "hardware": [],
     "notExercised": [
@@ -50,7 +61,10 @@
       "While a chat is still opening its message list is hidden, so the queued row is not visible until the open ends and the message is sent.",
       "A refused held send returns pills as expanded text, not chips, the same as Cancel on a backend-queued message.",
       "Held image object URLs of a chat that is never shown again stay until the renderer reloads.",
-      "Phones: nothing changed."
+      "Phones not driven on a device or emulator: a real profile switch or a slow chat open with messages sent during it.",
+      "Native Android does not put a returned message's review pill back; the Expo app does. Android still has no queue while a chat opens because it never refused a send then.",
+      "Expo: implementing a plan during a wait is still refused with the draft kept; only sends are queued.",
+      "The Android demo runtime has no hold, so a send there during a demo switch goes at once."
     ]
   }
 }

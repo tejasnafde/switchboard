@@ -31,6 +31,8 @@ class OutboxCoordinator(
     private val durableDedupeByOrigin = mutableMapOf<String, Boolean>()
     private val blockedThreads = mutableSetOf<ThreadQueueKey>()
     private val editingOrigins = mutableSetOf<String>()
+    /** Runtime only: a hold never outlives the process, so a restart delivers. */
+    private val heldThreads = mutableSetOf<ThreadQueueKey>()
     private val scheduledAt = mutableMapOf<String, Long>()
     private var pumping = false
     private var pumpAgain = false
@@ -102,6 +104,38 @@ class OutboxCoordinator(
     fun setEditing(origin: String, editing: Boolean) {
         if (editing) editingOrigins += origin else editingOrigins -= origin
         if (!editing) requestPump()
+    }
+
+    /** Holds delivery for one thread (a profile switch is in flight) until released. */
+    @Synchronized
+    fun holdThread(connectionId: String, threadId: String, held: Boolean) {
+        val key = ThreadQueueKey(connectionId, threadId)
+        if (held) heldThreads += key else if (heldThreads.remove(key)) requestPump()
+    }
+
+    /**
+     * Takes a turn that was never sent back out of the outbox. [adopt] runs
+     * before the staged files are discarded, so the caller can copy them.
+     */
+    @Synchronized
+    fun withdraw(origin: String, adopt: (QueuedTurn) -> Unit = {}): QueuedTurn? {
+        val turn = records[origin] ?: return null
+        if (
+            turn.deliveryState !is OutboxDeliveryState.Pending ||
+            origin in inFlightOrigins ||
+            origin in editingOrigins
+        ) return null
+        if (store.delete(origin) is OutboxStorageResult.Failure) return null
+        records.remove(origin)
+        scheduler.cancel(origin)
+        scheduledAt.remove(origin)
+        try {
+            adopt(turn)
+        } finally {
+            attachmentStager.discard(turn.attachments)
+        }
+        requestPump()
+        return turn
     }
 
     @Synchronized
@@ -256,7 +290,12 @@ class OutboxCoordinator(
         records.values.sortedWith(turnOrder).forEach { turn ->
             if (turn.deliveryState !is OutboxDeliveryState.Pending) return@forEach
             val key = turn.threadKey()
-            if (key in blockedThreads || key in ambiguousThreads || key in inFlightThreads) return@forEach
+            if (
+                key in blockedThreads ||
+                key in ambiguousThreads ||
+                key in inFlightThreads ||
+                key in heldThreads
+            ) return@forEach
             heads.putIfAbsent(key, turn)
         }
         return heads.values.toList()

@@ -19,6 +19,7 @@ import {
   queuedTurnBody,
   removeAcceptedOrigin,
   recoverRejectedDraft,
+  returnedDraft,
   selectRejectedForEdit,
   queuedBubbleExists,
   resolvedAmbiguousBubbleAction,
@@ -53,6 +54,10 @@ describe('deliveryAction', () => {
   it('waits while the user has the message open for editing', () => {
     // Delivering here would send a payload the user is still changing.
     expect(deliveryAction({ ...base, editing: true })).toBe('wait')
+  })
+
+  it('waits while the chat opens or switches provider', () => {
+    expect(deliveryAction({ ...base, holding: true })).toBe('wait')
   })
 
   it('waits until the backoff has elapsed', () => {
@@ -298,6 +303,15 @@ describe('deterministic rejection recovery', () => {
       ],
     })
     expect(recoverRejectedDraft(message)).toBeNull()
+  })
+
+  it('returns held messages after the draft, with their images', () => {
+    const second = { ...message, messageId: 'turn-2', text: 'and this', images: undefined }
+    expect(returnedDraft('typed since', [message, second])).toEqual({
+      text: 'typed since\n\ninspect this\n\nand this',
+      images: [{ id: 'recovered-turn-1-0', previewUri: image.url, url: image.url, mimeType: 'image/png' }],
+    })
+    expect(returnedDraft('', [second]).text).toBe('and this')
   })
 
   it('keeps rejected attachments durable while the composer edits a copy', () => {
