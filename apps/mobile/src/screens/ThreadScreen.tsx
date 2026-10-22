@@ -1484,7 +1484,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
       )}
 
       <PrLinksBanner links={prLinks} onUnlink={unlinkPr} />
-      {limitRowClient && <LimitResumeRow client={limitRowClient} threadId={threadId} />}
+      {/* Keyed by the re-seed revision: after a resume gap the row reads its state again. */}
+      {limitRowClient && (
+        <LimitResumeRow key={`${threadId}:${staleGeneration}`} client={limitRowClient} threadId={threadId} />
+      )}
 
       {forkMetadata && (
         <View style={styles.forkBanner} accessibilityRole="summary">

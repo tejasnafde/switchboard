@@ -37,7 +37,7 @@
     "nativeAndroid": {
       "status": "staged",
       "flag": "limit_auto_resume",
-      "followUpRelease": "The release that turns limit_auto_resume on by default (LIMIT_AUTO_RESUME_ENABLED true), after the desktop runner, the Expo and the Android Limited rows ship and beta users run it for a week. The Android app reads turn.completed by field, so the optional limit field is ignored until then. SyntheticUserMessage.kt drops the resume turn's block (fixture case limit-resume-turn); the stored resume row shows as Switchboard notice and limit-resume.changed is ignored until the Android Limited row ships. The Android app ignores the limit_auto_resume_v1 capability and the gaveUp field until its Limited row ships (PR 4b); the 'Auto-resume gave up' push reaches it as an ordinary error push."
+      "followUpRelease": "The release that turns limit_auto_resume on by default (LIMIT_AUTO_RESUME_ENABLED true), after the Android Limited row ships (PR 4b) and beta users run it for a week. The Android app reads turn.completed by field, so the optional limit field is ignored until then. SyntheticUserMessage.kt drops the resume turn's block (fixture case limit-resume-turn); the stored resume row shows as Switchboard notice and limit-resume.changed is ignored until the Android Limited row ships. The Android app ignores the limit_auto_resume_v1 capability and the gaveUp field until its Limited row ships (PR 4b); the 'Auto-resume gave up' push reaches it as an ordinary error push."
     },
     "sharedBackendApi": {
       "status": "staged",
