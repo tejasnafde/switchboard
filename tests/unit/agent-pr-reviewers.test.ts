@@ -1,8 +1,8 @@
 /**
  * Matching the reviewers an agent names on create_pull_request against the
  * repository's reviewer candidates: exact (case and a leading @ aside) on id,
- * login, display name or a listed email; unknown and ambiguous names refused
- * with the close candidates; the signed-in user refused; at most 10.
+ * login, display name or a listed email; else the one close candidate; several
+ * close candidates or none refused; the signed-in user refused; at most 10.
  */
 import { describe, expect, it } from 'vitest'
 import { checkReviewerNames, keptReviewers, resolveReviewers, reviewerLabel } from '../../src/shared/agent-pr-reviewers'
@@ -68,16 +68,36 @@ describe('resolveReviewers', () => {
     })
   })
 
-  it('refuses a name that matches nobody, with the close candidates, never a guess', () => {
+  it('takes the one close candidate when no name matches exactly', () => {
+    const team = [user('sidhu', 'sidhu', 'Sidhu Subhash'), ...GH]
+    expect(resolveReviewers('github', ['Sidhu'], team, ME)).toEqual({
+      ok: true,
+      value: [{ id: 'sidhu', login: 'sidhu', displayName: 'Sidhu Subhash', kind: 'user' }],
+    })
+    const self = resolveReviewers('github', ['Myself'], GH, ME)
+    expect(self.ok ? null : self.message).toContain('the only close one is the signed-in user')
+  })
+
+  it('never takes a close candidate by a shared word or an email', () => {
+    const team = [user('abrown', 'abrown', 'Alex Brown'), user('sj', 'sam.jones', 'Sam Jones', 'x@geoiq.io')]
+    const held = [user('alex', 'alex', 'alex'), user('geoiq', 'geoiq', 'geoiq')]
+    for (const name of ['Alex Kumar', 'geoiq reviewer', 'someone@geoiq.io']) {
+      expect(resolveReviewers('github', [name], held, ME).ok, `held: ${name}`).toBe(false)
+      const r = resolveReviewers('github', [name], [...team, ...GH], ME)
+      expect(r.ok, name).toBe(false)
+    }
+    const kumar = resolveReviewers('github', ['Alex Kumar'], team, ME)
+    expect(kumar.ok ? null : kumar.message).toContain('close: Alex Brown (abrown)')
+  })
+
+  it('refuses a name with several close candidates, listing them, and one with none', () => {
     const r = resolveReviewers('github', ['jane'], GH, ME)
     expect(r).toEqual({
       ok: false,
       message: expect.stringContaining(
-        '"jane" is not someone who can review here; close: Jane Doe (jdoe), Jane Smith (jsmith).',
+        '"jane" is not an exact match, and 2 people are close: Jane Doe (jdoe), Jane Smith (jsmith). Use a login.',
       ),
     })
-    const email = resolveReviewers('github', ['rahul@acme.dev'], GH, ME)
-    expect(email.ok ? null : email.message).toContain('close: rahul')
     const nobody = resolveReviewers('github', ['zzz'], GH, ME)
     expect(nobody.ok ? null : nobody.message).toContain('"zzz" is not someone who can review here.')
   })

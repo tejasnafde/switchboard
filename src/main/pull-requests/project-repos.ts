@@ -55,12 +55,24 @@ export interface RepoDirDeps {
 
 const defaultRepoDirDeps: RepoDirDeps = { realpath: (p) => realpath(p), run: defaultGitRun }
 
-export type RepoDir = { ok: true; dir: string; relPath: string } | { ok: false; message: string }
+export type RepoDir =
+  | {
+      ok: true
+      dir: string
+      /** Relative to the project folder; the absolute path for a worktree outside it. */
+      relPath: string
+      /** The main checkout of the repository `dir` belongs to, relative to the project folder ('.' for the folder itself). */
+      mainRelPath: string
+    }
+  | { ok: false; message: string }
 
 /**
  * `repoPath` (relative to the project folder, or absolute) as the real path
- * of a git work tree inside it. Both sides are resolved with realpath first,
- * so neither `..` nor a symlink can point outside the folder.
+ * of a git work tree inside it, or of a linked worktree (for example one in
+ * /tmp) of a repository whose main checkout is inside it. Every path is
+ * resolved with realpath first, so neither `..` nor a symlink can point
+ * outside the folder, and a worktree outside counts only when its main
+ * checkout lists it in `git worktree list`.
  */
 export async function resolveRepoDir(
   projectPath: string,
@@ -81,15 +93,68 @@ export async function resolveRepoDir(
     log.debug('repoPath does not resolve', { repoPath, err: String(err) })
     return { ok: false, message: `repoPath "${repoPath}" does not exist under ${projectPath}.` }
   }
-  if (!isWithinFolder(root, dir)) {
+  const inside = isWithinFolder(root, dir)
+  const main = await mainCheckoutOf(dir, deps)
+  if (!inside && !(main && isWithinFolder(root, main))) {
     return {
       ok: false,
-      message: `repoPath "${repoPath}" is outside this chat's project folder ${projectPath}; only a repository inside it can be used.`,
+      message:
+        `repoPath "${repoPath}" is outside this chat's project folder ${projectPath}, and it is not a git worktree of a repository inside it. ` +
+        'Only a repository inside the folder, or a worktree of one, can be used.',
     }
   }
   const tree = await deps.run(dir, ['rev-parse', '--is-inside-work-tree'])
   if (tree.code !== 0 || tree.stdout.trim() !== 'true') {
     return { ok: false, message: `repoPath "${repoPath}" (${dir}) is not a git work tree.` }
   }
-  return { ok: true, dir, relPath: relativeLabel(root, dir) }
+  // A folder inside a work tree stands for the work tree, so the card names the checkout.
+  const top = await deps.run(dir, ['rev-parse', '--show-toplevel'])
+  if (top.code === 0 && top.stdout.trim()) {
+    try {
+      const topDir = await deps.realpath(top.stdout.trim())
+      if (inside ? isWithinFolder(root, topDir) : isWithinFolder(topDir, dir)) dir = topDir
+    } catch (err) {
+      log.debug('the work tree top level does not resolve', { dir, err: String(err) })
+    }
+  }
+  const relPath = isWithinFolder(root, dir) ? relativeLabel(root, dir) : dir
+  return {
+    ok: true,
+    dir,
+    relPath,
+    mainRelPath: main && isWithinFolder(root, main) ? relativeLabel(root, main) : relPath,
+  }
+}
+
+/**
+ * The real path of the main checkout of the repository `dir` is in: the
+ * folder holding its common git directory. Null when that is not a `.git`
+ * folder (a bare repository, a separate git dir), or when the main checkout
+ * does not list a worktree holding `dir`, so a hand-made `.git` file pointing
+ * at a repository is not taken for one of its worktrees.
+ */
+async function mainCheckoutOf(dir: string, deps: RepoDirDeps): Promise<string | null> {
+  const common = await deps.run(dir, ['rev-parse', '--git-common-dir'])
+  if (common.code !== 0 || !common.stdout.trim()) return null
+  let commonDir: string
+  try {
+    commonDir = await deps.realpath(path.resolve(dir, common.stdout.trim()))
+  } catch (err) {
+    log.debug('the common git directory does not resolve', { dir, err: String(err) })
+    return null
+  }
+  if (path.basename(commonDir) !== '.git') return null
+  const main = path.dirname(commonDir)
+  if (isWithinFolder(main, dir)) return main
+  const listed = await deps.run(main, ['worktree', 'list', '--porcelain'])
+  if (listed.code !== 0) return null
+  for (const line of listed.stdout.split('\n')) {
+    if (!line.startsWith('worktree ')) continue
+    try {
+      if (isWithinFolder(await deps.realpath(line.slice('worktree '.length)), dir)) return main
+    } catch (err) {
+      log.debug('a listed worktree does not resolve', { line, err: String(err) })
+    }
+  }
+  return null
 }

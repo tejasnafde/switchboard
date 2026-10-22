@@ -15,11 +15,22 @@ const log = createMainLogger('pull-requests:branch-check')
 
 const GIT_TIMEOUT_MS = 20_000
 
+/** Set by a git hook or a parent shell, these override `-C` and point git at another repository. */
+export const GIT_LOCATION_VARS = [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_COMMON_DIR',
+] as const
+
 export type GitRun = (cwd: string, args: string[]) => Promise<{ code: number; stdout: string; stderr: string }>
 
 export const defaultGitRun: GitRun = (cwd, args) =>
   new Promise((resolve) => {
-    const env = { ...childProcessEnv(), GIT_TERMINAL_PROMPT: '0' }
+    const env: NodeJS.ProcessEnv = { ...childProcessEnv(), GIT_TERMINAL_PROMPT: '0' }
+    for (const name of GIT_LOCATION_VARS) delete env[name]
     execFile(
       'git',
       ['-C', cwd, ...args],
