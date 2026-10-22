@@ -76,6 +76,7 @@ import { mergeHistoryItems, historyToItems } from '../lib/thread-history'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { PrLinksBanner } from '../components/PrLinksBanner'
+import { LimitResumeRow } from '../components/LimitResumeRow'
 import { ReviewPillChip } from '../components/ReviewPillChip'
 import { unlinkPrLink } from '../lib/pr-link-unlink'
 import type { PrLink } from '@shared/pull-request-links'
@@ -106,6 +107,7 @@ import {
 } from './ThreadFeedItems'
 import { MergeBackSheet, type MergeBackSheetApi, type MergeBackSheetMode } from '../components/MergeBackSheet'
 import { FORK_MERGE_BACK_CAPABILITY } from '@shared/merge-back'
+import { LIMIT_AUTO_RESUME_CAPABILITY } from '@shared/limit-resume'
 import { styles } from './thread-screen.styles'
 import { blockedSendReason } from '../lib/composer'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
@@ -1139,6 +1141,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // Merge-back (`fork_merge_back_v1`): Send back from a fork, Edit and Discard
   // on the parent's card. An older backend has no handler, so no action shows.
   const canMergeBack = getClient(connectionId)?.supportsCapability(FORK_MERGE_BACK_CAPABILITY) === true
+  // An older backend has no Limited row channels; it keeps the held message's Resume only.
+  const limitClient = getClient(connectionId)
+  const showLimitRow = limitClient?.supportsCapability(LIMIT_AUTO_RESUME_CAPABILITY) === true
   const [mergeBackSheet, setMergeBackSheet] = useState<MergeBackSheetMode | null>(null)
   // The client is looked up per call: a reconnect replaces it while the sheet is open.
   const mergeBackApi = useMemo<MergeBackSheetApi>(() => {
@@ -1479,6 +1484,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       )}
 
       <PrLinksBanner links={prLinks} onUnlink={unlinkPr} />
+      {showLimitRow && limitClient && <LimitResumeRow client={limitClient} threadId={threadId} />}
 
       {forkMetadata && (
         <View style={styles.forkBanner} accessibilityRole="summary">

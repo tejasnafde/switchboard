@@ -430,7 +430,8 @@ export class ProviderRegistry implements PeerToolHost {
       archived: (conversationId) => isConversationArchived(conversationId),
       usage: async (instanceId) => (await import('./usage')).fetchInstanceUsage(instanceId),
       sendResume: (threadId) => this.sendLimitResume(threadId),
-      changed: (conversationId, state, resumed) => this.publishLimitResume(conversationId, state, resumed),
+      changed: (conversationId, state, resumed, gaveUp) =>
+        this.publishLimitResume(conversationId, state, resumed, gaveUp),
     }
   }
 
@@ -443,7 +444,7 @@ export class ProviderRegistry implements PeerToolHost {
     return true
   }
 
-  private publishLimitResume(conversationId: string, state: LimitState, resumed: boolean): void {
+  private publishLimitResume(conversationId: string, state: LimitState, resumed: boolean, gaveUp?: boolean): void {
     let row: { messageId: string; content: string; at: number } | undefined
     if (resumed) {
       const at = Date.now()
@@ -461,6 +462,7 @@ export class ProviderRegistry implements PeerToolHost {
       threadId: this.liveSessionId(conversationId) ?? conversationId,
       state,
       ...(row ? { row } : {}),
+      ...(gaveUp ? { gaveUp } : {}),
     })
   }
 
