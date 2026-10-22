@@ -56,6 +56,7 @@ import { RECENT_SESSION_LIMITS } from './sidebar/recent-session-limit'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { Button } from './ui/button'
 import { Combobox } from './ui/combobox'
+import { Switch } from './ui/switch'
 import { onEscapeFirst } from './ui/escape-first'
 import { cn } from '../lib/utils'
 import {
@@ -869,7 +870,7 @@ function Section({ title, card = false, children }: { title: string; card?: bool
   )
 }
 
-function SettingsCard({ children }: { children: ReactNode }) {
+export function SettingsCard({ children }: { children: ReactNode }) {
   return (
     <div className="overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)]">
       {children}
@@ -931,7 +932,7 @@ function SettingAnchor({ def, children }: { def: SettingRowDef; children: ReactN
  * the default, and the control. In a project's scope the marker is
  * "Overridden" instead and Reset removes the override.
  */
-function SettingRow({
+export function SettingRow({
   def,
   extra,
   below,
@@ -1046,33 +1047,18 @@ function useRowValue(def: SettingRowDef): [string | undefined, (value: string) =
   return [scoped.value, write, scoped.value === undefined || scoped.disabledReason !== undefined]
 }
 
-function ToggleControl({ def, onToggle }: { def: SettingRowDef; onToggle?: (on: boolean) => void }) {
+export function ToggleControl({ def, onToggle }: { def: SettingRowDef; onToggle?: (on: boolean) => void }) {
   const [value, setValue, disabled] = useRowValue(def)
-  const on = value === 'true'
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
+    <Switch
+      checked={value === 'true'}
       aria-labelledby={labelId(def.id)}
       disabled={disabled}
-      onClick={() => {
-        setValue(String(!on))
-        onToggle?.(!on)
+      onCheckedChange={(on) => {
+        setValue(String(on))
+        onToggle?.(on)
       }}
-      className={cn(
-        'relative h-[18px] w-8 shrink-0 cursor-pointer rounded-full border-0 p-0 outline-none transition-colors duration-100 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50',
-        on ? 'bg-[var(--accent)]' : 'bg-[rgba(128,128,128,0.35)]',
-      )}
-    >
-      <span
-        aria-hidden="true"
-        className={cn(
-          'absolute left-[2px] top-[2px] size-[14px] rounded-full bg-[#fff] shadow-[0_1px_2px_rgba(0,0,0,0.3)] transition-transform duration-100',
-          on && 'translate-x-[14px]',
-        )}
-      />
-    </button>
+    />
   )
 }
 

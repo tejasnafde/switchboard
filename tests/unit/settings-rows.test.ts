@@ -47,6 +47,10 @@ describe('searchSettingRows', () => {
     expect(searchSettingRows('google').map((r) => r.id)).toEqual(['devices.mobile'])
   })
 
+  it('leaves out the auto-resume row while its staged flag is off', () => {
+    expect(searchSettingRows('usage limit resets')).toEqual([])
+  })
+
   it('lists results in page order', () => {
     const pages = SETTINGS_PAGES.map((p) => p.id)
     const order = searchSettingRows('e').map((r) => pages.indexOf(r.page))

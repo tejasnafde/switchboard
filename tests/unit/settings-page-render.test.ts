@@ -36,7 +36,9 @@ describe('Settings pages', () => {
         const rows = await import('../../src/renderer/components/settings/settings-rows')
         const values = await import('../../src/renderer/components/settings/setting-values')
         const withDefault = rows.SETTING_ROWS.filter((row) => row.defaultValue !== undefined).map((row) => row.id)
-        expect([...values.SETTING_BINDING_IDS].sort()).toEqual(withDefault.sort())
+        // Bound but not indexed while the staged flag limit_auto_resume is off.
+        const staged = rows.SETTING_ROW.autoResumeAfterLimit.id
+        expect([...values.SETTING_BINDING_IDS].sort()).toEqual([...withDefault, staged].sort())
         expect(withDefault.includes('keyboard.terminal.kill-word')).toBe(platform === 'MacIntel')
       } finally {
         vi.unstubAllGlobals()

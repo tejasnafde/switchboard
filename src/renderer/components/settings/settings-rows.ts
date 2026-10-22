@@ -20,6 +20,7 @@ import { SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
 import { SETTING_SESSION_ENV_MODE, SETTING_SHOW_FILE_DIFFS, type ScopableSettingKey } from '@shared/project-settings'
 import { RUNTIME_MODE_OPTIONS } from '../chat/runtime-mode-options'
 import { formatPeerLinkDuration, parsePeerLinkDuration, PEER_LINK_DURATION_CHOICES } from '@shared/peer-links'
+import { AUTO_RESUME_AFTER_LIMIT_SETTING, LIMIT_AUTO_RESUME_ENABLED } from '@shared/limit-resume'
 
 export type SettingsPageId =
   | 'general'
@@ -240,6 +241,15 @@ const ROWS = {
     description:
       'A new named account for a built-in agent (Claude Code, Codex, OpenCode, Gemini CLI, Mistral Vibe, Cline, GitHub Copilot) or for any local command that speaks the Agent Client Protocol: pick the agent, sign it in and test it, then name it.',
   },
+  autoResumeAfterLimit: {
+    id: AUTO_RESUME_AFTER_LIMIT_SETTING,
+    page: 'accounts',
+    section: 'Usage limits',
+    label: 'Resume after a usage limit resets',
+    description:
+      'A chat stopped by a usage limit continues by itself when the limit resets. Stop, or Cancel auto-resume in the chat, turns it off for that chat.',
+    defaultValue: 'true',
+  },
   sourceControl: {
     id: 'accounts.sourceControl',
     page: 'accounts',
@@ -362,7 +372,11 @@ export function shortcutRows(platform: ShortcutPlatform = currentPlatform()): Se
 
 /** Every row above plus one per shortcut, in page order, with the keys in effect now. */
 export function settingRows(): SettingRowDef[] {
-  const rows: SettingRowDef[] = [...Object.values(ROWS), ...shortcutRows()]
+  // Off the search and the changed counts until the staged flag ships on.
+  const rows: SettingRowDef[] = [
+    ...Object.values(ROWS).filter((row) => LIMIT_AUTO_RESUME_ENABLED || row !== ROWS.autoResumeAfterLimit),
+    ...shortcutRows(),
+  ]
   const order = SETTINGS_PAGES.map((p) => p.id)
   return rows.sort((a, b) => order.indexOf(a.page) - order.indexOf(b.page))
 }
