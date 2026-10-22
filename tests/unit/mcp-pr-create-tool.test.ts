@@ -567,12 +567,30 @@ describe('create_pull_request: reviewers', () => {
     expect(s.creates[0]).not.toHaveProperty('reviewers')
   })
 
-  it('refuses an unknown or ambiguous name before the card, listing the close candidates', async () => {
+  it('takes the one close candidate for a name that is not exact, and shows them on the card', async () => {
     const s = setup({ answer: approve() })
     const result = await s.call({ title: 'T', reviewers: ['jane'] })
+    expect(result.isError).toBeFalsy()
+    expect(opened(s.events)[0].hostWrite?.create?.reviewers).toEqual([
+      { id: 'jdoe', login: 'jdoe', displayName: 'Jane Doe', kind: 'user' },
+    ])
+    expect(s.creates[0]).toMatchObject({ reviewers: ['jdoe'] })
+  })
+
+  it('refuses an unknown or ambiguous name before the card, listing the close candidates', async () => {
+    const s = setup({
+      answer: approve(),
+      pool: {
+        ok: true,
+        data: { candidates: [...CANDIDATES, candidate('jsmith', 'Jane Smith')], viewer: { id: 'me', login: 'me' } },
+      },
+    })
+    const result = await s.call({ title: 'T', reviewers: ['jane'] })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('"jane" is not someone who can review here; close: Jane Doe (jdoe).')
+    expect(text(result)).toContain('2 people are close: Jane Doe (jdoe), Jane Smith (jsmith)')
     expect(text(result)).toContain('Nothing was created.')
+    const nobody = await s.call({ title: 'T', reviewers: ['zzz'] })
+    expect(text(nobody)).toContain('"zzz" is not someone who can review here.')
     expect(opened(s.events)).toEqual([])
     expect(s.creates).toEqual([])
   })
@@ -680,10 +698,11 @@ describe('create_pull_request: a project folder that holds several repositories'
       children,
       answer: approve(),
       repoDirs: {
-        core: { ok: true, dir: '/p/core', relPath: 'core' },
-        '/p/apps/studio': { ok: true, dir: '/p/apps/studio', relPath: 'apps/studio' },
+        core: { ok: true, dir: '/p/core', relPath: 'core', mainRelPath: 'core' },
+        '/p/apps/studio': { ok: true, dir: '/p/apps/studio', relPath: 'apps/studio', mainRelPath: 'apps/studio' },
+        '/tmp/core-wt': { ok: true, dir: '/tmp/core-wt', relPath: '/tmp/core-wt', mainRelPath: 'core' },
       },
-      dirRepos: { '/p/core': CORE, '/p/apps/studio': STUDIO },
+      dirRepos: { '/p/core': CORE, '/p/apps/studio': STUDIO, '/tmp/core-wt': CORE },
       ...extra,
     })
 
@@ -731,21 +750,31 @@ describe('create_pull_request: a project folder that holds several repositories'
   it('refuses any nested checkout in a project that is a repository itself, even one of the same repository', async () => {
     for (const nested of [CORE, APP]) {
       const s = setup({
-        repoDirs: { vendor: { ok: true, dir: '/p/vendor', relPath: 'vendor' } },
+        repoDirs: { vendor: { ok: true, dir: '/p/vendor', relPath: 'vendor', mainRelPath: 'vendor' } },
         dirRepos: { '/p/vendor': nested },
       })
       const result = await s.call({ title: 'T', repoPath: 'vendor' })
       expect(result.isError).toBe(true)
       expect(text(result)).toContain(
-        '/p is itself a repository (acme/app), so "repoPath" can only be the project folder; vendor is inside it',
+        '/p is itself a repository (acme/app), so "repoPath" can only be the project folder or a worktree of it; vendor is another checkout',
       )
       expect(s.access.currentBranch).not.toHaveBeenCalledWith('/p/vendor')
       expect(s.creates).toEqual([])
     }
   })
 
+  it("opens from a worktree of the project's own repository, inside the folder or outside it", async () => {
+    for (const dir of ['/tmp/app-wt', '/p/.switchboard/worktrees/y']) {
+      const s = setup({ answer: approve(), repoDirs: { [dir]: { ok: true, dir, relPath: dir, mainRelPath: '.' } } })
+      const result = await s.call({ title: 'T', repoPath: dir })
+      expect(result.isError, dir).toBeFalsy()
+      expect(s.access.currentBranch).toHaveBeenCalledWith(dir)
+      expect(s.access.createPullRequest).toHaveBeenCalledWith(APP, expect.anything())
+    }
+  })
+
   it('treats repoPath "." in a project that is a repository as the chat\'s own checkout', async () => {
-    const s = setup({ answer: approve(), repoDirs: { '.': { ok: true, dir: '/p', relPath: '.' } } })
+    const s = setup({ answer: approve(), repoDirs: { '.': { ok: true, dir: '/p', relPath: '.', mainRelPath: '.' } } })
     const result = await s.call({ title: 'T', repoPath: '.' })
     expect(result.isError).toBeFalsy()
     expect(s.access.currentBranch).toHaveBeenCalledWith('/p/.switchboard/worktrees/x')
@@ -792,5 +821,50 @@ describe('create_pull_request: a project folder that holds several repositories'
 
     const empty = await parent({ children: [] }).call({ title: 'T', repository: 'geoiq/x' })
     expect(text(empty)).toContain('no GitHub or Bitbucket repository was found up to two folders below it')
+  })
+
+  it('opens from a worktree outside the folder whose main checkout is a child repository', async () => {
+    const s = parent()
+    const result = await s.call({ title: 'T', repoPath: '/tmp/core-wt' })
+    expect(result.isError).toBeFalsy()
+    expect(s.access.currentBranch).toHaveBeenCalledWith('/tmp/core-wt')
+    expect(s.access.createPullRequest).toHaveBeenCalledWith(CORE, expect.anything())
+  })
+
+  it('takes the chat\'s own worktree of the child repository "repository" names as the source', async () => {
+    const s = parent({ cwd: '/tmp/core-wt' })
+    const result = await s.call({ title: 'T', repository: 'geoiq/geoiq-ssg-core-v1' })
+    expect(result.isError).toBeFalsy()
+    expect(s.access.currentBranch).toHaveBeenCalledWith('/tmp/core-wt')
+    expect(s.access.currentBranch).not.toHaveBeenCalledWith('/p/core')
+    expect(opened(s.events)[0].hostWrite?.create).toMatchObject({ localPath: '/tmp/core-wt' })
+  })
+
+  it('needs neither repoPath nor repository when the chat runs in a child repository or a worktree of one', async () => {
+    const s = parent({ cwd: '/tmp/core-wt' })
+    const result = await s.call({ title: 'T' })
+    expect(result.isError).toBeFalsy()
+    expect(s.access.createPullRequest).toHaveBeenCalledWith(CORE, expect.anything())
+  })
+
+  it('picks the chat\'s checkout when several checkouts share the remote "repository" names', async () => {
+    const s = parent({
+      cwd: '/tmp/core-wt',
+      children: [...children, { path: '/p/core-copy', relPath: 'core-copy', repo: CORE }],
+    })
+    const result = await s.call({ title: 'T', repository: 'geoiq/geoiq-ssg-core-v1' })
+    expect(result.isError).toBeFalsy()
+    expect(s.access.currentBranch).toHaveBeenCalledWith('/tmp/core-wt')
+  })
+
+  it('scans the folder again before refusing a repository it did not find', async () => {
+    const s = parent()
+    vi.mocked(s.access.projectRepos).mockImplementation(async (_p, opts) =>
+      projectReposFrom(null, opts?.fresh ? children : children.filter((c) => c.relPath !== 'apps/studio')),
+    )
+    const result = await s.call({ title: 'T', repository: 'geoiq/geoiq-ssg-studio-v1' })
+    expect(result.isError).toBeFalsy()
+    expect(s.access.projectRepos).toHaveBeenCalledWith('/p', { fresh: true })
+    expect(s.access.createPullRequest).toHaveBeenCalledWith(STUDIO, expect.anything())
   })
 })

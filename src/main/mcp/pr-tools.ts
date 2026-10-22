@@ -45,6 +45,7 @@ import {
   coveredRepos,
   describeChildRepos,
   findChildRepo,
+  type ChildRepo,
   projectCoversRepo,
   type ProjectRepos,
 } from '@shared/project-repos'
@@ -816,11 +817,14 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
    * The repository to open on and the work tree whose branch is the source:
    * `repoPath` when given, else the project's own repository and the chat's
    * checkout, else the one child repository of a parent folder that
-   * `repository` names. Every path ends at a repository the project covers.
+   * `repository` names or the chat's checkout is in. Every path ends at a
+   * repository the project covers. A refusal that a new child repository
+   * could change is tried once more against a fresh scan.
    */
   const createTarget = async (
     access: AgentPullRequestAccess,
     input: CreatePrArgs,
+    fresh = false,
   ): Promise<CreateTarget | McpToolResult> => {
     const projectPath = access.chatProject(ctx.chatId)
     if (!projectPath)
@@ -828,20 +832,25 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         'This chat has no Switchboard project record, so there is no repository to open a pull request on.',
         true,
       )
-    const project = await access.projectRepos(projectPath)
+    const project = await access.projectRepos(projectPath, fresh ? { fresh } : undefined)
     if (input.repoPath) {
       const dir = await access.resolveRepoDir(projectPath, input.repoPath)
       if (!dir.ok) return toolText(`${dir.message} Nothing was created.`, true)
       if (project.own) {
-        // A project that is a repository covers only its own checkout: a nested
-        // clone of the same remote must not become the source branch. The
-        // folder itself falls through to the chat's checkout below.
-        if (dir.relPath !== '.') {
+        // A project that is a repository covers only its own checkout and its
+        // worktrees: a nested clone of the same remote must not become the
+        // source branch. The folder itself falls through to the chat's checkout below.
+        if (dir.mainRelPath !== '.') {
           return toolText(
-            `${projectPath} is itself a repository (${project.own.owner}/${project.own.name}), so "repoPath" can only be the project folder; ` +
-              `${dir.relPath} is inside it. Call again without "repoPath". Nothing was created.`,
+            `${projectPath} is itself a repository (${project.own.owner}/${project.own.name}), so "repoPath" can only be the project folder or a worktree of it; ` +
+              `${dir.relPath} is another checkout. Call again without "repoPath". Nothing was created.`,
             true,
           )
+        }
+        if (dir.relPath !== '.') {
+          const refused = repositoryProblem(input.repository, project.own)
+          if (refused) return toolText(refused, true)
+          return { projectPath, repo: project.own, cwd: dir.dir, localPath: dir.relPath }
         }
       } else {
         const repo = await access.repoFor(dir.dir)
@@ -870,34 +879,67 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       if (refused) return toolText(refused, true)
       return { projectPath, repo: project.own, cwd: ctx.cwd() ?? projectPath, localPath: null }
     }
+    const retry = (refusal: McpToolResult) => (fresh ? refusal : createTarget(access, input, true))
     if (project.children.length === 0) {
-      return toolText(
-        `The git remotes of ${projectPath} point at neither GitHub nor Bitbucket, and no GitHub or Bitbucket repository was found up to two folders below it, ` +
-          'so Switchboard cannot open a pull request for it.',
-        true,
+      return retry(
+        toolText(
+          `The git remotes of ${projectPath} point at neither GitHub nor Bitbucket, and no GitHub or Bitbucket repository was found up to two folders below it, ` +
+            'so Switchboard cannot open a pull request for it.',
+          true,
+        ),
       )
     }
     const listed = describeChildRepos(project.children)
+    // The chat's own checkout, when it is one of the child repositories or a worktree of one.
+    const chatCheckout = await chatChildCheckout(access, projectPath, project.children)
+    const chatTarget = chatCheckout?.target
     if (!input.repository) {
+      if (chatTarget) return chatTarget
       return toolText(
-        `${projectPath} is not a repository itself; it holds ${listed}. Call again with "repoPath" naming the one the change is in. Nothing was created.`,
+        `${projectPath} is not a repository itself; it holds ${listed}. Call again with "repoPath" naming the one the change is in, ` +
+          'or with "repository" naming its remote. Nothing was created.',
         true,
       )
     }
     const match = findChildRepo(project, repoArgCandidates(input.repository))
     if (match.kind === 'none') {
-      return toolText(
-        `No repository under ${projectPath} has its remote at "${input.repository}". It holds ${listed}. Nothing was created.`,
-        true,
+      return retry(
+        toolText(
+          `No repository under ${projectPath} has its remote at "${input.repository}". It holds ${listed}. ` +
+            'Call again with "repository" set to one of those, or with "repoPath". Nothing was created.',
+          true,
+        ),
       )
     }
     if (match.kind === 'many') {
-      return toolText(
-        `Several checkouts under ${projectPath} point at "${input.repository}": ${describeChildRepos(match.matches)}. Call again with "repoPath" naming one. Nothing was created.`,
-        true,
+      if (chatTarget && match.matches.some((c) => c.relPath === chatCheckout.mainRelPath)) return chatTarget
+      return retry(
+        toolText(
+          `Several checkouts under ${projectPath} point at "${input.repository}": ${describeChildRepos(match.matches)}. Call again with "repoPath" naming one. Nothing was created.`,
+          true,
+        ),
       )
     }
+    if (chatTarget && chatCheckout.mainRelPath === match.child.relPath) return chatTarget
     return { projectPath, repo: match.child.repo, cwd: match.child.path, localPath: match.child.relPath }
+  }
+
+  /** The chat's checkout as a child repository of a parent folder (or a worktree of one), or null. */
+  const chatChildCheckout = async (
+    access: AgentPullRequestAccess,
+    projectPath: string,
+    children: readonly ChildRepo[],
+  ): Promise<{ target: CreateTarget; mainRelPath: string } | null> => {
+    const cwd = ctx.cwd()
+    if (!cwd) return null
+    const dir = await access.resolveRepoDir(projectPath, cwd)
+    if (!dir.ok) return null
+    const child = children.find((c) => c.relPath === dir.mainRelPath)
+    if (!child) return null
+    return {
+      target: { projectPath, repo: child.repo, cwd: dir.dir, localPath: dir.relPath },
+      mainRelPath: dir.mainRelPath,
+    }
   }
 
   const createTool: McpTool = {
@@ -908,9 +950,11 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       'it is the path that is set up with write access, and the pull request is linked to this chat so it shows in Reviews.',
       'Commit and push the branch first (git push -u <remote> <branch>); the source branch must already be on the remote.',
       "sourceBranch defaults to the branch checked out in this chat, targetBranch to the repository's default branch.",
-      'When the project folder holds several repositories (it is not one itself), pass "repoPath": the repository the change is in,',
-      'relative to the project folder or absolute; its git remote is the repository and its checked-out branch the default sourceBranch.',
-      '"repository" alone also works there when exactly one repository under the folder has that remote.',
+      'Which repository: leave both "repoPath" and "repository" out when this chat runs in the repository (or a worktree of it).',
+      'When the project folder holds several repositories (it is not one itself), pass "repoPath": the folder of the repository the change is in,',
+      'or of a git worktree of it, relative to the project folder or absolute; its git remote is the repository and its checked-out branch the default sourceBranch.',
+      '"repository" ("owner/name") alone also works there: it picks the one repository under the folder with that remote, and the chat\'s own worktree of it when the chat runs in one.',
+      'Make a worktree with git worktree add .switchboard/worktrees/<name> inside the repository, never in /tmp.',
       'If a pull request is already open for the source branch, nothing is created: that one is linked to this chat and returned.',
       'The user sees the title, description and reviewers in a Switchboard approval card, can edit them, and decides whether it is opened (in full access it opens without a card).',
       'It is opened as the user, the description ending with a "via Switchboard" line. "draft" is GitHub only. Refused in plan mode.',
@@ -939,12 +983,12 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         repository: {
           type: 'string',
           description:
-            'Optional: "owner/name" or its URL. Must be a repository of this chat\'s project (with repoPath, that path\'s remote); any other is refused.',
+            'Optional: the remote as "owner/name" or its URL. Must be a repository of this chat\'s project (with repoPath, that path\'s remote); any other is refused. In a folder of several repositories it picks the one with this remote.',
         },
         repoPath: {
           type: 'string',
           description:
-            "Optional: a git repository inside this chat's project folder, relative to it or absolute, for a project folder that holds several repositories. Anything outside the folder is refused.",
+            "Optional: a local folder, not a remote. A git repository inside this chat's project folder, or a git worktree of one (also outside the folder), relative to the folder or absolute. Any other folder is refused.",
         },
         reviewers: {
           type: 'array',

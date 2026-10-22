@@ -3,6 +3,7 @@
  * bounded child scan behind it, and resolving an agent's `repoPath` to a work
  * tree really inside the project folder (`main/pull-requests/project-repos.ts`).
  */
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, realpathSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
@@ -177,17 +178,24 @@ describe('on disk', () => {
       ok: true,
       dir: path.join(project, 'core'),
       relPath: 'core',
+      mainRelPath: 'core',
     })
     expect(
       await resolveRepoDir(project, path.join(project, 'group/studio'), {
         realpath: async (p) => realpathSync(p),
         run: worktree,
       }),
-    ).toEqual({ ok: true, dir: path.join(project, 'group', 'studio'), relPath: 'group/studio' })
+    ).toEqual({
+      ok: true,
+      dir: path.join(project, 'group', 'studio'),
+      relPath: 'group/studio',
+      mainRelPath: 'group/studio',
+    })
     expect(await resolveRepoDir(project, '.', { realpath: async (p) => realpathSync(p), run: worktree })).toEqual({
       ok: true,
       dir: project,
       relPath: '.',
+      mainRelPath: '.',
     })
   })
 
@@ -205,5 +213,64 @@ describe('on disk', () => {
       run: async () => ({ code: 128, stdout: '', stderr: 'fatal: not a git repository' }),
     })
     expect(notTree.ok === false && notTree.message).toContain('is not a git work tree')
+  })
+})
+
+describe('a worktree outside the project folder', () => {
+  const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'sb-project-wt-')))
+  afterAll(() => rmSync(root, { recursive: true, force: true }))
+  const project = path.join(root, 'ssg')
+  const core = path.join(project, 'core')
+  const other = path.join(root, 'other')
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync('git', ['-C', cwd, ...args], { stdio: 'pipe', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1' } })
+  for (const repo of [core, other]) {
+    mkdirSync(repo, { recursive: true })
+    git(repo, 'init', '-q', '-b', 'main')
+    git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init')
+  }
+  const tmpWorktree = path.join(root, 'tmp-wt')
+  git(core, 'worktree', 'add', '-q', tmpWorktree, '-b', 'feature')
+  const otherWorktree = path.join(root, 'other-wt')
+  git(other, 'worktree', 'add', '-q', otherWorktree, '-b', 'feature')
+  const inProject = path.join(project, '.switchboard', 'worktrees', 'x')
+  git(core, 'worktree', 'add', '-q', inProject, '-b', 'inside')
+  // A folder that claims to be a worktree of core without being registered in it.
+  const forged = path.join(root, 'forged')
+  mkdirSync(forged)
+  writeFileSync(path.join(forged, '.git'), `gitdir: ${path.join(core, '.git')}\n`)
+  symlinkSync(otherWorktree, path.join(project, 'link-out'))
+
+  it('accepts a worktree in another folder whose main checkout is inside the project', async () => {
+    expect(await resolveRepoDir(project, tmpWorktree)).toEqual({
+      ok: true,
+      dir: tmpWorktree,
+      relPath: tmpWorktree,
+      mainRelPath: 'core',
+    })
+  })
+
+  it('takes a folder inside a work tree for the work tree', async () => {
+    mkdirSync(path.join(core, 'src'), { recursive: true })
+    writeFileSync(path.join(core, 'src', 'a.ts'), '')
+    expect(await resolveRepoDir(project, 'core/src')).toEqual({
+      ok: true,
+      dir: core,
+      relPath: 'core',
+      mainRelPath: 'core',
+    })
+  })
+
+  it('names the main checkout of a worktree inside the folder', async () => {
+    const r = await resolveRepoDir(project, '.switchboard/worktrees/x')
+    expect(r).toMatchObject({ ok: true, relPath: '.switchboard/worktrees/x', mainRelPath: 'core' })
+  })
+
+  it('refuses a worktree of a repository outside, a symlink to one, and a forged .git file', async () => {
+    for (const repoPath of [otherWorktree, other, 'link-out', forged, path.join(tmpWorktree, '..')]) {
+      const r = await resolveRepoDir(project, repoPath)
+      expect(r.ok, repoPath).toBe(false)
+      if (!r.ok) expect(r.message).toContain("outside this chat's project folder")
+    }
   })
 })

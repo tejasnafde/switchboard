@@ -2,9 +2,12 @@
  * The reviewers an AGENT names for a pull request it asks Switchboard to open
  * (`reviewers` on `create_pull_request`): the names as the agent sent them,
  * and how each one is matched against the repository's reviewer candidates.
- * A name matches only exactly (case aside) on a candidate's id, login,
- * display name or an email the host listed; anything else is refused with the
- * close candidates, never guessed. Pure, so the tool, the service and the tests share it.
+ * A name matches exactly (case aside) on a candidate's id, login, display
+ * name or an email the host listed. Without an exact match, the one person
+ * whose name holds it (or is held by it) is taken; the card shows who, and
+ * the user may remove them. Several such people are refused with the list,
+ * and any other name is refused with the close candidates. Pure, so the
+ * tool, the service and the tests share it.
  */
 import type { PrHost, PrReviewerCandidate } from './pull-requests'
 import type { Checked } from './agent-pr-create'
@@ -92,16 +95,25 @@ function closeTo(name: string, candidates: readonly PrReviewerCandidate[]): PrRe
   const raw = normalize(name)
   const q = raw.includes('@') ? raw.slice(0, raw.indexOf('@')) : raw
   const qWords = words(q)
-  return candidates
-    .filter((c) =>
-      keysOf(c).some(
-        (k) =>
-          (q.length >= 2 && k.includes(q)) ||
-          (k.length >= 3 && q.includes(k)) ||
-          words(k).some((w) => qWords.includes(w)),
-      ),
-    )
-    .slice(0, CLOSE_MAX)
+  return candidates.filter((c) =>
+    keysOf(c).some(
+      (k) =>
+        (q.length >= 2 && k.includes(q)) ||
+        (k.length >= 3 && q.includes(k)) ||
+        words(k).some((w) => qWords.includes(w)),
+    ),
+  )
+}
+
+/** Candidates whose id, login, display name or team slug holds the name, or is held by it. Never by email. */
+function containing(name: string, candidates: readonly PrReviewerCandidate[]): PrReviewerCandidate[] {
+  const q = normalize(name)
+  return candidates.filter((c) =>
+    [c.id, c.person.login, c.person.displayName, c.kind === 'team' ? c.id.replace(/^team:/, '') : '']
+      .filter(Boolean)
+      .map(normalize)
+      .some((k) => (q.length >= 3 && k.includes(q)) || (k.length >= 3 && q.includes(k))),
+  )
 }
 
 function isViewer(host: PrHost, c: PrReviewerCandidate, viewer: ReviewerViewer | null): boolean {
@@ -124,16 +136,28 @@ export function resolveReviewers(
 ): Checked<HostWriteReviewer[]> {
   const out: HostWriteReviewer[] = []
   const problems: string[] = []
-  const suggest = (list: readonly PrReviewerCandidate[]) => list.map((c) => reviewerLabel(toReviewer(c))).join(', ')
+  const suggest = (list: readonly PrReviewerCandidate[]) =>
+    list
+      .slice(0, CLOSE_MAX)
+      .map((c) => reviewerLabel(toReviewer(c)))
+      .join(', ')
   for (const name of names) {
     const key = normalize(name)
-    const hits = candidates.filter((c) => keysOf(c).includes(key))
+    const exact = candidates.filter((c) => keysOf(c).includes(key))
+    // No exact match but one name inside the other for exactly one person
+    // ("Sidhu" for "Sidhu Subhash (sidhu)"): that person. A shared word alone
+    // ("Alex Kumar", "Alex Brown") is only listed, never taken.
+    const hits = exact.length > 0 ? exact : containing(name, candidates)
     const ids = new Set(hits.map((c) => c.id))
     if (ids.size === 0) {
       const close = closeTo(name, candidates)
       problems.push(
         `"${name}" is not someone who can review here${close.length > 0 ? `; close: ${suggest(close)}` : ''}.`,
       )
+    } else if (ids.size > 1 && exact.length === 0) {
+      problems.push(`"${name}" is not an exact match, and ${ids.size} people are close: ${suggest(hits)}. Use a login.`)
+    } else if (exact.length === 0 && isViewer(host, hits[0], viewer)) {
+      problems.push(`"${name}" is not an exact match, and the only close one is the signed-in user. Use a login.`)
     } else if (ids.size > 1) {
       problems.push(`"${name}" matches ${ids.size} people: ${suggest(hits)}. Use a login.`)
     } else if (isViewer(host, hits[0], viewer)) {
