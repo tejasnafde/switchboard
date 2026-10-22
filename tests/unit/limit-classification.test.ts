@@ -156,4 +156,36 @@ describe('a limit stays on its own turn', () => {
     for (const frame of frames) (adapter as any).handleNotification('t', active, frame)
     expect(lastTurnEnd(events)?.limit).toBeUndefined()
   })
+
+  it('codex: a late limit error of a stopped turn does not mark the next one before it has an id', () => {
+    const events: RuntimeEvent[] = []
+    const active = { ...codexActive((e) => events.push(e)), activeTurnId: null, stoppedTurnIds: new Set(['turn-0']) }
+    const adapter = new CodexAdapter()
+    const frames = [
+      {
+        method: 'error',
+        params: { turnId: 'turn-0', error: { message: 'x', codexErrorInfo: 'usageLimitExceeded' }, willRetry: false },
+      },
+      { method: 'turn/completed', params: { turn: { id: 'turn-1', status: 'failed' } } },
+    ]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const frame of frames) (adapter as any).handleNotification('t', active, frame)
+    expect(lastTurnEnd(events)?.limit).toBeUndefined()
+  })
+
+  it('claude: an overage rejection keeps the usage limit but no reset time', () => {
+    const events: RuntimeEvent[] = []
+    const active = claudeActive((e) => events.push(e))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(new ClaudeAdapter() as any).handleSDKMessage('t', active, {
+      type: 'rate_limit_event',
+      rate_limit_info: {
+        status: 'rejected',
+        rateLimitType: 'overage',
+        overageStatus: 'rejected',
+        resetsAt: 1761045600,
+      },
+    })
+    expect(lastTurnEnd(events)?.limit).toEqual({ limitClass: 'usage_limit', resetAt: null })
+  })
 })

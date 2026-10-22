@@ -1907,7 +1907,8 @@ export class CodexAdapter implements ProviderAdapter {
       } else {
         log.error(`codex error notification: ${message}`, notification.params ?? {})
         // A late error of a turn Stop interrupted must not mark the turn after it.
-        if (!active.activeTurnId || turnId === active.activeTurnId)
+        const stoppedTurn = typeof turnId === 'string' && active.stoppedTurnIds.has(turnId)
+        if (!stoppedTurn && (!active.activeTurnId || turnId === active.activeTurnId))
           active.turnLimit = mergeTurnLimit(active.turnLimit, codexErrorLimit(notification.params?.error))
         active.onEvent({
           type: 'error',

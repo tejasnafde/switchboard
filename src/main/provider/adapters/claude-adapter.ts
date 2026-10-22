@@ -2396,8 +2396,13 @@ export class ClaudeAdapter implements ProviderAdapter {
           // investigation. Mirror the `result` case: clear turn state and emit
           // turn.completed, then flag the error status.
           // A rejection while idle ends no turn of ours, so it must not arm a resume.
+          // An explicit overage block can clear before its resetsAt, so it arms no
+          // resume. An untyped rejection keeps its reset (the limit-classification cases).
           if (active.turnStartedAt != null || active.awaitingNextTurn)
-            active.turnLimit = mergeTurnLimit(active.turnLimit, claudeRejectionLimit(rl.resetsAt))
+            active.turnLimit = mergeTurnLimit(
+              active.turnLimit,
+              claudeRejectionLimit(rl.rateLimitType === 'overage' ? null : rl.resetsAt),
+            )
           const durationMs = takeTurnDuration(active)
           active.watchdog.turnEnded()
           this.holdQueuedTurns(active, 'The usage limit was reached.')
