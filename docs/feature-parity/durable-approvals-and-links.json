@@ -16,10 +16,7 @@
       "status": "implemented",
       "evidence": [
         "apps/mobile/src/screens/ThreadFeedItems.tsx",
-        "apps/mobile/src/stores/chat.ts",
-        "src/shared/system-markers.ts",
-        "src/shared/peer-links.ts",
-        "src/shared/agent-approval-cards.ts"
+        "apps/mobile/src/stores/chat.ts"
       ]
     },
     "nativeAndroid": {
@@ -45,7 +42,8 @@
         "tests/unit/peer-links-registry-ws.test.ts",
         "tests/unit/agent-approvals.test.ts",
         "tests/unit/peer-links.test.ts",
-        "tests/fixtures/system-marker-cases.json"
+        "tests/fixtures/system-marker-cases.json",
+        "src/shared/system-markers.ts"
       ]
     },
     "storageDataMigration": {
