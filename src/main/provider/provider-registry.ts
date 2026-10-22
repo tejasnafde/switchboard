@@ -369,7 +369,6 @@ export class ProviderRegistry implements PeerToolHost {
     })
     activeRegistry = this
     this.host = host
-    this.agentApprovals.expireOld()
     // SB_DEMO_ADAPTER=1 swaps in the scripted adapter so the tour recorder
     // (videos/capture-tour.mjs) can capture agent-driven scenes without
     // credentials. Never set by a normal launch.
@@ -395,6 +394,8 @@ export class ProviderRegistry implements PeerToolHost {
     // Invalid mirror edits are fs-watch findings with no tool result to ride
     // on - surface them in chat as error events through this registry's bus.
     notebookManager.setPublisher((event) => this.publish(event))
+    // After the bus exists: an expired card publishes request.closed.
+    this.agentApprovals.expireOld()
   }
 
   getAdapter(provider: ProviderKind): ProviderAdapter | undefined {
