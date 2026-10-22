@@ -8,10 +8,16 @@
  * credentials, asks for its model list and exits. No turn is sent, so no
  * usage is spent. Results are cached per instance for an hour; a live
  * session's own list stays authoritative inside that chat.
+ *
+ * The cache is also kept on disk, so a launch answers at once instead of
+ * starting every provider's CLI (over a second each). An entry older than the
+ * hour is still answered, and a probe refreshes it behind the reply.
  */
 import { isGenericAcpAgent } from '@shared/acp-agents'
 import { execFile } from 'child_process'
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
+import { dirname, join } from 'path'
 import { formatOpencodeModelLabel, inferModelTier, type ModelOption } from '@shared/models'
 import type { AgentProvider } from '@shared/types'
 import { resolveProviderInstance } from '../db/provider-instances'
@@ -26,6 +32,7 @@ import { applyCredentialHome } from './credential-home'
 import { applyEnvOverlay } from './env-overlay'
 import { resolveInstanceEnv } from './instance-env'
 import { remoteProviderConfigDir } from './remote-gate'
+import { userDataDir } from '../runtime'
 import { CodexProbeSession } from './usage/codex-usage'
 
 const log = createMainLogger('provider:catalog-probe')
@@ -33,8 +40,52 @@ const log = createMainLogger('provider:catalog-probe')
 const TTL_MS = 60 * 60_000
 const PROBE_TIMEOUT_MS = 20_000
 
-const cache = new Map<string, { models: ModelOption[]; at: number }>()
+type CacheEntry = { models: ModelOption[]; at: number }
+let cache: Map<string, CacheEntry> | null = null
 const inFlight = new Map<string, Promise<ModelOption[]>>()
+// Bumped by invalidateCatalog, so a probe started before it stores nothing.
+let generation = 0
+
+function cacheFile(): string {
+  return join(userDataDir(), 'data', 'model-catalog.json')
+}
+
+function loadedCache(): Map<string, CacheEntry> {
+  if (cache) return cache
+  cache = new Map()
+  try {
+    const stored = JSON.parse(readFileSync(cacheFile(), 'utf8')) as Record<string, CacheEntry>
+    for (const [key, entry] of Object.entries(stored)) {
+      const valid =
+        Array.isArray(entry?.models) &&
+        entry.models.every((m) => typeof m?.id === 'string' && typeof m.label === 'string') &&
+        typeof entry.at === 'number' &&
+        entry.at <= Date.now()
+      if (valid) cache.set(key, entry)
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('catalog cache unreadable, starting empty', err)
+  }
+  return cache
+}
+
+function saveCache(): void {
+  const file = cacheFile()
+  try {
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(`${file}.tmp`, JSON.stringify(Object.fromEntries(loadedCache())))
+    renameSync(`${file}.tmp`, file)
+  } catch (err) {
+    log.warn('catalog cache not saved', err)
+  }
+}
+
+function storeProbe(key: string, models: ModelOption[]): void {
+  const entries = loadedCache()
+  if (models.length > 0) entries.set(key, { models, at: Date.now() })
+  else if (!entries.delete(key)) return
+  saveCache()
+}
 
 function withTimeout<T>(promise: Promise<T>, what: string): Promise<T> {
   return Promise.race([
@@ -150,7 +201,7 @@ export function peekCatalog(
   remoteConfigDir?: string,
 ): ModelOption[] | undefined {
   try {
-    const hit = cache.get(probeTarget(agentType, instanceId, remoteConfigDir).key)
+    const hit = loadedCache().get(probeTarget(agentType, instanceId, remoteConfigDir).key)
     return hit && Date.now() - hit.at < TTL_MS ? hit.models : undefined
   } catch (err) {
     log.warn('catalog peek failed', err)
@@ -158,7 +209,11 @@ export function peekCatalog(
   }
 }
 
-/** Live catalog for an instance, or [] when it cannot be probed (no binary, signed out). */
+/**
+ * Live catalog for an instance, or [] when it cannot be probed (no binary,
+ * signed out). A stale cached catalog is answered at once while a probe
+ * refreshes it.
+ */
 export function probeCatalog(
   agentType: AgentProvider,
   instanceId?: string | null,
@@ -166,11 +221,12 @@ export function probeCatalog(
 ): Promise<ModelOption[]> {
   const target = probeTarget(agentType, instanceId, remoteConfigDir)
   const key = target.key
-  const hit = cache.get(key)
+  const hit = loadedCache().get(key)
   if (hit && Date.now() - hit.at < TTL_MS) return Promise.resolve(hit.models)
   const running = inFlight.get(key)
-  if (running) return running
+  if (running) return hit ? Promise.resolve(hit.models) : running
 
+  const started = generation
   const task = (async () => {
     try {
       // A generic ACP agent lists its models only inside a session, so
@@ -183,21 +239,30 @@ export function probeCatalog(
             : isGenericAcpAgent(agentType)
               ? []
               : await probeOpencode(target.instanceEnv)
-      // An empty answer is not cached, so the next ask retries.
-      if (models.length > 0) cache.set(key, { models, at: Date.now() })
+      // An empty answer is not cached, so the next ask retries, and it drops
+      // a stale entry (signed out, CLI removed).
+      if (started === generation) storeProbe(key, models)
       return models
     } catch (err) {
       log.warn(`catalog probe failed for ${key}: ${err instanceof Error ? err.message : String(err)}`)
+      if (started === generation) storeProbe(key, [])
       return []
     } finally {
-      inFlight.delete(key)
+      if (started === generation) inFlight.delete(key)
     }
   })()
   inFlight.set(key, task)
-  return task
+  return hit ? Promise.resolve(hit.models) : task
 }
 
-/** Forget a cached catalog, e.g. after an instance's credentials change. */
+/** Forget every cached catalog, e.g. after an instance's credentials change. */
 export function invalidateCatalog(): void {
-  cache.clear()
+  generation++
+  cache = new Map()
+  inFlight.clear()
+  try {
+    rmSync(cacheFile(), { force: true })
+  } catch (err) {
+    log.warn('catalog cache not removed', err)
+  }
 }

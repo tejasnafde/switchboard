@@ -45,7 +45,7 @@
     },
     "storageDataMigration": {
       "status": "not_applicable",
-      "reason": "The backend cache is in memory. The desktop keeps writing the list it shows into its existing per-instance settings cache, as before."
+      "reason": "The backend cache is in memory and in <userData>/data/model-catalog.json (see catalog-disk-cache.json). The desktop keeps writing the list it shows into its existing per-instance settings cache, as before."
     },
     "updateRelease": {
       "status": "implemented",

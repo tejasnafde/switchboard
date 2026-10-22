@@ -1,0 +1,40 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "catalog-disk-cache",
+  "summary": "The backend keeps the provider:list-catalog cache in <userData>/data/model-catalog.json as well as in memory, so a launch answers from the last probe instead of starting every provider's CLI (over a second each). An entry younger than an hour is answered as before; an older one is answered at once while a probe refreshes it behind the reply. Editing or deleting a provider instance clears the file with the memory cache, and a probe that was running when the cache was cleared does not store its answer. The IPC contract is unchanged.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop calls provider:list-catalog as before; only the backend answers faster."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The phone calls the same channel with the same reply shape; it gets the faster answer with no client change."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The phone calls the same channel with the same reply shape; it gets the faster answer with no client change."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": ["src/main/provider/catalog-probe.ts", "tests/unit/catalog-probe.test.ts"]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": ["src/main/provider/catalog-probe.ts"],
+      "reason": "A new cache file, no migration: a missing or unreadable file starts an empty cache, and an older build ignores it."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No packaging, channel or signing change; the file lives in the existing user data directory."
+    }
+  },
+  "verification": {
+    "automated": ["npx vitest run tests/unit/catalog-probe.test.ts", "npm run typecheck", "npm test"],
+    "hardware": [],
+    "notExercised": [
+      "A remote headless backend: it uses the same module and its own SWITCHBOARD_DATA_DIR."
+    ]
+  }
+}
