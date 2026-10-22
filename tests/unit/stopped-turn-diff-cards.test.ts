@@ -49,6 +49,7 @@ async function repo(): Promise<string> {
 type Internals = {
   publish: (e: RuntimeEvent) => void
   checkpoints: { beginTurn: (threadId: string, cwd: string) => Promise<void> }
+  emitFileEdits: (threadId: string, turnEndedAt: number) => Promise<void>
 }
 
 describe.each([
@@ -84,8 +85,13 @@ describe.each([
     await writeFile(join(cwd, 'user.txt'), 'two\n')
 
     // The user pressed Stop: the adapter ends the turn with no result.
+    // Await the registry's own fire-and-forget diff rather than poll for it:
+    // its git spawns take over a second on Windows runners.
+    const emitFileEdits = vi.spyOn(internals, 'emitFileEdits')
     internals.publish({ type: 'turn.completed', threadId: 't1' } as RuntimeEvent)
-    await vi.waitFor(() => expect(cards).toHaveLength(2))
+    expect(emitFileEdits).toHaveBeenCalledTimes(1)
+    await emitFileEdits.mock.results[0]?.value
+    expect(cards).toHaveLength(2)
 
     const byPath = Object.fromEntries(cards.map((c) => [c.relPath, c]))
     expect(byPath['agent.txt']?.newContent).toBe('two\n')

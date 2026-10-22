@@ -955,7 +955,11 @@ async function captureThemeScreens(win, theme) {
   await win.keyboard.press('Enter')
   const reviewCard = win.locator('[data-host-write-card="review"][data-status="pending"]').first()
   await reviewCard.waitFor({ state: 'visible', timeout: 20_000 })
-  await reviewCard.locator('[data-host-write-actions]').evaluate((el) => el.scrollIntoView({ block: 'end' }))
+  // The card is the last row and the list follows the bottom, so a late row
+  // update scrolls a partly scrolled list there: capture the bottom itself.
+  await list.evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
   await settle(win)
   await snapScreen(win, 'host-review-draft', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(800, 720))
