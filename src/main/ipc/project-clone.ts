@@ -16,6 +16,7 @@ import {
   IGNORED_FILE_MAX_BYTES,
   IGNORED_FILE_MAX_COUNT,
   NO_REMOTE_MESSAGE,
+  SUBFOLDER_MESSAGE,
   chooseCloneRemote,
   isSafeCloneUrl,
   isTextContent,
@@ -40,8 +41,14 @@ const execFileP = promisify(execFile)
 
 /** Never wait on a password prompt: there is no terminal to type it in. */
 function gitEnv(): NodeJS.ProcessEnv {
-  const env = childProcessEnv()
-  return { ...env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes' }
+  return { ...childProcessEnv(), GIT_TERMINAL_PROMPT: '0' }
+}
+
+/** BatchMode for ssh too, unless the user chose an ssh command (which GIT_SSH_COMMAND would override). */
+async function cloneEnv(): Promise<NodeJS.ProcessEnv> {
+  const env = gitEnv()
+  if (env.GIT_SSH_COMMAND || (await gitOptional(homedir(), ['config', '--get', 'core.sshCommand']))) return env
+  return { ...env, GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' }
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {
@@ -61,6 +68,9 @@ async function gitOptional(cwd: string, args: string[]): Promise<string | null> 
 
 export async function readCloneSource(projectPath: string): Promise<CloneSourceResult> {
   try {
+    if (await gitOptional(projectPath, ['rev-parse', '--show-prefix'])) {
+      return { ok: false, reason: 'error', error: SUBFOLDER_MESSAGE }
+    }
     const remotes = (await git(projectPath, ['remote'])).split('\n').filter(Boolean)
     // Null on a detached HEAD.
     const branch = await gitOptional(projectPath, ['symbolic-ref', '--short', '-q', 'HEAD'])
@@ -190,12 +200,17 @@ async function runClone(url: string, remoteBranch: string | null, dest: string):
   return { phase: 'done', branch: await gitOptional(dest, ['rev-parse', '--abbrev-ref', 'HEAD']) }
 }
 
-function gitClone(url: string, remoteBranch: string | null, dest: string): Promise<{ ok: boolean; stderr: string }> {
+async function gitClone(
+  url: string,
+  remoteBranch: string | null,
+  dest: string,
+): Promise<{ ok: boolean; stderr: string }> {
   const args = ['-c', 'protocol.ext.allow=never', 'clone', '--progress']
   if (remoteBranch) args.push('--branch', remoteBranch)
   args.push('--', url, dest)
+  const env = await cloneEnv()
   return new Promise((resolve) => {
-    const child = spawn('git', args, { env: gitEnv(), stdio: ['ignore', 'ignore', 'pipe'] })
+    const child = spawn('git', args, { env, stdio: ['ignore', 'ignore', 'pipe'] })
     let stderr = ''
     child.stderr.on('data', (chunk: Buffer) => {
       // Keep the tail only: progress rewrites one line thousands of times.

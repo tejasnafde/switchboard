@@ -53,9 +53,12 @@ export function isProjectCloning(machineId: string, projectPath: string): boolea
   return pending.has(cloneKey(machineId, projectPath))
 }
 
-/** Resolves when a clone into this project has ended (at once when there is none). */
-export function waitForProjectClone(machineId: string, projectPath: string): Promise<void> {
-  return pending.get(cloneKey(machineId, projectPath)) ?? Promise.resolve()
+/** Resolves when a clone into this project has ended (at once when there is none); rejects when it failed. */
+export async function waitForProjectClone(machineId: string, projectPath: string): Promise<void> {
+  const key = cloneKey(machineId, projectPath)
+  await pending.get(key)
+  const progress = useProjectCloneStore.getState().clones[key]
+  if (progress?.phase === 'failed') throw new Error(`The clone failed: ${progress.error}`)
 }
 
 export interface ProjectCloneApi {

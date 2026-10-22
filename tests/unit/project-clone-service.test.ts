@@ -87,7 +87,7 @@ describe('openProjectOnMachine', () => {
       { sourceMachineId: 'local', projectPath: '/Users/me/app', targetMachineId: 'vm2', source, files: ['.env'] },
       api,
     )
-    await waitForProjectClone('vm2', '/home/u/projects/app')
+    await expect(waitForProjectClone('vm2', '/home/u/projects/app')).rejects.toThrow('Permission denied')
     expect(useProjectCloneStore.getState().clones[cloneKey('vm2', '/home/u/projects/app')]).toEqual({
       phase: 'failed',
       error: 'Permission denied (publickey).',

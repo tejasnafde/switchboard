@@ -79,6 +79,20 @@ export type IgnoredReadResult = { ok: true; content: string } | { ok: false; err
 export const NO_REMOTE_MESSAGE =
   'This project has no git remote, so the other machine has nothing to clone from. Add a remote and push, then try again.'
 
+export const SUBFOLDER_MESSAGE =
+  'This project is a folder inside a git repository. Add the repository root as a project and open that on the other machine.'
+
+export const LOCAL_REMOTE_MESSAGE =
+  "This project's remote is a path on this computer, so the other machine cannot reach it. Use a remote with a network URL."
+
+/** A URL another machine can reach: `scheme://`, or the scp form `host:path`. A bare or `file://` path is local. */
+export function isNetworkCloneUrl(url: string): boolean {
+  if (/^file:/i.test(url)) return false
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) return true
+  // scp form: a colon before any slash, and not a Windows drive letter.
+  return /^[^/\\]+:/.test(url) && !/^[a-z]:[\\/]/i.test(url)
+}
+
 export interface RemoteConfig {
   branch: string | null
   /** `branch.<name>.remote`: the remote the current branch tracks. */
@@ -155,4 +169,10 @@ export function isSafeCloneUrl(url: string): boolean {
 export function lastProgressLine(stderr: string): string {
   const lines = stderr.split(/[\r\n]+/).filter((line) => line.trim())
   return lines.length > 0 ? lines[lines.length - 1].trim() : ''
+}
+
+/** Why the project cannot be cloned elsewhere, or null when it can. */
+export function cloneSourceProblem(result: CloneSourceResult): string | null {
+  if (!result.ok) return result.reason === 'no-remote' ? NO_REMOTE_MESSAGE : result.error
+  return isNetworkCloneUrl(result.url) ? null : LOCAL_REMOTE_MESSAGE
 }

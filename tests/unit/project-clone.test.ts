@@ -3,6 +3,7 @@ import {
   chooseCloneRemote,
   cloneFolderName,
   isSafeCloneUrl,
+  isNetworkCloneUrl,
   isTextContent,
   isValidCloneFolderName,
   lastProgressLine,
@@ -74,6 +75,17 @@ describe('clone request checks', () => {
     expect(isSafeCloneUrl('fd::3')).toBe(false)
     expect(isSafeCloneUrl('--upload-pack=touch /tmp/x')).toBe(false)
     expect(isSafeCloneUrl('https://x\n')).toBe(false)
+  })
+
+  it('tells a remote another machine can reach from a local path', () => {
+    expect(isNetworkCloneUrl('git@github.com:me/repo.git')).toBe(true)
+    expect(isNetworkCloneUrl('github-work:me/repo.git')).toBe(true)
+    expect(isNetworkCloneUrl('https://github.com/me/repo.git')).toBe(true)
+    expect(isNetworkCloneUrl('ssh://git@host/repo.git')).toBe(true)
+    expect(isNetworkCloneUrl('/srv/git/repo.git')).toBe(false)
+    expect(isNetworkCloneUrl('../upstream.git')).toBe(false)
+    expect(isNetworkCloneUrl('file:///srv/repo.git')).toBe(false)
+    expect(isNetworkCloneUrl('C:\\repos\\x.git')).toBe(false)
   })
 
   it('makes a safe folder name from the project path', () => {

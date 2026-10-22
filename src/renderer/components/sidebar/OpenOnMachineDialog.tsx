@@ -7,9 +7,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ProjectCloneChannels } from '@shared/ipc-channels'
 import {
-  NO_REMOTE_MESSAGE,
   PROJECT_CLONE_CAPABILITY,
   cloneFolderName,
+  cloneSourceProblem,
   type CloneSourceResult,
 } from '@shared/project-clone'
 import { formatBytes } from '@shared/worktree-manager'
@@ -92,6 +92,7 @@ export function OpenOnMachineDialog({
     }
   }, [project.machineId, project.projectPath])
 
+  const sourceError = source && cloneSourceProblem(source)
   const machineName = remotes.find((m) => m.id === machineId)?.name ?? ''
   const block = machineId
     ? cloneTargetBlock(window.api.routing.supportsCapability(machineId, PROJECT_CLONE_CAPABILITY))
@@ -176,12 +177,12 @@ export function OpenOnMachineDialog({
                 </div>
               )}
               {!source && <div className="text-[var(--text-muted)]">Reading the project's git remote…</div>}
-              {source && !source.ok && (
+              {sourceError && (
                 <div role="alert" className="text-[var(--text-secondary)]">
-                  {source.reason === 'no-remote' ? NO_REMOTE_MESSAGE : source.error}
+                  {sourceError}
                 </div>
               )}
-              {source?.ok && (
+              {source?.ok && !sourceError && (
                 <>
                   <DialogDescription className="text-[var(--text-muted)]">
                     Clones {source.url} (remote "{source.remoteName}")
@@ -232,7 +233,7 @@ export function OpenOnMachineDialog({
           {!started && targets.length > 0 && (
             <Button
               size="sm"
-              disabled={starting || !source?.ok || !machineId || block !== null}
+              disabled={starting || !source?.ok || !!sourceError || !machineId || block !== null}
               onClick={() => void start()}
             >
               {starting ? 'Starting…' : `Open on ${machineName}`}

@@ -129,6 +129,12 @@ describe('open a project on another machine (local bare repos)', () => {
     expect(await done).toEqual({ phase: 'done', branch: 'main' })
   })
 
+  it('refuses a project that is a folder inside a repository', async () => {
+    const { source } = makeSource()
+    mkdirSync(join(source, 'sub'))
+    expect(await readCloneSource(join(source, 'sub'))).toMatchObject({ ok: false, reason: 'error' })
+  })
+
   it('says so plainly when there is no remote', async () => {
     const source = join(root, 'plain')
     git(root, 'init', source)
