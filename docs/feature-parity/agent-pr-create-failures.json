@@ -1,0 +1,54 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "agent-pr-create-failures",
+  "summary": "Three causes of failed create_pull_request calls fixed. (1) A repoPath outside the project folder (a worktree in /tmp) is accepted when it is a linked worktree of a repository whose main checkout is inside the folder: git rev-parse --git-common-dir, realpathed, must be a .git folder inside the project folder, and that main checkout's git worktree list must hold the path, so a hand-made .git file does not count. Every other folder outside is still refused. In a project that is a repository, a repoPath may now be its own checkout or a worktree of it (inside or outside the folder). (2) A reviewer name with no exact match but exactly one person whose id, login, display name or team slug holds the name (or is held by it) now resolves to that person; several such people are refused with the list, and a shared word or an email domain never picks anyone, and the signed-in user is still refused. (3) In a folder of several repositories, the chat's own checkout picks the child repository when it is that child or a worktree of it: it is the source branch for a named repository, it settles several checkouts of the same remote, and with neither repoPath nor repository it picks the child alone. A refusal a new checkout could change is tried once more against a fresh scan. The tool description and the MCP server instructions say which argument to use and that a worktree goes in .switchboard/worktrees, never /tmp.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "No renderer change. The create card already shows create.localPath, which now can hold an absolute path for a worktree outside the folder; the card renders it as text."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No phone code change. The card payload keeps its shape; localPath is not in hostWritePreview, so the phone's preview and shownDigest are unchanged. A reviewer picked by a close match is an ordinary entry of create.reviewers, which the phone already lists."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "No Android code change, for the same reason: HostWriteCards.kt reads the same preview fields, and the pinned digest vectors stay valid."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/pull-requests/project-repos.ts",
+        "src/main/mcp/pr-tools.ts",
+        "src/main/mcp/switchboard-mcp-server.ts",
+        "src/shared/agent-pr-reviewers.ts",
+        "tests/unit/project-repos.test.ts",
+        "tests/unit/mcp-pr-create-tool.test.ts",
+        "tests/unit/agent-pr-reviewers.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table, column or migration. A stored create card's plan has the same shape; the re-check after the card reads the project's coverage, not a stored path."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, native module or update channel change. Backend behaviour only: calls that were refused now succeed, and no argument or payload field was added."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/project-repos.test.ts: on real git repositories in a temporary tree, a worktree outside the folder of a repository inside it resolves with mainRelPath naming the main checkout; a worktree inside the folder names its main checkout; a worktree of a repository outside, a symlink to one, a forged .git file and the parent of a worktree are refused.",
+      "tests/unit/mcp-pr-create-tool.test.ts: a worktree of the project's own repository (inside or outside the folder) opens on that repository from the worktree's branch; a nested checkout of another repository is still refused; a worktree of a child repository opens on the child; a named repository uses the chat's worktree of that child as the source; no argument picks the chat's child; several checkouts of one remote are settled by the chat's checkout; a repository missing from a cached scan is found after a fresh scan; a close reviewer name is taken and shown on the card; several close names or none are refused.",
+      "tests/unit/agent-pr-reviewers.test.ts: one close candidate taken (including by an email's local part), the signed-in user refused even by a close match, several close candidates listed, none refused.",
+      "Each new test was run against the code before the fix and failed.",
+      "npm run typecheck and npm test green."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run with a live agent session against a real GitHub or Bitbucket repository; git was real only in project-repos.test.ts, and the hosts were faked.",
+      "Whether each model now picks the right argument from the new tool description is untested."
+    ]
+  }
+}

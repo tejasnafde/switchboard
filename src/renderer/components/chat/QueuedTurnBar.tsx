@@ -27,17 +27,20 @@ export function QueuedTurnBar({
   sessionId,
   messageId,
   provider,
+  local: heldHere = false,
 }: {
   sessionId: string
   messageId: string
   provider: string | undefined
+  /** Held by this renderer while the chat opens, before the chat has a store entry. */
+  local?: boolean
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const entry = useAgentStore((st) => st.sessions.find((s) => s.id === sessionId)?.queuedTurns?.[messageId])
   const failed = entry?.failed
   const held = !failed && entry?.held === true
-  const local = entry?.local === true
+  const local = heldHere || entry?.local === true
   const promoteBlocked = promoteUnavailableReason(provider)
 
   const act = async (action: 'promote' | 'cancel' | 'resume') => {

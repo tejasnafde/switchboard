@@ -509,3 +509,16 @@ export const ProviderChannels = {
 export const AnalyticsChannels = {
   TRACK: 'analytics:track',
 } as const
+
+/**
+ * Open a project on another machine (`shared/project-clone.ts`). SOURCE and
+ * READ_IGNORED run on the backend that holds the project; CLONE, STATUS and
+ * WRITE_IGNORED on the target. All need the `terminal` scope.
+ */
+export const ProjectCloneChannels = {
+  SOURCE: 'project-clone:source',
+  READ_IGNORED: 'project-clone:read-ignored',
+  CLONE: 'project-clone:clone',
+  STATUS: 'project-clone:status',
+  WRITE_IGNORED: 'project-clone:write-ignored',
+} as const

@@ -46,7 +46,7 @@ describe('createReloadLimiter', () => {
 })
 
 describe('attachRendererCrashRecovery', () => {
-  it.each(['crashed', 'oom', 'abnormal-exit'])('reloads on %s and logs the reason', (reason) => {
+  it.each(['crashed', 'oom', 'abnormal-exit', 'killed'])('reloads on %s and logs the reason', (reason) => {
     logged.length = 0
     const { window, contents, gone } = fakeWindow()
     attachRendererCrashRecovery(window, vi.fn())
@@ -55,18 +55,15 @@ describe('attachRendererCrashRecovery', () => {
     expect(logged).toEqual([{ msg: 'renderer gone, reloading', fields: { reason, exitCode: 1 } }])
   })
 
-  it.each(['clean-exit', 'killed', 'launch-failed', 'integrity-failure'])(
-    'does not reload on %s but still logs it',
-    (reason) => {
-      logged.length = 0
-      const { window, contents, gone } = fakeWindow()
-      attachRendererCrashRecovery(window, vi.fn())
-      gone(reason)
-      expect(contents.reload).not.toHaveBeenCalled()
-      expect(contents.loadURL).not.toHaveBeenCalled()
-      expect(logged).toEqual([{ msg: 'renderer gone, no reload', fields: { reason, exitCode: 1 } }])
-    },
-  )
+  it.each(['clean-exit', 'launch-failed', 'integrity-failure'])('does not reload on %s but still logs it', (reason) => {
+    logged.length = 0
+    const { window, contents, gone } = fakeWindow()
+    attachRendererCrashRecovery(window, vi.fn())
+    gone(reason)
+    expect(contents.reload).not.toHaveBeenCalled()
+    expect(contents.loadURL).not.toHaveBeenCalled()
+    expect(logged).toEqual([{ msg: 'renderer gone, no reload', fields: { reason, exitCode: 1 } }])
+  })
 
   it('shows the error page on the 4th crash in a minute, and its Reload button reloads the app', () => {
     const { window, contents, gone } = fakeWindow()
@@ -121,5 +118,17 @@ describe('attachRendererCrashRecovery', () => {
     contents.emit('will-navigate', event, 'https://example.com/')
     expect(event.preventDefault).not.toHaveBeenCalled()
     expect(load).not.toHaveBeenCalled()
+  })
+
+  it('does not reload a renderer killed during a quit', () => {
+    const { window, contents, gone } = fakeWindow()
+    attachRendererCrashRecovery(
+      window,
+      vi.fn(),
+      () => 0,
+      () => true,
+    )
+    gone('killed')
+    expect(contents.reload).not.toHaveBeenCalled()
   })
 })

@@ -12,7 +12,7 @@
  * the preview pane, so one copy runs; Save as file there turns this block into
  * the normal HTML file card.
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   HTML_LIVE_QUIET_MS,
   htmlLiveBlockedHint,
@@ -200,7 +200,15 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
   const [backendHasImage, setBackendHasImage] = useState(false)
   const webviewRef = useRef<GuestWebview | null>(null)
   const quietTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const capturedRef = useRef(false)
+  // The frame height the still image was taken at: a new height takes a new one,
+  // so the paused box (the running height) always matches its image.
+  const capturedHeightRef = useRef<number | null>(null)
+  const frameHeightRef = useRef(0)
+  // Only the newest capture may replace the image or store it.
+  const captureSeqRef = useRef(0)
+  // The image this frame took and the box height it was taken at, so a pause
+  // before the next capture shows the image in its own box.
+  const [capturedBox, setCapturedBox] = useState<{ image: string; height: number } | null>(null)
   const tokenRef = useRef<string | null>(null)
 
   const label = title ?? 'Live page'
@@ -243,7 +251,7 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     let token: string | null = null
     setLoading(true)
     setOpenError(null)
-    capturedRef.current = false
+    capturedHeightRef.current = null
     window.api.preview.openInline({ source, theme: htmlLiveTheme() }).then(
       (result) => {
         if (!result.ok) {
@@ -299,11 +307,14 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
 
   const capture = useCallback(async () => {
     const wcId = webviewRef.current?.getWebContentsId?.()
-    if (wcId === undefined || !key || capturedRef.current) return
-    capturedRef.current = true
+    const frameHeight = frameHeightRef.current
+    if (wcId === undefined || !key || capturedHeightRef.current === frameHeight) return
+    capturedHeightRef.current = frameHeight
+    const seq = ++captureSeqRef.current
     const image = await window.api.preview.captureInline(wcId)
-    if (!image) return
+    if (!image || seq !== captureSeqRef.current) return
     rememberImage(key, image)
+    setCapturedBox({ image, height: frameHeight })
     if (backendHasImage || storedKeys.has(key)) return
     storedKeys.add(key)
     const stored = await window.api.htmlLive.update(machineId, key, { image })
@@ -320,6 +331,13 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
       captureRef.current().catch((err: unknown) => log.warn('live page capture failed', err))
     }, HTML_LIVE_QUIET_MS)
   }, [])
+  useLayoutEffect(() => {
+    frameHeightRef.current = htmlLiveFrameHeight(contentHeight, expanded)
+  }, [contentHeight, expanded])
+  // Show all grows the frame with no new content height: take the still image again.
+  useEffect(() => {
+    if (expanded) armQuiet()
+  }, [expanded, armQuiet])
 
   const setWebviewRef = useCallback(
     (el: HTMLElement | null) => {
@@ -386,7 +404,6 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
   if (saved && sessionId) return <HtmlFileCard path={saved} sessionId={sessionId} />
 
   const height = htmlLiveFrameHeight(contentHeight, expanded)
-  const stillHeight = htmlLiveStillHeight(contentHeight, expanded)
   // Shown under the page and under its still image alike, so a swap keeps the frame's size.
   const foldBar = !expanded && htmlLiveFolds(contentHeight) && (
     <button
@@ -401,6 +418,8 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     </button>
   )
   const image = memory.image
+  const boxHeight = htmlLiveStillHeight(contentHeight, expanded)
+  const stillHeight = boxHeight !== null && image && capturedBox?.image === image ? capturedBox.height : boxHeight
   const state = !verdict.ok
     ? 'rejected'
     : showSource

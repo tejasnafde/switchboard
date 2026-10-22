@@ -68,6 +68,11 @@ android {
             resValue("string", "project_id", firebaseProject["project_id"] as String)
             resValue("string", "google_storage_bucket", firebaseProject["storage_bucket"] as String)
             signingConfig = productionSigning
+            // Symbol tables of the bundled native libraries (ML Kit, CameraX) go
+            // into the AAB's BUNDLE-METADATA, where Play reads them for crash reports.
+            ndk.debugSymbolLevel = "SYMBOL_TABLE"
+            // With R8 off there is no mapping.txt; mobile-release.yml uploads one
+            // when R8 is turned on.
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
