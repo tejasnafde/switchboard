@@ -63,6 +63,14 @@ every permission of the AAB. The AAB is kept as a workflow artifact for 90
 days, then uploaded to Play. Play refuses a `versionCode` it has already seen,
 so it enforces monotonic versions.
 
+For crash reports, the release build type sets `ndk.debugSymbolLevel =
+"SYMBOL_TABLE"`, so the AAB carries the symbol tables of its bundled native
+libraries in `BUNDLE-METADATA`, where Play reads them. The job fails if they
+are missing. R8 is off (`isMinifyEnabled = false`), so there is no
+`mapping.txt` and Play's deobfuscation warning stays: it is informational
+while the code is not obfuscated. Once R8 is turned on, the job uploads
+`mapping.txt` with the AAB.
+
 The release build allows plain `ws://` only to loopback (`localhost`,
 `127.0.0.1`, `::1`), in `res/xml/network_security_config.xml` and in
 `CleartextPolicy`. Every other host, the emulator's `10.0.2.2` included, needs
