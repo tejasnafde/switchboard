@@ -140,6 +140,19 @@ describe('native Android publishing lane', () => {
     expect(workflow).toContain('sha256sum --check')
   })
 
+  test('gives Play the native debug symbols and, once R8 runs, its mapping', () => {
+    const workflow = readFileSync(releaseWorkflowPath, 'utf8')
+    const steps = (parseYaml(workflow) as any).jobs.release.steps as any[]
+    const symbols = steps.findIndex((step) => String(step.run ?? '').includes('com.android.tools.build.debugsymbols/'))
+    const upload = steps.findIndex((step) => String(step.uses ?? '').startsWith('r0adkll/upload-google-play@'))
+
+    expect(readFileSync(androidBuildPath, 'utf8')).toContain('ndk.debugSymbolLevel = "SYMBOL_TABLE"')
+    expect(symbols).toBeGreaterThanOrEqual(0)
+    expect(upload).toBeGreaterThan(symbols)
+    expect(steps[upload].with.mappingFile).toBe('${{ env.MAPPING_FILE }}')
+    expect(workflow).toContain('app/build/outputs/mapping/release/mapping.txt')
+  })
+
   test('publishes a sideload APK only on request, built from the verified AAB and verified itself', () => {
     const parsed = parseYaml(readFileSync(releaseWorkflowPath, 'utf8')) as any
     const steps = parsed.jobs.release.steps as any[]

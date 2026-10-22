@@ -158,6 +158,21 @@ jobs:
           RELEASE_AAB="switchboard-${{ steps.version.outputs.version }}.aab"
           cp app/build/outputs/bundle/release/app-release.aab "$RELEASE_AAB"
           echo "RELEASE_AAB=apps/android/$RELEASE_AAB" >> "$GITHUB_ENV"
+          # Only R8 writes a mapping; an empty value uploads none.
+          MAPPING=app/build/outputs/mapping/release/mapping.txt
+          if [[ -f "$MAPPING" ]]; then echo "MAPPING_FILE=apps/android/$MAPPING" >> "$GITHUB_ENV"; fi
+
+      # Play reads native symbols from BUNDLE-METADATA. Without them it warns
+      # that crash reports cannot be symbolicated.
+      - name: Check the AAB carries native debug symbols
+        run: |
+          set -euo pipefail
+          # Listed first: grep -q closing the pipe early fails unzip under pipefail.
+          ENTRIES="$(unzip -Z1 "$GITHUB_WORKSPACE/$RELEASE_AAB")"
+          if ! grep -q '^BUNDLE-METADATA/com.android.tools.build.debugsymbols/' <<< "$ENTRIES"; then
+            echo "::error::The AAB has no native debug symbols (ndk.debugSymbolLevel in app/build.gradle.kts)"
+            exit 1
+          fi
 
       - name: Download bundletool
         run: |
@@ -194,6 +209,7 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: app.tn07.switchboard
           releaseFiles: ${{ env.RELEASE_AAB }}
+          mappingFile: ${{ env.MAPPING_FILE }}
           track: ${{ inputs.track }}
           status: ${{ inputs.status }}
 
