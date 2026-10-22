@@ -811,6 +811,14 @@ const api = {
     /** Start a queue held after a failed or usage-limited turn. */
     resumeQueuedTurns: (threadId: string): Promise<{ ok: boolean; message?: string }> =>
       transport.invoke(ProviderChannels.RESUME_QUEUED_TURNS, threadId),
+    /** Auto-resume after a usage limit: whether the flag is on, a chat's Limited row, Cancel, Resume now. */
+    limitResumeEnabled: (): Promise<boolean> => transport.invoke(ProviderChannels.LIMIT_RESUME_ENABLED),
+    limitResumeGet: (threadId: string): Promise<import('@shared/limit-resume').LimitState> =>
+      transport.invoke(ProviderChannels.LIMIT_RESUME_GET, threadId),
+    limitResumeCancel: (threadId: string): Promise<void> =>
+      transport.invoke(ProviderChannels.LIMIT_RESUME_CANCEL, threadId),
+    limitResumeNow: (threadId: string): Promise<{ ok: true } | { ok: false; message: string }> =>
+      transport.invoke(ProviderChannels.LIMIT_RESUME_NOW, threadId),
 
     /** What a fork would send back to its parent. See `ProviderChannels.MERGE_BACK_PREVIEW`. */
     mergeBackPreview: (forkThreadId: string): Promise<import('@shared/merge-back').MergeBackPreview> =>

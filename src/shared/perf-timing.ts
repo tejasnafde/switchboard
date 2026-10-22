@@ -17,6 +17,8 @@ export const PERF_THRESHOLDS = {
   'handoff.build': 300,
   'db.migrate': 1000,
   'db.migrate-slow': 1000,
+  // Fires are rare (one per usage limit), so every one is logged: counts, outcomes, probe time.
+  'limit-resume.fire': 0,
   ipc: 200,
 } as const
 

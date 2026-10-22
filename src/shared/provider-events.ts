@@ -20,7 +20,7 @@ import { splitSyntheticUserText } from './synthetic-message'
 import type { AgentProvider } from './types'
 import { GENERIC_ACP_AGENTS, type GenericAcpAgent } from './acp-agents'
 import type { QueuedTurnExit } from './turn-delivery'
-import type { TurnLimit } from './limit-resume'
+import type { LimitState, TurnLimit } from './limit-resume'
 import type { FollowSuggestionMode } from './follow-suggestions'
 
 export type ProviderSessionStatus = 'connecting' | 'idle' | 'running' | 'error' | 'stopped'
@@ -264,6 +264,19 @@ export interface RuntimePeerUndeliveredEvent {
 }
 
 /**
+ * A chat's auto-resume after a usage limit changed (`shared/limit-resume.ts`):
+ * armed, fired, given up or disarmed. `state` is what its Limited row shows.
+ * `row` is the stored `[[sb:limit-resume]]` system row of a resume just sent,
+ * so a live client shows what a reload shows.
+ */
+export interface RuntimeLimitResumeChangedEvent {
+  type: 'limit-resume.changed'
+  threadId: string
+  state: LimitState
+  row?: { messageId: string; content: string; at: number }
+}
+
+/**
  * An agent's approval card closed and Switchboard recorded what happened
  * (`shared/agent-approval-cards.ts`). `content` is the stored system row, so
  * a live client shows exactly what a reload shows.
@@ -364,6 +377,7 @@ export type RuntimeEvent = (
   | RuntimeTurnQueuedEvent
   | RuntimeTurnDequeuedEvent
   | RuntimeTurnQueueHeldEvent
+  | RuntimeLimitResumeChangedEvent
   | RuntimeErrorEvent
   | RuntimeStatusEvent
   | RuntimeSessionEvent

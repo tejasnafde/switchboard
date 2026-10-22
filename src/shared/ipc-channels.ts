@@ -459,6 +459,11 @@ export const ProviderChannels = {
   CANCEL_QUEUED_TURN: 'provider:cancel-queued-turn',
   /** Start a queue held after a failed or usage-limited turn (`turn.queue-held`). */
   RESUME_QUEUED_TURNS: 'provider:resume-queued-turns',
+  /** Auto-resume after a usage limit (`limit_auto_resume`): whether it is on, a chat's Limited row, Cancel, Resume now. */
+  LIMIT_RESUME_ENABLED: 'provider:limit-resume-enabled',
+  LIMIT_RESUME_GET: 'provider:limit-resume-get',
+  LIMIT_RESUME_CANCEL: 'provider:limit-resume-cancel',
+  LIMIT_RESUME_NOW: 'provider:limit-resume-resume-now',
   LIST_SKILLS: 'provider:list-skills',
   ANSWER_QUESTION: 'provider:answer-question',
   /**

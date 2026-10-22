@@ -174,6 +174,17 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
         appendMessage(tid, { id: event.messageId, role: 'system', content: event.content, timestamp: event.at })
       break
     }
+    case 'limit-resume.changed': {
+      // The stored resume row, same id and content, so a reload lands on it.
+      const row = event.row
+      if (!row) break
+      const exists = useAgentStore
+        .getState()
+        .sessions.find((s) => s.id === tid)
+        ?.messages.some((m) => m.id === row.messageId)
+      if (!exists) appendMessage(tid, { id: row.messageId, role: 'system', content: row.content, timestamp: row.at })
+      break
+    }
     case 'merge-back.row': {
       // A fork's summary card: same id and content as the stored row; null once discarded.
       // Delivered, it moves to just above the message that carried it, as a reload shows it.

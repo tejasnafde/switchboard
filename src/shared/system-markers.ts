@@ -5,6 +5,7 @@
  * phones follow, ported to Android as `SystemMarkers.kt` with the same vectors.
  */
 import { approvalResultLabel, parseApprovalResultMarker } from './agent-approval-cards'
+import { LIMIT_RESUME_MARKER_PREFIX } from './limit-resume'
 import { mergeBackRowDetails, mergeBackRowTitle, parseMergeBackMarker } from './merge-back'
 import { parseUndeliveredMarker, type PeerUndelivered } from './peer-links'
 import { CONTEXT_HANDOFF_MARKER_PREFIX, parseRotationMarker, type RotationMarker } from './rotation-marker'
@@ -68,6 +69,8 @@ export function systemRowView(content: string): SystemRowView {
       body: content.slice(CONTEXT_HANDOFF_MARKER_PREFIX.length).trim(),
     }
   }
+  if (content.startsWith(LIMIT_RESUME_MARKER_PREFIX))
+    return { kind: 'notice', title: content.slice(LIMIT_RESUME_MARKER_PREFIX.length).trim(), body: '' }
   // A newer marker, or a known one whose payload did not parse: never its JSON.
   if (content.startsWith(SYSTEM_MARKER_PREFIX)) return { kind: 'notice', title: UNKNOWN_SYSTEM_MARKER_TITLE, body: '' }
   if (/^Error:/i.test(content)) return { kind: 'error', message: content }
