@@ -1142,8 +1142,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // on the parent's card. An older backend has no handler, so no action shows.
   const canMergeBack = getClient(connectionId)?.supportsCapability(FORK_MERGE_BACK_CAPABILITY) === true
   // An older backend has no Limited row channels; it keeps the held message's Resume only.
-  const limitClient = getClient(connectionId)
-  const showLimitRow = limitClient?.supportsCapability(LIMIT_AUTO_RESUME_CAPABILITY) === true
+  const currentClient = getClient(connectionId)
+  const limitRowClient = currentClient?.supportsCapability(LIMIT_AUTO_RESUME_CAPABILITY) === true ? currentClient : null
   const [mergeBackSheet, setMergeBackSheet] = useState<MergeBackSheetMode | null>(null)
   // The client is looked up per call: a reconnect replaces it while the sheet is open.
   const mergeBackApi = useMemo<MergeBackSheetApi>(() => {
@@ -1484,7 +1484,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       )}
 
       <PrLinksBanner links={prLinks} onUnlink={unlinkPr} />
-      {showLimitRow && limitClient && <LimitResumeRow client={limitClient} threadId={threadId} />}
+      {limitRowClient && <LimitResumeRow client={limitRowClient} threadId={threadId} />}
 
       {forkMetadata && (
         <View style={styles.forkBanner} accessibilityRole="summary">
