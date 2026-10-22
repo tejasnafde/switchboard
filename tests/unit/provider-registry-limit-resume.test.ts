@@ -146,6 +146,7 @@ describe('auto-resume in the registry', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       true,
     )
     registry.registerIpcHandlers()

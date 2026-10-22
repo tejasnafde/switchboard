@@ -144,6 +144,13 @@ import { buildPrLinkTools } from '../mcp/pr-link-tools'
 import { buildPeerMcpTools, runPeerSendPlan } from '../mcp/peer-mcp-tools'
 import { buildApprovalMcpTools } from '../mcp/approval-mcp-tools'
 import { sqliteApprovalCardStore } from '../db/agent-approval-cards'
+import { sqliteHeldPeerMessageStore } from '../db/peer-held-messages'
+import {
+  memoryHeldPeerMessageStore,
+  type HeldPeerMessage,
+  type HeldPeerMessageStore,
+  PEER_HELD_PER_EDGE_MAX,
+} from '@shared/peer-held-messages'
 import {
   approvalResultDelivery,
   approvalResultTurn,
@@ -347,8 +354,15 @@ export class ProviderRegistry implements PeerToolHost {
     // Tests get none unless they pass one.
     queuedRows: QueuedTurnRowStore | null = adapters ? null : sqliteQueuedTurnRowStore(() => getDb()),
     turnCheckpoints: TurnCheckpointStore | null = adapters ? null : sqliteTurnCheckpointStore(() => getDb()),
+    heldPeerStore: HeldPeerMessageStore = adapters ? memoryHeldPeerMessageStore() : sqliteHeldPeerMessageStore(),
     limitResume = !adapters,
   ) {
+    this.heldPeerStore = heldPeerStore
+    try {
+      for (const m of heldPeerStore.all()) this.heldPeerMessages.set(m.id, m)
+    } catch (err) {
+      log.error('could not read held peer messages; they stay in the store until it can be read', err)
+    }
     this.switchboardMcp = switchboardMcp
     this.approvalStore = approvalStore
     this.queuedRows = queuedRows
@@ -391,6 +405,8 @@ export class ProviderRegistry implements PeerToolHost {
     // Invalid mirror edits are fs-watch findings with no tool result to ride
     // on - surface them in chat as error events through this registry's bus.
     notebookManager.setPublisher((event) => this.publish(event))
+    // After the bus exists: an expired card publishes request.closed.
+    this.agentApprovals.expireOld()
     this.limitResumer = limitResume ? new LimitResumer(this.limitResumeHost()) : null
     this.limitResumer?.start()
   }
@@ -496,6 +512,11 @@ export class ProviderRegistry implements PeerToolHost {
   /** Auto-resume after a usage limit; null in tests that inject adapters. */
   readonly limitResumer: LimitResumer | null
   private readonly approvalStore: ApprovalCardStore<AgentWritePlan>
+  /** Agent messages a link refused only for time, until they are delivered (`shared/peer-held-messages.ts`). */
+  private readonly heldPeerStore: HeldPeerMessageStore
+  private readonly heldPeerMessages = new Map<string, HeldPeerMessage>()
+  /** Held messages a delivery is under way for, so two triggers do not send one twice. */
+  private readonly deliveringHeld = new Set<string>()
   private readonly queuedRows: QueuedTurnRowStore | null
 
   /** Serves this backend's MCP tools to every agent; one per process, shared across registries. */
@@ -958,6 +979,7 @@ export class ProviderRegistry implements PeerToolHost {
     if (!result.ok) throw new Error(result.message)
     log.info(`peer link ${result.created ? 'created' : 'renewed'}: ${a} <-> ${b}`)
     this.announcePeerLinks([a, b])
+    this.deliverHeldOnEdges(a, [b])
     return this.listPeerLinks(threadId)
   }
 
@@ -969,6 +991,7 @@ export class ProviderRegistry implements PeerToolHost {
     if (!result.ok) throw new Error(result.message)
     log.info(`peer link extended: ${a} <-> ${b}`)
     this.announcePeerLinks([a, b])
+    this.deliverHeldOnEdges(a, [b])
     return this.listPeerLinks(threadId)
   }
 
@@ -985,6 +1008,7 @@ export class ProviderRegistry implements PeerToolHost {
     text: string
     reason: PeerLinkRefusal
     notify: boolean
+    held?: boolean
   }): void {
     const messageId = peerUndeliveredId(input.fromThreadId, input.targetRoot, input.text)
     const content = formatUndeliveredMarker({
@@ -993,6 +1017,7 @@ export class ProviderRegistry implements PeerToolHost {
       reason: input.reason,
       text: input.text,
       sent: false,
+      ...(input.held ? { held: true } : {}),
     })
     try {
       // The same text refused again (its id is content-addressed) is undelivered
@@ -1013,6 +1038,7 @@ export class ProviderRegistry implements PeerToolHost {
       reason: input.reason,
       text: input.text,
       sent: false,
+      ...(input.held ? { held: true } : {}),
       notify: input.notify,
       at: Date.now(),
     })
@@ -1026,20 +1052,25 @@ export class ProviderRegistry implements PeerToolHost {
   private markUndeliveredSent(
     fromThreadId: string,
     messageId: string,
-    delivered: { targetRoot: string; text: string; fromLabel: string },
+    delivered: { targetRoot: string; text: string; fromLabel: string; bySwitchboard?: boolean },
   ): void {
     let rewritten: string | null = null
     try {
       rewritten = rewriteSystemMarker(fromThreadId, messageId, PEER_UNDELIVERED_MARKER_PREFIX, (content) => {
         const row = parseUndeliveredMarker(content)
         if (!row || row.to !== delivered.targetRoot || row.text !== delivered.text) return null
-        return formatUndeliveredMarker({ ...row, sent: true })
+        const { held: _held, ...rest } = row
+        return formatUndeliveredMarker(
+          delivered.bySwitchboard ? { ...rest, sent: true, held: true } : { ...rest, sent: true },
+        )
       })
     } catch (err) {
       log.warn(`failed to mark undelivered peer message ${messageId} as sent: ${err}`)
     }
     const row = rewritten === null ? null : parseUndeliveredMarker(rewritten)
     if (!row) return
+    // Sent by hand: Switchboard no longer delivers it on its own.
+    if (!delivered.bySwitchboard) this.dropHeldPeerMessage(messageId)
     this.publish({
       type: 'peer.undelivered',
       threadId: fromThreadId,
@@ -1050,6 +1081,7 @@ export class ProviderRegistry implements PeerToolHost {
       reason: row.reason,
       text: row.text,
       sent: true,
+      ...(row.held ? { held: true } : {}),
       notify: false,
       at: Date.now(),
     })
@@ -1104,6 +1136,7 @@ export class ProviderRegistry implements PeerToolHost {
       log.info(`peer link removed: ${root} <-> ${peers.join(', ')}`)
       this.announcePeerLinks([root, ...peers])
     }
+    for (const peer of peers) this.releaseHeldPeerMessages(root, peer)
     return this.listPeerLinks(threadId)
   }
 
@@ -1127,6 +1160,96 @@ export class ProviderRegistry implements PeerToolHost {
     const root = resolveRootThreadId(threadId)
     const peers = this.peerLinks.humanMessage(root, Date.now())
     if (peers.length > 0) this.announcePeerLinks([root, ...peers])
+    this.deliverHeldOnEdges(root, peers)
+  }
+
+  /**
+   * Keep an agent message a link refused only because its time was up, and
+   * tell the sender's chat. It goes out on its own once the link is renewed or
+   * the target chat's session next starts (`deliverHeldPeerMessages`).
+   */
+  private holdPeerMessage(message: HeldPeerMessage, notify: boolean): void {
+    this.heldPeerMessages.set(message.id, message)
+    try {
+      this.heldPeerStore.put(message)
+    } catch (err) {
+      log.error(`could not store held peer message ${message.id}; it is kept until the backend stops`, err)
+    }
+    this.recordUndelivered({
+      fromThreadId: message.fromThreadId,
+      fromLabel: message.fromLabel,
+      targetRoot: message.targetRoot,
+      targetLabel: message.targetLabel,
+      text: message.text,
+      reason: 'link-expired',
+      notify,
+      held: true,
+    })
+  }
+
+  private dropHeldPeerMessage(id: string): void {
+    if (!this.heldPeerMessages.delete(id)) return
+    try {
+      this.heldPeerStore.remove(id)
+    } catch (err) {
+      log.warn(`could not remove delivered held peer message ${id} from the store`, err)
+    }
+  }
+
+  /**
+   * The user took the link away (unlink, or archived a chat): nothing held on
+   * it goes out on its own any more. Each row turns back into an ordinary Not
+   * delivered row the user can still send by hand.
+   */
+  releaseHeldPeerMessages(threadId: string, peerThreadId?: string): void {
+    const root = resolveRootThreadId(threadId)
+    const peer = peerThreadId === undefined ? undefined : resolveRootThreadId(peerThreadId)
+    for (const m of [...this.heldPeerMessages.values()]) {
+      const ends = [m.fromRoot, m.targetRoot]
+      if (!ends.includes(root) || (peer !== undefined && !ends.includes(peer))) continue
+      this.dropHeldPeerMessage(m.id)
+      this.recordUndelivered({
+        fromThreadId: m.fromThreadId,
+        fromLabel: m.fromLabel,
+        targetRoot: m.targetRoot,
+        targetLabel: m.targetLabel,
+        text: m.text,
+        reason: 'link-removed',
+        notify: false,
+      })
+    }
+  }
+
+  /** Held messages on the edges between `root` and each of `peers`, both directions. */
+  private deliverHeldOnEdges(root: string, peers: readonly string[]): void {
+    if (peers.length === 0) return
+    this.deliverHeldPeerMessages(
+      (m) =>
+        (m.fromRoot === root && peers.includes(m.targetRoot)) || (m.targetRoot === root && peers.includes(m.fromRoot)),
+    )
+  }
+
+  /**
+   * Try every held message `which` picks. One that cannot go out yet (the
+   * target is not running or is mid-turn) stays held for the next trigger.
+   */
+  private deliverHeldPeerMessages(which: (m: HeldPeerMessage) => boolean): void {
+    for (const message of this.heldPeerMessages.values()) {
+      if (!which(message) || this.deliveringHeld.has(message.id)) continue
+      this.deliveringHeld.add(message.id)
+      this.deliverPeerMessage(
+        {
+          fromThreadId: message.fromThreadId,
+          fromLabel: message.fromLabel,
+          targetThreadId: message.targetRoot,
+          text: message.text,
+          initiator: 'agent',
+        },
+        { held: message },
+      )
+        .catch((err) => log.info(`held peer message ${message.id} not delivered yet: ${errorMessage(err)}`))
+        .finally(() => this.deliveringHeld.delete(message.id))
+    }
   }
 
   private announcePeerLinks(threadIds: string[]): void {
@@ -1153,8 +1276,13 @@ export class ProviderRegistry implements PeerToolHost {
    * Delivery is an ordinary turn, which is what makes a peer message unable to
    * answer a pending approval: nothing here reaches `respondToRequest`.
    */
-  async deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string }> {
+  async deliverPeerMessage(
+    input: PeerMessageInput,
+    opts: { held?: HeldPeerMessage } = {},
+  ): Promise<{ id: string; held?: true }> {
     const initiator = input.initiator ?? 'user'
+    // A held message already met the link once; it is not charged or refused for time again.
+    const held = initiator === 'agent' ? opts.held : undefined
     // `sessionAdapters` is keyed by whatever id startSession ran under, so
     // try the caller's id before the resolved root. Resolving first reported
     // a live chat as "not running" whenever its session id had rotated.
@@ -1211,10 +1339,44 @@ export class ProviderRegistry implements PeerToolHost {
       // A send along a link the user made spends that edge's budget INSTEAD of
       // the hop depth and per-sender budget. Only along that edge: the same
       // session sending anywhere else still meets both.
+      // A held message is charged to the edge when the edge is live again; at a
+      // target's start with the link out of time or gone it goes out uncharged.
       const linkVerdict =
-        initiator === 'agent' ? this.peerLinks.checkSend(fromRoot, targetRoot, Date.now()) : { linked: false as const }
+        initiator === 'agent' && (!held || this.peerLinks.isLive(fromRoot, targetRoot, Date.now()))
+          ? this.peerLinks.checkSend(fromRoot, targetRoot, Date.now())
+          : { linked: false as const }
+      if (held && linkVerdict.linked && !linkVerdict.ok) {
+        throw new Error(`The link with "${targetLabel}" has no messages left, so the held message waits.`)
+      }
       if (input.requireLink && !linkVerdict.linked) {
         throw new Error('The user removed the link with that session, so this message was not sent.')
+      }
+      const heldOnEdge = [...this.heldPeerMessages.values()].filter(
+        (m) => m.fromRoot === fromRoot && m.targetRoot === targetRoot,
+      ).length
+      if (
+        linkVerdict.linked &&
+        !linkVerdict.ok &&
+        linkVerdict.reason === 'link-expired' &&
+        heldOnEdge < PEER_HELD_PER_EDGE_MAX
+      ) {
+        const id = peerUndeliveredId(input.fromThreadId, targetRoot, input.text)
+        log.info(`linked peer send held until the link is renewed: ${input.fromThreadId} -> ${targetThreadId}`)
+        this.holdPeerMessage(
+          {
+            id,
+            fromThreadId: input.fromThreadId,
+            fromRoot,
+            fromLabel,
+            targetRoot,
+            targetLabel,
+            text: input.text,
+            heldAt: Date.now(),
+          },
+          linkVerdict.firstRefusal,
+        )
+        this.announcePeerLinks([fromRoot, targetRoot])
+        return { id, held: true }
       }
       if (linkVerdict.linked && !linkVerdict.ok) {
         log.warn(`linked peer send refused (${linkVerdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
@@ -1239,7 +1401,7 @@ export class ProviderRegistry implements PeerToolHost {
         if (chargedEdge !== null) this.peerLinks.release(fromRoot, targetRoot, chargedEdge)
         else this.peerAgentGuard.release(input.fromThreadId)
       }
-      if (initiator === 'agent' && !linkVerdict.linked) {
+      if (initiator === 'agent' && !linkVerdict.linked && !held) {
         const agentVerdict = this.peerAgentGuard.check({ fromThreadId: input.fromThreadId, senderDepth }, Date.now())
         if (!agentVerdict.ok) {
           log.warn(`agent peer send refused (${agentVerdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
@@ -1247,129 +1409,155 @@ export class ProviderRegistry implements PeerToolHost {
         }
       }
 
-      const key = { fromThreadId: input.fromThreadId, targetThreadId, text: input.text }
-      const verdict = this.peerGuard.check(key, Date.now())
-      if (!verdict.ok) {
-        releaseAgentSlot()
-        log.warn(`peer message refused (${verdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
-        throw new Error(verdict.message)
+      // A hand Send of a held row while Switchboard is delivering it would send it twice.
+      const handSendOfHeld =
+        initiator === 'user' && input.undeliveredId && this.heldPeerMessages.has(input.undeliveredId)
+          ? input.undeliveredId
+          : null
+      if (handSendOfHeld) {
+        if (this.deliveringHeld.has(handSendOfHeld))
+          throw new Error('Switchboard is delivering this message now. Wait a moment.')
+        this.deliveringHeld.add(handSendOfHeld)
       }
+      try {
+        const key = { fromThreadId: input.fromThreadId, targetThreadId, text: input.text }
+        const verdict = this.peerGuard.check(key, Date.now())
+        if (!verdict.ok) {
+          releaseAgentSlot()
+          log.warn(`peer message refused (${verdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
+          throw new Error(verdict.message)
+        }
 
-      const body = wrapPeerMessage(fromLabel, input.text)
-      // Same pre-turn bookkeeping an ordinary send does, or this turn's file
-      // edits produce no diff cards and notebook mirrors go unwatched.
-      const targetCwd = this.sessionCwd.get(targetThreadId)
-      const targetWasMidTurn = this.hasOutstandingTurn(targetThreadId)
-      if (targetCwd) await this.checkpoints.beginTurn(targetThreadId, targetCwd, targetWasMidTurn)
-      // The only await before sendTurn: everything from here to it is
-      // synchronous, so what this sees is what the send runs under.
-      const withdrawn = this.peerDeliveryProblem({
-        targetThreadId,
-        adapter,
-        targetLabel,
-        chargedEdge,
-        fromRoot,
-        targetRoot,
-      })
-      if (withdrawn) {
-        // A running turn keeps the checkpoint it now has; a fresh one belongs
-        // to a turn that will not happen.
-        // A turn that started meanwhile owns the checkpoint now.
-        if (targetCwd && !targetWasMidTurn && withdrawn.reason !== 'target-busy') this.checkpoints.clear(targetThreadId)
-        this.peerGuard.release(verdict.id, key)
-        releaseAgentSlot()
-        log.warn(
-          `peer message withdrawn before delivery (${withdrawn.reason}): ${input.fromThreadId} -> ${targetThreadId}`,
+        const body = wrapPeerMessage(fromLabel, input.text)
+        // Same pre-turn bookkeeping an ordinary send does, or this turn's file
+        // edits produce no diff cards and notebook mirrors go unwatched.
+        const targetCwd = this.sessionCwd.get(targetThreadId)
+        const targetWasMidTurn = this.hasOutstandingTurn(targetThreadId)
+        if (targetCwd) await this.checkpoints.beginTurn(targetThreadId, targetCwd, targetWasMidTurn)
+        // The only await before sendTurn: everything from here to it is
+        // synchronous, so what this sees is what the send runs under.
+        const withdrawn = this.peerDeliveryProblem({
+          targetThreadId,
+          adapter,
+          targetLabel,
+          chargedEdge,
+          fromRoot,
+          targetRoot,
+        })
+        if (withdrawn) {
+          // A running turn keeps the checkpoint it now has; a fresh one belongs
+          // to a turn that will not happen.
+          // A turn that started meanwhile owns the checkpoint now.
+          if (targetCwd && !targetWasMidTurn && withdrawn.reason !== 'target-busy')
+            this.checkpoints.clear(targetThreadId)
+          this.peerGuard.release(verdict.id, key)
+          releaseAgentSlot()
+          log.warn(
+            `peer message withdrawn before delivery (${withdrawn.reason}): ${input.fromThreadId} -> ${targetThreadId}`,
+          )
+          if (withdrawn.reason === 'link-removed') {
+            this.recordUndelivered({
+              fromThreadId: input.fromThreadId,
+              fromLabel,
+              targetRoot,
+              targetLabel,
+              text: input.text,
+              reason: 'link-removed',
+              notify: false,
+            })
+          }
+          throw new Error(withdrawn.message)
+        }
+        notebookManager.beginTurn(targetThreadId)
+        const startsNewProviderTurn = startsOwnProviderTurn(
+          adapter.provider,
+          this.hasOutstandingTurn(targetThreadId),
+          undefined,
         )
-        if (withdrawn.reason === 'link-removed') {
-          this.recordUndelivered({
-            fromThreadId: input.fromThreadId,
-            fromLabel,
+        if (startsNewProviderTurn) this.beginOutstandingTurn(targetThreadId)
+        releasePreparation()
+        // Set before the send, not after: the receiving model may call the peer
+        // tool the moment its turn starts, and the depth has to already be there.
+        const previousDepth = this.turnDepth.get(targetThreadId)
+        this.turnDepth.set(targetThreadId, nextHopDepth(senderDepth, initiator))
+        try {
+          await adapter.sendTurn(targetThreadId, body)
+        } catch (err) {
+          if (startsNewProviderTurn) this.finishOutstandingTurn(targetThreadId)
+          // The turn did NOT happen, so release the guard slot: otherwise an
+          // identical retry is refused as a duplicate for the next 10 minutes.
+          this.peerGuard.release(verdict.id, key)
+          releaseAgentSlot()
+          if (previousDepth === undefined) this.turnDepth.delete(targetThreadId)
+          else this.turnDepth.set(targetThreadId, previousDepth)
+          throw err
+        }
+
+        const at = Date.now()
+        // The receiving turn is persisted under the message id so a redelivery
+        // of the same id cannot double-post, and the sender keeps a marker so
+        // its own transcript says where the message went, and who decided. The
+        // displayBody keeps the wrapper out of the bubble after a reload,
+        // matching the live one.
+        try {
+          saveMessageIfAbsent(verdict.id, targetThreadId, 'user', body, undefined, `From "${fromLabel}": ${input.text}`)
+          saveMessageIfAbsent(
+            `peer_${verdict.id}`,
+            input.fromThreadId,
+            'system',
+            `${peerSentMarkerPrefix(initiator)} ${fromLabel} → ${targetLabel}`,
+          )
+        } catch (err) {
+          log.warn(`failed to persist peer message ${verdict.id}: ${err}`)
+        }
+
+        log.info(
+          `peer message delivered ${verdict.id} by ${initiator}: ${input.fromThreadId} -> ${targetThreadId} chars=${input.text.length}`,
+        )
+        this.publish({
+          type: 'peer.message',
+          threadId: input.fromThreadId,
+          direction: 'sent',
+          initiator,
+          messageId: verdict.id,
+          peerThreadId: targetThreadId,
+          peerLabel: targetLabel,
+          text: input.text,
+          at,
+        })
+        this.publish({
+          type: 'peer.message',
+          threadId: targetThreadId,
+          direction: 'received',
+          initiator,
+          messageId: verdict.id,
+          peerThreadId: input.fromThreadId,
+          peerLabel: fromLabel,
+          text: input.text,
+          at,
+        })
+        // A message the user sent along a link is a human message on that edge.
+        const renewed = initiator === 'user' && this.peerLinks.renew(fromRoot, targetRoot, at)
+        if (linkVerdict.linked || renewed) {
+          this.announcePeerLinks([fromRoot, targetRoot])
+        }
+        if (initiator === 'user' && input.undeliveredId) {
+          this.markUndeliveredSent(input.fromThreadId, input.undeliveredId, { targetRoot, text: input.text, fromLabel })
+        }
+        if (held) {
+          this.dropHeldPeerMessage(held.id)
+          this.markUndeliveredSent(input.fromThreadId, held.id, {
             targetRoot,
-            targetLabel,
             text: input.text,
-            reason: 'link-removed',
-            notify: false,
+            fromLabel,
+            bySwitchboard: true,
           })
         }
-        throw new Error(withdrawn.message)
+        if (renewed) this.deliverHeldOnEdges(fromRoot, [targetRoot])
+        return { id: verdict.id }
+      } finally {
+        if (handSendOfHeld) this.deliveringHeld.delete(handSendOfHeld)
       }
-      notebookManager.beginTurn(targetThreadId)
-      const startsNewProviderTurn = startsOwnProviderTurn(
-        adapter.provider,
-        this.hasOutstandingTurn(targetThreadId),
-        undefined,
-      )
-      if (startsNewProviderTurn) this.beginOutstandingTurn(targetThreadId)
-      releasePreparation()
-      // Set before the send, not after: the receiving model may call the peer
-      // tool the moment its turn starts, and the depth has to already be there.
-      const previousDepth = this.turnDepth.get(targetThreadId)
-      this.turnDepth.set(targetThreadId, nextHopDepth(senderDepth, initiator))
-      try {
-        await adapter.sendTurn(targetThreadId, body)
-      } catch (err) {
-        if (startsNewProviderTurn) this.finishOutstandingTurn(targetThreadId)
-        // The turn did NOT happen, so release the guard slot: otherwise an
-        // identical retry is refused as a duplicate for the next 10 minutes.
-        this.peerGuard.release(verdict.id, key)
-        releaseAgentSlot()
-        if (previousDepth === undefined) this.turnDepth.delete(targetThreadId)
-        else this.turnDepth.set(targetThreadId, previousDepth)
-        throw err
-      }
-
-      const at = Date.now()
-      // The receiving turn is persisted under the message id so a redelivery
-      // of the same id cannot double-post, and the sender keeps a marker so
-      // its own transcript says where the message went, and who decided. The
-      // displayBody keeps the wrapper out of the bubble after a reload,
-      // matching the live one.
-      try {
-        saveMessageIfAbsent(verdict.id, targetThreadId, 'user', body, undefined, `From "${fromLabel}": ${input.text}`)
-        saveMessageIfAbsent(
-          `peer_${verdict.id}`,
-          input.fromThreadId,
-          'system',
-          `${peerSentMarkerPrefix(initiator)} ${fromLabel} → ${targetLabel}`,
-        )
-      } catch (err) {
-        log.warn(`failed to persist peer message ${verdict.id}: ${err}`)
-      }
-
-      log.info(
-        `peer message delivered ${verdict.id} by ${initiator}: ${input.fromThreadId} -> ${targetThreadId} chars=${input.text.length}`,
-      )
-      this.publish({
-        type: 'peer.message',
-        threadId: input.fromThreadId,
-        direction: 'sent',
-        initiator,
-        messageId: verdict.id,
-        peerThreadId: targetThreadId,
-        peerLabel: targetLabel,
-        text: input.text,
-        at,
-      })
-      this.publish({
-        type: 'peer.message',
-        threadId: targetThreadId,
-        direction: 'received',
-        initiator,
-        messageId: verdict.id,
-        peerThreadId: input.fromThreadId,
-        peerLabel: fromLabel,
-        text: input.text,
-        at,
-      })
-      // A message the user sent along a link is a human message on that edge.
-      if (linkVerdict.linked || (initiator === 'user' && this.peerLinks.renew(fromRoot, targetRoot, at))) {
-        this.announcePeerLinks([fromRoot, targetRoot])
-      }
-      if (initiator === 'user' && input.undeliveredId) {
-        this.markUndeliveredSent(input.fromThreadId, input.undeliveredId, { targetRoot, text: input.text, fromLabel })
-      }
-      return { id: verdict.id }
     } finally {
       releasePreparation()
     }
@@ -1430,6 +1618,9 @@ export class ProviderRegistry implements PeerToolHost {
     } else if (close.kind === 'withdrawn') {
       outcome = 'withdrawn'
       text = `You withdrew ${what}. Nothing was sent.`
+    } else if (close.kind === 'expired') {
+      outcome = 'expired'
+      text = `Nobody answered the card for ${what} within 7 days, so it closed and nothing was sent.`
     } else {
       outcome = 'stopped'
       text = `The chat was stopped before the user answered, so ${what} was not sent.`
@@ -1889,7 +2080,14 @@ export class ProviderRegistry implements PeerToolHost {
       const boundary = this.executionRoot?.onTurnBoundary(event.threadId)
       // A relocation queued for this boundary held any result answered meanwhile.
       if (boundary) void boundary.finally(() => this.flushHeldApprovalResultsLater(event.threadId))
-      void this.driftHook((watcher, cwd) => watcher.onTurnCompleted(event.threadId, cwd), event.threadId)
+      // A held message that met a busy target goes out once its turn ends, while the link is live.
+      if (this.heldPeerMessages.size > 0) {
+        const doneRoot = resolveRootThreadId(event.threadId)
+        const now = Date.now()
+        this.deliverHeldPeerMessages(
+          (m) => m.targetRoot === doneRoot && this.peerLinks.isLive(m.fromRoot, doneRoot, now),
+        )
+      }
     }
   }
 
@@ -2817,6 +3015,11 @@ export class ProviderRegistry implements PeerToolHost {
             this.flushHeldApprovalResultsLater(opts.threadId)
             this.limitResumer?.onSessionStarted(opts.threadId)
           }
+          // Messages held for this chat while its link was out of time: it runs again.
+          if (this.heldPeerMessages.size > 0) {
+            const startedRoot = resolveRootThreadId(opts.threadId)
+            this.deliverHeldPeerMessages((m) => m.targetRoot === startedRoot)
+          }
           resolveStart(session)
           return session
         } catch (err) {
@@ -3466,6 +3669,7 @@ export function notifyWorktreeSwap(threadId: string, cwd: string | null): void {
 /** An archived conversation loses its session links (ipc/app.ts's archive handler). */
 export function notifyConversationArchived(conversationId: string): void {
   activeRegistry?.dropPeerLinks(conversationId)
+  activeRegistry?.releaseHeldPeerMessages(conversationId)
   activeRegistry?.closeAgentCards(conversationId)
   activeRegistry?.limitResumer?.disarm(conversationId, 'archive')
 }

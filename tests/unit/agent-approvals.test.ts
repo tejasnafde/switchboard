@@ -5,6 +5,8 @@ import type { RuntimeEvent } from '../../src/shared/provider-events'
 import type { HostWriteCard, HostWriteResponse } from '../../src/shared/agent-host-writes'
 import { HOST_WRITE_SHOWN_REQUIRED, hostWriteShownDigest } from '../../src/shared/host-write-phone'
 import {
+  AGENT_CARD_LIFETIME_TEXT,
+  AGENT_CARD_MAX_AGE_MS,
   memoryApprovalCardStore,
   type ApprovalCardClose,
   type ApprovalCardStore,
@@ -300,6 +302,41 @@ describe('a card that does not hold the turn', () => {
     expect(b.pendingEvents('t2')).toHaveLength(1)
   })
 
+  it('says on the card how long it waits', () => {
+    const { b, opened } = tracked()
+    b.open({ threadId: 't1', chatId: 't1', toolName: 'x', detail: 'd', plan: PLAN })
+    expect(opened().detail).toBe(`d\n\n${AGENT_CARD_LIFETIME_TEXT}`)
+    expect(AGENT_CARD_LIFETIME_TEXT).toContain('until you answer it or the chat ends, for at most 7 days')
+  })
+
+  it('keeps an unanswered card for days, and closes it unsent once it is 7 days old', () => {
+    const store = memoryApprovalCardStore<AgentWritePlan>()
+    const now = Date.now()
+    const stored = (requestId: string, age: number) => ({
+      requestId,
+      chatId: 't1',
+      threadId: 't1',
+      toolName: 'x',
+      detail: 'd',
+      hostWrite: null,
+      plan: PLAN,
+      openedAt: now - age,
+    })
+    store.putCard(stored('sbmcp_old', AGENT_CARD_MAX_AGE_MS + 1))
+    store.putCard(stored('sbmcp_six_days', AGENT_CARD_MAX_AGE_MS - 24 * 60 * 60_000))
+    const { b, closed, events } = tracked(store)
+    expect(b.pendingEvents('t1').map((e) => e.requestId)).toEqual(['sbmcp_six_days'])
+    expect(closed).toEqual([
+      { card: expect.objectContaining({ requestId: 'sbmcp_old' }), close: { kind: 'expired' }, response: {} },
+    ])
+    expect(events).toContainEqual({ type: 'request.closed', threadId: 't1', requestId: 'sbmcp_old', decision: 'deny' })
+    expect(b.respond('t1', 'sbmcp_old', 'approve', {}, DESKTOP)).toEqual({
+      ok: false,
+      message: 'That request is no longer open.',
+    })
+    expect(store.loadCards().map((c) => c.requestId)).toEqual(['sbmcp_six_days'])
+  })
+
   it('caps the open cards of one chat, and frees a slot when one closes', () => {
     const { b } = tracked()
     for (let i = 0; i < 20; i++) b.open({ threadId: 't1', chatId: 't1', toolName: 'x', detail: 'd', plan: PLAN })
@@ -332,7 +369,7 @@ describe('a card that does not hold the turn', () => {
         requestId: opened.requestId,
         requestType: 'tool',
         toolName: 'x',
-        detail: 'd',
+        detail: `d\n\n${AGENT_CARD_LIFETIME_TEXT}`,
         hostWrite: card,
       },
     ])

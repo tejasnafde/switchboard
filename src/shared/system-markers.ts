@@ -38,6 +38,8 @@ export function rotationMarkerText(marker: RotationMarker): string {
 
 /** Why a link refused the message, in plain words. */
 export function peerUndeliveredReasonText(row: PeerUndelivered): string {
+  if (row.held)
+    return `The link's time ran out. Switchboard delivers it when the link is renewed or ${row.toLabel} next starts.`
   switch (row.reason) {
     case 'link-expired':
       return "The link's time ran out."

@@ -145,6 +145,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
         reason: event.reason,
         text: event.text,
         sent: event.sent,
+        ...(event.held ? { held: true } : {}),
       })
       const exists = useAgentStore
         .getState()

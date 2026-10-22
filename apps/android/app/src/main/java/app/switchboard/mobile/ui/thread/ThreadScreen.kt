@@ -2219,6 +2219,7 @@ private fun ApprovalRow(
                 is ApprovalActions.DenyOnly -> Text("Approve this on the desktop. You can deny it here.", color = TextDim)
                 is ApprovalActions.HostWrite -> {
                     Text(if (approvable) "Posts as shown. Edit on the desktop." else "Show the full draft to approve it.", color = TextDim)
+                    Text(HostWriteCards.LIFETIME_TEXT, color = TextDim)
                     actions.buttons.forEach { button ->
                         button.problem?.let { Text("${button.label}: $it", color = TextDim) }
                     }
@@ -2629,7 +2630,7 @@ private fun UndeliveredRow(row: ThreadRowPresentation.Undelivered, sending: Bool
     CardContainer(tint = TextDim) {
         Text(SystemMarkers.undeliveredHeading(message), fontWeight = FontWeight.SemiBold)
         if (!message.sent) {
-            Text(SystemMarkers.reasonText(message.reason), color = TextDim, style = MaterialTheme.typography.bodySmall)
+            Text(SystemMarkers.reasonText(message), color = TextDim, style = MaterialTheme.typography.bodySmall)
         }
         Text(
             message.text,

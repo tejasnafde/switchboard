@@ -256,6 +256,8 @@ export interface RuntimePeerUndeliveredEvent {
   reason: PeerLinkRefusal
   text: string
   sent: boolean
+  /** Held for delivery later rather than refused (`PeerUndelivered.held`). Absent means false. */
+  held?: boolean
   /** The first refusal since the link ran out: worth a notification. Later ones are not. */
   notify: boolean
   at: number

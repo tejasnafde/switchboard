@@ -11,6 +11,7 @@
 import { createMainLogger as createLogger } from '../logger'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { ProviderKind } from './types'
+import { heldPeerMessageText } from '@shared/peer-held-messages'
 
 const log = createLogger('provider:peer-tools')
 
@@ -56,9 +57,11 @@ export const PEER_SEND_TOOL_DESCRIPTION = [
   `The exception is a session the user linked with this one (\`linked: true\` in ${PEER_LIST_TOOL_NAME}):`,
   'there the user has asked the two of you to work together, so you may reply to its messages and it',
   'may reply to yours, each reply arriving as a new message in the other transcript. A link has its',
-  'own message and time budget. When it runs out a send is refused and NOT delivered: keep working',
-  'on your own task, and put what you meant to send in your final reply to the user. A link never',
-  'extends to sessions it does not name, and you cannot create or extend one.',
+  'own message and time budget. When its time is up a send is held, not lost: Switchboard delivers it',
+  'when the user renews the link or the other session next starts, so do not send it again. When its',
+  'message budget is spent a send is refused and NOT delivered: keep working on your own task, and put',
+  'what you meant to send in your final reply to the user. A link never extends to sessions it does',
+  'not name, and you cannot create or extend one.',
 ].join('\n')
 
 /** One other open session, as the model is shown it. */
@@ -82,7 +85,8 @@ export interface PeerToolHost {
   listPeerSessions(fromThreadId: string): PeerSessionSummary[]
   /** Whether the user linked the two sessions (`shared/peer-links.ts`). */
   isLinkedPeer(fromThreadId: string, sessionId: string): boolean
-  deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string }>
+  /** `held`: the link's time was up, so the message waits to be delivered later. */
+  deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string; held?: true }>
 }
 
 /**
@@ -150,13 +154,21 @@ export function createPeerToolHandlers(host: PeerToolHost, fromThreadId: string)
       }
 
       try {
-        const { id } = await host.deliverPeerMessage({
+        const { id, held } = await host.deliverPeerMessage({
           fromThreadId,
           targetThreadId: sessionId,
           text: message,
           initiator: 'agent',
           ...(args.requireLink ? { requireLink: true } : {}),
         })
+        if (held) {
+          log.info(`agent-initiated peer send ${id} held: ${fromThreadId} -> ${sessionId}`)
+          return say(
+            heldPeerMessageText(
+              host.listPeerSessions(fromThreadId).find((s) => s.sessionId === sessionId)?.title ?? sessionId,
+            ),
+          )
+        }
         log.info(`agent-initiated peer send ${id}: ${fromThreadId} -> ${sessionId}`)
         if (host.isLinkedPeer(fromThreadId, sessionId)) {
           return say(

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import type { ChatMessage } from '@shared/types'
 import { hostWriteTitle, type HostWriteResponse } from '@shared/agent-host-writes'
+import { AGENT_CARD_LIFETIME_TEXT } from '@shared/agent-approval-cards'
 import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
 import { openExternal } from '../reviews/review-ui'
@@ -224,7 +225,7 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
         >
           {/* Shares the row when there is room, takes its own line in a narrow chat. */}
           <span className="mr-auto min-w-0 flex-[1_1_14rem] text-[11px] text-[var(--text-muted)]">
-            {card.agentLabel} asked for this and carried on. It hears what you choose.
+            {card.agentLabel} asked for this and carried on. It hears what you choose. {AGENT_CARD_LIFETIME_TEXT}
           </span>
           <label
             className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[var(--text-secondary)]"

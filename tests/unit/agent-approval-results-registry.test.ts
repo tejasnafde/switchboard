@@ -64,6 +64,7 @@ import type { AgentApprovalBroker, AgentWritePlan } from '../../src/main/mcp/age
 import type { BackendHost } from '../../src/main/backend/host'
 import { ProviderChannels } from '../../src/shared/ipc-channels'
 import {
+  AGENT_CARD_MAX_AGE_MS,
   APPROVAL_RESULT_TAG,
   memoryApprovalCardStore,
   parseApprovalResultMarker,
@@ -392,6 +393,24 @@ describe('a chat that is not running, and a restart', () => {
     await resultPublished(after.host, id)
     expect(after.adapter.turns.filter((t) => t.threadId === 'w1')).toHaveLength(1)
     expect(after.resultTurns('hub')).toHaveLength(1)
+  })
+  it('expires a stored card past the cap when the next backend starts', async () => {
+    const store = memoryApprovalCardStore<AgentWritePlan>()
+    const before = setup(store)
+    await before.start('hub', 'w1')
+    const id = before.openCard('hub', 'w1')
+    await before.registry.stopAll()
+
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + AGENT_CARD_MAX_AGE_MS + 1)
+    try {
+      const after = setup(store)
+      await until(() =>
+        expect(after.rows('hub')).toEqual([expect.objectContaining({ requestId: id, outcome: 'expired' })]),
+      )
+      expect(store.loadCards()).toEqual([])
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 })
 
