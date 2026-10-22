@@ -637,6 +637,7 @@ object ThreadStoreReducer {
                     reason = str("reason") ?: return null,
                     text = str("text") ?: return null,
                     sent = (raw.values["sent"] as? JsonBoolean)?.value == true,
+                    held = (raw.values["held"] as? JsonBoolean)?.value == true,
                 ),
             )
             else -> null

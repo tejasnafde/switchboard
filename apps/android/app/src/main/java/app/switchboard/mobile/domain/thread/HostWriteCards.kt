@@ -76,6 +76,9 @@ object HostWriteCards {
     /** The backend takes a chat-scoped device's approval of these cards. */
     const val PHONE_APPROVAL_CAPABILITY = "agent_host_write_phone_approval_v1"
 
+    /** `AGENT_CARD_LIFETIME_TEXT` in src/shared/agent-approval-cards.ts. */
+    const val LIFETIME_TEXT = "This card stays open until you answer it or the chat ends, for at most 7 days."
+
     /**
      * Port of `AGENT_ASYNC_APPROVAL_CAPABILITY`: the backend's cards no longer
      * expire, their answer reaches the agent as a later turn, and a response may

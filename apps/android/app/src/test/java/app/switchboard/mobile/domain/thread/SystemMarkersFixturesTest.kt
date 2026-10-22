@@ -27,6 +27,8 @@ class SystemMarkersFixturesTest {
     fun aLiveEventMarkerReadsBack() {
         val row = PeerUndelivered("agent_2", "Docs \"x\"", "link-removed", "line 1\nline 2", sent = true)
         assertEquals(SystemRowView.Undelivered(row), SystemMarkers.view(SystemMarkers.undeliveredMarker(row)))
+        val held = row.copy(reason = "link-expired", sent = false, held = true)
+        assertEquals(SystemRowView.Undelivered(held), SystemMarkers.view(SystemMarkers.undeliveredMarker(held)))
     }
 
     private fun expected(value: JsonObject): SystemRowView = when (value.str("kind")) {
@@ -36,6 +38,7 @@ class SystemMarkersFixturesTest {
                 PeerUndelivered(
                     row.str("to"), row.str("toLabel"), row.str("reason"), row.str("text"),
                     (row.values.getValue("sent") as JsonBoolean).value,
+                    (row.values["held"] as? JsonBoolean)?.value == true,
                 ),
             )
         }

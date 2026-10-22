@@ -3,10 +3,11 @@
  *
  * An agent asks for a write through the Switchboard MCP server (a pull request
  * write or a peer message); the tool answers at once that the write is queued
- * for the user, and the card stays open with no time limit, on every client,
- * after the agent's turn ends and across a backend restart. It closes once:
- * approved, approved quietly, denied, dismissed, withdrawn by the agent, or
- * closed because the user stopped or archived the chat. Only an approval runs
+ * for the user, and the card stays open on every client, after the agent's
+ * turn ends and across a backend restart, until the chat ends. It closes
+ * once: approved, approved quietly, denied, dismissed, withdrawn by the agent,
+ * closed because the user stopped or archived the chat, or, as a safety cap,
+ * closed after `AGENT_CARD_MAX_AGE_MS` without an answer. Only an approval runs
  * the write, with every check after the card that ran before.
  *
  * What happened is recorded twice: a system row in the chat for the user
@@ -36,6 +37,12 @@ export function isAgentApprovalCardId(requestId: unknown): boolean {
   return typeof requestId === 'string' && requestId.startsWith(AGENT_APPROVAL_ID_PREFIX)
 }
 
+/** A card nobody answered closes after this long, so a forgotten write does not run weeks later. */
+export const AGENT_CARD_MAX_AGE_MS = 7 * 24 * 60 * 60_000
+
+/** The card says how long it waits; the safety cap is the only time limit it has. */
+export const AGENT_CARD_LIFETIME_TEXT = 'This card stays open until you answer it or the chat ends, for at most 7 days.'
+
 /** Open cards one chat may hold. Past it a new ask is refused, so an agent cannot flood the chat. */
 export const AGENT_OPEN_CARD_CAP = 20
 
@@ -50,6 +57,7 @@ export type ApprovalCardClose =
   | { kind: 'deny'; wake: boolean }
   | { kind: 'withdrawn' }
   | { kind: 'stopped' }
+  | { kind: 'expired' }
 
 /**
  * The user's answer. A quiet approve runs the write without waking the agent;
@@ -161,6 +169,11 @@ export class ApprovalCardBook<Plan = unknown> {
     return [...this.cards.values()]
   }
 
+  /** Cards opened `maxAgeMs` or more before `nowMs`. */
+  olderThan(nowMs: number, maxAgeMs = AGENT_CARD_MAX_AGE_MS): StoredApprovalCard<Plan>[] {
+    return this.all().filter((c) => nowMs - c.openedAt >= maxAgeMs)
+  }
+
   take(requestId: string): StoredApprovalCard<Plan> | null {
     const card = this.cards.get(requestId)
     if (!card) return null
@@ -219,7 +232,7 @@ export function approvalResultTurn(input: { requestId: string; toolName: string;
   ].join('\n')
 }
 
-export type ApprovalResultOutcome = 'done' | 'failed' | 'declined' | 'dismissed' | 'withdrawn' | 'stopped'
+export type ApprovalResultOutcome = 'done' | 'failed' | 'declined' | 'dismissed' | 'withdrawn' | 'stopped' | 'expired'
 
 /** The chat's system row about one card. */
 export interface ApprovalResultRow {
@@ -237,7 +250,15 @@ export function formatApprovalResultMarker(row: ApprovalResultRow): string {
   return `${APPROVAL_RESULT_MARKER_PREFIX} ${JSON.stringify(row)}`
 }
 
-const OUTCOMES: readonly ApprovalResultOutcome[] = ['done', 'failed', 'declined', 'dismissed', 'withdrawn', 'stopped']
+const OUTCOMES: readonly ApprovalResultOutcome[] = [
+  'done',
+  'failed',
+  'declined',
+  'dismissed',
+  'withdrawn',
+  'stopped',
+  'expired',
+]
 const DELIVERIES: readonly ApprovalResultDelivery[] = ['none', 'turn', 'queue', 'hold']
 
 export function parseApprovalResultMarker(content: string): ApprovalResultRow | null {
@@ -269,6 +290,7 @@ const OUTCOME_LABEL: Record<ApprovalResultOutcome, string> = {
   dismissed: 'Dismissed',
   withdrawn: 'Withdrawn by the agent',
   stopped: 'Closed with the session',
+  expired: 'Closed after 7 days without an answer',
 }
 
 const DELIVERY_LABEL: Record<ApprovalResultDelivery, string> = {

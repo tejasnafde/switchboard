@@ -11,9 +11,11 @@
  * the user types in either session renews both; Extend adds messages and
  * restarts the window. Each edge keeps its own window length for both.
  *
- * Running out never loses work: the refused message is handed back to the
- * model to report, and stored in the sender's chat (`PEER_UNDELIVERED_MARKER_PREFIX`)
- * for the user to send by hand.
+ * Running out never loses work. A message refused for time is held and
+ * delivered once the link is renewed or the target next starts
+ * (`peer-held-messages.ts`); one refused for budget is handed back to the
+ * model to report. Both are stored in the sender's chat
+ * (`PEER_UNDELIVERED_MARKER_PREFIX`) for the user to send by hand.
  *
  * Only the user links. `link` refuses an agent initiator, and no tool reaches
  * it; the IPC handler forces `'user'` the same way `/send-to` does.
@@ -325,6 +327,12 @@ export class PeerLinkBook {
     return this.edges.get(edgeKey(a, b))?.id ?? null
   }
 
+  /** Linked, and the edge's window has not run out. */
+  isLive(a: string, b: string, nowMs: number): boolean {
+    const edge = this.edges.get(edgeKey(a, b))
+    return !!edge && nowMs - edge.since < edge.windowMs
+  }
+
   /**
    * The user typed in `id`: renew every edge it is on. Returns the peers whose
    * edge was renewed, so the caller knows whom to tell.
@@ -402,8 +410,10 @@ export interface PeerUndelivered {
   toLabel: string
   reason: PeerLinkRefusal
   text: string
-  /** The user has since sent it by hand. */
+  /** The user has since sent it by hand, or (when `held`) Switchboard delivered it. */
   sent: boolean
+  /** The link's time ran out and Switchboard delivers it on its own later (`peer-held-messages.ts`). Absent means false. */
+  held?: boolean
 }
 
 /** One id per (sender, target, text), so a model retrying the same refused send stores it once. */
@@ -423,7 +433,14 @@ export function parseUndeliveredMarker(content: string): PeerUndelivered | null 
     const r = raw as Record<string, unknown>
     if (typeof r.to !== 'string' || typeof r.toLabel !== 'string' || typeof r.text !== 'string') return null
     if (r.reason !== 'link-budget' && r.reason !== 'link-expired' && r.reason !== 'link-removed') return null
-    return { to: r.to, toLabel: r.toLabel, reason: r.reason, text: r.text, sent: r.sent === true }
+    return {
+      to: r.to,
+      toLabel: r.toLabel,
+      reason: r.reason,
+      text: r.text,
+      sent: r.sent === true,
+      ...(r.held === true ? { held: true } : {}),
+    }
   } catch {
     // A hand-edited or truncated row: show it as an ordinary system message.
     return null
@@ -437,6 +454,11 @@ export function peerLinkSpentText(fromLabel: string, toLabel: string): string {
 
 /** The row's heading. */
 export function peerUndeliveredHeading(undelivered: PeerUndelivered): string {
+  if (undelivered.held) {
+    return undelivered.sent
+      ? `Delivered to ${undelivered.toLabel} after the link ran out`
+      : `Held for ${undelivered.toLabel} until the link is renewed`
+  }
   if (undelivered.sent) return `Sent by you to ${undelivered.toLabel} after the link ran out`
   const why =
     undelivered.reason === 'link-expired'

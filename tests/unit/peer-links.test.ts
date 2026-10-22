@@ -387,6 +387,14 @@ describe('undelivered marker', () => {
     expect(peerUndeliveredHeading({ ...row, sent: true })).toMatch(/^Sent by you/)
   })
 
+  it('says a held message waits for a renewed link, and that Switchboard delivered it', () => {
+    const held = { ...row, reason: 'link-expired' as const, held: true }
+    expect(peerUndeliveredHeading(held)).toBe('Held for Worker A until the link is renewed')
+    expect(peerUndeliveredHeading({ ...held, sent: true })).toBe('Delivered to Worker A after the link ran out')
+    expect(parseUndeliveredMarker(formatUndeliveredMarker(held))).toEqual(held)
+    expect(parseUndeliveredMarker(formatUndeliveredMarker(row))).not.toHaveProperty('held')
+  })
+
   it('names both sessions in the notification', () => {
     expect(peerLinkSpentText('Lead', 'Worker A')).toMatch(/"Lead" and "Worker A"/)
   })

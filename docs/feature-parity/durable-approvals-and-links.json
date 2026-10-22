@@ -1,0 +1,77 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "durable-approvals-and-links",
+  "summary": "Agent work no longer lapses while the user is away. (1) An approval card from the Switchboard MCP server waits until the user answers it or the chat ends, with one safety cap: a card unanswered for 7 days (AGENT_CARD_MAX_AGE_MS) closes unsent, with the new approval result outcome 'expired', and the agent is not woken. Every card says so (AGENT_CARD_LIFETIME_TEXT): in the plain-text detail, and as a line on the desktop, Expo and Android host-write cards. (2) An agent message along a session link whose time ran out is held, not refused: the backend stores it (peer_held_messages), shows it in the sender's chat as a Not delivered row with held: true ('Held for X until the link is renewed', Send now still works), tells the agent it is held and not to send it again, and delivers it when the link is renewed (a message typed in either chat, Send along it, /link again, Extend) or the target chat's session next starts; it is retried after the target's turn ends while the link is live. At most 3 wait per sender and target; more is refused as before. An unlink or an archive releases the holds into ordinary Not delivered rows, and a hand Send drops the hold. The row then reads 'Delivered to X after the link ran out'. A hand Send drops the hold. A spent message budget still refuses, as before.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/HostWriteApprovalCard.tsx",
+        "src/renderer/components/chat/PeerUndeliveredRow.tsx",
+        "src/renderer/components/chat/provider-event-reducer.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/stores/chat.ts",
+        "src/shared/system-markers.ts",
+        "src/shared/peer-links.ts",
+        "src/shared/agent-approval-cards.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/SystemMarkers.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/HostWriteCards.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/SystemMarkersFixturesTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/peer-held-messages.ts",
+        "src/shared/peer-links.ts",
+        "src/shared/provider-events.ts",
+        "src/shared/agent-approval-cards.ts",
+        "src/main/mcp/agent-approvals.ts",
+        "src/main/provider/peer-tools.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/peer-links-registry-ws.test.ts",
+        "tests/unit/agent-approvals.test.ts",
+        "tests/unit/peer-links.test.ts",
+        "tests/fixtures/system-marker-cases.json"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": ["src/main/db/peer-held-messages.ts", "src/main/db/database.ts", "tests/unit/peer-held-messages-sqlite.test.ts"]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, native module or update channel change. Wire changes are additive: an optional held flag on peer.undelivered and in the Not delivered row's JSON, and a new approval result outcome 'expired'. An older desktop or Expo build ignores held and shows a held row as an ordinary Not delivered row whose Send still works; an older Android build does the same. An older client shows an expired result row as the neutral Switchboard notice. The new table is created with CREATE TABLE IF NOT EXISTS, so a downgrade leaves it unread."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/peer-links-registry-ws.test.ts (real registry over the wire): a send after the link's time is held, not an error, tells the agent not to send again and stores a held row; a message typed in either chat delivers it once and marks the row delivered; restarting the target delivers it with the link gone; a hand Send delivers it once and drops the hold; a fourth held message is refused and a renewal delivers only three; an unlink turns the row into a plain Not delivered row and a restart then sends nothing; a spent budget still refuses.",
+      "tests/unit/agent-approvals.test.ts: the card detail carries the lifetime text; a card 7 days old closes as expired, unsent, and can no longer be answered, while a 6-day-old one stays open across a restart.",
+      "tests/unit/peer-links.test.ts and tests/fixtures/system-marker-cases.json: held headings, the held flag round trip, and the expired result label.",
+      "tests/unit/peer-held-messages-sqlite.test.ts: the store keeps a held message across a reopen until it is removed.",
+      "Android unit tests SystemMarkersFixturesTest, ThreadStoreReducerTest and ThreadPresentationTest run against the same fixture.",
+      "Each new test failed against the code before the change.",
+      "npm run typecheck and npm test green."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run with live agents over a real link that ran out; the registry test uses a recording adapter and a fake clock.",
+      "The new card line and the held row were not seen in the running desktop, Expo or Android app, and no visual baseline was refreshed.",
+      "Provider-native approvals (a Claude or Codex tool permission) still end when the provider session errors, stops or restarts: the provider can no longer take the answer, so they are not part of this change."
+    ]
+  }
+}

@@ -14,6 +14,8 @@ data class PeerUndelivered(
     val reason: String,
     val text: String,
     val sent: Boolean,
+    /** The link's time ran out and the backend delivers it on its own later. */
+    val held: Boolean = false,
 )
 
 sealed interface SystemRowView {
@@ -66,6 +68,7 @@ object SystemMarkers {
         "dismissed" to "Dismissed",
         "withdrawn" to "Withdrawn by the agent",
         "stopped" to "Closed with the session",
+        "expired" to "Closed after 7 days without an answer",
     )
     private val DELIVERY_LABELS = mapOf(
         "none" to "",
@@ -97,14 +100,25 @@ object SystemMarkers {
         return SystemRowView.Notice(UNKNOWN_TITLE, content)
     }
 
+    fun reasonText(row: PeerUndelivered): String =
+        if (row.held) {
+            "The link's time ran out. Switchboard delivers it when the link is renewed or ${row.toLabel} next starts."
+        } else {
+            reasonText(row.reason)
+        }
+
     fun reasonText(reason: String): String = when (reason) {
         "link-expired" -> "The link's time ran out."
         "link-removed" -> "The link was removed before it was sent."
         else -> "The link's message budget was spent."
     }
 
-    fun undeliveredHeading(row: PeerUndelivered): String =
-        if (row.sent) "Sent by you to ${row.toLabel} after the link ran out" else "Not delivered to ${row.toLabel}"
+    fun undeliveredHeading(row: PeerUndelivered): String = when {
+        row.held && row.sent -> "Delivered to ${row.toLabel} after the link ran out"
+        row.held -> "Held for ${row.toLabel} until the link is renewed"
+        row.sent -> "Sent by you to ${row.toLabel} after the link ran out"
+        else -> "Not delivered to ${row.toLabel}"
+    }
 
     /** The stored row for a live `peer.undelivered` event, so it renders like the history row. */
     fun undeliveredMarker(row: PeerUndelivered): String = "$UNDELIVERED_PREFIX " + JsonCodec.encode(
@@ -115,7 +129,7 @@ object SystemMarkers {
                 "reason" to JsonString(row.reason),
                 "text" to JsonString(row.text),
                 "sent" to JsonBoolean(row.sent),
-            ),
+            ).apply { if (row.held) put("held", JsonBoolean(true)) },
         ),
     )
 
@@ -125,7 +139,14 @@ object SystemMarkers {
         val toLabel = raw.str("toLabel") ?: return null
         val text = raw.str("text") ?: return null
         val reason = raw.str("reason")?.takeIf { it in REASONS } ?: return null
-        return PeerUndelivered(to, toLabel, reason, text, (raw.values["sent"] as? JsonBoolean)?.value == true)
+        return PeerUndelivered(
+            to,
+            toLabel,
+            reason,
+            text,
+            sent = (raw.values["sent"] as? JsonBoolean)?.value == true,
+            held = (raw.values["held"] as? JsonBoolean)?.value == true,
+        )
     }
 
     private fun approvalResult(content: String): SystemRowView.Notice? {
