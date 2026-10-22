@@ -7,6 +7,7 @@
  * Held here rather than in a pane, so a pane that closes during the wait
  * does not lose them: whichever pane shows the chat next sends them.
  */
+import { useSyncExternalStore } from 'react'
 import type { UserMessagePillsMeta } from '@shared/provider-events'
 import { queuedTurnComposerText } from '@shared/queued-turns'
 import type { MessageImage } from '@shared/types'
@@ -46,7 +47,26 @@ export type HeldSendFn = (
 ) => Promise<HeldSendResult>
 
 const held = new Map<string, HeldSend[]>()
+const listeners = new Set<() => void>()
 let nextId = 0
+const NONE: readonly HeldSend[] = []
+
+/** Every change replaces the chat's array, so a reader can compare by identity. */
+function setHeld(sessionId: string, sends: HeldSend[]): void {
+  if (sends.length > 0) held.set(sessionId, sends)
+  else held.delete(sessionId)
+  for (const listener of listeners) listener()
+}
+
+/** The chat's held sends, for a view that shows them while the chat opens. */
+export function useHeldSends(sessionId: string | null): readonly HeldSend[] {
+  return useSyncExternalStore(subscribe, () => (sessionId ? (held.get(sessionId) ?? NONE) : NONE))
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
 
 /** A send must wait while its chat opens or while a switch or start is in flight. */
 export function sendMustWait(opening: boolean, wait: ChatWait | undefined): boolean {
@@ -63,7 +83,7 @@ export function holdSend(sessionId: string, send: Omit<HeldSend, 'messageId'>): 
   const messageId = `held_${Date.now()}_${++nextId}`
   const images = send.images?.map((image) => ({ file: image.file, previewUrl: URL.createObjectURL(image.file) }))
   const entry: HeldSend = { ...send, messageId, ...(images ? { images } : {}) }
-  held.set(sessionId, [...(held.get(sessionId) ?? []), entry])
+  setHeld(sessionId, [...(held.get(sessionId) ?? []), entry])
   showRow(sessionId, entry)
   return messageId
 }
@@ -102,7 +122,7 @@ function dropRow(sessionId: string, messageId: string): void {
 /** Remove every held send of the chat, rows and all. */
 function takeHeldSends(sessionId: string): HeldSend[] {
   const sends = held.get(sessionId) ?? []
-  held.delete(sessionId)
+  setHeld(sessionId, [])
   for (const send of sends) dropRow(sessionId, send.messageId)
   return sends
 }
@@ -152,8 +172,7 @@ export function cancelHeldSend(sessionId: string, messageId: string): boolean {
   const send = sends.find((candidate) => candidate.messageId === messageId)
   if (!send) return false
   const rest = sends.filter((candidate) => candidate !== send)
-  if (rest.length > 0) held.set(sessionId, rest)
-  else held.delete(sessionId)
+  setHeld(sessionId, rest)
   dropRow(sessionId, messageId)
   returnToComposer(sessionId, [send])
   return true
@@ -170,7 +189,7 @@ export function cancelHeldSends(sessionId: string): boolean {
 export function moveHeldSends(fromSessionId: string, toSessionId: string): void {
   const sends = takeHeldSends(fromSessionId)
   if (sends.length === 0) return
-  held.set(toSessionId, [...(held.get(toSessionId) ?? []), ...sends])
+  setHeld(toSessionId, [...(held.get(toSessionId) ?? []), ...sends])
   for (const send of sends) showRow(toSessionId, send)
 }
 
@@ -201,8 +220,7 @@ export async function settleHeldSends(
         return
       }
       const [next, ...rest] = held.get(sessionId) ?? []
-      if (rest.length > 0) held.set(sessionId, rest)
-      else held.delete(sessionId)
+      setHeld(sessionId, rest)
       dropRow(sessionId, next.messageId)
       let result: HeldSendResult
       try {

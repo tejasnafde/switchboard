@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "renderer-crash-reload",
-  "summary": "When the desktop window's renderer process crashes, runs out of memory or exits abnormally, reload the window automatically, at most 3 times per minute per window. After that, show a plain error page with a Reload button. Every renderer exit is logged with its reason.",
+  "summary": "When the desktop window's renderer process crashes, runs out of memory, exits abnormally or is killed (macOS reports a memory-pressure kill as killed), reload the window automatically, at most 3 times per minute per window. After that, show a plain error page with a Reload button. Every renderer exit is logged with its reason.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -35,7 +35,7 @@
   },
   "verification": {
     "automated": [
-      "tests/unit/renderer-crash-recovery.test.ts pins the sliding limit (3 per 60 s, freed as the oldest reload ages out), a reload for crashed, oom and abnormal-exit, no reload for clean-exit, killed, launch-failed and integrity-failure, a log line with the reason for every exit, the error page on the 4th crash, its Reload button running the app load, and a separate count per window."
+      "tests/unit/renderer-crash-recovery.test.ts pins the sliding limit (3 per 60 s, freed as the oldest reload ages out), a reload for crashed, oom, abnormal-exit and killed, no reload for clean-exit, launch-failed and integrity-failure or during a quit, a log line with the reason for every exit, the error page on the 4th crash, its Reload button running the app load, and a separate count per window."
     ],
     "hardware": [],
     "notExercised": [
