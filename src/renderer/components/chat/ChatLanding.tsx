@@ -31,11 +31,13 @@ import { Combobox, type ComboboxOption } from '../ui/combobox'
 import { ProjectFavicon } from '../sidebar/ProjectFavicon'
 import { RelativeTimeLabel } from '../sidebar/RelativeTimeLabel'
 import { ChatPanel } from './ChatPanel'
+import { OpenOnMachineDialog } from '../sidebar/OpenOnMachineDialog'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('chat:landing')
 
 const ADD_PROJECT = '\u0000add'
+const OPEN_ON_MACHINE = '\u0000open-on-machine'
 const optionValue = (t: LandingPick) => `${t.machineId}\u0000${t.projectPath}`
 
 function draftHasContent(id: string): boolean {
@@ -64,6 +66,7 @@ export function ChatLanding({
   const [picked, setPicked] = useState<LandingPick | null>(null)
   const [draftId, setDraftId] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [openOnMachine, setOpenOnMachine] = useState<ProjectTarget | null>(null)
   const [highlight, setHighlight] = useState<number | null>(null)
   const addButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -245,8 +248,11 @@ export function ChatLanding({
         keywords: [t.projectPath],
       })),
       { value: ADD_PROJECT, label: 'Add a project…' },
+      ...(selected && remotes.some((m) => m.id !== selected.machineId && connections[m.id] === 'connected')
+        ? [{ value: OPEN_ON_MACHINE, label: `Open ${selected.name} on another machine…` }]
+        : []),
     ],
-    [targets, withMachine],
+    [targets, withMachine, selected, remotes, connections],
   )
 
   const block = local === null ? null : landingSendBlock(selected, targets.length)
@@ -302,6 +308,10 @@ export function ChatLanding({
           void addProject()
           return
         }
+        if (value === OPEN_ON_MACHINE) {
+          if (selected) setOpenOnMachine(selected)
+          return
+        }
         const target = targets.find((t) => optionValue(t) === value)
         if (target) void choose(target)
       }}
@@ -312,6 +322,18 @@ export function ChatLanding({
 
   return (
     <div className="contents" onKeyDownCapture={onKeyDownCapture}>
+      {openOnMachine && (
+        <OpenOnMachineDialog
+          project={{
+            machineId: openOnMachine.machineId,
+            projectPath: openOnMachine.projectPath,
+            projectName: openOnMachine.name,
+          }}
+          onClose={() => setOpenOnMachine(null)}
+          // Stay on the new copy: the composer is ready while the clone runs, and a send waits for it.
+          onOpened={(machineId, projectPath) => setPicked({ machineId, projectPath })}
+        />
+      )}
       <ChatPanel
         chatSlot="primary"
         sessionIdOverride={liveDraftId}

@@ -490,6 +490,10 @@ const api = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     invokeOn: <T = any>(machineId: string, channel: string, ...args: unknown[]): Promise<T> =>
       router.invokeOn<T>(machineId, channel, ...args),
+    /** Whether a machine's backend announced a capability: false when it
+     *  did not, undefined before its handshake. The local backend has all. */
+    supportsCapability: (machineId: string, capability: string): boolean | undefined =>
+      machineId === 'local' ? true : remoteTransports.get(machineId)?.supportsCapability(capability),
     /** Register a connected remote's WS backend. Idempotent: a reconnect keeps
      *  its tunnel port, so a same-URL event on a still-alive transport keeps it
      *  (subscriptions survive the blip). A moved URL or a terminally-closed

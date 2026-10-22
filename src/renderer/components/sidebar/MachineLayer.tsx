@@ -18,6 +18,8 @@ import { syncedAgoLabel, cachedProjects } from './machine-snapshot'
 import { RelativeTimeLabel } from './RelativeTimeLabel'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { ProjectFavicon } from './ProjectFavicon'
+import { cloneKey, useProjectCloneStore } from '../../services/project-clone'
+import { cloneProgressText } from './OpenOnMachineDialog'
 import { AddRemoteProjectModal } from './AddRemoteProjectModal'
 import { confirm } from '../ui/confirm'
 import { useRenderCount } from '../../services/render-counter'
@@ -53,6 +55,7 @@ function SortableMachine({
  * keep the trimmed read-only snapshot list instead.
  */
 function RemoteProject({
+  machineId,
   project,
   collapsed,
   onToggle,
@@ -61,6 +64,7 @@ function RemoteProject({
   onNewChat,
   onContextMenu,
 }: {
+  machineId: string
   project: Project
   collapsed: boolean
   onToggle: () => void
@@ -72,6 +76,7 @@ function RemoteProject({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.path })
   // Scanner output is already newest-first; the local sidebar trusts it too.
   const sessions = project.sessions
+  const clone = useProjectCloneStore((s) => s.clones[cloneKey(machineId, project.path)])
   return (
     <div
       ref={setNodeRef}
@@ -145,6 +150,11 @@ function RemoteProject({
           </button>
         )}
       </div>
+      {clone && (clone.phase !== 'done' || clone.failedFiles.length > 0) && (
+        <div className="sidebar-machine-empty" role="status">
+          {cloneProgressText(clone)}
+        </div>
+      )}
       {!collapsed && (
         <div className="sidebar-threads">
           {sessions.map((s) => {
@@ -311,6 +321,7 @@ export function MachineLayer({
               {live.map((p) => (
                 <RemoteProject
                   key={p.path}
+                  machineId={node.id}
                   project={p}
                   collapsed={collapsedProjects.has(`${node.id}\0${p.path}`)}
                   onToggle={() => toggleProject(node.id, p.path)}

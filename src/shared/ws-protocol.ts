@@ -83,6 +83,10 @@ export const BACKEND_CAPABILITIES = [
    *  shared/device-identity). Phones send it regardless; an older backend
    *  drops it. */
   'device_identity_v1',
+  /** `project-clone:*`: clone a project from its git remote into the
+   *  backend's projects folder and take copied ignored files
+   *  (`PROJECT_CLONE_CAPABILITY` in shared/project-clone). */
+  'project_clone_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {
