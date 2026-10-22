@@ -1,5 +1,6 @@
 import { cn } from '../../lib/utils'
 import { useChatWaitStore } from '../../stores/chat-wait-store'
+import { isProjectCloning, waitForProjectClone } from '../../services/project-clone'
 import { cancelHeldSends, holdSend, sendMustWait, settleHeldSends, useHeldSends } from '../../services/held-sends'
 import { queuedTurnComposerText } from '@shared/queued-turns'
 import { QueuedTurnBar } from './QueuedTurnBar'
@@ -1030,6 +1031,11 @@ export function ChatPanel({
           useChatWaitStore.getState().begin(sessionId, `Starting ${agentLabel(agentType)}...`)
           try {
             const sessionForCwd = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
+            if (projectPath && isProjectCloning(sessionForCwd?.machineId ?? 'local', projectPath)) {
+              useChatWaitStore.getState().begin(sessionId, 'Waiting for the clone to finish...')
+              await waitForProjectClone(sessionForCwd?.machineId ?? 'local', projectPath)
+              useChatWaitStore.getState().begin(sessionId, `Starting ${agentLabel(agentType)}...`)
+            }
             const linkedCard = useKanbanStore.getState().findByConversationId(sessionId)
             const cwd = sessionForCwd?.worktreePath ?? linkedCard?.worktreePath ?? projectPath ?? '.'
             window.api.routing.bind(sessionId, sessionForCwd?.machineId ?? 'local')

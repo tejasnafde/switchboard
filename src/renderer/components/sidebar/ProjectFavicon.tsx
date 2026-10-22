@@ -15,6 +15,7 @@
  * URL roundtrip without ambiguity.
  */
 import { useState } from 'react'
+import { useProjectCloneStore } from '../../services/project-clone'
 
 interface Props {
   projectPath: string
@@ -40,9 +41,11 @@ function FolderFallback({ size }: { size: number }) {
 }
 
 export function ProjectFavicon({ projectPath, size = 14 }: Props) {
-  const [errored, setErrored] = useState(false)
-  const src = `sb-favicon://favicon?path=${encodeURIComponent(projectPath)}`
-  if (errored) {
+  // A clone that ends bumps the version, so a "no favicon" from the empty folder is tried again.
+  const version = useProjectCloneStore((s) => s.readyVersion[projectPath] ?? 0)
+  const [erroredAt, setErroredAt] = useState<number | null>(null)
+  const src = `sb-favicon://favicon?path=${encodeURIComponent(projectPath)}${version ? `&v=${version}` : ''}`
+  if (erroredAt === version) {
     return (
       <span className="sidebar-project-favicon" aria-hidden="true">
         <FolderFallback size={size} />
@@ -56,7 +59,7 @@ export function ProjectFavicon({ projectPath, size = 14 }: Props) {
         width={size}
         height={size}
         alt=""
-        onError={() => setErrored(true)}
+        onError={() => setErroredAt(version)}
         loading="eager"
         draggable={false}
       />

@@ -46,6 +46,7 @@ import { disposeSettingsFileSync, registerSettingsFileHandlers, settingsFileSync
 import { isSettingsFileKey } from '@shared/settings-file'
 import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
 import { registerFilesHandlers } from './ipc/files'
+import { registerProjectCloneHandlers } from './ipc/project-clone'
 import { ElectronIpcHost, type BackendHost } from './backend/host'
 import { MultiHost } from './backend/multi-host'
 import { createPairingCode, listSessionViews, renameSession, revokeSession } from './backend/device-sessions'
@@ -932,6 +933,7 @@ app.whenReady().then(() => {
   // Once, not per window: the handlers live on ipcMain and read the current window.
   registerSettingsFileHandlers({ getWindow: () => mainWindow, onSettingChanged })
   registerFilesHandlers(backendHost)
+  registerProjectCloneHandlers(backendHost)
   registerGitHandlers(backendHost)
   registerSttHandlers(backendHost)
   registerIdeHandlers(backendHost)
@@ -1018,6 +1020,7 @@ app.whenReady().then(() => {
       registerPushHandlers(reactivatedHost)
       registerAppDesktopHandlers(mainWindow)
       registerFilesHandlers(reactivatedHost)
+      registerProjectCloneHandlers(reactivatedHost)
       registerGitHandlers(reactivatedHost)
       registerSttHandlers(reactivatedHost)
       registerIdeHandlers(reactivatedHost)

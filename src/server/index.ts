@@ -21,6 +21,7 @@ import { registerPushHandlers } from '../main/ipc/push'
 import { attachPushNotifier } from '../main/push/registry'
 import { registerAppHandlers } from '../main/ipc/app'
 import { registerFilesHandlers } from '../main/ipc/files'
+import { registerProjectCloneHandlers } from '../main/ipc/project-clone'
 import { registerGitHandlers } from '../main/ipc/git'
 import { registerSttHandlers } from '../main/ipc/stt'
 import { registerKanbanHandlers } from '../main/ipc/kanban'
@@ -159,6 +160,7 @@ if (tcpServer) {
 
 registerPushHandlers(host)
 registerFilesHandlers(host)
+registerProjectCloneHandlers(host)
 registerGitHandlers(host)
 registerSttHandlers(host)
 registerProviderInstanceHandlers(host)
