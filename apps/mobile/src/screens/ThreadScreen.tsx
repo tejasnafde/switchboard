@@ -1479,8 +1479,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
     }
   }, [])
   const archive = () => {
-    if (archiving) return
-    if (!canArchive(thread.status, false)) {
+    if (archiving || loadLabel) return
+    // The confirm alert outlives the render that opened it: read the status now.
+    const status = useChatStore.getState().threads[key]?.status ?? thread.status
+    if (!canArchive(status, false)) {
       setArchiveError('Stop the current turn before archiving')
       return
     }
@@ -1501,7 +1503,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
           return
         }
         setSettingsOpen(false)
-        navigation.goBack()
+        if (navigation.isFocused()) navigation.goBack()
       },
       (err: unknown) => {
         log.warn('archive failed', err)
@@ -1701,7 +1703,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         gitContext={gitContext}
         archiving={archiving}
         archiveError={archiveError}
-        archiveEnabled={canArchive(thread.status, archiving)}
+        archiveEnabled={!loadLabel && canArchive(thread.status, archiving)}
         onMode={setMode}
         onOpenModel={() => openFromSettings('model')}
         onOpenProfile={() => openFromSettings('profile')}

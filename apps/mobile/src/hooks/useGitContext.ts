@@ -15,10 +15,15 @@ import {
 export function useGitContext(connectionId: string, cwd: string): { state: GitContextState; refresh: () => void } {
   const [state, setState] = useState(INITIAL_GIT_CONTEXT)
   const request = useRef(0)
+  const checkout = useRef('')
 
   const refresh = useCallback(() => {
     const token = ++request.current
-    setState(gitContextLoading)
+    // A retry keeps the last branch; another checkout must not show it.
+    const target = `${connectionId}\n${cwd}`
+    const same = checkout.current === target
+    checkout.current = target
+    setState((s) => gitContextLoading(same ? s : INITIAL_GIT_CONTEXT))
     const client = getClient(connectionId)
     if (!client) {
       setState((s) => gitContextFailed(s, 'Machine is not ready. Retry branch lookup.'))
