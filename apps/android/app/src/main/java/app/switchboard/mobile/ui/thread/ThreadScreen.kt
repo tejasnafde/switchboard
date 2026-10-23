@@ -129,6 +129,8 @@ import app.switchboard.mobile.domain.thread.AgentDigest
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWritePreview
+import app.switchboard.mobile.domain.thread.LimitResume
+import app.switchboard.mobile.domain.thread.LimitState
 import app.switchboard.mobile.domain.thread.MergeBackRow
 import app.switchboard.mobile.domain.thread.PrLink
 import app.switchboard.mobile.domain.thread.PrLinkRef
@@ -143,6 +145,7 @@ import app.switchboard.mobile.domain.remote.ForkLineageMetadata
 import app.switchboard.mobile.data.thread.MergeBackSheet
 import app.switchboard.mobile.data.thread.MergeBackSheetMode
 import app.switchboard.mobile.data.thread.MergeBackSheetPhase
+import app.switchboard.mobile.data.thread.ThreadLimitResumeState
 import app.switchboard.mobile.data.thread.ThreadMergeBackState
 import app.switchboard.mobile.data.thread.ThreadPendingActions
 import app.switchboard.mobile.data.thread.ThreadArchiveState
@@ -157,6 +160,7 @@ import app.switchboard.mobile.ui.theme.Red
 import app.switchboard.mobile.ui.theme.Surface
 import app.switchboard.mobile.ui.theme.SurfaceRaised
 import app.switchboard.mobile.ui.theme.TextDim
+import app.switchboard.mobile.ui.theme.TextPrimary
 import app.switchboard.mobile.ui.theme.TextFaint
 import app.switchboard.mobile.ui.theme.Violet
 import app.switchboard.mobile.ui.components.InlineStatus
@@ -179,6 +183,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -232,6 +237,9 @@ fun ThreadScreen(
     onMergeBackSubmit: () -> Unit = {},
     onMergeBackClose: () -> Unit = {},
     onDiscardMergeBack: (id: String) -> Unit = {},
+    limitResume: ThreadLimitResumeState = ThreadLimitResumeState(),
+    onResumeLimitNow: () -> Unit = {},
+    onCancelLimitResume: () -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
@@ -411,6 +419,7 @@ fun ThreadScreen(
                     onSendBack = onOpenMergeBackSend.takeIf { mergeBack.available },
                 )
             }
+            LimitResumeRow(limitResume, onResumeNow = onResumeLimitNow, onCancel = onCancelLimitResume)
             Box(modifier = Modifier.weight(1f)) {
             when (presentation) {
                 ThreadPresentation.Loading -> FullPageLoading()
@@ -578,6 +587,53 @@ private fun ForkLineageBanner(metadata: ForkLineageMetadata, onSendBack: (() -> 
     }
 }
 
+/**
+ * The Limited row (flag `limit_auto_resume`): "Usage limit. Resumes 15:40."
+ * over what happens next, with Resume now and Cancel auto-resume while a
+ * resume is armed. The same row as the desktop and the Expo app.
+ */
+@Composable
+private fun LimitResumeRow(row: ThreadLimitResumeState, onResumeNow: () -> Unit, onCancel: () -> Unit) {
+    // Follows the phone's 24-hour setting, not only the locale.
+    val context = LocalContext.current
+    val timeFormat = remember(context) { android.text.format.DateFormat.getTimeFormat(context) }
+    val title = LimitResume.text(row.state) { timeFormat.format(Date(it)) } ?: return
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Surface)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .testTag(ThreadTestTags.LIMIT_RESUME_ROW),
+    ) {
+        Column(Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }) {
+            Text(text = title, color = TextPrimary, style = MaterialTheme.typography.labelLarge)
+            LimitResume.detail(row.state)?.let {
+                Text(text = it, color = TextDim, style = MaterialTheme.typography.labelSmall)
+            }
+            row.note?.let {
+                Text(text = it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        if (row.state is LimitState.Armed) {
+            Row(
+                modifier = Modifier.padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = onResumeNow,
+                    enabled = !row.busy,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag(ThreadTestTags.LIMIT_RESUME_NOW),
+                ) { Text("Resume now") }
+                OutlinedButton(
+                    onClick = onCancel,
+                    enabled = !row.busy,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag(ThreadTestTags.LIMIT_RESUME_CANCEL),
+                ) { Text("Cancel auto-resume") }
+            }
+        }
+    }
+}
+
 /** The linked pull requests in the app bar: "#9 +1". A tap opens [PrLinksSheet]. */
 @Composable
 private fun PrLinksChip(links: List<PrLink>, onClick: () -> Unit) {
@@ -601,7 +657,7 @@ private fun PrLinksChip(links: List<PrLink>, onClick: () -> Unit) {
 }
 
 /** One row per pull request linked to this chat, each with an Unlink action
- *  behind a confirm dialog. Mirrors PrLinksBanner.tsx on the Expo app. */
+ *  behind a confirm dialog. Mirrors PrLinks.tsx on the Expo app. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PrLinksSheet(links: List<PrLink>, onUnlink: (PrLinkRef) -> Unit, onDismiss: () -> Unit) {
