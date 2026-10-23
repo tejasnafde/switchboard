@@ -125,6 +125,13 @@ fun ThreadSessionScreen(
         onDiscardMergeBack = { id ->
             (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.discardMergeBack(id) }
         },
+        limitResume = session.limitResume,
+        onResumeLimitNow = {
+            (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.resumeLimitNow() }
+        },
+        onCancelLimitResume = {
+            (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.cancelLimitResume() }
+        },
     )
 }
 
