@@ -79,7 +79,8 @@ describe('AgentSettingsSheet', () => {
       },
     })
     expect(v.countHostType('ActivityIndicator')).toBe(1)
-    expect(v.byLabel('Could not refresh branch: fatal: not a git repository')).toBeTruthy()
+    expect(v.byLabel(/^Branch unavailable:/).props.accessibilityState).toEqual({ disabled: false, busy: true })
+    expect(v.texts()).toEqual(expect.arrayContaining(['Could not refresh branch', 'fatal: not a git repository']))
     act(() => v.byLabel('Retry').props.onPress())
     expect(onRefreshGitContext).toHaveBeenCalled()
   })
@@ -99,7 +100,9 @@ describe('AgentSettingsSheet', () => {
 
   it('disables archive during a turn and shows a failed archive', () => {
     const v = view({ archiveEnabled: false, archiveError: 'Backend did not confirm the archive' })
-    expect(v.byLabel(/^Archive conversation:/).props.accessibilityState).toEqual({ disabled: true })
-    expect(v.byLabel('Could not archive conversation: Backend did not confirm the archive')).toBeTruthy()
+    expect(v.byLabel(/^Archive conversation:/).props.accessibilityState).toEqual({ disabled: true, busy: false })
+    expect(v.texts()).toEqual(
+      expect.arrayContaining(['Could not archive conversation', 'Backend did not confirm the archive']),
+    )
   })
 })

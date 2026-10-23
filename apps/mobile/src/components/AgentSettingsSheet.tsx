@@ -35,7 +35,7 @@ function Row({
       disabled={disabled || !onPress}
       accessibilityRole={onPress ? 'button' : 'text'}
       accessibilityLabel={`${label}: ${value}`}
-      accessibilityState={{ disabled: Boolean(disabled) }}
+      accessibilityState={{ disabled: Boolean(disabled), busy: Boolean(busy) }}
       testID={testID}
       style={({ pressed }) => [styles.row, pressed && styles.pressed, disabled && styles.disabled]}
     >
@@ -64,7 +64,7 @@ function Problem({
   onRetry?: () => void
 }) {
   return (
-    <View style={styles.problem} accessibilityLabel={`${message}: ${detail}`}>
+    <View style={styles.problem}>
       <View style={styles.rowText}>
         <Text style={[styles.problemText, { color: tone === 'error' ? colors.red : colors.amber }]}>{message}</Text>
         <Text style={styles.rowValue}>{detail}</Text>

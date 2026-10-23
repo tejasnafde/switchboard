@@ -1455,6 +1455,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const gitContext = presentGitContext(projectPath, checkoutWorktree, git.state)
   const [archiving, setArchiving] = useState(false)
   const [archiveError, setArchiveError] = useState<string | null>(null)
+  // A late goBack from a screen already left pops whatever screen is on top.
+  const mountedRef = useRef(false)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
   const archive = () => {
     if (archiving) return
     if (!canArchive(thread.status, false)) {
@@ -1470,6 +1478,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     setArchiveError(null)
     client.archiveConversation(threadId).then(
       (result) => {
+        if (!mountedRef.current) return
         setArchiving(false)
         const problem = archiveFailure(result)
         if (problem) {
@@ -1481,6 +1490,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       },
       (err: unknown) => {
         log.warn('archive failed', err)
+        if (!mountedRef.current) return
         setArchiving(false)
         setArchiveError(err instanceof Error ? err.message : String(err))
       },
