@@ -499,38 +499,6 @@ export const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  fileEditCard: {
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 10,
-    gap: 4,
-  },
-  fileEditTitle: {
-    color: colors.text,
-    fontSize: 13,
-    fontFamily: mono,
-  },
-  fileEditMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  addedText: {
-    color: colors.green,
-    fontSize: 12,
-    fontFamily: mono,
-  },
-  removedText: {
-    color: colors.red,
-    fontSize: 12,
-    fontFamily: mono,
-  },
-  fileEditApplied: {
-    color: colors.textFaint,
-    fontSize: 11,
-  },
   errorText: {
     marginHorizontal: 14,
     marginVertical: 4,

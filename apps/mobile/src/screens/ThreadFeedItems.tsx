@@ -12,7 +12,6 @@ import type { MarkdownThread } from '../components/HtmlLiveCard'
 import type { FeedItem } from '../stores/chat'
 import { styles } from './thread-screen.styles'
 import type { HeldTurnActions } from '../lib/held-turns'
-import { fileEditCounts, type FileGroupRow } from '../lib/file-groups'
 import { approvalActions, offersQuiet, quietLabel, quietly } from '../lib/approval-actions'
 import { hostWriteTitle, type HostWriteResponse } from '@shared/agent-host-writes'
 import { PR_HOST_LABEL } from '@shared/pull-requests'
@@ -394,55 +393,6 @@ export const PlanItem = memo(function PlanItem({
         </Pressable>
       </View>
     </View>
-  )
-})
-
-export const FileEditItem = memo(function FileEditItem({
-  item,
-  backendLabel,
-}: {
-  item: Extract<FeedItem, { kind: 'fileEdit' }>
-  backendLabel: string
-}) {
-  const { added, removed } = fileEditCounts(item)
-
-  return (
-    <View style={[styles.itemBlock, styles.fileEditCard]}>
-      <Text style={styles.fileEditTitle}>
-        {item.changeKind} {item.relPath}
-      </Text>
-      <View style={styles.fileEditMetaRow}>
-        <Text style={styles.addedText}>+{added}</Text>
-        <Text style={styles.removedText}>-{removed}</Text>
-        <Text style={styles.fileEditApplied}>applied on {backendLabel}</Text>
-      </View>
-    </View>
-  )
-})
-
-/** One turn's changed files, folded; a tap shows or hides that turn's file rows. */
-export const FileGroupItem = memo(function FileGroupItem({
-  row,
-  onToggle,
-}: {
-  row: FileGroupRow
-  onToggle: (id: string) => void
-}) {
-  return (
-    <Pressable
-      onPress={() => onToggle(row.id)}
-      accessibilityRole="button"
-      accessibilityState={{ expanded: row.expanded }}
-      testID="file-group"
-      style={[styles.itemBlock, styles.fileEditCard]}
-    >
-      <Text style={styles.fileEditTitle}>{row.label}</Text>
-      <View style={styles.fileEditMetaRow}>
-        <Text style={styles.addedText}>+{row.added}</Text>
-        <Text style={styles.removedText}>-{row.removed}</Text>
-        <Text style={styles.fileEditApplied}>{row.expanded ? 'Hide' : 'Show'}</Text>
-      </View>
-    </Pressable>
   )
 })
 

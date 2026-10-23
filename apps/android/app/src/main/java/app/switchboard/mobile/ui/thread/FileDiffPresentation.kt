@@ -123,6 +123,9 @@ object FileDiffPresenter {
 
         val oldChanged = oldLines.subList(prefix, oldLines.size - suffix)
         val newChanged = newLines.subList(prefix, newLines.size - suffix)
+        if (oldChanged.isEmpty() && newChanged.isEmpty()) {
+            return CompactFileDiff(emptyList(), 0, 0, truncated = false, countsExact = true)
+        }
         val rows = mutableListOf<CompactDiffLine>()
         val leadingContextStart = maxOf(0, prefix - CONTEXT_LINES)
         for (index in leadingContextStart until prefix) {
