@@ -149,7 +149,7 @@ object FileDiffPresenter {
 
         val omittedMutations = oldChanged.size - removedBudget + newChanged.size - addedBudget
         if (omittedMutations > 0 && rows.size < MAX_VISIBLE_ROWS) {
-            rows += CompactDiffLine(DiffLineKind.Omitted, "… $omittedMutations changed lines not shown")
+            rows += CompactDiffLine(DiffLineKind.Omitted, "… $omittedMutations changed ${if (omittedMutations == 1) "line" else "lines"} not shown")
         }
         val suffixBudget = minOf(CONTEXT_LINES, suffix, MAX_VISIBLE_ROWS - rows.size)
         repeat(suffixBudget) { offset ->
@@ -190,7 +190,7 @@ object FileDiffPresenter {
             } else {
                 val start = index
                 while (index < rows.size && !visible[index]) index += 1
-                compact += CompactDiffLine(DiffLineKind.Omitted, "… ${index - start} unchanged lines")
+                compact += CompactDiffLine(DiffLineKind.Omitted, "… ${index - start} unchanged ${if (index - start == 1) "line" else "lines"}")
             }
         }
         return compact

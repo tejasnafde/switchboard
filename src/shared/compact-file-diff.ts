@@ -135,7 +135,14 @@ function boundedFallback(oldLines: string[], newLines: string[]): CompactFileDif
 
   const omittedMutations = oldChanged.length - removedBudget + newChanged.length - addedBudget
   if (omittedMutations > 0 && rows.length < MAX_VISIBLE_ROWS) {
-    rows.push(line('omitted', `… ${omittedMutations} changed lines not shown`, null, null))
+    rows.push(
+      line(
+        'omitted',
+        `… ${omittedMutations} changed ${omittedMutations === 1 ? 'line' : 'lines'} not shown`,
+        null,
+        null,
+      ),
+    )
   }
   const suffixBudget = Math.min(CONTEXT_LINES, suffix, MAX_VISIBLE_ROWS - rows.length)
   for (let offset = 0; offset < suffixBudget; offset++) {
@@ -173,7 +180,9 @@ function compactContext(rows: CompactDiffLine[]): CompactDiffLine[] {
     } else {
       const start = index
       while (index < rows.length && !visible[index]) index++
-      compact.push(line('omitted', `… ${index - start} unchanged lines`, null, null))
+      compact.push(
+        line('omitted', `… ${index - start} unchanged ${index - start === 1 ? 'line' : 'lines'}`, null, null),
+      )
     }
   }
   return compact

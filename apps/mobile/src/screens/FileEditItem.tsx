@@ -6,7 +6,7 @@ import { fileEditDiff, type FileGroupRow } from '../lib/file-groups'
 import type { FeedItem } from '../stores/chat'
 import { styles as feed } from './thread-screen.styles'
 
-const MARKER: Record<CompactDiffLine['kind'], string> = { added: '+', removed: '-', context: ' ', omitted: '…' }
+const MARKER: Record<CompactDiffLine['kind'], string> = { added: '+', removed: '-', context: ' ', omitted: ' ' }
 
 /**
  * One changed file: path, line counts and where it changed. A tap shows or
