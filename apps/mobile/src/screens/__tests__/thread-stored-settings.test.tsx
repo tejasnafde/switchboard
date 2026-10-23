@@ -7,7 +7,7 @@ import React from 'react'
 import { act } from 'react-test-renderer'
 import { AppChannels, ProviderChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import { DemoTransport } from '@shared/phone-demo/phone-demo'
-import { ModePicker } from '../../components/ModePicker'
+import { AgentSettingsSheet } from '../../components/AgentSettingsSheet'
 import { renderComponent } from '../../test/render'
 import { useConnectionsStore } from '../../stores/connections'
 
@@ -77,15 +77,16 @@ async function openChat() {
 describe('opening a chat with stored settings', () => {
   it('shows the stored profile and mode', async () => {
     const view = await openChat()
-    expect(view.texts()).toContain('Work')
-    expect(view.texts()).not.toContain('Default')
-    expect(view.root.findByType(ModePicker).props.value).toBe('plan')
+    const sheet = view.root.findByType(AgentSettingsSheet).props
+    expect(sheet.profileLabel).toContain('Work')
+    expect(sheet.profileLabel).not.toContain('Default')
+    expect(sheet.mode).toBe('plan')
   })
 
   it('sends a mode picked on the phone to the backend', async () => {
     const view = await openChat()
     await act(async () => {
-      view.root.findByType(ModePicker).props.onChange('auto')
+      view.root.findByType(AgentSettingsSheet).props.onMode('auto')
     })
     expect(calls).toContainEqual({ channel: ProviderChannels.SET_RUNTIME_MODE, args: ['demo-done', 'auto'] })
   })
