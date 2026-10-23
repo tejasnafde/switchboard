@@ -25,7 +25,7 @@
 import { app, ipcMain, powerMonitor, type BrowserWindow } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { AppChannels } from '@shared/ipc-channels'
-import type { UpdateStatus } from '@shared/update-status'
+import { statusWhileReady, type UpdateStatus } from '@shared/update-status'
 import { withTimeout } from '@shared/promise-timeout'
 import { createMainLogger } from './logger'
 import { friendlyUpdateError, isStaleDownloadError, isCheckTimeout } from './updater-error'
@@ -39,6 +39,8 @@ export type { UpdateStatus }
 
 let registered = false
 let lastStatus: UpdateStatus = { kind: 'idle' }
+/** The last `downloaded` status: it stays installable until the restart. */
+let readyStatus: UpdateStatus | null = null
 const updaterWindows = new Set<BrowserWindow>()
 /** Guards the one-shot re-download after a purged staging file. */
 let staleDownloadRetried = false
@@ -120,6 +122,10 @@ function trackWindow(window: BrowserWindow): void {
 }
 
 function send(status: UpdateStatus): void {
+  broadcast(statusWhileReady(readyStatus, status))
+}
+
+function broadcast(status: UpdateStatus): void {
   lastStatus = status
   for (const window of updaterWindows) {
     if (!window.isDestroyed()) {
@@ -212,7 +218,8 @@ export function registerAutoUpdater(window: BrowserWindow): void {
     // A download that completes re-arms the stale-cache retry below, so a
     // later update in the same session gets its own attempt.
     staleDownloadRetried = false
-    send({ kind: 'downloaded', version: info?.version ?? 'unknown' })
+    readyStatus = { kind: 'downloaded', version: info?.version ?? 'unknown' }
+    send(readyStatus)
   })
   autoUpdater.on('error', (err) => {
     const msg = err.message ?? String(err)
@@ -286,7 +293,6 @@ function startAutoUpdaterScheduler(): void {
     getState: () => ({
       checkInFlight,
       downloadInFlight: downloadsInFlight > 0,
-      downloaded: lastStatus.kind === 'downloaded',
     }),
     runCheck: runScheduledCheck,
     onResume: (listener) => {
@@ -331,5 +337,6 @@ export function quitAndInstall(): void {
 /** Record + broadcast a status, so a remounted Settings row sees it too. */
 export function reportInstallStatus(window: BrowserWindow, status: UpdateStatus): void {
   trackWindow(window)
-  send(status)
+  // Unmasked: an install that did not start must say so.
+  broadcast(status)
 }

@@ -54,6 +54,8 @@ export const AppChannels = {
   SET_CONVERSATION_PENDING_HANDOFF: 'app:set-conversation-pending-handoff',
   CHECK_FOR_UPDATES: 'app:check-for-updates',
   GET_UPDATE_STATUS: 'app:get-update-status',
+  /** The new version once after an upgrade, else null. */
+  TAKE_UPDATED_NOTICE: 'app:take-updated-notice',
   RELAUNCH: 'app:relaunch',
   /** Settings > About > Diagnostics: one JSON snapshot of the host (see shared/diagnostics-report.ts). */
   GET_DIAGNOSTICS: 'app:get-diagnostics',

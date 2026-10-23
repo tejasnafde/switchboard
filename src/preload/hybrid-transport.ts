@@ -21,6 +21,7 @@ const LOCAL_CHANNELS = new Set<string>([
   AppChannels.SET_VIBRANCY,
   AppChannels.CHECK_FOR_UPDATES,
   AppChannels.GET_UPDATE_STATUS,
+  AppChannels.TAKE_UPDATED_NOTICE,
   // Diagnostics and usage counts describe THIS desktop, not the remote VM.
   AppChannels.GET_DIAGNOSTICS,
   AppChannels.OPEN_LOGS_FOLDER,
