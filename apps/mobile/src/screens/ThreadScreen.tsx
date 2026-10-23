@@ -573,6 +573,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // Leaving the chat mid-wait must not strand its messages.
   useEffect(() => () => releaseThread(connectionId, threadId), [connectionId, threadId])
 
+  // The backend's own view, from session.provider, so a rotation performed on
+  // the desktop relabels the chip live instead of going stale until reopen.
+  // Then this screen's pick, then the profile the loaded history names.
+  const effectiveProvider = thread.provider ?? provider
+  const effectiveInstanceId = thread.instanceId ?? instanceId ?? thread.historyMeta?.providerInstanceId ?? undefined
+
   /** Rotate providers, or transactionally rotate credentials within one provider. */
   const rotateProfile = useCallback(
     (nextProvider: ProviderKind, nextInstanceId?: string) => {
@@ -589,7 +595,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       void (async () => {
         try {
           if (nextProvider === provider && nextInstanceId) {
-            const rotation = await rotateWithinAgent(threadId, instanceId, nextInstanceId, {
+            const rotation = await rotateWithinAgent(threadId, effectiveInstanceId, nextInstanceId, {
               switchInstance: (id, input) => client.switchInstance(id, input),
               setConversationProviderInstanceId: (id, inst) => client.setConversationProviderInstanceId(id, inst),
               confirmStartFresh: (message) =>
@@ -639,7 +645,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       projectPath,
       worktreePath,
       provider,
-      instanceId,
+      effectiveInstanceId,
       reportError,
       instances,
       loadLabel,
@@ -1353,10 +1359,6 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   // Null hides the chip: a backend with no configured profiles has nothing to
   // switch between, and an empty chip would just be a dead control.
-  // The backend's own view, from session.provider, so a rotation performed on
-  // the desktop relabels this chip live instead of going stale until reopen.
-  const effectiveProvider = thread.provider ?? provider
-  const effectiveInstanceId = thread.instanceId ?? instanceId
   const currentProfiles = profilesFor(instances, effectiveProvider)
   const profileLabel =
     currentProfiles.length === 0
