@@ -29,11 +29,12 @@ function fakeClient(initial: LimitState) {
 
 const flush = () => act(async () => {})
 
-it('shows the reset time with Resume now and Cancel auto-resume while armed', async () => {
+it('shows the reset time and what happens next, with Resume now and Cancel auto-resume while armed', async () => {
   const { asClient } = fakeClient({ kind: 'armed', resetAt: RESET })
   const root = renderComponent(<LimitResumeRow client={asClient} threadId="t1" />)
   await flush()
   expect(root.texts().join(' ')).toMatch(/Usage limit\. Resumes \S*3:40/)
+  expect(root.texts()).toContain('This chat carries on by itself then. A message you send now runs at once.')
   expect(root.allByLabel('Resume now')).toHaveLength(1)
   expect(root.allByLabel('Cancel auto-resume')).toHaveLength(1)
 })
@@ -46,6 +47,7 @@ it('renders nothing while the chat is not limited, and appears on limit-resume.c
   emit({ kind: 'gave_up' })
   await flush()
   expect(root.texts()).toContain('Usage limit. Gave up after 3 tries.')
+  expect(root.texts()).toContain('Send a message after the reset to continue.')
   expect(root.allByLabel('Resume now')).toHaveLength(0)
 })
 

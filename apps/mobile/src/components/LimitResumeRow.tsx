@@ -1,12 +1,13 @@
 /**
  * The Limited row of a chat (flag `limit_auto_resume`): "Usage limit.
- * Resumes 15:40." with Resume now and Cancel auto-resume while a resume is
- * armed, or why none is. Read from the backend on open and on every
- * `limit-resume.changed`, like the desktop row, so both show the same thing.
+ * Resumes 15:40." over what happens next, with Resume now and Cancel
+ * auto-resume while a resume is armed, or why none is. Read from the
+ * backend on open and on every `limit-resume.changed`, like the desktop row,
+ * so both show the same thing.
  */
 import React, { useEffect, useState } from 'react'
 import { Pressable, Text, View } from 'react-native'
-import { limitStateText, type LimitState } from '@shared/limit-resume'
+import { limitStateDetail, limitStateText, type LimitState } from '@shared/limit-resume'
 import type { SwitchboardClient } from '../lib/api'
 import { createLogger } from '@shared/logger'
 import { styles } from '../screens/thread-screen.styles'
@@ -62,33 +63,39 @@ export function LimitResumeRow({ client, threadId }: { client: SwitchboardClient
     }
   }
 
+  const detail = limitStateDetail(state)
   return (
-    <View style={[styles.forkBanner, styles.compactBanner]} testID="limit-resume-row">
-      <Text style={[styles.forkBannerText, styles.compactBannerText]} accessibilityLiveRegion="polite">
-        {text}
-        {note ? ` ${note}` : ''}
-      </Text>
+    <View style={styles.forkBanner} testID="limit-resume-row">
+      <View accessibilityLiveRegion="polite">
+        <Text style={styles.limitResumeTitle}>{text}</Text>
+        {detail && <Text style={styles.forkBannerText}>{detail}</Text>}
+      </View>
+      {note && (
+        <Text style={styles.limitResumeNote} accessibilityRole="alert">
+          {note}
+        </Text>
+      )}
       {state.kind === 'armed' && (
-        <>
+        <View style={styles.buttonRow}>
           <Pressable
             onPress={() => void act('now')}
             disabled={busy}
+            style={[styles.actionButton, styles.implementButton, busy && styles.buttonDisabled]}
             accessibilityRole="button"
             accessibilityLabel="Resume now"
-            hitSlop={8}
           >
-            <Text style={styles.compactAction}>Resume now</Text>
+            <Text style={styles.actionLabel}>Resume now</Text>
           </Pressable>
           <Pressable
             onPress={() => void act('cancel')}
             disabled={busy}
+            style={[styles.actionButton, styles.iterateButton, busy && styles.buttonDisabled]}
             accessibilityRole="button"
             accessibilityLabel="Cancel auto-resume"
-            hitSlop={8}
           >
-            <Text style={styles.compactAction}>Cancel auto-resume</Text>
+            <Text style={styles.iterateLabel}>Cancel auto-resume</Text>
           </Pressable>
-        </>
+        </View>
       )}
     </View>
   )
