@@ -117,6 +117,7 @@ import { blockedSendReason } from '../lib/composer'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
 import { collapseFileEdits } from '../lib/file-groups'
 import { collapseSubagents, type ThreadRow } from '../lib/subagent-rows'
+import { EventRowItem } from './EventRowItem'
 import { SubagentItem } from './SubagentItem'
 
 const log = createLogger('screen:thread')
@@ -1358,6 +1359,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
           )
         case 'error':
           return <Text style={styles.errorText}>{item.message}</Text>
+        case 'retry':
+        case 'drift':
+        case 'spendBlocked':
+        case 'peer':
+        case 'todo':
+          return <EventRowItem item={item} />
       }
     },
     [

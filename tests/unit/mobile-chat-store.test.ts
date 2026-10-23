@@ -8,7 +8,7 @@ import { formatMergeBackMarker, type MergeBackRow } from '../../src/shared/merge
 import { echoMessageId } from '../../src/shared/provider-events'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { useChatStore, flushQueue, resetQueue, threadKey, type FeedItem } from '../../apps/mobile/src/stores/chat'
-import { historyToItems } from '../../apps/mobile/src/lib/thread-history'
+import { historyToItems, mergeHistoryItems } from '../../apps/mobile/src/lib/thread-history'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 
 const CONN = 'conn-1'
@@ -534,6 +534,102 @@ describe('request.expired', () => {
       },
       { kind: 'notice', id: 'q-q1', text: 'Question expired, no answer was sent. Gone.' },
       expect.objectContaining({ kind: 'approval', requestId: 'r2', closed: true }),
+    ])
+  })
+})
+
+describe('runtime event rows', () => {
+  it('shows a retry row that stops when the turn ends', () => {
+    ingest({ type: 'turn.retrying', threadId: THREAD, turnId: 't1', message: 'Overloaded, retry 1 of 3' })
+    ingest({ type: 'turn.retrying', threadId: THREAD, turnId: 't1', message: 'Overloaded, retry 2 of 3' })
+    flushQueue()
+    expect(items()).toEqual([
+      { kind: 'retry', id: 'r-t1', turnId: 't1', message: 'Overloaded, retry 2 of 3', active: true },
+    ])
+    ingest({ type: 'turn.completed', threadId: THREAD, turnId: 't1', durationMs: 10 } as RuntimeEvent)
+    flushQueue()
+    expect(items()[0]).toMatchObject({ kind: 'retry', active: false })
+  })
+
+  it('stops a retry when the session leaves running', () => {
+    ingest({ type: 'turn.retrying', threadId: THREAD, turnId: 't1', message: 'retry' })
+    ingest({ type: 'status', threadId: THREAD, status: 'running' })
+    flushQueue()
+    expect(items()[0]).toMatchObject({ active: true })
+    ingest({ type: 'status', threadId: THREAD, status: 'error' })
+    flushQueue()
+    expect(items()[0]).toMatchObject({ active: false })
+  })
+
+  it('keeps one drift row and updates it in place', () => {
+    ingest({ type: 'worktree.drift', threadId: THREAD, worktreePath: '/r/a', branch: 'a' })
+    ingest({ type: 'tool.started', threadId: THREAD, toolId: 'x', toolName: 'Bash', input: {} } as RuntimeEvent)
+    ingest({ type: 'worktree.drift', threadId: THREAD, worktreePath: '/r/b', branch: 'b' })
+    flushQueue()
+    expect(items().map((i) => i.id)).toEqual(['drift', 't-x'])
+    expect(items()[0]).toEqual({ kind: 'drift', id: 'drift', worktreePath: '/r/b', branch: 'b' })
+  })
+
+  it('keeps one spend row per instance and model', () => {
+    const blocked = {
+      type: 'spend.blocked',
+      threadId: THREAD,
+      instanceId: 'work',
+      model: 'claude-fable-5',
+      reason: 'org_level_disabled',
+      scope: 'org',
+      resetsAtMs: null,
+    } as const
+    ingest(blocked)
+    ingest({ ...blocked, reason: 'again' })
+    ingest({ ...blocked, model: 'claude-opus-5' })
+    flushQueue()
+    expect(items().map((i) => i.id)).toEqual(['spend:work:claude-fable-5', 'spend:work:claude-opus-5'])
+    expect(items()[0]).toMatchObject({ kind: 'spendBlocked', reason: 'again', scope: 'org' })
+  })
+
+  it('files a peer message under its stored row id, so a history merge lands on it', () => {
+    const peer = {
+      type: 'peer.message',
+      threadId: THREAD,
+      initiator: 'agent',
+      messageId: 'pm_1',
+      peerThreadId: 'agent_2',
+      peerLabel: 'Roadmap',
+      text: 'Found it',
+      at: 5,
+    } as const
+    ingest({ ...peer, direction: 'received' })
+    ingest({ ...peer, direction: 'sent', messageId: 'pm_2' })
+    flushQueue()
+    expect(items()).toEqual([
+      {
+        kind: 'peer',
+        id: 'h-pm_1',
+        direction: 'received',
+        initiator: 'agent',
+        peerThreadId: 'agent_2',
+        peerLabel: 'Roadmap',
+        text: 'Found it',
+        at: 5,
+      },
+      expect.objectContaining({ kind: 'peer', id: 'h-peer_pm_2', direction: 'sent' }),
+    ])
+    const history = historyToItems([
+      { id: 'pm_1', role: 'user', content: 'wrapped', displayBody: 'From "Roadmap": Found it', timestamp: 5 },
+    ])
+    expect(mergeHistoryItems(history, items()).map((i) => [i.id, i.kind])).toEqual([
+      ['h-pm_1', 'peer'],
+      ['h-peer_pm_2', 'peer'],
+    ])
+  })
+
+  it('replaces a todo list by its id', () => {
+    ingest({ type: 'todo.updated', threadId: THREAD, todoId: 'plan', items: [{ text: 'a', status: 'pending' }] })
+    ingest({ type: 'todo.updated', threadId: THREAD, todoId: 'plan', items: [{ text: 'a', status: 'completed' }] })
+    flushQueue()
+    expect(items()).toEqual([
+      { kind: 'todo', id: 'todo-plan', todoId: 'plan', items: [{ text: 'a', status: 'completed' }] },
     ])
   })
 })

@@ -15,7 +15,7 @@
     },
     "reactNativeIos": {
       "status": "not_applicable",
-      "reason": "The React Native app does not handle worktree.drift and shows neither the Follow chip nor the off notice; the new optional event field is ignored by it."
+      "reason": "The React Native app shows a read-only drift row from worktreePath and branch only (docs/feature-parity/phone-event-feed-rows.json), with no Follow chip and no off notice; the new optional event field is ignored by it."
     },
     "nativeAndroid": {
       "status": "not_applicable",
