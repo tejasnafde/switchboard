@@ -18,6 +18,7 @@
         "src/renderer/services/row-resize-scroll.ts",
         "src/renderer/components/chat/MessageList.tsx",
         "tests/unit/row-resize-scroll.test.ts",
+        "tests/unit/chat-visuals-button-reset.test.ts",
         "src/renderer/services/html-live-theme.ts",
         "src/renderer/services/html-live-save.ts",
         "src/renderer/services/html-live-open-requests.ts",
