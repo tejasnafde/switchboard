@@ -289,10 +289,11 @@ export function limitStateDetail(state: LimitState): string | null {
     case 'none':
       return null
     case 'armed':
-      return 'This chat carries on by itself then. A message you send now runs after it.'
+      return 'This chat carries on by itself then. A message you send now runs at once.'
     case 'disarmed':
     case 'gave_up':
-    case 'no_reset':
       return 'Send a message after the reset to continue.'
+    case 'no_reset':
+      return 'Send a message to try again. It fails while the limit lasts.'
   }
 }

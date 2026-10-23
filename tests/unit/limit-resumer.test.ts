@@ -292,11 +292,12 @@ describe('the Limited row and the resume row', () => {
     expect(limitStateText({ kind: 'gave_up' }, at)).toBe('Usage limit. Gave up after 3 tries.')
     expect(limitStateText({ kind: 'none' }, at)).toBeNull()
     expect(limitStateDetail({ kind: 'armed', resetAt: RESET })).toBe(
-      'This chat carries on by itself then. A message you send now runs after it.',
+      'This chat carries on by itself then. A message you send now runs at once.',
     )
-    for (const kind of ['disarmed', 'gave_up', 'no_reset'] as const) {
+    for (const kind of ['disarmed', 'gave_up'] as const) {
       expect(limitStateDetail({ kind })).toBe('Send a message after the reset to continue.')
     }
+    expect(limitStateDetail({ kind: 'no_reset' })).toBe('Send a message to try again. It fails while the limit lasts.')
     expect(limitStateDetail({ kind: 'none' })).toBeNull()
     expect(systemRowView(limitResumeMarker())).toEqual({
       kind: 'notice',

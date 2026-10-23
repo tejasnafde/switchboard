@@ -73,10 +73,10 @@ export function LimitResumeRow({ sessionId }: { sessionId: string }) {
     >
       <ClockIcon size={14} />
       <div className="min-w-0 flex-1">
-        <div role="status" aria-live="polite" className="text-[13px] font-[600] text-[var(--text-primary)]">
-          {text}
+        <div role="status" aria-live="polite">
+          <div className="text-[13px] font-[600] text-[var(--text-primary)]">{text}</div>
+          {detail && <div>{detail}</div>}
         </div>
-        {detail && <div>{detail}</div>}
         {note && (
           <div role="alert" className="mt-[2px] text-[var(--error)]">
             {note}
