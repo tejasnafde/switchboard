@@ -44,6 +44,8 @@ import app.switchboard.mobile.domain.reviews.RepoRef
 import app.switchboard.mobile.domain.thread.HostWriteResponse
 import app.switchboard.mobile.domain.thread.HtmlLivePages
 import app.switchboard.mobile.domain.thread.HtmlLiveState
+import app.switchboard.mobile.domain.thread.LimitResumeNowResult
+import app.switchboard.mobile.domain.thread.LimitState
 import app.switchboard.mobile.domain.thread.MergeBackActionResult
 import app.switchboard.mobile.domain.thread.MergeBackPreview
 import app.switchboard.mobile.domain.thread.PrLink
@@ -130,6 +132,10 @@ object BackendChannels {
     const val MergeBackSend = "provider:merge-back-send"
     const val MergeBackEdit = "provider:merge-back-edit"
     const val MergeBackDiscard = "provider:merge-back-discard"
+    /** The Limited row (src/shared/limit-resume.ts); gated behind `limit_auto_resume_v1`. */
+    const val LimitResumeGet = "provider:limit-resume-get"
+    const val LimitResumeCancel = "provider:limit-resume-cancel"
+    const val LimitResumeNow = "provider:limit-resume-resume-now"
     /** Inline live pages (src/shared/html-live.ts); gated behind `html_live_images_v1`. */
     const val HtmlLiveLoad = "html-live:load"
     const val HtmlLiveOpenOnDesktop = "html-live:open-on-desktop"
@@ -732,6 +738,15 @@ class SwitchboardRemoteClient(
         RemoteDecoders::mergeBackActionResult,
         callback,
     )
+
+    fun limitResumeGet(threadId: String, callback: (RemoteResponse<LimitState>) -> Unit) =
+        call(BackendChannels.LimitResumeGet, array(JsonString(threadId)), RemoteDecoders::limitState, callback)
+
+    fun limitResumeCancel(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) =
+        command(BackendChannels.LimitResumeCancel, array(JsonString(threadId)), callback)
+
+    fun limitResumeNow(threadId: String, callback: (RemoteResponse<LimitResumeNowResult>) -> Unit) =
+        call(BackendChannels.LimitResumeNow, array(JsonString(threadId)), RemoteDecoders::limitResumeNowResult, callback)
 
     /** The backend's live sessions with their current status, which the desktop also adopts on launch. */
     fun listSessionStatuses(callback: (RemoteResponse<Map<String, String>>) -> Unit) =

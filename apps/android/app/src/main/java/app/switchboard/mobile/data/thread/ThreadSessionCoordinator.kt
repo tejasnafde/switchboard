@@ -34,6 +34,9 @@ import app.switchboard.mobile.domain.thread.MessagePill
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWriteResponse
 import app.switchboard.mobile.domain.thread.FORK_MERGE_BACK_CAPABILITY
+import app.switchboard.mobile.domain.thread.LIMIT_AUTO_RESUME_CAPABILITY
+import app.switchboard.mobile.domain.thread.LimitResumeNowResult
+import app.switchboard.mobile.domain.thread.LimitState
 import app.switchboard.mobile.domain.thread.MergeBackActionResult
 import app.switchboard.mobile.domain.thread.MergeBackPreview
 import app.switchboard.mobile.domain.thread.mergeBackPreviewNote
@@ -106,6 +109,17 @@ data class ThreadSessionState(
     val followUp: ThreadFollowUpState = ThreadFollowUpState(),
     val prLinks: List<PrLink> = emptyList(),
     val mergeBack: ThreadMergeBackState = ThreadMergeBackState(),
+    val limitResume: ThreadLimitResumeState = ThreadLimitResumeState(),
+)
+
+/** The chat's Limited row, read from the backend like the desktop row. */
+data class ThreadLimitResumeState(
+    /** The backend advertises `limit_auto_resume_v1`. */
+    val available: Boolean = false,
+    val state: LimitState = LimitState.None,
+    val busy: Boolean = false,
+    /** Why Resume now or Cancel did not go through. */
+    val note: String? = null,
 )
 
 /** Which merge-back sheet is open: send this fork's work back, or edit a pending card. */
@@ -412,6 +426,16 @@ interface ThreadSessionRemote {
         mergeBackId: String,
         callback: (RemoteResponse<MergeBackActionResult>) -> Unit,
     ): Unit = throw UnsupportedOperationException("Merge-back is not supported")
+
+    /** The chat's Limited row. Only called on `limit_auto_resume_v1`. */
+    fun limitResumeGet(threadId: String, callback: (RemoteResponse<LimitState>) -> Unit): Unit =
+        throw UnsupportedOperationException("Auto-resume is not supported")
+
+    fun limitResumeCancel(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit): Unit =
+        throw UnsupportedOperationException("Auto-resume is not supported")
+
+    fun limitResumeNow(threadId: String, callback: (RemoteResponse<LimitResumeNowResult>) -> Unit): Unit =
+        throw UnsupportedOperationException("Auto-resume is not supported")
 }
 
 class SwitchboardThreadSessionRemote(
@@ -589,6 +613,18 @@ class SwitchboardThreadSessionRemote(
     ) {
         client.mergeBackDiscard(threadId, mergeBackId, callback).let { Unit }
     }
+
+    override fun limitResumeGet(threadId: String, callback: (RemoteResponse<LimitState>) -> Unit) {
+        client.limitResumeGet(threadId, callback).let { Unit }
+    }
+
+    override fun limitResumeCancel(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) {
+        client.limitResumeCancel(threadId, callback).let { Unit }
+    }
+
+    override fun limitResumeNow(threadId: String, callback: (RemoteResponse<LimitResumeNowResult>) -> Unit) {
+        client.limitResumeNow(threadId, callback).let { Unit }
+    }
 }
 
 object LoadedSessionSnapshotMapper {
@@ -751,6 +787,8 @@ class ThreadSessionCoordinator(
     private var mergeBack = ThreadMergeBackState(available = FORK_MERGE_BACK_CAPABILITY in capabilities)
     /** Bumped whenever the sheet opens or closes, so a stale preview/load answer is ignored. */
     private var mergeBackSheetRequest = 0L
+    private var limitResume = ThreadLimitResumeState(available = LIMIT_AUTO_RESUME_CAPABILITY in capabilities)
+    private var limitResumeRequest = 0L
     private val mutableState = MutableStateFlow(
         ThreadSessionState(load, composer, models = models, profiles = profiles),
     )
@@ -809,6 +847,7 @@ class ThreadSessionCoordinator(
         refreshProfiles()
         prLinksSubscription = remote.onPullRequestLinksChanged(::loadPrLinks)
         loadPrLinks()
+        loadLimitResume()
         remote.markRead(threadId) { /* best effort; local viewing state already cleared unread */ }
     }
 
@@ -869,6 +908,8 @@ class ThreadSessionCoordinator(
         if (closed || eventScope != scope) return
         reduce(ThreadAction.ReplayGap(eventScope))
         refresh()
+        // The gap may have dropped a `limit-resume.changed`.
+        loadLimitResume()
     }
 
     @Synchronized
@@ -1423,6 +1464,7 @@ class ThreadSessionCoordinator(
         reattachRequest += 1
         prLinksRequest += 1
         mergeBackSheetRequest += 1
+        limitResumeRequest += 1
         subscription?.cancel()
         gapSubscription?.cancel()
         prLinksSubscription?.cancel()
@@ -1677,7 +1719,13 @@ class ThreadSessionCoordinator(
 
     private fun onRuntimeEvent(eventScope: ThreadEventScope, payload: RuntimeEventPayload) {
         synchronized(this) {
-            if (closed || eventScope != scope || payload.threadId != threadId) return
+            if (closed || eventScope != scope) return
+            // The event names the live id, which can differ from this chat's: re-read on any.
+            if (payload.type == LIMIT_RESUME_CHANGED) {
+                limitResume = limitResume.copy(note = null)
+                loadLimitResume()
+            }
+            if (payload.threadId != threadId) return
             val event = ThreadEventDecoder.decode(payload.raw)
             if (event.threadId != threadId) return
             val known = event as? app.switchboard.mobile.domain.thread.ThreadRuntimeEvent.Known
@@ -2011,6 +2059,7 @@ class ThreadSessionCoordinator(
             ),
             prLinks = prLinks,
             mergeBack = mergeBack,
+            limitResume = limitResume,
         )
     }
 
@@ -2078,6 +2127,75 @@ class ThreadSessionCoordinator(
             controlMessage = error.message ?: "Could not unlink the pull request"
             publish()
         }
+    }
+
+    @Synchronized
+    private fun loadLimitResume() {
+        if (closed || !limitResume.available || remote.scope != scope) return
+        val request = ++limitResumeRequest
+        try {
+            remote.limitResumeGet(threadId) { response ->
+                synchronized(this) {
+                    if (!accepts(response, request, limitResumeRequest) || remote.scope != scope) return@synchronized
+                    (response.outcome as? RemoteOutcome.Success)?.let { limitResume = limitResume.copy(state = it.value) }
+                    publish()
+                }
+            }
+        } catch (_: RuntimeException) {
+            // The row is optional; it keeps what it last showed.
+        }
+    }
+
+    /** Resume now on the Limited row. A closed window keeps the row armed and says why. */
+    @Synchronized
+    fun resumeLimitNow() {
+        if (!beginLimitAction()) return
+        try {
+            remote.limitResumeNow(threadId) { response ->
+                endLimitAction(
+                    response,
+                    when (val outcome = response.outcome) {
+                        is RemoteOutcome.Failure -> outcome.message
+                        is RemoteOutcome.Success -> (outcome.value as? LimitResumeNowResult.Refused)?.message
+                    },
+                )
+            }
+        } catch (error: RuntimeException) {
+            failLimitAction(error)
+        }
+    }
+
+    /** Cancel auto-resume on the Limited row. */
+    @Synchronized
+    fun cancelLimitResume() {
+        if (!beginLimitAction()) return
+        try {
+            remote.limitResumeCancel(threadId) { response ->
+                endLimitAction(response, (response.outcome as? RemoteOutcome.Failure)?.message)
+            }
+        } catch (error: RuntimeException) {
+            failLimitAction(error)
+        }
+    }
+
+    private fun beginLimitAction(): Boolean {
+        if (closed || !limitResume.available || limitResume.busy || remote.scope != scope) return false
+        limitResume = limitResume.copy(busy = true, note = null)
+        publish()
+        return true
+    }
+
+    /** The backend's `limit-resume.changed` re-reads the row; only a refusal is kept here. */
+    private fun <T> endLimitAction(response: RemoteResponse<T>, note: String?) {
+        synchronized(this) {
+            limitResume = limitResume.copy(busy = false, note = note.takeIf { accepts(response) })
+            if (!closed) publish()
+        }
+    }
+
+    private fun failLimitAction(error: RuntimeException) {
+        limitResume = limitResume.copy(busy = false, note = error.message ?: "Request failed")
+        publish()
     }
 
     /**
@@ -2353,6 +2471,7 @@ class ThreadSessionCoordinator(
 
     companion object {
         const val HISTORY_LIMIT = 250L
+        private const val LIMIT_RESUME_CHANGED = "limit-resume.changed"
         private const val HELD_RECOVERY_ATTEMPTS = 3
         private const val HELD_LIST_FAILURE = "Could not list queued messages: "
 

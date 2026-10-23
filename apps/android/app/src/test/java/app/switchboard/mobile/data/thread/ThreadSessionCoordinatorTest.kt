@@ -28,6 +28,9 @@ import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.FORK_MERGE_BACK_CAPABILITY
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWriteResponse
+import app.switchboard.mobile.domain.thread.LIMIT_AUTO_RESUME_CAPABILITY
+import app.switchboard.mobile.domain.thread.LimitResumeNowResult
+import app.switchboard.mobile.domain.thread.LimitState
 import app.switchboard.mobile.domain.thread.MergeBackActionResult
 import app.switchboard.mobile.domain.thread.MergeBackPreview
 import app.switchboard.mobile.domain.remote.ForkLineageMetadata
@@ -1655,6 +1658,62 @@ class ThreadSessionCoordinatorTest {
         token = token,
     )
 
+    @Test
+    fun `the Limited row is not read without the capability`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote)
+        coordinator.start()
+        remote.emit(scope, event("limit-resume.changed", "thread-1"))
+
+        assertFalse(coordinator.state.value.limitResume.available)
+        assertTrue(remote.limitResumeGets.isEmpty())
+        coordinator.resumeLimitNow()
+        assertTrue(remote.limitResumeNowCallbacks.isEmpty())
+    }
+
+    @Test
+    fun `the Limited row reads on open, on any limit-resume change and after a gap`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(LIMIT_AUTO_RESUME_CAPABILITY))
+        coordinator.start()
+        assertEquals(listOf("thread-1"), remote.limitResumeGets)
+        remote.limitResumeGetCallbacks.removeAt(0)(success("get", LimitState.Armed(100_000)))
+        assertEquals(LimitState.Armed(100_000), coordinator.state.value.limitResume.state)
+
+        // The event names the live id, which can differ from the id this screen opened.
+        remote.emit(scope, event("limit-resume.changed", "live-session-id"))
+        assertEquals(2, remote.limitResumeGets.size)
+        remote.limitResumeGetCallbacks.removeAt(0)(success("get", LimitState.GaveUp))
+        assertEquals(LimitState.GaveUp, coordinator.state.value.limitResume.state)
+
+        coordinator.onReplayGap(scope)
+        assertEquals(3, remote.limitResumeGets.size)
+    }
+
+    @Test
+    fun `Resume now shows why it did not resume, and Cancel calls the backend`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(LIMIT_AUTO_RESUME_CAPABILITY))
+        coordinator.start()
+        remote.limitResumeGetCallbacks.removeAt(0)(success("get", LimitState.Armed(100_000)))
+
+        coordinator.resumeLimitNow()
+        assertTrue(coordinator.state.value.limitResume.busy)
+        coordinator.resumeLimitNow()
+        assertEquals(1, remote.limitResumeNowCallbacks.size)
+        remote.limitResumeNowCallbacks.removeAt(0)(
+            success("now", LimitResumeNowResult.Refused("The usage window is still closed.")),
+        )
+        assertFalse(coordinator.state.value.limitResume.busy)
+        assertEquals("The usage window is still closed.", coordinator.state.value.limitResume.note)
+
+        coordinator.cancelLimitResume()
+        assertNull(coordinator.state.value.limitResume.note)
+        remote.limitResumeCancelCallbacks.removeAt(0)(success("cancel", CommandBody(null)))
+        assertFalse(coordinator.state.value.limitResume.busy)
+        assertNull(coordinator.state.value.limitResume.note)
+    }
+
     private fun coordinator(
         remote: FakeThreadSessionRemote,
         cached: ThreadState? = null,
@@ -2266,6 +2325,24 @@ private class FakeThreadSessionRemote(
 
     fun completeMergeBackDiscard(response: RemoteResponse<MergeBackActionResult>) {
         mergeBackDiscardCallbacks.removeAt(0)(response)
+    }
+
+    val limitResumeGets = mutableListOf<String>()
+    val limitResumeGetCallbacks = mutableListOf<(RemoteResponse<LimitState>) -> Unit>()
+    val limitResumeNowCallbacks = mutableListOf<(RemoteResponse<LimitResumeNowResult>) -> Unit>()
+    val limitResumeCancelCallbacks = mutableListOf<(RemoteResponse<CommandBody>) -> Unit>()
+
+    override fun limitResumeGet(threadId: String, callback: (RemoteResponse<LimitState>) -> Unit) {
+        limitResumeGets += threadId
+        limitResumeGetCallbacks += callback
+    }
+
+    override fun limitResumeNow(threadId: String, callback: (RemoteResponse<LimitResumeNowResult>) -> Unit) {
+        limitResumeNowCallbacks += callback
+    }
+
+    override fun limitResumeCancel(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) {
+        limitResumeCancelCallbacks += callback
     }
 
     fun <T> RemoteResponse<T>.withScope(scope: ThreadEventScope) = copy(
