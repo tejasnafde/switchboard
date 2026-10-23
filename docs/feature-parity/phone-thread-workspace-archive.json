@@ -1,0 +1,68 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "phone-thread-workspace-archive",
+  "summary": "The agent settings sheet on the phone shows the chat's workspace and can archive the chat. Workspace: the branch of the chat's checkout (\"Checking branch\" before the first answer, \"Detached HEAD\" for a null branch, \"Branch unavailable\" when the lookup fails, for example outside a git repository or for a deleted folder), then \"Worktree\" or \"Project checkout\" with its path and, for a worktree, the parent project. A spinner shows while git:current-branch runs; a failed lookup keeps the last branch and shows \"Could not refresh branch\" with the reason and Retry. The phone reads the branch when the chat opens and again each time the sheet opens. Conversation: \"Archive conversation\" (\"Remove it from active lists without deleting its history.\") opens a confirm dialog (\"Archive this conversation?\", Cancel, Archive). It is disabled while a turn runs or the session starts. Archive calls app:archive-conversation and needs ok and archived in the answer; then the sheet closes and the phone goes back to the chat list, which reloads without the chat. A failure shows \"Could not archive conversation\" with the reason. In the demo both calls answer \"Not in the demo\", which the rows show as their error. The Expo app now matches native Android, which already had both.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/ipc/app.ts",
+        "src/main/ipc/git.ts",
+        "src/renderer/components/chat/BranchPicker.tsx",
+        "src/renderer/components/sidebar/Sidebar.tsx"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/lib/git-context.ts",
+        "apps/mobile/src/lib/thread-archive.ts",
+        "apps/mobile/src/hooks/useGitContext.ts",
+        "apps/mobile/src/components/AgentSettingsSheet.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/components/__tests__/AgentSettingsSheet.test.tsx",
+        "tests/unit/mobile-git-context.test.ts",
+        "tests/unit/phone-demo.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/GitContextPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/GitContextCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadChromePolicy.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/GitContextPresentationTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/GitContextCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadChromePolicyTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "The phone uses two channels the backend already answers for every client: git:current-branch ({ ok, branch } or { ok: false, error, missing? }) and app:archive-conversation ({ ok, archived }). Neither is in a phone scope's deny list, and neither handler changes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes. Archive sets the existing archived column through the existing handler; the phone keeps its cached copy of the chat, and the branch state is screen state only."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "JavaScript only in apps/mobile, so it ships on the iOS OTA lane (mobile-ota.yml) with an unchanged fingerprint runtimeVersion. No package identity, signing, deep link or native module change. Native Android is unchanged."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/mobile-git-context.test.ts: branch, detached HEAD, checking and unavailable labels, worktree and parent project, a failed refresh keeps the last branch, the archive status rule and the archive answer check.",
+      "npx vitest run tests/unit/phone-demo.test.ts: the demo refuses app:archive-conversation and git:current-branch with Not in the demo.",
+      "Expo jest AgentSettingsSheet: the Workspace row, the spinner and Retry on a failed lookup, archive only after the confirm dialog's Archive, the disabled row and the archive error.",
+      "npm run typecheck and apps/mobile tsc --noEmit pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The Expo screen was not run on an iPhone or a simulator: the confirm dialog over the sheet, the back navigation after archive, the chat list reload and VoiceOver on the new rows were not exercised.",
+      "Neither call was made against a live desktop or headless backend from the Expo app."
+    ]
+  }
+}

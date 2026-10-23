@@ -89,6 +89,9 @@ import { SendMicButton } from '../components/SendMicButton'
 import { SyntheticRow } from '../components/SyntheticRow'
 import { useDictation, type VoiceNote } from '../hooks/useDictation'
 import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
+import { useGitContext } from '../hooks/useGitContext'
+import { presentGitContext } from '../lib/git-context'
+import { archiveFailure, canArchive } from '../lib/thread-archive'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
 import { DEMO_STRIP_HEIGHT } from '../components/DemoStrip'
 import { DEMO_LABEL, NOT_IN_DEMO, isDemoConnection } from '@shared/phone-demo/phone-demo'
@@ -1447,6 +1450,42 @@ export default function ThreadScreen({ route, navigation }: Props) {
   })
 
   const usage = usageLine(thread)
+  const checkoutWorktree = thread.historyMeta?.worktreePath ?? worktreePath
+  const git = useGitContext(connectionId, checkoutWorktree ?? projectPath)
+  const gitContext = presentGitContext(projectPath, checkoutWorktree, git.state)
+  const [archiving, setArchiving] = useState(false)
+  const [archiveError, setArchiveError] = useState<string | null>(null)
+  const archive = () => {
+    if (archiving) return
+    if (!canArchive(thread.status, false)) {
+      setArchiveError('Stop the current turn before archiving')
+      return
+    }
+    const client = getClient(connectionId)
+    if (!client) {
+      setArchiveError('Backend not connected yet.')
+      return
+    }
+    setArchiving(true)
+    setArchiveError(null)
+    client.archiveConversation(threadId).then(
+      (result) => {
+        setArchiving(false)
+        const problem = archiveFailure(result)
+        if (problem) {
+          setArchiveError(problem)
+          return
+        }
+        setSettingsOpen(false)
+        navigation.goBack()
+      },
+      (err: unknown) => {
+        log.warn('archive failed', err)
+        setArchiving(false)
+        setArchiveError(err instanceof Error ? err.message : String(err))
+      },
+    )
+  }
   const footerShown = composerFocused || isRunning
   const showsQueueSegment = isRunning && canSteer(thread.provider ?? provider)
   const openPicker = (which: 'model' | 'profile') =>
@@ -1634,9 +1673,15 @@ export default function ThreadScreen({ route, navigation }: Props) {
         profileBusy={rotating}
         mode={thread.runtimeMode}
         usage={usage}
+        gitContext={gitContext}
+        archiving={archiving}
+        archiveError={archiveError}
+        archiveEnabled={canArchive(thread.status, archiving)}
         onMode={setMode}
         onOpenModel={() => openFromSettings('model')}
         onOpenProfile={() => openFromSettings('profile')}
+        onRefreshGitContext={git.refresh}
+        onArchive={archive}
         onClose={() => setSettingsOpen(false)}
         onDismiss={settingsDismissed}
       />
@@ -1710,6 +1755,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
                 onPress={() => {
                   // The keyboard would cover the bottom of the sheet.
                   Keyboard.dismiss()
+                  git.refresh()
                   setSettingsOpen(true)
                 }}
                 accessibilityRole="button"
