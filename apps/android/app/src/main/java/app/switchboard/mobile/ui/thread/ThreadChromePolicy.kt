@@ -56,9 +56,10 @@ object ThreadChromePolicy {
     }
 
     private fun String.formatTokenCounts(): String {
-        val match = Regex("^(\\d+) / (\\d+) tokens$").matchEntire(this) ?: return this
-        val used = match.groupValues[1].toLongOrNull() ?: return this
-        val maximum = match.groupValues[2].toLongOrNull() ?: return this
+        // The presenter already groups digits ("1,500 / 2,000 tokens").
+        val match = Regex("^([\\d,]+) / ([\\d,]+) tokens$").matchEntire(this) ?: return this
+        val used = match.groupValues[1].replace(",", "").toLongOrNull() ?: return this
+        val maximum = match.groupValues[2].replace(",", "").toLongOrNull() ?: return this
         return String.format(Locale.US, "%,d of %,d tokens", used, maximum)
     }
 }

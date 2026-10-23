@@ -42,7 +42,7 @@ class ThreadChromePolicyTest {
             listOf("1,500 of 2,000 tokens", "$0.42", "last turn 1.3s"),
             ThreadChromePolicy.metadataSummary(
                 metadata(
-                    contextLabel = "1500 / 2000 tokens",
+                    contextLabel = "1,500 / 2,000 tokens",
                     costLabel = "$0.42",
                     durationLabel = "1.3s",
                 ),
