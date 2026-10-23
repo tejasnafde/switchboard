@@ -109,6 +109,7 @@ import { createDefaultWorktreeCreationRuntime, type WorktreeCreationRuntime } fr
 
 const log = createMainLogger('tour')
 import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
+import { updatedNoticeVersion } from '@shared/update-status'
 import type { AgentType } from '@shared/types'
 import {
   KEYBOARD_OVERRIDES_SETTING,
@@ -180,6 +181,8 @@ const quitCoordinator = new QuitCoordinator(
   () => app.quit(),
 )
 const installAttempt = new InstallAttempt(quitCoordinator)
+/** The version that last ran; a different one at launch means an upgrade. */
+const LAST_RUN_VERSION_SETTING = 'app.lastRunVersion'
 
 // ⌘R / ⌘⇧R go through a confirm dialog instead of the raw reload roles -
 // a stray reload kills terminal panes and in-flight agent turns.
@@ -654,6 +657,15 @@ function createWindow(): BrowserWindow {
   ipcMain.removeAllListeners('app:close-window')
   ipcMain.on('app:close-window', () => {
     window.close()
+  })
+
+  // "Updated to vX" once per version: the first read after an upgrade.
+  ipcMain.removeHandler(AppChannels.TAKE_UPDATED_NOTICE)
+  ipcMain.handle(AppChannels.TAKE_UPDATED_NOTICE, () => {
+    const current = app.getVersion()
+    const version = updatedNoticeVersion(getSetting(LAST_RUN_VERSION_SETTING), current)
+    setSetting(LAST_RUN_VERSION_SETTING, current)
+    return version
   })
 
   // Quit + relaunch into a downloaded update. Repeat clicks are dropped.

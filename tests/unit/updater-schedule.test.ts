@@ -6,20 +6,23 @@ import {
 } from '../../src/main/updater-schedule'
 
 describe('shouldRunScheduledCheck', () => {
-  it('runs when nothing is in flight and nothing has downloaded', () => {
-    expect(shouldRunScheduledCheck({ checkInFlight: false, downloadInFlight: false, downloaded: false })).toBe(true)
+  it('runs when nothing is in flight', () => {
+    expect(shouldRunScheduledCheck({ checkInFlight: false, downloadInFlight: false })).toBe(true)
   })
 
   it('skips while a check is already in flight', () => {
-    expect(shouldRunScheduledCheck({ checkInFlight: true, downloadInFlight: false, downloaded: false })).toBe(false)
+    expect(shouldRunScheduledCheck({ checkInFlight: true, downloadInFlight: false })).toBe(false)
   })
 
   it('skips while a download a finished check started is still running', () => {
-    expect(shouldRunScheduledCheck({ checkInFlight: false, downloadInFlight: true, downloaded: false })).toBe(false)
+    expect(shouldRunScheduledCheck({ checkInFlight: false, downloadInFlight: true })).toBe(false)
   })
 
-  it('skips once an update has downloaded and is waiting for a restart', () => {
-    expect(shouldRunScheduledCheck({ checkInFlight: false, downloadInFlight: false, downloaded: true })).toBe(false)
+  // 2026-10-22: the checks stopped after the first download, so a prompt the
+  // user put off never came back and newer releases were never fetched.
+  it('keeps checking while a downloaded update waits for a restart', () => {
+    const waitingForRestart = { checkInFlight: false, downloadInFlight: false, downloaded: true }
+    expect(shouldRunScheduledCheck(waitingForRestart)).toBe(true)
   })
 })
 
@@ -33,10 +36,8 @@ describe('startUpdateScheduler', () => {
     vi.useRealTimers()
   })
 
-  function fakeState(
-    overrides: Partial<{ checkInFlight: boolean; downloadInFlight: boolean; downloaded: boolean }> = {},
-  ) {
-    return { checkInFlight: false, downloadInFlight: false, downloaded: false, ...overrides }
+  function fakeState(overrides: Partial<{ checkInFlight: boolean; downloadInFlight: boolean }> = {}) {
+    return { checkInFlight: false, downloadInFlight: false, ...overrides }
   }
 
   /** A no-op resume source: registers nothing real, removes nothing real. */
@@ -77,20 +78,6 @@ describe('startUpdateScheduler', () => {
     stop()
   })
 
-  it('skips an interval tick once an update has downloaded', () => {
-    const runCheck = vi.fn()
-    const stop = startUpdateScheduler({
-      getState: () => fakeState({ downloaded: true }),
-      runCheck,
-      onResume: noResume,
-    })
-
-    vi.advanceTimersByTime(UPDATE_CHECK_INTERVAL_MS)
-    expect(runCheck).not.toHaveBeenCalled()
-
-    stop()
-  })
-
   it('fires on resume', () => {
     const runCheck = vi.fn()
     let resumeListener: (() => void) | undefined
@@ -112,7 +99,7 @@ describe('startUpdateScheduler', () => {
     stop()
   })
 
-  it('skips a resume tick while a check is in flight or an update has downloaded', () => {
+  it('skips a resume tick while a check is in flight', () => {
     const runCheck = vi.fn()
     let resumeListener: (() => void) | undefined
     const state = fakeState({ checkInFlight: true })

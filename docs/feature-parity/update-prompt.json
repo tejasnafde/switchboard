@@ -1,0 +1,63 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "update-prompt",
+  "summary": "The desktop update prompt comes back until the user restarts. Before this, the hourly and resume checks stopped once an update had downloaded, and \"Later\" hid that version for the whole session, so one dismissal hid the prompt for good and newer releases were not fetched (2026-10-22: 0.9.103 waited about 17 hours with no check and no prompt). Now the scheduled checks keep running after a download; each one reports the cached download again, which shows the toast again after \"Later\" and fetches a newer version. The toast keeps a downloaded update on screen through later statuses (a check, a failed check) and reads the current status when it mounts. When the window is not in front, a downloaded version also fires one OS notification, \"Switchboard vX.Y.Z is ready. Restart to update.\", whose click focuses the window and shows the toast (it honours the notifications setting). Nothing installs without a click: `autoInstallOnAppQuit` stays false and only Restart calls `quitAndInstall`. After a launch into a new version the toast says \"Updated to vX.Y.Z\" once, with a link to the GitHub release notes.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/updater-schedule.ts",
+        "src/main/updater.ts",
+        "src/main/index.ts",
+        "src/preload/index.ts",
+        "src/preload/hybrid-transport.ts",
+        "src/renderer/components/UpdateToast.tsx",
+        "src/renderer/components/update-toast-policy.ts",
+        "src/renderer/services/notifications.ts",
+        "tests/unit/updater-schedule.test.ts",
+        "tests/unit/update-toast-policy.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Phones update through expo-updates and the App Store, not electron-updater, and show no desktop update prompt."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android updates through Google Play and shows no desktop update prompt."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/ipc-channels.ts",
+        "src/shared/update-status.ts",
+        "src/preload/hybrid-transport.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table, column or migration. The \"Updated to\" notice writes one row, app.lastRunVersion, into the existing settings key-value table; an older build ignores it, and the first launch with this build only records the version."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/updater-schedule.ts",
+        "src/renderer/components/UpdateToast.tsx"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/updater-schedule.test.ts: a scheduled check runs while a downloaded update waits for a restart (failed before the fix).",
+      "tests/unit/update-toast-policy.test.ts: the toast stays up through later statuses, shows again on the next downloaded report after \"Later\" (failed before the fix), and the \"Updated to\" version and release-notes URL rules.",
+      "npm run typecheck and the full vitest suite pass."
+    ],
+    "hardware": [
+      "The packaged 0.9.106 app with an isolated user-data dir, driven over CDP: an `update-downloaded` event from electron-updater rendered the toast, also when it arrived while the window was minimized. This showed the render path works and the prompt was lost to the stopped checks and the session-long dismissal."
+    ],
+    "notExercised": [
+      "The OS notification, the \"Updated to\" notice and the hourly re-prompt were not run in a packaged build across a real update. The `app.lastRunVersion` settings row needs no migration; the first launch with this build only records the version, so the notice first shows on the update after it."
+    ]
+  }
+}
