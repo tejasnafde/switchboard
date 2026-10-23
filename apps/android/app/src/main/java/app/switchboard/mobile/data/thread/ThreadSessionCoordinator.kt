@@ -772,6 +772,8 @@ class ThreadSessionCoordinator(
     private var reattachInFlight: ProviderKind? = null
     private var attachedProvider: ProviderKind? = null
     private var attachedInstanceId: String? = initialCached?.instanceId
+    /** A `session.provider` arrived, so an older load answer must not replace its profile. */
+    private var liveProviderSeen = false
     private val pendingControls = mutableSetOf<String>()
     private val pendingApprovalDecisions = mutableMapOf<String, ApprovalDecision>()
     private val pendingQuestionRequestIds = mutableSetOf<String>()
@@ -1449,12 +1451,13 @@ class ThreadSessionCoordinator(
                     currentThread()?.let {
                         val meta = outcome.value.meta
                         // The chat's stored provider and profile replace a saved copy's.
-                        val instanceId = meta?.providerInstanceId ?: it.instanceId
+                        val stored = meta.takeUnless { liveProviderSeen }
+                        val instanceId = stored?.providerInstanceId ?: it.instanceId
                         store = store.copy(threads = store.threads + (key to it.copy(
                             historyLoaded = true,
                             historyMeta = meta,
                             nextBeforeId = (outcome.value.raw.values["nextBeforeId"] as? JsonString)?.value,
-                            provider = meta?.agentType ?: it.provider,
+                            provider = stored?.agentType ?: it.provider,
                             instanceId = instanceId,
                             instanceName = if (instanceId == it.instanceId) it.instanceName else null,
                         )))
@@ -1728,6 +1731,7 @@ class ThreadSessionCoordinator(
             if (providerEvent != null) {
                 providerEvent.runtimeMode.toRuntimeModeOrNull()?.let { followBackendMode(it, supersedesPick = true) }
                 attachedInstanceId = providerEvent.instanceId
+                liveProviderSeen = true
                 val provider = providerKind(providerEvent.provider)
                 profiles = profiles.copy(
                     options = provider?.let {

@@ -818,6 +818,28 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `a profile announced live before the load answer is not replaced by the older stored one`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote)
+        coordinator.start()
+        remote.emit(scope, modeEvent("auto"))
+        remote.completeLoad(
+            success(
+                "load",
+                LoadedSession(
+                    messages = emptyList(),
+                    meta = SessionMeta("thread-1", "Title", "/repo", "claude", null, emptyJson(), providerInstanceId = "home"),
+                    total = 0,
+                    truncated = false,
+                    raw = emptyJson(),
+                ),
+            ),
+        )
+        assertEquals("work", coordinator.state.value.profiles.selectedInstanceId)
+        assertEquals("work", coordinator.currentThread()?.instanceId)
+    }
+
+    @Test
     fun `a mode picked on the phone applies at once and no turn re-sends it`() {
         val remote = FakeThreadSessionRemote(scope)
         val enqueue = FakeEnqueuePort()

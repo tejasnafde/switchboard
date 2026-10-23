@@ -577,7 +577,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // the desktop relabels the chip live instead of going stale until reopen.
   // Then this screen's pick, then the profile the loaded history names.
   const effectiveProvider = thread.provider ?? provider
-  const effectiveInstanceId = thread.instanceId ?? instanceId ?? thread.historyMeta?.providerInstanceId ?? undefined
+  // A live null (no profile) is an answer, so the loaded profile does not replace it.
+  const effectiveInstanceId =
+    thread.instanceId ??
+    instanceId ??
+    (thread.instanceId === null ? undefined : thread.historyMeta?.providerInstanceId) ??
+    undefined
 
   /** Rotate providers, or transactionally rotate credentials within one provider. */
   const rotateProfile = useCallback(
