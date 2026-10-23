@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { WorktreeProtection } from '@shared/worktree-manager'
 import { createRendererLogger } from '../../logger'
-import { cn } from '../../lib/utils'
+import { Switch } from '../ui/switch'
 
 const log = createRendererLogger('settings:worktree-protection')
 
@@ -53,26 +53,12 @@ export function WorktreeProtectionPanel() {
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={on}
+            <Switch
+              checked={on}
               aria-label={`Protect worktrees of ${project.name}`}
               disabled={protection === null}
-              onClick={() => void toggle(project.path, !on)}
-              className={cn(
-                'relative h-[18px] w-8 shrink-0 cursor-pointer rounded-full border-0 p-0 outline-none transition-colors duration-100 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50',
-                on ? 'bg-[var(--accent)]' : 'bg-[rgba(128,128,128,0.35)]',
-              )}
-            >
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'absolute left-[2px] top-[2px] size-[14px] rounded-full bg-[#fff] shadow-[0_1px_2px_rgba(0,0,0,0.3)] transition-transform duration-100',
-                  on && 'translate-x-[14px]',
-                )}
-              />
-            </button>
+              onCheckedChange={(next) => void toggle(project.path, next)}
+            />
           </div>
         )
       })}

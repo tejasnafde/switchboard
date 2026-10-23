@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { armLimitResume, getLimitResume, setLimitResumeStreak } from '../../src/main/db/database'
 import { LimitResumer, usageProbe, type LimitResumeHost } from '../../src/main/provider/limit-resume'
 import type { ProviderUsage } from '../../src/shared/provider-usage'
-import { limitResumeMarker, limitStateText, type LimitState } from '../../src/shared/limit-resume'
+import { limitResumeMarker, limitStateDetail, limitStateText, type LimitState } from '../../src/shared/limit-resume'
 import { systemRowView } from '../../src/shared/system-markers'
 
 const T0 = Date.UTC(2026, 9, 22, 12, 0, 0)
@@ -291,6 +291,14 @@ describe('the Limited row and the resume row', () => {
     expect(limitStateText({ kind: 'armed', resetAt: RESET }, at)).toBe('Usage limit. Resumes 12:02.')
     expect(limitStateText({ kind: 'gave_up' }, at)).toBe('Usage limit. Gave up after 3 tries.')
     expect(limitStateText({ kind: 'none' }, at)).toBeNull()
+    expect(limitStateDetail({ kind: 'armed', resetAt: RESET })).toBe(
+      'This chat carries on by itself then. A message you send now runs at once.',
+    )
+    for (const kind of ['disarmed', 'gave_up'] as const) {
+      expect(limitStateDetail({ kind })).toBe('Send a message after the reset to continue.')
+    }
+    expect(limitStateDetail({ kind: 'no_reset' })).toBe('Send a message to try again. It fails while the limit lasts.')
+    expect(limitStateDetail({ kind: 'none' })).toBeNull()
     expect(systemRowView(limitResumeMarker())).toEqual({
       kind: 'notice',
       title: 'Usage limit reset. Resumed the chat.',
