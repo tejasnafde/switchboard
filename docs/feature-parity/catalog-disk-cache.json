@@ -22,7 +22,7 @@
     },
     "storageDataMigration": {
       "status": "implemented",
-      "evidence": ["src/main/provider/catalog-probe.ts"],
+      "evidence": ["tests/unit/catalog-probe.test.ts"],
       "reason": "A new cache file, no migration: a missing or unreadable file starts an empty cache, and an older build ignores it."
     },
     "updateRelease": {
