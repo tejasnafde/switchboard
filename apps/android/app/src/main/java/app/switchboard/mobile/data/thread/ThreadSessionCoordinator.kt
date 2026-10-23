@@ -810,8 +810,8 @@ class ThreadSessionCoordinator(
     private var reattachInFlight: ProviderKind? = null
     private var attachedProvider: ProviderKind? = null
     private var attachedInstanceId: String? = initialCached?.instanceId
-    /** A `session.provider` arrived, so an older load answer must not replace its profile. */
-    private var liveProviderSeen = false
+    /** Counts `session.provider` events: a load answer that one overtook must not replace its profile. */
+    private var providerEventRevision = 0L
     private val pendingControls = mutableSetOf<String>()
     private val pendingApprovalDecisions = mutableMapOf<String, ApprovalDecision>()
     private val pendingQuestionRequestIds = mutableSetOf<String>()
@@ -860,13 +860,14 @@ class ThreadSessionCoordinator(
             reduce(ThreadAction.ReplayGap(scope))
         }
         val request = ++loadRequest
+        val providerRevision = providerEventRevision
         load = currentThread()?.takeIf { it.feed.isNotEmpty() }?.let {
             ThreadSessionLoad.Ready(it, refreshing = true)
         } ?: ThreadSessionLoad.Loading(null)
         publish()
         if ("history_window_v1" in capabilities) {
-            remote.loadSessionWindow(threadId, null) { response -> acceptLoad(request, response) }
-        } else remote.loadSession(threadId, HISTORY_LIMIT) { response -> acceptLoad(request, response) }
+            remote.loadSessionWindow(threadId, null) { response -> acceptLoad(request, providerRevision, response) }
+        } else remote.loadSession(threadId, HISTORY_LIMIT) { response -> acceptLoad(request, providerRevision, response) }
     }
 
     private var olderLoading = false
@@ -1478,7 +1479,7 @@ class ThreadSessionCoordinator(
         reduce(ThreadAction.SetViewing(scope.connectionId, threadId, false))
     }
 
-    private fun acceptLoad(request: Long, response: RemoteResponse<LoadedSession>) {
+    private fun acceptLoad(request: Long, providerRevision: Long, response: RemoteResponse<LoadedSession>) {
         synchronized(this) {
             if (!accepts(response, request, loadRequest)) return
             when (val outcome = response.outcome) {
@@ -1490,11 +1491,12 @@ class ThreadSessionCoordinator(
                             LoadedSessionSnapshotMapper.map(threadId, outcome.value),
                         ),
                     )
+                    val meta = outcome.value.meta
+                    // The chat's stored provider and profile replace a saved copy's,
+                    // unless a live event arrived while this load was in flight.
+                    val stored = meta.takeIf { providerRevision == providerEventRevision }
                     currentThread()?.let {
-                        val meta = outcome.value.meta
-                        // The chat's stored provider and profile replace a saved copy's.
-                        val stored = meta.takeUnless { liveProviderSeen }
-                        val instanceId = stored?.providerInstanceId ?: it.instanceId
+                        val instanceId = if (stored != null) stored.providerInstanceId else it.instanceId
                         store = store.copy(threads = store.threads + (key to it.copy(
                             historyLoaded = true,
                             historyMeta = meta,
@@ -1505,6 +1507,7 @@ class ThreadSessionCoordinator(
                         )))
                     }
                     syncProfiles()
+                    if (stored != null) profiles = profiles.copy(selectedInstanceId = stored.providerInstanceId)
                     reconcileOptimisticHistory()
                     optimisticTurns.values.forEach(::addOptimistic)
                     reduce(ThreadAction.CompleteReseed(scope))
@@ -1779,7 +1782,7 @@ class ThreadSessionCoordinator(
             if (providerEvent != null) {
                 providerEvent.runtimeMode.toRuntimeModeOrNull()?.let { followBackendMode(it, supersedesPick = true) }
                 attachedInstanceId = providerEvent.instanceId
-                liveProviderSeen = true
+                providerEventRevision += 1
                 val provider = providerKind(providerEvent.provider)
                 profiles = profiles.copy(
                     options = provider?.let {

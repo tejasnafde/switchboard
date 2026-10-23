@@ -843,6 +843,33 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `a later load after a live profile takes the stored profile, and a stored null clears it`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote)
+        coordinator.start()
+        remote.emit(scope, modeEvent("auto"))
+        remote.completeLoad(success("load", loadedSession()))
+        assertEquals("work", coordinator.state.value.profiles.selectedInstanceId)
+
+        coordinator.refresh()
+        remote.completeLoadAt(
+            1,
+            success(
+                "load",
+                LoadedSession(
+                    messages = emptyList(),
+                    meta = SessionMeta("thread-1", "Title", "/repo", "claude", null, emptyJson(), providerInstanceId = null),
+                    total = 0,
+                    truncated = false,
+                    raw = emptyJson(),
+                ),
+            ),
+        )
+        assertNull(coordinator.state.value.profiles.selectedInstanceId)
+        assertNull(coordinator.currentThread()?.instanceId)
+    }
+
+    @Test
     fun `a mode picked on the phone applies at once and no turn re-sends it`() {
         val remote = FakeThreadSessionRemote(scope)
         val enqueue = FakeEnqueuePort()
