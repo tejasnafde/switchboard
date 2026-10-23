@@ -5,6 +5,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Changed
+- **Native Android 0.5.21 (versionCode 23).** It adds the decluttered chat screen (#409), the stored provider, profile and mode on each chat (#408), the Limited row behind `limit_auto_resume` (#407), sends queued during a chat open or profile switch (#396), kept approval cards and link messages (#398) and native debug symbols for Play (#394) to the 0.5.20 Play build.
+
+### Changed
 - **Long chats open fast after a restart too, and the app starts faster.** Each transcript gets a small index of where every message starts, kept in the app data folder, so the first open after a restart parses only the lines near the window. On a 263 MB transcript the cold open drops from 4.7 s to 0.15 s. The first open of a chat after this update builds the index once (about 2.6 s for that chat). The pill and image lookup reads only the rows that the window shows (0.43 s to 0.05 s). Every start no longer counts the search index rows, which took about 5 s on a 1 GB database; one-time index builds now run after the window shows.
 - **Long chats open fast.** A chat window reads only the stored rows near it, and a reopen reads only the new bytes of a transcript, never the whole file. On a 256 MB transcript a warm open takes about 50 ms instead of 0.5 to 2 s, and every older page costs about the same. A window is capped at 1 MiB, so a phone may get fewer rows per page and loads the rest as it scrolls. The desktop starts loading older messages earlier when the pointer moves to the top of the list.
 - **Linked pull request picker.** The chat header chip reads "2 open · 106 linked" and opens a searchable list: the PR title first, then the number, state and what it needs, open PRs first, ten at a time. Search matches the number, title, branch and state words such as merged, draft or build failed. Arrows and Enter open a PR in Reviews.
