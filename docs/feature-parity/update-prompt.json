@@ -29,15 +29,22 @@
     },
     "sharedBackendApi": {
       "status": "implemented",
-      "evidence": ["src/shared/ipc-channels.ts", "src/shared/update-status.ts", "src/preload/hybrid-transport.ts"]
+      "evidence": [
+        "src/shared/ipc-channels.ts",
+        "src/shared/update-status.ts",
+        "src/preload/hybrid-transport.ts"
+      ]
     },
     "storageDataMigration": {
-      "status": "implemented",
-      "evidence": ["src/main/index.ts"]
+      "status": "not_applicable",
+      "reason": "No table, column or migration. The \"Updated to\" notice writes one row, app.lastRunVersion, into the existing settings key-value table; an older build ignores it, and the first launch with this build only records the version."
     },
     "updateRelease": {
       "status": "implemented",
-      "evidence": ["src/main/updater-schedule.ts", "src/renderer/components/UpdateToast.tsx"]
+      "evidence": [
+        "src/main/updater-schedule.ts",
+        "src/renderer/components/UpdateToast.tsx"
+      ]
     }
   },
   "verification": {
