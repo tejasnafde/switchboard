@@ -44,7 +44,7 @@
   "verification": {
     "automated": [
       "tests/unit/chat-load-rotated-settings.test.ts: a chat opened by its rotated id loads the root row's profile, mode, model and effort, and a change written through the rotated id shows on the next load by either id. Both cases failed before the fix (null profile and mode).",
-      "apps/mobile thread-stored-settings.test.tsx renders ThreadScreen against the demo transport with a stored Work profile and Plan mode: the chip shows Work, not the first profile, and a mode picked on the phone goes to provider:set-runtime-mode, which stores it. The profile case failed before the fix.",
+      "apps/mobile thread-stored-settings.test.tsx renders ThreadScreen against the demo transport with a stored Work profile and Plan mode: the agent settings sheet gets Work and Plan, not the first profile and the default mode, and a mode picked on the phone goes to provider:set-runtime-mode, which stores it. The profile case failed before the fix.",
       "ThreadSessionCoordinatorTest: a saved copy with another profile is replaced by the loaded profile and mode, the reattach starts on the stored profile, and a profile change sends it as the expected current profile. It failed before the fix. A second test pins that a profile announced live before the load answer is not replaced by the older stored one."
     ],
     "hardware": [],

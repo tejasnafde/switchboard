@@ -657,7 +657,7 @@ private fun PrLinksChip(links: List<PrLink>, onClick: () -> Unit) {
 }
 
 /** One row per pull request linked to this chat, each with an Unlink action
- *  behind a confirm dialog. Mirrors PrLinksBanner.tsx on the Expo app. */
+ *  behind a confirm dialog. Mirrors PrLinks.tsx on the Expo app. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PrLinksSheet(links: List<PrLink>, onUnlink: (PrLinkRef) -> Unit, onDismiss: () -> Unit) {

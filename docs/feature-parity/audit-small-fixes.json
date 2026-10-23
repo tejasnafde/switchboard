@@ -16,7 +16,7 @@
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
-        "apps/mobile/src/components/ThreadHeaderStatus.tsx",
+        "apps/mobile/src/components/ThreadHeaderTitle.tsx",
         "apps/mobile/src/screens/ThreadScreen.tsx"
       ]
     },

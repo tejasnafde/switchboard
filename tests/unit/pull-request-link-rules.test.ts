@@ -12,6 +12,8 @@ import {
   linkSourceLabel,
   mergesOrClosesPr,
   phoneLinkRowText,
+  phoneLinkSheetRow,
+  prLinksChipLabel,
   unlinkPrLabel,
   type PrLink,
 } from '../../src/shared/pull-request-links'
@@ -34,14 +36,30 @@ describe('link provenance labels', () => {
   })
 })
 
-const rowCases: Array<{ id: string; link: PrLink; text: string; unlinkLabel: string }> = JSON.parse(
-  readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../fixtures/pr-link-rows.json'), 'utf8'),
-)
+const rowCases: Array<{
+  id: string
+  link: PrLink
+  text: string
+  unlinkLabel: string
+  sheetPrimary: string
+  sheetSecondary: string
+}> = JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../fixtures/pr-link-rows.json'), 'utf8'))
 
 describe('phoneLinkRowText (tests/fixtures/pr-link-rows.json, shared with Android)', () => {
   it.each(rowCases.map((c) => [c.id, c] as const))('%s', (_id, c) => {
     expect(phoneLinkRowText(c.link)).toBe(c.text)
     expect(unlinkPrLabel(c.link.ref)).toBe(c.unlinkLabel)
+    expect(phoneLinkSheetRow(c.link)).toEqual({ primary: c.sheetPrimary, secondary: c.sheetSecondary })
+  })
+})
+
+describe('prLinksChipLabel', () => {
+  const link = (number: number) => ({ ref: { host: 'github' as const, owner: 'acme', name: 'app', number } })
+  it('names the first link and counts the rest', () => {
+    expect(prLinksChipLabel([])).toBe('')
+    expect(prLinksChipLabel([link(9)])).toBe('#9')
+    expect(prLinksChipLabel([link(9), link(10)])).toBe('#9 +1')
+    expect(prLinksChipLabel([link(9), link(10), link(11)])).toBe('#9 +2')
   })
 })
 

@@ -515,7 +515,7 @@ export default function NewSessionScreen({ route, navigation }: Props) {
         )}
 
         <Text style={styles.sectionLabel}>Runtime mode</Text>
-        <ModePicker value={mode} onChange={activeWorktreeCreation ? () => undefined : setMode} variant="row" />
+        <ModePicker value={mode} onChange={activeWorktreeCreation ? () => undefined : setMode} />
 
         <Text style={styles.sectionLabel}>First message (optional)</Text>
         <TextInput
