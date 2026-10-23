@@ -99,8 +99,6 @@ import { HOST_WRITE_PHONE_APPROVAL_CAPABILITY } from '@shared/host-write-phone'
 import { AGENT_ASYNC_APPROVAL_CAPABILITY } from '@shared/agent-approval-cards'
 import {
   ApprovalItem,
-  FileEditItem,
-  FileGroupItem,
   HeldTurnBar,
   MergeBackItem,
   PeerUndeliveredItem,
@@ -116,6 +114,7 @@ import { styles } from './thread-screen.styles'
 import { blockedSendReason } from '../lib/composer'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
 import { collapseFileEdits } from '../lib/file-groups'
+import { FileEditItem, FileGroupItem } from './FileEditItem'
 import { collapseSubagents, type ThreadRow } from '../lib/subagent-rows'
 import { EventRowItem } from './EventRowItem'
 import { SubagentItem } from './SubagentItem'
@@ -728,7 +727,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // FlatList passes its own getItem/getItemCount after {...restProps}, so a
   // zero-copy accessor would be ignored and the feed would render oldest-first.
   // Reversing a copy is cheap; the memoized rows are what actually mattered.
-  // Which turns' "Changed N files" rows are open, on this screen only.
+  // Which turns' "Changed N files" rows and which file diffs are open, on this
+  // screen only. Group ids start "files:", so they never meet a file row's id.
   const [openFileGroups, setOpenFileGroups] = useState<ReadonlySet<string>>(() => new Set())
   const toggleFileGroup = useCallback((id: string) => {
     setOpenFileGroups((open) => {
@@ -1318,7 +1318,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
         case 'plan':
           return <PlanItem item={item} onImplement={implementPlan} onIterate={focusComposer} />
         case 'fileEdit':
-          return <FileEditItem item={item} backendLabel={backendLabel} />
+          return (
+            <FileEditItem
+              item={item}
+              backendLabel={backendLabel}
+              expanded={openFileGroups.has(item.id)}
+              onToggle={toggleFileGroup}
+            />
+          )
         case 'fileGroup':
           return <FileGroupItem row={item} onToggle={toggleFileGroup} />
         case 'notice':
@@ -1388,6 +1395,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       actOnHeld,
       heldErrors,
       toggleFileGroup,
+      openFileGroups,
       undeliveredSending,
       undeliveredErrors,
       sendUndelivered,
