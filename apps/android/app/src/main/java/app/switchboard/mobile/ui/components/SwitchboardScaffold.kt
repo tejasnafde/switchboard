@@ -1,7 +1,11 @@
 package app.switchboard.mobile.ui.components
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
@@ -14,6 +18,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -26,6 +31,9 @@ fun SwitchboardScaffold(
     title: String,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    /** Makes the title block a button, for example to show the thread's usage. */
+    onTitleClick: (() -> Unit)? = null,
+    titleClickLabel: String? = null,
     navigationIcon: @Composable () -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
     snackbarHostState: SnackbarHostState? = null,
@@ -39,7 +47,16 @@ fun SwitchboardScaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    androidx.compose.foundation.layout.Column {
+                    Column(
+                        modifier = if (onTitleClick != null) {
+                            Modifier
+                                .heightIn(min = SwitchboardDimensions.minimumTouchTarget)
+                                .clickable(role = Role.Button, onClickLabel = titleClickLabel, onClick = onTitleClick)
+                        } else {
+                            Modifier
+                        },
+                        verticalArrangement = Arrangement.Center,
+                    ) {
                         Text(
                             text = title,
                             modifier = Modifier.semantics { heading() },
@@ -53,7 +70,7 @@ fun SwitchboardScaffold(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.bodySmall,
                             )
                         }
                     }

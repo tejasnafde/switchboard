@@ -65,7 +65,7 @@ val SwitchboardTypography = Typography(
     ),
     bodySmall = TextStyle(
         fontSize = 13.sp,
-        lineHeight = 19.sp,
+        lineHeight = 18.sp,
     ),
     labelLarge = TextStyle(
         fontFamily = InstrumentSans,

@@ -63,20 +63,26 @@ class TurnDeliveryPolicyTest {
     fun toggleReadsAsItAlwaysDidWithTheSteerDefault() {
         val steer = TurnDeliveryPolicy.queueToggle(TurnDelivery.Steer, flipped = false)
         assertFalse(steer.queues)
-        assertEquals("Steering the running turn · tap to queue", steer.label)
+        assertEquals("Steer", steer.label)
+        assertEquals("Steering the running turn · tap to queue", steer.hint)
+        assertEquals("Send after this turn instead of steering it", steer.accessibilityLabel)
         val flipped = TurnDeliveryPolicy.queueToggle(TurnDelivery.Steer, flipped = true)
         assertTrue(flipped.queues)
-        assertEquals("Sends after this turn", flipped.label)
+        assertEquals("Queue", flipped.label)
+        assertEquals("Sends after this turn", flipped.hint)
     }
 
     @Test
     fun toggleStartsQueuedWithTheQueueDefaultAndATapSteersOnce() {
         val queue = TurnDeliveryPolicy.queueToggle(TurnDelivery.Queue, flipped = false)
         assertTrue(queue.queues)
-        assertEquals("Sends after this turn · tap to steer", queue.label)
+        assertEquals("Queue", queue.label)
+        assertEquals("Sends after this turn · tap to steer", queue.hint)
+        assertEquals("Steer the running turn instead of queueing", queue.accessibilityLabel)
         val flipped = TurnDeliveryPolicy.queueToggle(TurnDelivery.Queue, flipped = true)
         assertFalse(flipped.queues)
-        assertEquals("Steering the running turn", flipped.label)
+        assertEquals("Steer", flipped.label)
+        assertEquals("Steering the running turn", flipped.hint)
     }
 
     @Test

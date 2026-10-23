@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -26,7 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -37,6 +41,7 @@ import app.switchboard.mobile.domain.voice.VoiceGestureOutcome
 import app.switchboard.mobile.domain.voice.VoiceGesturePolicy
 import app.switchboard.mobile.domain.voice.VoiceNoticeAction
 import app.switchboard.mobile.domain.voice.VoiceCapturePhase
+import app.switchboard.mobile.ui.thread.ThreadTestTags
 import app.switchboard.mobile.ui.theme.Amber
 import app.switchboard.mobile.ui.theme.Red
 import app.switchboard.mobile.ui.theme.TextDim
@@ -133,19 +138,29 @@ fun ThreadVoicePrimaryControl(
                         VoiceGestureOutcome.Locked -> Amber
                         VoiceGestureOutcome.None -> TextDim
                     },
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier
                         .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                 )
             }
         }
-        Text(
-            text = label,
-            color = MaterialTheme.colorScheme.onPrimary,
-            style = MaterialTheme.typography.labelLarge,
+        val stopAgent = mode == VoicePrimaryMode.StopAgent
+        Box(
+            contentAlignment = Alignment.Center,
             modifier = Modifier
                 .heightIn(min = 48.dp)
+                .then(
+                    if (stopAgent) {
+                        Modifier
+                            .size(48.dp)
+                            .testTag(ThreadTestTags.STOP_BUTTON)
+                            .semantics { contentDescription = label }
+                            .padding(4.dp)
+                    } else {
+                        Modifier
+                    },
+                )
                 .clip(CircleShape)
                 .background(
                     MaterialTheme.colorScheme.primary.copy(
@@ -243,8 +258,19 @@ fun ThreadVoicePrimaryControl(
                         else -> memory.active
                     }
                 }
-                .padding(horizontal = 18.dp, vertical = 14.dp),
-        )
+                .then(if (stopAgent) Modifier else Modifier.padding(horizontal = 18.dp, vertical = 14.dp)),
+        ) {
+            if (stopAgent) {
+                // A filled square: the stop glyph material-icons-core does not ship.
+                Box(
+                    Modifier
+                        .size(14.dp)
+                        .background(MaterialTheme.colorScheme.onPrimary, RoundedCornerShape(2.dp)),
+                )
+            } else {
+                Text(text = label, color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelLarge)
+            }
+        }
     }
 }
 

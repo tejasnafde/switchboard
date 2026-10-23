@@ -19,9 +19,9 @@ class ThreadChromePolicyTest {
     }
 
     @Test
-    fun `subtitle describes only known provider model and state`() {
+    fun `subtitle names the provider and state but not the model`() {
         assertEquals(
-            "Codex · gpt-5 · Working",
+            "Codex · Working",
             ThreadChromePolicy.subtitle(
                 metadata(
                     status = "running",
@@ -39,16 +39,41 @@ class ThreadChromePolicyTest {
     @Test
     fun `metadata summary includes measured values and omits missing ones`() {
         assertEquals(
-            listOf("1,500 / 2,000 tokens", "$0.42", "1.3s"),
+            listOf("1,500 of 2,000 tokens", "$0.42", "last turn 1.3s"),
             ThreadChromePolicy.metadataSummary(
                 metadata(
-                    contextLabel = "1500 / 2000 tokens",
+                    contextLabel = "1,500 / 2,000 tokens",
                     costLabel = "$0.42",
                     durationLabel = "1.3s",
                 ),
             ),
         )
         assertEquals(emptyList<String>(), ThreadChromePolicy.metadataSummary(metadata()))
+    }
+
+    @Test
+    fun `usage line joins the measured values into one sentence`() {
+        assertEquals(
+            "576,511 of 1,000,000 tokens · $904.67 · last turn 1.3s",
+            ThreadChromePolicy.usageLine(
+                metadata(
+                    contextLabel = "576511 / 1000000 tokens",
+                    costLabel = "$904.67",
+                    durationLabel = "1.3s",
+                ),
+            ),
+        )
+        assertEquals("$0.42", ThreadChromePolicy.usageLine(metadata(costLabel = "$0.42")))
+        assertNull(ThreadChromePolicy.usageLine(metadata()))
+    }
+
+    @Test
+    fun `turn duration shows from 30 seconds`() {
+        assertFalse(ThreadChromePolicy.showsTurnDuration(null))
+        assertFalse(ThreadChromePolicy.showsTurnDuration(1_300))
+        assertFalse(ThreadChromePolicy.showsTurnDuration(29_999))
+        assertTrue(ThreadChromePolicy.showsTurnDuration(30_000))
+        assertTrue(ThreadChromePolicy.showsTurnDuration(95_000))
     }
 
     @Test

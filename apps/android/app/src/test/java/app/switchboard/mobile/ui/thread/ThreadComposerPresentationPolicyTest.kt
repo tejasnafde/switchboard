@@ -36,17 +36,14 @@ class ThreadComposerPresentationPolicyTest {
     @Test
     fun `one settings affordance summarizes model and runtime`() {
         assertEquals(
-            ThreadSettingsAffordance(
-                label = "Claude Sonnet",
-                supportingLabel = "Supervised",
-            ),
+            ThreadSettingsAffordance(label = "Claude Sonnet · Supervised"),
             ThreadComposerPresentationPolicy.settingsAffordance(
                 modelLabel = " Claude Sonnet ",
                 runtimeMode = RuntimeMode.Sandbox,
             ),
         )
         assertEquals(
-            "Model & runtime",
+            "Model · Full access",
             ThreadComposerPresentationPolicy.settingsAffordance(
                 modelLabel = null,
                 runtimeMode = RuntimeMode.FullAccess,
@@ -55,14 +52,18 @@ class ThreadComposerPresentationPolicyTest {
     }
 
     @Test
-    fun `secondary actions stay hidden until the composer expands`() {
+    fun `secondary actions stay hidden until the composer expands or a turn runs`() {
         assertEquals(
             false,
-            ThreadComposerPresentationPolicy.showsSecondaryActions(ThreadComposerDensity.Compact),
+            ThreadComposerPresentationPolicy.showsSecondaryActions(ThreadComposerDensity.Compact, running = false),
         )
         assertEquals(
             true,
-            ThreadComposerPresentationPolicy.showsSecondaryActions(ThreadComposerDensity.Expanded),
+            ThreadComposerPresentationPolicy.showsSecondaryActions(ThreadComposerDensity.Expanded, running = false),
+        )
+        assertEquals(
+            true,
+            ThreadComposerPresentationPolicy.showsSecondaryActions(ThreadComposerDensity.Compact, running = true),
         )
     }
 

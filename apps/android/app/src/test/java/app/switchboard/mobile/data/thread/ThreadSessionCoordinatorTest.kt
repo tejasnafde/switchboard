@@ -975,7 +975,7 @@ class ThreadSessionCoordinatorTest {
         assertNull(enqueue.drafts.last().delivery)
 
         coordinator.toggleNextDelivery()
-        assertEquals("Sends after this turn", coordinator.state.value.toComposerPresentation().queueToggle?.label)
+        assertEquals("Sends after this turn", coordinator.state.value.toComposerPresentation().queueToggle?.hint)
         coordinator.updateDraft("later")
         enqueue.results += durable("o-2", "later")
         coordinator.submit()

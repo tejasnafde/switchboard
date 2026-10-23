@@ -182,6 +182,7 @@ sealed interface ThreadRowPresentation {
         val source: FeedItem.Text,
         override val kind: ThreadRowKind,
         val durationLabel: String?,
+        val durationMs: Long? = null,
     ) : ThreadRowPresentation {
         override val key = source.id
     }
@@ -552,6 +553,7 @@ object ThreadPresenter {
                 else -> ThreadRowKind.ASSISTANT
             },
             durationLabel = item.durationMs?.let(::formatDuration),
+            durationMs = item.durationMs,
         )
 
         is FeedItem.Tool -> {

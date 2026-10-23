@@ -49,7 +49,13 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
@@ -93,17 +99,20 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.expand
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -126,6 +135,7 @@ import app.switchboard.mobile.domain.thread.MergeBackRow
 import app.switchboard.mobile.domain.thread.PrLink
 import app.switchboard.mobile.domain.thread.PrLinkRef
 import app.switchboard.mobile.domain.thread.PrLinkRows
+import app.switchboard.mobile.domain.thread.QueueToggle
 import app.switchboard.mobile.domain.thread.SyntheticTone
 import app.switchboard.mobile.domain.thread.SystemMarkers
 import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
@@ -161,6 +171,8 @@ import app.switchboard.mobile.ui.components.SwitchboardListRow
 import app.switchboard.mobile.ui.components.SwitchboardScaffold
 import app.switchboard.mobile.ui.components.SwitchboardTopBarAction
 import app.switchboard.mobile.ui.theme.SwitchboardDimensions
+import app.switchboard.mobile.ui.reviews.ReviewsGlyph
+import app.switchboard.mobile.ui.reviews.ReviewsGlyphIcon
 import app.switchboard.mobile.ui.voice.ThreadVoicePrimaryControl
 import app.switchboard.mobile.ui.voice.VoiceNoticeRow
 import app.switchboard.mobile.ui.voice.rememberVoiceComposer
@@ -259,8 +271,14 @@ fun ThreadScreen(
             compactionDismissed = false
         }
     }
+    val usageLine = metadata?.let(ThreadChromePolicy::usageLine)
+    var usageVisible by rememberSaveable(threadId) { mutableStateOf(false) }
+    var prSheetOpen by rememberSaveable(threadId) { mutableStateOf(false) }
     val rows = (presentation as? ThreadPresentation.Content)?.rows.orEmpty()
     val pendingApproval = ThreadChromePolicy.pendingApproval(rows)
+    LaunchedEffect(prLinks.isEmpty()) {
+        if (prLinks.isEmpty()) prSheetOpen = false
+    }
 
     // Same 60s tick as the desktop pane and ThreadScreen.tsx: nothing else
     // re-renders an idle thread, so staleness needs its own clock source.
@@ -291,6 +309,7 @@ fun ThreadScreen(
                 modelLabel = composer.modelLabel,
                 runtimeMode = composer.runtimeMode,
             ),
+            usage = metadata?.let(ThreadChromePolicy::metadataSummary).orEmpty(),
             selectedMode = composer.runtimeMode,
             modeEnabled = !composer.modeChanging,
             models = models,
@@ -315,6 +334,8 @@ fun ThreadScreen(
     SwitchboardScaffold(
         title = title,
         subtitle = metadata?.let(ThreadChromePolicy::subtitle) ?: backendLabel,
+        onTitleClick = usageLine?.let { { usageVisible = !usageVisible } },
+        titleClickLabel = if (usageVisible) "Hide usage" else "Show usage",
         modifier = modifier.fillMaxSize(),
         navigationIcon = {
             SwitchboardTopBarAction(contentDescription = "Back", onClick = onBack) {
@@ -323,6 +344,9 @@ fun ThreadScreen(
         },
         actions = {
             DemoBadge(Modifier.align(Alignment.CenterVertically).padding(end = 4.dp))
+            if (prLinks.isNotEmpty()) {
+                PrLinksChip(links = prLinks, onClick = { prSheetOpen = true })
+            }
             if (composer != null) {
                 SwitchboardTopBarAction(
                     contentDescription = "Agent settings",
@@ -365,7 +389,7 @@ fun ThreadScreen(
                 .fillMaxSize()
                 .padding(scaffoldPadding),
         ) {
-            metadata?.let { ThreadMetricStrip(it) }
+            if (usageVisible) usageLine?.let { ThreadUsageLine(it) }
             if (profiles.changing) {
                 InlineStatus(
                     message = "Switching to ${profiles.switchingTo}...",
@@ -395,7 +419,6 @@ fun ThreadScreen(
                     onSendBack = onOpenMergeBackSend.takeIf { mergeBack.available },
                 )
             }
-            PrLinksBanner(links = prLinks, onUnlink = onUnlinkPrLink)
             LimitResumeRow(limitResume, onResumeNow = onResumeLimitNow, onCancel = onCancelLimitResume)
             Box(modifier = Modifier.weight(1f)) {
             when (presentation) {
@@ -416,7 +439,7 @@ fun ThreadScreen(
                             .fillMaxSize()
                             .testTag(ThreadTestTags.FEED),
                         reverseLayout = true,
-                        contentPadding = PaddingValues(top = 24.dp),
+                        contentPadding = PaddingValues(top = 12.dp, bottom = 8.dp),
                     ) {
                         items(
                             feedRows,
@@ -451,6 +474,9 @@ fun ThreadScreen(
         }
         }
     }
+    if (prSheetOpen && prLinks.isNotEmpty()) {
+        PrLinksSheet(links = prLinks, onUnlink = onUnlinkPrLink, onDismiss = { prSheetOpen = false })
+    }
     lightboxUrl?.let { url ->
         ThreadImageLightbox(url = url, onDismiss = { lightboxUrl = null })
     }
@@ -484,7 +510,7 @@ fun ThreadScreen(
 
 /** Compact form of tokens for banner text - mirrors formatTokens in
  *  src/shared/format.ts (128000 -> "128.0k", not the comma-grouped form
- *  ThreadMetricStrip uses for the context meter). */
+ *  the usage line uses for the context meter). */
 private fun formatTokensCompact(tokens: Long): String = when {
     tokens >= 1_000_000 -> String.format(Locale.US, "%.1fM", tokens / 1_000_000.0)
     tokens >= 1_000 -> String.format(Locale.US, "%.1fk", tokens / 1_000.0)
@@ -608,43 +634,99 @@ private fun LimitResumeRow(row: ThreadLimitResumeState, onResumeNow: () -> Unit,
     }
 }
 
-/** About two and a half rows: the cut-off row shows the list scrolls. */
-private val PR_LINKS_BANNER_MAX_HEIGHT = 120.dp
-
-/** One quiet line per pull request linked to this chat, with an Unlink
- *  action behind a confirm dialog. Mirrors PrLinksBanner.tsx on the Expo app.
- *  A long list scrolls inside a capped height, so the feed keeps its room. */
+/** The linked pull requests in the app bar: "#9 +1". A tap opens [PrLinksSheet]. */
 @Composable
-private fun PrLinksBanner(links: List<PrLink>, onUnlink: (PrLinkRef) -> Unit) {
-    if (links.isEmpty()) return
-    var confirmTarget by remember { mutableStateOf<PrLink?>(null) }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = PR_LINKS_BANNER_MAX_HEIGHT)
-            .background(Surface)
-            .verticalScroll(rememberScrollState()),
+private fun PrLinksChip(links: List<PrLink>, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier.heightIn(min = SwitchboardDimensions.minimumTouchTarget),
+        contentAlignment = Alignment.Center,
     ) {
-        links.forEach { link ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = PrLinkRows.text(link),
-                    color = TextDim,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(
-                    onClick = { confirmTarget = link },
-                    modifier = Modifier.semantics { contentDescription = PrLinkRows.unlinkLabel(link.ref) },
+        AssistChip(
+            onClick = onClick,
+            label = { Text(PrLinkRows.chipLabel(links), style = MaterialTheme.typography.bodySmall) },
+            leadingIcon = {
+                ReviewsGlyphIcon(ReviewsGlyph.PullRequest, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 14.dp)
+            },
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier
+                .height(32.dp)
+                .testTag(ThreadTestTags.PR_CHIP)
+                .semantics { contentDescription = "Linked pull requests, ${links.size}" },
+        )
+    }
+}
+
+/** One row per pull request linked to this chat, each with an Unlink action
+ *  behind a confirm dialog. Mirrors PrLinksBanner.tsx on the Expo app. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PrLinksSheet(links: List<PrLink>, onUnlink: (PrLinkRef) -> Unit, onDismiss: () -> Unit) {
+    var confirmTarget by remember { mutableStateOf<PrLink?>(null) }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.testTag(ThreadTestTags.PR_SHEET),
+    ) {
+        Text(
+            "Linked pull requests",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier
+                .padding(start = 24.dp, end = 24.dp, bottom = 12.dp)
+                .semantics { heading() },
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 16.dp),
+        ) {
+            links.forEach { link ->
+                val sheetRow = PrLinkRows.sheetRow(link)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 64.dp)
+                        .padding(start = 24.dp, end = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    Text("Unlink", color = Accent, style = MaterialTheme.typography.labelSmall)
+                    ReviewsGlyphIcon(
+                        if (link.state == "merged") ReviewsGlyph.Merged else ReviewsGlyph.PullRequest,
+                        tint = MaterialTheme.colorScheme.primary,
+                        size = 20.dp,
+                    )
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics(mergeDescendants = true) { contentDescription = PrLinkRows.text(link) },
+                    ) {
+                        Text(
+                            text = buildAnnotatedString {
+                                val number = "#${link.ref.number}"
+                                pushStyle(SpanStyle(fontWeight = FontWeight.SemiBold))
+                                append(number)
+                                pop()
+                                append(sheetRow.primary.removePrefix(number))
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = sheetRow.secondary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    TextButton(
+                        onClick = { confirmTarget = link },
+                        modifier = Modifier
+                            .heightIn(min = SwitchboardDimensions.minimumTouchTarget)
+                            .semantics { contentDescription = PrLinkRows.unlinkLabel(link.ref) },
+                    ) {
+                        Text("Unlink")
+                    }
                 }
             }
         }
@@ -830,28 +912,31 @@ private fun ThreadComposer(
         modelLabel = state.modelLabel,
         runtimeMode = state.runtimeMode,
     )
-    val showsSecondaryActions = ThreadComposerPresentationPolicy.showsSecondaryActions(density)
+    val showsSecondaryActions = ThreadComposerPresentationPolicy.showsSecondaryActions(
+        density,
+        running = state.showInterrupt,
+    )
     val inputLayout = ThreadComposerPresentationPolicy.inputLayout(density)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(Surface)
             .padding(
-                horizontal = 12.dp,
-                vertical = if (density == ThreadComposerDensity.Compact) 6.dp else 10.dp,
+                start = 16.dp,
+                end = 16.dp,
+                top = 12.dp,
+                bottom = if (density == ThreadComposerDensity.Compact) 8.dp else 12.dp,
             ),
-        verticalArrangement = Arrangement.spacedBy(
-            if (density == ThreadComposerDensity.Compact) 4.dp else 8.dp,
-        ),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         state.error?.let {
-            Text(it, color = Red, style = MaterialTheme.typography.labelSmall)
+            Text(it, color = Red, style = MaterialTheme.typography.bodySmall)
         }
         state.controlMessage?.let {
-            Text(it, color = Amber, style = MaterialTheme.typography.labelSmall)
+            Text(it, color = Amber, style = MaterialTheme.typography.bodySmall)
         }
         demoNotice?.let {
-            Text(it, color = Violet, style = MaterialTheme.typography.labelSmall)
+            Text(it, color = Violet, style = MaterialTheme.typography.bodySmall)
         }
         if (slashQuery != null && slashCommands.isNotEmpty()) {
             ThreadSlashMenu(slashCommands, ::runSlash)
@@ -874,24 +959,6 @@ private fun ThreadComposer(
                 }
             }
         }
-        state.queueToggle?.let { toggle ->
-            TextButton(
-                onClick = onToggleDelivery,
-                modifier = Modifier
-                    .heightIn(min = SwitchboardDimensions.minimumTouchTarget)
-                    .testTag(ThreadTestTags.QUEUE_TOGGLE)
-                    .semantics {
-                        contentDescription = toggle.accessibilityLabel
-                        stateDescription = toggle.label
-                    },
-            ) {
-                Text(
-                    toggle.label,
-                    color = if (toggle.queues) Accent else TextDim,
-                    style = MaterialTheme.typography.labelSmall,
-                )
-            }
-        }
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.large,
@@ -899,10 +966,8 @@ private fun ThreadComposer(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             tonalElevation = 0.dp,
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp),
-                verticalAlignment = Alignment.Bottom,
-            ) {
+            Column(modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) {
+            Row(verticalAlignment = Alignment.Bottom) {
                 if (!demo) {
                     IconButton(
                         onClick = { imagePicker.launch(arrayOf("image/*")) },
@@ -950,28 +1015,82 @@ private fun ThreadComposer(
                     modifier = Modifier.padding(bottom = 1.dp),
                 )
             }
+            if (showsSecondaryActions) {
+                ComposerFooter(
+                    queueToggle = state.queueToggle,
+                    settingsLabel = settings.label,
+                    settingsEnabled = !state.modeChanging,
+                    onToggleDelivery = onToggleDelivery,
+                    onOpenSettings = onOpenSettings,
+                )
+            }
+            }
         }
         if (showsSecondaryActions) {
             VoiceNoticeRow(voice = voice)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
+        }
+    }
+}
+
+/** Inside the composer card: the Steer | Queue segment while a turn runs, then the model and mode chip. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ComposerFooter(
+    queueToggle: QueueToggle?,
+    settingsLabel: String,
+    settingsEnabled: Boolean,
+    onToggleDelivery: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        queueToggle?.let { toggle ->
+            SingleChoiceSegmentedButtonRow(
+                modifier = Modifier
+                    .heightIn(min = SwitchboardDimensions.minimumTouchTarget)
+                    .testTag(ThreadTestTags.QUEUE_TOGGLE)
+                    .semantics {
+                        contentDescription = toggle.accessibilityLabel
+                        stateDescription = toggle.hint
+                    },
             ) {
-                TextButton(
-                    onClick = onOpenSettings,
-                    enabled = !state.modeChanging,
-                    modifier = Modifier
-                        .heightIn(min = SwitchboardDimensions.minimumTouchTarget)
-                        .testTag(ThreadTestTags.AGENT_SETTINGS_ACTION),
-                ) {
-                    Text(
-                        "${settings.label} · ${settings.supportingLabel}",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                listOf(false to "Steer", true to "Queue").forEachIndexed { index, (queues, label) ->
+                    SegmentedButton(
+                        selected = toggle.queues == queues,
+                        onClick = { if (toggle.queues != queues) onToggleDelivery() },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = 2),
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        ),
+                        icon = {},
+                        modifier = Modifier.height(32.dp),
+                    ) {
+                        Text(label, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
+        }
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+        AssistChip(
+            onClick = onOpenSettings,
+            enabled = settingsEnabled,
+            label = {
+                Text(
+                    settingsLabel,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.testTag(ThreadTestTags.AGENT_SETTINGS_ACTION),
+        )
         }
     }
 }
@@ -979,6 +1098,7 @@ private fun ThreadComposer(
 @Composable
 private fun ThreadAgentSettingsScreen(
     settings: ThreadSettingsAffordance,
+    usage: List<String>,
     selectedMode: RuntimeMode,
     modeEnabled: Boolean,
     models: ThreadModelState,
@@ -1021,6 +1141,22 @@ private fun ThreadAgentSettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
         ) {
+            if (usage.isNotEmpty()) {
+                SectionLabel(
+                    text = "Usage",
+                    modifier = Modifier.padding(
+                        start = SwitchboardDimensions.screenHorizontalPadding,
+                        end = SwitchboardDimensions.screenHorizontalPadding,
+                        top = 20.dp,
+                        bottom = 8.dp,
+                    ),
+                )
+                SwitchboardListRow(
+                    title = usage.first(),
+                    supportingText = usage.drop(1).joinToString(" · ").takeIf(String::isNotEmpty),
+                    showDivider = false,
+                )
+            }
             gitContext?.let { context ->
                 SectionLabel(
                     text = "Workspace",
@@ -1479,29 +1615,21 @@ private fun OutboxTray(
     }
 }
 
+/** Tokens, cost and the last turn's time, shown under the app bar on a title tap. */
 @Composable
-private fun ThreadMetricStrip(metadata: ThreadMetadataPresentation) {
-    val values = ThreadChromePolicy.metadataSummary(metadata)
-    if (values.isEmpty()) return
-    Row(
+private fun ThreadUsageLine(text: String) {
+    Text(
+        text = text,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .fillMaxWidth()
-            .semantics(mergeDescendants = true) {
-                contentDescription = values.joinToString(", ")
-            }
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 7.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        values.forEach { value ->
-            Text(
-                text = value,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-            )
-        }
-    }
+            .testTag(ThreadTestTags.USAGE_LINE)
+            .padding(start = 16.dp, end = 16.dp, bottom = 10.dp)
+            .semantics(mergeDescendants = true) { contentDescription = text },
+    )
 }
 
 @Composable
@@ -1995,17 +2123,22 @@ private fun TextRow(
     onFork: ((String) -> Unit)? = null,
 ) {
     var expanded by rememberSaveable(row.key) { mutableStateOf(false) }
+    var durationVisible by rememberSaveable(row.key) { mutableStateOf(false) }
     val reasoning = row.kind == ThreadRowKind.REASONING
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
-                enabled = onFork != null,
+                enabled = onFork != null || row.durationLabel != null,
                 onClick = {},
-                onLongClick = { onFork?.invoke(row.source.messageId) },
+                onLongClickLabel = if (onFork != null) "Fork conversation" else "Show turn time",
+                onLongClick = {
+                    durationVisible = true
+                    onFork?.invoke(row.source.messageId)
+                },
             )
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(7.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
             text = when (row.kind) {
@@ -2014,7 +2147,9 @@ private fun TextRow(
                 else -> "AGENT"
             },
             color = if (row.kind == ThreadRowKind.PLAN_STREAM) Accent else TextDim,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.bodySmall,
+            fontSize = 12.sp,
+            letterSpacing = 0.04.em,
         )
         if (reasoning) {
             Text(
@@ -2040,8 +2175,8 @@ private fun TextRow(
                 Text(if (expanded) "Show less" else "Show more")
             }
         }
-        row.durationLabel?.let {
-            Text("Worked for $it", color = TextDim, style = MaterialTheme.typography.labelSmall)
+        row.durationLabel?.takeIf { durationVisible || ThreadChromePolicy.showsTurnDuration(row.durationMs) }?.let {
+            Text("Worked for $it", color = TextDim, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -2263,7 +2398,7 @@ private fun ApprovalRow(
             Text(HostWriteCards.title(card), fontWeight = FontWeight.SemiBold)
             Text(HostWriteCards.context(card), color = Accent, fontFamily = GeistMono)
         } else {
-            Text(item.toolName, color = Accent, fontFamily = GeistMono)
+            Text(item.toolName, color = Accent, style = MaterialTheme.typography.titleSmall)
         }
         if (actions is ApprovalActions.HostWrite) {
             HostWritePreviewBlock(actions.preview, expanded) { expanded = !expanded }
@@ -2371,7 +2506,7 @@ private fun HostWritePreviewBlock(preview: HostWritePreview, expanded: Boolean, 
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             preview.sections.forEach { section ->
-                Text(section.label, color = TextDim, fontFamily = GeistMono, style = MaterialTheme.typography.labelSmall)
+                Text(section.label, color = TextDim, style = MaterialTheme.typography.bodySmall)
                 Text(section.text, style = MaterialTheme.typography.bodyMedium)
             }
         }

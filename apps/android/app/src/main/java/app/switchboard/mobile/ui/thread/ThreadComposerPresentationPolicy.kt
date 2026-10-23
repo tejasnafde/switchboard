@@ -13,8 +13,8 @@ data class ThreadComposerInputLayout(
 )
 
 data class ThreadSettingsAffordance(
+    /** "claude-opus-5-5 · Full access": the model and the mode on one chip. */
     val label: String,
-    val supportingLabel: String,
 )
 
 object ThreadComposerPresentationPolicy {
@@ -32,12 +32,12 @@ object ThreadComposerPresentationPolicy {
         modelLabel: String?,
         runtimeMode: RuntimeMode,
     ): ThreadSettingsAffordance = ThreadSettingsAffordance(
-        label = modelLabel?.trim()?.takeIf(String::isNotEmpty) ?: "Model & runtime",
-        supportingLabel = runtimeMode.presentationLabel(),
+        label = "${modelLabel?.trim()?.takeIf(String::isNotEmpty) ?: "Model"} · ${runtimeMode.presentationLabel()}",
     )
 
-    fun showsSecondaryActions(density: ThreadComposerDensity): Boolean =
-        density == ThreadComposerDensity.Expanded
+    /** The footer row: shown while focused or while a turn runs (it holds the Steer | Queue segment). */
+    fun showsSecondaryActions(density: ThreadComposerDensity, running: Boolean): Boolean =
+        density == ThreadComposerDensity.Expanded || running
 
     fun inputLayout(density: ThreadComposerDensity): ThreadComposerInputLayout =
         when (density) {
