@@ -16,10 +16,10 @@ const TINT: Record<EventFeedItem['kind'], string> = {
   todo: colors.accent,
 }
 
-const TODO_ICON: Record<TodoStatus, { name: keyof typeof Ionicons.glyphMap; color: string }> = {
-  completed: { name: 'checkmark-circle', color: colors.green },
-  in_progress: { name: 'radio-button-on', color: colors.accent },
-  pending: { name: 'ellipse-outline', color: colors.textFaint },
+const TODO_ICON: Record<TodoStatus, { name: keyof typeof Ionicons.glyphMap; color: string; label: string }> = {
+  completed: { name: 'checkmark-circle', color: colors.green, label: 'done' },
+  in_progress: { name: 'radio-button-on', color: colors.accent, label: 'in progress' },
+  pending: { name: 'ellipse-outline', color: colors.textFaint, label: 'to do' },
 }
 
 function formatTime(ms: number): string {
@@ -36,7 +36,12 @@ export const EventRowItem = memo(function EventRowItem({ item }: { item: EventFe
         {item.items.map((todo, i) => {
           const icon = TODO_ICON[todo.status]
           return (
-            <View key={`${i}-${todo.text}`} style={styles.todoLine}>
+            <View
+              key={`${i}-${todo.text}`}
+              style={styles.todoLine}
+              accessible
+              accessibilityLabel={`${todo.text}, ${icon.label}`}
+            >
               <Ionicons name={icon.name} size={13} color={icon.color} />
               <Text style={[styles.body, todo.status === 'completed' && styles.done]}>{todo.text}</Text>
             </View>

@@ -48,6 +48,9 @@ describe('EventRowItem', () => {
       />,
     )
     expect(v.iconNames()).toEqual(['checkmark-circle', 'radio-button-on', 'ellipse-outline'])
+    expect(v.byLabel('Read, done')).toBeTruthy()
+    expect(v.byLabel('Fix, in progress')).toBeTruthy()
+    expect(v.byLabel('Test, to do')).toBeTruthy()
     expect(v.texts().filter((t) => !v.iconNames().includes(t))).toEqual(['Todo', 'Read', 'Fix', 'Test'])
   })
 })
