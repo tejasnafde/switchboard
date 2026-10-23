@@ -262,6 +262,18 @@ object RemoteDecoders {
         }
     }
 
+    fun limitState(value: JsonValue?): app.switchboard.mobile.domain.thread.LimitState =
+        app.switchboard.mobile.domain.thread.LimitResume.decode(value)
+
+    fun limitResumeNowResult(value: JsonValue?): app.switchboard.mobile.domain.thread.LimitResumeNowResult {
+        val raw = value.obj()
+        return if (raw.booleanRequired("ok")) {
+            app.switchboard.mobile.domain.thread.LimitResumeNowResult.Ok
+        } else {
+            app.switchboard.mobile.domain.thread.LimitResumeNowResult.Refused(raw.string("message") ?: "Refused")
+        }
+    }
+
     fun setting(value: JsonValue?): String? =
         when (value) {
             null, JsonNull -> null

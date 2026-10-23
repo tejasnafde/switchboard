@@ -837,5 +837,73 @@
         "gaveUp": false
       }
     }
+  ],
+  "limitStateText": [
+    {
+      "name": "not limited shows no row",
+      "input": {
+        "state": {
+          "kind": "none"
+        },
+        "time": "15:40"
+      },
+      "expected": {
+        "title": null,
+        "detail": null
+      }
+    },
+    {
+      "name": "armed names the reset time",
+      "input": {
+        "state": {
+          "kind": "armed",
+          "resetAt": 100000
+        },
+        "time": "15:40"
+      },
+      "expected": {
+        "title": "Usage limit. Resumes 15:40.",
+        "detail": "This chat carries on by itself then. A message you send now runs at once."
+      }
+    },
+    {
+      "name": "disarmed",
+      "input": {
+        "state": {
+          "kind": "disarmed"
+        },
+        "time": "15:40"
+      },
+      "expected": {
+        "title": "Usage limit. Auto-resume off.",
+        "detail": "Send a message after the reset to continue."
+      }
+    },
+    {
+      "name": "gave up",
+      "input": {
+        "state": {
+          "kind": "gave_up"
+        },
+        "time": "15:40"
+      },
+      "expected": {
+        "title": "Usage limit. Gave up after 3 tries.",
+        "detail": "Send a message after the reset to continue."
+      }
+    },
+    {
+      "name": "no reset time",
+      "input": {
+        "state": {
+          "kind": "no_reset"
+        },
+        "time": "15:40"
+      },
+      "expected": {
+        "title": "Usage limit. No reset time, resume by hand.",
+        "detail": "Send a message to try again. It fails while the limit lasts."
+      }
+    }
   ]
 }

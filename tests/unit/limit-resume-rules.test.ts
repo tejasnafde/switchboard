@@ -10,6 +10,8 @@ import {
   limitAutoResumeEnabled,
   limitResumeTurn,
   limitState,
+  limitStateDetail,
+  limitStateText,
   nextStreak,
   shouldArm,
 } from '../../src/shared/limit-resume'
@@ -30,6 +32,11 @@ describe('limit resume rules (tests/fixtures/limit-resume-cases.json)', () => {
   })
   it.each(cases.nextStreak)('nextStreak: $name', ({ input, expected }) => {
     expect(nextStreak(input)).toEqual(expected)
+  })
+  // The phones' Limited rows port these lines; `time` is what the clock formatter returns.
+  it.each(cases.limitStateText)('limitStateText and limitStateDetail: $name', ({ input, expected }) => {
+    expect(limitStateText(input.state, () => input.time)).toBe(expected.title)
+    expect(limitStateDetail(input.state)).toBe(expected.detail)
   })
 })
 
