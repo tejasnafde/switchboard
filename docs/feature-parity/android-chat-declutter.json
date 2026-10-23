@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-chat-declutter",
+  "summary": "Native Android chat screen declutter. The linked pull requests become one app bar chip (\"#9 +1\") that opens a bottom sheet with one 64 dp row per link; Unlink and its confirm dialog live in the sheet. Tokens, cost and the last turn's time hide behind a tap on the title (one usage line under the app bar) and a Usage row in the agent settings screen. The subtitle drops the model (\"SSG · Working\"). \"Worked for\" shows only on turns of 30 s or more, and on any turn after a long press. While a turn runs, a Steer | Queue segment sits in a footer row inside the composer card, next to one \"model · mode\" chip that opens the agent settings; the old hint line and the trailing model button are gone. Stop is a 48 dp icon button. The subagent row is one 56 dp row with a status icon and a chevron. Metadata, eyebrows and notices use the sans bodySmall style; monospace stays for code, paths, diffs and todos. Rhythm: 16 dp margins, 20 dp between turns, 48 dp targets. Every action and accessibility label stays.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop chat has its own layout (PR links in the chat header, usage in the context meter); this change is a phone layout only and changes no desktop code."
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "expo_chat_declutter",
+      "followUpRelease": "The next Expo OTA release brings the same declutter to apps/mobile/src/screens/ThreadScreen.tsx (PR chip and sheet replacing PrLinksBanner.tsx, usage on a title tap, the Steer | Queue segment, the model and mode chip, the Worked for threshold). Until then the Expo app keeps its current layout; no Expo code changes here, so there is no unflagged Expo behaviour."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadChromePolicy.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadComposerPresentationPolicy.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/SubagentRow.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadTestTags.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/components/SwitchboardScaffold.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/voice/VoiceComposerControls.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/TurnDelivery.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/PrLinkRows.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadChromePolicyTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadComposerPresentationPolicyTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/TurnDeliveryPolicyTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/PrLinkRowsTest.kt",
+        "apps/android/app/src/androidTest/java/app/switchboard/mobile/ui/thread/ThreadScreenRegressionTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "The pull-requests:links and pull-requests:unlink calls, the turn delivery field and the thread metadata are read and sent as before; PrLinkRows.text and the shared tests/fixtures/pr-link-rows.json are unchanged."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing new is stored. The usage line, the PR sheet and the long-press duration are transient screen state."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "A UI-only change for the next native Android release; no package identity, signing, version, schema, deep link or update channel changes."
+    }
+  },
+  "verification": {
+    "automated": [
+      "Native Android testDebugUnitTest and lintDebug pass, including ThreadChromePolicyTest (subtitle without the model, usage line, 30 s threshold), TurnDeliveryPolicyTest (segment labels and hints), ThreadComposerPresentationPolicyTest (one chip label, footer while running), PrLinkRowsTest (chip label, sheet row), the unchanged PrLinkRowsFixturesTest and the SubagentRow Robolectric render test.",
+      "ThreadScreenRegressionTest compiles with the usage line opened by a title tap."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "connectedDebugAndroidTest was not run on a device or emulator.",
+      "TalkBack, font scaling, a live running turn with the Steer | Queue segment, and Unlink against a live backend were not exercised on hardware."
+    ]
+  }
+}

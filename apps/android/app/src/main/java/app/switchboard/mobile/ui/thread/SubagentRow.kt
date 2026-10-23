@@ -13,7 +13,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -35,8 +40,9 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.switchboard.mobile.domain.thread.SubagentStatus
+import app.switchboard.mobile.ui.reviews.ReviewsGlyph
+import app.switchboard.mobile.ui.reviews.ReviewsGlyphIcon
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.Green
 import app.switchboard.mobile.ui.theme.Red
@@ -55,12 +61,12 @@ internal fun SubagentRow(row: ThreadRowPresentation.Subagent) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 2.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 20.dp),
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = ToolActivityLayoutPolicy.CollapsedRowHeightDp.dp)
+                .heightIn(min = 56.dp)
                 .clip(RoundedCornerShape(6.dp))
                 .then(
                     if (expandable) {
@@ -77,61 +83,65 @@ internal fun SubagentRow(row: ThreadRowPresentation.Subagent) {
                         .joinToString(", ")
                     if (expandable) stateDescription = if (expanded) "Expanded" else "Collapsed"
                 }
-                .testTag(ThreadTestTags.subagentRow(row.key))
-                .padding(vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+                .testTag(ThreadTestTags.subagentRow(row.key)),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.width(24.dp), contentAlignment = Alignment.CenterStart) {
-                    Text(text = "✦", color = TextDim, fontSize = 13.sp, maxLines = 1)
-                }
-                Text(
-                    text = "Agent",
-                    fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = row.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                row.model?.let { model ->
-                    Spacer(Modifier.width(8.dp))
-                    Text(text = model, color = TextFaint, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                }
-                Spacer(Modifier.weight(1f))
-                if (expandable) {
-                    Text(text = if (expanded) "⌃" else "⌄", color = TextDim, fontSize = 14.sp)
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .testTag(ThreadTestTags.subagentStatus(row.key))
+                    // Tag first: clearAndSetSemantics drops every semantics modifier after it.
+                    .clearAndSetSemantics { },
+                contentAlignment = Alignment.Center,
+            ) {
+                when (row.status) {
+                    SubagentStatus.RUNNING ->
+                        CircularProgressIndicator(color = Accent, modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
+                    SubagentStatus.DONE ->
+                        Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Green, modifier = Modifier.size(20.dp))
+                    SubagentStatus.FAILED -> ReviewsGlyphIcon(ReviewsGlyph.Failed, tint = Red, size = 20.dp)
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .width(24.dp)
-                        .testTag(ThreadTestTags.subagentStatus(row.key))
-                        // Tag first: clearAndSetSemantics drops every semantics modifier after it.
-                        .clearAndSetSemantics { },
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    when (row.status) {
-                        SubagentStatus.RUNNING ->
-                            CircularProgressIndicator(color = Accent, modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
-                        SubagentStatus.DONE -> Text(text = "✓", color = Green, fontSize = 12.sp)
-                        SubagentStatus.FAILED -> Text(text = "✕", color = Red, fontSize = 12.sp)
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Agent",
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = row.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    row.model?.let { model ->
+                        Spacer(Modifier.width(8.dp))
+                        Text(text = model, color = TextFaint, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                     }
                 }
                 Text(
                     text = row.statusText,
-                    color = TextDim,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.testTag(ThreadTestTags.subagentStatusText(row.key)),
                 )
+            }
+            if (expandable) {
+                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Filled.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = TextDim,
+                        modifier = Modifier.rotate(if (expanded) 180f else 0f),
+                    )
+                }
             }
         }
         if (expanded && expandable) {

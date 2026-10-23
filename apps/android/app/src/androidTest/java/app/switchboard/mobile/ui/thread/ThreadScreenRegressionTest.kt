@@ -375,8 +375,10 @@ class ThreadScreenRegressionTest {
             }
         }
 
+        compose.onNodeWithTag(ThreadTestTags.USAGE_LINE).assertDoesNotExist()
+        compose.onNodeWithText("Release").performClick()
         compose.onNodeWithContentDescription(
-            "1,500 / 2,000 tokens, \$0.42, 1.3s",
+            "1,500 of 2,000 tokens · \$0.42 · last turn 1.3s",
         ).assertIsDisplayed()
     }
 

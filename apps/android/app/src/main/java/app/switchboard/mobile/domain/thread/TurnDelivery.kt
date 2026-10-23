@@ -31,8 +31,11 @@ sealed interface QueuedTurnActionResult {
 data class QueueToggle(
     /** The next send waits for the running turn. */
     val queues: Boolean,
+    /** The selected segment: "Steer" or "Queue". */
     val label: String,
     val accessibilityLabel: String,
+    /** What the next send does, read as the state of the segment. */
+    val hint: String,
 )
 
 data class HeldTurnActions(
@@ -79,20 +82,22 @@ object TurnDeliveryPolicy {
         return if (queues) TurnDelivery.Queue else null
     }
 
-    /** The chip above the composer while a turn runs; `flipped` is the one-send override. */
+    /** The Steer | Queue segment in the composer footer while a turn runs; `flipped` is the one-send override. */
     fun queueToggle(preferred: TurnDelivery, flipped: Boolean): QueueToggle {
         val queues = followUpDelivery(preferred, flipped) == TurnDelivery.Queue
         return if (preferred == TurnDelivery.Steer) {
             QueueToggle(
                 queues = queues,
-                label = if (queues) "Sends after this turn" else "Steering the running turn · tap to queue",
+                label = if (queues) "Queue" else "Steer",
                 accessibilityLabel = "Send after this turn instead of steering it",
+                hint = if (queues) "Sends after this turn" else "Steering the running turn · tap to queue",
             )
         } else {
             QueueToggle(
                 queues = queues,
-                label = if (queues) "Sends after this turn · tap to steer" else "Steering the running turn",
+                label = if (queues) "Queue" else "Steer",
                 accessibilityLabel = "Steer the running turn instead of queueing",
+                hint = if (queues) "Sends after this turn · tap to steer" else "Steering the running turn",
             )
         }
     }

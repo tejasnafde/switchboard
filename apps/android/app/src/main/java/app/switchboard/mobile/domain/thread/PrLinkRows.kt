@@ -29,6 +29,9 @@ sealed interface PrLinkUnlinkResult {
     data class Refused(val message: String) : PrLinkUnlinkResult
 }
 
+/** A linked pull request as a two line sheet row: "#9 geoiq/switchboard" over "Merged · Linked automatically". */
+data class PrLinkSheetRow(val primary: String, val secondary: String)
+
 /**
  * One line for a phone's link list: "#612 · merged · Opened by the agent ·
  * owner/name", the repository last so a one-line row cuts it off rather than
@@ -51,6 +54,20 @@ object PrLinkRows {
         parts += "${link.ref.owner}/${link.ref.name}"
         return parts.joinToString(" · ")
     }
+
+    /** The app bar chip: "#9", or "#9 +1" when more than one is linked. */
+    fun chipLabel(links: List<PrLink>): String {
+        val first = links.firstOrNull() ?: return ""
+        return if (links.size > 1) "#${first.ref.number} +${links.size - 1}" else "#${first.ref.number}"
+    }
+
+    fun sheetRow(link: PrLink): PrLinkSheetRow = PrLinkSheetRow(
+        primary = "#${link.ref.number} ${link.ref.owner}/${link.ref.name}",
+        secondary = listOfNotNull(
+            link.state?.takeIf { it != "open" }?.replaceFirstChar(Char::uppercaseChar),
+            sourceLabel(link.source),
+        ).joinToString(" · "),
+    )
 
     /** `linkSourceLabel`: a source a newer backend may send reads as a plain "Linked". */
     fun sourceLabel(source: String?): String = SOURCE_LABELS[source] ?: "Linked"
