@@ -1,8 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const execFile = vi.fn()
 const resolveProviderInstance = vi.fn()
 
+const dataDir = mkdtempSync(join(tmpdir(), 'sb-catalog-'))
+const cacheFile = join(dataDir, 'data', 'model-catalog.json')
+vi.mock('../../src/main/runtime', () => ({ userDataDir: () => dataDir }))
 vi.mock('child_process', () => ({ execFile: (...args: unknown[]) => execFile(...args) }))
 vi.mock('../../src/main/db/provider-instances', () => ({
   resolveProviderInstance: (...args: unknown[]) => resolveProviderInstance(...args),
@@ -56,6 +62,8 @@ function answer(stdout: string) {
     (_bin: string, _args: string[], _opts: unknown, cb: (e: Error | null, out: string) => void) => cb(null, stdout),
   )
 }
+
+afterAll(() => rmSync(dataDir, { recursive: true, force: true }))
 
 beforeEach(() => {
   execFile.mockReset()
@@ -116,5 +124,47 @@ describe('probeCatalog', () => {
     expect(models.map((m) => m.id)).toEqual(['gpt-6-sol'])
     expect(codexEnvs[0].CODEX_HOME).toBe('/home/vm/.codex-work')
     expect(resolveProviderInstance).not.toHaveBeenCalled()
+  })
+
+  it('answers from the disk cache after a restart without spawning', async () => {
+    answer('google/gemini-2.5-flash\n')
+    await probeCatalog('opencode', undefined)
+    vi.resetModules()
+    const fresh = await import('../../src/main/provider/catalog-probe')
+    expect((await fresh.probeCatalog('opencode', undefined)).map((m) => m.id)).toEqual(['google/gemini-2.5-flash'])
+    expect(execFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('answers a stale catalog at once and refreshes it behind the reply', async () => {
+    mkdirSync(join(dataDir, 'data'), { recursive: true })
+    const old = { id: 'google/old', label: 'old', tier: 'balanced' }
+    writeFileSync(cacheFile, JSON.stringify({ 'opencode:opencode-default': { models: [old], at: 0 } }))
+    vi.resetModules()
+    const fresh = await import('../../src/main/provider/catalog-probe')
+    answer('google/new\n')
+    expect((await fresh.probeCatalog('opencode', undefined)).map((m) => m.id)).toEqual(['google/old'])
+    await vi.waitFor(() => expect(fresh.peekCatalog('opencode', undefined)?.[0].id).toBe('google/new'))
+    expect(readFileSync(cacheFile, 'utf8')).toContain('google/new')
+    fresh.invalidateCatalog()
+  })
+
+  it('drops a stale catalog when its refresh finds no models', async () => {
+    mkdirSync(join(dataDir, 'data'), { recursive: true })
+    const old = { id: 'google/old', label: 'old', tier: 'balanced' }
+    writeFileSync(cacheFile, JSON.stringify({ 'opencode:opencode-default': { models: [old], at: 0 } }))
+    vi.resetModules()
+    const fresh = await import('../../src/main/provider/catalog-probe')
+    answer('')
+    expect((await fresh.probeCatalog('opencode', undefined)).map((m) => m.id)).toEqual(['google/old'])
+    await vi.waitFor(() => expect(readFileSync(cacheFile, 'utf8')).toBe('{}'))
+    fresh.invalidateCatalog()
+  })
+
+  it('invalidateCatalog forgets the disk cache too', async () => {
+    answer('google/gemini-2.5-flash\n')
+    await probeCatalog('opencode', undefined)
+    expect(existsSync(cacheFile)).toBe(true)
+    invalidateCatalog()
+    expect(existsSync(cacheFile)).toBe(false)
   })
 })
