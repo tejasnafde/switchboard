@@ -408,7 +408,7 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
   const foldBar = !expanded && htmlLiveFolds(contentHeight) && (
     <button
       type="button"
-      className="block w-full border-t border-[var(--border)] py-[5px] text-center text-[11.5px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+      className="block w-full appearance-none border-0 border-t border-solid border-[var(--border)] bg-transparent py-[5px] text-center text-[11.5px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
       onClick={() => {
         setExpanded(true)
         if (!running) runFrame(id)
