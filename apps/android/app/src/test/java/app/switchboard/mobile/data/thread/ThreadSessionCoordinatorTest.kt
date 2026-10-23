@@ -781,6 +781,95 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `opening a chat shows the profile and mode stored for it, and a profile change starts from them`() {
+        val remote = FakeThreadSessionRemote(scope)
+        // A saved copy from before the desktop moved the chat to another profile and mode.
+        val coordinator = coordinator(
+            remote,
+            cached = ThreadState(status = "idle", provider = "codex", instanceId = "codex-tejas", runtimeMode = "sandbox"),
+        )
+        coordinator.start()
+        remote.completeProfiles(
+            success("profiles", listOf(providerInstance("codex-work", "Work"), providerInstance("codex-tejas", "Tejas"))),
+        )
+        remote.completeLoad(
+            success(
+                "load",
+                LoadedSession(
+                    messages = emptyList(),
+                    meta = SessionMeta(
+                        "thread-1", "Title", "/repo", "codex", null, emptyJson(),
+                        providerInstanceId = "codex-work", runtimeMode = "plan",
+                    ),
+                    total = 0,
+                    truncated = false,
+                    raw = emptyJson(),
+                ),
+            ),
+        )
+
+        assertEquals("codex-work", coordinator.state.value.profiles.selectedInstanceId)
+        assertEquals(RuntimeMode.Plan, coordinator.state.value.composer.runtimeMode)
+        assertEquals("codex-work", remote.startedSessions.single().instanceId)
+
+        remote.completeStart(success("start", startedSession()))
+        coordinator.selectProfile("codex-tejas")
+        assertEquals(
+            listOf("thread-1" to ProviderInstanceSwitchRequest("codex-tejas", "codex-work")),
+            remote.profileSwitches,
+        )
+    }
+
+    @Test
+    fun `a profile announced live before the load answer is not replaced by the older stored one`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote)
+        coordinator.start()
+        remote.emit(scope, modeEvent("auto"))
+        remote.completeLoad(
+            success(
+                "load",
+                LoadedSession(
+                    messages = emptyList(),
+                    meta = SessionMeta("thread-1", "Title", "/repo", "claude", null, emptyJson(), providerInstanceId = "home"),
+                    total = 0,
+                    truncated = false,
+                    raw = emptyJson(),
+                ),
+            ),
+        )
+        assertEquals("work", coordinator.state.value.profiles.selectedInstanceId)
+        assertEquals("work", coordinator.currentThread()?.instanceId)
+    }
+
+    @Test
+    fun `a later load after a live profile takes the stored profile, and a stored null clears it`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote)
+        coordinator.start()
+        remote.emit(scope, modeEvent("auto"))
+        remote.completeLoad(success("load", loadedSession()))
+        assertEquals("work", coordinator.state.value.profiles.selectedInstanceId)
+
+        coordinator.refresh()
+        remote.completeLoadAt(
+            1,
+            success(
+                "load",
+                LoadedSession(
+                    messages = emptyList(),
+                    meta = SessionMeta("thread-1", "Title", "/repo", "claude", null, emptyJson(), providerInstanceId = null),
+                    total = 0,
+                    truncated = false,
+                    raw = emptyJson(),
+                ),
+            ),
+        )
+        assertNull(coordinator.state.value.profiles.selectedInstanceId)
+        assertNull(coordinator.currentThread()?.instanceId)
+    }
+
+    @Test
     fun `a mode picked on the phone applies at once and no turn re-sends it`() {
         val remote = FakeThreadSessionRemote(scope)
         val enqueue = FakeEnqueuePort()

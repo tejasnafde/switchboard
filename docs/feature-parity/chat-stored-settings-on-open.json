@@ -1,0 +1,56 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "chat-stored-settings-on-open",
+  "summary": "Opening an existing chat on any client shows the provider, profile and runtime mode the backend stores for it. The history load reads them from the root conversation, so a chat opened by its rotated session id no longer reads the empty settings of its own row, and both phones show the stored profile instead of the first profile or a saved copy.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/ipc/app.ts",
+        "src/renderer/App.tsx",
+        "src/renderer/services/open-conversation-at-anchor.ts",
+        "tests/unit/chat-load-rotated-settings.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/screens/__tests__/thread-stored-settings.test.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinatorTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": ["src/main/ipc/app.ts", "tests/unit/chat-load-rotated-settings.test.ts"]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema change. The settings already live on the root conversation row and the setters already resolve through resolveRootThreadId; only the history load read the wrong row."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["apps/mobile/src/screens/ThreadScreen.tsx"],
+      "notes": "The wire shape of the history meta is unchanged, so an old phone gets correct values from a new backend, and a new phone works against an old backend. The Expo change is JS only (OTA lane); Android ships in the next Play build."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/chat-load-rotated-settings.test.ts: a chat opened by its rotated id loads the root row's profile, mode, model and effort, and a change written through the rotated id shows on the next load by either id. Both cases failed before the fix (null profile and mode).",
+      "apps/mobile thread-stored-settings.test.tsx renders ThreadScreen against the demo transport with a stored Work profile and Plan mode: the chip shows Work, not the first profile, and a mode picked on the phone goes to provider:set-runtime-mode, which stores it. The profile case failed before the fix.",
+      "ThreadSessionCoordinatorTest: a saved copy with another profile is replaced by the loaded profile and mode, the reattach starts on the stored profile, and a profile change sends it as the expected current profile. It failed before the fix. A second test pins that a profile announced live before the load answer is not replaced by the older stored one."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run on a phone or against a live desktop. The fix was checked with unit and screen tests only.",
+      "A mode picked offline on Android is still kept over the loaded mode until a turn carries it. This is the existing, tested design for picks the backend has not seen."
+    ]
+  }
+}

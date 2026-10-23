@@ -551,6 +551,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
       }
       const rootThreadId = resolveRootThreadId(row.id)
       const rootRow = getConversationById(rootThreadId)
+      const settings = rootRow ?? row
       // rootThreadId lets the renderer avoid building a twin session: the sidebar
       // lists a chat under its SDK session UUID, but a live adapter keys events to
       // the synthetic agent_<ts> thread. See resolveSessionSelectTarget.
@@ -571,10 +572,11 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
         // `stale-revision`, which is the exact failure this field prevents.
         executionRootRevision: rootRow?.execution_root_revision ?? row.execution_root_revision ?? 0,
         worktreeId: row.worktree_id ?? null,
-        providerInstanceId: row.provider_instance_id ?? null,
-        runtimeMode: row.runtime_mode ?? null,
-        model: row.model ?? null,
-        reasoningEffort: row.reasoning_effort ?? null,
+        // Root row too: a rotated id owns a row whose settings are empty.
+        providerInstanceId: settings.provider_instance_id ?? null,
+        runtimeMode: settings.runtime_mode ?? null,
+        model: settings.model ?? null,
+        reasoningEffort: settings.reasoning_effort ?? null,
         launchConfigName: getSessionLayout(row.id)?.launchConfigName ?? row.launch_config_name ?? null,
         forkMetadata: getConversationForkMetadata(row.id),
       }
