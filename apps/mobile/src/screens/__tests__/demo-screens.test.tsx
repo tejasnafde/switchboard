@@ -113,4 +113,37 @@ describe('demo finished turn', () => {
     expect(view.texts()).toEqual(expect.arrayContaining(['Diagram', 'Changed 3 files']))
     expect(view.root.findAllByProps({ testID: 'webview' }).length).toBeGreaterThan(0)
   })
+
+  it('opens a changed file diff from the folded group, as the store screenshot does', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const ThreadScreen = require('../ThreadScreen').default
+    const route = {
+      params: {
+        connectionId: 'demo',
+        threadId: 'demo-done',
+        title: 'Retry uploads',
+        projectPath: '/demo/acme-console',
+      },
+    }
+    const view = renderComponent(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      <ThreadScreen navigation={{ ...navigation, addListener: () => () => undefined } as any} route={route as any} />,
+    )
+    await settle()
+    await settle()
+    expect(view.texts().join('')).toContain('+16-4')
+    act(() => {
+      view.root.findByProps({ testID: 'file-group' }).props.onPress()
+    })
+    const file = view.root.findAll(
+      (node) =>
+        String(node.props.testID).startsWith('file-edit:') &&
+        node.findAll((child) => child.props.children === 'src/upload/putFile.ts').length > 0,
+    )[0]
+    expect(view.texts()).toEqual(expect.arrayContaining(['src/upload/putFile.ts']))
+    act(() => {
+      file!.props.onPress()
+    })
+    expect(view.texts()).toEqual(expect.arrayContaining(['Read-only preview']))
+  })
 })

@@ -4,7 +4,7 @@
  */
 import React from 'react'
 import { act } from 'react-test-renderer'
-import { FileGroupItem } from '../ThreadFeedItems'
+import { FileGroupItem } from '../FileEditItem'
 import { renderComponent } from '../../test/render'
 
 const row = {
