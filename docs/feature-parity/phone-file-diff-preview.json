@@ -11,14 +11,12 @@
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
-        "src/shared/compact-file-diff.ts",
         "apps/mobile/src/lib/file-groups.ts",
         "apps/mobile/src/screens/FileEditItem.tsx",
         "apps/mobile/src/screens/ThreadScreen.tsx",
         "apps/mobile/src/screens/__tests__/file-edit-item.test.tsx",
         "apps/mobile/src/screens/__tests__/file-group-item.test.tsx",
         "apps/mobile/src/screens/__tests__/demo-screens.test.tsx",
-        "tests/unit/compact-file-diff.test.ts",
         "tests/unit/mobile-file-groups.test.ts"
       ]
     },
@@ -28,8 +26,7 @@
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/FileDiffPresentation.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/FileDiffPresentationTest.kt",
-        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/FileDiffPresentationFixturesTest.kt",
-        "tests/fixtures/compact-file-diff.json"
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/FileDiffPresentationFixturesTest.kt"
       ]
     },
     "sharedBackendApi": {
