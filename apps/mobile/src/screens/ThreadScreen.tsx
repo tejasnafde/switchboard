@@ -2,8 +2,9 @@ import { ThreadWaitStatus } from '../components/ThreadWaitStatus'
 /**
  * One chat thread: inverted feed over the chat store's FeedItems, a header
  * whose title shows usage on a tap and whose chip opens the linked pull
- * requests, and a pinned composer with one "model · mode" chip. History seeds from LOAD_SESSION_BY_ID; live events arrive via
- * the connection's onEvent -> useChatStore.ingest wiring.
+ * requests, and a pinned composer with one "model · mode" chip. History
+ * seeds from LOAD_SESSION_BY_ID; live events arrive via the connection's
+ * onEvent -> useChatStore.ingest wiring.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -12,6 +13,7 @@ import {
   Animated,
   Image,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -255,6 +257,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const [prSheetOpen, setPrSheetOpen] = useState(false)
   const openPrSheet = useCallback(() => setPrSheetOpen(true), [])
+  // Unlinking the last link closes the sheet, so a later link does not reopen it.
+  useEffect(() => {
+    if (prLinks.length === 0) setPrSheetOpen(false)
+  }, [prLinks.length])
 
   // The title subscribes to the store itself, so this runs only when its inputs change.
   useEffect(() => {
@@ -1609,12 +1615,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         onClose={() => setProfilePickerOpen(false)}
       />
 
-      <PrLinksSheet
-        visible={prSheetOpen && prLinks.length > 0}
-        links={prLinks}
-        onUnlink={unlinkPr}
-        onClose={() => setPrSheetOpen(false)}
-      />
+      <PrLinksSheet visible={prSheetOpen} links={prLinks} onUnlink={unlinkPr} onClose={() => setPrSheetOpen(false)} />
 
       <AgentSettingsSheet
         visible={settingsOpen}
@@ -1696,7 +1697,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
                 <QueueSegment toggle={toggle} flipped={flipNext} onFlip={() => setFlipNext((v) => !v)} />
               )}
               <Pressable
-                onPress={() => setSettingsOpen(true)}
+                onPress={() => {
+                  // The keyboard would cover the bottom of the sheet.
+                  Keyboard.dismiss()
+                  setSettingsOpen(true)
+                }}
                 accessibilityRole="button"
                 accessibilityLabel={`Agent settings: ${settingsChip}`}
                 testID="agent-settings-action"

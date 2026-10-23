@@ -37,6 +37,8 @@ export const TextItem = memo(function TextItem({
   // A short turn's "Worked for" shows after a long press, which also offers the fork.
   const [durationShown, setDurationShown] = useState(false)
 
+  const durationVisible = item.done && item.durationMs != null && (durationShown || showsTurnDuration(item.durationMs))
+
   if (item.stream === 'reasoning') {
     return (
       <View style={styles.itemBlock}>
@@ -66,6 +68,9 @@ export const TextItem = memo(function TextItem({
         onLongPress?.()
       }}
       disabled={!onLongPress && item.durationMs == null}
+      accessibilityHint={
+        item.done && item.durationMs != null && !durationVisible ? 'Long press to show how long it worked' : undefined
+      }
     >
       {/* <agent_digest> status tags drive the thread-list preview, not the
           transcript - stripped here the same way the desktop MessageBubble
@@ -74,7 +79,7 @@ export const TextItem = memo(function TextItem({
           chopped off - only a message still streaming in hides a trailing
           partial/unclosed tag. */}
       <Markdown text={stripDigest(item.text, { streaming: !item.done })} thread={thread} />
-      {item.done && item.durationMs != null && (durationShown || showsTurnDuration(item.durationMs)) && (
+      {durationVisible && item.durationMs != null && (
         <Text style={styles.durationText}>Worked for {fmtDuration(item.durationMs)}</Text>
       )}
     </Pressable>

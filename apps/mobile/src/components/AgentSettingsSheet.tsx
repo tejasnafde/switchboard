@@ -31,6 +31,7 @@ function Row({
       disabled={disabled || !onPress}
       accessibilityRole={onPress ? 'button' : 'text'}
       accessibilityLabel={`${label}: ${value}`}
+      accessibilityState={{ disabled: Boolean(disabled) }}
       testID={testID}
       style={({ pressed }) => [styles.row, pressed && styles.pressed, disabled && styles.disabled]}
     >

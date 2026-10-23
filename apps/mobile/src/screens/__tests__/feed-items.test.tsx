@@ -122,10 +122,12 @@ describe('TextItem', () => {
     const v = renderComponent(<TextItem item={row({ durationMs: 1500 })} onLongPress={onLongPress} />)
     expect(v.texts().join(' ')).not.toMatch(/worked for/i)
     // The Pressable, not TextItem itself, which carries the same prop name.
-    const pressable = v.root.find((n) => typeof n.props?.onLongPress === 'function' && 'disabled' in n.props)
-    act(() => pressable.props.onLongPress())
+    const pressable = () => v.root.find((n) => typeof n.props?.onLongPress === 'function' && 'disabled' in n.props)
+    expect(pressable().props.accessibilityHint).toBe('Long press to show how long it worked')
+    act(() => pressable().props.onLongPress())
     expect(v.texts().join(' ')).toMatch(/worked for\s+1\.5s/i)
     expect(onLongPress).toHaveBeenCalled()
+    expect(pressable().props.accessibilityHint).toBeUndefined()
   })
 
   it('shows no duration mid-stream, even once one is known', () => {
