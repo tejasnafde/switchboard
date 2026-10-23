@@ -153,6 +153,22 @@ describe('native Android publishing lane', () => {
     expect(workflow).toContain('app/build/outputs/mapping/release/mapping.txt')
   })
 
+  test('installs the NDK that build.gradle.kts pins before every release build', () => {
+    expect(readFileSync(androidBuildPath, 'utf8')).toMatch(/^ {4}ndkVersion = "\d+\.\d+\.\d+"$/m)
+    for (const [path, job] of [
+      [releaseWorkflowPath, 'release'],
+      [workflowPath, 'build'],
+    ]) {
+      const steps = (parseYaml(readFileSync(path, 'utf8')) as any).jobs[job].steps as any[]
+      const install = steps.findIndex((step) =>
+        String(step.run ?? '').includes('sdkmanager --install "ndk;$NDK_VERSION"'),
+      )
+      const build = steps.findIndex((step) => /bundleRelease|assembleRelease/.test(String(step.run ?? '')))
+      expect(install, path).toBeGreaterThanOrEqual(0)
+      expect(build, path).toBeGreaterThan(install)
+    }
+  })
+
   test('publishes a sideload APK only on request, built from the verified AAB and verified itself', () => {
     const parsed = parseYaml(readFileSync(releaseWorkflowPath, 'utf8')) as any
     const steps = parsed.jobs.release.steps as any[]

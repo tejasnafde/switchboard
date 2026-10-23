@@ -91,6 +91,19 @@ jobs:
           # cmdline-tools 16 (runner image 2026-09-07+) no longer ships.
           packages: platform-tools
 
+      # The release build strips native libraries and writes their symbol
+      # tables with the NDK. The runner image has none, so install the
+      # version that app/build.gradle.kts pins.
+      - name: Install the pinned Android NDK
+        run: |
+          set -euo pipefail
+          NDK_VERSION="$(sed -n 's/^ *ndkVersion = "\(.*\)"$/\1/p' app/build.gradle.kts)"
+          if [[ -z "$NDK_VERSION" ]]; then
+            echo "::error::app/build.gradle.kts sets no ndkVersion"
+            exit 1
+          fi
+          sdkmanager --install "ndk;$NDK_VERSION" > /dev/null
+
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
 
