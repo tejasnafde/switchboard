@@ -49,7 +49,7 @@ describe('SendMicButton', () => {
 
   it('is a stop square when running with nothing to send', () => {
     const v = view({ isRunning: true })
-    expect(v.byLabel('Stop the agent')).toBeTruthy()
+    expect(v.byLabel('Stop the agent').props.testID).toBe('stop-button')
     expect(v.iconNames()).toContain('stop')
   })
 

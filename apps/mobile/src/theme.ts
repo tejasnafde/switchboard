@@ -84,6 +84,10 @@ export const type = {
   /** Body copy and chat messages: platform face, most legible at length. */
   body: { fontSize: 15, lineHeight: 23 },
   bodySm: { fontSize: 13, lineHeight: 20 },
+  /** Chat turns, the same 16/24 as Android's bodyLarge. */
+  chatBody: { fontSize: 16, lineHeight: 24 },
+  /** Metadata under and around a turn: sans, never mono. */
+  meta: { fontSize: 13, lineHeight: 18 },
   /** Machine-produced text: paths, ids, tokens, model names. */
   mono: { fontFamily: fonts.mono, fontSize: 12, lineHeight: 18 },
   monoSm: { fontFamily: fonts.mono, fontSize: 11, lineHeight: 16 },
@@ -108,3 +112,11 @@ export const radius = {
 
 /** Minimum comfortable touch target. Rows and buttons should not go below this. */
 export const HIT = 44
+
+/** The chat screen's rhythm, the same numbers as Android's chat screen. */
+export const chat = {
+  margin: 16,
+  turnGap: 20,
+  target: 48,
+  sheetRow: 64,
+} as const

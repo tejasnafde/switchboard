@@ -181,7 +181,7 @@ export const Markdown = memo(function Markdown({
 
 const styles = StyleSheet.create({
   root: { gap: space.xs },
-  body: { color: colors.text, ...type.body },
+  body: { color: colors.text, ...type.chatBody },
   heading: { color: colors.text, fontWeight: '600', marginBottom: 2 },
   strong: { fontWeight: '700', color: colors.text },
   em: { fontStyle: 'italic' },
@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
   codeLang: { ...type.monoSm, color: colors.textDim, marginBottom: space.xs },
   codeText: { ...type.mono, color: colors.text },
   listRow: { flexDirection: 'row', gap: space.sm },
-  listMarker: { color: colors.textDim, ...type.body },
+  listMarker: { color: colors.textDim, ...type.chatBody },
   listBody: { flex: 1 },
   quote: {
     borderLeftColor: colors.border,

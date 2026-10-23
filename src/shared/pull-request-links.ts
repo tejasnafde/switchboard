@@ -62,6 +62,28 @@ export function phoneLinkRowText(link: Pick<PrLink, 'ref' | 'source' | 'state'>)
   return parts.join(' · ')
 }
 
+/** The chat header chip: "#9", or "#9 +1" when more than one is linked. Ported to Android as `PrLinkRows.chipLabel`. */
+export function prLinksChipLabel(links: readonly Pick<PrLink, 'ref'>[]): string {
+  const first = links[0]
+  if (!first) return ''
+  return links.length > 1 ? `#${first.ref.number} +${links.length - 1}` : `#${first.ref.number}`
+}
+
+/**
+ * A link as a two line sheet row: "#9 owner/name" over "Merged · Linked
+ * automatically". An open PR shows no state. Ported to Android as `PrLinkRows.sheetRow`.
+ */
+export function phoneLinkSheetRow(link: Pick<PrLink, 'ref' | 'source' | 'state'>): {
+  primary: string
+  secondary: string
+} {
+  const state = link.state && link.state !== 'open' ? link.state[0].toUpperCase() + link.state.slice(1) : null
+  return {
+    primary: `#${link.ref.number} ${link.ref.owner}/${link.ref.name}`,
+    secondary: [state, linkSourceLabel(link.source)].filter(Boolean).join(' · '),
+  }
+}
+
 /** Accessible name of a link's Unlink button. It names the repository, since two repositories can share a number. */
 export function unlinkPrLabel(ref: PrRef): string {
   return `Unlink pull request ${ref.owner}/${ref.name} #${ref.number}`

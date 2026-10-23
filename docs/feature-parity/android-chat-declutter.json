@@ -2,16 +2,34 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "android-chat-declutter",
-  "summary": "Native Android chat screen declutter. The linked pull requests become one app bar chip (\"#9 +1\") that opens a bottom sheet with one 64 dp row per link; Unlink and its confirm dialog live in the sheet. Tokens, cost and the last turn's time hide behind a tap on the title (one usage line under the app bar) and a Usage row in the agent settings screen. The subtitle drops the model (\"SSG · Working\"). \"Worked for\" shows only on turns of 30 s or more, and on any turn after a long press. While a turn runs, a Steer | Queue segment sits in a footer row inside the composer card, next to one \"model · mode\" chip that opens the agent settings; the old hint line and the trailing model button are gone. Stop is a 48 dp icon button. The subagent row is one 56 dp row with a status icon and a chevron. Metadata, eyebrows and notices use the sans bodySmall style; monospace stays for code, paths, diffs and todos. Rhythm: 16 dp margins, 20 dp between turns, 48 dp targets. Every action and accessibility label stays.",
+  "summary": "Phone chat screen declutter, on native Android and the Expo iOS app. The linked pull requests become one app bar chip (\"#9 +1\") that opens a bottom sheet with one 64 dp row per link; Unlink and its confirm dialog live in the sheet. Tokens, cost and the last turn's time hide behind a tap on the title (one usage line under the app bar) and a Usage row in the agent settings screen. The subtitle drops the model (\"SSG · Working\"). \"Worked for\" shows only on turns of 30 s or more, and on any turn after a long press. While a turn runs, a Steer | Queue segment sits in a footer row inside the composer card, next to one \"model · mode\" chip that opens the agent settings; the old hint line and the trailing model button are gone. Stop is a 48 dp icon button. The subagent row is one 56 dp row with a status icon and a chevron. Metadata, eyebrows and notices use the sans bodySmall style; monospace stays for code, paths, diffs and todos. Rhythm: 16 dp margins, 20 dp between turns, 48 dp targets. Every action and accessibility label stays. On Expo the same rules live in apps/mobile/src/lib/thread-chrome.ts and held-turns.ts, the chip label and sheet rows come from src/shared/pull-request-links.ts (checked against the shared pr-link-rows.json fixture, which Android also reads), and the model and mode chip opens an agent settings sheet (model, agent and profile, usage, runtime mode). The chip and its Steer | Queue segment sit in a footer inside the composer card that shows while typing or while a turn runs.",
   "surfaces": {
     "desktop": {
       "status": "not_applicable",
-      "reason": "The desktop chat has its own layout (PR links in the chat header, usage in the context meter); this change is a phone layout only and changes no desktop code."
+      "reason": "The desktop chat has its own layout (PR links in the chat header, usage in the context meter); this change is a phone layout only and changes no desktop code. The two helpers added to src/shared/pull-request-links.ts (prLinksChipLabel, phoneLinkSheetRow) are phone display text that the desktop does not call."
     },
     "reactNativeIos": {
-      "status": "staged",
-      "flag": "expo_chat_declutter",
-      "followUpRelease": "The next Expo OTA release brings the same declutter to apps/mobile/src/screens/ThreadScreen.tsx (PR chip and sheet replacing PrLinksBanner.tsx, usage on a title tap, the Steer | Queue segment, the model and mode chip, the Worked for threshold). Until then the Expo app keeps its current layout; no Expo code changes here, so there is no unflagged Expo behaviour."
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/screens/SubagentItem.tsx",
+        "apps/mobile/src/screens/thread-screen.styles.ts",
+        "apps/mobile/src/components/PrLinks.tsx",
+        "apps/mobile/src/components/ThreadHeaderTitle.tsx",
+        "apps/mobile/src/components/QueueSegment.tsx",
+        "apps/mobile/src/components/AgentSettingsSheet.tsx",
+        "apps/mobile/src/components/SendMicButton.tsx",
+        "apps/mobile/src/lib/thread-chrome.ts",
+        "apps/mobile/src/lib/held-turns.ts",
+        "tests/unit/mobile-thread-chrome.test.ts",
+        "tests/unit/mobile-held-turns.test.ts",
+        "apps/mobile/src/components/__tests__/PrLinks.test.tsx",
+        "apps/mobile/src/components/__tests__/QueueSegment.test.tsx",
+        "apps/mobile/src/components/__tests__/AgentSettingsSheet.test.tsx",
+        "apps/mobile/src/components/__tests__/SendMicButton.test.tsx",
+        "apps/mobile/src/screens/__tests__/feed-items.test.tsx"
+      ]
     },
     "nativeAndroid": {
       "status": "implemented",
@@ -30,12 +48,13 @@
         "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadComposerPresentationPolicyTest.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/TurnDeliveryPolicyTest.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/PrLinkRowsTest.kt",
-        "apps/android/app/src/androidTest/java/app/switchboard/mobile/ui/thread/ThreadScreenRegressionTest.kt"
+        "apps/android/app/src/androidTest/java/app/switchboard/mobile/ui/thread/ThreadScreenRegressionTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/PrLinkRowsFixturesTest.kt"
       ]
     },
     "sharedBackendApi": {
       "status": "not_applicable",
-      "reason": "The pull-requests:links and pull-requests:unlink calls, the turn delivery field and the thread metadata are read and sent as before; PrLinkRows.text and the shared tests/fixtures/pr-link-rows.json are unchanged."
+      "reason": "The pull-requests:links and pull-requests:unlink calls, the turn delivery field and the thread metadata are read and sent as before; PrLinkRows.text is unchanged. The shared tests/fixtures/pr-link-rows.json only gains the sheetPrimary and sheetSecondary keys on each record (additive, existing keys unchanged). The new shared helpers only format text on the client."
     },
     "storageDataMigration": {
       "status": "not_applicable",
@@ -43,18 +62,21 @@
     },
     "updateRelease": {
       "status": "not_applicable",
-      "reason": "A UI-only change for the next native Android release; no package identity, signing, version, schema, deep link or update channel changes."
+      "reason": "Android: a UI-only change for the next native Android release. Expo: JavaScript only (no native module, permission or app.json change), so it ships on the iOS OTA lane under the existing fingerprint runtime version. No package identity, signing, version, schema, deep link or update channel changes."
     }
   },
   "verification": {
     "automated": [
-      "Native Android testDebugUnitTest and lintDebug pass, including ThreadChromePolicyTest (subtitle without the model, usage line, 30 s threshold), TurnDeliveryPolicyTest (segment labels and hints), ThreadComposerPresentationPolicyTest (one chip label, footer while running), PrLinkRowsTest (chip label, sheet row), the unchanged PrLinkRowsFixturesTest and the SubagentRow Robolectric render test.",
-      "ThreadScreenRegressionTest compiles with the usage line opened by a title tap."
+      "Native Android testDebugUnitTest and lintDebug pass, including ThreadChromePolicyTest (subtitle without the model, usage line, 30 s threshold), TurnDeliveryPolicyTest (segment labels and hints), ThreadComposerPresentationPolicyTest (one chip label, footer while running), PrLinkRowsTest (chip label, sheet row), PrLinkRowsFixturesTest (text and unlink label, and now PrLinkRows.sheetRow) and the SubagentRow Robolectric render test.",
+      "ThreadScreenRegressionTest compiles with the usage line opened by a title tap.",
+      "Root vitest: mobile-thread-chrome (subtitle without the model, usage line and its spoken label, 30 s threshold, model and mode chip label), mobile-held-turns (Steer and Queue labels, hints and accessibility labels), pull-request-link-rules (prLinksChipLabel, and phoneLinkSheetRow against the shared pr-link-rows.json fixture).",
+      "Expo jest and tsc pass: PrLinks (chip label and count, sheet rows, the one-line row text kept for the screen reader, Unlink names the repository), QueueSegment (one switch with the hint as its value, flips on the other segment and on the activate action), AgentSettingsSheet (rows, hidden rows, mode pick), SendMicButton (Stop keeps its label, testID stop-button), feed-items (Worked for from 30 s, and after a long press that still forks)."
     ],
     "hardware": [],
     "notExercised": [
       "connectedDebugAndroidTest was not run on a device or emulator.",
-      "TalkBack, font scaling, a live running turn with the Steer | Queue segment, and Unlink against a live backend were not exercised on hardware."
+      "TalkBack, font scaling, a live running turn with the Steer | Queue segment, and Unlink against a live backend were not exercised on hardware.",
+      "The Expo screen was not run on an iPhone or a simulator: the header title and chip in the native stack header, the two bottom sheets, the picker that opens after the settings sheet is dismissed, VoiceOver on the Steer | Queue switch, and Dynamic Type were not exercised."
     ]
   }
 }
