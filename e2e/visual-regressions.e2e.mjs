@@ -933,8 +933,13 @@ async function captureThemeScreens(win, theme) {
   const listOverflow = await list.evaluate((el) => el.scrollWidth - el.clientWidth)
   if (listOverflow > 0)
     screenFailures.push(`host-write-narrow-${theme.toLowerCase()}: the message list scrolls ${listOverflow}px sideways`)
-  // The card is taller than this window, so show its end, where the buttons wrap.
-  await hostWriteCard.locator('[data-host-write-actions]').evaluate((el) => el.scrollIntoView({ block: 'end' }))
+  // The card is taller than this window, so show its end, where the buttons
+  // wrap. It is the last row and the list follows the bottom, so a late row
+  // update scrolls a partly scrolled list there: capture the bottom itself.
+  await list.evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
+  await settle(win)
   await snapScreen(win, 'host-write-narrow', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
   await app.evaluate(
     ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }),

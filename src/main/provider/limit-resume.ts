@@ -65,8 +65,8 @@ export interface LimitResumeHost {
   usage(instanceId: string): Promise<ProviderUsage>
   /** Send the resume turn, then release the held queue behind it. False when not sent. */
   sendResume(threadId: string): Promise<boolean>
-  /** Tell clients the chat's Limited row changed. `resumed` when a resume turn was just sent. */
-  changed(conversationId: string, state: LimitState, resumed: boolean): void
+  /** Tell clients the chat's Limited row changed. `resumed` when a resume turn was just sent, `gaveUp` when it just gave up. */
+  changed(conversationId: string, state: LimitState, resumed: boolean, gaveUp?: boolean): void
 }
 
 /** Whether a reading says the account can run a turn now. A reading we cannot use counts as open: the turn is the test. */
@@ -149,7 +149,7 @@ export class LimitResumer {
           endedAt: this.now(),
         })
         this.clearTimer(id)
-        this.notify(id, false)
+        this.notify(id, false, true)
         return
       }
       row = getLimitResume(id)
@@ -277,8 +277,8 @@ export class LimitResumer {
     this.timers.delete(id)
   }
 
-  private notify(id: string, resumed: boolean): void {
-    this.host.changed(id, this.view(id), resumed)
+  private notify(id: string, resumed: boolean, gaveUp = false): void {
+    this.host.changed(id, this.view(id), resumed, gaveUp)
   }
 
   private async fire(id: string, requestId: string, manual: boolean): Promise<ResumeNowResult> {
@@ -384,7 +384,7 @@ export class LimitResumer {
           setLimitResumeStreak(id, streak.streak, false)
           this.schedule(id, next, decision.resetAt + LIMIT_RESUME_FIRE_DELAY_MS)
         }
-        this.notify(id, false)
+        this.notify(id, false, streak.gaveUp)
         return refuse('rearm', 'The usage window is still closed.')
       }
       case 'fire':

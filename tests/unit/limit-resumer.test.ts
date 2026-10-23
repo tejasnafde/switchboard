@@ -43,7 +43,7 @@ class Host implements LimitResumeHost {
   reading = usage(false)
   sendOk = true
   sent: string[] = []
-  changes: Array<{ id: string; state: LimitState; resumed: boolean }> = []
+  changes: Array<{ id: string; state: LimitState; resumed: boolean; gaveUp?: boolean }> = []
   enabled = () => this.flag
   settingOn = () => this.setting
   liveThread = () => this.live
@@ -56,8 +56,8 @@ class Host implements LimitResumeHost {
     this.sent.push(threadId)
     return this.sendOk
   }
-  changed = (id: string, state: LimitState, resumed: boolean) => {
-    this.changes.push({ id, state, resumed })
+  changed = (id: string, state: LimitState, resumed: boolean, gaveUp?: boolean) => {
+    this.changes.push({ id, state, resumed, ...(gaveUp ? { gaveUp } : {}) })
   }
 }
 
@@ -130,6 +130,10 @@ describe('LimitResumer', () => {
     }
     expect(getLimitResume('c1')).toMatchObject({ state: 'gave_up', streak: 3 })
     expect(resumer.view('c1')).toEqual({ kind: 'gave_up' })
+    // The push fires on the one change that gave up.
+    expect(host.changes.filter((c) => c.gaveUp)).toEqual([
+      { id: 'c1', state: { kind: 'gave_up' }, resumed: false, gaveUp: true },
+    ])
     await vi.advanceTimersByTimeAsync(10 * MIN)
     expect(host.sent).toHaveLength(3)
   })
