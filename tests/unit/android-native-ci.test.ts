@@ -148,6 +148,8 @@ describe('native Android publishing lane', () => {
 
     expect(readFileSync(androidBuildPath, 'utf8')).toContain('ndk.debugSymbolLevel = "SYMBOL_TABLE"')
     expect(symbols).toBeGreaterThanOrEqual(0)
+    expect(steps[symbols].run).toContain("grep -q ' \\.symtab '")
+    expect(steps[symbols].run).toContain('exit "$MISSING"')
     expect(upload).toBeGreaterThan(symbols)
     expect(steps[upload].with.mappingFile).toBe('${{ env.MAPPING_FILE }}')
     expect(workflow).toContain('app/build/outputs/mapping/release/mapping.txt')
