@@ -20,6 +20,8 @@ import { unixSecondsToMs } from './provider-usage'
  */
 export const LIMIT_AUTO_RESUME_ENABLED = false
 export const LIMIT_AUTO_RESUME_LABS_SETTING = 'labs.limit_auto_resume'
+/** The backend serves the `provider:limit-resume-*` channels and `limit-resume.changed`. */
+export const LIMIT_AUTO_RESUME_CAPABILITY = 'limit_auto_resume_v1'
 
 /** Reads one backend settings row; `getSetting` from the db module fits. */
 export type SettingReader = (key: string) => string | null

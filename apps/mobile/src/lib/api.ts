@@ -17,6 +17,7 @@ import {
   WorktreeCreationChannels,
 } from '@shared/ipc-channels'
 import type { HtmlLiveOpenRequest, HtmlLiveState } from '@shared/html-live'
+import type { LimitState } from '@shared/limit-resume'
 import type { SttTranscribeRequest, SttTranscribeResult } from '@shared/stt'
 import type {
   RuntimeEvent,
@@ -407,6 +408,19 @@ export class SwitchboardClient {
   /** Start a queue held after a failed or usage-limited turn. */
   resumeQueuedTurns(threadId: string): Promise<{ ok: boolean; message?: string }> {
     return this.transport.invoke(ProviderChannels.RESUME_QUEUED_TURNS, threadId)
+  }
+
+  /** The chat's Limited row (needs `LIMIT_AUTO_RESUME_CAPABILITY`). */
+  limitResumeGet(threadId: string): Promise<LimitState> {
+    return this.transport.invoke(ProviderChannels.LIMIT_RESUME_GET, threadId)
+  }
+
+  limitResumeCancel(threadId: string): Promise<void> {
+    return this.transport.invoke(ProviderChannels.LIMIT_RESUME_CANCEL, threadId)
+  }
+
+  limitResumeNow(threadId: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    return this.transport.invoke(ProviderChannels.LIMIT_RESUME_NOW, threadId)
   }
 
   /** A user send to another session; with `undeliveredId` it sends a kept Not delivered row. */

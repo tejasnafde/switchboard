@@ -16,6 +16,17 @@ import type { RuntimeEvent } from '../../src/shared/provider-events'
 const T = 'thread-1'
 
 describe('pushForEvent', () => {
+  it('notifies once when auto-resume gives up, and not for other Limited row changes', () => {
+    const gaveUp: RuntimeEvent = { type: 'limit-resume.changed', threadId: T, state: { kind: 'gave_up' }, gaveUp: true }
+    expect(pushForEvent(gaveUp, { title: 'Chat' })).toEqual({
+      title: 'Chat',
+      body: 'Auto-resume gave up after 3 tries. Resume by hand.',
+      data: { threadId: T, kind: 'error' },
+    })
+    expect(pushForEvent({ ...gaveUp, gaveUp: undefined })).toBeNull()
+    expect(pushForEvent({ type: 'limit-resume.changed', threadId: T, state: { kind: 'armed', resetAt: 1 } })).toBeNull()
+  })
+
   it('notifies for an approval, which blocks the agent indefinitely', () => {
     const msg = pushForEvent(
       {

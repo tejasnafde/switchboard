@@ -6,6 +6,7 @@
  */
 import { hostWriteTitle } from './agent-host-writes'
 import { fmtDuration } from './format'
+import { LIMIT_RESUME_MAX_STREAK } from './limit-resume'
 import { peerLinkSpentText } from './peer-links'
 import type { RuntimeEvent } from './provider-events'
 
@@ -109,6 +110,15 @@ export function pushForEvent(event: RuntimeEvent, ctx: PushContext = {}): PushMe
         title,
         body: clampBody(peerLinkSpentText(event.fromLabel, event.peerLabel)),
         data: { threadId, kind: 'link' },
+      }
+
+    // Once per limit: the chat now waits until someone resumes it by hand.
+    case 'limit-resume.changed':
+      if (!event.gaveUp) return null
+      return {
+        title,
+        body: `Auto-resume gave up after ${LIMIT_RESUME_MAX_STREAK} tries. Resume by hand.`,
+        data: { threadId, kind: 'error' },
       }
 
     default:

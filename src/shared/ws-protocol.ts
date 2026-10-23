@@ -87,6 +87,10 @@ export const BACKEND_CAPABILITIES = [
    *  backend's projects folder and take copied ignored files
    *  (`PROJECT_CLONE_CAPABILITY` in shared/project-clone). */
   'project_clone_v1',
+  /** `provider:limit-resume-*` and `limit-resume.changed`: a chat's Limited
+   *  row with Resume now and Cancel auto-resume (`LIMIT_AUTO_RESUME_CAPABILITY`
+   *  in shared/limit-resume). With the flag off, get answers `none`. */
+  'limit_auto_resume_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {
