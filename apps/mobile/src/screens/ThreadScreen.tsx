@@ -1,8 +1,8 @@
 import { ThreadWaitStatus } from '../components/ThreadWaitStatus'
 /**
- * One chat thread: inverted feed over the chat store's FeedItems, a status
- * header (dot + context meter + cost), and a pinned composer with a runtime
- * mode picker. History seeds from LOAD_SESSION_BY_ID; live events arrive via
+ * One chat thread: inverted feed over the chat store's FeedItems, a header
+ * whose title shows usage on a tap and whose chip opens the linked pull
+ * requests, and a pinned composer with one "model · mode" chip. History seeds from LOAD_SESSION_BY_ID; live events arrive via
  * the connection's onEvent -> useChatStore.ingest wiring.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -32,7 +32,7 @@ import { providerKindFor, type ProviderInstance, type ProviderSkill } from '@sha
 import type { ChatMessage } from '@shared/types'
 import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type { ModelOption } from '@shared/models'
-import { formatTokens, contextPercent } from '@shared/format'
+import { formatTokens } from '@shared/format'
 import { echoMessageId, interruptFoundNoTurn, isRuntimeMode } from '@shared/provider-events'
 import { VIEWING_RENEW_MS } from '@shared/push-policy'
 import { generateTitle } from '@shared/auto-title'
@@ -63,7 +63,6 @@ import {
 import { usePrefsStore } from '../stores/prefs'
 import { usePushStore } from '../stores/push'
 import { HistoryPageStatus } from '../components/HistoryPageStatus'
-import { ModePicker } from '../components/ModePicker'
 import { ProfilePicker } from '../components/ProfilePicker'
 import { SlashMenu } from '../components/SlashMenu'
 import { allCommands, detectSlash, filterCommands, type SlashCommand } from '../lib/slash'
@@ -74,8 +73,11 @@ import { resolvedAmbiguousBubbleAction } from '../lib/outbox-model'
 import { keyboardAvoidance } from '../lib/keyboard-avoidance'
 import { mergeHistoryItems, historyToItems } from '../lib/thread-history'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
-import { PrLinksBanner } from '../components/PrLinksBanner'
+import { ThreadHeaderTitle } from '../components/ThreadHeaderTitle'
+import { PrLinksChip, PrLinksSheet } from '../components/PrLinks'
+import { QueueSegment } from '../components/QueueSegment'
+import { AgentSettingsSheet } from '../components/AgentSettingsSheet'
+import { settingsChipLabel, usageAccessibilityLabel, usageLine } from '../lib/thread-chrome'
 import { LimitResumeRow } from '../components/LimitResumeRow'
 import { ReviewPillChip } from '../components/ReviewPillChip'
 import { unlinkPrLink } from '../lib/pr-link-unlink'
@@ -154,7 +156,13 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const [models, setModels] = useState<ModelOption[]>([])
   const [model, setModel] = useState('')
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
-  const [statusOpen, setStatusOpen] = useState(false)
+  const [usageOpen, setUsageOpen] = useState(false)
+  const toggleUsage = useCallback(() => setUsageOpen((v) => !v), [])
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  // iOS presents one modal at a time, so a picker chosen in the settings sheet
+  // opens once the sheet has gone.
+  const pickerAfterSettingsRef = useRef<'model' | 'profile' | null>(null)
+  const [composerFocused, setComposerFocused] = useState(false)
   /** Full-screen preview of a sent image, since a 180pt thumbnail hides detail. */
   const [lightbox, setLightbox] = useState<string | null>(null)
   const [skills, setSkills] = useState<ProviderSkill[]>([])
@@ -189,13 +197,6 @@ export default function ThreadScreen({ route, navigation }: Props) {
       ),
     [thread.historyMessages],
   )
-
-  // The accessory subscribes to the store itself, so this runs once per thread.
-  useEffect(() => {
-    navigation.setOptions({
-      headerRight: () => <ThreadHeaderStatus threadKey={key} onPress={() => setStatusOpen((v) => !v)} />,
-    })
-  }, [navigation, key])
 
   // useFocusEffect (not useEffect) so activeKey tracks push/pop: pushing
   // another screen on top blurs this one and re-focusing restores it.
@@ -251,6 +252,25 @@ export default function ThreadScreen({ route, navigation }: Props) {
       stop()
     }
   }, [connectionId, threadId, prLinksConnection])
+
+  const [prSheetOpen, setPrSheetOpen] = useState(false)
+  const openPrSheet = useCallback(() => setPrSheetOpen(true), [])
+
+  // The title subscribes to the store itself, so this runs only when its inputs change.
+  useEffect(() => {
+    navigation.setOptions({
+      headerTitle: ({ children }) => (
+        <ThreadHeaderTitle
+          threadKey={key}
+          title={children}
+          provider={provider}
+          usageOpen={usageOpen}
+          onPress={toggleUsage}
+        />
+      ),
+      headerRight: () => <PrLinksChip links={prLinks} onPress={openPrSheet} />,
+    })
+  }, [navigation, key, provider, usageOpen, toggleUsage, prLinks, openPrSheet])
 
   const unlinkPr = useCallback(
     (link: PrLink) => {
@@ -728,6 +748,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
   }
 
   const modelLabel = models.find((m) => m.id === model)?.label ?? 'Default'
+  const settingsChip = settingsChipLabel(models.length > 0 ? modelLabel : null, thread.runtimeMode)
 
   /**
    * Messages still waiting to reach the backend, for this thread.
@@ -1409,8 +1430,21 @@ export default function ThreadScreen({ route, navigation }: Props) {
     unavailableNote: demo ? NOT_IN_DEMO : undefined,
   })
 
-  const contextShare = thread.usedTokens != null ? contextPercent(thread.usedTokens, thread.maxTokens) : null
-  const contextPct = contextShare == null ? null : contextShare / 100
+  const usage = usageLine(thread)
+  const footerShown = composerFocused || isRunning
+  const showsQueueSegment = isRunning && canSteer(thread.provider ?? provider)
+  const openPicker = (which: 'model' | 'profile') =>
+    which === 'model' ? setModelPickerOpen(true) : setProfilePickerOpen(true)
+  const openFromSettings = (which: 'model' | 'profile') => {
+    setSettingsOpen(false)
+    if (Platform.OS === 'ios') pickerAfterSettingsRef.current = which
+    else openPicker(which)
+  }
+  const settingsDismissed = () => {
+    const next = pickerAfterSettingsRef.current
+    pickerAfterSettingsRef.current = null
+    if (next) openPicker(next)
+  }
   const [compactionDismissed, setCompactionDismissed] = useState(false)
   // Same 60s tick as the desktop pane: nothing else re-renders an idle thread.
   const [now, setNow] = useState(() => Date.now())
@@ -1442,22 +1476,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
       style={[styles.screen, { transform: [{ translateX: swipeBack.translateX }] }]}
       {...keyboardAvoidance(Platform.OS, headerHeight)}
     >
-      {/* Expanded detail, shown only when the header accessory is tapped. */}
-      {statusOpen && (
-        <View style={styles.statusBar}>
-          <Text style={styles.statusText}>{thread.status}</Text>
-          {contextPct != null && thread.usedTokens != null && thread.maxTokens != null && (
-            <View style={styles.contextWrap}>
-              <View style={styles.contextTrack}>
-                <View style={[styles.contextFill, { width: `${Math.round(contextPct * 100)}%` }]} />
-              </View>
-              <Text style={styles.contextText}>
-                {formatTokens(thread.usedTokens)} / {formatTokens(thread.maxTokens)}
-              </Text>
-            </View>
-          )}
-          {thread.costUsd != null && <Text style={styles.costText}>${thread.costUsd.toFixed(2)}</Text>}
-        </View>
+      {usageOpen && (
+        <Text
+          style={styles.usageLine}
+          accessibilityLabel={usageAccessibilityLabel(thread) ?? undefined}
+          testID="usage-line"
+        >
+          {usage ?? 'No usage reported yet'}
+        </Text>
       )}
 
       {offerCompaction && thread.usedTokens != null && (
@@ -1483,7 +1509,6 @@ export default function ThreadScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      <PrLinksBanner links={prLinks} onUnlink={unlinkPr} />
       {/* Keyed by the re-seed revision: after a resume gap the row reads its state again. */}
       {limitRowClient && (
         <LimitResumeRow key={`${threadId}:${staleGeneration}`} client={limitRowClient} threadId={threadId} />
@@ -1584,6 +1609,27 @@ export default function ThreadScreen({ route, navigation }: Props) {
         onClose={() => setProfilePickerOpen(false)}
       />
 
+      <PrLinksSheet
+        visible={prSheetOpen && prLinks.length > 0}
+        links={prLinks}
+        onUnlink={unlinkPr}
+        onClose={() => setPrSheetOpen(false)}
+      />
+
+      <AgentSettingsSheet
+        visible={settingsOpen}
+        modelLabel={models.length > 0 ? modelLabel : null}
+        profileLabel={rotating ? switchLabel : profileLabel}
+        profileBusy={rotating}
+        mode={thread.runtimeMode}
+        usage={usage}
+        onMode={setMode}
+        onOpenModel={() => openFromSettings('model')}
+        onOpenProfile={() => openFromSettings('profile')}
+        onClose={() => setSettingsOpen(false)}
+        onDismiss={settingsDismissed}
+      />
+
       {mergeBackSheet && (
         <MergeBackSheet mode={mergeBackSheet} api={mergeBackApi} onClose={() => setMergeBackSheet(null)} />
       )}
@@ -1598,42 +1644,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       {/* The inset, not a constant: under edge-to-edge the gesture bar overlays
           the app, and it is a different height on every device. Floored so the
           composer keeps its breathing room on a phone that reports none. */}
-      <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        {/* Dropdowns left, actions right. The left group scrolls if the labels
-            overflow; the right group never does, so the mic, attach and Stop
-            are always where the thumb expects them. */}
-        <View style={styles.controlsRow}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            keyboardShouldPersistTaps="always"
-            style={styles.controlsScroller}
-            contentContainerStyle={styles.controlsContent}
-          >
-            <ModePicker value={thread.runtimeMode} onChange={setMode} />
-            {models.length > 0 && (
-              <Pressable
-                onPress={() => setModelPickerOpen(true)}
-                style={({ pressed }) => [styles.modelChip, pressed && styles.pressed]}
-              >
-                <Text style={styles.modelChipText} numberOfLines={1}>
-                  {modelLabel}
-                </Text>
-              </Pressable>
-            )}
-            {profileLabel !== null && (
-              <Pressable
-                onPress={() => setProfilePickerOpen(true)}
-                disabled={rotating}
-                style={({ pressed }) => [styles.modelChip, (pressed || rotating) && styles.pressed]}
-              >
-                <Text style={styles.modelChipText} numberOfLines={1}>
-                  {rotating ? switchLabel : profileLabel}
-                </Text>
-              </Pressable>
-            )}
-          </ScrollView>
-        </View>
+      <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         {voiceNote && <VoiceNoteBar note={voiceNote} />}
         {dictation.refining && <Text style={styles.queuedNote}>Refining transcript…</Text>}
         {waitingCount > 0 && (
@@ -1649,44 +1660,58 @@ export default function ThreadScreen({ route, navigation }: Props) {
             onRemove={() => usePrefsStore.getState().setReviewPill(key, undefined)}
           />
         )}
-        {isRunning && canSteer(thread.provider ?? provider) && (
-          <Pressable
-            onPress={() => setFlipNext((v) => !v)}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: flipNext }}
-            accessibilityLabel={toggle.accessibilityLabel}
-            testID="queue-next-toggle"
-            style={[styles.queueChip, toggle.queues && styles.queueChipOn]}
-            hitSlop={6}
-          >
-            <Text style={[styles.queueChipText, toggle.queues && styles.queueChipTextOn]}>{toggle.label}</Text>
-          </Pressable>
-        )}
-        <View style={styles.inputSurface}>
-          <TextInput
-            ref={composerRef}
-            style={styles.input}
-            value={draft}
-            onChangeText={setDraft}
-            placeholder={
-              isRunning
-                ? canSteer(thread.provider ?? provider) && !toggle.queues
-                  ? 'Steer the agent…'
-                  : 'Queue a follow-up…'
-                : 'Message the agent…'
-            }
-            placeholderTextColor={colors.textFaint}
-            multiline
-          />
-          {/* Attach lives inside the bubble, left of the primary button. */}
-          <AttachButton existing={attachments} onAdd={addAttachments} />
-          <SendMicButton
-            canSend={canSend}
-            isRunning={isRunning}
-            dictation={dictation}
-            onSend={() => send()}
-            onStopTurn={stop}
-          />
+        <View style={styles.inputCard}>
+          <View style={styles.inputRow}>
+            {/* Attach sits left of the input, the primary button right of it. */}
+            <AttachButton existing={attachments} onAdd={addAttachments} />
+            <TextInput
+              ref={composerRef}
+              style={styles.input}
+              value={draft}
+              onChangeText={setDraft}
+              onFocus={() => setComposerFocused(true)}
+              onBlur={() => setComposerFocused(false)}
+              placeholder={
+                isRunning
+                  ? canSteer(thread.provider ?? provider) && !toggle.queues
+                    ? 'Steer the agent…'
+                    : 'Queue a follow-up…'
+                  : 'Message the agent…'
+              }
+              placeholderTextColor={colors.textFaint}
+              multiline
+            />
+            <SendMicButton
+              canSend={canSend}
+              isRunning={isRunning}
+              dictation={dictation}
+              onSend={() => send()}
+              onStopTurn={stop}
+            />
+          </View>
+          {/* Hidden at rest; shown while typing or while a turn runs. */}
+          {footerShown && (
+            <View style={styles.composerFooter}>
+              {showsQueueSegment && (
+                <QueueSegment toggle={toggle} flipped={flipNext} onFlip={() => setFlipNext((v) => !v)} />
+              )}
+              <Pressable
+                onPress={() => setSettingsOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel={`Agent settings: ${settingsChip}`}
+                testID="agent-settings-action"
+                style={styles.settingsChipTarget}
+              >
+                {({ pressed }) => (
+                  <View style={[styles.settingsChip, pressed && styles.pressed]}>
+                    <Text style={styles.settingsChipText} numberOfLines={1}>
+                      {settingsChip}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+            </View>
+          )}
         </View>
       </View>
     </AnimatedKeyboardAvoidingView>

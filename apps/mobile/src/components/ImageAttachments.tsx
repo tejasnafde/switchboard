@@ -176,8 +176,8 @@ export const AttachmentStrip = memo(function AttachmentStrip({
 
 const styles = StyleSheet.create({
   attachButton: {
-    width: 40,
-    height: 44,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.sm,

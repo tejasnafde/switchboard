@@ -22,6 +22,7 @@ class PrLinkRowsFixturesTest {
             val link = decodeLink(case.values.getValue("link") as JsonObject)
             assertEquals(id, case.str("text"), PrLinkRows.text(link))
             assertEquals(id, case.str("unlinkLabel"), PrLinkRows.unlinkLabel(link.ref))
+            assertEquals(id, PrLinkSheetRow(case.str("sheetPrimary"), case.str("sheetSecondary")), PrLinkRows.sheetRow(link))
         }
     }
 

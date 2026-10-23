@@ -1,5 +1,5 @@
 import { Platform, StyleSheet } from 'react-native'
-import { colors, radius, space, type } from '../theme'
+import { chat, colors, radius, space, type } from '../theme'
 
 // ─── Styles ────────────────────────────────────────────────────
 
@@ -10,46 +10,12 @@ export const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg,
   },
-  statusBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    paddingHorizontal: space.lg,
-    paddingBottom: space.sm,
-    backgroundColor: colors.bg,
-  },
-  statusText: {
+  // Shown under the header by a tap on the title.
+  usageLine: {
     color: colors.textDim,
-    fontSize: 12,
-    textTransform: 'capitalize',
-  },
-  contextWrap: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  contextTrack: {
-    flex: 1,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: colors.surfaceRaised,
-    overflow: 'hidden',
-  },
-  contextFill: {
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: colors.accent,
-  },
-  contextText: {
-    color: colors.textFaint,
-    fontSize: 11,
-    fontFamily: mono,
-  },
-  costText: {
-    color: colors.textDim,
-    fontSize: 11,
-    fontFamily: mono,
+    ...type.meta,
+    paddingHorizontal: chat.margin,
+    paddingBottom: 10,
   },
   forkBanner: {
     paddingHorizontal: space.lg,
@@ -64,24 +30,12 @@ export const styles = StyleSheet.create({
     lineHeight: 15,
   },
   compactBanner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  // About five rows; a longer link list scrolls instead of pushing the feed off screen.
-  prLinksBanner: { flexGrow: 0, maxHeight: 96 },
-  queueChip: {
-    alignSelf: 'flex-start',
-    marginBottom: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  queueChipOn: { borderColor: colors.accent, backgroundColor: colors.accentWash },
-  queueChipText: { color: colors.textDim, fontSize: 11 },
-  queueChipTextOn: { color: colors.accent },
   compactBannerText: { flex: 1 },
   compactAction: { color: colors.accent, fontSize: 11, lineHeight: 15 },
+  // Inverted: paddingBottom sits under the header, paddingTop above the composer.
   feedContent: {
-    paddingVertical: 10,
+    paddingTop: space.sm,
+    paddingBottom: space.md,
     flexGrow: 1,
   },
   emptyWrap: {
@@ -101,12 +55,16 @@ export const styles = StyleSheet.create({
     marginHorizontal: space.lg,
     marginVertical: space.sm,
   },
+  /** An assistant turn: 20 pt above it, the same gap as above a user turn. */
+  turnBlock: {
+    marginHorizontal: chat.margin,
+    marginTop: chat.turnGap,
+  },
   userRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    marginHorizontal: space.lg,
-    marginTop: space.lg,
-    marginBottom: space.xs,
+    marginHorizontal: chat.margin,
+    marginTop: chat.turnGap,
   },
   // The old bubble was near-black navy on near-black: technically present,
   // practically invisible. A lighter raised surface plus a left accent edge
@@ -133,7 +91,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.surfaceRaised,
   },
   userText: {
-    ...type.bodySm,
+    ...type.chatBody,
     color: colors.text,
   },
   // A message the backend holds: dashed and unfilled, so it reads as not sent yet.
@@ -156,13 +114,13 @@ export const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
-  heldChipText: { ...type.monoSm, color: colors.textDim },
-  heldHint: { flex: 1, ...type.monoSm, color: colors.textFaint },
+  heldChipText: { ...type.meta, color: colors.textDim },
+  heldHint: { flex: 1, ...type.meta, color: colors.textFaint },
   heldAction: { padding: 4, borderRadius: radius.sm },
   heldActionDisabled: { opacity: 0.4 },
   deliveryText: {
     marginTop: space.xs,
-    ...type.monoSm,
+    ...type.meta,
     color: colors.textFaint,
   },
   deliveryFailed: {
@@ -175,9 +133,9 @@ export const styles = StyleSheet.create({
     color: colors.text,
   },
   durationText: {
-    marginTop: space.xs,
-    ...type.monoSm,
-    color: colors.textFaint,
+    marginTop: 6,
+    ...type.meta,
+    color: colors.textDim,
   },
   reasoningText: {
     color: colors.textDim,
@@ -218,10 +176,9 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   toolName: {
-    ...type.monoSm,
+    ...type.meta,
     color: colors.textDim,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    fontWeight: '600',
   },
   toolInput: {
     ...type.monoSm,
@@ -234,7 +191,7 @@ export const styles = StyleSheet.create({
     fontFamily: mono,
   },
   noticeRow: { alignItems: 'center', paddingVertical: space.md },
-  noticeText: { color: colors.textDim, ...type.monoSm },
+  noticeText: { color: colors.textDim, ...type.meta },
   undeliveredCard: {
     borderWidth: 1,
     borderStyle: 'dashed',
@@ -268,9 +225,9 @@ export const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   toolOutputText: { color: colors.textDim, ...type.monoSm },
-  toolMeta: { color: colors.textFaint, ...type.monoSm, marginTop: space.xs },
+  toolMeta: { color: colors.textFaint, ...type.meta, marginTop: space.xs },
   toolInputProse: { color: colors.textDim, ...type.bodySm },
-  queuedNote: { color: colors.textDim, ...type.monoSm, marginBottom: space.sm },
+  queuedNote: { color: colors.textDim, ...type.meta },
   denialPill: {
     alignSelf: 'flex-start',
     marginHorizontal: 14,
@@ -439,7 +396,6 @@ export const styles = StyleSheet.create({
   optionNumText: {
     color: colors.textDim,
     fontSize: 12,
-    fontFamily: mono,
   },
   optionNumTextSelected: {
     color: colors.accent,
@@ -538,19 +494,6 @@ export const styles = StyleSheet.create({
   pressed: {
     opacity: 0.6,
   },
-  modelChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceRaised,
-    maxWidth: 140,
-  },
-  modelChipText: {
-    color: colors.textDim,
-    fontSize: 12,
-  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -599,69 +542,57 @@ export const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
     backgroundColor: colors.surface,
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    gap: 8,
-  },
-  controlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    paddingHorizontal: chat.margin,
+    paddingTop: space.md,
     gap: space.sm,
   },
-  controlsScroller: {
-    flex: 1,
-    minHeight: 40,
+  // The input row and, while focused or while a turn runs, the footer.
+  inputCard: {
+    padding: space.xs,
+    borderRadius: 20,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
   },
-  controlsContent: {
-    gap: space.sm,
-    alignItems: 'center',
-    paddingHorizontal: 2,
-  },
-  controlsActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-  },
-  // Owns the border and fill so the send button can nest flush inside it: the
-  // small right padding is what makes the circle sit against the edge.
-  inputSurface: {
+  inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingLeft: 18,
-    paddingRight: 5,
-    paddingVertical: 5,
-    borderRadius: radius.lg,
-    backgroundColor: colors.bg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
   },
   input: {
     flex: 1,
-    minHeight: 36,
+    minHeight: chat.target,
     maxHeight: 160,
-    paddingHorizontal: 4,
-    paddingVertical: 8,
+    paddingHorizontal: space.sm,
+    paddingTop: 13,
+    paddingBottom: 13,
     color: colors.text,
-    fontSize: 15,
+    ...type.chatBody,
   },
-  sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  composerFooter: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accent,
+    gap: space.sm,
+    paddingHorizontal: space.xs,
+    paddingTop: space.xs,
+    paddingBottom: 6,
   },
-  sendButtonDisabled: {
-    backgroundColor: colors.surfaceRaised,
-    opacity: 0.55,
-  },
-  stopButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
+  settingsChipTarget: {
+    flex: 1,
+    minHeight: chat.target,
+    alignItems: 'flex-end',
     justifyContent: 'center',
-    backgroundColor: colors.red,
+  },
+  settingsChip: {
+    height: 32,
+    maxWidth: '100%',
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+    borderRadius: space.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  settingsChipText: {
+    color: colors.textDim,
+    ...type.meta,
   },
 })

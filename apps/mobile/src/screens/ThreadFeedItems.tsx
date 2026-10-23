@@ -20,6 +20,7 @@ import { peerUndeliveredHeading } from '@shared/peer-links'
 import { AGENT_CARD_LIFETIME_TEXT } from '@shared/agent-approval-cards'
 import { peerUndeliveredReasonText } from '@shared/system-markers'
 import { mergeBackRowDetails, mergeBackRowTitle } from '@shared/merge-back'
+import { showsTurnDuration } from '../lib/thread-chrome'
 
 // ─── Item renderers ────────────────────────────────────────────
 
@@ -33,6 +34,8 @@ export const TextItem = memo(function TextItem({
   thread?: MarkdownThread
 }) {
   const [expanded, setExpanded] = useState(false)
+  // A short turn's "Worked for" shows after a long press, which also offers the fork.
+  const [durationShown, setDurationShown] = useState(false)
 
   if (item.stream === 'reasoning') {
     return (
@@ -56,7 +59,14 @@ export const TextItem = memo(function TextItem({
   }
 
   return (
-    <Pressable style={styles.itemBlock} onLongPress={onLongPress} disabled={!onLongPress}>
+    <Pressable
+      style={styles.turnBlock}
+      onLongPress={() => {
+        setDurationShown(true)
+        onLongPress?.()
+      }}
+      disabled={!onLongPress && item.durationMs == null}
+    >
       {/* <agent_digest> status tags drive the thread-list preview, not the
           transcript - stripped here the same way the desktop MessageBubble
           strips them. See @shared/agent-digest. streaming: !item.done, so a
@@ -64,7 +74,7 @@ export const TextItem = memo(function TextItem({
           chopped off - only a message still streaming in hides a trailing
           partial/unclosed tag. */}
       <Markdown text={stripDigest(item.text, { streaming: !item.done })} thread={thread} />
-      {item.done && item.durationMs != null && (
+      {item.done && item.durationMs != null && (durationShown || showsTurnDuration(item.durationMs)) && (
         <Text style={styles.durationText}>Worked for {fmtDuration(item.durationMs)}</Text>
       )}
     </Pressable>

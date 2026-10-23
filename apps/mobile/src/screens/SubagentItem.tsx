@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons'
 import { subagentStatusParts, type SubagentDisplayItem, type SubagentStep } from '@shared/subagent-steps'
 import { backgroundTaskLabel, syntheticPartTone, type SyntheticTone } from '@shared/synthetic-message'
-import { colors, radius, space, type } from '../theme'
+import { chat, colors, radius, space, type } from '../theme'
 import { Markdown } from '../components/Markdown'
 import type { SubagentRow } from '../lib/subagent-rows'
 import { ToolItem } from './ThreadFeedItems'
@@ -17,8 +17,9 @@ const TONE_COLOR: Record<SyntheticTone, string> = {
 
 function StatusIcon({ status }: { status: SubagentRow['view']['status'] }) {
   if (status === 'running') return <ActivityIndicator size="small" color={colors.accent} testID="subagent-running" />
-  if (status === 'done') return <Ionicons name="checkmark" size={13} color={colors.green} testID="subagent-done" />
-  return <Ionicons name="close" size={13} color={colors.red} testID="subagent-failed" />
+  if (status === 'done')
+    return <Ionicons name="checkmark-circle-outline" size={20} color={colors.green} testID="subagent-done" />
+  return <Ionicons name="alert-circle-outline" size={20} color={colors.red} testID="subagent-failed" />
 }
 
 function Fold({ label, children }: { label: string; children: React.ReactNode }) {
@@ -99,23 +100,21 @@ export const SubagentItem = memo(function SubagentItem({ row }: { row: SubagentR
         accessibilityLabel={`Agent ${view.description}, ${status.lead}${statusText ? `, ${statusText}` : ''}`}
         style={({ pressed }) => [styles.header, pressed && styles.pressed]}
       >
-        <View style={styles.titleLine}>
-          <Ionicons name="sparkles-outline" size={14} color={colors.textFaint} />
-          <Text style={styles.agent}>Agent</Text>
-          <Text style={styles.description} numberOfLines={1}>
-            {view.description}
-          </Text>
-          {view.model ? <Text style={styles.model}>{view.model}</Text> : null}
-          <Ionicons name={open ? 'chevron-down' : 'chevron-forward'} size={13} color={colors.textDim} />
-        </View>
-        <View style={styles.statusLine}>
+        <View style={styles.statusIcon}>
           <StatusIcon status={view.status} />
-          <Text style={[styles.status, view.status === 'failed' && styles.failed]}>{status.lead}</Text>
-          {statusText ? (
-            <Text style={styles.status} numberOfLines={1}>
-              {` · ${statusText}`}
-            </Text>
-          ) : null}
+        </View>
+        <View style={styles.lines}>
+          <Text style={styles.titleLine} numberOfLines={1}>
+            <Text style={styles.agent}>Agent</Text> {view.description}
+            {view.model ? <Text style={styles.model}> · {view.model}</Text> : null}
+          </Text>
+          <Text style={[styles.status, view.status === 'failed' && styles.failed]} numberOfLines={1}>
+            {status.lead}
+            {statusText ? ` · ${statusText}` : ''}
+          </Text>
+        </View>
+        <View style={styles.chevron}>
+          <Ionicons name="chevron-down" size={18} color={colors.textDim} style={open && styles.flipped} />
         </View>
       </Pressable>
       {open && (
@@ -137,27 +136,22 @@ export const SubagentItem = memo(function SubagentItem({ row }: { row: SubagentR
 
 const styles = StyleSheet.create({
   card: {
-    marginHorizontal: space.lg,
-    marginVertical: space.sm,
-    borderRadius: radius.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    overflow: 'hidden',
+    marginHorizontal: chat.margin,
+    marginTop: chat.turnGap,
   },
-  header: { paddingHorizontal: space.md, paddingVertical: space.sm, gap: 2 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 56, borderRadius: radius.sm },
   pressed: { backgroundColor: colors.wash },
-  titleLine: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  agent: { color: colors.text, ...type.bodySm, fontWeight: '600' },
-  description: { flex: 1, color: colors.text, ...type.bodySm },
-  model: { color: colors.textDim, ...type.monoSm },
-  statusLine: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 22 },
-  status: { color: colors.textDim, ...type.monoSm, flexShrink: 1 },
+  statusIcon: { width: 20, alignItems: 'center' },
+  lines: { flex: 1, minWidth: 0 },
+  titleLine: { color: colors.text, fontSize: 15, lineHeight: 20 },
+  agent: { fontWeight: '600' },
+  model: { color: colors.textDim },
+  status: { color: colors.textDim, ...type.meta },
+  chevron: { width: chat.target, height: chat.target, alignItems: 'center', justifyContent: 'center' },
+  flipped: { transform: [{ rotate: '180deg' }] },
   failed: { color: colors.red },
   body: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    paddingHorizontal: space.sm,
+    paddingLeft: space.xs,
     paddingVertical: space.xs,
   },
   guide: { marginLeft: 7, paddingLeft: 9, borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.border },
@@ -180,5 +174,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceRaised,
   },
   result: { marginTop: space.sm, padding: space.md, borderRadius: radius.sm, backgroundColor: colors.bg },
-  resultLabel: { color: colors.textFaint, ...type.monoSm, marginBottom: space.xs },
+  resultLabel: { color: colors.textFaint, ...type.meta, marginBottom: space.xs },
 })

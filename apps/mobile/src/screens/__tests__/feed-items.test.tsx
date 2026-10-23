@@ -112,16 +112,27 @@ describe('TextItem', () => {
     expect(text).not.toContain('```')
   })
 
-  it('shows the duration once a turn is done', () => {
-    const v = renderComponent(<TextItem item={row({ durationMs: 1500 })} />)
-    expect(v.texts().join(' ')).toMatch(/worked for/i)
+  it('shows the duration once a turn of 30 s or more is done', () => {
+    const v = renderComponent(<TextItem item={row({ durationMs: 30_000 })} />)
+    expect(v.texts().join(' ')).toMatch(/worked for\s+30\.0s/i)
+  })
+
+  it("shows a short turn's duration only after a long press, which still offers the fork", () => {
+    const onLongPress = jest.fn()
+    const v = renderComponent(<TextItem item={row({ durationMs: 1500 })} onLongPress={onLongPress} />)
+    expect(v.texts().join(' ')).not.toMatch(/worked for/i)
+    // The Pressable, not TextItem itself, which carries the same prop name.
+    const pressable = v.root.find((n) => typeof n.props?.onLongPress === 'function' && 'disabled' in n.props)
+    act(() => pressable.props.onLongPress())
+    expect(v.texts().join(' ')).toMatch(/worked for\s+1\.5s/i)
+    expect(onLongPress).toHaveBeenCalled()
   })
 
   it('shows no duration mid-stream, even once one is known', () => {
     // durationMs must be SET here. Without it the row has no duration to show
     // in the first place, so the test passes with the `done` guard deleted and
     // proves only that absent data is absent.
-    const v = renderComponent(<TextItem item={row({ done: false, durationMs: 1500 })} />)
+    const v = renderComponent(<TextItem item={row({ done: false, durationMs: 45_000 })} />)
     expect(v.texts().join(' ')).not.toMatch(/worked for/i)
   })
 
