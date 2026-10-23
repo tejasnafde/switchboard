@@ -256,7 +256,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
   }, [connectionId, threadId, prLinksConnection])
 
   const [prSheetOpen, setPrSheetOpen] = useState(false)
-  const openPrSheet = useCallback(() => setPrSheetOpen(true), [])
+  const openPrSheet = useCallback(() => {
+    // The keyboard would cover the Unlink buttons at the bottom of the sheet.
+    Keyboard.dismiss()
+    setPrSheetOpen(true)
+  }, [])
   // Unlinking the last link closes the sheet, so a later link does not reopen it.
   useEffect(() => {
     if (prLinks.length === 0) setPrSheetOpen(false)
