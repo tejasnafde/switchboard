@@ -65,8 +65,10 @@ so it enforces monotonic versions.
 
 For crash reports, the release build type sets `ndk.debugSymbolLevel =
 "SYMBOL_TABLE"`, so the AAB carries the symbol tables of its bundled native
-libraries in `BUNDLE-METADATA`, where Play reads them. The job fails if they
-are missing. R8 is off (`isMinifyEnabled = false`), so there is no
+libraries in `BUNDLE-METADATA`, where Play reads them. Writing them needs the
+NDK, which the runner image does not have: both Android workflows install the
+version that `android.ndkVersion` pins with `sdkmanager`. The job fails if
+the symbols are missing. R8 is off (`isMinifyEnabled = false`), so there is no
 `mapping.txt` and Play's deobfuscation warning stays: it is informational
 while the code is not obfuscated. Once R8 is turned on, the job uploads
 `mapping.txt` with the AAB.

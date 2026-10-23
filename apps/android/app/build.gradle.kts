@@ -33,6 +33,7 @@ fun requiredSigningEnvironment(name: String): String =
 android {
     namespace = "app.switchboard.mobile"
     compileSdk = 36
+    ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = canonicalApplicationId
