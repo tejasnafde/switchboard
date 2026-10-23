@@ -584,9 +584,9 @@ private fun LimitResumeRow(row: ThreadLimitResumeState, onResumeNow: () -> Unit,
             LimitResume.detail(row.state)?.let {
                 Text(text = it, color = TextDim, style = MaterialTheme.typography.labelSmall)
             }
-        }
-        row.note?.let {
-            Text(text = it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+            row.note?.let {
+                Text(text = it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+            }
         }
         if (row.state is LimitState.Armed) {
             Row(

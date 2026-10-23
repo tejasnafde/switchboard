@@ -76,7 +76,7 @@ export function LimitResumeRow({ client, threadId }: { client: SwitchboardClient
         </Text>
       )}
       {state.kind === 'armed' && (
-        <View style={styles.buttonRow}>
+        <View style={styles.buttonRowWrap}>
           <Pressable
             onPress={() => void act('now')}
             disabled={busy}
