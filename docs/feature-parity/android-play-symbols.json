@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "android-play-symbols",
-  "summary": "The native Android release build writes the symbol tables of its bundled native libraries into the AAB (ndk.debugSymbolLevel SYMBOL_TABLE), so Play can symbolicate native crash reports. mobile-release.yml fails when the AAB has no BUNDLE-METADATA debug symbols, and uploads the R8 mapping.txt to Play when one exists (R8 is off today, so none is uploaded). No app behaviour changes.",
+  "summary": "The native Android release build writes the symbol tables of its bundled native libraries into the AAB (ndk.debugSymbolLevel SYMBOL_TABLE), so Play can symbolicate native crash reports. mobile-release.yml fails when a native library in the AAB has a symbol table but no matching BUNDLE-METADATA .sym file (every bundled library ships already stripped today, so none has symbols to upload), and uploads the R8 mapping.txt to Play when one exists (R8 is off today, so none is uploaded). The release build pins android.ndkVersion, and both Android workflows install that NDK with sdkmanager, because the runner image has none and Gradle then writes no symbols. No app behaviour changes.",
   "surfaces": {
     "desktop": {
       "status": "not_applicable",
@@ -30,6 +30,7 @@
       "status": "implemented",
       "evidence": [
         ".github/workflows/mobile-release.yml",
+        ".github/workflows/android-native-ci.yml",
         "tests/unit/android-native-ci.test.ts",
         "docs/releasing.md"
       ]
@@ -37,7 +38,9 @@
   },
   "verification": {
     "automated": [
-      "tests/unit/android-native-ci.test.ts checks the symbol level, the BUNDLE-METADATA check and the mapping upload in the workflow."
+      "tests/unit/android-native-ci.test.ts checks the symbol level, the per-library symbol check and the mapping upload in the workflow.",
+      "tests/unit/android-native-ci.test.ts checks that both workflows install the NDK that build.gradle.kts pins before the release build.",
+      "The check script ran locally against a fake AAB: stripped vendor libraries pass, a library with a .symtab fails without its .sym and passes with it."
     ],
     "hardware": [],
     "notExercised": [

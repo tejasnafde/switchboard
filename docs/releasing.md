@@ -64,9 +64,14 @@ days, then uploaded to Play. Play refuses a `versionCode` it has already seen,
 so it enforces monotonic versions.
 
 For crash reports, the release build type sets `ndk.debugSymbolLevel =
-"SYMBOL_TABLE"`, so the AAB carries the symbol tables of its bundled native
-libraries in `BUNDLE-METADATA`, where Play reads them. The job fails if they
-are missing. R8 is off (`isMinifyEnabled = false`), so there is no
+"SYMBOL_TABLE"`, so Gradle writes the symbol table of each bundled native
+library into the AAB's `BUNDLE-METADATA`, where Play reads them. Writing them
+needs the NDK, which the runner image does not have: both Android workflows
+install the version that `android.ndkVersion` pins with `sdkmanager`. Today
+every bundled library (ML Kit, CameraX, AndroidX) ships already stripped, so
+there is nothing to extract and Play's native symbols warning stays. The job
+fails when a library in the AAB has a `.symtab` but no matching `.sym` file.
+R8 is off (`isMinifyEnabled = false`), so there is no
 `mapping.txt` and Play's deobfuscation warning stays: it is informational
 while the code is not obfuscated. Once R8 is turned on, the job uploads
 `mapping.txt` with the AAB.

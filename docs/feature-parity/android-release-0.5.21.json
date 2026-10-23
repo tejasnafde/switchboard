@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-release-0.5.21",
+  "summary": "Native Android release 0.5.21 (versionCode 23): the next Play build after 0.5.20. Adds what merged after 0.5.20: the decluttered chat screen (#409), the stored provider, profile and mode on each chat (#408), the Limited row behind limit_auto_resume (#407), sends queued during a chat open or profile switch (#396), kept approval cards and link messages (#398) and native debug symbols for Play (#394).",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Android version bump only; the desktop parts of each shipped feature are covered by that feature's own manifest."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo client has its own OTA and build lanes; this bump touches only apps/android."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No API change; the backend contracts these Android features use are covered by their own manifests."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes in this bump."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        ".github/workflows/mobile-release.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "./gradlew :app:testDebugUnitTest passes on this branch."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Install of the Play internal build on a phone (next step, by the user)."
+    ]
+  }
+}

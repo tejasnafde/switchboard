@@ -210,3 +210,21 @@ export async function notifyTurnCompleted(opts: {
     notif.close()
   }
 }
+
+/** OS notification for a downloaded update while the window is not in front. */
+/** Resolves true when the notification was shown. */
+export async function notifyUpdateReady(version: string, onClick: () => void): Promise<boolean> {
+  if (!(await areNotificationsEnabled())) return false
+  if (document.hasFocus() && document.visibilityState === 'visible') return false
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return false
+  const notif = new Notification('Switchboard', {
+    body: `Switchboard v${version} is ready. Restart to update.`,
+    tag: 'switchboard.update-ready',
+  })
+  notif.onclick = () => {
+    window.focus()
+    onClick()
+    notif.close()
+  }
+  return true
+}

@@ -148,9 +148,27 @@ describe('native Android publishing lane', () => {
 
     expect(readFileSync(androidBuildPath, 'utf8')).toContain('ndk.debugSymbolLevel = "SYMBOL_TABLE"')
     expect(symbols).toBeGreaterThanOrEqual(0)
+    expect(steps[symbols].run).toContain("grep -q ' \\.symtab '")
+    expect(steps[symbols].run).toContain('exit "$MISSING"')
     expect(upload).toBeGreaterThan(symbols)
     expect(steps[upload].with.mappingFile).toBe('${{ env.MAPPING_FILE }}')
     expect(workflow).toContain('app/build/outputs/mapping/release/mapping.txt')
+  })
+
+  test('installs the NDK that build.gradle.kts pins before every release build', () => {
+    expect(readFileSync(androidBuildPath, 'utf8')).toMatch(/^ {4}ndkVersion = "\d+\.\d+\.\d+"$/m)
+    for (const [path, job] of [
+      [releaseWorkflowPath, 'release'],
+      [workflowPath, 'build'],
+    ]) {
+      const steps = (parseYaml(readFileSync(path, 'utf8')) as any).jobs[job].steps as any[]
+      const install = steps.findIndex((step) =>
+        String(step.run ?? '').includes('sdkmanager --install "ndk;$NDK_VERSION"'),
+      )
+      const build = steps.findIndex((step) => /bundleRelease|assembleRelease/.test(String(step.run ?? '')))
+      expect(install, path).toBeGreaterThanOrEqual(0)
+      expect(build, path).toBeGreaterThan(install)
+    }
   })
 
   test('publishes a sideload APK only on request, built from the verified AAB and verified itself', () => {

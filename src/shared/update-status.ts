@@ -23,3 +23,23 @@ export type UpdateStatus =
   | { kind: 'slow'; message: string }
   /** Dev / non-packaged build - updater can't run, surfaced as info. */
   | { kind: 'unsupported'; reason: string }
+
+/**
+ * What to report while a downloaded update waits for a restart. A later check
+ * (and its progress or failure) does not make that update less installable, so
+ * the status stays `downloaded` and the Restart button stays. `installing` and
+ * a newer `downloaded` pass through.
+ */
+export function statusWhileReady(ready: UpdateStatus | null, status: UpdateStatus): UpdateStatus {
+  if (!ready || status.kind === 'downloaded' || status.kind === 'installing') return status
+  return ready
+}
+
+/** The version to announce as "Updated to" after a launch, or null on a first run or the same version. */
+export function updatedNoticeVersion(lastRunVersion: string | null, currentVersion: string): string | null {
+  return lastRunVersion && lastRunVersion !== currentVersion ? currentVersion : null
+}
+
+export function releaseNotesUrl(version: string): string {
+  return `https://github.com/tejasnafde/switchboard/releases/tag/v${version}`
+}

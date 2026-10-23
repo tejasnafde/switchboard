@@ -343,6 +343,8 @@ const api = {
      */
     checkForUpdates: (): Promise<UpdateStatus> => transport.invoke(AppChannels.CHECK_FOR_UPDATES),
     getUpdateStatus: (): Promise<UpdateStatus> => transport.invoke(AppChannels.GET_UPDATE_STATUS),
+    /** The version to announce as "Updated to" once after an upgrade, else null. */
+    takeUpdatedNotice: (): Promise<string | null> => transport.invoke(AppChannels.TAKE_UPDATED_NOTICE),
     /**
      * Subscribe to update lifecycle events from the main-process
      * autoUpdater (checking → available → downloading → downloaded |

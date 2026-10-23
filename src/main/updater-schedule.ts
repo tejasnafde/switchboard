@@ -8,8 +8,7 @@
  * otherwise only ever checks once, 3s after launch. This adds an hourly
  * check plus a check on waking from sleep, both routed through the same
  * `shouldRunScheduledCheck` gate so they never pile onto a check already in
- * flight or re-check once an update is sitting downloaded and waiting for a
- * restart.
+ * flight.
  */
 
 export const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000 // 1 hour
@@ -23,8 +22,6 @@ export interface UpdateScheduleState {
    * scheduled check start mid-download.
    */
   downloadInFlight: boolean
-  /** An update has already downloaded and is waiting on the user to restart. */
-  downloaded: boolean
 }
 
 export type ScheduledCheckReason = 'interval' | 'resume'
@@ -32,13 +29,13 @@ export type ScheduledCheckReason = 'interval' | 'resume'
 /**
  * Pure: should a periodic or resume-triggered check run right now? Skips
  * while a check or the download it started is already in flight (electron-updater dedups concurrent
- * checks anyway, so this just avoids the noise of trying) and once an
- * update has downloaded, since there is nothing newer to find until the
- * user installs it, and a background check must not overwrite the
- * "downloaded, restart to update" status the renderer is showing.
+ * checks anyway, so this just avoids the noise of trying). It keeps running
+ * after an update has downloaded: a newer release can appear before the user
+ * restarts, and each check reports the (cached) download again, which brings
+ * back a prompt the user put off with "Later".
  */
 export function shouldRunScheduledCheck(state: UpdateScheduleState): boolean {
-  return !state.checkInFlight && !state.downloadInFlight && !state.downloaded
+  return !state.checkInFlight && !state.downloadInFlight
 }
 
 export interface UpdateSchedulerDeps {
