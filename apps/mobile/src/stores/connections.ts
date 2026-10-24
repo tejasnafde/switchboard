@@ -32,8 +32,9 @@ import {
   saveConnectionSession,
   saveConnectionToken,
 } from '../lib/secrets'
-import { usePushStore } from './push'
+import { noticeTurnCompletion, usePushStore } from './push'
 import { useChatStore } from './chat'
+import { useSavedProjectsStore } from './saved-projects'
 import { acknowledgeAcceptedOrigin, drain as drainOutbox } from './outbox'
 
 const log = createLogger('store:connections')
@@ -160,6 +161,7 @@ function attachClient(id: string, client: SwitchboardClient): void {
         )
       }
       useChatStore.getState().ingest(id, event)
+      noticeTurnCompletion(id, event)
     }),
   )
 }
@@ -191,6 +193,7 @@ export const useConnectionsStore = create<ConnectionsState>()(
         iapResume.delete(id)
         keystoreFailures.delete(id)
         const forgettingCredentials = queueCredentialWrite(id, () => deleteConnectionToken(id))
+        useSavedProjectsStore.getState().forget(id)
         set((s) => {
           const status = { ...s.status }
           delete status[id]
