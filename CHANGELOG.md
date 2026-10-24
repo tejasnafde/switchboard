@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Added
+- **iOS app: saved projects, Settings and a local Done notice.** A machine's project list shows the list it answered last time while it is offline, with "Showing saved projects" and Retry. A Settings screen (account, machines, follow-up default, version) opens from the Machines list and from `switchboard://settings`. When a turn ends with the app in the background and no push covers it, the phone shows a local "Done" notice that opens the chat. These match the native Android app.
+
 ### Changed
 - **The iOS chat list leads with the chats that need you.** A project's chat list is grouped into Needs you (an open approval, question or plan, or an error), Working and Done recently, with a plain count beside each header, as on native Android. Open cards come from the live events and from `provider:get-pending-requests` for the newest 15 chats when the list loads (`pending_requests_v1`), so a chat whose card opened before the phone was listening still reads Needs you. A list where nothing needs you or works, and a search, stay one plain list. Only a running chat counts as Working on iOS for now. See `docs/feature-parity/sidebar-needs-you.json`.
 - **Native Android 0.5.21 (versionCode 23).** It adds the decluttered chat screen (#409), the stored provider, profile and mode on each chat (#408), the Limited row behind `limit_auto_resume` (#407), sends queued during a chat open or profile switch (#396), kept approval cards and link messages (#398) and native debug symbols for Play (#394) to the 0.5.20 Play build.

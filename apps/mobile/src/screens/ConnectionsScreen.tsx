@@ -24,8 +24,6 @@ import { BuildStamp } from '../components/BuildStamp'
 import { confirmLeaveDemo } from '../components/DemoStrip'
 import { Ionicons } from '@expo/vector-icons'
 import { DEMO_CONNECTION_ID, DEMO_LABEL, DEMO_PROJECT } from '@shared/phone-demo/phone-demo'
-import { usePrefsStore } from '../stores/prefs'
-import type { TurnDelivery } from '@shared/turn-delivery'
 import { chatCacheReady } from '../stores/chat'
 import { useConnectionsStore, secretsReady, type ConnectionConfig } from '../stores/connections'
 import { MachineRow } from '../components/MachineRow'
@@ -197,9 +195,9 @@ export default function ConnectionsScreen() {
           <Text style={styles.ctaText}>Scan a pairing QR</Text>
         </Pressable>
         <DemoEntry onOpen={openDemo} />
-        {/* Also here, not only in the paired list's footer: a fresh install is
-            exactly when someone asks which build they are holding, and it is
-            the first place a pairing problem gets debugged. */}
+        {/* Also here, not only in Settings: a fresh install is exactly when
+            someone asks which build they are holding, and it is the first
+            place a pairing problem gets debugged. */}
         <BuildStamp />
       </View>
     )
@@ -241,8 +239,15 @@ export default function ConnectionsScreen() {
       ListFooterComponent={
         <View>
           {demoActive && <DemoEntry onOpen={openDemo} />}
-          <FollowUpDefaultSetting />
-          <BuildStamp />
+          <Pressable
+            onPress={() => navigation.navigate('Settings')}
+            testID="open-settings"
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.settingsLink, pressed && styles.pressed]}
+          >
+            <Ionicons name="settings-outline" size={16} color={colors.textDim} />
+            <Text style={styles.settingsLinkText}>Settings</Text>
+          </Pressable>
           {__DEV__ && (
             <Pressable onPress={() => navigation.navigate('DevGallery')} style={styles.devLink}>
               <Text style={styles.devLinkText}>Component gallery</Text>
@@ -276,19 +281,15 @@ export default function ConnectionsScreen() {
 
 const styles = StyleSheet.create({
   devLink: { alignItems: 'center', paddingVertical: space.sm },
-  followUp: { marginTop: space.lg, marginBottom: space.sm, gap: space.xs },
-  followUpLabel: { color: colors.textDim, ...type.monoSm },
-  followUpOptions: { flexDirection: 'row', gap: space.sm },
-  followUpOption: {
-    paddingHorizontal: space.md,
-    paddingVertical: space.xs,
-    borderRadius: radius.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+  settingsLink: {
+    minHeight: HIT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space.xs,
+    marginTop: space.lg,
   },
-  followUpOptionOn: { borderColor: colors.accent, backgroundColor: colors.accentWash },
-  followUpOptionText: { color: colors.textDim, ...type.bodySm },
-  followUpOptionTextOn: { color: colors.accent },
+  settingsLinkText: { color: colors.textDim, ...type.bodySm },
   devLinkText: { color: colors.textFaint, ...type.monoSm },
   list: {
     paddingHorizontal: space.lg,
@@ -414,8 +415,8 @@ const styles = StyleSheet.create({
 
 /**
  * "Try the demo" on the empty screen. While the demo is open it reads "Back to
- * the demo" and offers Leave demo, here and in the list footer (the app's
- * settings), not only in the demo's own strip.
+ * the demo" and offers Leave demo, here, in the list footer and in Settings,
+ * not only in the demo's own strip.
  */
 function DemoEntry({ onOpen }: { onOpen: () => void }) {
   const active = useConnectionsStore((s) => s.demoActive)
@@ -445,41 +446,6 @@ function DemoEntry({ onOpen }: { onOpen: () => void }) {
           Sample chats and pull requests on this phone. No machine needed, nothing is sent anywhere.
         </Text>
       )}
-    </View>
-  )
-}
-
-/**
- * This device's "Follow-up while the agent works": what a send does while a
- * turn runs. The composer's chip flips it for one send.
- */
-function FollowUpDefaultSetting() {
-  const value = usePrefsStore((s) => s.followUpDefault)
-  const setValue = usePrefsStore((s) => s.setFollowUpDefault)
-  const options: Array<{ value: TurnDelivery; label: string }> = [
-    { value: 'steer', label: 'Steer' },
-    { value: 'queue', label: 'Queue' },
-  ]
-  return (
-    <View style={styles.followUp}>
-      <Text style={styles.followUpLabel}>Follow-up while the agent works</Text>
-      <View style={styles.followUpOptions} accessibilityRole="radiogroup">
-        {options.map((option) => {
-          const on = option.value === value
-          return (
-            <Pressable
-              key={option.value}
-              onPress={() => setValue(option.value)}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: on }}
-              testID={`follow-up-${option.value}`}
-              style={[styles.followUpOption, on && styles.followUpOptionOn]}
-            >
-              <Text style={[styles.followUpOptionText, on && styles.followUpOptionTextOn]}>{option.label}</Text>
-            </Pressable>
-          )
-        })}
-      </View>
     </View>
   )
 }

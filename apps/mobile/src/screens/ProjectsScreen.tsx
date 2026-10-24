@@ -1,6 +1,7 @@
 /**
  * Project list for one paired backend. Fetches on focus, pull-to-refresh,
  * and shows a per-project unread pill summed from the chat store's threads.
+ * Until the machine answers, it shows the list it answered last time.
  */
 import { memo, useCallback, useMemo, useState } from 'react'
 import {
@@ -16,9 +17,9 @@ import {
 import { Ionicons } from '@expo/vector-icons'
 import { useFocusEffect } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
-import type { Project, Workspace } from '@shared/types'
+import type { Workspace } from '@shared/types'
 import { groupProjectsByWorkspace } from '@shared/project-grouping'
-import { matchesQuery } from '../lib/project-list'
+import { matchesQuery, savedProjectsStatus } from '../lib/project-list'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { usePrefsStore, UNGROUPED_WORKSPACE_KEY } from '../stores/prefs'
@@ -27,6 +28,7 @@ import { useChatStore, threadKey } from '../stores/chat'
 import { UnreadPill } from '../components/UnreadPill'
 import { ConnectionTabBar } from '../components/ConnectionTabBar'
 import { useReviewsStore } from '../stores/reviews'
+import { useSavedProjectsStore, type SavedProjects } from '../stores/saved-projects'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Projects'>
 
@@ -58,8 +60,9 @@ export default function ProjectsScreen({ route, navigation }: Props) {
       onSelect={() => navigation.replace('Reviews', { connectionId, label })}
     />
   )
-  const [projects, setProjects] = useState<Project[] | null>(null)
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [live, setLive] = useState<SavedProjects | null>(null)
+  const saved = useSavedProjectsStore((s) => s.byConnection[connectionId])
+  const { projects, workspaces } = live ?? saved ?? { projects: null, workspaces: [] }
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -82,8 +85,9 @@ export default function ProjectsScreen({ route, navigation }: Props) {
           client.getProjects(),
           client.listWorkspaces().catch(() => [] as Workspace[]),
         ])
-        setProjects(result)
-        setWorkspaces(ws)
+        const next = { projects: result, workspaces: ws }
+        setLive(next)
+        useSavedProjectsStore.getState().save(connectionId, next)
         setError(null)
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
@@ -143,6 +147,8 @@ export default function ProjectsScreen({ route, navigation }: Props) {
     )
   }
 
+  const status = savedProjectsStatus(live !== null, error)
+
   if (projects === null) {
     return (
       <View style={styles.screen}>
@@ -183,22 +189,42 @@ export default function ProjectsScreen({ route, navigation }: Props) {
           ) : null
         }
         ListHeaderComponent={
-          // Hidden until there are enough projects for finding one to be work.
-          (projects?.length ?? 0) > 6 || query !== '' ? (
-            <View style={styles.searchWrap}>
-              <TextInput
-                style={styles.searchInput}
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Search projects"
-                placeholderTextColor={colors.textFaint}
-                autoCorrect={false}
-                autoCapitalize="none"
-                returnKeyType="search"
-                clearButtonMode="while-editing"
-              />
-            </View>
-          ) : null
+          <>
+            {status && (
+              <View style={styles.status}>
+                {status.loading && <ActivityIndicator size="small" color={colors.textDim} />}
+                <View style={styles.statusBody}>
+                  <Text style={styles.statusLabel}>{status.label}</Text>
+                  {status.detail ? (
+                    <Text style={styles.statusDetail} numberOfLines={2}>
+                      {status.detail}
+                    </Text>
+                  ) : null}
+                </View>
+                {status.canRetry && (
+                  <Pressable onPress={() => void load()} hitSlop={8} accessibilityRole="button">
+                    <Text style={styles.statusRetry}>Retry</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+            {/* Hidden until there are enough projects for finding one to be work. */}
+            {projects.length > 6 || query !== '' ? (
+              <View style={styles.searchWrap}>
+                <TextInput
+                  style={styles.searchInput}
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="Search projects"
+                  placeholderTextColor={colors.textFaint}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                  clearButtonMode="while-editing"
+                />
+              </View>
+            ) : null}
+          </>
         }
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={colors.textDim} />
@@ -249,6 +275,21 @@ export default function ProjectsScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   searchWrap: { paddingBottom: space.sm },
+  status: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    marginHorizontal: space.lg,
+    marginVertical: space.sm,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+  },
+  statusBody: { flex: 1, gap: 2 },
+  statusLabel: { ...type.bodySm, color: colors.textDim },
+  statusDetail: { ...type.monoSm, color: colors.textFaint },
+  statusRetry: { fontFamily: fonts.display, fontSize: 14, color: colors.accent },
   searchInput: {
     backgroundColor: colors.surfaceRaised,
     borderColor: colors.border,

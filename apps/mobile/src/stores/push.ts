@@ -4,11 +4,16 @@
  * One token, many backends: the Mac and every VM each need to know it, because
  * each sends its own notifications.
  */
+import { AppState } from 'react-native'
+import * as Notifications from 'expo-notifications'
 import { create } from 'zustand'
 import { createLogger } from '@shared/logger'
 import { isDemoConnection } from '@shared/phone-demo/phone-demo'
+import type { RuntimeEvent } from '@shared/provider-events'
 import { obtainPushToken, type PushSetup } from '../lib/push'
+import { createCompletionNotifier } from '../lib/completion-notice'
 import { getClient, useConnectionsStore } from './connections'
+import { threadKey, useChatStore } from './chat'
 
 const log = createLogger('store:push')
 
@@ -143,4 +148,34 @@ export function initPushWhenPaired(): () => void {
   unsubscribe = useConnectionsStore.subscribe(check)
   check()
   return () => unsubscribe()
+}
+
+const completionNotifier = createCompletionNotifier({
+  // Inactive (Control Center, the app switcher) still counts as in front, like Android's started state.
+  appActive: () => AppState.currentState !== 'background',
+  // The open chat's viewing lease holds back its push, so that chat needs the local notice.
+  pushCovers: (connectionId, threadId) => {
+    const { token, registered } = usePushStore.getState()
+    return (
+      token !== null &&
+      registered.has(connectionId) &&
+      useChatStore.getState().activeKey !== threadKey(connectionId, threadId)
+    )
+  },
+  post: (notice) =>
+    Notifications.scheduleNotificationAsync({
+      content: { title: notice.title, body: notice.body, data: notice.data },
+      trigger: null,
+    }).then(
+      () => true,
+      (err: unknown) => {
+        log.warn('local completion notice failed', err)
+        return false
+      },
+    ),
+})
+
+/** Every runtime event from a live client passes here; only a turn end can notify. */
+export function noticeTurnCompletion(connectionId: string, event: RuntimeEvent): void {
+  void completionNotifier(connectionId, event)
 }

@@ -2,7 +2,7 @@
  * Projects-screen search helpers.
  */
 import { describe, it, expect } from 'vitest'
-import { matchesQuery } from '../../apps/mobile/src/lib/project-list'
+import { matchesQuery, savedProjectsStatus } from '../../apps/mobile/src/lib/project-list'
 import { initialsFromEmail } from '../../apps/mobile/src/lib/account'
 
 describe('matchesQuery', () => {
@@ -56,5 +56,30 @@ describe('initialsFromEmail', () => {
 
   it('handles a one-letter local part without padding it', () => {
     expect(initialsFromEmail('t@x.io')).toBe('T')
+  })
+})
+
+describe('savedProjectsStatus', () => {
+  it('says nothing over a live list', () => {
+    expect(savedProjectsStatus(true, null)).toBeNull()
+  })
+
+  it('shows the saved list with progress while the machine has not answered', () => {
+    expect(savedProjectsStatus(false, null)).toEqual({
+      label: 'Showing saved projects',
+      loading: true,
+      canRetry: false,
+    })
+  })
+
+  it('names the failure and offers Retry when the machine cannot answer', () => {
+    for (const live of [false, true]) {
+      expect(savedProjectsStatus(live, 'Backend not connected yet.')).toEqual({
+        label: 'Showing saved projects',
+        detail: 'Backend not connected yet.',
+        loading: false,
+        canRetry: true,
+      })
+    }
   })
 })

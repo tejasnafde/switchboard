@@ -1,0 +1,61 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "expo-app-shell-parity",
+  "summary": "The iOS app catches up with three parts of the native Android app shell. A machine's Projects screen shows the list that machine answered last time, with \"Showing saved projects\", progress while it loads, and the failure plus Retry when it cannot answer. A Settings screen (Account, Connections, Chat, App, and Leave demo while the demo is open) opens from the Machines list footer and from the switchboard://settings link. When a turn ends while the app is in the background and the backend push does not cover it (no registered token, or the chat is the one on screen and its viewing lease holds the push back), the phone posts a local \"Done\" notice that opens the chat on a tap.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Phone-only screens and notices. The desktop app and its settings are unchanged."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ProjectsScreen.tsx",
+        "apps/mobile/src/stores/saved-projects.ts",
+        "apps/mobile/src/lib/project-list.ts",
+        "apps/mobile/src/screens/SettingsScreen.tsx",
+        "apps/mobile/src/lib/deep-link.ts",
+        "apps/mobile/App.tsx",
+        "apps/mobile/src/lib/completion-notice.ts",
+        "apps/mobile/src/stores/push.ts",
+        "apps/mobile/src/screens/__tests__/app-shell-parity.test.tsx",
+        "tests/unit/mobile-project-list.test.ts",
+        "tests/unit/mobile-deep-link.test.ts",
+        "tests/unit/mobile-completion-notice.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/browse/BrowseModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/settings/SettingsScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/deeplink/SwitchboardDeepLinkContract.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/notification/BackgroundTurnNotificationCoordinator.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire or API change. The Projects screen uses the existing getProjects and listWorkspaces calls, and the local notice reads turn.completed events the phone already receives."
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": ["apps/mobile/src/stores/saved-projects.ts", "apps/mobile/src/lib/demo.ts", "apps/mobile/src/stores/connections.ts"]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["CHANGELOG.md", "apps/mobile/app.json"]
+    }
+  },
+  "verification": {
+    "automated": [
+      "Vitest: savedProjectsStatus copy, appLinkRoute accepts only switchboard://settings and switchboard:///settings, and the completion notifier (app in front, demo, push cover, dedupe per turn, retry after a failed post, cap of 128 turns).",
+      "Jest: ProjectsScreen shows the saved list, the failure and Retry when the machine cannot answer, and drops the note and saves the list when it answers; SettingsScreen lists the account, machines, follow-up default and build, and its rows navigate.",
+      "Root typecheck and apps/mobile tsc pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run on an iPhone or the simulator. The deep link, the local notification permission and display, and the notice tap were not exercised. JS only (the switchboard scheme is already in app.json), so it ships on the OTA lane."
+    ]
+  }
+}
