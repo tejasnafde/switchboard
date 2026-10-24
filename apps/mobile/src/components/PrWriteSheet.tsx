@@ -61,6 +61,7 @@ type Banner =
 
 const UNLOCK_UNAVAILABLE = 'This phone cannot ask for Face ID or its passcode. Nothing was sent.'
 const OFFLINE = 'Not connected to the computer. Nothing was sent.'
+const VERDICT_GONE = 'This verdict is not open now. Pick another.'
 
 const count = (n: number) => `${n.toLocaleString('en-US')} ${n === 1 ? 'character' : 'characters'}`
 
@@ -123,6 +124,8 @@ export function PrWriteSheet({
   const [banner, setBanner] = useState<Banner | null>(null)
   const [uncertain, setUncertain] = useState(false)
   const mounted = useRef(true)
+  // Set synchronously on the first Post tap, so a second tap before the re-render sends nothing.
+  const sending = useRef(false)
   useEffect(
     () => () => {
       mounted.current = false
@@ -159,12 +162,18 @@ export function PrWriteSheet({
     }
   }, [api, refHost, owner, name, number, step])
 
-  const draftProblem = composeProblem(host, action, reviewEvent, draft)
+  // A re-read of the pull request while the sheet is open can close it or change the viewer.
+  const verdictAllowed = reviewEvent === null || events.includes(reviewEvent)
+  const draftProblem = verdictAllowed ? composeProblem(host, action, reviewEvent, draft) : VERDICT_GONE
   const limitNote = prTextLimitNote(host, draft.trim().length)
   const removed = banner?.kind === 'removed'
   const busy = phase !== 'idle'
   const canPost =
-    account.kind === 'ready' && !busy && !removed && composeProblem(host, action, reviewEvent, shown) === null
+    account.kind === 'ready' &&
+    !busy &&
+    !removed &&
+    verdictAllowed &&
+    composeProblem(host, action, reviewEvent, shown) === null
 
   const openConfirm = () => {
     if (draftProblem) return
@@ -174,7 +183,16 @@ export function PrWriteSheet({
   }
 
   const post = async () => {
-    if (!canPost || account.kind !== 'ready') return
+    if (sending.current || !canPost || account.kind !== 'ready') return
+    sending.current = true
+    try {
+      await postOnce(account.account)
+    } finally {
+      sending.current = false
+    }
+  }
+
+  const postOnce = async (writeAccount: string) => {
     setBanner(null)
     if (!api.isConnected()) {
       setBanner({ kind: 'offline' })
@@ -195,7 +213,7 @@ export function PrWriteSheet({
       return
     }
     const request = buildWriteRequest({
-      account: account.account,
+      account: writeAccount,
       ref: pr.ref,
       target,
       event: reviewEvent,
@@ -376,6 +394,7 @@ export function PrWriteSheet({
         {facts}
         {action !== 'resolve' && textBlock('Text')}
         {reviewEvent === 'approve' && <Text style={styles.factDim}>{PHONE_PR_WRITE_COPY.approveNote}</Text>}
+        {!verdictAllowed && <Text style={styles.error}>{VERDICT_GONE}</Text>}
         {!removed && (
           <View style={styles.lockLine}>
             <Ionicons name="lock-closed-outline" size={13} color={colors.textDim} />

@@ -6,10 +6,11 @@
  * and says it is not sure; 'not permitted' says the scope was removed.
  */
 import React from 'react'
-import { act } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 import { phonePrWriteDigest, PHONE_PR_WRITE_COPY } from '@shared/pull-request-phone-writes'
 import type { PrConversation, PrDetail, PrSummary } from '@shared/pull-requests'
 import PullRequestScreen from '../PullRequestScreen'
+import { PrWriteSheet, type PrWriteSheetApi } from '../../components/PrWriteSheet'
 import { renderComponent } from '../../test/render'
 import type { DeviceUnlock } from '../../lib/device-unlock'
 
@@ -239,5 +240,68 @@ describe('pull request writes on the phone', () => {
     const second = mockClient.pullRequestWrite.mock.calls[1][2].phone
     expect(second.writeId).not.toBe(first.writeId)
     expect(second.shown).not.toBe(first.shown)
+  })
+
+  it('sends once when Post is tapped twice before the sheet re-renders', async () => {
+    let unlock: (value: DeviceUnlock) => void = () => undefined
+    mockUnlock.mockReturnValue(new Promise<DeviceUnlock>((resolve) => (unlock = resolve)))
+    mockClient.pullRequestWrite.mockResolvedValue({ ok: true, data: { refresh: [] } })
+    const view = await openReplySheet('Fixed.')
+    const [post] = byTestId(view, 'pr-write-post')
+    await act(async () => {
+      post.props.onPress()
+      post.props.onPress()
+    })
+    await act(async () => unlock('ok'))
+    await flush()
+    expect(mockUnlock).toHaveBeenCalledTimes(1)
+    expect(mockClient.pullRequestWrite).toHaveBeenCalledTimes(1)
+  })
+
+  it('names only merge, close, reviewers and re-run as desktop-only when the phone holds pr-write', async () => {
+    const view = await mount()
+    expect(view.texts()).toContain(
+      'Merges, closes, reviewers and re-runs stay on the desktop app. Replies, comments and reviews from this phone post as you on GitHub.',
+    )
+  })
+
+  it('will not post an approval once a re-read shows the pull request closed', async () => {
+    const api: PrWriteSheetApi = {
+      writeAccount: async () => ({ ok: true, data: { account: 'tejasnafde' } }),
+      write: mockClient.pullRequestWrite,
+      unlock: () => mockUnlock(),
+      newWriteId: () => 'w_0123456789abcdef',
+      isConnected: () => true,
+    }
+    const sheet = (detail: PrDetail) => (
+      <PrWriteSheet
+        pr={detail}
+        target={{ action: 'review' }}
+        draft=""
+        onDraftChange={() => undefined}
+        api={api}
+        onPosted={() => undefined}
+        onRemoved={() => undefined}
+        onCheckThread={() => undefined}
+        onClose={() => undefined}
+      />
+    )
+    let renderer!: ReactTestRenderer
+    await act(async () => {
+      renderer = create(sheet({ ...pr, state: 'open' }))
+    })
+    const find = (testID: string) => renderer.root.findAll((n) => n.props.testID === testID, { deep: false })
+    await act(async () => find('pr-verdict-approve')[0].props.onPress())
+    await act(async () => find('pr-write-continue')[0].props.onPress())
+    await flush()
+    expect(find('pr-write-post')[0].props.disabled).toBe(false)
+    await act(async () => renderer.update(sheet({ ...pr, state: 'closed' })))
+    await flush()
+    expect(find('pr-write-post')[0].props.disabled).toBe(true)
+    await act(async () => find('pr-write-post')[0].props.onPress())
+    await flush()
+    expect(mockUnlock).not.toHaveBeenCalled()
+    expect(mockClient.pullRequestWrite).not.toHaveBeenCalled()
+    act(() => renderer.unmount())
   })
 })

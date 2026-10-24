@@ -136,6 +136,7 @@ export function PrDetailView({
   onWorkOnPr,
   conversations,
   notice,
+  canWrite = false,
 }: {
   pr: PrDetail
   chats: PrLinkChat[]
@@ -147,6 +148,8 @@ export function PrDetailView({
   conversations?: ReactNode
   /** A short confirmation after a write, such as "Posted". */
   notice?: string | null
+  /** This phone holds `pr-write`, so the desktop note names only what stays there. */
+  canWrite?: boolean
 }) {
   const insets = useSafeAreaInsets()
   const [checksOpen, setChecksOpen] = useState(false)
@@ -242,7 +245,7 @@ export function PrDetailView({
           <Ionicons name="lock-closed-outline" size={14} color={colors.textDim} style={styles.noteIcon} />
           <Text style={styles.noteText}>
             <Text style={styles.noteStrong}>Merge on desktop. </Text>
-            {mergeOnDesktopNote(pr.ref.host)}
+            {mergeOnDesktopNote(pr.ref.host, canWrite)}
           </Text>
         </View>
 
@@ -477,6 +480,7 @@ export default function PullRequestScreen({ route, navigation }: Props) {
         onAskAboutFailures={(pill) => (chats.length === 1 ? openChat(chats[0], pill) : setSheet({ attachOnly: pill }))}
         onWorkOnPr={() => setSheet('work')}
         notice={notice}
+        canWrite={writeCapable && canWrite}
         conversations={
           writeCapable ? (
             <PrConversations
