@@ -30,9 +30,7 @@
         "apps/android/app/src/main/java/app/switchboard/mobile/MainActivity.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/domain/reviews/PhonePrWritesTest.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/PrWriteCoordinatorTest.kt",
-        "apps/android/app/src/test/java/app/switchboard/mobile/ui/reviews/PrWritesUiTest.kt",
-        "tests/unit/phone-pr-write-copy-fixture.test.ts",
-        "tests/fixtures/phone-pr-write-copy.json"
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/reviews/PrWritesUiTest.kt"
       ]
     },
     "sharedBackendApi": {
