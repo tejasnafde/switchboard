@@ -10,7 +10,12 @@
  */
 import { execFile } from 'node:child_process'
 import type { BackendHost } from '../backend/host'
-import { PullRequestChannels, PullRequestWriteChannels, SourceControlChannels } from '@shared/ipc-channels'
+import {
+  PullRequestChannels,
+  PullRequestPhoneChannels,
+  PullRequestWriteChannels,
+  SourceControlChannels,
+} from '@shared/ipc-channels'
 import {
   prKey,
   type GithubAccountState,
@@ -69,6 +74,7 @@ import { BitbucketCredentialStore, CredentialStoreError, validateBitbucketInput 
 import { GitHubProvider } from '../pull-requests/github'
 import { PrHostError } from '../pull-requests/provider'
 import { PullRequestService } from '../pull-requests/service'
+import { phoneWrite } from '../pull-requests/phone-write-gate'
 import { createDemoPullRequestService } from '../pull-requests/demo'
 import { setAgentPullRequestAccess } from '../mcp/pr-tools'
 import { currentBranch, remoteHasBranch } from '../pull-requests/branch-check'
@@ -428,19 +434,28 @@ export function registerPullRequestHandlers(host: BackendHost): void {
   host.handle(PullRequestChannels.CHECKS, (ref: unknown) => getService().checks(ref))
   host.handle(PullRequestChannels.REVIEWER_CANDIDATES, (ref: unknown) => getService().reviewerCandidates(ref))
 
-  host.handle(PullRequestWriteChannels.REPLY, (ref: unknown, input: unknown) => getService().reply(ref, input))
-  host.handle(PullRequestWriteChannels.RESOLVE, (ref: unknown, input: unknown) =>
-    getService().setResolved(ref, input, true),
+  host.handle(PullRequestPhoneChannels.WRITE_ACCOUNT, (ref: unknown) => getService().writeAccount(ref))
+  host.handle(
+    PullRequestWriteChannels.REPLY,
+    phoneWrite('reply', getService, (ref, input) => getService().reply(ref, input)),
+  )
+  host.handle(
+    PullRequestWriteChannels.RESOLVE,
+    phoneWrite('resolve', getService, (ref, input) => getService().setResolved(ref, input, true)),
   )
   host.handle(PullRequestWriteChannels.UNRESOLVE, (ref: unknown, input: unknown) =>
     getService().setResolved(ref, input, false),
   )
-  host.handle(PullRequestWriteChannels.COMMENT, (ref: unknown, input: unknown) => getService().comment(ref, input))
+  host.handle(
+    PullRequestWriteChannels.COMMENT,
+    phoneWrite('comment', getService, (ref, input) => getService().comment(ref, input)),
+  )
   host.handle(PullRequestWriteChannels.INLINE_COMMENT, (ref: unknown, input: unknown) =>
     getService().inlineComment(ref, input),
   )
-  host.handle(PullRequestWriteChannels.SUBMIT_REVIEW, (ref: unknown, input: unknown) =>
-    getService().submitReview(ref, input),
+  host.handle(
+    PullRequestWriteChannels.SUBMIT_REVIEW,
+    phoneWrite('review', getService, (ref, input) => getService().submitReview(ref, input)),
   )
   host.handle(PullRequestWriteChannels.MERGE, async (ref: unknown, input: unknown) =>
     afterTerminalWrite(ref, 'merged', await getService().merge(ref, input)),

@@ -292,8 +292,19 @@ export class BitbucketProvider implements PullRequestProvider {
 
   private async currentUser(): Promise<BbViewer> {
     if (!this.viewer) {
-      const user = await this.client.json<{ uuid?: string; account_id?: string }>('/user')
-      this.viewer = { uuid: user.uuid ?? null, accountId: user.account_id ?? null }
+      const user = await this.client.json<{
+        uuid?: string
+        account_id?: string
+        display_name?: string
+        nickname?: string
+      }>('/user')
+      const name = user.display_name || null
+      const nick = user.nickname || null
+      this.viewer = {
+        uuid: user.uuid ?? null,
+        accountId: user.account_id ?? null,
+        label: name && nick && name !== nick ? `${name} (${nick})` : (name ?? nick),
+      }
     }
     return this.viewer
   }
@@ -628,6 +639,11 @@ export class BitbucketProvider implements PullRequestProvider {
 
   async viewerIdentity(): Promise<ReviewerViewer> {
     return { id: (await this.currentUser()).uuid, login: null }
+  }
+
+  async writeAccount(): Promise<string> {
+    const viewer = await this.currentUser()
+    return viewer.label ?? viewer.uuid ?? 'Bitbucket account'
   }
 
   /** The reviewers ride in the same POST, so they are asked with the pull request or not at all. */

@@ -20,7 +20,13 @@ import { WsHost, wsServerOptions } from './ws-host'
 import { DualWebSocketServer, loadOrCreateTlsIdentity, type TlsIdentity } from './tls'
 import { userDataDir } from '../runtime'
 import { join } from 'node:path'
-import { authenticateSession, redeemPairingCode, setRevocationListener, touchSession } from './device-sessions'
+import {
+  authenticateSession,
+  redeemPairingCode,
+  setRevocationListener,
+  setScopeChangeListener,
+  touchSession,
+} from './device-sessions'
 import { PHONE_SCOPES } from '@shared/device-auth'
 
 const log = createLogger('backend:mobile-server')
@@ -180,6 +186,7 @@ export class MobileEndpoint implements BackendHost {
     // A revoke must reach the sockets this endpoint is holding open, or the
     // revoked device keeps working until it next reconnects.
     setRevocationListener((sessionId) => inner.disconnectSession(sessionId))
+    setScopeChangeListener((sessionId, scopes) => inner.setSessionScopes(sessionId, scopes))
 
     this.wss = wss
     this.inner = inner
@@ -195,6 +202,7 @@ export class MobileEndpoint implements BackendHost {
     if (!wss) return
     this.wss = null
     setRevocationListener(null)
+    setScopeChangeListener(null)
     // Or the heartbeat outlives the endpoint.
     this.inner?.dispose()
     this.inner = null

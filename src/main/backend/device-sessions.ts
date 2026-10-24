@@ -12,6 +12,7 @@ import {
   toView,
   DEVICE_NAME_MAX,
   PAIRING_CODE_TTL_MS,
+  PR_WRITE_INACTIVE_MS,
   type DeviceScope,
   type DeviceSession,
   type DeviceSessionView,
@@ -198,7 +199,7 @@ export function authenticateSession(
   if (!found || isRevoked(found)) return null
   // The list is small and a device connects rarely; lastSeenAt makes the
   // revoke UI usable.
-  const updated = withContext({ ...found, lastSeenAt: nowMs }, context)
+  const updated = withContext({ ...found, lastSeenAt: nowMs, scopes: activeScopes(found, nowMs) }, context)
   saveSessions(sessions.map((s) => (s.id === found.id ? updated : s)))
   return updated
 }
@@ -228,6 +229,49 @@ export function renameSession(id: string, name: string | null): boolean {
   saveSessions(sessions.map((s) => (s.id === id ? updated : s)))
   log.info(trimmed ? 'renamed a device session' : 'cleared a device session name')
   return true
+}
+
+/** A pull request write grant does not outlive a month without the device. */
+function activeScopes(session: DeviceSession, nowMs: number): DeviceScope[] {
+  const since = Math.max(session.lastSeenAt, session.prWriteGrantedAt ?? 0)
+  if (!session.scopes.includes('pr-write') || nowMs - since < PR_WRITE_INACTIVE_MS) return session.scopes
+  log.info(`dropped pull request writes from inactive device ${session.label}`)
+  return session.scopes.filter((s) => s !== 'pr-write')
+}
+
+/**
+ * Notified when a session's scopes change, so live sockets for it take the
+ * new set at once: a removed grant must not wait for a reconnect.
+ */
+let onScopesChanged: ((id: string, scopes: readonly DeviceScope[]) => void) | null = null
+export function setScopeChangeListener(fn: ((id: string, scopes: readonly DeviceScope[]) => void) | null): void {
+  onScopesChanged = fn
+}
+
+/**
+ * Grant or remove pull request writes for one device. Called from the
+ * desktop's admin channel only. A device that is offline takes the grant at
+ * its next connect, since scopes are read on every auth.
+ */
+export function setPrWriteScope(id: string, allowed: boolean, nowMs: number = Date.now()): boolean {
+  const sessions = listSessions()
+  const target = sessions.find((s) => s.id === id)
+  if (!target || isRevoked(target)) return false
+  const without = target.scopes.filter((s) => s !== 'pr-write')
+  const scopes: DeviceScope[] = allowed ? [...without, 'pr-write'] : without
+  saveSessions(
+    sessions.map((s) => (s.id === id ? { ...s, scopes, ...(allowed ? { prWriteGrantedAt: nowMs } : {}) } : s)),
+  )
+  log.info(`${allowed ? 'granted' : 'removed'} pull request writes for device ${target.label}`)
+  onScopesChanged?.(id, scopes)
+  return true
+}
+
+/** Stamp a device's last pull request write, for the Devices tab. */
+export function recordPrWrite(id: string, nowMs: number = Date.now()): void {
+  const sessions = listSessions()
+  if (!sessions.some((s) => s.id === id)) return
+  saveSessions(sessions.map((s) => (s.id === id ? { ...s, lastPrWriteAt: nowMs } : s)))
 }
 
 /**
