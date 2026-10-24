@@ -5,10 +5,15 @@
   "summary": "A phone the desktop allows can reply to, resolve, comment on, approve and request changes on a pull request. A new device scope, pr-write, is never given at pairing: only the desktop grants it, through the admin channel mobile-pairing:set-pr-write, after a confirm that names the risk; removing it needs no confirm and holds from the next frame on live sockets. A grant made while the phone is offline applies at its next connect, and a grant on a device unseen for 30 days is dropped when it next connects. The reply, resolve, comment and submit-review channels and pull-requests:write-account (who a write posts as) open to admin or pr-write; merge, close, decline, reviewers, re-run, line comments and unresolve stay admin. Every phone write carries a proof: the FNV-1a 64 digest of what its confirm sheet showed (account, pull request, thread, action, verdict, exact text, write id) and a one-time write id. The backend recomputes the digest with the account it posts as and refuses a missing or different one, and refuses a write id it has taken, so a write is never sent twice. The desktop and admin devices need no proof. The backend advertises pr_write_scope_v1; device-session:scopes tells a phone its current scopes.",
   "surfaces": {
     "desktop": {
-      "status": "staged",
-      "flag": "desktop_pr_write_grant",
-      "followUpRelease": "The Devices tab grant UI (an Access block with Allow and its risk confirm, a PR writes badge, a Last write line, instant Remove) ships in the next desktop pull request of this feature. Until it lands nothing calls mobile-pairing:set-pr-write, so no device holds pr-write and the phone write path is unreachable.",
-      "evidence": ["src/main/index.ts", "src/main/backend/device-sessions.ts"]
+      "status": "implemented",
+      "evidence": [
+        "src/main/index.ts",
+        "src/main/backend/device-sessions.ts",
+        "src/preload/index.ts",
+        "src/renderer/components/settings/PairedDevices.tsx",
+        "src/renderer/components/settings/device-list.ts",
+        "tests/unit/device-list.test.ts"
+      ]
     },
     "reactNativeIos": {
       "status": "staged",
@@ -56,12 +61,13 @@
     "automated": [
       "tests/unit/pr-write-scope.test.ts: pr-write is not a pairing scope; a phone without it is refused every write channel; a granted phone reaches only reply, resolve, comment, submit-review and write-account, never merge, decline, reviewers, re-run, line comments or unresolve; a phone cannot call the grant channel; grant and removal are stored and reach the live-socket listener; a grant made while offline is in the scopes of the next auth; a grant is dropped after 30 days unseen; a revoked device cannot be granted.",
       "tests/unit/pr-write-scope.test.ts through the gate and the real PullRequestService: a phone write with no proof, a digest of other text, or a digest over another account is refused and the provider is never called; a matching write posts once and the same write id is refused afterwards (no re-send), also when two copies race; a refused write may retry under its id once the sheet matches; the desktop and admin devices need no proof; a phone review with line comments is refused. Two digest vectors are pinned for the Android port.",
+      "tests/unit/device-list.test.ts: the PR writes badge shows only for a device with pr-write; the Access line describes the grant before it is given and reads Allowed, with Last write as a relative time when the device has written; the grant confirm names the risk (posts as you on GitHub and Bitbucket, anyone who can unlock the phone, Face ID or passcode, what stays on the desktop) with the label Allow writes; an offline device's confirm says the grant takes effect at its next connect.",
       "npm run typecheck and npm test green."
     ],
     "hardware": [],
     "notExercised": [
       "No installed build was run: the scope is stored on existing deviceSessions rows (an optional lastPrWriteAt field, pr-write in the scopes array), and an upgrade from existing user data is still to be checked on a packaged app before merge.",
-      "No phone can reach the write path until the desktop grant UI ships, so no end to end write from a phone was made."
+      "No phone can reach the write path until the phones pull request ships, so no end to end write from a phone was made. The Devices tab Access block (Allow with its confirm, Remove, the inline error) was not clicked through in a running app; no component test covers it."
     ]
   }
 }
