@@ -7,7 +7,7 @@
 import React from 'react'
 import { act } from 'react-test-renderer'
 import ConversationsScreen from '../ConversationsScreen'
-import { useChatStore, threadKey, emptyThread, type ThreadState } from '../../stores/chat'
+import { useChatStore, threadKey, emptyThread, type ThreadPending, type ThreadState } from '../../stores/chat'
 import { renderComponent } from '../../test/render'
 
 jest.mock('@react-navigation/native', () => {
@@ -33,12 +33,13 @@ jest.mock('../../stores/connections', () => ({
 const navigation = { setOptions: jest.fn(), navigate: jest.fn() }
 const route = { params: { connectionId: 'conn', projectPath: '/p', projectName: 'switchboard' } }
 
-function setThreads(threads: Record<string, Partial<ThreadState>>) {
+function setThreads(threads: Record<string, Partial<ThreadState>>, pending: Record<string, ThreadPending> = {}) {
   act(() => {
     useChatStore.setState({
       threads: Object.fromEntries(
         Object.entries(threads).map(([id, t]) => [threadKey('conn', id), { ...emptyThread(), ...t }]),
       ),
+      pending: Object.fromEntries(Object.entries(pending).map(([id, p]) => [threadKey('conn', id), p])),
     })
   })
 }
@@ -52,44 +53,45 @@ async function renderScreen() {
   return view
 }
 
-const HEADERS = ['NEEDS YOU', 'WORKING', 'DONE RECENTLY']
+const HEADERS = ['Needs you', 'Working', 'Done recently']
 const shown = (texts: string[]) => texts.filter((t) => titles.includes(t) || HEADERS.includes(t) || /^\d+$/.test(t))
 
 afterEach(() => {
   act(() => {
-    useChatStore.setState({ threads: {} })
+    useChatStore.setState({ threads: {}, pending: {} })
   })
 })
 
 describe('ConversationsScreen groups', () => {
   it('puts an open card and an error under Needs you, a running chat under Working', async () => {
-    setThreads({
-      c1: {
-        status: 'idle',
-        pendingRequests: [
-          {
-            type: 'request.opened',
-            threadId: 'c1',
-            requestId: 'r1',
-            requestType: 'command',
-            toolName: 'Bash',
-            detail: 'ls',
-          },
-        ],
+    setThreads(
+      { c2: { status: 'running' }, c3: { status: 'error' } },
+      {
+        c1: {
+          revision: 1,
+          requests: [
+            {
+              type: 'request.opened',
+              threadId: 'c1',
+              requestId: 'r1',
+              requestType: 'command',
+              toolName: 'Bash',
+              detail: 'ls',
+            },
+          ],
+        },
       },
-      c2: { status: 'running' },
-      c3: { status: 'error' },
-    })
+    )
     const view = await renderScreen()
     expect(shown(view.texts())).toEqual([
-      'NEEDS YOU',
+      'Needs you',
       '2',
       'Add search',
       'Tidy CSS',
-      'WORKING',
+      'Working',
       '1',
       'Ship docs',
-      'DONE RECENTLY',
+      'Done recently',
       '1',
       'Fix login',
     ])
@@ -107,11 +109,18 @@ describe('ConversationsScreen groups', () => {
         detail: 'ls',
       } as never)
     })
-    expect(shown(view.texts()).slice(0, 3)).toEqual(['NEEDS YOU', '1', 'Fix login'])
+    expect(shown(view.texts()).slice(0, 3)).toEqual(['Needs you', '1', 'Fix login'])
     act(() => {
       useChatStore.getState().ingestNow('conn', { type: 'request.closed', threadId: 'c0', requestId: 'r1' } as never)
     })
-    expect(view.texts()).not.toContain('NEEDS YOU')
+    expect(view.texts()).not.toContain('Needs you')
+  })
+
+  it('marks each group label as a header', async () => {
+    setThreads({ c2: { status: 'running' } })
+    const view = await renderScreen()
+    const headers = view.root.findAll((n) => typeof n.type === 'string' && n.props.accessibilityRole === 'header')
+    expect(headers).toHaveLength(2)
   })
 
   it('stays one plain list when nothing needs you or works', async () => {

@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { chatActivity, chatGroupKey, groupChats, type ChatGroupKey } from '../../apps/mobile/src/lib/chat-activity'
-import { useChatStore, resetQueue, threadKey } from '../../apps/mobile/src/stores/chat'
+import { useChatStore, resetQueue, threadActivity, threadKey } from '../../apps/mobile/src/stores/chat'
 import { PENDING_SEED_ROWS, seedListPendingRequests } from '../../apps/mobile/src/stores/list-pending'
 import type { PendingBlockingEvent } from '../../src/shared/pending-requests'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
@@ -25,21 +25,23 @@ function ingest(event: RuntimeEvent | PendingBlockingEvent): void {
   useChatStore.getState().ingestNow(CONN, event as RuntimeEvent)
 }
 
-const pending = () => useChatStore.getState().threads[KEY]?.pendingRequests ?? []
+const pending = () => useChatStore.getState().pending[KEY]?.requests ?? []
+const revision = () => useChatStore.getState().pending[KEY]?.revision ?? 0
+const current = () => true
 
 beforeEach(() => {
   resetQueue()
-  useChatStore.setState({ threads: {}, activeKey: null })
+  useChatStore.setState({ threads: {}, pending: {}, activeKey: null })
 })
 
 describe('chatActivity', () => {
-  it('ranks an approval over a question over a plan over an error', () => {
-    expect(chatActivity({ status: 'error', pendingRequests: [plan('p'), question('q'), approval('a')] })).toBe(
+  it('ranks an error over an approval over a question over a plan', () => {
+    expect(chatActivity({ status: 'error', pendingRequests: [approval('a')] })).toBe('failed')
+    expect(chatActivity({ status: 'idle', pendingRequests: [plan('p'), question('q'), approval('a')] })).toBe(
       'approval',
     )
-    expect(chatActivity({ status: 'error', pendingRequests: [plan('p'), question('q')] })).toBe('input')
-    expect(chatActivity({ status: 'error', pendingRequests: [plan('p')] })).toBe('plan')
-    expect(chatActivity({ status: 'error' })).toBe('failed')
+    expect(chatActivity({ status: 'idle', pendingRequests: [plan('p'), question('q')] })).toBe('input')
+    expect(chatActivity({ pendingRequests: [plan('p')] })).toBe('plan')
   })
 
   it('reads a running chat as working and anything else as nothing', () => {
@@ -111,13 +113,26 @@ describe('open cards from live events', () => {
     expect(pending().map((e) => e.type)).toEqual(['request.opened'])
   })
 
+  it('does not count a status that closes nothing', () => {
+    ingest(approval('r1'))
+    ingest({ type: 'status', threadId: THREAD, status: 'running' } as RuntimeEvent)
+    expect(revision()).toBe(1)
+  })
+
   it('is not written to the disk cache', () => {
     ingest(approval('r1'))
-    const persisted = useChatStore.persist.getOptions().partialize?.(useChatStore.getState()) as {
-      threads: Record<string, object>
-    }
-    expect(persisted.threads[KEY]).not.toHaveProperty('pendingRequests')
-    expect(persisted.threads[KEY]).not.toHaveProperty('pendingRevision')
+    const persisted = useChatStore.persist.getOptions().partialize?.(useChatStore.getState())
+    expect(persisted).not.toHaveProperty('pending')
+  })
+
+  it('drops the open cards after a resume gap, and with the connection', () => {
+    ingest(approval('r1'))
+    useChatStore.getState().invalidateConnection(CONN)
+    expect(pending()).toEqual([])
+    expect(revision()).toBe(2)
+    ingest(approval('r2'))
+    useChatStore.getState().forgetConnection(CONN)
+    expect(useChatStore.getState().pending[KEY]).toBeUndefined()
   })
 })
 
@@ -134,8 +149,11 @@ describe('seeding from provider:get-pending-requests', () => {
       CONN,
       client(async () => [approval('r1')]),
       [THREAD],
+      current,
     )
-    expect(chatActivity(useChatStore.getState().threads[KEY])).toBe('approval')
+    expect(threadActivity(useChatStore.getState(), KEY)).toBe('approval')
+    // The chat's feed is not touched, so the disk cache keeps its real chats.
+    expect(useChatStore.getState().threads[KEY]).toBeUndefined()
   })
 
   it('asks about the newest 15 chats only', async () => {
@@ -144,6 +162,7 @@ describe('seeding from provider:get-pending-requests', () => {
       CONN,
       c,
       Array.from({ length: 20 }, (_, i) => `t${i}`),
+      current,
     )
     expect(c.getPendingRequests).toHaveBeenCalledTimes(PENDING_SEED_ROWS)
     expect(c.getPendingRequests.mock.calls.map(([id]) => id)).toEqual(Array.from({ length: 15 }, (_, i) => `t${i}`))
@@ -151,7 +170,7 @@ describe('seeding from provider:get-pending-requests', () => {
 
   it('does not ask an older backend', async () => {
     const c = client(async () => [], false)
-    await seedListPendingRequests(CONN, c, [THREAD])
+    await seedListPendingRequests(CONN, c, [THREAD], current)
     expect(c.getPendingRequests).not.toHaveBeenCalled()
   })
 
@@ -160,8 +179,47 @@ describe('seeding from provider:get-pending-requests', () => {
       CONN,
       client(async () => []),
       [THREAD],
+      current,
     )
-    expect(useChatStore.getState().threads[KEY]).toBeUndefined()
+    expect(useChatStore.getState().pending[KEY]).toBeUndefined()
+  })
+
+  it('does not reopen a card this phone never saw open, closed while the backend answered', async () => {
+    let calls = 0
+    const c = client(async () => {
+      calls++
+      if (calls === 1) {
+        ingest({ type: 'request.closed', threadId: THREAD, requestId: 'r1' } as RuntimeEvent)
+        return [approval('r1')]
+      }
+      return []
+    })
+    await seedListPendingRequests(CONN, c, [THREAD], current)
+    expect(pending()).toEqual([])
+  })
+
+  it('does not reopen a card the provider cleared by stopping while the backend answered', async () => {
+    let calls = 0
+    const c = client(async () => {
+      calls++
+      if (calls === 1) {
+        ingest({ type: 'status', threadId: THREAD, status: 'stopped' } as RuntimeEvent)
+        return [approval('r1')]
+      }
+      return []
+    })
+    await seedListPendingRequests(CONN, c, [THREAD], current)
+    expect(pending()).toEqual([])
+  })
+
+  it('drops a reply that lands after the connection is gone', async () => {
+    let live = true
+    const c = client(async () => {
+      live = false
+      return [approval('r1')]
+    })
+    await seedListPendingRequests(CONN, c, [THREAD], () => live)
+    expect(useChatStore.getState().pending[KEY]).toBeUndefined()
   })
 
   it('does not reopen a card closed live while the backend answered', async () => {
@@ -176,7 +234,7 @@ describe('seeding from provider:get-pending-requests', () => {
       }
       return []
     })
-    await seedListPendingRequests(CONN, c, [THREAD])
+    await seedListPendingRequests(CONN, c, [THREAD], current)
     expect(c.getPendingRequests).toHaveBeenCalledTimes(2)
     expect(pending()).toEqual([])
   })
@@ -187,6 +245,7 @@ describe('seeding from provider:get-pending-requests', () => {
       CONN,
       client(async () => []),
       [THREAD],
+      current,
     )
     expect(pending()).toEqual([])
   })

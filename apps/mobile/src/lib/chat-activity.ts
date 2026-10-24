@@ -18,15 +18,15 @@ export const CHAT_GROUP_LABELS: Record<ChatGroupKey, string> = {
   done: 'Done recently',
 }
 
-/** An approval outranks a question, a question a plan, and an error all but a card. */
+/** An error outranks an approval, an approval a question, a question a plan. */
 export function chatActivity(
   thread: { status?: ProviderSessionStatus; pendingRequests?: readonly PendingBlockingEvent[] } | undefined,
 ): ChatActivity {
   const pending = thread?.pendingRequests ?? []
+  if (thread?.status === 'error') return 'failed'
   if (pending.some((e) => e.type === 'request.opened')) return 'approval'
   if (pending.some((e) => e.type === 'question.asked')) return 'input'
   if (pending.some((e) => e.type === 'plan.proposed')) return 'plan'
-  if (thread?.status === 'error') return 'failed'
   // 'connecting' is also what a chat restored from disk shows, so it is not work.
   if (thread?.status === 'running') return 'working'
   return null

@@ -73,12 +73,12 @@ describe('ConversationsScreen search', () => {
       useChatStore.setState({ threads: { [threadKey('conn', 'c2')]: { ...emptyThread(), status: 'running' } } })
     })
     const view = await renderScreen()
-    expect(view.texts()).toContain('WORKING')
+    expect(view.texts()).toContain('Working')
     act(() => {
       view.root.findByType(TextInput).props.onChangeText('sync')
     })
-    expect(view.texts()).not.toContain('WORKING')
-    expect(view.texts()).not.toContain('DONE RECENTLY')
+    expect(view.texts()).not.toContain('Working')
+    expect(view.texts()).not.toContain('Done recently')
     act(() => {
       useChatStore.setState({ threads: {} })
     })

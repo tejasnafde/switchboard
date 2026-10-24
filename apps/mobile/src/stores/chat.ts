@@ -41,6 +41,7 @@ import { approvalResultLabel, parseApprovalResultMarker } from '@shared/agent-ap
 import type { PeerUndelivered } from '@shared/peer-links'
 import { parseMergeBackMarker, type MergeBackRow } from '@shared/merge-back'
 import { withoutDemo } from '@shared/phone-demo/phone-demo'
+import { chatActivity, type ChatActivity } from '../lib/chat-activity'
 import {
   applyPendingRequestEvent,
   PENDING_REQUEST_EVENT_TYPES,
@@ -171,11 +172,14 @@ export interface ThreadState {
   heldTurns?: QueuedTurnsByMessage
   /** Bumped by every held-message event, so a re-list can tell it raced one. */
   heldRevision?: number
-  /** The backend's open approvals, questions and plans (Needs you), whether
-   *  or not the feed shows them. Not cached. */
-  pendingRequests?: readonly PendingBlockingEvent[]
-  /** Bumped by every event that can change `pendingRequests`, so a seed can tell it raced one. */
-  pendingRevision?: number
+}
+
+/** The backend's open approvals, questions and plans in one chat (Needs you),
+ *  whether or not its feed is loaded. */
+export interface ThreadPending {
+  requests: readonly PendingBlockingEvent[]
+  /** Bumped by every change, so a seed can tell it raced one. */
+  revision: number
 }
 
 /** The cache shows the last thing you were reading offline; it is not an
@@ -194,14 +198,7 @@ export function prunePersistedThreads(
     .slice(0, maxThreads)
   const out: Record<string, ThreadState> = {}
   for (const [key, thread] of keep) {
-    const {
-      heldTurns: _held,
-      heldRevision: _revision,
-      historyMessages: _history,
-      pendingRequests: _pending,
-      pendingRevision: _pendingRevision,
-      ...rest
-    } = thread
+    const { heldTurns: _held, heldRevision: _revision, historyMessages: _history, ...rest } = thread
     out[key] = {
       ...rest,
       // The tail, because a feed renders newest-last and that is what the user
@@ -225,6 +222,9 @@ export const emptyThread = (): ThreadState => ({
 
 interface ChatState {
   threads: Record<string, ThreadState>
+  /** Open cards by thread key. Kept apart from `threads` so a chat nobody
+   *  opened gets no feed entry, and never cached. */
+  pending: Record<string, ThreadPending>
   /** Thread currently on screen - its events don't bump unread. */
   activeKey: string | null
   setActive: (key: string | null) => void
@@ -344,8 +344,12 @@ export function flushQueue(): void {
   queue = []
   useChatStore.setState((s) => {
     let threads = s.threads
-    for (const q of batch) threads = applyEvent(threads, q.connectionId, q.event, s.activeKey)
-    return { threads }
+    let pending = s.pending
+    for (const q of batch) {
+      threads = applyEvent(threads, q.connectionId, q.event, s.activeKey)
+      pending = applyPending(pending, q.connectionId, q.event)
+    }
+    return { threads, pending }
   })
 }
 
@@ -793,15 +797,27 @@ function applyEvent(
   activeKey: string | null,
 ): Record<string, ThreadState> {
   const key = threadKey(connectionId, event.threadId)
-  return patchThread(threads, key, (t) => ({ ...reduceEvent(t, event, activeKey === key), ...trackPending(t, event) }))
+  return patchThread(threads, key, (t) => reduceEvent(t, event, activeKey === key))
 }
 
-function trackPending(t: ThreadState, event: RuntimeEvent): Partial<ThreadState> {
-  if (!PENDING_REQUEST_EVENT_TYPES.has(event.type)) return {}
-  return {
-    pendingRequests: applyPendingRequestEvent(t.pendingRequests ?? [], event),
-    pendingRevision: (t.pendingRevision ?? 0) + 1,
-  }
+function applyPending(
+  pending: Record<string, ThreadPending>,
+  connectionId: string,
+  event: RuntimeEvent,
+): Record<string, ThreadPending> {
+  if (!PENDING_REQUEST_EVENT_TYPES.has(event.type)) return pending
+  const key = threadKey(connectionId, event.threadId)
+  const before = pending[key] ?? { requests: [], revision: 0 }
+  const requests = applyPendingRequestEvent(before.requests, event)
+  // A close still counts when it removes nothing here: a seed in flight may hold that card.
+  const closes = event.type !== 'status' || event.status === 'error' || event.status === 'stopped'
+  if (requests === before.requests && !closes) return pending
+  return { ...pending, [key]: { requests, revision: before.revision + 1 } }
+}
+
+/** What the chat needs from the user, for a list row's dot and group. */
+export function threadActivity(s: Pick<ChatState, 'threads' | 'pending'>, key: string): ChatActivity {
+  return chatActivity({ status: s.threads[key]?.status, pendingRequests: s.pending[key]?.requests })
 }
 
 /**
@@ -821,6 +837,7 @@ export const useChatStore = create<ChatState>()(
   persist(
     (set, get) => ({
       threads: {},
+      pending: {},
       activeKey: null,
 
       setActive: (key) =>
@@ -901,12 +918,11 @@ export const useChatStore = create<ChatState>()(
       removeUserMessage: (key, id) =>
         set((s) => ({ threads: patchThread(s.threads, key, (t) => ({ items: t.items.filter((i) => i.id !== id) })) })),
 
-      seedPendingRequests: (key, pending, revision) => {
-        const thread = get().threads[key]
-        if ((thread?.pendingRevision ?? 0) !== revision) return false
-        // A chat nobody has opened gets an entry only when something is open.
-        if (pending.length > 0 || thread?.pendingRequests?.length) {
-          set((s) => ({ threads: patchThread(s.threads, key, () => ({ pendingRequests: pending })) }))
+      seedPendingRequests: (key, requests, revision) => {
+        const before = get().pending[key]
+        if ((before?.revision ?? 0) !== revision) return false
+        if (requests.length > 0 || before?.requests.length) {
+          set((s) => ({ pending: { ...s.pending, [key]: { requests, revision } } }))
         }
         return true
       },
@@ -934,7 +950,10 @@ export const useChatStore = create<ChatState>()(
       ingest: (connectionId, event) => enqueue(connectionId, event),
 
       ingestNow: (connectionId, event) =>
-        set((s) => ({ threads: applyEvent(s.threads, connectionId, event, s.activeKey) })),
+        set((s) => ({
+          threads: applyEvent(s.threads, connectionId, event, s.activeKey),
+          pending: applyPending(s.pending, connectionId, event),
+        })),
 
       staleGeneration: 0,
 
@@ -942,7 +961,8 @@ export const useChatStore = create<ChatState>()(
         set((s) => {
           const prefix = `${connectionId}:`
           const threads = Object.fromEntries(Object.entries(s.threads).filter(([key]) => !key.startsWith(prefix)))
-          return { threads, activeKey: s.activeKey?.startsWith(prefix) ? null : s.activeKey }
+          const pending = Object.fromEntries(Object.entries(s.pending).filter(([key]) => !key.startsWith(prefix)))
+          return { threads, pending, activeKey: s.activeKey?.startsWith(prefix) ? null : s.activeKey }
         }),
 
       invalidateConnection: (connectionId) => {
@@ -956,7 +976,12 @@ export const useChatStore = create<ChatState>()(
               ? { ...thread, historyLoaded: false, cached: true, reseedRevision: (thread.reseedRevision ?? 0) + 1 }
               : thread
           }
-          return { threads, staleGeneration: s.staleGeneration + 1 }
+          // Open cards may have closed during the gap; the list seeds them again.
+          const pending: Record<string, ThreadPending> = {}
+          for (const [key, entry] of Object.entries(s.pending)) {
+            pending[key] = key.startsWith(prefix) ? { requests: [], revision: entry.revision + 1 } : entry
+          }
+          return { threads, pending, staleGeneration: s.staleGeneration + 1 }
         })
       },
     }),

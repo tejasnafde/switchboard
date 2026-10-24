@@ -28,11 +28,11 @@ import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, statusColor, type, HIT } from '../theme'
 import { keyboardAvoidance } from '../lib/keyboard-avoidance'
 import { getClient } from '../stores/connections'
-import { useChatStore, threadKey } from '../stores/chat'
+import { useChatStore, threadKey, threadActivity } from '../stores/chat'
 import { UnreadPill } from '../components/UnreadPill'
 import { conversationSourceLabel } from '../lib/conversation-source'
 import { threadPreviewLine } from '../lib/thread-preview'
-import { chatActivity, chatGroupKey, groupChats, type ChatActivity } from '../lib/chat-activity'
+import { chatGroupKey, groupChats, type ChatActivity } from '../lib/chat-activity'
 import { seedListPendingRequests } from '../stores/list-pending'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Conversations'>
@@ -54,7 +54,7 @@ export const RowMeta = memo(function RowMeta({
 }) {
   const unread = useChatStore((s) => s.threads[threadKeyStr]?.unread ?? 0)
   const status = useChatStore((s) => s.threads[threadKeyStr]?.status)
-  const activity = useChatStore((s) => chatActivity(s.threads[threadKeyStr]))
+  const activity = useChatStore((s) => threadActivity(s, threadKeyStr))
   // A feed restored from disk may predate the backend's line, so it only fills in.
   const preview = useChatStore((s) => {
     const thread = s.threads[threadKeyStr]
@@ -64,7 +64,9 @@ export const RowMeta = memo(function RowMeta({
   return (
     <>
       <View style={styles.titleLine}>
-        {status != null && <View style={[styles.statusDot, { backgroundColor: dotColor(status, activity) }]} />}
+        {(status != null || activity !== null) && (
+          <View style={[styles.statusDot, { backgroundColor: dotColor(status, activity) }]} />
+        )}
         <Text style={styles.title} numberOfLines={1}>
           {title}
         </Text>
@@ -79,11 +81,11 @@ export const RowMeta = memo(function RowMeta({
   )
 })
 
-/** The dot carries the colour; an open card outranks everything but an error. */
-function dotColor(status: string, activity: ChatActivity): string {
+/** The dot carries the colour; an error outranks an open card, a card the status. */
+function dotColor(status: string | undefined, activity: ChatActivity): string {
   if (activity === 'failed') return colors.red
   if (activity !== null && activity !== 'working') return colors.amber
-  return statusColor[status] ?? colors.textFaint
+  return (status && statusColor[status]) ?? colors.textFaint
 }
 
 export default function ConversationsScreen({ route, navigation }: Props) {
@@ -110,6 +112,7 @@ export default function ConversationsScreen({ route, navigation }: Props) {
           connectionId,
           client,
           result.map((row) => row.id),
+          () => getClient(connectionId) === client,
         )
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
@@ -190,7 +193,7 @@ export default function ConversationsScreen({ route, navigation }: Props) {
   // One group key per row, compared shallowly: a status change re-renders the
   // list only when it moves a chat between groups.
   const groupKeys = useChatStore(
-    useShallow((s) => visibleRows.map((row) => chatGroupKey(chatActivity(s.threads[threadKey(connectionId, row.id)])))),
+    useShallow((s) => visibleRows.map((row) => chatGroupKey(threadActivity(s, threadKey(connectionId, row.id))))),
   )
   // A query shows one ranked list; grouping by state would undo the ranking.
   const sections = useMemo(() => {
@@ -236,8 +239,8 @@ export default function ConversationsScreen({ route, navigation }: Props) {
         stickySectionHeadersEnabled={false}
         renderSectionHeader={({ section }) =>
           section.label === '' ? null : (
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{section.label.toUpperCase()}</Text>
+            <View style={styles.sectionHeader} accessible accessibilityRole="header">
+              <Text style={styles.sectionTitle}>{section.label}</Text>
               <Text style={styles.sectionCount}>{section.data.length}</Text>
             </View>
           )
@@ -383,12 +386,13 @@ const styles = StyleSheet.create({
   searchWrap: { paddingBottom: space.sm },
   sectionHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: space.sm,
     paddingHorizontal: space.lg,
     paddingTop: space.lg,
     paddingBottom: space.xs,
   },
-  sectionTitle: { ...type.label, color: colors.textDim },
+  sectionTitle: { ...type.label, color: colors.textDim, textTransform: 'uppercase' },
   sectionCount: { ...type.monoSm, color: colors.textFaint },
   searchInput: {
     backgroundColor: colors.surfaceRaised,
