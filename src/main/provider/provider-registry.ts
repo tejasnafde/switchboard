@@ -145,7 +145,7 @@ import { buildPrLinkTools } from '../mcp/pr-link-tools'
 import { buildPeerMcpTools, runPeerSendPlan } from '../mcp/peer-mcp-tools'
 import { buildApprovalMcpTools } from '../mcp/approval-mcp-tools'
 import { toolText } from '../mcp/mcp-session'
-import { buildHubMcpTools, HUB_INSTRUCTIONS, START_CHILDREN_TOOL } from '../mcp/hub-tools'
+import { buildChildHubMcpTools, buildHubMcpTools, HUB_INSTRUCTIONS, START_CHILDREN_TOOL } from '../mcp/hub-tools'
 import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } from '../hub/hub-start'
 import { appMetrics } from '../runtime'
 import { HubResourceSampler } from '../hub/hub-measure'
@@ -466,6 +466,9 @@ export class ProviderRegistry implements PeerToolHost {
           ...row,
           at: Date.now(),
         }),
+      stopChild: async (childId: string) => {
+        await this.stopChildSession?.(this.liveSessionId(childId) ?? childId)
+      },
     }
   }
 
@@ -573,6 +576,8 @@ export class ProviderRegistry implements PeerToolHost {
   readonly limitResumer: LimitResumer | null
   /** Starts child chats (`start_children`) and holds their run slots. */
   readonly hubStarter: HubStarter
+  /** The user's Stop for one thread; set when the IPC handlers are registered. */
+  private stopChildSession: ((threadId: string) => Promise<void>) | null = null
   /** Samples the agent process trees of open children; null in tests that inject adapters. */
   private readonly hubSampler: HubResourceSampler | null
   private readonly approvalStore: ApprovalCardStore<AgentWritePlan>
@@ -1886,7 +1891,9 @@ export class ProviderRegistry implements PeerToolHost {
     const runtimeMode = (): RuntimeMode => this.chatRuntimeMode(threadId)
     const publish = (event: RuntimeEvent): void => this.publish(event)
     // Depth 1: an open child gets no parent tools and no hub paragraph.
-    const parentTools = this.hubChildrenOn() && !this.hubStarter.isOpenChild(threadId)
+    const hubOn = this.hubChildrenOn()
+    const openChild = hubOn && this.hubStarter.isOpenChild(threadId)
+    const parentTools = hubOn && !openChild
     try {
       return await this.switchboardMcp.open(
         threadId,
@@ -1935,6 +1942,7 @@ export class ProviderRegistry implements PeerToolHost {
                 publish,
               })
             : []),
+          ...(openChild ? buildChildHubMcpTools({ threadId, runtimeMode, starter: this.hubStarter }) : []),
         ],
         parentTools ? HUB_INSTRUCTIONS : undefined,
       )
@@ -2736,6 +2744,12 @@ export class ProviderRegistry implements PeerToolHost {
           resolvedEnv: { ...credentials.resolvedEnv },
         },
       }
+    }
+
+    this.stopChildSession = async (threadId) => {
+      this.dropPeerLinks(threadId)
+      this.closeAgentCards(threadId)
+      await stopSession(threadId)
     }
 
     // ── Execution-root relocation ──────────────────────────────────

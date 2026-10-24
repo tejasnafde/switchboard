@@ -178,11 +178,13 @@ export async function hydrateOutbox(): Promise<void> {
     const bubbleId = echoMessageId(message.messageId)
     const itemIds = useChatStore.getState().threads[key]?.items.map((item) => item.id) ?? []
     if (queuedBubbleExists(itemIds, bubbleId)) continue
+    const shown = queuedTurnBody(message)
     useChatStore.getState().addUserMessage(
       key,
-      message.text,
+      shown.displayBody,
       message.images?.map((image) => image.url),
       bubbleId,
+      shown.pillsMeta,
     )
   }
   void drain()

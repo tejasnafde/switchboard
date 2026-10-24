@@ -1,5 +1,5 @@
 import { AppState, type AppStateStatus } from 'react-native'
-import { getClient, installLifecycleReconnect, useConnectionsStore } from '../connections'
+import { getClient, installLifecycleReconnect, onAppBackground, useConnectionsStore } from '../connections'
 import { SwitchboardClient } from '../../lib/api'
 
 jest.mock('expo-network', () => ({}))
@@ -79,4 +79,17 @@ test('a transport with only a probe, such as an IAP tunnel, is still probed', as
   awayFor(5_000)
 
   expect(transport.probe).toHaveBeenCalledTimes(1)
+})
+
+test('going to the background runs the registered callbacks once', () => {
+  const release = jest.fn()
+  const unsubscribe = onAppBackground(release)
+  uninstall = installLifecycleReconnect()
+
+  emit('background')
+  unsubscribe()
+  emit('active')
+  emit('background')
+
+  expect(release).toHaveBeenCalledTimes(1)
 })

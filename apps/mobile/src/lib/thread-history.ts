@@ -1,4 +1,4 @@
-import { visibleUserMessageText } from '@shared/provider-events'
+import { visibleUserMessageText, type UserMessagePillsMeta } from '@shared/provider-events'
 import { pillBodyText } from '@shared/pill-body-text'
 import { splitSyntheticUserText } from '@shared/synthetic-message'
 import { systemRowView } from '@shared/system-markers'
@@ -7,6 +7,22 @@ import type { ChatMessage } from '@shared/types'
 import type { FeedItem } from '../stores/chat'
 
 type UserItem = Extract<FeedItem, { kind: 'user' }>
+
+/**
+ * A user message's bubble text. A display body with pill metadata keeps its
+ * `[[pill:id]]` tokens and carries the metadata, so the bubble draws chips;
+ * without metadata an unknown token is dropped. Null when nothing is shown.
+ */
+export function userBubbleBody(
+  content: string,
+  displayBody: string | undefined,
+  pillsMeta: UserMessagePillsMeta | undefined,
+): { text: string | null; pillsMeta?: UserMessagePillsMeta } {
+  const visible = visibleUserMessageText(content, displayBody)
+  if (visible === null || displayBody === undefined) return { text: visible }
+  if (pillsMeta && Object.keys(pillsMeta).length > 0) return { text: visible, pillsMeta }
+  return { text: pillBodyText(visible, pillsMeta) }
+}
 
 /**
  * Background-task notifications and interrupts ride the user role in a
@@ -35,7 +51,7 @@ export function splitTranscriptUserItem(item: UserItem): FeedItem[] {
  */
 export function splitLegacyCachedItems(items: FeedItem[]): FeedItem[] {
   return items.flatMap((item) =>
-    item.kind === 'user' && item.id.startsWith('h-') ? splitTranscriptUserItem(item) : [item],
+    item.kind === 'user' && item.id.startsWith('h-') && !item.pillsMeta ? splitTranscriptUserItem(item) : [item],
   )
 }
 
@@ -45,9 +61,7 @@ export function historyToItems(messages: ChatMessage[]): FeedItem[] {
   for (const message of messages) {
     if (message.role === 'user') {
       const urls = (message.images ?? []).map((image) => image.url).filter(Boolean)
-      const visible = visibleUserMessageText(message.content, message.displayBody)
-      const text =
-        visible !== null && message.displayBody !== undefined ? pillBodyText(visible, message.pillsMeta) : visible
+      const { text, pillsMeta } = userBubbleBody(message.content, message.displayBody, message.pillsMeta)
       // Context-only text is hidden, but images sent with it still show.
       if (text === null && urls.length === 0) continue
       const item: UserItem = {
@@ -56,6 +70,7 @@ export function historyToItems(messages: ChatMessage[]): FeedItem[] {
         text: text ?? '',
         at: message.timestamp,
         images: urls.length > 0 ? urls : undefined,
+        ...(pillsMeta ? { pillsMeta } : {}),
       }
       // Only provider transcript text is classified. A typed displayBody that
       // starts with a marker such as "[Request interrupted by user]" is the

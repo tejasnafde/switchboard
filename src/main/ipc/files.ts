@@ -23,6 +23,7 @@ import { writeFileSafe, deleteFileSafe } from '../files/writing'
 import { createMainLogger as createLogger } from '../logger'
 import { currentBackendRequestContext } from '../backend/request-context'
 import { PREVIEW_MAX_BYTES, isHtmlPreviewPath } from '@shared/html-preview'
+import { linkedDependencyAt } from '../hub/hub-deps'
 
 const log = createLogger('ipc:files')
 
@@ -64,6 +65,12 @@ export async function resolveWithinRepo(repoRoot: string, subPath: string): Prom
     throw new Error(`Path escapes repo root via symlink: ${subPath}`)
   }
   return candidate
+}
+
+/** A child chat's linked dependency folder is the main checkout's: a write there edits every chat's copy. */
+function assertNotLinkedDependency(candidate: string): void {
+  const link = linkedDependencyAt(candidate)
+  if (link) throw new Error(`Not permitted: ${link} is linked to the main checkout's dependencies`)
 }
 
 async function assertRemoteMutationAllowed(candidate: string): Promise<void> {
@@ -112,6 +119,7 @@ export function registerFilesHandlers(host: BackendHost): void {
           return { ok: false, error: `File too large to write (cap ${MAX_WRITE_BYTES} bytes)` }
         }
         const abs = await resolveWithinRepo(repoRoot, subPath)
+        assertNotLinkedDependency(abs)
         await assertRemoteMutationAllowed(abs)
         // A JSON transport sends an omitted argument as null.
         const res = await writeFileSafe(abs, content, {
@@ -131,6 +139,7 @@ export function registerFilesHandlers(host: BackendHost): void {
     async (repoRoot: string, subPath: string, expected?: { content: string } | null) => {
       try {
         const abs = await resolveWithinRepo(repoRoot, subPath)
+        assertNotLinkedDependency(abs)
         await assertRemoteMutationAllowed(abs)
         return await deleteFileSafe(abs, expected?.content)
       } catch (err) {

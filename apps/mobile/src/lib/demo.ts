@@ -9,11 +9,13 @@ import { useConnectionsStore } from '../stores/connections'
 import { useOutboxStore } from '../stores/outbox'
 import { usePrefsStore } from '../stores/prefs'
 import { useReviewsStore } from '../stores/reviews'
+import { useSavedProjectsStore } from '../stores/saved-projects'
 
 export function leaveDemo(): void {
   useConnectionsStore.getState().stopDemo()
   useChatStore.getState().forgetConnection(DEMO_CONNECTION_ID)
   usePrefsStore.setState((s) => ({ threads: withoutDemo(s.threads), prFilters: withoutDemo(s.prFilters) }))
   useReviewsStore.setState((s) => ({ byConnection: withoutDemo(s.byConnection) }))
+  useSavedProjectsStore.getState().forget(DEMO_CONNECTION_ID)
   useOutboxStore.setState((s) => ({ messages: s.messages.filter((m) => !isDemoConnection(m.connectionId)) }))
 }
