@@ -1,14 +1,14 @@
 /**
- * The parent tools on the Switchboard MCP server: `start_children` and
- * `list_children`. Only a chat that is not an open child gets them, and only
- * while the `hub_children` flag is on (the registry decides when it builds a
- * chat's tool list). Starting is `HubStarter`'s; this binds it to MCP and
- * gathers what `list_children` reports.
+ * The hub tools on the Switchboard MCP server, only while the `hub_children`
+ * flag is on (the registry decides when it builds a chat's tool list). A chat
+ * that is not an open child gets the parent tools `start_children` and
+ * `list_children`; an open child gets `own_dependencies`. Starting is
+ * `HubStarter`'s; this binds it to MCP and gathers what `list_children` reports.
  */
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { HUB_MAX_TASKS_PER_BATCH, parseHubTasks } from '@shared/hub'
-import { RUNTIME_MODES, type RuntimeEvent } from '@shared/provider-events'
+import { RUNTIME_MODES, type RuntimeEvent, type RuntimeMode } from '@shared/provider-events'
 import { getConversationById, getLimitResume, listHubChildren, listPendingHubWakes } from '../db/database'
 import type { ChatResources } from '../hub/hub-measure'
 import type { HubParentContext, HubStarter } from '../hub/hub-start'
@@ -20,6 +20,7 @@ const execFileP = promisify(execFile)
 
 export const START_CHILDREN_TOOL = 'start_children'
 export const LIST_CHILDREN_TOOL = 'list_children'
+export const OWN_DEPENDENCIES_TOOL = 'own_dependencies'
 
 /** The hub paragraph of the MCP instructions, for a chat that has the parent tools. Kept short: every such chat pays for it. */
 export const HUB_INSTRUCTIONS = [
@@ -178,6 +179,31 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
             2,
           ),
         )
+      },
+    },
+  ]
+}
+
+export interface ChildHubMcpToolContext {
+  threadId: string
+  runtimeMode(): RuntimeMode
+  starter: Pick<HubStarter, 'ownDependencies'>
+}
+
+/** The tools of an open child. */
+export function buildChildHubMcpTools(ctx: ChildHubMcpToolContext): McpTool[] {
+  return [
+    {
+      name: OWN_DEPENDENCIES_TOOL,
+      description:
+        "Replace this worktree's linked dependency folders (node_modules linked to the main checkout) with your own " +
+        'copy. Call it before you install, remove, update or rebuild packages; a change through a link reaches the ' +
+        'main checkout and every other chat, and stops this chat.',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      annotations: { title: 'Own dependencies', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      async call() {
+        if (ctx.runtimeMode() === 'plan') return toolText('Plan mode does not change dependency folders.', true)
+        return ctx.starter.ownDependencies(ctx.threadId)
       },
     },
   ]
