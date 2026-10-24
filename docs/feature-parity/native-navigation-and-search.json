@@ -13,7 +13,7 @@
     },
     "reactNativeIos": {
       "status": "not_applicable",
-      "reason": "This slice restores native Android navigation parity without changing the existing React Native navigation behavior."
+      "reason": "This slice restores native Android navigation parity without changing the existing React Native navigation behavior. The iOS message search screen is tracked in message-search.json."
     },
     "nativeAndroid": {
       "status": "implemented",
