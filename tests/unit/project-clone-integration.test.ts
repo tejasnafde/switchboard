@@ -305,8 +305,14 @@ describe('a clone cut off by a restart', () => {
     expect(readFileSync(join(elsewhere, 'keep.txt'), 'utf8')).toBe('keep')
   })
 
+  it('leaves a folder with the same device and inode but another birth time', async () => {
+    const { dest, entry } = await leaveHalfClone('reborn', { createdFolder: true })
+    expect(await removePartialClone({ ...entry, birth: String(BigInt(entry.birth) + 1n) })).toBe('not-ours')
+    expect(readFileSync(join(dest, '.git', 'HEAD'), 'utf8')).toBe('ref: refs/heads/main\n')
+  })
+
   it('refuses a journal path that is not absolute and normal, or is the home folder', async () => {
-    const base = { dev: '1', ino: '1', createdFolder: true, addedProject: false }
+    const base = { dev: '1', ino: '1', birth: '1', createdFolder: true, addedProject: false }
     expect(await removePartialClone({ ...base, path: 'relative/x' })).toBe('not-ours')
     expect(await removePartialClone({ ...base, path: `${root}/a/../b` })).toBe('not-ours')
     expect(await removePartialClone({ ...base, path: '/' })).toBe('not-ours')

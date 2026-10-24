@@ -18,6 +18,12 @@ export interface CloneJournalEntry {
   /** `lstat(path, { bigint: true })` of the folder at the start, as decimal strings. */
   dev: string
   ino: string
+  /**
+   * The folder's birth time in ns, or '0' where the file system has none. An
+   * inode number can be reused (ext4), so a new folder made at the same path
+   * after a restart could carry the old one's device and inode.
+   */
+  birth: string
   /** False when the folder already existed (empty): then only its contents are removed. */
   createdFolder: boolean
   /** False when the path was already a project: then the project row stays. */
@@ -86,14 +92,15 @@ function isEntry(value: unknown): value is CloneJournalEntry {
     typeof e.path === 'string' &&
     typeof e.dev === 'string' &&
     typeof e.ino === 'string' &&
+    typeof e.birth === 'string' &&
     typeof e.createdFolder === 'boolean' &&
     typeof e.addedProject === 'boolean'
   )
 }
 
-export async function folderIdentity(path: string): Promise<{ dev: string; ino: string }> {
+export async function folderIdentity(path: string): Promise<{ dev: string; ino: string; birth: string }> {
   const stat = await fs.lstat(path, { bigint: true })
-  return { dev: stat.dev.toString(), ino: stat.ino.toString() }
+  return { dev: stat.dev.toString(), ino: stat.ino.toString(), birth: stat.birthtimeNs.toString() }
 }
 
 export type PartialCloneOutcome = 'removed' | 'missing' | 'not-ours'
@@ -101,7 +108,7 @@ export type PartialCloneOutcome = 'removed' | 'missing' | 'not-ours'
 /**
  * Remove what a clone left at `entry.path`, but only when the folder there is
  * still the one the entry names: a real folder (not a link) with the same
- * device and inode, below the root and not the home folder. A folder that
+ * device, inode and birth time, below the root and not the home folder. A folder that
  * existed before the clone is emptied, not removed.
  */
 export async function removePartialClone(entry: CloneJournalEntry): Promise<PartialCloneOutcome> {
@@ -117,7 +124,12 @@ export async function removePartialClone(entry: CloneJournalEntry): Promise<Part
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return 'missing'
     throw err
   }
-  if (!stat.isDirectory() || stat.dev.toString() !== entry.dev || stat.ino.toString() !== entry.ino) {
+  if (
+    !stat.isDirectory() ||
+    stat.dev.toString() !== entry.dev ||
+    stat.ino.toString() !== entry.ino ||
+    stat.birthtimeNs.toString() !== entry.birth
+  ) {
     log.warn('the folder is not the one the clone made; leaving it', { path })
     return 'not-ours'
   }
