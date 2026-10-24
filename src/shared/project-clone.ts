@@ -7,10 +7,13 @@
  * Channels (`ProjectCloneChannels`) need the `terminal` scope: a clone runs
  * git with a caller's URL, and the ignored-file reads and writes carry
  * secrets. The target needs `PROJECT_CLONE_CAPABILITY`; an older one is
- * refused before anything starts.
+ * refused before anything starts. A folder other than the default also needs
+ * `PROJECT_CLONE_FOLDER_CAPABILITY`: an older target drops `path` and would
+ * clone into `~/projects/<name>` instead, so the desktop refuses first.
  */
 
 export const PROJECT_CLONE_CAPABILITY = 'project_clone_v1'
+export const PROJECT_CLONE_FOLDER_CAPABILITY = 'project_clone_folder_v1'
 
 /** Ignored files larger than this are not offered. */
 export const IGNORED_FILE_MAX_BYTES = 1024 * 1024
@@ -64,6 +67,11 @@ export interface CloneRequest {
   remoteBranch: string | null
   /** Folder name under the target's projects folder. */
   name: string
+  /**
+   * The folder to clone into, absolute or `~/`-relative, on the target.
+   * Absent means `~/projects/<name>`. Needs `PROJECT_CLONE_FOLDER_CAPABILITY`.
+   */
+  path?: string
 }
 
 export type CloneStartResult = { ok: true; path: string } | { ok: false; error: string }
@@ -72,9 +80,13 @@ export type CloneStatus =
   | { phase: 'cloning'; line: string }
   | { phase: 'done'; branch: string | null }
   | { phase: 'failed'; error: string }
+  /** Not a clone this backend knows: an older backend's answer after a restart. */
   | { phase: 'unknown' }
 
 export type IgnoredReadResult = { ok: true; content: string } | { ok: false; error: string }
+
+export const INTERRUPTED_CLONE_MESSAGE =
+  'Switchboard restarted on that machine during the clone, so the clone did not finish. Try again.'
 
 export const NO_REMOTE_MESSAGE =
   'This project has no git remote, so the other machine has nothing to clone from. Add a remote and push, then try again.'
@@ -153,6 +165,33 @@ export function cloneFolderName(projectPath: string): string {
 
 export function isValidCloneFolderName(name: string): boolean {
   return /^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$/.test(name)
+}
+
+/** The folder the dialog offers, and the one a request without `path` clones into. */
+export function defaultCloneTarget(name: string): string {
+  return `~/projects/${name}`
+}
+
+/**
+ * Why a target folder cannot be used, or null when it can. It is absolute or
+ * starts with `~/`, names at least one folder below the root or home, and has
+ * no control characters, no `.` or `..` part, and no part that starts with
+ * `-` (it would read as an option to git). Checked on the desktop for
+ * feedback and again on the target, which is the check that counts.
+ */
+export function cloneTargetPathProblem(path: string): string | null {
+  if (!path) return 'Enter a folder.'
+  if (path.length > 1024) return 'That folder path is too long.'
+  if (/[\x00-\x1f\x7f]/.test(path)) return 'The folder path has a control character.'
+  if (!path.startsWith('/') && !path.startsWith('~/')) return 'Use a full path, or one that starts with ~/.'
+  const parts = path
+    .slice(path.startsWith('~/') ? 2 : 1)
+    .split('/')
+    .filter(Boolean)
+  if (parts.length === 0) return 'Name a folder below the root or home folder.'
+  if (parts.some((part) => part === '.' || part === '..')) return 'The folder path cannot have . or .. in it.'
+  if (parts.some((part) => part.startsWith('-'))) return 'No part of the folder path can start with -.'
+  return null
 }
 
 /**
