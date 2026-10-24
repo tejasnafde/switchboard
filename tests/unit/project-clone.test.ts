@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   chooseCloneRemote,
   cloneFolderName,
+  cloneTargetPathProblem,
+  defaultCloneTarget,
   isSafeCloneUrl,
   isNetworkCloneUrl,
   isTextContent,
@@ -106,5 +108,23 @@ describe('clone request checks', () => {
   it('keeps every clone channel away from a phone', () => {
     expect(isChannelAllowed(['chat'], 'project-clone:read-ignored')).toBe(false)
     expect(isChannelAllowed(['chat', 'terminal', 'admin'], 'project-clone:clone')).toBe(true)
+  })
+})
+
+describe('cloneTargetPathProblem', () => {
+  it('takes an absolute or ~/ path, including the default', () => {
+    for (const path of [defaultCloneTarget('app'), '/srv/code/app', '~/a b/c.d', '/opt/app/']) {
+      expect(cloneTargetPathProblem(path)).toBeNull()
+    }
+  })
+
+  it('refuses a relative, option-like, dotted, control-character or empty path', () => {
+    for (const path of ['', 'code/app', '~', '~user/app', '/', '~/', '//', '~/-rf', '/srv/--x/app', '~/a/../b']) {
+      expect(cloneTargetPathProblem(path)).not.toBeNull()
+    }
+    expect(cloneTargetPathProblem('~/./a')).not.toBeNull()
+    expect(cloneTargetPathProblem('/srv/a\nb')).not.toBeNull()
+    expect(cloneTargetPathProblem('/srv/a\u0000b')).not.toBeNull()
+    expect(cloneTargetPathProblem(`/${'a'.repeat(1100)}`)).not.toBeNull()
   })
 })
