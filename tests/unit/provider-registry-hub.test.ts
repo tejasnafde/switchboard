@@ -159,5 +159,7 @@ describe('child chats in the registry', () => {
     expect(names('child1')).not.toContain('start_children')
     expect(names('child1')).not.toContain('list_children')
     expect(mcp.opened.get('child1')!.instructions).toBeUndefined()
+    expect(names('child1')).toContain('own_dependencies')
+    expect(names('parent1')).not.toContain('own_dependencies')
   })
 })

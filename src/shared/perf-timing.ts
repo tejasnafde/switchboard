@@ -24,6 +24,9 @@ export const PERF_THRESHOLDS = {
   'hub.start-child': 0,
   'hub.child-turn': 0,
   'hub.resources': 0,
+  // Each child turn end; the changed outcome also logs a warning.
+  'hub.deps-check': 200,
+  'hub.own-deps': 0,
   ipc: 200,
 } as const
 

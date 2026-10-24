@@ -6,14 +6,19 @@ vi.mock('../../src/main/db/provider-instances', () => ({
 }))
 
 import {
+  addProject,
+  createConversation,
   getHubBatch,
   getHubChild,
   getSetting,
   insertHubChild,
   listHubChildren,
   listPendingHubWakes,
+  setConversationWorktree,
   setSetting,
+  updateHubChild,
 } from '../../src/main/db/database'
+import { linkedDependencyAt, untrackDependencyLinks, type ChildDepsState } from '../../src/main/hub/hub-deps'
 import { HubStarter, type HubParentContext, type HubStartHost, type HubStartIo } from '../../src/main/hub/hub-start'
 import type { HubTask } from '../../src/shared/hub'
 import type { WorktreeCreationRequest } from '../../src/shared/worktree-creation'
@@ -21,12 +26,21 @@ import type { UserTurnSubmissionV1 } from '../../src/shared/provider-events'
 
 const GIB = 1024 ** 3
 
-function harness(opts: { failWorktree?: (r: WorktreeCreationRequest) => boolean; freeBytes?: number } = {}) {
+function harness(
+  opts: {
+    failWorktree?: (r: WorktreeCreationRequest) => boolean
+    freeBytes?: number
+    depsMode?: 'link' | 'clone' | 'install'
+    problems?: () => string[]
+  } = {},
+) {
   const started: string[] = []
   const turns: UserTurnSubmissionV1[] = []
   const cards: string[] = []
   const rows: string[] = []
-  const cloned: string[] = []
+  const prepared: string[] = []
+  const stopped: string[] = []
+  const owned: string[] = []
   const host: HubStartHost = {
     async createWorktree(request) {
       if (opts.failWorktree?.(request)) throw new Error('disk on fire')
@@ -48,21 +62,40 @@ function harness(opts: { failWorktree?: (r: WorktreeCreationRequest) => boolean;
     announceRow(_parentId, row) {
       rows.push(row.content)
     },
+    async stopChild(childId) {
+      stopped.push(childId)
+    },
   }
   const io: Partial<HubStartIo> = {
     freeBytes: async () => opts.freeBytes ?? 100 * GIB,
     checkoutBytes: async () => GIB / 2,
     dirBytes: async () => GIB,
-    dependencyDirs: async () => ['node_modules', 'apps/mobile/node_modules'],
-    cloneDependencyDir: async (_p, wt, dir) => {
-      cloned.push(`${wt}/${dir}`)
-      return true
+    planDeps: async () =>
+      ['node_modules', 'apps/mobile/node_modules'].map((path) => ({
+        path,
+        pkgDir: path.replace(/\/?node_modules$/, ''),
+        mode: opts.depsMode ?? 'link',
+        reason: null,
+      })),
+    prepareDeps: async (_p, wt, plans) => {
+      prepared.push(wt)
+      return { folders: plans.map((p) => ({ ...p, target: `/repo/${p.path}`, stamp: 's', lock: 'l' })) }
+    },
+    checkDeps: async () => opts.problems?.() ?? [],
+    ownDeps: async (_p, wt, state: ChildDepsState) => {
+      owned.push(wt)
+      return {
+        state: {
+          folders: state.folders.map((f) => ({ path: f.path, pkgDir: f.pkgDir, mode: 'clone' as const, reason: null })),
+        },
+        lines: state.folders.map((f) => `${f.path}: now your own copy.`),
+      }
     },
     isMainCheckout: async () => true,
     commitOf: async (_cwd, ref) => (ref === 'missing' ? null : 'a'.repeat(40)),
   }
   const starter = new HubStarter(host, getSetting, io)
-  return { starter, started, turns, cards, rows, cloned }
+  return { starter, started, turns, cards, rows, prepared, stopped, owned }
 }
 
 const parent = (mode: HubParentContext['mode']): HubParentContext => ({
@@ -116,9 +149,10 @@ describe('HubStarter', () => {
     await settle()
     await settle()
     expect(h.started.map((s) => s.split(':').slice(1).join(':'))).toEqual(['claude:auto', 'codex:auto', 'claude:auto'])
-    // Every dependency folder is cloned before the first turn.
-    expect(h.cloned).toHaveLength(6)
+    // Every child's dependency folders are ready before its first turn.
+    expect(h.prepared).toHaveLength(3)
     expect(h.turns[0]!.providerText).toContain('<switchboard-hub-brief>')
+    expect(h.turns[0]!.providerText).toContain('own_dependencies')
     expect(listHubChildren('agent_parent').every((c) => c.phase === 'open')).toBe(true)
   })
 
@@ -246,5 +280,81 @@ describe('HubStarter', () => {
     h.starter.onTurnEnded(id, { usedTokens: 1 })
     h.starter.onTurnEnded(id, { usedTokens: 2 })
     expect(h.starter.lastTurnOf(id)?.usedTokens).toBe(2)
+  })
+
+  it('counts a clone at 5% of its folder and an install at the whole folder in the disk check', async () => {
+    // 2 folders of 1 GiB each: a link needs nothing, a clone about 0.1 GiB, an install 2 GiB.
+    const free = 5 * GIB + GIB / 2 + GIB / 4
+    expect(
+      text(await harness({ freeBytes: free, depsMode: 'link' }).starter.propose(parent('auto'), [task('A')])),
+    ).toContain('Starting 1')
+    createMigratedDb()
+    expect(
+      text(await harness({ freeBytes: free, depsMode: 'clone' }).starter.propose(parent('auto'), [task('A')])),
+    ).toContain('Starting 1')
+    createMigratedDb()
+    expect(
+      text(await harness({ freeBytes: free, depsMode: 'install' }).starter.propose(parent('auto'), [task('A')])),
+    ).toContain('Not enough disk')
+  })
+
+  it('stops a child that changed its shared dependencies, with one blocked wake', async () => {
+    let problems: string[] = []
+    const h = harness({ problems: () => problems })
+    await h.starter.propose(parent('auto'), [task('A')])
+    for (let i = 0; i < 6; i++) await settle()
+    const id = listHubChildren('agent_parent')[0]!.childId
+    h.starter.onTurnEnded(id, { usedTokens: 1 })
+    await settle()
+    expect(h.stopped).toEqual([])
+    problems = ['the packages in node_modules were installed or removed']
+    h.starter.onTurnEnded(id, { usedTokens: 2 })
+    h.starter.onTurnEnded(id, { usedTokens: 3 })
+    for (let i = 0; i < 3; i++) await settle()
+    expect(h.stopped).toEqual([id])
+    const wakes = listPendingHubWakes('agent_parent')
+    expect(wakes).toHaveLength(1)
+    expect(wakes[0]).toMatchObject({ kind: 'blocked', childId: id })
+    expect(wakes[0]!.summary).toContain('Changed shared dependencies')
+    untrackDependencyLinks(id)
+  })
+
+  it('own_dependencies replaces the links and lifts the write guard', async () => {
+    const h = harness()
+    await h.starter.propose(parent('auto'), [task('A')])
+    for (let i = 0; i < 6; i++) await settle()
+    const id = listHubChildren('agent_parent')[0]!.childId
+    expect(linkedDependencyAt(`/wt/${id}/node_modules/x.js`)).toBe(`/wt/${id}/node_modules`)
+    addProject('/repo', 'repo')
+    createConversation(id, '/repo', 'claude-code', 'A')
+    setConversationWorktree(id, `/wt/${id}`, `hub/${id}`)
+    const res = await h.starter.ownDependencies(id)
+    expect(text(res)).toContain('node_modules: now your own copy.')
+    expect(h.owned).toEqual([`/wt/${id}`])
+    expect(getHubChild(id)!.depsMode).toBe('clone')
+    expect(linkedDependencyAt(`/wt/${id}/node_modules/x.js`)).toBeNull()
+    expect(text(await h.starter.ownDependencies(id))).toContain('no linked dependency folders')
+  })
+
+  it('tracks the links of open children again after a restart', () => {
+    insertHubChild({
+      childId: 'agent_open',
+      parentId: 'agent_parent',
+      batchId: 'b0',
+      ordinal: 0,
+      title: 'Open',
+      brief: 'b',
+      location: 'worktree',
+      grantedMode: 'auto',
+      depsMode: 'link',
+      depsJson: JSON.stringify({ folders: [{ path: 'node_modules', pkgDir: '', mode: 'link', reason: null }] }),
+    })
+    updateHubChild('agent_open', { phase: 'open' })
+    addProject('/repo', 'repo')
+    createConversation('agent_open', '/repo', 'claude-code', 'Open')
+    setConversationWorktree('agent_open', '/wt/open', 'hub/open')
+    harness().starter.recoverInterrupted()
+    expect(linkedDependencyAt('/wt/open/node_modules/a.js')).toBe('/wt/open/node_modules')
+    untrackDependencyLinks('agent_open')
   })
 })
