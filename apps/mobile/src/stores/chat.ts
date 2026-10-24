@@ -950,7 +950,10 @@ export const useChatStore = create<ChatState>()(
         // 'running' would spin for a turn that finished while the app was
         // closed; 'idle' would claim a connection we have not made.
         state.threads = Object.fromEntries(
-          Object.entries(state.threads).map(([key, t]) => [key, { ...t, status: 'connecting' as const, cached: true }]),
+          Object.entries(state.threads).map(([key, t]) => [
+            key,
+            { ...t, status: 'connecting' as const, cached: true, items: stopRetries(t.items) },
+          ]),
         )
         resolveCache()
       },
