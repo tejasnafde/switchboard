@@ -624,8 +624,9 @@ export class HubStarter {
   async ownDependencies(threadId: string): Promise<McpToolResult> {
     const childId = resolveRootThreadId(threadId)
     const child = getHubChild(childId)
-    const worktree = getConversationById(childId)?.worktree_path
-    const main = getConversationById(childId)?.project_path
+    const conv = getConversationById(childId)
+    const worktree = conv?.worktree_path
+    const main = conv?.project_path
     if (!child || !worktree || !main) return toolText('This chat has no linked dependency folders.')
     const state = parseChildDeps(child.depsJson)
     if (linkedFolders(state).length === 0) return toolText('This chat has no linked dependency folders.')
@@ -818,7 +819,7 @@ function defaultIo(): HubStartIo {
       dirBytesCache.set(path, { bytes, at: Date.now() })
       return bytes
     },
-    planDeps: (projectPath, baseSha, setting) => planChildDeps(projectPath, baseSha, setting),
+    planDeps: planChildDeps,
     prepareDeps: prepareChildDeps,
     checkDeps: checkChildDeps,
     ownDeps: ownChildDeps,
