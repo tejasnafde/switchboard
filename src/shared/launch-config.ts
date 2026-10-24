@@ -30,7 +30,9 @@ export interface WorktreeSetupConfig {
 }
 
 export interface WorktreeLaunchConfig {
-  setup: WorktreeSetupConfig
+  setup?: WorktreeSetupConfig
+  /** More folders a child worktree links to the main checkout (`vendor/bundle`, `Pods`), relative to the project. */
+  link?: string[]
 }
 
 /**
@@ -174,12 +176,18 @@ export function serializeLaunchConfigFile(config: LaunchConfigFile): string {
   const obj: Record<string, unknown> = {}
 
   if (config.worktree) {
-    const setup: Record<string, string> = {
-      default_policy: config.worktree.setup.defaultPolicy,
-      startup_policy: config.worktree.setup.startupPolicy,
+    const worktree: Record<string, unknown> = {}
+    if (config.worktree.setup) {
+      const setup: Record<string, string> = {
+        default_policy: config.worktree.setup.defaultPolicy,
+        startup_policy: config.worktree.setup.startupPolicy,
+      }
+      if (config.worktree.setup.command) setup.command = config.worktree.setup.command
+      worktree.setup = setup
     }
-    if (config.worktree.setup.command) setup.command = config.worktree.setup.command
-    obj.worktree = { setup }
+    if (config.worktree.link?.length) worktree.link = config.worktree.link
+    // An empty block would not parse back (`worktree.setup must be an object`).
+    if (Object.keys(worktree).length > 0) obj.worktree = worktree
   }
 
   const configs = config.configs ?? {}
@@ -209,7 +217,9 @@ function parseWorktreeConfig(raw: unknown): WorktreeLaunchConfig | undefined {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     throw new Error('worktree must be an object')
   }
-  const setupRaw = (raw as Record<string, unknown>).setup
+  const { setup: setupRaw, link: linkRaw } = raw as Record<string, unknown>
+  const link = parseWorktreeLink(linkRaw)
+  if (setupRaw === undefined && link) return { link }
   if (typeof setupRaw !== 'object' || setupRaw === null || Array.isArray(setupRaw)) {
     throw new Error('worktree.setup must be an object')
   }
@@ -232,7 +242,25 @@ function parseWorktreeConfig(raw: unknown): WorktreeLaunchConfig | undefined {
       defaultPolicy,
       startupPolicy,
     },
+    ...(link ? { link } : {}),
   }
+}
+
+/** `worktree.link`: relative paths inside the project, with no `..` part and no trailing slash. */
+function parseWorktreeLink(raw: unknown): string[] | undefined {
+  if (raw === undefined) return undefined
+  if (!Array.isArray(raw)) throw new Error('worktree.link must be a list of paths')
+  return raw.map((entry) => {
+    const path = typeof entry === 'string' ? entry.trim().replace(/\/+$/, '') : ''
+    if (
+      !path ||
+      path.startsWith('/') ||
+      /^[A-Za-z]:/.test(path) ||
+      path.split(/[\\/]/).some((p) => p === '..' || p === '.git')
+    )
+      throw new Error(`worktree.link: ${JSON.stringify(entry)} must be a relative path inside the project`)
+    return path
+  })
 }
 
 /**

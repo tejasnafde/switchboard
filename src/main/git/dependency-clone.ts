@@ -228,7 +228,6 @@ export async function cloneDependencyDirs(
   const dir = options.dir ?? DEPENDENCY_DIR_NAME
   const src = join(sourceRoot, dir)
   const dst = join(worktreeRoot, dir)
-  const platform = options.platform ?? osPlatform()
   const accessFn = options.access ?? defaultAccess
 
   if (!(await pathExists(src, accessFn))) return false
@@ -237,46 +236,10 @@ export async function cloneDependencyDirs(
   const isEnabled = options.isEnabled ?? isDependencyCloneEnabled
   if (!isEnabled()) return false
 
-  if (!SUPPORTED_PLATFORMS.has(platform)) {
-    log.info(`dependency clone skipped: unsupported platform ${platform}`)
-    return false
-  }
-
-  const sameDevice = options.sameDevice ?? checkSameDevice
-  if (!(await sameDevice(src, worktreeRoot))) {
-    log.info(`dependency clone skipped: source and worktree are on different devices/volumes`)
-    return false
-  }
-
-  if (platform === 'darwin') {
-    const isApfs = options.isApfs ?? checkIsApfs
-    if (!(await isApfs(worktreeRoot))) {
-      log.info(
-        `dependency clone skipped: destination filesystem is not confirmed APFS (cp -c silently falls back to a full copy otherwise)`,
-      )
-      return false
-    }
-  }
-
   const suffix = (options.stagingSuffix ?? (() => randomUUID().slice(0, 8)))()
   const staging = `${dst}.sb-clone-${suffix}`
-  const args = cloneArgsFor(platform, src, staging)
-  if (!args) {
-    log.info(`dependency clone skipped: no clone strategy for platform ${platform}`)
-    return false
-  }
-
-  const runner = options.runner ?? defaultRunner
   const startedAt = Date.now()
-  log.info(`dependency clone starting: ${src} -> ${staging} (${platform}, will move to ${dst} on success)`)
-  try {
-    await runner('cp', args)
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    log.warn(`dependency clone failed after ${Date.now() - startedAt}ms, removing staging dir: ${msg}`)
-    await removeStaging(staging)
-    return false
-  }
+  if (!(await cloneFolderTo(src, staging, worktreeRoot, options))) return false
 
   // The install this clone raced against may have finished, or started
   // and finished, while `cp` was running. Adopt the staged clone only if
@@ -295,6 +258,60 @@ export async function cloneDependencyDirs(
     const msg = err instanceof Error ? err.message : String(err)
     log.warn(`dependency clone: failed to move staged clone into place, removing it: ${msg}`)
     await removeStaging(staging)
+    return false
+  }
+}
+
+/**
+ * Copy-on-write clone of the folder `src` to the new path `dst`, which must not
+ * exist yet, on the volume of `destRoot`. The same checks as
+ * `cloneDependencyDirs` (platform, same device, APFS): never a full copy.
+ * Resolves true when it cloned; a failed clone leaves nothing at `dst`.
+ */
+export async function cloneFolderTo(
+  src: string,
+  dst: string,
+  destRoot: string,
+  options: Pick<CloneDependencyDirsOptions, 'runner' | 'platform' | 'sameDevice' | 'isApfs'> = {},
+): Promise<boolean> {
+  const platform = options.platform ?? osPlatform()
+  if (!SUPPORTED_PLATFORMS.has(platform)) {
+    log.info(`dependency clone skipped: unsupported platform ${platform}`)
+    return false
+  }
+
+  const sameDevice = options.sameDevice ?? checkSameDevice
+  if (!(await sameDevice(src, destRoot))) {
+    log.info(`dependency clone skipped: source and worktree are on different devices/volumes`)
+    return false
+  }
+
+  if (platform === 'darwin') {
+    const isApfs = options.isApfs ?? checkIsApfs
+    if (!(await isApfs(destRoot))) {
+      log.info(
+        `dependency clone skipped: destination filesystem is not confirmed APFS (cp -c silently falls back to a full copy otherwise)`,
+      )
+      return false
+    }
+  }
+
+  const args = cloneArgsFor(platform, src, dst)
+  if (!args) {
+    log.info(`dependency clone skipped: no clone strategy for platform ${platform}`)
+    return false
+  }
+
+  const runner = options.runner ?? defaultRunner
+  const startedAt = Date.now()
+  log.info(`dependency clone starting: ${src} -> ${dst} (${platform})`)
+  try {
+    await runner('cp', args)
+    return true
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    log.warn(`dependency clone failed after ${Date.now() - startedAt}ms, removing ${dst}: ${msg}`)
+    await removeStaging(dst)
     return false
   }
 }

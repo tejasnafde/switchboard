@@ -26,6 +26,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { access } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createMainLogger } from './logger'
+import { removeDependencyLinks } from './git/dependency-links'
 import type { WorktreeInfo } from '@shared/kanban'
 import { protectionSource, type WorktreeProtection, type WorktreeProtectionSource } from '@shared/worktree-manager'
 
@@ -103,6 +104,9 @@ export function protectionFor(
  *
  * Also deletes the branch the worktree was on, iff it matches our
  * `kanban/` prefix - leaves user-created branches alone.
+ *
+ * Dependency links into the main checkout (a child chat's `node_modules`)
+ * are unlinked first, so the removal never reaches the main checkout's folders.
  */
 export async function removeWorktree(
   repoPath: string,
@@ -114,6 +118,7 @@ export async function removeWorktree(
   if (opts.force) args.push('--force')
   args.push(worktreePath)
   log.info(`removing worktree: ${worktreePath}${opts.force ? ' (force)' : ''}`)
+  await removeDependencyLinks(worktreePath)
   try {
     await runner(args, repoPath)
   } catch (err) {
