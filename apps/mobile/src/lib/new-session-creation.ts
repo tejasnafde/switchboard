@@ -268,7 +268,9 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
     await options.storage?.remove(intent.connectionId, intent.projectPath)
   }
 
-  const acceptSnapshot = async (snapshot: WorktreeCreationSnapshot): Promise<WorktreeCreationSnapshot> => {
+  const acceptSnapshot = async (snapshot: WorktreeCreationSnapshot): Promise<void> => {
+    // A read that started before an action can answer after it.
+    if (state.snapshot?.creationId === snapshot.creationId && snapshot.revision < state.snapshot.revision) return
     createDisposition = 'unknown'
     const intent = state.intent
     const nextState: MobileNewSessionCreationState = {
@@ -281,7 +283,7 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
     if (disposed) {
       state = nextState
       await persist()
-      return snapshot
+      return
     }
     publish(nextState)
     if (snapshot.status === 'ready' && snapshot.worktreeId && snapshot.worktreePath && snapshot.branch && intent) {
@@ -307,7 +309,6 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
     } else {
       await persist()
     }
-    return snapshot
   }
 
   const classifyFailure = async (error: unknown): Promise<'ambiguous' | 'definite_rejection'> => {
@@ -397,10 +398,35 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
       )
     } catch (error) {
       if (isMissingWorktreeCreation(error)) {
+        // The backend lost the record, so a resubmitted create restarts its revisions.
+        state = { ...state, snapshot: undefined }
         await submitWorktree()
         return
       }
       createDisposition = await classifyFailure(error)
+    }
+  }
+
+  const sendAction = async (
+    intent: MobileNewSessionIntent,
+    snapshot: WorktreeCreationSnapshot,
+    action: WorktreeCreationRecoveryAction,
+  ): Promise<void> => {
+    const act = options.worktrees.act
+    if (!act) throw new Error('This worktree action is not available.')
+    publish({ ...state, status: 'submitting', error: undefined })
+    try {
+      await acceptSnapshot(
+        await act({
+          creationId: snapshot.creationId,
+          machineId: intent.machineId,
+          expectedRevision: snapshot.revision,
+          action,
+        }),
+      )
+    } catch (error) {
+      // A refused action leaves the creation as it was: keep its status so the title still describes it.
+      if ((await classifyFailure(error)) === 'definite_rejection') publish({ ...state, status: snapshot.status })
     }
   }
 
@@ -501,19 +527,7 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
       }
       const snapshot = state.snapshot
       if (snapshot?.recoveryActions.includes('retry') && options.worktrees.act) {
-        publish({ ...state, status: 'submitting', error: undefined })
-        try {
-          await acceptSnapshot(
-            await options.worktrees.act({
-              creationId: snapshot.creationId,
-              machineId: state.intent.machineId,
-              expectedRevision: snapshot.revision,
-              action: 'retry',
-            }),
-          )
-        } catch (error) {
-          await classifyFailure(error)
-        }
+        await sendAction(state.intent, snapshot, 'retry')
         return
       }
       await persist()
@@ -525,22 +539,10 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
     async act(action: WorktreeActAction): Promise<void> {
       const intent = state.intent
       const snapshot = state.snapshot
-      if (!intent || !snapshot || !snapshot.recoveryActions.includes(action) || !options.worktrees.act) {
+      if (!intent || !snapshot || !snapshot.recoveryActions.includes(action)) {
         throw new Error('This worktree action is not available.')
       }
-      publish({ ...state, status: 'submitting', error: undefined })
-      try {
-        await acceptSnapshot(
-          await options.worktrees.act({
-            creationId: snapshot.creationId,
-            machineId: intent.machineId,
-            expectedRevision: snapshot.revision,
-            action,
-          }),
-        )
-      } catch (error) {
-        await classifyFailure(error)
-      }
+      await sendAction(intent, snapshot, action)
     },
 
     async startInProject(): Promise<void> {

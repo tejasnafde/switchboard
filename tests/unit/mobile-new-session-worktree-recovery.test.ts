@@ -146,7 +146,7 @@ describe('mobile new-session worktree recovery actions', () => {
     expect(h.act).not.toHaveBeenCalled()
   })
 
-  it('shows a refused removal as failed with the backend message', async () => {
+  it('keeps the cleanup status and shows the backend message when removal is refused', async () => {
     const h = harness(
       snapshot({ status: 'cleanup_required', phase: 'provisioning', recoveryActions: ['retain', 'remove'] }),
       snapshot(),
@@ -156,8 +156,22 @@ describe('mobile new-session worktree recovery actions', () => {
     await h.coordinator.act('remove')
 
     expect(h.coordinator.getState()).toMatchObject({
-      status: 'failed',
+      status: 'cleanup_required',
       error: 'Remote worktree removal requires the terminal device scope.',
     })
+    expect(newSessionCreationActions(h.coordinator.getState()).progressLabel).toBe('Worktree cleanup required')
+  })
+
+  it('ignores a status read that answers after a newer action result', async () => {
+    const h = harness(
+      snapshot({ status: 'cleanup_required', phase: 'provisioning', recoveryActions: ['retain', 'remove'] }),
+      snapshot({ revision: 2, status: 'cleanup_required', cleanupDisposition: 'removed', recoveryActions: [] }),
+    )
+    await h.coordinator.begin(intent)
+    await h.coordinator.act('remove')
+    await h.coordinator.reconcileAfterReconnect()
+
+    expect(h.coordinator.getState().snapshot).toMatchObject({ revision: 2, cleanupDisposition: 'removed' })
+    expect(newSessionCreationActions(h.coordinator.getState()).canRemove).toBe(false)
   })
 })

@@ -43,7 +43,7 @@
   },
   "verification": {
     "automated": [
-      "Root vitest: mobile-new-session-worktree-recovery (each action offered only when listed, the cleanup and cancel titles, Check status hidden while submitting and after a definite rejection, cancel sent with the snapshot revision and the saved record removed, retain keeps the record while remove is offered, an unoffered action refused, a refused removal shown with the backend message) and the existing mobile-new-session coordinator and integration tests.",
+      "Root vitest: mobile-new-session-worktree-recovery (each action offered only when listed, the cleanup and cancel titles, Check status hidden while submitting and after a definite rejection, cancel sent with the snapshot revision and the saved record removed, retain keeps the record while remove is offered, an unoffered action refused, a refused removal keeps the cleanup status and shows the backend message, a status read that answers after a newer action result is ignored) and the existing mobile-new-session coordinator and integration tests.",
       "Expo jest and tsc: WorktreeCreationCard renders the title, correlation line, error and only the offered buttons, and a tap sends cancel, remove and check status."
     ],
     "hardware": [],
