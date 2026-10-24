@@ -60,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import app.switchboard.mobile.data.remote.PrWriteState
 import app.switchboard.mobile.data.remote.PullRequestDetailState
 import app.switchboard.mobile.domain.reviews.PhonePrStatusLine
 import app.switchboard.mobile.domain.reviews.PhonePullRequests
@@ -113,6 +114,9 @@ fun PullRequestDetailScreen(
     onStartChat: (PrDetail, WorkOnPrPlan) -> Unit,
     onLoadLinkableChats: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Null when the backend has no phone writes; the screen is then unchanged. */
+    writes: PrWriteState? = null,
+    writeActions: PrWriteActions = PrWriteActions(),
 ) {
     var workSheet by rememberSaveable { mutableStateOf(false) }
     var picker by rememberSaveable { mutableStateOf<ChatPicker?>(null) }
@@ -138,6 +142,8 @@ fun PullRequestDetailScreen(
             detail = detail,
             linkedChats = state.linkedChats,
             now = now,
+            writes = writes,
+            writeActions = writeActions,
             onOpenChat = { onOpenChat(it, null) },
             onAskAgent = {
                 val pill = PhonePullRequests.failedChecksPill(detail) ?: return@DetailBody
@@ -151,6 +157,7 @@ fun PullRequestDetailScreen(
             },
             modifier = Modifier.weight(1f),
         )
+        PrWriteNotice(writes?.notice, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -187,6 +194,7 @@ fun PullRequestDetailScreen(
                 }
             }
         }
+        if (writes != null) PrWriteOverlays(writes, detail.summary, writeActions)
         if (workSheet) {
             ModalBottomSheet(onDismissRequest = { workSheet = false }, containerColor = Surface) {
                 WorkOnPrSheet(
@@ -235,6 +243,8 @@ private fun DetailBody(
     detail: PrDetail,
     linkedChats: List<PrLinkChat>,
     now: Long,
+    writes: PrWriteState?,
+    writeActions: PrWriteActions,
     onOpenChat: (PrLinkChat) -> Unit,
     onAskAgent: () -> Unit,
     modifier: Modifier = Modifier,
@@ -342,6 +352,8 @@ private fun DetailBody(
                 ) { Text(if (descriptionOpen) "Show less" else "Show more", color = Accent) }
             }
         }
+
+        if (writes != null) PrConversationsSection(writes, pr, writeActions)
 
         if (linkedChats.isNotEmpty()) {
             SectionLabel("Linked chats", modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))

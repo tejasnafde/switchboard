@@ -135,6 +135,8 @@ room {
 dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.fragment)
 
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)
