@@ -1,0 +1,54 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "new-session-worktree-recovery",
+  "summary": "When a new-session worktree is in progress, fails or is interrupted, the phones show the backend's status and every recovery action it offers. iOS now matches Android: besides Run setup, Skip setup, Retry and Start in current checkout, the card shows \"Check status\" (reads the creation again with worktree-creation:get), \"Keep worktree\" (retain), \"Remove worktree\" (remove) and \"Cancel worktree creation\" (cancel), each only when the snapshot's recoveryActions lists it, sent through worktree-creation:act with the snapshot's revision. The title names the cleanup outcome (Worktree retained for recovery, Worktree removed, Worktree removal was refused, Worktree cleanup required) and a cancellation, and a \"Creation <id>, revision <n>\" line identifies the record. iOS hides Check status while a create call is in flight and after a definite rejection that never reached the backend. A saved creation that ends with nothing left to act on (cancelled, removed, rolled back) is dropped from the phone's storage so it is not restored next time.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop already shows its own worktree creation progress and recovery (WorktreeCreationProgress). This change is the iOS client only."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/new-session-creation.ts",
+        "apps/mobile/src/components/WorktreeCreationCard.tsx",
+        "apps/mobile/src/screens/NewSessionScreen.tsx",
+        "apps/mobile/src/components/__tests__/WorktreeCreationCard.test.tsx",
+        "tests/unit/mobile-new-session-worktree-recovery.test.ts",
+        "tests/unit/mobile-new-session-worktree-integration.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/newsession/NewSessionWorktreePresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/newsession/NewSessionScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/NewSessionCoordinator.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/newsession/NewSessionWorktreePresentationPolicyTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No call, event or field changes. iOS uses the existing worktree-creation:get and worktree-creation:act calls and the WorktreeCreationRecoveryAction values in src/shared/worktree-creation.ts; the backend decides which actions to offer and authorizes them (remote removal still needs the terminal device scope)."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "The saved creation record keeps the same shape. The only change is that iOS deletes the record once the backend reports a finished creation with no recovery action left, so no migration is needed."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "iOS: JavaScript only (no native module, permission or app.json change), so it ships on the OTA lane under the existing fingerprint runtime version. Android is unchanged. No package identity, signing, version, deep link or update channel changes."
+    }
+  },
+  "verification": {
+    "automated": [
+      "Root vitest: mobile-new-session-worktree-recovery (each action offered only when listed, the cleanup and cancel titles, Check status hidden while submitting and after a definite rejection, cancel sent with the snapshot revision and the saved record removed, retain keeps the record while remove is offered, an unoffered action refused, a refused removal keeps the cleanup status and shows the backend message, a status read that answers after a newer action result is ignored) and the existing mobile-new-session coordinator and integration tests.",
+      "Expo jest and tsc: WorktreeCreationCard renders the title, correlation line, error and only the offered buttons, and a tap sends cancel, remove and check status."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The iOS card was not run on an iPhone or a simulator, and not against a live backend: the button wrap, VoiceOver on the live region and the real cancel, retain and remove round trips were not exercised."
+    ]
+  }
+}

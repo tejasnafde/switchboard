@@ -2,6 +2,7 @@ import { hostname } from 'node:os'
 import type { DeviceSession } from '@shared/device-auth'
 import { formatSenderLine, takesSenderLine, type SenderContext, type SenderSurface } from '@shared/sender-line'
 import { listSessions } from '../backend/device-sessions'
+import { devServerWatch } from '../terminal/dev-server-watch'
 import { currentBackendRequestContext, type BackendRequestContext } from '../backend/request-context'
 
 export interface SenderEnvironment {
@@ -9,6 +10,8 @@ export interface SenderEnvironment {
   headless: boolean
   machineName: string
   deviceSession: (id: string) => DeviceSession | undefined
+  /** Dev server addresses seen for a project folder, newest first. */
+  devServers: (projectPath: string | undefined) => string[]
 }
 
 /**
@@ -49,10 +52,22 @@ const liveEnvironment: SenderEnvironment = {
   headless: Boolean(process.env.SWITCHBOARD_REMOTE),
   machineName: hostname(),
   deviceSession: (id) => listSessions().find((s) => s.id === id),
+  devServers: (projectPath) => devServerWatch.serversFor(projectPath),
 }
 
-/** The line for a turn the current request submits, or null when the turn takes none. */
-export function senderLineForTurn(text: string, env: SenderEnvironment = liveEnvironment): string | null {
+/**
+ * The line for a turn the current request submits, or null when the turn takes
+ * none. `projectPath` is the chat's folder; terminals there or under it name
+ * the dev servers.
+ */
+export function senderLineForTurn(
+  text: string,
+  projectPath: string | undefined,
+  env: SenderEnvironment = liveEnvironment,
+): string | null {
   if (!takesSenderLine(text)) return null
-  return formatSenderLine(resolveSenderContext(currentBackendRequestContext(), env))
+  return formatSenderLine({
+    ...resolveSenderContext(currentBackendRequestContext(), env),
+    devServers: env.devServers(projectPath),
+  })
 }

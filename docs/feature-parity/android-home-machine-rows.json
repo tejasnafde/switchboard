@@ -10,7 +10,7 @@
     },
     "reactNativeIos": {
       "status": "not_applicable",
-      "reason": "The iOS app has no separate Home machine list: its Machines screen (ConnectionsScreen.tsx) already uses the shared MachineRow."
+      "reason": "The iOS Home (ConnectionsScreen.tsx, Recents then machines, see ios-home-recents) draws its machine list with the shared MachineRow, the same row as before, so there is no second Home row to align."
     },
     "nativeAndroid": {
       "status": "implemented",
@@ -31,7 +31,10 @@
     },
     "updateRelease": {
       "status": "implemented",
-      "evidence": ["CHANGELOG.md", "docs/store/account-holder-guide.md"]
+      "evidence": [
+        "CHANGELOG.md",
+        "docs/store/account-holder-guide.md"
+      ]
     }
   },
   "verification": {

@@ -10,6 +10,7 @@ import { create } from 'zustand'
 import { ProjectCloneChannels } from '@shared/ipc-channels'
 import {
   cloneFolderName,
+  type CloneRequest,
   type CloneSource,
   type CloneStartResult,
   type CloneStatus,
@@ -70,10 +71,21 @@ export interface ProjectCloneApi {
 export const OLD_TARGET_MESSAGE =
   'Switchboard on that machine is too old to clone a project. Update it, then try again.'
 
-/** Why a machine cannot take the project, or null when it can. */
-export function cloneTargetBlock(supports: boolean | undefined): string | null {
+export const OLD_TARGET_FOLDER_MESSAGE =
+  'Switchboard on that machine is too old to clone into another folder. Update it, or use the default folder.'
+
+/**
+ * Why a machine cannot take the project, or null when it can. A folder other
+ * than the default needs the folder capability too: an older target drops
+ * the folder and would clone into `~/projects/<name>` instead.
+ */
+export function cloneTargetBlock(
+  supports: boolean | undefined,
+  folder?: { custom: boolean; supported: boolean | undefined },
+): string | null {
   if (supports === undefined) return 'That machine is still connecting.'
-  return supports ? null : OLD_TARGET_MESSAGE
+  if (!supports) return OLD_TARGET_MESSAGE
+  return folder?.custom && !folder.supported ? OLD_TARGET_FOLDER_MESSAGE : null
 }
 
 /**
@@ -88,15 +100,19 @@ export async function openProjectOnMachine(
     targetMachineId: string
     source: CloneSource
     files: string[]
+    /** A folder other than the default `~/projects/<name>`; absent for the default. */
+    targetFolder?: string
   },
   api: ProjectCloneApi,
 ): Promise<CloneStartResult> {
-  const { sourceMachineId, projectPath, targetMachineId, source, files } = input
-  const started = await api.invokeOn<CloneStartResult>(targetMachineId, ProjectCloneChannels.CLONE, {
+  const { sourceMachineId, projectPath, targetMachineId, source, files, targetFolder } = input
+  const request: CloneRequest = {
     url: source.url,
     remoteBranch: source.remoteBranch,
     name: cloneFolderName(projectPath),
-  })
+  }
+  if (targetFolder !== undefined) request.path = targetFolder
+  const started = await api.invokeOn<CloneStartResult>(targetMachineId, ProjectCloneChannels.CLONE, request)
   if (!started.ok) return started
   const target = started.path
   const key = cloneKey(targetMachineId, target)

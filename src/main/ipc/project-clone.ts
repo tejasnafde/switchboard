@@ -3,21 +3,25 @@
  * backend answers which remote and branch to clone and which ignored files
  * may be copied, and reads them one at a time. The target backend clones in
  * the background (the desktop polls STATUS, so no invoke waits on a network
- * transfer) and writes the copied files into a clone it made itself.
+ * transfer) and writes the copied files into a clone it made itself. A
+ * clone in progress is recorded in `project-clone-journal.ts`, so one cut off
+ * by a restart is removed on the next start and reads as failed.
  */
 import { execFile, spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { BackendHost } from '../backend/host'
 import { ProjectCloneChannels } from '@shared/ipc-channels'
 import {
   IGNORED_FILE_MAX_BYTES,
   IGNORED_FILE_MAX_COUNT,
+  INTERRUPTED_CLONE_MESSAGE,
   NO_REMOTE_MESSAGE,
   SUBFOLDER_MESSAGE,
   chooseCloneRemote,
+  cloneTargetPathProblem,
   isSafeCloneUrl,
   isTextContent,
   isValidCloneFolderName,
@@ -34,6 +38,8 @@ import { addProject, getProjects, removeProject } from '../db/database'
 import { forgetProjectFavicon } from '../projects/favicon-resolver'
 import { childProcessEnv } from '../shell-env'
 import { resolveWithinRepo } from './files'
+import { userDataDir } from '../runtime'
+import { CloneJournal, folderIdentity, removePartialClone, type CloneJournalEntry } from './project-clone-journal'
 import { createMainLogger } from '../logger'
 
 const log = createMainLogger('ipc:project-clone')
@@ -138,7 +144,7 @@ export async function readIgnoredFile(projectPath: string, relPath: string): Pro
   }
 }
 
-// ponytail: in memory, so a backend restart mid-clone answers 'unknown' and the half clone stays on disk.
+// In memory; a clone in progress is also in the journal, so a restart can clean it up.
 const clones = new Map<string, CloneStatus>()
 
 export function cloneStatus(path: string): CloneStatus {
@@ -146,48 +152,134 @@ export function cloneStatus(path: string): CloneStatus {
 }
 
 export interface CloneDeps {
-  projectsDir: string
+  /** The target's home folder, for `~/` and the default `~/projects/<name>`. */
+  homeDir: string
+  journal: CloneJournal
   /** Resolves when the clone has ended, for tests. */
   onSettled?: (status: CloneStatus) => void
 }
 
+/** The absolute folder a request clones into, or the reason it cannot. */
+export function resolveCloneTarget(
+  request: Pick<CloneRequest, 'name' | 'path'>,
+  homeDir: string,
+): { ok: true; path: string } | { ok: false; error: string } {
+  if (request.path === undefined) {
+    if (!isValidCloneFolderName(request.name))
+      return { ok: false, error: `"${request.name}" is not a usable folder name.` }
+    return { ok: true, path: join(homeDir, 'projects', request.name) }
+  }
+  if (typeof request.path !== 'string') return { ok: false, error: 'Invalid folder.' }
+  const problem = cloneTargetPathProblem(request.path)
+  if (problem) return { ok: false, error: problem }
+  const path = resolve(request.path.startsWith('~/') ? join(homeDir, request.path.slice(2)) : request.path)
+  if (path === resolve(homeDir)) return { ok: false, error: 'Name a folder below the home folder.' }
+  return { ok: true, path }
+}
+
 /**
- * Start a clone into `<projectsDir>/<name>` and list it as a project at once,
- * so a chat can be opened while it runs (the desktop holds the send until it
- * ends). A failed clone removes the folder and the project row.
+ * Claim `dest` for a clone: make it, or take an existing empty folder (not a
+ * link). Answers whether this call made the folder.
  */
-export async function startClone(request: CloneRequest, deps: CloneDeps): Promise<CloneStartResult> {
-  const { url, remoteBranch, name } = request
-  if (!isSafeCloneUrl(url)) return { ok: false, error: 'This remote URL cannot be cloned.' }
-  if (!isValidCloneFolderName(name)) return { ok: false, error: `"${name}" is not a usable folder name.` }
-  if (remoteBranch !== null && !isValidRefName(remoteBranch)) return { ok: false, error: 'Invalid branch name.' }
-  const dest = join(deps.projectsDir, name)
+async function claimCloneFolder(dest: string): Promise<{ ok: true; created: boolean } | { ok: false; error: string }> {
   try {
-    await fs.mkdir(deps.projectsDir, { recursive: true })
+    await fs.mkdir(dirname(dest), { recursive: true })
     // mkdir without recursive fails on an existing folder, which claims the name.
     await fs.mkdir(dest)
+    return { ok: true, created: true }
   } catch (err) {
-    log.warn('creating the clone folder failed', { dest, err: (err as Error).message })
-    if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
-      return { ok: false, error: `${dest} already exists on this machine. Add it as a project, or remove it first.` }
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
+      log.warn('creating the clone folder failed', { dest, err: (err as Error).message })
+      return { ok: false, error: (err as Error).message }
     }
-    return { ok: false, error: (err as Error).message }
   }
-  const listedBefore = getProjects().some((p) => p.path === dest)
-  addProject(dest, name)
+  const stat = await fs.lstat(dest)
+  if (stat.isDirectory() && (await fs.readdir(dest)).length === 0) return { ok: true, created: false }
+  return {
+    ok: false,
+    error: `${dest} already exists on this machine and is not empty. Pick another folder, or add it as a project.`,
+  }
+}
+
+/**
+ * Start a clone into the requested folder (default `~/projects/<name>`) and
+ * list it as a project at once, so a chat can be opened while it runs (the
+ * desktop holds the send until it ends). A failed clone removes what it made:
+ * the folder (or its contents, when the folder was already there and empty)
+ * and the project row.
+ */
+export async function startClone(request: CloneRequest, deps: CloneDeps): Promise<CloneStartResult> {
+  const { url, remoteBranch } = request
+  if (!isSafeCloneUrl(url)) return { ok: false, error: 'This remote URL cannot be cloned.' }
+  if (remoteBranch !== null && !isValidRefName(remoteBranch)) return { ok: false, error: 'Invalid branch name.' }
+  const target = resolveCloneTarget(request, deps.homeDir)
+  if (!target.ok) return target
+  const dest = target.path
+  const previous = clones.get(dest)
+  if (previous?.phase === 'cloning') return { ok: false, error: `A clone into ${dest} is already running.` }
+  // Claimed before the first await, so a second request for the same folder is refused above.
   clones.set(dest, { phase: 'cloning', line: 'Starting the clone' })
+  const refuse = (error: string): CloneStartResult => {
+    if (previous) clones.set(dest, previous)
+    else clones.delete(dest)
+    return { ok: false, error }
+  }
+  const claimed = await claimCloneFolder(dest).catch((err: Error) => {
+    log.warn('claiming the clone folder failed', { dest, err: err.message })
+    return { ok: false as const, error: err.message }
+  })
+  if (!claimed.ok) return refuse(claimed.error)
+  let entry: CloneJournalEntry | null = null
+  try {
+    entry = {
+      path: dest,
+      ...(await folderIdentity(dest)),
+      createdFolder: claimed.created,
+      addedProject: !getProjects().some((p) => p.path === dest),
+    }
+    await deps.journal.add(entry)
+  } catch (err) {
+    // Without the journal entry a restart could not clean up, so do not start.
+    log.warn('writing the clone journal failed', { dest, err: (err as Error).message })
+    if (entry) await removePartialClone(entry).catch((rmErr) => log.warn('removing an unstarted clone folder', rmErr))
+    return refuse((err as Error).message)
+  }
+  const journaled = entry
+  addProject(dest, basename(dest))
   log.info('clone started', { dest, remoteBranch })
   void runClone(url, remoteBranch, dest).then(async (status) => {
     if (status.phase === 'failed') {
-      if (!listedBefore) removeProject(dest)
-      await fs.rm(dest, { recursive: true, force: true }).catch((err) => log.warn('removing a failed clone', err))
+      if (journaled.addedProject) removeProject(dest)
+      await removePartialClone(journaled).catch((err) => log.warn('removing a failed clone', err))
     }
+    await deps.journal.remove(dest).catch((err) => log.warn('dropping a clone journal entry', err))
     forgetProjectFavicon(dest)
     clones.set(dest, status)
     log.info('clone ended', { dest, phase: status.phase })
     deps.onSettled?.(status)
   })
   return { ok: true, path: dest }
+}
+
+/**
+ * After a restart: every journal entry with no clone running in this process
+ * is a clone the last process did not finish. Remove what it made (only when
+ * the folder there is still the one it made), drop the project row it added,
+ * and answer status `failed` for the path, so the desktop can offer a retry.
+ */
+export async function recoverInterruptedClones(journal: CloneJournal): Promise<void> {
+  for (const entry of await journal.read()) {
+    if (clones.get(entry.path)?.phase === 'cloning') continue
+    const outcome = await removePartialClone(entry).catch((err: Error) => {
+      log.warn('removing an interrupted clone failed', { path: entry.path, err: err.message })
+      return 'error' as const
+    })
+    log.info('interrupted clone found', { path: entry.path, outcome })
+    if (outcome === 'error') continue
+    if (entry.addedProject && outcome !== 'not-ours') removeProject(entry.path)
+    clones.set(entry.path, { phase: 'failed', error: INTERRUPTED_CLONE_MESSAGE })
+    await journal.remove(entry.path)
+  }
 }
 
 async function runClone(url: string, remoteBranch: string | null, dest: string): Promise<CloneStatus> {
@@ -252,16 +344,32 @@ export async function writeIgnoredFile(
   }
 }
 
+let recovered: { journal: CloneJournal; done: Promise<void> } | null = null
+
+/** Once per process: handlers are registered again when the desktop window reopens. */
+function cloneJournal(): { journal: CloneJournal; done: Promise<void> } {
+  if (!recovered) {
+    const journal = new CloneJournal(join(userDataDir(), 'project-clones.json'))
+    const done = recoverInterruptedClones(journal).catch((err) => log.warn('recovering interrupted clones failed', err))
+    recovered = { journal, done }
+  }
+  return recovered
+}
+
 export function registerProjectCloneHandlers(host: BackendHost): void {
+  const { journal, done } = cloneJournal()
   host.handle(ProjectCloneChannels.SOURCE, (projectPath: string) => readCloneSource(projectPath))
   host.handle(ProjectCloneChannels.READ_IGNORED, (projectPath: string, relPath: string) =>
     readIgnoredFile(projectPath, relPath),
   )
-  host.handle(ProjectCloneChannels.CLONE, (request: CloneRequest) =>
-    // ponytail: one fixed projects folder; add a setting when someone keeps projects elsewhere.
-    startClone(request, { projectsDir: join(homedir(), 'projects') }),
-  )
-  host.handle(ProjectCloneChannels.STATUS, (path: string) => cloneStatus(path))
+  host.handle(ProjectCloneChannels.CLONE, async (request: CloneRequest) => {
+    await done
+    return startClone(request, { homeDir: homedir(), journal })
+  })
+  host.handle(ProjectCloneChannels.STATUS, async (path: string) => {
+    await done
+    return cloneStatus(path)
+  })
   host.handle(ProjectCloneChannels.WRITE_IGNORED, (projectPath: string, relPath: string, content: string) =>
     writeIgnoredFile(projectPath, relPath, content),
   )

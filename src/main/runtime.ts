@@ -46,3 +46,8 @@ export function appVersion(): string {
   if (isElectron) return electron().app.getVersion()
   return process.env.npm_package_version ?? '0.0.0'
 }
+
+/** CPU and memory of every Electron process (main, renderers, helpers), or null outside Electron. */
+export function appMetrics(): import('electron').ProcessMetric[] | null {
+  return isElectron ? electron().app.getAppMetrics() : null
+}

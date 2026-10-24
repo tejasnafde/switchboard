@@ -1,15 +1,19 @@
 /**
  * Open a project on another machine (`services/project-clone.ts`): pick a
  * connected machine, optionally pick ignored files to copy (none by
- * default), then watch the clone. Closing the dialog leaves the clone running;
- * the sidebar row shows its progress.
+ * default) and the folder (default `~/projects/<name>`), then watch the
+ * clone. Closing the dialog leaves the clone running; the sidebar row shows
+ * its progress. A failed clone offers Try again.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { ProjectCloneChannels } from '@shared/ipc-channels'
 import {
   PROJECT_CLONE_CAPABILITY,
+  PROJECT_CLONE_FOLDER_CAPABILITY,
   cloneFolderName,
   cloneSourceProblem,
+  cloneTargetPathProblem,
+  defaultCloneTarget,
   type CloneSourceResult,
 } from '@shared/project-clone'
 import { formatBytes } from '@shared/worktree-manager'
@@ -25,6 +29,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dia
 import { Button } from '../ui/button'
 import { Checkbox } from '../ui/checkbox'
 import { Combobox } from '../ui/combobox'
+import { Input } from '../ui/input'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('sidebar:open-on-machine')
@@ -72,6 +77,8 @@ export function OpenOnMachineDialog({
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [started, setStarted] = useState<string | null>(null)
+  const defaultFolder = defaultCloneTarget(cloneFolderName(project.projectPath))
+  const [folder, setFolder] = useState(defaultFolder)
   const progress = useProjectCloneStore((s) => (started ? s.clones[started] : undefined))
 
   useEffect(() => {
@@ -94,12 +101,18 @@ export function OpenOnMachineDialog({
 
   const sourceError = source && cloneSourceProblem(source)
   const machineName = remotes.find((m) => m.id === machineId)?.name ?? ''
+  const targetFolder = folder.trim()
+  const customFolder = targetFolder !== defaultFolder
+  const folderProblem = cloneTargetPathProblem(targetFolder)
   const block = machineId
-    ? cloneTargetBlock(window.api.routing.supportsCapability(machineId, PROJECT_CLONE_CAPABILITY))
+    ? cloneTargetBlock(window.api.routing.supportsCapability(machineId, PROJECT_CLONE_CAPABILITY), {
+        custom: customFolder,
+        supported: window.api.routing.supportsCapability(machineId, PROJECT_CLONE_FOLDER_CAPABILITY),
+      })
     : null
 
   const start = async () => {
-    if (!source?.ok || !machineId || starting) return
+    if (!source?.ok || !machineId || starting || folderProblem) return
     setStarting(true)
     setError(null)
     try {
@@ -110,6 +123,7 @@ export function OpenOnMachineDialog({
           targetMachineId: machineId,
           source,
           files: [...checked],
+          targetFolder: customFolder ? targetFolder : undefined,
         },
         {
           invokeOn: (id, channel, ...args) => window.api.routing.invokeOn(id, channel, ...args),
@@ -186,9 +200,25 @@ export function OpenOnMachineDialog({
                 <>
                   <DialogDescription className="text-[var(--text-muted)]">
                     Clones {source.url} (remote "{source.remoteName}")
-                    {source.remoteBranch ? ` and checks out ${source.remoteBranch}` : ''} into ~/projects/
-                    {cloneFolderName(project.projectPath)} on {machineName}. Uncommitted and unpushed work stays here.
+                    {source.remoteBranch ? ` and checks out ${source.remoteBranch}` : ''} into the folder below on{' '}
+                    {machineName}. Uncommitted and unpushed work stays here.
                   </DialogDescription>
+                  <label className="flex items-center gap-[8px]">
+                    <span className="text-[var(--text-secondary)]">Folder</span>
+                    <Input
+                      aria-label="Folder on the other machine"
+                      aria-invalid={folderProblem !== null}
+                      spellCheck={false}
+                      className="[font-family:var(--font-mono)]"
+                      value={folder}
+                      onChange={(e) => setFolder(e.target.value)}
+                    />
+                  </label>
+                  {folderProblem && (
+                    <div role="alert" className="text-[var(--text-secondary)]">
+                      {folderProblem}
+                    </div>
+                  )}
                   {source.ignored.length > 0 && (
                     <fieldset className="m-0 flex flex-col gap-[6px] border-0 p-0">
                       <legend className="mb-[4px] p-0 text-[var(--text-secondary)]">
@@ -230,10 +260,23 @@ export function OpenOnMachineDialog({
           <Button variant="outline" size="sm" disabled={starting} onClick={onClose}>
             {started ? (ended ? 'Close' : 'Close, keep cloning') : 'Cancel'}
           </Button>
+          {started && progress?.phase === 'failed' && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setStarted(null)
+                setError(null)
+              }}
+            >
+              Try again
+            </Button>
+          )}
           {!started && targets.length > 0 && (
             <Button
               size="sm"
-              disabled={starting || !source?.ok || !!sourceError || !machineId || block !== null}
+              disabled={
+                starting || !source?.ok || !!sourceError || !machineId || block !== null || folderProblem !== null
+              }
               onClick={() => void start()}
             >
               {starting ? 'Starting…' : `Open on ${machineName}`}
