@@ -6,9 +6,10 @@
  * "the state is right in the store but wrong on screen".
  */
 import React from 'react'
-import { ApprovalItem, ToolItem, TextItem } from '../ThreadFeedItems'
+import { ApprovalItem, ToolItem, TextItem, UserMessageText } from '../ThreadFeedItems'
 import type { FeedItem } from '../../stores/chat'
 import { act } from 'react-test-renderer'
+import * as Clipboard from 'expo-clipboard'
 import type { HostWriteCard } from '@shared/agent-host-writes'
 import { hostWriteShownDigest } from '@shared/host-write-phone'
 import { renderComponent, type Node } from '../../test/render'
@@ -77,6 +78,17 @@ describe('ToolItem', () => {
   it('offers no chevron when there is nothing to expand', () => {
     const v = renderComponent(<ToolItem item={tool({ output: '' })} />)
     expect(v.iconNames()).not.toContain('chevron-down')
+  })
+
+  it('copies the whole output from the expanded row', async () => {
+    const output = 'line one\nline two'
+    const v = renderComponent(<ToolItem item={tool({ output })} />)
+    press(v.root, 'npm run typecheck')
+    await act(async () => {
+      pressable(v.root, 'Copy full output').props.onPress()
+    })
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(output)
+    expect(v.texts()).toContain('Copied')
   })
 
   it('renders a tool whose input is unusable without throwing', () => {
@@ -402,5 +414,18 @@ describe('ApprovalItem', () => {
     expect(texts).toContain('Comment')
     expect(texts).not.toContain('Approve')
     expect(texts).not.toContain('Request changes')
+  })
+})
+
+describe('UserMessageText', () => {
+  it('draws each known pill as a chip and drops an unknown one', () => {
+    const v = renderComponent(
+      <UserMessageText
+        text="[[pill:r]] fix it [[pill:gone]]"
+        pillsMeta={{ r: { label: '#612 · integration', kind: 'review' } }}
+      />,
+    )
+    expect(v.byLabel('[#612 · integration] fix it ')).toBeTruthy()
+    expect(v.texts().join('')).toBe('#612 · integration fix it ')
   })
 })

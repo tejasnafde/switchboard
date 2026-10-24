@@ -20,14 +20,14 @@ import type {
   ProviderSessionStatus,
   Question,
   TodoItem,
+  UserMessagePillsMeta,
 } from '@shared/provider-events'
 import type { PeerMessageInitiator } from '@shared/peer-messaging'
 import type { OverageScope } from '@shared/claude-rate-limit'
 import { applyContentText, mergeContentChunks } from '@shared/content-stream'
-import { echoMessageId, expiredRequestNotice, visibleUserMessageText } from '@shared/provider-events'
-import { pillBodyText } from '@shared/pill-body-text'
+import { echoMessageId, expiredRequestNotice } from '@shared/provider-events'
 import { transcriptShowsTaskNotification, type SyntheticUserPart } from '@shared/synthetic-message'
-import { splitLegacyCachedItems, systemRowItem } from '../lib/thread-history'
+import { splitLegacyCachedItems, systemRowItem, userBubbleBody } from '../lib/thread-history'
 import {
   applyQueuedTurnEvent,
   queuedRowRemoved,
@@ -49,7 +49,15 @@ import {
 } from '@shared/pending-requests'
 
 export type FeedItem =
-  | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
+  | {
+      kind: 'user'
+      id: string
+      /** With `pillsMeta`, the display body: its `[[pill:id]]` tokens draw as chips. */
+      text: string
+      at: number
+      images?: string[]
+      pillsMeta?: UserMessagePillsMeta
+    }
   | {
       kind: 'text'
       id: string
@@ -244,7 +252,7 @@ interface ChatState {
   /** The pick reached the backend (applied, or carried by a turn). */
   settlePickedMode: (key: string, mode: RuntimeMode) => void
   /** `id` ties the bubble to its queued message so a failed send can undo it. */
-  addUserMessage: (key: string, text: string, images?: string[], id?: string) => void
+  addUserMessage: (key: string, text: string, images?: string[], id?: string, pillsMeta?: UserMessagePillsMeta) => void
   markQuestionAnswered: (key: string, requestId: string, answers: string[][]) => void
   /** Put back a question card whose answer the backend refused. */
   reopenQuestion: (key: string, requestId: string) => void
@@ -462,9 +470,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
           : []
       const own = t.items.findIndex((i) => i.id === id)
       if (own >= 0) return marker.length ? { items: [...t.items.slice(0, own), ...marker, ...t.items.slice(own)] } : {}
-      const visible = visibleUserMessageText(event.text, event.displayBody)
-      const text =
-        visible !== null && event.displayBody !== undefined ? pillBodyText(visible, event.pillsMeta) : visible
+      const { text, pillsMeta } = userBubbleBody(event.text, event.displayBody, event.pillsMeta)
       const images = event.images?.map((image) => image.url)
       // Context-only text is hidden, but images sent with it still show.
       if (text === null && !images?.length) return marker.length ? { items: [...t.items, ...marker] } : {}
@@ -472,7 +478,14 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
         items: [
           ...t.items,
           ...marker,
-          { kind: 'user', id, text: text ?? '', at: event.at, images: images?.length ? images : undefined },
+          {
+            kind: 'user',
+            id,
+            text: text ?? '',
+            at: event.at,
+            images: images?.length ? images : undefined,
+            ...(pillsMeta ? { pillsMeta } : {}),
+          },
         ],
       }
     }
@@ -869,10 +882,20 @@ export const useChatStore = create<ChatState>()(
           threads: patchThread(s.threads, key, (t) => (t.pickedMode === mode ? { pickedMode: undefined } : {})),
         })),
 
-      addUserMessage: (key, text, images, id) =>
+      addUserMessage: (key, text, images, id, pillsMeta) =>
         set((s) => ({
           threads: patchThread(s.threads, key, (t) => ({
-            items: [...t.items, { kind: 'user', id: id ?? `u-${Date.now()}`, text, at: Date.now(), images }],
+            items: [
+              ...t.items,
+              {
+                kind: 'user',
+                id: id ?? `u-${Date.now()}`,
+                text,
+                at: Date.now(),
+                images,
+                ...(pillsMeta ? { pillsMeta } : {}),
+              },
+            ],
           })),
         })),
 
