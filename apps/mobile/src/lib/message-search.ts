@@ -35,6 +35,21 @@ export function cleanSnippet(value: string): string {
   return normalized.length <= SNIPPET_MAX ? normalized : `${normalized.slice(0, SNIPPET_MAX).trimEnd()}…`
 }
 
+export const SEARCH_NOT_READY = 'Machine is not ready. Retry search.'
+
+/**
+ * Android's search copy (`RpcFailure.searchMessage()`) for the transport's own
+ * failures; an error the backend sent is shown as it is.
+ */
+export function searchErrorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+  if (message.startsWith('invoke timed out:')) return 'Search timed out. Retry.'
+  if (message.startsWith('transport queue full:')) return 'Machine is busy. Retry search.'
+  if (message === 'WebSocket closed') return 'Machine connection was lost. Retry search.'
+  if (message === 'transport closed') return 'Machine connection changed. Retry search.'
+  return message
+}
+
 function projectName(path: string): string {
   return (
     path

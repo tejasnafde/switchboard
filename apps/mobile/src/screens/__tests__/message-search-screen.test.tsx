@@ -12,6 +12,8 @@ import { renderComponent } from '../../test/render'
 const mockSearch = jest.fn<Promise<MessageSearchResult[]>, [string]>()
 jest.mock('../../stores/connections', () => ({
   getClient: () => ({ searchMessages: (query: string) => mockSearch(query) }),
+  useConnectionsStore: (select: (s: { configs: { id: string; label: string }[] }) => unknown) =>
+    select({ configs: [{ id: 'conn', label: 'Studio Mac' }] }),
 }))
 
 const hit: MessageSearchResult = {
@@ -27,7 +29,7 @@ const hit: MessageSearchResult = {
   worktreeBranch: null,
 }
 
-const navigation = { navigate: jest.fn() }
+const navigation = { navigate: jest.fn(), setOptions: jest.fn() }
 const route = { params: { connectionId: 'conn' } }
 
 function renderScreen() {
@@ -47,10 +49,18 @@ beforeEach(() => {
   jest.useFakeTimers()
   mockSearch.mockReset()
   navigation.navigate.mockReset()
+  navigation.setOptions.mockReset()
 })
 afterEach(() => jest.useRealTimers())
 
 describe('MessageSearchScreen', () => {
+  it('names the machine it searches in the header', () => {
+    renderScreen()
+    const { headerTitle } = navigation.setOptions.mock.calls[0][0]
+    const header = renderComponent(headerTitle())
+    expect(header.texts()).toEqual(['Search chats', 'Studio Mac'])
+  })
+
   it('asks for two characters and does not search one', async () => {
     const view = renderScreen()
     expect(view.texts()).toContain('Search every chat')
@@ -90,7 +100,7 @@ describe('MessageSearchScreen', () => {
   })
 
   it('shows the error and retries', async () => {
-    mockSearch.mockRejectedValueOnce(new Error('Search timed out. Retry.'))
+    mockSearch.mockRejectedValueOnce(new Error('invoke timed out: app:search-messages'))
     const view = renderScreen()
     await type(view, 'sync')
     expect(view.texts()).toEqual(expect.arrayContaining(['Search unavailable', 'Search timed out. Retry.']))
@@ -101,6 +111,9 @@ describe('MessageSearchScreen', () => {
     })
     expect(mockSearch).toHaveBeenCalledTimes(2)
     expect(view.texts()).toContain('Fix sync jitter')
+    expect(view.byLabel('Fix sync jitter, the sync loop, switchboard · Assistant').props.accessibilityRole).toBe(
+      'button',
+    )
   })
 
   it('drops a late answer to an older query', async () => {

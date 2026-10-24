@@ -4,7 +4,12 @@
  */
 import { describe, it, expect } from 'vitest'
 import type { MessageSearchResult } from '../../src/shared/message-search'
-import { cleanSnippet, messageSearchRow, searchableQuery } from '../../apps/mobile/src/lib/message-search'
+import {
+  cleanSnippet,
+  messageSearchRow,
+  searchableQuery,
+  searchErrorMessage,
+} from '../../apps/mobile/src/lib/message-search'
 
 function result(over: Partial<MessageSearchResult> = {}): MessageSearchResult {
   return {
@@ -49,6 +54,22 @@ describe('cleanSnippet', () => {
     const snippet = cleanSnippet('x'.repeat(400))
     expect(snippet.length).toBeLessThanOrEqual(241)
     expect(snippet.endsWith('…')).toBe(true)
+  })
+})
+
+describe('searchErrorMessage', () => {
+  it("uses Android's copy for transport failures", () => {
+    expect(searchErrorMessage(new Error('invoke timed out: app:search-messages'))).toBe('Search timed out. Retry.')
+    expect(searchErrorMessage(new Error('transport queue full: app:search-messages'))).toBe(
+      'Machine is busy. Retry search.',
+    )
+    expect(searchErrorMessage(new Error('WebSocket closed'))).toBe('Machine connection was lost. Retry search.')
+    expect(searchErrorMessage(new Error('transport closed'))).toBe('Machine connection changed. Retry search.')
+  })
+
+  it('shows a backend error as it is', () => {
+    expect(searchErrorMessage(new Error('database is locked'))).toBe('database is locked')
+    expect(searchErrorMessage('plain')).toBe('plain')
   })
 })
 

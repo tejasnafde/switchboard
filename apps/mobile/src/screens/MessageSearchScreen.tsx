@@ -3,15 +3,23 @@
  * Same rules and copy as native Android's search screen: two characters
  * minimum, 200 ms debounce, at most 40 rows, a tap opens the chat.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { createLogger } from '@shared/logger'
 import type { MessageSearchResult } from '@shared/message-search'
+import { DEMO_LABEL, isDemoConnection } from '@shared/phone-demo/phone-demo'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
-import { getClient } from '../stores/connections'
-import { messageSearchRow, searchableQuery, SEARCH_DEBOUNCE_MS, SEARCH_RESULT_LIMIT } from '../lib/message-search'
+import { getClient, useConnectionsStore } from '../stores/connections'
+import {
+  messageSearchRow,
+  searchableQuery,
+  searchErrorMessage,
+  SEARCH_DEBOUNCE_MS,
+  SEARCH_NOT_READY,
+  SEARCH_RESULT_LIMIT,
+} from '../lib/message-search'
 
 const log = createLogger('screen:message-search')
 
@@ -32,13 +40,31 @@ export default function MessageSearchScreen({ route, navigation }: Props) {
   const [state, setState] = useState<SearchState>(IDLE)
   // Only the newest request may write results, so a slow answer to an older query is dropped.
   const request = useRef(0)
+  const machine =
+    useConnectionsStore((s) => s.configs.find((c) => c.id === connectionId)?.label) ??
+    (isDemoConnection(connectionId) ? DEMO_LABEL : null)
+
+  // Android's title and subtitle: which machine is searched.
+  useLayoutEffect(() => {
+    if (machine === null) return
+    navigation.setOptions({
+      headerTitle: () => (
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Search chats</Text>
+          <Text style={styles.headerSubtitle} numberOfLines={1}>
+            {machine}
+          </Text>
+        </View>
+      ),
+    })
+  }, [navigation, machine])
 
   const run = useCallback(
     (text: string) => {
       const token = ++request.current
       const client = getClient(connectionId)
       if (!client) {
-        setState({ results: [], loading: false, searched: true, error: 'Backend not connected yet.' })
+        setState({ results: [], loading: false, searched: true, error: SEARCH_NOT_READY })
         return
       }
       setState((s) => ({ ...s, loading: true, searched: true, error: null }))
@@ -50,12 +76,7 @@ export default function MessageSearchScreen({ route, navigation }: Props) {
         (err: unknown) => {
           if (token !== request.current) return
           log.warn('search failed', err)
-          setState({
-            results: [],
-            loading: false,
-            searched: true,
-            error: err instanceof Error ? err.message : String(err),
-          })
+          setState({ results: [], loading: false, searched: true, error: searchErrorMessage(err) })
         },
       )
     },
@@ -82,7 +103,12 @@ export default function MessageSearchScreen({ route, navigation }: Props) {
       <View style={styles.center}>
         <Text style={styles.stateTitle}>Search unavailable</Text>
         <Text style={styles.stateDetail}>{state.error}</Text>
-        <Pressable testID="search-retry" style={styles.retryButton} onPress={() => text !== null && run(text)}>
+        <Pressable
+          testID="search-retry"
+          accessibilityRole="button"
+          style={styles.retryButton}
+          onPress={() => text !== null && run(text)}
+        >
           <Text style={styles.retryLabel}>Retry</Text>
         </Pressable>
       </View>
@@ -111,6 +137,8 @@ export default function MessageSearchScreen({ route, navigation }: Props) {
         renderItem={({ item }) => (
           <Pressable
             testID={`search-row-${item.key}`}
+            accessibilityRole="button"
+            accessibilityLabel={[item.title, item.snippet, item.metadata].filter(Boolean).join(', ')}
             style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
             onPress={() =>
               navigation.navigate('Thread', {
@@ -165,6 +193,9 @@ export default function MessageSearchScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  header: { alignItems: 'center' },
+  headerTitle: { ...type.heading, color: colors.text },
+  headerSubtitle: { ...type.monoSm, color: colors.textDim },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -216,5 +247,5 @@ const styles = StyleSheet.create({
   rowPressed: { backgroundColor: colors.surface },
   title: { ...type.heading, color: colors.text },
   snippet: { ...type.bodySm, color: colors.textDim },
-  metadata: { ...type.monoSm, color: colors.textFaint },
+  metadata: { ...type.monoSm, color: colors.textDim },
 })
