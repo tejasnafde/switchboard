@@ -294,6 +294,8 @@ templates:
     })
     expect(parseLaunchConfigFile(serializeLaunchConfigFile(both)).worktree).toEqual(both.worktree)
     expect(parseLaunchConfigFile(serializeLaunchConfigFile(only)).worktree).toEqual(only.worktree)
+    const empty = parseLaunchConfigFile('worktree:\n  link: []\nterminals: []\n')
+    expect(parseLaunchConfigFile(serializeLaunchConfigFile(empty)).worktree).toBeUndefined()
   })
 
   it('refuses a worktree.link path outside the project', () => {

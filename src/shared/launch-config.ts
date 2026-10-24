@@ -186,7 +186,8 @@ export function serializeLaunchConfigFile(config: LaunchConfigFile): string {
       worktree.setup = setup
     }
     if (config.worktree.link?.length) worktree.link = config.worktree.link
-    obj.worktree = worktree
+    // An empty block would not parse back (`worktree.setup must be an object`).
+    if (Object.keys(worktree).length > 0) obj.worktree = worktree
   }
 
   const configs = config.configs ?? {}

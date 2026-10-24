@@ -306,14 +306,24 @@ const INSTALL_COMMANDS: Record<(typeof LOCKFILES)[number], [string, string[]]> =
   'yarn.lock': ['yarn', ['install', '--immutable']],
 }
 
+/** The frozen install for a lockfile. On Windows the package managers are `.cmd` files, which run only through a shell. */
+export function frozenInstallCommand(
+  lock: (typeof LOCKFILES)[number],
+  platform: NodeJS.Platform = osPlatform(),
+): { cmd: string; args: string[]; shell: boolean } {
+  const [cmd, args] = INSTALL_COMMANDS[lock]
+  return { cmd, args, shell: platform === 'win32' }
+}
+
 /** A frozen install in the child's package folder. */
 async function frozenInstall(worktree: string, pkgDir: string): Promise<{ ok: true } | { ok: false; reason: string }> {
   const lock = await lockfileOf(worktree, pkgDir)
   if (!lock) return { ok: false, reason: 'no lockfile for a frozen install' }
-  const [cmd, args] = INSTALL_COMMANDS[lock]
+  const { cmd, args, shell } = frozenInstallCommand(lock)
   try {
     await execFileP(cmd, args, {
       cwd: join(worktree, pkgDir),
+      shell,
       env: childProcessEnv(),
       timeout: INSTALL_TIMEOUT_MS,
       maxBuffer: 16 * 1024 * 1024,

@@ -27,6 +27,8 @@ export const PERF_THRESHOLDS = {
   // Each child turn end; the changed outcome also logs a warning.
   'hub.deps-check': 200,
   'hub.own-deps': 0,
+  // Per base commit of a start_children call: git show and lockfile reads per folder.
+  'hub.deps-plan': 200,
   ipc: 200,
 } as const
 

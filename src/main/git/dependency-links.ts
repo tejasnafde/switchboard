@@ -17,8 +17,8 @@
  * Only the filesystem is read here (the `.git` file, `commondir`), never the
  * git CLI, so a removal of a worktree that is already gone costs nothing.
  */
-import { appendFile, lstat, mkdir, readFile, readlink, symlink, unlink, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, resolve, sep } from 'node:path'
+import { appendFile, lstat, mkdir, readFile, readlink, realpath, symlink, unlink, writeFile } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { createMainLogger } from '../logger'
 
 const log = createMainLogger('git:dependency-links')
@@ -91,6 +91,35 @@ async function excludeLinks(worktree: string, paths: string[]): Promise<void> {
   await appendFile(file, `${lead}${[...head, ...missing].join('\n')}\n`)
 }
 
+/** The real path of `path`, or of its nearest existing ancestor with the rest appended. */
+async function realpathOrAncestor(path: string): Promise<string> {
+  const tail: string[] = []
+  let dir = resolve(path)
+  for (;;) {
+    try {
+      return resolve(await realpath(dir), ...tail.reverse())
+    } catch (err) {
+      log.debug(`${dir} does not resolve: ${(err as NodeJS.ErrnoException).code}`)
+      const parent = dirname(dir)
+      if (parent === dir) return resolve(path)
+      tail.push(basename(dir))
+      dir = parent
+    }
+  }
+}
+
+/**
+ * Whether `<worktree>/<path>` stays inside the worktree once symlinks resolve.
+ * A parent that is itself a link (`node_modules/x` under a linked
+ * `node_modules`) resolves into the main checkout: linking or unlinking there
+ * would change the main checkout's own files.
+ */
+async function insideWorktree(worktree: string, path: string): Promise<boolean> {
+  const at = resolve(worktree, path)
+  const rel = relative(await realpathOrAncestor(worktree), await realpathOrAncestor(dirname(at)))
+  return resolve(worktree) !== at && !rel.startsWith('..') && !isAbsolute(rel)
+}
+
 export type LinkResult = { ok: true; target: string } | { ok: false; reason: string }
 
 /**
@@ -103,6 +132,7 @@ export async function linkDependencyFolder(main: string, worktree: string, path:
   const at = join(worktree, path)
   if (resolve(worktree) === resolve(main)) return { ok: false, reason: 'the worktree is the main checkout' }
   try {
+    if (!(await insideWorktree(worktree, path))) return { ok: false, reason: 'the path resolves outside the worktree' }
     const existing = await lstat(at).catch((err: NodeJS.ErrnoException) => {
       if (err.code === 'ENOENT') return null
       throw err
@@ -149,8 +179,11 @@ export async function removeDependencyLinks(worktree: string): Promise<number> {
   let removed = 0
   for (const path of await readLinkManifest(worktree)) {
     const at = resolve(worktree, path)
-    if (!at.startsWith(resolve(worktree) + sep)) continue
     try {
+      if (!(await insideWorktree(worktree, path))) {
+        log.warn(`not unlinking ${at}: it resolves outside the worktree`)
+        continue
+      }
       if ((await lstat(at)).isSymbolicLink()) {
         await unlink(at)
         removed++

@@ -5,8 +5,10 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -20,6 +22,7 @@ import {
   depsBriefLine,
   depsRule,
   depsSummary,
+  frozenInstallCommand,
   linkedDependencyAt,
   npmTreeMatches,
   ownChildDeps,
@@ -76,6 +79,17 @@ describe('depsRule (L1 to L5)', () => {
     expect(depsSummary([])).toBe('none')
     expect(depsSummary(['link', 'clone', 'link'])).toBe('clone')
     expect(depsSummary(['link', 'install'])).toBe('install')
+  })
+})
+
+describe('frozenInstallCommand', () => {
+  it('runs the package manager through a shell only on Windows', () => {
+    expect(frozenInstallCommand('package-lock.json', 'darwin')).toEqual({ cmd: 'npm', args: ['ci'], shell: false })
+    expect(frozenInstallCommand('pnpm-lock.yaml', 'win32')).toEqual({
+      cmd: 'pnpm',
+      args: ['install', '--frozen-lockfile'],
+      shell: true,
+    })
   })
 })
 
@@ -184,6 +198,18 @@ describe.skipIf(process.platform === 'win32')('a child worktree with linked node
     const state = await prepareChildDeps(main, wt, [{ path: 'node_modules', pkgDir: null, mode: 'link', reason: null }])
     expect(state.folders[0]?.mode).toBe('none')
     expect(readFileSync(join(wt, 'node_modules', 'mine.txt'), 'utf8')).toBe('x')
+  })
+
+  it('refuses a link whose parent resolves into the main checkout', async () => {
+    mkdirSync(join(main, 'packages', 'p'), { recursive: true })
+    mkdirSync(join(main, 'node_modules', '@s'))
+    symlinkSync('../../packages/p', join(main, 'node_modules', '@s', 'p'))
+    const state = await prepareChildDeps(main, wt, [
+      { path: 'node_modules', pkgDir: '', mode: 'link', reason: null },
+      { path: 'node_modules/@s/p', pkgDir: null, mode: 'link', reason: null },
+    ])
+    expect(state.folders.map((f) => f.mode)).toEqual(['link', 'none'])
+    expect(readlinkSync(join(main, 'node_modules', '@s', 'p'))).toBe('../../packages/p')
   })
 
   it.runIf(process.platform === 'darwin')('own_dependencies swaps a link for a clone', async () => {

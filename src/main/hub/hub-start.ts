@@ -273,7 +273,15 @@ export class HubStarter {
     const head = await this.io.commitOf(ctx.cwd, 'HEAD')
     const depsPlans = new Map<string, Promise<DepsFolderPlan[]>>()
     const planDeps = (sha: string) => {
-      if (!depsPlans.has(sha)) depsPlans.set(sha, this.io.planDeps(ctx.projectPath, sha, settings.childDependencies))
+      if (!depsPlans.has(sha)) {
+        const span = perfSpan('hub.deps-plan', { parentId: ctx.parentId })
+        const plan = this.io.planDeps(ctx.projectPath, sha, settings.childDependencies)
+        plan.then(
+          (plans) => span.end({ outcome: 'ok', folders: plans.length }),
+          () => span.end({ outcome: 'error' }),
+        )
+        depsPlans.set(sha, plan)
+      }
       return depsPlans.get(sha)!
     }
     const children: PlannedChild[] = []
