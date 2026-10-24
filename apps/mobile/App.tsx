@@ -1,10 +1,17 @@
 import { useEffect } from 'react'
 import { StyleSheet, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
-import { NavigationContainer, DarkTheme, createNavigationContainerRef } from '@react-navigation/native'
+import {
+  NavigationContainer,
+  DarkTheme,
+  createNavigationContainerRef,
+  getStateFromPath,
+  type LinkingOptions,
+} from '@react-navigation/native'
 import * as Notifications from 'expo-notifications'
 import { initPushWhenPaired } from './src/stores/push'
 import { threadRouteFromPush, type ThreadRoute } from './src/lib/push-route'
+import { appLinkRoute } from './src/lib/deep-link'
 import DevGalleryScreen from './src/screens/DevGalleryScreen'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { StatusBar } from 'expo-status-bar'
@@ -29,6 +36,7 @@ import MessageSearchScreen from './src/screens/MessageSearchScreen'
 import { MessageSearchButton } from './src/components/MessageSearchButton'
 import type { PrDetail, PrRef } from '@shared/pull-requests'
 import SignInScreen from './src/screens/SignInScreen'
+import SettingsScreen from './src/screens/SettingsScreen'
 import { DemoBadge, withDemoStrip } from './src/components/DemoStrip'
 import { isDemoConnection } from '@shared/phone-demo/phone-demo'
 
@@ -36,6 +44,7 @@ const log = createLogger('app')
 
 export type RootStackParamList = {
   Connections: undefined
+  Settings: undefined
   SignIn: undefined
   /** `rescan` scans a new QR for `editId`; `kind: 'iap'` opens on the Cloud IAP list. */
   Pair: { editId?: string; rescan?: boolean; kind?: 'iap' } | undefined
@@ -125,6 +134,20 @@ Notifications.setNotificationHandler({
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>()
 
+/** switchboard://settings, as on Android. Settings opens over the machines list. */
+const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: ['switchboard://'],
+  config: {
+    initialRouteName: 'Connections',
+    screens: { Settings: 'settings' },
+  },
+  getStateFromPath: (path, options) => {
+    if (appLinkRoute(path)) return getStateFromPath(path, options)
+    log.warn('ignored an app link that names no screen', { path: path.slice(0, 160) })
+    return undefined
+  },
+}
+
 /**
  * A tap can arrive before the navigation container mounts, which is normal on a
  * cold start. Dropping it - as an isReady() guard did - lost exactly the taps
@@ -206,7 +229,7 @@ export default function App() {
     // Android edge-to-edge is unconditional from SDK 57, so the gesture bar
     // overlays the app and nothing pads for it unless this provider is mounted.
     <SafeAreaProvider style={styles.root}>
-      <NavigationContainer theme={theme} ref={navigationRef} onReady={flushPendingRoute}>
+      <NavigationContainer theme={theme} ref={navigationRef} linking={linking} onReady={flushPendingRoute}>
         <StatusBar style="light" />
         <Stack.Navigator
           initialRouteName="Connections"
@@ -217,6 +240,7 @@ export default function App() {
           }}
         >
           <Stack.Screen name="Connections" component={ConnectionsScreen} options={{ title: 'Switchboard' }} />
+          <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
           <Stack.Screen
             name="SignIn"
             component={SignInScreen}

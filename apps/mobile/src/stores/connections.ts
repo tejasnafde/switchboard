@@ -32,8 +32,9 @@ import {
   saveConnectionSession,
   saveConnectionToken,
 } from '../lib/secrets'
-import { usePushStore } from './push'
+import { noticeTurnCompletion, usePushStore } from './push'
 import { useChatStore } from './chat'
+import { useSavedProjectsStore } from './saved-projects'
 import { useRecentsStore } from './recents'
 import { acknowledgeAcceptedOrigin, drain as drainOutbox } from './outbox'
 
@@ -161,6 +162,7 @@ function attachClient(id: string, client: SwitchboardClient): void {
         )
       }
       useChatStore.getState().ingest(id, event)
+      noticeTurnCompletion(id, event)
     }),
   )
 }
@@ -192,6 +194,7 @@ export const useConnectionsStore = create<ConnectionsState>()(
         iapResume.delete(id)
         keystoreFailures.delete(id)
         const forgettingCredentials = queueCredentialWrite(id, () => deleteConnectionToken(id))
+        useSavedProjectsStore.getState().forget(id)
         set((s) => {
           const status = { ...s.status }
           delete status[id]
@@ -499,6 +502,14 @@ export function onAppForeground(fn: () => void): () => void {
   return () => onForeground.delete(fn)
 }
 
+/** Callbacks to run as the app goes to the background, before JS is suspended. */
+const onBackground = new Set<() => void>()
+
+export function onAppBackground(fn: () => void): () => void {
+  onBackground.add(fn)
+  return () => onBackground.delete(fn)
+}
+
 /**
  * Report the device's network state to every live transport.
  *
@@ -532,6 +543,7 @@ export function installLifecycleReconnect(): () => void {
   const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
     if (next === 'background') {
       backgroundedAt = Date.now()
+      onBackground.forEach((fn) => fn())
       return
     }
     if (next !== 'active') return

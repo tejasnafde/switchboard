@@ -41,7 +41,7 @@ import { generateTitle } from '@shared/auto-title'
 import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors } from '../theme'
-import { getClient, onAppForeground, useConnectionsStore } from '../stores/connections'
+import { getClient, onAppBackground, onAppForeground, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
 import {
   expiredOpenRequests,
@@ -216,6 +216,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
       // background leaves the lease expired and the user gets notified about
       // the thread already on their screen.
       const unsubForeground = onAppForeground(report)
+      // Release the lease on the way out: once JS is suspended the app cannot post
+      // its own notice, so the backend must be free to push this chat's events.
+      const unsubBackground = onAppBackground(() => usePushStore.getState().reportViewing(connectionId, null))
       // Read state is the backend's, so the Mac's badge clears from here too.
       getClient(connectionId)
         ?.markRead(threadId)
@@ -223,6 +226,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       return () => {
         clearInterval(renew)
         unsubForeground()
+        unsubBackground()
         useChatStore.getState().setActive(null)
         usePushStore.getState().reportViewing(connectionId, null)
         // On the way out, not per keystroke - persist writes to AsyncStorage.
