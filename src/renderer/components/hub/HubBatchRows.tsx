@@ -6,7 +6,13 @@ export function HubBatchRows({ view }: { view: HubBatchView }) {
   return (
     <div
       data-testid="approval-hub-batch"
-      style={{ padding: '8px 12px', fontSize: '11.5px', color: 'var(--text-secondary)', maxHeight: '320px', overflow: 'auto' }}
+      style={{
+        padding: '8px 12px',
+        fontSize: '11.5px',
+        color: 'var(--text-secondary)',
+        maxHeight: '320px',
+        overflow: 'auto',
+      }}
     >
       <div>
         Start {view.rows.length} child chat{view.rows.length === 1 ? '' : 's'}:
@@ -28,7 +34,9 @@ export function HubBatchRows({ view }: { view: HubBatchView }) {
           Disk: needs about {formatGiB(view.needBytes)}, {formatGiB(view.freeBytes)} free.
         </div>
       )}
-      {view.mainCheckout && <div style={{ marginTop: '6px', color: 'var(--warning)' }}>{HUB_MAIN_CHECKOUT_WARNING}</div>}
+      {view.mainCheckout && (
+        <div style={{ marginTop: '6px', color: 'var(--warning)' }}>{HUB_MAIN_CHECKOUT_WARNING}</div>
+      )}
     </div>
   )
 }

@@ -1888,51 +1888,56 @@ export class ProviderRegistry implements PeerToolHost {
     // Depth 1: an open child gets no parent tools and no hub paragraph.
     const parentTools = this.hubChildrenOn() && !this.hubStarter.isOpenChild(threadId)
     try {
-      return await this.switchboardMcp.open(threadId, () => [
-        ...buildPrTools({
-          threadId,
-          chatId: chatId(),
-          agentLabel: agentLabel(toAgentProvider(provider)),
-          cwd: () => this.sessionDescriptors.get(threadId)?.cwd ?? null,
-          runtimeMode,
-          publish,
-          approvals: this.agentApprovals,
-          budget: this.agentWriteBudget,
-          pullRequests: agentPullRequestAccess(),
-        }),
-        ...buildPrLinkTools({
-          threadId,
-          chatId: chatId(),
-          runtimeMode,
-          publish,
-          pullRequests: agentPullRequestAccess(),
-        }),
-        ...buildPeerMcpTools({
-          threadId,
-          chatId: chatId(),
-          runtimeMode,
-          publish,
-          approvals: this.agentApprovals,
-          peers: this,
-        }),
-        ...buildApprovalMcpTools({ chatId: chatId(), approvals: this.agentApprovals }),
-        ...(parentTools
-          ? buildHubMcpTools({
-              parent: () => ({
-                threadId: this.liveSessionId(threadId) ?? threadId,
-                parentId: chatId(),
-                projectPath: getConversationById(chatId())?.project_path ?? this.sessionDescriptors.get(threadId)?.cwd ?? '',
-                cwd: this.sessionDescriptors.get(threadId)?.cwd ?? '',
-                mode: runtimeMode(),
-                agent: toAgentProvider(provider),
-                instanceId: this.sessionDescriptors.get(threadId)?.instanceId ?? null,
-              }),
-              starter: this.hubStarter,
-              resources: (id) => this.hubSampler?.resourcesOf(id),
-              publish,
-            })
-          : []),
-      ], parentTools ? HUB_INSTRUCTIONS : undefined)
+      return await this.switchboardMcp.open(
+        threadId,
+        () => [
+          ...buildPrTools({
+            threadId,
+            chatId: chatId(),
+            agentLabel: agentLabel(toAgentProvider(provider)),
+            cwd: () => this.sessionDescriptors.get(threadId)?.cwd ?? null,
+            runtimeMode,
+            publish,
+            approvals: this.agentApprovals,
+            budget: this.agentWriteBudget,
+            pullRequests: agentPullRequestAccess(),
+          }),
+          ...buildPrLinkTools({
+            threadId,
+            chatId: chatId(),
+            runtimeMode,
+            publish,
+            pullRequests: agentPullRequestAccess(),
+          }),
+          ...buildPeerMcpTools({
+            threadId,
+            chatId: chatId(),
+            runtimeMode,
+            publish,
+            approvals: this.agentApprovals,
+            peers: this,
+          }),
+          ...buildApprovalMcpTools({ chatId: chatId(), approvals: this.agentApprovals }),
+          ...(parentTools
+            ? buildHubMcpTools({
+                parent: () => ({
+                  threadId: this.liveSessionId(threadId) ?? threadId,
+                  parentId: chatId(),
+                  projectPath:
+                    getConversationById(chatId())?.project_path ?? this.sessionDescriptors.get(threadId)?.cwd ?? '',
+                  cwd: this.sessionDescriptors.get(threadId)?.cwd ?? '',
+                  mode: runtimeMode(),
+                  agent: toAgentProvider(provider),
+                  instanceId: this.sessionDescriptors.get(threadId)?.instanceId ?? null,
+                }),
+                starter: this.hubStarter,
+                resources: (id) => this.hubSampler?.resourcesOf(id),
+                publish,
+              })
+            : []),
+        ],
+        parentTools ? HUB_INSTRUCTIONS : undefined,
+      )
     } catch (err) {
       log.warn(`Switchboard MCP server unavailable for ${threadId}; starting without its tools`, err)
       return null

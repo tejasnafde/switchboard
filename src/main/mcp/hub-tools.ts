@@ -54,7 +54,7 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
       name: START_CHILDREN_TOOL,
       description: [
         `Start 1 to ${HUB_MAX_TASKS_PER_BATCH} child chats, each an agent working on one task, by default in its own git`,
-        'worktree off this chat\'s current commit (or baseRef). Each child gets its brief as its first message; it cannot',
+        "worktree off this chat's current commit (or baseRef). Each child gets its brief as its first message; it cannot",
         'see this chat, so the brief must stand on its own: the goal, the files, how to check the work, and what to',
         'report. In ask and plan modes the user approves the batch on a card first; in other modes the children start',
         'at once. A child never gets more access than this chat. The tool returns at once; use list_children to follow',
@@ -78,7 +78,10 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
                   description: 'worktree (default): its own worktree and branch. project: this project folder, shared.',
                 },
                 baseRef: { type: 'string', description: "Commit or branch to start from. Default: this chat's HEAD." },
-                branch: { type: 'string', description: 'A name for the branch; Switchboard adds a hub/ prefix and a suffix.' },
+                branch: {
+                  type: 'string',
+                  description: 'A name for the branch; Switchboard adds a hub/ prefix and a suffix.',
+                },
                 agent: { type: 'string', description: 'claude, codex, opencode, ... Default: the agent of this chat.' },
                 account: { type: 'string', description: 'A provider account id. Default: the account of this chat.' },
                 model: { type: 'string' },
@@ -101,7 +104,13 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         const parent = ctx.parent()
         if (parent.mode === 'plan') {
           const reason = 'Plan mode does not start child chats.'
-          ctx.publish({ type: 'tool.denied', threadId: parent.threadId, toolName: START_CHILDREN_TOOL, reason, mode: 'plan' })
+          ctx.publish({
+            type: 'tool.denied',
+            threadId: parent.threadId,
+            toolName: START_CHILDREN_TOOL,
+            reason,
+            mode: 'plan',
+          })
           return toolText(`${reason} Ask the user to leave plan mode first.`, true)
         }
         const parsed = parseHubTasks(args.tasks)
@@ -144,7 +153,9 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
               worktree,
               ...(git ?? {}),
               lastTurn: turn ? { contextTokens: turn.usedTokens ?? null, knownCostUsd: turn.costUsd ?? null } : null,
-              resources: res ? { rssMb: Math.round(res.rssBytes / MB), cpuPct: res.cpuPct, processes: res.processes } : null,
+              resources: res
+                ? { rssMb: Math.round(res.rssBytes / MB), cpuPct: res.cpuPct, processes: res.processes }
+                : null,
               diskMb: disk === undefined ? null : Math.round(disk / MB),
               limit: getLimitResume(c.childId)?.state ?? null,
               lastUpdate: wake ? { kind: wake.kind, summary: wake.summary } : null,
@@ -158,7 +169,10 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
           JSON.stringify(
             {
               children: rows,
-              resources: { childrenRssMb: total, ...(own ? { ownRssMb: Math.round(own.rssBytes / MB), ownCpuPct: own.cpuPct } : {}) },
+              resources: {
+                childrenRssMb: total,
+                ...(own ? { ownRssMb: Math.round(own.rssBytes / MB), ownCpuPct: own.cpuPct } : {}),
+              },
             },
             null,
             2,

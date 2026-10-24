@@ -75,7 +75,12 @@ const parent = (mode: HubParentContext['mode']): HubParentContext => ({
   instanceId: 'claude-code-default',
 })
 
-const task = (title: string, extra: Partial<HubTask> = {}): HubTask => ({ title, brief: `Do ${title}`, location: 'worktree', ...extra })
+const task = (title: string, extra: Partial<HubTask> = {}): HubTask => ({
+  title,
+  brief: `Do ${title}`,
+  location: 'worktree',
+  ...extra,
+})
 const text = (r: { content: Array<{ text: string }> }) => r.content.map((c) => c.text).join('\n')
 
 /** Lets the batch runner's chained promises settle. */
@@ -213,7 +218,10 @@ describe('HubStarter', () => {
     const h = harness()
     const eight = Array.from({ length: 8 }, (_, i) => task(`T${i}`))
     await h.starter.propose(parent('sandbox'), eight)
-    await h.starter.propose(parent('sandbox'), eight.map((t) => ({ ...t, title: `${t.title}b` })))
+    await h.starter.propose(
+      parent('sandbox'),
+      eight.map((t) => ({ ...t, title: `${t.title}b` })),
+    )
     expect((await h.starter.approve(h.cards[0]!, 'sandbox')).isError).toBeFalsy()
     const second = await h.starter.approve(h.cards[1]!, 'sandbox')
     expect(text(second)).toContain('at most 12')

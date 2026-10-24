@@ -142,9 +142,12 @@ export interface HubStartHost {
   startSession(opts: SessionStartOpts): Promise<unknown>
   submitTurn(input: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult>
   /** Opens the batch card on the parent; the approval comes back through `approve`. */
-  openCard(input: { threadId: string; parentId: string; detail: string; plan: HubBatchPlan }):
-    | { ok: true; requestId: string }
-    | { ok: false; message: string }
+  openCard(input: {
+    threadId: string
+    parentId: string
+    detail: string
+    plan: HubBatchPlan
+  }): { ok: true; requestId: string } | { ok: false; message: string }
   /** A new system row in the parent's chat, for clients to show. */
   announceRow(parentId: string, row: { messageId: string; requestId: string; content: string }): void
 }
@@ -321,7 +324,13 @@ export class HubStarter {
 
     const lateCap = openCapProblem(ctx.parentId, tasks.length)
     if (lateCap) return toolText(lateCap, true)
-    createHubBatch({ batchId, parentId: ctx.parentId, cardRequestId: null, planJson: JSON.stringify(plan), planDigest: digest })
+    createHubBatch({
+      batchId,
+      parentId: ctx.parentId,
+      cardRequestId: null,
+      planJson: JSON.stringify(plan),
+      planDigest: digest,
+    })
     const text = this.startApproved(batchId, ctx.mode, view.mainCheckout)
     this.writeStartedRow(ctx.parentId, batchId, text)
     return toolText(text)
@@ -402,7 +411,9 @@ export class HubStarter {
       `Starting ${plan.children.length} child chat${plan.children.length === 1 ? '' : 's'}. Each starts in its own ` +
         'worktree (or the project folder) and gets its brief as its first turn:',
       ...lines,
-      ...(mainCheckout ? [HUB_MAIN_CHECKOUT_WARNING, 'Ask the user before you merge into a branch checked out there.'] : []),
+      ...(mainCheckout
+        ? [HUB_MAIN_CHECKOUT_WARNING, 'Ask the user before you merge into a branch checked out there.']
+        : []),
     ].join('\n')
   }
 
@@ -417,7 +428,12 @@ export class HubStarter {
   }
 
   /** Worktree and dependencies; then the launch waits for a slot. False when the child failed. */
-  private async prepareChild(batchId: string, parentId: string, projectPath: string, c: PlannedChild): Promise<boolean> {
+  private async prepareChild(
+    batchId: string,
+    parentId: string,
+    projectPath: string,
+    c: PlannedChild,
+  ): Promise<boolean> {
     const span = perfSpan('hub.start-child', { childId: c.childId, agent: c.agent, location: c.location, deps: c.deps })
     const t0 = performance.now()
     let cwd = projectPath
@@ -441,7 +457,13 @@ export class HubStarter {
         updateHubChild(c.childId, { depsJson: JSON.stringify({ cloned }) })
         const bytes = await this.io.dirBytes(cwd)
         if (bytes !== null) this.diskUse.set(c.childId, bytes)
-        span.end({ outcome: 'prepared', worktreeMs: Math.round(worktreeMs), depsMs: Math.round(depsMs), cloned: cloned.length, diskMb: bytes === null ? null : Math.round(bytes / 1024 ** 2) })
+        span.end({
+          outcome: 'prepared',
+          worktreeMs: Math.round(worktreeMs),
+          depsMs: Math.round(depsMs),
+          cloned: cloned.length,
+          diskMb: bytes === null ? null : Math.round(bytes / 1024 ** 2),
+        })
       } else {
         createConversation(c.childId, projectPath, c.agent, c.title)
         span.end({ outcome: 'prepared' })
@@ -474,9 +496,10 @@ export class HubStarter {
         ...(c.instanceId ? { instanceId: c.instanceId } : {}),
         ...(c.model ? { model: c.model } : {}),
       })
-      const brief = c.deps === 'none' && c.location === 'worktree'
-        ? `${c.brief}\n\nThis worktree has no dependency folders. Install them if the task needs them.`
-        : c.brief
+      const brief =
+        c.deps === 'none' && c.location === 'worktree'
+          ? `${c.brief}\n\nThis worktree has no dependency folders. Install them if the task needs them.`
+          : c.brief
       const result = await this.host.submitTurn({
         version: 1,
         threadId: c.childId,
@@ -533,7 +556,7 @@ export class HubStarter {
 
   private pump(): void {
     const s = readHubSettings(this.getSetting)
-    for (let i = 0; i < this.waiting.length; ) {
+    for (let i = 0; i < this.waiting.length;) {
       const w = this.waiting[i]!
       if (runSlotFree(w.slot, [...this.running.values()], s.runningPerInstance, s.runningPerParent)) {
         this.waiting.splice(i, 1)
@@ -544,7 +567,12 @@ export class HubStarter {
     }
   }
 
-  private worktreeRequest(batchId: string, parentId: string, projectPath: string, c: PlannedChild): WorktreeCreationRequest {
+  private worktreeRequest(
+    batchId: string,
+    parentId: string,
+    projectPath: string,
+    c: PlannedChild,
+  ): WorktreeCreationRequest {
     return {
       schemaVersion: WORKTREE_CREATION_SCHEMA_VERSION,
       creationId: `${batchId}-${c.ordinal}`,
@@ -562,7 +590,9 @@ export class HubStarter {
     }
   }
 
-  private async diskCheck(plan: StoredPlan): Promise<{ problem: string | null; needBytes: number | null; freeBytes: number | null }> {
+  private async diskCheck(
+    plan: StoredPlan,
+  ): Promise<{ problem: string | null; needBytes: number | null; freeBytes: number | null }> {
     const worktrees = plan.children.filter((c) => c.location === 'worktree')
     if (worktrees.length === 0) return { problem: null, needBytes: 0, freeBytes: null }
     const free = await this.io.freeBytes(plan.projectPath)
@@ -620,7 +650,9 @@ function openCapProblem(parentId: string, adding: number): string | null {
 function planDigest(parentId: string, plan: StoredPlan): string {
   // Child ids are fresh on every call, so they are left out: the same tasks give the same digest.
   const tasks = plan.children.map(({ childId: _id, ...rest }) => rest)
-  return createHash('sha256').update(JSON.stringify([parentId, plan.projectPath, tasks])).digest('hex')
+  return createHash('sha256')
+    .update(JSON.stringify([parentId, plan.projectPath, tasks]))
+    .digest('hex')
 }
 
 const dirBytesCache = new Map<string, { bytes: number | null; at: number }>()
@@ -672,7 +704,9 @@ function defaultIo(): HubStartIo {
       cloneDependencyDirs(projectPath, worktreePath, { dir, isEnabled: () => true }),
     async isMainCheckout(cwd) {
       try {
-        const [gitDir, common] = (await git(cwd, ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir']))
+        const [gitDir, common] = (
+          await git(cwd, ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'])
+        )
           .trim()
           .split('\n')
         return gitDir === common

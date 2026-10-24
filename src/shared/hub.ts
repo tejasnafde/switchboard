@@ -353,14 +353,16 @@ export function parseHubTasks(raw: unknown): { ok: true; tasks: HubTask[] } | { 
     const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
     const title = str(t.title)
     const brief = str(t.brief)
-    if (!title || title.length > TITLE_MAX) return { ok: false, message: `${n} needs a title of 1 to ${TITLE_MAX} characters.` }
+    if (!title || title.length > TITLE_MAX)
+      return { ok: false, message: `${n} needs a title of 1 to ${TITLE_MAX} characters.` }
     if (!brief || brief.length > BRIEF_MAX) return { ok: false, message: `${n} needs a brief of at most 32 KiB.` }
     const location = t.location ?? 'worktree'
     if (location !== 'worktree' && location !== 'project')
       return { ok: false, message: `${n}: location is "worktree" or "project".` }
     const agentRaw = str(t.agent)
     const agent = agentRaw === 'claude' ? 'claude-code' : agentRaw
-    if (agent !== undefined && !isAgentProvider(agent)) return { ok: false, message: `${n}: unknown agent "${agentRaw}".` }
+    if (agent !== undefined && !isAgentProvider(agent))
+      return { ok: false, message: `${n}: unknown agent "${agentRaw}".` }
     const mode = str(t.mode)
     if (mode !== undefined && !(RUNTIME_MODES as readonly string[]).includes(mode))
       return { ok: false, message: `${n}: mode is one of ${RUNTIME_MODES.join(', ')}.` }
@@ -404,7 +406,8 @@ export interface HubBatchView {
   mainCheckout: boolean
 }
 
-export const HUB_MAIN_CHECKOUT_WARNING = 'This chat works in the main checkout. Merging children here changes its branch.'
+export const HUB_MAIN_CHECKOUT_WARNING =
+  'This chat works in the main checkout. Merging children here changes its branch.'
 
 const GIB = 1024 ** 3
 
