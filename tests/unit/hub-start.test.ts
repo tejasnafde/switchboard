@@ -8,6 +8,7 @@ vi.mock('../../src/main/db/provider-instances', () => ({
 import {
   getHubBatch,
   getHubChild,
+  getSetting,
   insertHubChild,
   listHubChildren,
   listPendingHubWakes,
@@ -17,7 +18,6 @@ import { HubStarter, type HubParentContext, type HubStartHost, type HubStartIo }
 import type { HubTask } from '../../src/shared/hub'
 import type { WorktreeCreationRequest } from '../../src/shared/worktree-creation'
 import type { UserTurnSubmissionV1 } from '../../src/shared/provider-events'
-import { getSetting } from '../../src/main/db/database'
 
 const GIB = 1024 ** 3
 
