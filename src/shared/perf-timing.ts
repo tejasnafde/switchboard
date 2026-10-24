@@ -19,6 +19,11 @@ export const PERF_THRESHOLDS = {
   'db.migrate-slow': 1000,
   // Fires are rare (one per usage limit), so every one is logged: counts, outcomes, probe time.
   'limit-resume.fire': 0,
+  // Child chats: every batch, child start, child turn end and 30 s resource sample is logged.
+  'hub.batch': 0,
+  'hub.start-child': 0,
+  'hub.child-turn': 0,
+  'hub.resources': 0,
   ipc: 200,
 } as const
 

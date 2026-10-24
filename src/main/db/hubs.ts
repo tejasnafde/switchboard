@@ -435,3 +435,9 @@ export function markHubWakesDelivered(ids: readonly string[], revision: number):
   const stmt = db.prepare('UPDATE hub_wakes SET delivered_revision = ? WHERE id = ? AND delivered_revision IS NULL')
   return db.transaction(() => ids.reduce((n, id) => n + stmt.run(revision, id).changes, 0))()
 }
+
+/** Every child in `phase`, across parents: startup recovery and the resource sampler. */
+export function listHubChildrenInPhase(phase: HubChildPhase): HubChildRow[] {
+  const rows = getDb().prepare('SELECT * FROM hub_children WHERE phase = ? ORDER BY created_at, ordinal').all(phase) as ChildDbRow[]
+  return rows.map(toChild)
+}

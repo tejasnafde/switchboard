@@ -59,6 +59,7 @@ import {
   threadFamilyIds,
   getConversationById,
   getConversationTitle,
+  listHubChildrenInPhase,
   resolveRootThreadId,
   rewriteSystemMarker,
   getDb,
@@ -143,6 +144,11 @@ import {
 import { buildPrLinkTools } from '../mcp/pr-link-tools'
 import { buildPeerMcpTools, runPeerSendPlan } from '../mcp/peer-mcp-tools'
 import { buildApprovalMcpTools } from '../mcp/approval-mcp-tools'
+import { buildHubMcpTools, HUB_INSTRUCTIONS, START_CHILDREN_TOOL } from '../mcp/hub-tools'
+import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } from '../hub/hub-start'
+import { appMetrics } from '../runtime'
+import { HubResourceSampler } from '../hub/hub-measure'
+import { CHILD_READ_ONLY_CODE, CHILD_READ_ONLY_TEXT, hubChildrenEnabled } from '@shared/hub'
 import { sqliteApprovalCardStore } from '../db/agent-approval-cards'
 import { sqliteHeldPeerMessageStore } from '../db/peer-held-messages'
 import {
@@ -409,6 +415,57 @@ export class ProviderRegistry implements PeerToolHost {
     this.agentApprovals.expireOld()
     this.limitResumer = limitResume ? new LimitResumer(this.limitResumeHost()) : null
     this.limitResumer?.start()
+    this.hubStarter = new HubStarter(this.hubStartHost(), getSetting)
+    this.hubSampler = adapters
+      ? null
+      : new HubResourceSampler({
+          targets: () =>
+            this.hubChildrenOn()
+              ? listHubChildrenInPhase('open').map((c) => ({ childId: c.childId, parentId: c.parentId }))
+              : [],
+          agentPid: (threadId) => this.switchboardMcp?.agentPid(this.liveSessionId(threadId) ?? threadId) ?? null,
+          appMetrics,
+        })
+    if (!adapters) {
+      try {
+        this.hubStarter.recoverInterrupted()
+      } catch (err) {
+        log.error('could not recover child chats cut off mid-start', err)
+      }
+    }
+    this.hubSampler?.start()
+  }
+
+  private hubChildrenOn(): boolean {
+    try {
+      return hubChildrenEnabled(process.env, getSetting)
+    } catch (err) {
+      log.warn('could not read the hub_children flag; it counts as off', err)
+      return false
+    }
+  }
+
+  private hubStartHost() {
+    return {
+      createWorktree: hubWorktreeCreator,
+      startSession: (opts: SessionStartOpts) => this.startManagedSession(opts),
+      submitTurn: (input: UserTurnSubmissionV1) => this.submitManagedUserTurn(input),
+      openCard: (input: { threadId: string; parentId: string; detail: string; plan: HubBatchPlan }) =>
+        this.agentApprovals.open({
+          threadId: input.threadId,
+          chatId: input.parentId,
+          toolName: START_CHILDREN_TOOL,
+          detail: input.detail,
+          plan: input.plan,
+        }),
+      announceRow: (parentId: string, row: { messageId: string; requestId: string; content: string }) =>
+        this.publish({
+          type: 'approval.result',
+          threadId: this.liveSessionId(parentId) ?? parentId,
+          ...row,
+          at: Date.now(),
+        }),
+    }
   }
 
   private limitResumeHost(): LimitResumeHost {
@@ -513,6 +570,10 @@ export class ProviderRegistry implements PeerToolHost {
   private readonly agentApprovals: AgentApprovalBroker
   /** Auto-resume after a usage limit; null in tests that inject adapters. */
   readonly limitResumer: LimitResumer | null
+  /** Starts child chats (`start_children`) and holds their run slots. */
+  readonly hubStarter: HubStarter
+  /** Samples the agent process trees of open children; null in tests that inject adapters. */
+  private readonly hubSampler: HubResourceSampler | null
   private readonly approvalStore: ApprovalCardStore<AgentWritePlan>
   /** Agent messages a link refused only for time, until they are delivered (`shared/peer-held-messages.ts`). */
   private readonly heldPeerStore: HeldPeerMessageStore
@@ -1291,6 +1352,11 @@ export class ProviderRegistry implements PeerToolHost {
     // A "not delivered" row names its target by root id, so a session running
     // under another id of that root is found too.
     const targetThreadId = this.liveSessionId(input.targetThreadId) ?? resolveRootThreadId(input.targetThreadId)
+    // An open child hears only from its parent (`/send-to` from the user included).
+    const childParent = this.hubStarter.parentOfOpenChild(targetThreadId)
+    if (childParent && (initiator === 'user' || resolveRootThreadId(input.fromThreadId) !== childParent)) {
+      throw new Error(CHILD_READ_ONLY_TEXT)
+    }
     if (this.switchingSessions.has(targetThreadId)) {
       throw new Error('That session is changing profiles. Try again when it reconnects.')
     }
@@ -1600,7 +1666,13 @@ export class ProviderRegistry implements PeerToolHost {
     response: HostWriteResponse,
   ): Promise<void> {
     const plan = card.plan
-    const what = isPrWritePlan(plan) ? prWritePlanSummary(plan) : `the message to session ${plan.sessionId}`
+    const what = isPrWritePlan(plan)
+      ? prWritePlanSummary(plan)
+      : isHubBatchPlan(plan)
+        ? `the ${plan.view.rows.length} child chats`
+        : `the message to session ${plan.sessionId}`
+    if (isHubBatchPlan(plan) && close.kind !== 'approve')
+      this.hubStarter.closed(plan.batchId, close.kind === 'withdrawn' ? 'withdrawn' : 'denied')
     let outcome: ApprovalResultOutcome
     let text: string
     if (close.kind === 'approve') {
@@ -1631,7 +1703,11 @@ export class ProviderRegistry implements PeerToolHost {
     const messageId = `apr_${card.requestId}`
     const content = formatApprovalResultMarker({
       requestId: card.requestId,
-      title: card.hostWrite ? hostWriteTitle(card.hostWrite) : 'Message another session',
+      title: card.hostWrite
+        ? hostWriteTitle(card.hostWrite)
+        : isHubBatchPlan(plan)
+          ? 'Start child chats'
+          : 'Message another session',
       outcome,
       text,
       delivery,
@@ -1663,6 +1739,7 @@ export class ProviderRegistry implements PeerToolHost {
         response,
       )
     }
+    if (isHubBatchPlan(plan)) return this.hubStarter.approve(plan.batchId, runtimeMode())
     return runPeerSendPlan({ threadId, runtimeMode, publish, peers: this }, plan)
   }
 
@@ -1804,6 +1881,8 @@ export class ProviderRegistry implements PeerToolHost {
     const chatId = (): string => resolveRootThreadId(threadId)
     const runtimeMode = (): RuntimeMode => this.chatRuntimeMode(threadId)
     const publish = (event: RuntimeEvent): void => this.publish(event)
+    // Depth 1: an open child gets no parent tools and no hub paragraph.
+    const parentTools = this.hubChildrenOn() && !this.hubStarter.isOpenChild(threadId)
     try {
       return await this.switchboardMcp.open(threadId, () => [
         ...buildPrTools({
@@ -1833,7 +1912,23 @@ export class ProviderRegistry implements PeerToolHost {
           peers: this,
         }),
         ...buildApprovalMcpTools({ chatId: chatId(), approvals: this.agentApprovals }),
-      ])
+        ...(parentTools
+          ? buildHubMcpTools({
+              parent: () => ({
+                threadId: this.liveSessionId(threadId) ?? threadId,
+                parentId: chatId(),
+                projectPath: getConversationById(chatId())?.project_path ?? this.sessionDescriptors.get(threadId)?.cwd ?? '',
+                cwd: this.sessionDescriptors.get(threadId)?.cwd ?? '',
+                mode: runtimeMode(),
+                agent: toAgentProvider(provider),
+                instanceId: this.sessionDescriptors.get(threadId)?.instanceId ?? null,
+              }),
+              starter: this.hubStarter,
+              resources: (id) => this.hubSampler?.resourcesOf(id),
+              publish,
+            })
+          : []),
+      ], parentTools ? HUB_INSTRUCTIONS : undefined)
     } catch (err) {
       log.warn(`Switchboard MCP server unavailable for ${threadId}; starting without its tools`, err)
       return null
@@ -2049,7 +2144,12 @@ export class ProviderRegistry implements PeerToolHost {
     this.bus.publish(event)
     // After the event itself, so clients see the turn end before its Limited row.
     if (event.type === 'error') this.limitResumer?.onError(event.threadId)
-    if (event.type === 'turn.completed') this.limitResumer?.onTurnEnded(event.threadId, event.limit, event.turnId)
+    if (event.type === 'turn.completed') {
+      this.limitResumer?.onTurnEnded(event.threadId, event.limit, event.turnId)
+      this.hubStarter.onTurnEnded(event.threadId, event)
+    }
+    if (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))
+      this.hubStarter.onTurnEnded(event.threadId)
     if (event.type === 'turn.dequeued') {
       // A promoted message joins the running turn, whose mode stands.
       const held = this.heldTurnModes.get(event.messageId)
@@ -2296,6 +2396,8 @@ export class ProviderRegistry implements PeerToolHost {
    * backend's own goes to the provider in its place.
    */
   private submitClientUserTurn(input: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> {
+    if (typeof input?.threadId === 'string' && this.hubStarter.isOpenChild(input.threadId))
+      return Promise.resolve({ ...rejectedAtomicTurn(CHILD_READ_ONLY_TEXT), code: CHILD_READ_ONLY_CODE })
     if (typeof input?.providerText !== 'string') return this.submitAtomicUserTurn(input)
     const providerText = stripSenderLine(input.providerText)
     const turn = providerText === input.providerText ? input : { ...input, providerText }
@@ -3310,6 +3412,7 @@ export class ProviderRegistry implements PeerToolHost {
         origin?: string,
       ): Promise<TurnAcceptanceResult | undefined> => {
         if (typeof message === 'string') message = stripSenderLine(message)
+        if (this.hubStarter.isOpenChild(threadId)) throw new TurnNotAcceptedError(CHILD_READ_ONLY_TEXT)
         if (origin) {
           const result = await this.submitClientUserTurn({
             version: 1,
@@ -3642,6 +3745,7 @@ export class ProviderRegistry implements PeerToolHost {
     this.firstContentSpans.clear()
     this.firstTurnSent.clear()
     this.limitResumer?.dispose()
+    this.hubSampler?.stop()
     // Open approval cards stay in the store: a quit or a closed window is not an answer.
     for (const threadId of this.sessionAdapters.keys()) this.switchboardMcp?.close(threadId)
     for (const [threadId, adapter] of this.sessionAdapters) {

@@ -555,6 +555,7 @@ export class WorktreeCreationService {
       location: request.checkout.location ?? 'managed-user-data',
       userDataDir: this.options.userDataDir,
       ...(request.checkout.existingBranch ? { existingBranch: request.checkout.existingBranch } : {}),
+      ...(request.purpose === 'hub-child' ? { skipDependencyClone: true } : {}),
     })
     const requestJson = canonicalizeWorktreeCreationRequest(request)
     const worktreeId = this.createWorktreeId()
