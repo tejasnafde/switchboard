@@ -109,6 +109,14 @@ describe('granting and removing', () => {
     expect(sessions.listSessionViews()[0].scopes).toEqual(['chat'])
   })
 
+  it('keeps a grant given to a device that was already away for a month', () => {
+    const id = pair()
+    const seen = sessions.listSessionViews()[0].lastSeenAt
+    const later = seen + 2 * PR_WRITE_INACTIVE_MS
+    sessions.setPrWriteScope(id, true, later)
+    expect(sessions.authenticateSession(token, {}, later + 1000)?.scopes).toEqual(['chat', 'pr-write'])
+  })
+
   it('refuses a revoked device', () => {
     const id = pair()
     sessions.revokeSession(id)

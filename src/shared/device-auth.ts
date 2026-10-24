@@ -238,6 +238,8 @@ export interface DeviceSession {
   customName?: string
   /** When this device last posted on a pull request (`pr-write`). */
   lastPrWriteAt?: number
+  /** When the desktop last granted `pr-write`; inactivity counts from here too. */
+  prWriteGrantedAt?: number
 }
 
 /**

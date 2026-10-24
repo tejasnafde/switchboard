@@ -146,7 +146,9 @@ export function prTextLimitNote(host: PrHost, length: number): string | null {
 
 export const PHONE_PR_WRITE_COPY = {
   /** Where write buttons would be, on a phone without the scope. */
-  noScope: 'Ask the desktop to allow pull request writes.',
+  noScopeTitle: 'This phone can read threads, not post to them.',
+  noScopeBody:
+    'To allow writes, open Settings on your computer, then Devices & machines, this phone, Details, and choose Allow.',
   /** A phone with no passcode, fingerprint or face unlock cannot use the scope. */
   noPasscode: 'Set a passcode on this phone to post from it.',
   /** The write failed in a way that may have reached the host. */

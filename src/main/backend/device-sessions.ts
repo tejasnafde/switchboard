@@ -233,7 +233,8 @@ export function renameSession(id: string, name: string | null): boolean {
 
 /** A pull request write grant does not outlive a month without the device. */
 function activeScopes(session: DeviceSession, nowMs: number): DeviceScope[] {
-  if (!session.scopes.includes('pr-write') || nowMs - session.lastSeenAt < PR_WRITE_INACTIVE_MS) return session.scopes
+  const since = Math.max(session.lastSeenAt, session.prWriteGrantedAt ?? 0)
+  if (!session.scopes.includes('pr-write') || nowMs - since < PR_WRITE_INACTIVE_MS) return session.scopes
   log.info(`dropped pull request writes from inactive device ${session.label}`)
   return session.scopes.filter((s) => s !== 'pr-write')
 }
@@ -252,13 +253,15 @@ export function setScopeChangeListener(fn: ((id: string, scopes: readonly Device
  * desktop's admin channel only. A device that is offline takes the grant at
  * its next connect, since scopes are read on every auth.
  */
-export function setPrWriteScope(id: string, allowed: boolean): boolean {
+export function setPrWriteScope(id: string, allowed: boolean, nowMs: number = Date.now()): boolean {
   const sessions = listSessions()
   const target = sessions.find((s) => s.id === id)
   if (!target || isRevoked(target)) return false
   const without = target.scopes.filter((s) => s !== 'pr-write')
   const scopes: DeviceScope[] = allowed ? [...without, 'pr-write'] : without
-  saveSessions(sessions.map((s) => (s.id === id ? { ...s, scopes } : s)))
+  saveSessions(
+    sessions.map((s) => (s.id === id ? { ...s, scopes, ...(allowed ? { prWriteGrantedAt: nowMs } : {}) } : s)),
+  )
   log.info(`${allowed ? 'granted' : 'removed'} pull request writes for device ${target.label}`)
   onScopesChanged?.(id, scopes)
   return true
