@@ -24,12 +24,14 @@ export interface WorktreeMaterializationIntent {
   creationId: string
   baseRef: string
   branch: {
-    namespace: 'sb' | 'fork' | 'kanban'
+    namespace: 'sb' | 'fork' | 'kanban' | 'hub'
     seed: string
   }
   location: 'managed-in-repo' | 'managed-user-data'
   userDataDir?: string
   existingBranch?: WorktreeExistingBranchIntent
+  /** The caller prepares dependency folders itself before the agent starts (a child chat). */
+  skipDependencyClone?: boolean
 }
 
 /** An existing-branch checkout. Absent on a plan for a fresh branch. */
@@ -62,6 +64,7 @@ export interface WorktreeMaterializationPlan {
   managedRoot: string
   containmentRoot: string
   existingBranch?: ExistingBranchPlan
+  skipDependencyClone?: boolean
 }
 
 export type WorktreeMaterializationResult =
@@ -402,6 +405,7 @@ export class ExecFileGitWorktreeAdapter {
       managedRoot: root,
       containmentRoot,
       ...(existing ? { existingBranch: existing.plan } : {}),
+      ...(intent.skipDependencyClone ? { skipDependencyClone: true } : {}),
     }
   }
 
@@ -510,7 +514,7 @@ export class ExecFileGitWorktreeAdapter {
       }
     }
     const headCommit = (await this.run(plan.worktreePath, ['rev-parse', 'HEAD'])).stdout.trim()
-    cloneDependencyDirsInBackground(plan.repository.projectPath, plan.worktreePath)
+    if (!plan.skipDependencyClone) cloneDependencyDirsInBackground(plan.repository.projectPath, plan.worktreePath)
     return {
       kind: 'completed',
       worktreePath: plan.worktreePath,

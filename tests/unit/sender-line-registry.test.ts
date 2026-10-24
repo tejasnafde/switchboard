@@ -77,6 +77,7 @@ vi.mock('../../src/main/db/database', () => ({
 
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
 import { withBackendRequestContext } from '../../src/main/backend/request-context'
+import { devServerWatch } from '../../src/main/terminal/dev-server-watch'
 import { ProviderChannels } from '../../src/shared/ipc-channels'
 import { SENDER_LINE_OPEN, formatSenderLine } from '../../src/shared/sender-line'
 import type { BackendHost } from '../../src/main/backend/host'
@@ -210,6 +211,21 @@ describe('sender line on a submitted turn', () => {
     expect(t.adapter.sent[0]).toContain('From: Android app')
     expect(t.adapter.sent[0]).not.toContain('Its localhost reaches the user.')
     expect(stored[0].providerText).toBe('open localhost:3000')
+  })
+
+  it('names the dev servers a terminal in the chat folder printed, on both submit paths', async () => {
+    const t = await setup()
+    devServerWatch.observe('pty-1', tmpdir(), 'Local: http://localhost:5173/\n')
+    try {
+      await t.submit('check the page')
+      await t.host.invoke(ProviderChannels.SEND_TURN, 't1', 'and again')
+    } finally {
+      devServerWatch.forget('pty-1')
+    }
+
+    for (const sent of t.adapter.sent) expect(sent).toContain('Dev servers: localhost:5173.')
+    expect(stored[0].providerText).toBe('check the page')
+    expect(state.saved).toEqual(['and again'])
   })
 
   it('sends a slash command as typed', async () => {

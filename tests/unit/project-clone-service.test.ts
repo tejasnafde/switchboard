@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ProjectCloneChannels } from '../../src/shared/ipc-channels'
 import type { CloneSource, CloneStatus } from '../../src/shared/project-clone'
 import {
+  OLD_TARGET_FOLDER_MESSAGE,
   OLD_TARGET_MESSAGE,
   cloneKey,
   cloneTargetBlock,
@@ -99,5 +100,30 @@ describe('openProjectOnMachine', () => {
     expect(cloneTargetBlock(false)).toBe(OLD_TARGET_MESSAGE)
     expect(cloneTargetBlock(undefined)).not.toBeNull()
     expect(cloneTargetBlock(true)).toBeNull()
+  })
+
+  it('refuses a chosen folder on a target that would drop it, but not the default folder', () => {
+    expect(cloneTargetBlock(true, { custom: true, supported: false })).toBe(OLD_TARGET_FOLDER_MESSAGE)
+    expect(cloneTargetBlock(true, { custom: true, supported: undefined })).toBe(OLD_TARGET_FOLDER_MESSAGE)
+    expect(cloneTargetBlock(true, { custom: false, supported: false })).toBeNull()
+    expect(cloneTargetBlock(true, { custom: true, supported: true })).toBeNull()
+    expect(cloneTargetBlock(false, { custom: false, supported: false })).toBe(OLD_TARGET_MESSAGE)
+  })
+
+  it('sends a chosen folder as path, and leaves path out for the default', async () => {
+    const custom = fakeApi([{ phase: 'done', branch: 'feat' }])
+    await openProjectOnMachine(
+      {
+        sourceMachineId: 'local',
+        projectPath: '/Users/me/app',
+        targetMachineId: 'vm3',
+        source,
+        files: [],
+        targetFolder: '~/code/app',
+      },
+      custom.api,
+    )
+    await waitForProjectClone('vm3', '/home/u/projects/app')
+    expect(custom.calls[0][2]).toEqual({ url: source.url, remoteBranch: 'feat', name: 'app', path: '~/code/app' })
   })
 })

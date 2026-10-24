@@ -3,6 +3,7 @@ import type { AgentType } from '@shared/types'
 import type {
   WorktreeCreationActionRequest,
   WorktreeCreationProgressEvent,
+  WorktreeCreationRecoveryAction,
   WorktreeCreationRequest,
   WorktreeCreationSnapshot,
   WorktreeExistingBranchIntent,
@@ -109,8 +110,19 @@ export interface MobileNewSessionCreationActions {
   canStartInProject: boolean
   canChooseSetupRun: boolean
   canChooseSetupSkip: boolean
+  canCheckStatus: boolean
+  canCancel: boolean
+  canRetain: boolean
+  canRemove: boolean
   progressLabel: string
+  correlation?: string
 }
+
+/** Recovery actions the coordinator sends through `worktree-creation:act` as-is. */
+export type WorktreeActAction = Extract<
+  WorktreeCreationRecoveryAction,
+  'choose_setup_run' | 'choose_setup_skip' | 'cancel' | 'retain' | 'remove'
+>
 
 export function newSessionCreationActions(state: MobileNewSessionCreationState): MobileNewSessionCreationActions {
   const recovery = state.snapshot?.recoveryActions ?? state.progress?.recoveryActions ?? []
@@ -118,19 +130,49 @@ export function newSessionCreationActions(state: MobileNewSessionCreationState):
   const canStartInProject =
     state.intent?.checkout.kind === 'worktree' &&
     (recovery.includes('start_in_project') || (!state.snapshot && state.status === 'failed'))
-  const canChooseSetupRun = recovery.includes('choose_setup_run')
-  const canChooseSetupSkip = recovery.includes('choose_setup_skip')
-  const progressLabel =
-    state.status === 'failed'
-      ? 'Worktree creation failed'
-      : state.status === 'rolled_back'
-        ? 'Worktree creation rolled back'
-        : state.status === 'cleanup_required'
-          ? 'Worktree needs attention'
-          : state.status === 'ambiguous'
-            ? 'Checking whether the worktree was created'
-            : (state.progress?.detail ?? phaseLabel(state.progress?.phase ?? state.snapshot?.phase))
-  return { canRetry, canStartInProject, canChooseSetupRun, canChooseSetupSkip, progressLabel }
+  const snapshot = state.snapshot
+  return {
+    canRetry,
+    canStartInProject,
+    canChooseSetupRun: recovery.includes('choose_setup_run'),
+    canChooseSetupSkip: recovery.includes('choose_setup_skip'),
+    // A definite rejection (failed with no snapshot) never reached the backend, so there is nothing to check.
+    canCheckStatus:
+      state.intent?.checkout.kind === 'worktree' &&
+      state.status !== 'submitting' &&
+      !(state.status === 'failed' && !snapshot),
+    canCancel: recovery.includes('cancel'),
+    canRetain: recovery.includes('retain'),
+    canRemove: recovery.includes('remove'),
+    progressLabel: progressLabel(state),
+    ...(snapshot ? { correlation: `Creation ${snapshot.creationId}, revision ${snapshot.revision}` } : {}),
+  }
+}
+
+function progressLabel(state: MobileNewSessionCreationState): string {
+  switch (state.status) {
+    case 'failed':
+      return 'Worktree creation failed'
+    case 'rolled_back':
+      return 'Worktree creation rolled back'
+    case 'cancelled':
+      return 'Worktree creation cancelled'
+    case 'cleanup_required':
+      switch (state.snapshot?.cleanupDisposition) {
+        case 'retained':
+          return 'Worktree retained for recovery'
+        case 'removed':
+          return 'Worktree removed'
+        case 'removal_refused':
+          return 'Worktree removal was refused'
+        default:
+          return 'Worktree cleanup required'
+      }
+    case 'ambiguous':
+      return 'Checking whether the worktree was created'
+    default:
+      return state.progress?.detail ?? phaseLabel(state.progress?.phase ?? state.snapshot?.phase)
+  }
 }
 
 function phaseLabel(phase: WorktreeCreationSnapshot['phase'] | undefined): string {
@@ -226,7 +268,9 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
     await options.storage?.remove(intent.connectionId, intent.projectPath)
   }
 
-  const acceptSnapshot = async (snapshot: WorktreeCreationSnapshot): Promise<WorktreeCreationSnapshot> => {
+  const acceptSnapshot = async (snapshot: WorktreeCreationSnapshot): Promise<void> => {
+    // A read that started before an action can answer after it.
+    if (state.snapshot?.creationId === snapshot.creationId && snapshot.revision < state.snapshot.revision) return
     createDisposition = 'unknown'
     const intent = state.intent
     const nextState: MobileNewSessionCreationState = {
@@ -239,7 +283,7 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
     if (disposed) {
       state = nextState
       await persist()
-      return snapshot
+      return
     }
     publish(nextState)
     if (snapshot.status === 'ready' && snapshot.worktreeId && snapshot.worktreePath && snapshot.branch && intent) {
@@ -254,10 +298,17 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
         creationId: snapshot.creationId,
       })
       await removePersisted(intent)
+    } else if (
+      intent &&
+      snapshot.status !== 'pending' &&
+      snapshot.status !== 'ready' &&
+      snapshot.recoveryActions.length === 0
+    ) {
+      // Cancelled, removed or rolled back with nothing left to act on: do not restore it next time.
+      await removePersisted(intent)
     } else {
       await persist()
     }
-    return snapshot
   }
 
   const classifyFailure = async (error: unknown): Promise<'ambiguous' | 'definite_rejection'> => {
@@ -347,10 +398,35 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
       )
     } catch (error) {
       if (isMissingWorktreeCreation(error)) {
+        // The backend lost the record, so a resubmitted create restarts its revisions.
+        state = { ...state, snapshot: undefined }
         await submitWorktree()
         return
       }
       createDisposition = await classifyFailure(error)
+    }
+  }
+
+  const sendAction = async (
+    intent: MobileNewSessionIntent,
+    snapshot: WorktreeCreationSnapshot,
+    action: WorktreeCreationRecoveryAction,
+  ): Promise<void> => {
+    const act = options.worktrees.act
+    if (!act) throw new Error('This worktree action is not available.')
+    publish({ ...state, status: 'submitting', error: undefined })
+    try {
+      await acceptSnapshot(
+        await act({
+          creationId: snapshot.creationId,
+          machineId: intent.machineId,
+          expectedRevision: snapshot.revision,
+          action,
+        }),
+      )
+    } catch (error) {
+      // A refused action leaves the creation as it was: keep its status so the title still describes it.
+      if ((await classifyFailure(error)) === 'definite_rejection') publish({ ...state, status: snapshot.status })
     }
   }
 
@@ -451,19 +527,7 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
       }
       const snapshot = state.snapshot
       if (snapshot?.recoveryActions.includes('retry') && options.worktrees.act) {
-        publish({ ...state, status: 'submitting', error: undefined })
-        try {
-          await acceptSnapshot(
-            await options.worktrees.act({
-              creationId: snapshot.creationId,
-              machineId: state.intent.machineId,
-              expectedRevision: snapshot.revision,
-              action: 'retry',
-            }),
-          )
-        } catch (error) {
-          await classifyFailure(error)
-        }
+        await sendAction(state.intent, snapshot, 'retry')
         return
       }
       await persist()
@@ -472,25 +536,13 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
 
     reconcileAfterReconnect: reconcile,
 
-    async chooseSetup(action: 'choose_setup_run' | 'choose_setup_skip'): Promise<void> {
+    async act(action: WorktreeActAction): Promise<void> {
       const intent = state.intent
       const snapshot = state.snapshot
-      if (!intent || !snapshot || !snapshot.recoveryActions.includes(action) || !options.worktrees.act) {
-        throw new Error('No worktree setup decision is available.')
+      if (!intent || !snapshot || !snapshot.recoveryActions.includes(action)) {
+        throw new Error('This worktree action is not available.')
       }
-      publish({ ...state, status: 'submitting', error: undefined })
-      try {
-        await acceptSnapshot(
-          await options.worktrees.act({
-            creationId: snapshot.creationId,
-            machineId: intent.machineId,
-            expectedRevision: snapshot.revision,
-            action,
-          }),
-        )
-      } catch (error) {
-        await classifyFailure(error)
-      }
+      await sendAction(intent, snapshot, action)
     },
 
     async startInProject(): Promise<void> {

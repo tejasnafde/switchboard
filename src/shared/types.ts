@@ -294,6 +294,8 @@ export interface ChatMessage {
     hostWrite?: import('./agent-host-writes').HostWriteCard
     /** A Codex permissions request, listed in full. */
     permissions?: import('./codex-permission-request').CodexPermissionView
+    /** Child chats an agent asked to start, one row each. */
+    hubBatch?: import('./hub').HubBatchView
   }
   /** Plan proposal from agent exiting plan mode */
   plan?: PlanAttachment

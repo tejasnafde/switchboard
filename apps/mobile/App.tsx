@@ -76,7 +76,7 @@ const DemoPullRequestScreen = withDemoStrip(PullRequestScreen)
 const DemoConversationsScreen = withDemoStrip(ConversationsScreen)
 const DemoThreadScreen = withDemoStrip(ThreadScreen)
 const DemoNewSessionScreen = withDemoStrip(NewSessionScreen, { notInDemo: true })
-const DemoMessageSearchScreen = withDemoStrip(MessageSearchScreen)
+const DemoMessageSearchScreen = withDemoStrip(MessageSearchScreen, { notInDemo: true })
 
 /** The DEMO badge in the header of the demo's own machine screens. */
 function demoBadge(connectionId: string) {

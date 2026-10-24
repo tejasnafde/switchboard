@@ -35,6 +35,7 @@ import type {
 } from '@shared/provider-events'
 import type { ModelOption, ReasoningEffort } from '@shared/models'
 import type { PendingBlockingEvent } from '@shared/pending-requests'
+import type { LiveSessionSummary } from '@shared/live-sessions'
 import type { QueuedTurnActionResult, QueuedTurnSummary } from '@shared/turn-delivery'
 import type {
   AgentType,
@@ -396,6 +397,11 @@ export class SwitchboardClient {
    */
   getPendingRequests(threadId: string): Promise<PendingBlockingEvent[]> {
     return this.transport.invoke(ProviderChannels.GET_PENDING_REQUESTS, threadId)
+  }
+
+  /** Every session the backend runs now, with its current status. */
+  listLiveSessions(): Promise<LiveSessionSummary[]> {
+    return this.transport.invoke(ProviderChannels.LIST_SESSIONS)
   }
 
   /** Messages the backend holds until the running turn ends. Needs `turn_queue_controls_v1`. */

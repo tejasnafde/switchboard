@@ -1,0 +1,65 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ios-home-recents",
+  "summary": "The iOS app's landing screen (ConnectionsScreen) now opens with Recents above the machine list, with the rules of native Android's Home (HomePresenter). Recents lists every chat of every paired machine, ranked by what it needs: Approval, then Input, then Working (with a spinner), Failed, Done (unread) and the rest, each newest first. A row shows the title (Untitled chat when blank), the project and machine name, and the status or, with no status, the relative time (a short date after a week). It shows five rows and Show more adds five. A tap opens the chat. A chat's status comes only from this run and only while its machine is connected: live events (the chat store stamps each live status change with a clock, statusAt, never restored from disk) plus the backend's provider:list-sessions reply, asked on every Home visit, when a machine connects and after a resume gap. A thread missing from that reply has no live session, a live change after the request beats the reply, an older reply never lands over a newer one, and the reply is dropped when the machine leaves connected. Approval and Input come from the chat's feed (a pending approval, an unanswered question) only for a chat whose status is live this run and not errored or stopped; Plan is never shown, since iOS has no in-memory record of open cards yet. Each machine's chat list is kept on the phone (stores/recents.ts, the newest 50 per machine), so an offline machine still lists its chats, with no status; the demo is never written and unpairing a machine drops its list. The machine list and its management stay on the same screen: unlike Android, iOS keeps the full list there instead of three rows plus Manage.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop has no phone Home screen; its sidebar Recents (sidebar-needs-you) is unchanged."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/home-recents.ts",
+        "apps/mobile/src/stores/recents.ts",
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/components/HomeRecents.tsx",
+        "apps/mobile/src/screens/ConnectionsScreen.tsx",
+        "apps/mobile/src/components/__tests__/HomeRecents.test.tsx",
+        "tests/unit/mobile-home-recents.test.ts",
+        "tests/unit/mobile-chat-store.test.ts",
+        "apps/mobile/src/stores/connections.ts",
+        "tests/unit/mobile-recents-store.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/home/HomePresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/home/HomeScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/home/HomePresentationTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Uses the existing app:get-projects and provider:list-sessions channels unchanged (LiveSessionSummary in src/shared/live-sessions.ts). A backend that fails either call is logged; Recents keeps the last list and shows no reply-based status."
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/recents.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "JavaScript only, with no native module, permission or app.json change, so the fingerprint runtimeVersion is unchanged and it ships on the mobile-ota.yml iOS lane. The new AsyncStorage key switchboard-recents starts empty on an upgrade and an older app ignores it. Android is unchanged."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/mobile-home-recents.test.ts: the Android HomePresentationTest cases (attention outranks Working, Failed and Done and the route fields are kept; neutral rows newest first; one row per chat per machine but the same id on two machines; a bounded page with its total; answered cards drop attention) plus the status source (a restored status shows nothing, a live status this run shows, the list-sessions reply sets and clears, a live change after the request wins both ways), feed attention only for a chat live this run and never a plan or after error or stop, no status for a disconnected machine, the 50-chat disk write without the demo, and the relative time with a short date after eight days",
+      "npx vitest run tests/unit/mobile-recents-store.test.ts: an older reply that lands after a newer one is dropped, a disconnect drops the live reply, and unpairing leaves nothing to write",
+      "npx vitest run tests/unit/mobile-chat-store.test.ts: each live status change gets a statusAt after the mark taken before it",
+      "npx jest (apps/mobile): RecentsList renders the empty copy, title, project and machine, time or status with the Working spinner, opens the chat on tap and offers Show more only while rows remain",
+      "npx tsc --noEmit -p apps/mobile and npm run typecheck"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run on an iPhone or a simulator, and not against a live backend.",
+      "Threads the desktop started under a synthetic agent_<ts> id while the project list shows the provider's session id match neither live events nor the list-sessions reply, so they show no status, as on Android.",
+      "A plan proposed in a chat does not mark it on Home: iOS shows Plan once Home reads the backend's open cards (provider:get-pending-requests), which the chat-list grouping work adds."
+    ]
+  }
+}

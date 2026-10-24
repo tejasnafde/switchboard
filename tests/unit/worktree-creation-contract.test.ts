@@ -121,6 +121,18 @@ describe('worktree creation request contract', () => {
     })
   })
 
+  it('accepts a child chat worktree only in the hub branch namespace', () => {
+    const request = conversationRequest()
+    const child = (namespace: 'hub' | 'sb') =>
+      parseWorktreeCreationRequest({
+        ...request,
+        checkout: { ...request.checkout, branch: { namespace, seed: 'child task' } },
+        purpose: 'hub-child',
+      })
+    expect(child('hub')).toMatchObject({ ok: true, value: { purpose: 'hub-child' } })
+    expect(child('sb')).toMatchObject({ ok: false })
+  })
+
   it('accepts a fork owner without conflating Git ancestry and product lineage', () => {
     const request = conversationRequest()
     const parsed = parseWorktreeCreationRequest({

@@ -45,6 +45,23 @@ Nothing merges to main or ships in a release without, in order:
 Applies to every batch including "small" fixes. Releases additionally
 require green CI on main first (see docs/releasing.md).
 
+**High-risk changes (2026-10-24).** A change that touches any of these needs
+two more things before it merges:
+
+- stored encrypted data (for example `safeStorage` provider instance env,
+  device keys, or any key or format that reads it back),
+- the app's identity (product name, bundle id or package name, signing,
+  update feed, `userData` path),
+- an agent permission boundary (`decidePermission`, runtime modes, sandbox,
+  `canUseTool`, approval routing, MCP tool exposure).
+
+1. Test it on a real installed build (a packaged app, not `npm run dev`) that
+   starts from existing user data, and write in the pull request what you
+   checked. Unit tests and a fresh profile do not count: these changes break
+   on upgrade, not on first launch.
+2. Get the user's explicit approval in the pull request or the chat before
+   the merge. A green gate and a clean review are not approval.
+
 If the batch goes through a pull request, CodeRabbit reviews it automatically
 (config in `.coderabbit.yaml`, no workflow). It is a second opinion, not a
 replacement for step 2: it sees only the PR diff and it does not block the

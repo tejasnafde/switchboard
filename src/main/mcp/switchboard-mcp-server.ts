@@ -18,7 +18,7 @@ import { createMainLogger } from '../logger'
 import { appVersion, userDataDir } from '../runtime'
 import { McpSession, type McpTool } from './mcp-session'
 import { McpTokens } from './mcp-tokens'
-import { ensureStdioBridge, MCP_AUTH_KEY, MCP_PORT_ENV, MCP_TOKEN_FILE_ENV } from './stdio-bridge'
+import { ensureStdioBridge, MCP_AGENT_PID_KEY, MCP_AUTH_KEY, MCP_PORT_ENV, MCP_TOKEN_FILE_ENV } from './stdio-bridge'
 
 const log = createMainLogger('mcp:server')
 
@@ -69,8 +69,11 @@ export interface SwitchboardMcpServerOptions {
 
 interface ChatEntry {
   tools: () => McpTool[]
+  /** Appended to the shared instructions for this chat only. */
+  instructions?: string
   sockets: Set<Socket>
   tokenFile: string
+  agentPid?: number
 }
 
 export class SwitchboardMcpServer {
@@ -98,13 +101,13 @@ export class SwitchboardMcpServer {
    * Give a chat its token and return how its agent launches the bridge.
    * Opening a chat again (a restart) replaces the old token.
    */
-  async open(threadId: string, tools: () => McpTool[]): Promise<SwitchboardMcpLaunch> {
+  async open(threadId: string, tools: () => McpTool[], instructions?: string): Promise<SwitchboardMcpLaunch> {
     const port = await this.listen()
     const { script, tokenDir } = this.bridgeFiles()
     this.close(threadId)
     const tokenFile = join(tokenDir, `${randomBytes(8).toString('hex')}.token`)
     writeFileSync(tokenFile, this.tokens.mint(threadId), { mode: 0o600 })
-    this.chats.set(threadId, { tools, sockets: new Set(), tokenFile })
+    this.chats.set(threadId, { tools, ...(instructions ? { instructions } : {}), sockets: new Set(), tokenFile })
     return {
       // Electron's own binary runs as Node with ELECTRON_RUN_AS_NODE; the headless server is Node already.
       command: process.execPath,
@@ -125,6 +128,11 @@ export class SwitchboardMcpServer {
 
   isOpen(threadId: string): boolean {
     return this.chats.has(threadId)
+  }
+
+  /** The pid of the agent whose bridge connected for this chat, once one has. */
+  agentPid(threadId: string): number | null {
+    return this.chats.get(threadId)?.agentPid ?? null
   }
 
   /** Stop listening and drop everything. Tests and shutdown. */
@@ -192,7 +200,8 @@ export class SwitchboardMcpServer {
         session.handle(parsed)
         return
       }
-      const token = (parsed as Record<string, unknown> | null)?.[MCP_AUTH_KEY]
+      const auth = parsed as Record<string, unknown> | null
+      const token = auth?.[MCP_AUTH_KEY]
       const chat = this.tokens.resolve(token)
       const entry = chat ? this.chats.get(chat) : undefined
       if (!chat || !entry) {
@@ -203,10 +212,12 @@ export class SwitchboardMcpServer {
       clearTimeout(authTimer)
       threadId = chat
       entry.sockets.add(socket)
+      const pid = auth?.[MCP_AGENT_PID_KEY]
+      if (Number.isInteger(pid) && (pid as number) > 1) entry.agentPid = pid as number
       session = new McpSession({
         serverName: SWITCHBOARD_MCP_SERVER_NAME,
         serverVersion: appVersion(),
-        instructions: INSTRUCTIONS,
+        instructions: entry.instructions ? `${INSTRUCTIONS} ${entry.instructions}` : INSTRUCTIONS,
         tools: entry.tools(),
         send,
       })
