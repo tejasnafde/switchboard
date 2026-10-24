@@ -174,7 +174,8 @@ describe('open a project on another machine (local bare repos)', () => {
   })
 })
 
-describe('the target folder', () => {
+// Targets are SSH machines, and a Windows path is refused (`cloneTargetPathProblem`).
+describe.skipIf(process.platform === 'win32')('the target folder', () => {
   it('expands ~/ against the home folder and defaults to ~/projects/<name>', () => {
     expect(resolveCloneTarget({ name: 'app' }, '/home/u')).toEqual({ ok: true, path: '/home/u/projects/app' })
     expect(resolveCloneTarget({ name: 'app', path: '~/code/app' }, '/home/u')).toEqual({
