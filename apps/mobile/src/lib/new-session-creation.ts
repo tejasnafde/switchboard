@@ -3,6 +3,7 @@ import type { AgentType } from '@shared/types'
 import type {
   WorktreeCreationActionRequest,
   WorktreeCreationProgressEvent,
+  WorktreeCreationRecoveryAction,
   WorktreeCreationRequest,
   WorktreeCreationSnapshot,
   WorktreeExistingBranchIntent,
@@ -109,8 +110,19 @@ export interface MobileNewSessionCreationActions {
   canStartInProject: boolean
   canChooseSetupRun: boolean
   canChooseSetupSkip: boolean
+  canCheckStatus: boolean
+  canCancel: boolean
+  canRetain: boolean
+  canRemove: boolean
   progressLabel: string
+  correlation?: string
 }
+
+/** Recovery actions the coordinator sends through `worktree-creation:act` as-is. */
+export type WorktreeActAction = Extract<
+  WorktreeCreationRecoveryAction,
+  'choose_setup_run' | 'choose_setup_skip' | 'cancel' | 'retain' | 'remove'
+>
 
 export function newSessionCreationActions(state: MobileNewSessionCreationState): MobileNewSessionCreationActions {
   const recovery = state.snapshot?.recoveryActions ?? state.progress?.recoveryActions ?? []
@@ -118,19 +130,49 @@ export function newSessionCreationActions(state: MobileNewSessionCreationState):
   const canStartInProject =
     state.intent?.checkout.kind === 'worktree' &&
     (recovery.includes('start_in_project') || (!state.snapshot && state.status === 'failed'))
-  const canChooseSetupRun = recovery.includes('choose_setup_run')
-  const canChooseSetupSkip = recovery.includes('choose_setup_skip')
-  const progressLabel =
-    state.status === 'failed'
-      ? 'Worktree creation failed'
-      : state.status === 'rolled_back'
-        ? 'Worktree creation rolled back'
-        : state.status === 'cleanup_required'
-          ? 'Worktree needs attention'
-          : state.status === 'ambiguous'
-            ? 'Checking whether the worktree was created'
-            : (state.progress?.detail ?? phaseLabel(state.progress?.phase ?? state.snapshot?.phase))
-  return { canRetry, canStartInProject, canChooseSetupRun, canChooseSetupSkip, progressLabel }
+  const snapshot = state.snapshot
+  return {
+    canRetry,
+    canStartInProject,
+    canChooseSetupRun: recovery.includes('choose_setup_run'),
+    canChooseSetupSkip: recovery.includes('choose_setup_skip'),
+    // A definite rejection (failed with no snapshot) never reached the backend, so there is nothing to check.
+    canCheckStatus:
+      state.intent?.checkout.kind === 'worktree' &&
+      state.status !== 'submitting' &&
+      !(state.status === 'failed' && !snapshot),
+    canCancel: recovery.includes('cancel'),
+    canRetain: recovery.includes('retain'),
+    canRemove: recovery.includes('remove'),
+    progressLabel: progressLabel(state),
+    ...(snapshot ? { correlation: `Creation ${snapshot.creationId}, revision ${snapshot.revision}` } : {}),
+  }
+}
+
+function progressLabel(state: MobileNewSessionCreationState): string {
+  switch (state.status) {
+    case 'failed':
+      return 'Worktree creation failed'
+    case 'rolled_back':
+      return 'Worktree creation rolled back'
+    case 'cancelled':
+      return 'Worktree creation cancelled'
+    case 'cleanup_required':
+      switch (state.snapshot?.cleanupDisposition) {
+        case 'retained':
+          return 'Worktree retained for recovery'
+        case 'removed':
+          return 'Worktree removed'
+        case 'removal_refused':
+          return 'Worktree removal was refused'
+        default:
+          return 'Worktree cleanup required'
+      }
+    case 'ambiguous':
+      return 'Checking whether the worktree was created'
+    default:
+      return state.progress?.detail ?? phaseLabel(state.progress?.phase ?? state.snapshot?.phase)
+  }
 }
 
 function phaseLabel(phase: WorktreeCreationSnapshot['phase'] | undefined): string {
@@ -253,6 +295,14 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
         worktreeId: snapshot.worktreeId,
         creationId: snapshot.creationId,
       })
+      await removePersisted(intent)
+    } else if (
+      intent &&
+      snapshot.status !== 'pending' &&
+      snapshot.status !== 'ready' &&
+      snapshot.recoveryActions.length === 0
+    ) {
+      // Cancelled, removed or rolled back with nothing left to act on: do not restore it next time.
       await removePersisted(intent)
     } else {
       await persist()
@@ -472,11 +522,11 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
 
     reconcileAfterReconnect: reconcile,
 
-    async chooseSetup(action: 'choose_setup_run' | 'choose_setup_skip'): Promise<void> {
+    async act(action: WorktreeActAction): Promise<void> {
       const intent = state.intent
       const snapshot = state.snapshot
       if (!intent || !snapshot || !snapshot.recoveryActions.includes(action) || !options.worktrees.act) {
-        throw new Error('No worktree setup decision is available.')
+        throw new Error('This worktree action is not available.')
       }
       publish({ ...state, status: 'submitting', error: undefined })
       try {

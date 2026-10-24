@@ -520,7 +520,7 @@ describe('mobile durable worktree new-session coordinator', () => {
       canChooseSetupRun: true,
       canChooseSetupSkip: true,
     })
-    await h.coordinator.chooseSetup('choose_setup_skip')
+    await h.coordinator.act('choose_setup_skip')
 
     expect(h.act).toHaveBeenCalledWith({
       creationId: 'creation-mobile-1',
