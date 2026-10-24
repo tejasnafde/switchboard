@@ -47,6 +47,7 @@ import type {
   Workspace,
 } from '@shared/types'
 import type { SshIapTarget } from '@shared/machines'
+import type { MessageSearchResult } from '@shared/message-search'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { MergeBackActionResult, MergeBackPreview, MergeBackToken } from '@shared/merge-back'
@@ -256,6 +257,11 @@ export class SwitchboardClient {
     machineId?: string
   }): Promise<ForkConversationOutcome | null> {
     return this.transport.invoke(AppChannels.GET_CONVERSATION_FORK, request)
+  }
+
+  /** Every chat's saved messages on this machine, best match first. */
+  searchMessages(query: string): Promise<MessageSearchResult[]> {
+    return this.transport.invoke(AppChannels.SEARCH_MESSAGES, query)
   }
 
   renameConversation(conversationId: string, title: string): Promise<unknown> {

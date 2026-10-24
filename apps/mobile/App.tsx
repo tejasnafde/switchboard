@@ -12,7 +12,7 @@ import { useFonts } from 'expo-font'
 import { InstrumentSans_600SemiBold, InstrumentSans_700Bold } from '@expo-google-fonts/instrument-sans'
 import { GeistMono_400Regular, GeistMono_500Medium } from '@expo-google-fonts/geist-mono'
 import { createLogger } from '@shared/logger'
-import { colors, fonts } from './src/theme'
+import { colors, fonts, space } from './src/theme'
 import { getCachedAccessToken, warmUpGoogleAuth } from './src/lib/google-auth'
 import { installLifecycleReconnect, installNetworkWatch, setGoogleTokenProvider } from './src/stores/connections'
 import { hydrateOutbox } from './src/stores/outbox'
@@ -25,6 +25,8 @@ import ThreadScreen from './src/screens/ThreadScreen'
 import NewSessionScreen from './src/screens/NewSessionScreen'
 import ReviewsScreen from './src/screens/ReviewsScreen'
 import PullRequestScreen from './src/screens/PullRequestScreen'
+import MessageSearchScreen from './src/screens/MessageSearchScreen'
+import { MessageSearchButton } from './src/components/MessageSearchButton'
 import type { PrDetail, PrRef } from '@shared/pull-requests'
 import SignInScreen from './src/screens/SignInScreen'
 import { DemoBadge, withDemoStrip } from './src/components/DemoStrip'
@@ -60,6 +62,7 @@ export type RootStackParamList = {
   }
   Reviews: { connectionId: string; label: string }
   PullRequest: { connectionId: string; ref: PrRef; title: string }
+  MessageSearch: { connectionId: string }
   DevGallery: undefined
 }
 
@@ -73,10 +76,21 @@ const DemoPullRequestScreen = withDemoStrip(PullRequestScreen)
 const DemoConversationsScreen = withDemoStrip(ConversationsScreen)
 const DemoThreadScreen = withDemoStrip(ThreadScreen)
 const DemoNewSessionScreen = withDemoStrip(NewSessionScreen, { notInDemo: true })
+const DemoMessageSearchScreen = withDemoStrip(MessageSearchScreen)
 
 /** The DEMO badge in the header of the demo's own machine screens. */
 function demoBadge(connectionId: string) {
   return isDemoConnection(connectionId) ? { headerRight: () => <DemoBadge /> } : {}
+}
+
+/** Search button on the Projects header, beside the DEMO badge in the demo. */
+function projectsHeaderRight(connectionId: string, openSearch: () => void) {
+  return () => (
+    <View style={styles.headerRight}>
+      {isDemoConnection(connectionId) && <DemoBadge />}
+      <MessageSearchButton onPress={openSearch} />
+    </View>
+  )
 }
 
 const theme = {
@@ -212,10 +226,12 @@ export default function App() {
           <Stack.Screen
             name="Projects"
             component={DemoProjectsScreen}
-            options={({ route }) => ({
+            options={({ route, navigation }) => ({
               title: route.params.label,
               animation: route.params.viaTab ? 'none' : 'default',
-              ...demoBadge(route.params.connectionId),
+              headerRight: projectsHeaderRight(route.params.connectionId, () =>
+                navigation.navigate('MessageSearch', { connectionId: route.params.connectionId }),
+              ),
             })}
           />
           <Stack.Screen
@@ -238,6 +254,7 @@ export default function App() {
             component={DemoThreadScreen}
             options={({ route }) => ({ title: route.params.title })}
           />
+          <Stack.Screen name="MessageSearch" component={DemoMessageSearchScreen} options={{ title: 'Search chats' }} />
           <Stack.Screen
             name="NewSession"
             component={DemoNewSessionScreen}
@@ -255,4 +272,5 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: space.md },
 })

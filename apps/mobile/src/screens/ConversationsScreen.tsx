@@ -28,6 +28,7 @@ import { keyboardAvoidance } from '../lib/keyboard-avoidance'
 import { getClient } from '../stores/connections'
 import { useChatStore, threadKey } from '../stores/chat'
 import { UnreadPill } from '../components/UnreadPill'
+import { MessageSearchButton } from '../components/MessageSearchButton'
 import { conversationSourceLabel } from '../lib/conversation-source'
 import { threadPreviewLine } from '../lib/thread-preview'
 
@@ -152,13 +153,16 @@ export default function ConversationsScreen({ route, navigation }: Props) {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable
-          hitSlop={12}
-          onPress={() => navigation.navigate('NewSession', { connectionId, projectPath, projectName })}
-          style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}
-        >
-          <Text style={styles.headerPlus}>+</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <MessageSearchButton onPress={() => navigation.navigate('MessageSearch', { connectionId })} />
+          <Pressable
+            hitSlop={12}
+            onPress={() => navigation.navigate('NewSession', { connectionId, projectPath, projectName })}
+            style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}
+          >
+            <Text style={styles.headerPlus}>+</Text>
+          </Pressable>
+        </View>
       ),
     })
   }, [navigation, connectionId, projectPath, projectName])
@@ -393,6 +397,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.accent,
   },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   headerAction: {
     minHeight: HIT,
     justifyContent: 'center',

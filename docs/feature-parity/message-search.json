@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "message-search",
-  "summary": "Message search (cmd+shift+F on the desktop, the search screen on native Android) matches better, orders by relevance with recency as the tiebreak, and names the chat. The backend splits the query into words (runs of letters and digits, the way the FTS tokenizer does), so punctuation, quotes, parentheses, *, :, ^, - and bare AND/OR/NOT/NEAR can no longer make an FTS syntax error that fell back to a slow exact-string scan; every word must match, each as a word prefix (\"sync\" finds \"syncing\"). The LIKE scan stays for a real FTS failure only, and logs it (error code only). Results order by: the words together as typed first, then bm25 relevance, and among results within the same tenth of the best score the newer message first (shared pure rule orderMessageSearchResults). Archived chats stay out unless the query has the word archive or archived (shared parseArchiveIntent, which Go to chat should reuse); that word is then dropped from the search and archived rows are marked. Results gain optional fields: timestamp, rank, phraseMatch, archived and snippetMarked (control-character markers, so a markdown bold word is not shown as a match); the old fields and the ** snippet are unchanged. The desktop dialog shows one row per matching message with the chat title (else Untitled chat), machine (remote only), project, agent, relative time and the highlighted snippet with a you/agent tag, arrow keys and Enter, and a footer counting chats and matches. It searches this machine and every connected remote machine and merges the hits in the same order. Opening a hit opens the chat through the sidebar's open path on its own machine, then opens that chat's cmd+F find bar with the query typed in and its cursor on the chosen message (waiting for the full history when the message is not loaded yet), so next and previous walk the chat's other matches. cmd+F now matches a message holding the typed text or every word of it, and highlights the first word found when the whole text is not there.",
+  "summary": "Message search (cmd+shift+F on the desktop, the search screen on native Android) matches better, orders by relevance with recency as the tiebreak, and names the chat. The backend splits the query into words (runs of letters and digits, the way the FTS tokenizer does), so punctuation, quotes, parentheses, *, :, ^, - and bare AND/OR/NOT/NEAR can no longer make an FTS syntax error that fell back to a slow exact-string scan; every word must match, each as a word prefix (\"sync\" finds \"syncing\"). The LIKE scan stays for a real FTS failure only, and logs it (error code only). Results order by: the words together as typed first, then bm25 relevance, and among results within the same tenth of the best score the newer message first (shared pure rule orderMessageSearchResults). Archived chats stay out unless the query has the word archive or archived (shared parseArchiveIntent, which Go to chat should reuse); that word is then dropped from the search and archived rows are marked. Results gain optional fields: timestamp, rank, phraseMatch, archived and snippetMarked (control-character markers, so a markdown bold word is not shown as a match); the old fields and the ** snippet are unchanged. The iOS app (Expo) has the same search screen as native Android: a search button on the Projects and chat list headers opens Search chats, which needs two characters, waits 200 ms after typing, shows at most 40 rows (chat title, else Untitled chat; snippet without match markers; project, You or Assistant, Archived) with Android's empty, no-match and error copy plus Retry, and a tap opens the chat at its newest messages (neither phone scrolls to the hit). The desktop dialog shows one row per matching message with the chat title (else Untitled chat), machine (remote only), project, agent, relative time and the highlighted snippet with a you/agent tag, arrow keys and Enter, and a footer counting chats and matches. It searches this machine and every connected remote machine and merges the hits in the same order. Opening a hit opens the chat through the sidebar's open path on its own machine, then opens that chat's cmd+F find bar with the query typed in and its cursor on the chosen message (waiting for the full history when the message is not loaded yet), so next and previous walk the chat's other matches. cmd+F now matches a message holding the typed text or every word of it, and highlights the first word found when the whole text is not there.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -28,8 +28,17 @@
       ]
     },
     "reactNativeIos": {
-      "status": "not_applicable",
-      "reason": "The Expo app has no message search screen and never calls app:search-messages; its thread list filter is local and unchanged."
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/MessageSearchScreen.tsx",
+        "apps/mobile/src/lib/message-search.ts",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/components/MessageSearchButton.tsx",
+        "apps/mobile/App.tsx",
+        "apps/mobile/src/screens/ConversationsScreen.tsx",
+        "tests/unit/mobile-message-search.test.ts",
+        "apps/mobile/src/screens/__tests__/message-search-screen.test.tsx"
+      ]
     },
     "nativeAndroid": {
       "status": "implemented",
@@ -68,12 +77,15 @@
       "e2e/radix-overlays.e2e.mjs: every search check passes, plus the new ones (a hit opens the chat's find bar with the query, at 1/1, focused). Its 'session picker: the pick opens beside' check fails the same way on unchanged origin/main code.",
       "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens npm run test:e2e:visual: new message-search screen in Dark, Light and Translucent (read); every other baseline unchanged; two runs pass without updating.",
       "Android: MessageSearchPresentationTest, MessageSearchCoordinatorTest and SwitchboardRemoteClientTest pass (./gradlew :app:testDebugUnitTest).",
+      "tests/unit/mobile-message-search.test.ts: the iOS row (Android's presentation cases: markers and dots dropped, whitespace folded, 240-character cap, project, role and Archived labels, Untitled chat) and the two-character rule.",
+      "apps/mobile/src/screens/__tests__/message-search-screen.test.tsx (jest): the copy for each state, one request per debounced query, a late answer to an older query dropped, error then Retry, and a tap navigating to the chat with its project and worktree.",
       "npm run typecheck and npm test pass."
     ],
     "hardware": [],
     "notExercised": [
       "Search across a real connected remote machine was not driven; the merge is unit-tested and remote calls use the existing routing.invokeOn path.",
-      "The Android archived marker was not seen on a device; the presenter is unit-tested."
+      "The Android archived marker was not seen on a device; the presenter is unit-tested.",
+      "The iOS search screen was not run on an iPhone or the simulator; its rendering and navigation are covered by jest only."
     ]
   }
 }
