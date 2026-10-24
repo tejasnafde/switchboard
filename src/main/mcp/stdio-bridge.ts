@@ -23,6 +23,8 @@ export const MCP_PORT_ENV = 'SWITCHBOARD_MCP_PORT'
  */
 export const MCP_TOKEN_FILE_ENV = 'SWITCHBOARD_MCP_TOKEN_FILE'
 export const MCP_AUTH_KEY = 'switchboardMcpAuth'
+/** The bridge's parent process: the agent that spawned it, whose process tree the hub measures. */
+export const MCP_AGENT_PID_KEY = 'agentPid'
 
 export const STDIO_BRIDGE_SOURCE = `'use strict'
 // Switchboard MCP stdio bridge. Written by Switchboard at startup; edits are overwritten.
@@ -42,7 +44,7 @@ if (!Number.isInteger(port) || port <= 0 || !token) {
 const socket = net.connect({ host: '127.0.0.1', port })
 socket.setNoDelay(true)
 socket.on('connect', () => {
-  socket.write(JSON.stringify({ ${MCP_AUTH_KEY}: token }) + '\\n')
+  socket.write(JSON.stringify({ ${MCP_AUTH_KEY}: token, ${MCP_AGENT_PID_KEY}: process.ppid }) + '\\n')
   process.stdin.pipe(socket)
 })
 socket.pipe(process.stdout)

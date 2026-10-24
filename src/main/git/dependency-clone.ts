@@ -61,7 +61,7 @@
  */
 
 import { execFile } from 'node:child_process'
-import { access, rename, rm, stat, realpath } from 'node:fs/promises'
+import { access, readdir, rename, rm, stat, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { platform as osPlatform } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -72,7 +72,7 @@ import { createMainLogger } from '../logger'
 const log = createMainLogger('git:dependency-clone')
 const execFileP = promisify(execFile)
 
-/** Name of the dependency directory we clone. Root-level only for now. */
+/** Name of the dependency directory we clone. The background clone takes the root one only. */
 export const DEPENDENCY_DIR_NAME = 'node_modules'
 
 /** Settings key; unset or anything but the literal string 'false' means on. */
@@ -202,16 +202,18 @@ export interface CloneDependencyDirsOptions {
   stagingSuffix?: () => string
   /** Override for the existence check's `fs.access`, tests only. */
   access?: AccessFn
+  /** The folder to clone, relative to both roots. Defaults to the root `node_modules`. */
+  dir?: string
 }
 
 /**
- * Clone `<sourceRoot>/node_modules` into `<worktreeRoot>/node_modules`
- * with a copy-on-write filesystem clone, if the source has one and the
- * worktree doesn't already.
+ * Clone `<sourceRoot>/<dir>` into `<worktreeRoot>/<dir>` (`dir` defaults to
+ * `node_modules`) with a copy-on-write filesystem clone, if the source has
+ * one and the worktree doesn't already. Resolves true when it cloned.
  *
  * Never throws. Every failure path (unsupported platform, missing
  * source, existing destination, cross-device, non-APFS target, clone
- * command failure) logs once at info/warn and returns.
+ * command failure) logs once at info/warn and resolves false.
  *
  * The opt-out setting is read only once there is actually something to
  * clone (source present, destination absent) - the common case in a
@@ -222,27 +224,28 @@ export async function cloneDependencyDirs(
   sourceRoot: string,
   worktreeRoot: string,
   options: CloneDependencyDirsOptions = {},
-): Promise<void> {
-  const src = join(sourceRoot, DEPENDENCY_DIR_NAME)
-  const dst = join(worktreeRoot, DEPENDENCY_DIR_NAME)
+): Promise<boolean> {
+  const dir = options.dir ?? DEPENDENCY_DIR_NAME
+  const src = join(sourceRoot, dir)
+  const dst = join(worktreeRoot, dir)
   const platform = options.platform ?? osPlatform()
   const accessFn = options.access ?? defaultAccess
 
-  if (!(await pathExists(src, accessFn))) return
-  if (await pathExists(dst, accessFn)) return
+  if (!(await pathExists(src, accessFn))) return false
+  if (await pathExists(dst, accessFn)) return false
 
   const isEnabled = options.isEnabled ?? isDependencyCloneEnabled
-  if (!isEnabled()) return
+  if (!isEnabled()) return false
 
   if (!SUPPORTED_PLATFORMS.has(platform)) {
     log.info(`dependency clone skipped: unsupported platform ${platform}`)
-    return
+    return false
   }
 
   const sameDevice = options.sameDevice ?? checkSameDevice
   if (!(await sameDevice(src, worktreeRoot))) {
     log.info(`dependency clone skipped: source and worktree are on different devices/volumes`)
-    return
+    return false
   }
 
   if (platform === 'darwin') {
@@ -251,16 +254,16 @@ export async function cloneDependencyDirs(
       log.info(
         `dependency clone skipped: destination filesystem is not confirmed APFS (cp -c silently falls back to a full copy otherwise)`,
       )
-      return
+      return false
     }
   }
 
   const suffix = (options.stagingSuffix ?? (() => randomUUID().slice(0, 8)))()
-  const staging = join(worktreeRoot, `${DEPENDENCY_DIR_NAME}.sb-clone-${suffix}`)
+  const staging = `${dst}.sb-clone-${suffix}`
   const args = cloneArgsFor(platform, src, staging)
   if (!args) {
     log.info(`dependency clone skipped: no clone strategy for platform ${platform}`)
-    return
+    return false
   }
 
   const runner = options.runner ?? defaultRunner
@@ -272,7 +275,7 @@ export async function cloneDependencyDirs(
     const msg = err instanceof Error ? err.message : String(err)
     log.warn(`dependency clone failed after ${Date.now() - startedAt}ms, removing staging dir: ${msg}`)
     await removeStaging(staging)
-    return
+    return false
   }
 
   // The install this clone raced against may have finished, or started
@@ -282,15 +285,17 @@ export async function cloneDependencyDirs(
   if (await pathExists(dst, accessFn)) {
     log.warn(`dependency clone: node_modules appeared during the clone, discarding staged clone: ${staging}`)
     await removeStaging(staging)
-    return
+    return false
   }
   try {
     await rename(staging, dst)
     log.info(`dependency clone completed in ${Date.now() - startedAt}ms: ${dst}`)
+    return true
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     log.warn(`dependency clone: failed to move staged clone into place, removing it: ${msg}`)
     await removeStaging(staging)
+    return false
   }
 }
 
@@ -310,4 +315,34 @@ export function cloneDependencyDirsInBackground(
     // `options.runner`), logged rather than left as an unhandled rejection.
     log.warn(`dependency clone: unexpected error: ${err instanceof Error ? err.message : String(err)}`)
   })
+}
+
+const SKIP_DIRS = new Set([DEPENDENCY_DIR_NAME, '.git', '.switchboard'])
+
+/**
+ * Every `node_modules` next to a `package.json` under `root`, at most `depth`
+ * folders down, as paths relative to `root` (`node_modules`,
+ * `apps/mobile/node_modules`). Never looks inside a `node_modules`.
+ */
+export async function findDependencyDirs(root: string, depth = 3): Promise<string[]> {
+  const found: string[] = []
+  const walk = async (rel: string, level: number): Promise<void> => {
+    let entries
+    try {
+      entries = await readdir(join(root, rel), { withFileTypes: true })
+    } catch (err) {
+      log.warn(`dependency scan: cannot read ${join(root, rel)}: ${err instanceof Error ? err.message : String(err)}`)
+      return
+    }
+    const names = new Set(entries.map((e) => e.name))
+    if (names.has('package.json') && entries.some((e) => e.name === DEPENDENCY_DIR_NAME && e.isDirectory()))
+      found.push(rel ? `${rel}/${DEPENDENCY_DIR_NAME}` : DEPENDENCY_DIR_NAME)
+    if (level >= depth) return
+    for (const e of entries) {
+      if (e.isDirectory() && !SKIP_DIRS.has(e.name) && !e.name.startsWith('.'))
+        await walk(rel ? `${rel}/${e.name}` : e.name, level + 1)
+    }
+  }
+  await walk('', 0)
+  return found
 }
