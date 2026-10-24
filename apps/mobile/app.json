@@ -58,6 +58,12 @@
         }
       ],
       "expo-notifications",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Switchboard asks for Face ID before it posts to a pull request as you."
+        }
+      ],
       "./plugins/withAndroidCleartextTraffic",
       "expo-asset"
     ],
