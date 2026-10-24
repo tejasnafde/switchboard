@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "sender-line",
-  "summary": "The backend puts one sender line in front of each user turn it sends to the provider: the surface that sent it, the paired device, the machine that runs the agent, and whether localhost on that machine reaches the user. It comes from the authenticated connection, replaces any line a client sends, and is never stored or shown.",
+  "summary": "The backend puts one sender line in front of each user turn it sends to the provider: the surface that sent it, the paired device, the machine that runs the agent, whether localhost on that machine reaches the user, and up to three dev server addresses that terminals in the chat's folder printed. It comes from the authenticated connection, replaces any line a client sends, and is never stored or shown.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -14,16 +14,19 @@
         "tests/unit/sender-line-registry.test.ts",
         "tests/unit/sender-line.test.ts",
         "src/main/provider/adapters/acp/acp-adapter.ts",
-        "tests/unit/acp-generic-adapter.test.ts"
+        "tests/unit/acp-generic-adapter.test.ts",
+        "src/main/terminal/dev-server-watch.ts",
+        "src/main/terminal/pty-manager.ts",
+        "tests/unit/dev-server-watch.test.ts"
       ]
     },
     "reactNativeIos": {
       "status": "not_applicable",
-      "reason": "The backend stamps the line from the connection's device session, so the Expo app sends nothing new. The phone never receives the line: the stored turn does not hold it and the backend's transcript parser strips it before history goes over the wire."
+      "reason": "The backend stamps the line from the connection's device session, so the Expo app sends nothing new. The phone never receives the line: the stored turn does not hold it and the backend's transcript parser strips it before history goes over the wire. The dev server note is read from terminals on the backend, so the phone needs nothing for it either."
     },
     "nativeAndroid": {
       "status": "not_applicable",
-      "reason": "The backend stamps the line from the connection's device session, so the Android app sends nothing new. The phone never receives the line: the stored turn does not hold it and the backend's transcript parser strips it before history goes over the wire, so SyntheticUserMessage needs no new block."
+      "reason": "The backend stamps the line from the connection's device session, so the Android app sends nothing new. The phone never receives the line: the stored turn does not hold it and the backend's transcript parser strips it before history goes over the wire, so SyntheticUserMessage needs no new block. The dev server note is read from terminals on the backend, so the phone needs nothing for it either."
     },
     "sharedBackendApi": {
       "status": "implemented",
@@ -39,7 +42,7 @@
     },
     "storageDataMigration": {
       "status": "not_applicable",
-      "reason": "No schema or stored-data change. The stored user turn keeps the text the client sent, without the line. Provider transcripts written after this change hold the line, and the parser strips it on read."
+      "reason": "No schema or stored-data change. The stored user turn keeps the text the client sent, without the line. Provider transcripts written after this change hold the line, and the parser strips it on read. Dev server addresses live in memory per PTY and go when the PTY exits."
     },
     "updateRelease": {
       "status": "implemented",
@@ -53,6 +56,7 @@
       "tests/unit/sender-line-registry.test.ts drives SUBMIT_USER_TURN and the legacy SEND_TURN through the real ProviderRegistry: a desktop turn and a paired Android phone turn each reach the adapter with one line and are stored without it, a line the client forged is replaced by the backend's, a slash command goes out as typed, and the turn.dispatch perf span carries the line's byte size and the running count of stamped turns.",
       "tests/unit/sender-line.test.ts pins the surface rules (desktop, iOS, Android, another client, desktop through an SSH tunnel), the 200 character bound against hostile device names, and that a Claude or Codex transcript line with the line parses back to the stored text and merges with the stored row into one message.",
       "Review fixes are pinned: a failed native resume puts the history preamble after the sender line (tests/unit/sender-line.test.ts), and an ACP agent's first-prompt hook and title get the text without it (tests/unit/acp-generic-adapter.test.ts).",
+      "tests/unit/dev-server-watch.test.ts pins URL and listening-port extraction, ANSI and OSC stripping, an address split across two chunks, the three-per-terminal cap, project folder matching (the folder or under it, never a sibling or a parent) and that PtyManager forgets a terminal on exit and on kill. tests/unit/sender-line.test.ts pins the dev server part (three at most, dropped whole to stay within 200 characters) and that a line with it strips from the text and from a reloaded transcript. tests/unit/sender-line-registry.test.ts shows both submit paths name a dev server a terminal in the chat folder printed.",
       "npm run typecheck and vitest passed; see the PR body for counts."
     ],
     "hardware": [],
@@ -61,7 +65,8 @@
       "No phone or SSH machine was connected. The phone and SSH cases are covered by request-context unit tests only.",
       "Turns the backend sends itself (peer messages, approval results, startup prompts of a new worktree, resumed queued messages) get no line by design.",
       "A phone on the IAP TCP host has no device session, so its line says another client.",
-      "On an SSH machine the line names the OS host name, not the machine name set in Switchboard."
+      "On an SSH machine the line names the OS host name, not the machine name set in Switchboard.",
+      "No real dev runner was started in a Switchboard terminal; banners are matched from fixed strings. A server stopped while its shell stays open stays listed until the PTY exits, and a server started outside a Switchboard terminal is not seen."
     ]
   }
 }

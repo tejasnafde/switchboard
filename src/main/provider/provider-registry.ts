@@ -2299,7 +2299,11 @@ export class ProviderRegistry implements PeerToolHost {
     if (typeof input?.providerText !== 'string') return this.submitAtomicUserTurn(input)
     const providerText = stripSenderLine(input.providerText)
     const turn = providerText === input.providerText ? input : { ...input, providerText }
-    return this.submitAtomicUserTurn(turn, senderLineForTurn(providerText))
+    return this.submitAtomicUserTurn(turn, senderLineForTurn(providerText, this.threadCwd(input.threadId)))
+  }
+
+  private threadCwd(threadId: string): string | undefined {
+    return this.sessionCwd.get(threadId) ?? this.sessionDescriptors.get(threadId)?.cwd
   }
 
   /** Sends `text` to the adapter, with `senderLine` in front when there is one. */
@@ -3385,8 +3389,12 @@ export class ProviderRegistry implements PeerToolHost {
             releasePreparation()
             const modeBefore = adapter.runtimeModeOf?.(threadId)
             try {
-              await this.dispatchToAdapter(adapter, threadId, message, senderLineForTurn(message), (text) =>
-                adapter.sendTurn(threadId, text, runtimeMode, acceptedImages),
+              await this.dispatchToAdapter(
+                adapter,
+                threadId,
+                message,
+                senderLineForTurn(message, this.threadCwd(threadId)),
+                (text) => adapter.sendTurn(threadId, text, runtimeMode, acceptedImages),
               )
             } catch (error) {
               if (startsNewProviderTurn) this.finishOutstandingTurn(threadId)
