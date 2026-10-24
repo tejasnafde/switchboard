@@ -14,8 +14,8 @@
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
-        "apps/mobile/src/components/PrLinksBanner.tsx",
-        "apps/mobile/src/components/__tests__/PrLinksBanner.test.tsx",
+        "apps/mobile/src/components/PrLinks.tsx",
+        "apps/mobile/src/components/__tests__/PrLinks.test.tsx",
         "apps/mobile/src/lib/api.ts",
         "apps/mobile/src/lib/pr-link-unlink.ts",
         "apps/mobile/src/lib/__tests__/pr-link-unlink.test.ts",
@@ -82,7 +82,7 @@
       "tests/unit/pull-request-link-rules.test.ts: provenance labels, header state choice, merge/close command detection, several remotes and fork parents in coveredRepos, and phoneLinkRowText and unlinkPrLabel against tests/fixtures/pr-link-rows.json (shared with Android).",
       "tests/unit/pull-requests-hidden-ipc.test.ts: a Reviews list read stores state only for PRs a chat links.",
       "tests/unit/pull-request-service.test.ts: a fork parent and a second remote become linkable; a failed fork-parent read is retried later.",
-      "apps/mobile jest: PrLinksBanner renders each row, nothing without links, and unlinks the tapped row by a label that names the repository; unlinkPrLink reports a refusal, a missing connection and a failed request.",
+      "apps/mobile jest: PrLinks renders each row, nothing without links, and unlinks the tapped row by a label that names the repository; unlinkPrLink reports a refusal, a missing connection and a failed request.",
       "apps/android ./gradlew :app:testDebugUnitTest: PrLinkRows (row text and Unlink label) against tests/fixtures/pr-link-rows.json, the links and unlink decoders, and the existing coordinator suite (1014 tests).",
       "npm run typecheck and npm test green."
     ],

@@ -14,7 +14,7 @@ import { Animated, Easing, PanResponder, StyleSheet, Text, View } from 'react-na
 import { Ionicons } from '@expo/vector-icons'
 import { composerMode, gestureOutcome, holdHint, type GestureOutcome } from '../lib/composer'
 import type { Dictation } from '../hooks/useDictation'
-import { colors, radius, space, type } from '../theme'
+import { chat, colors, radius, space, type } from '../theme'
 
 /** Hold this long before a press becomes dictation, so a tap stays a tap. */
 const HOLD_MS = 220
@@ -167,21 +167,24 @@ export const SendMicButton = memo(function SendMicButton({
                 ? 'Stop the agent'
                 : 'Hold to dictate, slide up to lock'
         }
-        style={[styles.button, mode === 'send' && styles.buttonSend, mode === 'stop-turn' && styles.buttonStop]}
+        testID={mode === 'stop-turn' ? 'stop-button' : undefined}
+        style={styles.target}
       >
-        {dictation.listening && (
-          <Animated.View
-            style={[
-              styles.pulseRing,
-              {
-                borderColor: tint,
-                opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0] }),
-                transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] }) }],
-              },
-            ]}
-          />
-        )}
-        <Glyph mode={mode} tint={dictation.listening ? tint : undefined} />
+        <View style={[styles.button, mode === 'send' && styles.buttonSend, mode === 'stop-turn' && styles.buttonStop]}>
+          {dictation.listening && (
+            <Animated.View
+              style={[
+                styles.pulseRing,
+                {
+                  borderColor: tint,
+                  opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0] }),
+                  transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] }) }],
+                },
+              ]}
+            />
+          )}
+          <Glyph mode={mode} tint={dictation.listening ? tint : undefined} />
+        </View>
       </View>
     </View>
   )
@@ -192,7 +195,7 @@ function Glyph({ mode, tint }: { mode: ReturnType<typeof composerMode>; tint?: s
     case 'send':
       return <Ionicons name="arrow-up" size={16} color="#fff" />
     case 'stop-turn':
-      return <Ionicons name="stop" size={16} color="#fff" />
+      return <Ionicons name="stop" size={16} color={colors.bg} />
     case 'stop-dictation':
       return <Ionicons name="stop" size={16} color={tint ?? '#fff'} />
     default:
@@ -204,7 +207,7 @@ const styles = StyleSheet.create({
   wrap: { justifyContent: 'center', alignItems: 'center' },
   hint: {
     position: 'absolute',
-    bottom: 44 + space.sm,
+    bottom: chat.target + space.sm,
     right: 0,
     backgroundColor: colors.surfaceRaised,
     borderColor: colors.border,
@@ -213,16 +216,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.sm,
     paddingVertical: space.xs,
   },
-  hintText: { color: colors.textDim, ...type.monoSm },
+  hintText: { color: colors.textDim, ...type.meta },
+  // A 48 pt target around a 40 pt circle.
+  target: { width: chat.target, height: chat.target, alignItems: 'center', justifyContent: 'center' },
   button: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
   buttonSend: { backgroundColor: colors.accent },
-  buttonStop: { backgroundColor: colors.red },
-  pulseRing: { position: 'absolute', width: 44, height: 44, borderRadius: 22, borderWidth: 2 },
+  buttonStop: { backgroundColor: colors.accent },
+  pulseRing: { position: 'absolute', width: 40, height: 40, borderRadius: 20, borderWidth: 2 },
 })

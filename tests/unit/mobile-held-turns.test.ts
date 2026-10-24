@@ -1,17 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../../apps/mobile/src/lib/held-turns'
 
-describe('phone steer/queue toggle', () => {
-  it('reads as it always did with the Steer default', () => {
+describe('phone steer/queue segment', () => {
+  it('selects Steer with the Steer default, and a tap queues once', () => {
     expect(queueToggle('steer', false)).toMatchObject({
       queues: false,
-      label: 'Steering the running turn · tap to queue',
+      label: 'Steer',
+      hint: 'Steering the running turn · tap to queue',
+      accessibilityLabel: 'Send after this turn instead of steering it',
     })
-    expect(queueToggle('steer', true)).toMatchObject({ queues: true, label: 'Sends after this turn' })
+    expect(queueToggle('steer', true)).toMatchObject({ queues: true, label: 'Queue', hint: 'Sends after this turn' })
   })
-  it('starts queued with the Queue default, and a tap steers once', () => {
-    expect(queueToggle('queue', false)).toMatchObject({ queues: true, label: 'Sends after this turn · tap to steer' })
-    expect(queueToggle('queue', true)).toMatchObject({ queues: false, label: 'Steering the running turn' })
+  it('selects Queue with the Queue default, and a tap steers once', () => {
+    expect(queueToggle('queue', false)).toMatchObject({
+      queues: true,
+      label: 'Queue',
+      hint: 'Sends after this turn · tap to steer',
+      accessibilityLabel: 'Steer the running turn instead of queueing',
+    })
+    expect(queueToggle('queue', true)).toMatchObject({
+      queues: false,
+      label: 'Steer',
+      hint: 'Steering the running turn',
+    })
   })
 })
 

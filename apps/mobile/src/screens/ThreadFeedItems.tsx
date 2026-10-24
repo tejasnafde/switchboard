@@ -12,7 +12,6 @@ import type { MarkdownThread } from '../components/HtmlLiveCard'
 import type { FeedItem } from '../stores/chat'
 import { styles } from './thread-screen.styles'
 import type { HeldTurnActions } from '../lib/held-turns'
-import { fileEditCounts, type FileGroupRow } from '../lib/file-groups'
 import { approvalActions, offersQuiet, quietLabel, quietly } from '../lib/approval-actions'
 import { hostWriteTitle, type HostWriteResponse } from '@shared/agent-host-writes'
 import { PR_HOST_LABEL } from '@shared/pull-requests'
@@ -20,6 +19,7 @@ import { peerUndeliveredHeading } from '@shared/peer-links'
 import { AGENT_CARD_LIFETIME_TEXT } from '@shared/agent-approval-cards'
 import { peerUndeliveredReasonText } from '@shared/system-markers'
 import { mergeBackRowDetails, mergeBackRowTitle } from '@shared/merge-back'
+import { showsTurnDuration } from '../lib/thread-chrome'
 
 // ─── Item renderers ────────────────────────────────────────────
 
@@ -33,6 +33,10 @@ export const TextItem = memo(function TextItem({
   thread?: MarkdownThread
 }) {
   const [expanded, setExpanded] = useState(false)
+  // A short turn's "Worked for" shows after a long press, which also offers the fork.
+  const [durationShown, setDurationShown] = useState(false)
+
+  const durationVisible = item.done && item.durationMs != null && (durationShown || showsTurnDuration(item.durationMs))
 
   if (item.stream === 'reasoning') {
     return (
@@ -56,7 +60,17 @@ export const TextItem = memo(function TextItem({
   }
 
   return (
-    <Pressable style={styles.itemBlock} onLongPress={onLongPress} disabled={!onLongPress}>
+    <Pressable
+      style={styles.turnBlock}
+      onLongPress={() => {
+        setDurationShown(true)
+        onLongPress?.()
+      }}
+      disabled={!onLongPress && item.durationMs == null}
+      accessibilityHint={
+        item.done && item.durationMs != null && !durationVisible ? 'Long press to show how long it worked' : undefined
+      }
+    >
       {/* <agent_digest> status tags drive the thread-list preview, not the
           transcript - stripped here the same way the desktop MessageBubble
           strips them. See @shared/agent-digest. streaming: !item.done, so a
@@ -64,7 +78,7 @@ export const TextItem = memo(function TextItem({
           chopped off - only a message still streaming in hides a trailing
           partial/unclosed tag. */}
       <Markdown text={stripDigest(item.text, { streaming: !item.done })} thread={thread} />
-      {item.done && item.durationMs != null && (
+      {durationVisible && item.durationMs != null && (
         <Text style={styles.durationText}>Worked for {fmtDuration(item.durationMs)}</Text>
       )}
     </Pressable>
@@ -394,55 +408,6 @@ export const PlanItem = memo(function PlanItem({
         </Pressable>
       </View>
     </View>
-  )
-})
-
-export const FileEditItem = memo(function FileEditItem({
-  item,
-  backendLabel,
-}: {
-  item: Extract<FeedItem, { kind: 'fileEdit' }>
-  backendLabel: string
-}) {
-  const { added, removed } = fileEditCounts(item)
-
-  return (
-    <View style={[styles.itemBlock, styles.fileEditCard]}>
-      <Text style={styles.fileEditTitle}>
-        {item.changeKind} {item.relPath}
-      </Text>
-      <View style={styles.fileEditMetaRow}>
-        <Text style={styles.addedText}>+{added}</Text>
-        <Text style={styles.removedText}>-{removed}</Text>
-        <Text style={styles.fileEditApplied}>applied on {backendLabel}</Text>
-      </View>
-    </View>
-  )
-})
-
-/** One turn's changed files, folded; a tap shows or hides that turn's file rows. */
-export const FileGroupItem = memo(function FileGroupItem({
-  row,
-  onToggle,
-}: {
-  row: FileGroupRow
-  onToggle: (id: string) => void
-}) {
-  return (
-    <Pressable
-      onPress={() => onToggle(row.id)}
-      accessibilityRole="button"
-      accessibilityState={{ expanded: row.expanded }}
-      testID="file-group"
-      style={[styles.itemBlock, styles.fileEditCard]}
-    >
-      <Text style={styles.fileEditTitle}>{row.label}</Text>
-      <View style={styles.fileEditMetaRow}>
-        <Text style={styles.addedText}>+{row.added}</Text>
-        <Text style={styles.removedText}>-{row.removed}</Text>
-        <Text style={styles.fileEditApplied}>{row.expanded ? 'Hide' : 'Show'}</Text>
-      </View>
-    </Pressable>
   )
 })
 

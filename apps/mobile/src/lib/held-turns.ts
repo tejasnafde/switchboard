@@ -14,27 +14,34 @@ import {
 export interface QueueToggle {
   /** The next send waits for the running turn. */
   queues: boolean
-  label: string
+  /** The selected segment: "Steer" or "Queue". */
+  label: 'Steer' | 'Queue'
   accessibilityLabel: string
+  /** What the next send does, read as the state of the segment. */
+  hint: string
 }
 
 /**
- * The chip above the composer while a turn runs. `flipped` is the one-send
- * override of the device's default, the phone's equivalent of Option+Enter.
+ * The Steer | Queue segment in the composer footer while a turn runs. `flipped`
+ * is the one-send override of the device's default, the phone's equivalent of
+ * Option+Enter. Same text as Android's `TurnDeliveryPolicy.queueToggle`.
  */
 export function queueToggle(preferred: TurnDelivery, flipped: boolean): QueueToggle {
   const queues = followUpDelivery(preferred, flipped) === 'queue'
+  const label = queues ? 'Queue' : 'Steer'
   if (preferred === 'steer') {
     return {
       queues,
-      label: queues ? 'Sends after this turn' : 'Steering the running turn · tap to queue',
+      label,
       accessibilityLabel: 'Send after this turn instead of steering it',
+      hint: queues ? 'Sends after this turn' : 'Steering the running turn · tap to queue',
     }
   }
   return {
     queues,
-    label: queues ? 'Sends after this turn · tap to steer' : 'Steering the running turn',
+    label,
     accessibilityLabel: 'Steer the running turn instead of queueing',
+    hint: queues ? 'Sends after this turn · tap to steer' : 'Steering the running turn',
   }
 }
 
