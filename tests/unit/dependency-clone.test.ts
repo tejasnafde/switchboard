@@ -44,6 +44,7 @@ import {
   WORKTREE_CLONE_DEPENDENCIES_SETTING,
   type CloneRunner,
   type AccessFn,
+  findDependencyDirs,
 } from '../../src/main/git/dependency-clone'
 
 afterEach(() => {
@@ -412,7 +413,7 @@ describe('cloneDependencyDirs', () => {
 
       await expect(
         cloneDependencyDirs(sourceRoot, worktreeRoot, { ...passingChecks, runner, platform: 'darwin' }),
-      ).resolves.toBeUndefined()
+      ).resolves.toBe(false)
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -509,5 +510,25 @@ describe('isDependencyCloneEnabled', () => {
   it('stays enabled for any other value', () => {
     mocks.getSetting.mockReturnValue('yes-please')
     expect(isDependencyCloneEnabled()).toBe(true)
+  })
+})
+
+describe('findDependencyDirs', () => {
+  it('finds every node_modules next to a package.json, 3 levels deep at most, never inside node_modules', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sb-deps-scan-'))
+    try {
+      const pkg = async (dir: string) => {
+        await mkdir(join(root, dir, 'node_modules', 'x'), { recursive: true })
+        await writeFile(join(root, dir, 'package.json'), '{}')
+      }
+      await pkg('.')
+      await pkg('apps/mobile')
+      await pkg('node_modules/x')
+      await pkg('a/b/c/d')
+      await mkdir(join(root, 'lonely', 'node_modules'), { recursive: true })
+      expect((await findDependencyDirs(root)).sort()).toEqual(['apps/mobile/node_modules', 'node_modules'])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })

@@ -289,6 +289,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
           status: 'pending',
           ...(event.hostWrite ? { hostWrite: event.hostWrite } : {}),
           ...(event.permissions ? { permissions: event.permissions } : {}),
+          ...(event.hubBatch ? { hubBatch: event.hubBatch } : {}),
         },
         timestamp: Date.now(),
       })

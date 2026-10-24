@@ -5,6 +5,7 @@ import { matchesShortcut } from '@shared/shortcuts'
 import { isAgentApprovalCardId } from '@shared/agent-approval-cards'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import type { CodexPermissionView } from '@shared/codex-permission-request'
+import { HubBatchRows } from '../hub/HubBatchRows'
 
 const log = createRendererLogger('chat:approval-card')
 
@@ -122,7 +123,9 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
 
       {/* Detail - collapsible. Long JSON tool inputs used to overflow a
           160px box silently; now default-collapsed with a summary line. */}
-      {message.approval.permissions ? (
+      {message.approval.hubBatch ? (
+        <HubBatchRows view={message.approval.hubBatch} />
+      ) : message.approval.permissions ? (
         <PermissionList view={message.approval.permissions} />
       ) : (
         <ApprovalDetail detail={message.approval.detail} />
