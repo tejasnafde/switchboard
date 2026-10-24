@@ -1,0 +1,54 @@
+{
+  "copy": {
+    "noScopeTitle": "This phone can read threads, not post to them.",
+    "noScopeBody": "To allow writes, open Settings on your computer, then Devices & machines, this phone, Details, and choose Allow.",
+    "noPasscode": "Set a passcode on this phone to post from it.",
+    "notSureTitle": "Not sure it posted",
+    "notSureBody": "The connection dropped before the computer answered. Switchboard does not send it again. Check the thread first.",
+    "removed": "The desktop removed pull request writes for this phone. Your text is kept.",
+    "approveNote": "Approving does not merge."
+  },
+  "maxChars": 60000,
+  "limitNotes": [
+    {
+      "host": "github",
+      "length": 60000,
+      "note": null
+    },
+    {
+      "host": "github",
+      "length": 60001,
+      "note": "GitHub takes at most 65,536 characters. Switchboard stops at 60,000. Remove 1."
+    },
+    {
+      "host": "github",
+      "length": 61234,
+      "note": "GitHub takes at most 65,536 characters. Switchboard stops at 60,000. Remove 1,234."
+    },
+    {
+      "host": "github",
+      "length": 1250000,
+      "note": "GitHub takes at most 65,536 characters. Switchboard stops at 60,000. Remove 1,190,000."
+    },
+    {
+      "host": "bitbucket",
+      "length": 60000,
+      "note": null
+    },
+    {
+      "host": "bitbucket",
+      "length": 60001,
+      "note": "Bitbucket sets its own limit. Switchboard stops at 60,000. Remove 1."
+    },
+    {
+      "host": "bitbucket",
+      "length": 61234,
+      "note": "Bitbucket sets its own limit. Switchboard stops at 60,000. Remove 1,234."
+    },
+    {
+      "host": "bitbucket",
+      "length": 1250000,
+      "note": "Bitbucket sets its own limit. Switchboard stops at 60,000. Remove 1,190,000."
+    }
+  ]
+}

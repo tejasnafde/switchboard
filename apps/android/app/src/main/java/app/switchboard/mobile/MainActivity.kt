@@ -7,7 +7,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -25,7 +25,8 @@ import app.switchboard.mobile.platform.deeplink.PendingAppDeepLink
 import app.switchboard.mobile.platform.deeplink.SwitchboardDeepLinkContract
 import kotlinx.coroutines.flow.MutableStateFlow
 
-class MainActivity : ComponentActivity() {
+// A FragmentActivity so BiometricPrompt can ask for the device check before a pull request write.
+class MainActivity : FragmentActivity() {
     private val notificationRouteWake = MutableStateFlow(0L)
     private val appDeepLinkRequest = MutableStateFlow<PendingAppDeepLink?>(null)
     private var nextAppDeepLinkRequestId = 0L
