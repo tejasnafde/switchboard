@@ -164,10 +164,11 @@ sealed interface PrWriteAuthResult {
 class PrWriteCoordinator(
     val ref: PrRef,
     supported: Boolean,
-    private val remote: PrWriteRemote,
+    /** The current connection; null while there is none, so nothing is read or sent. */
+    private var remote: PrWriteRemote?,
     private val mintWriteId: () -> String = { PhonePrWrites.mintWriteId() },
     /** Re-reads the pull request detail after a write. */
-    private val onWritten: () -> Unit = {},
+    private var onWritten: () -> Unit = {},
     private val log: (String) -> Unit = {},
 ) {
     private val mutableState = MutableStateFlow(PrWriteState(supported = supported))
@@ -177,12 +178,34 @@ class PrWriteCoordinator(
     private var conversationsRequest = 0L
     private var accountRequest = 0L
     private var phaseBeforeAuth = PrWritePhase.Ready
+    private var closed = false
 
     private var value: PrWriteState
         get() = mutableState.value
         set(next) {
             mutableState.value = next
         }
+
+    /**
+     * A new connection, or none. The coordinator outlives a reconnect so a
+     * draft, and the answer to a write sent before it, stay on the screen.
+     */
+    @Synchronized
+    fun attach(remote: PrWriteRemote?, supported: Boolean, onWritten: () -> Unit) {
+        this.remote = remote
+        this.onWritten = onWritten
+        if (value.supported != supported) value = value.copy(supported = supported)
+    }
+
+    /**
+     * The screen is gone. A device check that ends later (the prompt can
+     * outlive the activity) sends nothing, because no screen would show the answer.
+     */
+    @Synchronized
+    fun close() {
+        closed = true
+        remote = null
+    }
 
     /** The screen opened or came back to the front. */
     @Synchronized
@@ -193,7 +216,8 @@ class PrWriteCoordinator(
 
     @Synchronized
     fun refreshScopes() {
-        if (!value.supported) return
+        val remote = remote
+        if (!value.supported || remote == null) return
         val id = ++scopesRequest
         remote.scopes { response ->
             synchronized(this) {
@@ -208,7 +232,8 @@ class PrWriteCoordinator(
 
     @Synchronized
     fun loadConversations() {
-        if (!value.supported) return
+        val remote = remote
+        if (!value.supported || remote == null) return
         val id = ++conversationsRequest
         remote.conversations(ref) { response ->
             synchronized(this) {
@@ -272,6 +297,7 @@ class PrWriteCoordinator(
         if (!value.canWrite) return
         value = value.copy(sheet = PrWriteSheetState(target, text))
         val id = ++accountRequest
+        val remote = remote ?: return
         remote.writeAccount(ref) { response ->
             synchronized(this) {
                 if (id != accountRequest) return@writeAccount
@@ -312,6 +338,10 @@ class PrWriteCoordinator(
     fun authFinished(result: PrWriteAuthResult) {
         val sheet = value.sheet ?: return
         if (sheet.phase != PrWritePhase.Authenticating) return
+        if (closed) {
+            log("device check ended after the screen closed; nothing sent")
+            return
+        }
         value = when (result) {
             PrWriteAuthResult.Success -> {
                 send(sheet)
@@ -341,6 +371,7 @@ class PrWriteCoordinator(
             ),
         )
         value = value.copy(sheet = sheet.copy(phase = PrWritePhase.Posting, message = null))
+        val remote = remote ?: return finish(sheet, PrWriteOutcome.NotSent("Not connected"))
         remote.write(target.action, ref, PrWriteRules.input(target, sheet.text, shown, writeId)) { outcome ->
             synchronized(this) { finish(sheet, outcome) }
         }

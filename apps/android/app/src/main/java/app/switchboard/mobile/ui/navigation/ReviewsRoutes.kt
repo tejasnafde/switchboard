@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -215,7 +216,13 @@ internal fun PullRequestRouteHost(
             Log.w(TAG, "no browser for the pull request url", error)
         }
     }
+    // Keyed on the route alone: a reconnect keeps the drafts and the answer to a write in flight.
+    val writes = remember(route) {
+        PrWriteCoordinator(ref = route.ref, supported = false, remote = null, log = { Log.w(TAG, it) })
+    }
+    DisposableEffect(writes) { onDispose { writes.close() } }
     if (runtime == null || lease == null) {
+        SideEffect { writes.attach(remote = null, supported = false, onWritten = {}) }
         PullRequestDetailScreen(
             state = PullRequestDetailState(
                 loading = false,
@@ -245,16 +252,13 @@ internal fun PullRequestRouteHost(
         )
     }
     LaunchedEffect(coordinator) { coordinator.load() }
-    val writes = remember(route, lease.scope) {
-        PrWriteCoordinator(
-            ref = route.ref,
-            supported = PhonePrWrites.CAPABILITY in lease.capabilities,
+    PrWriteScopesEffect(writes, lease.scope) {
+        writes.attach(
             remote = SwitchboardPrWriteRemote(lease.client),
+            supported = PhonePrWrites.CAPABILITY in lease.capabilities,
             onWritten = coordinator::load,
-            log = { Log.w(TAG, it) },
         )
     }
-    PrWriteScopesEffect(writes)
     val writeState by writes.state.collectAsState()
     val authenticator = remember(context) {
         context.findFragmentActivity()?.let(::BiometricPrWriteAuthenticator)
@@ -294,11 +298,15 @@ internal fun PullRequestRouteHost(
     )
 }
 
-/** Scopes and threads are read when the screen opens and each time it comes back to the front. */
+/**
+ * Attaches the connection, then reads scopes and threads when the screen
+ * opens, on each new connection, and each time it comes back to the front.
+ */
 @Composable
-private fun PrWriteScopesEffect(writes: PrWriteCoordinator) {
+private fun PrWriteScopesEffect(writes: PrWriteCoordinator, scope: Any, attach: () -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(writes, lifecycleOwner) {
+    DisposableEffect(writes, scope, lifecycleOwner) {
+        attach()
         writes.open()
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) writes.refreshScopes()

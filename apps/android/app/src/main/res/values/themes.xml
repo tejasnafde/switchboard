@@ -8,5 +8,8 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:fontFamily">@font/instrument_sans_semibold</item>
         <item name="android:colorAccent">@color/switchboard_accent</item>
+        <!-- BiometricPrompt shows an androidx.appcompat AlertDialog for fingerprint on API 24 to 27,
+             which throws on a theme that is not AppCompat. Only that dialog reads this. -->
+        <item name="alertDialogTheme">@style/Theme.AppCompat.Dialog.Alert</item>
     </style>
 </resources>

@@ -17,6 +17,8 @@ exifinterface = "1.4.2"
 mlKitBarcode = "17.3.0"
 firebaseBom = "34.16.0"
 biometric = "1.1.0"
+# The version biometric 1.1.0 brings; named because themes.xml uses its dialog theme.
+appcompat = "1.2.0"
 fragment = "1.9.1"
 
 [libraries]
@@ -49,6 +51,7 @@ mlkit-barcode-scanning = { module = "com.google.mlkit:barcode-scanning", version
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
 androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "biometric" }
+androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
 androidx-fragment = { module = "androidx.fragment:fragment-ktx", version.ref = "fragment" }
 
 [plugins]

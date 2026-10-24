@@ -21,9 +21,9 @@ fun interface PrWriteAuthenticator {
 
 /**
  * BiometricPrompt with the device PIN, pattern or password always allowed.
- * API 30 and later take a strong biometric or the credential. API 28 and 29
- * cannot pair a strong biometric with the credential, so they take any
- * enrolled biometric or the credential. A phone with neither answers
+ * API 30 and later take a strong biometric or the credential. Below API 30
+ * a strong biometric cannot be paired with the credential, so older phones
+ * take any enrolled biometric or the credential. A phone with neither answers
  * [PrWriteAuthResult.NoCredential] and nothing posts.
  */
 class BiometricPrWriteAuthenticator(private val activity: FragmentActivity) : PrWriteAuthenticator {

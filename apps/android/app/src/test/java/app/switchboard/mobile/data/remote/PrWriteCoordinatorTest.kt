@@ -172,6 +172,45 @@ class PrWriteCoordinatorTest {
     }
 
     @Test
+    fun aDeviceCheckThatEndsAfterTheScreenClosedSendsNothing() {
+        val writes = granted()
+        replySheet(writes, "Done.")
+        assertTrue(writes.beginPost())
+        writes.close()
+        writes.authFinished(PrWriteAuthResult.Success)
+        assertTrue(remote.writes.isEmpty())
+    }
+
+    @Test
+    fun aReconnectKeepsTheDraftAndShowsTheAnswerToAWriteInFlight() {
+        val writes = granted()
+        replySheet(writes, "Done.")
+        post(writes)
+        writes.attach(remote = null, supported = false, onWritten = {})
+        remote.writes.single().callback(PrWriteOutcome.Uncertain("ConnectionLost"))
+        val next = FakePrWriteRemote()
+        writes.attach(remote = next, supported = true, onWritten = {})
+        writes.open()
+        assertEquals(PrWritePhase.Uncertain, writes.state.value.sheet?.phase)
+        assertEquals("Done.", writes.state.value.draft(PrWriteTarget.Reply(thread)))
+        assertEquals(1, next.scopeCalls.size)
+        assertTrue(next.writes.isEmpty())
+    }
+
+    @Test
+    fun withNoConnectionAPostIsNotSent() {
+        val writes = granted()
+        replySheet(writes, "Done.")
+        assertTrue(writes.beginPost())
+        writes.attach(remote = null, supported = true, onWritten = {})
+        writes.authFinished(PrWriteAuthResult.Success)
+        assertTrue(remote.writes.isEmpty())
+        val sheet = writes.state.value.sheet!!
+        assertEquals(PrWritePhase.Refused, sheet.phase)
+        assertEquals(PrWriteCoordinator.NOT_SENT, sheet.message)
+    }
+
+    @Test
     fun aRefusalKeepsTheTextAndPostAgainMintsANewWriteId() {
         val writes = granted()
         replySheet(writes, "Done.")

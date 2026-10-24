@@ -28,9 +28,11 @@
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/reviews/PullRequestDetailScreen.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/ReviewsRoutes.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/MainActivity.kt",
+        "apps/android/app/src/main/res/values/themes.xml",
         "apps/android/app/src/test/java/app/switchboard/mobile/domain/reviews/PhonePrWritesTest.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/PrWriteCoordinatorTest.kt",
-        "apps/android/app/src/test/java/app/switchboard/mobile/ui/reviews/PrWritesUiTest.kt"
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/reviews/PrWritesUiTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/platform/auth/PrWriteAuthenticatorThemeTest.kt"
       ]
     },
     "sharedBackendApi": {
@@ -65,7 +67,7 @@
   },
   "verification": {
     "automated": [
-      "Android (testDebugUnitTest): PhonePrWritesTest pins both digest vectors, checks fresh valid write ids and keeps the copy and limit notes equal to tests/fixtures/phone-pr-write-copy.json; PrWriteCoordinatorTest: no write UI or reads without pr_write_scope_v1, read-only threads without pr-write, Post sends the digest of exactly the shown trimmed text with a valid write id, cancelled or missing device authentication sends nothing, an uncertain write is never sent again and leaves only Check thread, not permitted removes the scope and keeps the text, a refusal keeps the text and the next Post mints a new write id; PrWritesUiTest (Robolectric) renders the no-scope note, the Reply and Resolve buttons only with the scope, the approve sheet and the uncertain sheet.",
+      "Android (testDebugUnitTest): PhonePrWritesTest pins both digest vectors, checks fresh valid write ids and keeps the copy and limit notes equal to tests/fixtures/phone-pr-write-copy.json; PrWriteCoordinatorTest: no write UI or reads without pr_write_scope_v1, read-only threads without pr-write, Post sends the digest of exactly the shown trimmed text with a valid write id, cancelled or missing device authentication sends nothing, an uncertain write is never sent again and leaves only Check thread, not permitted removes the scope and keeps the text, a refusal keeps the text and the next Post mints a new write id, a device check that ends after the screen closed sends nothing, a reconnect keeps the draft and the answer to a write in flight; PrWriteAuthenticatorThemeTest builds the fingerprint dialog BiometricPrompt shows below API 28 on the app theme; PrWritesUiTest (Robolectric) renders the no-scope note, the Reply and Resolve buttons only with the scope, the approve sheet and the uncertain sheet.",
       "tests/unit/pr-write-scope.test.ts: pr-write is not a pairing scope; a phone without it is refused every write channel; a granted phone reaches only reply, resolve, comment, submit-review and write-account, never merge, decline, reviewers, re-run, line comments or unresolve; a phone cannot call the grant channel; grant and removal are stored and reach the live-socket listener; a grant made while offline is in the scopes of the next auth; a grant is dropped after 30 days unseen; a revoked device cannot be granted.",
       "tests/unit/pr-write-scope.test.ts through the gate and the real PullRequestService: a phone write with no proof, a digest of other text, or a digest over another account is refused and the provider is never called; a matching write posts once and the same write id is refused afterwards (no re-send), also when two copies race; a refused write may retry under its id once the sheet matches; the desktop and admin devices need no proof; a phone review with line comments is refused. Two digest vectors are pinned for the Android port.",
       "npm run typecheck and npm test green."
