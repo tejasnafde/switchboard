@@ -19,8 +19,9 @@ export interface SavedProjectsStatus {
 }
 
 /**
- * The note over a project list that did not come from the machine just now
- * (Android's `BrowseProjectionPolicy.status`). Null while the list is live.
+ * The note over a project list that did not come from the machine just now:
+ * loading while the saved list waits for an answer, or the failure with Retry.
+ * Null while the list is live.
  */
 export function savedProjectsStatus(live: boolean, error: string | null): SavedProjectsStatus | null {
   if (error !== null) return { label: 'Showing saved projects', detail: error, loading: false, canRetry: true }

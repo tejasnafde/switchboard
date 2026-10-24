@@ -28,7 +28,10 @@ interface PushState {
   token: string | null
   /** Why registration is unavailable, for the Settings screen to explain. */
   problem: Exclude<PushSetup, { ok: true }> | null
+  /** Backends that confirmed this token. Only these suppress the local Done notice. */
   registered: Set<string>
+  /** Registrations still in flight, so the subscription does not send a second one. */
+  pending: Set<string>
   init: () => Promise<void>
   unregisterWith: (connectionId: string) => Promise<void>
   registerWith: (connectionId: string) => Promise<void>
@@ -39,6 +42,7 @@ export const usePushStore = create<PushState>((set, get) => ({
   token: null,
   problem: null,
   registered: new Set<string>(),
+  pending: new Set<string>(),
 
   init: async () => {
     if (get().token) return
@@ -63,51 +67,49 @@ export const usePushStore = create<PushState>((set, get) => ({
   },
 
   registerWith: async (connectionId) => {
-    const { token, registered } = get()
+    const { token, registered, pending } = get()
     if (
       !token ||
       registered.has(connectionId) ||
+      pending.has(connectionId) ||
       isDemoConnection(connectionId) ||
       !useConnectionsStore.getState().configs.some((c) => c.id === connectionId)
     )
       return
     // Claim the slot before awaiting: the subscription can fire again while
     // this request is in flight, which would double-register.
-    set({ registered: new Set(registered).add(connectionId) })
+    set({ pending: new Set(pending).add(connectionId) })
     const client = getClient(connectionId)
     if (!client) {
-      set({ registered: withoutId(get().registered, connectionId) })
+      set({ pending: withoutId(get().pending, connectionId) })
       return
     }
     try {
       // Pass our own connection id so every payload comes back tagged with the
       // backend that sent it - a tap can then open the right thread.
       const res = await client.registerPush(token, 'phone', connectionId)
+      set({ pending: withoutId(get().pending, connectionId) })
       if (
         getClient(connectionId) !== client ||
         !useConnectionsStore.getState().configs.some((c) => c.id === connectionId)
       )
         return
-      if (res?.ok === false) {
-        log.warn(`backend rejected push token: ${res.error}`)
-        set({ registered: withoutId(get().registered, connectionId) })
-      }
+      if (res?.ok === false) log.warn(`backend rejected push token: ${res.error}`)
+      else set({ registered: new Set(get().registered).add(connectionId) })
     } catch (err) {
       // An older backend has no push handler. Not worth surfacing, but let a
       // later attempt retry.
       log.warn('push registration failed', err)
-      if (
-        getClient(connectionId) === client &&
-        useConnectionsStore.getState().configs.some((c) => c.id === connectionId)
-      ) {
-        set({ registered: withoutId(get().registered, connectionId) })
-      }
+      set({ pending: withoutId(get().pending, connectionId) })
     }
   },
 
   unregisterWith: async (connectionId) => {
     const { token } = get()
-    set({ registered: withoutId(get().registered, connectionId) })
+    set({
+      registered: withoutId(get().registered, connectionId),
+      pending: withoutId(get().pending, connectionId),
+    })
     const client = getClient(connectionId)
     if (!token || !client || isDemoConnection(connectionId)) return
     let timeout: ReturnType<typeof setTimeout> | undefined

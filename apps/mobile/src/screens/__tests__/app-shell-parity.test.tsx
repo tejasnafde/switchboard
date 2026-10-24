@@ -10,6 +10,7 @@ import SettingsScreen from '../SettingsScreen'
 import { renderComponent } from '../../test/render'
 import { useSavedProjectsStore } from '../../stores/saved-projects'
 import { usePrefsStore } from '../../stores/prefs'
+import { useConnectionsStore } from '../../stores/connections'
 
 const mockNavigation = { replace: jest.fn(), navigate: jest.fn(), popToTop: jest.fn() }
 
@@ -76,6 +77,21 @@ describe('ProjectsScreen offline', () => {
     expect(view.texts()).toContain('live-app')
     expect(view.texts()).not.toContain('Showing saved projects')
     expect(useSavedProjectsStore.getState().byConnection.mac.projects.map((p) => p.name)).toEqual(['live-app'])
+  })
+
+  it('does not save an answer that lands after the machine was unpaired', async () => {
+    const configs = useConnectionsStore.getState().configs
+    let answer!: (projects: Project[]) => void
+    mockGetProjects = () => new Promise((resolve) => (answer = resolve))
+    await renderProjects()
+    useConnectionsStore.setState({ configs: configs.filter((c) => c.id !== 'mac') })
+    await act(async () => {
+      answer([project('late-app')])
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(useSavedProjectsStore.getState().byConnection.mac).toBeUndefined()
+    useConnectionsStore.setState({ configs })
   })
 })
 

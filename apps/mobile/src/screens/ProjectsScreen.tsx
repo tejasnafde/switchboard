@@ -19,11 +19,12 @@ import { useFocusEffect } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { Workspace } from '@shared/types'
 import { groupProjectsByWorkspace } from '@shared/project-grouping'
+import { isDemoConnection } from '@shared/phone-demo/phone-demo'
 import { matchesQuery, savedProjectsStatus } from '../lib/project-list'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { usePrefsStore, UNGROUPED_WORKSPACE_KEY } from '../stores/prefs'
-import { getClient } from '../stores/connections'
+import { getClient, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey } from '../stores/chat'
 import { UnreadPill } from '../components/UnreadPill'
 import { ConnectionTabBar } from '../components/ConnectionTabBar'
@@ -87,7 +88,9 @@ export default function ProjectsScreen({ route, navigation }: Props) {
         ])
         const next = { projects: result, workspaces: ws }
         setLive(next)
-        useSavedProjectsStore.getState().save(connectionId, next)
+        // An answer that lands after unpair must not bring the removed machine's list back.
+        if (isDemoConnection(connectionId) || useConnectionsStore.getState().configs.some((c) => c.id === connectionId))
+          useSavedProjectsStore.getState().save(connectionId, next)
         setError(null)
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))

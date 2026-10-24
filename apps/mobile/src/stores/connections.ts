@@ -502,6 +502,14 @@ export function onAppForeground(fn: () => void): () => void {
   return () => onForeground.delete(fn)
 }
 
+/** Callbacks to run as the app goes to the background, before JS is suspended. */
+const onBackground = new Set<() => void>()
+
+export function onAppBackground(fn: () => void): () => void {
+  onBackground.add(fn)
+  return () => onBackground.delete(fn)
+}
+
 /**
  * Report the device's network state to every live transport.
  *
@@ -535,6 +543,7 @@ export function installLifecycleReconnect(): () => void {
   const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
     if (next === 'background') {
       backgroundedAt = Date.now()
+      onBackground.forEach((fn) => fn())
       return
     }
     if (next !== 'active') return

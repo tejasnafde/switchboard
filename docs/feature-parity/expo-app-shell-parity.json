@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "expo-app-shell-parity",
-  "summary": "The iOS app catches up with three parts of the native Android app shell. A machine's Projects screen shows the list that machine answered last time, with \"Showing saved projects\", progress while it loads, and the failure plus Retry when it cannot answer. A Settings screen (Account, Connections, Chat, App, and Leave demo while the demo is open) opens from the Machines list footer and from the switchboard://settings link. When a turn ends while the app is in the background and the backend push does not cover it (no registered token, or the chat is the one on screen and its viewing lease holds the push back), the phone posts a local \"Done\" notice that opens the chat on a tap.",
+  "summary": "The iOS app catches up with three parts of the native Android app shell. A machine's Projects screen shows the list that machine answered last time, with \"Showing saved projects\", progress while it loads, and the failure plus Retry when it cannot answer. A Settings screen (Account, Connections, Chat, App, and Leave demo while the demo is open) opens from the Machines list footer, from the empty Machines screen and from the switchboard://settings link. When a turn ends while the app is in the background and the backend push does not cover it (no token the backend has confirmed, or the chat is the one on screen and its viewing lease holds the push back), the phone posts a local \"Done\" notice that opens the chat on a tap. The open chat releases its viewing lease when the app goes to the background, so the backend push covers a turn that ends after JS is suspended. A project list that arrives after its machine was removed is not saved.",
   "surfaces": {
     "desktop": {
       "status": "not_applicable",
@@ -19,7 +19,13 @@
         "apps/mobile/App.tsx",
         "apps/mobile/src/lib/completion-notice.ts",
         "apps/mobile/src/stores/push.ts",
+        "apps/mobile/src/stores/connections.ts",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/screens/ConnectionsScreen.tsx",
         "apps/mobile/src/screens/__tests__/app-shell-parity.test.tsx",
+        "apps/mobile/src/screens/__tests__/demo-mode.test.tsx",
+        "apps/mobile/src/stores/__tests__/push-unpair.test.ts",
+        "apps/mobile/src/stores/__tests__/lifecycle-reconnect.test.ts",
         "tests/unit/mobile-project-list.test.ts",
         "tests/unit/mobile-deep-link.test.ts",
         "tests/unit/mobile-completion-notice.test.ts"
@@ -50,7 +56,7 @@
   "verification": {
     "automated": [
       "Vitest: savedProjectsStatus copy, appLinkRoute accepts only switchboard://settings and switchboard:///settings, and the completion notifier (app in front, demo, push cover, dedupe per turn, retry after a failed post, cap of 128 turns).",
-      "Jest: ProjectsScreen shows the saved list, the failure and Retry when the machine cannot answer, and drops the note and saves the list when it answers; SettingsScreen lists the account, machines, follow-up default and build, and its rows navigate.",
+      "Jest: ProjectsScreen shows the saved list, the failure and Retry when the machine cannot answer, and drops the note and saves the list when it answers, but not after the machine was removed; the empty Machines screen opens Settings; a push registration counts only after the backend confirms it; going to the background runs the lease release callbacks; SettingsScreen lists the account, machines, follow-up default and build, and its rows navigate.",
       "Root typecheck and apps/mobile tsc pass."
     ],
     "hardware": [],

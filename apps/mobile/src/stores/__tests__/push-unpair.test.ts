@@ -195,3 +195,30 @@ test('unpair deletes keys after a legacy credential migration already in flight'
   await removing
   expect(events).toEqual(['migration-start', 'migration-end', 'delete'])
 })
+
+test('a registration counts only once the backend confirms it', async () => {
+  usePushStore.setState({ registered: new Set(), pending: new Set() })
+  let acknowledge!: (value: unknown) => void
+  const transport = {
+    invoke: jest.fn(
+      () =>
+        new Promise((resolve) => {
+          acknowledge = resolve
+        }),
+    ),
+    on: jest.fn(() => () => {}),
+    close: jest.fn(),
+  }
+  jest.spyOn(SwitchboardClient, 'overWs').mockReturnValue(new SwitchboardClient(transport as never))
+  useConnectionsStore.getState().connect('mac')
+  await connected('mac')
+  const registering = usePushStore.getState().registerWith('mac')
+  await usePushStore.getState().registerWith('mac')
+  expect(transport.invoke).toHaveBeenCalledTimes(1)
+  expect(usePushStore.getState().registered.has('mac')).toBe(false)
+  acknowledge({ ok: true })
+  await registering
+  expect(usePushStore.getState().registered.has('mac')).toBe(true)
+  expect(usePushStore.getState().pending.has('mac')).toBe(false)
+  useConnectionsStore.getState().disconnect('mac')
+})

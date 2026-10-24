@@ -195,6 +195,7 @@ export default function ConnectionsScreen() {
           <Text style={styles.ctaText}>Scan a pairing QR</Text>
         </Pressable>
         <DemoEntry onOpen={openDemo} />
+        <SettingsLink onOpen={() => navigation.navigate('Settings')} />
         {/* Also here, not only in Settings: a fresh install is exactly when
             someone asks which build they are holding, and it is the first
             place a pairing problem gets debugged. */}
@@ -239,15 +240,7 @@ export default function ConnectionsScreen() {
       ListFooterComponent={
         <View>
           {demoActive && <DemoEntry onOpen={openDemo} />}
-          <Pressable
-            onPress={() => navigation.navigate('Settings')}
-            testID="open-settings"
-            accessibilityRole="button"
-            style={({ pressed }) => [styles.settingsLink, pressed && styles.pressed]}
-          >
-            <Ionicons name="settings-outline" size={16} color={colors.textDim} />
-            <Text style={styles.settingsLinkText}>Settings</Text>
-          </Pressable>
+          <SettingsLink onOpen={() => navigation.navigate('Settings')} />
           {__DEV__ && (
             <Pressable onPress={() => navigation.navigate('DevGallery')} style={styles.devLink}>
               <Text style={styles.devLinkText}>Component gallery</Text>
@@ -412,6 +405,20 @@ const styles = StyleSheet.create({
     color: '#08131f',
   },
 })
+
+function SettingsLink({ onOpen }: { onOpen: () => void }) {
+  return (
+    <Pressable
+      onPress={onOpen}
+      testID="open-settings"
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.settingsLink, pressed && styles.pressed]}
+    >
+      <Ionicons name="settings-outline" size={16} color={colors.textDim} />
+      <Text style={styles.settingsLinkText}>Settings</Text>
+    </Pressable>
+  )
+}
 
 /**
  * "Try the demo" on the empty screen. While the demo is open it reads "Back to
