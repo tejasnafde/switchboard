@@ -6,6 +6,7 @@
  * native Android app ports it (`HostWritePhoneCard.kt`).
  */
 import type { HostWriteCard, HostWriteResponse } from './agent-host-writes'
+import { fnv1a64Hex } from './fnv64'
 import { reviewFromResponse, reviewVerdictProblem } from './agent-pr-review'
 import { reviewerLabel } from './agent-pr-reviewers'
 import { lineLocation, REVIEW_EVENT_LABEL, type ReviewEvent } from './pull-request-writes'
@@ -199,15 +200,7 @@ export function hostWriteShownDigest(requestId: string, card: HostWriteCard): st
     card.action,
     ...preview.sections.flatMap((s) => [s.label, s.text]),
   ].join('\u0000')
-  let hash = FNV_OFFSET
-  for (let i = 0; i < input.length; i++) {
-    const unit = input.charCodeAt(i)
-    hash = BigInt.asUintN(64, (hash ^ BigInt(unit & 0xff)) * FNV_PRIME)
-    hash = BigInt.asUintN(64, (hash ^ BigInt(unit >>> 8)) * FNV_PRIME)
-  }
-  return hash.toString(16).padStart(16, '0')
+  return fnv1a64Hex(input)
 }
 
 const SHOWN_DIGEST_VERSION = 'sb-shown-2'
-const FNV_OFFSET = BigInt('0xcbf29ce484222325')
-const FNV_PRIME = BigInt('0x100000001b3')

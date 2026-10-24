@@ -580,6 +580,10 @@ export class GitHubProvider implements PullRequestProvider {
     return { id: login, login }
   }
 
+  writeAccount(): Promise<string> {
+    return this.viewerLogin()
+  }
+
   async createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<OpenedPr> {
     let pr: { number?: number; html_url?: string } | null
     try {

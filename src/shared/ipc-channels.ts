@@ -99,6 +99,10 @@ export const AppChannels = {
   MOBILE_DEVICE_REVOKE: 'mobile-pairing:revoke',
   /** Name a device on this computer, or clear the name with null. */
   MOBILE_DEVICE_RENAME: 'mobile-pairing:rename',
+  /** `(id, allowed: boolean)`: grant or remove the `pr-write` scope. Admin, so a phone cannot grant itself. */
+  MOBILE_DEVICE_PR_WRITE: 'mobile-pairing:set-pr-write',
+  /** `()` -> the calling device's scopes now. Open: a phone reads its own grant. */
+  DEVICE_SCOPES: 'device-session:scopes',
   /**
    * Run Google consent in a browser and return the credential blob for the
    * phone's QR. Desktop-only: the phone cannot complete this flow, which is the
@@ -331,7 +335,8 @@ export const PullRequestChannels = {
 /**
  * The human write actions on a pull request, one channel per action, each
  * `(ref, input)` -> `PrResult<PrWriteDone>` (`shared/pull-request-writes.ts`).
- * Admin-scoped in `shared/device-auth.ts`: a paired phone calls none of them.
+ * Admin-scoped in `shared/device-auth.ts`, except the ones a `pr-write` phone
+ * may call (`PHONE_PR_WRITE_CHANNELS` in `shared/pull-request-phone-writes.ts`).
  */
 export const PullRequestWriteChannels = {
   REPLY: 'pull-requests:reply',
@@ -346,6 +351,12 @@ export const PullRequestWriteChannels = {
   REMOVE_REVIEWER: 'pull-requests:remove-reviewer',
   /** `(ref)`: Bitbucket decline, GitHub close. */
   DECLINE: 'pull-requests:decline',
+} as const
+
+/** Phone pull request writes (`shared/pull-request-phone-writes.ts`). `pr-write` or `admin`. */
+export const PullRequestPhoneChannels = {
+  /** `(ref)` -> `PrResult<{ account: string }>`: who a write on that pull request posts as. */
+  WRITE_ACCOUNT: 'pull-requests:write-account',
 } as const
 
 /**

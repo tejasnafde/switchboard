@@ -529,6 +529,18 @@ export class WsHost implements BackendHost {
     return closed
   }
 
+  /** Give live connections of a session a new scope set, e.g. a removed
+   *  `pr-write` grant, which must hold from the next frame on. */
+  setSessionScopes(sessionId: string, scopes: readonly DeviceScope[]): number {
+    let changed = 0
+    for (const state of this.clients.values()) {
+      if (state.sessionId !== sessionId || !state.scopes) continue
+      state.scopes = [...scopes]
+      changed++
+    }
+    return changed
+  }
+
   /** Stop the heartbeat. Call when the host is torn down for good. */
   dispose(): void {
     clearInterval(this.heartbeat)
