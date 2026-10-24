@@ -18,8 +18,7 @@
         "apps/mobile/src/stores/outbox.ts",
         "apps/mobile/src/lib/pr-chat.ts",
         "apps/mobile/src/screens/__tests__/feed-items.test.tsx",
-        "tests/unit/mobile-thread-history.test.ts",
-        "tests/unit/pill-body-segments.test.ts"
+        "tests/unit/mobile-thread-history.test.ts"
       ]
     },
     "nativeAndroid": {
