@@ -34,6 +34,7 @@ import {
 } from '../lib/secrets'
 import { usePushStore } from './push'
 import { useChatStore } from './chat'
+import { useRecentsStore } from './recents'
 import { acknowledgeAcceptedOrigin, drain as drainOutbox } from './outbox'
 
 const log = createLogger('store:connections')
@@ -196,6 +197,7 @@ export const useConnectionsStore = create<ConnectionsState>()(
           delete status[id]
           return { configs: s.configs.filter((c) => c.id !== id), status }
         })
+        useRecentsStore.getState().forget(id)
         await usePushStore.getState().unregisterWith(id)
         if (clients.get(id) === client) {
           get().disconnect(id)
@@ -374,7 +376,10 @@ export const useConnectionsStore = create<ConnectionsState>()(
         get().setStatus(id, 'disconnected')
       },
 
-      setStatus: (id, status) => set((s) => ({ status: { ...s.status, [id]: status } })),
+      setStatus: (id, status) => {
+        if (status !== 'connected') useRecentsStore.getState().dropLive(id)
+        set((s) => ({ status: { ...s.status, [id]: status } }))
+      },
     }),
     {
       name: 'sb-connections',

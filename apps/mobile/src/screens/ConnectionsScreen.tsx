@@ -1,7 +1,8 @@
 /**
- * Machines: the app's home, and a glanceable status board rather than a list of
- * settings. Answers three questions without a tap - which machines are alive,
- * which have unread activity, and what each one actually is.
+ * Home: Recents across every paired machine (components/HomeRecents), then the
+ * machines as a glanceable status board rather than a list of settings.
+ * Answers three questions without a tap - which machines are alive, which have
+ * unread activity, and what each one actually is.
  *
  * "Machines" matches the desktop's own vocabulary (the machines table,
  * MachineChannels, MachineLayer); "backends" was a second name for the same
@@ -28,6 +29,7 @@ import type { TurnDelivery } from '@shared/turn-delivery'
 import { chatCacheReady } from '../stores/chat'
 import { useConnectionsStore, secretsReady, type ConnectionConfig } from '../stores/connections'
 import { MachineRow } from '../components/MachineRow'
+import { HomeRecents } from '../components/HomeRecents'
 import { CERTIFICATE_CHANGED_MESSAGE, canPinCertificates } from '../lib/pinned-websocket'
 import { transportRefusal } from '../lib/transport-gate'
 import {
@@ -222,6 +224,20 @@ export default function ConnectionsScreen() {
       data={items}
       keyExtractor={(item) => item.key}
       contentContainerStyle={styles.list}
+      ListHeaderComponent={
+        <HomeRecents
+          onOpen={(row) =>
+            navigation.navigate('Thread', {
+              connectionId: row.connectionId,
+              threadId: row.id,
+              title: row.title,
+              projectPath: row.projectPath,
+              worktreePath: row.worktreePath ?? null,
+              worktreeBranch: row.worktreeBranch ?? undefined,
+            })
+          }
+        />
+      }
       ListFooterComponent={
         <View>
           {demoActive && <DemoEntry onOpen={openDemo} />}
