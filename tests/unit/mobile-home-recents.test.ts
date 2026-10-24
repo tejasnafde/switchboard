@@ -10,6 +10,7 @@ import {
   homeRelativeTime,
   liveStatus,
   newestSessions,
+  persistedRecents,
   sessionsFromProjects,
   type HomeMachine,
   type LiveStatuses,
@@ -36,8 +37,14 @@ function project(
   }
 }
 
-function machine(id: string, projects: Project[], live?: LiveStatuses): HomeMachine {
-  return { connectionId: id, label: id === 'mac' ? 'Studio Mac' : id, sessions: sessionsFromProjects(projects), live }
+function machine(id: string, projects: Project[], live?: LiveStatuses, connected = true): HomeMachine {
+  return {
+    connectionId: id,
+    label: id === 'mac' ? 'Studio Mac' : id,
+    connected,
+    sessions: sessionsFromProjects(projects),
+    live,
+  }
 }
 
 function thread(patch: Partial<Thread> = {}): Thread {
@@ -73,14 +80,12 @@ describe('homeRecents', () => {
             { id: 'input', startedAt: 200 },
             { id: 'working', startedAt: 300 },
             { id: 'failed', startedAt: 400 },
-            { id: 'plan', startedAt: 50 },
           ),
         ]),
       ],
       {
-        'mac:approval': thread({ items: [approval('pending')] }),
-        'mac:input': thread({ items: [question()] }),
-        'mac:plan': thread({ items: [{ kind: 'plan', id: 'p', planId: 'p', markdown: '' }] }),
+        'mac:approval': thread({ status: 'running', statusAt: 4, items: [approval('pending')] }),
+        'mac:input': thread({ status: 'running', statusAt: 5, items: [question()] }),
         'mac:done': thread({ status: 'idle', statusAt: 1, unread: 1 }),
         'mac:working': thread({ status: 'running', statusAt: 2 }),
         'mac:failed': thread({ status: 'error', statusAt: 3 }),
@@ -90,7 +95,6 @@ describe('homeRecents', () => {
     expect(page.items.map((r) => [r.id, r.status])).toEqual([
       ['approval', 'Approval'],
       ['input', 'Input'],
-      ['plan', 'Plan'],
       ['working', 'Working'],
       ['failed', 'Failed'],
       ['done', 'Done'],
@@ -132,24 +136,58 @@ describe('homeRecents', () => {
   })
 
   it('drops attention once the card is answered', () => {
+    const page = homeRecents([machine('mac', [project('/a', { id: 'a', startedAt: 1 }, { id: 'q', startedAt: 2 })])], {
+      'mac:a': thread({ status: 'idle', statusAt: 1, items: [approval('approve')] }),
+      'mac:q': thread({ status: 'idle', statusAt: 2, items: [question([['yes']])] }),
+    })
+    expect(page.items.map((r) => r.status)).toEqual([null, null])
+  })
+
+  it('reads attention from the feed only for a chat live this run, and never a plan', () => {
     const page = homeRecents(
       [
         machine('mac', [
-          project('/a', { id: 'a', startedAt: 1 }, { id: 'q', startedAt: 2 }, { id: 'p', startedAt: 3 }),
+          project(
+            '/a',
+            { id: 'cached', startedAt: 1 },
+            { id: 'plan', startedAt: 2 },
+            { id: 'err', startedAt: 3 },
+            { id: 'stop', startedAt: 4 },
+          ),
         ]),
       ],
       {
-        'mac:a': thread({ items: [approval('approve')] }),
-        'mac:q': thread({ items: [question([['yes']])] }),
-        'mac:p': thread({
-          items: [
-            { kind: 'plan', id: 'p', planId: 'p', markdown: '' },
-            { kind: 'user', id: 'u', text: 'Implement', at: 1 },
-          ],
+        'mac:cached': thread({ items: [approval('pending')] }),
+        'mac:plan': thread({
+          status: 'idle',
+          statusAt: 1,
+          items: [{ kind: 'plan', id: 'p', planId: 'p', markdown: '' }],
         }),
+        'mac:err': thread({ status: 'error', statusAt: 2, items: [approval('pending')] }),
+        'mac:stop': thread({ status: 'stopped', statusAt: 3, items: [question()] }),
       },
     )
-    expect(page.items.map((r) => r.status)).toEqual([null, null, null])
+    expect(page.items.map((r) => [r.id, r.status])).toEqual([
+      ['err', 'Failed'],
+      ['stop', null],
+      ['plan', null],
+      ['cached', null],
+    ])
+  })
+
+  it('shows no live status or attention for a machine that is not connected', () => {
+    const page = homeRecents(
+      [
+        machine(
+          'mac',
+          [project('/a', { id: 'w', startedAt: 1 }, { id: 'r', startedAt: 2 })],
+          { mark: 0, statuses: { r: 'running' } },
+          false,
+        ),
+      ],
+      { 'mac:w': thread({ status: 'running', statusAt: 1, items: [approval('pending')] }) },
+    )
+    expect(page.items.map((r) => r.status)).toEqual([null, null])
   })
 })
 
@@ -189,10 +227,24 @@ describe('helpers', () => {
     expect(newestSessions(sessions, 2).map((s) => s.id)).toEqual(['b', 'c'])
   })
 
+  it('writes the newest 50 chats per machine and never the demo', () => {
+    const many = sessionsFromProjects([
+      project('/a', ...Array.from({ length: 60 }, (_, i) => ({ id: `t${i}`, startedAt: i }))),
+    ])
+    const out = persistedRecents({ mac: many, demo: many }, 50)
+    expect(Object.keys(out)).toEqual(['mac'])
+    expect(out.mac).toHaveLength(50)
+    expect(out.mac[0].id).toBe('t59')
+  })
+
   it('formats seconds or milliseconds, and nothing for no time', () => {
     const now = Date.now()
     expect(homeRelativeTime(now - 5 * 60_000)).toBe('5m')
     expect(homeRelativeTime(Math.floor((now - 2 * 3_600_000) / 1000))).toBe('2h')
     expect(homeRelativeTime(0)).toBe('')
+    const eightDays = now - 8 * 24 * 3_600_000
+    expect(homeRelativeTime(eightDays, now)).toBe(
+      new Date(eightDays).toLocaleDateString(undefined, { dateStyle: 'short' }),
+    )
   })
 })

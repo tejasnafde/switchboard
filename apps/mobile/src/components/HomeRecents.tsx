@@ -3,7 +3,7 @@
  * machine, what each needs, and a tap straight into the chat. Rules in
  * lib/home-recents.ts.
  */
-import { useCallback, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
 import { colors, radius, space, type, HIT } from '../theme'
@@ -22,10 +22,14 @@ import { useRecentsStore } from '../stores/recents'
 const STATUS_COLOR: Record<HomeRecentStatus, string> = {
   Approval: colors.amber,
   Input: colors.amber,
-  Plan: colors.amber,
   Working: colors.accent,
   Failed: colors.red,
   Done: colors.green,
+}
+
+function refreshConnected() {
+  const { configs, status } = useConnectionsStore.getState()
+  for (const c of configs) if (status[c.id] === 'connected') void useRecentsStore.getState().refresh(c.id)
 }
 
 export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }) {
@@ -41,17 +45,22 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
     .filter((c) => status[c.id] === 'connected')
     .map((c) => c.id)
     .join(',')
-  const configIds = configs.map((c) => c.id).join(',')
-  // Asked on every Home visit and on each connect: live events miss a turn
-  // that ended while this app was disconnected or not running, and so does a
-  // resume gap (staleGeneration).
-  useFocusEffect(
-    useCallback(() => {
-      const store = useRecentsStore.getState()
-      store.retain(configIds.split(','))
-      for (const id of connected.split(',')) if (id) void store.refresh(id)
-    }, [connected, configIds, staleGeneration]),
-  )
+  // Asked on every Home visit, when a machine connects and after a resume gap:
+  // live events miss a turn that ended while this app was disconnected or not
+  // running.
+  useFocusEffect(refreshConnected)
+  const refreshed = useRef(new Set(connected.split(',')))
+  useEffect(() => {
+    const ids = new Set(connected.split(','))
+    for (const id of ids) if (id && !refreshed.current.has(id)) void useRecentsStore.getState().refresh(id)
+    refreshed.current = ids
+  }, [connected])
+  const seenGeneration = useRef(staleGeneration)
+  useEffect(() => {
+    if (staleGeneration === seenGeneration.current) return
+    seenGeneration.current = staleGeneration
+    refreshConnected()
+  }, [staleGeneration])
 
   const page = useMemo(
     () =>
@@ -59,13 +68,14 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
         configs.map((c) => ({
           connectionId: c.id,
           label: c.label,
+          connected: status[c.id] === 'connected',
           sessions: sessions[c.id] ?? [],
           live: live[c.id],
         })),
         threads,
         limit,
       ),
-    [configs, sessions, live, threads, limit],
+    [configs, status, sessions, live, threads, limit],
   )
 
   return (
