@@ -267,7 +267,8 @@ internal fun PrWriteNotice(notice: String?, modifier: Modifier = Modifier) {
 @Composable
 private fun Composer(target: PrWriteTarget, draft: String, pr: PrSummary, actions: PrWriteActions) {
     val text = draft.trim()
-    val problem = PrWriteRules.composerProblem(pr.ref.host, target, text)
+    val offered = target.event == null || target.event in PhonePrWrites.phoneReviewEvents(pr)
+    val problem = PrWriteRules.composerProblem(pr.ref.host, target, text) ?: if (offered) null else "This verdict is no longer offered."
     val limitNote = PhonePrWrites.prTextLimitNote(pr.ref.host, text.length)
     Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
         Text(
@@ -410,7 +411,8 @@ private fun ConfirmSheet(sheet: PrWriteSheetState, pr: PrSummary, actions: PrWri
                 ) { Text("Check thread") }
                 sheet.phase != PrWritePhase.Removed -> Button(
                     onClick = actions.onPost,
-                    enabled = sheet.canPost,
+                    // A re-read may show the pull request closed, or the viewer as its author.
+                    enabled = sheet.canPost && (target.event == null || target.event in PhonePrWrites.phoneReviewEvents(pr)),
                     modifier = Modifier.weight(1f).testTag(PrWriteTestTags.SHEET_POST),
                 ) {
                     if (busy) {

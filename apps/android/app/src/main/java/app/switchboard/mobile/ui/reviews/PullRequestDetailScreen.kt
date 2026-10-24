@@ -330,7 +330,7 @@ private fun DetailBody(
             Text(
                 buildAnnotatedString {
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Merge on desktop. ") }
-                    withStyle(SpanStyle(color = TextDim)) { append(PhonePullRequests.mergeOnDesktopNote(pr.ref.host)) }
+                    withStyle(SpanStyle(color = TextDim)) { append(PhonePullRequests.mergeOnDesktopNote(pr.ref.host, canWrite = writes?.canWrite == true)) }
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
