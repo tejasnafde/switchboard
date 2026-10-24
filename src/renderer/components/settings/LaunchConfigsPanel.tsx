@@ -145,9 +145,9 @@ export function LaunchConfigsPanel() {
         setBodyDirty(false)
         setConfigSaveState('idle')
         setConfigError(null)
-        setSetupCommand(parsed.worktree?.setup.command ?? '')
-        setSetupDefaultPolicy(parsed.worktree?.setup.defaultPolicy ?? 'ask')
-        setSetupStartupPolicy(parsed.worktree?.setup.startupPolicy ?? 'wait-for-setup')
+        setSetupCommand(parsed.worktree?.setup?.command ?? '')
+        setSetupDefaultPolicy(parsed.worktree?.setup?.defaultPolicy ?? 'ask')
+        setSetupStartupPolicy(parsed.worktree?.setup?.startupPolicy ?? 'wait-for-setup')
       })
       .catch((err) => {
         if (cancelled) return

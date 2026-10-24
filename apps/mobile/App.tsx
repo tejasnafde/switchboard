@@ -1,10 +1,17 @@
 import { useEffect } from 'react'
 import { StyleSheet, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
-import { NavigationContainer, DarkTheme, createNavigationContainerRef } from '@react-navigation/native'
+import {
+  NavigationContainer,
+  DarkTheme,
+  createNavigationContainerRef,
+  getStateFromPath,
+  type LinkingOptions,
+} from '@react-navigation/native'
 import * as Notifications from 'expo-notifications'
 import { initPushWhenPaired } from './src/stores/push'
 import { threadRouteFromPush, type ThreadRoute } from './src/lib/push-route'
+import { appLinkRoute } from './src/lib/deep-link'
 import DevGalleryScreen from './src/screens/DevGalleryScreen'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { StatusBar } from 'expo-status-bar'
@@ -12,7 +19,7 @@ import { useFonts } from 'expo-font'
 import { InstrumentSans_600SemiBold, InstrumentSans_700Bold } from '@expo-google-fonts/instrument-sans'
 import { GeistMono_400Regular, GeistMono_500Medium } from '@expo-google-fonts/geist-mono'
 import { createLogger } from '@shared/logger'
-import { colors, fonts } from './src/theme'
+import { colors, fonts, space } from './src/theme'
 import { getCachedAccessToken, warmUpGoogleAuth } from './src/lib/google-auth'
 import { installLifecycleReconnect, installNetworkWatch, setGoogleTokenProvider } from './src/stores/connections'
 import { hydrateOutbox } from './src/stores/outbox'
@@ -25,8 +32,11 @@ import ThreadScreen from './src/screens/ThreadScreen'
 import NewSessionScreen from './src/screens/NewSessionScreen'
 import ReviewsScreen from './src/screens/ReviewsScreen'
 import PullRequestScreen from './src/screens/PullRequestScreen'
+import MessageSearchScreen from './src/screens/MessageSearchScreen'
+import { MessageSearchButton } from './src/components/MessageSearchButton'
 import type { PrDetail, PrRef } from '@shared/pull-requests'
 import SignInScreen from './src/screens/SignInScreen'
+import SettingsScreen from './src/screens/SettingsScreen'
 import { DemoBadge, withDemoStrip } from './src/components/DemoStrip'
 import { isDemoConnection } from '@shared/phone-demo/phone-demo'
 
@@ -34,6 +44,7 @@ const log = createLogger('app')
 
 export type RootStackParamList = {
   Connections: undefined
+  Settings: undefined
   SignIn: undefined
   /** `rescan` scans a new QR for `editId`; `kind: 'iap'` opens on the Cloud IAP list. */
   Pair: { editId?: string; rescan?: boolean; kind?: 'iap' } | undefined
@@ -60,6 +71,7 @@ export type RootStackParamList = {
   }
   Reviews: { connectionId: string; label: string }
   PullRequest: { connectionId: string; ref: PrRef; title: string }
+  MessageSearch: { connectionId: string }
   DevGallery: undefined
 }
 
@@ -73,10 +85,21 @@ const DemoPullRequestScreen = withDemoStrip(PullRequestScreen)
 const DemoConversationsScreen = withDemoStrip(ConversationsScreen)
 const DemoThreadScreen = withDemoStrip(ThreadScreen)
 const DemoNewSessionScreen = withDemoStrip(NewSessionScreen, { notInDemo: true })
+const DemoMessageSearchScreen = withDemoStrip(MessageSearchScreen, { notInDemo: true })
 
 /** The DEMO badge in the header of the demo's own machine screens. */
 function demoBadge(connectionId: string) {
   return isDemoConnection(connectionId) ? { headerRight: () => <DemoBadge /> } : {}
+}
+
+/** Search button on the Projects header, beside the DEMO badge in the demo. */
+function projectsHeaderRight(connectionId: string, openSearch: () => void) {
+  return () => (
+    <View style={styles.headerRight}>
+      {isDemoConnection(connectionId) && <DemoBadge />}
+      <MessageSearchButton onPress={openSearch} />
+    </View>
+  )
 }
 
 const theme = {
@@ -110,6 +133,20 @@ Notifications.setNotificationHandler({
 })
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>()
+
+/** switchboard://settings, as on Android. Settings opens over the machines list. */
+const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: ['switchboard://'],
+  config: {
+    initialRouteName: 'Connections',
+    screens: { Settings: 'settings' },
+  },
+  getStateFromPath: (path, options) => {
+    if (appLinkRoute(path)) return getStateFromPath(path, options)
+    log.warn('ignored an app link that names no screen', { path: path.slice(0, 160) })
+    return undefined
+  },
+}
 
 /**
  * A tap can arrive before the navigation container mounts, which is normal on a
@@ -192,7 +229,7 @@ export default function App() {
     // Android edge-to-edge is unconditional from SDK 57, so the gesture bar
     // overlays the app and nothing pads for it unless this provider is mounted.
     <SafeAreaProvider style={styles.root}>
-      <NavigationContainer theme={theme} ref={navigationRef} onReady={flushPendingRoute}>
+      <NavigationContainer theme={theme} ref={navigationRef} linking={linking} onReady={flushPendingRoute}>
         <StatusBar style="light" />
         <Stack.Navigator
           initialRouteName="Connections"
@@ -203,6 +240,7 @@ export default function App() {
           }}
         >
           <Stack.Screen name="Connections" component={ConnectionsScreen} options={{ title: 'Switchboard' }} />
+          <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
           <Stack.Screen
             name="SignIn"
             component={SignInScreen}
@@ -212,10 +250,12 @@ export default function App() {
           <Stack.Screen
             name="Projects"
             component={DemoProjectsScreen}
-            options={({ route }) => ({
+            options={({ route, navigation }) => ({
               title: route.params.label,
               animation: route.params.viaTab ? 'none' : 'default',
-              ...demoBadge(route.params.connectionId),
+              headerRight: projectsHeaderRight(route.params.connectionId, () =>
+                navigation.navigate('MessageSearch', { connectionId: route.params.connectionId }),
+              ),
             })}
           />
           <Stack.Screen
@@ -238,6 +278,7 @@ export default function App() {
             component={DemoThreadScreen}
             options={({ route }) => ({ title: route.params.title })}
           />
+          <Stack.Screen name="MessageSearch" component={DemoMessageSearchScreen} options={{ title: 'Search chats' }} />
           <Stack.Screen
             name="NewSession"
             component={DemoNewSessionScreen}
@@ -255,4 +296,5 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: space.md },
 })

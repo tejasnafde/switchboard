@@ -88,7 +88,7 @@ export function launchConfigListReducer(
         ok: true,
         config: {
           ...config,
-          worktree: { setup: action.setup },
+          worktree: { ...config.worktree, setup: action.setup },
         },
       }
   }

@@ -41,7 +41,7 @@ import { generateTitle } from '@shared/auto-title'
 import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors } from '../theme'
-import { getClient, onAppForeground, useConnectionsStore } from '../stores/connections'
+import { getClient, onAppBackground, onAppForeground, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
 import {
   expiredOpenRequests,
@@ -92,7 +92,7 @@ import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
 import { DEMO_STRIP_HEIGHT } from '../components/DemoStrip'
 import { DEMO_LABEL, NOT_IN_DEMO, isDemoConnection } from '@shared/phone-demo/phone-demo'
-import { outboxPresentation, recoverRejectedDraft, returnedDraft } from '../lib/outbox-model'
+import { outboxPresentation, queuedTurnBody, recoverRejectedDraft, returnedDraft } from '../lib/outbox-model'
 import { forgetMobileForkRequest, mobileForkRequest } from '../lib/conversation-fork'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { HOST_WRITE_PHONE_APPROVAL_CAPABILITY } from '@shared/host-write-phone'
@@ -106,6 +106,7 @@ import {
   QuestionItem,
   TextItem,
   ToolItem,
+  UserMessageText,
 } from './ThreadFeedItems'
 import { MergeBackSheet, type MergeBackSheetApi, type MergeBackSheetMode } from '../components/MergeBackSheet'
 import { FORK_MERGE_BACK_CAPABILITY } from '@shared/merge-back'
@@ -215,6 +216,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
       // background leaves the lease expired and the user gets notified about
       // the thread already on their screen.
       const unsubForeground = onAppForeground(report)
+      // Release the lease on the way out: once JS is suspended the app cannot post
+      // its own notice, so the backend must be free to push this chat's events.
+      const unsubBackground = onAppBackground(() => usePushStore.getState().reportViewing(connectionId, null))
       // Read state is the backend's, so the Mac's badge clears from here too.
       getClient(connectionId)
         ?.markRead(threadId)
@@ -222,6 +226,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       return () => {
         clearInterval(renew)
         unsubForeground()
+        unsubBackground()
         useChatStore.getState().setActive(null)
         usePushStore.getState().reportViewing(connectionId, null)
         // On the way out, not per keystroke - persist writes to AsyncStorage.
@@ -847,12 +852,13 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // existing chat whose items were emptied by /clear, or one whose history
     // has not loaded yet, also has no user items - titling those would
     // overwrite a title the user already has.
+    const shown = queuedTurnBody(turn.queued)
     useChatStore.getState().addUserMessage(
       key,
-      // The phone draws a pill as its label, as `pillBodyText` does for the stored row.
-      pill ? `[${pill.label}] ${text}`.trim() : text,
+      shown.displayBody,
       images.map((i) => i.url),
       turn.bubbleId,
+      shown.pillsMeta,
     )
     enqueueTurn(turn.queued, enqueue, settlePick)
       .then(async () => {
@@ -1257,7 +1263,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
                 ))}
                 {/* An image with no caption is a valid message, so the label is
                     conditional rather than a placeholder like "[1 image]". */}
-                {item.text.length > 0 && <Text style={styles.userText}>{item.text}</Text>}
+                {item.text.length > 0 && <UserMessageText text={item.text} pillsMeta={item.pillsMeta} />}
                 {delivery && (
                   <Text style={[styles.deliveryText, delivery.state === 'failed' && styles.deliveryFailed]}>
                     {delivery.label}

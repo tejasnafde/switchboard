@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { parseLaunchConfigFile, type LaunchConfigFile, type LaunchConfigTerminal } from '../../src/shared/launch-config'
+import {
+  parseLaunchConfigFile,
+  serializeLaunchConfigFile,
+  type LaunchConfigFile,
+  type LaunchConfigTerminal,
+} from '../../src/shared/launch-config'
 
 describe('workspace config parser', () => {
   // ── Valid configs ─────────────────────────────────────────────
@@ -277,5 +282,25 @@ templates:
     expect(Object.keys(config.configs!).sort()).toEqual(['backend', 'default'])
     expect(config.configs!.default.terminals[0].label).toBe('shell')
     expect(config.configs!.backend.terminals[0].cwd).toBe('services/api')
+  })
+
+  it('parses worktree.link with or without a setup block, and round-trips it', () => {
+    const only = parseLaunchConfigFile('worktree:\n  link:\n    - vendor/bundle/\n    - ios/Pods\n')
+    expect(only.worktree).toEqual({ link: ['vendor/bundle', 'ios/Pods'] })
+    const both = parseLaunchConfigFile('worktree:\n  setup:\n    command: npm ci\n  link: [Pods]\n')
+    expect(both.worktree).toEqual({
+      setup: { command: 'npm ci', defaultPolicy: 'ask', startupPolicy: 'wait-for-setup' },
+      link: ['Pods'],
+    })
+    expect(parseLaunchConfigFile(serializeLaunchConfigFile(both)).worktree).toEqual(both.worktree)
+    expect(parseLaunchConfigFile(serializeLaunchConfigFile(only)).worktree).toEqual(only.worktree)
+    const empty = parseLaunchConfigFile('worktree:\n  link: []\nterminals: []\n')
+    expect(parseLaunchConfigFile(serializeLaunchConfigFile(empty)).worktree).toBeUndefined()
+  })
+
+  it('refuses a worktree.link path outside the project', () => {
+    for (const bad of ['../x', '/abs', 'a/../../b', '.git/hooks', 'C:/x', ''])
+      expect(() => parseLaunchConfigFile(`worktree:\n  link: [${JSON.stringify(bad)}]\n`)).toThrow(/worktree.link/)
+    expect(() => parseLaunchConfigFile('worktree:\n  link: Pods\n')).toThrow(/list of paths/)
   })
 })

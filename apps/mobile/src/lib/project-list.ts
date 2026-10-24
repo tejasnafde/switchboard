@@ -10,3 +10,21 @@ export function matchesQuery(p: Pick<Project, 'name' | 'path'>, query: string): 
   if (needle === '') return true
   return p.name.toLowerCase().includes(needle) || p.path.toLowerCase().includes(needle)
 }
+
+export interface SavedProjectsStatus {
+  label: string
+  detail?: string
+  loading: boolean
+  canRetry: boolean
+}
+
+/**
+ * The note over a project list that did not come from the machine just now:
+ * loading while the saved list waits for an answer, or the failure with Retry.
+ * Null while the list is live.
+ */
+export function savedProjectsStatus(live: boolean, error: string | null): SavedProjectsStatus | null {
+  if (error !== null) return { label: 'Showing saved projects', detail: error, loading: false, canRetry: true }
+  if (live) return null
+  return { label: 'Showing saved projects', loading: true, canRetry: false }
+}

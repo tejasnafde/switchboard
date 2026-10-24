@@ -6,14 +6,18 @@
  * Per child, in order: its `hub_children` row (phase `starting`); a worktree
  * through the worktree creation service (purpose `hub-child`, which skips the
  * background dependency clone), or the project folder for `location:
- * 'project'`; then every dependency folder cloned before the first turn; then
- * the session with the brief as its first turn, once a run slot is free. One
+ * 'project'`; then its dependency folders linked, cloned or installed before
+ * the first turn (`hub-deps.ts`); then the session with the brief as its first
+ * turn, once a run slot is free. After each child turn the links are checked:
+ * a child that changed shared dependencies is stopped with a `blocked` wake. One
  * child failing marks it `failed_start` with a `failed` wake, and the batch
  * goes on. A child never gets more access than its parent (`grantedMode`).
  *
  * Measured: one `hub.batch` and one `hub.start-child` perf line per batch and
  * child (outcome and the time of each step), `hub.child-turn` per child turn
- * end (tokens, cost, duration), and the worktree's disk use after start.
+ * end (tokens, cost, duration), the worktree's disk use after start,
+ * `hub.deps-check` per child turn end of a child with links, and
+ * `hub.own-deps` per `own_dependencies` call.
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { execFile } from 'node:child_process'
@@ -52,6 +56,7 @@ import {
   ensureHubParent,
   findProposedHubBatch,
   getHubBatch,
+  getConversationById,
   getHubChild,
   insertHubChild,
   insertHubWake,
@@ -67,7 +72,20 @@ import {
 } from '../db/database'
 import { resolveProviderInstance } from '../db/provider-instances'
 import type { SessionStartOpts } from '../provider/types'
-import { cloneDependencyDirs, findDependencyDirs } from '../git/dependency-clone'
+import {
+  checkChildDeps,
+  depsBriefLine,
+  depsSummary,
+  linkedFolders,
+  ownChildDeps,
+  parseChildDeps,
+  planChildDeps,
+  prepareChildDeps,
+  trackDependencyLinks,
+  untrackDependencyLinks,
+  type ChildDepsState,
+  type DepsFolderPlan,
+} from './hub-deps'
 import { toolText, type McpToolResult } from '../mcp/mcp-session'
 import { createMainLogger } from '../logger'
 import { perfSpan } from '../perf'
@@ -102,7 +120,10 @@ interface PlannedChild {
   requestedMode: RuntimeMode | null
   /** The mode the card showed: approval never grants more, even if the parent's mode rose since. */
   shownMode: RuntimeMode
+  /** The heaviest mode of `depsPlan`, for the card. */
   deps: HubDepsMode
+  /** Per folder, as planned for the card and the disk check; the start plans again. */
+  depsPlan: DepsFolderPlan[]
 }
 
 interface StoredPlan {
@@ -150,6 +171,8 @@ export interface HubStartHost {
   }): { ok: true; requestId: string } | { ok: false; message: string }
   /** A new system row in the parent's chat, for clients to show. */
   announceRow(parentId: string, row: { messageId: string; requestId: string; content: string }): void
+  /** Stops a child's session, as the user's Stop does. */
+  stopChild(childId: string): Promise<void>
 }
 
 /** Git and disk reads, replaceable in tests. */
@@ -158,8 +181,14 @@ export interface HubStartIo {
   /** Bytes of the tracked files at `sha`: what a worktree checkout writes. */
   checkoutBytes(projectPath: string, sha: string): Promise<number | null>
   dirBytes(path: string): Promise<number | null>
-  dependencyDirs(projectPath: string): Promise<string[]>
-  cloneDependencyDir(projectPath: string, worktreePath: string, dir: string): Promise<boolean>
+  planDeps(projectPath: string, baseSha: string, setting: HubDepsMode): Promise<DepsFolderPlan[]>
+  prepareDeps(projectPath: string, worktreePath: string, plans: DepsFolderPlan[]): Promise<ChildDepsState>
+  checkDeps(worktreePath: string, state: ChildDepsState): Promise<string[]>
+  ownDeps(
+    projectPath: string,
+    worktreePath: string,
+    state: ChildDepsState,
+  ): Promise<{ state: ChildDepsState; lines: string[] }>
   isMainCheckout(cwd: string): Promise<boolean>
   commitOf(cwd: string, ref: string): Promise<string | null>
 }
@@ -176,6 +205,8 @@ export class HubStarter {
   private readonly diskUse = new Map<string, number>()
   /** Children this process launched, to their parents. A restart forgets them; restart recovery comes later. */
   private readonly launched = new Map<string, string>()
+  /** Open children with linked dependency folders, for the post-turn check. Rebuilt at startup. */
+  private readonly linked = new Map<string, { worktree: string; parentId: string; state: ChildDepsState }>()
 
   constructor(
     private readonly host: HubStartHost,
@@ -195,6 +226,12 @@ export class HubStarter {
       updateHubChild(child.childId, { phase: 'failed_start' })
       this.failedWake(child.parentId, child.childId, 'Start was cut off when Switchboard quit.')
       log.info('child start cut off by a quit', { childId: child.childId, parentId: child.parentId })
+    }
+    for (const child of listHubChildrenInPhase('open')) {
+      const state = parseChildDeps(child.depsJson)
+      const conv = getConversationById(child.childId)
+      if (linkedFolders(state).length > 0 && conv?.worktree_path)
+        this.track(child.childId, child.parentId, conv.worktree_path, state)
     }
   }
 
@@ -233,8 +270,20 @@ export class HubStarter {
     if (capProblem) return toolText(capProblem, true)
 
     const settings = readHubSettings(this.getSetting)
-    const deps: HubDepsMode = settings.childDependencies === 'none' ? 'none' : 'clone'
     const head = await this.io.commitOf(ctx.cwd, 'HEAD')
+    const depsPlans = new Map<string, Promise<DepsFolderPlan[]>>()
+    const planDeps = (sha: string) => {
+      if (!depsPlans.has(sha)) {
+        const span = perfSpan('hub.deps-plan', { parentId: ctx.parentId })
+        const plan = this.io.planDeps(ctx.projectPath, sha, settings.childDependencies)
+        plan.then(
+          (plans) => span.end({ outcome: 'ok', folders: plans.length }),
+          () => span.end({ outcome: 'error' }),
+        )
+        depsPlans.set(sha, plan)
+      }
+      return depsPlans.get(sha)!
+    }
     const children: PlannedChild[] = []
     for (const [i, task] of tasks.entries()) {
       const agent = task.agent ?? ctx.agent
@@ -256,6 +305,7 @@ export class HubStarter {
             true,
           )
       }
+      const depsPlan = baseSha ? await planDeps(baseSha) : []
       children.push({
         childId: `agent_${Date.now()}_${randomBytes(4).toString('hex')}`,
         ordinal: i,
@@ -270,7 +320,8 @@ export class HubStarter {
         model: task.model ?? null,
         requestedMode: task.mode ?? null,
         shownMode: grantedMode(task.mode, ctx.mode),
-        deps: task.location === 'project' ? 'none' : deps,
+        deps: depsSummary(depsPlan.map((p) => p.mode)),
+        depsPlan,
       })
     }
 
@@ -363,8 +414,9 @@ export class HubStarter {
   /** A turn of some chat ended: frees its run slot and records a child's tokens. */
   onTurnEnded(threadId: string, turn?: { usedTokens?: number; costUsd?: number; durationMs?: number }): void {
     // No database read on this hot path while no child started in this process.
-    if (this.launched.size === 0) return
+    if (this.launched.size === 0 && this.linked.size === 0) return
     const childId = resolveRootThreadId(threadId)
+    if (this.linked.has(childId)) void this.checkLinks(childId)
     const slot = this.running.get(childId)
     if (slot) this.running.delete(childId)
     if (turn) {
@@ -439,6 +491,7 @@ export class HubStarter {
     let cwd = projectPath
     let worktreeMs = 0
     let depsMs = 0
+    let depsState: ChildDepsState | null = null
     try {
       if (c.location === 'worktree') {
         const snapshot = await this.host.createWorktree(this.worktreeRequest(batchId, parentId, projectPath, c))
@@ -448,20 +501,24 @@ export class HubStarter {
         worktreeMs = performance.now() - t0
         updateHubChild(c.childId, { branch: snapshot.branch ?? null })
         const t1 = performance.now()
-        const cloned: string[] = []
-        if (c.deps === 'clone') {
-          for (const dir of await this.io.dependencyDirs(projectPath))
-            if (await this.io.cloneDependencyDir(projectPath, cwd, dir)) cloned.push(dir)
-        }
+        const setting = readHubSettings(this.getSetting).childDependencies
+        const plans = c.baseSha ? await this.io.planDeps(projectPath, c.baseSha, setting) : []
+        depsState = await this.io.prepareDeps(projectPath, cwd, plans)
         depsMs = performance.now() - t1
-        updateHubChild(c.childId, { depsJson: JSON.stringify({ cloned }) })
+        const modes = depsState.folders.map((f) => f.mode)
+        updateHubChild(c.childId, { depsMode: depsSummary(modes), depsJson: JSON.stringify(depsState) })
+        if (linkedFolders(depsState).length > 0) this.track(c.childId, parentId, cwd, depsState)
         const bytes = await this.io.dirBytes(cwd)
         if (bytes !== null) this.diskUse.set(c.childId, bytes)
+        const count = (m: HubDepsMode) => modes.filter((x) => x === m).length
         span.end({
           outcome: 'prepared',
           worktreeMs: Math.round(worktreeMs),
           depsMs: Math.round(depsMs),
-          cloned: cloned.length,
+          linked: count('link'),
+          cloned: count('clone'),
+          installed: count('install'),
+          noDeps: count('none'),
           diskMb: bytes === null ? null : Math.round(bytes / 1024 ** 2),
         })
       } else {
@@ -477,13 +534,20 @@ export class HubStarter {
     setConversationRuntimeMode(c.childId, mode)
     if (c.instanceId) setConversationProviderInstanceId(c.childId, c.instanceId)
     const slot: HubRunningChild = { providerInstanceId: c.instanceId ?? c.agent, parentId }
+    const depsLine = depsState ? depsBriefLine(depsState) : null
     void this.whenSlotFree(c.childId, slot)
-      .then(() => this.launch(c, cwd, mode, slot))
+      .then(() => this.launch(c, cwd, mode, slot, depsLine))
       .catch((err) => log.error(`launching child ${c.childId} threw`, err))
     return true
   }
 
-  private async launch(c: PlannedChild, cwd: string, mode: RuntimeMode, slot: HubRunningChild): Promise<void> {
+  private async launch(
+    c: PlannedChild,
+    cwd: string,
+    mode: RuntimeMode,
+    slot: HubRunningChild,
+    depsLine: string | null,
+  ): Promise<void> {
     const span = perfSpan('hub.start-child', { childId: c.childId, agent: c.agent, step: 'launch' })
     this.running.set(c.childId, slot)
     this.launched.set(c.childId, slot.parentId)
@@ -496,10 +560,7 @@ export class HubStarter {
         ...(c.instanceId ? { instanceId: c.instanceId } : {}),
         ...(c.model ? { model: c.model } : {}),
       })
-      const brief =
-        c.deps === 'none' && c.location === 'worktree'
-          ? `${c.brief}\n\nThis worktree has no dependency folders. Install them if the task needs them.`
-          : c.brief
+      const brief = depsLine ? `${c.brief}\n\n${depsLine}` : c.brief
       const result = await this.host.submitTurn({
         version: 1,
         threadId: c.childId,
@@ -518,6 +579,75 @@ export class HubStarter {
       this.pump()
       this.fail(slot.parentId, c, err)
     }
+  }
+
+  private track(childId: string, parentId: string, worktree: string, state: ChildDepsState): void {
+    this.linked.set(childId, { worktree, parentId, state })
+    trackDependencyLinks(childId, worktree, state)
+  }
+
+  private untrack(childId: string): void {
+    this.linked.delete(childId)
+    untrackDependencyLinks(childId)
+  }
+
+  /**
+   * After a child turn: a child that installed, removed or rebuilt through a
+   * link, or changed its lockfile, changed what the main checkout and the
+   * other children run. It is stopped with a `blocked` wake, once.
+   */
+  private async checkLinks(childId: string): Promise<void> {
+    const entry = this.linked.get(childId)
+    if (!entry) return
+    const span = perfSpan('hub.deps-check', { childId, links: linkedFolders(entry.state).length })
+    let problems: string[]
+    try {
+      problems = await this.io.checkDeps(entry.worktree, entry.state)
+    } catch (err) {
+      span.end({ outcome: 'error' })
+      log.warn(`dependency check of child ${childId} failed`, err)
+      return
+    }
+    span.end({ outcome: problems.length ? 'changed' : 'ok', problems: problems.length })
+    if (problems.length === 0 || this.linked.get(childId) !== entry) return
+    // One wake per change: the guard paths stay, the check stops until own_dependencies.
+    this.linked.delete(childId)
+    log.warn('child changed shared dependencies; stopping it', { childId, problems })
+    try {
+      insertHubWake({
+        id: `hw_${Date.now()}_${randomBytes(4).toString('hex')}`,
+        parentId: entry.parentId,
+        childId,
+        kind: 'blocked',
+        summary: `Changed shared dependencies: ${problems.join('; ')}. Stopped.`,
+        pointer: null,
+      })
+    } catch (err) {
+      log.error(`could not record the blocked wake of ${childId}`, err)
+    }
+    await this.host.stopChild(childId).catch((err) => log.warn(`could not stop child ${childId}`, err))
+  }
+
+  /** `own_dependencies`: the child's linked folders become its own copies. */
+  async ownDependencies(threadId: string): Promise<McpToolResult> {
+    const childId = resolveRootThreadId(threadId)
+    const child = getHubChild(childId)
+    const conv = getConversationById(childId)
+    const worktree = conv?.worktree_path
+    const main = conv?.project_path
+    if (!child || !worktree || !main) return toolText('This chat has no linked dependency folders.')
+    const state = parseChildDeps(child.depsJson)
+    if (linkedFolders(state).length === 0) return toolText('This chat has no linked dependency folders.')
+    const span = perfSpan('hub.own-deps', { childId, links: linkedFolders(state).length })
+    // Off the check first, so the swap itself does not read as a change.
+    this.linked.delete(childId)
+    const owned = await this.io.ownDeps(main, worktree, state)
+    const modes = owned.state.folders.map((f) => f.mode)
+    updateHubChild(childId, { depsMode: depsSummary(modes), depsJson: JSON.stringify(owned.state) })
+    if (linkedFolders(owned.state).length > 0) this.track(childId, child.parentId, worktree, owned.state)
+    else this.untrack(childId)
+    span.end({ outcome: modes.includes('link') ? 'partial' : 'ok', modes: modes.join(',') })
+    return toolText(owned.lines.join('\n'))
   }
 
   private fail(parentId: string, c: PlannedChild, err: unknown): void {
@@ -602,11 +732,10 @@ export class HubStarter {
       const checkout = c.baseSha ? await this.io.checkoutBytes(plan.projectPath, c.baseSha) : null
       if (checkout === null) known = false
       need += checkout ?? 0
-      if (c.deps === 'clone') {
-        for (const dir of await this.io.dependencyDirs(plan.projectPath)) {
-          const bytes = await this.io.dirBytes(join(plan.projectPath, dir))
-          need += Math.round((bytes ?? 0) * CLONE_SHARE)
-        }
+      for (const f of c.depsPlan ?? []) {
+        if (f.mode !== 'clone' && f.mode !== 'install') continue
+        const bytes = (await this.io.dirBytes(join(plan.projectPath, f.path))) ?? 0
+        need += Math.round(f.mode === 'clone' ? bytes * CLONE_SHARE : bytes)
       }
     }
     if (free === null) {
@@ -698,10 +827,10 @@ function defaultIo(): HubStartIo {
       dirBytesCache.set(path, { bytes, at: Date.now() })
       return bytes
     },
-    dependencyDirs: (projectPath) => findDependencyDirs(projectPath),
-    cloneDependencyDir: (projectPath, worktreePath, dir) =>
-      // The child's setting decided already; the worktree clone switch is for background clones.
-      cloneDependencyDirs(projectPath, worktreePath, { dir, isEnabled: () => true }),
+    planDeps: planChildDeps,
+    prepareDeps: prepareChildDeps,
+    checkDeps: checkChildDeps,
+    ownDeps: ownChildDeps,
     async isMainCheckout(cwd) {
       try {
         const [gitDir, common] = (

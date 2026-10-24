@@ -76,6 +76,12 @@ describe('Try the demo', () => {
     ])
   })
 
+  it('opens Settings from the empty Machines screen', async () => {
+    const view = await renderConnections()
+    act(() => view.root.findByProps({ testID: 'open-settings' }).props.onPress())
+    expect(mockNavigation.navigate).toHaveBeenLastCalledWith('Settings')
+  })
+
   it('offers Leave demo on the Connections screen while the demo is open', async () => {
     useConnectionsStore.getState().startDemo()
     const view = await renderConnections()
