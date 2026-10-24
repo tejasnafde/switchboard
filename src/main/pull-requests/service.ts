@@ -463,6 +463,7 @@ export class PullRequestService {
     try {
       return { ok: true, data: { account: await target.provider.writeAccount() } }
     } catch (err) {
+      log.warn('reading the write account failed', err)
       return { ok: false, error: toPrError(err, target.ref.host) }
     }
   }
@@ -472,11 +473,16 @@ export class PullRequestService {
    * The write must carry a proof whose digest matches what this backend would
    * post (the account it posts as included), and a write id not taken before.
    * The id is reserved here, before any await, so two copies of one write
-   * racing each other cannot both pass.
+   * racing each other cannot both pass. A refusal here frees it; once this
+   * check passes it stays taken whatever the write's outcome, so a phone
+   * mints a new id for every Post.
    */
   async checkPhoneWrite(ref: unknown, action: PhonePrWriteAction, input: unknown): Promise<PrError | null> {
     const proof = readPhoneProof(input)
-    if (!proof) return { kind: 'invalid', host: null, message: PHONE_PR_WRITE_MISMATCH }
+    if (!proof) {
+      log.warn('refused a phone pull request write: no proof', { action })
+      return { kind: 'invalid', host: null, message: PHONE_PR_WRITE_MISMATCH }
+    }
     const now = this.now()
     for (const [id, at] of this.phoneWriteIds) if (now - at > PHONE_WRITE_ID_TTL_MS) this.phoneWriteIds.delete(id)
     if (this.phoneWriteIds.has(proof.writeId))
@@ -490,11 +496,15 @@ export class PullRequestService {
     if ('error' in target) return refuse(target.error)
     const host = target.ref.host
     const sheet = phoneSheetFromInput(target.ref, action, input, proof.writeId)
-    if ('problem' in sheet) return refuse({ kind: 'invalid', host, message: sheet.problem })
+    if ('problem' in sheet) {
+      log.warn('refused a phone pull request write: malformed input', { action, host })
+      return refuse({ kind: 'invalid', host, message: sheet.problem })
+    }
     let account: string
     try {
       account = await target.provider.writeAccount()
     } catch (err) {
+      log.warn('refused a phone pull request write: the account could not be read', err)
       return refuse(toPrError(err, host))
     }
     if (phonePrWriteDigest({ ...sheet, account }) !== proof.shown) {
