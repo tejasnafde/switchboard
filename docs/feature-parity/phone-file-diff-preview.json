@@ -1,0 +1,56 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "phone-file-diff-preview",
+  "summary": "A changed-file row on the phones opens a read-only line diff. The row shows the path, +N -N (with a ~ prefix when the counts are approximate) and \"Changed on <machine> · <kind>\"; a tap on Review shows the old and new line numbers, a +, - or space marker and the line, with 2 context lines around each change, one \"… N unchanged lines\" row per skipped run, at most 160 rows and a \"Read-only preview\" footer that says when a large diff is truncated. A file whose contents did not change has no diff and no tap, on both phones and at any size (Android used to show two context rows for an unchanged file past 300 lines). The diff and the counts come from the old and new contents the file.edited event and the history already carry, so the \"Changed N files\" totals now count replaced lines too. The rules live in src/shared/compact-file-diff.ts for the iOS app and in Android's FileDiffPresenter, and both check tests/fixtures/compact-file-diff.json. Which rows are open is screen state on this device only.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop already shows full per-file diff cards with per-hunk accept and reject (FileDiffCard). This change adds the phone preview and a shared client helper the desktop does not import."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/file-groups.ts",
+        "apps/mobile/src/screens/FileEditItem.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/screens/__tests__/file-edit-item.test.tsx",
+        "apps/mobile/src/screens/__tests__/file-group-item.test.tsx",
+        "apps/mobile/src/screens/__tests__/demo-screens.test.tsx",
+        "tests/unit/mobile-file-groups.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/FileDiffPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/FileDiffPresentationTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/FileDiffPresentationFixturesTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No call, event or field changes. The file.edited event and the history fileDiff record already carry oldContent and newContent; the diff is computed on the phone."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored. Which file rows are open is transient screen state, and the iOS chat cache keeps the same fileEdit rows as before."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "iOS: JavaScript only (no native module, permission or app.json change), so it ships on the OTA lane under the existing fingerprint runtime version, or in the 1.0 binary. Android: one fix in FileDiffPresenter (a large file whose contents did not change no longer shows two context rows and a Review button), shipped with the next native Android release. No package identity, signing, version, deep link or update channel changes."
+    }
+  },
+  "verification": {
+    "automated": [
+      "Root vitest: compact-file-diff (every shared fixture case, including a lone CR and an unchanged 400-line file, the 320-character line cut, the alignment bounds, 50,000-line created and deleted files, a 1,000-line rewrite) and mobile-file-groups (group totals from the shared counts).",
+      "Expo jest and tsc: FileEditItem (path, counts and Changed on, Review opens the diff lines and the footer, no Review for an unchanged file, ~ counts and the truncated footer for a 400-line rewrite), FileGroupItem, and the demo chat, where the Changed 3 files group shows +16 -4 and src/upload/putFile.ts opens its diff, the same steps as Android's store screenshot test.",
+      "Native Android FileDiffPresentationFixturesTest and FileDiffPresentationTest and the other ui.thread unit tests pass (gradle testDebugUnitTest --tests 'app.switchboard.mobile.ui.thread.*') against the same fixture."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The iOS diff was not run on an iPhone or a simulator: the row press state, the GeistMono line rendering, VoiceOver on the Review button and Dynamic Type were not exercised."
+    ]
+  }
+}

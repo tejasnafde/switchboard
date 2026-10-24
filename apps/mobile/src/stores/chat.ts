@@ -19,7 +19,10 @@ import type {
   RuntimeMode,
   ProviderSessionStatus,
   Question,
+  TodoItem,
 } from '@shared/provider-events'
+import type { PeerMessageInitiator } from '@shared/peer-messaging'
+import type { OverageScope } from '@shared/claude-rate-limit'
 import { applyContentText, mergeContentChunks } from '@shared/content-stream'
 import { echoMessageId, expiredRequestNotice, visibleUserMessageText } from '@shared/provider-events'
 import { pillBodyText } from '@shared/pill-body-text'
@@ -98,6 +101,33 @@ export type FeedItem =
   | { kind: 'undelivered'; id: string; messageId: string; row: PeerUndelivered }
   /** A fork's merge-back card in this (parent) chat. `messageId` is its stored row. */
   | { kind: 'mergeBack'; id: string; messageId: string; row: MergeBackRow }
+  /** The provider is retrying a turn; `active` until the turn ends. */
+  | { kind: 'retry'; id: string; turnId: string; message: string; active: boolean }
+  /** The agent started working in another worktree. One per chat, updated in place. */
+  | { kind: 'drift'; id: string; worktreePath: string; branch: string }
+  /** A turn refused because its extra-usage pool is unavailable. One per (instance, model). */
+  | {
+      kind: 'spendBlocked'
+      id: string
+      instanceId: string | null
+      model: string | null
+      reason: string | null
+      scope: OverageScope
+      resetsAtMs: number | null
+    }
+  /** A message delivered between two chats, on either side. Same id as the stored row. */
+  | {
+      kind: 'peer'
+      id: string
+      direction: 'sent' | 'received'
+      initiator: PeerMessageInitiator
+      peerThreadId: string
+      peerLabel: string
+      text: string
+      at: number
+    }
+  /** The agent's checklist; an update replaces the row with the same `todoId`. */
+  | { kind: 'todo'; id: string; todoId: string; items: TodoItem[] }
 
 export interface ThreadState {
   items: FeedItem[]
@@ -342,6 +372,12 @@ function findFromEnd(items: FeedItem[], match: (i: FeedItem) => boolean): FeedIt
   return undefined
 }
 
+/** Replace the item with this id in place, or append it. */
+function upsertItem(items: FeedItem[], item: FeedItem): FeedItem[] {
+  const at = items.findIndex((i) => i.id === item.id)
+  return at === -1 ? [...items, item] : items.map((i, n) => (n === at ? item : i))
+}
+
 /** Pure per-event reducer, so a whole batch folds into one set(). */
 function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Partial<ThreadState> {
   switch (event.type) {
@@ -555,6 +591,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
         // which showed as several cards spinning at once. The turn ending
         // is proof nothing is still running.
         if (i.kind === 'tool' && i.state === 'running') return { ...i, state: 'done' as const }
+        if (i.kind === 'retry' && i.active) return { ...i, active: false }
         return i
       })
       return {
@@ -568,7 +605,68 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
       }
     }
     case 'status':
-      return { status: event.status, heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event) }
+      return {
+        status: event.status,
+        heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event),
+        ...(event.status === 'running' ? {} : { items: stopRetries(t.items) }),
+      }
+    case 'turn.retrying':
+      return {
+        items: upsertItem(t.items, {
+          kind: 'retry',
+          id: `r-${event.turnId}`,
+          turnId: event.turnId,
+          message: event.message,
+          active: true,
+        }),
+      }
+    case 'worktree.drift':
+      return {
+        items: upsertItem(t.items, {
+          kind: 'drift',
+          id: 'drift',
+          worktreePath: event.worktreePath,
+          branch: event.branch,
+        }),
+      }
+    case 'spend.blocked': {
+      const { instanceId, model, reason, scope, resetsAtMs } = event
+      return {
+        items: upsertItem(t.items, {
+          kind: 'spendBlocked',
+          id: `spend:${instanceId}:${model}`,
+          instanceId,
+          model,
+          reason,
+          scope,
+          resetsAtMs,
+        }),
+      }
+    }
+    // The ids are the stored rows' (a received message is a user row, a sent
+    // one a system marker), so a history merge lands on this row.
+    case 'peer.message':
+      return {
+        items: upsertItem(t.items, {
+          kind: 'peer',
+          id: event.direction === 'sent' ? `h-peer_${event.messageId}` : `h-${event.messageId}`,
+          direction: event.direction,
+          initiator: event.initiator,
+          peerThreadId: event.peerThreadId,
+          peerLabel: event.peerLabel,
+          text: event.text,
+          at: event.at,
+        }),
+      }
+    case 'todo.updated':
+      return {
+        items: upsertItem(t.items, {
+          kind: 'todo',
+          id: `todo-${event.todoId}`,
+          todoId: event.todoId,
+          items: event.items,
+        }),
+      }
     case 'turn.queued':
     case 'turn.queue-held':
       return { heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event), heldRevision: (t.heldRevision ?? 0) + 1 }
@@ -641,8 +739,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
           ...(event.held ? { held: true } : {}),
         },
       }
-      const at = t.items.findIndex((i) => i.id === item.id)
-      return { items: at === -1 ? [...t.items, item] : t.items.map((i, n) => (n === at ? item : i)) }
+      return { items: upsertItem(t.items, item) }
     }
     // A fork's summary card in this (parent) chat: same id as the history
     // row, so a reload and a live event land on one row, and a discarded
@@ -652,9 +749,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
       if (event.content === null) return { items: t.items.filter((i) => i.id !== id) }
       const row = parseMergeBackMarker(event.content)
       if (!row) return {}
-      const item: FeedItem = { kind: 'mergeBack', id, messageId: event.messageId, row }
-      const at = t.items.findIndex((i) => i.id === id)
-      return { items: at === -1 ? [...t.items, item] : t.items.map((i, n) => (n === at ? item : i)) }
+      return { items: upsertItem(t.items, { kind: 'mergeBack', id, messageId: event.messageId, row }) }
     }
     // Read on another client. applyEvent already resolved the connection's
     // thread key, so this only has to drop the count.
@@ -663,6 +758,12 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
     default:
       return {}
   }
+}
+
+function stopRetries(items: FeedItem[]): FeedItem[] {
+  return items.some((i) => i.kind === 'retry' && i.active)
+    ? items.map((i) => (i.kind === 'retry' && i.active ? { ...i, active: false } : i))
+    : items
 }
 
 function applyEvent(
@@ -849,7 +950,10 @@ export const useChatStore = create<ChatState>()(
         // 'running' would spin for a turn that finished while the app was
         // closed; 'idle' would claim a connection we have not made.
         state.threads = Object.fromEntries(
-          Object.entries(state.threads).map(([key, t]) => [key, { ...t, status: 'connecting' as const, cached: true }]),
+          Object.entries(state.threads).map(([key, t]) => [
+            key,
+            { ...t, status: 'connecting' as const, cached: true, items: stopRetries(t.items) },
+          ]),
         )
         resolveCache()
       },

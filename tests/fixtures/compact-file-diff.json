@@ -1,0 +1,2311 @@
+[
+  {
+    "id": "insertion",
+    "oldContent": "alpha\nbeta\ngamma",
+    "newContent": "alpha\ninserted\nbeta\ngamma",
+    "expected": {
+      "lines": [
+        {
+          "kind": "context",
+          "text": "alpha",
+          "oldLine": 1,
+          "newLine": 1
+        },
+        {
+          "kind": "added",
+          "text": "inserted",
+          "oldLine": null,
+          "newLine": 2
+        },
+        {
+          "kind": "context",
+          "text": "beta",
+          "oldLine": 2,
+          "newLine": 3
+        },
+        {
+          "kind": "context",
+          "text": "gamma",
+          "oldLine": 3,
+          "newLine": 4
+        }
+      ],
+      "addedLines": 1,
+      "removedLines": 0,
+      "truncated": false,
+      "countsExact": true
+    }
+  },
+  {
+    "id": "replacement",
+    "oldContent": "before",
+    "newContent": "after",
+    "expected": {
+      "lines": [
+        {
+          "kind": "removed",
+          "text": "before",
+          "oldLine": 1,
+          "newLine": null
+        },
+        {
+          "kind": "added",
+          "text": "after",
+          "oldLine": null,
+          "newLine": 1
+        }
+      ],
+      "addedLines": 1,
+      "removedLines": 1,
+      "truncated": false,
+      "countsExact": true
+    }
+  },
+  {
+    "id": "identical",
+    "oldContent": "same\nlines\n",
+    "newContent": "same\nlines\n",
+    "expected": {
+      "lines": [],
+      "addedLines": 0,
+      "removedLines": 0,
+      "truncated": false,
+      "countsExact": true
+    }
+  },
+  {
+    "id": "created-file",
+    "oldContent": "",
+    "newContent": "one\ntwo\nthree\n",
+    "expected": {
+      "lines": [
+        {
+          "kind": "added",
+          "text": "one",
+          "oldLine": null,
+          "newLine": 1
+        },
+        {
+          "kind": "added",
+          "text": "two",
+          "oldLine": null,
+          "newLine": 2
+        },
+        {
+          "kind": "added",
+          "text": "three",
+          "oldLine": null,
+          "newLine": 3
+        }
+      ],
+      "addedLines": 3,
+      "removedLines": 0,
+      "truncated": false,
+      "countsExact": true
+    }
+  },
+  {
+    "id": "deleted-file",
+    "oldContent": "one\ntwo\n",
+    "newContent": "",
+    "expected": {
+      "lines": [
+        {
+          "kind": "removed",
+          "text": "one",
+          "oldLine": 1,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "two",
+          "oldLine": 2,
+          "newLine": null
+        }
+      ],
+      "addedLines": 0,
+      "removedLines": 2,
+      "truncated": false,
+      "countsExact": true
+    }
+  },
+  {
+    "id": "trailing-newline-ignored",
+    "oldContent": "a\nb\n",
+    "newContent": "a\nb\nc\n",
+    "expected": {
+      "lines": [
+        {
+          "kind": "context",
+          "text": "a",
+          "oldLine": 1,
+          "newLine": 1
+        },
+        {
+          "kind": "context",
+          "text": "b",
+          "oldLine": 2,
+          "newLine": 2
+        },
+        {
+          "kind": "added",
+          "text": "c",
+          "oldLine": null,
+          "newLine": 3
+        }
+      ],
+      "addedLines": 1,
+      "removedLines": 0,
+      "truncated": false,
+      "countsExact": true
+    }
+  },
+  {
+    "id": "crlf-normalised",
+    "oldContent": "a\r\nb\r\nc",
+    "newContent": "a\nB\nc\n",
+    "expected": {
+      "lines": [
+        {
+          "kind": "context",
+          "text": "a",
+          "oldLine": 1,
+          "newLine": 1
+        },
+        {
+          "kind": "removed",
+          "text": "b",
+          "oldLine": 2,
+          "newLine": null
+        },
+        {
+          "kind": "added",
+          "text": "B",
+          "oldLine": null,
+          "newLine": 2
+        },
+        {
+          "kind": "context",
+          "text": "c",
+          "oldLine": 3,
+          "newLine": 3
+        }
+      ],
+      "addedLines": 1,
+      "removedLines": 1,
+      "truncated": false,
+      "countsExact": true
+    }
+  },
+  {
+    "id": "unchanged-runs-fold",
+    "oldContent": "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20",
+    "newContent": "line 1\nline 2\nline three\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline seventeen\nline 18\nline 19\nline 20",
+    "expected": {
+      "lines": [
+        {
+          "kind": "context",
+          "text": "line 1",
+          "oldLine": 1,
+          "newLine": 1
+        },
+        {
+          "kind": "context",
+          "text": "line 2",
+          "oldLine": 2,
+          "newLine": 2
+        },
+        {
+          "kind": "removed",
+          "text": "line 3",
+          "oldLine": 3,
+          "newLine": null
+        },
+        {
+          "kind": "added",
+          "text": "line three",
+          "oldLine": null,
+          "newLine": 3
+        },
+        {
+          "kind": "context",
+          "text": "line 4",
+          "oldLine": 4,
+          "newLine": 4
+        },
+        {
+          "kind": "context",
+          "text": "line 5",
+          "oldLine": 5,
+          "newLine": 5
+        },
+        {
+          "kind": "omitted",
+          "text": "… 9 unchanged lines",
+          "oldLine": null,
+          "newLine": null
+        },
+        {
+          "kind": "context",
+          "text": "line 15",
+          "oldLine": 15,
+          "newLine": 15
+        },
+        {
+          "kind": "context",
+          "text": "line 16",
+          "oldLine": 16,
+          "newLine": 16
+        },
+        {
+          "kind": "removed",
+          "text": "line 17",
+          "oldLine": 17,
+          "newLine": null
+        },
+        {
+          "kind": "added",
+          "text": "line seventeen",
+          "oldLine": null,
+          "newLine": 17
+        },
+        {
+          "kind": "context",
+          "text": "line 18",
+          "oldLine": 18,
+          "newLine": 18
+        },
+        {
+          "kind": "context",
+          "text": "line 19",
+          "oldLine": 19,
+          "newLine": 19
+        },
+        {
+          "kind": "omitted",
+          "text": "… 1 unchanged line",
+          "oldLine": null,
+          "newLine": null
+        }
+      ],
+      "addedLines": 2,
+      "removedLines": 2,
+      "truncated": false,
+      "countsExact": true
+    }
+  },
+  {
+    "id": "lone-cr-normalised",
+    "oldContent": "a\rb\r",
+    "newContent": "a\rc\r",
+    "expected": {
+      "lines": [
+        {
+          "kind": "context",
+          "text": "a",
+          "oldLine": 1,
+          "newLine": 1
+        },
+        {
+          "kind": "removed",
+          "text": "b",
+          "oldLine": 2,
+          "newLine": null
+        },
+        {
+          "kind": "added",
+          "text": "c",
+          "oldLine": null,
+          "newLine": 2
+        }
+      ],
+      "addedLines": 1,
+      "removedLines": 1,
+      "truncated": false,
+      "countsExact": true
+    }
+  },
+  {
+    "id": "large-identical-no-diff",
+    "oldContent": "same-1\nsame-2\nsame-3\nsame-4\nsame-5\nsame-6\nsame-7\nsame-8\nsame-9\nsame-10\nsame-11\nsame-12\nsame-13\nsame-14\nsame-15\nsame-16\nsame-17\nsame-18\nsame-19\nsame-20\nsame-21\nsame-22\nsame-23\nsame-24\nsame-25\nsame-26\nsame-27\nsame-28\nsame-29\nsame-30\nsame-31\nsame-32\nsame-33\nsame-34\nsame-35\nsame-36\nsame-37\nsame-38\nsame-39\nsame-40\nsame-41\nsame-42\nsame-43\nsame-44\nsame-45\nsame-46\nsame-47\nsame-48\nsame-49\nsame-50\nsame-51\nsame-52\nsame-53\nsame-54\nsame-55\nsame-56\nsame-57\nsame-58\nsame-59\nsame-60\nsame-61\nsame-62\nsame-63\nsame-64\nsame-65\nsame-66\nsame-67\nsame-68\nsame-69\nsame-70\nsame-71\nsame-72\nsame-73\nsame-74\nsame-75\nsame-76\nsame-77\nsame-78\nsame-79\nsame-80\nsame-81\nsame-82\nsame-83\nsame-84\nsame-85\nsame-86\nsame-87\nsame-88\nsame-89\nsame-90\nsame-91\nsame-92\nsame-93\nsame-94\nsame-95\nsame-96\nsame-97\nsame-98\nsame-99\nsame-100\nsame-101\nsame-102\nsame-103\nsame-104\nsame-105\nsame-106\nsame-107\nsame-108\nsame-109\nsame-110\nsame-111\nsame-112\nsame-113\nsame-114\nsame-115\nsame-116\nsame-117\nsame-118\nsame-119\nsame-120\nsame-121\nsame-122\nsame-123\nsame-124\nsame-125\nsame-126\nsame-127\nsame-128\nsame-129\nsame-130\nsame-131\nsame-132\nsame-133\nsame-134\nsame-135\nsame-136\nsame-137\nsame-138\nsame-139\nsame-140\nsame-141\nsame-142\nsame-143\nsame-144\nsame-145\nsame-146\nsame-147\nsame-148\nsame-149\nsame-150\nsame-151\nsame-152\nsame-153\nsame-154\nsame-155\nsame-156\nsame-157\nsame-158\nsame-159\nsame-160\nsame-161\nsame-162\nsame-163\nsame-164\nsame-165\nsame-166\nsame-167\nsame-168\nsame-169\nsame-170\nsame-171\nsame-172\nsame-173\nsame-174\nsame-175\nsame-176\nsame-177\nsame-178\nsame-179\nsame-180\nsame-181\nsame-182\nsame-183\nsame-184\nsame-185\nsame-186\nsame-187\nsame-188\nsame-189\nsame-190\nsame-191\nsame-192\nsame-193\nsame-194\nsame-195\nsame-196\nsame-197\nsame-198\nsame-199\nsame-200\nsame-201\nsame-202\nsame-203\nsame-204\nsame-205\nsame-206\nsame-207\nsame-208\nsame-209\nsame-210\nsame-211\nsame-212\nsame-213\nsame-214\nsame-215\nsame-216\nsame-217\nsame-218\nsame-219\nsame-220\nsame-221\nsame-222\nsame-223\nsame-224\nsame-225\nsame-226\nsame-227\nsame-228\nsame-229\nsame-230\nsame-231\nsame-232\nsame-233\nsame-234\nsame-235\nsame-236\nsame-237\nsame-238\nsame-239\nsame-240\nsame-241\nsame-242\nsame-243\nsame-244\nsame-245\nsame-246\nsame-247\nsame-248\nsame-249\nsame-250\nsame-251\nsame-252\nsame-253\nsame-254\nsame-255\nsame-256\nsame-257\nsame-258\nsame-259\nsame-260\nsame-261\nsame-262\nsame-263\nsame-264\nsame-265\nsame-266\nsame-267\nsame-268\nsame-269\nsame-270\nsame-271\nsame-272\nsame-273\nsame-274\nsame-275\nsame-276\nsame-277\nsame-278\nsame-279\nsame-280\nsame-281\nsame-282\nsame-283\nsame-284\nsame-285\nsame-286\nsame-287\nsame-288\nsame-289\nsame-290\nsame-291\nsame-292\nsame-293\nsame-294\nsame-295\nsame-296\nsame-297\nsame-298\nsame-299\nsame-300\nsame-301\nsame-302\nsame-303\nsame-304\nsame-305\nsame-306\nsame-307\nsame-308\nsame-309\nsame-310\nsame-311\nsame-312\nsame-313\nsame-314\nsame-315\nsame-316\nsame-317\nsame-318\nsame-319\nsame-320\nsame-321\nsame-322\nsame-323\nsame-324\nsame-325\nsame-326\nsame-327\nsame-328\nsame-329\nsame-330\nsame-331\nsame-332\nsame-333\nsame-334\nsame-335\nsame-336\nsame-337\nsame-338\nsame-339\nsame-340\nsame-341\nsame-342\nsame-343\nsame-344\nsame-345\nsame-346\nsame-347\nsame-348\nsame-349\nsame-350\nsame-351\nsame-352\nsame-353\nsame-354\nsame-355\nsame-356\nsame-357\nsame-358\nsame-359\nsame-360\nsame-361\nsame-362\nsame-363\nsame-364\nsame-365\nsame-366\nsame-367\nsame-368\nsame-369\nsame-370\nsame-371\nsame-372\nsame-373\nsame-374\nsame-375\nsame-376\nsame-377\nsame-378\nsame-379\nsame-380\nsame-381\nsame-382\nsame-383\nsame-384\nsame-385\nsame-386\nsame-387\nsame-388\nsame-389\nsame-390\nsame-391\nsame-392\nsame-393\nsame-394\nsame-395\nsame-396\nsame-397\nsame-398\nsame-399\nsame-400",
+    "newContent": "same-1\nsame-2\nsame-3\nsame-4\nsame-5\nsame-6\nsame-7\nsame-8\nsame-9\nsame-10\nsame-11\nsame-12\nsame-13\nsame-14\nsame-15\nsame-16\nsame-17\nsame-18\nsame-19\nsame-20\nsame-21\nsame-22\nsame-23\nsame-24\nsame-25\nsame-26\nsame-27\nsame-28\nsame-29\nsame-30\nsame-31\nsame-32\nsame-33\nsame-34\nsame-35\nsame-36\nsame-37\nsame-38\nsame-39\nsame-40\nsame-41\nsame-42\nsame-43\nsame-44\nsame-45\nsame-46\nsame-47\nsame-48\nsame-49\nsame-50\nsame-51\nsame-52\nsame-53\nsame-54\nsame-55\nsame-56\nsame-57\nsame-58\nsame-59\nsame-60\nsame-61\nsame-62\nsame-63\nsame-64\nsame-65\nsame-66\nsame-67\nsame-68\nsame-69\nsame-70\nsame-71\nsame-72\nsame-73\nsame-74\nsame-75\nsame-76\nsame-77\nsame-78\nsame-79\nsame-80\nsame-81\nsame-82\nsame-83\nsame-84\nsame-85\nsame-86\nsame-87\nsame-88\nsame-89\nsame-90\nsame-91\nsame-92\nsame-93\nsame-94\nsame-95\nsame-96\nsame-97\nsame-98\nsame-99\nsame-100\nsame-101\nsame-102\nsame-103\nsame-104\nsame-105\nsame-106\nsame-107\nsame-108\nsame-109\nsame-110\nsame-111\nsame-112\nsame-113\nsame-114\nsame-115\nsame-116\nsame-117\nsame-118\nsame-119\nsame-120\nsame-121\nsame-122\nsame-123\nsame-124\nsame-125\nsame-126\nsame-127\nsame-128\nsame-129\nsame-130\nsame-131\nsame-132\nsame-133\nsame-134\nsame-135\nsame-136\nsame-137\nsame-138\nsame-139\nsame-140\nsame-141\nsame-142\nsame-143\nsame-144\nsame-145\nsame-146\nsame-147\nsame-148\nsame-149\nsame-150\nsame-151\nsame-152\nsame-153\nsame-154\nsame-155\nsame-156\nsame-157\nsame-158\nsame-159\nsame-160\nsame-161\nsame-162\nsame-163\nsame-164\nsame-165\nsame-166\nsame-167\nsame-168\nsame-169\nsame-170\nsame-171\nsame-172\nsame-173\nsame-174\nsame-175\nsame-176\nsame-177\nsame-178\nsame-179\nsame-180\nsame-181\nsame-182\nsame-183\nsame-184\nsame-185\nsame-186\nsame-187\nsame-188\nsame-189\nsame-190\nsame-191\nsame-192\nsame-193\nsame-194\nsame-195\nsame-196\nsame-197\nsame-198\nsame-199\nsame-200\nsame-201\nsame-202\nsame-203\nsame-204\nsame-205\nsame-206\nsame-207\nsame-208\nsame-209\nsame-210\nsame-211\nsame-212\nsame-213\nsame-214\nsame-215\nsame-216\nsame-217\nsame-218\nsame-219\nsame-220\nsame-221\nsame-222\nsame-223\nsame-224\nsame-225\nsame-226\nsame-227\nsame-228\nsame-229\nsame-230\nsame-231\nsame-232\nsame-233\nsame-234\nsame-235\nsame-236\nsame-237\nsame-238\nsame-239\nsame-240\nsame-241\nsame-242\nsame-243\nsame-244\nsame-245\nsame-246\nsame-247\nsame-248\nsame-249\nsame-250\nsame-251\nsame-252\nsame-253\nsame-254\nsame-255\nsame-256\nsame-257\nsame-258\nsame-259\nsame-260\nsame-261\nsame-262\nsame-263\nsame-264\nsame-265\nsame-266\nsame-267\nsame-268\nsame-269\nsame-270\nsame-271\nsame-272\nsame-273\nsame-274\nsame-275\nsame-276\nsame-277\nsame-278\nsame-279\nsame-280\nsame-281\nsame-282\nsame-283\nsame-284\nsame-285\nsame-286\nsame-287\nsame-288\nsame-289\nsame-290\nsame-291\nsame-292\nsame-293\nsame-294\nsame-295\nsame-296\nsame-297\nsame-298\nsame-299\nsame-300\nsame-301\nsame-302\nsame-303\nsame-304\nsame-305\nsame-306\nsame-307\nsame-308\nsame-309\nsame-310\nsame-311\nsame-312\nsame-313\nsame-314\nsame-315\nsame-316\nsame-317\nsame-318\nsame-319\nsame-320\nsame-321\nsame-322\nsame-323\nsame-324\nsame-325\nsame-326\nsame-327\nsame-328\nsame-329\nsame-330\nsame-331\nsame-332\nsame-333\nsame-334\nsame-335\nsame-336\nsame-337\nsame-338\nsame-339\nsame-340\nsame-341\nsame-342\nsame-343\nsame-344\nsame-345\nsame-346\nsame-347\nsame-348\nsame-349\nsame-350\nsame-351\nsame-352\nsame-353\nsame-354\nsame-355\nsame-356\nsame-357\nsame-358\nsame-359\nsame-360\nsame-361\nsame-362\nsame-363\nsame-364\nsame-365\nsame-366\nsame-367\nsame-368\nsame-369\nsame-370\nsame-371\nsame-372\nsame-373\nsame-374\nsame-375\nsame-376\nsame-377\nsame-378\nsame-379\nsame-380\nsame-381\nsame-382\nsame-383\nsame-384\nsame-385\nsame-386\nsame-387\nsame-388\nsame-389\nsame-390\nsame-391\nsame-392\nsame-393\nsame-394\nsame-395\nsame-396\nsame-397\nsame-398\nsame-399\nsame-400\n",
+    "expected": {
+      "lines": [],
+      "addedLines": 0,
+      "removedLines": 0,
+      "truncated": false,
+      "countsExact": true
+    }
+  },
+  {
+    "id": "long-line-cut",
+    "oldContent": "short",
+    "newContent": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "expected": {
+      "lines": [
+        {
+          "kind": "removed",
+          "text": "short",
+          "oldLine": 1,
+          "newLine": null
+        },
+        {
+          "kind": "added",
+          "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…",
+          "oldLine": null,
+          "newLine": 1
+        }
+      ],
+      "addedLines": 1,
+      "removedLines": 1,
+      "truncated": false,
+      "countsExact": true
+    }
+  },
+  {
+    "id": "exact-truncated",
+    "oldContent": "old-1\nold-2\nold-3\nold-4\nold-5\nold-6\nold-7\nold-8\nold-9\nold-10\nold-11\nold-12\nold-13\nold-14\nold-15\nold-16\nold-17\nold-18\nold-19\nold-20\nold-21\nold-22\nold-23\nold-24\nold-25\nold-26\nold-27\nold-28\nold-29\nold-30\nold-31\nold-32\nold-33\nold-34\nold-35\nold-36\nold-37\nold-38\nold-39\nold-40\nold-41\nold-42\nold-43\nold-44\nold-45\nold-46\nold-47\nold-48\nold-49\nold-50\nold-51\nold-52\nold-53\nold-54\nold-55\nold-56\nold-57\nold-58\nold-59\nold-60\nold-61\nold-62\nold-63\nold-64\nold-65\nold-66\nold-67\nold-68\nold-69\nold-70\nold-71\nold-72\nold-73\nold-74\nold-75\nold-76\nold-77\nold-78\nold-79\nold-80\nold-81\nold-82\nold-83\nold-84\nold-85\nold-86\nold-87\nold-88\nold-89\nold-90\nold-91\nold-92\nold-93\nold-94\nold-95\nold-96\nold-97\nold-98\nold-99\nold-100\nold-101\nold-102\nold-103\nold-104\nold-105\nold-106\nold-107\nold-108\nold-109\nold-110\nold-111\nold-112\nold-113\nold-114\nold-115\nold-116\nold-117\nold-118\nold-119\nold-120\nold-121\nold-122\nold-123\nold-124\nold-125\nold-126\nold-127\nold-128\nold-129\nold-130\nold-131\nold-132\nold-133\nold-134\nold-135\nold-136\nold-137\nold-138\nold-139\nold-140\nold-141\nold-142\nold-143\nold-144\nold-145\nold-146\nold-147\nold-148\nold-149\nold-150\nold-151\nold-152\nold-153\nold-154\nold-155\nold-156\nold-157\nold-158\nold-159\nold-160\nold-161\nold-162\nold-163\nold-164\nold-165\nold-166\nold-167\nold-168\nold-169\nold-170\nold-171\nold-172\nold-173\nold-174\nold-175\nold-176\nold-177\nold-178\nold-179\nold-180\nold-181\nold-182\nold-183\nold-184\nold-185\nold-186\nold-187\nold-188\nold-189\nold-190\nold-191\nold-192\nold-193\nold-194\nold-195\nold-196\nold-197\nold-198\nold-199\nold-200",
+    "newContent": "new-1\nnew-2\nnew-3\nnew-4\nnew-5\nnew-6\nnew-7\nnew-8\nnew-9\nnew-10\nnew-11\nnew-12\nnew-13\nnew-14\nnew-15\nnew-16\nnew-17\nnew-18\nnew-19\nnew-20\nnew-21\nnew-22\nnew-23\nnew-24\nnew-25\nnew-26\nnew-27\nnew-28\nnew-29\nnew-30\nnew-31\nnew-32\nnew-33\nnew-34\nnew-35\nnew-36\nnew-37\nnew-38\nnew-39\nnew-40\nnew-41\nnew-42\nnew-43\nnew-44\nnew-45\nnew-46\nnew-47\nnew-48\nnew-49\nnew-50\nnew-51\nnew-52\nnew-53\nnew-54\nnew-55\nnew-56\nnew-57\nnew-58\nnew-59\nnew-60\nnew-61\nnew-62\nnew-63\nnew-64\nnew-65\nnew-66\nnew-67\nnew-68\nnew-69\nnew-70\nnew-71\nnew-72\nnew-73\nnew-74\nnew-75\nnew-76\nnew-77\nnew-78\nnew-79\nnew-80\nnew-81\nnew-82\nnew-83\nnew-84\nnew-85\nnew-86\nnew-87\nnew-88\nnew-89\nnew-90\nnew-91\nnew-92\nnew-93\nnew-94\nnew-95\nnew-96\nnew-97\nnew-98\nnew-99\nnew-100\nnew-101\nnew-102\nnew-103\nnew-104\nnew-105\nnew-106\nnew-107\nnew-108\nnew-109\nnew-110\nnew-111\nnew-112\nnew-113\nnew-114\nnew-115\nnew-116\nnew-117\nnew-118\nnew-119\nnew-120\nnew-121\nnew-122\nnew-123\nnew-124\nnew-125\nnew-126\nnew-127\nnew-128\nnew-129\nnew-130\nnew-131\nnew-132\nnew-133\nnew-134\nnew-135\nnew-136\nnew-137\nnew-138\nnew-139\nnew-140\nnew-141\nnew-142\nnew-143\nnew-144\nnew-145\nnew-146\nnew-147\nnew-148\nnew-149\nnew-150\nnew-151\nnew-152\nnew-153\nnew-154\nnew-155\nnew-156\nnew-157\nnew-158\nnew-159\nnew-160\nnew-161\nnew-162\nnew-163\nnew-164\nnew-165\nnew-166\nnew-167\nnew-168\nnew-169\nnew-170\nnew-171\nnew-172\nnew-173\nnew-174\nnew-175\nnew-176\nnew-177\nnew-178\nnew-179\nnew-180\nnew-181\nnew-182\nnew-183\nnew-184\nnew-185\nnew-186\nnew-187\nnew-188\nnew-189\nnew-190\nnew-191\nnew-192\nnew-193\nnew-194\nnew-195\nnew-196\nnew-197\nnew-198\nnew-199\nnew-200",
+    "expected": {
+      "lines": [
+        {
+          "kind": "removed",
+          "text": "old-1",
+          "oldLine": 1,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-2",
+          "oldLine": 2,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-3",
+          "oldLine": 3,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-4",
+          "oldLine": 4,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-5",
+          "oldLine": 5,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-6",
+          "oldLine": 6,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-7",
+          "oldLine": 7,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-8",
+          "oldLine": 8,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-9",
+          "oldLine": 9,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-10",
+          "oldLine": 10,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-11",
+          "oldLine": 11,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-12",
+          "oldLine": 12,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-13",
+          "oldLine": 13,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-14",
+          "oldLine": 14,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-15",
+          "oldLine": 15,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-16",
+          "oldLine": 16,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-17",
+          "oldLine": 17,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-18",
+          "oldLine": 18,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-19",
+          "oldLine": 19,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-20",
+          "oldLine": 20,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-21",
+          "oldLine": 21,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-22",
+          "oldLine": 22,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-23",
+          "oldLine": 23,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-24",
+          "oldLine": 24,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-25",
+          "oldLine": 25,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-26",
+          "oldLine": 26,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-27",
+          "oldLine": 27,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-28",
+          "oldLine": 28,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-29",
+          "oldLine": 29,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-30",
+          "oldLine": 30,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-31",
+          "oldLine": 31,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-32",
+          "oldLine": 32,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-33",
+          "oldLine": 33,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-34",
+          "oldLine": 34,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-35",
+          "oldLine": 35,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-36",
+          "oldLine": 36,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-37",
+          "oldLine": 37,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-38",
+          "oldLine": 38,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-39",
+          "oldLine": 39,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-40",
+          "oldLine": 40,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-41",
+          "oldLine": 41,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-42",
+          "oldLine": 42,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-43",
+          "oldLine": 43,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-44",
+          "oldLine": 44,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-45",
+          "oldLine": 45,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-46",
+          "oldLine": 46,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-47",
+          "oldLine": 47,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-48",
+          "oldLine": 48,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-49",
+          "oldLine": 49,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-50",
+          "oldLine": 50,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-51",
+          "oldLine": 51,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-52",
+          "oldLine": 52,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-53",
+          "oldLine": 53,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-54",
+          "oldLine": 54,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-55",
+          "oldLine": 55,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-56",
+          "oldLine": 56,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-57",
+          "oldLine": 57,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-58",
+          "oldLine": 58,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-59",
+          "oldLine": 59,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-60",
+          "oldLine": 60,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-61",
+          "oldLine": 61,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-62",
+          "oldLine": 62,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-63",
+          "oldLine": 63,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-64",
+          "oldLine": 64,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-65",
+          "oldLine": 65,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-66",
+          "oldLine": 66,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-67",
+          "oldLine": 67,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-68",
+          "oldLine": 68,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-69",
+          "oldLine": 69,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-70",
+          "oldLine": 70,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-71",
+          "oldLine": 71,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-72",
+          "oldLine": 72,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-73",
+          "oldLine": 73,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-74",
+          "oldLine": 74,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-75",
+          "oldLine": 75,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-76",
+          "oldLine": 76,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-77",
+          "oldLine": 77,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-78",
+          "oldLine": 78,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-79",
+          "oldLine": 79,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-80",
+          "oldLine": 80,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-81",
+          "oldLine": 81,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-82",
+          "oldLine": 82,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-83",
+          "oldLine": 83,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-84",
+          "oldLine": 84,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-85",
+          "oldLine": 85,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-86",
+          "oldLine": 86,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-87",
+          "oldLine": 87,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-88",
+          "oldLine": 88,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-89",
+          "oldLine": 89,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-90",
+          "oldLine": 90,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-91",
+          "oldLine": 91,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-92",
+          "oldLine": 92,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-93",
+          "oldLine": 93,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-94",
+          "oldLine": 94,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-95",
+          "oldLine": 95,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-96",
+          "oldLine": 96,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-97",
+          "oldLine": 97,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-98",
+          "oldLine": 98,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-99",
+          "oldLine": 99,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-100",
+          "oldLine": 100,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-101",
+          "oldLine": 101,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-102",
+          "oldLine": 102,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-103",
+          "oldLine": 103,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-104",
+          "oldLine": 104,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-105",
+          "oldLine": 105,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-106",
+          "oldLine": 106,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-107",
+          "oldLine": 107,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-108",
+          "oldLine": 108,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-109",
+          "oldLine": 109,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-110",
+          "oldLine": 110,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-111",
+          "oldLine": 111,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-112",
+          "oldLine": 112,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-113",
+          "oldLine": 113,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-114",
+          "oldLine": 114,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-115",
+          "oldLine": 115,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-116",
+          "oldLine": 116,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-117",
+          "oldLine": 117,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-118",
+          "oldLine": 118,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-119",
+          "oldLine": 119,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-120",
+          "oldLine": 120,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-121",
+          "oldLine": 121,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-122",
+          "oldLine": 122,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-123",
+          "oldLine": 123,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-124",
+          "oldLine": 124,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-125",
+          "oldLine": 125,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-126",
+          "oldLine": 126,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-127",
+          "oldLine": 127,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-128",
+          "oldLine": 128,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-129",
+          "oldLine": 129,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-130",
+          "oldLine": 130,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-131",
+          "oldLine": 131,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-132",
+          "oldLine": 132,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-133",
+          "oldLine": 133,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-134",
+          "oldLine": 134,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-135",
+          "oldLine": 135,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-136",
+          "oldLine": 136,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-137",
+          "oldLine": 137,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-138",
+          "oldLine": 138,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-139",
+          "oldLine": 139,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-140",
+          "oldLine": 140,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-141",
+          "oldLine": 141,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-142",
+          "oldLine": 142,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-143",
+          "oldLine": 143,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-144",
+          "oldLine": 144,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-145",
+          "oldLine": 145,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-146",
+          "oldLine": 146,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-147",
+          "oldLine": 147,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-148",
+          "oldLine": 148,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-149",
+          "oldLine": 149,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-150",
+          "oldLine": 150,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-151",
+          "oldLine": 151,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-152",
+          "oldLine": 152,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-153",
+          "oldLine": 153,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-154",
+          "oldLine": 154,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-155",
+          "oldLine": 155,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-156",
+          "oldLine": 156,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-157",
+          "oldLine": 157,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-158",
+          "oldLine": 158,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-159",
+          "oldLine": 159,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-160",
+          "oldLine": 160,
+          "newLine": null
+        }
+      ],
+      "addedLines": 200,
+      "removedLines": 200,
+      "truncated": true,
+      "countsExact": true
+    }
+  },
+  {
+    "id": "fallback-approximate",
+    "oldContent": "keep-1\nkeep-2\nkeep-3\nkeep-4\nold-5\nold-6\nold-7\nold-8\nold-9\nold-10\nold-11\nold-12\nold-13\nold-14\nold-15\nold-16\nold-17\nold-18\nold-19\nold-20\nold-21\nold-22\nold-23\nold-24\nold-25\nold-26\nold-27\nold-28\nold-29\nold-30\nold-31\nold-32\nold-33\nold-34\nold-35\nold-36\nold-37\nold-38\nold-39\nold-40\nold-41\nold-42\nold-43\nold-44\nold-45\nold-46\nold-47\nold-48\nold-49\nold-50\nold-51\nold-52\nold-53\nold-54\nold-55\nold-56\nold-57\nold-58\nold-59\nold-60\nold-61\nold-62\nold-63\nold-64\nold-65\nold-66\nold-67\nold-68\nold-69\nold-70\nold-71\nold-72\nold-73\nold-74\nold-75\nold-76\nold-77\nold-78\nold-79\nold-80\nold-81\nold-82\nold-83\nold-84\nold-85\nold-86\nold-87\nold-88\nold-89\nold-90\nold-91\nold-92\nold-93\nold-94\nold-95\nold-96\nold-97\nold-98\nold-99\nold-100\nold-101\nold-102\nold-103\nold-104\nold-105\nold-106\nold-107\nold-108\nold-109\nold-110\nold-111\nold-112\nold-113\nold-114\nold-115\nold-116\nold-117\nold-118\nold-119\nold-120\nold-121\nold-122\nold-123\nold-124\nold-125\nold-126\nold-127\nold-128\nold-129\nold-130\nold-131\nold-132\nold-133\nold-134\nold-135\nold-136\nold-137\nold-138\nold-139\nold-140\nold-141\nold-142\nold-143\nold-144\nold-145\nold-146\nold-147\nold-148\nold-149\nold-150\nold-151\nold-152\nold-153\nold-154\nold-155\nold-156\nold-157\nold-158\nold-159\nold-160\nold-161\nold-162\nold-163\nold-164\nold-165\nold-166\nold-167\nold-168\nold-169\nold-170\nold-171\nold-172\nold-173\nold-174\nold-175\nold-176\nold-177\nold-178\nold-179\nold-180\nold-181\nold-182\nold-183\nold-184\nold-185\nold-186\nold-187\nold-188\nold-189\nold-190\nold-191\nold-192\nold-193\nold-194\nold-195\nold-196\nold-197\nold-198\nold-199\nold-200\nold-201\nold-202\nold-203\nold-204\nold-205\nold-206\nold-207\nold-208\nold-209\nold-210\nold-211\nold-212\nold-213\nold-214\nold-215\nold-216\nold-217\nold-218\nold-219\nold-220\nold-221\nold-222\nold-223\nold-224\nold-225\nold-226\nold-227\nold-228\nold-229\nold-230\nold-231\nold-232\nold-233\nold-234\nold-235\nold-236\nold-237\nold-238\nold-239\nold-240\nold-241\nold-242\nold-243\nold-244\nold-245\nold-246\nold-247\nold-248\nold-249\nold-250\nold-251\nold-252\nold-253\nold-254\nold-255\nold-256\nold-257\nold-258\nold-259\nold-260\nold-261\nold-262\nold-263\nold-264\nold-265\nold-266\nold-267\nold-268\nold-269\nold-270\nold-271\nold-272\nold-273\nold-274\nold-275\nold-276\nold-277\nold-278\nold-279\nold-280\nold-281\nold-282\nold-283\nold-284\nold-285\nold-286\nold-287\nold-288\nold-289\nold-290\nold-291\nold-292\nold-293\nold-294\nold-295\nold-296\nold-297\nold-298\nold-299\nold-300\nold-301\nold-302\nold-303\nold-304\nold-305\nold-306\nold-307\nold-308\nold-309\nold-310\nold-311\nold-312\nold-313\nold-314\nold-315\nold-316\nold-317\nold-318\nold-319\nold-320\nold-321\nold-322\nold-323\nold-324\nold-325\nold-326\nold-327\nold-328\nold-329\nold-330\nold-331\nold-332\nold-333\nold-334\nold-335\nold-336\nold-337\nold-338\nold-339\nold-340\nold-341\nold-342\nold-343\nold-344\nold-345\nold-346\nold-347\nold-348\nold-349\nold-350\nold-351\nold-352\nold-353\nold-354\nold-355\nold-356\nold-357\nold-358\nold-359\nold-360\nold-361\nold-362\nold-363\nold-364\nold-365\nold-366\nold-367\nold-368\nold-369\nold-370\nold-371\nold-372\nold-373\nold-374\nold-375\nold-376\nold-377\nold-378\nold-379\nold-380\nold-381\nold-382\nold-383\nold-384\nold-385\nold-386\nold-387\nold-388\nold-389\nold-390\nold-391\nold-392\nold-393\nold-394\nold-395\nold-396\nkeep-397\nkeep-398\nkeep-399\nkeep-400",
+    "newContent": "keep-1\nkeep-2\nkeep-3\nkeep-4\nnew-5\nnew-6\nnew-7\nnew-8\nnew-9\nnew-10\nnew-11\nnew-12\nnew-13\nnew-14\nnew-15\nnew-16\nnew-17\nnew-18\nnew-19\nnew-20\nnew-21\nnew-22\nnew-23\nnew-24\nnew-25\nnew-26\nnew-27\nnew-28\nnew-29\nnew-30\nnew-31\nnew-32\nnew-33\nnew-34\nnew-35\nnew-36\nnew-37\nnew-38\nnew-39\nnew-40\nnew-41\nnew-42\nnew-43\nnew-44\nnew-45\nnew-46\nnew-47\nnew-48\nnew-49\nnew-50\nnew-51\nnew-52\nnew-53\nnew-54\nnew-55\nnew-56\nnew-57\nnew-58\nnew-59\nnew-60\nnew-61\nnew-62\nnew-63\nnew-64\nnew-65\nnew-66\nnew-67\nnew-68\nnew-69\nnew-70\nnew-71\nnew-72\nnew-73\nnew-74\nnew-75\nnew-76\nnew-77\nnew-78\nnew-79\nnew-80\nnew-81\nnew-82\nnew-83\nnew-84\nnew-85\nnew-86\nnew-87\nnew-88\nnew-89\nnew-90\nnew-91\nnew-92\nnew-93\nnew-94\nnew-95\nnew-96\nnew-97\nnew-98\nnew-99\nnew-100\nnew-101\nnew-102\nnew-103\nnew-104\nnew-105\nnew-106\nnew-107\nnew-108\nnew-109\nnew-110\nnew-111\nnew-112\nnew-113\nnew-114\nnew-115\nnew-116\nnew-117\nnew-118\nnew-119\nnew-120\nnew-121\nnew-122\nnew-123\nnew-124\nnew-125\nnew-126\nnew-127\nnew-128\nnew-129\nnew-130\nnew-131\nnew-132\nnew-133\nnew-134\nnew-135\nnew-136\nnew-137\nnew-138\nnew-139\nnew-140\nnew-141\nnew-142\nnew-143\nnew-144\nnew-145\nnew-146\nnew-147\nnew-148\nnew-149\nnew-150\nnew-151\nnew-152\nnew-153\nnew-154\nnew-155\nnew-156\nnew-157\nnew-158\nnew-159\nnew-160\nnew-161\nnew-162\nnew-163\nnew-164\nnew-165\nnew-166\nnew-167\nnew-168\nnew-169\nnew-170\nnew-171\nnew-172\nnew-173\nnew-174\nnew-175\nnew-176\nnew-177\nnew-178\nnew-179\nnew-180\nnew-181\nnew-182\nnew-183\nnew-184\nnew-185\nnew-186\nnew-187\nnew-188\nnew-189\nnew-190\nnew-191\nnew-192\nnew-193\nnew-194\nnew-195\nnew-196\nnew-197\nnew-198\nnew-199\nnew-200\nnew-201\nnew-202\nnew-203\nnew-204\nnew-205\nnew-206\nnew-207\nnew-208\nnew-209\nnew-210\nnew-211\nnew-212\nnew-213\nnew-214\nnew-215\nnew-216\nnew-217\nnew-218\nnew-219\nnew-220\nnew-221\nnew-222\nnew-223\nnew-224\nnew-225\nnew-226\nnew-227\nnew-228\nnew-229\nnew-230\nnew-231\nnew-232\nnew-233\nnew-234\nnew-235\nnew-236\nnew-237\nnew-238\nnew-239\nnew-240\nnew-241\nnew-242\nnew-243\nnew-244\nnew-245\nnew-246\nnew-247\nnew-248\nnew-249\nnew-250\nnew-251\nnew-252\nnew-253\nnew-254\nnew-255\nnew-256\nnew-257\nnew-258\nnew-259\nnew-260\nnew-261\nnew-262\nnew-263\nnew-264\nnew-265\nnew-266\nnew-267\nnew-268\nnew-269\nnew-270\nnew-271\nnew-272\nnew-273\nnew-274\nnew-275\nnew-276\nnew-277\nnew-278\nnew-279\nnew-280\nnew-281\nnew-282\nnew-283\nnew-284\nnew-285\nnew-286\nnew-287\nnew-288\nnew-289\nnew-290\nnew-291\nnew-292\nnew-293\nnew-294\nnew-295\nnew-296\nnew-297\nnew-298\nnew-299\nnew-300\nnew-301\nnew-302\nnew-303\nnew-304\nnew-305\nnew-306\nnew-307\nnew-308\nnew-309\nnew-310\nnew-311\nnew-312\nnew-313\nnew-314\nnew-315\nnew-316\nnew-317\nnew-318\nnew-319\nnew-320\nnew-321\nnew-322\nnew-323\nnew-324\nnew-325\nnew-326\nnew-327\nnew-328\nnew-329\nnew-330\nnew-331\nnew-332\nnew-333\nnew-334\nnew-335\nnew-336\nnew-337\nnew-338\nnew-339\nnew-340\nnew-341\nnew-342\nnew-343\nnew-344\nnew-345\nnew-346\nnew-347\nnew-348\nnew-349\nnew-350\nnew-351\nnew-352\nnew-353\nnew-354\nnew-355\nnew-356\nnew-357\nnew-358\nnew-359\nnew-360\nnew-361\nnew-362\nnew-363\nnew-364\nnew-365\nnew-366\nnew-367\nnew-368\nnew-369\nnew-370\nnew-371\nnew-372\nnew-373\nnew-374\nnew-375\nnew-376\nnew-377\nnew-378\nnew-379\nnew-380\nnew-381\nnew-382\nnew-383\nnew-384\nnew-385\nnew-386\nnew-387\nnew-388\nnew-389\nnew-390\nnew-391\nnew-392\nnew-393\nnew-394\nnew-395\nnew-396\nnew-397\nkeep-397\nkeep-398\nkeep-399\nkeep-400",
+    "expected": {
+      "lines": [
+        {
+          "kind": "context",
+          "text": "keep-3",
+          "oldLine": 3,
+          "newLine": 3
+        },
+        {
+          "kind": "context",
+          "text": "keep-4",
+          "oldLine": 4,
+          "newLine": 4
+        },
+        {
+          "kind": "removed",
+          "text": "old-5",
+          "oldLine": 5,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-6",
+          "oldLine": 6,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-7",
+          "oldLine": 7,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-8",
+          "oldLine": 8,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-9",
+          "oldLine": 9,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-10",
+          "oldLine": 10,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-11",
+          "oldLine": 11,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-12",
+          "oldLine": 12,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-13",
+          "oldLine": 13,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-14",
+          "oldLine": 14,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-15",
+          "oldLine": 15,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-16",
+          "oldLine": 16,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-17",
+          "oldLine": 17,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-18",
+          "oldLine": 18,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-19",
+          "oldLine": 19,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-20",
+          "oldLine": 20,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-21",
+          "oldLine": 21,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-22",
+          "oldLine": 22,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-23",
+          "oldLine": 23,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-24",
+          "oldLine": 24,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-25",
+          "oldLine": 25,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-26",
+          "oldLine": 26,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-27",
+          "oldLine": 27,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-28",
+          "oldLine": 28,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-29",
+          "oldLine": 29,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-30",
+          "oldLine": 30,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-31",
+          "oldLine": 31,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-32",
+          "oldLine": 32,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-33",
+          "oldLine": 33,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-34",
+          "oldLine": 34,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-35",
+          "oldLine": 35,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-36",
+          "oldLine": 36,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-37",
+          "oldLine": 37,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-38",
+          "oldLine": 38,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-39",
+          "oldLine": 39,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-40",
+          "oldLine": 40,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-41",
+          "oldLine": 41,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-42",
+          "oldLine": 42,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-43",
+          "oldLine": 43,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-44",
+          "oldLine": 44,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-45",
+          "oldLine": 45,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-46",
+          "oldLine": 46,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-47",
+          "oldLine": 47,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-48",
+          "oldLine": 48,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-49",
+          "oldLine": 49,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-50",
+          "oldLine": 50,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-51",
+          "oldLine": 51,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-52",
+          "oldLine": 52,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-53",
+          "oldLine": 53,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-54",
+          "oldLine": 54,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-55",
+          "oldLine": 55,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-56",
+          "oldLine": 56,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-57",
+          "oldLine": 57,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-58",
+          "oldLine": 58,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-59",
+          "oldLine": 59,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-60",
+          "oldLine": 60,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-61",
+          "oldLine": 61,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-62",
+          "oldLine": 62,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-63",
+          "oldLine": 63,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-64",
+          "oldLine": 64,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-65",
+          "oldLine": 65,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-66",
+          "oldLine": 66,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-67",
+          "oldLine": 67,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-68",
+          "oldLine": 68,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-69",
+          "oldLine": 69,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-70",
+          "oldLine": 70,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-71",
+          "oldLine": 71,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-72",
+          "oldLine": 72,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-73",
+          "oldLine": 73,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-74",
+          "oldLine": 74,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-75",
+          "oldLine": 75,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-76",
+          "oldLine": 76,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-77",
+          "oldLine": 77,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-78",
+          "oldLine": 78,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-79",
+          "oldLine": 79,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-80",
+          "oldLine": 80,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-81",
+          "oldLine": 81,
+          "newLine": null
+        },
+        {
+          "kind": "removed",
+          "text": "old-82",
+          "oldLine": 82,
+          "newLine": null
+        },
+        {
+          "kind": "added",
+          "text": "new-5",
+          "oldLine": null,
+          "newLine": 5
+        },
+        {
+          "kind": "added",
+          "text": "new-6",
+          "oldLine": null,
+          "newLine": 6
+        },
+        {
+          "kind": "added",
+          "text": "new-7",
+          "oldLine": null,
+          "newLine": 7
+        },
+        {
+          "kind": "added",
+          "text": "new-8",
+          "oldLine": null,
+          "newLine": 8
+        },
+        {
+          "kind": "added",
+          "text": "new-9",
+          "oldLine": null,
+          "newLine": 9
+        },
+        {
+          "kind": "added",
+          "text": "new-10",
+          "oldLine": null,
+          "newLine": 10
+        },
+        {
+          "kind": "added",
+          "text": "new-11",
+          "oldLine": null,
+          "newLine": 11
+        },
+        {
+          "kind": "added",
+          "text": "new-12",
+          "oldLine": null,
+          "newLine": 12
+        },
+        {
+          "kind": "added",
+          "text": "new-13",
+          "oldLine": null,
+          "newLine": 13
+        },
+        {
+          "kind": "added",
+          "text": "new-14",
+          "oldLine": null,
+          "newLine": 14
+        },
+        {
+          "kind": "added",
+          "text": "new-15",
+          "oldLine": null,
+          "newLine": 15
+        },
+        {
+          "kind": "added",
+          "text": "new-16",
+          "oldLine": null,
+          "newLine": 16
+        },
+        {
+          "kind": "added",
+          "text": "new-17",
+          "oldLine": null,
+          "newLine": 17
+        },
+        {
+          "kind": "added",
+          "text": "new-18",
+          "oldLine": null,
+          "newLine": 18
+        },
+        {
+          "kind": "added",
+          "text": "new-19",
+          "oldLine": null,
+          "newLine": 19
+        },
+        {
+          "kind": "added",
+          "text": "new-20",
+          "oldLine": null,
+          "newLine": 20
+        },
+        {
+          "kind": "added",
+          "text": "new-21",
+          "oldLine": null,
+          "newLine": 21
+        },
+        {
+          "kind": "added",
+          "text": "new-22",
+          "oldLine": null,
+          "newLine": 22
+        },
+        {
+          "kind": "added",
+          "text": "new-23",
+          "oldLine": null,
+          "newLine": 23
+        },
+        {
+          "kind": "added",
+          "text": "new-24",
+          "oldLine": null,
+          "newLine": 24
+        },
+        {
+          "kind": "added",
+          "text": "new-25",
+          "oldLine": null,
+          "newLine": 25
+        },
+        {
+          "kind": "added",
+          "text": "new-26",
+          "oldLine": null,
+          "newLine": 26
+        },
+        {
+          "kind": "added",
+          "text": "new-27",
+          "oldLine": null,
+          "newLine": 27
+        },
+        {
+          "kind": "added",
+          "text": "new-28",
+          "oldLine": null,
+          "newLine": 28
+        },
+        {
+          "kind": "added",
+          "text": "new-29",
+          "oldLine": null,
+          "newLine": 29
+        },
+        {
+          "kind": "added",
+          "text": "new-30",
+          "oldLine": null,
+          "newLine": 30
+        },
+        {
+          "kind": "added",
+          "text": "new-31",
+          "oldLine": null,
+          "newLine": 31
+        },
+        {
+          "kind": "added",
+          "text": "new-32",
+          "oldLine": null,
+          "newLine": 32
+        },
+        {
+          "kind": "added",
+          "text": "new-33",
+          "oldLine": null,
+          "newLine": 33
+        },
+        {
+          "kind": "added",
+          "text": "new-34",
+          "oldLine": null,
+          "newLine": 34
+        },
+        {
+          "kind": "added",
+          "text": "new-35",
+          "oldLine": null,
+          "newLine": 35
+        },
+        {
+          "kind": "added",
+          "text": "new-36",
+          "oldLine": null,
+          "newLine": 36
+        },
+        {
+          "kind": "added",
+          "text": "new-37",
+          "oldLine": null,
+          "newLine": 37
+        },
+        {
+          "kind": "added",
+          "text": "new-38",
+          "oldLine": null,
+          "newLine": 38
+        },
+        {
+          "kind": "added",
+          "text": "new-39",
+          "oldLine": null,
+          "newLine": 39
+        },
+        {
+          "kind": "added",
+          "text": "new-40",
+          "oldLine": null,
+          "newLine": 40
+        },
+        {
+          "kind": "added",
+          "text": "new-41",
+          "oldLine": null,
+          "newLine": 41
+        },
+        {
+          "kind": "added",
+          "text": "new-42",
+          "oldLine": null,
+          "newLine": 42
+        },
+        {
+          "kind": "added",
+          "text": "new-43",
+          "oldLine": null,
+          "newLine": 43
+        },
+        {
+          "kind": "added",
+          "text": "new-44",
+          "oldLine": null,
+          "newLine": 44
+        },
+        {
+          "kind": "added",
+          "text": "new-45",
+          "oldLine": null,
+          "newLine": 45
+        },
+        {
+          "kind": "added",
+          "text": "new-46",
+          "oldLine": null,
+          "newLine": 46
+        },
+        {
+          "kind": "added",
+          "text": "new-47",
+          "oldLine": null,
+          "newLine": 47
+        },
+        {
+          "kind": "added",
+          "text": "new-48",
+          "oldLine": null,
+          "newLine": 48
+        },
+        {
+          "kind": "added",
+          "text": "new-49",
+          "oldLine": null,
+          "newLine": 49
+        },
+        {
+          "kind": "added",
+          "text": "new-50",
+          "oldLine": null,
+          "newLine": 50
+        },
+        {
+          "kind": "added",
+          "text": "new-51",
+          "oldLine": null,
+          "newLine": 51
+        },
+        {
+          "kind": "added",
+          "text": "new-52",
+          "oldLine": null,
+          "newLine": 52
+        },
+        {
+          "kind": "added",
+          "text": "new-53",
+          "oldLine": null,
+          "newLine": 53
+        },
+        {
+          "kind": "added",
+          "text": "new-54",
+          "oldLine": null,
+          "newLine": 54
+        },
+        {
+          "kind": "added",
+          "text": "new-55",
+          "oldLine": null,
+          "newLine": 55
+        },
+        {
+          "kind": "added",
+          "text": "new-56",
+          "oldLine": null,
+          "newLine": 56
+        },
+        {
+          "kind": "added",
+          "text": "new-57",
+          "oldLine": null,
+          "newLine": 57
+        },
+        {
+          "kind": "added",
+          "text": "new-58",
+          "oldLine": null,
+          "newLine": 58
+        },
+        {
+          "kind": "added",
+          "text": "new-59",
+          "oldLine": null,
+          "newLine": 59
+        },
+        {
+          "kind": "added",
+          "text": "new-60",
+          "oldLine": null,
+          "newLine": 60
+        },
+        {
+          "kind": "added",
+          "text": "new-61",
+          "oldLine": null,
+          "newLine": 61
+        },
+        {
+          "kind": "added",
+          "text": "new-62",
+          "oldLine": null,
+          "newLine": 62
+        },
+        {
+          "kind": "added",
+          "text": "new-63",
+          "oldLine": null,
+          "newLine": 63
+        },
+        {
+          "kind": "added",
+          "text": "new-64",
+          "oldLine": null,
+          "newLine": 64
+        },
+        {
+          "kind": "added",
+          "text": "new-65",
+          "oldLine": null,
+          "newLine": 65
+        },
+        {
+          "kind": "added",
+          "text": "new-66",
+          "oldLine": null,
+          "newLine": 66
+        },
+        {
+          "kind": "added",
+          "text": "new-67",
+          "oldLine": null,
+          "newLine": 67
+        },
+        {
+          "kind": "added",
+          "text": "new-68",
+          "oldLine": null,
+          "newLine": 68
+        },
+        {
+          "kind": "added",
+          "text": "new-69",
+          "oldLine": null,
+          "newLine": 69
+        },
+        {
+          "kind": "added",
+          "text": "new-70",
+          "oldLine": null,
+          "newLine": 70
+        },
+        {
+          "kind": "added",
+          "text": "new-71",
+          "oldLine": null,
+          "newLine": 71
+        },
+        {
+          "kind": "added",
+          "text": "new-72",
+          "oldLine": null,
+          "newLine": 72
+        },
+        {
+          "kind": "added",
+          "text": "new-73",
+          "oldLine": null,
+          "newLine": 73
+        },
+        {
+          "kind": "added",
+          "text": "new-74",
+          "oldLine": null,
+          "newLine": 74
+        },
+        {
+          "kind": "added",
+          "text": "new-75",
+          "oldLine": null,
+          "newLine": 75
+        },
+        {
+          "kind": "added",
+          "text": "new-76",
+          "oldLine": null,
+          "newLine": 76
+        },
+        {
+          "kind": "added",
+          "text": "new-77",
+          "oldLine": null,
+          "newLine": 77
+        },
+        {
+          "kind": "added",
+          "text": "new-78",
+          "oldLine": null,
+          "newLine": 78
+        },
+        {
+          "kind": "added",
+          "text": "new-79",
+          "oldLine": null,
+          "newLine": 79
+        },
+        {
+          "kind": "added",
+          "text": "new-80",
+          "oldLine": null,
+          "newLine": 80
+        },
+        {
+          "kind": "added",
+          "text": "new-81",
+          "oldLine": null,
+          "newLine": 81
+        },
+        {
+          "kind": "added",
+          "text": "new-82",
+          "oldLine": null,
+          "newLine": 82
+        },
+        {
+          "kind": "omitted",
+          "text": "… 629 changed lines not shown",
+          "oldLine": null,
+          "newLine": null
+        },
+        {
+          "kind": "context",
+          "text": "keep-397",
+          "oldLine": 397,
+          "newLine": 398
+        }
+      ],
+      "addedLines": 393,
+      "removedLines": 392,
+      "truncated": true,
+      "countsExact": false
+    }
+  }
+]

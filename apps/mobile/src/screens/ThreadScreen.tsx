@@ -89,6 +89,9 @@ import { SendMicButton } from '../components/SendMicButton'
 import { SyntheticRow } from '../components/SyntheticRow'
 import { useDictation, type VoiceNote } from '../hooks/useDictation'
 import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
+import { useGitContext } from '../hooks/useGitContext'
+import { presentGitContext } from '../lib/git-context'
+import { archiveFailure, canArchive } from '../lib/thread-archive'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
 import { DEMO_STRIP_HEIGHT } from '../components/DemoStrip'
 import { DEMO_LABEL, NOT_IN_DEMO, isDemoConnection } from '@shared/phone-demo/phone-demo'
@@ -99,8 +102,6 @@ import { HOST_WRITE_PHONE_APPROVAL_CAPABILITY } from '@shared/host-write-phone'
 import { AGENT_ASYNC_APPROVAL_CAPABILITY } from '@shared/agent-approval-cards'
 import {
   ApprovalItem,
-  FileEditItem,
-  FileGroupItem,
   HeldTurnBar,
   MergeBackItem,
   PeerUndeliveredItem,
@@ -116,7 +117,9 @@ import { styles } from './thread-screen.styles'
 import { blockedSendReason } from '../lib/composer'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
 import { collapseFileEdits } from '../lib/file-groups'
+import { FileEditItem, FileGroupItem } from './FileEditItem'
 import { collapseSubagents, type ThreadRow } from '../lib/subagent-rows'
+import { EventRowItem } from './EventRowItem'
 import { SubagentItem } from './SubagentItem'
 
 const log = createLogger('screen:thread')
@@ -727,7 +730,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // FlatList passes its own getItem/getItemCount after {...restProps}, so a
   // zero-copy accessor would be ignored and the feed would render oldest-first.
   // Reversing a copy is cheap; the memoized rows are what actually mattered.
-  // Which turns' "Changed N files" rows are open, on this screen only.
+  // Which turns' "Changed N files" rows and which file diffs are open, on this
+  // screen only. Group ids start "files:", so they never meet a file row's id.
   const [openFileGroups, setOpenFileGroups] = useState<ReadonlySet<string>>(() => new Set())
   const toggleFileGroup = useCallback((id: string) => {
     setOpenFileGroups((open) => {
@@ -1317,7 +1321,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
         case 'plan':
           return <PlanItem item={item} onImplement={implementPlan} onIterate={focusComposer} />
         case 'fileEdit':
-          return <FileEditItem item={item} backendLabel={backendLabel} />
+          return (
+            <FileEditItem
+              item={item}
+              backendLabel={backendLabel}
+              expanded={openFileGroups.has(item.id)}
+              onToggle={toggleFileGroup}
+            />
+          )
         case 'fileGroup':
           return <FileGroupItem row={item} onToggle={toggleFileGroup} />
         case 'notice':
@@ -1358,6 +1369,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
           )
         case 'error':
           return <Text style={styles.errorText}>{item.message}</Text>
+        case 'retry':
+        case 'drift':
+        case 'spendBlocked':
+        case 'peer':
+        case 'todo':
+          return <EventRowItem item={item} />
       }
     },
     [
@@ -1381,6 +1398,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       actOnHeld,
       heldErrors,
       toggleFileGroup,
+      openFileGroups,
       undeliveredSending,
       undeliveredErrors,
       sendUndelivered,
@@ -1447,6 +1465,54 @@ export default function ThreadScreen({ route, navigation }: Props) {
   })
 
   const usage = usageLine(thread)
+  const checkoutWorktree = thread.historyMeta?.worktreePath ?? worktreePath
+  const git = useGitContext(connectionId, checkoutWorktree ?? projectPath)
+  const gitContext = presentGitContext(projectPath, checkoutWorktree, git.state)
+  const [archiving, setArchiving] = useState(false)
+  const [archiveError, setArchiveError] = useState<string | null>(null)
+  // A late goBack from a screen already left pops whatever screen is on top.
+  const mountedRef = useRef(false)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+  const archive = () => {
+    if (archiving || loadLabel) return
+    // The confirm alert outlives the render that opened it: read the status now.
+    const status = useChatStore.getState().threads[key]?.status ?? thread.status
+    if (!canArchive(status, false)) {
+      setArchiveError('Stop the current turn before archiving')
+      return
+    }
+    const client = getClient(connectionId)
+    if (!client) {
+      setArchiveError('Backend not connected yet.')
+      return
+    }
+    setArchiving(true)
+    setArchiveError(null)
+    client.archiveConversation(threadId).then(
+      (result) => {
+        if (!mountedRef.current) return
+        setArchiving(false)
+        const problem = archiveFailure(result)
+        if (problem) {
+          setArchiveError(problem)
+          return
+        }
+        setSettingsOpen(false)
+        if (navigation.isFocused()) navigation.goBack()
+      },
+      (err: unknown) => {
+        log.warn('archive failed', err)
+        if (!mountedRef.current) return
+        setArchiving(false)
+        setArchiveError(err instanceof Error ? err.message : String(err))
+      },
+    )
+  }
   const footerShown = composerFocused || isRunning
   const showsQueueSegment = isRunning && canSteer(thread.provider ?? provider)
   const openPicker = (which: 'model' | 'profile') =>
@@ -1634,9 +1700,15 @@ export default function ThreadScreen({ route, navigation }: Props) {
         profileBusy={rotating}
         mode={thread.runtimeMode}
         usage={usage}
+        gitContext={gitContext}
+        archiving={archiving}
+        archiveError={archiveError}
+        archiveEnabled={!loadLabel && canArchive(thread.status, archiving)}
         onMode={setMode}
         onOpenModel={() => openFromSettings('model')}
         onOpenProfile={() => openFromSettings('profile')}
+        onRefreshGitContext={git.refresh}
+        onArchive={archive}
         onClose={() => setSettingsOpen(false)}
         onDismiss={settingsDismissed}
       />
@@ -1710,6 +1782,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
                 onPress={() => {
                   // The keyboard would cover the bottom of the sheet.
                   Keyboard.dismiss()
+                  git.refresh()
                   setSettingsOpen(true)
                 }}
                 accessibilityRole="button"

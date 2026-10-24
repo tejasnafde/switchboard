@@ -7,6 +7,7 @@ import { WsTransport, type TransportSocket, type WsAuth } from '@shared/ws-trans
 import type { Transport } from '@shared/transport'
 import {
   AppChannels,
+  GitChannels,
   HtmlLiveChannels,
   MachineChannels,
   ProviderChannels,
@@ -78,6 +79,8 @@ export interface StartSessionOpts {
   resumeSessionId?: string
   instanceId?: string
 }
+
+export type CurrentBranchResult = { ok: true; branch: string | null } | { ok: false; error: string; missing?: true }
 
 /** Subset of the registry's ProviderSession the mobile client reads. */
 export interface StartedSession {
@@ -260,6 +263,16 @@ export class SwitchboardClient {
 
   renameConversation(conversationId: string, title: string): Promise<unknown> {
     return this.transport.invoke(AppChannels.RENAME_CONVERSATION, conversationId, title)
+  }
+
+  /** Hides the chat from active lists; its history stays on the backend. */
+  archiveConversation(conversationId: string): Promise<{ ok: boolean; archived?: boolean; error?: string }> {
+    return this.transport.invoke(AppChannels.ARCHIVE_CONVERSATION, conversationId)
+  }
+
+  /** `branch: null` is a detached HEAD; `missing` means the folder is gone. */
+  currentBranch(cwd: string): Promise<CurrentBranchResult> {
+    return this.transport.invoke(GitChannels.CURRENT_BRANCH, cwd)
   }
 
   createConversation(params: CreateConversationParams): Promise<void> {

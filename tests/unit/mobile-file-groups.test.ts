@@ -27,7 +27,13 @@ describe('phone file groups', () => {
   it('folds each turn behind one collapsed row where its first file was', () => {
     const rows = collapseFileEdits(items, new Set())
     expect(rows.map((r) => r.id)).toEqual(['u1', 't1', 'files:f-a', 'u2', 'files:f-c', 't2'])
-    expect(rows[2]).toMatchObject({ kind: 'fileGroup', label: 'Changed 2 files', added: 2, expanded: false })
+    expect(rows[2]).toMatchObject({
+      kind: 'fileGroup',
+      label: 'Changed 2 files',
+      added: 3,
+      removed: 1,
+      expanded: false,
+    })
     expect(rows[4]).toMatchObject({ label: 'Changed 1 file' })
   })
 

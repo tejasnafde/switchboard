@@ -8,7 +8,7 @@ import {
   withoutDemo,
   type DemoData,
 } from '../../src/shared/phone-demo/phone-demo'
-import { AppChannels, ProviderChannels, PullRequestChannels } from '../../src/shared/ipc-channels'
+import { AppChannels, GitChannels, ProviderChannels, PullRequestChannels } from '../../src/shared/ipc-channels'
 import { REQUEST_EXPIRED, type RuntimeEvent } from '../../src/shared/provider-events'
 import type { PrDetail, PrListData, PrResult } from '../../src/shared/pull-requests'
 
@@ -182,6 +182,8 @@ describe('DemoTransport', () => {
   it('refuses what the demo cannot do', async () => {
     const transport = new DemoTransport(() => NOW)
     await expect(transport.invoke(AppChannels.FORK_CONVERSATION, {})).rejects.toThrow(NOT_IN_DEMO)
+    await expect(transport.invoke(AppChannels.ARCHIVE_CONVERSATION, 'demo-done')).rejects.toThrow(NOT_IN_DEMO)
+    await expect(transport.invoke(GitChannels.CURRENT_BRANCH, '/x')).rejects.toThrow(NOT_IN_DEMO)
     await expect(
       transport.invoke(ProviderChannels.START_SESSION, { threadId: 'new-chat', provider: 'claude', cwd: '/x' }),
     ).rejects.toThrow(NOT_IN_DEMO)
