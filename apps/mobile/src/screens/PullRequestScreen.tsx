@@ -1,18 +1,23 @@
 /**
- * One pull request, read-only: the header, a status card (checks expand in
- * place, failures first; reviews; conversations; conflicts), the description
- * and the linked chats. No merge, review or comment: those post as the user
- * on the host, so they stay on the desktop (`PullRequestWriteChannels` are
- * admin-scoped). "Work on PR" opens or starts a chat (`WorkOnPrSheet`).
+ * One pull request: the header, a status card (checks expand in place,
+ * failures first; reviews; conversations; conflicts), the review threads, the
+ * description and the linked chats. "Work on PR" opens or starts a chat
+ * (`WorkOnPrSheet`).
+ *
+ * With `pr_write_scope_v1` the threads are listed (`PrConversations`), and a
+ * phone the desktop granted `pr-write` (read on every focus) may reply,
+ * resolve, comment and review through `PrWriteSheet`. Merge, close,
+ * reviewers and re-run stay on the desktop.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { createLogger } from '@shared/logger'
 import { linkSourceLabel, type PrLinkChat } from '@shared/pull-request-links'
-import { stripHtmlComments, type PrCheck, type PrDetail } from '@shared/pull-requests'
+import { stripHtmlComments, type PrCheck, type PrConversation, type PrDetail } from '@shared/pull-requests'
+import { PR_WRITE_SCOPE_CAPABILITY } from '@shared/pull-request-phone-writes'
 import {
   checksStatus,
   checkTrailing,
@@ -36,8 +41,12 @@ import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { Markdown } from '../components/Markdown'
 import { WorkOnPrSheet } from '../components/WorkOnPrSheet'
-import { getClient } from '../stores/connections'
+import { PrConversations } from '../components/PrConversations'
+import { PrWriteSheet, type PrWriteSheetApi } from '../components/PrWriteSheet'
+import { getClient, useConnectionsStore } from '../stores/connections'
 import { openChatWithPill } from '../lib/pr-chat'
+import { unlockToPost } from '../lib/device-unlock'
+import { draftKey, newWriteId, type PrWriteTarget } from '../lib/pr-write'
 
 const log = createLogger('screen:pull-request')
 
@@ -125,6 +134,8 @@ export function PrDetailView({
   onOpenChat,
   onAskAboutFailures,
   onWorkOnPr,
+  conversations,
+  notice,
 }: {
   pr: PrDetail
   chats: PrLinkChat[]
@@ -132,6 +143,10 @@ export function PrDetailView({
   onOpenChat: (chat: PrLinkChat) => void
   onAskAboutFailures: (pill: PhoneReviewPill) => void
   onWorkOnPr: () => void
+  /** The review threads section, when the backend can list them for a phone. */
+  conversations?: ReactNode
+  /** A short confirmation after a write, such as "Posted". */
+  notice?: string | null
 }) {
   const insets = useSafeAreaInsets()
   const [checksOpen, setChecksOpen] = useState(false)
@@ -231,6 +246,8 @@ export function PrDetailView({
           </Text>
         </View>
 
+        {conversations}
+
         {description !== '' && (
           <>
             <Text style={styles.sectionLabel}>DESCRIPTION</Text>
@@ -261,6 +278,12 @@ export function PrDetailView({
           </Pressable>
         ))}
       </ScrollView>
+      {notice && (
+        <View style={styles.notice} testID="pr-write-notice" accessibilityLiveRegion="polite">
+          <Ionicons name="checkmark-circle-outline" size={16} color={colors.green} />
+          <Text style={styles.noticeText}>{notice}</Text>
+        </View>
+      )}
       <View style={[styles.actions, { paddingBottom: Math.max(insets.bottom, space.md) }]}>
         <Pressable style={styles.primary} onPress={onWorkOnPr} accessibilityRole="button" testID="pr-work-on">
           <Ionicons name="chatbox-outline" size={18} color={colors.bg} />
@@ -292,6 +315,96 @@ export default function PullRequestScreen({ route, navigation }: Props) {
   const [chats, setChats] = useState<PrLinkChat[]>([])
   const [sheet, setSheet] = useState<{ attachOnly: PhoneReviewPill } | 'work' | null>(null)
   const ticket = useRef(0)
+  const [conversations, setConversations] = useState<PrConversation[] | null>(null)
+  const [conversationsError, setConversationsError] = useState<string | null>(null)
+  const [canWrite, setCanWrite] = useState(false)
+  const [writeTarget, setWriteTarget] = useState<PrWriteTarget | null>(null)
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [notice, setNotice] = useState<string | null>(null)
+  const conversationsTicket = useRef(0)
+  const scopesTicket = useRef(0)
+  // Re-read on every render: the capability arrives with the `ready` frame, after the first paint.
+  const writeCapable = getClient(connectionId)?.supportsCapability(PR_WRITE_SCOPE_CAPABILITY) === true
+  const connected = useConnectionsStore((s) => s.status[connectionId] === 'connected')
+
+  const loadConversations = useCallback(() => {
+    const client = getClient(connectionId)
+    if (!client || client.supportsCapability(PR_WRITE_SCOPE_CAPABILITY) !== true) return
+    const mine = ++conversationsTicket.current
+    client
+      .pullRequestConversations(ref)
+      .then((result) => {
+        if (mine !== conversationsTicket.current) return
+        if (result.ok) {
+          setConversations(result.data)
+          setConversationsError(null)
+        } else setConversationsError(result.error.message)
+      })
+      .catch((err: unknown) => {
+        log.warn('pull request conversations failed', err)
+        if (mine === conversationsTicket.current)
+          setConversationsError(err instanceof Error ? err.message : String(err))
+      })
+  }, [connectionId, ref])
+
+  // The desktop grants and removes `pr-write` at any time, so the scope is read on every focus.
+  const loadScopes = useCallback(() => {
+    const client = getClient(connectionId)
+    if (!client || client.supportsCapability(PR_WRITE_SCOPE_CAPABILITY) !== true) {
+      setCanWrite(false)
+      return
+    }
+    const mine = ++scopesTicket.current
+    client
+      .deviceScopes()
+      .then((scopes) => {
+        if (mine === scopesTicket.current) setCanWrite(Array.isArray(scopes) && scopes.includes('pr-write'))
+      })
+      .catch((err: unknown) => {
+        log.warn('device scopes read failed', err)
+        if (mine === scopesTicket.current) setCanWrite(false)
+      })
+  }, [connectionId])
+
+  useEffect(() => {
+    loadScopes()
+    return navigation.addListener('focus', () => {
+      loadScopes()
+      loadConversations()
+    })
+  }, [navigation, loadScopes, loadConversations])
+
+  // A capability that arrives after the first paint (a reconnect) still shows the threads.
+  useEffect(() => {
+    if (!writeCapable || !connected) return
+    loadScopes()
+    loadConversations()
+  }, [writeCapable, connected, loadScopes, loadConversations])
+
+  useEffect(() => {
+    if (!notice) return
+    const timer = setTimeout(() => setNotice(null), 3000)
+    return () => clearTimeout(timer)
+  }, [notice])
+
+  const writeApi = useMemo<PrWriteSheetApi>(
+    () => ({
+      writeAccount: (target) => {
+        const client = getClient(connectionId)
+        return client ? client.pullRequestWriteAccount(target) : Promise.reject(new Error('Backend not connected.'))
+      },
+      write: (channel, target, input) => {
+        const client = getClient(connectionId)
+        return client
+          ? client.pullRequestWrite(channel, target, input)
+          : Promise.reject(new Error('Backend not connected.'))
+      },
+      unlock: unlockToPost,
+      newWriteId,
+      isConnected: () => useConnectionsStore.getState().status[connectionId] === 'connected',
+    }),
+    [connectionId],
+  )
 
   const load = useCallback(() => {
     const client = getClient(connectionId)
@@ -301,6 +414,7 @@ export default function PullRequestScreen({ route, navigation }: Props) {
     }
     const mine = ++ticket.current
     setError(null)
+    loadConversations()
     client
       .pullRequestDetail(ref)
       .then((result) => {
@@ -318,7 +432,7 @@ export default function PullRequestScreen({ route, navigation }: Props) {
         if (mine === ticket.current) setChats(list)
       })
       .catch((err: unknown) => log.warn('linked chats failed', err))
-  }, [connectionId, ref])
+  }, [connectionId, ref, loadConversations])
 
   useEffect(() => {
     load()
@@ -362,7 +476,46 @@ export default function PullRequestScreen({ route, navigation }: Props) {
         onOpenChat={(chat) => openChat(chat)}
         onAskAboutFailures={(pill) => (chats.length === 1 ? openChat(chats[0], pill) : setSheet({ attachOnly: pill }))}
         onWorkOnPr={() => setSheet('work')}
+        notice={notice}
+        conversations={
+          writeCapable ? (
+            <PrConversations
+              conversations={conversations}
+              error={conversationsError}
+              canWrite={canWrite}
+              onReply={(conversation) => setWriteTarget({ action: 'reply', conversation })}
+              onResolve={(conversation) => setWriteTarget({ action: 'resolve', conversation })}
+              onComment={() => setWriteTarget({ action: 'comment' })}
+              onReview={() => setWriteTarget({ action: 'review' })}
+            />
+          ) : undefined
+        }
       />
+      {writeTarget && (
+        <PrWriteSheet
+          pr={pr}
+          target={writeTarget}
+          draft={drafts[draftKey(writeTarget)] ?? ''}
+          onDraftChange={(text) => setDrafts((d) => ({ ...d, [draftKey(writeTarget)]: text }))}
+          api={writeApi}
+          onPosted={(note) => {
+            setDrafts((d) => ({ ...d, [draftKey(writeTarget)]: '' }))
+            setWriteTarget(null)
+            setNotice(note)
+            load()
+          }}
+          onRemoved={() => {
+            // The sheet stays open with the removed note; the buttons go now, the re-read confirms.
+            setCanWrite(false)
+            loadScopes()
+          }}
+          onCheckThread={() => {
+            setWriteTarget(null)
+            loadConversations()
+          }}
+          onClose={() => setWriteTarget(null)}
+        />
+      )}
       {sheet && (
         <WorkOnPrSheet
           connectionId={connectionId}
@@ -488,6 +641,17 @@ const styles = StyleSheet.create({
   chatBody: { flex: 1 },
   chatTitle: { ...type.body, color: colors.text },
   chatMeta: { ...type.monoSm, color: colors.textDim },
+  notice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    marginHorizontal: space.lg,
+    marginBottom: space.sm,
+    padding: space.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceRaised,
+  },
+  noticeText: { ...type.bodySm, color: colors.text },
   actions: {
     flexDirection: 'row',
     gap: space.sm,
