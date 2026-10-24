@@ -7,6 +7,7 @@ import { act } from 'react-test-renderer'
 import { TextInput } from 'react-native'
 import ConversationsScreen from '../ConversationsScreen'
 import { renderComponent } from '../../test/render'
+import { useChatStore, threadKey, emptyThread } from '../../stores/chat'
 
 jest.mock('@react-navigation/native', () => {
   const { useEffect } = jest.requireActual('react')
@@ -35,7 +36,7 @@ const mockRows = titles.map((title, i) => ({
 }))
 
 jest.mock('../../stores/connections', () => ({
-  getClient: () => ({ getConversations: () => Promise.resolve(mockRows) }),
+  getClient: () => ({ getConversations: () => Promise.resolve(mockRows), supportsCapability: () => undefined }),
 }))
 
 const navigation = { setOptions: jest.fn(), navigate: jest.fn() }
@@ -65,6 +66,22 @@ describe('ConversationsScreen search', () => {
       input.props.onChangeText('SYNC')
     })
     expect(shownTitles(view.texts())).toEqual(['sync', 'Sync backoff cap', 'Fix sync jitter', 'Notebook sync engine'])
+  })
+
+  it('drops the Needs you, Working and Done recently groups while searching', async () => {
+    act(() => {
+      useChatStore.setState({ threads: { [threadKey('conn', 'c2')]: { ...emptyThread(), status: 'running' } } })
+    })
+    const view = await renderScreen()
+    expect(view.texts()).toContain('Working')
+    act(() => {
+      view.root.findByType(TextInput).props.onChangeText('sync')
+    })
+    expect(view.texts()).not.toContain('Working')
+    expect(view.texts()).not.toContain('Done recently')
+    act(() => {
+      useChatStore.setState({ threads: {} })
+    })
   })
 
   it('says nothing matched', async () => {
