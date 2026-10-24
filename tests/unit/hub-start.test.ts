@@ -201,4 +201,42 @@ describe('HubStarter', () => {
     for (let i = 0; i < 6; i++) await settle()
     expect(h.started).toHaveLength(1)
   })
+
+  it('never grants more than the card showed, even when the parent mode rose before the approval', async () => {
+    const h = harness()
+    await h.starter.propose(parent('sandbox'), [task('A', { mode: 'full-access' })])
+    await h.starter.approve(h.cards[0]!, 'full-access')
+    expect(listHubChildren('agent_parent')[0]!.grantedMode).toBe('sandbox')
+  })
+
+  it('checks the 12 open children cap again at approval', async () => {
+    const h = harness()
+    const eight = Array.from({ length: 8 }, (_, i) => task(`T${i}`))
+    await h.starter.propose(parent('sandbox'), eight)
+    await h.starter.propose(parent('sandbox'), eight.map((t) => ({ ...t, title: `${t.title}b` })))
+    expect((await h.starter.approve(h.cards[0]!, 'sandbox')).isError).toBeFalsy()
+    const second = await h.starter.approve(h.cards[1]!, 'sandbox')
+    expect(text(second)).toContain('at most 12')
+    expect(listHubChildren('agent_parent')).toHaveLength(8)
+  })
+
+  it('does not hold a child behind a waiter on another account and parent', async () => {
+    setSetting('hub.runningPerInstance', '1')
+    const h = harness()
+    await h.starter.propose(parent('auto'), [task('A'), task('B')])
+    for (let i = 0; i < 6; i++) await settle()
+    await h.starter.propose({ ...parent('auto'), parentId: 'agent_p2' }, [task('C', { agent: 'codex' })])
+    for (let i = 0; i < 6; i++) await settle()
+    expect(h.started.filter((x) => x.includes(':codex:'))).toHaveLength(1)
+  })
+
+  it("records every later turn of a launched child, not only the brief's", async () => {
+    const h = harness()
+    await h.starter.propose(parent('auto'), [task('A')])
+    for (let i = 0; i < 6; i++) await settle()
+    const id = listHubChildren('agent_parent')[0]!.childId
+    h.starter.onTurnEnded(id, { usedTokens: 1 })
+    h.starter.onTurnEnded(id, { usedTokens: 2 })
+    expect(h.starter.lastTurnOf(id)?.usedTokens).toBe(2)
+  })
 })

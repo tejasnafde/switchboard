@@ -144,6 +144,7 @@ import {
 import { buildPrLinkTools } from '../mcp/pr-link-tools'
 import { buildPeerMcpTools, runPeerSendPlan } from '../mcp/peer-mcp-tools'
 import { buildApprovalMcpTools } from '../mcp/approval-mcp-tools'
+import { toolText } from '../mcp/mcp-session'
 import { buildHubMcpTools, HUB_INSTRUCTIONS, START_CHILDREN_TOOL } from '../mcp/hub-tools'
 import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } from '../hub/hub-start'
 import { appMetrics } from '../runtime'
@@ -1739,7 +1740,10 @@ export class ProviderRegistry implements PeerToolHost {
         response,
       )
     }
-    if (isHubBatchPlan(plan)) return this.hubStarter.approve(plan.batchId, runtimeMode())
+    if (isHubBatchPlan(plan)) {
+      if (!this.hubChildrenOn()) return toolText('Child chats are turned off, so no children were started.', true)
+      return this.hubStarter.approve(plan.batchId, runtimeMode())
+    }
     return runPeerSendPlan({ threadId, runtimeMode, publish, peers: this }, plan)
   }
 

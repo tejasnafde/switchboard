@@ -124,8 +124,8 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         const rows = await Promise.all(
           children.map(async (c) => {
             const worktree = getConversationById(c.childId)?.worktree_path ?? null
-            const base = c.baseRef && c.baseRef !== 'HEAD' ? c.baseRef : c.baseSha
-            const git = worktree && base ? await stats(worktree, base) : null
+            // The commit the child started from: a ref like HEAD~2 would resolve in the child's own worktree.
+            const git = worktree && c.baseSha ? await stats(worktree, c.baseSha) : null
             const res = ctx.resources(c.childId)
             const turn = ctx.starter.lastTurnOf(c.childId)
             const disk = ctx.starter.diskUseOf(c.childId)

@@ -100,6 +100,8 @@ interface PlannedChild {
   instanceId: string | null
   model: string | null
   requestedMode: RuntimeMode | null
+  /** The mode the card showed: approval never grants more, even if the parent's mode rose since. */
+  shownMode: RuntimeMode
   deps: HubDepsMode
 }
 
@@ -169,6 +171,8 @@ export class HubStarter {
   private readonly waiting: Array<{ childId: string; slot: HubRunningChild; go: () => void }> = []
   private readonly lastTurn = new Map<string, { usedTokens?: number; costUsd?: number; at: number }>()
   private readonly diskUse = new Map<string, number>()
+  /** Children this process launched, to their parents. A restart forgets them; restart recovery comes later. */
+  private readonly launched = new Map<string, string>()
 
   constructor(
     private readonly host: HubStartHost,
@@ -222,12 +226,8 @@ export class HubStarter {
     if (openChildParentId(ctx.parentId)) return toolText('A child chat cannot start children of its own.', true)
     if (ctx.mode === 'plan')
       return toolText('Plan mode does not start child chats. Ask the user to leave plan mode first.', true)
-    const open = listHubChildren(ctx.parentId).filter((c) => isOpenChildPhase(c.phase)).length
-    if (open + tasks.length > HUB_OPEN_CHILDREN_MAX)
-      return toolText(
-        `This chat has ${open} open children; at most ${HUB_OPEN_CHILDREN_MAX} may be open at once. Settle some first.`,
-        true,
-      )
+    const capProblem = openCapProblem(ctx.parentId, tasks.length)
+    if (capProblem) return toolText(capProblem, true)
 
     const settings = readHubSettings(this.getSetting)
     const deps: HubDepsMode = settings.childDependencies === 'none' ? 'none' : 'clone'
@@ -266,6 +266,7 @@ export class HubStarter {
         instanceId,
         model: task.model ?? null,
         requestedMode: task.mode ?? null,
+        shownMode: grantedMode(task.mode, ctx.mode),
         deps: task.location === 'project' ? 'none' : deps,
       })
     }
@@ -281,7 +282,7 @@ export class HubStarter {
         agent: c.agent,
         account: c.instanceId,
         model: c.model,
-        mode: grantedMode(c.requestedMode ?? undefined, ctx.mode),
+        mode: c.shownMode,
         location: c.location,
         baseRef: c.baseSha ? `${c.baseRef} (${c.baseSha.slice(0, 7)})` : c.baseRef,
         deps: c.deps,
@@ -318,6 +319,8 @@ export class HubStarter {
       )
     }
 
+    const lateCap = openCapProblem(ctx.parentId, tasks.length)
+    if (lateCap) return toolText(lateCap, true)
     createHubBatch({ batchId, parentId: ctx.parentId, cardRequestId: null, planJson: JSON.stringify(plan), planDigest: digest })
     const text = this.startApproved(batchId, ctx.mode, view.mainCheckout)
     this.writeStartedRow(ctx.parentId, batchId, text)
@@ -334,9 +337,11 @@ export class HubStarter {
     }
     const plan = JSON.parse(batch.planJson) as StoredPlan
     const disk = await this.diskCheck(plan)
-    if (disk.problem) {
+    // After the last await, so a batch started meanwhile counts.
+    const problem = disk.problem ?? openCapProblem(batch.parentId, plan.children.length)
+    if (problem) {
       setHubBatchStatus(batchId, 'denied')
-      return toolText(`${disk.problem} No children were started.`, true)
+      return toolText(`${problem} No children were started.`, true)
     }
     return toolText(this.startApproved(batchId, parentMode, false))
   }
@@ -347,21 +352,26 @@ export class HubStarter {
   }
 
   /** A turn of some chat ended: frees its run slot and records a child's tokens. */
-  onTurnEnded(threadId: string, turn: { usedTokens?: number; costUsd?: number; durationMs?: number } = {}): void {
+  onTurnEnded(threadId: string, turn?: { usedTokens?: number; costUsd?: number; durationMs?: number }): void {
+    // No database read on this hot path while no child started in this process.
+    if (this.launched.size === 0) return
     const childId = resolveRootThreadId(threadId)
     const slot = this.running.get(childId)
-    if (!slot) return
-    this.running.delete(childId)
-    this.lastTurn.set(childId, { usedTokens: turn.usedTokens, costUsd: turn.costUsd, at: Date.now() })
-    perfSpan('hub.child-turn', {
-      childId,
-      parentId: slot.parentId,
-      instance: slot.providerInstanceId,
-      usedTokens: turn.usedTokens,
-      costUsd: turn.costUsd,
-      turnMs: turn.durationMs,
-    }).end()
-    this.pump()
+    if (slot) this.running.delete(childId)
+    if (turn) {
+      const parentId = this.launched.get(childId)
+      if (parentId) {
+        this.lastTurn.set(childId, { usedTokens: turn.usedTokens, costUsd: turn.costUsd, at: Date.now() })
+        perfSpan('hub.child-turn', {
+          childId,
+          parentId,
+          usedTokens: turn.usedTokens,
+          costUsd: turn.costUsd,
+          turnMs: turn.durationMs,
+        }).end()
+      }
+    }
+    if (slot) this.pump()
   }
 
   private startApproved(batchId: string, parentMode: RuntimeMode, mainCheckout: boolean): string {
@@ -378,7 +388,7 @@ export class HubStarter {
         title: c.title,
         brief: c.brief,
         location: c.location,
-        grantedMode: grantedMode(c.requestedMode ?? undefined, parentMode),
+        grantedMode: grantedMode(c.shownMode, parentMode),
         depsMode: c.deps,
         baseRef: c.baseRef,
         baseSha: c.baseSha,
@@ -454,6 +464,7 @@ export class HubStarter {
   private async launch(c: PlannedChild, cwd: string, mode: RuntimeMode, slot: HubRunningChild): Promise<void> {
     const span = perfSpan('hub.start-child', { childId: c.childId, agent: c.agent, step: 'launch' })
     this.running.set(c.childId, slot)
+    this.launched.set(c.childId, slot.parentId)
     try {
       await this.host.startSession({
         threadId: c.childId,
@@ -510,7 +521,11 @@ export class HubStarter {
 
   private whenSlotFree(childId: string, slot: HubRunningChild): Promise<void> {
     const s = readHubSettings(this.getSetting)
-    if (this.waiting.length === 0 && runSlotFree(slot, [...this.running.values()], s.runningPerInstance, s.runningPerParent))
+    // Only waiters on the same account or parent can be ahead of this child.
+    const ahead = this.waiting.some(
+      (w) => w.slot.providerInstanceId === slot.providerInstanceId || w.slot.parentId === slot.parentId,
+    )
+    if (!ahead && runSlotFree(slot, [...this.running.values()], s.runningPerInstance, s.runningPerParent))
       return Promise.resolve()
     log.info('child waits for a run slot', { childId, instance: slot.providerInstanceId })
     return new Promise((go) => this.waiting.push({ childId, slot, go }))
@@ -564,12 +579,18 @@ export class HubStarter {
         }
       }
     }
-    if (free === null || !known) {
-      log.warn('could not size the batch; starting it without the free-space check', { free, known })
-      return { problem: null, needBytes: known ? need : null, freeBytes: free }
+    if (free === null) {
+      log.warn('could not read free space; starting the batch without the free-space check')
+      return { problem: null, needBytes: known ? need : null, freeBytes: null }
     }
+    // An unsized checkout counts as nothing: the floor still holds for the part that is known.
+    if (!known) log.warn('could not size every checkout of the batch; the free-space check uses the known part')
     const minFreeGiB = readHubSettings(this.getSetting).minFreeGiB
-    return { problem: hubDiskProblem({ freeBytes: free, needBytes: need, minFreeGiB }), needBytes: need, freeBytes: free }
+    return {
+      problem: hubDiskProblem({ freeBytes: free, needBytes: need, minFreeGiB }),
+      needBytes: known ? need : null,
+      freeBytes: free,
+    }
   }
 
   private writeStartedRow(parentId: string, batchId: string, text: string): void {
@@ -588,6 +609,12 @@ export class HubStarter {
       log.warn(`could not store the started row of batch ${batchId}`, err)
     }
   }
+}
+
+function openCapProblem(parentId: string, adding: number): string | null {
+  const open = listHubChildren(parentId).filter((c) => isOpenChildPhase(c.phase)).length
+  if (open + adding <= HUB_OPEN_CHILDREN_MAX) return null
+  return `This chat has ${open} open children; at most ${HUB_OPEN_CHILDREN_MAX} may be open at once. Settle some first.`
 }
 
 function planDigest(parentId: string, plan: StoredPlan): string {
