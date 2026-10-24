@@ -45,7 +45,7 @@
     },
     "storageDataMigration": {
       "status": "implemented",
-      "evidence": ["src/main/backend/device-sessions.ts", "src/shared/device-auth.ts", "tests/unit/pr-write-scope.test.ts"]
+      "evidence": ["tests/unit/pr-write-scope.test.ts"]
     },
     "updateRelease": {
       "status": "implemented",
