@@ -416,7 +416,7 @@ export class ProviderRegistry implements PeerToolHost {
     this.agentApprovals.expireOld()
     this.limitResumer = limitResume ? new LimitResumer(this.limitResumeHost()) : null
     this.limitResumer?.start()
-    this.hubStarter = new HubStarter(this.hubStartHost(), getSetting)
+    this.hubStarter = new HubStarter(this.hubStartHost(), (key) => getSetting(key))
     this.hubSampler = adapters
       ? null
       : new HubResourceSampler({
