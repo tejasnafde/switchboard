@@ -150,6 +150,8 @@ export interface ThreadState {
   /** When the agent last finished a turn. `updatedAt` is bumped by every
    *  event, read receipts included, so it cannot stand in for this. */
   lastTurnAt?: number
+  /** `statusMark()` when a live event last set `status` this run. Not restored from disk. */
+  statusAt?: number
   unread: number
   /** Last time any event touched this thread. Drives cache eviction. */
   updatedAt?: number
@@ -193,6 +195,13 @@ export function prunePersistedThreads(
     }
   }
   return out
+}
+
+let statusClock = 0
+
+/** Counts live status changes, so a `provider:list-sessions` reply cannot undo a newer one. */
+export function statusMark(): number {
+  return statusClock
 }
 
 export function threadKey(connectionId: string, threadId: string): string {
@@ -597,6 +606,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
       return {
         items,
         status: 'idle' as const,
+        statusAt: ++statusClock,
         usedTokens: event.usedTokens ?? t.usedTokens,
         maxTokens: event.maxTokens ?? t.maxTokens,
         costUsd: event.costUsd ?? t.costUsd,
@@ -607,6 +617,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
     case 'status':
       return {
         status: event.status,
+        statusAt: ++statusClock,
         heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event),
         ...(event.status === 'running' ? {} : { items: stopRetries(t.items) }),
       }
@@ -713,6 +724,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
       return {
         items: [...t.items, { kind: 'error', id: `e-${Date.now()}`, message: event.message }],
         status: 'error' as const,
+        statusAt: ++statusClock,
       }
     // An agent's approval card closed; the desktop shows the same row on reload.
     case 'approval.result': {
@@ -950,7 +962,10 @@ export const useChatStore = create<ChatState>()(
         // 'running' would spin for a turn that finished while the app was
         // closed; 'idle' would claim a connection we have not made.
         state.threads = Object.fromEntries(
-          Object.entries(state.threads).map(([key, t]) => [key, { ...t, status: 'connecting' as const, cached: true }]),
+          Object.entries(state.threads).map(([key, { statusAt: _statusAt, ...t }]) => [
+            key,
+            { ...t, status: 'connecting' as const, cached: true },
+          ]),
         )
         resolveCache()
       },
