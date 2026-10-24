@@ -206,10 +206,7 @@ export class HubStarter {
   /** Children this process launched, to their parents. A restart forgets them; restart recovery comes later. */
   private readonly launched = new Map<string, string>()
   /** Open children with linked dependency folders, for the post-turn check. Rebuilt at startup. */
-  private readonly linked = new Map<
-    string,
-    { main: string; worktree: string; parentId: string; state: ChildDepsState }
-  >()
+  private readonly linked = new Map<string, { worktree: string; parentId: string; state: ChildDepsState }>()
 
   constructor(
     private readonly host: HubStartHost,
@@ -234,7 +231,7 @@ export class HubStarter {
       const state = parseChildDeps(child.depsJson)
       const conv = getConversationById(child.childId)
       if (linkedFolders(state).length > 0 && conv?.worktree_path)
-        this.track(child.childId, child.parentId, conv.project_path, conv.worktree_path, state)
+        this.track(child.childId, child.parentId, conv.worktree_path, state)
     }
   }
 
@@ -502,7 +499,7 @@ export class HubStarter {
         depsMs = performance.now() - t1
         const modes = depsState.folders.map((f) => f.mode)
         updateHubChild(c.childId, { depsMode: depsSummary(modes), depsJson: JSON.stringify(depsState) })
-        if (linkedFolders(depsState).length > 0) this.track(c.childId, parentId, projectPath, cwd, depsState)
+        if (linkedFolders(depsState).length > 0) this.track(c.childId, parentId, cwd, depsState)
         const bytes = await this.io.dirBytes(cwd)
         if (bytes !== null) this.diskUse.set(c.childId, bytes)
         const count = (m: HubDepsMode) => modes.filter((x) => x === m).length
@@ -576,8 +573,8 @@ export class HubStarter {
     }
   }
 
-  private track(childId: string, parentId: string, main: string, worktree: string, state: ChildDepsState): void {
-    this.linked.set(childId, { main, worktree, parentId, state })
+  private track(childId: string, parentId: string, worktree: string, state: ChildDepsState): void {
+    this.linked.set(childId, { worktree, parentId, state })
     trackDependencyLinks(childId, worktree, state)
   }
 
@@ -638,7 +635,7 @@ export class HubStarter {
     const owned = await this.io.ownDeps(main, worktree, state)
     const modes = owned.state.folders.map((f) => f.mode)
     updateHubChild(childId, { depsMode: depsSummary(modes), depsJson: JSON.stringify(owned.state) })
-    if (linkedFolders(owned.state).length > 0) this.track(childId, child.parentId, main, worktree, owned.state)
+    if (linkedFolders(owned.state).length > 0) this.track(childId, child.parentId, worktree, owned.state)
     else this.untrack(childId)
     span.end({ outcome: modes.includes('link') ? 'partial' : 'ok', modes: modes.join(',') })
     return toolText(owned.lines.join('\n'))
