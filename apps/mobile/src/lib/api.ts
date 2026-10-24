@@ -12,6 +12,7 @@ import {
   ProviderChannels,
   ProviderInstanceChannels,
   PullRequestChannels,
+  PullRequestPhoneChannels,
   PushChannels,
   SttChannels,
   WorktreeCreationChannels,
@@ -52,7 +53,8 @@ import type { HostWriteResponse } from '@shared/agent-host-writes'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { MergeBackActionResult, MergeBackPreview, MergeBackToken } from '@shared/merge-back'
 import type { PrLink, PrLinkChat, PrLinkResult } from '@shared/pull-request-links'
-import type { PrDetail, PrListData, PrRef, PrResult, RepoRef } from '@shared/pull-requests'
+import type { PrConversation, PrDetail, PrListData, PrRef, PrResult, RepoRef } from '@shared/pull-requests'
+import type { PrWriteDone } from '@shared/pull-request-writes'
 import type { ForkConversationOutcome, ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type {
   GetWorktreeCreationRequest,
@@ -460,7 +462,7 @@ export class SwitchboardClient {
     return this.transport.invoke(PullRequestChannels.UNLINK, threadId, ref)
   }
 
-  /** Reviews reads; open to a phone. The writes (`PullRequestWriteChannels`) are admin-scoped and never called here. */
+  /** Reviews reads; open to a phone. The only writes are `pullRequestWrite`, behind the `pr-write` scope. */
   listPullRequests(): Promise<PrResult<PrListData>> {
     return this.transport.invoke(PullRequestChannels.LIST)
   }
@@ -480,6 +482,30 @@ export class SwitchboardClient {
   /** Links as `manual`, like the desktop's Reviews. */
   linkPullRequest(threadId: string, ref: PrRef): Promise<PrLinkResult> {
     return this.transport.invoke(PullRequestChannels.LINK, threadId, ref)
+  }
+
+  /** The review threads of a pull request; open to a phone. */
+  pullRequestConversations(ref: PrRef): Promise<PrResult<PrConversation[]>> {
+    return this.transport.invoke(PullRequestChannels.CONVERSATIONS, ref)
+  }
+
+  /** Gate: `PR_WRITE_SCOPE_CAPABILITY`. This device's scopes now, so a grant shows without a reconnect. */
+  deviceScopes(): Promise<string[]> {
+    return this.transport.invoke(AppChannels.DEVICE_SCOPES)
+  }
+
+  /** Gate: `PR_WRITE_SCOPE_CAPABILITY` and the `pr-write` scope. Who a write on this pull request posts as. */
+  pullRequestWriteAccount(ref: PrRef): Promise<PrResult<{ account: string }>> {
+    return this.transport.invoke(PullRequestPhoneChannels.WRITE_ACCOUNT, ref)
+  }
+
+  /**
+   * Gate: `PR_WRITE_SCOPE_CAPABILITY` and the `pr-write` scope. One write
+   * (`lib/pr-write.ts` builds the channel and input, with its proof). Called
+   * once per Post and never retried.
+   */
+  pullRequestWrite(channel: string, ref: PrRef, input: Record<string, unknown>): Promise<PrResult<PrWriteDone>> {
+    return this.transport.invoke(channel, ref, input)
   }
 
   unhidePullRequestRepos(repos: RepoRef[]): Promise<{ ok: boolean }> {
