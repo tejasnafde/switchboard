@@ -1,6 +1,7 @@
 /**
  * Dependency folders a worktree shares with its main checkout through a
- * symlink (`<worktree>/<path>` -> `<main>/<path>`), used by child chats.
+ * symlink (`<worktree>/<path>` -> `<main>/<path>`, a junction on Windows), used
+ * by child chats.
  *
  * Three files keep a link safe:
  *   - the repository's shared `info/exclude` lists each path with no trailing
@@ -143,7 +144,8 @@ export async function linkDependencyFolder(main: string, worktree: string, path:
     await excludeLinks(worktree, [path])
     if (existing) await unlink(at)
     await mkdir(dirname(at), { recursive: true })
-    await symlink(target, at, 'dir')
+    // A junction on Windows (a plain symlink needs admin rights or developer mode); other systems ignore the type.
+    await symlink(resolve(target), at, 'junction')
     return { ok: true, target }
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)

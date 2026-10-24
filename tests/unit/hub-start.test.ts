@@ -1,5 +1,6 @@
 import { createMigratedDb } from './helpers/test-db'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { resolve } from 'node:path'
 
 vi.mock('../../src/main/db/provider-instances', () => ({
   resolveProviderInstance: (agentType: string, id?: string | null) => ({ id: id ?? `${agentType}-default`, agentType }),
@@ -324,7 +325,7 @@ describe('HubStarter', () => {
     await h.starter.propose(parent('auto'), [task('A')])
     for (let i = 0; i < 6; i++) await settle()
     const id = listHubChildren('agent_parent')[0]!.childId
-    expect(linkedDependencyAt(`/wt/${id}/node_modules/x.js`)).toBe(`/wt/${id}/node_modules`)
+    expect(linkedDependencyAt(`/wt/${id}/node_modules/x.js`)).toBe(resolve(`/wt/${id}/node_modules`))
     addProject('/repo', 'repo')
     createConversation(id, '/repo', 'claude-code', 'A')
     setConversationWorktree(id, `/wt/${id}`, `hub/${id}`)
@@ -354,7 +355,7 @@ describe('HubStarter', () => {
     createConversation('agent_open', '/repo', 'claude-code', 'Open')
     setConversationWorktree('agent_open', '/wt/open', 'hub/open')
     harness().starter.recoverInterrupted()
-    expect(linkedDependencyAt('/wt/open/node_modules/a.js')).toBe('/wt/open/node_modules')
+    expect(linkedDependencyAt('/wt/open/node_modules/a.js')).toBe(resolve('/wt/open/node_modules'))
     untrackDependencyLinks('agent_open')
   })
 })

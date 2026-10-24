@@ -66,21 +66,25 @@ export interface DepsFolderFacts {
 
 /** L1 to L5: the first mode to try for a folder, and why it is not `link` when it is not. */
 export function depsRule(f: DepsFolderFacts): { mode: HubDepsMode; reason: string | null } {
-  const canLink = f.platform === 'darwin' || f.platform === 'linux'
+  // Windows links a folder as a junction, which needs no admin rights; it has no copy-on-write clone.
+  const canLink = f.platform === 'darwin' || f.platform === 'linux' || f.platform === 'win32'
+  const clone = (reason: string | null): { mode: HubDepsMode; reason: string | null } =>
+    f.platform === 'win32'
+      ? { mode: 'install', reason: `${reason ?? 'clone is set'}, and clones need macOS or Linux` }
+      : { mode: 'clone', reason }
   if (f.extra) {
     if (f.setting === 'none') return { mode: 'none', reason: null }
-    return canLink ? { mode: 'link', reason: null } : { mode: 'none', reason: 'links need macOS or Linux' }
+    return canLink ? { mode: 'link', reason: null } : { mode: 'none', reason: 'links need macOS, Linux or Windows' }
   }
   if (f.setting === 'none' || f.setting === 'install') return { mode: f.setting, reason: null }
-  if (!canLink) return { mode: 'install', reason: 'links and clones need macOS or Linux' }
+  if (!canLink) return { mode: 'install', reason: 'links and clones need macOS, Linux or Windows' }
   if (!f.baseMatches)
     return { mode: 'install', reason: "the base commit's package.json or lockfile differs from the main checkout" }
-  if (f.setting === 'clone') return { mode: 'clone', reason: null }
-  if (f.workspaces) return { mode: 'clone', reason: 'the package uses workspaces' }
-  if (f.installScript) return { mode: 'clone', reason: 'the package has an install script' }
-  if (!f.hasLockfile) return { mode: 'clone', reason: 'no lockfile to check the folder against' }
-  if (f.installedMatches === false)
-    return { mode: 'clone', reason: "the installed packages differ from the main checkout's lockfile" }
+  if (f.setting === 'clone') return clone(null)
+  if (f.workspaces) return clone('the package uses workspaces')
+  if (f.installScript) return clone('the package has an install script')
+  if (!f.hasLockfile) return clone('no lockfile to check the folder against')
+  if (f.installedMatches === false) return clone("the installed packages differ from the main checkout's lockfile")
   return { mode: 'link', reason: null }
 }
 
@@ -503,8 +507,10 @@ export function untrackDependencyLinks(childId: string): void {
  * main checkout's folder, which the main checkout and every other child use.
  */
 export function linkedDependencyAt(absPath: string): string | null {
-  const path = resolve(absPath)
+  // Windows paths are case-insensitive.
+  const fold = (p: string) => (process.platform === 'win32' ? p.toLowerCase() : p)
+  const path = fold(resolve(absPath))
   for (const links of guardBook.values())
-    for (const link of links) if (path === link || path.startsWith(link + sep)) return link
+    for (const link of links) if (path === fold(link) || path.startsWith(fold(link) + sep)) return link
   return null
 }

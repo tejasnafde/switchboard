@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../src/main/launch-config/launch-config-store', () => ({ readLaunchConfig: () => null }))
@@ -59,7 +59,13 @@ describe('depsRule (L1 to L5)', () => {
     expect(depsRule(facts({ hasLockfile: false })).mode).toBe('clone')
     expect(depsRule(facts({ installedMatches: false })).mode).toBe('clone')
     expect(depsRule(facts({ baseMatches: false })).mode).toBe('install')
-    expect(depsRule(facts({ platform: 'win32' })).mode).toBe('install')
+    expect(depsRule(facts({ platform: 'freebsd' })).mode).toBe('install')
+  })
+
+  it('links on Windows, and installs where it would clone', () => {
+    expect(depsRule(facts({ platform: 'win32' }))).toEqual({ mode: 'link', reason: null })
+    expect(depsRule(facts({ platform: 'win32', workspaces: true })).mode).toBe('install')
+    expect(depsRule(facts({ platform: 'win32', setting: 'clone' })).mode).toBe('install')
   })
 
   it('never goes above the setting', () => {
@@ -71,7 +77,8 @@ describe('depsRule (L1 to L5)', () => {
 
   it('links a worktree.link path, or leaves it out', () => {
     expect(depsRule(facts({ extra: true })).mode).toBe('link')
-    expect(depsRule(facts({ extra: true, platform: 'win32' })).mode).toBe('none')
+    expect(depsRule(facts({ extra: true, platform: 'win32' })).mode).toBe('link')
+    expect(depsRule(facts({ extra: true, platform: 'freebsd' })).mode).toBe('none')
     expect(depsRule(facts({ extra: true, setting: 'none' })).mode).toBe('none')
   })
 
@@ -111,14 +118,14 @@ describe('linkedDependencyAt', () => {
       folders: [{ path: 'node_modules', pkgDir: '', mode: 'link', reason: null }],
     })
     expect(linkedDependencyAt('/repo/.switchboard/worktrees/c/node_modules/x/index.js')).toBe(
-      '/repo/.switchboard/worktrees/c/node_modules',
+      resolve('/repo/.switchboard/worktrees/c/node_modules'),
     )
     expect(linkedDependencyAt('/repo/.switchboard/worktrees/c/src/a.ts')).toBeNull()
     expect(linkedDependencyAt('/repo/.switchboard/worktrees/c/node_modules_other')).toBeNull()
   })
 })
 
-describe.skipIf(process.platform === 'win32')('a child worktree with linked node_modules', () => {
+describe('a child worktree with linked node_modules', () => {
   let main: string
   let wt: string
   let base: string
@@ -200,7 +207,8 @@ describe.skipIf(process.platform === 'win32')('a child worktree with linked node
     expect(readFileSync(join(wt, 'node_modules', 'mine.txt'), 'utf8')).toBe('x')
   })
 
-  it('refuses a link whose parent resolves into the main checkout', async () => {
+  // The fixture's relative symlink needs admin rights on Windows.
+  it.skipIf(process.platform === 'win32')('refuses a link whose parent resolves into the main checkout', async () => {
     mkdirSync(join(main, 'packages', 'p'), { recursive: true })
     mkdirSync(join(main, 'node_modules', '@s'))
     symlinkSync('../../packages/p', join(main, 'node_modules', '@s', 'p'))
