@@ -12,6 +12,7 @@
 
 import type { HostWriteCard } from './agent-host-writes'
 import type { CodexPermissionView } from './codex-permission-request'
+import type { HubBatchView } from './hub'
 import type { OverageScope } from './claude-rate-limit'
 import type { PeerMessageInitiator } from './peer-messaging'
 import type { PeerLinkRefusal } from './peer-links'
@@ -122,6 +123,8 @@ export type UserTurnSubmissionResult =
       retryable: boolean
       reason: string
       blockingOrigin?: string
+      /** `child_read_only`: the chat is an open child; message its parent instead. */
+      code?: string
     }
   | {
       status: 'conflict'
@@ -683,6 +686,8 @@ export interface RuntimeRequestOpenedEvent {
   hostWrite?: HostWriteCard
   /** A Codex permissions request: every permission and path an approval grants. `detail` lists the same in plain text. */
   permissions?: CodexPermissionView
+  /** A batch of child chats an agent asked to start (`start_children`). `detail` lists the same in plain text. */
+  hubBatch?: HubBatchView
 }
 
 export interface RuntimeRequestClosedEvent {

@@ -6,7 +6,7 @@ import {
   takesSenderLine,
   withSenderLine,
 } from '../../src/shared/sender-line'
-import { resolveSenderContext, type SenderEnvironment } from '../../src/main/provider/sender-context'
+import { resolveSenderContext, senderLineForTurn, type SenderEnvironment } from '../../src/main/provider/sender-context'
 import type { DeviceSession } from '../../src/shared/device-auth'
 import { buildHandoffPreamble, stripHandoffPreamble, withHandoffPreamble } from '../../src/shared/handoff'
 import { JsonlParser } from '../../src/main/agent/jsonl-parser'
@@ -27,6 +27,7 @@ const env = (over: Partial<SenderEnvironment> = {}): SenderEnvironment => ({
   headless: false,
   machineName: 'gpu-box',
   deviceSession: () => undefined,
+  devServers: () => [],
   ...over,
 })
 
@@ -104,6 +105,84 @@ describe('formatSenderLine', () => {
       localhostReachesUser: false,
     })
     expect(line).toContain('From: Android app, Pixel 8.')
+  })
+})
+
+describe('dev servers in the line', () => {
+  it('lists the dev servers after the host', () => {
+    const line = formatSenderLine({
+      surface: 'desktop',
+      localhostReachesUser: true,
+      devServers: ['localhost:5173', 'localhost:3000'],
+    })
+    expect(line).toBe(
+      "<switchboard-sender>From: desktop app. Agent host: the user's computer. Its localhost reaches the user." +
+        ' Dev servers: localhost:5173, localhost:3000.</switchboard-sender>',
+    )
+  })
+
+  it('keeps at most three and drops entries that do not fit in the cap', () => {
+    const many = Array.from({ length: 12 }, (_, i) => `localhost:${3000 + i}`)
+    const short = formatSenderLine({ surface: 'desktop', localhostReachesUser: true, devServers: many })
+    expect(short).toContain('Dev servers: localhost:3000, localhost:3001, localhost:3002.')
+    expect(short).not.toContain('localhost:3003')
+    expect(short.length).toBeLessThanOrEqual(SENDER_LINE_MAX_CHARS)
+
+    const long = formatSenderLine({
+      surface: 'android',
+      deviceName: 'n'.repeat(40),
+      deviceKind: 'k'.repeat(40),
+      sshMachine: 'h'.repeat(60),
+      localhostReachesUser: false,
+      devServers: ['https://localhost:65535', 'x'.repeat(200), ...many],
+    })
+    expect(long.length).toBeLessThanOrEqual(SENDER_LINE_MAX_CHARS)
+    expect(long.match(/<\/switchboard-sender>/g)).toHaveLength(1)
+    // The longest fixed part leaves room for one short entry at most; never a cut one.
+    expect(long).not.toMatch(/Dev servers: [^.]*$/)
+  })
+
+  it('has no dev server part when there are none', () => {
+    expect(formatSenderLine({ surface: 'desktop', localhostReachesUser: true, devServers: [] })).not.toContain(
+      'Dev servers',
+    )
+  })
+
+  it('asks for the dev servers of the chat folder', () => {
+    const asked: Array<string | undefined> = []
+    const line = senderLineForTurn(
+      'hi',
+      '/repo',
+      env({
+        devServers: (path) => {
+          asked.push(path)
+          return ['localhost:8080']
+        },
+      }),
+    )
+    expect(asked).toEqual(['/repo'])
+    expect(line).toContain('Dev servers: localhost:8080.')
+  })
+
+  it('is stripped with the rest of the line, from the text and from a reloaded transcript', () => {
+    const line = formatSenderLine({
+      surface: 'ios',
+      deviceName: 'Desk phone',
+      localhostReachesUser: false,
+      devServers: ['localhost:5173', 'https://localhost:8443', 'localhost:3000'],
+    })
+    const text = withSenderLine('check the page', line)
+    expect(stripSenderLine(text)).toBe('check the page')
+    const out: ChatMessage[] = []
+    new JsonlParser((m) => out.push(m), 'claude-code').feed(
+      `${JSON.stringify({
+        type: 'user',
+        uuid: 'u2',
+        timestamp: '2026-10-24T00:00:00.000Z',
+        message: { role: 'user', content: text },
+      })}\n`,
+    )
+    expect(out.map((m) => m.content)).toEqual(['check the page'])
   })
 })
 

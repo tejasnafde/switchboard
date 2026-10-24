@@ -12,6 +12,7 @@
 import type { RuntimeMode } from './provider-events'
 import { RUNTIME_MODES } from './provider-events'
 import type { LimitState, SettingReader } from './limit-resume'
+import { isAgentProvider, type AgentProvider } from './types'
 
 /**
  * Staged flag `hub_children`. Off until children ship on every surface.
@@ -313,4 +314,121 @@ export function hubUpdateTurn(entries: readonly HubUpdateEntry[]): string {
     return lines.join('\n')
   })
   return `${HUB_UPDATE_OPEN}\n${blocks.join('\n\n')}\n${HUB_UPDATE_CLOSE}`
+}
+
+// ─── Starting children ──────────────────────────────────────────
+
+/** Tasks one `start_children` call may hold. */
+export const HUB_MAX_TASKS_PER_BATCH = 8
+
+/** The backend refuses a user turn to an open child with this code. */
+export const CHILD_READ_ONLY_CODE = 'child_read_only'
+export const CHILD_READ_ONLY_TEXT = 'This chat belongs to a hub. Message the hub.'
+
+/** One child as the parent asked for it. `agent` is an agent type; `account` a provider instance id. */
+export interface HubTask {
+  title: string
+  brief: string
+  location: HubChildLocation
+  baseRef?: string
+  branch?: string
+  agent?: AgentProvider
+  account?: string
+  model?: string
+  mode?: RuntimeMode
+}
+
+const TITLE_MAX = 120
+const BRIEF_MAX = 32 * 1024
+
+/** The tasks of a `start_children` call, or why they are refused. Agent input, so every field is checked. */
+export function parseHubTasks(raw: unknown): { ok: true; tasks: HubTask[] } | { ok: false; message: string } {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > HUB_MAX_TASKS_PER_BATCH)
+    return { ok: false, message: `Give 1 to ${HUB_MAX_TASKS_PER_BATCH} tasks.` }
+  const tasks: HubTask[] = []
+  for (const [i, item] of raw.entries()) {
+    const n = `Task ${i + 1}`
+    if (typeof item !== 'object' || item === null) return { ok: false, message: `${n} is not an object.` }
+    const t = item as Record<string, unknown>
+    const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
+    const title = str(t.title)
+    const brief = str(t.brief)
+    if (!title || title.length > TITLE_MAX)
+      return { ok: false, message: `${n} needs a title of 1 to ${TITLE_MAX} characters.` }
+    if (!brief || brief.length > BRIEF_MAX) return { ok: false, message: `${n} needs a brief of at most 32 KiB.` }
+    const location = t.location ?? 'worktree'
+    if (location !== 'worktree' && location !== 'project')
+      return { ok: false, message: `${n}: location is "worktree" or "project".` }
+    const agentRaw = str(t.agent)
+    const agent = agentRaw === 'claude' ? 'claude-code' : agentRaw
+    if (agent !== undefined && !isAgentProvider(agent))
+      return { ok: false, message: `${n}: unknown agent "${agentRaw}".` }
+    const mode = str(t.mode)
+    if (mode !== undefined && !(RUNTIME_MODES as readonly string[]).includes(mode))
+      return { ok: false, message: `${n}: mode is one of ${RUNTIME_MODES.join(', ')}.` }
+    const branch = str(t.branch)
+    if (branch !== undefined && !/^[A-Za-z0-9._/-]{1,80}$/.test(branch))
+      return { ok: false, message: `${n}: branch may hold letters, digits, ".", "_", "-" and "/" only.` }
+    const task: HubTask = { title, brief, location }
+    const baseRef = str(t.baseRef)
+    const account = str(t.account)
+    const model = str(t.model)
+    if (baseRef) task.baseRef = baseRef
+    if (branch) task.branch = branch
+    if (agent) task.agent = agent
+    if (account) task.account = account
+    if (model) task.model = model
+    if (mode) task.mode = mode as RuntimeMode
+    tasks.push(task)
+  }
+  return { ok: true, tasks }
+}
+
+/** One row of the batch card. */
+export interface HubBatchRowView {
+  title: string
+  agent: AgentProvider
+  account: string | null
+  model: string | null
+  mode: RuntimeMode
+  location: HubChildLocation
+  baseRef: string
+  deps: HubDepsMode
+}
+
+/** What the batch card shows. `needBytes` and `freeBytes` are null when unknown. */
+export interface HubBatchView {
+  batchId: string
+  rows: HubBatchRowView[]
+  needBytes: number | null
+  freeBytes: number | null
+  /** The parent works in the main checkout: merging children there changes its branch. */
+  mainCheckout: boolean
+}
+
+export const HUB_MAIN_CHECKOUT_WARNING =
+  'This chat works in the main checkout. Merging children here changes its branch.'
+
+const GIB = 1024 ** 3
+
+export const formatGiB = (bytes: number): string => `${(bytes / GIB).toFixed(1)} GiB`
+
+/** Why the disk cannot take the batch, or null: free space after it must stay at or above the floor. */
+export function hubDiskProblem(d: { freeBytes: number; needBytes: number; minFreeGiB: number }): string | null {
+  if (d.freeBytes - d.needBytes >= d.minFreeGiB * GIB) return null
+  return `Not enough disk: the children need about ${formatGiB(d.needBytes)} and ${formatGiB(d.freeBytes)} is free, which would leave less than ${d.minFreeGiB} GiB.`
+}
+
+/** The card as plain text, for clients that do not draw it. */
+export function hubBatchDetail(view: HubBatchView): string {
+  const rows = view.rows.map(
+    (r, i) =>
+      `${i + 1}. ${r.title} - ${r.agent}${r.model ? ` ${r.model}` : ''}, ${r.mode}, ` +
+      (r.location === 'project' ? 'in the project folder' : `worktree off ${r.baseRef}, deps: ${r.deps}`),
+  )
+  const lines = [`Start ${view.rows.length} child chat${view.rows.length === 1 ? '' : 's'}:`, ...rows]
+  if (view.needBytes !== null && view.freeBytes !== null)
+    lines.push(`Disk: needs about ${formatGiB(view.needBytes)}, ${formatGiB(view.freeBytes)} free.`)
+  if (view.mainCheckout) lines.push(HUB_MAIN_CHECKOUT_WARNING)
+  return lines.join('\n')
 }

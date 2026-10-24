@@ -1,7 +1,8 @@
 /**
  * One line of context the backend puts in front of a user's turn: which
  * surface sent it, from which device, which machine runs the agent, and
- * whether a localhost URL on that machine reaches the user.
+ * whether a localhost URL on that machine reaches the user, plus the local dev
+ * servers seen running for the project, when there are any.
  *
  * The backend builds it from the authenticated connection, never from the
  * turn, and only the provider gets it. The stored message never holds it, and
@@ -26,6 +27,8 @@ export interface SenderContext {
   /** Absent when the agent runs on the user's own computer. */
   sshMachine?: string
   localhostReachesUser: boolean
+  /** Loopback addresses (`localhost:5173`) a terminal in the project printed, newest first. */
+  devServers?: string[]
 }
 
 const SURFACE_LABEL: Record<SenderSurface, string> = {
@@ -37,6 +40,8 @@ const SURFACE_LABEL: Record<SenderSurface, string> = {
 
 const DEVICE_FIELD_MAX = 20
 const MACHINE_NAME_MAX = 30
+const DEV_SERVER_MAX = 30
+const DEV_SERVERS_MAX = 3
 
 /** Free text from a device or a host name, made safe for one line inside the tags. */
 function clean(value: string | undefined, max: number): string {
@@ -59,7 +64,22 @@ export function formatSenderLine(ctx: SenderContext): string {
   const localhost = ctx.localhostReachesUser
     ? 'Its localhost reaches the user.'
     : 'Its localhost does not reach the user.'
-  return `${SENDER_LINE_OPEN}${from} ${host} ${localhost}${SENDER_LINE_CLOSE}`
+  const base = `${SENDER_LINE_OPEN}${from} ${host} ${localhost}`
+  const room = SENDER_LINE_MAX_CHARS - base.length - SENDER_LINE_CLOSE.length
+  return `${base}${devServerNote(ctx.devServers, room)}${SENDER_LINE_CLOSE}`
+}
+
+/** " Dev servers: a, b." with as many entries as fit in `room` characters, or ''. */
+function devServerNote(servers: string[] | undefined, room: number): string {
+  const kept: string[] = []
+  for (const raw of servers ?? []) {
+    const server = clean(raw, DEV_SERVER_MAX)
+    if (!server || kept.includes(server)) continue
+    if (` Dev servers: ${[...kept, server].join(', ')}.`.length > room) break
+    kept.push(server)
+    if (kept.length >= DEV_SERVERS_MAX) break
+  }
+  return kept.length ? ` Dev servers: ${kept.join(', ')}.` : ''
 }
 
 /** A slash command must stay first in the prompt, or the agent does not run it. */

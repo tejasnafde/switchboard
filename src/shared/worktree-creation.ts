@@ -15,7 +15,8 @@ export type WorktreeCreationPhase =
 
 export type WorktreeCreationStatus = 'pending' | 'ready' | 'failed' | 'rolled_back' | 'cleanup_required' | 'cancelled'
 
-export type WorktreePurpose = 'new-chat' | 'kanban' | 'fork'
+/** `hub-child`: a child chat's worktree; its dependency folders are prepared before its first turn, not in the background. */
+export type WorktreePurpose = 'new-chat' | 'kanban' | 'fork' | 'hub-child'
 export type WorktreeSetupPolicy = 'inherit' | 'run' | 'skip'
 export type WorktreeCreationSurface = 'desktop' | 'react-native' | 'android' | 'automation' | 'legacy'
 
@@ -48,7 +49,7 @@ export interface WorktreeExistingBranchIntent {
 export interface WorktreeCheckoutIntent {
   baseRef: string
   branch: {
-    namespace: 'sb' | 'fork' | 'kanban'
+    namespace: 'sb' | 'fork' | 'kanban' | 'hub'
     seed: string
   }
   location?: 'managed-in-repo' | 'managed-user-data'
@@ -406,7 +407,7 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
   if (!validGitRef(baseRef)) issue('invalid_git_ref', 'checkout.baseRef', 'Base ref is empty or unsafe.')
   const branch = record(checkout?.branch)
   const namespace = branch?.namespace
-  if (namespace !== 'sb' && namespace !== 'fork' && namespace !== 'kanban') {
+  if (namespace !== 'sb' && namespace !== 'fork' && namespace !== 'kanban' && namespace !== 'hub') {
     issue('invalid_value', 'checkout.branch.namespace', 'Branch namespace is invalid.')
   }
   const seed = branch?.seed
@@ -581,11 +582,11 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
   }
 
   const purpose = root.purpose
-  if (purpose !== 'new-chat' && purpose !== 'kanban' && purpose !== 'fork') {
+  if (purpose !== 'new-chat' && purpose !== 'kanban' && purpose !== 'fork' && purpose !== 'hub-child') {
     issue('invalid_value', 'purpose', 'Worktree purpose is invalid.')
   }
   const expectedOwnerKind =
-    purpose === 'new-chat'
+    purpose === 'new-chat' || purpose === 'hub-child'
       ? 'conversation'
       : purpose === 'kanban'
         ? 'kanban-card'
@@ -596,7 +597,15 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
     issue('owner_purpose_mismatch', 'owner.kind', `Purpose ${String(purpose)} requires a ${expectedOwnerKind} owner.`)
   }
   const expectedNamespace =
-    purpose === 'new-chat' ? 'sb' : purpose === 'kanban' ? 'kanban' : purpose === 'fork' ? 'fork' : undefined
+    purpose === 'new-chat'
+      ? 'sb'
+      : purpose === 'kanban'
+        ? 'kanban'
+        : purpose === 'fork'
+          ? 'fork'
+          : purpose === 'hub-child'
+            ? 'hub'
+            : undefined
   if (expectedNamespace && namespace !== expectedNamespace) {
     issue(
       'invalid_value',

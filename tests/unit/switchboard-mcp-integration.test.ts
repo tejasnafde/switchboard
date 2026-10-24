@@ -152,6 +152,21 @@ describe('the stdio bridge against the server', () => {
     await server.stop()
   })
 
+  it("records the agent's pid and serves a chat's own instructions", async () => {
+    const server = new SwitchboardMcpServer({ bridgeDir: () => bridgeDir })
+    const launch = await server.open('chat-1', () => [echo], 'Extra paragraph.')
+    const client = connect(launch)
+    const init = await client.request('initialize', {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'test', version: '1' },
+    })
+    expect((init.result as { instructions: string }).instructions).toMatch(/ Extra paragraph\.$/)
+    // The bridge's parent is whatever spawned it: here, this test process.
+    expect(server.agentPid('chat-1')).toBe(process.pid)
+    await server.stop()
+  })
+
   it('drops a bridge whose token it does not know', async () => {
     const server = new SwitchboardMcpServer({ bridgeDir: () => bridgeDir })
     const launch = await server.open('chat-1', () => [echo])

@@ -5,6 +5,7 @@ import type { IPty } from 'node-pty'
 import type { TerminalCreateOptions } from '@shared/types'
 import { createMainLogger as createLogger } from '../logger'
 import { ExitDrain, type DrainResult } from './exit-drain'
+import { devServerWatch, type DevServerWatch } from './dev-server-watch'
 
 const log = createLogger('pty')
 
@@ -90,7 +91,11 @@ export class PtyManager {
   /** `kill()` returns before node-pty delivers the exit; `disposeAll` waits. */
   private exitDrain = new ExitDrain()
 
-  constructor(onData: PtyDataCallback, onExit: PtyExitCallback) {
+  constructor(
+    onData: PtyDataCallback,
+    onExit: PtyExitCallback,
+    private devServers: DevServerWatch = devServerWatch,
+  ) {
     this.onData = onData
     this.onExit = onExit
   }
@@ -119,11 +124,12 @@ export class PtyManager {
     // with "command not found." Terminal.app and iTerm both default to
     // login shells for this exact reason.
     const loginArgs = !isWin && (shell.endsWith('/zsh') || shell.endsWith('/bash')) ? ['-l'] : []
+    const cwd = opts.cwd ?? process.cwd()
     const instance = pty.spawn(shell, loginArgs, {
       name: 'xterm-256color',
       cols: opts.cols ?? 80,
       rows: opts.rows ?? 24,
-      cwd: opts.cwd ?? process.cwd(),
+      cwd,
       env: { ...process.env, ...envOverrides, ...opts.env } as Record<string, string>,
       // ConPTY (Win10 1809+) gives full ANSI/VT support and is the only
       // backend node-pty uses on modern Windows; opt-in is explicit.
@@ -143,9 +149,11 @@ export class PtyManager {
     instance.onData((data) => {
       this.onData(opts.id, data)
       this.checkWaitingCommands(data)
+      this.devServers.observe(opts.id, cwd, data)
     })
     instance.onExit(({ exitCode, signal }) => {
       this.ptys.delete(opts.id)
+      this.devServers.forget(opts.id)
       this.exitDrain.settle(opts.id)
       this.onExit(opts.id, exitCode, signal)
     })
@@ -198,6 +206,7 @@ export class PtyManager {
     if (!managed) return
     managed.pty.kill()
     this.ptys.delete(id)
+    this.devServers.forget(id)
   }
 
   killAll(): void {

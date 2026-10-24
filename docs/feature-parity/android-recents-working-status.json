@@ -9,8 +9,13 @@
       "reason": "The desktop already adopts each session's current status from provider:list-sessions on launch (App.tsx adoptLiveSessions) and does not persist a status across restarts, so it never showed a stale Working. Nothing on the desktop changes."
     },
     "reactNativeIos": {
-      "status": "not_applicable",
-      "reason": "Checked, not affected: the Expo app has no Home recents. Its conversation list reads the chat store, which ingests runtime events for every thread from the connection (stores/connections.ts) whether or not the chat is open, and resets every cached thread's status to 'connecting' on rehydrate (stores/chat.ts), so neither a closed-chat turn end nor a cold start can leave it on 'running'."
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/home-recents.ts",
+        "apps/mobile/src/stores/recents.ts",
+        "apps/mobile/src/stores/chat.ts",
+        "tests/unit/mobile-home-recents.test.ts"
+      ]
     },
     "nativeAndroid": {
       "status": "implemented",

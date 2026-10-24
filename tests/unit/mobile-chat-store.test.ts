@@ -7,7 +7,14 @@ import { formatApprovalResultMarker } from '../../src/shared/agent-approval-card
 import { formatMergeBackMarker, type MergeBackRow } from '../../src/shared/merge-back'
 import { echoMessageId } from '../../src/shared/provider-events'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { useChatStore, flushQueue, resetQueue, threadKey, type FeedItem } from '../../apps/mobile/src/stores/chat'
+import {
+  useChatStore,
+  flushQueue,
+  resetQueue,
+  statusMark,
+  threadKey,
+  type FeedItem,
+} from '../../apps/mobile/src/stores/chat'
 import { historyToItems, mergeHistoryItems } from '../../apps/mobile/src/lib/thread-history'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 
@@ -631,5 +638,17 @@ describe('runtime event rows', () => {
     expect(items()).toEqual([
       { kind: 'todo', id: 'todo-plan', todoId: 'plan', items: [{ text: 'a', status: 'completed' }] },
     ])
+  })
+})
+
+describe('live status clock', () => {
+  it('stamps each live status change after the mark taken before it', () => {
+    const mark = statusMark()
+    useChatStore.getState().ingestNow(CONN, { type: 'status', threadId: THREAD, status: 'running' } as RuntimeEvent)
+    const running = useChatStore.getState().threads[KEY].statusAt ?? 0
+    expect(running).toBeGreaterThan(mark)
+    useChatStore.getState().ingestNow(CONN, { type: 'turn.completed', threadId: THREAD } as RuntimeEvent)
+    expect(useChatStore.getState().threads[KEY].statusAt ?? 0).toBeGreaterThan(running)
+    expect(statusMark()).toBe(useChatStore.getState().threads[KEY].statusAt)
   })
 })

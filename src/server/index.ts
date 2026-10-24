@@ -38,6 +38,7 @@ import { disposeUsageProbes } from '../main/provider/usage'
 import { startBridgeHost } from '../main/ide/bridge-host'
 import { createMainLogger as createLogger } from '../main/logger'
 import { createDefaultWorktreeCreationRuntime } from '../main/worktree-creation/runtime'
+import { configureHubWorktreeCreator } from '../main/hub/hub-start'
 import { createBindLifecycle } from './lifecycle'
 import { nodePidFileIo } from './pidfile'
 
@@ -170,6 +171,7 @@ host.handle(SERVER_VERSION_CHANNEL, () => __SERVER_VERSION__)
 
 const registry = new ProviderRegistry(host)
 const worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(host, () => registry)
+configureHubWorktreeCreator((request) => worktreeCreationRuntime.createWorktreeTransaction(request))
 registerAppHandlers(host, { isTurnInFlight: (id) => registry.isTurnInFlight(id) })
 registerKanbanHandlers(host, {
   createWorktreeTransaction: (request) => worktreeCreationRuntime.createWorktreeTransaction(request),

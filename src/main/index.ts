@@ -106,6 +106,7 @@ import { createMainLogger } from './logger'
 import { warmShellEnv } from './shell-env'
 import { attachRendererCrashRecovery, CRASH_RELOAD_URL, isCrashPage } from './renderer-crash-recovery'
 import { createDefaultWorktreeCreationRuntime, type WorktreeCreationRuntime } from './worktree-creation/runtime'
+import { configureHubWorktreeCreator } from './hub/hub-start'
 
 const log = createMainLogger('tour')
 import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
@@ -996,6 +997,7 @@ app.whenReady().then(() => {
   // Provider registry - new agent bridge (SDK-based)
   providerRegistry = new ProviderRegistry(backendHost)
   worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(backendHost, () => providerRegistry)
+  configureHubWorktreeCreator((request) => worktreeCreationRuntime!.createWorktreeTransaction(request))
   detachPush = attachPushNotifier(providerRegistry.bus, {
     // OS-level idle, so it is true whatever window is in front. The headless
     // server passes nothing and therefore never suppresses.

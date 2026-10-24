@@ -33,12 +33,13 @@ import {
 import { HOST_WRITE_SHOWN_REQUIRED, hostWriteApprovalProblem, hostWriteShownDigest } from '@shared/host-write-phone'
 import type { PrWritePlan } from './pr-tools'
 import type { PeerSendPlan } from './peer-mcp-tools'
+import type { HubBatchPlan } from '../hub/hub-start'
 import { createMainLogger } from '../logger'
 
 const log = createMainLogger('mcp:approvals')
 
 /** The write an approval runs, as data, so it survives a restart. */
-export type AgentWritePlan = PrWritePlan | PeerSendPlan
+export type AgentWritePlan = PrWritePlan | PeerSendPlan | HubBatchPlan
 
 export type AgentApprovalCard = StoredApprovalCard<AgentWritePlan>
 
@@ -212,5 +213,6 @@ function openedEvent(card: AgentApprovalCard): RuntimeRequestOpenedEvent {
     toolName: card.toolName,
     detail: card.detail,
     ...(card.hostWrite ? { hostWrite: card.hostWrite } : {}),
+    ...(card.plan.kind === 'hub-batch' ? { hubBatch: card.plan.view } : {}),
   }
 }
