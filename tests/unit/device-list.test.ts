@@ -165,7 +165,7 @@ describe('pull request writes', () => {
     expect(ask.destructive).toBeUndefined()
     expect(ask.body).toContain('posts as you on GitHub and Bitbucket')
     expect(ask.body).toContain('Anyone who can unlock the phone')
-    expect(ask.body).toContain('Face ID or its passcode')
+    expect(ask.body).toContain('Face ID or the passcode')
     expect(ask.items?.map((i) => i.label)).toEqual(['Allowed', 'Stays here'])
     expect(ask.items?.[1]?.detail).toContain('Merge, close')
   })

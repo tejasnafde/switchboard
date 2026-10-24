@@ -250,14 +250,19 @@ function AccessBlock({
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const granted = hasPrWrite(device)
+  // A saved change stays busy until the reloaded list brings the new scopes,
+  // so the old button cannot be clicked again in between.
+  useEffect(() => setBusy(false), [device])
 
   const change = async (allowed: boolean): Promise<void> => {
     if (allowed && !(await confirm(prWriteConfirm(device)))) return
     setBusy(true)
     setFailed(false)
     const ok = await onSetPrWrite(allowed)
-    setBusy(false)
-    setFailed(!ok)
+    if (!ok) {
+      setBusy(false)
+      setFailed(true)
+    }
   }
 
   return (

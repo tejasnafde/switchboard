@@ -70,10 +70,10 @@ function saveSessions(sessions: DeviceSession[]): void {
 /** Revoked devices are left out: a row that stays after Revoke reads as if
  *  Revoke did nothing. `online` holds the session ids with an open,
  *  authenticated socket; it lives in the endpoint's memory, not the store. */
-export function listSessionViews(online: ReadonlySet<string> = new Set()): DeviceSessionView[] {
+export function listSessionViews(online: ReadonlySet<string> = new Set(), nowMs = Date.now()): DeviceSessionView[] {
   return listSessions()
     .filter((s) => !isRevoked(s))
-    .map((s) => toView(s, online.has(s.id)))
+    .map((s) => ({ ...toView(s, online.has(s.id)), scopes: effectiveScopes(s, nowMs) }))
 }
 
 /** What a connection says about the device behind it, recorded on auth. */
@@ -231,12 +231,19 @@ export function renameSession(id: string, name: string | null): boolean {
   return true
 }
 
-/** A pull request write grant does not outlive a month without the device. */
-function activeScopes(session: DeviceSession, nowMs: number): DeviceScope[] {
+/** A pull request write grant does not outlive a month without the device.
+ *  The list shows this too, so a lapsed grant never reads as allowed. */
+function effectiveScopes(session: DeviceSession, nowMs: number): DeviceScope[] {
   const since = Math.max(session.lastSeenAt, session.prWriteGrantedAt ?? 0)
   if (!session.scopes.includes('pr-write') || nowMs - since < PR_WRITE_INACTIVE_MS) return session.scopes
-  log.info(`dropped pull request writes from inactive device ${session.label}`)
   return session.scopes.filter((s) => s !== 'pr-write')
+}
+
+function activeScopes(session: DeviceSession, nowMs: number): DeviceScope[] {
+  const scopes = effectiveScopes(session, nowMs)
+  if (scopes.length === session.scopes.length) return scopes
+  log.info(`dropped pull request writes from inactive device ${session.label}`)
+  return scopes
 }
 
 /**

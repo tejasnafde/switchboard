@@ -129,7 +129,7 @@ export function prWriteConfirm(device: DeviceSessionView): ConfirmOptions {
   const body = [
     'It posts as you on GitHub and Bitbucket, with the accounts signed in on this computer.',
     'Anyone who can unlock the phone can do the same.',
-    'The phone asks for Face ID or its passcode and shows each write in full before it posts.',
+    'The Switchboard app asks for Face ID or the passcode and shows each write in full before it posts.',
     'You can remove this here at any time.',
   ]
   if (!device.online) body.push('The phone is offline. This takes effect when it next connects.')
@@ -138,7 +138,10 @@ export function prWriteConfirm(device: DeviceSessionView): ConfirmOptions {
     body: body.join(' '),
     items: [
       { label: 'Allowed', detail: 'Comment, reply, resolve a thread, approve, request changes' },
-      { label: 'Stays here', detail: 'Merge, close, decline, reviewers, re-run checks' },
+      {
+        label: 'Stays here',
+        detail: 'Merge, close, decline, reviewers, re-run checks, line comments, reopen a thread',
+      },
     ],
     confirmLabel: 'Allow writes',
   }
