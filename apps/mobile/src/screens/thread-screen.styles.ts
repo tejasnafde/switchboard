@@ -96,6 +96,13 @@ export const styles = StyleSheet.create({
     ...type.chatBody,
     color: colors.text,
   },
+  userPill: {
+    maxWidth: 180,
+    paddingHorizontal: 7,
+    borderRadius: 6,
+    backgroundColor: colors.accentWash,
+  },
+  userPillText: { ...type.meta, color: colors.text },
   // A message the backend holds: dashed and unfilled, so it reads as not sent yet.
   heldBubble: {
     backgroundColor: 'transparent',
@@ -227,7 +234,9 @@ export const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   toolOutputText: { color: colors.textDim, ...type.monoSm },
-  toolMeta: { color: colors.textFaint, ...type.meta, marginTop: space.xs },
+  toolMeta: { color: colors.textFaint, ...type.meta },
+  toolOutputFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: space.xs },
+  toolCopyText: { color: colors.accent, ...type.meta },
   toolInputProse: { color: colors.textDim, ...type.bodySm },
   queuedNote: { color: colors.textDim, ...type.meta },
   denialPill: {
