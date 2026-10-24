@@ -1,7 +1,10 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import type { Question } from '@shared/provider-events'
+import * as Clipboard from 'expo-clipboard'
+import type { Question, UserMessagePillsMeta } from '@shared/provider-events'
+import { createLogger } from '@shared/logger'
+import { pillBodySegments, pillBodyText } from '@shared/pill-body-text'
 import { questionAnswersComplete, resolveQuestionAnswers } from '@shared/question-answers'
 import { fmtDuration } from '@shared/format'
 import { stripDigest } from '@shared/agent-digest'
@@ -21,7 +24,32 @@ import { peerUndeliveredReasonText } from '@shared/system-markers'
 import { mergeBackRowDetails, mergeBackRowTitle } from '@shared/merge-back'
 import { showsTurnDuration } from '../lib/thread-chrome'
 
+const log = createLogger('screen:thread-feed')
+
 // ─── Item renderers ────────────────────────────────────────────
+
+/** A sent message's text, each known `[[pill:id]]` drawn as a chip. A chip does nothing on tap. */
+export function UserMessageText({ text, pillsMeta }: { text: string; pillsMeta?: UserMessagePillsMeta }) {
+  const segments = useMemo(() => (pillsMeta ? pillBodySegments(text, pillsMeta) : null), [text, pillsMeta])
+  if (!segments) return <Text style={styles.userText}>{text}</Text>
+  if (segments.length === 0) return null
+  // iOS reads a Text as one element and skips the views inside it, so the chips go in its label.
+  return (
+    <Text style={styles.userText} accessibilityLabel={pillBodyText(text, pillsMeta)}>
+      {segments.map((segment, i) =>
+        segment.kind === 'text' ? (
+          segment.text
+        ) : (
+          <View key={i} style={styles.userPill}>
+            <Text style={styles.userPillText} numberOfLines={1}>
+              {segment.label}
+            </Text>
+          </View>
+        ),
+      )}
+    </Text>
+  )
+}
 
 export const TextItem = memo(function TextItem({
   item,
@@ -92,6 +120,20 @@ export const ToolItem = memo(function ToolItem({ item }: { item: Extract<FeedIte
   const output = item.output ?? ''
   const hasOutput = item.state === 'done' && output.length > 0
   const lineCount = hasOutput ? output.split('\n').length : 0
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 1500)
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  const copyOutput = (): void => {
+    Clipboard.setStringAsync(output).then(
+      () => setCopied(true),
+      (error: unknown) => log.warn('tool output copy failed', error),
+    )
+  }
 
   // Collapsed to a single quiet line: a turn can hold dozens of these, and the
   // output only matters when the user asks for it.
@@ -128,9 +170,14 @@ export const ToolItem = memo(function ToolItem({ item }: { item: Extract<FeedIte
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <Text style={styles.toolOutputText}>{output}</Text>
           </ScrollView>
-          <Text style={styles.toolMeta}>
-            {lineCount} {lineCount === 1 ? 'line' : 'lines'}
-          </Text>
+          <View style={styles.toolOutputFooter}>
+            <Text style={styles.toolMeta}>
+              {lineCount} {lineCount === 1 ? 'line' : 'lines'}
+            </Text>
+            <Pressable onPress={copyOutput} hitSlop={12} accessibilityRole="button">
+              <Text style={styles.toolCopyText}>{copied ? 'Copied' : 'Copy full output'}</Text>
+            </Pressable>
+          </View>
         </View>
       )}
     </View>

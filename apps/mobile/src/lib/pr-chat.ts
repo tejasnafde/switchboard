@@ -12,6 +12,7 @@ import { threadKey, useChatStore } from '../stores/chat'
 import { getClient } from '../stores/connections'
 import { enqueue } from '../stores/outbox'
 import { usePrefsStore } from '../stores/prefs'
+import { queuedTurnBody } from './outbox-model'
 import { buildTurn } from './turn-submit'
 
 const log = createLogger('lib:pr-chat')
@@ -65,7 +66,8 @@ export async function startWorkOnPrChat(input: {
     titleCandidate: input.pr.title,
     reviewPill: pill,
   })
-  useChatStore.getState().addUserMessage(key, `[${pill.label}] ${input.text}`, undefined, turn.bubbleId)
+  const shown = queuedTurnBody(turn.queued)
+  useChatStore.getState().addUserMessage(key, shown.displayBody, undefined, turn.bubbleId, shown.pillsMeta)
   try {
     await enqueue(turn.queued)
   } catch (err) {

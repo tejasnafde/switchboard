@@ -100,6 +100,16 @@ describe('mobile thread history', () => {
     ])
   })
 
+  it('keeps pill tokens with their metadata, so the bubble draws chips', () => {
+    const pillsMeta = { r: { label: '#612', kind: 'review' as const } }
+    const item = { kind: 'user' as const, id: 'h-user-1', text: '[[pill:r]] fix', at: 1, images: undefined, pillsMeta }
+    expect(historyToItems([message({ content: 'wire', displayBody: '[[pill:r]] fix', pillsMeta })])).toEqual([item])
+    expect(splitLegacyCachedItems([item])).toEqual([item])
+    expect(historyToItems([message({ content: 'wire', displayBody: '[[pill:gone]] fix' })])).toEqual([
+      { kind: 'user', id: 'h-user-1', text: ' fix', at: 1, images: undefined },
+    ])
+  })
+
   it('splits history rows from a cache written before synthetic rows, and nothing else', () => {
     const live = { kind: 'user' as const, id: 'remote_1', text: '[Request interrupted by user] typed live', at: 2 }
     expect(

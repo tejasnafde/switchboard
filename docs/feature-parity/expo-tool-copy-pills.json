@@ -1,0 +1,56 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "expo-tool-copy-pills",
+  "summary": "The iOS app closes two thread gaps with native Android. An expanded tool row has a \"Copy full output\" button that puts the whole output on the clipboard (\"Copied\" shows for 1.5 s). A sent user bubble draws each known [[pill:id]] as an inline chip with its label, as Android's PillBodyPresenter does, instead of plain [label] text: the live echo, the history, the local bubble at send, a restored outbox bubble and the first Work on PR turn all keep the display body and its pill metadata. An unknown token is dropped and the text around it joins, the rule pillBodyText already follows. The split lives in src/shared/pill-body-text.ts (pillBodySegments); pillBodyText is unchanged.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop already draws pill chips in sent bubbles (renderPillBody) and does not import pillBodySegments. pillBodyText keeps the same output."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/lib/thread-history.ts",
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/stores/outbox.ts",
+        "apps/mobile/src/lib/pr-chat.ts",
+        "apps/mobile/src/screens/__tests__/feed-items.test.tsx",
+        "tests/unit/mobile-thread-history.test.ts",
+        "tests/unit/pill-body-segments.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/PillBodyPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ToolOutputPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No call, event or field changes. The user-message event and the history already carry displayBody and pillsMeta."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "The iOS chat cache now keeps an optional pillsMeta on a user row. A row cached before this change has none and shows as before; no migration."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "iOS: JavaScript only, expo-clipboard is already in the binary, so it ships on the OTA lane under the existing fingerprint runtime version. Android is unchanged. No package identity, signing, deep link or update channel changes."
+    }
+  },
+  "verification": {
+    "automated": [
+      "Root vitest: pill-body-segments (chips, unknown tokens, empty body) and mobile-thread-history (history keeps tokens with metadata, a legacy cache split leaves such a row whole, no metadata drops the token).",
+      "Expo jest and tsc: ToolItem copies the whole output and shows Copied; UserMessageText draws a known pill as a chip with its Context label and drops an unknown one."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run on an iPhone or a simulator: the inline chip baseline inside wrapped text, VoiceOver on the chip and the copy button, and Dynamic Type were not exercised."
+    ]
+  }
+}
