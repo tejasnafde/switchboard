@@ -23,6 +23,7 @@ import { isRuntimeMode } from '@shared/session-defaults'
 import { WORK_ON_PR_CAPABILITY, workOnPrCheckout } from '@shared/pull-request-phone'
 import type { RootStackParamList } from '../../App'
 import { ModePicker } from '../components/ModePicker'
+import { WorktreeCreationCard } from '../components/WorktreeCreationCard'
 import { MicButton, VoiceNoteBar, type VoiceNote } from '../components/MicButton'
 import { keyboardAvoidance } from '../lib/keyboard-avoidance'
 import {
@@ -30,6 +31,7 @@ import {
   newSessionCreationActions,
   type MobileNewSessionCreationState,
   type ParentCheckoutRequest,
+  type WorktreeActAction,
 } from '../lib/new-session-creation'
 import { mobileNewSessionCreationStorage } from '../lib/new-session-creation-storage'
 import { agentTypeFor, profilesFor } from '../lib/profiles'
@@ -338,10 +340,19 @@ export default function NewSessionScreen({ route, navigation }: Props) {
     }
   }
 
-  const chooseSetup = async (action: 'choose_setup_run' | 'choose_setup_skip') => {
+  const act = async (action: WorktreeActAction) => {
     setError(null)
     try {
-      await coordinatorRef.current?.chooseSetup(action)
+      await coordinatorRef.current?.act(action)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const checkStatus = async () => {
+    setError(null)
+    try {
+      await coordinatorRef.current?.reconcileAfterReconnect()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -540,42 +551,15 @@ export default function NewSessionScreen({ route, navigation }: Props) {
         </View>
 
         {activeWorktreeCreation && (
-          <View style={styles.progressCard} accessibilityLiveRegion="polite">
-            <View style={styles.progressHeading}>
-              {(busy || creationState.status === 'ambiguous') && (
-                <ActivityIndicator size="small" color={colors.accent} />
-              )}
-              <Text style={styles.progressLabel}>{creationActions.progressLabel}</Text>
-            </View>
-            {creationState.error && <Text style={styles.errorText}>{creationState.error}</Text>}
-            {(creationActions.canRetry ||
-              creationActions.canStartInProject ||
-              creationActions.canChooseSetupRun ||
-              creationActions.canChooseSetupSkip) && (
-              <View style={styles.recoveryRow}>
-                {creationActions.canChooseSetupRun && (
-                  <Pressable style={styles.secondaryButton} onPress={() => void chooseSetup('choose_setup_run')}>
-                    <Text style={styles.secondaryButtonLabel}>Run setup</Text>
-                  </Pressable>
-                )}
-                {creationActions.canChooseSetupSkip && (
-                  <Pressable style={styles.secondaryButton} onPress={() => void chooseSetup('choose_setup_skip')}>
-                    <Text style={styles.secondaryButtonLabel}>Skip setup</Text>
-                  </Pressable>
-                )}
-                {creationActions.canRetry && (
-                  <Pressable style={styles.secondaryButton} onPress={() => void retry()}>
-                    <Text style={styles.secondaryButtonLabel}>Retry</Text>
-                  </Pressable>
-                )}
-                {creationActions.canStartInProject && (
-                  <Pressable style={styles.secondaryButton} onPress={() => void startInProject()}>
-                    <Text style={styles.secondaryButtonLabel}>Start in current checkout</Text>
-                  </Pressable>
-                )}
-              </View>
-            )}
-          </View>
+          <WorktreeCreationCard
+            actions={creationActions}
+            error={creationState.error}
+            spinning={busy || creationState.status === 'ambiguous'}
+            onAct={(action) => void act(action)}
+            onRetry={() => void retry()}
+            onCheckStatus={() => void checkStatus()}
+            onStartInProject={() => void startInProject()}
+          />
         )}
 
         {error && <Text style={styles.errorText}>{error}</Text>}
@@ -750,42 +734,6 @@ const styles = StyleSheet.create({
   },
   voiceSpacer: {
     flex: 1,
-  },
-  progressCard: {
-    marginTop: space.md,
-    padding: space.md,
-    gap: space.sm,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  progressHeading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-  },
-  progressLabel: {
-    ...type.body,
-    color: colors.text,
-    flex: 1,
-  },
-  recoveryRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: space.sm,
-  },
-  secondaryButton: {
-    minHeight: HIT,
-    justifyContent: 'center',
-    paddingHorizontal: space.md,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.accent,
-  },
-  secondaryButtonLabel: {
-    ...type.label,
-    color: colors.accent,
   },
   errorText: {
     ...type.bodySm,
