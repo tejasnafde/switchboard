@@ -41,6 +41,11 @@ import { approvalResultLabel, parseApprovalResultMarker } from '@shared/agent-ap
 import type { PeerUndelivered } from '@shared/peer-links'
 import { parseMergeBackMarker, type MergeBackRow } from '@shared/merge-back'
 import { withoutDemo } from '@shared/phone-demo/phone-demo'
+import {
+  applyPendingRequestEvent,
+  PENDING_REQUEST_EVENT_TYPES,
+  type PendingBlockingEvent,
+} from '@shared/pending-requests'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
@@ -166,6 +171,11 @@ export interface ThreadState {
   heldTurns?: QueuedTurnsByMessage
   /** Bumped by every held-message event, so a re-list can tell it raced one. */
   heldRevision?: number
+  /** The backend's open approvals, questions and plans (Needs you), whether
+   *  or not the feed shows them. Not cached. */
+  pendingRequests?: readonly PendingBlockingEvent[]
+  /** Bumped by every event that can change `pendingRequests`, so a seed can tell it raced one. */
+  pendingRevision?: number
 }
 
 /** The cache shows the last thing you were reading offline; it is not an
@@ -184,7 +194,14 @@ export function prunePersistedThreads(
     .slice(0, maxThreads)
   const out: Record<string, ThreadState> = {}
   for (const [key, thread] of keep) {
-    const { heldTurns: _held, heldRevision: _revision, historyMessages: _history, ...rest } = thread
+    const {
+      heldTurns: _held,
+      heldRevision: _revision,
+      historyMessages: _history,
+      pendingRequests: _pending,
+      pendingRevision: _pendingRevision,
+      ...rest
+    } = thread
     out[key] = {
       ...rest,
       // The tail, because a feed renders newest-last and that is what the user
@@ -233,6 +250,9 @@ interface ChatState {
   seedItems: (key: string, items: FeedItem[], keepIds?: string[]) => void
   /** Remove an optimistic user bubble whose message will never be sent. */
   removeUserMessage: (key: string, id: string) => void
+  /** Replace the open cards with the backend's record, unless a live event
+   *  changed them since `revision` was read. False when it did. */
+  seedPendingRequests: (key: string, pending: readonly PendingBlockingEvent[], revision: number) => boolean
   /** Replace the held messages with what the backend lists. */
   setHeldTurns: (key: string, turns: readonly QueuedTurnSummary[]) => void
   /** Queued: coalesced and applied on the next flush tick. */
@@ -773,7 +793,15 @@ function applyEvent(
   activeKey: string | null,
 ): Record<string, ThreadState> {
   const key = threadKey(connectionId, event.threadId)
-  return patchThread(threads, key, (t) => reduceEvent(t, event, activeKey === key))
+  return patchThread(threads, key, (t) => ({ ...reduceEvent(t, event, activeKey === key), ...trackPending(t, event) }))
+}
+
+function trackPending(t: ThreadState, event: RuntimeEvent): Partial<ThreadState> {
+  if (!PENDING_REQUEST_EVENT_TYPES.has(event.type)) return {}
+  return {
+    pendingRequests: applyPendingRequestEvent(t.pendingRequests ?? [], event),
+    pendingRevision: (t.pendingRevision ?? 0) + 1,
+  }
 }
 
 /**
@@ -791,7 +819,7 @@ export const chatCacheReady = new Promise<void>((resolve) => {
 
 export const useChatStore = create<ChatState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       threads: {},
       activeKey: null,
 
@@ -872,6 +900,16 @@ export const useChatStore = create<ChatState>()(
 
       removeUserMessage: (key, id) =>
         set((s) => ({ threads: patchThread(s.threads, key, (t) => ({ items: t.items.filter((i) => i.id !== id) })) })),
+
+      seedPendingRequests: (key, pending, revision) => {
+        const thread = get().threads[key]
+        if ((thread?.pendingRevision ?? 0) !== revision) return false
+        // A chat nobody has opened gets an entry only when something is open.
+        if (pending.length > 0 || thread?.pendingRequests?.length) {
+          set((s) => ({ threads: patchThread(s.threads, key, () => ({ pendingRequests: pending })) }))
+        }
+        return true
+      },
 
       setHeldTurns: (key, turns) =>
         set((s) => ({ threads: patchThread(s.threads, key, () => ({ heldTurns: seedQueuedTurns(turns) })) })),

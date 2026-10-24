@@ -1,23 +1,25 @@
 /**
  * Conversation list for one project on a paired backend. Fetches on focus and after a resume gap,
- * newest first, with live status dots and unread badges from the chat store.
+ * newest first, with live status dots and unread badges from the chat store. Grouped into Needs
+ * you, Working and Done recently while any chat needs you or works (`lib/chat-activity.ts`).
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
   RefreshControl,
+  SectionList,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
+import { useShallow } from 'zustand/react/shallow'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { isAgentType, type ConversationRow } from '@shared/types'
 import { formatRelativeTime } from '@shared/format'
@@ -30,6 +32,8 @@ import { useChatStore, threadKey } from '../stores/chat'
 import { UnreadPill } from '../components/UnreadPill'
 import { conversationSourceLabel } from '../lib/conversation-source'
 import { threadPreviewLine } from '../lib/thread-preview'
+import { chatActivity, chatGroupKey, groupChats, type ChatActivity } from '../lib/chat-activity'
+import { seedListPendingRequests } from '../stores/list-pending'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Conversations'>
 
@@ -50,6 +54,7 @@ export const RowMeta = memo(function RowMeta({
 }) {
   const unread = useChatStore((s) => s.threads[threadKeyStr]?.unread ?? 0)
   const status = useChatStore((s) => s.threads[threadKeyStr]?.status)
+  const activity = useChatStore((s) => chatActivity(s.threads[threadKeyStr]))
   // A feed restored from disk may predate the backend's line, so it only fills in.
   const preview = useChatStore((s) => {
     const thread = s.threads[threadKeyStr]
@@ -59,9 +64,7 @@ export const RowMeta = memo(function RowMeta({
   return (
     <>
       <View style={styles.titleLine}>
-        {status != null && (
-          <View style={[styles.statusDot, { backgroundColor: statusColor[status] ?? colors.textFaint }]} />
-        )}
+        {status != null && <View style={[styles.statusDot, { backgroundColor: dotColor(status, activity) }]} />}
         <Text style={styles.title} numberOfLines={1}>
           {title}
         </Text>
@@ -75,6 +78,13 @@ export const RowMeta = memo(function RowMeta({
     </>
   )
 })
+
+/** The dot carries the colour; an open card outranks everything but an error. */
+function dotColor(status: string, activity: ChatActivity): string {
+  if (activity === 'failed') return colors.red
+  if (activity !== null && activity !== 'working') return colors.amber
+  return statusColor[status] ?? colors.textFaint
+}
 
 export default function ConversationsScreen({ route, navigation }: Props) {
   const { connectionId, projectPath, projectName } = route.params
@@ -93,9 +103,14 @@ export default function ConversationsScreen({ route, navigation }: Props) {
         return
       }
       try {
-        const result = await client.getConversations(projectPath)
-        setRows([...result].sort((a, b) => b.updated_at - a.updated_at))
+        const result = [...(await client.getConversations(projectPath))].sort((a, b) => b.updated_at - a.updated_at)
+        setRows(result)
         setError(null)
+        void seedListPendingRequests(
+          connectionId,
+          client,
+          result.map((row) => row.id),
+        )
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       } finally {
@@ -172,6 +187,18 @@ export default function ConversationsScreen({ route, navigation }: Props) {
     ).map((match) => match.row)
   }, [rows, query, projectName])
 
+  // One group key per row, compared shallowly: a status change re-renders the
+  // list only when it moves a chat between groups.
+  const groupKeys = useChatStore(
+    useShallow((s) => visibleRows.map((row) => chatGroupKey(chatActivity(s.threads[threadKey(connectionId, row.id)])))),
+  )
+  // A query shows one ranked list; grouping by state would undo the ranking.
+  const sections = useMemo(() => {
+    const groups = query.trim() === '' ? groupChats(visibleRows, (_, i) => groupKeys[i]) : []
+    if (groups.length === 0) return visibleRows.length > 0 ? [{ key: 'all', label: '', data: visibleRows }] : []
+    return groups.map((group) => ({ key: group.key, label: group.label, data: group.items }))
+  }, [visibleRows, groupKeys, query])
+
   if (rows === null && error !== null) {
     return (
       <View style={styles.center}>
@@ -203,9 +230,18 @@ export default function ConversationsScreen({ route, navigation }: Props) {
         onCancel={() => setRenaming(null)}
         onSubmit={commitRename}
       />
-      <FlatList
-        data={visibleRows}
+      <SectionList
+        sections={sections}
         keyExtractor={(r) => r.id}
+        stickySectionHeadersEnabled={false}
+        renderSectionHeader={({ section }) =>
+          section.label === '' ? null : (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>{section.label.toUpperCase()}</Text>
+              <Text style={styles.sectionCount}>{section.data.length}</Text>
+            </View>
+          )
+        }
         contentContainerStyle={visibleRows.length === 0 ? styles.emptyContainer : styles.listContent}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
@@ -345,6 +381,15 @@ const styles = StyleSheet.create({
   modalButtonText: { ...type.body, color: colors.textDim },
   modalPrimary: { color: colors.accent, fontWeight: '600' },
   searchWrap: { paddingBottom: space.sm },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: space.lg,
+    paddingTop: space.lg,
+    paddingBottom: space.xs,
+  },
+  sectionTitle: { ...type.label, color: colors.textDim },
+  sectionCount: { ...type.monoSm, color: colors.textFaint },
   searchInput: {
     backgroundColor: colors.surfaceRaised,
     borderColor: colors.border,

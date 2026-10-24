@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "sidebar-needs-you",
-  "summary": "Redesign the desktop sidebar around what each chat needs from the user (option C of the sidebar mock). Recents rows become two lines: a status dot, the title and the time, then a full-width muted status line. Recents is grouped into Needs you (an open approval, question or plan, or an error), Working and Done recently, with Needs you and Working always shown in full above Show N more. Needs you comes from the backend's own record of open cards (provider:get-pending-requests plus the live request/question/plan events), not from the transcript. The This Mac workspace tree folds behind one summary row and offline remote machines behind one Remote machines row, both persisted through the settings table, and the workspace count reads \"14 projects\" with the thread count in a tooltip. Native Android's conversation list groups the same way: BrowseThreadActivityIndex follows the shared reducer's rules (open adds, the matching close removes, error or stop clears everything, the next user message clears a plan), is seeded per chat from provider:get-pending-requests when the list loads (newest 15 chats, behind pending_requests_v1, and a card closed live is not reopened by a racing reply), and the list shows Needs you, Working and Done recently with a plain grey count while the row dot carries the colour. A list where nothing needs you or works stays one plain list.",
+  "summary": "Redesign the desktop sidebar around what each chat needs from the user (option C of the sidebar mock). Recents rows become two lines: a status dot, the title and the time, then a full-width muted status line. Recents is grouped into Needs you (an open approval, question or plan, or an error), Working and Done recently, with Needs you and Working always shown in full above Show N more. Needs you comes from the backend's own record of open cards (provider:get-pending-requests plus the live request/question/plan events), not from the transcript. The This Mac workspace tree folds behind one summary row and offline remote machines behind one Remote machines row, both persisted through the settings table, and the workspace count reads \"14 projects\" with the thread count in a tooltip. Native Android's conversation list groups the same way: BrowseThreadActivityIndex follows the shared reducer's rules (open adds, the matching close removes, error or stop clears everything, the next user message clears a plan), is seeded per chat from provider:get-pending-requests when the list loads (newest 15 chats, behind pending_requests_v1, and a card closed live is not reopened by a racing reply), and the list shows Needs you, Working and Done recently with a plain grey count while the row dot carries the colour. A list where nothing needs you or works stays one plain list. The iOS app's per-project conversation list groups the same way: the chat store tracks each chat's open cards with applyPendingRequestEvent from the live events, the list seeds the newest 15 chats from provider:get-pending-requests behind pending_requests_v1 and drops a reply that raced a live event (asking again), and the rule lives in apps/mobile/src/lib/chat-activity.ts.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -36,9 +36,16 @@
       ]
     },
     "reactNativeIos": {
-      "status": "staged",
-      "flag": "mobile_conversations_needs_you",
-      "followUpRelease": "mobile-v0.5.0. The phone's ConversationsScreen already renders the two-line row this change brings to desktop (status dot and title on line 1, the turnPreviewLine preview on line 2), so only the Needs you group is missing. It is not small: the list is per project and knows a thread's state only once that thread has been opened in the chat store, so grouping by pending cards needs a per-row pending-request fetch (or a batched channel) and a SectionList. It ships in mobile-v0.5.0 behind the local mobile_conversations_needs_you flag, reusing applyPendingRequestEvent from src/shared/pending-requests.ts for the live updates."
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/chat-activity.ts",
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/stores/list-pending.ts",
+        "apps/mobile/src/screens/ConversationsScreen.tsx",
+        "apps/mobile/src/screens/__tests__/conversation-groups.test.tsx",
+        "apps/mobile/src/screens/__tests__/conversation-search.test.tsx",
+        "tests/unit/mobile-chat-activity.test.ts"
+      ]
     },
     "nativeAndroid": {
       "status": "implemented",
@@ -79,7 +86,8 @@
       "SB_VISUAL_SCOPE=behaviour passed end to end: Recents paging (6, Show 5 more x2, Show 2 more, Show less), no blinking dot, Saved view, workspace organizer in 3 themes, native glass, This Mac starting folded, expanding it, and the expanded state surviving a relaunch. It needed a .first() on the pre-existing .runtime-mode-select locator, which failed identically on the unchanged code.",
       "e2e/dual-chat-workspace.e2e.mjs passed (sidebar session click, open beside, forwarding).",
       "All 13 feature-tour clips re-recorded with videos/capture-tour.mjs; frames of welcome, workspaces (search auto-expands This Mac), remote-machines (the offline fold opens to the old list) and chats-and-board checked by eye.",
-      "cd apps/android && ./gradlew testDebugUnitTest: BrowseConversationGroupsTest (group per status and card, order, empty groups dropped, a list with nothing active stays flat, the dot, the status line), BrowseThreadActivityIndexTest (plan until the next user message, stop clears, backend seed cannot reopen a card closed live), BrowseCoordinatorTest (one pending-requests call per listed chat on pending_requests_v1, none on an older backend)"
+      "cd apps/android && ./gradlew testDebugUnitTest: BrowseConversationGroupsTest (group per status and card, order, empty groups dropped, a list with nothing active stays flat, the dot, the status line), BrowseThreadActivityIndexTest (plan until the next user message, stop clears, backend seed cannot reopen a card closed live), BrowseCoordinatorTest (one pending-requests call per listed chat on pending_requests_v1, none on an older backend)",
+      "iOS (Expo): tests/unit/mobile-chat-activity.test.ts (activity ranking, group order, empty groups dropped, a list with nothing active stays flat, open adds and close removes, error or stop clears, the next user message clears a plan, open cards are not cached, seed of the newest 15 chats only on pending_requests_v1, a card closed live is not reopened by a racing reply). Jest conversation-groups.test.tsx (rendered NEEDS YOU, WORKING and DONE RECENTLY headers with counts, a live open and close moving a chat, the plain list) and conversation-search.test.tsx (a query shows one ranked list with no headers)."
     ],
     "hardware": [
       "Every new sidebar and sidebar-needs-you baseline PNG was opened and inspected by eye in Dark, Light and Translucent on this Mac before commit. Translucent first showed the red dot and the count pill vanishing over the warm half of the backdrop; a translucent-only white ring and solid pills fixed it."
@@ -89,7 +97,7 @@
       "drift, ds-flow, ide-syntax and ide-workflow e2e were not run (they need code-server); each only gained a setting that pre-expands This Mac.",
       "No live remote machine: the offline fold, a remote chat under Needs you, and the machine-lost clearing were checked by unit tests and the tour fixture's offline machines only.",
       "No live Claude, Codex or OpenCode turn; Needs you was exercised with the demo adapter's approval hold.",
-      "React Native is staged; nothing was run on a phone. The native Android grouping was not seen on a device or emulator (none was available)."
+      "The iOS grouping was not run on an iPhone or a simulator, and the native Android grouping was not seen on a device or emulator (none was available)."
     ]
   }
 }
