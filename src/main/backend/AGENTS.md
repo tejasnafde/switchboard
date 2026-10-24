@@ -155,6 +155,22 @@ one name the desktop shows. The Settings list rules (groups, search, the
 `renderer/components/settings/device-list.ts`; nothing expires a device on its
 own, "Revoke inactive" asks first and lists what goes.
 
+## Pull request writes (`pr-write` scope)
+
+`DeviceScope` `'pr-write'` is not in `PHONE_SCOPES`, so no pairing gives it.
+The desktop grants or removes it through `mobile-pairing:set-pr-write(id,
+allowed)` (`setPrWriteScope`, admin like every `mobile-pairing:` channel), and
+the change reaches live sockets through `setScopeChangeListener` ->
+`WsHost.setSessionScopes`, so a removal holds from the next frame. Scopes are
+read on every auth, so a grant made while the phone is offline applies at its
+next connect, and `authenticateSession` drops the grant from a device unseen
+for `PR_WRITE_INACTIVE_MS` (30 days). `isChannelAllowed` opens a channel in
+`SCOPE_ANY_OF_CHANNELS` to any one listed scope: the phone write channels take
+`admin` or `pr-write`. `device-session:scopes` (open) answers the caller's
+current scopes, so a phone learns a grant without reconnecting. The IAP TCP
+host runs with `PHONE_SCOPES` and never holds `pr-write`. What a write must
+carry is in `src/main/pull-requests/AGENTS.md` (Phone writes).
+
 ## Device identity (`device_identity_v1`)
 
 Phones send `device { installId, name, manufacturer, model, platform,

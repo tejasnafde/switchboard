@@ -11,14 +11,22 @@
  * surface runs an agent. This is a reduction in blast radius, not a sandbox.
  */
 import { KEYBOARD_OVERRIDES_SETTING } from './shortcuts'
-import { HtmlLiveChannels, ProviderChannels, ProviderInstanceChannels, PullRequestWriteChannels } from './ipc-channels'
+import {
+  HtmlLiveChannels,
+  ProviderChannels,
+  ProviderInstanceChannels,
+  PullRequestPhoneChannels,
+  PullRequestWriteChannels,
+} from './ipc-channels'
+import { PHONE_PR_WRITE_CHANNELS } from './pull-request-phone-writes'
 import { governedSettingKey } from './project-settings'
 import { ACP_COMMAND_AGENT } from './acp-agents'
 import type { DeviceIdentity, DevicePlatform } from './device-identity'
 
 /** `terminal` is separate because a PTY is arbitrary code execution and nothing
- *  on the phone needs it. */
-export type DeviceScope = 'chat' | 'terminal' | 'admin'
+ *  on the phone needs it. `pr-write` lets a phone post on pull requests as the
+ *  user; it is never given at pairing, only granted later from the desktop. */
+export type DeviceScope = 'chat' | 'terminal' | 'admin' | 'pr-write'
 
 export const PHONE_SCOPES: readonly DeviceScope[] = ['chat']
 export const FULL_SCOPES: readonly DeviceScope[] = ['chat', 'terminal', 'admin']
@@ -40,7 +48,20 @@ const SCOPE_REQUIRED_PREFIXES: Record<DeviceScope, readonly string[]> = {
   admin: ['mobile-pairing:', 'source-control:'],
   // `chat` gates nothing on its own. It is the baseline every session has.
   chat: [],
+  'pr-write': [],
 }
+
+/** The writes a phone may make on a pull request, plus the account read its
+ *  confirm sheet names. Merge, close, reviewers and re-run stay `admin`. */
+const PHONE_WRITE_CHANNELS: readonly string[] = [
+  ...Object.values(PHONE_PR_WRITE_CHANNELS),
+  PullRequestPhoneChannels.WRITE_ACCOUNT,
+]
+
+/** Channels that any ONE of the listed scopes opens. */
+const SCOPE_ANY_OF_CHANNELS: ReadonlyMap<string, readonly DeviceScope[]> = new Map(
+  PHONE_WRITE_CHANNELS.map((ch) => [ch, ['admin', 'pr-write'] as const]),
+)
 
 const SCOPE_REQUIRED_CHANNELS: Partial<Record<DeviceScope, readonly string[]>> = {
   terminal: ['app:save-launch-config', ProviderInstanceChannels.TEST_DRAFT],
@@ -48,12 +69,11 @@ const SCOPE_REQUIRED_CHANNELS: Partial<Record<DeviceScope, readonly string[]>> =
   // along, and unprotecting one reopens it to cleanup. Nothing on the phone
   // does either.
   // Pull request writes post, approve and merge as the user on GitHub or
-  // Bitbucket. The phone has no Reviews screen yet; reply and resolve may
-  // open to it in a later release. The reads stay open.
+  // Bitbucket. The reads stay open; the phone's subset is below.
   admin: [
     'worktree-manager:remove',
     'worktree-manager:set-protection',
-    ...Object.values(PullRequestWriteChannels),
+    ...Object.values(PullRequestWriteChannels).filter((ch) => !PHONE_WRITE_CHANNELS.includes(ch)),
     // A session link lets two agents message each other past the hop limit,
     // without a card in auto mode. Creating or extending one is consent a
     // phone credential must not be able to grant, like approving a host
@@ -162,6 +182,8 @@ export function isChannelAllowed(scopes: readonly DeviceScope[], channel: string
   for (const [scope, channels] of Object.entries(SCOPE_REQUIRED_CHANNELS) as Array<[DeviceScope, readonly string[]]>) {
     if (channels.includes(channel) && !scopes.includes(scope)) return false
   }
+  const anyOf = SCOPE_ANY_OF_CHANNELS.get(channel)
+  if (anyOf && !anyOf.some((scope) => scopes.includes(scope))) return false
   return true
 }
 
@@ -214,7 +236,15 @@ export interface DeviceSession {
   lastAddress?: string
   /** Set on the desktop; overrides the name the phone reports. */
   customName?: string
+  /** When this device last posted on a pull request (`pr-write`). */
+  lastPrWriteAt?: number
 }
+
+/**
+ * A `pr-write` grant on a device unseen this long is dropped when it next
+ * connects: the same 30 days after which the Devices tab folds it as inactive.
+ */
+export const PR_WRITE_INACTIVE_MS = 30 * 24 * 60 * 60_000
 
 /** Same bound as the reported identity fields. */
 export const DEVICE_NAME_MAX = 128
@@ -248,6 +278,7 @@ export interface DeviceSessionView {
   appVersion?: string
   lastAddress?: string
   customName?: string
+  lastPrWriteAt?: number
   /** In memory only: an authenticated socket for this session is open now. */
   online?: boolean
 }
@@ -263,6 +294,7 @@ export function toView(session: DeviceSession, online = false): DeviceSessionVie
     revoked: isRevoked(session),
     ...(session.lastAddress ? { lastAddress: session.lastAddress } : {}),
     ...(typeof session.customName === 'string' && session.customName ? { customName: session.customName } : {}),
+    ...(typeof session.lastPrWriteAt === 'number' ? { lastPrWriteAt: session.lastPrWriteAt } : {}),
     online,
   }
 }

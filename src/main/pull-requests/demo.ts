@@ -766,6 +766,10 @@ class DemoProvider implements PullRequestProvider {
     return { id: reviewerId(this.host, ME), login: ME.login }
   }
 
+  async writeAccount(): Promise<string> {
+    return ME.login
+  }
+
   async createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<OpenedPr> {
     const number = 900 + ++this.seq
     await this.record('create', { ...repo, number }, input)

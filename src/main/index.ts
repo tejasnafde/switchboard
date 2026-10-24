@@ -49,7 +49,15 @@ import { registerFilesHandlers } from './ipc/files'
 import { registerProjectCloneHandlers } from './ipc/project-clone'
 import { ElectronIpcHost, type BackendHost } from './backend/host'
 import { MultiHost } from './backend/multi-host'
-import { createPairingCode, listSessionViews, renameSession, revokeSession } from './backend/device-sessions'
+import { currentBackendRequestContext } from './backend/request-context'
+import { FULL_SCOPES } from '@shared/device-auth'
+import {
+  createPairingCode,
+  listSessionViews,
+  renameSession,
+  revokeSession,
+  setPrWriteScope,
+} from './backend/device-sessions'
 import { currentGoogleClient, googleClientStatus, setGoogleClient } from './google/client-config'
 import { mintGoogleCredentials } from './google/mint'
 import type { PartialClientConfig } from '@shared/google-oauth'
@@ -929,6 +937,14 @@ app.whenReady().then(() => {
     if (typeof id !== 'string' || (name !== null && typeof name !== 'string')) throw new Error('invalid rename request')
     return renameSession(id, name)
   })
+  // Granting pull request writes is consent a phone must not give itself.
+  // Removing takes power away and needs no confirm; both apply to live sockets.
+  backendHost.handle(AppChannels.MOBILE_DEVICE_PR_WRITE, (id: unknown, allowed: unknown) => {
+    if (typeof id !== 'string' || typeof allowed !== 'boolean') throw new Error('invalid pull request write grant')
+    return setPrWriteScope(id, allowed)
+  })
+  // Open: a phone reads its own grant, which the desktop may change while it is connected.
+  backendHost.handle(AppChannels.DEVICE_SCOPES, () => currentBackendRequestContext()?.deviceScopes ?? FULL_SCOPES)
   // Same scope, for a sharper reason: this one opens a browser on the desktop
   // and hands back a credential that grants cloud-platform access as the user.
   backendHost.handle(AppChannels.GOOGLE_CLIENT_STATUS, () => googleClientStatus())

@@ -51,6 +51,14 @@ import {
   type RepoRef,
 } from '@shared/pull-requests'
 import { reposFromRemotes } from '@shared/pull-request-remote'
+import {
+  PHONE_PR_WRITE_DUPLICATE,
+  PHONE_PR_WRITE_MISMATCH,
+  phonePrWriteDigest,
+  phoneSheetFromInput,
+  readPhoneProof,
+  type PhonePrWriteAction,
+} from '@shared/pull-request-phone-writes'
 import { coveredRepos, projectReposFrom, type ChildRepo, type ProjectRepos } from '@shared/project-repos'
 import { createMainLogger } from '../logger'
 import { relativeLabel } from './project-repos'
@@ -64,6 +72,9 @@ function lineTargetProblem(files: readonly PrChangedFile[], c: InlineCommentInpu
     ? `${lineLocation(c)} spans two hunks of the diff; a comment covers lines of one hunk.`
     : `${lineLocation(c)} is not in the diff any more.`
 }
+
+/** A write id is remembered this long; a phone mints a new one per Post. */
+const PHONE_WRITE_ID_TTL_MS = 24 * 60 * 60_000
 
 const log = createMainLogger('pull-requests:service')
 
@@ -438,6 +449,59 @@ export class PullRequestService {
       log.info('read reviewer candidates', { host: r.host, ms: Date.now() - started, count: candidates.length })
       return candidates
     })
+  }
+
+  // ─── Phone writes ─────────────────────────────────────────────
+
+  /** Phone write ids taken in the last day, so a write is never sent twice. */
+  private readonly phoneWriteIds = new Map<string, number>()
+
+  /** Who a write on `ref` posts as, for a phone's confirm sheet. */
+  async writeAccount(ref: unknown): Promise<PrResult<{ account: string }>> {
+    const target = await this.resolve(ref)
+    if ('error' in target) return { ok: false, error: target.error }
+    try {
+      return { ok: true, data: { account: await target.provider.writeAccount() } }
+    } catch (err) {
+      return { ok: false, error: toPrError(err, target.ref.host) }
+    }
+  }
+
+  /**
+   * Why a phone's write is refused before it reaches the write path, or null.
+   * The write must carry a proof whose digest matches what this backend would
+   * post (the account it posts as included), and a write id not taken before.
+   * The id is reserved here, before any await, so two copies of one write
+   * racing each other cannot both pass.
+   */
+  async checkPhoneWrite(ref: unknown, action: PhonePrWriteAction, input: unknown): Promise<PrError | null> {
+    const proof = readPhoneProof(input)
+    if (!proof) return { kind: 'invalid', host: null, message: PHONE_PR_WRITE_MISMATCH }
+    const now = this.now()
+    for (const [id, at] of this.phoneWriteIds) if (now - at > PHONE_WRITE_ID_TTL_MS) this.phoneWriteIds.delete(id)
+    if (this.phoneWriteIds.has(proof.writeId))
+      return { kind: 'conflict', host: null, message: PHONE_PR_WRITE_DUPLICATE }
+    this.phoneWriteIds.set(proof.writeId, now)
+    const refuse = (error: PrError): PrError => {
+      this.phoneWriteIds.delete(proof.writeId)
+      return error
+    }
+    const target = await this.resolve(ref)
+    if ('error' in target) return refuse(target.error)
+    const host = target.ref.host
+    const sheet = phoneSheetFromInput(target.ref, action, input, proof.writeId)
+    if ('problem' in sheet) return refuse({ kind: 'invalid', host, message: sheet.problem })
+    let account: string
+    try {
+      account = await target.provider.writeAccount()
+    } catch (err) {
+      return refuse(toPrError(err, host))
+    }
+    if (phonePrWriteDigest({ ...sheet, account }) !== proof.shown) {
+      log.warn('refused a phone pull request write: shown digest differs', { action, host })
+      return refuse({ kind: 'invalid', host, message: PHONE_PR_WRITE_MISMATCH })
+    }
+    return null
   }
 
   // ─── Writes ────────────────────────────────────────────────────

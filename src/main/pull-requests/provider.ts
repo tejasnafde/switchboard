@@ -68,6 +68,8 @@ export interface PullRequestProvider {
   createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<OpenedPr>
   /** The signed-in user, who cannot review the pull requests they open. */
   viewerIdentity(): Promise<ReviewerViewer>
+  /** The account a write posts as, as a phone's confirm sheet names it. */
+  writeAccount(): Promise<string>
 }
 
 /** A host failure already classified for the UI. Providers throw it; the service turns it into a result. */

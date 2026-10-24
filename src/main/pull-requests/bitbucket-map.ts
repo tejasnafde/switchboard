@@ -118,6 +118,8 @@ export interface BbActivity {
 export interface BbViewer {
   uuid: string | null
   accountId: string | null
+  /** "Display Name (nickname)", or whichever of the two the host gave. */
+  label: string | null
 }
 
 export interface BbEnrichment {
