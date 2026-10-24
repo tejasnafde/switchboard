@@ -1,8 +1,8 @@
 /**
  * Settings > Devices & machines > Paired devices: search, sort, the "Online
- * now" and "Earlier" groups, the inactive fold, per-device Details with rename,
- * and Revoke (one device, or every inactive one). The rules live in
- * device-list.ts.
+ * now" and "Earlier" groups, the inactive fold, per-device Details with rename
+ * and the Access block (pull request writes), and Revoke (one device, or every
+ * inactive one). The rules live in device-list.ts.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { deviceDisplayName, type DeviceSessionView } from '@shared/device-auth'
@@ -18,9 +18,12 @@ import {
   DEVICE_SORT_OPTIONS,
   absoluteDate,
   groupDevices,
+  hasPrWrite,
   isInactive,
   makeAndModel,
   platformLabel,
+  prWriteConfirm,
+  prWriteDescription,
   relativeTime,
   type DeviceSort,
   renameValue,
@@ -208,12 +211,98 @@ function NameRow({
   )
 }
 
-function DeviceDetails({
+function AccessLine({
+  title,
+  description,
+  highlight = false,
+  children,
+}: {
+  title: string
+  description: string
+  highlight?: boolean
+  children: ReactNode
+}) {
+  return (
+    <div
+      className={cn(
+        'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 border-t border-border px-2.5 py-2 first:border-t-0',
+        highlight && 'bg-[var(--accent-subtle)]',
+      )}
+    >
+      <div>
+        <div className="text-[12px] font-[500] leading-4">{title}</div>
+        <div className="mt-0.5 text-[11px] leading-4 text-[var(--text-secondary)]">{description}</div>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function AccessBlock({
   device,
-  onRename,
+  nowMs,
+  onSetPrWrite,
 }: {
   device: DeviceSessionView
+  nowMs: number
+  onSetPrWrite: (allowed: boolean) => Promise<boolean>
+}) {
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const granted = hasPrWrite(device)
+
+  const change = async (allowed: boolean): Promise<void> => {
+    if (allowed && !(await confirm(prWriteConfirm(device)))) return
+    setBusy(true)
+    setFailed(false)
+    const ok = await onSetPrWrite(allowed)
+    setBusy(false)
+    setFailed(!ok)
+  }
+
+  return (
+    <>
+      <dt className="self-start text-[11px] leading-6 text-[var(--text-secondary)]">Access</dt>
+      <dd className="min-w-0 pt-0.5 pb-1.5">
+        <div className="rounded-md border border-border bg-[var(--bg-surface)]">
+          <AccessLine
+            title="Chats, sessions and approvals"
+            description="Every paired phone has this. It includes approving an agent's pull request cards."
+          >
+            <span className="text-[11px] text-[var(--text-secondary)]">Always</span>
+          </AccessLine>
+          <AccessLine title="Pull request writes" description={prWriteDescription(device, nowMs)} highlight={granted}>
+            {granted ? (
+              <Button variant="destructive-outline" size="sm" disabled={busy} onClick={() => void change(false)}>
+                Remove
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => void change(true)}>
+                {busy ? 'Allowing…' : 'Allow…'}
+              </Button>
+            )}
+          </AccessLine>
+        </div>
+        {failed && (
+          <div role="alert" className="mt-1.5 text-[12px] text-destructive">
+            Could not save this change. Try again.
+          </div>
+        )}
+      </dd>
+    </>
+  )
+}
+
+function DeviceDetails({
+  device,
+  nowMs,
+  onRename,
+  onSetPrWrite,
+}: {
+  device: DeviceSessionView
+  nowMs: number
   onRename: (name: string | null) => Promise<void>
+  onSetPrWrite: (allowed: boolean) => Promise<boolean>
 }) {
   const platform = platformLabel(device)
   const system = [platform, device.osVersion].filter(Boolean).join(' ')
@@ -225,6 +314,7 @@ function DeviceDetails({
     >
       <dl className="grid grid-cols-[76px_minmax(0,1fr)] items-center gap-x-3 gap-y-1">
         <NameRow device={device} onRename={onRename} />
+        <AccessBlock device={device} nowMs={nowMs} onSetPrWrite={onSetPrWrite} />
         <DetailRow term="Last seen">
           {device.online ? 'Connected now' : absoluteDate(device.lastSeenAt, true)}
         </DetailRow>
@@ -263,11 +353,13 @@ function DeviceRow({
   nowMs,
   onRevoke,
   onRename,
+  onSetPrWrite,
 }: {
   device: DeviceSessionView
   nowMs: number
   onRevoke: (device: DeviceSessionView) => void
   onRename: (device: DeviceSessionView, name: string | null) => Promise<void>
+  onSetPrWrite: (device: DeviceSessionView, allowed: boolean) => Promise<boolean>
 }) {
   const meta = [
     makeAndModel(device),
@@ -295,6 +387,11 @@ function DeviceRow({
               Inactive
             </span>
           )}
+          {hasPrWrite(device) && (
+            <span className="rounded-[4px] bg-[var(--accent-subtle)] px-1.5 text-[10.5px] leading-4 text-[var(--accent)]">
+              PR writes
+            </span>
+          )}
         </div>
         <div className="truncate text-[11px] leading-4 text-[var(--text-secondary)]">
           {meta.map((part, i) => (
@@ -311,7 +408,12 @@ function DeviceRow({
           Revoke
         </Button>
       </div>
-      <DeviceDetails device={device} onRename={(name) => onRename(device, name)} />
+      <DeviceDetails
+        device={device}
+        nowMs={nowMs}
+        onRename={(name) => onRename(device, name)}
+        onSetPrWrite={(allowed) => onSetPrWrite(device, allowed)}
+      />
     </Collapsible>
   )
 }
@@ -413,9 +515,27 @@ export function PairedDevices({
     onChanged()
   }
 
+  const setPrWrite = async (device: DeviceSessionView, allowed: boolean): Promise<boolean> => {
+    let ok = false
+    try {
+      ok = await window.api.app.mobileSetPrWrite(device.id, allowed)
+    } catch (err) {
+      log.warn('failed to change pull request writes for a device', err)
+    }
+    onChanged()
+    return ok
+  }
+
   const rows = (list: DeviceSessionView[]) =>
     list.map((device) => (
-      <DeviceRow key={device.id} device={device} nowMs={nowMs} onRevoke={(d) => void revokeOne(d)} onRename={rename} />
+      <DeviceRow
+        key={device.id}
+        device={device}
+        nowMs={nowMs}
+        onRevoke={(d) => void revokeOne(d)}
+        onRename={rename}
+        onSetPrWrite={setPrWrite}
+      />
     ))
 
   if (total === 0) {

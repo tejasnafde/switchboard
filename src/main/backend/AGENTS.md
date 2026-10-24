@@ -153,7 +153,11 @@ and `deviceDisplayName` (custom, then reported, then the pairing label) is the
 one name the desktop shows. The Settings list rules (groups, search, the
 30-day inactive fold, relative and absolute dates) are pure, in
 `renderer/components/settings/device-list.ts`; nothing expires a device on its
-own, "Revoke inactive" asks first and lists what goes.
+own, "Revoke inactive" asks first and lists what goes. Details has an Access
+block: the baseline every paired phone has, and "Pull request writes" with
+Allow (after a confirm that names the risk, `prWriteConfirm`) or Remove (at once,
+no confirm) through `mobileSetPrWrite`; a device with the scope gets one "PR
+writes" badge on its row.
 
 ## Pull request writes (`pr-write` scope)
 
