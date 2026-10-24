@@ -40,6 +40,8 @@ import app.switchboard.mobile.domain.reviews.PrListData
 import app.switchboard.mobile.domain.reviews.PrRef
 import app.switchboard.mobile.domain.reviews.PrResult
 import app.switchboard.mobile.domain.reviews.PullRequestDecoders
+import app.switchboard.mobile.domain.reviews.PhonePrWriteAction
+import app.switchboard.mobile.domain.reviews.PrConversation
 import app.switchboard.mobile.domain.reviews.RepoRef
 import app.switchboard.mobile.domain.thread.HostWriteResponse
 import app.switchboard.mobile.domain.thread.HtmlLivePages
@@ -125,6 +127,12 @@ object BackendChannels {
     const val PullRequestLinkableChats = "pull-requests:linkable-chats"
     const val PullRequestLink = "pull-requests:link"
     const val PullRequestUnhideRepos = "pull-requests:unhide-repos"
+    /** The pull request threads; open to a phone's scopes. Read only behind `pr_write_scope_v1`. */
+    const val PullRequestConversations = "pull-requests:conversations"
+    /** Who a phone write posts as; open to `admin` or `pr-write`. */
+    const val PullRequestWriteAccount = "pull-requests:write-account"
+    /** The caller's current device scopes (open), so a grant reaches the phone without a reconnect. */
+    const val DeviceScopes = "device-session:scopes"
     /** Payload `{ conversationId, created? }`; re-read the open thread's links rather than matching ids. */
     const val PullRequestLinksChanged = "pull-requests:links-changed"
     /** Merge-back (src/shared/merge-back.ts); gated behind `fork_merge_back_v1`. */
@@ -678,6 +686,36 @@ class SwitchboardRemoteClient(
             PullRequestDecoders::actionResult,
             callback,
         )
+
+    fun deviceScopes(callback: (RemoteResponse<List<String>>) -> Unit) =
+        call(BackendChannels.DeviceScopes, decoder = PullRequestDecoders::scopes, callback = callback)
+
+    fun pullRequestConversations(ref: PrRef, callback: (RemoteResponse<PrResult<List<PrConversation>>>) -> Unit) =
+        call(BackendChannels.PullRequestConversations, array(encodePrRef(ref)), PullRequestDecoders::conversationsResult, callback)
+
+    fun pullRequestWriteAccount(ref: PrRef, callback: (RemoteResponse<PrResult<String>>) -> Unit) =
+        call(BackendChannels.PullRequestWriteAccount, array(encodePrRef(ref)), PullRequestDecoders::writeAccountResult, callback)
+
+    /**
+     * One phone write, sent once. The outcome keeps the transport failure
+     * apart from the answer, because a write that may have reached the host
+     * must never be sent again ([PrWriteOutcomes.classify]).
+     */
+    fun pullRequestWrite(
+        action: PhonePrWriteAction,
+        ref: PrRef,
+        input: JsonObject,
+        callback: (PrWriteOutcome) -> Unit,
+    ) {
+        val scope = rpc.scope
+        if (scope == null || scope.connectionId != connectionId) {
+            callback(PrWriteOutcome.NotSent("Not connected"))
+            return
+        }
+        rpc.invoke(scope, action.channel, array(encodePrRef(ref), input)) { outcome ->
+            callback(PrWriteOutcomes.classify(outcome))
+        }
+    }
 
     private fun encodePrRef(ref: PrRef): JsonObject = obj(
         "host" to JsonString(ref.host),

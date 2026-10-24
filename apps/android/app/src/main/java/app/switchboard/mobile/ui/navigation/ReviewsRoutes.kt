@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -21,6 +22,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.switchboard.mobile.data.local.OfflineSnapshot
+import app.switchboard.mobile.data.remote.PrWriteAuthResult
+import app.switchboard.mobile.data.remote.PrWriteCoordinator
+import app.switchboard.mobile.data.remote.PrWriteRules
+import app.switchboard.mobile.data.remote.SwitchboardPrWriteRemote
 import app.switchboard.mobile.data.remote.PullRequestDetailCoordinator
 import app.switchboard.mobile.data.remote.PullRequestDetailState
 import app.switchboard.mobile.data.remote.ReadyClientLease
@@ -28,6 +33,7 @@ import app.switchboard.mobile.data.remote.ReviewsCoordinator
 import app.switchboard.mobile.data.remote.ReviewsState
 import app.switchboard.mobile.data.remote.SwitchboardReviewsRemote
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
+import app.switchboard.mobile.domain.reviews.PhonePrWrites
 import app.switchboard.mobile.domain.reviews.PhonePullRequests
 import app.switchboard.mobile.domain.reviews.PhoneReviewPill
 import app.switchboard.mobile.domain.reviews.PrDetail
@@ -39,7 +45,11 @@ import app.switchboard.mobile.domain.reviews.WorkOnPr
 import app.switchboard.mobile.domain.reviews.WorkOnPrPlan
 import app.switchboard.mobile.ui.reviews.ConnectionTab
 import app.switchboard.mobile.ui.reviews.ConnectionTabBar
+import app.switchboard.mobile.ui.reviews.PrWriteActions
 import app.switchboard.mobile.ui.reviews.PullRequestDetailScreen
+import app.switchboard.mobile.platform.auth.BiometricPrWriteAuthenticator
+import app.switchboard.mobile.platform.auth.PrWriteAuthenticator
+import app.switchboard.mobile.platform.auth.findFragmentActivity
 import app.switchboard.mobile.ui.reviews.ReviewsScreen
 import kotlinx.coroutines.delay
 
@@ -206,7 +216,13 @@ internal fun PullRequestRouteHost(
             Log.w(TAG, "no browser for the pull request url", error)
         }
     }
+    // Keyed on the route alone: a reconnect keeps the drafts and the answer to a write in flight.
+    val writes = remember(route) {
+        PrWriteCoordinator(ref = route.ref, supported = false, remote = null, log = { Log.w(TAG, it) })
+    }
+    DisposableEffect(writes) { onDispose { writes.close() } }
     if (runtime == null || lease == null) {
+        SideEffect { writes.attach(remote = null, supported = false, onWritten = {}) }
         PullRequestDetailScreen(
             state = PullRequestDetailState(
                 loading = false,
@@ -236,6 +252,35 @@ internal fun PullRequestRouteHost(
         )
     }
     LaunchedEffect(coordinator) { coordinator.load() }
+    PrWriteScopesEffect(writes, lease.scope) {
+        writes.attach(
+            remote = SwitchboardPrWriteRemote(lease.client),
+            supported = PhonePrWrites.CAPABILITY in lease.capabilities,
+            onWritten = coordinator::load,
+        )
+    }
+    val writeState by writes.state.collectAsState()
+    val authenticator = remember(context) {
+        context.findFragmentActivity()?.let(::BiometricPrWriteAuthenticator)
+            ?: PrWriteAuthenticator { _, onResult -> onResult(PrWriteAuthResult.Failed("Device authentication is not available.")) }
+    }
+    val writeActions = remember(writes, authenticator) {
+        PrWriteActions(
+            onCompose = writes::openComposer,
+            onCloseComposer = writes::closeComposer,
+            onDraft = writes::setDraft,
+            onReviewEvent = writes::setReviewEvent,
+            onConfirmComposer = writes::confirmComposer,
+            onResolve = writes::resolve,
+            onDismissSheet = writes::dismissSheet,
+            onPost = {
+                val title = writes.state.value.sheet?.target?.let(PrWriteRules::primaryLabel) ?: "Post"
+                if (writes.beginPost()) authenticator.authenticate(title, writes::authFinished)
+            },
+            onCheckThread = writes::checkThread,
+            onClearNotice = writes::clearNotice,
+        )
+    }
     val state by coordinator.state.collectAsState()
     val plan = state.detail?.let { WorkOnPr.plan(it.summary, lease.capabilities) }
     PullRequestDetailScreen(
@@ -248,7 +293,27 @@ internal fun PullRequestRouteHost(
         onOpenChat = onOpenChat,
         onStartChat = onStartChat,
         onLoadLinkableChats = coordinator::loadLinkableChats,
+        writes = writeState.takeIf { it.supported },
+        writeActions = writeActions,
     )
+}
+
+/**
+ * Attaches the connection, then reads scopes and threads when the screen
+ * opens, on each new connection, and each time it comes back to the front.
+ */
+@Composable
+private fun PrWriteScopesEffect(writes: PrWriteCoordinator, scope: Any, attach: () -> Unit) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(writes, scope, lifecycleOwner) {
+        attach()
+        writes.open()
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) writes.refreshScopes()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 }
 
 internal val AppRoute.PullRequest.ref: PrRef get() = PrRef(host, owner, name, number)

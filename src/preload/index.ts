@@ -219,6 +219,9 @@ const api = {
     /** Name a device on this computer; null or blank restores the reported name. */
     mobileRenameDevice: (id: string, name: string | null): Promise<boolean> =>
       transport.invoke(AppChannels.MOBILE_DEVICE_RENAME, id, name),
+    /** Grant or remove a device's pull request writes (the pr-write scope). */
+    mobileSetPrWrite: (id: string, allowed: boolean): Promise<boolean> =>
+      transport.invoke(AppChannels.MOBILE_DEVICE_PR_WRITE, id, allowed),
     /** Whether an OAuth client is configured for minting, and from where. */
     googleClientStatus: (): Promise<GoogleClientStatus> => transport.invoke(AppChannels.GOOGLE_CLIENT_STATUS),
     googleSetClient: (config: PartialClientConfig): Promise<GoogleClientStatus> =>

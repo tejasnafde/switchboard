@@ -123,6 +123,39 @@ object PullRequestDecoders {
         message = raw.string("message") ?: "Could not read pull requests",
     )
 
+    /** `pull-requests:conversations`. */
+    fun conversationsResult(value: JsonValue?): PrResult<List<PrConversation>> =
+        result(value) { data -> data.array().values.map { conversation(it.obj()) } }
+
+    fun conversation(raw: JsonObject): PrConversation = PrConversation(
+        id = raw.stringRequired("id"),
+        path = raw.string("path"),
+        line = raw.long("line"),
+        startLine = raw.long("startLine"),
+        resolved = raw.boolean("resolved") ?: false,
+        outdated = raw.boolean("outdated") ?: false,
+        comments = raw.optionalArray("comments").map {
+            val comment = it.obj()
+            PrComment(
+                id = comment.stringRequired("id"),
+                author = person(comment.required("author").obj()),
+                body = comment.string("body").orEmpty(),
+                createdAt = comment.long("createdAt") ?: 0,
+            )
+        },
+    )
+
+    /** `pull-requests:write-account`: `{ account }`. */
+    fun writeAccountResult(value: JsonValue?): PrResult<String> =
+        result(value) { data -> data.obj().stringRequired("account") }
+
+    /** A phone write's answer: `{ refresh: string[] }`. */
+    fun writeResult(value: JsonValue?): PrResult<List<String>> =
+        result(value) { data -> data.obj().optionalArray("refresh").map { it.string("refresh key") } }
+
+    /** `device-session:scopes`: the caller's current scopes. */
+    fun scopes(value: JsonValue?): List<String> = value.array().values.map { it.string("scope") }
+
     /** `pull-requests:linked-chats` and `pull-requests:linkable-chats`. */
     fun linkChats(value: JsonValue?): List<PrLinkChat> {
         if (value == null || value === JsonNull) return emptyList()
