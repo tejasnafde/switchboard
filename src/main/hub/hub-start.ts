@@ -173,6 +173,8 @@ export interface HubStartHost {
   announceRow(parentId: string, row: { messageId: string; requestId: string; content: string }): void
   /** Stops a child's session, as the user's Stop does. */
   stopChild(childId: string): Promise<void>
+  /** A child of `parentId` was added, changed phase or got a wake: clients read the parent's view again. */
+  changed?(parentId: string): void
 }
 
 /** Git and disk reads, replaceable in tests. */
@@ -457,6 +459,7 @@ export class HubStarter {
         requestedModel: c.model,
       })
     }
+    this.host.changed?.(batch.parentId)
     void this.runBatch(batchId, batch.parentId, plan).catch((err) => log.error(`batch ${batchId} failed`, err))
     const lines = plan.children.map((c) => `- ${c.title}: ${c.childId}`)
     return [
@@ -572,6 +575,7 @@ export class HubStarter {
       if (result.status === 'rejected' || result.status === 'conflict')
         throw new Error(`the brief was not accepted: ${result.reason}`)
       updateHubChild(c.childId, { phase: 'open' })
+      this.host.changed?.(slot.parentId)
       span.end({ outcome: result.status })
     } catch (err) {
       span.end({ outcome: 'failed', step: 'launch' })
@@ -625,6 +629,7 @@ export class HubStarter {
     } catch (err) {
       log.error(`could not record the blocked wake of ${childId}`, err)
     }
+    this.host.changed?.(entry.parentId)
     await this.host.stopChild(childId).catch((err) => log.warn(`could not stop child ${childId}`, err))
   }
 
@@ -659,6 +664,7 @@ export class HubStarter {
     } catch (writeErr) {
       log.error(`could not record the failed start of ${c.childId}`, writeErr)
     }
+    this.host.changed?.(parentId)
   }
 
   private failedWake(parentId: string, childId: string, summary: string): void {

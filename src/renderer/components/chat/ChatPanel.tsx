@@ -89,6 +89,10 @@ import { confirm } from '../ui/confirm'
 import { Toolbar } from '../ui/toolbar'
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 import { fileDiffNoRevertMessage } from '@shared/file-diff-revert'
+import { useHubView } from '../../stores/hub-store'
+import { HubChip } from '../hub/HubChip'
+import { ChildrenStrip } from '../hub/ChildrenStrip'
+import { ChildBanner } from '../hub/ChildBanner'
 
 interface ChatPanelProps {
   /**
@@ -209,6 +213,7 @@ export function ChatPanel({
   const projectPath = opening?.projectPath ?? activeSession?.projectPath
   const resumeSessionId = activeSession?.resumeSessionId
   const chatTitle = opening?.title ?? activeSession?.title ?? 'New conversation'
+  const hub = useHubView(activeSession?.draft ? null : sessionId)
   const otherSessionId = useLayoutStore((state) => slotSessions(state, chatSlot).other)
   const hasDraftPayload = useDraftStore((state) =>
     Boolean(
@@ -1255,6 +1260,38 @@ export function ChatPanel({
     handleChatSearchClose,
   } = useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot })
 
+  const interruptTurn = async () => {
+    if (!sessionId) return
+    // Stop takes back what is held for a switch or open, as Cancel does.
+    if (cancelHeldSends(sessionId) && !providerStartedRef.current.has(sessionId)) return
+    // No provider session was ever started (e.g. startSession failed) -
+    // there is nothing in main to interrupt and no event will ever
+    // arrive, so clear the stuck status locally instead of no-oping.
+    if (!providerStartedRef.current.has(sessionId)) {
+      messageLifecycle.settleThread(sessionId)
+      updateStatus(sessionId, 'idle')
+      return
+    }
+    try {
+      const result = await window.api.provider?.interrupt?.(sessionId)
+      contentCoalescerRef.current?.flushThread(sessionId)
+      messageLifecycle.settleThread(sessionId)
+      // No turn on the backend (its end fell into a resume gap): no
+      // closing event will come, so clear the status here.
+      if (interruptFoundNoTurn(result)) updateStatus(sessionId, 'idle')
+    } catch (err) {
+      log.warn('provider interrupt failed; stopping wedged session', { sessionId, err })
+      await window.api.provider?.stopSession?.(sessionId).catch((stopErr: unknown) => {
+        log.warn('provider recovery stop failed', { sessionId, err: stopErr })
+      })
+      providerStartedRef.current.delete(sessionId)
+      agentStartedRef.current.delete(sessionId)
+      contentCoalescerRef.current?.flushThread(sessionId)
+      messageLifecycle.settleThread(sessionId)
+      updateStatus(sessionId, 'idle')
+    }
+  }
+
   const composer = (
     <>
       {/* Thinking indicator */}
@@ -1287,98 +1324,76 @@ export function ChatPanel({
         instanceId={instanceId}
       />
 
-      {/* Input - now includes runtime mode + context meter in footer */}
-      <ChatInput
-        sessionId={sessionId}
-        onSend={handleSend}
-        disabled={!hasSession || status === 'exited'}
-        placeholder={
-          wait?.pending
-            ? `${wait.label} You can keep typing.`
-            : status === 'exited'
-              ? 'Agent has exited. Start a new session.'
-              : !hasSession
-                ? (emptyPlaceholder ?? 'Click "+ New Chat" or select a session to start...')
-                : status === 'running' || status === 'thinking'
-                  ? runningPlaceholder(activeSession?.type, followUpDefault)
-                  : 'Message the agent...'
-        }
-        agentType={agentType}
-        onAgentTypeChange={handleAgentTypeChange}
-        instanceId={instanceId}
-        onInstanceChange={handleInstanceChange}
-        canChangeAgent={
-          // Allow switching agent unless a turn is actively running. We
-          // tear down the old provider session on switch so the next send
-          // cleanly spins up a fresh one under the new provider.
-          !hasSession || (status !== 'running' && status !== 'thinking')
-        }
-        runtimeMode={runtimeMode}
-        onRuntimeModeChange={handleRuntimeModeChange}
-        model={model}
-        resolvedModel={resolvedModel}
-        onModelChange={handleModelChange}
-        reasoningEffort={reasoningEffort}
-        onReasoningEffortChange={handleReasoningEffortChange}
-        contextUsage={
-          hasSession && activeSession?.tokenUsage
-            ? {
-                // Hidden until the first context_window event: the char estimate read "0" for every fresh chat.
-                usedTokens: activeSession.tokenUsage.usedTokens,
-                maxTokens: activeSession.tokenUsage.maxTokens ?? 200000,
-              }
-            : undefined
-        }
-        isRunning={status === 'running' || status === 'thinking'}
-        onInterrupt={async () => {
-          if (!sessionId) return
-          // Stop takes back what is held for a switch or open, as Cancel does.
-          if (cancelHeldSends(sessionId) && !providerStartedRef.current.has(sessionId)) return
-          // No provider session was ever started (e.g. startSession failed) -
-          // there is nothing in main to interrupt and no event will ever
-          // arrive, so clear the stuck status locally instead of no-oping.
-          if (!providerStartedRef.current.has(sessionId)) {
-            messageLifecycle.settleThread(sessionId)
-            updateStatus(sessionId, 'idle')
-            return
+      {/* An open child is read-only: the banner takes the input's place. */}
+      {hub.self && hub.parent ? (
+        <ChildBanner
+          parent={hub.parent}
+          child={hub.self}
+          onStop={status === 'running' || status === 'thinking' ? () => void interruptTurn() : undefined}
+        />
+      ) : (
+        <ChatInput
+          sessionId={sessionId}
+          onSend={handleSend}
+          disabled={!hasSession || status === 'exited'}
+          placeholder={
+            wait?.pending
+              ? `${wait.label} You can keep typing.`
+              : status === 'exited'
+                ? 'Agent has exited. Start a new session.'
+                : !hasSession
+                  ? (emptyPlaceholder ?? 'Click "+ New Chat" or select a session to start...')
+                  : status === 'running' || status === 'thinking'
+                    ? runningPlaceholder(activeSession?.type, followUpDefault)
+                    : 'Message the agent...'
           }
-          try {
-            const result = await window.api.provider?.interrupt?.(sessionId)
+          agentType={agentType}
+          onAgentTypeChange={handleAgentTypeChange}
+          instanceId={instanceId}
+          onInstanceChange={handleInstanceChange}
+          canChangeAgent={
+            // Allow switching agent unless a turn is actively running. We
+            // tear down the old provider session on switch so the next send
+            // cleanly spins up a fresh one under the new provider.
+            !hasSession || (status !== 'running' && status !== 'thinking')
+          }
+          runtimeMode={runtimeMode}
+          onRuntimeModeChange={handleRuntimeModeChange}
+          model={model}
+          resolvedModel={resolvedModel}
+          onModelChange={handleModelChange}
+          reasoningEffort={reasoningEffort}
+          onReasoningEffortChange={handleReasoningEffortChange}
+          contextUsage={
+            hasSession && activeSession?.tokenUsage
+              ? {
+                  // Hidden until the first context_window event: the char estimate read "0" for every fresh chat.
+                  usedTokens: activeSession.tokenUsage.usedTokens,
+                  maxTokens: activeSession.tokenUsage.maxTokens ?? 200000,
+                }
+              : undefined
+          }
+          isRunning={status === 'running' || status === 'thinking'}
+          onInterrupt={interruptTurn}
+          onClearMessages={() => {
+            if (!sessionId) return
             contentCoalescerRef.current?.flushThread(sessionId)
             messageLifecycle.settleThread(sessionId)
-            // No turn on the backend (its end fell into a resume gap): no
-            // closing event will come, so clear the status here.
-            if (interruptFoundNoTurn(result)) updateStatus(sessionId, 'idle')
-          } catch (err) {
-            log.warn('provider interrupt failed; stopping wedged session', { sessionId, err })
-            await window.api.provider?.stopSession?.(sessionId).catch((stopErr: unknown) => {
-              log.warn('provider recovery stop failed', { sessionId, err: stopErr })
+            clearMessages(sessionId)
+          }}
+          onArchive={() => {
+            if (!sessionId) return
+            messageLifecycle.settleThread(sessionId)
+            window.api.app.archiveConversation(sessionId, projectPath, chatTitle).catch((err) => {
+              log.warn(`archiveConversation failed for ${sessionId}`, err)
             })
-            providerStartedRef.current.delete(sessionId)
-            agentStartedRef.current.delete(sessionId)
-            contentCoalescerRef.current?.flushThread(sessionId)
-            messageLifecycle.settleThread(sessionId)
-            updateStatus(sessionId, 'idle')
-          }
-        }}
-        onClearMessages={() => {
-          if (!sessionId) return
-          contentCoalescerRef.current?.flushThread(sessionId)
-          messageLifecycle.settleThread(sessionId)
-          clearMessages(sessionId)
-        }}
-        onArchive={() => {
-          if (!sessionId) return
-          messageLifecycle.settleThread(sessionId)
-          window.api.app.archiveConversation(sessionId, projectPath, chatTitle).catch((err) => {
-            log.warn(`archiveConversation failed for ${sessionId}`, err)
-          })
-          removeSession(sessionId)
-        }}
-        onShowSlashHelp={() => setSlashHelpOpen(true)}
-        onMergeBack={() => setMergeBackFor(sessionId ?? null)}
-        leadingControl={landing?.composerLead}
-      />
+            removeSession(sessionId)
+          }}
+          onShowSlashHelp={() => setSlashHelpOpen(true)}
+          onMergeBack={() => setMergeBackFor(sessionId ?? null)}
+          leadingControl={landing?.composerLead}
+        />
+      )}
     </>
   )
 
@@ -1476,6 +1491,7 @@ export function ChatPanel({
                     {identity.branch}
                   </span>
                 )}
+                <HubChip view={hub} />
               </div>
             ) : (
               <span className="font-[500] text-[var(--text-primary)]">Switchboard</span>
@@ -1606,6 +1622,7 @@ export function ChatPanel({
           )}
 
           {sessionId && <LimitResumeRow sessionId={sessionId} />}
+          {hub.self && <ChildrenStrip parent={hub.self} items={hub.children} />}
           {composer}
         </>
       )}

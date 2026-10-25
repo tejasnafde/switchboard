@@ -26,6 +26,8 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
   return { ...actual, remoteProviderLoginPrompt: () => null }
 })
 
+const hubFlag = vi.hoisted(() => ({ on: true }))
+
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
   recordConversationSegment: () => {},
@@ -39,7 +41,7 @@ vi.mock('../../src/main/db/database', () => ({
   getConversationReasoningEffort: () => null,
   getConversationAgentType: () => null,
   getConversationProviderInstanceId: () => null,
-  getSetting: (key: string) => (key === 'labs.hub_children' ? 'true' : null),
+  getSetting: (key: string) => (key === 'labs.hub_children' && hubFlag.on ? 'true' : null),
   getConversationExecutionRoot: () => null,
   commitConversationExecutionRoot: () => {},
   commitConversationProviderSwitch: () => {},
@@ -48,6 +50,23 @@ vi.mock('../../src/main/db/database', () => ({
   isConversationArchived: () => false,
   // hub_children, as one open child: the SQL is covered by hub-db.test.ts.
   openChildParentId: (id: string) => (id === 'child1' ? 'parent1' : null),
+  threadFamilyIds: (id: string) => [id],
+  listHubChildren: (id: string) =>
+    id === 'parent1'
+      ? [
+          {
+            childId: 'child1',
+            parentId: 'parent1',
+            title: 'Usage export',
+            phase: 'open',
+            providerInstanceId: 'claude-work',
+            branch: 'hub/usage-export-1',
+          },
+        ]
+      : [],
+  lastHubWakes: () => new Map(),
+  listPendingHubWakes: () => [],
+  getHubParent: () => null,
 }))
 
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
@@ -57,7 +76,7 @@ import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../s
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 import type { SwitchboardMcpServer } from '../../src/main/mcp/switchboard-mcp-server'
 import type { McpTool } from '../../src/main/mcp/mcp-session'
-import { CHILD_READ_ONLY_CODE } from '../../src/shared/hub'
+import { CHILD_READ_ONLY_CODE, EMPTY_HUB_VIEW, type HubChatView } from '../../src/shared/hub'
 
 class FakeHost implements BackendHost {
   private readonly handlers = new Map<string, (...args: unknown[]) => unknown>()
@@ -161,5 +180,63 @@ describe('child chats in the registry', () => {
     expect(mcp.opened.get('child1')!.instructions).toBeUndefined()
     expect(names('child1')).toContain('own_dependencies')
     expect(names('parent1')).not.toContain('own_dependencies')
+  })
+})
+
+describe('the hub view', () => {
+  it('shows a parent its children with their state, and a child its parent', async () => {
+    hubFlag.on = true
+    const { host } = setup()
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: '/tmp' })
+    const parent = await host.invoke<HubChatView>(ProviderChannels.HUB_LIST_CHILDREN, 'parent1')
+    expect(parent.self?.id).toBe('parent1')
+    expect(parent.parent).toBeNull()
+    expect(parent.children).toHaveLength(1)
+    expect(parent.children[0]).toMatchObject({
+      chat: { id: 'child1' },
+      liveId: 'child1',
+      state: 'paused',
+      account: 'claude-work',
+      branch: 'hub/usage-export-1',
+    })
+    expect(parent.state).toBe('idle')
+
+    const child = await host.invoke<HubChatView>(ProviderChannels.HUB_LIST_CHILDREN, 'child1')
+    expect(child.self?.id).toBe('child1')
+    expect(child.parent?.id).toBe('parent1')
+    expect(child.children).toEqual([])
+
+    expect(await host.invoke(ProviderChannels.HUB_LIST_CHILDREN, 'other')).toEqual(EMPTY_HUB_VIEW)
+  })
+
+  it("tells clients to re-read the parent when a child's status changes, and shows it working", async () => {
+    hubFlag.on = true
+    const host = new FakeHost()
+    const adapter = new Adapter()
+    const registry = new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, undefined, fakeMcp().server)
+    registry.registerIpcHandlers()
+    const events: RuntimeEvent[] = []
+    registry.bus.subscribe((e) => events.push(e))
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: '/tmp' })
+    adapter.onEvent({ type: 'status', threadId: 'child1', status: 'running' })
+    // Claude repeats running on each tool call: only the change counts.
+    adapter.onEvent({ type: 'status', threadId: 'child1', status: 'running' })
+    expect(events.filter((e) => e.type === 'hub.children-changed')).toEqual([
+      { type: 'hub.children-changed', threadId: 'parent1' },
+    ])
+    const parent = await host.invoke<HubChatView>(ProviderChannels.HUB_LIST_CHILDREN, 'parent1')
+    expect(parent.children[0].state).toBe('working')
+    expect(parent.state).toBe('waiting')
+  })
+
+  it('is empty with the flag off', async () => {
+    hubFlag.on = false
+    try {
+      const { host } = setup()
+      expect(await host.invoke(ProviderChannels.HUB_LIST_CHILDREN, 'parent1')).toEqual(EMPTY_HUB_VIEW)
+      expect(await host.invoke(ProviderChannels.HUB_LIST_CHILDREN, 'child1')).toEqual(EMPTY_HUB_VIEW)
+    } finally {
+      hubFlag.on = true
+    }
   })
 })

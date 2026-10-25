@@ -42,6 +42,7 @@ function harness(
   const prepared: string[] = []
   const stopped: string[] = []
   const owned: string[] = []
+  const changed: string[] = []
   const host: HubStartHost = {
     async createWorktree(request) {
       if (opts.failWorktree?.(request)) throw new Error('disk on fire')
@@ -65,6 +66,9 @@ function harness(
     },
     async stopChild(childId) {
       stopped.push(childId)
+    },
+    changed(parentId) {
+      changed.push(parentId)
     },
   }
   const io: Partial<HubStartIo> = {
@@ -96,7 +100,7 @@ function harness(
     commitOf: async (_cwd, ref) => (ref === 'missing' ? null : 'a'.repeat(40)),
   }
   const starter = new HubStarter(host, getSetting, io)
-  return { starter, started, turns, cards, rows, prepared, stopped, owned }
+  return { starter, started, turns, cards, rows, prepared, stopped, owned, changed }
 }
 
 const parent = (mode: HubParentContext['mode']): HubParentContext => ({
@@ -199,6 +203,8 @@ describe('HubStarter', () => {
     expect(wakes).toHaveLength(1)
     expect(wakes[0]).toMatchObject({ kind: 'failed' })
     expect(wakes[0]!.summary).toContain('disk on fire')
+    // Clients re-read the parent when the children are added, as each opens, and when one fails.
+    expect(h.changed).toEqual(Array(4).fill('agent_parent'))
   })
 
   it('approves a card with the mode the parent has then, and a denial starts nothing', async () => {

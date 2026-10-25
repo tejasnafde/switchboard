@@ -429,11 +429,27 @@ export function listPendingHubWakes(parentId: string): HubWakeRow[] {
   }))
 }
 
+/** Each child's newest wake, delivered or not, keyed by child id. */
+export function lastHubWakes(parentId: string): Map<string, { kind: HubWakeKind; summary: string }> {
+  const rows = getDb()
+    .prepare('SELECT child_id, kind, summary FROM hub_wakes WHERE parent_id = ? ORDER BY created_at, id')
+    .all(resolveRootThreadId(parentId)) as Array<Pick<WakeDbRow, 'child_id' | 'kind' | 'summary'>>
+  return new Map(rows.map((r) => [r.child_id, { kind: r.kind, summary: r.summary }]))
+}
+
 /** Marks wakes delivered by the parent turn `revision`; a wake already delivered keeps its first revision. */
 export function markHubWakesDelivered(ids: readonly string[], revision: number): number {
   const db = getDb()
   const stmt = db.prepare('UPDATE hub_wakes SET delivered_revision = ? WHERE id = ? AND delivered_revision IS NULL')
   return db.transaction(() => ids.reduce((n, id) => n + stmt.run(revision, id).changes, 0))()
+}
+
+/** Every open child (phase `starting` or `open`), across parents: the session list's `hub` field. */
+export function listOpenHubChildren(): Array<{ childId: string; parentId: string }> {
+  const rows = getDb()
+    .prepare("SELECT child_id, parent_id FROM hub_children WHERE phase IN ('starting', 'open')")
+    .all() as Array<{ child_id: string; parent_id: string }>
+  return rows.map((r) => ({ childId: r.child_id, parentId: r.parent_id }))
 }
 
 /** Every child in `phase`, across parents: startup recovery and the resource sampler. */

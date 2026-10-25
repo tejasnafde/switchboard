@@ -28,6 +28,7 @@ import {
   type WorkspaceGroup,
 } from './sidebar-helpers'
 import type { Workspace } from '@shared/types'
+import { nestHubChildren } from '@shared/hub'
 import { moveProjectToWorkspace, projectOrganizationItems, reorderWorkspacesById } from '@shared/workspace-organization'
 import { createRendererLogger } from '../../logger'
 
@@ -92,6 +93,8 @@ function SortableProject({
 export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewChat }: SidebarProps) {
   useRenderCount('Sidebar')
   const [projects, setProjects] = useState<Project[]>([])
+  /** Parents whose children the user folded away. */
+  const [foldedHubs, setFoldedHubs] = useState<ReadonlySet<string>>(new Set())
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [scanning, setScanning] = useState<string | null>(null)
   const [importProject, setImportProject] = useState<Project | null>(null)
@@ -810,97 +813,126 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
         {!isCollapsed && (
           <div className="sidebar-threads">
             {project.sessions.length > 0 ? (
-              project.sessions.map((s) => {
-                const isActive = activeSessionId === s.id
-                const isDisplayed = displayedSessionIds.includes(s.id)
-                return (
-                  <div
-                    key={s.id}
-                    className={`sidebar-thread ${isActive ? 'sidebar-thread-active' : ''} ${isDisplayed ? 'sidebar-thread-displayed' : ''}`}
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      setContextMenu({
-                        x: e.clientX,
-                        y: e.clientY,
-                        sessionId: s.id,
-                        projectPath: project.path,
-                        session: s,
-                      })
-                    }}
-                  >
-                    {editingId === s.id ? (
-                      <div className="sidebar-rename-row">
-                        <input
-                          ref={editRef}
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') commitRename(project.path, s.id)
-                            if (e.key === 'Escape') cancelRename()
-                          }}
-                          onBlur={() => commitRename(project.path, s.id)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="sidebar-rename-input"
-                        />
-                        <button
-                          className="sidebar-rename-cancel"
-                          onMouseDown={(e) => {
-                            e.preventDefault()
-                            cancelRename()
-                          }}
-                          title="Cancel (Esc)"
-                        >
-                          &times;
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          className="sidebar-thread-main"
-                          aria-current={isActive ? 'page' : undefined}
-                          onClick={() => onSessionSelect?.(s, project.path)}
-                        >
-                          <span className="sidebar-thread-title">{s.title}</span>
-                          {s.worktreeRecovery?.cleanupDisposition === 'retained' && (
-                            <span
-                              title="This worktree was retained and needs recovery before the conversation can start."
-                              style={{ color: 'var(--warning)', fontSize: 10, flex: '0 0 auto' }}
-                            >
-                              Recovery
-                            </span>
-                          )}
-                          <UnreadBadge sessionId={s.id} />
-                          <RelativeTimeLabel className="sidebar-thread-time" timestamp={s.startedAt} />
-                        </button>
-                        <button
-                          className="sidebar-thread-archive"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleArchive(project.path, s)
-                          }}
-                          title="Archive"
-                        >
-                          <svg
-                            width="11"
-                            height="11"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
+              nestHubChildren(project.sessions).flatMap(({ session: hubRow, children }) => {
+                const childActive = children.some((c) => c.id === activeSessionId)
+                const folded = !childActive && foldedHubs.has(hubRow.id)
+                return [hubRow, ...(folded ? [] : children)].map((s) => {
+                  const isActive = activeSessionId === s.id
+                  const isChild = s !== hubRow
+                  // An open child keeps its parent highlighted.
+                  const isDisplayed = displayedSessionIds.includes(s.id) || (!isChild && childActive)
+                  return (
+                    <div
+                      key={s.id}
+                      className={`sidebar-thread ${isActive ? 'sidebar-thread-active' : ''} ${isDisplayed ? 'sidebar-thread-displayed' : ''} ${isChild ? 'sidebar-thread-child' : children.length > 0 ? 'sidebar-thread-hub' : ''}`}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setContextMenu({
+                          x: e.clientX,
+                          y: e.clientY,
+                          sessionId: s.id,
+                          projectPath: project.path,
+                          session: s,
+                        })
+                      }}
+                    >
+                      {editingId === s.id ? (
+                        <div className="sidebar-rename-row">
+                          <input
+                            ref={editRef}
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') commitRename(project.path, s.id)
+                              if (e.key === 'Escape') cancelRename()
+                            }}
+                            onBlur={() => commitRename(project.path, s.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="sidebar-rename-input"
+                          />
+                          <button
+                            className="sidebar-rename-cancel"
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              cancelRename()
+                            }}
+                            title="Cancel (Esc)"
                           >
-                            <rect x="3" y="3" width="18" height="4" rx="1" />
-                            <path d="M5 7v13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7" />
-                            <line x1="10" y1="12" x2="14" y2="12" />
-                          </svg>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )
+                            &times;
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          {!isChild && children.length > 0 && (
+                            <button
+                              type="button"
+                              className="sidebar-hub-caret"
+                              aria-expanded={!folded}
+                              aria-label={folded ? 'Show child chats' : 'Hide child chats'}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setFoldedHubs((prev) => {
+                                  const next = new Set(prev)
+                                  if (!next.delete(s.id)) next.add(s.id)
+                                  return next
+                                })
+                              }}
+                            >
+                              {folded ? '▶' : '▼'}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="sidebar-thread-main"
+                            aria-current={isActive ? 'page' : undefined}
+                            onClick={() => onSessionSelect?.(s, project.path)}
+                          >
+                            <span className="sidebar-thread-title">{s.title}</span>
+                            {!isChild && children.length > 0 && (
+                              <span className="sidebar-project-count" title="Child chats">
+                                {children.length}
+                              </span>
+                            )}
+                            {s.worktreeRecovery?.cleanupDisposition === 'retained' && (
+                              <span
+                                title="This worktree was retained and needs recovery before the conversation can start."
+                                style={{ color: 'var(--warning)', fontSize: 10, flex: '0 0 auto' }}
+                              >
+                                Recovery
+                              </span>
+                            )}
+                            <UnreadBadge sessionId={s.id} />
+                            <RelativeTimeLabel className="sidebar-thread-time" timestamp={s.startedAt} />
+                          </button>
+                          <button
+                            className="sidebar-thread-archive"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleArchive(project.path, s)
+                            }}
+                            title="Archive"
+                          >
+                            <svg
+                              width="11"
+                              height="11"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <rect x="3" y="3" width="18" height="4" rx="1" />
+                              <path d="M5 7v13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7" />
+                              <line x1="10" y1="12" x2="14" y2="12" />
+                            </svg>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )
+                })
               })
             ) : (
               <button
