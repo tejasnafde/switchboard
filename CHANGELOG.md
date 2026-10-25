@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Changed
+- **Native Android 0.5.22 (versionCode 24).** It adds phone pull request writes (#434, landed on main by #439): with the pr-write scope the desktop grants, a phone can reply to, resolve and comment on a pull request and submit a review, after a confirm sheet and a fingerprint or device credential check. The compact file diff also shows nothing for a file with no changed lines and says "1 line", not "1 lines" (#417).
+
 ### Added
 - **iOS app: saved projects, Settings and a local Done notice.** A machine's project list shows the list it answered last time while it is offline, with "Showing saved projects" and Retry. A Settings screen (account, machines, follow-up default, version) opens from the Machines list and from `switchboard://settings`. When a turn ends with the app in the background and no push covers it, the phone shows a local "Done" notice that opens the chat. These match the native Android app.
 
