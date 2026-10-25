@@ -311,6 +311,9 @@ describe('phone pull request rules', () => {
     expect(mergeOnDesktopNote('bitbucket')).toBe(
       'Reviews, comments and merges post as you on Bitbucket, so they stay on the desktop app.',
     )
+    expect(mergeOnDesktopNote('github', true)).toBe(
+      'Merges, closes, reviewers and re-runs stay on the desktop app. Replies, comments and reviews from this phone post as you on GitHub.',
+    )
   })
 
   it('puts failed checks first, then running, and says what the hidden rest are', () => {
