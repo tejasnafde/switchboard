@@ -16,10 +16,18 @@
       ]
     },
     "reactNativeIos": {
-      "status": "staged",
-      "flag": "mobile_pr_writes",
-      "followUpRelease": "The Expo Reviews thread list, composer and confirm sheet with device authentication ship in the phones pull request of this feature. The current app keeps its read-only Reviews tab and calls no write channel.",
-      "evidence": ["src/shared/pull-request-phone-writes.ts"]
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/pr-write.ts",
+        "apps/mobile/src/lib/device-unlock.ts",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/components/PrConversations.tsx",
+        "apps/mobile/src/components/PrWriteSheet.tsx",
+        "apps/mobile/src/screens/PullRequestScreen.tsx",
+        "apps/mobile/src/lib/__tests__/pr-write.test.ts",
+        "apps/mobile/src/screens/__tests__/pr-writes.test.tsx",
+        "apps/mobile/app.json"
+      ]
     },
     "nativeAndroid": {
       "status": "implemented",
@@ -63,11 +71,16 @@
     },
     "storageDataMigration": {
       "status": "implemented",
-      "evidence": ["tests/unit/pr-write-scope.test.ts"]
+      "evidence": [
+        "tests/unit/pr-write-scope.test.ts"
+      ]
     },
     "updateRelease": {
       "status": "implemented",
-      "evidence": ["src/shared/ws-protocol.ts", "src/shared/pull-request-phone-writes.ts"]
+      "evidence": [
+        "src/shared/ws-protocol.ts",
+        "src/shared/pull-request-phone-writes.ts"
+      ]
     }
   },
   "verification": {
@@ -76,13 +89,15 @@
       "tests/unit/pr-write-scope.test.ts: pr-write is not a pairing scope; a phone without it is refused every write channel; a granted phone reaches only reply, resolve, comment, submit-review and write-account, never merge, decline, reviewers, re-run, line comments or unresolve; a phone cannot call the grant channel; grant and removal are stored and reach the live-socket listener; a grant made while offline is in the scopes of the next auth; a grant is dropped after 30 days unseen; a revoked device cannot be granted.",
       "tests/unit/pr-write-scope.test.ts through the gate and the real PullRequestService: a phone write with no proof, a digest of other text, or a digest over another account is refused and the provider is never called; a matching write posts once and the same write id is refused afterwards (no re-send), also when two copies race; a refused write may retry under its id once the sheet matches; the desktop and admin devices need no proof; a phone review with line comments is refused. Two digest vectors are pinned for the Android port.",
       "tests/unit/device-list.test.ts: the PR writes badge shows only for a device with pr-write; the Access line describes the grant before it is given and reads Allowed, with Last write as a relative time when the device has written; the grant confirm names the risk (posts as you on GitHub and Bitbucket, anyone who can unlock the phone, Face ID or passcode, what stays on the desktop) with the label Allow writes; an offline device's confirm says the grant takes effect at its next connect.",
+      "apps/mobile jest (pr-write.test.ts, pr-writes.test.tsx): the Expo write request carries the digest of the exact trimmed text it sends, matching both pinned vectors; write ids are w_ plus 24 base64url characters; no threads or write UI without pr_write_scope_v1, threads read-only with the no-scope note without pr-write; scopes are read again on focus; a cancelled, unavailable or no-passcode unlock sends nothing; a rejected send is sent once and shows Not sure it posted with Check thread, keeping the draft; not permitted shows the removed copy and hides the write buttons; a second Post after a refusal uses a new write id.",
       "npm run typecheck and npm test green."
     ],
     "hardware": [],
     "notExercised": [
       "Android: no device or emulator run. BiometricPrompt (strong biometric or device credential on API 30 and later, any biometric or the credential on API 28 and 29), the no-passcode path and the sheets on a real phone are unexercised.",
       "No installed build was run: the scope is stored on existing deviceSessions rows (an optional lastPrWriteAt field, pr-write in the scopes array), and an upgrade from existing user data is still to be checked on a packaged app before merge.",
-      "No phone can reach the write path until the phones pull request ships, so no end to end write from a phone was made. The Devices tab Access block (Allow with its confirm, Remove, the inline error) was not clicked through in a running app; no component test covers it."
+      "No end to end write from a phone was made in this branch. The Devices tab Access block (Allow with its confirm, Remove, the inline error) was not clicked through in a running app; no component test covers it.",
+      "iOS is unexercised on hardware: the user has no iOS device, so the Expo write path never ran on an iPhone. Face ID, the passcode fallback, a phone with no passcode and the NSFaceIDUsageDescription prompt are unverified. The real-install test of this feature is the Android build. expo-local-authentication is a new native module, so the iOS app needs a new build before the write UI works; the fingerprint runtime keeps this change off older binaries over OTA."
     ]
   }
 }

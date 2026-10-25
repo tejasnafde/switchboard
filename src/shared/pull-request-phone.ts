@@ -293,9 +293,15 @@ export function diffStatLabel(pr: PrSummary): string {
   return `+${pr.additions} -${pr.deletions}${files}`
 }
 
-/** Follows "Merge on desktop." where the Merge button would be. */
-export function mergeOnDesktopNote(host: PrHost): string {
-  return `Reviews, comments and merges post as you on ${PR_HOST_LABEL[host]}, so they stay on the desktop app.`
+/**
+ * Follows "Merge on desktop." where the Merge button would be. `canWrite` is a
+ * phone the desktop granted `pr-write`: it posts replies, comments and reviews
+ * itself, so only the rest stays on the desktop.
+ */
+export function mergeOnDesktopNote(host: PrHost, canWrite = false): string {
+  return canWrite
+    ? `Merges, closes, reviewers and re-runs stay on the desktop app. Replies, comments and reviews from this phone post as you on ${PR_HOST_LABEL[host]}.`
+    : `Reviews, comments and merges post as you on ${PR_HOST_LABEL[host]}, so they stay on the desktop app.`
 }
 
 export const RERUN_ON_DESKTOP_NOTE = 'Re-run failed jobs on the desktop.'
