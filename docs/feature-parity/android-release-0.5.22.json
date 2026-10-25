@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-release-0.5.22",
+  "summary": "Native Android release 0.5.22 (versionCode 24): the next Play build after 0.5.21. Adds what merged after 0.5.21: phone pull request writes (#434, landed on main by #439) and the compact file diff fixes (#417): no rows for a file with no changed lines, and a singular "line".",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Android version bump only; the desktop parts of each shipped feature are covered by that feature's own manifest."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo client has its own OTA and build lanes; this bump touches only apps/android."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No API change; the backend contracts these Android features use are covered by their own manifests."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes in this bump."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        ".github/workflows/mobile-release.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "./gradlew :app:testDebugUnitTest passes on this branch."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Install of the Play internal build on a phone, which is also the real-install test of phone pull request writes (next step, by the user)."
+    ]
+  }
+}
