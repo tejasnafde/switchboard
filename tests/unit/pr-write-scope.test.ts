@@ -109,6 +109,14 @@ describe('granting and removing', () => {
     expect(sessions.listSessionViews()[0].scopes).toEqual(['chat'])
   })
 
+  it('lists a lapsed grant as not allowed before the device connects again', () => {
+    const id = pair()
+    sessions.setPrWriteScope(id, true)
+    const seen = sessions.listSessionViews()[0].lastSeenAt
+    expect(sessions.listSessionViews(new Set(), seen + PR_WRITE_INACTIVE_MS - 1)[0].scopes).toContain('pr-write')
+    expect(sessions.listSessionViews(new Set(), seen + 2 * PR_WRITE_INACTIVE_MS)[0].scopes).toEqual(['chat'])
+  })
+
   it('keeps a grant given to a device that was already away for a month', () => {
     const id = pair()
     const seen = sessions.listSessionViews()[0].lastSeenAt

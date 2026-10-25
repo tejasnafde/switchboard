@@ -131,8 +131,14 @@ object PhonePullRequests {
     /** Checks shown before "+ N more passed" when the card is expanded. */
     const val PHONE_CHECKS_SHOWN = 6
 
-    fun mergeOnDesktopNote(host: String): String =
-        "Reviews, comments and merges post as you on ${hostLabel(host)}, so they stay on the desktop app."
+    /** [canWrite]: the desktop granted this phone `pr-write`, so it posts replies, comments and reviews itself. */
+    fun mergeOnDesktopNote(host: String, canWrite: Boolean = false): String =
+        if (canWrite) {
+            "Merges, closes, reviewers and re-runs stay on the desktop app. " +
+                "Replies, comments and reviews from this phone post as you on ${hostLabel(host)}."
+        } else {
+            "Reviews, comments and merges post as you on ${hostLabel(host)}, so they stay on the desktop app."
+        }
     const val RERUN_ON_DESKTOP_NOTE = "Re-run failed jobs on the desktop."
 
     fun hostLabel(host: String): String = when (host) {

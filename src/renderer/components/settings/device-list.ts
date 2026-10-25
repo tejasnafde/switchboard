@@ -1,9 +1,10 @@
 /**
  * The rules behind the Paired devices list: search, sort, the "Online now" and
- * "Earlier" groups, the inactive fold, and how dates read. Pure, so the tab
- * only renders.
+ * "Earlier" groups, the inactive fold, how dates read, and the pull request
+ * writes copy. Pure, so the tab only renders.
  */
 import { deviceDisplayName, type DeviceSessionView } from '@shared/device-auth'
+import type { ConfirmOptions } from '../ui/confirm'
 
 /** Not connected for this long, the device folds away and "Revoke inactive" offers it. */
 export const INACTIVE_AFTER_MS = 30 * 24 * 60 * 60_000
@@ -110,4 +111,38 @@ export function renameValue(draft: string, current: string, reported: string): s
   if (next === current) return undefined
   if (next === '' || next === reported) return null
   return next
+}
+
+export function hasPrWrite(device: Pick<DeviceSessionView, 'scopes'>): boolean {
+  return device.scopes.includes('pr-write')
+}
+
+/** The Access block's "Pull request writes" description. */
+export function prWriteDescription(device: Pick<DeviceSessionView, 'scopes' | 'lastPrWriteAt'>, nowMs: number): string {
+  if (!hasPrWrite(device)) return 'Comment, reply, resolve and review as you, from this phone. Never merge.'
+  if (device.lastPrWriteAt === undefined) return 'Allowed.'
+  return `Allowed. Last write: ${relativeTime(device.lastPrWriteAt, nowMs)}.`
+}
+
+/** The confirm before a grant: it names the risk, and when an offline phone gets it. */
+export function prWriteConfirm(device: DeviceSessionView): ConfirmOptions {
+  const body = [
+    'It posts as you on GitHub and Bitbucket, with the accounts signed in on this computer.',
+    'Anyone who can unlock the phone can do the same.',
+    'The Switchboard app asks for Face ID or the passcode and shows each write in full before it posts.',
+    'You can remove this here at any time.',
+  ]
+  if (!device.online) body.push('The phone is offline. This takes effect when it next connects.')
+  return {
+    title: `Let ${deviceDisplayName(device)} write to pull requests?`,
+    body: body.join(' '),
+    items: [
+      { label: 'Allowed', detail: 'Comment, reply, resolve a thread, approve, request changes' },
+      {
+        label: 'Stays here',
+        detail: 'Merge, close, decline, reviewers, re-run checks, line comments, reopen a thread',
+      },
+    ],
+    confirmLabel: 'Allow writes',
+  }
 }

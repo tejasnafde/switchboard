@@ -221,6 +221,11 @@ class PhonePullRequestsFixtureTest {
             "Reviews, comments and merges post as you on Bitbucket, so they stay on the desktop app.",
             PhonePullRequests.mergeOnDesktopNote("bitbucket"),
         )
+        assertEquals(
+            "Merges, closes, reviewers and re-runs stay on the desktop app. " +
+                "Replies, comments and reviews from this phone post as you on GitHub.",
+            PhonePullRequests.mergeOnDesktopNote("github", canWrite = true),
+        )
     }
 
     @Test

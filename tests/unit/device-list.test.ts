@@ -1,4 +1,4 @@
-/** The Paired devices list rules: groups, search, the inactive fold, sort and dates. */
+/** The Paired devices list rules: groups, search, the inactive fold, sort, dates and pull request writes. */
 import { describe, it, expect } from 'vitest'
 import type { DeviceSessionView } from '@shared/device-auth'
 import {
@@ -6,8 +6,11 @@ import {
   INACTIVE_AFTER_MS,
   absoluteDate,
   groupDevices,
+  hasPrWrite,
   isInactive,
   matchesDeviceSearch,
+  prWriteConfirm,
+  prWriteDescription,
   relativeTime,
 } from '../../src/renderer/components/settings/device-list'
 
@@ -134,5 +137,40 @@ describe('renameValue', () => {
   })
   it('stores a new trimmed name', () => {
     expect(renameValue('  Tejas phone ', 'Pixel 9', 'Pixel 9')).toBe('Tejas phone')
+  })
+})
+
+describe('pull request writes', () => {
+  const writer = { ...iphone, scopes: [...iphone.scopes, 'pr-write' as const] }
+
+  it('shows the badge only for a device with the pr-write scope', () => {
+    expect(hasPrWrite(iphone)).toBe(false)
+    expect(hasPrWrite(writer)).toBe(true)
+  })
+  it('describes what a grant gives, before it is given', () => {
+    expect(prWriteDescription(iphone, NOW)).toBe(
+      'Comment, reply, resolve and review as you, from this phone. Never merge.',
+    )
+  })
+  it('reads Allowed, with the last write when there is one', () => {
+    expect(prWriteDescription(writer, NOW)).toBe('Allowed.')
+    expect(prWriteDescription({ ...writer, lastPrWriteAt: NOW - 3 * 60 * 60_000 }, NOW)).toBe(
+      'Allowed. Last write: 3 hours ago.',
+    )
+  })
+  it('names the risk in the grant confirm', () => {
+    const ask = prWriteConfirm(iphone)
+    expect(ask.title).toBe("Let Tejas's iPhone write to pull requests?")
+    expect(ask.confirmLabel).toBe('Allow writes')
+    expect(ask.destructive).toBeUndefined()
+    expect(ask.body).toContain('posts as you on GitHub and Bitbucket')
+    expect(ask.body).toContain('Anyone who can unlock the phone')
+    expect(ask.body).toContain('Face ID or the passcode')
+    expect(ask.items?.map((i) => i.label)).toEqual(['Allowed', 'Stays here'])
+    expect(ask.items?.[1]?.detail).toContain('Merge, close')
+  })
+  it('says an offline phone gets the grant at its next connect', () => {
+    expect(prWriteConfirm(iphone).body).not.toContain('offline')
+    expect(prWriteConfirm(galaxy).body).toContain('The phone is offline. This takes effect when it next connects.')
   })
 })
