@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "android-release-0.5.22",
-  "summary": "Native Android release 0.5.22 (versionCode 24): the next Play build after 0.5.21. Adds what merged after 0.5.21: phone pull request writes (#434, landed on main by #439) and the compact file diff fixes (#417): no rows for a file with no changed lines, and a singular "line".",
+  "summary": "Native Android release 0.5.22 (versionCode 24): the next Play build after 0.5.21. Adds what merged after 0.5.21: phone pull request writes (#434, landed on main by #439) and the compact file diff fixes (#417): no rows for a file with no changed lines, and a singular line.",
   "surfaces": {
     "desktop": {
       "status": "not_applicable",
