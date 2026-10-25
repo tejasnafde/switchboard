@@ -77,6 +77,8 @@ import {
   recordConversationSegment,
   findManagedConversationForNativeSession,
   getDb,
+  getSetting,
+  listOpenHubChildren,
 } from '../db/database'
 import { claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
@@ -112,6 +114,7 @@ import {
   setProjectOverride,
 } from '../project-settings'
 import { projectOverrideKey } from '@shared/project-settings'
+import { hubChildrenEnabled, withHubFields } from '@shared/hub'
 
 const log = createLogger('ipc:app')
 
@@ -169,10 +172,21 @@ function capMessages<T extends { messages: ChatMessage[] }>(
  * Provider files are deliberately absent; SCAN_SESSIONS exposes those only in
  * the explicit Import/Recovery surface. */
 export async function visibleSessionsForProject(projectPath: string): Promise<SessionSummary[]> {
-  return projectManagedRootSessions(getManagedRootConversationsForProject(projectPath)).map((session) => {
+  const sessions = projectManagedRootSessions(getManagedRootConversationsForProject(projectPath)).map((session) => {
     const forkMetadata = getConversationForkMetadata(session.id)
     return forkMetadata ? { ...session, forkMetadata } : session
   })
+  return withHubFields(sessions, openHubChildren())
+}
+
+/** Every open child while child chats are on, for the session rows' `hub` field; none while they are off. */
+function openHubChildren(): Array<{ childId: string; parentId: string }> {
+  try {
+    return hubChildrenEnabled(process.env, getSetting) ? listOpenHubChildren() : []
+  } catch (err) {
+    log.warn('could not read open child chats; rows go without their hub field', err)
+    return []
+  }
 }
 
 function enrichRecoveryCandidates(candidates: SessionSummary[]): SessionSummary[] {
@@ -349,10 +363,11 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   host.handle(AppChannels.GET_PROJECTS, async () => {
     const rows = getProjects()
     const convsByProject = getManagedRootConversationsForProjects(rows.map((row) => row.path))
+    const openChildren = openHubChildren()
     const projects: Project[] = rows.map((row) => ({
       path: row.path,
       name: row.name,
-      sessions: projectManagedRootSessions(convsByProject.get(row.path) ?? []),
+      sessions: withHubFields(projectManagedRootSessions(convsByProject.get(row.path) ?? []), openChildren),
       workspaceId: row.workspace_id ?? null,
     }))
     return projects

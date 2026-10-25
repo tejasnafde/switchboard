@@ -133,6 +133,8 @@ export function deriveRecentSessions(_input: {
     .flatMap(({ machineId, projects }) =>
       projects.flatMap((project) =>
         project.sessions.map((session) => {
+          // An open child is reached through its parent.
+          if (session.hub && 'parentId' in session.hub) return null
           const key = `${machineId}\0${session.id}`
           if (seen.has(key)) return null
           seen.add(key)

@@ -1281,6 +1281,30 @@ html, body, #root {
   outline-offset: -2px;
 }
 
+/* Child chats: indented under their parent, which gets a fold caret in its left padding. */
+.sidebar-thread-hub .sidebar-thread-main {
+  padding-left: 18px;
+}
+
+.sidebar-thread-child .sidebar-thread-main {
+  padding-left: 26px;
+}
+
+.sidebar-hub-caret {
+  position: absolute;
+  left: 3px;
+  z-index: 1;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 8px;
+  cursor: pointer;
+}
+
 /* ─── Turn presentation ─────────────────────────────────────────── */
 
 .turn-activity {

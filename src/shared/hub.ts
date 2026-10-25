@@ -6,12 +6,11 @@
  * a chat type. Children report through small wake rows (a summary and a
  * pointer into the child's own transcript), delivered to the parent as one
  * batched turn while it is idle.
- *
- * Nothing reads this module outside tests until the children runner lands.
  */
 import type { RuntimeMode } from './provider-events'
 import { RUNTIME_MODES } from './provider-events'
 import type { LimitState, SettingReader } from './limit-resume'
+import type { PrLinkChat } from './pull-request-links'
 import { isAgentProvider, type AgentProvider } from './types'
 
 /**
@@ -431,4 +430,119 @@ export function hubBatchDetail(view: HubBatchView): string {
     lines.push(`Disk: needs about ${formatGiB(view.needBytes)}, ${formatGiB(view.freeBytes)} free.`)
   if (view.mainCheckout) lines.push(HUB_MAIN_CHECKOUT_WARNING)
   return lines.join('\n')
+}
+
+// ─── Views for clients ──────────────────────────────────────────
+
+/** A chat the hub UI can open the sidebar way: root id, every id of its thread, title, agent, project. */
+export type HubChatRef = Omit<PrLinkChat, 'linkSource'>
+
+/** One child as the strip and the sidebar show it. */
+export interface HubChildView {
+  chat: HubChatRef
+  /** The id its session runs under now, or null when it is not running. Stop goes there. */
+  liveId: string | null
+  phase: HubChildPhase
+  state: ChildState
+  /** Working, but it already reported: its native subagents still run. */
+  reported?: true
+  limit: LimitState['kind']
+  waitingForSlot: boolean
+  account: string | null
+  branch: string | null
+  lastWake: { kind: HubWakeKind; summary: string } | null
+  /** Context tokens and known cost (USD, only where the provider reports it) of its last turn. */
+  lastTurn: { usedTokens: number | null; costUsd: number | null } | null
+}
+
+/** What a chat shows about the hub: its parent while it is an open child, its unsettled children while it has any. */
+export interface HubChatView {
+  /** The chat itself; null in the empty view. */
+  self: HubChatRef | null
+  parent: HubChatRef | null
+  children: HubChildView[]
+  state: ParentState | null
+}
+
+export const EMPTY_HUB_VIEW: HubChatView = { self: null, parent: null, children: [], state: null }
+
+/** The optional `hub` field of a session list row (flag on only): on an open child, or on a parent with open children. */
+export type SessionHubField = { parentId: string } | { openChildren: number }
+
+/** Session list rows with their `hub` field, from every open child as `{ childId, parentId }`. Pure. */
+export function withHubFields<T extends { id: string; hub?: SessionHubField }>(
+  sessions: readonly T[],
+  openChildren: ReadonlyArray<{ childId: string; parentId: string }>,
+): T[] {
+  if (openChildren.length === 0) return [...sessions]
+  const parentOf = new Map(openChildren.map((c) => [c.childId, c.parentId]))
+  const counts = new Map<string, number>()
+  for (const c of openChildren) counts.set(c.parentId, (counts.get(c.parentId) ?? 0) + 1)
+  return sessions.map((s) => {
+    const parentId = parentOf.get(s.id)
+    if (parentId) return { ...s, hub: { parentId } }
+    const n = counts.get(s.id)
+    return n ? { ...s, hub: { openChildren: n } } : s
+  })
+}
+
+/**
+ * Sidebar order with each open child under its parent, in the list's own
+ * order. A child whose parent is not in the list (archived, another project)
+ * stays at the top level.
+ */
+export function nestHubChildren<T extends { id: string; hub?: SessionHubField }>(
+  sessions: readonly T[],
+): Array<{ session: T; children: T[] }> {
+  const ids = new Set(sessions.map((s) => s.id))
+  const parentOf = (s: T) => (s.hub && 'parentId' in s.hub && ids.has(s.hub.parentId) ? s.hub.parentId : null)
+  const children = new Map<string, T[]>()
+  for (const s of sessions) {
+    const p = parentOf(s)
+    if (p) children.set(p, [...(children.get(p) ?? []), s])
+  }
+  return sessions.filter((s) => !parentOf(s)).map((session) => ({ session, children: children.get(session.id) ?? [] }))
+}
+
+const CHILD_STATE_LABELS: Record<ChildState, string> = {
+  settled: 'Settled',
+  starting: 'Starting',
+  needs_you: 'Needs you',
+  working: 'Working',
+  limited: 'Limited',
+  asked_hub: 'Asked the hub',
+  result_ready: 'Result ready',
+  blocked: 'Blocked',
+  failed: 'Failed',
+  paused: 'Paused',
+}
+
+export function childStateLabel(c: Pick<HubChildView, 'state' | 'reported' | 'waitingForSlot'>): string {
+  if (c.reported) return 'Reported, subagents still running'
+  if (c.state === 'starting' && c.waitingForSlot) return 'Waiting for a slot'
+  return CHILD_STATE_LABELS[c.state]
+}
+
+const PARENT_STATE_LABELS: Record<ParentState, string | null> = {
+  working: 'Working',
+  limited: 'Limited',
+  updates_ready: 'Updates ready',
+  waiting: 'Waiting for children',
+  done: 'Done',
+  idle: null,
+}
+
+/** The header chip: "Hub, 3 children" and the parent state when it has one. */
+export function hubChipText(view: Pick<HubChatView, 'children' | 'state'>): string {
+  const n = view.children.length
+  const label = view.state ? PARENT_STATE_LABELS[view.state] : null
+  return `Hub, ${n} ${n === 1 ? 'child' : 'children'}${label ? ` · ${label}` : ''}`
+}
+
+/** What a Nudge chip puts in the parent's message: who it is for and how to pass it on. */
+export function hubNudgeContent(child: HubChatRef): string {
+  return (
+    `The user's next words are for the child chat "${child.title}" (childId: ${child.id}). ` +
+    'Pass them on with send_agent_message, in your own words where that helps.'
+  )
 }

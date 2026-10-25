@@ -814,6 +814,8 @@ const api = {
     resumeQueuedTurns: (threadId: string): Promise<{ ok: boolean; message?: string }> =>
       transport.invoke(ProviderChannels.RESUME_QUEUED_TURNS, threadId),
     /** Auto-resume after a usage limit: whether the flag is on, a chat's Limited row, Cancel, Resume now. */
+    hubListChildren: (threadId: string): Promise<import('@shared/hub').HubChatView> =>
+      transport.invoke(ProviderChannels.HUB_LIST_CHILDREN, threadId),
     limitResumeEnabled: (): Promise<boolean> => transport.invoke(ProviderChannels.LIMIT_RESUME_ENABLED),
     limitResumeGet: (threadId: string): Promise<import('@shared/limit-resume').LimitState> =>
       transport.invoke(ProviderChannels.LIMIT_RESUME_GET, threadId),

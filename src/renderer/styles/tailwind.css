@@ -41,6 +41,7 @@
 @source '../components/chat/MergeBackRow.tsx';
 @source '../components/chat/QueuedTurnBar.tsx';
 @source '../components/chat/LimitResumeRow.tsx';
+@source '../components/hub';
 @source '../components/chat/visuals';
 @source '../components/chat/HtmlFileCard.tsx';
 @source '../components/preview';

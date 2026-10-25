@@ -466,6 +466,8 @@ export const ProviderChannels = {
   LIMIT_RESUME_GET: 'provider:limit-resume-get',
   LIMIT_RESUME_CANCEL: 'provider:limit-resume-cancel',
   LIMIT_RESUME_NOW: 'provider:limit-resume-resume-now',
+  /** Child chats (`hub_children`): a chat's `HubChatView` (its parent, or its children). */
+  HUB_LIST_CHILDREN: 'provider:hub-list-children',
   LIST_SKILLS: 'provider:list-skills',
   ANSWER_QUESTION: 'provider:answer-question',
   /**

@@ -282,6 +282,16 @@ export interface RuntimeLimitResumeChangedEvent {
 }
 
 /**
+ * A parent's children changed (`hub_children`): one started, ended a turn,
+ * opened or closed a card, or reported. `threadId` is the parent's root id.
+ * Clients read the parent's view again with `provider:hub-list-children`.
+ */
+export interface RuntimeHubChildrenChangedEvent {
+  type: 'hub.children-changed'
+  threadId: string
+}
+
+/**
  * An agent's approval card closed and Switchboard recorded what happened
  * (`shared/agent-approval-cards.ts`). `content` is the stored system row, so
  * a live client shows exactly what a reload shows.
@@ -383,6 +393,7 @@ export type RuntimeEvent = (
   | RuntimeTurnDequeuedEvent
   | RuntimeTurnQueueHeldEvent
   | RuntimeLimitResumeChangedEvent
+  | RuntimeHubChildrenChangedEvent
   | RuntimeErrorEvent
   | RuntimeStatusEvent
   | RuntimeSessionEvent

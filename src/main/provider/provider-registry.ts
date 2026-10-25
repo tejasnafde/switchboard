@@ -60,6 +60,10 @@ import {
   getConversationById,
   getConversationTitle,
   listHubChildrenInPhase,
+  listHubChildren,
+  listPendingHubWakes,
+  lastHubWakes,
+  getHubParent,
   resolveRootThreadId,
   rewriteSystemMarker,
   getDb,
@@ -149,7 +153,19 @@ import { buildChildHubMcpTools, buildHubMcpTools, HUB_INSTRUCTIONS, START_CHILDR
 import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } from '../hub/hub-start'
 import { appMetrics } from '../runtime'
 import { HubResourceSampler } from '../hub/hub-measure'
-import { CHILD_READ_ONLY_CODE, CHILD_READ_ONLY_TEXT, hubChildrenEnabled } from '@shared/hub'
+import {
+  CHILD_READ_ONLY_CODE,
+  CHILD_READ_ONLY_TEXT,
+  childState,
+  EMPTY_HUB_VIEW,
+  hubChildrenEnabled,
+  parentState,
+  type HubChatRef,
+  type HubChatView,
+  type HubChildView,
+  type HubWakeKind,
+} from '@shared/hub'
+import type { HubChildRow } from '../db/hubs'
 import { sqliteApprovalCardStore } from '../db/agent-approval-cards'
 import { sqliteHeldPeerMessageStore } from '../db/peer-held-messages'
 import {
@@ -221,6 +237,28 @@ import { pendingRequestKey, type PendingBlockingEvent } from '@shared/pending-re
 import { turnPreviewLine } from '@shared/turn-preview'
 
 const log = createLogger('provider:registry')
+
+/** A child's events that can change its shown state, so its parent's view is read again. */
+const HUB_VIEW_EVENTS: ReadonlySet<RuntimeEvent['type']> = new Set([
+  'status',
+  'turn.completed',
+  'request.opened',
+  'request.closed',
+  'request.expired',
+  'limit-resume.changed',
+])
+
+function hubChatRef(id: string, fallbackTitle = 'Untitled'): HubChatRef {
+  const conv = getConversationById(id)
+  return {
+    id,
+    familyIds: threadFamilyIds(id),
+    title: conv?.title ?? fallbackTitle,
+    agentType: conv?.agent_type ?? 'claude-code',
+    projectPath: conv?.project_path ?? '',
+    updatedAt: conv?.updated_at ?? 0,
+  }
+}
 
 /** Old plus new content. A bigger card still streams live, but is not stored. */
 const MIRRORED_FILE_DIFF_MAX_CHARS = 2 * 1024 * 1024
@@ -469,6 +507,71 @@ export class ProviderRegistry implements PeerToolHost {
       stopChild: async (childId: string) => {
         await this.stopChildSession?.(this.liveSessionId(childId) ?? childId)
       },
+      changed: (parentId: string) => this.publishHubChange(parentId, true),
+    }
+  }
+
+  /** Clients re-read the parent's view; `rows` also re-reads session lists, whose `hub` field moved. */
+  private publishHubChange(parentId: string, rows = false): void {
+    this.bus.publish({ type: 'hub.children-changed', threadId: parentId })
+    if (rows) this.host.emit(AppChannels.CONVERSATIONS_CHANGED)
+  }
+
+  /** A chat's hub view: its parent while it is an open child, else its unsettled children. Empty with the flag off. */
+  hubView(threadId: string): HubChatView {
+    if (!this.hubChildrenOn()) return EMPTY_HUB_VIEW
+    const span = perfSpan('hub.view')
+    const root = resolveRootThreadId(threadId)
+    const parentId = this.hubStarter.parentOfOpenChild(root)
+    const rows = parentId ? [] : listHubChildren(root)
+    const wakes = rows.length > 0 ? lastHubWakes(root) : null
+    const children = rows.map((c) => this.hubChildView(c, wakes?.get(c.childId) ?? null))
+    const state =
+      rows.length > 0
+        ? parentState({
+            ownTurnRunning: this.liveTurnRunning(root),
+            ownLimit: this.limitResumer?.view(root).kind ?? 'none',
+            heldWakes: getHubParent(root)?.held ? listPendingHubWakes(root).length : 0,
+            children: children.map((c) => ({ state: c.state, limit: c.limit })),
+          })
+        : null
+    span.end({ children: children.length, child: parentId !== null })
+    if (!parentId && rows.length === 0) return EMPTY_HUB_VIEW
+    return { self: hubChatRef(root), parent: parentId ? hubChatRef(parentId) : null, children, state }
+  }
+
+  private liveTurnRunning(conversationId: string): boolean {
+    const live = this.liveSessionId(conversationId)
+    return live !== null && (this.sessionStatus.get(live) === 'running' || this.hasOutstandingTurn(live))
+  }
+
+  private hubChildView(c: HubChildRow, wake: { kind: HubWakeKind; summary: string } | null): HubChildView {
+    const waitingForSlot = this.hubStarter.waitingForSlot(c.childId)
+    const turn = this.hubStarter.lastTurnOf(c.childId)
+    const limit = this.limitResumer?.view(c.childId).kind ?? 'none'
+    const shown = childState({
+      phase: c.phase,
+      depsReady: true,
+      waitingForSlot,
+      sessionKnown: true,
+      blockingRequest: this.getPendingRequests(c.childId).length > 0,
+      running: this.liveTurnRunning(c.childId),
+      nativeSubagentsRunning: false,
+      limit,
+      lastWake: wake?.kind ?? null,
+      parentRepliedSinceWake: false,
+    })
+    return {
+      chat: hubChatRef(c.childId, c.title),
+      liveId: this.liveSessionId(c.childId),
+      phase: c.phase,
+      ...shown,
+      limit,
+      waitingForSlot,
+      account: c.providerInstanceId,
+      branch: c.branch,
+      lastWake: wake ? { kind: wake.kind, summary: wake.summary } : null,
+      lastTurn: turn ? { usedTokens: turn.usedTokens ?? null, costUsd: turn.costUsd ?? null } : null,
     }
   }
 
@@ -2088,6 +2191,8 @@ export class ProviderRegistry implements PeerToolHost {
     // nothing, so a client that was not listening at the time - the desktop,
     // for a chat the phone started - had no way to ever learn a session was
     // running. `listSessions` and the re-attach descriptor both read this.
+    // Claude repeats `running` on every tool call; only a change moves a child's shown state.
+    const statusChanged = event.type === 'status' && this.sessionStatus.get(event.threadId) !== event.status
     if (event.type === 'status') this.sessionStatus.set(event.threadId, event.status)
     if (event.type === 'session.provider') this.sessionIdentity.set(event.threadId, event)
     // Open cards a reconnecting or reloaded client can recover - see
@@ -2167,6 +2272,10 @@ export class ProviderRegistry implements PeerToolHost {
     }
     if (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))
       this.hubStarter.onTurnEnded(event.threadId)
+    if ((event.type === 'status' ? statusChanged : HUB_VIEW_EVENTS.has(event.type)) && this.hubChildrenOn()) {
+      const parentId = this.hubStarter.parentOfOpenChild(event.threadId)
+      if (parentId) this.publishHubChange(parentId)
+    }
     if (event.type === 'turn.dequeued') {
       // A promoted message joins the running turn, whose mode stands.
       const held = this.heldTurnModes.get(event.messageId)
@@ -3726,6 +3835,7 @@ export class ProviderRegistry implements PeerToolHost {
     )
     this.host.handle(ProviderChannels.LIST_QUEUED_TURNS, (threadId: string) => this.listQueuedTurns(threadId))
     this.host.handle(ProviderChannels.RESUME_QUEUED_TURNS, (threadId: string) => this.resumeQueuedTurns(threadId))
+    this.host.handle(ProviderChannels.HUB_LIST_CHILDREN, (threadId: string) => this.hubView(threadId))
     this.host.handle(ProviderChannels.LIMIT_RESUME_ENABLED, () => Boolean(this.limitResumer?.enabled()))
     this.host.handle(
       ProviderChannels.LIMIT_RESUME_GET,

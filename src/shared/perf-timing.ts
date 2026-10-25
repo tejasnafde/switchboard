@@ -29,6 +29,8 @@ export const PERF_THRESHOLDS = {
   'hub.own-deps': 0,
   // Per base commit of a start_children call: git show and lockfile reads per folder.
   'hub.deps-plan': 200,
+  // A chat's children view (strip, banner, chip): DB reads per open, per change event.
+  'hub.view': 100,
   ipc: 200,
 } as const
 

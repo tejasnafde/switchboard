@@ -14,7 +14,7 @@ const machineLayerSource = readFileSync(
 describe('sidebar conversation row semantics', () => {
   it('uses a native button as the primary local conversation action', () => {
     expect(sidebarSource).toContain('className="sidebar-thread-main"')
-    const wrapperStart = sidebarSource.indexOf('<div\n                    key={s.id}')
+    const wrapperStart = sidebarSource.search(/<div\s+key=\{s\.id\}/)
     const wrapperOpenEnd = sidebarSource.indexOf('>', wrapperStart)
     const mainButtonStart = sidebarSource.indexOf('className="sidebar-thread-main"', wrapperStart)
     expect(wrapperStart).toBeGreaterThan(-1)
