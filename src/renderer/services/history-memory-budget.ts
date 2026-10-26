@@ -12,6 +12,12 @@ export interface HistoryMemoryBudget {
   targetShare: number
   /** A trim never keeps fewer rows than this, whatever their size. */
   minKept: number
+  /**
+   * Nor fewer user turns, so the list at its bottom stays past the point
+   * where it prefetches the older window (`shouldLoadOlder`) and a trim does
+   * not loop with that load.
+   */
+  minKeptTurns: number
 }
 
 export const HISTORY_MEMORY_BUDGET: HistoryMemoryBudget = {
@@ -19,6 +25,7 @@ export const HISTORY_MEMORY_BUDGET: HistoryMemoryBudget = {
   maxBytes: 16 * 1024 * 1024,
   targetShare: 0.75,
   minKept: 2 * DESKTOP_HISTORY_WINDOW,
+  minKeptTurns: 8,
 }
 
 /** Fixed cost of a row (object, id, role, timestamp), in bytes. */
@@ -54,46 +61,48 @@ function isLive(message: ChatMessage): boolean {
   )
 }
 
+export interface HistoryTrimLimits {
+  /** Index of the first row any view renders; nothing from it on is dropped. */
+  protectFrom?: number
+  /** Ids the backend may not know (rows appended live); never the new first row. */
+  liveIds?: ReadonlySet<string>
+  budget?: HistoryMemoryBudget
+}
+
 /**
  * How many of the oldest rows to drop so the chat fits its budget, or 0.
  *
- * The cut lands on a user row, so whole turns go and the new first row is a
- * row the backend paged out (a valid older-window cursor). It never reaches
- * `protectFrom` (the first row shown in any view), the last turn (the
- * streaming tail), a live row, or the last `minKept` rows.
+ * The cut lands on a user row the backend paged out, so whole turns go and
+ * the new first row is a valid older-window cursor. It never reaches
+ * `protectFrom`, the last `minKeptTurns` turns (the streaming tail among
+ * them), a live row, or the last `minKept` rows.
  */
-export function planHistoryTrim(
-  messages: readonly ChatMessage[],
-  protectFrom: number = messages.length,
-  budget: HistoryMemoryBudget = HISTORY_MEMORY_BUDGET,
-): number {
+export function planHistoryTrim(messages: readonly ChatMessage[], limits: HistoryTrimLimits = {}): number {
+  const { protectFrom = messages.length, liveIds, budget = HISTORY_MEMORY_BUDGET } = limits
   const sizes = messages.map(estimateMessageBytes)
   const total = sizes.reduce((sum, size) => sum + size, 0)
   if (messages.length <= budget.maxMessages && total <= budget.maxBytes) return 0
 
+  const isTurnStart = (message: ChatMessage) => message.role === 'user' && !message.parentToolCallId
   let limit = Math.min(protectFrom, messages.length - budget.minKept)
   const firstLive = messages.findIndex(isLive)
   if (firstLive >= 0) limit = Math.min(limit, firstLive)
-  let lastUser = -1
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === 'user') {
-      lastUser = i
-      break
-    }
+  let turnsKept = 0
+  for (let i = messages.length - 1; i >= 0 && turnsKept < budget.minKeptTurns; i--) {
+    if (isTurnStart(messages[i])) turnsKept++
+    if (turnsKept === budget.minKeptTurns) limit = Math.min(limit, i)
   }
-  limit = Math.min(limit, Math.max(lastUser, 0))
+  if (turnsKept < budget.minKeptTurns) return 0
 
   const keepMessages = budget.maxMessages * budget.targetShare
   const keepBytes = budget.maxBytes * budget.targetShare
-  let dropped = 0
   let droppedBytes = 0
   let cut = 0
   for (let i = 1; i <= limit; i++) {
-    dropped++
     droppedBytes += sizes[i - 1]
-    if (messages[i].role !== 'user' || messages[i].parentToolCallId) continue
+    if (!isTurnStart(messages[i]) || liveIds?.has(messages[i].id)) continue
     cut = i
-    if (messages.length - dropped <= keepMessages && total - droppedBytes <= keepBytes) break
+    if (messages.length - i <= keepMessages && total - droppedBytes <= keepBytes) break
   }
   return cut
 }

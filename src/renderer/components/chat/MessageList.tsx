@@ -371,10 +371,24 @@ export function MessageList({
 
   // Rows were added above the one in view: put it back where it was. While
   // following the bottom there is nothing to keep; the follow logic owns it.
+  const firstTurnIdRef = useRef<string | undefined>(undefined)
   useLayoutEffect(() => {
     const container = containerRef.current
     const anchor = viewAnchorRef.current
+    const previousFirst = firstTurnIdRef.current
+    firstTurnIdRef.current = turns[0]?.[0]?.id
     if (!container) return
+    // A memory trim dropped the oldest rows while following: the browser
+    // clamped the scroll to the new bottom, so render the rows there before paint.
+    if (
+      !isScrollLockedRef.current &&
+      previousFirst !== undefined &&
+      previousFirst !== firstTurnIdRef.current &&
+      turnIndexHolding(turns, previousFirst) < 0
+    ) {
+      virtualizer.scrollOffset = container.scrollTop
+      rerender()
+    }
     if (anchor && isScrollLockedRef.current) {
       const index = turnIndexHolding(turns, anchor.messageId)
       const start = index >= 0 ? virtualizer.measurementsCache[index]?.start : undefined

@@ -24,7 +24,13 @@ const load = vi.fn(async (_id: string, opts?: HistoryLoadOptions) =>
 )
 ;(globalThis as { window?: unknown }).window = { api: { app: { loadSessionById: load } } }
 
-const budget: HistoryMemoryBudget = { maxMessages: 300, maxBytes: 100_000_000, targetShare: 0.5, minKept: 50 }
+const budget: HistoryMemoryBudget = {
+  maxMessages: 300,
+  maxBytes: 100_000_000,
+  targetShare: 0.5,
+  minKept: 50,
+  minKeptTurns: 1,
+}
 const session = () => useAgentStore.getState().sessions.find((s) => s.id === 's')!
 
 describe('history memory trim', () => {
@@ -60,6 +66,15 @@ describe('history memory trim', () => {
     expect(trimHistoryToBudget('s', budget)).toBe(0)
     release()
     expect(trimHistoryToBudget('s', budget)).toBe(300)
+  })
+
+  it('never makes a row appended live the cursor, since a full read may not return its id', () => {
+    useAgentStore.getState().setMessages('s', rows.slice(0, 300), null)
+    for (const row of rows.slice(300)) {
+      useAgentStore.getState().appendMessage('s', { ...row, id: `remote_${row.id}` })
+    }
+    expect(trimHistoryToBudget('s', budget)).toBe(298)
+    expect(session().olderHistoryCursor).toBe('m298')
   })
 
   it('waits for a pending jump to a row', () => {

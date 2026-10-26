@@ -17,7 +17,13 @@ function chat(count: number, content = 'x'): ChatMessage[] {
   })) as ChatMessage[]
 }
 
-const budget: HistoryMemoryBudget = { maxMessages: 100, maxBytes: 1_000_000, targetShare: 0.5, minKept: 10 }
+const budget: HistoryMemoryBudget = {
+  maxMessages: 100,
+  maxBytes: 1_000_000,
+  targetShare: 0.5,
+  minKept: 10,
+  minKeptTurns: 1,
+}
 
 describe('estimateMessageBytes', () => {
   it('counts text, tool calls, image data URLs and diffs', () => {
@@ -46,19 +52,19 @@ describe('estimateMessageBytes', () => {
 
 describe('planHistoryTrim', () => {
   it('drops nothing inside the budget', () => {
-    expect(planHistoryTrim(chat(100), 100, budget)).toBe(0)
+    expect(planHistoryTrim(chat(100), { budget })).toBe(0)
   })
 
   it('drops whole turns down to the target share of the count budget', () => {
     const messages = chat(120)
-    const drop = planHistoryTrim(messages, messages.length, budget)
+    const drop = planHistoryTrim(messages, { budget })
     expect(drop).toBe(70)
     expect(messages[drop].role).toBe('user')
   })
 
   it('trims by bytes when few rows are large', () => {
     const messages = chat(40, 'y'.repeat(15_000))
-    const drop = planHistoryTrim(messages, messages.length, budget)
+    const drop = planHistoryTrim(messages, { budget })
     expect(drop).toBeGreaterThan(0)
     expect(drop % 2).toBe(0)
     const kept = messages.slice(drop).reduce((sum, m) => sum + estimateMessageBytes(m), 0)
@@ -66,35 +72,46 @@ describe('planHistoryTrim', () => {
   })
 
   it('keeps the shown rows and everything after them', () => {
-    expect(planHistoryTrim(chat(120), 30, budget)).toBe(30)
-    expect(planHistoryTrim(chat(120), 31, budget)).toBe(30)
-    expect(planHistoryTrim(chat(120), 0, budget)).toBe(0)
+    expect(planHistoryTrim(chat(120), { protectFrom: 30, budget })).toBe(30)
+    expect(planHistoryTrim(chat(120), { protectFrom: 31, budget })).toBe(30)
+    expect(planHistoryTrim(chat(120), { protectFrom: 0, budget })).toBe(0)
   })
 
   it('keeps the last turn while it streams', () => {
     const messages = chat(120)
     const oneTurn = [messages[0], ...messages.slice(1).map((m) => ({ ...m, role: 'assistant' as const }))]
-    expect(planHistoryTrim(oneTurn, oneTurn.length, budget)).toBe(0)
+    expect(planHistoryTrim(oneTurn, { budget })).toBe(0)
   })
 
   it('stops before a row that waits on the user or the backend', () => {
     const messages = chat(120)
     messages[20] = { ...messages[20], deliveryState: 'pending' }
-    expect(planHistoryTrim(messages, messages.length, budget)).toBe(20)
+    expect(planHistoryTrim(messages, { budget })).toBe(20)
     const asking = chat(120)
     asking[41] = { ...asking[41], approval: { toolName: 'Bash', detail: 'ls', status: 'pending' } }
-    expect(planHistoryTrim(asking, asking.length, budget)).toBe(40)
+    expect(planHistoryTrim(asking, { budget })).toBe(40)
   })
 
   it('keeps at least minKept rows whatever their size', () => {
     const messages = chat(20, 'z'.repeat(200_000))
-    const drop = planHistoryTrim(messages, messages.length, budget)
+    const drop = planHistoryTrim(messages, { budget })
     expect(messages.length - drop).toBe(budget.minKept)
+  })
+
+  it('keeps the last minKeptTurns turns, so the list at its bottom does not prefetch them back', () => {
+    const messages = chat(120)
+    expect(planHistoryTrim(messages, { budget: { ...budget, minKeptTurns: 30 } })).toBe(60)
+    expect(planHistoryTrim(chat(20), { budget: { ...budget, maxMessages: 5, minKept: 0, minKeptTurns: 11 } })).toBe(0)
+  })
+
+  it('never makes a row appended live the first one', () => {
+    const messages = chat(120)
+    expect(planHistoryTrim(messages, { liveIds: new Set(['m70']), budget })).toBe(72)
   })
 
   it('never makes a subagent row the first one', () => {
     const messages = chat(120)
     messages[70] = { ...messages[70], parentToolCallId: 'agent-call' }
-    expect(planHistoryTrim(messages, messages.length, budget)).toBe(72)
+    expect(planHistoryTrim(messages, { budget })).toBe(72)
   })
 })

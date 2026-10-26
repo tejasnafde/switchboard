@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "chat-memory-cap",
-  "summary": "The desktop renderer keeps at most 1,500 rows or an estimated 16 MiB of one chat in the agent store. Past either limit it drops whole oldest turns down to 75% of the limits and marks the chat as having older history, so a scroll to the top loads them again through the existing older-window path. The trim waits while any message list of the chat is scrolled up, while a history load or a jump to a row is in flight, and while cmd+F holds the chat; it never drops a rendered row, the last turn or a pending card. Readers of the whole chat (cmd+F, global search, fork anchors, export, handoff) already call ensureFullHistory, which reloads what a trim dropped.",
+  "summary": "The desktop renderer keeps at most 1,500 rows or an estimated 16 MiB of one chat in the agent store. Past either limit it drops whole oldest turns down to 75% of the limits and marks the chat as having older history, so a scroll to the top loads them again through the existing older-window path. The trim waits while any message list of the chat is scrolled up, while a history load or a jump to a row is in flight, and while cmd+F holds the chat; it never drops a rendered row, the last 8 turns or a pending card, and never makes a row appended live (whose id a full read may not return) the new first row. Readers of the whole chat (cmd+F, global search, fork anchors, export, handoff) already call ensureFullHistory, which reloads what a trim dropped.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -42,13 +42,14 @@
   },
   "verification": {
     "automated": [
-      "tests/unit/history-memory-budget.test.ts: the estimate counts text, tool calls, image data URLs and diffs; a trim drops whole turns to the target share of the count budget and of the byte budget, keeps the first shown row and all after it, the streaming last turn, pending rows and at least minKept rows, and never starts at a subagent row.",
-      "tests/unit/history-memory-trim.test.ts: through the real agent store, a trim drops the oldest rows and sets the older cursor, two older-window loads then restore every row and clear it, ensureFullHistory restores every row after a trim, and a cmd+F hold, a pending jump or a scrolled-up view stops the trim."
+      "tests/unit/history-memory-budget.test.ts: the estimate counts text, tool calls, image data URLs and diffs; a trim drops whole turns to the target share of the count budget and of the byte budget, keeps the first shown row and all after it, the last minKeptTurns turns, pending rows and at least minKept rows, and never starts at a subagent row or a row appended live.",
+      "tests/unit/history-memory-trim.test.ts: through the real agent store, a trim drops the oldest rows and sets the older cursor, two older-window loads then restore every row and clear it, ensureFullHistory restores every row after a trim, a row appended live is never the new cursor, and a cmd+F hold, a pending jump or a scrolled-up view stops the trim."
     ],
     "hardware": [],
     "notExercised": [
       "Not run in the built app: scroll stability during a trim at the bottom of a long chat was not watched by eye or by the e2e prepend check.",
-      "No phone run; the phones do not change."
+      "No phone run; the phones do not change.",
+      "Rows appended live in this app run are never a cut point, so a session that grows only by live rows is not trimmed until the chat is loaded again from the backend."
     ]
   }
 }

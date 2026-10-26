@@ -76,8 +76,9 @@ past either, `trimHistoryToBudget` drops whole oldest turns down to 75% and sets
 again. It runs after an append or an older window, when a list returns to the
 bottom, and when no list shows the chat; it waits while any list is scrolled up,
 a load or a jump to a row is in flight, or cmd+F holds the chat
-(`holdFullHistory`), and never drops a rendered row, the last turn or a pending
-card. Full readers call `ensureFullHistory`, which reloads what a trim dropped. It also asks `imageRefs: true`: base64
+(`holdFullHistory`), and never drops a rendered row, the last 8 turns or a
+pending card. The new first row is never one appended live (`liveAppendedIds`):
+its id, such as a sent message's `remote_` id, may be missing from a full read. Full readers call `ensureFullHistory`, which reloads what a trim dropped. It also asks `imageRefs: true`: base64
 images come back as `MessageImage.ref` (message id, index, byte size, with
 `mimeType`) and `app:load-history-image` serves the bytes when a thumbnail
 scrolls into view. A fork anchor digested over a referenced image still

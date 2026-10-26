@@ -1,6 +1,6 @@
 import type { ChatMessage } from '@shared/types'
 import type { HistoryLoadOptions } from '@shared/phone-history-window'
-import { useAgentStore } from '../stores/agent-store'
+import { liveAppendedIds, useAgentStore } from '../stores/agent-store'
 import { createRendererLogger } from '../logger'
 import { perfSpan } from '../perf'
 import { DESKTOP_HISTORY_WINDOW, olderThan } from './history-window'
@@ -187,7 +187,7 @@ export function trimHistoryToBudget(sessionId: string, budget: HistoryMemoryBudg
     if (at < 0) return 0
     protectFrom = Math.min(protectFrom, at)
   }
-  const count = planHistoryTrim(session.messages, protectFrom, budget)
+  const count = planHistoryTrim(session.messages, { protectFrom, liveIds: liveAppendedIds(sessionId), budget })
   if (count === 0 || !store.dropOldestMessages(sessionId, count)) return 0
   log.info('history trimmed to budget', { sessionId, dropped: count, kept: session.messages.length - count })
   return count
