@@ -5,6 +5,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Changed
+- **A long chat no longer keeps all of its history in memory.** After a search or a long scroll back, a chat could hold every row of a 14,000-row transcript in the window. Now one chat keeps at most 1,500 rows or about 16 MiB; past that the oldest turns leave memory once you are back at the bottom, and they load again when you scroll up. Search, fork, export and the agent handoff still load the whole chat when they need it.
 - **Native Android 0.5.22 (versionCode 24).** It adds phone pull request writes (#434, landed on main by #439): with the pr-write scope the desktop grants, a phone can reply to, resolve and comment on a pull request and submit a review, after a confirm sheet and a fingerprint or device credential check. The compact file diff also shows nothing for a file with no changed lines and says "1 line", not "1 lines" (#417).
 
 ### Added

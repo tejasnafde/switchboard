@@ -328,6 +328,8 @@ interface AgentStore {
     newest: ChatMessage[],
     nextCursor: string | null,
   ) => boolean
+  /** Drop the oldest `count` rows; the new first row becomes the older-window cursor. */
+  dropOldestMessages: (sessionId: string, count: number) => boolean
   clearMessages: (sessionId: string) => void
   setConversationId: (sessionId: string, conversationId: string) => void
   setPendingRequests: (sessionId: string, pending: readonly PendingBlockingEvent[]) => void
@@ -576,6 +578,19 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         if (!messages) return s
         applied = true
         return { ...s, messages, olderHistoryCursor: nextCursor }
+      }),
+    }))
+    return applied
+  },
+
+  dropOldestMessages: (sessionId, count) => {
+    let applied = false
+    set((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId || count <= 0 || count >= s.messages.length) return s
+        applied = true
+        const messages = s.messages.slice(count)
+        return { ...s, messages, olderHistoryCursor: messages[0].id }
       }),
     }))
     return applied
