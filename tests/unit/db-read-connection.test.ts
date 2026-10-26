@@ -1,6 +1,6 @@
 /** History window reads use a second, read-only connection to the same database file. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { closeDb, getDb, getReadDb, messageWindowRows, saveMessage } from '../../src/main/db/database'
@@ -59,6 +59,22 @@ describe('getReadDb', () => {
     expect(next.open).toBe(true)
     expect(next.readonly).toBe(true)
   })
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'falls back to the main connection when the read connection cannot open, until the next open',
+    () => {
+      const main = getDb()
+      chmodSync(main.name, 0o000)
+      try {
+        expect(getReadDb()).toBe(main)
+      } finally {
+        chmodSync(main.name, 0o644)
+      }
+      expect(getReadDb()).toBe(main)
+      closeDb()
+      expect(getReadDb().readonly).toBe(true)
+    },
+  )
 
   it('falls back to the main connection when the database is not in WAL mode', () => {
     const main = getDb()
