@@ -115,9 +115,9 @@ function openAndMigrate(dbPath: string): Database.Database {
  * A second, read-only connection to the same file, for the history window
  * reads (`messageWindowRows`, `getDisplayBodyEnrichments`). It opens after
  * `getDb()` has migrated the file. The main connection is in WAL mode, so
- * this one reads the last committed state without waiting for a writer. All
- * writes stay on `getDb()`. An in-memory database (tests), a database that is
- * not in WAL mode, or a failed open uses the main connection.
+ * this one reads the last committed state. All writes stay on `getDb()`. An
+ * in-memory database (tests), a database that is not in WAL mode, or a failed
+ * open uses the main connection.
  */
 export function getReadDb(): Database.Database {
   const main = getDb()
@@ -790,23 +790,27 @@ function runSlowMigrationsOn(db: Database.Database): void {
   span.end()
 }
 
-/**
- * `forQuit` makes the close final: a late writer (an adapter still unwinding,
- * a window event) gets an error instead of a fresh native handle opened while
- * the process is being torn down.
- */
 /** The quit did not happen after all (an update that never started): allow reopening. */
 export function reopenDbAfterAbortedQuit(): void {
   closedForQuit = false
 }
 
+/**
+ * `forQuit` makes the close final: a late writer (an adapter still unwinding,
+ * a window event) gets an error instead of a fresh native handle opened while
+ * the process is being torn down.
+ */
 export function closeDb(opts: { forQuit?: boolean } = {}): void {
   if (opts.forQuit) closedForQuit = true
   readDbUnavailable = false
   if (readDb) {
     const reader = readDb
     readDb = null
-    reader.close()
+    try {
+      reader.close()
+    } catch (err) {
+      log.warn('read-only history connection did not close', err)
+    }
   }
   if (db) {
     const open = db

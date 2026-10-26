@@ -70,7 +70,8 @@ function measure(mode: 'main' | 'read'): { cold: number; median: number; p90: nu
   return { cold, median: warm[Math.floor(RUNS / 2)], p90: warm[Math.ceil(RUNS * 0.9) - 1] }
 }
 
-it.skipIf(!process.env.SB_PERF_BENCH)(
+// The main-connection run makes the file unreadable with chmod, which neither Windows nor root honours.
+it.skipIf(!process.env.SB_PERF_BENCH || process.platform === 'win32' || process.getuid?.() === 0)(
   'times the history window reads on the main and the read-only connection',
   () => {
     const previousDataDir = process.env.SWITCHBOARD_DATA_DIR
