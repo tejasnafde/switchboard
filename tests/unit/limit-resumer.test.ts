@@ -237,6 +237,21 @@ describe('LimitResumer', () => {
     expect(host.sent).toEqual(['c1'])
   })
 
+  it('a turn sent during the usage reading wins: the resume waits for it', async () => {
+    resumer.onTurnEnded('c1', limited(), 'turn1')
+    host.usage = async () => {
+      host.turnRunning = true
+      return host.reading
+    }
+    await vi.advanceTimersByTimeAsync(3 * MIN)
+    expect(host.sent).toEqual([])
+    expect(getLimitResume('c1')?.state).toBe('armed')
+    host.turnRunning = false
+    host.usage = async () => host.reading
+    await vi.advanceTimersByTimeAsync(5 * MIN)
+    expect(host.sent).toEqual(['c1'])
+  })
+
   it('waits while a card is open, and for the session when the chat is not running', async () => {
     resumer.onTurnEnded('c1', limited(), 'turn1')
     host.card = true

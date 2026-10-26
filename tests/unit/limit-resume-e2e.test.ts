@@ -220,19 +220,20 @@ class FakeAdapter implements ProviderAdapter {
     if (queuedId) this.onEvent({ type: 'turn.dequeued', threadId, messageId: queuedId, reason: 'started' })
     this.onEvent({ type: 'status', threadId, status: 'running' })
   }
-  /** The running turn ends, on `limit` or normally. */
+  /** The running turn ends, on `limit` or normally, with the events in the order the real adapters send them. */
   end(threadId: string, limit?: TurnLimit): void {
     this.running = false
-    this.onEvent({ type: 'turn.completed', threadId, ...(limit ? { limit } : {}) })
     if (limit) {
       this.held = true
       this.onEvent({ type: 'turn.queue-held', threadId, held: true, reason: 'limit' })
+      this.onEvent({ type: 'turn.completed', threadId, limit })
       this.onEvent({ type: 'status', threadId, status: 'error' })
       return
     }
-    this.onEvent({ type: 'status', threadId, status: 'idle' })
     const next = this.held ? undefined : this.queue.shift()
     if (next) this.start(threadId, next.text, next.id)
+    this.onEvent({ type: 'turn.completed', threadId })
+    if (!next) this.onEvent({ type: 'status', threadId, status: 'idle' })
   }
   async resumeQueuedTurns(): Promise<boolean> {
     this.held = false
