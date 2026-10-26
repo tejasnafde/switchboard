@@ -813,7 +813,7 @@ export interface RuntimeStatusEvent {
    * backend counts it as running until its `turn.completed`.
    */
   newTurn?: boolean
-  /** With `running`: the turn is compacting its context, so a message steered in now could be lost. */
+  /** With `running`: the turn is compacting its context (true) or has finished compacting (false). A steer while compacting could be lost. */
   compacting?: boolean
 }
 

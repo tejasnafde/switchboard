@@ -1601,6 +1601,12 @@ export class ProviderRegistry implements PeerToolHost {
         this.announcePeerLinks([fromRoot, targetRoot])
         return { id, held: true }
       }
+      // A Send on the kept row would be a user message to an open child, which is refused,
+      // so a lineage refusal keeps no row: the agent is told to report it instead.
+      if (linkVerdict.linked && !linkVerdict.ok && this.peerLinks.isLineage(fromRoot, targetRoot)) {
+        log.warn(`lineage peer send refused (${linkVerdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
+        throw new Error(linkVerdict.message)
+      }
       if (linkVerdict.linked && !linkVerdict.ok) {
         log.warn(`linked peer send refused (${linkVerdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
         this.recordUndelivered({
@@ -1666,7 +1672,7 @@ export class ProviderRegistry implements PeerToolHost {
           chargedEdge,
           fromRoot,
           targetRoot,
-          canQueue: input.delivery !== undefined,
+          canQueue: !!input.delivery,
         })
         if (withdrawn) {
           // A running turn keeps the checkpoint it now has; a fresh one belongs
@@ -2253,8 +2259,10 @@ export class ProviderRegistry implements PeerToolHost {
     // Claude repeats `running` on every tool call; only a change moves a child's shown state.
     const statusChanged = event.type === 'status' && this.sessionStatus.get(event.threadId) !== event.status
     if (event.type === 'status') this.sessionStatus.set(event.threadId, event.status)
-    if (event.type === 'status' && event.compacting) this.steerBlocked.add(event.threadId)
-    else if ((event.type === 'status' && event.status !== 'running') || event.type === 'turn.completed')
+    if (event.type === 'status' && event.compacting !== undefined) {
+      if (event.compacting) this.steerBlocked.add(event.threadId)
+      else this.steerBlocked.delete(event.threadId)
+    } else if ((event.type === 'status' && event.status !== 'running') || event.type === 'turn.completed')
       this.steerBlocked.delete(event.threadId)
     if (event.type === 'session.provider') this.sessionIdentity.set(event.threadId, event)
     // Open cards a reconnecting or reloaded client can recover - see
@@ -3740,7 +3748,7 @@ export class ProviderRegistry implements PeerToolHost {
     // read: honouring a claimed `'agent'` would let a client take the agent
     // path's budget while skipping the approval canUseTool gives it.
     this.host.handle(ProviderChannels.DELIVER_PEER_MESSAGE, async (input: PeerMessageInput) =>
-      this.deliverPeerMessage({ ...input, initiator: 'user' }),
+      this.deliverPeerMessage({ ...input, delivery: undefined, initiator: 'user' }),
     )
     this.host.handle(
       ProviderChannels.LINK_PEER,

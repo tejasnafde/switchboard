@@ -196,6 +196,11 @@ export const PEER_LINK_NOT_DELIVERED =
   'or a summary of it, in your final reply to the user so nothing is lost. Switchboard has also kept ' +
   'the message in this chat for the user to send by hand.'
 
+/** As `PEER_LINK_NOT_DELIVERED`, for a parent and child: no row is kept, since the user cannot send to a child. */
+export const PEER_LINEAGE_NOT_DELIVERED =
+  'Your message was NOT delivered. Keep working on your own task, and put the undelivered message, ' +
+  'or a summary of it, in your final reply so nothing is lost.'
+
 export class PeerLinkBook {
   private readonly edges = new Map<string, Edge>()
   private nextEdgeId = 0
@@ -349,7 +354,8 @@ export class PeerLinkBook {
     const refuse = (reason: PeerLinkRefusal, why: string): PeerLinkSendCheck => {
       const firstRefusal = !edge.notified
       edge.notified = true
-      return { linked: true, ok: false, reason, firstRefusal, message: `${why} ${PEER_LINK_NOT_DELIVERED}` }
+      const trailer = edge.kind === 'lineage' ? PEER_LINEAGE_NOT_DELIVERED : PEER_LINK_NOT_DELIVERED
+      return { linked: true, ok: false, reason, firstRefusal, message: `${why} ${trailer}` }
     }
     if (nowMs - edge.since >= edge.windowMs) {
       return refuse('link-expired', `This link's time (${formatPeerLinkDuration(edge.windowMs)}) is up.`)

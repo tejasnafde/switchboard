@@ -497,6 +497,8 @@ describe('lineage edges', () => {
       expect(book.checkSend('p', 'c1', day * 7)).toEqual({ linked: true, ok: true })
     const spent = book.checkSend('c1', 'p', day * 7)
     expect(spent).toMatchObject({ linked: true, ok: false, reason: 'link-budget' })
+    // No row is kept for a child, so the agent is not told one was.
+    expect(spent).toMatchObject({ message: expect.not.stringContaining('send by hand') })
     // A message the user types in the parent renews it.
     book.humanMessage('p', day * 7)
     expect(book.checkSend('c1', 'p', day * 7)).toEqual({ linked: true, ok: true })

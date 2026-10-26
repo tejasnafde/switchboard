@@ -134,6 +134,7 @@ async function setup() {
     ['child1', 'claude'],
     ['child2', 'gemini'],
     ['other', 'claude'],
+    ['gem', 'gemini'],
   ] as const)
     await host.invoke(ProviderChannels.START_SESSION, { threadId, provider, cwd: '/tmp' })
   /** The child starts a turn of its own, as a running agent would be. */
@@ -172,6 +173,10 @@ describe('lineage messages', () => {
     claude.emit.get('child1')!({ type: 'status', threadId: 'child1', status: 'running', compacting: true })
     await send('parent1', 'child1', 'steer')
     expect(claude.sends.at(-1)?.delivery).toBe('queue')
+    claude.emit.get('child1')!({ type: 'status', threadId: 'child1', status: 'running', compacting: false })
+    await send('parent1', 'child1', 'steer')
+    expect(claude.sends.at(-1)?.delivery).toBe('steer')
+    claude.emit.get('child1')!({ type: 'status', threadId: 'child1', status: 'running', compacting: true })
 
     // The compacting turn ends; the next one is being stopped.
     claude.emit.get('child1')!({ type: 'turn.completed', threadId: 'child1' })
@@ -235,5 +240,18 @@ describe('lineage messages', () => {
     } finally {
       hubFlag.on = true
     }
+  })
+
+  it('ignores a delivery a client sends with /send-to', async () => {
+    const { host, gemini, busy } = await setup()
+    busy(gemini, 'gem')
+    await expect(
+      host.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, {
+        fromThreadId: 'other',
+        targetThreadId: 'gem',
+        text: 'typed',
+        delivery: 'queue',
+      }),
+    ).rejects.toThrow('mid-turn')
   })
 })
