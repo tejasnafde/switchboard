@@ -16,7 +16,7 @@ function satisfies(version: string, range: string): boolean {
   const want = range.slice(op.length).split('.').map(Number)
   const have = version.split('.').map(Number)
   if (op === '') return want.every((n, i) => have[i] === n)
-  const fixed = op === '~' ? 2 : 1
+  const fixed = op === '~' || want[0] === 0 ? 2 : 1
   for (let i = 0; i < fixed; i++) if (have[i] !== want[i]) return false
   for (let i = fixed; i < 3; i++) if (have[i] !== want[i]) return have[i] > want[i]
   return true
@@ -29,6 +29,7 @@ describe('Expo native module versions', () => {
     expect(satisfies('57.1.0', '~57.0.24')).toBe(false)
     expect(satisfies('5.8.0', '^5.7.0')).toBe(true)
     expect(satisfies('0.86.2', '0.86.3')).toBe(false)
+    expect(satisfies('0.87.0', '^0.86.3')).toBe(false)
   })
 
   it('locks every SDK-managed package at the version the installed expo expects', () => {
