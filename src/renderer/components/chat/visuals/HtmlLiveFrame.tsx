@@ -70,6 +70,7 @@ const warningText = 'text-[var(--warning)] [.theme-light_&]:text-[#a16207]'
 const WRITING_TAIL_LINES = 8
 /** A hidden capture of a page that never goes quiet is taken this long after it opens. */
 const HIDDEN_STILL_MAX_MS = 8000
+const HIDDEN_CAPTURE_MAX_MS = 5000
 const HIDDEN_STILL_FALLBACK_WIDTH = 640
 /** Page keys whose still image this window already sent to a backend. */
 const storedKeys = new Set<string>()
@@ -245,7 +246,8 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     hasImage: memory.image !== null,
     allowed: verdict.ok,
     inPane,
-    saved: saved !== null,
+    // Any saved path, before its file check answers: a saved page never runs hidden.
+    saved: memory.savedPath !== null,
     inView,
     running,
   })
@@ -294,13 +296,16 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     if (!mode) return
     let current = true
     let token: string | null = null
+    let hiddenCap: ReturnType<typeof setTimeout> | null = null
     setLoading(true)
     setOpenError(null)
     capturedHeightRef.current = null
+    loadedRef.current = false
     window.api.preview.openInline({ source, theme: htmlLiveTheme() }).then(
       (result) => {
         if (!result.ok) {
-          if (current) setOpenError(result.message ?? 'The page could not be opened.')
+          if (!current) return
+          setOpenError(result.message ?? 'The page could not be opened.')
           if (mode === 'hidden') endHiddenStill()
           return
         }
@@ -311,21 +316,20 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
         }
         tokenRef.current = token
         setDoc({ url: result.url, token: result.token })
-      },
-      (err: unknown) => {
-        log.warn('inline open failed', err)
-        if (current) setOpenError('The page could not be opened.')
-        if (mode === 'hidden') endHiddenStill()
-      },
-    )
-    const hiddenCap =
-      mode === 'hidden'
-        ? setTimeout(() => {
+        if (mode === 'hidden')
+          hiddenCap = setTimeout(() => {
             if (quietTimer.current) clearTimeout(quietTimer.current)
             if (!loadedRef.current) return endHiddenStill()
             captureRef.current().catch((err: unknown) => log.warn('hidden live page capture failed', err))
           }, HIDDEN_STILL_MAX_MS)
-        : null
+      },
+      (err: unknown) => {
+        log.warn('inline open failed', err)
+        if (!current) return
+        setOpenError('The page could not be opened.')
+        if (mode === 'hidden') endHiddenStill()
+      },
+    )
     return () => {
       if (hiddenCap) clearTimeout(hiddenCap)
       current = false
@@ -377,11 +381,17 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     if (!stored.ok) log.warn('live page image was not stored', { bytes: image.length })
   }, [key, machineId, backendHasImage])
   const captureLive = useCallback(async () => {
-    const hidden = modeRef.current === 'hidden'
+    if (modeRef.current !== 'hidden') return capture()
+    // A capture that never answers must not hold the hidden render's slot.
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      await capture()
+      await Promise.race([
+        capture(),
+        new Promise<void>((resolve) => (timer = setTimeout(resolve, HIDDEN_CAPTURE_MAX_MS))),
+      ])
     } finally {
-      if (hidden) endHiddenStill()
+      clearTimeout(timer)
+      endHiddenStill()
     }
   }, [capture, endHiddenStill])
 
