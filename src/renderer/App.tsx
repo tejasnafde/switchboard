@@ -1416,7 +1416,7 @@ export function App() {
   // Reviews opens a linked chat through the sidebar path, reusing the session
   // already open under any id of its thread.
   useEffect(() => {
-    registerReviewChatOpener(async (chat) => {
+    registerReviewChatOpener(async (chat, machineId) => {
       const open = useAgentStore.getState().sessions.find((session) => chat.familyIds.includes(session.id))
       await handleSessionSelect(
         {
@@ -1429,7 +1429,7 @@ export function App() {
           agentType: chat.agentType,
         },
         open?.projectPath ?? chat.projectPath,
-        open?.machineId ?? 'local',
+        open?.machineId ?? machineId ?? 'local',
       )
       return useLayoutStore.getState().focusedChatSessionId()
     })

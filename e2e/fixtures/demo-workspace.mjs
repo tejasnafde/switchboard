@@ -207,3 +207,83 @@ export function seedDatabase(
   }
   execFileSync('sqlite3', [dbPath, statements.join('\n')])
 }
+
+/** The parent and children of the hub screens, by conversation id. */
+export const HUB_PARENT = { id: 'hub-parent', title: 'Harden the login flow' }
+export const HUB_WORKING_CHILD = { id: 'hub-child-redirect', title: 'Fix callback redirect' }
+
+/**
+ * A parent chat with four children in mixed states for the hub screens (flag
+ * hub_children): Asked the hub, Result ready and Failed from their stored
+ * wakes, and one the suite runs itself, so it shows Working. That child is
+ * stored `settled` (a client may send to it then) until `openHubChild` opens it.
+ */
+export function seedHubChildren(dbPath, projectPath, { now = Date.now() } = {}) {
+  const conv = (id, title, ago, extra = {}) =>
+    `INSERT OR REPLACE INTO conversations (id, project_path, agent_type, title, created_at, updated_at, runtime_mode, sidebar_role) VALUES (${sql(id)}, ${sql(projectPath)}, ${sql(extra.agent ?? 'claude-code')}, ${sql(title)}, ${now - ago - 60000}, ${now - ago}, 'sandbox', 'managed');`
+  const children = [
+    { ...HUB_WORKING_CHILD, phase: 'settled', branch: 'hub/fix-callback-redirect', account: 'claude-work', ago: 20000 },
+    {
+      id: 'hub-child-tests',
+      title: 'Write OAuth state tests',
+      phase: 'open',
+      branch: 'hub/oauth-state-tests',
+      account: 'claude-work',
+      ago: 140000,
+      agent: 'codex',
+    },
+    {
+      id: 'hub-child-retries',
+      title: 'Trace webhook retries',
+      phase: 'open',
+      branch: 'hub/webhook-retries',
+      account: 'claude-personal',
+      ago: 260000,
+    },
+    {
+      id: 'hub-child-storage',
+      title: 'Audit token storage',
+      phase: 'failed_start',
+      branch: null,
+      account: 'claude-work',
+      ago: 380000,
+    },
+  ]
+  const wakes = [
+    ['hub-child-tests', 'question', 'Should an expired state token return 400 or redirect to the login page?'],
+    [
+      'hub-child-retries',
+      'report',
+      'Exponential backoff with jitter keeps retries under 40 per second. Branch pushed.',
+    ],
+    ['hub-child-storage', 'failed', 'Could not create the worktree: branch hub/token-storage already exists.'],
+  ]
+  const statements = [
+    conv(HUB_PARENT.id, HUB_PARENT.title, 10000),
+    `INSERT OR REPLACE INTO messages (id, conversation_id, role, content, timestamp) VALUES ('hub-m1', ${sql(HUB_PARENT.id)}, 'user', 'Split the login hardening into parallel child chats: the redirect fix, state tests, webhook retries and token storage.', ${now - 600000});`,
+    `INSERT OR REPLACE INTO messages (id, conversation_id, role, content, timestamp) VALUES ('hub-m2', ${sql(HUB_PARENT.id)}, 'assistant', 'Started four child chats, each on its own branch. I will collect their reports here.', ${now - 590000});`,
+    `INSERT OR REPLACE INTO messages (id, conversation_id, role, content, timestamp) VALUES ('hub-m3', ${sql(HUB_WORKING_CHILD.id)}, 'user', 'Brief from the hub: make the OAuth callback redirect back to the page that started the login.', ${now - 580000});`,
+    ...children.flatMap((c, i) => [
+      conv(c.id, c.title, c.ago, c),
+      `INSERT OR REPLACE INTO hub_children (child_id, parent_id, batch_id, ordinal, title, brief, location, branch, provider_instance_id, granted_mode, deps_mode, phase, created_at, updated_at) VALUES (${sql(c.id)}, ${sql(HUB_PARENT.id)}, 'hub-batch-1', ${i}, ${sql(c.title)}, ${sql(`Brief for ${c.title}.`)}, 'worktree', ${sql(c.branch)}, ${sql(c.account)}, 'sandbox', 'link', ${sql(c.phase)}, ${now - 600000 + i}, ${now - c.ago});`,
+    ]),
+    ...wakes.map(
+      ([childId, kind, summary], i) =>
+        `INSERT OR REPLACE INTO hub_wakes (id, parent_id, child_id, kind, summary, created_at, delivered_revision) VALUES (${sql(`hub-wake-${i}`)}, ${sql(HUB_PARENT.id)}, ${sql(childId)}, ${sql(kind)}, ${sql(summary)}, ${now - 100000 + i}, 1);`,
+    ),
+    // Nested children show in the project tree, behind "This Mac".
+    `INSERT OR REPLACE INTO settings (key, value) VALUES ('sidebar.localTreeExpanded', 'true');`,
+  ]
+  execFileSync('sqlite3', [dbPath, statements.join('\n')])
+}
+
+/** Moves the working child to `open` once its turn runs (the backend refuses a client's turn to an open child). */
+export function openHubChild(dbPath) {
+  // The app holds the database open, so wait out a write of its own.
+  execFileSync('sqlite3', [
+    '-cmd',
+    '.timeout 5000',
+    dbPath,
+    `UPDATE hub_children SET phase = 'open' WHERE child_id = ${sql(HUB_WORKING_CHILD.id)};`,
+  ])
+}

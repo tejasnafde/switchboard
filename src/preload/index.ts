@@ -742,6 +742,17 @@ const api = {
 
     interrupt: (threadId: string): Promise<import('@shared/provider-events').InterruptResult | undefined> =>
       transport.invoke(ProviderChannels.INTERRUPT, threadId),
+    /**
+     * Stop a child chat from its parent's strip. A parent starts its children
+     * on its own backend, so the call goes where the parent's calls go (by
+     * whichever of its ids this window bound): the child's live id is bound
+     * only once this window opened the child.
+     */
+    interruptHubChild: (
+      parentFamilyIds: readonly string[],
+      childThreadId: string,
+    ): Promise<import('@shared/provider-events').InterruptResult | undefined> =>
+      router.invokeOn(routingTable.resolveThread(parentFamilyIds), ProviderChannels.INTERRUPT, childThreadId),
 
     setRuntimeMode: (threadId: string, mode: RuntimeMode) =>
       transport.invoke(ProviderChannels.SET_RUNTIME_MODE, threadId, mode),

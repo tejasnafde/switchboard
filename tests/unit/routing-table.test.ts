@@ -116,4 +116,14 @@ describe('RoutingTable', () => {
     expect(t.resolve('x', ['b'])).toBe('local')
     expect(t.resolve('x', ['c'])).toBe('m2')
   })
+
+  // Stop in a parent's children strip names a child this window never opened,
+  // so its live id is unbound: routing by it sent the stop to the local backend.
+  it("routes a call about a hub child through whichever of its parent's ids is bound", () => {
+    const t = new RoutingTable()
+    t.bind('parent-session-uuid', 'vm')
+    expect(t.resolve('provider:interrupt', ['child-live'])).toBe('local')
+    expect(t.resolveThread(['parent-root', 'parent-session-uuid'])).toBe('vm')
+    expect(t.resolveThread(['parent-root'])).toBe('local')
+  })
 })

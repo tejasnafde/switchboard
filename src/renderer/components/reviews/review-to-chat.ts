@@ -13,17 +13,20 @@ import { useReviewStore } from '../../stores/review-store'
 
 const log = createRendererLogger('reviews:to-chat')
 
-/** Opens a chat (App's sidebar path) and returns the session id its composer uses. */
-type ChatOpener = (chat: PrLinkChat) => Promise<string | null>
+/**
+ * Opens a chat (App's sidebar path) and returns the session id its composer
+ * uses. `machineId` is where a chat that is not open lives (local by default).
+ */
+type ChatOpener = (chat: PrLinkChat, machineId?: string) => Promise<string | null>
 let opener: ChatOpener | null = null
 
 export function registerReviewChatOpener(fn: ChatOpener | null): void {
   opener = fn
 }
 
-export async function openReviewChat(chat: PrLinkChat): Promise<string | null> {
+export async function openReviewChat(chat: PrLinkChat, machineId?: string): Promise<string | null> {
   try {
-    return (await opener?.(chat)) ?? null
+    return (await opener?.(chat, machineId)) ?? null
   } catch (err) {
     log.warn('opening a linked chat failed', err)
     return null
