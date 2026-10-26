@@ -249,11 +249,10 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     inView,
     running,
   })
-  const stillWanted = stillKey !== null
   useEffect(() => {
     setFrameStillRequest(id, stillKey)
   }, [id, stillKey])
-  const hiddenStill = useFrameHiddenStill(id) && stillWanted
+  const hiddenStill = useFrameHiddenStill(id) && stillKey !== null
   const mode: LiveMode | null = running ? 'running' : hiddenStill ? 'hidden' : null
   const modeRef = useRef(mode)
   modeRef.current = mode
