@@ -119,3 +119,21 @@ describe('running placeholder', () => {
     expect(runningPlaceholder('opencode', 'steer')).toBe('Queue a follow-up… it sends when this turn ends.')
   })
 })
+
+import { peerDelivery } from '@shared/turn-delivery'
+
+describe('agent message delivery', () => {
+  it('is an ordinary turn when the target is idle', () => {
+    expect(peerDelivery('claude', false, 'steer', false)).toBeUndefined()
+    expect(peerDelivery('gemini', false, 'queue', false)).toBeUndefined()
+  })
+
+  it('steers mid-turn only when asked, where the agent can, and not while compacting or stopping', () => {
+    expect(peerDelivery('claude', true, 'steer', false)).toBe('steer')
+    expect(peerDelivery('codex', true, 'steer', false)).toBe('steer')
+    expect(peerDelivery('claude', true, 'queue', false)).toBe('queue')
+    expect(peerDelivery('gemini', true, 'steer', false)).toBe('queue')
+    expect(peerDelivery('opencode', true, 'steer', false)).toBe('queue')
+    expect(peerDelivery('claude', true, 'steer', true)).toBe('queue')
+  })
+})

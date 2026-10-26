@@ -1507,6 +1507,8 @@ export class CodexAdapter implements ProviderAdapter {
     }
 
     if (itemType === 'contextCompaction') {
+      if (notification.method === 'item/started')
+        active.onEvent({ type: 'status', threadId, status: 'running', compacting: true })
       active.onEvent({
         type: 'content',
         threadId,

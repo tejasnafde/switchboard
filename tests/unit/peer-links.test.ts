@@ -482,3 +482,55 @@ describe('link duration', () => {
     expect(book.linksOf('a')[0].windowMs).toBe(PEER_LINK_WINDOW_MS)
   })
 })
+
+import { PEER_LINEAGE_MESSAGE_BUDGET } from '../../src/shared/peer-links'
+
+describe('lineage edges', () => {
+  it('links each open child with its parent, with its own budget and no time window', () => {
+    const book = new PeerLinkBook()
+    expect(book.syncLineage([['p', 'c1']], 0).sort()).toEqual(['c1', 'p'])
+    expect(book.isLinked('p', 'c1')).toBe(true)
+    expect(book.isLineage('c1', 'p')).toBe(true)
+    expect(book.linksOf('p')).toEqual([])
+    const day = 24 * 60 * 60_000
+    for (let i = 0; i < PEER_LINEAGE_MESSAGE_BUDGET; i++)
+      expect(book.checkSend('p', 'c1', day * 7)).toEqual({ linked: true, ok: true })
+    const spent = book.checkSend('c1', 'p', day * 7)
+    expect(spent).toMatchObject({ linked: true, ok: false, reason: 'link-budget' })
+    // A message the user types in the parent renews it.
+    book.humanMessage('p', day * 7)
+    expect(book.checkSend('c1', 'p', day * 7)).toEqual({ linked: true, ok: true })
+  })
+
+  it('outlives unlink, stop and archive, and ends only when the child leaves the open set', () => {
+    const book = new PeerLinkBook()
+    book.syncLineage([['p', 'c1']], 0)
+    book.checkSend('p', 'c1', 1)
+    expect(book.unlink('p', 'c1')).toEqual([])
+    expect(book.unlink('p')).toEqual([])
+    expect(book.removeSession('c1')).toEqual([])
+    expect(book.syncLineage([['p', 'c1']], 2)).toEqual([])
+    // The count survives a resync; a new edge for a second child starts full.
+    expect(
+      book
+        .syncLineage(
+          [
+            ['p', 'c1'],
+            ['p', 'c2'],
+          ],
+          3,
+        )
+        .sort(),
+    ).toEqual(['c2', 'p'])
+    expect(book.syncLineage([['p', 'c2']], 4).sort()).toEqual(['c1', 'p'])
+    expect(book.isLinked('p', 'c1')).toBe(false)
+  })
+
+  it('cannot be replaced or extended by the user', () => {
+    const book = new PeerLinkBook()
+    book.syncLineage([['p', 'c1']], 0)
+    expect(book.link('p', 'c1', 'user', 1)).toEqual({ ok: false, message: 'A child chat talks only with its parent.' })
+    expect(book.extend('p', 'c1', 'user', 1).ok).toBe(false)
+    expect(book.isLineage('p', 'c1')).toBe(true)
+  })
+})

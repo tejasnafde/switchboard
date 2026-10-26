@@ -35,6 +35,7 @@ function fakeHost(over: Partial<PeerToolHost> = {}) {
   const host: PeerToolHost = {
     listPeerSessions: () => [sibling],
     isLinkedPeer: () => false,
+    isLineagePeer: () => false,
     deliverPeerMessage: async (input) => {
       delivered.push(input)
       return { id: 'pm_0123456789abcdef' }

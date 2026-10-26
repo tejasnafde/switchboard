@@ -6,6 +6,7 @@
  * wrapper, content-addressed id, and the guards - with `now` injected so the
  * windows need no fake timers.
  */
+import type { TurnDelivery } from './turn-delivery'
 
 /** Body cap in utf-8 bytes. A peer message is a summary, not a transcript. */
 export const PEER_MESSAGE_MAX_BYTES = 16 * 1024
@@ -81,6 +82,11 @@ export interface PeerMessageInput extends PeerMessageKey {
    * unlink while it was in flight cannot let it through uncarded.
    */
   requireLink?: boolean
+  /**
+   * How an agent send reaches a target that is mid-turn (`peerDelivery`).
+   * Absent: the provider's own default, which is how every send went before.
+   */
+  delivery?: TurnDelivery
   /**
    * Id of the "not delivered" row this user send resends
    * (`PEER_UNDELIVERED_MARKER_PREFIX`), so the row can say it went.

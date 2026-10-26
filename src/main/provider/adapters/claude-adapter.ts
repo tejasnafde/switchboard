@@ -2052,7 +2052,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
         // "compacting" status → show in UI
         if (sys.subtype === 'status' && sys.status === 'compacting') {
-          active.onEvent({ type: 'status', threadId, status: 'running' })
+          active.onEvent({ type: 'status', threadId, status: 'running', compacting: true })
           active.onEvent({
             type: 'content',
             threadId,
