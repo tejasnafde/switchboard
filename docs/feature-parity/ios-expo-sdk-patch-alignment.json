@@ -1,0 +1,26 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ios-expo-sdk-patch-alignment",
+  "summary": "The iOS app locks every Expo SDK 57 managed package at the patch the installed expo expects, so the precompiled Expo frameworks link against a matching ExpoModulesCore. Builds 3 to 5 crashed on launch because ExpoImageManipulator 57.0.20 imported symbols ExpoModulesCore 57.0.8 did not export. A jest test fails on new drift.",
+  "surfaces": {
+    "desktop": { "status": "not_applicable", "reason": "Only apps/mobile dependencies, one mobile import and a mobile test change." },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": ["apps/mobile/package.json", "apps/mobile/package-lock.json", "apps/mobile/src/lib/pinned-websocket.ts", "apps/mobile/src/__tests__/expo-native-versions.test.ts"]
+    },
+    "nativeAndroid": { "status": "not_applicable", "reason": "The native Android app in apps/android does not use the Expo packages." },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "No protocol change." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "No stored data or key change; SecureStore and AsyncStorage keep their data across the patch bump." },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["apps/mobile/AGENTS.md"],
+      "notes": "Native change: the fingerprint runtime version changes, so it ships in iOS build 6 and later OTAs reach only that binary."
+    }
+  },
+  "verification": {
+    "automated": ["Mobile jest (expo-native-versions.test.ts fails on the old lock, passes on the new one) and tsc; expo-doctor clean except the local Xcode version.", "dyld symbol scan of the build 5 IPA found the 8 missing ExpoModulesCore symbols; the same scan runs on the build 6 IPA."],
+    "hardware": [],
+    "notExercised": ["Launching build 6 on an iPhone or a simulator."]
+  }
+}
