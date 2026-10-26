@@ -11,10 +11,7 @@
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
-        "src/shared/transport-security.ts",
-        "apps/mobile/src/stores/__tests__/transport-gate.test.ts",
-        "tests/unit/transport-security.test.ts",
-        "tests/unit/connection-security.test.ts"
+        "apps/mobile/src/stores/__tests__/transport-gate.test.ts"
       ]
     },
     "nativeAndroid": {
@@ -22,8 +19,12 @@
       "reason": "Native Android keeps its stricter release rule (CleartextPolicy.kt and network_security_config.xml: localhost, 127.0.0.1, ::1 only; 10.0.2.2 in debug builds only), unchanged by this work."
     },
     "sharedBackendApi": {
-      "status": "not_applicable",
-      "reason": "The wire protocol, the QR payload and the server endpoint are unchanged."
+      "status": "implemented",
+      "evidence": [
+        "src/shared/transport-security.ts",
+        "tests/unit/transport-security.test.ts",
+        "tests/unit/connection-security.test.ts"
+      ]
     },
     "storageDataMigration": {
       "status": "not_applicable",
