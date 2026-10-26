@@ -127,3 +127,16 @@ mismatch made Metro unable to resolve files outside the project root, which is
 how this app reaches `src/shared`, and it surfaced only as a failed
 "Bundle JavaScript" phase on EAS. `npx expo install --fix`, and keep doctor at
 20/20.
+
+**Patch drift crashes the iOS app on launch.** The store build links
+precompiled Expo frameworks, each built against the expo-modules-core of its
+own SDK patch release. iOS builds 3 to 5 (0.4.1) paired expo-image-manipulator
+57.0.20 with expo-modules-core 57.0.8: the framework imported eight
+`BaseModule`/`AnyModule` symbols the core did not export, so dyld killed the app
+before any JS ran, and App Review rejected it under 2.1. EAS printed the drift
+as a doctor warning and built anyway. `src/__tests__/expo-native-versions.test.ts`
+now fails when a locked package is outside the range the installed `expo`
+expects, and expo-modules-core is reached through `expo`, never as a direct
+dependency. To check an IPA: `xcrun dyld_info -imports` on each framework under
+`Payload/Switchboard.app/Frameworks`, and confirm `nm -gU` on the named library
+exports every symbol.

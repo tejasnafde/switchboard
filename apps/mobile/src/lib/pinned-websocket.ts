@@ -1,4 +1,4 @@
-import { requireOptionalNativeModule } from 'expo-modules-core'
+import { requireOptionalNativeModule } from 'expo'
 import { Platform } from 'react-native'
 import { createLogger } from '@shared/logger'
 import { isCertFingerprint } from '@shared/transport-security'
