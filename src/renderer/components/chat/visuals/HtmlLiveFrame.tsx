@@ -8,11 +8,15 @@
  * HTML_LIVE_MAX_RUNNING frames run per window (services/html-live-frames.ts);
  * the others pause as their still image with Run. After the page is quiet for
  * HTML_LIVE_QUIET_MS the frame is captured and the image stored with the
- * chat's backend, which is what phones show. Open in pane moves the page to
+ * chat's backend, which is what phones show. A frame with no image that is
+ * not in view takes it hidden when a running slot is free: the page renders
+ * out of sight at the block's width, is captured once quiet and closes
+ * (services/html-live-still-scheduler.ts). Open in pane moves the page to
  * the preview pane, so one copy runs; Save as file there turns this block into
  * the normal HTML file card.
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import {
   HTML_LIVE_QUIET_MS,
   htmlLiveBlockedHint,
@@ -31,14 +35,18 @@ import { useDraftStore } from '../../../stores/draft-store'
 import { useLayoutStore } from '../../../stores/layout-store'
 import {
   claimFrame,
+  finishHiddenStill,
   rememberImage,
   rememberSavedPath,
   releaseFrame,
   runFrame,
+  setFrameStillRequest,
   setFrameWants,
+  useFrameHiddenStill,
   useFrameRunning,
   useLivePageMemory,
 } from '../../../services/html-live-frames'
+import { hiddenStillKey } from '../../../services/html-live-still-scheduler'
 import { htmlLiveKey, htmlLiveTheme } from '../../../services/html-live-theme'
 import {
   cspBlockedUrl,
@@ -60,11 +68,15 @@ const actionButton =
 /** The light theme's --warning is too faint for text (2.9:1 on white). */
 const warningText = 'text-[var(--warning)] [.theme-light_&]:text-[#a16207]'
 const WRITING_TAIL_LINES = 8
+/** A hidden capture of a page that never goes quiet is taken this long after it opens. */
+const HIDDEN_STILL_MAX_MS = 8000
+const HIDDEN_STILL_FALLBACK_WIDTH = 640
 /** Page keys whose still image this window already sent to a backend. */
 const storedKeys = new Set<string>()
 
 type GuestWebview = HTMLElement & { getWebContentsId?: () => number }
 type Doc = { url: string; token: string }
+type LiveMode = 'running' | 'hidden'
 
 function subscribeThemeClass(onChange: () => void): () => void {
   const observer = new MutationObserver(onChange)
@@ -93,9 +105,10 @@ function useKey(source: string): string | null {
   return state?.source === source ? state.key : null
 }
 
-function useInView(): [React.RefObject<HTMLDivElement | null>, boolean] {
+/** Whether the block is in view: `null` until the first observation. */
+function useInView(): [React.RefObject<HTMLDivElement | null>, boolean | null] {
   const ref = useRef<HTMLDivElement>(null)
-  const [inView, setInView] = useState(false)
+  const [inView, setInView] = useState<boolean | null>(null)
   useEffect(() => {
     const el = ref.current
     if (!el) return
@@ -198,6 +211,9 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
   const [showSource, setShowSource] = useState(false)
   const [copied, setCopied] = useState(false)
   const [backendHasImage, setBackendHasImage] = useState(false)
+  // The key whose backend state has loaded: a hidden capture waits for it.
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  const [hiddenWidth, setHiddenWidth] = useState(0)
   const webviewRef = useRef<GuestWebview | null>(null)
   const quietTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // The frame height the still image was taken at: a new height takes a new one,
@@ -220,9 +236,38 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     return () => releaseFrame(id)
   }, [id])
   useEffect(() => {
-    setFrameWants(id, inView && !inPane && verdict.ok && !saved)
+    setFrameWants(id, inView === true && !inPane && verdict.ok && !saved)
   }, [id, inView, inPane, verdict.ok, saved])
   const running = useFrameRunning(id) && verdict.ok && !inPane && !saved
+  const stillKey = hiddenStillKey({
+    key,
+    loadedKey,
+    hasImage: memory.image !== null,
+    allowed: verdict.ok,
+    inPane,
+    saved: saved !== null,
+    inView,
+    running,
+  })
+  const stillWanted = stillKey !== null
+  useEffect(() => {
+    setFrameStillRequest(id, stillKey)
+  }, [id, stillKey])
+  const hiddenStill = useFrameHiddenStill(id) && stillWanted
+  const mode: LiveMode | null = running ? 'running' : hiddenStill ? 'hidden' : null
+  const modeRef = useRef(mode)
+  modeRef.current = mode
+  const keyRef = useRef(key)
+  keyRef.current = key
+  // A hidden capture runs once per page key, whether or not it got an image.
+  const endHiddenStill = useCallback(() => {
+    if (keyRef.current) finishHiddenStill(id, keyRef.current)
+  }, [id])
+  // The hidden page renders at the width the block has in the chat column
+  // (its full 640 px when the block is not laid out, as in a hidden panel).
+  useLayoutEffect(() => {
+    if (hiddenStill) setHiddenWidth(ref.current?.clientWidth || HIDDEN_STILL_FALLBACK_WIDTH)
+  }, [hiddenStill, ref])
 
   // What the chat's backend already holds: a still image, or the saved file.
   useEffect(() => {
@@ -236,6 +281,7 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
           rememberImage(key, state.image)
         }
         if (state.savedPath) rememberSavedPath(key, state.savedPath)
+        setLoadedKey(key)
       },
       (err: unknown) => log.debug('live page state load failed', err),
     )
@@ -244,9 +290,9 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     }
   }, [key, machineId])
 
-  // Running: open the page's document in the preview session; reopened on a theme change.
+  // Running or hidden: open the page's document in the preview session; reopened on a theme change.
   useEffect(() => {
-    if (!running) return
+    if (!mode) return
     let current = true
     let token: string | null = null
     setLoading(true)
@@ -256,6 +302,7 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
       (result) => {
         if (!result.ok) {
           if (current) setOpenError(result.message ?? 'The page could not be opened.')
+          if (mode === 'hidden') endHiddenStill()
           return
         }
         token = result.token
@@ -269,9 +316,19 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
       (err: unknown) => {
         log.warn('inline open failed', err)
         if (current) setOpenError('The page could not be opened.')
+        if (mode === 'hidden') endHiddenStill()
       },
     )
+    const hiddenCap =
+      mode === 'hidden'
+        ? setTimeout(() => {
+            if (quietTimer.current) clearTimeout(quietTimer.current)
+            if (!loadedRef.current) return endHiddenStill()
+            captureRef.current().catch((err: unknown) => log.warn('hidden live page capture failed', err))
+          }, HIDDEN_STILL_MAX_MS)
+        : null
     return () => {
+      if (hiddenCap) clearTimeout(hiddenCap)
       current = false
       tokenRef.current = null
       setDoc(null)
@@ -279,7 +336,7 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
       if (token)
         void window.api.preview.closeInline(token).catch((err: unknown) => log.warn('inline close failed', err))
     }
-  }, [running, source, themeClass])
+  }, [mode, source, themeClass, endHiddenStill])
 
   // The error and blocked lists outlive a pause and a rerun of the same page,
   // so a swap between the page and its still image keeps the frame's size.
@@ -320,9 +377,17 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     const stored = await window.api.htmlLive.update(machineId, key, { image })
     if (!stored.ok) log.warn('live page image was not stored', { bytes: image.length })
   }, [key, machineId, backendHasImage])
+  const captureLive = useCallback(async () => {
+    const hidden = modeRef.current === 'hidden'
+    try {
+      await capture()
+    } finally {
+      if (hidden) endHiddenStill()
+    }
+  }, [capture, endHiddenStill])
 
-  const captureRef = useRef(capture)
-  captureRef.current = capture
+  const captureRef = useRef(captureLive)
+  captureRef.current = captureLive
   const loadedRef = useRef(false)
   const armQuiet = useCallback(() => {
     if (quietTimer.current) clearTimeout(quietTimer.current)
@@ -561,6 +626,36 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
           </>
         )
       )}
+
+      {hiddenStill &&
+        doc &&
+        createPortal(
+          // Out of sight and out of the layout: fixed, transparent, behind the app and inert.
+          <div
+            aria-hidden="true"
+            inert
+            data-html-live-hidden=""
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: hiddenWidth,
+              opacity: 0,
+              zIndex: -1,
+              pointerEvents: 'none',
+            }}
+          >
+            <webview
+              ref={setWebviewRef}
+              src={doc.url}
+              partition={PREVIEW_PARTITION}
+              webpreferences="contextIsolation=yes,sandbox=yes,nodeIntegration=no"
+              className="flex w-full border-0 bg-[var(--bg-secondary)]"
+              style={{ height }}
+            />
+          </div>,
+          document.body,
+        )}
 
       {!showSource && !inPane && verdict.ok && (errors.length > 0 || blocked.length > 0) && (
         <div className="border-t border-[var(--border)] px-[10px] py-[7px] font-[family-name:var(--font-mono)] text-[11px] leading-[1.7]">
