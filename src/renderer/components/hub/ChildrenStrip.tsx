@@ -14,9 +14,11 @@ const log = createRendererLogger('hub:strip')
 
 const ATTENTION = new Set<HubChildView['state']>(['needs_you', 'asked_hub', 'blocked', 'failed', 'limited'])
 
-function stopChild(child: HubChildView): void {
+function stopChild(parent: HubChatRef, child: HubChildView): void {
   if (!child.liveId) return
-  window.api.provider.interrupt(child.liveId).catch((err: unknown) => log.warn('stopping a child failed', err))
+  window.api.provider
+    .interruptHubChild(parent.familyIds, child.liveId)
+    .catch((err: unknown) => log.warn('stopping a child failed', err))
 }
 
 function ChildRow({ parent, child }: { parent: HubChatRef; child: HubChildView }) {
@@ -28,10 +30,12 @@ function ChildRow({ parent, child }: { parent: HubChatRef; child: HubChildView }
     child.lastTurn?.costUsd != null ? `known cost $${child.lastTurn.costUsd.toFixed(2)}` : null,
   ].filter(Boolean)
   return (
-    <li data-hub-child={child.state} className="flex items-center gap-[8px] py-[4px]">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-[8px]">
-          <span className="truncate text-[12px] font-[600] text-[var(--text-primary)]">{child.chat.title}</span>
+    <li data-hub-child={child.state} className="flex flex-wrap items-center gap-x-[8px] gap-y-[2px] py-[4px]">
+      <div className="min-w-[min(100%,240px)] flex-1">
+        <div className="flex flex-wrap items-baseline gap-x-[8px]">
+          <span className="max-w-full truncate text-[12px] font-[600] text-[var(--text-primary)]">
+            {child.chat.title}
+          </span>
           <span
             className={
               ATTENTION.has(child.state) ? 'shrink-0 text-[11px] text-[var(--warning)]' : 'shrink-0 text-[11px]'
@@ -47,15 +51,15 @@ function ChildRow({ parent, child }: { parent: HubChatRef; child: HubChildView }
           </div>
         )}
       </div>
-      <div className="flex shrink-0 gap-[4px]">
-        <Button variant="ghost" size="sm" onClick={() => void openHubChat(child.chat)}>
+      <div className="flex flex-wrap gap-[4px]">
+        <Button variant="ghost" size="sm" onClick={() => void openHubChat(child.chat, parent)}>
           Open
         </Button>
         <Button variant="ghost" size="sm" onClick={() => void nudgeChild(parent, child.chat)}>
           Nudge
         </Button>
         {child.state === 'working' && child.liveId && (
-          <Button variant="destructive-outline" size="sm" onClick={() => stopChild(child)}>
+          <Button variant="destructive-outline" size="sm" onClick={() => stopChild(parent, child)}>
             Stop
           </Button>
         )}

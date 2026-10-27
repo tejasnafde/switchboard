@@ -58,6 +58,15 @@ export class RoutingTable {
     for (const [id, m] of this.bindings) if (m === machineId) this.bindings.delete(id)
   }
 
+  /** The machine of a chat known by several ids (its root and rotated session ids): the first one bound, else local. */
+  resolveThread(familyIds: readonly string[]): string {
+    for (const id of familyIds) {
+      const machineId = this.bindings.get(id)
+      if (machineId) return machineId
+    }
+    return 'local'
+  }
+
   resolve(_channel: string, args: unknown[]): string {
     const first = args[0]
     if (first && typeof first === 'object') {
