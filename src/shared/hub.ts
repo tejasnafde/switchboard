@@ -504,7 +504,7 @@ export function nestHubChildren<T extends { id: string; hub?: SessionHubField }>
   return sessions.filter((s) => !parentOf(s)).map((session) => ({ session, children: children.get(session.id) ?? [] }))
 }
 
-const CHILD_STATE_LABELS: Record<ChildState, string> = {
+export const CHILD_STATE_LABELS: Record<ChildState, string> = {
   settled: 'Settled',
   starting: 'Starting',
   needs_you: 'Needs you',
@@ -532,11 +532,16 @@ const PARENT_STATE_LABELS: Record<ParentState, string | null> = {
   idle: null,
 }
 
-/** The header chip: "Hub, 3 children" and the parent state when it has one. */
+export const parentStateLabel = (state: ParentState | null): string | null =>
+  state ? PARENT_STATE_LABELS[state] : null
+
+/** "1 child", "3 children". */
+export const hubChildCount = (n: number): string => `${n} ${n === 1 ? 'child' : 'children'}`
+
+/** The header chip as one line of text: "Hub, 3 children" and the parent state when it has one. */
 export function hubChipText(view: Pick<HubChatView, 'children' | 'state'>): string {
-  const n = view.children.length
-  const label = view.state ? PARENT_STATE_LABELS[view.state] : null
-  return `Hub, ${n} ${n === 1 ? 'child' : 'children'}${label ? ` · ${label}` : ''}`
+  const label = parentStateLabel(view.state)
+  return `Hub, ${hubChildCount(view.children.length)}${label ? ` · ${label}` : ''}`
 }
 
 /** What a Nudge chip puts in the parent's message: who it is for and how to pass it on. */
