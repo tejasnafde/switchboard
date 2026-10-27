@@ -77,14 +77,14 @@ function deliverHeld(parent: HubChatRef): void {
 export function ChildrenStrip({
   parent,
   items,
-  updatesHeld,
+  heldUpdates,
 }: {
   parent: HubChatRef
   items: HubChildView[]
-  /** Updates wait for Deliver (after a Stop, a failed delivery or the hourly cap). */
-  updatesHeld: boolean
+  /** Updates waiting for Deliver (after a Stop, failed deliveries or the hourly cap). */
+  heldUpdates: number
 }) {
-  if (items.length === 0) return null
+  if (items.length === 0 && heldUpdates === 0) return null
   return (
     <section
       aria-label="Child chats"
@@ -95,9 +95,11 @@ export function ChildrenStrip({
         <div className="flex-1 text-[11px] font-[600] uppercase tracking-[0.04em] text-[var(--text-muted)]">
           Children · {items.length}
         </div>
-        {updatesHeld && (
+        {heldUpdates > 0 && (
           <>
-            <span className="text-[11px] text-[var(--warning)]">Updates held</span>
+            <span className="text-[11px] text-[var(--warning)]">
+              {heldUpdates === 1 ? '1 update held' : `${heldUpdates} updates held`}
+            </span>
             <Button variant="outline" size="sm" onClick={() => deliverHeld(parent)}>
               Deliver
             </Button>

@@ -143,7 +143,9 @@ describe('hub update rows and reports', () => {
 
   it('reads a row it cannot use as not a row', () => {
     expect(parseHubUpdateMarker('[[sb:hub-update]] {bad')).toBeNull()
-    expect(parseHubUpdateMarker('[[sb:hub-update]] {"entries":[{"childId":"a","title":"t","kind":"x","summary":""}]}')).toBeNull()
+    expect(
+      parseHubUpdateMarker('[[sb:hub-update]] {"entries":[{"childId":"a","title":"t","kind":"x","summary":""}]}'),
+    ).toBeNull()
     expect(parseHubUpdateMarker('[[sb:approval-result]] {}')).toBeNull()
   })
 

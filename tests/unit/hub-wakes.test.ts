@@ -1,12 +1,6 @@
 import { createMigratedDb } from './helpers/test-db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  getDb,
-  getHubParent,
-  insertHubChild,
-  listPendingHubWakes,
-  setHubParentHeld,
-} from '../../src/main/db/database'
+import { getDb, getHubParent, insertHubChild, listPendingHubWakes, setHubParentHeld } from '../../src/main/db/database'
 import { HubWakeScheduler, type HubWakeHost } from '../../src/main/hub/hub-wakes'
 import {
   HUB_UPDATE_OPEN,
@@ -95,7 +89,8 @@ describe('HubWakeScheduler', () => {
     expect(h.sent).toHaveLength(1)
     const body = h.sent[0]!.body
     expect(body.startsWith(HUB_UPDATE_OPEN)).toBe(true)
-    for (const t of ['Child A (result_ready): A done', 'Child B', 'Child C', 'at: "call_agent_a"']) expect(body).toContain(t)
+    for (const t of ['Child A (result_ready): A done', 'Child B', 'Child C', 'at: "call_agent_a"'])
+      expect(body).toContain(t)
     // Delivered only once the provider shows activity.
     expect(listPendingHubWakes(PARENT)).toHaveLength(3)
     h.s.onActivity(PARENT)
@@ -153,6 +148,17 @@ describe('HubWakeScheduler', () => {
     expect(getHubParent(PARENT)?.held).toBe(false)
   })
 
+  it('counts a wake turn that ends with no output of the agent as a failed try', async () => {
+    const h = harness()
+    h.report('agent_a', 'A done')
+    await vi.advanceTimersByTimeAsync(HUB_WAKE_QUIET_MS)
+    h.s.onTurnEnded(PARENT)
+    expect(listPendingHubWakes(PARENT)).toHaveLength(1)
+    expect(h.rows).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(HUB_WAKE_QUIET_MS)
+    expect(h.sent).toHaveLength(2)
+  })
+
   it('delivers a wake once after a refused send', async () => {
     let refuse = true
     const h = harness({ send: async () => !refuse })
@@ -204,7 +210,7 @@ describe('HubWakeScheduler', () => {
     setHubParentHeld(PARENT, true, 'budget')
     h.report('agent_a', 'A done')
     const claim = h.s.claimForTurn(PARENT)!
-    expect(claim.apply('merge it')).toMatch(/^merge it\n\n<switchboard-hub-update>/)
+    expect(claim.apply('merge it')).toMatch(/^<switchboard-hub-update>[\s\S]*<\/switchboard-hub-update>\n\nmerge it$/)
     // A second turn meanwhile does not take the same wakes.
     expect(h.s.claimForTurn(PARENT)).toBeNull()
     const d = claim.dispatched()

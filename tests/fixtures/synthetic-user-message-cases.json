@@ -171,8 +171,8 @@
     }
   },
   {
-    "id": "hub-update-after-user-text",
-    "text": "merge the login fix\n\n<switchboard-hub-update>\nFix login (result_ready): Done.\nread_child { childId: \"agent_1\" }\n</switchboard-hub-update>",
+    "id": "hub-update-before-user-text",
+    "text": "<switchboard-hub-update>\nFix login (result_ready): Done.\nread_child { childId: \"agent_1\" }\n</switchboard-hub-update>\n\nmerge the login fix",
     "expected": {
       "rows": [],
       "userText": "merge the login fix"

@@ -87,10 +87,27 @@ describe('readChild', () => {
         ],
       }),
     ]
-    const r = await readChild({ parentId: 'agent_parent', load: async () => all }, { childId: 'agent_child', at: 'call_r' })
+    const r = await readChild(
+      { parentId: 'agent_parent', load: async () => all },
+      { childId: 'agent_child', at: 'call_r' },
+    )
     const body = JSON.parse(text(r))
     expect(body.messages[0].tools[0].input).toContain(report)
     expect(body.messages[0].tools[1].output.length).toBeLessThan(3000)
+  })
+
+  it('reports a failed load as an error, not a gone transcript', async () => {
+    const r = await readChild(
+      {
+        parentId: 'agent_parent',
+        load: async () => {
+          throw new Error('disk')
+        },
+      },
+      { childId: 'agent_child' },
+    )
+    expect(r.isError).toBe(true)
+    expect(text(r)).not.toContain('gone')
   })
 
   it('says the transcript is gone and gives the summary', async () => {
@@ -106,6 +123,8 @@ describe('readChild', () => {
       { parentId: 'agent_parent', load: async () => history(3), exists: () => false },
       { childId: 'agent_child' },
     )
-    expect(text(r)).toBe('The transcript of Fix login is gone (/gone/session.jsonl). Only its summary is left: Login fixed.')
+    expect(text(r)).toBe(
+      'The transcript of Fix login is gone (/gone/session.jsonl). Only its summary is left: Login fixed.',
+    )
   })
 })

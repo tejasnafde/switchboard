@@ -4,7 +4,9 @@
  * provider. A window starts at a pointer (`at`: a tool call id or message id)
  * or an absolute `offset`, else it is the newest messages; `query` searches the
  * whole history. A `report_to_hub` call is returned whole, since its `report`
- * is the child's full report; other tool input and output is clipped.
+ * is the child's full report; other tool input and output is clipped. A
+ * Codex or ACP child's tool calls come from Switchboard's own copy, which
+ * stores at most 32 KiB of a call's input, so a longer report is cut there.
  *
  * Measured: one `hub.read-child` perf line per call (messages returned, total,
  * bytes of the reply, outcome).
@@ -134,20 +136,19 @@ export async function readChild(ctx: ReadChildContext, raw: Record<string, unkno
   }
   const wake = lastHubWakeOf(child.childId)
   const path = wake?.pointer?.transcriptPath
-  let all: ChatMessage[] = []
-  if (!path || (ctx.exists ?? existsSync)(path)) {
-    try {
-      all = await ctx.load(child.childId)
-    } catch (err) {
-      log.warn(`could not load the history of child ${child.childId}`, err)
-    }
-  }
   // A transcript file the pointer named is the record: without it, only the summary is left.
-  if (all.length === 0) {
+  if (path && !(ctx.exists ?? existsSync)(path)) {
     span.end({ outcome: 'gone' })
-    const where = path ? ` (${path})` : ''
     const left = wake ? ` Only its summary is left: ${wake.summary}` : ''
-    return toolText(`The transcript of ${child.title} is gone${where}.${left}`)
+    return toolText(`The transcript of ${child.title} is gone (${path}).${left}`)
+  }
+  let all: ChatMessage[]
+  try {
+    all = await ctx.load(child.childId)
+  } catch (err) {
+    log.warn(`could not load the history of child ${child.childId}`, err)
+    span.end({ outcome: 'error' })
+    return toolText(`Could not read the history of ${child.title}. Try again in a moment.`, true)
   }
   const w = readChildWindow(all, args)
   const reply = JSON.stringify(

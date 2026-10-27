@@ -566,6 +566,8 @@ export interface HubChatView {
   parent: HubChatRef | null
   children: HubChildView[]
   state: ParentState | null
+  /** Updates held for Deliver (a Stop, failed deliveries, the hourly cap); absent when none. */
+  heldUpdates?: number
 }
 
 export const EMPTY_HUB_VIEW: HubChatView = { self: null, parent: null, children: [], state: null }

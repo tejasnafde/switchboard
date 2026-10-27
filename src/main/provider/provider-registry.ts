@@ -614,28 +614,33 @@ export class ProviderRegistry implements PeerToolHost {
   /** `report_to_hub`: the child's summary and a pointer to the call in its transcript become a wake for its parent. */
   private async reportToHub(threadId: string, input: { status: HubReportStatus; summary: string }) {
     const childId = resolveRootThreadId(threadId)
-    const parentId = this.hubStarter.parentOfOpenChild(childId)
-    if (!parentId) return toolText('This chat is not an open child chat, so it has no parent to report to.', true)
     const toolCallId = this.reportCalls.get(threadId)
     this.reportCalls.delete(threadId)
+    const parentId = this.hubStarter.parentOfOpenChild(childId)
+    if (!parentId) return toolText('This chat is not an open child chat, so it has no parent to report to.', true)
     let transcriptPath: string | null = null
     try {
       transcriptPath = await transcriptPathOf(childId)
     } catch (err) {
       log.warn(`could not find the transcript file of child ${childId}`, err)
     }
-    this.hubWakes.record({
-      parentId,
-      childId,
-      kind: reportWakeKind(input.status),
-      summary: input.summary,
-      pointer: {
+    try {
+      this.hubWakes.record({
+        parentId,
         childId,
-        ...(toolCallId ? { toolCallId } : {}),
-        at: Date.now(),
-        ...(transcriptPath ? { transcriptPath } : {}),
-      },
-    })
+        kind: reportWakeKind(input.status),
+        summary: input.summary,
+        pointer: {
+          childId,
+          ...(toolCallId ? { toolCallId } : {}),
+          at: Date.now(),
+          ...(transcriptPath ? { transcriptPath } : {}),
+        },
+      })
+    } catch (err) {
+      log.error(`could not store the report of child ${childId}`, err)
+      return toolText('Switchboard could not store your report. Try again in a moment.', true)
+    }
     log.info('child reported', {
       childId,
       parentId,
@@ -667,18 +672,26 @@ export class ProviderRegistry implements PeerToolHost {
     const rows = parentId ? [] : listHubChildren(root)
     const wakes = rows.length > 0 ? lastHubWakes(root) : null
     const children = rows.map((c) => this.hubChildView(c, wakes?.get(c.childId) ?? null))
+    // Held updates outlive the children: settled ones still leave them for Deliver.
+    const heldUpdates = !parentId && getHubParent(root)?.held ? listPendingHubWakes(root).length : 0
     const state =
       rows.length > 0
         ? parentState({
             ownTurnRunning: this.liveTurnRunning(root),
             ownLimit: this.limitResumer?.view(root).kind ?? 'none',
-            heldWakes: getHubParent(root)?.held ? listPendingHubWakes(root).length : 0,
+            heldWakes: heldUpdates,
             children: children.map((c) => ({ state: c.state, limit: c.limit })),
           })
         : null
     span.end({ children: children.length, child: parentId !== null })
-    if (!parentId && rows.length === 0) return EMPTY_HUB_VIEW
-    return { self: hubChatRef(root), parent: parentId ? hubChatRef(parentId) : null, children, state }
+    if (!parentId && rows.length === 0 && heldUpdates === 0) return EMPTY_HUB_VIEW
+    return {
+      self: hubChatRef(root),
+      parent: parentId ? hubChatRef(parentId) : null,
+      children,
+      state,
+      ...(heldUpdates > 0 ? { heldUpdates } : {}),
+    }
   }
 
   private liveTurnRunning(conversationId: string): boolean {
@@ -2476,13 +2489,15 @@ export class ProviderRegistry implements PeerToolHost {
       this.hubStarter.onTurnEnded(event.threadId)
     if (event.type === 'tool.started' && /report_to_hub$/.test(event.toolName))
       this.reportCalls.set(event.threadId, event.toolId)
+    if (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))
+      this.reportCalls.delete(event.threadId)
+    // Only the agent's own output: adapters announce `status: running` themselves before the CLI does anything.
+    if (event.type === 'content' || event.type === 'tool.started') this.hubWakes.onActivity(event.threadId)
     if (
-      event.type === 'content' ||
-      event.type === 'tool.started' ||
       event.type === 'turn.completed' ||
-      (event.type === 'status' && event.status === 'running')
+      (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))
     )
-      this.hubWakes.onActivity(event.threadId)
+      this.hubWakes.onTurnEnded(event.threadId)
     if (event.type === 'turn.completed' || (event.type === 'status' && event.status === 'idle'))
       this.hubWakes.onIdleChance(event.threadId)
     if ((event.type === 'status' ? statusChanged : HUB_VIEW_EVENTS.has(event.type)) && this.hubChildrenOn()) {

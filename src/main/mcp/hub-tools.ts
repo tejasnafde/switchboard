@@ -194,7 +194,7 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         'its full report; other tool input and output shortened) and its own subagents. at: a tool call id or message',
         'id from an update; the window starts there. offset and limit page (default 20 messages, at most 200);',
         'nextOffset is where the next page starts. query searches the whole history. Without at or offset you get',
-        'the newest messages.',
+        'the newest messages. A Codex or ACP child keeps at most 32 KiB of a report; its summary is always whole.',
       ].join(' '),
       inputSchema: {
         type: 'object',
@@ -243,7 +243,12 @@ export function buildChildHubMcpTools(ctx: ChildHubMcpToolContext): McpTool[] {
         required: ['status', 'summary'],
         additionalProperties: false,
       },
-      annotations: { title: 'Report to the parent chat', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      annotations: {
+        title: 'Report to the parent chat',
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
       async call(args) {
         const status = HUB_REPORT_STATUSES.find((s) => s === args.status)
         if (!status) return toolText(`status is one of ${HUB_REPORT_STATUSES.join(', ')}.`, true)

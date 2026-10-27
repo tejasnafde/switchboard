@@ -45,7 +45,9 @@ export function HubUpdateRow({
             <div className="min-w-[min(100%,240px)] flex-1">
               <span className="font-[600] text-[var(--text-primary)]">{e.title}</span>
               <span className="ml-[6px] text-[11px] text-[var(--text-muted)]">{hubWakeKindLabel(e.kind)}</span>
-              <div className="max-h-[120px] overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">{e.summary}</div>
+              <div className="max-h-[120px] overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">
+                {e.summary}
+              </div>
             </div>
             {parent && (
               <Button variant="ghost" size="sm" onClick={() => void openHubChat(refOf(e), parent)}>

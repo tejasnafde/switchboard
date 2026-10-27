@@ -41,6 +41,7 @@ import {
   setHubParentHeld,
   type HubWakeRow,
 } from '../db/database'
+import { withMergeBacks } from '@shared/merge-back'
 import { createMainLogger } from '../logger'
 import { perfSpan } from '../perf'
 
@@ -141,7 +142,13 @@ export class HubWakeScheduler {
   }
 
   /** Stores a wake and schedules its parent. */
-  record(w: { parentId: string; childId: string; kind: HubWakeKind; summary: string; pointer: HubPointer | null }): void {
+  record(w: {
+    parentId: string
+    childId: string
+    kind: HubWakeKind
+    summary: string
+    pointer: HubPointer | null
+  }): void {
     insertHubWake({ id: newWakeId(), ...w })
     this.poke(w.parentId)
   }
@@ -160,7 +167,17 @@ export class HubWakeScheduler {
     if (this.pending.has(parentId)) this.consider(parentId)
   }
 
-  /** Provider activity on a thread: confirms a wake turn sent there. */
+  /**
+   * A turn ended, stopped or failed on a thread. A wake turn there that showed
+   * no activity of the agent's own counts as a failed try at once.
+   */
+  onTurnEnded(threadId: string): void {
+    const parentId = this.byThread.get(threadId)
+    const f = parentId ? this.inFlight.get(parentId) : undefined
+    if (parentId && f?.sent && !f.active) this.failed(parentId, f, 'no_start')
+  }
+
+  /** The agent's own output (text or a tool call) on a thread: confirms a wake turn sent there. */
   onActivity(threadId: string): void {
     const parentId = this.byThread.get(threadId)
     if (!parentId) return
@@ -205,7 +222,8 @@ export class HubWakeScheduler {
       for (const w of wakes) this.claimed.delete(w.id)
     }
     return {
-      apply: (providerText) => `${providerText}\n\n${body}`,
+      // In front of the user's words, like fork summaries: the synthetic split drops leading blocks only.
+      apply: (providerText) => withMergeBacks(providerText, [body]),
       release,
       dispatched: () => ({
         commitInTransaction: (db, acceptedAt) => {
@@ -313,7 +331,7 @@ export class HubWakeScheduler {
         attempt,
       }),
     }
-    // Before the send: a Codex turn can show activity before its start call returns.
+    // Before the send: output can arrive before the send call returns.
     this.inFlight.set(parentId, f)
     this.byThread.set(threadId, parentId)
     let ok = false
