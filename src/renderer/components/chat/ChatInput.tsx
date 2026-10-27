@@ -79,6 +79,7 @@ import type { RuntimeMode, UserMessagePillsMeta } from '@shared/provider-events'
 import { Button } from '../ui/button'
 import { confirm } from '../ui/confirm'
 import { useRenderCount } from '../../services/render-counter'
+import { toComposerImage } from '../../services/image-intake'
 
 export type ChatSendResult =
   | { accepted: true }
@@ -784,11 +785,11 @@ export function ChatInput({
   }, [sessionId, removePill])
 
   const addImages = useCallback(
-    (files: File[]) => {
+    async (files: File[]) => {
       if (!sessionId) return
       setSendError(null)
-      const imageFiles = files.filter((f) => f.type.startsWith('image/'))
-      const valid = imageFiles.filter((f) => f.size <= MAX_IMAGE_SIZE)
+      const images = await Promise.all(files.filter((f) => f.size <= MAX_IMAGE_SIZE).map(toComposerImage))
+      const valid = images.filter((f): f is File => f !== null)
 
       addImagesToSession(
         sessionId,
@@ -1517,7 +1518,7 @@ export function ChatInput({
       dragDepthRef.current = 0
       setIsDragOver(false)
       const files = Array.from(e.dataTransfer.files)
-      addImages(files)
+      void addImages(files)
       richRef.current?.focus()
     },
     [addImages],
@@ -1600,11 +1601,11 @@ export function ChatInput({
       <input
         ref={filePickerRef}
         type="file"
-        accept={USER_MESSAGE_IMAGE_TYPES.join(',')}
+        accept={[...USER_MESSAGE_IMAGE_TYPES, 'image/heic', 'image/heif', '.heic', '.heif'].join(',')}
         multiple
         onChange={(e) => {
           const files = Array.from(e.target.files ?? [])
-          if (files.length > 0) addImages(files)
+          if (files.length > 0) void addImages(files)
           if (filePickerRef.current) filePickerRef.current.value = ''
           richRef.current?.focus()
         }}

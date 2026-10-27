@@ -8,6 +8,14 @@
 /** Ceiling on the encoded data URLs of one message; the backend enforces the same. */
 export const MESSAGE_IMAGE_WIRE_BUDGET = 3 * 1024 * 1024
 
+/**
+ * Longest side, in pixels, of any image sent to a provider. The Claude API
+ * refuses a request with more than 20 images when one has a side over 2000 px,
+ * and Claude Code keeps earlier images in the session, so one larger image
+ * breaks every later turn of a long chat.
+ */
+export const MAX_IMAGE_LONG_SIDE = 2000
+
 /** A PNG (a screenshot) stays PNG only while it is this small, else it becomes a JPEG. */
 export const PNG_KEEP_WIRE_BYTES = 1024 * 1024
 
@@ -22,7 +30,7 @@ export interface ResizeAttempt {
 
 /** Tried in order until one fits: full size first, then smaller and softer. */
 export const JPEG_STEPS: readonly ResizeAttempt[] = [
-  { maxSide: 2048, quality: 0.85, format: 'jpeg' },
+  { maxSide: MAX_IMAGE_LONG_SIDE, quality: 0.85, format: 'jpeg' },
   { maxSide: 1600, quality: 0.85, format: 'jpeg' },
   { maxSide: 1280, quality: 0.75, format: 'jpeg' },
 ]
@@ -33,7 +41,8 @@ export const JPEG_STEPS: readonly ResizeAttempt[] = [
  */
 export function resizeAttempts(sourceMimeType: string): readonly ResizeAttempt[] | null {
   if (sourceMimeType === 'image/gif') return null
-  if (sourceMimeType === 'image/png') return [{ maxSide: 2048, quality: 1, format: 'png' }, ...JPEG_STEPS]
+  if (sourceMimeType === 'image/png')
+    return [{ maxSide: MAX_IMAGE_LONG_SIDE, quality: 1, format: 'png' }, ...JPEG_STEPS]
   return JPEG_STEPS
 }
 
@@ -93,12 +102,23 @@ export async function shrinkToBudget<T>(
 }
 
 /** A GIF (or any image sent unchanged) either fits what is left, or is refused with the reason. */
-export function sendAsIs(wireBytes: number, remaining: number): 'ok' | 'over-message-budget' | 'gif-too-large' {
+export function sendAsIs(
+  wireBytes: number,
+  remaining: number,
+  longestSide = 0,
+): 'ok' | 'over-message-budget' | 'gif-too-large' | 'gif-too-wide' {
+  if (longestSide > MAX_IMAGE_LONG_SIDE) return 'gif-too-wide'
   if (wireBytes <= remaining) return 'ok'
   return wireBytes <= MESSAGE_IMAGE_WIRE_BUDGET ? 'over-message-budget' : 'gif-too-large'
 }
 
-export type ImageRefusal = 'too-large' | 'over-message-budget' | 'gif-too-large' | 'unreadable' | 'unsupported-type'
+export type ImageRefusal =
+  | 'too-large'
+  | 'over-message-budget'
+  | 'gif-too-large'
+  | 'gif-too-wide'
+  | 'unreadable'
+  | 'unsupported-type'
 
 function mib(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(0)} MB`
@@ -114,9 +134,37 @@ export function imageRefusalMessage(name: string, reason: ImageRefusal): string 
       return `${name} did not fit: the images in one message can total at most ${budget}`
     case 'gif-too-large':
       return `${name} is a GIF over ${budget}; GIFs are sent unchanged to keep their animation`
+    case 'gif-too-wide':
+      return `${name} is a GIF over ${MAX_IMAGE_LONG_SIDE} px on its long side; GIFs are sent unchanged to keep their animation`
     case 'unsupported-type':
       return `${name} must be PNG, JPEG, WebP, or GIF`
     case 'unreadable':
       return `${name} could not be read`
   }
+}
+
+const EXTENSION_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  heic: 'image/heic',
+  heif: 'image/heif',
+}
+
+/**
+ * The image type of a file: its MIME type, or the one its extension names
+ * when the MIME type is missing or generic (a drag from another app can
+ * carry none). Empty when it is not an image.
+ */
+export function imageTypeOf(file: { type: string; name: string }): string {
+  if (file.type.startsWith('image/')) return file.type
+  if (file.type && file.type !== 'application/octet-stream') return ''
+  return EXTENSION_TYPES[file.name.split('.').pop()?.toLowerCase() ?? ''] ?? ''
+}
+
+/** HEIC and HEIF (iPhone photos): no Chromium decodes them, so they are converted to JPEG first. */
+export function isHeicType(mimeType: string): boolean {
+  return mimeType === 'image/heic' || mimeType === 'image/heif'
 }

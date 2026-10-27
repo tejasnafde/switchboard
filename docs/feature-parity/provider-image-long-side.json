@@ -1,0 +1,67 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "provider-image-long-side",
+  "summary": "Every image a provider gets is at most 2000 px on its long side (MAX_IMAGE_LONG_SIDE), the Claude API limit for requests with more than 20 images. Clients resize to it first; the backend shrinks any larger PNG or JPEG before the adapter (older phone builds, re-sends of stored images) and refuses a larger GIF or WebP by name. The desktop composer takes the image type from the extension when the MIME type is missing and converts HEIC/HEIF to JPEG with macOS sips.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/services/image-intake.ts",
+        "src/renderer/services/image-downscale.ts",
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/lexical/RichChatTextarea.tsx",
+        "src/main/heic.ts",
+        "src/main/ipc/app-desktop.ts",
+        "src/preload/index.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/image-resize.ts",
+        "apps/mobile/src/components/ImageAttachments.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/composer/ImageResizePlan.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/composer/ImageResizePlanTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/image-limits.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/provider-image-limits.test.ts",
+        "tests/unit/provider-registry-image-limit.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Stored messages keep the images as the client sent them; only the copy passed to the adapter is shrunk. The turn hash still covers the sent images, so a retry of an accepted turn stays a duplicate. No schema change."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships with the next desktop, headless server, Expo OTA and Android release on their usual lanes. jpeg-js and pngjs are pure JS: bundled into the headless server and installed as desktop dependencies, no native rebuild."
+    }
+  },
+  "verification": {
+    "automated": [
+      "vitest: tests/unit/provider-image-limits.test.ts (steps at 2000 px, header sizes, PNG and JPEG shrink, GIF refusal, pixel cap before decode, mismatched type, type from extension) and tests/unit/provider-registry-image-limit.test.ts (typed submit and legacy send reach the adapter at 2000 px).",
+      "vitest: tests/unit/image-resize.test.ts with the 2000 px steps."
+    ],
+    "hardware": [
+      "src/main/heic.ts converted a sips-made HEIC to a JPEG on macOS 26 (2026-10-27)."
+    ],
+    "notExercised": [
+      "Dropping a HEIC from Finder and an image with no MIME type into the running desktop app.",
+      "Android ImageResizePlanTest after the 2000 px change (gradle not run here).",
+      "HEIC on Windows: no converter, so the composer refuses it at send as unreadable.",
+      "Deferred: Android does not refuse a GIF over 2000 px when it is attached; the backend refuses the turn by name instead.",
+      "Deferred: the backend shrink ignores EXIF orientation. Every client strips EXIF before it sends, so only a client that skips the resize is affected."
+    ]
+  }
+}

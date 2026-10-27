@@ -8,6 +8,7 @@ import { perfSpan } from '../perf'
 import type { BackendHost } from '../backend/host'
 import { AppChannels, ProviderChannels } from '@shared/ipc-channels'
 import { applyContentText } from '@shared/content-stream'
+import { fitImagesToProviderLimit } from './image-limits'
 import { createMainLogger as createLogger } from '../logger'
 import { trackAnalyticsEvent } from '../analytics'
 import { ClaudeAdapter } from './adapters/claude-adapter'
@@ -2682,12 +2683,20 @@ export class ProviderRegistry implements PeerToolHost {
       const clientScope =
         currentBackendRequestContext()?.clientScope ??
         hashClientScope('unscoped-local', 'backend-host-without-request-context')
+      let providerImages: typeof input.images
       const result = await this.atomicTurnSubmission.submit(input, {
         clientScope,
         conversationId,
         prepare: async () => {
           if (this.switchingSessions.has(threadId)) {
             throw new TurnNotAcceptedError('Session queue full while a profile switch is in progress')
+          }
+          // After validation and the duplicate check. The stored turn keeps
+          // the images as sent; only the provider gets them shrunk.
+          try {
+            providerImages = fitImagesToProviderLimit(input.images)
+          } catch (error) {
+            throw new TurnNotAcceptedError(errorMessage(error), { cause: error })
           }
           if (speaksAcp(adapter.provider) && this.hasOutstandingTurn(threadId) && input.delivery !== 'queue') {
             throw new TurnNotAcceptedError(
@@ -2740,7 +2749,7 @@ export class ProviderRegistry implements PeerToolHost {
           const providerText = mergeBack ? mergeBack.apply(turn.providerText) : turn.providerText
           try {
             await this.dispatchToAdapter(adapter, threadId, providerText, senderLine, (text) =>
-              adapter.sendTurn(threadId, text, input.runtimeMode, input.images, input.delivery, queuedId),
+              adapter.sendTurn(threadId, text, input.runtimeMode, providerImages, input.delivery, queuedId),
             )
           } catch (error) {
             mergeBack?.release()
@@ -3659,6 +3668,7 @@ export class ProviderRegistry implements PeerToolHost {
             throw new Error(`No session: ${threadId}`)
           }
           const acceptedImages = validateUserMessageImages(images)
+          const providerImages = fitImagesToProviderLimit(acceptedImages)
           firstContentSpan = this.beginFirstTurnTiming(threadId)
           log.info(
             `sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${acceptedImages?.length ?? 0}`,
@@ -3701,7 +3711,7 @@ export class ProviderRegistry implements PeerToolHost {
                 threadId,
                 message,
                 senderLineForTurn(message, this.threadCwd(threadId)),
-                (text) => adapter.sendTurn(threadId, text, runtimeMode, acceptedImages),
+                (text) => adapter.sendTurn(threadId, text, runtimeMode, providerImages),
               )
             } catch (error) {
               if (startsNewProviderTurn) this.finishOutstandingTurn(threadId)
