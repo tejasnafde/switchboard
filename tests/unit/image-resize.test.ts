@@ -30,7 +30,7 @@ describe('fitWithin', () => {
 describe('resizeAttempts', () => {
   it('steps a photo down in size, then in quality', () => {
     expect(resizeAttempts('image/jpeg')).toEqual([
-      { maxSide: 2048, quality: 0.85, format: 'jpeg' },
+      { maxSide: 2000, quality: 0.85, format: 'jpeg' },
       { maxSide: 1600, quality: 0.85, format: 'jpeg' },
       { maxSide: 1280, quality: 0.75, format: 'jpeg' },
     ])
@@ -38,7 +38,7 @@ describe('resizeAttempts', () => {
   })
 
   it('tries a PNG as PNG first, then as a photo', () => {
-    expect(resizeAttempts('image/png')).toEqual([{ maxSide: 2048, quality: 1, format: 'png' }, ...JPEG_STEPS])
+    expect(resizeAttempts('image/png')).toEqual([{ maxSide: 2000, quality: 1, format: 'png' }, ...JPEG_STEPS])
   })
 
   it('never re-encodes a GIF, which would drop its animation', () => {
@@ -66,43 +66,43 @@ describe('shrinkToBudget', () => {
   }
 
   it('keeps the first attempt that fits', async () => {
-    const { tried, encode } = encoder({ 'jpeg@2048': 900_000 })
+    const { tried, encode } = encoder({ 'jpeg@2000': 900_000 })
     const out = await shrinkToBudget(resizeAttempts('image/jpeg')!, MESSAGE_IMAGE_WIRE_BUDGET, encode)
-    expect(out).toMatchObject({ ok: true, result: 'jpeg@2048' })
-    expect(tried).toEqual(['jpeg@2048'])
+    expect(out).toMatchObject({ ok: true, result: 'jpeg@2000' })
+    expect(tried).toEqual(['jpeg@2000'])
   })
 
   it('steps down until the image fits', async () => {
-    const { tried, encode } = encoder({ 'jpeg@2048': 4e6, 'jpeg@1600': 3.5e6, 'jpeg@1280': 2e6 })
+    const { tried, encode } = encoder({ 'jpeg@2000': 4e6, 'jpeg@1600': 3.5e6, 'jpeg@1280': 2e6 })
     const out = await shrinkToBudget(JPEG_STEPS, MESSAGE_IMAGE_WIRE_BUDGET, encode)
     expect(out).toMatchObject({ ok: true, result: 'jpeg@1280', attempt: { quality: 0.75 } })
-    expect(tried).toEqual(['jpeg@2048', 'jpeg@1600', 'jpeg@1280'])
+    expect(tried).toEqual(['jpeg@2000', 'jpeg@1600', 'jpeg@1280'])
   })
 
   it('keeps a small PNG (a screenshot) as PNG', async () => {
-    const { encode } = encoder({ 'png@2048': PNG_KEEP_WIRE_BYTES })
+    const { encode } = encoder({ 'png@2000': PNG_KEEP_WIRE_BYTES })
     expect(await shrinkToBudget(resizeAttempts('image/png')!, MESSAGE_IMAGE_WIRE_BUDGET, encode)).toMatchObject({
       ok: true,
-      result: 'png@2048',
+      result: 'png@2000',
     })
   })
 
   it('turns a large PNG into a JPEG even when the PNG would fit the budget', async () => {
-    const { encode } = encoder({ 'png@2048': PNG_KEEP_WIRE_BYTES + 1, 'jpeg@2048': 500_000 })
+    const { encode } = encoder({ 'png@2000': PNG_KEEP_WIRE_BYTES + 1, 'jpeg@2000': 500_000 })
     expect(await shrinkToBudget(resizeAttempts('image/png')!, MESSAGE_IMAGE_WIRE_BUDGET, encode)).toMatchObject({
       ok: true,
-      result: 'jpeg@2048',
+      result: 'jpeg@2000',
     })
   })
 
   it('fits what is left of the message, and says so when only that is the problem', async () => {
-    const { encode } = encoder({ 'jpeg@2048': 2e6, 'jpeg@1600': 1.5e6, 'jpeg@1280': 1e6 })
+    const { encode } = encoder({ 'jpeg@2000': 2e6, 'jpeg@1600': 1.5e6, 'jpeg@1280': 1e6 })
     expect(await shrinkToBudget(JPEG_STEPS, 1.2e6, encode)).toMatchObject({ ok: true, result: 'jpeg@1280' })
     expect(await shrinkToBudget(JPEG_STEPS, 500_000, encode)).toEqual({ ok: false, reason: 'over-message-budget' })
   })
 
   it('refuses an image too large even alone', async () => {
-    const { encode } = encoder({ 'jpeg@2048': 9e6, 'jpeg@1600': 8e6, 'jpeg@1280': 4e6 })
+    const { encode } = encoder({ 'jpeg@2000': 9e6, 'jpeg@1600': 8e6, 'jpeg@1280': 4e6 })
     expect(await shrinkToBudget(JPEG_STEPS, MESSAGE_IMAGE_WIRE_BUDGET, encode)).toEqual({
       ok: false,
       reason: 'too-large',

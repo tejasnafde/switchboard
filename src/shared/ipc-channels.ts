@@ -57,6 +57,8 @@ export const AppChannels = {
   /** The new version once after an upgrade, else null. */
   TAKE_UPDATED_NOTICE: 'app:take-updated-notice',
   RELAUNCH: 'app:relaunch',
+  /** Desktop only: HEIC/HEIF bytes to JPEG bytes (`main/heic.ts`). */
+  CONVERT_HEIC: 'app:convert-heic',
   /** Settings > About > Diagnostics: one JSON snapshot of the host (see shared/diagnostics-report.ts). */
   GET_DIAGNOSTICS: 'app:get-diagnostics',
   /** Reveal the main-process log directory in Finder / Explorer. */

@@ -79,6 +79,7 @@ import type { RuntimeMode, UserMessagePillsMeta } from '@shared/provider-events'
 import { Button } from '../ui/button'
 import { confirm } from '../ui/confirm'
 import { useRenderCount } from '../../services/render-counter'
+import { toComposerImage } from '../../services/image-intake'
 
 export type ChatSendResult =
   | { accepted: true }
@@ -413,6 +414,8 @@ export function ChatInput({
   )
   const recovery = sessionId ? (recoveries[sessionId] ?? null) : null
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Images still converting (HEIC): Send waits for them so the text never goes without its image.
+  const [pendingIntakes, setPendingIntakes] = useState(0)
   const submittingRef = useRef(false)
   const submissionRef = useRef(0)
   const acceptedOriginsRef = useRef(new Set<string>())
@@ -784,20 +787,25 @@ export function ChatInput({
   }, [sessionId, removePill])
 
   const addImages = useCallback(
-    (files: File[]) => {
+    async (files: File[]) => {
       if (!sessionId) return
       setSendError(null)
-      const imageFiles = files.filter((f) => f.type.startsWith('image/'))
-      const valid = imageFiles.filter((f) => f.size <= MAX_IMAGE_SIZE)
+      setPendingIntakes((count) => count + 1)
+      try {
+        const images = await Promise.all(files.filter((f) => f.size <= MAX_IMAGE_SIZE).map(toComposerImage))
+        const valid = images.filter((f): f is File => f !== null)
 
-      addImagesToSession(
-        sessionId,
-        valid.map((file) => ({
-          id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          file,
-          previewUrl: URL.createObjectURL(file),
-        })),
-      )
+        addImagesToSession(
+          sessionId,
+          valid.map((file) => ({
+            id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            file,
+            previewUrl: URL.createObjectURL(file),
+          })),
+        )
+      } finally {
+        setPendingIntakes((count) => count - 1)
+      }
     },
     [sessionId, addImagesToSession],
   )
@@ -814,7 +822,8 @@ export function ChatInput({
     async (delivery: TurnDelivery = 'steer') => {
       const trimmed = value.trim()
       const hasPills = pills.length > 0
-      if ((!trimmed && images.length === 0 && !hasPills) || disabled || submittingRef.current) return
+      if ((!trimmed && images.length === 0 && !hasPills) || disabled || submittingRef.current || pendingIntakes > 0)
+        return
       const submittedSessionId = sessionId
       const submission = ++submissionRef.current
       const priorRecovery = recovery?.sessionId === submittedSessionId ? recovery : null
@@ -999,6 +1008,7 @@ export function ChatInput({
       pillsById,
       images,
       disabled,
+      pendingIntakes,
       onSend,
       sessionId,
       composerFingerprint,
@@ -1517,7 +1527,7 @@ export function ChatInput({
       dragDepthRef.current = 0
       setIsDragOver(false)
       const files = Array.from(e.dataTransfer.files)
-      addImages(files)
+      void addImages(files)
       richRef.current?.focus()
     },
     [addImages],
@@ -1600,11 +1610,11 @@ export function ChatInput({
       <input
         ref={filePickerRef}
         type="file"
-        accept={USER_MESSAGE_IMAGE_TYPES.join(',')}
+        accept={[...USER_MESSAGE_IMAGE_TYPES, 'image/heic', 'image/heif', '.heic', '.heif'].join(',')}
         multiple
         onChange={(e) => {
           const files = Array.from(e.target.files ?? [])
-          if (files.length > 0) addImages(files)
+          if (files.length > 0) void addImages(files)
           if (filePickerRef.current) filePickerRef.current.value = ''
           richRef.current?.focus()
         }}
@@ -1732,7 +1742,12 @@ export function ChatInput({
               onClick={() => {
                 void handleSend(followUpDefault)
               }}
-              disabled={disabled || isSubmitting || (!value.trim() && images.length === 0 && pills.length === 0)}
+              disabled={
+                disabled ||
+                isSubmitting ||
+                pendingIntakes > 0 ||
+                (!value.trim() && images.length === 0 && pills.length === 0)
+              }
               aria-label={sendButton.label}
               title={sendButton.tooltip}
             >

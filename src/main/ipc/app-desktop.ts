@@ -14,6 +14,7 @@ import { projectManagedRootSessions } from './terminal-sessions'
 import { addProject } from '../db/database'
 import type { Project } from '@shared/types'
 import { noteQuitSource } from '../quit-source'
+import { convertHeicToJpeg } from '../heic'
 
 const log = createLogger('ipc:app-desktop')
 
@@ -52,6 +53,9 @@ export function registerAppDesktopHandlers(window: BrowserWindow): void {
   ipcMain.removeHandler(AppChannels.EXPORT_MARKDOWN)
   ipcMain.removeHandler(AppChannels.RELAUNCH)
   ipcMain.removeHandler(AppChannels.SET_VIBRANCY)
+  ipcMain.removeHandler(AppChannels.CONVERT_HEIC)
+
+  ipcMain.handle(AppChannels.CONVERT_HEIC, (_event, bytes: Uint8Array) => convertHeicToJpeg(bytes))
 
   ipcMain.handle(AppChannels.OPEN_FOLDER, async () => {
     log.info('open-folder dialog')
