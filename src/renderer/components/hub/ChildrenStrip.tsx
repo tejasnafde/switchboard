@@ -68,7 +68,22 @@ function ChildRow({ parent, child }: { parent: HubChatRef; child: HubChildView }
   )
 }
 
-export function ChildrenStrip({ parent, items }: { parent: HubChatRef; items: HubChildView[] }) {
+function deliverHeld(parent: HubChatRef): void {
+  window.api.provider
+    .hubDeliverHeldWakes(parent.id)
+    .catch((err: unknown) => log.warn('delivering held updates failed', err))
+}
+
+export function ChildrenStrip({
+  parent,
+  items,
+  updatesHeld,
+}: {
+  parent: HubChatRef
+  items: HubChildView[]
+  /** Updates wait for Deliver (after a Stop, a failed delivery or the hourly cap). */
+  updatesHeld: boolean
+}) {
   if (items.length === 0) return null
   return (
     <section
@@ -76,8 +91,18 @@ export function ChildrenStrip({ parent, items }: { parent: HubChatRef; items: Hu
       data-testid="hub-children-strip"
       className="mx-6 mb-2 max-h-[30vh] overflow-y-auto rounded-[10px] border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-2 text-[var(--text-secondary)]"
     >
-      <div className="text-[11px] font-[600] uppercase tracking-[0.04em] text-[var(--text-muted)]">
-        Children · {items.length}
+      <div className="flex items-center gap-[8px]">
+        <div className="flex-1 text-[11px] font-[600] uppercase tracking-[0.04em] text-[var(--text-muted)]">
+          Children · {items.length}
+        </div>
+        {updatesHeld && (
+          <>
+            <span className="text-[11px] text-[var(--warning)]">Updates held</span>
+            <Button variant="outline" size="sm" onClick={() => deliverHeld(parent)}>
+              Deliver
+            </Button>
+          </>
+        )}
       </div>
       <ul className="m-0 list-none p-0">
         {items.map((c) => (

@@ -26,7 +26,7 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
   return { ...actual, remoteProviderLoginPrompt: () => null }
 })
 
-const hubFlag = vi.hoisted(() => ({ on: true }))
+const hubFlag = vi.hoisted(() => ({ on: true, wakes: [] as Array<Record<string, unknown>> }))
 
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
@@ -66,6 +66,8 @@ vi.mock('../../src/main/db/database', () => ({
       : [],
   lastHubWakes: () => new Map(),
   listPendingHubWakes: () => [],
+  listParentsWithPendingHubWakes: () => [],
+  insertHubWake: (w: Record<string, unknown>) => hubFlag.wakes.push(w),
   getHubParent: () => null,
 }))
 
@@ -180,6 +182,40 @@ describe('child chats in the registry', () => {
     expect(mcp.opened.get('child1')!.instructions).toBeUndefined()
     expect(names('child1')).toContain('own_dependencies')
     expect(names('parent1')).not.toContain('own_dependencies')
+    expect(names('parent1')).toContain('read_child')
+    expect(names('child1')).not.toContain('read_child')
+    expect(names('child1')).toContain('report_to_hub')
+    expect(names('parent1')).not.toContain('report_to_hub')
+  })
+
+  it('stores a report as a wake for the parent, pointing at the tool call', async () => {
+    const adapter = new Adapter()
+    const host = new FakeHost()
+    const mcp = fakeMcp()
+    new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, undefined, mcp.server).registerIpcHandlers()
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: '/tmp' })
+    adapter.onEvent({
+      type: 'tool.started',
+      threadId: 'child1',
+      toolId: 'toolu_42',
+      toolName: 'mcp__switchboard__report_to_hub',
+      input: {},
+    })
+    const report = mcp.opened.get('child1')!.tools.find((t) => t.name === 'report_to_hub')!
+    hubFlag.wakes.length = 0
+    const result = await report.call({ status: 'done', summary: 'Export works.', report: 'Long report' })
+    expect(result.isError).toBeFalsy()
+    expect(hubFlag.wakes).toEqual([
+      expect.objectContaining({
+        parentId: 'parent1',
+        childId: 'child1',
+        kind: 'report',
+        summary: 'Export works.',
+        pointer: expect.objectContaining({ childId: 'child1', toolCallId: 'toolu_42' }),
+      }),
+    ])
+    // The report body stays in the child's transcript.
+    expect(JSON.stringify(hubFlag.wakes)).not.toContain('Long report')
   })
 })
 

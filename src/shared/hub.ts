@@ -275,6 +275,106 @@ export function wakeBatchDecision(w: {
   return w.now < quietAt ? { action: 'wait', until: quietAt } : { action: 'send' }
 }
 
+/** A wake turn the provider shows no activity on for this long ends; its wakes stay pending. */
+export const HUB_WAKE_NO_START_MS = 120_000
+/** Failed tries (a refused send, or no activity) before the wakes are held for Deliver. */
+export const HUB_WAKE_MAX_ATTEMPTS = 2
+
+/** What a child reports with `report_to_hub`. */
+export type HubReportStatus = 'done' | 'question' | 'blocked'
+export const HUB_REPORT_STATUSES: readonly HubReportStatus[] = ['done', 'question', 'blocked']
+
+export function reportWakeKind(status: HubReportStatus): HubWakeKind {
+  return status === 'done' ? 'report' : status
+}
+
+/** The state a wake puts its child in, for the update turn: the parent reads the rest with list_children. */
+export function wakeChildState(kind: HubWakeKind): ChildState {
+  switch (kind) {
+    case 'report':
+      return 'result_ready'
+    case 'question':
+      return 'asked_hub'
+    case 'blocked':
+      return 'blocked'
+    case 'failed':
+      return 'failed'
+    case 'limited':
+      return 'limited'
+    case 'resumed':
+      return 'working'
+    case 'stopped':
+    case 'restart':
+      return 'paused'
+  }
+}
+
+/** One child's line in the parent's `[[sb:hub-update]]` row. */
+export interface HubUpdateRowEntry {
+  childId: string
+  title: string
+  kind: HubWakeKind
+  summary: string
+}
+
+export const HUB_UPDATE_MARKER_PREFIX = '[[sb:hub-update]]'
+
+/** The system row the parent's chat shows for one delivered update. */
+export function formatHubUpdateMarker(entries: readonly HubUpdateRowEntry[]): string {
+  return `${HUB_UPDATE_MARKER_PREFIX} ${JSON.stringify({ entries })}`
+}
+
+const WAKE_KINDS: ReadonlySet<string> = new Set([
+  'report',
+  'question',
+  'blocked',
+  'failed',
+  'stopped',
+  'limited',
+  'resumed',
+  'restart',
+])
+
+/** The entries of a stored `[[sb:hub-update]]` row, or null when it is not one. */
+export function parseHubUpdateMarker(content: string): HubUpdateRowEntry[] | null {
+  if (!content.startsWith(HUB_UPDATE_MARKER_PREFIX)) return null
+  let raw: unknown
+  try {
+    raw = JSON.parse(content.slice(HUB_UPDATE_MARKER_PREFIX.length))
+  } catch {
+    return null
+  }
+  const list = (raw as { entries?: unknown } | null)?.entries
+  if (!Array.isArray(list)) return null
+  const entries: HubUpdateRowEntry[] = []
+  for (const e of list) {
+    const r = e as Record<string, unknown> | null
+    if (
+      typeof r?.childId !== 'string' ||
+      typeof r.title !== 'string' ||
+      typeof r.kind !== 'string' ||
+      !WAKE_KINDS.has(r.kind) ||
+      typeof r.summary !== 'string'
+    )
+      return null
+    entries.push({ childId: r.childId, title: r.title, kind: r.kind as HubWakeKind, summary: r.summary })
+  }
+  return entries
+}
+
+const WAKE_KIND_LABELS: Record<HubWakeKind, string> = {
+  report: 'Reported',
+  question: 'Asked a question',
+  blocked: 'Blocked',
+  failed: 'Failed',
+  stopped: 'Stopped',
+  limited: 'Limited',
+  resumed: 'Resumed',
+  restart: 'Restarted',
+}
+
+export const hubWakeKindLabel = (kind: HubWakeKind): string => WAKE_KIND_LABELS[kind]
+
 // ─── Wrappers ───────────────────────────────────────────────────
 
 export const HUB_BRIEF_OPEN = '<switchboard-hub-brief>'
@@ -286,6 +386,10 @@ export const HUB_UPDATE_CLOSE = '</switchboard-hub-update>'
 const without = (close: string) => (s: string) => s.split(close).join(`${close.slice(0, -1)} >`)
 const safeBrief = without(HUB_BRIEF_CLOSE)
 const safeUpdate = without(HUB_UPDATE_CLOSE)
+
+/** Appended to every brief, so a child knows how to reach its parent. */
+export const HUB_REPORT_LINE =
+  'When you finish, have a question for your parent chat, or are blocked, call report_to_hub with a short summary.'
 
 /** A child's first turn: the parent's brief, wrapped so it carries no user authority. */
 export function hubBriefTurn(brief: string): string {

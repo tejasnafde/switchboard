@@ -152,6 +152,22 @@ async function loadDiskHistory(conversationId: string, timing: ChatLoadTiming): 
   return { familyIds, diskMessages, provenanceByMessageId, sources }
 }
 
+/**
+ * The provider file that holds a chat's own transcript: the newest session's
+ * most complete Claude copy, or its Codex rollout. Null for a chat with none
+ * (ACP agents keep theirs in their own store).
+ */
+export async function transcriptPathOf(conversationId: string): Promise<string | null> {
+  const { knownSessionIds, claudeIds } = sessionIdsOf(conversationId)
+  for (const sessionId of [...claudeIds].reverse()) {
+    const path = claudeCopyPaths(sessionId)[0]
+    if (path) return path
+  }
+  const codex = codexCopiesById(await scanCodexSessionCopies(knownSessionIds, codexCandidateDirs()), knownSessionIds)
+  const paths = [...codex.values()].at(-1)
+  return paths ? ((await largestFirst(paths))[0] ?? null) : null
+}
+
 export async function loadConversationHistory(
   conversationId: string,
   _projectPath: string,
