@@ -56,6 +56,7 @@ that takes whole tool calls may get fewer than 200 rows and pages on through
 `nextBeforeId`; `chat-load-payload-ceiling.test.ts` fails CI when a window or
 an older page grows past its ceiling. `app:load-history-image` and
 `app:load-tool-call` misses read one message the same way (`throughId`).
+`messageWindowRows` and `getDisplayBodyEnrichments` read on `getReadDb()`, a read-only, query-only second connection to the WAL database (main connection for `:memory:`, a non-WAL file or a failed open); never write through it.
 Full-history readers, on purpose: fork (anchors need every row), the handoff
 preamble and the merge-back summary (`provider-registry.ts`), and the desktop's
 `ensureFullHistory` (cmd+F, global search, export, a jump to an old row).
