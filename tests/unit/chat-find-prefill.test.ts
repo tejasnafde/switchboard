@@ -11,6 +11,7 @@ import type { ChatMessage } from '../../src/shared/types'
 
 vi.mock('../../src/renderer/services/history-loader', () => ({
   ensureFullHistory: vi.fn(async () => true),
+  holdFullHistory: vi.fn(() => () => {}),
 }))
 
 const { ensureFullHistory } = await import('../../src/renderer/services/history-loader')

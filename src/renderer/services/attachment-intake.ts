@@ -1,3 +1,4 @@
+import { imageTypeOf, isHeicType } from '@shared/image-resize'
 import { USER_MESSAGE_IMAGE_TYPES } from '@shared/provider-events'
 import { MAX_ATTACHMENT_BYTES } from '@shared/attachments'
 
@@ -35,19 +36,21 @@ export function sortAttachments(
 ): { images: File[]; files: File[]; folders: File[]; refused: AttachmentRefusal[] } {
   const out = { images: [] as File[], files: [] as File[], folders: [] as File[], refused: [] as AttachmentRefusal[] }
   for (const file of files) {
+    // HEIC/HEIF counts as an image: the intake converts it to JPEG.
+    const type = imageTypeOf(file)
     if (isFolder(file)) {
       out.folders.push(file)
-    } else if (SUPPORTED_IMAGES.includes(file.type)) {
+    } else if (SUPPORTED_IMAGES.includes(type) || isHeicType(type)) {
       if (file.size > MAX_IMAGE_BYTES)
         out.refused.push({
           name: file.name,
           reason: `${megabytes(file.size)} is over the ${megabytes(MAX_IMAGE_BYTES)} image limit.`,
         })
       else out.images.push(file)
-    } else if (file.type.startsWith('image/') && file.type !== 'image/svg+xml') {
+    } else if (type.startsWith('image/') && type !== 'image/svg+xml') {
       out.refused.push({
         name: file.name,
-        reason: `${imageFormat(file.type)} images are not supported. Use PNG, JPEG, WebP or GIF.`,
+        reason: `${imageFormat(type)} images are not supported. Use PNG, JPEG, WebP, GIF or HEIC.`,
       })
     } else if (file.size > MAX_ATTACHMENT_BYTES) {
       out.refused.push({

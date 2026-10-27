@@ -15,6 +15,7 @@ import { addProject } from '../db/database'
 import type { Project } from '@shared/types'
 import { noteQuitSource } from '../quit-source'
 import { folderEntryCount, saveAttachment } from '../attachments'
+import { convertHeicToJpeg } from '../heic'
 
 const log = createLogger('ipc:app-desktop')
 
@@ -55,11 +56,13 @@ export function registerAppDesktopHandlers(window: BrowserWindow): void {
   ipcMain.removeHandler(AppChannels.SET_VIBRANCY)
   ipcMain.removeHandler(AppChannels.SAVE_ATTACHMENT)
   ipcMain.removeHandler(AppChannels.FOLDER_ENTRY_COUNT)
+  ipcMain.removeHandler(AppChannels.CONVERT_HEIC)
 
   ipcMain.handle(AppChannels.SAVE_ATTACHMENT, (_event, input: Parameters<typeof saveAttachment>[0]) =>
     saveAttachment(input),
   )
   ipcMain.handle(AppChannels.FOLDER_ENTRY_COUNT, (_event, input: { folder: string }) => folderEntryCount(input.folder))
+  ipcMain.handle(AppChannels.CONVERT_HEIC, (_event, bytes: Uint8Array) => convertHeicToJpeg(bytes))
 
   ipcMain.handle(AppChannels.OPEN_FOLDER, async () => {
     log.info('open-folder dialog')

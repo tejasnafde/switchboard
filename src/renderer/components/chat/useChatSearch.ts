@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatMessage } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
-import { ensureFullHistory } from '../../services/history-loader'
+import { ensureFullHistory, holdFullHistory } from '../../services/history-loader'
 import type { ChatSlot } from '../../services/chat-workspace'
 import { matchesShortcut } from '@shared/shortcuts'
 import { textMatchesSearch } from '@shared/message-search'
@@ -44,9 +44,11 @@ export function useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot
   // for an anchor that cannot arrive.
   const [anchorLost, setAnchorLost] = useState(0)
 
-  // A long chat opens with its newest window; search covers all of it.
+  // A long chat opens with its newest window; search covers all of it, and
+  // the memory trim keeps every row while the search is open.
   useEffect(() => {
     if (!searchOpen || !sessionId) return
+    const release = holdFullHistory(sessionId)
     void ensureFullHistory(sessionId).then((complete) => {
       const anchor = anchorRef.current
       if (complete || anchor?.sessionId !== sessionId) return
@@ -57,6 +59,7 @@ export function useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot
       }
       setAnchorLost((n) => n + 1)
     })
+    return release
   }, [searchOpen, sessionId])
 
   // ── In-pane search: matching message ids (the text, or every word of it) ──

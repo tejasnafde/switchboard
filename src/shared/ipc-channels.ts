@@ -61,6 +61,8 @@ export const AppChannels = {
   SAVE_ATTACHMENT: 'app:save-attachment',
   /** Desktop only: entries in a folder dropped on the composer, or null. */
   FOLDER_ENTRY_COUNT: 'app:folder-entry-count',
+  /** Desktop only: HEIC/HEIF bytes to JPEG bytes (`main/heic.ts`). */
+  CONVERT_HEIC: 'app:convert-heic',
   /** Settings > About > Diagnostics: one JSON snapshot of the host (see shared/diagnostics-report.ts). */
   GET_DIAGNOSTICS: 'app:get-diagnostics',
   /** Reveal the main-process log directory in Finder / Explorer. */

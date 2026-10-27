@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "phone-image-resize",
-  "summary": "Attached images are scaled to at most 2048 px and re-encoded (JPEG 0.85, a small PNG stays PNG, EXIF orientation applied then dropped, a GIF sent as is or refused), stepping down to 1600 px and 1280 px at 0.75 until each fits what is left of the unchanged 3 MiB message limit. Refusals name the image and the reason. One rule set in src/shared/image-resize.ts, ported to Kotlin.",
+  "summary": "Attached images are scaled to at most 2000 px (MAX_IMAGE_LONG_SIDE) and re-encoded (JPEG 0.85, a small PNG stays PNG, EXIF orientation applied then dropped, a GIF sent as is or refused), stepping down to 1600 px and 1280 px at 0.75 until each fits what is left of the unchanged 3 MiB message limit. Refusals name the image and the reason. One rule set in src/shared/image-resize.ts, ported to Kotlin.",
   "surfaces": {
     "desktop": {
       "status": "implemented",

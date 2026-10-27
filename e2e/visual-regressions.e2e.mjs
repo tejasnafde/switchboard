@@ -35,7 +35,15 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PNG } from 'pngjs'
 import { checkBaseline, flattenOverBackdrop } from './lib/visual-compare.mjs'
-import { makeDemoRepo, makeSideRepo, seedDatabase } from './fixtures/demo-workspace.mjs'
+import {
+  HUB_PARENT,
+  HUB_WORKING_CHILD,
+  makeDemoRepo,
+  makeSideRepo,
+  openHubChild,
+  seedDatabase,
+  seedHubChildren,
+} from './fixtures/demo-workspace.mjs'
 
 const repoRoot = process.cwd()
 const packagedExecutable = process.env.SB_PACKAGED_EXECUTABLE
@@ -524,6 +532,7 @@ async function prepareScreensFixture() {
   for (const [key, path] of Object.entries(live)) cpSync(path, join(pristine, key), { recursive: true })
   return {
     userData: live.userData,
+    projectPath,
     restore() {
       for (const [key, path] of Object.entries(live)) {
         rmSync(path, { recursive: true, force: true })
@@ -1469,6 +1478,83 @@ async function captureComposerChips(win, theme) {
   await viewer.waitFor({ state: 'hidden' })
 }
 
+/**
+ * The hub screens (flag hub_children), on a launch of their own so the other
+ * screens never see the hub chats: the parent with four children (nested
+ * sidebar, Hub chip, children strip at the default and the narrow width) and
+ * the working child's read-only view. That child runs the demo's "render
+ * order" turn, whose tool call holds it Working for a minute.
+ */
+async function captureHubScreens(fixture, theme) {
+  fixture.restore()
+  const dbPath = join(fixture.userData, 'data', 'switchboard.db')
+  seedHubChildren(dbPath, fixture.projectPath, { now: FROZEN_NOW })
+  const { instance, win } = await launchSwitchboard({
+    userData: fixture.userData,
+    demo: true,
+    env: { SB_HUB_CHILDREN: '1' },
+  })
+  win.on('pageerror', (error) => console.error(`renderer error: ${error.message}`))
+  // Its text is all streamed once the minute-long tool call starts, so the
+  // child view and its unread count are the same on every run.
+  await win.evaluate(
+    async ({ id, cwd }) => {
+      await window.api.provider.startSession({ threadId: id, provider: 'claude', cwd, runtimeMode: 'sandbox' })
+      const toolStarted = new Promise((done) => {
+        const off = window.api.provider.onEvent((event) => {
+          if (event.type === 'tool.started' && event.threadId === id) {
+            off()
+            done()
+          }
+        })
+      })
+      await window.api.provider.sendTurn(id, 'Check the render order.')
+      await toolStarted
+    },
+    { id: HUB_WORKING_CHILD.id, cwd: fixture.projectPath },
+  )
+  openHubChild(dbPath)
+  await instance.context().addInitScript(pinDate, FROZEN_NOW)
+  await win.reload()
+  await win.waitForFunction((now) => !!window.api?.settings && Date.now() === now, FROZEN_NOW, { timeout: 20_000 })
+  await win.addStyleTag({ content: FREEZE_CSS })
+  await chooseTheme(win, theme)
+  const turnTimes = win.locator('.turn-timestamp')
+
+  await openConversation(win, HUB_PARENT.title)
+  const strip = win.getByTestId('hub-children-strip')
+  await strip.locator('[data-hub-child]').nth(3).waitFor({ state: 'visible', timeout: 20_000 })
+  const working = strip.locator('[data-hub-child="working"]')
+  await working.getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
+  await win.getByTestId('hub-chip').waitFor({ state: 'visible' })
+  // The three open children nest under the parent in its project; the failed one is not open.
+  const projectToggle = win
+    .locator('.sidebar-project-header')
+    .filter({ hasText: 'acme-console' })
+    .locator('.sidebar-project-toggle')
+    .first()
+  if ((await projectToggle.getAttribute('aria-expanded')) !== 'true') await projectToggle.click()
+  await win.locator('.sidebar-thread-child').nth(2).waitFor({ state: 'visible', timeout: 20_000 })
+  await snapScreen(win, 'hub-parent', theme, win, [turnTimes])
+  await snapScreen(win, 'hub-strip', theme, strip)
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(800, 720))
+  await settle(win)
+  const stripOverflow = await strip.evaluate((el) => el.scrollWidth - el.clientWidth)
+  if (stripOverflow > 0)
+    screenFailures.push(`hub-strip-narrow-${theme.toLowerCase()}: the strip scrolls ${stripOverflow}px sideways`)
+  await snapScreen(win, 'hub-strip-narrow', theme, strip)
+  await app.evaluate(
+    ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }),
+    SCREEN_SIZE,
+  )
+
+  await working.getByRole('button', { name: 'Open', exact: true }).click()
+  await win.locator('.chat-identity-title').filter({ hasText: HUB_WORKING_CHILD.title }).waitFor({ state: 'visible' })
+  await win.getByTestId('hub-child-banner').waitFor({ state: 'visible', timeout: 20_000 })
+  await snapScreen(win, 'hub-child', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
+  await closeApp()
+}
+
 async function runThemeScreens() {
   const fixture = await prepareScreensFixture()
   for (const theme of THEMES) {
@@ -1488,6 +1574,7 @@ async function runThemeScreens() {
     await captureChatWaitScreens(win, theme)
     await captureComposerChips(win, theme)
     await closeApp()
+    await captureHubScreens(fixture, theme)
   }
 }
 
@@ -1505,7 +1592,7 @@ function pinDate(now) {
   globalThis.Date = FixedDate
 }
 
-async function launchSwitchboard({ userData = userDataDir, demo = false } = {}) {
+async function launchSwitchboard({ userData = userDataDir, demo = false, env = {} } = {}) {
   // The screens phase pins what changes pixels between machines: a 1x device
   // scale (Retina or not), sRGB output whatever the display's colour profile,
   // the window size, the terminal's shell prompt and the time zone.
@@ -1534,6 +1621,7 @@ async function launchSwitchboard({ userData = userDataDir, demo = false } = {}) 
       // even when an agent runs it (agents default to background windows).
       ...(demo ? {} : { SB_E2E_BACKGROUND: '0' }),
       ...demoEnv,
+      ...env,
     },
   })
   app = instance

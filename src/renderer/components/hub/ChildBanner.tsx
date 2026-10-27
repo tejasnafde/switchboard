@@ -33,7 +33,7 @@ export function ChildBanner({
             Stop
           </Button>
         )}
-        <Button variant="outline" size="sm" onClick={() => void openHubChat(parent)}>
+        <Button variant="outline" size="sm" onClick={() => void openHubChat(parent, child)}>
           Open hub
         </Button>
         <Button variant="default" size="sm" onClick={() => void nudgeChild(parent, child)}>

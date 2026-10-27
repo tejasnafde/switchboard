@@ -85,6 +85,7 @@ import type { RuntimeMode, UserMessagePillsMeta } from '@shared/provider-events'
 import { Button } from '../ui/button'
 import { confirm } from '../ui/confirm'
 import { useRenderCount } from '../../services/render-counter'
+import { toComposerImage } from '../../services/image-intake'
 
 export type ChatSendResult =
   | { accepted: true }
@@ -453,7 +454,7 @@ export function ChatInput({
   // can re-detect slash triggers without dipping into the editor.
   const [caret, setCaret] = useState<number | null>(null)
   const [refusals, setRefusals] = useState<AttachmentRefusal[]>([])
-  /** Attachments still being copied; Send waits for them so none is left behind. */
+  /** Attachments still being copied or converted (HEIC); Send waits for them so none is left behind. */
   const [savingCount, setSavingCount] = useState(0)
   /** The last large paste folded into a file, until it is sent, removed or kept inline. */
   const [pasteNotice, setPasteNotice] = useState<{ pillId: string; name: string; text: string; kb: number } | null>(
@@ -847,14 +848,22 @@ export function ChatInput({
       setSendError(null)
       const sorted = sortAttachments(files, isFolder)
       const refused = [...sorted.refused]
-      addImagesToSession(
-        target,
-        sorted.images.map((file) => ({
-          id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          file,
-          previewUrl: URL.createObjectURL(file),
-        })),
-      )
+      setSavingCount((n) => n + 1)
+      try {
+        const images = await Promise.all(sorted.images.map(toComposerImage))
+        addImagesToSession(
+          target,
+          images
+            .filter((f): f is File => f !== null)
+            .map((file) => ({
+              id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+              file,
+              previewUrl: URL.createObjectURL(file),
+            })),
+        )
+      } finally {
+        setSavingCount((n) => n - 1)
+      }
       if (onRemoteMachine(target)) {
         for (const file of [...sorted.files, ...sorted.folders])
           refused.push({ name: file.name, reason: 'Files can be attached only to chats on this Mac.' })

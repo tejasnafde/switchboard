@@ -38,10 +38,16 @@ describe('sortAttachments', () => {
     expect(sorted.files).toEqual([pdf, svg])
     expect(sorted.folders).toEqual([folder])
     expect(sorted.refused).toEqual([
-      { name: 'scan.tiff', reason: 'TIFF images are not supported. Use PNG, JPEG, WebP or GIF.' },
+      { name: 'scan.tiff', reason: 'TIFF images are not supported. Use PNG, JPEG, WebP, GIF or HEIC.' },
       { name: 'huge.jpg', reason: '21 MB is over the 20 MB image limit.' },
       { name: 'design.sketch', reason: '82 MB is over the 50 MB file limit.' },
     ])
+  })
+
+  it('takes the type from the extension and keeps HEIC for conversion', () => {
+    const heic = file('IMG_1.HEIC', '')
+    const shot = file('shot.png', 'application/octet-stream')
+    expect(sortAttachments([heic, shot]).images).toEqual([heic, shot])
   })
 
   it('labels a chip with its pages, lines or folder entries', () => {
