@@ -114,7 +114,8 @@ interface RichChatTextareaProps {
   onCaretChange?: (caret: number | null) => void
   /** `altKey` is true for Alt/Option+Enter (queue instead of steer). */
   onEnter?: (key: { altKey: boolean }) => void
-  onPasteFiles?: (files: File[]) => void
+  /** `isFolder` marks pasted Finder folders. */
+  onPasteFiles?: (files: File[], isFolder: (file: File) => boolean) => void
   /** Pasted text; return true to take it out of the editor (the host folds a large paste into a file). */
   onPasteText?: (text: string) => boolean
   pillsById: Record<string, ComposerPill>
@@ -573,6 +574,14 @@ function EnterKeyPlugin({ onEnter }: { onEnter?: (key: { altKey: boolean }) => v
   return null
 }
 
+/** Which of a drop's or paste's files are folders. Items and files list the same entries in order. */
+export function droppedFolders(data: DataTransfer | null): (file: File) => boolean {
+  const items = Array.from(data?.items ?? []).filter((item) => item.kind === 'file')
+  const files = Array.from(data?.files ?? [])
+  const folders = new Set(files.filter((_, i) => items[i]?.webkitGetAsEntry()?.isDirectory))
+  return (file) => folders.has(file)
+}
+
 /**
  * Plugin: forward pasted files to the host, and offer it pasted text first
  * (it folds a large paste into a file). Cmd+Shift+V pastes the clipboard's
@@ -583,19 +592,26 @@ function PasteFilesPlugin({
   onPasteText,
 }: Pick<RichChatTextareaProps, 'onPasteFiles' | 'onPasteText'>): null {
   const [editor] = useLexicalComposerContext()
+  // Refs, so the commands register once: a re-registration would move this
+  // handler behind PasteTextPlugin's for the same priority.
+  const filesRef = useRef(onPasteFiles)
+  filesRef.current = onPasteFiles
+  const textRef = useRef(onPasteText)
+  textRef.current = onPasteText
   useEffect(() => {
     const unregisterPaste = editor.registerCommand<ClipboardEvent>(
       PASTE_COMMAND,
       (event) => {
         const files = Array.from(event.clipboardData?.files ?? [])
         if (files.length > 0) {
-          if (!onPasteFiles) return false
+          if (!filesRef.current) return false
           event.preventDefault()
-          onPasteFiles(files)
+          filesRef.current(files, droppedFolders(event.clipboardData))
           return true
         }
         const text = event.clipboardData?.getData('text/plain') ?? ''
-        if (!text || !onPasteText?.(text)) return false
+        // Text with pill tokens is a copied draft: PasteTextPlugin rebuilds its chips.
+        if (!text || text.includes('[[pill:') || !textRef.current?.(text)) return false
         event.preventDefault()
         return true
       },
@@ -623,7 +639,7 @@ function PasteFilesPlugin({
       unregisterPaste()
       unregisterInline()
     }
-  }, [editor, onPasteFiles, onPasteText])
+  }, [editor])
   return null
 }
 

@@ -57,6 +57,23 @@ describe('composer attachments', () => {
     expect(blocks[0]).toMatchObject({ type: 'document', title: 'spec.pdf', source: { media_type: 'application/pdf' } })
   })
 
+  it("keeps all of a turn's PDFs within one budget and skips a PDF with no readable page count", async () => {
+    const big = (pages: number): Buffer => Buffer.concat([pdf(pages), Buffer.alloc(6 * 1024 * 1024)])
+    const first = await saveAttachment({ name: 'a.pdf', bytes: big(2) })
+    const second = await saveAttachment({ name: 'b.pdf', bytes: big(2) })
+    const unknown = await saveAttachment({ name: 'c.pdf', bytes: Buffer.from('%PDF-1.7 compressed') })
+    const message = [first, second, unknown]
+      .map((saved, i) => attachmentPromptLine('file', `${'abc'[i]}.pdf`, saved.path))
+      .join('\n')
+    expect(attachedPdfBlocks(message).map((block) => block.title)).toEqual(['a.pdf'])
+  })
+
+  it('refuses a folder given as a file', async () => {
+    const src = mkdtempSync(join(tmpdir(), 'sb-attach-dir-'))
+    dirs.push(src)
+    await expect(saveAttachment({ name: 'shots', sourcePath: src })).rejects.toThrow('is a folder')
+  })
+
   it('removes copies older than 30 days at startup', async () => {
     const old = await saveAttachment({ name: 'old.txt', bytes: new Uint8Array([1]) })
     const fresh = await saveAttachment({ name: 'new.txt', bytes: new Uint8Array([1]) })

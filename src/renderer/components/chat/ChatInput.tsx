@@ -66,7 +66,12 @@ import { pinLinkTarget } from './link-command'
 import { fuzzyScore } from '../../services/fuzzy-score'
 import { AtMentionMenu } from './AtMentionMenu'
 import { ComposerFooter } from './ComposerFooter'
-import { RICH_TEXTAREA_MIN_HEIGHT, RichChatTextarea, type RichChatTextareaHandle } from './lexical/RichChatTextarea'
+import {
+  droppedFolders,
+  RICH_TEXTAREA_MIN_HEIGHT,
+  RichChatTextarea,
+  type RichChatTextareaHandle,
+} from './lexical/RichChatTextarea'
 import { serializeBodyWithPills } from '../../services/chat-input-body'
 import {
   desktopComposerRecoveryAction,
@@ -448,6 +453,8 @@ export function ChatInput({
   // can re-detect slash triggers without dipping into the editor.
   const [caret, setCaret] = useState<number | null>(null)
   const [refusals, setRefusals] = useState<AttachmentRefusal[]>([])
+  /** Attachments still being copied; Send waits for them so none is left behind. */
+  const [savingCount, setSavingCount] = useState(0)
   /** The last large paste folded into a file, until it is sent, removed or kept inline. */
   const [pasteNotice, setPasteNotice] = useState<{ pillId: string; name: string; text: string; kb: number } | null>(
     null,
@@ -854,6 +861,7 @@ export function ChatInput({
         setRefusals(refused)
         return
       }
+      setSavingCount((n) => n + 1)
       for (const file of sorted.files) {
         try {
           const sourcePath = window.api.app.pathForFile(file)
@@ -874,7 +882,8 @@ export function ChatInput({
         if (entries === null) refused.push({ name: folder.name, reason: 'The folder could not be read.' })
         else attach(target, 'folder', folder.name, path, attachmentLabel(folder.name, { entries }))
       }
-      setRefusals(refused)
+      setSavingCount((n) => n - 1)
+      if (sessionIdRef.current === target) setRefusals(refused)
     },
     [sessionId, addImagesToSession, attach],
   )
@@ -893,8 +902,10 @@ export function ChatInput({
         .filter(Boolean)
         .map(Number)
       const name = `pasted-text-${Math.max(0, ...used) + 1}.txt`
+      setSavingCount((n) => n + 1)
       window.api.app
         .saveAttachment({ name, bytes })
+        .finally(() => setSavingCount((n) => n - 1))
         .then((saved) => {
           const lines = text.split('\n').length
           const pillId = attach(target, 'file', name, saved.path, attachmentLabel(name, { lines }))
@@ -903,11 +914,12 @@ export function ChatInput({
         })
         .catch((err) => {
           log.warn('large paste not saved, pasting inline', err)
-          richRef.current?.replaceRange(value.length, value.length, text)
+          const caret = richRef.current?.getCaret() ?? 0
+          richRef.current?.replaceRange(caret, caret, text)
         })
       return true
     },
-    [sessionId, pills, attach, value.length],
+    [sessionId, pills, attach],
   )
 
   const keepPasteInline = useCallback(() => {
@@ -931,7 +943,7 @@ export function ChatInput({
     async (delivery: TurnDelivery = 'steer') => {
       const trimmed = value.trim()
       const hasPills = pills.length > 0
-      if ((!trimmed && images.length === 0 && !hasPills) || disabled || submittingRef.current) return
+      if ((!trimmed && images.length === 0 && !hasPills) || disabled || submittingRef.current || savingCount > 0) return
       const submittedSessionId = sessionId
       const submission = ++submissionRef.current
       const priorRecovery = recovery?.sessionId === submittedSessionId ? recovery : null
@@ -1120,6 +1132,7 @@ export function ChatInput({
       pillsById,
       images,
       disabled,
+      savingCount,
       onSend,
       sessionId,
       composerFingerprint,
@@ -1611,11 +1624,7 @@ export function ChatInput({
   )
 
   const dropZone = useChatDropZone(composerRef, (e) => {
-    const items = Array.from(e.dataTransfer?.items ?? []).filter((item) => item.kind === 'file')
-    const files = Array.from(e.dataTransfer?.files ?? [])
-    // Items and files list the same entries in the same order.
-    const folders = new Set(files.filter((_, i) => items[i]?.webkitGetAsEntry()?.isDirectory))
-    void addAttachments(files, (file) => folders.has(file))
+    void addAttachments(Array.from(e.dataTransfer?.files ?? []), droppedFolders(e.dataTransfer))
     richRef.current?.focus()
   })
   const attachedPills = pills.filter((p) => p.attached)
@@ -1897,7 +1906,12 @@ export function ChatInput({
               onClick={() => {
                 void handleSend(followUpDefault)
               }}
-              disabled={disabled || isSubmitting || (!value.trim() && images.length === 0 && pills.length === 0)}
+              disabled={
+                disabled ||
+                isSubmitting ||
+                savingCount > 0 ||
+                (!value.trim() && images.length === 0 && pills.length === 0)
+              }
               aria-label={sendButton.label}
               title={sendButton.tooltip}
             >

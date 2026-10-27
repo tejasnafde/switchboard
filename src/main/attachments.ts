@@ -6,7 +6,7 @@
  * (`attachedPdfBlocks`). Copies older than `KEEP_DAYS` are removed at startup.
  */
 import { randomUUID } from 'crypto'
-import { readFileSync } from 'fs'
+import { readFileSync, statSync } from 'fs'
 import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'fs/promises'
 import { basename, join, relative, isAbsolute } from 'path'
 import { MAX_ATTACHMENT_BYTES, parseAttachmentLines } from '@shared/attachments'
@@ -16,9 +16,13 @@ import { userDataDir } from './runtime'
 const log = createMainLogger('chat:attachments')
 
 const KEEP_DAYS = 30
-/** Under Claude's 32 MB request and 100-page document limits, with room for the rest of the turn. */
-const MAX_PDF_BLOCK_BYTES = 20 * 1024 * 1024
-const MAX_PDF_BLOCK_PAGES = 100
+/**
+ * PDF bytes and pages one turn sends as document blocks, together. Claude's
+ * limits are 32 MB a request and 100 pages, and the session resends earlier
+ * blocks, so a turn keeps well under them.
+ */
+const MAX_PDF_TURN_BYTES = 10 * 1024 * 1024
+const MAX_PDF_TURN_PAGES = 100
 
 export function attachmentsDir(): string {
   return join(userDataDir(), 'attachments')
@@ -43,7 +47,9 @@ export async function saveAttachment(input: {
   sourcePath?: string
   bytes?: Uint8Array
 }): Promise<SavedAttachment> {
-  const size = input.sourcePath ? (await stat(input.sourcePath)).size : (input.bytes?.byteLength ?? 0)
+  const source = input.sourcePath ? await stat(input.sourcePath) : null
+  if (source?.isDirectory()) throw new Error(`${input.name} is a folder`)
+  const size = source ? source.size : (input.bytes?.byteLength ?? 0)
   if (size > MAX_ATTACHMENT_BYTES) throw new Error(`${input.name} is over the attachment limit`)
   const dir = join(attachmentsDir(), randomUUID())
   await mkdir(dir, { recursive: true })
@@ -94,17 +100,23 @@ export interface PdfDocumentBlock {
 
 /**
  * A document block for each attached PDF the message names, when it is a copy
- * in the attachments folder and within Claude's size and page limits. Other
- * PDFs stay as the path line only. Synchronous, so two turns sent back to back
+ * in the attachments folder, its page count is known, and it fits what is left
+ * of the turn's PDF budget. Other PDFs stay as the path line only. Synchronous, so two turns sent back to back
  * reach the agent in order.
  */
 export function attachedPdfBlocks(message: string): PdfDocumentBlock[] {
   const blocks: PdfDocumentBlock[] = []
+  let bytesLeft = MAX_PDF_TURN_BYTES
+  let pagesLeft = MAX_PDF_TURN_PAGES
   for (const { name, path } of parseAttachmentLines(message)) {
     if (!path.toLowerCase().endsWith('.pdf') || !insideAttachments(path)) continue
     try {
+      if (statSync(path).size > bytesLeft) continue
       const bytes = readFileSync(path)
-      if (bytes.byteLength > MAX_PDF_BLOCK_BYTES || (pdfPageCount(bytes) ?? 0) > MAX_PDF_BLOCK_PAGES) continue
+      const pages = pdfPageCount(bytes)
+      if (pages === undefined || pages > pagesLeft) continue
+      bytesLeft -= bytes.byteLength
+      pagesLeft -= pages
       blocks.push({
         type: 'document',
         source: { type: 'base64', media_type: 'application/pdf', data: bytes.toString('base64') },
