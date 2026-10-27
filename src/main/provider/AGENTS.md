@@ -71,6 +71,10 @@ A Claude subagent's work belongs to the Agent/Task call that started it. The ada
 5. Codex adapter encodes images into JSON-RPC content blocks (Phase B done - see `codex-adapter.ts` `sendTurn`)
 6. On JSONL reload, `JsonlParser.extractImages` reconstructs data URLs from image blocks - historical images survive restart
 
+## Composer file attachments (2026-10-27)
+
+Any other file is not sent as bytes. The composer copies it to `<userData>/attachments/<uuid>/<name>` (`src/main/attachments.ts`, 50 MB limit, copies older than 30 days pruned at startup) and adds a `file` pill whose content is the line from `attachmentPromptLine` (`src/shared/attachments.ts`): `[Attached file "x" is saved at: /path]`, or `[Attached folder "x" is at: /path]` for a dropped folder. The line reaches every adapter as text. The Claude adapter also sends each such PDF that is inside the attachments folder as a `document` block (`attachedPdfBlocks`, 10 MB and 100 pages for all of a turn's PDFs, and only when the page count is known), read synchronously so back-to-back turns keep their order.
+
 ## Question / Plan flow
 
 1. Agent calls `AskUserQuestion` or `ExitPlanMode` (both in `CUSTOM_UI_TOOLS`) - raw `tool.started` is suppressed

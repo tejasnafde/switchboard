@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 /**
- * Composer attachments: which dropped or picked files are refused and why, and
- * the chat-view drop zone, whose highlight must clear on the window's dragend.
+ * Composer attachments: how dropped or picked files are sorted and refused,
+ * the chips of saved files and folders, and the chat-view drop zone, whose highlight must clear on the window's dragend.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, createElement, useRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MAX_IMAGE_BYTES, sortAttachments } from '../../src/renderer/services/attachment-intake'
+import { attachmentLabel, MAX_IMAGE_BYTES, sortAttachments } from '../../src/renderer/services/attachment-intake'
+import { attachmentPromptLine, parseAttachmentLine } from '../../src/shared/attachments'
+import { pillChipModel, pillContentInMessage } from '../../src/renderer/services/pill-chip-model'
 import { useChatDropZone } from '../../src/renderer/components/chat/useChatDropZone'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -15,19 +17,30 @@ const file = (name: string, type: string, size = 10): File =>
   Object.defineProperty(new File(['x'], name, { type }), 'size', { value: size })
 
 describe('sortAttachments', () => {
-  it('keeps supported images and names each refused file with its reason', () => {
+  it('sends images inline, other files and folders as paths, and names each refused file', () => {
     const png = file('a.png', 'image/png')
-    const { images, refused } = sortAttachments([
-      png,
-      file('scan.tiff', 'image/tiff'),
-      file('huge.jpg', 'image/jpeg', MAX_IMAGE_BYTES + 1),
-      file('notes.txt', 'text/plain'),
-    ])
-    expect(images).toEqual([png])
-    expect(refused).toEqual([
+    const pdf = file('spec.pdf', 'application/pdf')
+    const svg = file('logo.svg', 'image/svg+xml')
+    const folder = file('shots', '')
+    const sorted = sortAttachments(
+      [
+        png,
+        pdf,
+        svg,
+        folder,
+        file('scan.tiff', 'image/tiff'),
+        file('huge.jpg', 'image/jpeg', MAX_IMAGE_BYTES + 1),
+        file('design.sketch', '', 82 * 1024 * 1024),
+      ],
+      (f) => f === folder,
+    )
+    expect(sorted.images).toEqual([png])
+    expect(sorted.files).toEqual([pdf, svg])
+    expect(sorted.folders).toEqual([folder])
+    expect(sorted.refused).toEqual([
       { name: 'scan.tiff', reason: 'TIFF images are not supported. Use PNG, JPEG, WebP, GIF or HEIC.' },
       { name: 'huge.jpg', reason: '21 MB is over the 20 MB image limit.' },
-      { name: 'notes.txt', reason: 'Only images can be attached.' },
+      { name: 'design.sketch', reason: '82 MB is over the 50 MB file limit.' },
     ])
   })
 
@@ -35,6 +48,36 @@ describe('sortAttachments', () => {
     const heic = file('IMG_1.HEIC', '')
     const shot = file('shot.png', 'application/octet-stream')
     expect(sortAttachments([heic, shot]).images).toEqual([heic, shot])
+  })
+
+  it('labels a chip with its pages, lines or folder entries', () => {
+    expect(attachmentLabel('spec.pdf', { pages: 12 })).toBe('spec.pdf (12 pages)')
+    expect(attachmentLabel('pasted-text-1.txt', { lines: 2140 })).toBe('pasted-text-1.txt (2,140 lines)')
+    expect(attachmentLabel('shots', { entries: 14 })).toBe('shots/ (14 files)')
+    expect(attachmentLabel('one.pdf', { pages: 1 })).toBe('one.pdf')
+  })
+})
+
+describe('attachment chips', () => {
+  const content = attachmentPromptLine('file', 'spec.pdf', '/data/attachments/u1/spec.pdf')
+
+  it('reads back the saved path from the prompt line', () => {
+    expect(parseAttachmentLine(content)).toEqual({
+      kind: 'file',
+      name: 'spec.pdf',
+      path: '/data/attachments/u1/spec.pdf',
+    })
+    expect(parseAttachmentLine(attachmentPromptLine('folder', 'shots', '/x/shots'))?.kind).toBe('folder')
+  })
+
+  it('shows the count and the saved path, and finds its line in a sent message', () => {
+    const model = pillChipModel({ kind: 'file', label: 'spec.pdf (12 pages)', content })
+    expect(model).toMatchObject({ name: 'spec.pdf', count: '12 pages', source: 'Attachment', target: null })
+    expect(model.preview).toEqual(['Saved at /data/attachments/u1/spec.pdf'])
+    expect(pillContentInMessage('file', 'spec.pdf (12 pages)', `Compare with the spec\n\n${content}`)).toBe(content)
+    const folder = attachmentPromptLine('folder', 'shots', '/x/shots')
+    expect(pillChipModel({ kind: 'file', label: 'shots/ (14 files)', content: folder }).source).toBe('Folder')
+    expect(pillContentInMessage('file', 'shots/ (14 files)', `look\n${folder}`)).toBe(folder)
   })
 })
 

@@ -41,6 +41,7 @@ import { registerPushHandlers } from './ipc/push'
 import { attachPushNotifier } from './push/registry'
 import { registerAppHandlers, type AppHandlerDependencies } from './ipc/app'
 import { isMenuCaptureActive, setMenuCapture, unlessCapturing } from './menu-capture'
+import { pruneAttachments } from './attachments'
 import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass } from './ipc/app-desktop'
 import { disposeSettingsFileSync, registerSettingsFileHandlers, settingsFileSync } from './ipc/settings-file'
 import { isSettingsFileKey } from '@shared/settings-file'
@@ -839,6 +840,7 @@ app.whenReady().then(() => {
   // `peekShellEnv`, so kicking it here just means the answer is usually
   // already there by the first provider lookup instead of one lookup later.
   void warmShellEnv()
+  void pruneAttachments()
 
   // Send external links / OAuth opens from the embedded code-server <webview>
   // to the system browser. Electron silently blocks window.open in a <webview>

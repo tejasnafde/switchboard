@@ -25,6 +25,7 @@ import { parseImageDataUrl } from '@shared/provider-events'
 import { withHandoffPreamble } from '@shared/handoff'
 import { execSync, execFile } from 'child_process'
 import { randomUUID } from 'crypto'
+import { attachedPdfBlocks } from '../../attachments'
 import type { ModelOption, ReasoningEffort } from '@shared/models'
 import { claudeQueryEffort } from '@shared/effort'
 import { claudeModelOptions } from '../claude-models'
@@ -896,17 +897,18 @@ export class ClaudeAdapter implements ProviderAdapter {
       active.onEvent({ type: 'status', threadId, status: 'running' })
     }
 
-    // Build SDK content - text + optional image blocks
-    let content:
-      | string
-      | Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }>
-    if (images && images.length > 0) {
-      const blocks: Array<{
-        type: string
-        text?: string
-        source?: { type: string; media_type: string; data: string }
-      }> = []
-      for (const img of images) {
+    // Build SDK content - text + optional image and attached-PDF blocks
+    type ContentBlock = {
+      type: string
+      text?: string
+      title?: string
+      source?: { type: string; media_type: string; data: string }
+    }
+    let content: string | ContentBlock[]
+    const pdfBlocks = attachedPdfBlocks(message)
+    if ((images && images.length > 0) || pdfBlocks.length > 0) {
+      const blocks: ContentBlock[] = [...pdfBlocks]
+      for (const img of images ?? []) {
         const parsed = parseImageDataUrl(img.url)
         if (parsed) {
           blocks.push({

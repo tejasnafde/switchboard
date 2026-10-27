@@ -1,0 +1,59 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "composer-file-attachments",
+  "summary": "The desktop composer attaches any file, not only images. A non-image file (dropped, pasted or picked, up to 50 MB) is copied to <userData>/attachments/<uuid>/<name> and becomes a file chip above the editor; a dropped folder becomes a chip with its entry count and is not copied. On send each chip's token follows the typed text and expands to a line [Attached file \"x\" is saved at: /path] (or [Attached folder \"x\" is at: /path]), so every provider gets the path. A Claude turn also carries its attached PDFs as document blocks, 10 MB and 100 pages for all of them, and only when the page count can be read. A paste over 32 KiB becomes pasted-text-N.txt with a notice and a Keep inline action; Cmd+Shift+V pastes text inline. Chats on a remote machine take images only and name each refused file. Copies older than 30 days are removed at startup.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/lexical/RichChatTextarea.tsx",
+        "src/renderer/services/attachment-intake.ts",
+        "src/renderer/services/pill-chip-model.ts",
+        "src/renderer/stores/draft-store.ts",
+        "src/main/attachments.ts",
+        "src/main/ipc/app-desktop.ts",
+        "src/preload/index.ts",
+        "tests/unit/composer-attach.test.ts",
+        "tests/unit/main-attachments.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No phone change. A sent attachment is a file pill in pills_meta (label such as spec.pdf (12 pages)) on a displayBody token, which the Expo thread already draws as a file chip. Attaching files from the phone is a separate feature."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "No phone change. Android shows a desktop file pill as the text it expands to, here the saved-path line, as it does for every other desktop file reference. Attaching files from the phone is a separate feature."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/attachments.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/shared/ipc-channels.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Messages store the same displayBody and pills_meta shapes as before; an attachment is a file pill. Draft pills gain an optional attached flag in localStorage, which older builds ignore. The attachments folder is new and needs no migration."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Desktop only, ships with the next desktop release. The headless server never registers the save channels, and the composer refuses files for chats on a remote machine."
+    }
+  },
+  "verification": {
+    "automated": [
+      "vitest: tests/unit/composer-attach.test.ts (sorting into images, files, folders and refusals; chip labels; chip model and sent-message lookup for file and folder lines; drop zone).",
+      "vitest: tests/unit/main-attachments.test.ts (copy by path and bytes, PDF page count, document block only for a copy in the attachments folder, 30-day prune)."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Dropping a PDF, a log and a folder from Finder into the running desktop app and sending to Claude, Codex and OpenCode.",
+      "A 68 KB paste and Cmd+Shift+V in the running app.",
+      "How the Expo and Android threads show a sent attachment chip (read from code, not run)."
+    ]
+  }
+}

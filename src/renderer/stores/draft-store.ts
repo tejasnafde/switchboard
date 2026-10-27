@@ -38,6 +38,11 @@ export interface DraftPill extends PillMessageSource {
   label: string
   /** Full text inserted into the message body on Send. */
   content: string
+  /**
+   * A composer attachment (a saved file or a dropped folder): shown above the
+   * editor instead of inline, and its token is appended to the body on Send.
+   */
+  attached?: boolean
 }
 
 export interface DraftPayload {
