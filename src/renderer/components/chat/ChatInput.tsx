@@ -1882,7 +1882,6 @@ export function ChatInput({
             overlayClassName="z-[1100] bg-[rgba(0,0,0,0.72)]"
             className="inset-0 z-[1100] grid place-items-center"
             onClick={() => setPreviewImageId(null)}
-            onOpenAutoFocus={(e) => e.preventDefault()}
             onCloseAutoFocus={(e) => {
               e.preventDefault()
               richRef.current?.focus()
