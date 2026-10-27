@@ -30,13 +30,14 @@ const children = [
   { childId: 'child2', parentId: 'parent1', title: 'Gemini child', phase: 'open' },
 ]
 
+// process.cwd(): a folder that exists on every OS, since START_SESSION checks the cwd is readable.
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
   recordConversationSegment: () => {},
   updateConversationSessionId: () => {},
   saveMessageIfAbsent: () => true,
   rewriteSystemMarker: () => null,
-  getConversationById: (id: string) => ({ id, project_path: '/tmp' }),
+  getConversationById: (id: string) => ({ id, project_path: process.cwd() }),
   getConversationTitle: () => null,
   resolveRootThreadId: (id: string) => id,
   getConversationRuntimeMode: () => null,
@@ -136,7 +137,7 @@ async function setup() {
     ['other', 'claude'],
     ['gem', 'gemini'],
   ] as const)
-    await host.invoke(ProviderChannels.START_SESSION, { threadId, provider, cwd: '/tmp' })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId, provider, cwd: process.cwd() })
   /** The child starts a turn of its own, as a running agent would be. */
   const busy = (adapter: Adapter, threadId: string) =>
     adapter.emit.get(threadId)!({ type: 'status', threadId, status: 'running', newTurn: true })

@@ -93,6 +93,8 @@ interface Case {
 const { cases } = JSON.parse(readFileSync(join(__dirname, '../fixtures/limit-classification-cases.json'), 'utf8')) as {
   cases: Case[]
 }
+// Any folder that exists on every OS: START_SESSION checks the cwd is readable.
+const TMP = process.cwd()
 const fixture = (name: string) => cases.find((c) => c.name === name)!
 
 /** The `limit` the real adapter puts on the turn end for these frames. */
@@ -106,7 +108,7 @@ function classify(provider: 'claude' | 'codex', frames: object[]): TurnLimit | u
         provider: 'claude',
         status: 'running',
         runtimeMode: 'sandbox',
-        cwd: '/tmp',
+        cwd: TMP,
         createdAt: 0,
       },
       query: null,
@@ -275,7 +277,7 @@ function boot(provider: 'claude' | 'codex' = 'claude') {
 }
 
 async function startChat(provider: 'claude' | 'codex' = 'claude', threadId = 'c1') {
-  await host.invoke(ProviderChannels.START_SESSION, { threadId, provider, cwd: '/tmp' })
+  await host.invoke(ProviderChannels.START_SESSION, { threadId, provider, cwd: TMP })
 }
 
 const send = (text: string, delivery?: 'queue') =>
@@ -303,8 +305,8 @@ beforeEach(() => {
   vi.useFakeTimers()
   createMigratedDb()
   setSetting('labs.limit_auto_resume', 'true')
-  addProject('/tmp', 'tmp')
-  createConversation('c1', '/tmp', 'claude-code')
+  addProject(TMP, 'tmp')
+  createConversation('c1', TMP, 'claude-code')
   usage.reads = []
   usage.closedUntil = null
 })
