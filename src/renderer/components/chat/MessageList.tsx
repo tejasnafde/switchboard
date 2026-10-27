@@ -31,7 +31,12 @@ import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 import { SubagentRow } from './SubagentRow'
 import { groupChatSubagents, subagentCallsOf } from './subagent-messages'
 import { PREFETCH_OLDER_POINTER_SHARE, shouldLoadOlder, turnIndexHolding } from '../../services/history-window'
-import { loadOlderHistory } from '../../services/history-loader'
+import {
+  forgetHistoryView,
+  loadOlderHistory,
+  reportHistoryView,
+  trimHistoryToBudget,
+} from '../../services/history-loader'
 import { keepViewOnRowResize } from '../../services/row-resize-scroll'
 import { messageSearchTerms } from '@shared/message-search'
 import { cn } from '../../lib/utils'
@@ -316,6 +321,24 @@ export function MessageList({
     [sessionId, virtualizer],
   )
 
+  // What this list shows, for the memory trim: it never drops a rendered row
+  // (overscan included) and waits while the list is scrolled up.
+  const viewTokenRef = useRef(Symbol('history-view'))
+  const reportView = useCallback(() => {
+    if (!sessionId) return
+    const first = virtualizer.getVirtualItems()[0]
+    reportHistoryView(sessionId, viewTokenRef.current, {
+      firstMessageId: first ? (turnsRef.current[first.index]?.[0]?.id ?? null) : null,
+      following: !isScrollLockedRef.current,
+    })
+  }, [sessionId, virtualizer])
+  useEffect(() => {
+    if (!sessionId) return
+    const token = viewTokenRef.current
+    reportView()
+    return () => forgetHistoryView(sessionId, token)
+  }, [sessionId, reportView])
+
   const handleScroll = useCallback(() => {
     const container = containerRef.current
     if (!container) return
@@ -324,20 +347,48 @@ export function MessageList({
     viewAnchorRef.current =
       first && firstId ? { messageId: firstId, index: first.index, offset: first.start - container.scrollTop } : null
     maybeLoadOlder()
+    const wasLocked = isScrollLockedRef.current
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
     if (programmaticScrollRef.current) {
       if (distanceFromBottom <= 50) isScrollLockedRef.current = false
-      return
+    } else {
+      isScrollLockedRef.current = distanceFromBottom > 50
     }
-    isScrollLockedRef.current = distanceFromBottom > 50
-  }, [maybeLoadOlder, virtualizer])
+    reportView()
+    // Back at the bottom: run the trim an older window or a scroll up deferred.
+    if (wasLocked && !isScrollLockedRef.current && sessionId) trimHistoryToBudget(sessionId)
+  }, [maybeLoadOlder, reportView, sessionId, virtualizer])
+
+  // New rows arrived (an append or an older window): trim to the memory budget.
+  const trimLengthRef = useRef({ sessionId, length: messages.length })
+  useEffect(() => {
+    const last = trimLengthRef.current
+    trimLengthRef.current = { sessionId, length: messages.length }
+    if (!sessionId || last.sessionId !== sessionId || messages.length <= last.length) return
+    reportView()
+    trimHistoryToBudget(sessionId)
+  }, [messages.length, sessionId, reportView])
 
   // Rows were added above the one in view: put it back where it was. While
   // following the bottom there is nothing to keep; the follow logic owns it.
+  const firstTurnIdRef = useRef<string | undefined>(undefined)
   useLayoutEffect(() => {
     const container = containerRef.current
     const anchor = viewAnchorRef.current
+    const previousFirst = firstTurnIdRef.current
+    firstTurnIdRef.current = turns[0]?.[0]?.id
     if (!container) return
+    // A memory trim dropped the oldest rows while following: the browser
+    // clamped the scroll to the new bottom, so render the rows there before paint.
+    if (
+      !isScrollLockedRef.current &&
+      previousFirst !== undefined &&
+      previousFirst !== firstTurnIdRef.current &&
+      turnIndexHolding(turns, previousFirst) < 0
+    ) {
+      virtualizer.scrollOffset = container.scrollTop
+      rerender()
+    }
     if (anchor && isScrollLockedRef.current) {
       const index = turnIndexHolding(turns, anchor.messageId)
       const start = index >= 0 ? virtualizer.measurementsCache[index]?.start : undefined

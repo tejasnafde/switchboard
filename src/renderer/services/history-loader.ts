@@ -1,9 +1,10 @@
 import type { ChatMessage } from '@shared/types'
 import type { HistoryLoadOptions } from '@shared/phone-history-window'
-import { useAgentStore } from '../stores/agent-store'
+import { liveAppendedIds, useAgentStore } from '../stores/agent-store'
 import { createRendererLogger } from '../logger'
 import { perfSpan } from '../perf'
 import { DESKTOP_HISTORY_WINDOW, olderThan } from './history-window'
+import { HISTORY_MEMORY_BUDGET, planHistoryTrim, type HistoryMemoryBudget } from './history-memory-budget'
 
 const log = createRendererLogger('chat:history')
 
@@ -44,8 +45,17 @@ function once<T>(key: string, run: () => Promise<T>): Promise<T> {
   return next
 }
 
-/** Load the window before the oldest shown row. No-op when all is loaded. */
+/**
+ * Load the window before the oldest shown row. No-op when all is loaded.
+ * Then trims to the memory budget, which waits while a view is scrolled up.
+ */
 export function loadOlderHistory(sessionId: string): Promise<void> {
+  return loadOlderWindow(sessionId).then(() => {
+    trimHistoryToBudget(sessionId)
+  })
+}
+
+function loadOlderWindow(sessionId: string): Promise<void> {
   return once(`older:${sessionId}`, async () => {
     const cursor = cursorOf(sessionId)
     if (!cursor) return
@@ -116,4 +126,69 @@ export function ensureFullHistory(sessionId: string): Promise<boolean> {
       return holdsAllRows(sessionId)
     }
   })
+}
+
+/** What one message list shows of a chat: its first rendered row, and whether it follows the bottom. */
+export interface HistoryView {
+  firstMessageId: string | null
+  following: boolean
+}
+
+const views = new Map<string, Map<symbol, HistoryView>>()
+const holds = new Map<string, number>()
+
+/** Report a list's view of a chat; trims never drop that row or anything after it. */
+export function reportHistoryView(sessionId: string, token: symbol, view: HistoryView): void {
+  let byList = views.get(sessionId)
+  if (!byList) views.set(sessionId, (byList = new Map()))
+  byList.set(token, view)
+}
+
+/** The list no longer shows the chat. A chat no list shows is trimmed now. */
+export function forgetHistoryView(sessionId: string, token: symbol): void {
+  const byList = views.get(sessionId)
+  if (!byList?.delete(token)) return
+  if (byList.size > 0) return
+  views.delete(sessionId)
+  trimHistoryToBudget(sessionId)
+}
+
+/** Keep every loaded row while a reader of the whole chat (cmd+F) is open. Returns the release. */
+export function holdFullHistory(sessionId: string): () => void {
+  holds.set(sessionId, (holds.get(sessionId) ?? 0) + 1)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const left = (holds.get(sessionId) ?? 1) - 1
+    if (left > 0) holds.set(sessionId, left)
+    else holds.delete(sessionId)
+  }
+}
+
+/**
+ * Drop the oldest turns of a chat that holds more than its memory budget,
+ * and mark it as having older history, so a scroll to the top loads them
+ * again. Waits while a load or a jump to a row is in flight, while a full
+ * reader holds the chat, and while any view of it is scrolled up (so no view
+ * moves). Never drops a shown row. Returns the number of rows dropped.
+ */
+export function trimHistoryToBudget(sessionId: string, budget: HistoryMemoryBudget = HISTORY_MEMORY_BUDGET): number {
+  if (holds.has(sessionId) || inFlight.has(`older:${sessionId}`) || inFlight.has(`full:${sessionId}`)) return 0
+  const store = useAgentStore.getState()
+  if (store.pendingScrollToMessage?.sessionId === sessionId) return 0
+  const session = store.sessions.find((s) => s.id === sessionId)
+  if (!session) return 0
+  let protectFrom = session.messages.length
+  for (const view of views.get(sessionId)?.values() ?? []) {
+    if (!view.following) return 0
+    if (!view.firstMessageId) continue
+    const at = session.messages.findIndex((message) => message.id === view.firstMessageId)
+    if (at < 0) return 0
+    protectFrom = Math.min(protectFrom, at)
+  }
+  const count = planHistoryTrim(session.messages, { protectFrom, liveIds: liveAppendedIds(sessionId), budget })
+  if (count === 0 || !store.dropOldestMessages(sessionId, count)) return 0
+  log.info('history trimmed to budget', { sessionId, dropped: count, kept: session.messages.length - count })
+  return count
 }
