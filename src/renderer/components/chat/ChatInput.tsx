@@ -1,5 +1,4 @@
 import { useChatWaitStore } from '../../stores/chat-wait-store'
-import { USER_MESSAGE_IMAGE_TYPES } from '@shared/provider-events'
 import { createPortal } from 'react-dom'
 import { useState, useCallback, useMemo, useRef, useEffect, type CSSProperties, type ReactNode } from 'react'
 import { cn } from '../../lib/utils'
@@ -19,7 +18,14 @@ import { followUpDelivery, sendAction, waitsForIdle, type TurnDelivery } from '@
 import { followOffNotice, followSuggestionView, type FollowSuggestionMode } from '@shared/follow-suggestions'
 import { useFollowUpDefault } from '../../services/effective-settings'
 import { ArrowUpIcon, CloseIcon, PaperclipIcon, StopSquareIcon } from './chat-icons'
-import { sortAttachments, type AttachmentRefusal } from '../../services/attachment-intake'
+import {
+  attachmentLabel,
+  LARGE_PASTE_BYTES,
+  sortAttachments,
+  type AttachmentRefusal,
+} from '../../services/attachment-intake'
+import { attachmentPromptLine, type AttachmentKind } from '@shared/attachments'
+import { PillChipVisual } from './lexical/PillChipVisual'
 import { useChatDropZone } from './useChatDropZone'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 import { modelsForAgent, type ModelOption, type ReasoningEffort } from '@shared/models'
@@ -437,6 +443,10 @@ export function ChatInput({
   // can re-detect slash triggers without dipping into the editor.
   const [caret, setCaret] = useState<number | null>(null)
   const [refusals, setRefusals] = useState<AttachmentRefusal[]>([])
+  /** The last large paste folded into a file, until it is sent, removed or kept inline. */
+  const [pasteNotice, setPasteNotice] = useState<{ pillId: string; name: string; text: string; kb: number } | null>(
+    null,
+  )
   const [previewImageId, setPreviewImageId] = useState<string | null>(null)
 
   // Slash command popover state: `null` when closed; trigger info when open
@@ -609,6 +619,7 @@ export function ChatInput({
     setIsSubmitting(false)
     setSendError(null)
     setRefusals([])
+    setPasteNotice(null)
   }, [sessionId])
 
   // Map of pill id → metadata, used by the editor to render chips and by
@@ -799,23 +810,111 @@ export function ChatInput({
     return () => window.removeEventListener('sb-pill-remove', handler)
   }, [sessionId, removePill])
 
+  const attach = useCallback(
+    (targetSessionId: string, kind: AttachmentKind, name: string, path: string, label: string): string => {
+      const id = `att_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+      useDraftStore.getState().addPill(targetSessionId, {
+        id,
+        kind: 'file',
+        label,
+        content: attachmentPromptLine(kind, name, path),
+        attached: true,
+      })
+      return id
+    },
+    [],
+  )
+
+  // Images go inline as before. Any other file is copied under the app's
+  // attachments folder and sent as its path; a folder is sent as its own path.
+  // Both need this Mac's disk, so a chat on a remote machine takes images only.
   const addImages = useCallback(
-    (files: File[]) => {
+    async (files: File[], isFolder?: (file: File) => boolean) => {
       if (!sessionId) return
+      const target = sessionId
       setSendError(null)
-      const { images: valid, refused } = sortAttachments(files)
-      setRefusals(refused)
+      const sorted = sortAttachments(files, isFolder)
+      const refused = [...sorted.refused]
       addImagesToSession(
-        sessionId,
-        valid.map((file) => ({
+        target,
+        sorted.images.map((file) => ({
           id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           file,
           previewUrl: URL.createObjectURL(file),
         })),
       )
+      const remote = (useAgentStore.getState().sessions.find((s) => s.id === target)?.machineId ?? 'local') !== 'local'
+      if (remote) {
+        for (const file of [...sorted.files, ...sorted.folders])
+          refused.push({ name: file.name, reason: 'Files can be attached only to chats on this Mac.' })
+        setRefusals(refused)
+        return
+      }
+      for (const file of sorted.files) {
+        try {
+          const sourcePath = window.api.app.pathForFile(file)
+          const saved = await window.api.app.saveAttachment(
+            sourcePath
+              ? { name: file.name, sourcePath }
+              : { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) },
+          )
+          attach(target, 'file', file.name, saved.path, attachmentLabel(file.name, { pages: saved.pages }))
+        } catch (err) {
+          log.warn('attachment not saved', err)
+          refused.push({ name: file.name, reason: 'It could not be saved.' })
+        }
+      }
+      for (const folder of sorted.folders) {
+        const path = window.api.app.pathForFile(folder)
+        const entries = path ? await window.api.app.folderEntryCount(path) : null
+        if (entries === null) refused.push({ name: folder.name, reason: 'The folder could not be read.' })
+        else attach(target, 'folder', folder.name, path, attachmentLabel(folder.name, { entries }))
+      }
+      setRefusals(refused)
     },
-    [sessionId, addImagesToSession],
+    [sessionId, addImagesToSession, attach],
   )
+
+  // A paste over LARGE_PASTE_BYTES becomes `pasted-text-N.txt`, so a long log
+  // does not slow the editor. Cmd+Shift+V or "Keep inline" pastes it as text.
+  const foldLargePaste = useCallback(
+    (text: string): boolean => {
+      if (!sessionId) return false
+      const bytes = new TextEncoder().encode(text)
+      if (bytes.byteLength <= LARGE_PASTE_BYTES) return false
+      if ((useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.machineId ?? 'local') !== 'local')
+        return false
+      const target = sessionId
+      const used = pills
+        .map((p) => /^pasted-text-(\d+)\.txt/.exec(p.label)?.[1])
+        .filter(Boolean)
+        .map(Number)
+      const name = `pasted-text-${Math.max(0, ...used) + 1}.txt`
+      window.api.app
+        .saveAttachment({ name, bytes })
+        .then((saved) => {
+          const lines = text.split('\n').length
+          const pillId = attach(target, 'file', name, saved.path, attachmentLabel(name, { lines }))
+          if (sessionIdRef.current === target)
+            setPasteNotice({ pillId, name, text, kb: Math.round(bytes.byteLength / 1024) })
+        })
+        .catch((err) => {
+          log.warn('large paste not saved, pasting inline', err)
+          richRef.current?.replaceRange(value.length, value.length, text)
+        })
+      return true
+    },
+    [sessionId, pills, attach, value.length],
+  )
+
+  const keepPasteInline = useCallback(() => {
+    if (!sessionId || !pasteNotice) return
+    removePill(sessionId, pasteNotice.pillId)
+    const caret = richRef.current?.getCaret() ?? value.length
+    richRef.current?.replaceRange(caret, caret, pasteNotice.text)
+    setPasteNotice(null)
+    richRef.current?.focus()
+  }, [sessionId, pasteNotice, removePill, value.length])
 
   const removeImage = useCallback(
     (id: string) => {
@@ -873,11 +972,14 @@ export function ChatInput({
       // chat-message quote) before handing off. Tokens whose pills were
       // already removed get dropped silently.
       const pick = sendToPickRef.current?.sessionId === submittedSessionId ? sendToPickRef.current : null
-      const serialized = serializeBodyWithPills(trimmed, pillsById)
+      // Attachments are not in the editor: their tokens follow the typed text.
+      const attachedTokens = pills.filter((p) => p.attached).map((p) => `[[pill:${p.id}]]`)
+      const composed = [trimmed, attachedTokens.join('\n')].filter(Boolean).join('\n\n')
+      const serialized = serializeBodyWithPills(composed, pillsById)
       const body = pick?.command === 'link' ? pinLinkTarget(serialized, pick) : pinSendToTarget(serialized, pick)
       const pillsMeta: UserMessagePillsMeta = {}
       for (const p of pills) {
-        if (trimmed.includes(`[[pill:${p.id}]]`)) {
+        if (composed.includes(`[[pill:${p.id}]]`)) {
           pillsMeta[p.id] = {
             label: p.label,
             kind: p.kind,
@@ -895,6 +997,7 @@ export function ChatInput({
           })
         : { text: value, pills: [...pills], images: [...images] }
       setValue('')
+      setPasteNotice(null)
       insertedPillsRef.current.clear()
       submittingRef.current = true
       setIsSubmitting(true)
@@ -912,7 +1015,7 @@ export function ChatInput({
             ...(action === 'send-with-warning' && priorRecovery?.origin
               ? { confirmedRecoveryOrigin: priorRecovery.origin }
               : {}),
-            ...(hasPills ? { displayBody: trimmed, pillsMeta } : {}),
+            ...(hasPills ? { displayBody: composed, pillsMeta } : {}),
           },
         )
       } catch (error) {
@@ -1505,9 +1608,14 @@ export function ChatInput({
   )
 
   const dropZone = useChatDropZone(composerRef, (e) => {
-    addImages(Array.from(e.dataTransfer?.files ?? []))
+    const items = Array.from(e.dataTransfer?.items ?? []).filter((item) => item.kind === 'file')
+    const files = Array.from(e.dataTransfer?.files ?? [])
+    // Items and files list the same entries in the same order.
+    const folders = new Set(files.filter((_, i) => items[i]?.webkitGetAsEntry()?.isDirectory))
+    void addImages(files, (file) => folders.has(file))
     richRef.current?.focus()
   })
+  const attachedPills = pills.filter((p) => p.attached)
   const previewIndex = images.findIndex((image) => image.id === previewImageId)
   const previewImage = previewIndex === -1 ? null : images[previewIndex]
 
@@ -1517,33 +1625,6 @@ export function ChatInput({
       className="chat-composer shrink-0 border-t border-[var(--border)] bg-[var(--bg-secondary)] px-[12px] pt-[8px] pb-[10px]"
       data-runtime-mode={runtimeMode}
     >
-      {/* Image previews */}
-      {images.length > 0 && (
-        <div className="mb-[6px] flex flex-wrap gap-[6px]">
-          {images.map((img) => (
-            <div
-              key={img.id}
-              className="relative h-[56px] w-[56px] overflow-hidden rounded-[6px] border border-[var(--border)]"
-            >
-              <img
-                src={img.previewUrl}
-                alt={img.file.name}
-                onClick={() => setPreviewImageId(img.id)}
-                className="h-full w-full cursor-pointer object-cover"
-              />
-              <button
-                type="button"
-                aria-label={`Remove image ${img.file.name}`}
-                onClick={() => removeImage(img.id)}
-                className="absolute top-[2px] right-[2px] flex h-[16px] w-[16px] cursor-pointer items-center justify-center rounded-[50%] border-0 bg-[rgba(0,0,0,0.6)] text-[10px] leading-none text-[#fff]"
-              >
-                x
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
       {(bannerError || refusals.length > 0) && (
         <div
           data-composer-send-error
@@ -1584,6 +1665,68 @@ export function ChatInput({
         </div>
       )}
 
+      {pasteNotice && attachedPills.some((p) => p.id === pasteNotice.pillId) && (
+        <div
+          data-paste-notice
+          className="mb-[6px] flex items-center gap-[8px] rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[9px] py-[6px] text-[11px] leading-[1.45] text-[var(--text-secondary)]"
+        >
+          <span aria-hidden className="font-[600] text-[var(--warning)]">
+            !
+          </span>
+          <span>
+            Pasted {pasteNotice.kb} KB as <span className="text-[var(--text-primary)]">{pasteNotice.name}</span>.{' '}
+            <kbd className="mr-[2px] rounded-[3px] bg-[var(--bg-secondary)] px-[4px] text-[10px] [font-family:var(--font-mono)]">
+              {'⌘⇧V'}
+            </kbd>{' '}
+            pastes text inline.
+          </span>
+          <button
+            type="button"
+            className="ml-auto cursor-pointer border-0 bg-transparent p-0 text-[11px] whitespace-nowrap text-[var(--accent)]"
+            onClick={keepPasteInline}
+          >
+            Keep inline
+          </button>
+        </div>
+      )}
+
+      {/* Attachments: image tiles, then file and folder chips */}
+      {(images.length > 0 || attachedPills.length > 0) && (
+        <div data-composer-attachments className="mb-[6px] flex flex-wrap items-center gap-[6px]">
+          {images.map((img) => (
+            <div
+              key={img.id}
+              className="relative h-[56px] w-[56px] overflow-hidden rounded-[6px] border border-[var(--border)]"
+            >
+              <img
+                src={img.previewUrl}
+                alt={img.file.name}
+                onClick={() => setPreviewImageId(img.id)}
+                className="h-full w-full cursor-pointer object-cover"
+              />
+              <button
+                type="button"
+                aria-label={`Remove image ${img.file.name}`}
+                onClick={() => removeImage(img.id)}
+                className="absolute top-[2px] right-[2px] flex h-[16px] w-[16px] cursor-pointer items-center justify-center rounded-[50%] border-0 bg-[rgba(0,0,0,0.6)] text-[10px] leading-none text-[#fff]"
+              >
+                x
+              </button>
+            </div>
+          ))}
+          {attachedPills.map((pill) => (
+            <PillChipVisual
+              key={pill.id}
+              label={pill.label}
+              kind={pill.kind}
+              content={pill.content}
+              selectable={false}
+              onRemove={() => sessionId && removePill(sessionId, pill.id)}
+            />
+          ))}
+        </div>
+      )}
+
       {dropZone.dragging &&
         dropZone.panel &&
         createPortal(
@@ -1595,7 +1738,7 @@ export function ChatInput({
             <div>
               Drop files to attach
               <small className="mt-[3px] block text-[11.5px] font-[400] text-[var(--text-secondary)]">
-                PNG, JPEG, WebP or GIF images
+                Images, PDFs, logs or a folder
               </small>
             </div>
           </div>,
@@ -1606,11 +1749,10 @@ export function ChatInput({
       <input
         ref={filePickerRef}
         type="file"
-        accept={USER_MESSAGE_IMAGE_TYPES.join(',')}
         multiple
         onChange={(e) => {
           const files = Array.from(e.target.files ?? [])
-          if (files.length > 0) addImages(files)
+          if (files.length > 0) void addImages(files)
           if (filePickerRef.current) filePickerRef.current.value = ''
           richRef.current?.focus()
         }}
@@ -1712,6 +1854,7 @@ export function ChatInput({
               void handleSend(followUpDelivery(followUpDefault, altKey))
             }}
             onPasteFiles={addImages}
+            onPasteText={foldLargePaste}
             pillsById={pillsById}
             placeholder={placeholder}
             disabled={disabled}

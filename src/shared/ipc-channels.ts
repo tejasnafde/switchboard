@@ -57,6 +57,10 @@ export const AppChannels = {
   /** The new version once after an upgrade, else null. */
   TAKE_UPDATED_NOTICE: 'app:take-updated-notice',
   RELAUNCH: 'app:relaunch',
+  /** Desktop only: copy a composer attachment into `<userData>/attachments` (`main/attachments.ts`). */
+  SAVE_ATTACHMENT: 'app:save-attachment',
+  /** Desktop only: entries in a folder dropped on the composer, or null. */
+  FOLDER_ENTRY_COUNT: 'app:folder-entry-count',
   /** Settings > About > Diagnostics: one JSON snapshot of the host (see shared/diagnostics-report.ts). */
   GET_DIAGNOSTICS: 'app:get-diagnostics',
   /** Reveal the main-process log directory in Finder / Explorer. */

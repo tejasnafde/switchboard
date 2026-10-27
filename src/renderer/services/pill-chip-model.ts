@@ -7,11 +7,13 @@
  * source chat and message), so everything else is read back out of the label
  * shapes the capture paths write:
  *   terminal      `api (12 lines)`            (context-bridge.ts)
- *   file          `auth.ts (1-7)` or `auth.ts` (IDE selection, @-mention)
+ *   file          `auth.ts (1-7)` or `auth.ts` (IDE selection, @-mention),
+ *                 `spec.pdf (12 pages)`, `shots/ (14 files)` (composer attachment)
  *   chat-message  `Claude: "first line…"`, `you: "…"` for the user's own
  *   review        `2 review conversations · #612 · places` (review-context.ts)
  */
 import type { UserMessagePillKind } from '@shared/provider-events'
+import { parseAttachmentLine } from '@shared/attachments'
 
 export type PillChipKind = 'file' | 'terminal' | 'chat-message' | 'you' | 'review'
 
@@ -183,6 +185,25 @@ export function pillChipModel(input: {
     }
   }
 
+  // A composer attachment: its content is the saved-path line, its label may end in a count.
+  const attachment = stored === 'file' && input.content ? parseAttachmentLine(input.content) : null
+  const counted = stored === 'file' ? /^(.*) \(([\d,]+ (?:pages?|files?|lines?))\)$/.exec(label) : null
+  if (attachment || counted) {
+    return {
+      ...base,
+      kind: 'file',
+      source: attachment?.kind === 'folder' ? 'Folder' : 'Attachment',
+      name: counted ? counted[1] : label,
+      count: counted ? counted[2] : null,
+      detail: counted ? counted[2] : null,
+      where: null,
+      preview: attachment ? [`${attachment.kind === 'folder' ? 'At' : 'Saved at'} ${attachment.path}`] : [],
+      moreLines: 0,
+      lines: attachment ? [attachment.path] : [],
+      target: null,
+    }
+  }
+
   if (stored === 'file') {
     const m = /^(.*) \((\d+)(?:-(\d+))?\)$/.exec(label)
     const name = m ? m[1] : label
@@ -290,6 +311,13 @@ export function pillContentInMessage(kind: UserMessagePillKind, label: string, t
     return text.slice(start, headEnd + 1 + end)
   }
   if (kind === 'file') {
+    // A composer attachment: its saved-path line.
+    const attached = (/^(.*) \([\d,]+ (?:pages?|files?|lines?)\)$/.exec(label)?.[1] ?? label).replace(/\/$/, '')
+    const line = new RegExp(
+      `^\\[Attached (?:file|folder) "${escapeRegExp(attached)}" is (?:saved )?at: .+\\]$`,
+      'm',
+    ).exec(text)
+    if (line) return line[0]
     const m = /^(.*) \((\d+(?:-\d+)?)\)$/.exec(label)
     const name = m ? m[1] : label
     const path = `@((?:\\S*/)?${escapeRegExp(name)})`

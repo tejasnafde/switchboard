@@ -66,6 +66,7 @@ import {
   FOCUS_COMMAND,
   KEY_ARROW_LEFT_COMMAND,
   KEY_ARROW_RIGHT_COMMAND,
+  KEY_DOWN_COMMAND,
   KEY_ENTER_COMMAND,
   PASTE_COMMAND,
   SKIP_DOM_SELECTION_TAG,
@@ -114,6 +115,8 @@ interface RichChatTextareaProps {
   /** `altKey` is true for Alt/Option+Enter (queue instead of steer). */
   onEnter?: (key: { altKey: boolean }) => void
   onPasteFiles?: (files: File[]) => void
+  /** Pasted text; return true to take it out of the editor (the host folds a large paste into a file). */
+  onPasteText?: (text: string) => boolean
   pillsById: Record<string, ComposerPill>
   placeholder?: string
   disabled?: boolean
@@ -571,26 +574,56 @@ function EnterKeyPlugin({ onEnter }: { onEnter?: (key: { altKey: boolean }) => v
 }
 
 /**
- * Plugin: forward image-file pastes to the host. PlainTextPlugin
- * already strips HTML, so we only need to extract `clipboardData.files`.
+ * Plugin: forward pasted files to the host, and offer it pasted text first
+ * (it folds a large paste into a file). Cmd+Shift+V pastes the clipboard's
+ * text inline, whatever its size. PlainTextPlugin already strips HTML.
  */
-function PasteFilesPlugin({ onPasteFiles }: { onPasteFiles?: (files: File[]) => void }): null {
+function PasteFilesPlugin({
+  onPasteFiles,
+  onPasteText,
+}: Pick<RichChatTextareaProps, 'onPasteFiles' | 'onPasteText'>): null {
   const [editor] = useLexicalComposerContext()
   useEffect(() => {
-    if (!onPasteFiles) return
-    return editor.registerCommand<ClipboardEvent>(
+    const unregisterPaste = editor.registerCommand<ClipboardEvent>(
       PASTE_COMMAND,
       (event) => {
         const files = Array.from(event.clipboardData?.files ?? [])
-        const images = files.filter((f) => f.type.startsWith('image/'))
-        if (images.length === 0) return false
+        if (files.length > 0) {
+          if (!onPasteFiles) return false
+          event.preventDefault()
+          onPasteFiles(files)
+          return true
+        }
+        const text = event.clipboardData?.getData('text/plain') ?? ''
+        if (!text || !onPasteText?.(text)) return false
         event.preventDefault()
-        onPasteFiles(images)
         return true
       },
       COMMAND_PRIORITY_LOW,
     )
-  }, [editor, onPasteFiles])
+    const unregisterInline = editor.registerCommand<KeyboardEvent>(
+      KEY_DOWN_COMMAND,
+      (event) => {
+        if (!(event.metaKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'v')) return false
+        event.preventDefault()
+        navigator.clipboard
+          .readText()
+          .then((text) =>
+            editor.update(() => {
+              const sel = $getSelection()
+              if ($isRangeSelection(sel)) sel.insertRawText(text)
+            }),
+          )
+          .catch((err) => log.warn('inline paste could not read the clipboard', err))
+        return true
+      },
+      COMMAND_PRIORITY_LOW,
+    )
+    return () => {
+      unregisterPaste()
+      unregisterInline()
+    }
+  }, [editor, onPasteFiles, onPasteText])
   return null
 }
 
@@ -694,6 +727,7 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
       onCaretChange,
       onEnter,
       onPasteFiles,
+      onPasteText,
       pillsById,
       placeholder = 'Message the agent...',
       disabled = false,
@@ -762,7 +796,7 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
           <HistoryPlugin />
           <OnChangePlugin onChange={handleChange} />
           <EnterKeyPlugin onEnter={onEnter} />
-          <PasteFilesPlugin onPasteFiles={onPasteFiles} />
+          <PasteFilesPlugin onPasteFiles={onPasteFiles} onPasteText={onPasteText} />
           <PasteTextPlugin pillsById={pillsById} />
           <PillInsertPlugin />
           <PillSelectPlugin />

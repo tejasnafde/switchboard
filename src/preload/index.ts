@@ -1,4 +1,4 @@
-import { contextBridge } from 'electron'
+import { contextBridge, webUtils } from 'electron'
 import { IpcTransport, type Transport } from './transport'
 import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
@@ -253,6 +253,18 @@ const api = {
     attachToThread: (fragmentId: string, rootThreadId: string) =>
       transport.invoke(AppChannels.ATTACH_TO_THREAD, fragmentId, rootThreadId),
     relaunch: () => transport.invoke(AppChannels.RELAUNCH),
+    /** The path on disk of a dropped or picked file, or '' for one that has none (pasted bytes). */
+    pathForFile: (file: File): string => webUtils.getPathForFile(file),
+    /** Copy a composer attachment, by path or bytes, into the attachments folder on this Mac. */
+    saveAttachment: (input: {
+      name: string
+      sourcePath?: string
+      bytes?: Uint8Array
+    }): Promise<{ path: string; size: number; pages?: number }> => transport.invoke(AppChannels.SAVE_ATTACHMENT, input),
+    // An object, not a bare path: a bare string is read as a routing key and could
+    // send the call to a remote machine bound to that project path.
+    folderEntryCount: (folder: string): Promise<number | null> =>
+      transport.invoke(AppChannels.FOLDER_ENTRY_COUNT, { folder }),
     saveMessage: (params: SaveMessageParams) => transport.invoke(AppChannels.SAVE_MESSAGE, params),
     setFileDiffStatus: (
       conversationId: string,
