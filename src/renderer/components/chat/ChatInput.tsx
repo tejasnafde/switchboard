@@ -947,6 +947,11 @@ export function ChatInput({
       const trimmed = value.trim()
       const hasPills = pills.length > 0
       if ((!trimmed && images.length === 0 && !hasPills) || disabled || submittingRef.current || savingCount > 0) return
+      // A copied prompt can carry attachments into a remote chat; their paths are on this Mac.
+      if (sessionId && onRemoteMachine(sessionId) && pills.some((p) => p.attached)) {
+        setSendError('Files can be attached only to chats on this Mac. Remove the attached files to send.')
+        return
+      }
       const submittedSessionId = sessionId
       const submission = ++submissionRef.current
       const priorRecovery = recovery?.sessionId === submittedSessionId ? recovery : null

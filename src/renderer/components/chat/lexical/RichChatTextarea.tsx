@@ -613,6 +613,11 @@ function PasteFilesPlugin({
         // Text with pill tokens is a copied draft: PasteTextPlugin rebuilds its chips.
         if (!text || text.includes('[[pill:') || !textRef.current?.(text)) return false
         event.preventDefault()
+        // The folded paste replaces the selection, as an inline paste would.
+        editor.update(() => {
+          const sel = $getSelection()
+          if ($isRangeSelection(sel) && !sel.isCollapsed()) sel.removeText()
+        })
         return true
       },
       COMMAND_PRIORITY_LOW,
