@@ -16,7 +16,7 @@ import { userDataDir } from './runtime'
 const log = createMainLogger('chat:attachments')
 
 const KEEP_DAYS = 30
-/** Claude's document block limits: 32 MB per request and 100 pages. */
+/** Under Claude's 32 MB request and 100-page document limits, with room for the rest of the turn. */
 const MAX_PDF_BLOCK_BYTES = 20 * 1024 * 1024
 const MAX_PDF_BLOCK_PAGES = 100
 
@@ -67,7 +67,10 @@ export async function folderEntryCount(path: string): Promise<number | null> {
 /** Remove copies older than `KEEP_DAYS`. */
 export async function pruneAttachments(now = Date.now()): Promise<void> {
   const root = attachmentsDir()
-  const entries = await readdir(root).catch(() => [] as string[])
+  const entries = await readdir(root).catch((err: NodeJS.ErrnoException) => {
+    if (err.code !== 'ENOENT') log.warn('could not list attachments', err)
+    return [] as string[]
+  })
   for (const entry of entries) {
     const dir = join(root, entry)
     try {

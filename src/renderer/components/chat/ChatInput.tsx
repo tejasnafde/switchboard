@@ -189,6 +189,11 @@ const recoveryActionClass = cn(
 const LIGHTBOX_KBD =
   'rounded-[3px] bg-[rgba(255,255,255,0.14)] px-[4px] text-[10px] text-[#fff] [font-family:var(--font-mono)]'
 
+/** Attachments other than images need this Mac's disk. */
+function onRemoteMachine(sessionId: string): boolean {
+  return (useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.machineId ?? 'local') !== 'local'
+}
+
 /** Copy an image, by its object URL, to the clipboard as a PNG. */
 function copyImageToClipboard(url: string): void {
   const imgEl = document.createElement('img')
@@ -828,7 +833,7 @@ export function ChatInput({
   // Images go inline as before. Any other file is copied under the app's
   // attachments folder and sent as its path; a folder is sent as its own path.
   // Both need this Mac's disk, so a chat on a remote machine takes images only.
-  const addImages = useCallback(
+  const addAttachments = useCallback(
     async (files: File[], isFolder?: (file: File) => boolean) => {
       if (!sessionId) return
       const target = sessionId
@@ -843,8 +848,7 @@ export function ChatInput({
           previewUrl: URL.createObjectURL(file),
         })),
       )
-      const remote = (useAgentStore.getState().sessions.find((s) => s.id === target)?.machineId ?? 'local') !== 'local'
-      if (remote) {
+      if (onRemoteMachine(target)) {
         for (const file of [...sorted.files, ...sorted.folders])
           refused.push({ name: file.name, reason: 'Files can be attached only to chats on this Mac.' })
         setRefusals(refused)
@@ -882,8 +886,7 @@ export function ChatInput({
       if (!sessionId) return false
       const bytes = new TextEncoder().encode(text)
       if (bytes.byteLength <= LARGE_PASTE_BYTES) return false
-      if ((useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.machineId ?? 'local') !== 'local')
-        return false
+      if (onRemoteMachine(sessionId)) return false
       const target = sessionId
       const used = pills
         .map((p) => /^pasted-text-(\d+)\.txt/.exec(p.label)?.[1])
@@ -1612,7 +1615,7 @@ export function ChatInput({
     const files = Array.from(e.dataTransfer?.files ?? [])
     // Items and files list the same entries in the same order.
     const folders = new Set(files.filter((_, i) => items[i]?.webkitGetAsEntry()?.isDirectory))
-    void addImages(files, (file) => folders.has(file))
+    void addAttachments(files, (file) => folders.has(file))
     richRef.current?.focus()
   })
   const attachedPills = pills.filter((p) => p.attached)
@@ -1752,7 +1755,7 @@ export function ChatInput({
         multiple
         onChange={(e) => {
           const files = Array.from(e.target.files ?? [])
-          if (files.length > 0) void addImages(files)
+          if (files.length > 0) void addAttachments(files)
           if (filePickerRef.current) filePickerRef.current.value = ''
           richRef.current?.focus()
         }}
@@ -1853,7 +1856,7 @@ export function ChatInput({
             onEnter={({ altKey }) => {
               void handleSend(followUpDelivery(followUpDefault, altKey))
             }}
-            onPasteFiles={addImages}
+            onPasteFiles={addAttachments}
             onPasteText={foldLargePaste}
             pillsById={pillsById}
             placeholder={placeholder}
