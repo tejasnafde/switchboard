@@ -39,6 +39,8 @@
  *                           sandbox (e2e/html-live.e2e.mjs)
  *   - text says "tall live page" -> an ```html-live page taller than the
  *                           folded frame, then text under it (e2e/html-live.e2e.mjs)
+ *   - text says "offscreen live page" -> an ```html-live page whose still
+ *                           image is taken hidden (e2e/html-live.e2e.mjs)
  *   - anything else      -> a short two-sentence reply
  *
  * With `SB_DEMO_CLAUDE_TRANSCRIPT_DIR` set, the claude adapter also appends a
@@ -254,6 +256,17 @@ const LIVE_TALL_REPLY = [
     { length: 12 },
     (_, i) => `${i + 1}. Step ${i + 1} of the follow-up, written out so the reply runs past the page.`,
   ),
+].join('\n')
+
+/** An inline live page the e2e keeps out of view, so its still image is taken hidden. */
+const LIVE_OFFSCREEN_REPLY = [
+  'Status board:',
+  '',
+  '```html-live title="Offscreen status board"',
+  '<div style="height:200px;background:var(--sb-accent)"></div>',
+  '```',
+  '',
+  'Text under the board, so the end of the reply is not the page.',
 ].join('\n')
 
 /** An inline live page that tries every way out of the sandbox and logs each result. */
@@ -727,6 +740,8 @@ export class DemoAdapter implements ProviderAdapter {
       await this.say(threadId, turn, 'Final answer: the order holds.')
     } else if (/\bdraw\b/i.test(message)) {
       await this.say(threadId, turn, VISUALS_REPLY)
+    } else if (/\boffscreen live page\b/i.test(message)) {
+      await this.say(threadId, turn, LIVE_OFFSCREEN_REPLY)
     } else if (/\btall live page\b/i.test(message)) {
       await this.say(threadId, turn, LIVE_TALL_REPLY)
     } else if (/\blive page\b/i.test(message)) {
