@@ -115,6 +115,7 @@ import {
 } from '../project-settings'
 import { projectOverrideKey } from '@shared/project-settings'
 import { hubChildrenEnabled, withHubFields } from '@shared/hub'
+import { uploadAttachment } from '../attachments'
 
 const log = createLogger('ipc:app')
 
@@ -213,6 +214,8 @@ export interface AppHandlerDependencies {
 export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependencies = {}): void {
   registerHtmlLiveHandlers(host)
   setLaunchConfigEmitter((channel, ...args) => host.emit(channel, ...args))
+
+  host.handle(AppChannels.UPLOAD_ATTACHMENT, (input: { name: string; data: string }) => uploadAttachment(input))
 
   host.handle(AppChannels.SCAN_SESSIONS, async (projectPath: string) => {
     log.info(`scan-sessions: ${projectPath}`)

@@ -115,3 +115,61 @@ describe('imageTypeOf', () => {
     expect(imageTypeOf({ type: '', name: 'notes.txt' })).toBe('')
   })
 })
+
+describe('EXIF orientation in the backend shrink', () => {
+  /** A JPEG with an APP1 EXIF segment whose IFD0 holds only the orientation tag. */
+  function withOrientation(bytes: Buffer, orientation: number, little: boolean): Buffer {
+    const tiff = Buffer.alloc(8 + 2 + 12 + 4)
+    tiff.write(little ? 'II' : 'MM')
+    const u16 = (v: number, at: number) => (little ? tiff.writeUInt16LE(v, at) : tiff.writeUInt16BE(v, at))
+    const u32 = (v: number, at: number) => (little ? tiff.writeUInt32LE(v, at) : tiff.writeUInt32BE(v, at))
+    u16(42, 2)
+    u32(8, 4)
+    u16(1, 8)
+    u16(0x0112, 10)
+    u16(3, 12)
+    u32(1, 14)
+    u16(orientation, 18)
+    const body = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff])
+    const head = Buffer.from([0xff, 0xe1, 0, 0])
+    head.writeUInt16BE(body.length + 2, 2)
+    return Buffer.concat([bytes.subarray(0, 2), head, body, bytes.subarray(2)])
+  }
+
+  /** Left half red, right half blue. */
+  function halves(width: number, height: number): Buffer {
+    const data = Buffer.alloc(width * height * 4)
+    for (let i = 0; i < width * height; i++) {
+      const left = i % width < width / 2
+      data.set(left ? [255, 0, 0, 255] : [0, 0, 255, 255], i * 4)
+    }
+    return encodeJpeg({ data, width, height }, 90).data
+  }
+
+  const pixel = (image: { data: Uint8Array; width: number }, x: number, y: number) => {
+    const i = (Math.floor(y) * image.width + Math.floor(x)) * 4
+    return image.data[i] > image.data[i + 2] ? 'red' : 'blue'
+  }
+
+  it.each([
+    [6, true, 'red', 'blue'],
+    [8, false, 'blue', 'red'],
+  ])('orientation %i turns the shrunk image upright', (orientation, little, top, bottom) => {
+    const bytes = withOrientation(halves(2400, 1000), orientation, little)
+    const [out] = fitImagesToProviderLimit([{ url: dataUrl('image/jpeg', bytes), mimeType: 'image/jpeg' }])!
+    const decoded = decodeJpeg(Buffer.from(out.url.split(',')[1], 'base64'), { useTArray: true })
+    expect(decoded.height).toBe(MAX_IMAGE_LONG_SIDE)
+    expect(decoded.width).toBeLessThan(decoded.height)
+    expect(pixel(decoded, decoded.width / 2, 100)).toBe(top)
+    expect(pixel(decoded, decoded.width / 2, decoded.height - 100)).toBe(bottom)
+  })
+
+  it('leaves a JPEG without EXIF as it was', () => {
+    const [out] = fitImagesToProviderLimit([
+      { url: dataUrl('image/jpeg', halves(2400, 1000)), mimeType: 'image/jpeg' },
+    ])!
+    const decoded = decodeJpeg(Buffer.from(out.url.split(',')[1], 'base64'), { useTArray: true })
+    expect([decoded.width, decoded.height]).toEqual([MAX_IMAGE_LONG_SIDE, 833])
+    expect(pixel(decoded, 100, 400)).toBe('red')
+  })
+})

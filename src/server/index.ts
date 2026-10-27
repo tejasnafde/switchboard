@@ -20,6 +20,7 @@ import { MultiHost } from '../main/backend/multi-host'
 import { registerPushHandlers } from '../main/ipc/push'
 import { attachPushNotifier } from '../main/push/registry'
 import { registerAppHandlers } from '../main/ipc/app'
+import { pruneAttachments } from '../main/attachments'
 import { registerFilesHandlers } from '../main/ipc/files'
 import { registerProjectCloneHandlers } from '../main/ipc/project-clone'
 import { registerGitHandlers } from '../main/ipc/git'
@@ -173,6 +174,7 @@ const registry = new ProviderRegistry(host)
 const worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(host, () => registry)
 configureHubWorktreeCreator((request) => worktreeCreationRuntime.createWorktreeTransaction(request))
 registerAppHandlers(host, { isTurnInFlight: (id) => registry.isTurnInFlight(id) })
+void pruneAttachments()
 registerKanbanHandlers(host, {
   createWorktreeTransaction: (request) => worktreeCreationRuntime.createWorktreeTransaction(request),
   getWorktreeCreation: (request) => worktreeCreationRuntime.getWorktreeCreation(request),

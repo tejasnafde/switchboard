@@ -99,6 +99,9 @@ export const BACKEND_CAPABILITIES = [
    *  review on a pull request, each write carrying the digest of the sheet it
    *  showed (`PR_WRITE_SCOPE_CAPABILITY` in shared/pull-request-phone-writes). */
   'pr_write_scope_v1',
+  /** `app:upload-attachment` saves a phone's file and answers its path
+   *  (`ATTACHMENT_UPLOAD_CAPABILITY` in shared/attachments). */
+  'attachment_upload_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {

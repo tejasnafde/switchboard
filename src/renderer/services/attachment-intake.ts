@@ -2,11 +2,10 @@ import { imageTypeOf, isHeicType } from '@shared/image-resize'
 import { USER_MESSAGE_IMAGE_TYPES } from '@shared/provider-events'
 import { MAX_ATTACHMENT_BYTES } from '@shared/attachments'
 
+export { attachmentLabel, LARGE_PASTE_BYTES } from '@shared/attachments'
+
 /** Largest source image the composer takes; it is shrunk to the message budget at send. */
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024
-
-/** Pasted text over this many bytes becomes a `pasted-text-N.txt` attachment. */
-export const LARGE_PASTE_BYTES = 32 * 1024
 
 /** A file the composer did not attach, and why. Shown one per line above the editor. */
 export interface AttachmentRefusal {
@@ -62,16 +61,4 @@ export function sortAttachments(
     }
   }
   return out
-}
-
-/** `1,234` for a count on a chip. */
-const count = (n: number): string => n.toLocaleString('en-US')
-
-/** The chip label of a saved attachment: `spec.pdf (12 pages)`, `log.txt (2,140 lines)`, or the name. */
-export function attachmentLabel(name: string, detail: { pages?: number; lines?: number; entries?: number }): string {
-  if (detail.entries !== undefined)
-    return `${name}/ (${count(detail.entries)} ${detail.entries === 1 ? 'file' : 'files'})`
-  if (detail.pages && detail.pages > 1) return `${name} (${count(detail.pages)} pages)`
-  if (detail.lines && detail.lines > 1) return `${name} (${count(detail.lines)} lines)`
-  return name
 }
