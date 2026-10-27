@@ -1924,7 +1924,8 @@ export class ProviderRegistry implements PeerToolHost {
       if (this.sessionAdapters.get(threadId) !== adapter) return false
       notebookManager.beginTurn(threadId)
       const delivery = midTurn ? ('queue' as const) : undefined
-      const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, this.hasOutstandingTurn(threadId), delivery)
+      // `midTurn`, not the count: a limit resume is its own turn while held messages still count.
+      const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, midTurn, delivery)
       if (startsNewProviderTurn) this.beginOutstandingTurn(threadId)
       const queuedId = midTurn ? `apr_${requestId}` : undefined
       if (queuedId) this.queuedTurns.expect(queuedId, 'Switchboard: an approval result', Date.now())

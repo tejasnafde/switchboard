@@ -312,10 +312,11 @@ export class LimitResumer {
     // again (onSessionStarted); restarting the session here is restart recovery's job.
     if (!live) return refuse('not_running', 'The chat is not running. Send a message to continue.')
     // A turn already runs (you sent one): its end decides, disarming or arming again.
-    if (this.host.busy(live)) {
+    const busy = () => {
       if (!manual) this.schedule(id, requestId, this.now() + RETRY_MS)
       return refuse('busy', 'The chat is running a turn.')
     }
+    if (this.host.busy(live)) return busy()
 
     const checks = (probe: UsageProbe) =>
       fireChecks({
@@ -334,6 +335,8 @@ export class LimitResumer {
     if (decision.action === 'fire') {
       const row = getLimitResume(id)!
       decision = checks(usageProbe(await this.host.usage(row.providerInstanceId), this.now()))
+      // A turn you sent during the reading decides, as above.
+      if (decision.action === 'fire' && this.host.busy(live)) return busy()
     }
 
     switch (decision.action) {
