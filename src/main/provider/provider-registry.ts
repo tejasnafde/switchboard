@@ -104,6 +104,7 @@ import { echoMessageId, isRuntimeMode, REQUEST_EXPIRED, SESSION_START_STOPPED } 
 import { isReasoningEffort } from '@shared/provider-option-memory'
 import {
   promoteUnavailableReason,
+  peerDelivery,
   startsOwnProviderTurn,
   type QueuedTurnActionResult,
   type QueuedTurnSummary,
@@ -302,6 +303,12 @@ export class ProviderRegistry implements PeerToolHost {
   private sessionCwd = new Map<string, string>()
   /** Last status published per live thread. Cleared with the session. */
   private sessionStatus = new Map<string, ProviderSession['status']>()
+  /**
+   * Threads whose running turn is compacting or being stopped: a peer steer
+   * there is lost or lands in the wrong turn, so it queues (`peerDelivery`).
+   * Cleared when the turn ends.
+   */
+  private readonly steerBlocked = new Set<string>()
   /** The last `session.provider` published per thread, re-sent with a mode change. */
   private sessionIdentity = new Map<string, Extract<RuntimeEvent, { type: 'session.provider' }>>()
   /** Mode a held message was sent with, by its chat row id: it applies only when that message starts. */
@@ -472,7 +479,28 @@ export class ProviderRegistry implements PeerToolHost {
         log.error('could not recover child chats cut off mid-start', err)
       }
     }
+    this.syncLineageLinks()
     this.hubSampler?.start()
+  }
+
+  /**
+   * One lineage edge per open child and its parent (`PeerLinkBook.syncLineage`),
+   * none with the flag off. Run at startup and whenever a child row changes.
+   */
+  private syncLineageLinks(): void {
+    let pairs: Array<[string, string]> = []
+    try {
+      if (this.hubChildrenOn())
+        pairs = [...listHubChildrenInPhase('starting'), ...listHubChildrenInPhase('open')].map((c) => [
+          c.parentId,
+          c.childId,
+        ])
+    } catch (err) {
+      log.warn('could not read open child chats; keeping the lineage links as they are', err)
+      return
+    }
+    const changed = this.peerLinks.syncLineage(pairs, Date.now())
+    if (changed.length > 0) log.info('lineage links synced', { open: pairs.length, changed: changed.length })
   }
 
   private hubChildrenOn(): boolean {
@@ -513,6 +541,7 @@ export class ProviderRegistry implements PeerToolHost {
 
   /** Clients re-read the parent's view; `rows` also re-reads session lists, whose `hub` field moved. */
   private publishHubChange(parentId: string, rows = false): void {
+    if (rows) this.syncLineageLinks()
     this.bus.publish({ type: 'hub.children-changed', threadId: parentId })
     if (rows) this.host.emit(AppChannels.CONVERSATIONS_CHANGED)
   }
@@ -1096,16 +1125,20 @@ export class ProviderRegistry implements PeerToolHost {
    */
   listPeerSessions(fromThreadId: string): PeerSessionSummary[] {
     const ownRoot = resolveRootThreadId(fromThreadId)
+    const ownParent = this.hubStarter.parentOfOpenChild(ownRoot)
     const out: PeerSessionSummary[] = []
     for (const [threadId, session] of this.sessionDescriptors) {
-      if (threadId === fromThreadId || resolveRootThreadId(threadId) === ownRoot) continue
+      const root = resolveRootThreadId(threadId)
+      if (threadId === fromThreadId || root === ownRoot) continue
+      const lineage = this.peerLinks.isLineage(ownRoot, root)
       out.push({
         sessionId: threadId,
         title: getConversationTitle(threadId) ?? threadId,
         folder: this.sessionCwd.get(threadId) ?? session.cwd,
         provider: session.provider,
         midTurn: this.hasOutstandingTurn(threadId),
-        linked: this.peerLinks.isLinked(ownRoot, resolveRootThreadId(threadId)),
+        linked: this.peerLinks.isLinked(ownRoot, root),
+        ...(lineage ? { hub: root === ownParent ? ('parent' as const) : ('child' as const) } : {}),
       })
     }
     return out
@@ -1113,6 +1146,10 @@ export class ProviderRegistry implements PeerToolHost {
 
   isLinkedPeer(fromThreadId: string, sessionId: string): boolean {
     return this.peerLinks.isLinked(resolveRootThreadId(fromThreadId), resolveRootThreadId(sessionId))
+  }
+
+  isLineagePeer(fromThreadId: string, sessionId: string): boolean {
+    return this.peerLinks.isLineage(resolveRootThreadId(fromThreadId), resolveRootThreadId(sessionId))
   }
 
   /** The id a live session runs under for this id: itself, its root, or another id rotated from that root. */
@@ -1141,6 +1178,8 @@ export class ProviderRegistry implements PeerToolHost {
   linkPeers(threadId: string, peerThreadId: string, messages?: number, windowMs?: number): PeerLinkView[] {
     const a = resolveRootThreadId(threadId)
     const b = resolveRootThreadId(peerThreadId)
+    // A child talks only with its parent, on the lineage edge Switchboard made.
+    if (this.hubStarter.isOpenChild(a) || this.hubStarter.isOpenChild(b)) throw new Error(CHILD_READ_ONLY_TEXT)
     if (!this.isLiveSession(threadId))
       throw new Error('This chat is not running. Send it a message first, then link it.')
     if (!this.isLiveSession(peerThreadId)) {
@@ -1271,6 +1310,8 @@ export class ProviderRegistry implements PeerToolHost {
     chargedEdge: number | null
     fromRoot: string
     targetRoot: string
+    /** The sender named a delivery, so a busy target queues it. */
+    canQueue: boolean
   }): { reason: 'link-removed' | 'target-gone' | 'target-busy'; message: string } | null {
     if (input.chargedEdge !== null && this.peerLinks.edgeId(input.fromRoot, input.targetRoot) !== input.chargedEdge) {
       return {
@@ -1288,7 +1329,7 @@ export class ProviderRegistry implements PeerToolHost {
       }
     }
     // A turn may have started during the checkpoint await; an ACP agent would drop the send.
-    if (speaksAcp(input.adapter.provider) && this.hasOutstandingTurn(input.targetThreadId)) {
+    if (!input.canQueue && speaksAcp(input.adapter.provider) && this.hasOutstandingTurn(input.targetThreadId)) {
       return {
         reason: 'target-busy',
         message: `"${input.targetLabel}" is mid-turn and cannot take a message yet. Try again when it finishes.`,
@@ -1451,7 +1492,7 @@ export class ProviderRegistry implements PeerToolHost {
   async deliverPeerMessage(
     input: PeerMessageInput,
     opts: { held?: HeldPeerMessage } = {},
-  ): Promise<{ id: string; held?: true }> {
+  ): Promise<{ id: string; held?: true; queued?: true }> {
     const initiator = input.initiator ?? 'user'
     // A held message already met the link once; it is not charged or refused for time again.
     const held = initiator === 'agent' ? opts.held : undefined
@@ -1465,6 +1506,10 @@ export class ProviderRegistry implements PeerToolHost {
     const childParent = this.hubStarter.parentOfOpenChild(targetThreadId)
     if (childParent && (initiator === 'user' || resolveRootThreadId(input.fromThreadId) !== childParent)) {
       throw new Error(CHILD_READ_ONLY_TEXT)
+    }
+    const senderParent = initiator === 'agent' ? this.hubStarter.parentOfOpenChild(input.fromThreadId) : null
+    if (senderParent && resolveRootThreadId(targetThreadId) !== senderParent) {
+      throw new Error('A child chat can message only its parent chat.')
     }
     if (this.switchingSessions.has(targetThreadId)) {
       throw new Error('That session is changing profiles. Try again when it reconnects.')
@@ -1499,8 +1544,9 @@ export class ProviderRegistry implements PeerToolHost {
       }
       // An ACP agent is one prompt per turn and DROPS a mid-turn send, so
       // delivering into a running turn would record a message the agent never
-      // saw. The other adapters queue or steer, so they are fine.
-      if (speaksAcp(adapter.provider) && this.hasOutstandingTurn(targetThreadId)) {
+      // saw. The other adapters queue or steer, so they are fine. A send that
+      // names a delivery queues there instead.
+      if (!input.delivery && speaksAcp(adapter.provider) && this.hasOutstandingTurn(targetThreadId)) {
         throw new Error(`"${targetLabel}" is mid-turn and cannot take a message yet. Try again when it finishes.`)
       }
 
@@ -1554,6 +1600,12 @@ export class ProviderRegistry implements PeerToolHost {
         )
         this.announcePeerLinks([fromRoot, targetRoot])
         return { id, held: true }
+      }
+      // A Send on the kept row would be a user message to an open child, which is refused,
+      // so a lineage refusal keeps no row: the agent is told to report it instead.
+      if (linkVerdict.linked && !linkVerdict.ok && this.peerLinks.isLineage(fromRoot, targetRoot)) {
+        log.warn(`lineage peer send refused (${linkVerdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
+        throw new Error(linkVerdict.message)
       }
       if (linkVerdict.linked && !linkVerdict.ok) {
         log.warn(`linked peer send refused (${linkVerdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
@@ -1620,6 +1672,7 @@ export class ProviderRegistry implements PeerToolHost {
           chargedEdge,
           fromRoot,
           targetRoot,
+          canQueue: !!input.delivery,
         })
         if (withdrawn) {
           // A running turn keeps the checkpoint it now has; a fresh one belongs
@@ -1646,19 +1699,23 @@ export class ProviderRegistry implements PeerToolHost {
           throw new Error(withdrawn.message)
         }
         notebookManager.beginTurn(targetThreadId)
-        const startsNewProviderTurn = startsOwnProviderTurn(
-          adapter.provider,
-          this.hasOutstandingTurn(targetThreadId),
-          undefined,
-        )
+        const midTurn = this.hasOutstandingTurn(targetThreadId)
+        const delivery = input.delivery
+          ? peerDelivery(adapter.provider, midTurn, input.delivery, this.steerBlocked.has(targetThreadId))
+          : undefined
+        const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, midTurn, delivery)
         if (startsNewProviderTurn) this.beginOutstandingTurn(targetThreadId)
+        // Listed, promoted and cancelled by the id of the received row every client shows.
+        const queuedId = delivery === 'queue' ? verdict.id : undefined
+        if (queuedId) this.queuedTurns.expect(queuedId, `From "${fromLabel}": ${input.text}`, Date.now())
         releasePreparation()
         // Set before the send, not after: the receiving model may call the peer
         // tool the moment its turn starts, and the depth has to already be there.
         const previousDepth = this.turnDepth.get(targetThreadId)
         this.turnDepth.set(targetThreadId, nextHopDepth(senderDepth, initiator))
         try {
-          await adapter.sendTurn(targetThreadId, body)
+          if (delivery) await adapter.sendTurn(targetThreadId, body, undefined, undefined, delivery, queuedId)
+          else await adapter.sendTurn(targetThreadId, body)
         } catch (err) {
           if (startsNewProviderTurn) this.finishOutstandingTurn(targetThreadId)
           // The turn did NOT happen, so release the guard slot: otherwise an
@@ -1668,6 +1725,8 @@ export class ProviderRegistry implements PeerToolHost {
           if (previousDepth === undefined) this.turnDepth.delete(targetThreadId)
           else this.turnDepth.set(targetThreadId, previousDepth)
           throw err
+        } finally {
+          if (queuedId) this.queuedTurns.settle(queuedId)
         }
 
         const at = Date.now()
@@ -1690,6 +1749,11 @@ export class ProviderRegistry implements PeerToolHost {
 
         log.info(
           `peer message delivered ${verdict.id} by ${initiator}: ${input.fromThreadId} -> ${targetThreadId} chars=${input.text.length}`,
+          {
+            lineage: this.peerLinks.isLineage(fromRoot, targetRoot),
+            requested: input.delivery ?? null,
+            delivery: delivery ?? 'turn',
+          },
         )
         this.publish({
           type: 'peer.message',
@@ -1731,7 +1795,7 @@ export class ProviderRegistry implements PeerToolHost {
           })
         }
         if (renewed) this.deliverHeldOnEdges(fromRoot, [targetRoot])
-        return { id: verdict.id }
+        return { id: verdict.id, ...(queuedId ? { queued: true as const } : {}) }
       } finally {
         if (handSendOfHeld) this.deliveringHeld.delete(handSendOfHeld)
       }
@@ -1924,7 +1988,8 @@ export class ProviderRegistry implements PeerToolHost {
       if (this.sessionAdapters.get(threadId) !== adapter) return false
       notebookManager.beginTurn(threadId)
       const delivery = midTurn ? ('queue' as const) : undefined
-      const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, this.hasOutstandingTurn(threadId), delivery)
+      // `midTurn`, not the count: a limit resume is its own turn while held messages still count.
+      const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, midTurn, delivery)
       if (startsNewProviderTurn) this.beginOutstandingTurn(threadId)
       const queuedId = midTurn ? `apr_${requestId}` : undefined
       if (queuedId) this.queuedTurns.expect(queuedId, 'Switchboard: an approval result', Date.now())
@@ -2026,6 +2091,7 @@ export class ProviderRegistry implements PeerToolHost {
             publish,
             approvals: this.agentApprovals,
             peers: this,
+            hubChildren: hubOn,
           }),
           ...buildApprovalMcpTools({ chatId: chatId(), approvals: this.agentApprovals }),
           ...(parentTools
@@ -2194,6 +2260,11 @@ export class ProviderRegistry implements PeerToolHost {
     // Claude repeats `running` on every tool call; only a change moves a child's shown state.
     const statusChanged = event.type === 'status' && this.sessionStatus.get(event.threadId) !== event.status
     if (event.type === 'status') this.sessionStatus.set(event.threadId, event.status)
+    if (event.type === 'status' && event.compacting !== undefined) {
+      if (event.compacting) this.steerBlocked.add(event.threadId)
+      else this.steerBlocked.delete(event.threadId)
+    } else if ((event.type === 'status' && event.status !== 'running') || event.type === 'turn.completed')
+      this.steerBlocked.delete(event.threadId)
     if (event.type === 'session.provider') this.sessionIdentity.set(event.threadId, event)
     // Open cards a reconnecting or reloaded client can recover - see
     // `getPendingRequests`. `request.opened` / `question.asked` block the
@@ -2832,6 +2903,7 @@ export class ProviderRegistry implements PeerToolHost {
       this.sessionAdapters.delete(threadId)
       this.sessionCwd.delete(threadId)
       this.sessionStatus.delete(threadId)
+      this.steerBlocked.delete(threadId)
       this.sessionIdentity.delete(threadId)
       for (const [id, held] of this.heldTurnModes) if (held.threadId === threadId) this.heldTurnModes.delete(id)
       this.sessionDescriptors.delete(threadId)
@@ -3677,7 +3749,7 @@ export class ProviderRegistry implements PeerToolHost {
     // read: honouring a claimed `'agent'` would let a client take the agent
     // path's budget while skipping the approval canUseTool gives it.
     this.host.handle(ProviderChannels.DELIVER_PEER_MESSAGE, async (input: PeerMessageInput) =>
-      this.deliverPeerMessage({ ...input, initiator: 'user' }),
+      this.deliverPeerMessage({ ...input, delivery: undefined, initiator: 'user' }),
     )
     this.host.handle(
       ProviderChannels.LINK_PEER,
@@ -3708,6 +3780,7 @@ export class ProviderRegistry implements PeerToolHost {
       }
       const live = this.hasOutstandingTurn(threadId) || this.sessionStatus.get(threadId) === 'running'
       this.limitResumer?.disarm(threadId, 'stop')
+      if (live) this.steerBlocked.add(threadId)
       await adapter.interruptTurn(threadId)
       return { live }
     })

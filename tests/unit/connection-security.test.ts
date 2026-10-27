@@ -65,6 +65,12 @@ describe('connectionSecurity', () => {
     expect(ws('ws://10.0.4.17:8765')).toBe('plain')
   })
 
+  it('reads a near-miss of the emulator host as plain', () => {
+    expect(ws('ws://10.0.2.20:8765')).toBe('plain')
+    expect(ws('ws://10.0.2.2.example.com:8765')).toBe('plain')
+    expect(ws('ws://110.0.2.2:8765')).toBe('plain')
+  })
+
   it('reads wss:// without a usable pin as encrypted, unless it is loopback', () => {
     expect(ws('wss://10.0.4.17:8765')).toBe('encrypted')
     expect(ws(`wss://10.0.4.17:8765?fp=${FP}`, { canPin: false })).toBe('encrypted')

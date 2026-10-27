@@ -71,6 +71,16 @@ describe('transportRefusal', () => {
     expect(gate.transportRefusal('wss://mac.tailnet.ts.net')).toBeNull()
   })
 
+  it('lets a store build dial the Android emulator host, and refuses a near-miss of it', async () => {
+    mockReleaseType.mockResolvedValue(APP_STORE)
+    const { gate } = load()
+    await gate.storeBuildKnown()
+    expect(gate.transportRefusal('ws://10.0.2.2:8765')).toBeNull()
+    expect(gate.transportRefusal('ws://10.0.2.20:8765')).toMatch(/encrypted connection/)
+    expect(gate.transportRefusal('ws://10.0.2.2.example.com:8765')).toMatch(/encrypted connection/)
+    expect(gate.transportRefusal('ws://110.0.2.2:8765')).toMatch(/encrypted connection/)
+  })
+
   it('settles the refusal before a rescan replaces a saved address', async () => {
     let release!: (type: number) => void
     mockReleaseType.mockReturnValue(new Promise((resolve) => (release = resolve)))

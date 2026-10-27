@@ -5,9 +5,11 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Changed
+- **Chat history windows read on a read-only database connection.** The desktop opens a second, read-only SQLite connection with a larger page cache and memory-mapped reads for the window rows and the pill and image lookup. All writes stay on the main connection. When the read connection cannot open, the reads use the main connection as before. A synthetic 20,000-message bench shows the same warm time on both connections (about 7 ms).
 - **Native Android 0.5.22 (versionCode 24).** It adds phone pull request writes (#434, landed on main by #439): with the pr-write scope the desktop grants, a phone can reply to, resolve and comment on a pull request and submit a review, after a confirm sheet and a fingerprint or device credential check. The compact file diff also shows nothing for a file with no changed lines and says "1 line", not "1 lines" (#417).
 
 ### Added
+- **Live pages get a still image without being scrolled to.** A live page in a chat that the desktop has open but that you never scroll to now runs once out of sight at the width of the message, and the desktop captures its still image and stores it, so phones show the image instead of No image yet. These hidden runs use only the running slots that pages on screen leave free (two per window) and wait for a free slot. They stop when the page scrolls into view, and each page runs hidden at most once.
 - **iOS app: saved projects, Settings and a local Done notice.** A machine's project list shows the list it answered last time while it is offline, with "Showing saved projects" and Retry. A Settings screen (account, machines, follow-up default, version) opens from the Machines list and from `switchboard://settings`. When a turn ends with the app in the background and no push covers it, the phone shows a local "Done" notice that opens the chat. These match the native Android app.
 
 ### Changed

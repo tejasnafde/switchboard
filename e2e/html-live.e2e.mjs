@@ -5,8 +5,9 @@
  * a window, navigate away, read files and load an unknown /_sb/ name, and
  * checks for Node and the app API. Every attempt must fail, and only the
  * bundled /_sb/ libraries load. Then Open in pane moves the page (one running
- * copy), at most two frames run at once, the still image is stored, and a
- * frame at the top edge of a chat scrolled to the bottom does not jitter.
+ * copy), at most two frames run at once, the still image is stored, a
+ * frame at the top edge of a chat scrolled to the bottom does not jitter, and
+ * a frame that never comes into view gets its still image taken hidden.
  *
  *   npm run build:fast && SB_E2E_BACKGROUND=1 node e2e/html-live.e2e.mjs
  *
@@ -296,6 +297,56 @@ try {
       `edge ${edge}: the list settles at the bottom (gap ${Math.round(last.gap)}, ${last.state})`,
     )
   }
+  await list.evaluate((el) => (el.style.maxHeight = ''))
+
+  // ── A frame that never comes into view still gets its still image, taken hidden ──
+  // The list is 1 px tall and scrolled to the bottom, so only the text under the page shows.
+  await list.evaluate((el) => (el.style.maxHeight = '1px'))
+  await send('Show the offscreen live page.')
+  const board = win.locator('[data-html-live]').filter({ hasText: 'Offscreen status board' }).last()
+  await board.waitFor({ state: 'attached', timeout: 20_000 })
+  const hiddenSeen = await win
+    .waitForFunction(() => !!document.querySelector('[data-html-live-hidden] webview'), null, { timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false)
+  check(hiddenSeen, 'a frame out of view renders its page hidden')
+  check((await liveGuests(app)).length <= 2, 'the hidden render stays within the running limit')
+  const still = board.getByRole('img', { name: 'Offscreen status board, still image' })
+  await still.waitFor({ state: 'attached', timeout: 20_000 })
+  check((await board.getAttribute('data-html-live')) === 'paused', 'the frame stayed paused: it never ran in view')
+  await win.waitForFunction(() => !document.querySelector('[data-html-live-hidden]'), null, { timeout: 5_000 })
+  check(true, 'the hidden page is torn down after the capture')
+  // The image is the page, not a blank frame: its top shows the accent block.
+  const pixel = await still.evaluate(async (img) => {
+    await img.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = img.naturalWidth
+    canvas.height = img.naturalHeight
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(img, 0, 0)
+    const at = [...ctx.getImageData(Math.floor(img.naturalWidth / 2), 20, 1, 1).data]
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
+    ctx.fillRect(0, 0, 1, 1)
+    const accent = [...ctx.getImageData(0, 0, 1, 1).data]
+    return { at, accent, width: img.naturalWidth }
+  })
+  const close = pixel.at.slice(0, 3).every((v, i) => Math.abs(v - pixel.accent[i]) <= 12)
+  check(close, `the hidden still image shows the page (${pixel.at.join(',')} vs accent ${pixel.accent.join(',')})`)
+  const boardStored = await win.evaluate(async () => {
+    const source = '<div style="height:200px;background:var(--sb-accent)"></div>'
+    for (let i = 0; i < 40; i++) {
+      for (const text of [source, `${source}\n`]) {
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+        const key = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+        const state = await window.api.htmlLive.load(null, key)
+        if (state.image) return true
+      }
+      await new Promise((r) => setTimeout(r, 250))
+    }
+    return false
+  })
+  check(boardStored, "the hidden still image is stored with the chat's backend")
+  if (shots) await win.screenshot({ path: join(shots, 'hidden-still.png') })
   await list.evaluate((el) => (el.style.maxHeight = ''))
 } catch (err) {
   console.error(err)

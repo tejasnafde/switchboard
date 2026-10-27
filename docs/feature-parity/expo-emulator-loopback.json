@@ -1,0 +1,48 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "expo-emulator-loopback",
+  "summary": "The Expo app treats the Android emulator host 10.0.2.2 as loopback through the one shared isLoopbackHost helper, matched exactly: 10.0.2.20, 10.0.2.2.example.com and 110.0.2.2 are refused. No behaviour changes; tests pin the rule and the helper names the stricter native Android release rule.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop does not dial phones and does not call isLoopbackHost or cleartextRefusal; only a comment in src/shared/transport-security.ts changed."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/__tests__/transport-gate.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android keeps its stricter release rule (CleartextPolicy.kt and network_security_config.xml: localhost, 127.0.0.1, ::1 only; 10.0.2.2 in debug builds only), unchanged by this work."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/transport-security.ts",
+        "tests/unit/transport-security.test.ts",
+        "tests/unit/connection-security.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data is read or written differently; saved machines are not rewritten."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No runtime code changed, so no OTA or binary release carries a behaviour change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "vitest tests/unit/transport-security.test.ts and tests/unit/connection-security.test.ts: 10.0.2.2 is loopback and local, the near-misses are refused and read as plain.",
+      "jest apps/mobile transport-gate.test.ts: a store build dials ws://10.0.2.2 and refuses the near-misses."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No emulator or phone was run; the change is tests and a comment only."
+    ]
+  }
+}

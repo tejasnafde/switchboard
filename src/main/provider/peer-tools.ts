@@ -12,6 +12,8 @@ import { createMainLogger as createLogger } from '../logger'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { ProviderKind } from './types'
 import { heldPeerMessageText } from '@shared/peer-held-messages'
+import type { TurnDelivery } from '@shared/turn-delivery'
+import { PEER_LINEAGE_MESSAGE_BUDGET } from '@shared/peer-links'
 
 const log = createLogger('provider:peer-tools')
 
@@ -64,6 +66,19 @@ export const PEER_SEND_TOOL_DESCRIPTION = [
   'not name, and you cannot create or extend one.',
 ].join('\n')
 
+/**
+ * Appended to the send description while child chats are on: the parent and
+ * child edge, and the `delivery` argument.
+ */
+export const PEER_SEND_LINEAGE_DESCRIPTION = [
+  '',
+  `A parent chat and its child chats (\`hub: "child"\` or \`hub: "parent"\` in ${PEER_LIST_TOOL_NAME}) are linked`,
+  'by Switchboard: they message each other without an approval card, except in plan mode, under a budget of',
+  `${PEER_LINEAGE_MESSAGE_BUDGET} messages that renews when the user writes in either chat. A child can message only its parent. A child`,
+  'that is mid-turn gets the message after its turn by default (`delivery: "queue"`); `delivery: "steer"` puts',
+  'it into the running turn where the agent supports that, and queues it otherwise.',
+].join('\n')
+
 /** One other open session, as the model is shown it. */
 export interface PeerSessionSummary {
   sessionId: string
@@ -74,6 +89,8 @@ export interface PeerSessionSummary {
   midTurn: boolean
   /** The user linked it with the caller, so the two may message back and forth. */
   linked: boolean
+  /** It is the caller's parent chat, or one of its child chats. */
+  hub?: 'parent' | 'child'
 }
 
 /**
@@ -85,8 +102,13 @@ export interface PeerToolHost {
   listPeerSessions(fromThreadId: string): PeerSessionSummary[]
   /** Whether the user linked the two sessions (`shared/peer-links.ts`). */
   isLinkedPeer(fromThreadId: string, sessionId: string): boolean
-  /** `held`: the link's time was up, so the message waits to be delivered later. */
-  deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string; held?: true }>
+  /** A parent and its child chat (`PeerLinkBook.isLineage`): sends between them need no card. */
+  isLineagePeer(fromThreadId: string, sessionId: string): boolean
+  /**
+   * `held`: the link's time was up, so the message waits to be delivered later.
+   * `queued`: the target was mid-turn, so the message runs after that turn.
+   */
+  deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string; held?: true; queued?: true }>
 }
 
 /**
@@ -115,6 +137,8 @@ export interface PeerSendArgs {
   message: string
   /** See `PeerMessageInput.requireLink`. */
   requireLink?: boolean
+  /** See `PeerMessageInput.delivery`. */
+  delivery?: TurnDelivery
 }
 
 /**
@@ -154,12 +178,13 @@ export function createPeerToolHandlers(host: PeerToolHost, fromThreadId: string)
       }
 
       try {
-        const { id, held } = await host.deliverPeerMessage({
+        const { id, held, queued } = await host.deliverPeerMessage({
           fromThreadId,
           targetThreadId: sessionId,
           text: message,
           initiator: 'agent',
           ...(args.requireLink ? { requireLink: true } : {}),
+          ...(args.delivery ? { delivery: args.delivery } : {}),
         })
         if (held) {
           log.info(`agent-initiated peer send ${id} held: ${fromThreadId} -> ${sessionId}`)
@@ -170,14 +195,15 @@ export function createPeerToolHandlers(host: PeerToolHost, fromThreadId: string)
           )
         }
         log.info(`agent-initiated peer send ${id}: ${fromThreadId} -> ${sessionId}`)
+        const when = queued ? ' It is mid-turn, so it reads the message when that turn ends.' : ''
         if (host.isLinkedPeer(fromThreadId, sessionId)) {
           return say(
-            `Delivered to linked session ${sessionId} as message ${id}. If it replies, the reply arrives ` +
+            `Delivered to linked session ${sessionId} as message ${id}.${when} If it replies, the reply arrives ` +
               'as a new message in this session; end your turn rather than waiting inside it.',
           )
         }
         return say(
-          `Delivered to session ${sessionId} as message ${id}. That session acts on it in its own ` +
+          `Delivered to session ${sessionId} as message ${id}.${when} That session acts on it in its own ` +
             'transcript and no reply comes back here, so continue without waiting.',
         )
       } catch (err) {

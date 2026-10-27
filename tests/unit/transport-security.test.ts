@@ -49,4 +49,15 @@ describe('cleartextRefusal', () => {
     expect(isLoopbackHost('127.0.0.1.evil.example')).toBe(false)
     expect(isLoopbackHost('localhost.example')).toBe(false)
   })
+
+  it('matches the emulator host exactly, not a near-miss', () => {
+    expect(isLoopbackHost('10.0.2.2')).toBe(true)
+    expect(isLoopbackHost('10.0.2.20')).toBe(false)
+    expect(isLoopbackHost('10.0.2.2.example.com')).toBe(false)
+    expect(isLoopbackHost('110.0.2.2')).toBe(false)
+    expect(cleartextRefusal('ws://10.0.2.20:8765')).toMatch(/encrypted connection/)
+    expect(cleartextRefusal('ws://10.0.2.2.example.com:8765')).toMatch(/encrypted connection/)
+    expect(cleartextRefusal('ws://110.0.2.2:8765')).toMatch(/encrypted connection/)
+    expect(cleartextRefusal('ws://10.0.2.2@evil.example:8765')).toMatch(/encrypted connection/)
+  })
 })

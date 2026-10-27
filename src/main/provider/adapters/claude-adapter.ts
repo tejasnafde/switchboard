@@ -706,6 +706,8 @@ interface ActiveSession {
   promptTooLongSeen?: boolean
   /** The limit the current turn ended on. Kept until the next turn starts, so a late empty `result` carries it too. */
   turnLimit?: TurnLimit | null
+  /** A usage rejection ended the running turn, so its late `result` must not end it again. */
+  endedByRejection?: boolean
   /**
    * The running turn hit the context window: `/compact` was sent, and the
    * turn's own messages go again once it ends (see recoverPromptTooLong).
@@ -872,6 +874,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     if (!queued) {
       active.turnStartedAt = Date.now()
       active.turnLimit = null
+      active.endedByRejection = false
       active.watchdog.turnStarted(Date.now())
     }
 
@@ -1540,6 +1543,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     }
     active.turnStartedAt = Date.now()
     active.turnLimit = null
+    active.endedByRejection = false
     active.watchdog.turnStarted(Date.now())
     active.session.status = 'running'
     active.onEvent({ type: 'status', threadId, status: 'running', newTurn: true })
@@ -1723,6 +1727,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       })
     active.turnStartedAt = Date.now()
     active.turnLimit = null
+    active.endedByRejection = false
     active.watchdog.turnStarted(Date.now())
     active.session.status = 'running'
     active.onEvent({ type: 'status', threadId: active.session.threadId, status: 'running' })
@@ -2012,6 +2017,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         // Compaction event - context window shrank, refresh usage
         if (sys.subtype === 'status' && sys.compact_result === 'success') {
           log.info(`compaction completed: ${threadId}`)
+          active.onEvent({ type: 'status', threadId, status: 'running', compacting: false })
           if (active.query) {
             active.query
               .getContextUsage()
@@ -2052,7 +2058,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
         // "compacting" status → show in UI
         if (sys.subtype === 'status' && sys.status === 'compacting') {
-          active.onEvent({ type: 'status', threadId, status: 'running' })
+          active.onEvent({ type: 'status', threadId, status: 'running', compacting: true })
           active.onEvent({
             type: 'content',
             threadId,
@@ -2288,6 +2294,9 @@ export class ClaudeAdapter implements ProviderAdapter {
         active.prompt.answered(new Set(active.queuedTurns.map((turn) => turn.sdkMessage)))
         if (this.recoverPromptTooLong(threadId, active, result as { is_error?: boolean }, tooLong, unanswered)) break
         const limit = mergeTurnLimit(active.turnLimit, tooLong ? { limitClass: 'context_full', resetAt: null } : null)
+        // Each turn end settles one outstanding turn in the registry; this one was settled by the rejection.
+        const alreadyEnded = active.endedByRejection && active.turnStartedAt == null
+        active.endedByRejection = false
 
         const durationMs = takeTurnDuration(active)
         active.watchdog.turnEnded()
@@ -2304,15 +2313,16 @@ export class ClaudeAdapter implements ProviderAdapter {
           else this.startQueuedTurn(active)
         }
         active.steeredThisTurn = false
-        active.onEvent({
-          type: 'turn.completed',
-          threadId,
-          costUsd: result.total_cost_usd,
-          numTurns: result.num_turns,
-          usedTokens: result.usage?.input_tokens,
-          ...(durationMs !== undefined ? { durationMs } : {}),
-          ...(limit ? { limit } : {}),
-        })
+        if (!alreadyEnded)
+          active.onEvent({
+            type: 'turn.completed',
+            threadId,
+            costUsd: result.total_cost_usd,
+            numTurns: result.num_turns,
+            usedTokens: result.usage?.input_tokens,
+            ...(durationMs !== undefined ? { durationMs } : {}),
+            ...(limit ? { limit } : {}),
+          })
 
         if (result.session_id) {
           active.session.sessionId = result.session_id
@@ -2398,11 +2408,13 @@ export class ClaudeAdapter implements ProviderAdapter {
           // A rejection while idle ends no turn of ours, so it must not arm a resume.
           // An explicit overage block can clear before its resetsAt, so it arms no
           // resume. An untyped rejection keeps its reset (the limit-classification cases).
-          if (active.turnStartedAt != null || active.awaitingNextTurn)
+          if (active.turnStartedAt != null || active.awaitingNextTurn) {
+            active.endedByRejection = true
             active.turnLimit = mergeTurnLimit(
               active.turnLimit,
               claudeRejectionLimit(rl.rateLimitType === 'overage' ? null : rl.resetsAt),
             )
+          }
           const durationMs = takeTurnDuration(active)
           active.watchdog.turnEnded()
           this.holdQueuedTurns(active, 'The usage limit was reached.')

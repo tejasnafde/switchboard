@@ -130,6 +130,16 @@ describe('limit helpers', () => {
 })
 
 describe('a limit stays on its own turn', () => {
+  it('claude: the late empty result of a rejected turn does not end it twice', () => {
+    const events: RuntimeEvent[] = []
+    const active = claudeActive((e) => events.push(e))
+    const adapter = new ClaudeAdapter()
+    const { events: frames } = cases.find((c) => c.name === 'a limit followed by an empty success stays a limit')!
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const frame of frames) (adapter as any).handleSDKMessage('t', active, frame)
+    expect(events.filter((e) => e.type === 'turn.completed')).toHaveLength(1)
+  })
+
   it('claude: a rejection while idle carries no limit', () => {
     const events: RuntimeEvent[] = []
     const active = { ...claudeActive((e) => events.push(e)), turnStartedAt: null }
