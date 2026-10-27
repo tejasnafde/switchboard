@@ -101,8 +101,8 @@ export interface PdfDocumentBlock {
 /**
  * A document block for each attached PDF the message names, when it is a copy
  * in the attachments folder, its page count is known, and it fits what is left
- * of the turn's PDF budget. Other PDFs stay as the path line only. Synchronous, so two turns sent back to back
- * reach the agent in order.
+ * of the turn's PDF budget. Other PDFs stay as the path line only.
+ * Synchronous, so two turns sent back to back reach the agent in order.
  */
 export function attachedPdfBlocks(message: string): PdfDocumentBlock[] {
   const blocks: PdfDocumentBlock[] = []

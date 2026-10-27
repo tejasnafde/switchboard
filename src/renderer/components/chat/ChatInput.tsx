@@ -862,27 +862,30 @@ export function ChatInput({
         return
       }
       setSavingCount((n) => n + 1)
-      for (const file of sorted.files) {
-        try {
-          const sourcePath = window.api.app.pathForFile(file)
-          const saved = await window.api.app.saveAttachment(
-            sourcePath
-              ? { name: file.name, sourcePath }
-              : { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) },
-          )
-          attach(target, 'file', file.name, saved.path, attachmentLabel(file.name, { pages: saved.pages }))
-        } catch (err) {
-          log.warn('attachment not saved', err)
-          refused.push({ name: file.name, reason: 'It could not be saved.' })
+      try {
+        for (const file of sorted.files) {
+          try {
+            const sourcePath = window.api.app.pathForFile(file)
+            const saved = await window.api.app.saveAttachment(
+              sourcePath
+                ? { name: file.name, sourcePath }
+                : { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) },
+            )
+            attach(target, 'file', file.name, saved.path, attachmentLabel(file.name, { pages: saved.pages }))
+          } catch (err) {
+            log.warn('attachment not saved', err)
+            refused.push({ name: file.name, reason: 'It could not be saved.' })
+          }
         }
+        for (const folder of sorted.folders) {
+          const path = window.api.app.pathForFile(folder)
+          const entries = path ? await window.api.app.folderEntryCount(path) : null
+          if (entries === null) refused.push({ name: folder.name, reason: 'The folder could not be read.' })
+          else attach(target, 'folder', folder.name, path, attachmentLabel(folder.name, { entries }))
+        }
+      } finally {
+        setSavingCount((n) => n - 1)
       }
-      for (const folder of sorted.folders) {
-        const path = window.api.app.pathForFile(folder)
-        const entries = path ? await window.api.app.folderEntryCount(path) : null
-        if (entries === null) refused.push({ name: folder.name, reason: 'The folder could not be read.' })
-        else attach(target, 'folder', folder.name, path, attachmentLabel(folder.name, { entries }))
-      }
-      setSavingCount((n) => n - 1)
       if (sessionIdRef.current === target) setRefusals(refused)
     },
     [sessionId, addImagesToSession, attach],
@@ -905,7 +908,6 @@ export function ChatInput({
       setSavingCount((n) => n + 1)
       window.api.app
         .saveAttachment({ name, bytes })
-        .finally(() => setSavingCount((n) => n - 1))
         .then((saved) => {
           const lines = text.split('\n').length
           const pillId = attach(target, 'file', name, saved.path, attachmentLabel(name, { lines }))
@@ -917,6 +919,7 @@ export function ChatInput({
           const caret = richRef.current?.getCaret() ?? 0
           richRef.current?.replaceRange(caret, caret, text)
         })
+        .finally(() => setSavingCount((n) => n - 1))
       return true
     },
     [sessionId, pills, attach],
