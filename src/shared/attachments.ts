@@ -56,10 +56,11 @@ export function attachmentLabel(name: string, detail: { pages?: number; lines?: 
 export const ATTACHMENT_UPLOAD_CAPABILITY = 'attachment_upload_v1'
 
 /**
- * Largest file a phone uploads. Its base64 rides in one JSON frame, which must
- * stay under the 64 MiB WebSocket frame limit.
+ * Largest file a phone uploads. Its base64 rides in one message, which must
+ * fit OkHttp's 16 MiB send queue (Android), the IAP host's 32 MiB line and
+ * the 64 MiB WebSocket frame.
  */
-export const MAX_UPLOAD_ATTACHMENT_BYTES = 25 * 1024 * 1024
+export const MAX_UPLOAD_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 /** A file saved on the backend, ready to go in a turn. */
 export interface SentAttachment {

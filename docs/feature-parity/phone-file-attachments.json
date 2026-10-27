@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "phone-file-attachments",
-  "summary": "Phones attach any file, as the desktop composer does. The phone uploads the bytes over app:upload-attachment ({ name, data } in base64, 25 MB at most so one frame stays under the 64 MiB WebSocket limit); the backend saves them under <data dir>/attachments/<uuid>/<name> and answers the path. The turn is the desktop's shape (attachmentTurn): the provider text ends with one [Attached file \"x\" is saved at: /path] line per file, the display body with a [[pill:id]] token drawn as a file chip. A backend without attachment_upload_v1 takes images only. The backend image shrink also turns a JPEG upright from its EXIF orientation before it drops the EXIF, and the headless server prunes copies older than 30 days at start.",
+  "summary": "Phones attach any file, as the desktop composer does. The phone uploads the bytes over app:upload-attachment ({ name, data } in base64, 10 MB at most so one message fits the OkHttp 16 MiB send queue and the IAP 32 MiB line); the backend saves them under <data dir>/attachments/<uuid>/<name> and answers the path. The turn is the desktop's shape (attachmentTurn): the provider text ends with one [Attached file \"x\" is saved at: /path] line per file, the display body with a [[pill:id]] token drawn as a file chip. A backend without attachment_upload_v1 takes images only. The backend image shrink also turns a JPEG upright from its EXIF orientation before it drops the EXIF, and the headless server prunes copies older than 30 days at start.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -45,7 +45,7 @@
   },
   "verification": {
     "automated": [
-      "vitest: tests/unit/main-attachments.test.ts (upload saves base64 bytes, refuses over 25 MB before decoding, refuses a source path; attachmentTurn lines, tokens and pills; pasted-text names).",
+      "vitest: tests/unit/main-attachments.test.ts (upload saves base64 bytes, refuses over 10 MB before decoding, refuses a source path; attachmentTurn lines, tokens and pills; pasted-text names).",
       "vitest: tests/unit/provider-image-limits.test.ts (EXIF orientation 6 and 8, big- and little-endian, come out upright after the shrink)."
     ],
     "hardware": [],

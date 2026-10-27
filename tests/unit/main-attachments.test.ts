@@ -20,6 +20,7 @@ import {
   MAX_UPLOAD_ATTACHMENT_BYTES,
   nextPastedTextName,
 } from '../../src/shared/attachments'
+import { MAX_LINE_BYTES } from '../../src/main/backend/tcp-host'
 
 const pdf = (pages: number): Buffer =>
   Buffer.from(
@@ -98,8 +99,14 @@ describe('phone attachments', () => {
     expect(saved.path.startsWith(attachmentsDir())).toBe(true)
     expect(saved.size).toBe(5)
     const big = 'A'.repeat(Math.ceil((MAX_UPLOAD_ATTACHMENT_BYTES * 4) / 3) + 8)
-    await expect(uploadAttachment({ name: 'big.bin', data: big })).rejects.toThrow('big.bin is over the 25 MB')
+    await expect(uploadAttachment({ name: 'big.bin', data: big })).rejects.toThrow('big.bin is over the 10 MB')
     await expect(uploadAttachment({ name: 'x', sourcePath: '/etc/hosts' } as never)).rejects.toThrow('Invalid')
+  })
+
+  it('fits one upload in every transport: OkHttp queue, IAP line, WebSocket frame', () => {
+    const message = Math.ceil(MAX_UPLOAD_ATTACHMENT_BYTES / 3) * 4 + 64 * 1024
+    expect(message).toBeLessThan(16 * 1024 * 1024)
+    expect(message).toBeLessThan(MAX_LINE_BYTES)
   })
 
   it('builds the same turn the desktop sends: lines for the agent, tokens for the bubble', () => {
