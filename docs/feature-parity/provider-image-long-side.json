@@ -19,7 +19,6 @@
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
-        "src/shared/image-resize.ts",
         "apps/mobile/src/components/ImageAttachments.tsx"
       ]
     },

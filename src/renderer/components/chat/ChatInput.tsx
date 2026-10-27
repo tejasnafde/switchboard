@@ -414,6 +414,8 @@ export function ChatInput({
   )
   const recovery = sessionId ? (recoveries[sessionId] ?? null) : null
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Images still converting (HEIC): Send waits for them so the text never goes without its image.
+  const [pendingIntakes, setPendingIntakes] = useState(0)
   const submittingRef = useRef(false)
   const submissionRef = useRef(0)
   const acceptedOriginsRef = useRef(new Set<string>())
@@ -788,17 +790,22 @@ export function ChatInput({
     async (files: File[]) => {
       if (!sessionId) return
       setSendError(null)
-      const images = await Promise.all(files.filter((f) => f.size <= MAX_IMAGE_SIZE).map(toComposerImage))
-      const valid = images.filter((f): f is File => f !== null)
+      setPendingIntakes((count) => count + 1)
+      try {
+        const images = await Promise.all(files.filter((f) => f.size <= MAX_IMAGE_SIZE).map(toComposerImage))
+        const valid = images.filter((f): f is File => f !== null)
 
-      addImagesToSession(
-        sessionId,
-        valid.map((file) => ({
-          id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          file,
-          previewUrl: URL.createObjectURL(file),
-        })),
-      )
+        addImagesToSession(
+          sessionId,
+          valid.map((file) => ({
+            id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            file,
+            previewUrl: URL.createObjectURL(file),
+          })),
+        )
+      } finally {
+        setPendingIntakes((count) => count - 1)
+      }
     },
     [sessionId, addImagesToSession],
   )
@@ -815,7 +822,8 @@ export function ChatInput({
     async (delivery: TurnDelivery = 'steer') => {
       const trimmed = value.trim()
       const hasPills = pills.length > 0
-      if ((!trimmed && images.length === 0 && !hasPills) || disabled || submittingRef.current) return
+      if ((!trimmed && images.length === 0 && !hasPills) || disabled || submittingRef.current || pendingIntakes > 0)
+        return
       const submittedSessionId = sessionId
       const submission = ++submissionRef.current
       const priorRecovery = recovery?.sessionId === submittedSessionId ? recovery : null
@@ -1000,6 +1008,7 @@ export function ChatInput({
       pillsById,
       images,
       disabled,
+      pendingIntakes,
       onSend,
       sessionId,
       composerFingerprint,
@@ -1733,7 +1742,12 @@ export function ChatInput({
               onClick={() => {
                 void handleSend(followUpDefault)
               }}
-              disabled={disabled || isSubmitting || (!value.trim() && images.length === 0 && pills.length === 0)}
+              disabled={
+                disabled ||
+                isSubmitting ||
+                pendingIntakes > 0 ||
+                (!value.trim() && images.length === 0 && pills.length === 0)
+              }
               aria-label={sendButton.label}
               title={sendButton.tooltip}
             >
