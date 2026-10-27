@@ -1,18 +1,27 @@
 /**
- * The children strip above a parent's composer: one row per unsettled child
- * with its state, account, branch, last turn and last update, and Open, Nudge
- * and Stop. Rows come from the backend's hub view, so every client shows the
- * same states.
+ * The children strip above a parent's composer: a header with the counts, the
+ * parent state and the token total, then one line per unsettled child with
+ * its state, last wake, account and tokens, and Open, Nudge and Stop. Rows
+ * come from the backend's hub view, so every client shows the same states.
  */
-import { childStateLabel, type HubChatRef, type HubChildView } from '@shared/hub'
+import { useState } from 'react'
+import { childStateLabel, parentStateLabel, type HubChatRef, type HubChildView, type ParentState } from '@shared/hub'
 import { agentLabel, type AgentType } from '@shared/types'
 import { createRendererLogger } from '../../logger'
-import { Button } from '../ui/button'
+import { childDot } from './child-dot'
 import { nudgeChild, openHubChat } from './hub-actions'
 
 const log = createRendererLogger('hub:strip')
 
-const ATTENTION = new Set<HubChildView['state']>(['needs_you', 'asked_hub', 'blocked', 'failed', 'limited'])
+const ATTENTION = new Set<HubChildView['state']>(['needs_you', 'asked_hub', 'blocked', 'failed'])
+/** Rows shown before "Show all". */
+const FOLDED_ROWS = 6
+
+const textAction = 'cursor-pointer border-0 bg-transparent p-0 [font:inherit] hover:underline'
+const linkClass = `${textAction} text-[var(--accent)]`
+const stopClass = `${textAction} text-[var(--error)]`
+
+const canStop = (c: HubChildView) => c.state === 'working' && c.liveId !== null
 
 function stopChild(parent: HubChatRef, child: HubChildView): void {
   if (!child.liveId) return
@@ -21,66 +30,86 @@ function stopChild(parent: HubChatRef, child: HubChildView): void {
     .catch((err: unknown) => log.warn('stopping a child failed', err))
 }
 
+const kTokens = (n: number) => `${Math.round(n / 1000)}k`
+
 function ChildRow({ parent, child }: { parent: HubChatRef; child: HubChildView }) {
-  const facts = [
-    agentLabel(child.chat.agentType as AgentType),
-    child.account,
-    child.branch,
-    child.lastTurn?.usedTokens != null ? `${Math.round(child.lastTurn.usedTokens / 1000)}k tokens` : null,
-    child.lastTurn?.costUsd != null ? `known cost $${child.lastTurn.costUsd.toFixed(2)}` : null,
-  ].filter(Boolean)
+  const tokens = child.lastTurn?.usedTokens
+  const muted = [child.account, tokens != null ? kTokens(tokens) : null].filter(Boolean)
   return (
-    <li data-hub-child={child.state} className="flex flex-wrap items-center gap-x-[8px] gap-y-[2px] py-[4px]">
-      <div className="min-w-[min(100%,240px)] flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-[8px]">
-          <span className="max-w-full truncate text-[12px] font-[600] text-[var(--text-primary)]">
-            {child.chat.title}
-          </span>
-          <span
-            className={
-              ATTENTION.has(child.state) ? 'shrink-0 text-[11px] text-[var(--warning)]' : 'shrink-0 text-[11px]'
-            }
-          >
-            {childStateLabel(child)}
-          </span>
-        </div>
-        <div className="truncate text-[11px] text-[var(--text-muted)]">{facts.join(' · ')}</div>
-        {child.lastWake && (
-          <div className="truncate text-[11px]" title={child.lastWake.summary}>
-            {child.lastWake.summary}
-          </div>
-        )}
-      </div>
-      <div className="flex flex-wrap gap-[4px]">
-        <Button variant="ghost" size="sm" onClick={() => void openHubChat(child.chat, parent)}>
+    <li
+      data-hub-child={child.state}
+      title={[agentLabel(child.chat.agentType as AgentType), child.branch].filter(Boolean).join(' · ')}
+      className="grid grid-cols-[7px_minmax(120px,160px)_minmax(0,1fr)_auto] items-center gap-x-[10px] gap-y-[2px] border-t border-[var(--border)] px-3 py-[5px] @max-[420px]:grid-cols-[7px_minmax(0,1fr)]"
+    >
+      <span className="sidebar-recent-dot" data-dot={childDot(child.state)} />
+      <span className="truncate text-[var(--text-primary)]">{child.chat.title}</span>
+      <span
+        className={`truncate @max-[420px]:col-start-2 ${ATTENTION.has(child.state) ? 'font-[500] text-[var(--text-primary)]' : ''}`}
+      >
+        {childStateLabel(child)}
+        {child.lastWake && `: ${child.lastWake.summary}`}
+        {muted.length > 0 && <span className="font-[400] text-[var(--text-muted)]"> · {muted.join(' · ')}</span>}
+      </span>
+      <span className="flex flex-wrap gap-x-[10px] whitespace-nowrap @max-[420px]:col-start-2">
+        <button type="button" className={linkClass} onClick={() => void openHubChat(child.chat, parent)}>
           Open
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => void nudgeChild(parent, child.chat)}>
+        </button>
+        <button type="button" className={linkClass} onClick={() => void nudgeChild(parent, child.chat)}>
           Nudge
-        </Button>
-        {child.state === 'working' && child.liveId && (
-          <Button variant="destructive-outline" size="sm" onClick={() => stopChild(parent, child)}>
+        </button>
+        {canStop(child) && (
+          <button type="button" className={stopClass} onClick={() => stopChild(parent, child)}>
             Stop
-          </Button>
+          </button>
         )}
-      </div>
+      </span>
     </li>
   )
 }
 
-export function ChildrenStrip({ parent, items }: { parent: HubChatRef; items: HubChildView[] }) {
+export function ChildrenStrip({
+  parent,
+  items,
+  state,
+}: {
+  parent: HubChatRef
+  items: HubChildView[]
+  state: ParentState | null
+}) {
+  const [showAll, setShowAll] = useState(false)
   if (items.length === 0) return null
+  const running = items.filter((c) => c.state === 'working').length
+  const stoppable = items.filter(canStop)
+  const tokens = items.reduce((sum, c) => sum + (c.lastTurn?.usedTokens ?? 0), 0)
+  const stateLabel = parentStateLabel(state)
+  const shown = showAll ? items : items.slice(0, FOLDED_ROWS)
   return (
     <section
       aria-label="Child chats"
       data-testid="hub-children-strip"
-      className="mx-6 mb-2 max-h-[30vh] overflow-y-auto rounded-[10px] border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-2 text-[var(--text-secondary)]"
+      className="@container mx-6 mb-2 overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-secondary)] text-[12px] text-[var(--text-secondary)]"
     >
-      <div className="text-[11px] font-[600] uppercase tracking-[0.04em] text-[var(--text-muted)]">
-        Children · {items.length}
+      <div className="flex flex-wrap items-baseline gap-x-[12px] gap-y-[2px] px-3 py-[6px] whitespace-nowrap">
+        <b className="font-[600] text-[var(--text-primary)]">Children</b>
+        <span>
+          {items.length} open · {running} running
+        </span>
+        {stateLabel && <span className="min-w-0 truncate">{stateLabel}</span>}
+        <span className="flex-1" />
+        {tokens > 0 && <span>{kTokens(tokens)} tokens</span>}
+        {items.length > FOLDED_ROWS && (
+          <button type="button" className={linkClass} onClick={() => setShowAll((v) => !v)}>
+            {showAll ? 'Show fewer' : `Show all ${items.length}`}
+          </button>
+        )}
+        {stoppable.length > 0 && (
+          <button type="button" className={stopClass} onClick={() => stoppable.forEach((c) => stopChild(parent, c))}>
+            Stop all
+          </button>
+        )}
       </div>
-      <ul className="m-0 list-none p-0">
-        {items.map((c) => (
+      <ul className="m-0 max-h-[240px] list-none overflow-y-auto p-0">
+        {shown.map((c) => (
           <ChildRow key={c.chat.id} parent={parent} child={c} />
         ))}
       </ul>
