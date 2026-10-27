@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "inline-html-live",
-  "summary": "An agent's ```html-live title=\"...\" block is a small HTML page (fragment or full document, at most 128 KB of UTF-8) that the desktop runs inside the message, in a <webview> with exactly the HTML preview pane's sandbox: the sb-html-preview partition, will-attach-webview hardening (no preload, no Node, sandbox, context isolation), denied popups, no navigation off the page, refused permissions and downloads, the dead proxy, the request filter that cancels everything except the page's own sb-preview://<token> origin, and the pane's CSP. It runs only once its fence has closed and it has scrolled into view; while it streams the card says Writing. The frame fits the page's reported height between 120 and 480 px, with Show all past 480. It shows loading, the error list with Send to agent and Show source, the N blocked list (with a hint naming the bundled copy of a blocked library), and too-large or unknown-library refusals that never run. At most two frames run per window (the newest in view, or one started with Run); the others pause as their still image. Source and Copy source sit in the header. Open in pane moves the page to the preview pane (the message keeps the image and In pane, one running copy); Save as file under More in the pane writes it into the chat's folder under a free name and the block becomes the normal HTML file card. Bundled libraries are served at /_sb/ (Chart.js 4.5.1, D3 7.9.0 and Three.js 0.170.0 vendored unmodified in resources/sb-live with their licences; Mermaid from the app's own dependency); nothing else loads. After a page is quiet for 1 s the desktop captures it and stores the still image on the chat's backend, keyed by the SHA-256 of the block source (html_live_images_v1, admin scope to write). Phones never run agent scripts: they show that image (or No image yet), Source, Copy source and Open on desktop, which asks the backend to open the page in a desktop window's pane. Agents learn the block from one paragraph in the Switchboard MCP server's instructions.",
+  "summary": "An agent's ```html-live title=\"...\" block is a small HTML page (fragment or full document, at most 128 KB of UTF-8) that the desktop runs inside the message, in a <webview> with exactly the HTML preview pane's sandbox: the sb-html-preview partition, will-attach-webview hardening (no preload, no Node, sandbox, context isolation), denied popups, no navigation off the page, refused permissions and downloads, the dead proxy, the request filter that cancels everything except the page's own sb-preview://<token> origin, and the pane's CSP. It runs only once its fence has closed and it has scrolled into view; while it streams the card says Writing. The frame fits the page's reported height between 120 and 480 px, with Show all past 480. It shows loading, the error list with Send to agent and Show source, the N blocked list (with a hint naming the bundled copy of a blocked library), and too-large or unknown-library refusals that never run. At most two frames run per window (the newest in view, or one started with Run); the others pause as their still image. Source and Copy source sit in the header. Open in pane moves the page to the preview pane (the message keeps the image and In pane, one running copy); Save as file under More in the pane writes it into the chat's folder under a free name and the block becomes the normal HTML file card. Bundled libraries are served at /_sb/ (Chart.js 4.5.1, D3 7.9.0 and Three.js 0.170.0 vendored unmodified in resources/sb-live with their licences; Mermaid from the app's own dependency); nothing else loads. After a page is quiet for 1 s the desktop captures it and stores the still image on the chat's backend (a block that never comes into view is rendered hidden in a free running slot to take it), keyed by the SHA-256 of the block source (html_live_images_v1, admin scope to write). Phones never run agent scripts: they show that image (or No image yet), Source, Copy source and Open on desktop, which asks the backend to open the page in a desktop window's pane. Agents learn the block from one paragraph in the Switchboard MCP server's instructions.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -35,7 +35,9 @@
         "e2e/snapshots/chat-live-error-dark-darwin.png",
         "e2e/snapshots/chat-live-error-light-darwin.png",
         "resources/sb-live/README.md",
-        "electron-builder.yml"
+        "electron-builder.yml",
+        "src/renderer/services/html-live-still-scheduler.ts",
+        "tests/unit/html-live-still-scheduler.test.ts"
       ]
     },
     "reactNativeIos": {
@@ -117,7 +119,8 @@
       "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens npm run test:e2e:visual: new chat-live-chart and chat-live-error baselines in Dark and Light (page masked, as the pane's), read; two runs pass without updating.",
       "apps/mobile jest (172 tests) and tsc: the key vectors, No image yet, the image and its 480 px fold, no call without html_live_images_v1, the Open on desktop payload, Markdown with streaming and closed blocks.",
       "Android ./gradlew :app:testDebugUnitTest (1125 tests) and :app:compileDebugKotlin: fixture cases with title and closed, key vectors, the capability gate and answer parsing.",
-      "npm run typecheck and npm test pass."
+      "npm run typecheck and npm test pass.",
+      "tests/unit/html-live-still-scheduler.test.ts and SB_E2E_BACKGROUND=1 node e2e/html-live.e2e.mjs (2026-10-27, hidden still capture): a block that never came into view and has no image gets a hidden capture; one the rules forbid (refused, in the pane, saved), one in view, running or not yet observed, and one with an image or an unloaded backend state does not; captures fill only the slots the frames in view leave, queue past the limit, drop on unmount or coming into view, and run once per page key. In the built app a frame kept out of view by a 1 px list renders hidden, stays paused, never exceeds two guests, is torn down after the capture, and its image shows the page (the accent block, not a blank frame) and is stored on the backend."
     ],
     "hardware": [],
     "notExercised": [
@@ -125,7 +128,7 @@
       "iOS was not run (no simulator on this Mac).",
       "Open on desktop against a remote headless backend: the event path is the same router subscription the desktop uses for other pushes, but it was exercised only against the local backend.",
       "The jitter fix changes the desktop only: phones show the still image and never run the page, so they have no running-to-paused swap. A frame that never ran in this window still takes its first height when it first runs. An expanded frame that pauses keeps its expanded height. Its still image is taken again once the frame's height changes (Show all, or a new content height), so the image fills that box. Not driven in the built app: a frame that pauses less than 1 s after Show all still shows the folded image in the taller box.",
-      "A frame that never ran on any desktop shows No image yet on phones; the desktop does not render missing images offscreen when a phone asks."
+      "Phones gain stills for blocks a desktop window mounted but never scrolled to (no phone code changed; they read the same html_live_images_v1 image). A block outside the chat list's mounted rows (beyond the virtualizer's overscan), or in a chat no desktop window opens, is still never rendered, so phones show No image yet for it. The hidden capture was exercised against the local backend only, not a remote one."
     ]
   }
 }

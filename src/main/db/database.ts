@@ -40,6 +40,10 @@ export * from './hubs'
 export * from './limit-resumes'
 
 let db: Database.Database | null = null
+/** The read-only connection for history reads, opened by `getReadDb`. */
+let readDb: Database.Database | null = null
+/** The read connection could not open for the current main connection: use the main one. */
+let readDbUnavailable = false
 /** Set by the quit path: a write after it must fail, not reopen the file. */
 let closedForQuit = false
 
@@ -105,6 +109,40 @@ function openAndMigrate(dbPath: string): Database.Database {
   d.pragma('foreign_keys = ON')
   migrate(d)
   return d
+}
+
+/**
+ * A second, read-only connection to the same file, for the history window
+ * reads (`messageWindowRows`, `getDisplayBodyEnrichments`). It opens after
+ * `getDb()` has migrated the file. The main connection is in WAL mode, so
+ * this one reads the last committed state. All writes stay on `getDb()`. An
+ * in-memory database (tests), a database that is not in WAL mode, or a failed
+ * open uses the main connection.
+ */
+export function getReadDb(): Database.Database {
+  const main = getDb()
+  if (readDb) return readDb
+  if (readDbUnavailable || main.memory) return main
+  try {
+    const mode = main.pragma('journal_mode', { simple: true })
+    if (mode !== 'wal') throw new Error(`journal_mode is ${String(mode)}, not wal`)
+    const reader = new Database(main.name, { readonly: true, fileMustExist: true })
+    try {
+      reader.pragma('query_only = ON')
+      reader.pragma('temp_store = MEMORY')
+      reader.pragma('cache_size = -65536') // 64 MiB
+      reader.pragma('mmap_size = 268435456') // 256 MiB
+    } catch (err) {
+      reader.close()
+      throw err
+    }
+    readDb = reader
+    return reader
+  } catch (err) {
+    log.warn('read-only history connection did not open, reading on the main connection', err)
+    readDbUnavailable = true
+    return main
+  }
 }
 
 function notifyDbReset(backupPath: string): void {
@@ -752,18 +790,28 @@ function runSlowMigrationsOn(db: Database.Database): void {
   span.end()
 }
 
-/**
- * `forQuit` makes the close final: a late writer (an adapter still unwinding,
- * a window event) gets an error instead of a fresh native handle opened while
- * the process is being torn down.
- */
 /** The quit did not happen after all (an update that never started): allow reopening. */
 export function reopenDbAfterAbortedQuit(): void {
   closedForQuit = false
 }
 
+/**
+ * `forQuit` makes the close final: a late writer (an adapter still unwinding,
+ * a window event) gets an error instead of a fresh native handle opened while
+ * the process is being torn down.
+ */
 export function closeDb(opts: { forQuit?: boolean } = {}): void {
   if (opts.forQuit) closedForQuit = true
+  readDbUnavailable = false
+  if (readDb) {
+    const reader = readDb
+    readDb = null
+    try {
+      reader.close()
+    } catch (err) {
+      log.warn('read-only history connection did not close', err)
+    }
+  }
   if (db) {
     const open = db
     db = null

@@ -1,7 +1,7 @@
 /** The shared test database: in memory, migrated, and fresh on every call. */
 import { describe, expect, it } from 'vitest'
 import { createMigratedDb } from './helpers/test-db'
-import { getDb, getSetting, setSetting } from '../../src/main/db/database'
+import { getDb, getReadDb, getSetting, setSetting } from '../../src/main/db/database'
 
 describe('createMigratedDb', () => {
   it('backs getDb with a fresh migrated in-memory database', () => {
@@ -15,5 +15,10 @@ describe('createMigratedDb', () => {
     expect(first.open).toBe(false)
     expect(getDb()).toBe(second)
     expect(getSetting('k')).toBeNull()
+  })
+
+  it('reads history on the main connection: a read-only one cannot share an in-memory database', () => {
+    const db = createMigratedDb()
+    expect(getReadDb()).toBe(db)
   })
 })

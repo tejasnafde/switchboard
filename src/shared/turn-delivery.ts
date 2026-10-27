@@ -25,6 +25,23 @@ export function waitsForIdle(provider: string | undefined | null, busy: boolean,
   return busy && (delivery === 'queue' || !canSteer(provider))
 }
 
+/**
+ * How an agent's message to another chat goes in, when the sender asked for
+ * `requested`. Idle: an ordinary turn (undefined). Mid-turn it steers only when
+ * asked to, where the provider can, and while the turn is not compacting or
+ * being stopped (a steer there is lost or ends up in the wrong turn); every
+ * other case queues behind the running turn.
+ */
+export function peerDelivery(
+  provider: string | undefined | null,
+  midTurn: boolean,
+  requested: TurnDelivery,
+  steerBlocked: boolean,
+): TurnDelivery | undefined {
+  if (!midTurn) return undefined
+  return requested === 'steer' && canSteer(provider) && !steerBlocked ? 'steer' : 'queue'
+}
+
 /** Settings key for what a plain Enter does while the agent works. */
 export const FOLLOW_UP_DEFAULT_KEY = 'chat.followUpDefault'
 

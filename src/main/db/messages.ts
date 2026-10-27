@@ -2,7 +2,7 @@ import { createMainLogger as createLogger } from '../logger'
 import { parseErrorKind } from './parse-error'
 import Database from 'better-sqlite3'
 import type { ChatMessage, FileDiffAttachment, ToolCall } from '@shared/types'
-import { getDb } from './database'
+import { getDb, getReadDb } from './database'
 import { threadFamilyIds } from './conversations'
 import { parsePersistedPillsMeta } from '../provider/pill-metadata'
 import type { WindowRows } from '../conversations/history-window'
@@ -140,7 +140,7 @@ const bound = (at: number) => Math.max(-Number.MAX_VALUE, Math.min(Number.MAX_VA
  * `onRead` receives the milliseconds each read took.
  */
 export function messageWindowRows(familyIds: readonly string[], onRead?: (ms: number) => void): WindowRows {
-  const db = getDb()
+  const db = getReadDb()
   const timed = <T>(read: () => T): T => {
     const start = performance.now()
     try {
@@ -303,7 +303,7 @@ export function getDisplayBodyEnrichments(
   conversationId: string,
   contents?: ReadonlySet<string>,
 ): Map<string, DisplayBodyEnrichment> {
-  const db = getDb()
+  const db = getReadDb()
   const candidates = db
     .prepare(
       `SELECT rowid, content

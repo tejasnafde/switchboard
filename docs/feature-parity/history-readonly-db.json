@@ -1,0 +1,43 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "history-readonly-db",
+  "summary": "The history window's SQLite reads (messageWindowRows, getDisplayBodyEnrichments) run on a second better-sqlite3 connection to the same file, opened read-only with query_only, temp_store MEMORY, a 64 MiB cache and a 256 MiB mmap after getDb has migrated the file. The main connection is in WAL mode, so the reader sees every committed write. All writes stay on the main connection. An in-memory database, a database that is not in WAL mode, or a failed open uses the main connection; closeDb closes both.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": ["src/main/db/database.ts", "src/main/db/messages.ts", "tests/unit/db-read-connection.test.ts"]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Desktop main-process only: the window requests, response fields and stored data do not change, only which SQLite connection the backend reads them on."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Desktop main-process only: the window requests, response fields and stored data do not change, only which SQLite connection the backend reads them on."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": ["src/main/db/messages.ts", "src/main/backend/AGENTS.md", "tests/unit/db-read-connection.test.ts"]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema, migration or file format change: the read connection opens the existing WAL database read-only and writes nothing."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["CHANGELOG.md", "docs/feature-parity/history-readonly-db.json"]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/db-read-connection.test.ts: on a real temp file database the read connection is separate, read-only and query_only, a write through it throws, the window reads prepare on it, a write committed on the main connection is visible to it, it closes with closeDb and opens again, and it falls back to the main connection when it cannot open or the file is not in WAL mode.",
+      "tests/unit/test-db-helper.test.ts: an in-memory test database reads on the main connection.",
+      "tests/unit/history-read-connection-benchmark.test.ts (SB_PERF_BENCH=1): synthetic 20,000-message chat, newest page plus one older page plus enrichment, same timings on both connections (median about 7 ms)."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No run in the built Electron app or against the real 1.1 GB database; the bench is synthetic and local."
+    ]
+  }
+}

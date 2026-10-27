@@ -27,11 +27,20 @@
  * Pure and in memory, with `now` injected. Links do not survive a backend
  * restart: every session is stopped by then, and stopping a session removes
  * its links anyway, so a persisted link would only ever be a stale one.
+ *
+ * A child chat's edge to its parent is a LINEAGE edge (`syncLineage`), made by
+ * Switchboard, not the user: it is how a parent and its children talk. It has
+ * `PEER_LINEAGE_MESSAGE_BUDGET` messages, renewed like any edge by a message
+ * the user types in either chat, no time window, and lives until the child is
+ * settled: `/unlink`, a stop and an archive leave it. The registry rebuilds
+ * the set from `hub_children`, so a restart keeps it.
  */
 import { peerMessageId, type PeerMessageInitiator } from './peer-messaging'
 
 /** Agent messages allowed on one edge by default, both directions together. */
 export const PEER_LINK_MESSAGE_BUDGET = 20
+/** Agent messages a parent and one child may exchange before the user writes in either chat again. */
+export const PEER_LINEAGE_MESSAGE_BUDGET = 60
 /**
  * The most messages one edge may ever hold, whether set by `/link` or reached
  * by Extend. Ten default budgets. The window bounds how long an edge lasts and
@@ -155,6 +164,8 @@ export type PeerLinkResult = { ok: true; created: boolean } | { ok: false; messa
 interface Edge {
   /** Distinct per link, so an unlink and relink is a different edge, and a different consent. */
   id: number
+  /** `lineage`: a child's edge to its parent, made by Switchboard, with no time window. */
+  kind: 'user' | 'lineage'
   since: number
   used: number
   budget: number
@@ -185,6 +196,11 @@ export const PEER_LINK_NOT_DELIVERED =
   'or a summary of it, in your final reply to the user so nothing is lost. Switchboard has also kept ' +
   'the message in this chat for the user to send by hand.'
 
+/** As `PEER_LINK_NOT_DELIVERED`, for a parent and child: no row is kept, since the user cannot send to a child. */
+export const PEER_LINEAGE_NOT_DELIVERED =
+  'Your message was NOT delivered. Keep working on your own task, and put the undelivered message, ' +
+  'or a summary of it, in your final reply so nothing is lost.'
+
 export class PeerLinkBook {
   private readonly edges = new Map<string, Edge>()
   private nextEdgeId = 0
@@ -214,10 +230,12 @@ export class PeerLinkBook {
     const problem = peerLinkBudgetProblem(budget) ?? peerLinkWindowProblem(windowMs)
     if (problem) return { ok: false, message: problem }
     const key = edgeKey(a, b)
-    const created = !this.edges.has(key)
     const existing = this.edges.get(key)
+    if (existing?.kind === 'lineage') return { ok: false, message: 'A child chat talks only with its parent.' }
+    const created = !existing
     this.edges.set(key, {
       id: existing?.id ?? ++this.nextEdgeId,
+      kind: 'user',
       since: nowMs,
       used: 0,
       budget,
@@ -234,7 +252,7 @@ export class PeerLinkBook {
   extend(a: string, b: string, initiator: PeerMessageInitiator, nowMs: number): PeerLinkResult {
     if (initiator !== 'user') return { ok: false, message: 'Only the user can extend a link.' }
     const edge = this.edges.get(edgeKey(a, b))
-    if (!edge) return { ok: false, message: 'Those sessions are not linked.' }
+    if (!edge || edge.kind === 'lineage') return { ok: false, message: 'Those sessions are not linked.' }
     if (edge.budget >= PEER_LINK_MAX_MESSAGES && edge.used >= edge.budget) {
       return {
         ok: false,
@@ -247,33 +265,70 @@ export class PeerLinkBook {
     return { ok: true, created: false }
   }
 
-  /** Remove one edge, or every edge of `a` when `b` is omitted. Returns the peers unlinked. */
+  /** Remove one user edge, or every user edge of `a` when `b` is omitted. Returns the peers unlinked. */
   unlink(a: string, b?: string): string[] {
-    if (b !== undefined) return this.edges.delete(edgeKey(a, b)) ? [b] : []
-    return this.removeSession(a)
+    if (b === undefined) return this.removeSession(a)
+    if (this.edges.get(edgeKey(a, b))?.kind !== 'user') return []
+    this.edges.delete(edgeKey(a, b))
+    return [b]
   }
 
-  /** Drop every edge touching a session (stopped, archived). Returns the peers unlinked. */
+  /** Drop every user edge touching a session (stopped, archived). Returns the peers unlinked. */
   removeSession(id: string): string[] {
     const peers: string[] = []
-    for (const key of [...this.edges.keys()]) {
+    for (const [key, edge] of [...this.edges]) {
       const peer = otherEnd(key, id)
-      if (peer === null) continue
+      if (peer === null || edge.kind === 'lineage') continue
       this.edges.delete(key)
       peers.push(peer)
     }
     return peers
   }
 
+  /**
+   * Make the lineage edges exactly `pairs` ([parent, child] root ids): add the
+   * missing ones with a full budget, keep the counts of those already there,
+   * and drop the rest. Returns the ids whose edges changed.
+   */
+  syncLineage(pairs: ReadonlyArray<readonly [string, string]>, nowMs: number): string[] {
+    const wanted = new Set(pairs.map(([parent, child]) => edgeKey(parent, child)))
+    const changed: string[] = []
+    for (const [key, edge] of [...this.edges]) {
+      if (edge.kind !== 'lineage' || wanted.has(key)) continue
+      this.edges.delete(key)
+      changed.push(...key.split('\u0000'))
+    }
+    for (const [parent, child] of pairs) {
+      const key = edgeKey(parent, child)
+      if (parent === child || this.edges.get(key)?.kind === 'lineage') continue
+      this.edges.set(key, {
+        id: ++this.nextEdgeId,
+        kind: 'lineage',
+        since: nowMs,
+        used: 0,
+        budget: PEER_LINEAGE_MESSAGE_BUDGET,
+        windowMs: Number.POSITIVE_INFINITY,
+        notified: false,
+      })
+      changed.push(parent, child)
+    }
+    return changed
+  }
+
   isLinked(a: string, b: string): boolean {
     return this.edges.has(edgeKey(a, b))
   }
 
+  isLineage(a: string, b: string): boolean {
+    return this.edges.get(edgeKey(a, b))?.kind === 'lineage'
+  }
+
+  /** The user links of a session; lineage edges show in the hub views instead. */
   linksOf(id: string): PeerLinkSummary[] {
     const out: PeerLinkSummary[] = []
     for (const [key, edge] of this.edges) {
       const peer = otherEnd(key, id)
-      if (peer === null) continue
+      if (peer === null || edge.kind === 'lineage') continue
       out.push({
         peerThreadId: peer,
         used: edge.used,
@@ -299,13 +354,19 @@ export class PeerLinkBook {
     const refuse = (reason: PeerLinkRefusal, why: string): PeerLinkSendCheck => {
       const firstRefusal = !edge.notified
       edge.notified = true
-      return { linked: true, ok: false, reason, firstRefusal, message: `${why} ${PEER_LINK_NOT_DELIVERED}` }
+      const trailer = edge.kind === 'lineage' ? PEER_LINEAGE_NOT_DELIVERED : PEER_LINK_NOT_DELIVERED
+      return { linked: true, ok: false, reason, firstRefusal, message: `${why} ${trailer}` }
     }
     if (nowMs - edge.since >= edge.windowMs) {
       return refuse('link-expired', `This link's time (${formatPeerLinkDuration(edge.windowMs)}) is up.`)
     }
     if (edge.used >= edge.budget) {
-      return refuse('link-budget', `The two sessions have used all ${edge.budget} messages of this link.`)
+      return refuse(
+        'link-budget',
+        edge.kind === 'lineage'
+          ? `This parent and child have used all ${edge.budget} messages they may send before the user writes in either chat again.`
+          : `The two sessions have used all ${edge.budget} messages of this link.`,
+      )
     }
     edge.used += 1
     return { linked: true, ok: true }

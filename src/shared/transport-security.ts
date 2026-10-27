@@ -15,7 +15,11 @@ export function isCertFingerprint(value: string): boolean {
   return /^[0-9a-f]{64}$/.test(value)
 }
 
-/** Hosts where plain ws:// never leaves the device (or the emulator's host). */
+/**
+ * Hosts where plain ws:// never leaves the device (or the emulator's host).
+ * The native Android release build is stricter and refuses 10.0.2.2
+ * (CleartextPolicy.kt): there it is a LAN address on a real phone.
+ */
 export function isLoopbackHost(host: string): boolean {
   const h = host.toLowerCase().replace(/^\[|\]$/g, '')
   return h === 'localhost' || h === '::1' || h === '10.0.2.2' || /^127\.\d+\.\d+\.\d+$/.test(h)
