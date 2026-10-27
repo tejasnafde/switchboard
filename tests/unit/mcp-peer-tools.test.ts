@@ -13,7 +13,7 @@ import type { PeerToolHost } from '../../src/main/provider/peer-tools'
 import type { PeerMessageInput } from '../../src/shared/peer-messaging'
 import type { RuntimeEvent, RuntimeMode } from '../../src/shared/provider-events'
 
-function setup(mode: RuntimeMode, decision?: 'approve' | 'deny', linked = false) {
+function setup(mode: RuntimeMode, decision?: 'approve' | 'deny', linked = false, lineage = false, hubChildren = false) {
   const events: RuntimeEvent[] = []
   const delivered: PeerMessageInput[] = []
   const sends: Array<Promise<unknown>> = []
@@ -21,7 +21,8 @@ function setup(mode: RuntimeMode, decision?: 'approve' | 'deny', linked = false)
     listPeerSessions: vi.fn(() => [
       { sessionId: 's2', title: 'Other', folder: '/p', provider: 'codex' as const, midTurn: false, linked },
     ]),
-    isLinkedPeer: vi.fn(() => linked),
+    isLinkedPeer: vi.fn(() => linked || lineage),
+    isLineagePeer: vi.fn(() => lineage),
     deliverPeerMessage: vi.fn(async (input: PeerMessageInput) => {
       delivered.push(input)
       return { id: 'pm_0123456789abcdef' }
@@ -52,6 +53,7 @@ function setup(mode: RuntimeMode, decision?: 'approve' | 'deny', linked = false)
     publish: (e) => events.push(e),
     approvals,
     peers,
+    hubChildren,
   })
   const signal = new AbortController().signal
   /** The tool, then waits for a card answered as it opened to close and run its send. */
@@ -222,8 +224,56 @@ describe('send_agent_message along a session link', () => {
       publish: () => {},
       approvals: { open: vi.fn() },
       peers: setup('full-access').peers,
+      hubChildren: false,
     })
     expect(tools.map((t) => t.name)).toEqual([list.name, send.name])
     expect(tools.map((t) => t.name)).toEqual(['list_agent_sessions', 'send_agent_message'])
+  })
+})
+
+// A parent and its child chat share a lineage edge, made by the batch the user approved.
+describe('send_agent_message between a parent and its child chat', () => {
+  it('sends without a card in every mode but plan, queued by default', async () => {
+    for (const mode of ['sandbox', 'accept-edits', 'auto', 'full-access'] as const) {
+      const { send, events, delivered, signal } = setup(mode, undefined, false, true, true)
+      expect((await send.call(args, { signal })).isError).toBeFalsy()
+      expect(events).toEqual([])
+      expect(delivered).toEqual([
+        {
+          fromThreadId: 't1',
+          targetThreadId: 's2',
+          text: 'the migration landed',
+          initiator: 'agent',
+          delivery: 'queue',
+          ...(mode === 'full-access' ? {} : { requireLink: true }),
+        },
+      ])
+    }
+  })
+
+  it('passes steer on when asked', async () => {
+    const { send, delivered, signal } = setup('auto', undefined, false, true, true)
+    await send.call({ ...args, delivery: 'steer' }, { signal })
+    expect(delivered[0].delivery).toBe('steer')
+  })
+
+  it('is denied in plan mode', async () => {
+    const { send, delivered, signal } = setup('plan', undefined, false, true, true)
+    expect((await send.call(args, { signal })).isError).toBe(true)
+    expect(delivered).toEqual([])
+  })
+
+  it('keeps the card and the old schema with child chats off', async () => {
+    const { send, events, delivered, signal } = setup('sandbox', 'approve', false, true, false)
+    expect(Object.keys(send.inputSchema.properties as object)).toEqual(['sessionId', 'message'])
+    await send.call(args, { signal })
+    expect(events.map((e) => e.type)).toContain('request.opened')
+    expect(delivered[0].delivery).toBeUndefined()
+  })
+
+  it('stores the delivery on a card, so the approved send keeps it', async () => {
+    const { send, delivered, signal } = setup('sandbox', 'approve', false, false, true)
+    await send.call({ ...args, delivery: 'steer' }, { signal })
+    expect(delivered[0].delivery).toBe('steer')
   })
 })

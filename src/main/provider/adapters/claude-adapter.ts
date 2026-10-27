@@ -2017,6 +2017,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         // Compaction event - context window shrank, refresh usage
         if (sys.subtype === 'status' && sys.compact_result === 'success') {
           log.info(`compaction completed: ${threadId}`)
+          active.onEvent({ type: 'status', threadId, status: 'running', compacting: false })
           if (active.query) {
             active.query
               .getContextUsage()
@@ -2057,7 +2058,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
         // "compacting" status → show in UI
         if (sys.subtype === 'status' && sys.status === 'compacting') {
-          active.onEvent({ type: 'status', threadId, status: 'running' })
+          active.onEvent({ type: 'status', threadId, status: 'running', compacting: true })
           active.onEvent({
             type: 'content',
             threadId,

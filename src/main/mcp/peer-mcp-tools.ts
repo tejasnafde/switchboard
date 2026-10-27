@@ -14,6 +14,9 @@
  * message would defeat the link they just made. Sandbox and accept-edits keep
  * the card even when linked: in those modes the user reviews every outward
  * action, and a peer message is one (its text can steer the other agent).
+ * A parent and its child chat (a lineage edge) skip the card in every mode
+ * but plan: the user approved the batch, and the two are one piece of work.
+ * With child chats on, the send takes `delivery` (default `queue`).
  *
  * The card does not hold the turn: the tool says the message is queued for
  * the user and returns, and the approval sends it later (`runPeerSendPlan`),
@@ -26,11 +29,13 @@ import {
   PEER_LIST_TOOL_DESCRIPTION,
   PEER_LIST_TOOL_NAME,
   PEER_SEND_TOOL,
+  PEER_SEND_LINEAGE_DESCRIPTION,
   PEER_SEND_TOOL_DESCRIPTION,
   PEER_SEND_TOOL_NAME,
   type PeerToolHost,
 } from '../provider/peer-tools'
 import { queuedToolText } from '@shared/agent-approval-cards'
+import type { TurnDelivery } from '@shared/turn-delivery'
 import type { AgentApprovalBroker } from './agent-approvals'
 import { toolText, type McpTool, type McpToolResult } from './mcp-session'
 
@@ -39,6 +44,7 @@ export interface PeerSendPlan {
   kind: 'peer-send'
   sessionId: string
   message: string
+  delivery?: TurnDelivery
 }
 
 export interface PeerMcpToolContext {
@@ -49,6 +55,8 @@ export interface PeerMcpToolContext {
   publish(event: RuntimeEvent): void
   approvals: Pick<AgentApprovalBroker, 'open'>
   peers: PeerToolHost
+  /** Child chats are on (`hub_children`): lineage edges and the `delivery` argument. */
+  hubChildren: boolean
 }
 
 /** What sending an approved peer message needs. `threadId` is the id the sender runs under now. */
@@ -65,6 +73,7 @@ export async function runPeerSendPlan(ctx: PeerSendRunContext, plan: PeerSendPla
   return createPeerToolHandlers(ctx.peers, ctx.threadId).sendMessage({
     sessionId: plan.sessionId,
     message: plan.message,
+    ...(plan.delivery ? { delivery: plan.delivery } : {}),
   })
 }
 
@@ -82,7 +91,9 @@ export function buildPeerMcpTools(ctx: PeerMcpToolContext): McpTool[] {
     },
     {
       name: PEER_SEND_TOOL_NAME,
-      description: PEER_SEND_TOOL_DESCRIPTION,
+      description: ctx.hubChildren
+        ? `${PEER_SEND_TOOL_DESCRIPTION}\n${PEER_SEND_LINEAGE_DESCRIPTION}`
+        : PEER_SEND_TOOL_DESCRIPTION,
       inputSchema: {
         type: 'object',
         properties: {
@@ -96,6 +107,17 @@ export function buildPeerMcpTools(ctx: PeerMcpToolContext): McpTool[] {
               'The whole message. It has to stand on its own: the peer cannot see your transcript, ' +
               'so name the files, commands and findings it needs.',
           },
+          ...(ctx.hubChildren
+            ? {
+                delivery: {
+                  type: 'string',
+                  enum: ['queue', 'steer'],
+                  description:
+                    'When the receiver is mid-turn: queue (default) runs it after that turn, steer puts it into ' +
+                    'the running turn where the agent supports that.',
+                },
+              }
+            : {}),
         },
         required: ['sessionId', 'message'],
         additionalProperties: false,
@@ -110,11 +132,15 @@ export function buildPeerMcpTools(ctx: PeerMcpToolContext): McpTool[] {
         const input = {
           sessionId: typeof args.sessionId === 'string' ? args.sessionId : '',
           message: typeof args.message === 'string' ? args.message : '',
+          ...(ctx.hubChildren ? { delivery: args.delivery === 'steer' ? ('steer' as const) : ('queue' as const) } : {}),
         }
         const mode = ctx.runtimeMode()
         const decided = decidePermission(mode, PEER_SEND_TOOL)
+        const target = input.sessionId.trim()
         const linkInsteadOfCard =
-          decided === 'prompt' && mode === 'auto' && ctx.peers.isLinkedPeer(ctx.threadId, input.sessionId.trim())
+          decided === 'prompt' &&
+          ((mode === 'auto' && ctx.peers.isLinkedPeer(ctx.threadId, target)) ||
+            (ctx.hubChildren && ctx.peers.isLineagePeer(ctx.threadId, target)))
         const policy = linkInsteadOfCard ? 'allow' : decided
         if (policy === 'deny') {
           const reason = denialMessage(mode, PEER_SEND_TOOL)
@@ -128,7 +154,7 @@ export function buildPeerMcpTools(ctx: PeerMcpToolContext): McpTool[] {
             chatId: ctx.chatId,
             toolName: PEER_SEND_TOOL,
             detail: JSON.stringify(input, null, 2).slice(0, 500),
-            plan: { kind: 'peer-send', sessionId: input.sessionId, message: input.message },
+            plan: { kind: 'peer-send', ...input },
           })
           return opened.ok ? toolText(queuedToolText(opened.requestId)) : toolText(opened.message, true)
         }
