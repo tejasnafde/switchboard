@@ -1,0 +1,47 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "composer-attach-button",
+  "summary": "The desktop composer has a paperclip Attach files button beside Send (the same 28 px round control) that opens the native file picker with multi-select. The whole chat view is the drop target: a dashed overlay with role=status shows while files are dragged over it and clears on dragleave, drop and the window's dragend (a drag cancelled with Escape). Every refused file is named on its own line with the reason (unsupported image type, over the 20 MB image limit, not an image) in the existing error banner, instead of being dropped with no message. Image tiles have an accessible name and a labelled remove button. The image preview is a dialog: Escape closes it, focus returns to the composer, and the arrow keys move between the draft's images.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/useChatDropZone.ts",
+        "src/renderer/components/chat/chat-icons.tsx",
+        "src/renderer/services/attachment-intake.ts",
+        "tests/unit/composer-attach.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Desktop composer controls only. The Expo composer already has its own image picker button, and the sent message data is unchanged."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Desktop composer controls only. The Android composer already has its own image picker button, and the sent message data is unchanged."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Renderer-only change: images still go to sendTurn as data URLs through the same API."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes: draft images stay in memory and sent messages keep their shape."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships with the next desktop release; no native module, channel or package change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "vitest: tests/unit/composer-attach.test.ts (refusal reasons per file; the drop zone highlights only for file drags, clears on window dragend and hands a drop to the composer)."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "A Finder drag cancelled with Escape over the running desktop app."
+    ]
+  }
+}

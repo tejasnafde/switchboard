@@ -1,15 +1,7 @@
 import { useChatWaitStore } from '../../stores/chat-wait-store'
 import { USER_MESSAGE_IMAGE_TYPES } from '@shared/provider-events'
-import {
-  useState,
-  useCallback,
-  useMemo,
-  useRef,
-  useEffect,
-  type CSSProperties,
-  type DragEvent,
-  type ReactNode,
-} from 'react'
+import { createPortal } from 'react-dom'
+import { useState, useCallback, useMemo, useRef, useEffect, type CSSProperties, type ReactNode } from 'react'
 import { cn } from '../../lib/utils'
 import { createRendererLogger } from '../../logger'
 
@@ -26,7 +18,10 @@ import { coversFor, reconcileSelectedModel } from '@shared/model-reconcile'
 import { followUpDelivery, sendAction, waitsForIdle, type TurnDelivery } from '@shared/turn-delivery'
 import { followOffNotice, followSuggestionView, type FollowSuggestionMode } from '@shared/follow-suggestions'
 import { useFollowUpDefault } from '../../services/effective-settings'
-import { ArrowUpIcon, StopSquareIcon } from './chat-icons'
+import { ArrowUpIcon, CloseIcon, PaperclipIcon, StopSquareIcon } from './chat-icons'
+import { sortAttachments, type AttachmentRefusal } from '../../services/attachment-intake'
+import { useChatDropZone } from './useChatDropZone'
+import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 import { modelsForAgent, type ModelOption, type ReasoningEffort } from '@shared/models'
 import { effortControlFor, effortPick } from '@shared/effort'
 import { sessionCostLabel } from '@shared/format'
@@ -167,8 +162,6 @@ interface ChatInputProps {
   leadingControl?: ReactNode
 }
 
-const MAX_IMAGE_SIZE = 20 * 1024 * 1024 // 20MB
-
 /** The text-link buttons in the drift chip and its "off" line. */
 const driftLinkClass = 'cursor-pointer border-0 bg-transparent p-0 text-[11px] text-[var(--accent,#4a7dff)]'
 
@@ -188,7 +181,28 @@ const recoveryActionClass = cn(
   bannerFocusClass,
 )
 
-// Stop/Send sit inside the input box at its bottom-right, inset so they are
+const LIGHTBOX_KBD =
+  'rounded-[3px] bg-[rgba(255,255,255,0.14)] px-[4px] text-[10px] text-[#fff] [font-family:var(--font-mono)]'
+
+/** Copy an image, by its object URL, to the clipboard as a PNG. */
+function copyImageToClipboard(url: string): void {
+  const imgEl = document.createElement('img')
+  imgEl.src = url
+  imgEl.onload = () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = imgEl.naturalWidth
+    canvas.height = imgEl.naturalHeight
+    canvas.getContext('2d')?.drawImage(imgEl, 0, 0)
+    canvas.toBlob((blob) => {
+      if (!blob) return
+      navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).catch((err) => {
+        log.warn('failed to copy preview image to clipboard', err)
+      })
+    }, 'image/png')
+  }
+}
+
+// Attach/Stop/Send sit inside the input box at its bottom-right, inset so they are
 // centred on a one-line draft and stay pinned to the corner as it grows.
 // The size is Button's `icon-round` (size-7), which is rem-based.
 const COMPOSER_ACTION_SIZE = '1.75rem'
@@ -197,7 +211,7 @@ const COMPOSER_ACTION_GAP = 6
 const COMPOSER_TEXT_GAP = 8
 
 function composerActionsInset(showStop: boolean): string {
-  const buttons = showStop ? 2 : 1
+  const buttons = showStop ? 3 : 2
   const gaps = (buttons - 1) * COMPOSER_ACTION_GAP + COMPOSER_TEXT_GAP
   return `calc(${COMPOSER_ACTION_INSET} + ${buttons} * ${COMPOSER_ACTION_SIZE} + ${gaps}px)`
 }
@@ -425,8 +439,8 @@ export function ChatInput({
   // Live caret offset into `value`. Updated on every editor change so we
   // can re-detect slash triggers without dipping into the editor.
   const [caret, setCaret] = useState<number | null>(null)
-  const [isDragOver, setIsDragOver] = useState(false)
-  const [previewImage, setPreviewImage] = useState<ImageAttachment | null>(null)
+  const [refusals, setRefusals] = useState<AttachmentRefusal[]>([])
+  const [previewImageId, setPreviewImageId] = useState<string | null>(null)
 
   // Slash command popover state: `null` when closed; trigger info when open
   const [slashQuery, setSlashQuery] = useState<string | null>(null)
@@ -568,7 +582,7 @@ export function ChatInput({
   )
 
   const slashRangeRef = useRef<{ start: number; end: number } | null>(null)
-  const dragDepthRef = useRef(0)
+  const composerRef = useRef<HTMLDivElement>(null)
   const richRef = useRef<RichChatTextareaHandle>(null)
   useEffect(() => {
     if (!sessionId) return
@@ -597,6 +611,7 @@ export function ChatInput({
     submittingRef.current = false
     setIsSubmitting(false)
     setSendError(null)
+    setRefusals([])
   }, [sessionId])
 
   // Map of pill id → metadata, used by the editor to render chips and by
@@ -648,6 +663,7 @@ export function ChatInput({
   const bannerError = sendError ?? (canRestore && !recovery?.dismissed ? (recovery?.error ?? null) : null)
   const dismissBanner = useCallback(() => {
     setSendError(null)
+    setRefusals([])
     if (sessionId && recoveriesRef.current[sessionId]) {
       updateRecoveries((current) => ({ ...current, [sessionId]: { ...current[sessionId], dismissed: true } }))
     }
@@ -790,9 +806,11 @@ export function ChatInput({
     async (files: File[]) => {
       if (!sessionId) return
       setSendError(null)
+      const { images: accepted, refused } = sortAttachments(files)
+      setRefusals(refused)
       setPendingIntakes((count) => count + 1)
       try {
-        const images = await Promise.all(files.filter((f) => f.size <= MAX_IMAGE_SIZE).map(toComposerImage))
+        const images = await Promise.all(accepted.map(toComposerImage))
         const valid = images.filter((f): f is File => f !== null)
 
         addImagesToSession(
@@ -1499,48 +1517,18 @@ export function ChatInput({
     ],
   )
 
-  const handleDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
-    if (!e.dataTransfer.types.includes('Files')) return
-    e.preventDefault()
-    dragDepthRef.current += 1
-    setIsDragOver(true)
-  }, [])
-
-  const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
-    if (!e.dataTransfer.types.includes('Files')) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
-  }, [])
-
-  const handleDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    dragDepthRef.current -= 1
-    if (dragDepthRef.current <= 0) {
-      dragDepthRef.current = 0
-      setIsDragOver(false)
-    }
-  }, [])
-
-  const handleDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault()
-      dragDepthRef.current = 0
-      setIsDragOver(false)
-      const files = Array.from(e.dataTransfer.files)
-      void addImages(files)
-      richRef.current?.focus()
-    },
-    [addImages],
-  )
+  const dropZone = useChatDropZone(composerRef, (e) => {
+    void addImages(Array.from(e.dataTransfer?.files ?? []))
+    richRef.current?.focus()
+  })
+  const previewIndex = images.findIndex((image) => image.id === previewImageId)
+  const previewImage = previewIndex === -1 ? null : images[previewIndex]
 
   return (
     <div
+      ref={composerRef}
       className="chat-composer shrink-0 border-t border-[var(--border)] bg-[var(--bg-secondary)] px-[12px] pt-[8px] pb-[10px]"
       data-runtime-mode={runtimeMode}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
     >
       {/* Image previews */}
       {images.length > 0 && (
@@ -1552,11 +1540,13 @@ export function ChatInput({
             >
               <img
                 src={img.previewUrl}
-                alt="attachment"
-                onClick={() => setPreviewImage(img)}
+                alt={img.file.name}
+                onClick={() => setPreviewImageId(img.id)}
                 className="h-full w-full cursor-pointer object-cover"
               />
               <button
+                type="button"
+                aria-label={`Remove image ${img.file.name}`}
                 onClick={() => removeImage(img.id)}
                 className="absolute top-[2px] right-[2px] flex h-[16px] w-[16px] cursor-pointer items-center justify-center rounded-[50%] border-0 bg-[rgba(0,0,0,0.6)] text-[10px] leading-none text-[#fff]"
               >
@@ -1567,7 +1557,7 @@ export function ChatInput({
         </div>
       )}
 
-      {bannerError && (
+      {(bannerError || refusals.length > 0) && (
         <div
           data-composer-send-error
           data-composer-recovery={recovery ? '' : undefined}
@@ -1578,7 +1568,15 @@ export function ChatInput({
           <button type="button" className={bannerDismissClass} aria-label="Dismiss" onClick={dismissBanner}>
             x
           </button>
-          <div className="pr-[18px]">{bannerError}</div>
+          {bannerError && <div className="pr-[18px]">{bannerError}</div>}
+          {refusals.map((refusal, i) => (
+            <div key={i} data-attachment-refusal className="flex gap-[6px] pr-[18px]">
+              <span className="shrink-0 text-[11.5px] text-[var(--text-primary)] [font-family:var(--font-mono)]">
+                {refusal.name}
+              </span>
+              <span>was not attached: {refusal.reason}</span>
+            </div>
+          ))}
           {canRestore && (
             <button type="button" className={recoveryActionClass} onClick={restoreRecovery}>
               Restore
@@ -1599,14 +1597,25 @@ export function ChatInput({
         </div>
       )}
 
-      {/* Drop overlay */}
-      {isDragOver && (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[var(--radius)] border-2 border-dashed border-[var(--accent)] bg-[rgba(var(--accent-rgb,59,130,246),0.08)] text-[13px] font-[500] text-[var(--accent)]">
-          Drop image to attach
-        </div>
-      )}
+      {dropZone.dragging &&
+        dropZone.panel &&
+        createPortal(
+          <div
+            role="status"
+            data-chat-drop-overlay
+            className="pointer-events-none absolute inset-[6px] z-10 grid place-items-center rounded-[8px] border-[1.5px] border-dashed border-[color-mix(in_srgb,var(--accent)_60%,transparent)] bg-[color-mix(in_srgb,var(--bg-primary)_72%,transparent)] text-center text-[13px] font-[500] text-[var(--text-primary)]"
+          >
+            <div>
+              Drop files to attach
+              <small className="mt-[3px] block text-[11.5px] font-[400] text-[var(--text-secondary)]">
+                PNG, JPEG, WebP or GIF images
+              </small>
+            </div>
+          </div>,
+          dropZone.panel,
+        )}
 
-      {/* Hidden file picker for /image slash command */}
+      {/* Hidden file picker: the Attach button and the /image slash command */}
       <input
         ref={filePickerRef}
         type="file"
@@ -1737,6 +1746,19 @@ export function ChatInput({
                 <StopSquareIcon />
               </Button>
             )}
+            <Button
+              variant="outline"
+              size="icon-round"
+              className="text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              // Keep focus and the caret in the editor.
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => filePickerRef.current?.click()}
+              disabled={disabled}
+              aria-label="Attach files"
+              title="Attach files"
+            >
+              <PaperclipIcon />
+            </Button>
             <Button
               size="icon-round"
               onClick={() => {
@@ -1871,46 +1893,57 @@ export function ChatInput({
         }
       />
 
-      {/* Image lightbox */}
-      {previewImage && (
-        <div
-          onClick={() => setPreviewImage(null)}
-          onContextMenu={(e) => {
-            e.preventDefault()
-            // Copy image to clipboard
-            const canvas = document.createElement('canvas')
-            const imgEl = document.createElement('img')
-            imgEl.src = previewImage.previewUrl
-            imgEl.onload = () => {
-              canvas.width = imgEl.naturalWidth
-              canvas.height = imgEl.naturalHeight
-              const ctx = canvas.getContext('2d')
-              ctx?.drawImage(imgEl, 0, 0)
-              canvas.toBlob((blob) => {
-                if (blob) {
-                  navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).catch((err) => {
-                    log.warn('failed to copy preview image to clipboard', err)
-                  })
-                }
-              }, 'image/png')
-            }
-            setPreviewImage(null)
-          }}
-          className="fixed inset-0 z-[1100] flex cursor-pointer items-center justify-center bg-[rgba(0,0,0,0.7)]"
-        >
-          <div className="relative max-h-[80vh] max-w-[90vw]">
+      <Dialog open={!!previewImage} onOpenChange={(open) => !open && setPreviewImageId(null)}>
+        {previewImage && (
+          <DialogContent
+            aria-describedby={undefined}
+            overlayClassName="z-[1100] bg-[rgba(0,0,0,0.72)]"
+            className="inset-0 z-[1100] grid place-items-center"
+            onClick={() => setPreviewImageId(null)}
+            onCloseAutoFocus={(e) => {
+              e.preventDefault()
+              richRef.current?.focus()
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+              e.preventDefault()
+              const step = e.key === 'ArrowLeft' ? -1 : 1
+              setPreviewImageId(images[(previewIndex + step + images.length) % images.length].id)
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              copyImageToClipboard(previewImage.previewUrl)
+              setPreviewImageId(null)
+            }}
+          >
+            <DialogTitle className="sr-only">Preview {previewImage.file.name}</DialogTitle>
             <img
               src={previewImage.previewUrl}
-              alt="preview"
+              alt={previewImage.file.name}
               className="max-h-[80vh] max-w-[90vw] rounded-[8px] object-contain shadow-[0_16px_48px_rgba(0,0,0,0.5)]"
               onClick={(e) => e.stopPropagation()}
             />
-            <div className="absolute bottom-[-32px] left-[50%] [transform:translateX(-50%)] whitespace-nowrap text-[11px] text-[rgba(255,255,255,0.6)]">
-              Click backdrop to close · Right-click to copy
+            <button
+              type="button"
+              aria-label="Close preview"
+              className="absolute top-[12px] right-[12px] grid h-[28px] w-[28px] cursor-pointer place-items-center rounded-full border border-[rgba(255,255,255,0.25)] bg-[rgba(0,0,0,0.4)] p-0 text-[#fff]"
+              onClick={() => setPreviewImageId(null)}
+            >
+              <CloseIcon size={14} />
+            </button>
+            <div className="absolute bottom-[16px] left-0 right-0 text-center text-[11px] text-[rgba(255,255,255,0.75)]">
+              <kbd className={LIGHTBOX_KBD}>Esc</kbd> close
+              {images.length > 1 && (
+                <>
+                  {' '}
+                  <kbd className={LIGHTBOX_KBD}>{'←'}</kbd> <kbd className={LIGHTBOX_KBD}>{'→'}</kbd> next image
+                </>
+              )}{' '}
+              Right-click to copy
             </div>
-          </div>
-        </div>
-      )}
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   )
 }

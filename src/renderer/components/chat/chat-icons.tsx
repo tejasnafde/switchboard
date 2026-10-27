@@ -39,3 +39,11 @@ export function CloseIcon({ size = 12 }: { size?: number }) {
     </svg>
   )
 }
+
+export function PaperclipIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" {...stroke} strokeWidth={1.75}>
+      <path d="M21 11.5l-8.8 8.8a5.5 5.5 0 0 1-7.8-7.8l9-9a3.5 3.5 0 0 1 5 5l-9 9a1.5 1.5 0 0 1-2.1-2.1l8.3-8.3" />
+    </svg>
+  )
+}
