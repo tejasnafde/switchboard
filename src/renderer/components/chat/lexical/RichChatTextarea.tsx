@@ -87,6 +87,7 @@ import {
 import type { DraftPill } from '../../../stores/draft-store'
 import { createRendererLogger } from '../../../logger'
 import { matchesShortcut } from '@shared/shortcuts'
+import { imageTypeOf } from '@shared/image-resize'
 
 const log = createRendererLogger('chat:lexical')
 
@@ -582,7 +583,7 @@ function PasteFilesPlugin({ onPasteFiles }: { onPasteFiles?: (files: File[]) => 
       PASTE_COMMAND,
       (event) => {
         const files = Array.from(event.clipboardData?.files ?? [])
-        const images = files.filter((f) => f.type.startsWith('image/'))
+        const images = files.filter((f) => imageTypeOf(f))
         if (images.length === 0) return false
         event.preventDefault()
         onPasteFiles(images)

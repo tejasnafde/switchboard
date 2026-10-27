@@ -11,6 +11,7 @@
 
 import {
   fitWithin,
+  imageTypeOf,
   mimeTypeOf,
   resizeAttempts,
   sendAsIs,
@@ -108,12 +109,12 @@ export async function fitImageToBudget(
   remaining: number,
 ): Promise<{ ok: true; dataUrl: string } | { ok: false; reason: ImageRefusal }> {
   const sourceUrl = await readAsDataUrl(file)
-  const attempts = resizeAttempts(file.type)
+  const attempts = resizeAttempts(imageTypeOf(file))
+  const img = await loadImage(sourceUrl)
   if (!attempts) {
-    const fit = sendAsIs(sourceUrl.length, remaining)
+    const fit = sendAsIs(sourceUrl.length, remaining, Math.max(img.naturalWidth, img.naturalHeight))
     return fit === 'ok' ? { ok: true, dataUrl: sourceUrl } : { ok: false, reason: fit }
   }
-  const img = await loadImage(sourceUrl)
   const outcome = await shrinkToBudget(attempts, remaining, async (attempt) => {
     const size = fitWithin(img.naturalWidth, img.naturalHeight, attempt.maxSide)
     const canvas = document.createElement('canvas')

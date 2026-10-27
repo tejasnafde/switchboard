@@ -8,13 +8,16 @@ object ImageResizePlan {
     const val MESSAGE_WIRE_BUDGET = 3L * 1024 * 1024
     const val PNG_KEEP_WIRE_BYTES = 1024L * 1024
 
+    /** Longest side sent to a provider: the Claude API refuses larger images in long chats. */
+    const val MAX_IMAGE_LONG_SIDE = 2000
+
     enum class Format(val mimeType: String) { JPEG("image/jpeg"), PNG("image/png") }
 
     data class Attempt(val maxSide: Int, val quality: Int, val format: Format)
 
     /** Tried in order until one fits: full size first, then smaller and softer. */
     val JPEG_STEPS = listOf(
-        Attempt(2048, 85, Format.JPEG),
+        Attempt(MAX_IMAGE_LONG_SIDE, 85, Format.JPEG),
         Attempt(1600, 85, Format.JPEG),
         Attempt(1280, 75, Format.JPEG),
     )
@@ -22,7 +25,7 @@ object ImageResizePlan {
     /** Null for a GIF: re-encoding would drop its animation, so it is sent as is or refused. */
     fun attempts(sourceMimeType: String): List<Attempt>? = when (sourceMimeType) {
         "image/gif" -> null
-        "image/png" -> listOf(Attempt(2048, 100, Format.PNG)) + JPEG_STEPS
+        "image/png" -> listOf(Attempt(MAX_IMAGE_LONG_SIDE, 100, Format.PNG)) + JPEG_STEPS
         else -> JPEG_STEPS
     }
 

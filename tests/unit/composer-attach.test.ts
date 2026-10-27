@@ -25,10 +25,16 @@ describe('sortAttachments', () => {
     ])
     expect(images).toEqual([png])
     expect(refused).toEqual([
-      { name: 'scan.tiff', reason: 'TIFF images are not supported. Use PNG, JPEG, WebP or GIF.' },
+      { name: 'scan.tiff', reason: 'TIFF images are not supported. Use PNG, JPEG, WebP, GIF or HEIC.' },
       { name: 'huge.jpg', reason: '21 MB is over the 20 MB image limit.' },
       { name: 'notes.txt', reason: 'Only images can be attached.' },
     ])
+  })
+
+  it('takes the type from the extension and keeps HEIC for conversion', () => {
+    const heic = file('IMG_1.HEIC', '')
+    const shot = file('shot.png', 'application/octet-stream')
+    expect(sortAttachments([heic, shot]).images).toEqual([heic, shot])
   })
 })
 

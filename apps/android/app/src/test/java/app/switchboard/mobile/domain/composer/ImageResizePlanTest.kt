@@ -27,7 +27,7 @@ class ImageResizePlanTest {
 
     @Test
     fun `steps match the shared rules`() {
-        assertEquals(listOf(2048 to 85, 1600 to 85, 1280 to 75), ImageResizePlan.JPEG_STEPS.map { it.maxSide to it.quality })
+        assertEquals(listOf(2000 to 85, 1600 to 85, 1280 to 75), ImageResizePlan.JPEG_STEPS.map { it.maxSide to it.quality })
         assertEquals(Format.PNG, ImageResizePlan.attempts("image/png")!!.first().format)
         assertEquals(ImageResizePlan.JPEG_STEPS, ImageResizePlan.attempts("image/webp"))
         assertNull(ImageResizePlan.attempts("image/gif"))
@@ -40,7 +40,7 @@ class ImageResizePlanTest {
 
     @Test
     fun `steps down until it fits, and keeps only a small PNG as PNG`() {
-        val sizes = mapOf("PNG@2048" to 2_000_000L, "JPEG@2048" to 4_000_000L, "JPEG@1600" to 2_500_000L)
+        val sizes = mapOf("PNG@2000" to 2_000_000L, "JPEG@2000" to 4_000_000L, "JPEG@1600" to 2_500_000L)
         val tried = mutableListOf<String>()
         val outcome = ImageResizePlan.shrink(ImageResizePlan.attempts("image/png")!!, ImageResizePlan.MESSAGE_WIRE_BUDGET) {
             val key = "${it.format}@${it.maxSide}"
@@ -48,7 +48,7 @@ class ImageResizePlanTest {
             key to sizes.getValue(key)
         }
         assertEquals(Outcome.Fitted("JPEG@1600", ImageResizePlan.JPEG_STEPS[1]), outcome)
-        assertEquals(listOf("PNG@2048", "JPEG@2048", "JPEG@1600"), tried)
+        assertEquals(listOf("PNG@2000", "JPEG@2000", "JPEG@1600"), tried)
     }
 
     @Test

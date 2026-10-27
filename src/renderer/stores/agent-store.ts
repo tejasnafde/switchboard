@@ -33,6 +33,17 @@ import type { ForkLineageMetadata } from '@shared/conversation-fork'
 
 const log = createRendererLogger('store:agent')
 
+/**
+ * Ids of rows this window appended from live events, per session. A live row
+ * can carry an id the backend's history never returns (a sent message's
+ * `remote_` id, a task notice), so it is never an older-window cursor.
+ */
+const appendedIds = new Map<string, Set<string>>()
+
+export function liveAppendedIds(sessionId: string): ReadonlySet<string> {
+  return appendedIds.get(sessionId) ?? new Set()
+}
+
 import type { RuntimeMode } from '@shared/provider-events'
 export type { RuntimeMode }
 
@@ -328,6 +339,8 @@ interface AgentStore {
     newest: ChatMessage[],
     nextCursor: string | null,
   ) => boolean
+  /** Drop the oldest `count` rows; the new first row becomes the older-window cursor. */
+  dropOldestMessages: (sessionId: string, count: number) => boolean
   clearMessages: (sessionId: string) => void
   setConversationId: (sessionId: string, conversationId: string) => void
   setPendingRequests: (sessionId: string, pending: readonly PendingBlockingEvent[]) => void
@@ -436,6 +449,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     // Drop the routing-table entry so a stale id can't keep routing to its old machine.
     window.api.routing?.unbind?.(id)
     removeRuntimeChatSession(id)
+    appendedIds.delete(id)
     set((state) => {
       const remaining = state.sessions.filter((s) => s.id !== id)
       return {
@@ -520,6 +534,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         // reconnect delivery. The shared provider reducer already guarantees
         // that multiple mounted ChatPanels do not reduce an event twice.
         if (s.messages.some((m) => m.id === message.id)) return s
+        let ids = appendedIds.get(sessionId)
+        if (!ids) appendedIds.set(sessionId, (ids = new Set()))
+        ids.add(message.id)
         return {
           ...s,
           messages: [...s.messages, message],
@@ -576,6 +593,19 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         if (!messages) return s
         applied = true
         return { ...s, messages, olderHistoryCursor: nextCursor }
+      }),
+    }))
+    return applied
+  },
+
+  dropOldestMessages: (sessionId, count) => {
+    let applied = false
+    set((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId || count <= 0 || count >= s.messages.length) return s
+        applied = true
+        const messages = s.messages.slice(count)
+        return { ...s, messages, olderHistoryCursor: messages[0].id }
       }),
     }))
     return applied

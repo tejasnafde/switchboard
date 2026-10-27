@@ -1,0 +1,55 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "chat-memory-cap",
+  "summary": "The desktop renderer aims to keep one chat at or below 1,500 rows or an estimated 16 MiB in the agent store; the last 8 turns, rendered rows and pending rows can keep a chat above either limit. Past either limit it drops whole oldest turns down to 75% of the limits and marks the chat as having older history, so a scroll to the top loads them again through the existing older-window path. The trim waits while any message list of the chat is scrolled up, while a history load or a jump to a row is in flight, and while cmd+F holds the chat; it never drops a rendered row, the last 8 turns or a pending card, and never makes a row appended live (whose id a full read may not return) the new first row. Readers of the whole chat (cmd+F, global search, fork anchors, export, handoff) already call ensureFullHistory, which reloads what a trim dropped.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/services/history-memory-budget.ts",
+        "src/renderer/services/history-loader.ts",
+        "src/renderer/stores/agent-store.ts",
+        "src/renderer/components/chat/MessageList.tsx",
+        "src/renderer/components/chat/useChatSearch.ts",
+        "tests/unit/history-memory-budget.test.ts",
+        "tests/unit/history-memory-trim.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app never loads a full history: it has no cmd+F, fork anchor, export or handoff reader, so its store grows only by one window of at most 1 MiB each time the user scrolls to the top of a chat. The large growth this cap answers (a full-history load of a 14,000-row chat kept after search) cannot happen there."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Android also loads only windows of at most 1 MiB, one per scroll to the top, and has no full-history reader, so a chat grows only as far as the user scrolls back by hand."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No backend change: a trimmed chat pages back with the same app:load-session-by-id window request, using a row id the backend returned earlier as beforeId."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "The trim changes only renderer memory. Nothing is stored or migrated."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md",
+        "docs/feature-parity/chat-memory-cap.json"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/history-memory-budget.test.ts: the estimate counts text, tool calls, image data URLs and diffs; a trim drops whole turns to the target share of the count budget and of the byte budget, keeps the first shown row and all after it, the last minKeptTurns turns, pending rows and at least minKept rows, and never starts at a subagent row or a row appended live.",
+      "tests/unit/history-memory-trim.test.ts: through the real agent store, a trim drops the oldest rows and sets the older cursor, two older-window loads then restore every row and clear it, ensureFullHistory restores every row after a trim, a row appended live is never the new cursor, and a cmd+F hold, a pending jump or a scrolled-up view stops the trim."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run in the built app: scroll stability during a trim at the bottom of a long chat was not watched by eye or by the e2e prepend check.",
+      "No phone run; the phones do not change.",
+      "Rows appended live in this app run are never a cut point, so a session that grows only by live rows is not trimmed until the chat is loaded again from the backend."
+    ]
+  }
+}

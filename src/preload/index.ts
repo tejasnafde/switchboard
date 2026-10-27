@@ -348,6 +348,9 @@ const api = {
     getUpdateStatus: (): Promise<UpdateStatus> => transport.invoke(AppChannels.GET_UPDATE_STATUS),
     /** The version to announce as "Updated to" once after an upgrade, else null. */
     takeUpdatedNotice: (): Promise<string | null> => transport.invoke(AppChannels.TAKE_UPDATED_NOTICE),
+    /** HEIC/HEIF bytes to JPEG bytes, on this Mac (never a remote machine). */
+    convertHeic: (bytes: Uint8Array): Promise<Uint8Array<ArrayBuffer>> =>
+      transport.invoke(AppChannels.CONVERT_HEIC, bytes),
     /**
      * Subscribe to update lifecycle events from the main-process
      * autoUpdater (checking → available → downloading → downloaded |
@@ -742,6 +745,17 @@ const api = {
 
     interrupt: (threadId: string): Promise<import('@shared/provider-events').InterruptResult | undefined> =>
       transport.invoke(ProviderChannels.INTERRUPT, threadId),
+    /**
+     * Stop a child chat from its parent's strip. A parent starts its children
+     * on its own backend, so the call goes where the parent's calls go (by
+     * whichever of its ids this window bound): the child's live id is bound
+     * only once this window opened the child.
+     */
+    interruptHubChild: (
+      parentFamilyIds: readonly string[],
+      childThreadId: string,
+    ): Promise<import('@shared/provider-events').InterruptResult | undefined> =>
+      router.invokeOn(routingTable.resolveThread(parentFamilyIds), ProviderChannels.INTERRUPT, childThreadId),
 
     setRuntimeMode: (threadId: string, mode: RuntimeMode) =>
       transport.invoke(ProviderChannels.SET_RUNTIME_MODE, threadId, mode),

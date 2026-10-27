@@ -70,7 +70,16 @@ the row in view in place. `MessageList` applies a size correction above the
 view itself and re-renders in the same frame (the virtualizer's own correction
 re-rendered a frame late, which painted the jump), and after a prepend renders
 the rows around the kept row before paint. `e2e/history-prepend.e2e.mjs`
-checks the row in view never moves. It also asks `imageRefs: true`: base64
+checks the row in view never moves. A chat holds at most 1,500 rows or an
+estimated 16 MiB in the renderer (`renderer/services/history-memory-budget.ts`):
+past either, `trimHistoryToBudget` drops whole oldest turns down to 75% and sets
+`olderHistoryCursor` to the new first row, so a scroll to the top loads them
+again. It runs after an append or an older window, when a list returns to the
+bottom, and when no list shows the chat; it waits while any list is scrolled up,
+a load or a jump to a row is in flight, or cmd+F holds the chat
+(`holdFullHistory`), and never drops a rendered row, the last 8 turns or a
+pending card. The new first row is never one appended live (`liveAppendedIds`):
+its id, such as a sent message's `remote_` id, may be missing from a full read. Full readers call `ensureFullHistory`, which reloads what a trim dropped. It also asks `imageRefs: true`: base64
 images come back as `MessageImage.ref` (message id, index, byte size, with
 `mimeType`) and `app:load-history-image` serves the bytes when a thumbnail
 scrolls into view. A fork anchor digested over a referenced image still

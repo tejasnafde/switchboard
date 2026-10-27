@@ -46,7 +46,7 @@ async function shrinkAsset(
     }
     const b64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 })
     const url = `data:${sourceType};base64,${b64}`
-    const fit = sendAsIs(url.length, remaining)
+    const fit = sendAsIs(url.length, remaining, Math.max(asset.width, asset.height))
     return fit === 'ok' ? { ok: true, payload: { url, mimeType: sourceType } } : { ok: false, reason: fit }
   }
   const source = await ImageManipulator.manipulate(asset.uri).renderAsync()
