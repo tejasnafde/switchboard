@@ -12,8 +12,14 @@ import {
   folderEntryCount,
   pruneAttachments,
   saveAttachment,
+  uploadAttachment,
 } from '../../src/main/attachments'
-import { attachmentPromptLine } from '../../src/shared/attachments'
+import {
+  attachmentPromptLine,
+  attachmentTurn,
+  MAX_UPLOAD_ATTACHMENT_BYTES,
+  nextPastedTextName,
+} from '../../src/shared/attachments'
 
 const pdf = (pages: number): Buffer =>
   Buffer.from(
@@ -83,5 +89,32 @@ describe('composer attachments', () => {
     await pruneAttachments()
     expect(existsSync(old.path)).toBe(false)
     expect(existsSync(fresh.path)).toBe(true)
+  })
+})
+
+describe('phone attachments', () => {
+  it('saves uploaded base64 bytes and refuses one over the upload limit before decoding', async () => {
+    const saved = await uploadAttachment({ name: 'log.txt', data: Buffer.from('hello').toString('base64') })
+    expect(saved.path.startsWith(attachmentsDir())).toBe(true)
+    expect(saved.size).toBe(5)
+    const big = 'A'.repeat(Math.ceil((MAX_UPLOAD_ATTACHMENT_BYTES * 4) / 3) + 8)
+    await expect(uploadAttachment({ name: 'big.bin', data: big })).rejects.toThrow('big.bin is over the 25 MB')
+    await expect(uploadAttachment({ name: 'x', sourcePath: '/etc/hosts' } as never)).rejects.toThrow('Invalid')
+  })
+
+  it('builds the same turn the desktop sends: lines for the agent, tokens for the bubble', () => {
+    const turn = attachmentTurn('look', [
+      { id: 'a1', name: 'spec.pdf', path: '/s/spec.pdf', label: 'spec.pdf (3 pages)' },
+    ])
+    expect(turn.providerText).toBe(`look\n\n${attachmentPromptLine('file', 'spec.pdf', '/s/spec.pdf')}`)
+    expect(turn.displayBody).toBe('look\n\n[[pill:a1]]')
+    expect(turn.pillsMeta).toEqual({ a1: { label: 'spec.pdf (3 pages)', kind: 'file' } })
+    expect(attachmentTurn('hi', [])).toEqual({ providerText: 'hi', displayBody: 'hi' })
+    expect(attachmentTurn('', [{ id: 'b', name: 'n', path: '/p', label: 'n' }]).displayBody).toBe('[[pill:b]]')
+  })
+
+  it('numbers pasted text after the highest one attached', () => {
+    expect(nextPastedTextName([])).toBe('pasted-text-1.txt')
+    expect(nextPastedTextName(['pasted-text-2.txt (900 lines)', 'spec.pdf'])).toBe('pasted-text-3.txt')
   })
 })

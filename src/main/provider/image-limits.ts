@@ -88,7 +88,65 @@ function downscaleRgba(src: Uint8Array, sw: number, sh: number, dw: number, dh: 
   return out
 }
 
-/** Re-encode a PNG or JPEG at no more than `MAX_IMAGE_LONG_SIDE`, in its own format. */
+/** The EXIF orientation (1 to 8) of a JPEG, or 1 when it has none. */
+export function jpegOrientation(bytes: Uint8Array): number {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  let at = 2
+  while (at + 4 <= bytes.length && bytes[at] === 0xff) {
+    const marker = bytes[at + 1]
+    const length = view.getUint16(at + 2)
+    // APP1 "Exif\0\0", then a TIFF header and IFD0, which holds tag 0x0112.
+    if (marker === 0xe1 && at + 10 + 8 <= bytes.length && view.getUint32(at + 4) === 0x45786966) {
+      const tiff = at + 10
+      const little = view.getUint16(tiff) === 0x4949
+      const ifd = tiff + view.getUint32(tiff + 4, little)
+      if (ifd + 2 > bytes.length) return 1
+      const entries = view.getUint16(ifd, little)
+      for (let i = 0; i < entries; i++) {
+        const entry = ifd + 2 + i * 12
+        if (entry + 12 > bytes.length) return 1
+        if (view.getUint16(entry, little) === 0x0112) {
+          const value = view.getUint16(entry + 8, little)
+          return value >= 1 && value <= 8 ? value : 1
+        }
+      }
+      return 1
+    }
+    if (marker === 0xda) return 1
+    at += 2 + length
+  }
+  return 1
+}
+
+/** RGBA pixels turned upright for an EXIF orientation; 5 to 8 swap width and height. */
+function orientRgba(
+  src: Buffer,
+  w: number,
+  h: number,
+  orientation: number,
+): { data: Buffer; width: number; height: number } {
+  if (orientation <= 1 || orientation > 8) return { data: src, width: w, height: h }
+  const swap = orientation >= 5
+  const width = swap ? h : w
+  const height = swap ? w : h
+  const out = Buffer.alloc(src.length)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      // The source pixel shown at (x, y) once upright.
+      const fx = orientation === 2 || orientation === 3 || orientation >= 7
+      const fy = orientation === 3 || orientation === 4 || orientation === 6 || orientation === 7
+      const sx = swap ? (fx ? w - 1 - y : y) : fx ? w - 1 - x : x
+      const sy = swap ? (fy ? h - 1 - x : x) : fy ? h - 1 - y : y
+      src.copy(out, (y * width + x) * 4, (sy * w + sx) * 4, (sy * w + sx) * 4 + 4)
+    }
+  }
+  return { data: out, width, height }
+}
+
+/**
+ * Re-encode a PNG or JPEG at no more than `MAX_IMAGE_LONG_SIDE`, in its own
+ * format. The new JPEG has no EXIF, so its pixels are turned upright first.
+ */
 function shrink(mimeType: string, bytes: Buffer): Buffer {
   const decoded =
     mimeType === 'image/png'
@@ -101,7 +159,7 @@ function shrink(mimeType: string, bytes: Buffer): Buffer {
     data.copy(png.data)
     return PNG.sync.write(png)
   }
-  return encodeJpeg({ data, width: size.width, height: size.height }, JPEG_QUALITY).data
+  return encodeJpeg(orientRgba(data, size.width, size.height, jpegOrientation(bytes)), JPEG_QUALITY).data
 }
 
 /**

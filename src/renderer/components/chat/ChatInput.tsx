@@ -24,7 +24,7 @@ import {
   sortAttachments,
   type AttachmentRefusal,
 } from '../../services/attachment-intake'
-import { attachmentPromptLine, type AttachmentKind } from '@shared/attachments'
+import { attachmentPromptLine, nextPastedTextName, type AttachmentKind } from '@shared/attachments'
 import { PillChipVisual } from './lexical/PillChipVisual'
 import { useChatDropZone } from './useChatDropZone'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
@@ -909,11 +909,7 @@ export function ChatInput({
       if (bytes.byteLength <= LARGE_PASTE_BYTES) return false
       if (onRemoteMachine(sessionId)) return false
       const target = sessionId
-      const used = pills
-        .map((p) => /^pasted-text-(\d+)\.txt/.exec(p.label)?.[1])
-        .filter(Boolean)
-        .map(Number)
-      const name = `pasted-text-${Math.max(0, ...used) + 1}.txt`
+      const name = nextPastedTextName(pills.map((p) => p.label))
       setSavingCount((n) => n + 1)
       window.api.app
         .saveAttachment({ name, bytes })
