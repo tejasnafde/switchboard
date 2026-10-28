@@ -23,6 +23,7 @@ let fileChangePatchUpdates: (typeof fileChanges)[] = []
 let fileChangeStatus = 'completed'
 let omitFileChangesAtStart = false
 let stallInitialize = false
+let initializeErrors: string[] = []
 let initStderrChunks: string[] = []
 let lastChild: MockChild | null = null
 let persistedSessionIds: string[] = []
@@ -66,6 +67,19 @@ function makeChild(): MockChild {
           for (const chunk of initStderrChunks) {
             queueMicrotask(() => child.stderr.emit('data', Buffer.from(chunk)))
           }
+          return
+        }
+        const initializeError = initializeErrors.shift()
+        if (initializeError) {
+          queueMicrotask(() => {
+            stdout.write(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: message.id,
+                error: { code: -32000, message: initializeError },
+              }) + '\n',
+            )
+          })
           return
         }
         queueMicrotask(() => {
@@ -541,6 +555,7 @@ describe('CodexAdapter', () => {
     fileChangeStatus = 'completed'
     omitFileChangesAtStart = false
     stallInitialize = false
+    initializeErrors = []
     initStderrChunks = []
     lastChild = null
     persistedSessionIds = []
@@ -991,6 +1006,63 @@ describe('CodexAdapter', () => {
       threadId: 'thread-1',
       status: 'idle',
     })
+  })
+
+  it('starts a new app-server and resumes the same thread when the old one died', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const { spawn } = await import('child_process')
+    const adapter = new CodexAdapter()
+    await adapter.startSession(
+      { threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', model: 'gpt-5.4' },
+      vi.fn(),
+    )
+    await adapter.sendTurn('thread-1', 'first')
+    lastChild!.emit('close', null)
+    writes.length = 0
+
+    await adapter.sendTurn('thread-1', 'after the crash')
+
+    expect(vi.mocked(spawn)).toHaveBeenCalledTimes(2)
+    const messages = writes.map((line) => JSON.parse(line))
+    expect(messages.some((message) => message.method === 'thread/start')).toBe(false)
+    expect(messages.find((message) => message.method === 'thread/resume')).toMatchObject({
+      params: { threadId: 'codex-thread-1', cwd: '/tmp/project', model: 'gpt-5.4' },
+    })
+    expect(messages.find((message) => message.method === 'turn/start')).toMatchObject({
+      params: { threadId: 'codex-thread-1', input: [{ type: 'text', text: 'after the crash' }] },
+    })
+  })
+
+  it('fails only the send whose app-server restart fails, and tries again on the next send', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const { spawn } = await import('child_process')
+    const adapter = new CodexAdapter()
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, vi.fn())
+    await adapter.sendTurn('thread-1', 'first')
+    lastChild!.emit('close', 1)
+    initializeErrors = ['codex is not logged in']
+
+    await expect(adapter.sendTurn('thread-1', 'second')).rejects.toThrow('codex is not logged in')
+    expect(vi.mocked(spawn)).toHaveBeenCalledTimes(2)
+
+    writes.length = 0
+    await adapter.sendTurn('thread-1', 'third')
+    expect(vi.mocked(spawn)).toHaveBeenCalledTimes(3)
+    const messages = writes.map((line) => JSON.parse(line))
+    expect(messages.find((message) => message.method === 'thread/resume')).toMatchObject({
+      params: { threadId: 'codex-thread-1' },
+    })
+  })
+
+  it('does not start a new app-server for a session that was stopped', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const { spawn } = await import('child_process')
+    const adapter = new CodexAdapter()
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, vi.fn())
+    await adapter.stopSession('thread-1')
+
+    await expect(adapter.sendTurn('thread-1', 'late')).rejects.toThrow('not found or not connected')
+    expect(vi.mocked(spawn)).toHaveBeenCalledTimes(1)
   })
 
   it('emits retry progress instead of errors while Codex reconnects a turn', async () => {

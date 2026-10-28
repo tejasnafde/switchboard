@@ -230,6 +230,8 @@ interface McpElicitationField {
 
 interface ActiveSession extends VisibleHistoryState {
   session: ProviderSession
+  /** What started this app-server, to start a new one if it dies. */
+  startOpts: SessionStartOpts
   /** `thread/resume` succeeded: the agent holds this chat's earlier thread. */
   resumed?: boolean
   child: ChildProcessWithoutNullStreams | null
@@ -666,12 +668,23 @@ const codexExecutable = createExecutableCache({
 export class CodexAdapter implements ProviderAdapter {
   readonly provider = 'codex' as const
   private sessions = new Map<string, ActiveSession>()
+  /** A new app-server starting for a session whose old one died, by thread. */
+  private restarts = new Map<string, Promise<ActiveSession>>()
 
   async isAvailable(): Promise<boolean> {
     return codexExecutable.refresh() !== null
   }
 
   async startSession(opts: SessionStartOpts, onEvent: (event: RuntimeEvent) => void): Promise<ProviderSession> {
+    return this.launch(opts, onEvent)
+  }
+
+  /** `knownThreadId` skips the lookup: a restart already knows its thread. */
+  private async launch(
+    opts: SessionStartOpts,
+    onEvent: (event: RuntimeEvent) => void,
+    knownThreadId?: string,
+  ): Promise<ProviderSession> {
     const executable = codexExecutable.refresh()
     if (!executable) {
       throw new Error('Codex CLI not found. Install with: npm install -g @openai/codex')
@@ -688,11 +701,12 @@ export class CodexAdapter implements ProviderAdapter {
       reasoningEffort: opts.reasoningEffort,
       instanceId: opts.instanceId,
     }
-    const resumeThreadId = await this.resolveResumeThreadId(opts)
+    const resumeThreadId = knownThreadId ?? (await this.resolveResumeThreadId(opts))
     if (resumeThreadId) session.sessionId = resumeThreadId
 
     const active: ActiveSession = {
       session,
+      startOpts: opts,
       child: null,
       onEvent,
       portableHistory: opts.portableHistory,
@@ -873,6 +887,49 @@ export class CodexAdapter implements ProviderAdapter {
     return session
   }
 
+  /**
+   * The app-server exited (killed or crashed) under a session nobody stopped.
+   * Start a new one on the same Codex thread. One attempt per send: a failed
+   * start rejects that send and leaves the dead session for the next one.
+   */
+  private restartAppServer(threadId: string, dead: ActiveSession): Promise<ActiveSession> {
+    const pending = this.restarts.get(threadId)
+    if (pending) return pending
+    const restart = (async () => {
+      log.warn('codex app-server is gone, starting a new one for this send', {
+        threadId,
+        codexThreadId: dead.threadId,
+      })
+      const { session } = dead
+      try {
+        await this.launch(
+          {
+            ...dead.startOpts,
+            cwd: session.cwd,
+            model: session.model,
+            runtimeMode: session.runtimeMode,
+            reasoningEffort: session.reasoningEffort,
+          },
+          dead.onEvent,
+          dead.threadId ?? undefined,
+        )
+        const next = this.sessions.get(threadId)!
+        if (dead.needsVisibleHistory) next.needsVisibleHistory = true
+        return next
+      } catch (err) {
+        // Not after stopSession, which drops the pending restart.
+        if (this.restarts.has(threadId) && !this.sessions.get(threadId)?.child) {
+          this.sessions.set(threadId, dead)
+        }
+        throw err
+      } finally {
+        this.restarts.delete(threadId)
+      }
+    })()
+    this.restarts.set(threadId, restart)
+    return restart
+  }
+
   private async resolveResumeThreadId(opts: SessionStartOpts): Promise<string | null> {
     try {
       const typed = resolveResumeSegment(opts.threadId, 'codex', opts.instanceId)
@@ -916,7 +973,8 @@ export class CodexAdapter implements ProviderAdapter {
     /** Set only by drainQueued, which owns the next drain step itself. */
     fromQueue: boolean,
   ): Promise<void> {
-    const active = this.sessions.get(threadId)
+    let active = this.sessions.get(threadId)
+    if (active && !active.child) active = await this.restartAppServer(threadId, active)
     if (!active?.child) throw new Error(`Session ${threadId} not found or not connected`)
 
     // Queued behind a running (or starting) turn: kept with its own runtime
@@ -1396,6 +1454,7 @@ export class CodexAdapter implements ProviderAdapter {
   }
 
   async stopSession(threadId: string): Promise<void> {
+    this.restarts.delete(threadId)
     const active = this.sessions.get(threadId)
     if (!active) return
 
