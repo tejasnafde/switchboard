@@ -31,6 +31,9 @@ export const PERF_THRESHOLDS = {
   'hub.deps-plan': 200,
   // A chat's children view (strip, banner, chip): DB reads per open, per change event.
   'hub.view': 100,
+  // Every wake turn (wakes, bytes, attempt, outcome, ms to first activity) and every read_child call.
+  'hub.wake': 0,
+  'hub.read-child': 0,
   ipc: 200,
 } as const
 

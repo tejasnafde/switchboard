@@ -16,6 +16,7 @@ import {
   COMPACT_FIRST_MESSAGE,
   COMPACTED_NOT_RESENT_MESSAGE,
   COMPACTING_NOTICE,
+  compactingNoticeId,
   isPromptTooLongResult,
   isPromptTooLongText,
   PROMPT_TOO_LONG_MESSAGE,
@@ -1488,7 +1489,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     active.onEvent({
       type: 'content',
       threadId,
-      messageId: `sys_compact_${Date.now()}`,
+      messageId: compactingNoticeId(Date.now()),
       text: COMPACTING_NOTICE,
       streamKind: 'reasoning',
     })

@@ -487,6 +487,8 @@ export const ProviderChannels = {
   LIMIT_RESUME_NOW: 'provider:limit-resume-resume-now',
   /** Child chats (`hub_children`): a chat's `HubChatView` (its parent, or its children). */
   HUB_LIST_CHILDREN: 'provider:hub-list-children',
+  /** Deliver: lift a parent's hold and send its pending child updates at its next idle. */
+  HUB_DELIVER_HELD_WAKES: 'provider:hub-deliver-held-wakes',
   LIST_SKILLS: 'provider:list-skills',
   ANSWER_QUESTION: 'provider:answer-question',
   /**

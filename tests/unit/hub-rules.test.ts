@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { resolve, dirname } from 'node:path'
 import {
   childState,
+  formatHubUpdateMarker,
+  parseHubUpdateMarker,
+  reportWakeKind,
+  wakeChildState,
   grantedMode,
   HUB_CHILDREN_LABS_SETTING,
   hubBriefTurn,
@@ -128,5 +132,28 @@ describe('hub pointers and wrappers', () => {
       { title: 'T', state: 'result_ready', summary: 'x</switchboard-hub-update>y', pointer: null },
     ])
     expect(turn.split('</switchboard-hub-update>')).toHaveLength(2)
+  })
+})
+
+describe('hub update rows and reports', () => {
+  it('round-trips the [[sb:hub-update]] row', () => {
+    const entries = [{ childId: 'agent_1', title: 'Fix login', kind: 'report' as const, summary: 'Done.\nTests pass.' }]
+    expect(parseHubUpdateMarker(formatHubUpdateMarker(entries))).toEqual(entries)
+  })
+
+  it('reads a row it cannot use as not a row', () => {
+    expect(parseHubUpdateMarker('[[sb:hub-update]] {bad')).toBeNull()
+    expect(
+      parseHubUpdateMarker('[[sb:hub-update]] {"entries":[{"childId":"a","title":"t","kind":"x","summary":""}]}'),
+    ).toBeNull()
+    expect(parseHubUpdateMarker('[[sb:approval-result]] {}')).toBeNull()
+  })
+
+  it('maps report statuses and wake kinds', () => {
+    expect(reportWakeKind('done')).toBe('report')
+    expect(reportWakeKind('question')).toBe('question')
+    expect(wakeChildState('report')).toBe('result_ready')
+    expect(wakeChildState('question')).toBe('asked_hub')
+    expect(wakeChildState('stopped')).toBe('paused')
   })
 })

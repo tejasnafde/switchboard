@@ -1630,7 +1630,14 @@ export function ChatPanel({
           )}
 
           {sessionId && <LimitResumeRow sessionId={sessionId} />}
-          {hub.self && <ChildrenStrip parent={hub.self} items={hub.children} state={hub.state} />}
+          {hub.self && (
+            <ChildrenStrip
+              parent={hub.self}
+              items={hub.children}
+              state={hub.state}
+              heldUpdates={hub.heldUpdates ?? 0}
+            />
+          )}
           {composer}
         </>
       )}

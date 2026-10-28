@@ -9,10 +9,21 @@
       "evidence": ["src/renderer/services/attachment-intake.ts", "src/renderer/components/chat/ChatInput.tsx"]
     },
     "reactNativeIos": {
-      "status": "staged",
-      "flag": "attachment_upload_v1",
-      "followUpRelease": "The Expo composer gains file attach, refusals and the large-paste chip; until then it sends images only, as before",
-      "evidence": ["src/shared/attachments.ts"]
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/file-attachments.ts",
+        "apps/mobile/src/lib/outbox-model.ts",
+        "apps/mobile/src/lib/turn-submit.ts",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/hooks/useComposerFiles.ts",
+        "apps/mobile/src/components/FileAttachments.tsx",
+        "apps/mobile/src/components/ImageAttachments.tsx",
+        "apps/mobile/src/components/ReviewPillChip.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "tests/unit/mobile-file-attachments.test.ts",
+        "tests/unit/mobile-outbox.test.ts",
+        "apps/mobile/src/components/__tests__/FileAttachments.test.tsx"
+      ]
     },
     "nativeAndroid": {
       "status": "implemented",
@@ -67,12 +78,16 @@
       "Android JUnit: ImageResizePlanTest (a GIF over 2000 px on its long side is refused at attach with the desktop copy; one at 2000 px is kept).",
       "Android JUnit: PrivateComposerAttachmentStagerTest (an uploaded file in a queued turn comes back to the draft as the same file chip, with no file read or written on the phone).",
       "Android JUnit: OutboxRemoteSenderTest (an uploaded file goes as a prompt line, a [[pill:id]] token and a file pill, and never as an image).",
-      "Android JUnit: DurableComposerRuntimeUploadTest, ThreadSessionCoordinatorTest and ThreadSessionPresentationTest (send waits while a file uploads and then carries it; two pastes in flight get different pasted-text names; a refused paste ends its upload)."
+      "Android JUnit: DurableComposerRuntimeUploadTest, ThreadSessionCoordinatorTest and ThreadSessionPresentationTest (send waits while a file uploads and then carries it; two pastes in flight get different pasted-text names; a refused paste ends its upload).",
+      "vitest: tests/unit/mobile-file-attachments.test.ts (Expo: image or file routing by type and extension, HEIC as a photo, refusals for other image formats, a backend without attachment_upload_v1 and a file over MAX_UPLOAD_ATTACHMENT_BYTES; UTF-8 base64; the large-paste rule by UTF-8 growth, caret position and surrogate pairs; put-back on failure; only uploaded chips are sent).",
+      "vitest: tests/unit/mobile-outbox.test.ts (Expo: QueuedMessage.attachments survives a restart, malformed entries dropped; queuedTurnBody puts the review pill first, then the text, then the file lines and chips; rejected and returned drafts give the files back).",
+      "jest: apps/mobile/src/components/__tests__/FileAttachments.test.tsx (Expo: file chip label, 'Remove <name>' control, upload spinner, one refusal line per file, the Photos and Files sheet)."
     ],
     "hardware": [],
     "notExercised": [
       "An upload from a real phone over the LAN and over the IAP tunnel.",
-      "Android: the file picker, the file chip, the large paste and an upload on a real device or emulator; only unit tests and the build ran."
+      "Android: the file picker, the file chip, the large paste and an upload on a real device or emulator; only unit tests and the build ran.",
+      "Expo iOS: the document picker, a GIF picked from Files (its pixel size from Image.getSize), the upload and the large-paste fold on a real iPhone. expo-document-picker is a new native module, so this needs a new iOS build; none was made."
     ]
   }
 }

@@ -17,6 +17,13 @@ const COMPACT_INVOCATION = /^\s*\/compact(?:\s|$)/i
 export const COMPACTING_NOTICE =
   "(This conversation no longer fits the model's context window. Compacting it, then sending your message again.)"
 
+const COMPACTING_NOTICE_ID_PREFIX = 'sys_compact_'
+
+export const compactingNoticeId = (now: number) => `${COMPACTING_NOTICE_ID_PREFIX}${now}`
+
+/** The `content` event of that notice: Switchboard's text, not the agent's. */
+export const isCompactingNotice = (messageId: string) => messageId.startsWith(COMPACTING_NOTICE_ID_PREFIX)
+
 export const PROMPT_TOO_LONG_MESSAGE =
   "This conversation no longer fits the model's context window, and compacting it did not help. " +
   'Start a new chat, or pick a model with a larger context window.'

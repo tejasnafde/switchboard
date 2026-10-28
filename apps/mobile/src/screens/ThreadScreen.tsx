@@ -90,6 +90,9 @@ import { SyntheticRow } from '../components/SyntheticRow'
 import { useDictation, type VoiceNote } from '../hooks/useDictation'
 import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
+import { AttachRefusals, FileChips } from '../components/FileAttachments'
+import { useComposerFiles } from '../hooks/useComposerFiles'
+import { reinsertPaste, sentAttachments, uploadsRunning } from '../lib/file-attachments'
 import { DEMO_STRIP_HEIGHT } from '../components/DemoStrip'
 import { DEMO_LABEL, NOT_IN_DEMO, isDemoConnection } from '@shared/phone-demo/phone-demo'
 import { outboxPresentation, queuedTurnBody, recoverRejectedDraft, returnedDraft } from '../lib/outbox-model'
@@ -155,6 +158,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
   draftRef.current = draft
   const [voiceNote, setVoiceNote] = useState<VoiceNote | null>(null)
   const [attachments, setAttachments] = useState<Attachment[]>([])
+  // A large paste that failed to upload goes back into the text.
+  const pasteFailed = useCallback((at: number, inserted: string) => {
+    setDraft((current) => reinsertPaste(current, at, inserted))
+  }, [])
+  const composerFiles = useComposerFiles(connectionId, pasteFailed)
   const composerRef = useRef<TextInput>(null)
   const [models, setModels] = useState<ModelOption[]>([])
   const [model, setModel] = useState('')
@@ -587,10 +595,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
     const restored = returnedDraft(draftRef.current, back)
     setDraft(restored.text)
     setAttachments((prev) => [...prev, ...restored.images])
+    composerFiles.restore(restored.files)
     usePrefsStore.getState().rememberDraft(key, restored.text)
     const pill = back.find((message) => message.reviewPill)?.reviewPill
     if (pill) usePrefsStore.getState().setReviewPill(key, pill)
-  }, [key])
+  }, [key, composerFiles.restore])
 
   const waiting = Boolean(loadLabel) || rotating
   useEffect(() => {
@@ -810,8 +819,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
     const text = (textOverride ?? draft).trim()
     // Only the user's own send carries the review pill, never a one-tap override.
     const pill = textOverride ? undefined : reviewPill
-    // An image with no caption is a legitimate turn, and so is a pill alone.
-    if (!text && attachments.length === 0 && !pill) return
+    // Send waits for every upload: a chip without a path has nothing to send yet.
+    if (!textOverride && uploadsRunning(composerFiles.files) > 0) return
+    const files = textOverride ? [] : sentAttachments(composerFiles.files)
+    // An image with no caption is a legitimate turn, and so is a pill or a file alone.
+    if (!text && attachments.length === 0 && !pill && files.length === 0) return
     const images = textOverride ? [] : attachments.map((a) => ({ url: a.url, mimeType: a.mimeType }))
     // An override (Compact) is its own turn; it must not complete a pending edit.
     const editingId = textOverride ? undefined : useOutboxStore.getState().editingId
@@ -820,6 +832,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       setDraft('')
       setVoiceNote(null)
       setAttachments([])
+      composerFiles.clear()
       usePrefsStore.getState().rememberDraft(key, '')
       if (pill) usePrefsStore.getState().setReviewPill(key, undefined)
     }
@@ -842,6 +855,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       titleCandidate,
       whenIdle: toggle.queues && !textOverride,
       ...(pill ? { reviewPill: pill } : {}),
+      attachments: files,
     })
     setFlipNext(false)
     if (held) {
@@ -873,6 +887,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         useChatStore.getState().removeUserMessage(key, turn.bubbleId)
         setDraft((current) => (current ? current : text))
         setAttachments(attachments)
+        composerFiles.restore(files)
         if (pill) usePrefsStore.getState().setReviewPill(key, pill)
         reportError(err)
       })
@@ -994,10 +1009,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
       if (!recovered) return
       setDraft(recovered.text)
       setAttachments(recovered.images)
+      composerFiles.clear()
+      composerFiles.restore(recovered.files)
       usePrefsStore.getState().rememberDraft(key, recovered.text)
       composerRef.current?.focus()
     },
-    [key],
+    [key, composerFiles.clear, composerFiles.restore],
   )
 
   const resolveAmbiguous = useCallback(
@@ -1456,7 +1473,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
   )
 
   const isRunning = thread.status === 'running'
-  const canSend = draft.trim().length > 0 || attachments.length > 0 || reviewPill !== undefined
+  const uploading = uploadsRunning(composerFiles.files)
+  const canSend =
+    uploading === 0 &&
+    (draft.trim().length > 0 || attachments.length > 0 || reviewPill !== undefined || composerFiles.files.length > 0)
   // Vocabulary bias comes from the tree the agent works in, so a worktree
   // session biases on the worktree's files.
   const dictation = useDictation({
@@ -1685,6 +1705,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
           </Text>
         )}
         {slashQuery !== null && <SlashMenu commands={slashMatches} onPick={runSlash} />}
+        <AttachRefusals lines={composerFiles.refusals} onDismiss={() => composerFiles.setRefusals([])} />
+        {uploading > 0 && (
+          <Text style={styles.queuedNote}>
+            Uploading {uploading} {uploading === 1 ? 'file' : 'files'}. Send waits until it is done.
+          </Text>
+        )}
         <AttachmentStrip attachments={attachments} onRemove={removeAttachment} />
         {reviewPill && (
           <ReviewPillChip
@@ -1692,15 +1718,22 @@ export default function ThreadScreen({ route, navigation }: Props) {
             onRemove={() => usePrefsStore.getState().setReviewPill(key, undefined)}
           />
         )}
+        <FileChips files={composerFiles.files} onRemove={composerFiles.remove} />
         <View style={styles.inputCard}>
           <View style={styles.inputRow}>
             {/* Attach sits left of the input, the primary button right of it. */}
-            <AttachButton existing={attachments} onAdd={addAttachments} />
+            <AttachButton
+              existing={attachments}
+              onAdd={addAttachments}
+              onFiles={composerFiles.addPicked}
+              onRefused={composerFiles.setRefusals}
+              canUploadFiles={composerFiles.canUpload}
+            />
             <TextInput
               ref={composerRef}
               style={styles.input}
               value={draft}
-              onChangeText={setDraft}
+              onChangeText={(next) => setDraft(composerFiles.foldPaste(draftRef.current, next))}
               onFocus={() => setComposerFocused(true)}
               onBlur={() => setComposerFocused(false)}
               placeholder={

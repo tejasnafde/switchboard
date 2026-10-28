@@ -26,7 +26,7 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
   return { ...actual, remoteProviderLoginPrompt: () => null }
 })
 
-const hubFlag = vi.hoisted(() => ({ on: true }))
+const hubFlag = vi.hoisted(() => ({ on: true, wakes: [] as Array<Record<string, unknown>> }))
 
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
@@ -66,10 +66,13 @@ vi.mock('../../src/main/db/database', () => ({
       : [],
   lastHubWakes: () => new Map(),
   listPendingHubWakes: () => [],
+  listParentsWithPendingHubWakes: () => [],
+  insertHubWake: (w: Record<string, unknown>) => hubFlag.wakes.push(w),
   getHubParent: () => null,
 }))
 
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
+import { COMPACTING_NOTICE, compactingNoticeId } from '../../src/main/provider/claude-prompt-too-long'
 import { ProviderChannels } from '../../src/shared/ipc-channels'
 import type { BackendHost } from '../../src/main/backend/host'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
@@ -180,6 +183,80 @@ describe('child chats in the registry', () => {
     expect(mcp.opened.get('child1')!.instructions).toBeUndefined()
     expect(names('child1')).toContain('own_dependencies')
     expect(names('parent1')).not.toContain('own_dependencies')
+    expect(names('parent1')).toContain('read_child')
+    expect(names('child1')).not.toContain('read_child')
+    expect(names('child1')).toContain('report_to_hub')
+    expect(names('parent1')).not.toContain('report_to_hub')
+  })
+
+  it('stores a report as a wake for the parent, pointing at the tool call', async () => {
+    const adapter = new Adapter()
+    const host = new FakeHost()
+    const mcp = fakeMcp()
+    new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, undefined, mcp.server).registerIpcHandlers()
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: '/tmp' })
+    adapter.onEvent({
+      type: 'tool.started',
+      threadId: 'child1',
+      toolId: 'toolu_42',
+      toolName: 'mcp__switchboard__report_to_hub',
+      input: {},
+    })
+    const report = mcp.opened.get('child1')!.tools.find((t) => t.name === 'report_to_hub')!
+    hubFlag.wakes.length = 0
+    const result = await report.call({ status: 'done', summary: 'Export works.', report: 'Long report' })
+    expect(result.isError).toBeFalsy()
+    expect(hubFlag.wakes).toEqual([
+      expect.objectContaining({
+        parentId: 'parent1',
+        childId: 'child1',
+        kind: 'report',
+        summary: 'Export works.',
+        pointer: expect.objectContaining({ childId: 'child1', toolCallId: 'toolu_42' }),
+      }),
+    ])
+    // The report body stays in the child's transcript.
+    expect(JSON.stringify(hubFlag.wakes)).not.toContain('Long report')
+  })
+
+  it('gives two reports started in one message their own tool calls, in order', async () => {
+    const adapter = new Adapter()
+    const host = new FakeHost()
+    const mcp = fakeMcp()
+    new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, undefined, mcp.server).registerIpcHandlers()
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: '/tmp' })
+    for (const toolId of ['toolu_1', 'toolu_2'])
+      adapter.onEvent({
+        type: 'tool.started',
+        threadId: 'child1',
+        toolId,
+        toolName: 'mcp__switchboard__report_to_hub',
+        input: {},
+      })
+    const report = mcp.opened.get('child1')!.tools.find((t) => t.name === 'report_to_hub')!
+    hubFlag.wakes.length = 0
+    await report.call({ status: 'done', summary: 'First.' })
+    await report.call({ status: 'done', summary: 'Second.' })
+    expect(hubFlag.wakes.map((w) => (w.pointer as { toolCallId?: string }).toolCallId)).toEqual(['toolu_1', 'toolu_2'])
+  })
+
+  it('does not count the compaction notice as output of the agent on a wake turn', async () => {
+    const adapter = new Adapter()
+    const host = new FakeHost()
+    const registry = new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, undefined, fakeMcp().server)
+    registry.registerIpcHandlers()
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'parent1', provider: 'claude', cwd: '/tmp' })
+    const activity = vi.spyOn(registry.hubWakes, 'onActivity')
+    adapter.onEvent({
+      type: 'content',
+      threadId: 'parent1',
+      messageId: compactingNoticeId(1),
+      text: COMPACTING_NOTICE,
+      streamKind: 'reasoning',
+    })
+    expect(activity).not.toHaveBeenCalled()
+    adapter.onEvent({ type: 'content', threadId: 'parent1', messageId: 'm1', text: 'On it.', streamKind: 'assistant' })
+    expect(activity).toHaveBeenCalledWith('parent1')
   })
 })
 
