@@ -118,6 +118,36 @@ describe('Claude approval reason', () => {
     await adapter.stopSession('t1')
   })
 
+  it('opens a card in accept edits for an edit tool a safety check stopped', async () => {
+    const { adapter, onEvent } = await startTurn('accept-edits')
+    void captured!.canUseTool(
+      'Edit',
+      { file_path: '/tmp/.git/config' },
+      { ...baseOptions, decisionReason: 'Edits to .git need approval.', decisionReasonType: 'safetyCheck' },
+    )
+    await vi.waitFor(() => expect(openedRequest(onEvent)).toBeDefined())
+    expect(openedRequest(onEvent).reason).toBe('Edits to .git need approval.')
+    await adapter.stopSession('t1')
+  })
+
+  it('keeps plan mode read-only allows without a card', async () => {
+    const { adapter, onEvent } = await startTurn('plan')
+    const safety = await captured!.canUseTool(
+      'Read',
+      { file_path: '/etc/hosts' },
+      { ...baseOptions, decisionReason: 'Outside the project.', decisionReasonType: 'safetyCheck' },
+    )
+    const rule = await captured!.canUseTool(
+      'WebFetch',
+      { url: 'https://example.com' },
+      { ...baseOptions, matchedAskRule: { source: 'userSettings', toolName: 'WebFetch' } },
+    )
+    expect(safety.behavior).toBe('allow')
+    expect(rule.behavior).toBe('allow')
+    expect(openedRequest(onEvent)).toBeUndefined()
+    await adapter.stopSession('t1')
+  })
+
   it('still allows a plain full access ask without a card', async () => {
     const { adapter, onEvent } = await startTurn('full-access')
     const decision = await captured!.canUseTool(

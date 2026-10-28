@@ -1111,9 +1111,12 @@ export class ClaudeAdapter implements ProviderAdapter {
         return { behavior: 'deny', message: redirect.message } as PermissionResult
       }
 
-      // In full access the SDK asks only when a safety check or the user's
-      // ask rule stopped the action. Those asks get a card, not an allow.
-      const forcedAsk = Boolean(options.matchedAskRule) || options.decisionReasonType === 'safetyCheck'
+      // In full access, and for an edit tool in accept-edits, an ask that a
+      // safety check or the user's ask rule forced gets a card, not an allow.
+      // Plan keeps its read-only allows; sandbox and auto prompt anyway.
+      const forcedAsk =
+        (currentMode === 'full-access' || currentMode === 'accept-edits') &&
+        (Boolean(options.matchedAskRule) || options.decisionReasonType === 'safetyCheck')
       if (policy === 'allow' && !forcedAsk) {
         return { behavior: 'allow', updatedInput: toolInput } as PermissionResult
       }
