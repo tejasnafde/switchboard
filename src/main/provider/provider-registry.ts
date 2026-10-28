@@ -109,6 +109,7 @@ import { queuedTurnComposerText } from '@shared/queued-turns'
 import { echoMessageId, isRuntimeMode, REQUEST_EXPIRED, SESSION_START_STOPPED } from '@shared/provider-events'
 import { isReasoningEffort } from '@shared/provider-option-memory'
 import {
+  canSteer,
   promoteUnavailableReason,
   peerDelivery,
   startsOwnProviderTurn,
@@ -252,6 +253,9 @@ import { turnPreviewLine } from '@shared/turn-preview'
 import { reapOrphanedClaudeChildrenOnce } from './claude-orphans'
 
 const log = createLogger('provider:registry')
+
+/** What the agent is told when the user answers an approval card by sending a message. */
+export const SEND_DECLINES_APPROVAL_REASON = 'The user sent a new message instead of answering this request.'
 
 /** A child's events that can change its shown state, so its parent's view is read again. */
 const HUB_VIEW_EVENTS: ReadonlySet<RuntimeEvent['type']> = new Set([
@@ -1433,6 +1437,33 @@ export class ProviderRegistry implements PeerToolHost {
       if (event.type === 'plan.proposed') byKey.delete(key)
     }
     if (byKey.size === 0) this.pendingRequests.delete(threadId)
+  }
+
+  /**
+   * A message the user sends while an approval card waits answers the card:
+   * each open approval of the chat is denied with a reason, so the turn it
+   * blocked goes on and takes the message as a steer (or, on an agent that
+   * cannot steer, ends, and the queued message starts). Questions and plans are left alone, and so are the
+   * broker's cards, which never hold a turn. A deny that fails refuses the send.
+   */
+  private async declinePendingApprovals(adapter: ProviderAdapter, threadId: string): Promise<void> {
+    const open = new Set<string>()
+    for (const id of [threadId, resolveRootThreadId(threadId)]) {
+      for (const event of this.pendingRequests.get(id)?.values() ?? []) {
+        if (event.type === 'request.opened') open.add(event.requestId)
+      }
+    }
+    for (const requestId of open) {
+      log.info(`request ${requestId} on ${threadId} declined by a user message`)
+      try {
+        await adapter.respondToRequest(threadId, requestId, 'deny', SEND_DECLINES_APPROVAL_REASON)
+      } catch (error) {
+        log.warn(`could not decline request ${requestId} on ${threadId}; the message is not sent`, error)
+        throw new TurnNotAcceptedError('The waiting approval could not be declined, so the message was not sent.', {
+          cause: error,
+        })
+      }
+    }
   }
 
   /**
@@ -3007,10 +3038,10 @@ export class ProviderRegistry implements PeerToolHost {
   private submitClientUserTurn(input: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> {
     if (typeof input?.threadId === 'string' && this.hubStarter.isOpenChild(input.threadId))
       return Promise.resolve({ ...rejectedAtomicTurn(CHILD_READ_ONLY_TEXT), code: CHILD_READ_ONLY_CODE })
-    if (typeof input?.providerText !== 'string') return this.submitAtomicUserTurn(input)
+    if (typeof input?.providerText !== 'string') return this.submitAtomicUserTurn(input, null, true)
     const providerText = stripSenderLine(input.providerText)
     const turn = providerText === input.providerText ? input : { ...input, providerText }
-    return this.submitAtomicUserTurn(turn, senderLineForTurn(providerText, this.threadCwd(input.threadId)))
+    return this.submitAtomicUserTurn(turn, senderLineForTurn(providerText, this.threadCwd(input.threadId)), true)
   }
 
   private threadCwd(threadId: string): string | undefined {
@@ -3044,6 +3075,7 @@ export class ProviderRegistry implements PeerToolHost {
   private async submitAtomicUserTurn(
     input: UserTurnSubmissionV1,
     senderLine: string | null = null,
+    declineApprovals = false,
   ): Promise<UserTurnSubmissionResult> {
     const threadId = input.threadId
     if (this.switchingSessions.has(threadId)) {
@@ -3133,6 +3165,11 @@ export class ProviderRegistry implements PeerToolHost {
         },
         finalize: (turn) => this.withPendingHandoff(threadId, adapter, turn),
         dispatch: async (turn) => {
+          // Here, past every check that can still refuse the turn, so an agent
+          // is never told of a message that then does not arrive. A message
+          // queued on purpose where a steer was possible waits for the card.
+          if (declineApprovals && !(input.delivery === 'queue' && canSteer(adapter.provider)))
+            await this.declinePendingApprovals(adapter, threadId)
           // A queued message becomes a turn of its own once the running one
           // ends, so it counts; a Codex steer joins the running turn and does not.
           const startsNewProviderTurn = startsOwnProviderTurn(
@@ -4120,6 +4157,7 @@ export class ProviderRegistry implements PeerToolHost {
             } catch (error) {
               throw new TurnNotAcceptedError('turn preparation failed before provider dispatch', { cause: error })
             }
+            await this.declinePendingApprovals(adapter, threadId)
 
             const startsNewProviderTurn = startsOwnProviderTurn(
               adapter.provider,

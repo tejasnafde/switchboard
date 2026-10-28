@@ -1,0 +1,65 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "send-declines-approval",
+  "summary": "A message the user sends while an approval card waits denies the card with a reason the agent can read, then steers into the running turn (or queues on an agent that cannot steer). A deny that fails refuses the send. The backend does it on the user send path, so every client gets it.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/provider-registry-send-declines-approval.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/api.ts",
+        "tests/unit/mobile-api-turn-compat.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/OutboxRemoteSender.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/outbox/OutboxRemoteSenderTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/types.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "tests/unit/provider-registry-send-declines-approval.test.ts",
+        "tests/unit/provider-registry-pending-requests.test.ts",
+        "tests/unit/claude-adapter-switchboard-mcp.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored or migrated. Open approvals live only in the registry's in-memory record and the adapters' pending maps; the deny closes them through the existing request.closed event."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/provider-registry-send-declines-approval.test.ts drives the registry with SUBMIT_USER_TURN and the legacy SEND_TURN: the open approval is denied with the reason before the message is steered (Claude, Codex) or queued (OpenCode); every open card of the chat is denied; a failed deny rejects the send and sends nothing; an open question is left alone; a managed turn (not typed by the user) does not answer a card; a turn that the durable store refuses to dispatch, or whose checkpoint fails, leaves the card open; a card stored under the root id is denied when the send names the rotated session id; a message queued on purpose on an agent that can steer leaves the card open.",
+      "tests/unit/claude-adapter-switchboard-mcp.test.ts checks that the Claude adapter returns the deny reason as the canUseTool message, and keeps 'User denied permission' without one.",
+      "npm run typecheck and the full vitest suite."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live agent run: the deny-then-steer was not exercised against a real Claude, Codex or OpenCode turn, and not on a packaged build from existing user data.",
+      "Codex and ACP answers have no reason field, so those agents get a plain decline; the steered or queued message that follows is what redirects them.",
+      "The phones were not run. They send through the same backend path and update the card from request.closed, but the 'Send a message to decline and redirect' placeholder is desktop only.",
+      "Known limit, deferred: a phone outbox can deliver a message late, after a reconnect. That send then denies a card that opened after the message was written. The message carries no record of which cards the user saw, so the backend cannot tell them apart."
+    ]
+  }
+}

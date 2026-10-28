@@ -205,31 +205,23 @@ describe('ProviderRegistry pending-request recovery', () => {
     expect(await getPending('t1')).toEqual([])
   })
 
-  it('an open approval survives a queued or steered send while the turn is still running', async () => {
+  it('an open question survives a queued or steered send while the turn is still running', async () => {
     // The turnDepth-reset code path that clears a resolved plan also runs
     // for a Codex steer and for a delivery: 'queue' send, both of which
     // reach it while an earlier turn on this thread is still outstanding -
-    // and that earlier turn can still be blocked on an open approval or
-    // question. Only the plan may be cleared there; the approval must keep
-    // waiting for its own request.closed.
+    // and that earlier turn can still be blocked on an open question. Only
+    // the plan may be cleared there; the question must keep waiting for its
+    // own question.answered. (An open approval is denied by the send, see
+    // provider-registry-send-declines-approval.test.ts.)
     const { adapter, host, getPending } = await setup()
-    adapter.emit('t1', {
-      type: 'request.opened',
-      threadId: 't1',
-      requestId: 'r1',
-      requestType: 'tool',
-      toolName: 'Write',
-      detail: 'x',
-    })
+    adapter.emit('t1', { type: 'question.asked', threadId: 't1', requestId: 'q1', questions: [] })
     adapter.emit('t1', { type: 'plan.proposed', threadId: 't1', planId: 'p1', planMarkdown: '# Plan' })
     // First send starts a turn that never completes (RecordingAdapter.sendTurn
     // is a no-op), so the thread stays mid-turn for the second send below.
     await host.invoke(ProviderChannels.SEND_TURN, 't1', 'first message')
     // A second send while mid-turn - a steer on the legacy channel.
     await host.invoke(ProviderChannels.SEND_TURN, 't1', 'steer message')
-    expect(await getPending('t1')).toEqual([
-      { type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'tool', toolName: 'Write', detail: 'x' },
-    ])
+    expect(await getPending('t1')).toEqual([{ type: 'question.asked', threadId: 't1', requestId: 'q1', questions: [] }])
   })
 
   it('clears every open card when the provider reports it died', async () => {
