@@ -6,10 +6,7 @@
   "surfaces": {
     "desktop": {
       "status": "implemented",
-      "evidence": [
-        "src/renderer/services/attachment-intake.ts",
-        "src/renderer/components/chat/ChatInput.tsx"
-      ]
+      "evidence": ["src/renderer/services/attachment-intake.ts", "src/renderer/components/chat/ChatInput.tsx"]
     },
     "reactNativeIos": {
       "status": "implemented",
@@ -32,9 +29,7 @@
       "status": "staged",
       "flag": "attachment_upload_v1",
       "followUpRelease": "The Android composer gains file attach, refusals, the large-paste chip and the GIF size check; until then it sends images only, as before",
-      "evidence": [
-        "src/shared/attachments.ts"
-      ]
+      "evidence": ["src/shared/attachments.ts"]
     },
     "sharedBackendApi": {
       "status": "implemented",
@@ -56,9 +51,7 @@
     },
     "updateRelease": {
       "status": "implemented",
-      "evidence": [
-        "src/shared/ws-protocol.ts"
-      ]
+      "evidence": ["src/shared/ws-protocol.ts"]
     }
   },
   "verification": {
