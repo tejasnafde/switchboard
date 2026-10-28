@@ -47,6 +47,10 @@ jest.mock('expo-image-picker', () => ({
   launchImageLibraryAsync: jest.fn(async () => ({ canceled: true, assets: [] })),
 }))
 
+jest.mock('expo-document-picker', () => ({
+  getDocumentAsync: jest.fn(async () => ({ canceled: true, assets: null })),
+}))
+
 jest.mock('expo-constants', () => ({
   __esModule: true,
   default: { expoConfig: { extra: { eas: { projectId: 'test-project' } } } },
