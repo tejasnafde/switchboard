@@ -3,6 +3,8 @@ interface ChatIdentityInput {
   machineName?: string
   projectPath?: string
   title: string
+  /** An open child's parent, shown as the crumb before the title. */
+  parentTitle?: string
   worktreeBranch?: string | null
 }
 
@@ -19,6 +21,7 @@ export function chatIdentity(input: ChatIdentityInput): ChatIdentity {
   const pathParts = input.projectPath?.split('/').filter(Boolean) ?? []
   const folder = pathParts[pathParts.length - 1]
   if (folder) breadcrumb.push(folder)
+  if (input.parentTitle) breadcrumb.push(input.parentTitle)
   breadcrumb.push(input.title)
   return { breadcrumb, branch: input.worktreeBranch ?? null }
 }

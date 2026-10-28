@@ -1,0 +1,54 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "phone-file-attachments",
+  "summary": "Phones attach any file, as the desktop composer does. The phone uploads the bytes over app:upload-attachment ({ name, data } in base64, 10 MB at most so one message fits the OkHttp 16 MiB send queue and the IAP 32 MiB line); the backend saves them under <data dir>/attachments/<uuid>/<name> and answers the path. The turn is the desktop's shape (attachmentTurn): the provider text ends with one [Attached file \"x\" is saved at: /path] line per file, the display body with a [[pill:id]] token drawn as a file chip. A backend without attachment_upload_v1 takes images only. The backend image shrink also turns a JPEG upright from its EXIF orientation before it drops the EXIF, and the headless server prunes copies older than 30 days at start.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": ["src/renderer/services/attachment-intake.ts", "src/renderer/components/chat/ChatInput.tsx"]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "attachment_upload_v1",
+      "followUpRelease": "The Expo composer gains file attach, refusals and the large-paste chip; until then it sends images only, as before",
+      "evidence": ["src/shared/attachments.ts"]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "attachment_upload_v1",
+      "followUpRelease": "The Android composer gains file attach, refusals, the large-paste chip and the GIF size check; until then it sends images only, as before",
+      "evidence": ["src/shared/attachments.ts"]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/attachments.ts",
+        "src/shared/ipc-channels.ts",
+        "src/shared/ws-protocol.ts",
+        "src/main/attachments.ts",
+        "src/main/ipc/app.ts",
+        "src/main/provider/image-limits.ts",
+        "src/server/index.ts",
+        "tests/unit/main-attachments.test.ts",
+        "tests/unit/provider-image-limits.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "An uploaded file is saved in the same attachments folder as a desktop attachment, and a sent one is an ordinary file pill in pills_meta. No stored shape changes."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["src/shared/ws-protocol.ts"]
+    }
+  },
+  "verification": {
+    "automated": [
+      "vitest: tests/unit/main-attachments.test.ts (upload saves base64 bytes, refuses over 10 MB before decoding, refuses a source path; attachmentTurn lines, tokens and pills; pasted-text names).",
+      "vitest: tests/unit/provider-image-limits.test.ts (EXIF orientation 6 and 8, big- and little-endian, come out upright after the shrink)."
+    ],
+    "hardware": [],
+    "notExercised": ["An upload from a real phone over the LAN and over the IAP tunnel."]
+  }
+}

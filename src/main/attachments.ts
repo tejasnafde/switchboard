@@ -9,7 +9,7 @@ import { randomUUID } from 'crypto'
 import { readFileSync, statSync } from 'fs'
 import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'fs/promises'
 import { basename, join, relative, isAbsolute } from 'path'
-import { MAX_ATTACHMENT_BYTES, parseAttachmentLines } from '@shared/attachments'
+import { MAX_ATTACHMENT_BYTES, MAX_UPLOAD_ATTACHMENT_BYTES, parseAttachmentLines } from '@shared/attachments'
 import { createMainLogger } from './logger'
 import { userDataDir } from './runtime'
 
@@ -58,6 +58,15 @@ export async function saveAttachment(input: {
   else await writeFile(path, input.bytes ?? new Uint8Array())
   const pages = path.toLowerCase().endsWith('.pdf') ? pdfPageCount(await readFile(path)) : undefined
   return { path, size, ...(pages ? { pages } : {}) }
+}
+
+/** Save a file a phone sent as base64. Only bytes: a phone never names a path on this machine. */
+export async function uploadAttachment(input: { name: string; data: string }): Promise<SavedAttachment> {
+  if (typeof input?.name !== 'string' || typeof input.data !== 'string') throw new Error('Invalid attachment')
+  // base64 is 4 characters for every 3 bytes; check before decoding.
+  if ((input.data.length * 3) / 4 > MAX_UPLOAD_ATTACHMENT_BYTES + 2)
+    throw new Error(`${input.name} is over the ${MAX_UPLOAD_ATTACHMENT_BYTES / (1024 * 1024)} MB upload limit`)
+  return saveAttachment({ name: input.name, bytes: Buffer.from(input.data, 'base64') })
 }
 
 /** Number of entries directly inside a dropped folder, or null when it is not a readable folder. */

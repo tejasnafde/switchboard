@@ -29,4 +29,10 @@ describe('chatIdentity', () => {
       branch: null,
     })
   })
+
+  it("puts an open child's parent between the project and the title", () => {
+    expect(
+      chatIdentity({ projectPath: '/p/acme', parentTitle: 'Ship billing v2', title: 'Webhook retries' }).breadcrumb,
+    ).toEqual(['acme', 'Ship billing v2', 'Webhook retries'])
+  })
 })

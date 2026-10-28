@@ -59,6 +59,8 @@ export const AppChannels = {
   RELAUNCH: 'app:relaunch',
   /** Desktop only: copy a composer attachment into `<userData>/attachments` (`main/attachments.ts`). */
   SAVE_ATTACHMENT: 'app:save-attachment',
+  /** Phones: save uploaded bytes (`{ name, data }`, base64) as a composer attachment (`attachment_upload_v1`). */
+  UPLOAD_ATTACHMENT: 'app:upload-attachment',
   /** Desktop only: entries in a folder dropped on the composer, or null. */
   FOLDER_ENTRY_COUNT: 'app:folder-entry-count',
   /** Desktop only: HEIC/HEIF bytes to JPEG bytes (`main/heic.ts`). */

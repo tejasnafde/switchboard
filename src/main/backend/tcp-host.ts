@@ -41,7 +41,7 @@ const log = createLogger('backend:tcp-host')
  * base64 inflates them by a third. Going over destroys the connection rather
  * than rejecting the frame, so it must sit above any legitimate payload.
  */
-const MAX_LINE_BYTES = 32 * 1024 * 1024
+export const MAX_LINE_BYTES = 32 * 1024 * 1024
 
 function tokenMatches(expected: string, presented: unknown): boolean {
   if (typeof presented !== 'string') return false
