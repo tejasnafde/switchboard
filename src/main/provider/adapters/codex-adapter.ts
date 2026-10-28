@@ -679,11 +679,11 @@ export class CodexAdapter implements ProviderAdapter {
     return this.launch(opts, onEvent)
   }
 
-  /** `knownThreadId` skips the lookup: a restart already knows its thread. */
+  /** A defined `knownThreadId` (null: none) skips the lookup: a restart already did it. */
   private async launch(
     opts: SessionStartOpts,
     onEvent: (event: RuntimeEvent) => void,
-    knownThreadId?: string,
+    knownThreadId?: string | null,
   ): Promise<ProviderSession> {
     const executable = codexExecutable.refresh()
     if (!executable) {
@@ -701,7 +701,7 @@ export class CodexAdapter implements ProviderAdapter {
       reasoningEffort: opts.reasoningEffort,
       instanceId: opts.instanceId,
     }
-    const resumeThreadId = knownThreadId ?? (await this.resolveResumeThreadId(opts))
+    const resumeThreadId = knownThreadId === undefined ? await this.resolveResumeThreadId(opts) : knownThreadId
     if (resumeThreadId) session.sessionId = resumeThreadId
 
     const active: ActiveSession = {
@@ -893,15 +893,16 @@ export class CodexAdapter implements ProviderAdapter {
    * start rejects that send and leaves the dead session for the next one.
    */
   private restartAppServer(threadId: string, dead: ActiveSession): Promise<ActiveSession> {
-    const pending = this.restarts.get(threadId)
-    if (pending) return pending
-    const restart = (async () => {
+    // Started on the next microtask, so the map holds it before the body runs.
+    const restart = Promise.resolve().then(async () => {
       log.warn('codex app-server is gone, starting a new one for this send', {
         threadId,
         codexThreadId: dead.threadId,
       })
       const { session } = dead
       try {
+        const resumeThreadId = dead.threadId ?? (await this.resolveResumeThreadId(dead.startOpts))
+        if (!this.restarts.has(threadId)) throw new Error(`Session ${threadId} not found or not connected`)
         await this.launch(
           {
             ...dead.startOpts,
@@ -911,10 +912,12 @@ export class CodexAdapter implements ProviderAdapter {
             reasoningEffort: session.reasoningEffort,
           },
           dead.onEvent,
-          dead.threadId ?? undefined,
+          resumeThreadId,
         )
         const next = this.sessions.get(threadId)!
         if (dead.needsVisibleHistory) next.needsVisibleHistory = true
+        next.skills ??= dead.skills
+        next.models ??= dead.models
         return next
       } catch (err) {
         // Not after stopSession, which drops the pending restart.
@@ -925,7 +928,7 @@ export class CodexAdapter implements ProviderAdapter {
       } finally {
         this.restarts.delete(threadId)
       }
-    })()
+    })
     this.restarts.set(threadId, restart)
     return restart
   }
@@ -973,7 +976,9 @@ export class CodexAdapter implements ProviderAdapter {
     /** Set only by drainQueued, which owns the next drain step itself. */
     fromQueue: boolean,
   ): Promise<void> {
-    let active = this.sessions.get(threadId)
+    // A send during a restart waits for its initialize and thread/resume.
+    const restarting = this.restarts.get(threadId)
+    let active = restarting ? await restarting : this.sessions.get(threadId)
     if (active && !active.child) active = await this.restartAppServer(threadId, active)
     if (!active?.child) throw new Error(`Session ${threadId} not found or not connected`)
 
