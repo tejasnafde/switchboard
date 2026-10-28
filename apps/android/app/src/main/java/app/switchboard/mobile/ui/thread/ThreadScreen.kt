@@ -2400,7 +2400,7 @@ private fun ApprovalRow(
         } else {
             Text(item.toolName, color = Accent, style = MaterialTheme.typography.titleSmall)
         }
-        item.reason?.let { Text("Reason: $it", style = MaterialTheme.typography.bodyMedium) }
+        item.reason?.let { Text("Reason: $it", style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis) }
         if (actions is ApprovalActions.HostWrite) {
             HostWritePreviewBlock(actions.preview, expanded) { expanded = !expanded }
         } else {
