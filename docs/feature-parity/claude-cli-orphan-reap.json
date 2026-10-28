@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "claude-cli-orphan-reap",
-  "summary": "A Claude Code CLI keeps running its current turn after the backend that started it dies (desktop main process crash, headless server restart). Each backend now records the CLIs it runs (pid, start time and a sha256 of the command line, mode 0600) in a ledger under its data folder. On its next start it stops the CLIs, with the processes they started, of every ledger whose backend is gone, and every session start waits until they have exited. A process is known by its pid and start time, so a reused pid is never stopped.",
+  "summary": "A Claude Code CLI keeps running its current turn after the backend that started it dies (desktop main process crash, headless server restart). Each backend now records the CLIs it runs (pid, start time and a sha256 of the command line, mode 0600) in a ledger under its data folder. On its next start it stops the CLIs, with the processes they started, of every ledger whose backend is gone, and every session start waits until they have exited. A process is known by its pid and start time, so a reused pid is never stopped. Only the process tree of each CLI is stopped: a tool that detached itself is not found. Windows does not run it.",
   "surfaces": {
     "desktop": {
       "status": "implemented",

@@ -99,7 +99,7 @@ describe.skipIf(process.platform === 'win32')('claude orphans', () => {
     await killBackend(backend)
 
     expect(await reapOrphanedClaudeChildren(dir, GRACE_MS)).toBe(1)
-    expect(await waitFor(() => !alive(cli), 1000)).toBe(true)
+    expect(alive(cli)).toBe(false)
   })
 
   it('leaves the CLI of a backend that is still running', async () => {

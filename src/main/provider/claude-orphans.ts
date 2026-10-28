@@ -25,6 +25,7 @@ const execFileAsync = promisify(execFile)
 const CLI_MARK = '--input-format stream-json'
 const KILL_GRACE_MS = 3_000
 const POLL_MS = 100
+const PS_TIMEOUT_MS = 10_000
 const PS_ARGS = ['-axww', '-o', 'pid=,ppid=,lstart=,command=']
 
 export interface ProcessRow {
@@ -68,6 +69,7 @@ export function parsePs(out: string): ProcessRow[] {
 async function listProcesses(): Promise<ProcessRow[]> {
   const { stdout } = await execFileAsync('ps', PS_ARGS, {
     maxBuffer: 16 * 1024 * 1024,
+    timeout: PS_TIMEOUT_MS,
     env: { ...process.env, LC_ALL: 'C' },
   })
   return parsePs(stdout)
@@ -127,13 +129,16 @@ export async function reapOrphanedClaudeChildren(dir: string, graceMs = KILL_GRA
   try {
     names = readdirSync(dir)
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('reading claude CLI ledgers failed', err)
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') log.debug('no claude CLI ledgers yet')
+    else log.warn('reading claude CLI ledgers failed', err)
     return 0
   }
   if (names.length === 0) return 0
   const rows = await listProcesses()
 
   const orphaned: Ledger[] = []
+  // Kept until their CLIs are gone, so a backend that dies mid-reap leaves them for the next one.
+  const orphanedFiles: string[] = []
   for (const name of names) {
     const file = join(dir, name)
     if (name.endsWith('.json.tmp')) {
@@ -145,10 +150,13 @@ export async function reapOrphanedClaudeChildren(dir: string, graceMs = KILL_GRA
     if (!name.endsWith('.json')) continue
     try {
       const ledger = JSON.parse(readFileSync(file, 'utf8')) as Ledger
+      if (!Array.isArray(ledger.children)) throw new Error('no children list')
       const ownerLive =
         ledger.ownerPid !== process.pid && running(rows, { pid: ledger.ownerPid, start: ledger.ownerStart })
       if (ownerLive) continue
       orphaned.push(ledger)
+      orphanedFiles.push(file)
+      continue
     } catch (err) {
       log.warn(`unreadable claude CLI ledger ${name}, dropping it`, err)
     }
@@ -171,20 +179,24 @@ export async function reapOrphanedClaudeChildren(dir: string, graceMs = KILL_GRA
       reaped++
     }
   }
-  if (targets.length === 0) return reaped
-
   for (const id of targets) signal(id.pid, 'SIGTERM')
-  const deadline = Date.now() + graceMs
+  let deadline = Date.now() + graceMs
+  let killed = false
   let left = targets
   while (left.length > 0) {
     await new Promise((resolve) => setTimeout(resolve, POLL_MS))
     const now = await listProcesses()
     left = left.filter((id) => running(now, id))
-    if (left.length > 0 && Date.now() >= deadline) {
-      for (const id of left) signal(id.pid, 'SIGKILL')
+    if (left.length === 0 || Date.now() < deadline) continue
+    if (killed) {
+      log.warn('orphaned claude CLI processes outlived SIGKILL', { pids: left.map((id) => id.pid) })
       break
     }
+    for (const id of left) signal(id.pid, 'SIGKILL')
+    killed = true
+    deadline = Date.now() + graceMs
   }
+  for (const file of orphanedFiles) rmSync(file, { force: true })
   return reaped
 }
 
@@ -206,6 +218,7 @@ function signal(pid: number, sig: NodeJS.Signals): void {
   try {
     process.kill(pid, sig)
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ESRCH') log.warn(`${sig} to ${pid} failed`, err)
+    if ((err as NodeJS.ErrnoException).code === 'ESRCH') log.debug(`${sig} to ${pid}: already gone`)
+    else log.warn(`${sig} to ${pid} failed`, err)
   }
 }
