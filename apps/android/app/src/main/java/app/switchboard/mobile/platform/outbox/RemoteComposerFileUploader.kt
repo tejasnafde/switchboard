@@ -54,6 +54,7 @@ class RemoteComposerFileUploader(
                             name = name,
                             path = outcome.value.path,
                             label = ComposerFiles.label(name, pages = outcome.value.pages, lines = lines),
+                            savedAtMs = System.currentTimeMillis(),
                         ),
                     )
                     is RemoteOutcome.Failure -> {

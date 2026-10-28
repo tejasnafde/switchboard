@@ -282,7 +282,13 @@ data class WithdrawnTurn(
 interface ThreadComposerPersistence {
     fun save(draft: ComposerDraft)
 
+    /** A text or mode edit: the stored draft keeps its own attachments. */
+    fun saveText(draft: ComposerDraft) = save(draft)
+
     fun clear(key: ComposerDraftKey): Boolean
+
+    /** A pick or a paste is still on its way into the draft; read at send time. */
+    fun uploading(key: ComposerDraftKey): Boolean = false
 }
 
 private object NoOpThreadComposerPersistence : ThreadComposerPersistence {
@@ -959,7 +965,11 @@ class ThreadSessionCoordinator(
 
     @Synchronized
     fun submit(): ComposerSubmitResult {
-        if (composer.submitting || composer.uploading > 0) return ComposerSubmitResult.Busy
+        // Both: [uploading] goes false as soon as a file lands, while the draft
+        // that carries it reaches [composer] a composition later.
+        if (composer.submitting || composer.uploading > 0 || composerPersistence.uploading(composerKey)) {
+            return ComposerSubmitResult.Busy
+        }
         val text = composer.draft.trim()
         val pill = composer.reviewPill
         if (text.isEmpty() && composer.attachments.isEmpty() && pill == null) return ComposerSubmitResult.Empty
@@ -1982,7 +1992,7 @@ class ThreadSessionCoordinator(
             error = withdrawn.firstNotNullOfOrNull(WithdrawnTurn::attachmentError),
         )
         composerHasUnacknowledgedLocalChanges = true
-        persistComposer()
+        persistComposer(textOnly = false)
     }
 
     private fun submitFailed(message: String): ComposerSubmitResult.Failed {
@@ -2454,16 +2464,16 @@ class ThreadSessionCoordinator(
         if (pickedMode == null) composer = composer.copy(runtimeMode = mode)
     }
 
-    private fun persistComposer() {
-        composerPersistence.save(
-            ComposerDraft(
-                key = composerKey,
-                text = composer.draft,
-                runtimeMode = pickedMode?.wire,
-                attachments = composer.attachments,
-                editingOrigin = composer.editingOrigin,
-            ),
+    /** [textOnly] keeps the stored attachments: [composer] can lag a file the worker just added. */
+    private fun persistComposer(textOnly: Boolean = true) {
+        val draft = ComposerDraft(
+            key = composerKey,
+            text = composer.draft,
+            runtimeMode = pickedMode?.wire,
+            attachments = composer.attachments,
+            editingOrigin = composer.editingOrigin,
         )
+        if (textOnly) composerPersistence.saveText(draft) else composerPersistence.save(draft)
     }
 
     private fun persistSnapshot() {

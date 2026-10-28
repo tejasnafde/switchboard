@@ -88,6 +88,14 @@ class ComposerDraftCoordinator(
         is ComposerDraftStorageResult.Failure -> ComposerDraftMutation.Failure(result.reason)
     }
 
+    /**
+     * Saves a text or mode edit. The attachments stay the stored ones, read
+     * under this lock: the caller's copy can predate a file the worker added.
+     */
+    @Synchronized
+    fun saveText(draft: ComposerDraft): ComposerDraftMutation =
+        save(draft.copy(attachments = mutableDrafts.value[draft.key]?.attachments.orEmpty()))
+
     @Synchronized
     fun addImages(
         key: ComposerDraftKey,

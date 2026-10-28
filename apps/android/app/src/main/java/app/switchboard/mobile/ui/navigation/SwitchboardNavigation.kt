@@ -1116,11 +1116,11 @@ private fun ThreadRouteHost(
             },
             onDraftChange = { text ->
                 localDraft = localDraft.copy(text = text)
-                runtime?.saveComposerDraft(localDraft)
+                runtime?.saveComposerText(localDraft)
             },
             onRuntimeModeChange = { mode ->
                 localDraft = localDraft.copy(runtimeMode = mode.wire)
-                runtime?.saveComposerDraft(localDraft)
+                runtime?.saveComposerText(localDraft)
             },
             onImagesSelected = { sources -> runtime?.addComposerImages(composerKey, sources) },
             onRemoveImage = { attachmentId ->
@@ -1245,8 +1245,12 @@ private fun ConnectedThreadRoute(
             composerPersistence = object : ThreadComposerPersistence {
                 override fun save(draft: ComposerDraft) = runtime.saveComposerDraft(draft)
 
+                override fun saveText(draft: ComposerDraft) = runtime.saveComposerText(draft)
+
                 override fun clear(key: ComposerDraftKey): Boolean =
                     runtime.clearComposerDraftBlocking(key)
+
+                override fun uploading(key: ComposerDraftKey): Boolean = runtime.composerUploading(key)
             },
             reviewPills = runtime.reviewPills,
         )

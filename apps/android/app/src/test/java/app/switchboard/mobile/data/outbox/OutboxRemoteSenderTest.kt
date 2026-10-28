@@ -254,6 +254,29 @@ class OutboxRemoteSenderTest {
     }
 
     @Test
+    fun aFileThatDoesNotDecodeOrWasPrunedIsRefusedBeforeSending() {
+        val rpc = FakeRpc(synchronousOutcome = RpcOutcome.Success(null))
+        val noImages = OutboxImageMaterializer { OutboxImageMaterialization.Success(emptyList()) }
+        val outcomes = mutableListOf<SendOutcome>()
+        val broken = StagedAttachment("not json", ComposerFiles.UPLOADED_FILE_MIME)
+        sender(rpc, materializer = noImages).send(turn(attachments = listOf(broken)), outcomes::add)
+
+        val old = UploadedFile("a.pdf", "/att/a.pdf", "a.pdf", savedAtMs = 10)
+        val staged = StagedAttachment(ComposerFiles.encode(old), ComposerFiles.UPLOADED_FILE_MIME)
+        val late = OutboxClock { 10 + ComposerFiles.SENDABLE_FOR_MS + 1 }
+        sender(rpc, materializer = noImages, clock = late).send(turn(attachments = listOf(staged)), outcomes::add)
+
+        assertEquals(null, rpc.lastChannel)
+        assertEquals(2, outcomes.size)
+        assertTrue(outcomes.all { it is SendOutcome.Permanent })
+
+        // Inside the window it sends.
+        val fresh = OutboxClock { 10 + ComposerFiles.SENDABLE_FOR_MS }
+        sender(rpc, materializer = noImages, clock = fresh).send(turn(attachments = listOf(staged)), outcomes::add)
+        assertEquals("provider:send-turn", rpc.lastChannel)
+    }
+
+    @Test
     fun aReviewPillSurvivesTheOutboxRow() {
         val pill = QueuedReviewPill("review-1", "label", "content \"quoted\"")
         val queued = turn(reviewPill = pill)
@@ -280,10 +303,12 @@ class OutboxRemoteSenderTest {
         materializer: OutboxImageMaterializer = OutboxImageMaterializer {
             OutboxImageMaterialization.Success(listOf(ImageInput("data:image/png;base64,AQID", "image/png")))
         },
+        clock: OutboxClock = OutboxClock { 1 },
     ) = OutboxRemoteSender(
         clients = OutboxClientLookup { SwitchboardRemoteClient(it, rpc) },
         capabilities = availability,
         images = materializer,
+        clock = clock,
     )
 
     private fun turn(

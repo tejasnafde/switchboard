@@ -26,9 +26,11 @@ import app.switchboard.mobile.domain.composer.UploadedFile
 import app.switchboard.mobile.domain.outbox.AttachmentDraft
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.outbox.StagedAttachment
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -38,8 +40,9 @@ class DurableComposerRuntimeUploadTest {
     private val worker = Executors.newSingleThreadExecutor()
     private val outboxStore = FakeOutboxStore()
     private val uploader = DeferredUploader()
+    private val draftStore = MemoryDraftStore()
     private val runtime = DurableComposerRuntime(
-        coordinator = ComposerDraftCoordinator(MemoryDraftStore(), NoImages),
+        coordinator = ComposerDraftCoordinator(draftStore, NoImages),
         outbox = OutboxRuntime(
             store = outboxStore,
             attachmentStager = PassThroughStager,
@@ -79,13 +82,47 @@ class DurableComposerRuntimeUploadTest {
     }
 
     @Test
-    fun `two pastes in flight get different names`() {
+    fun `two pastes in flight get different names and upload one at a time`() {
         runtime.attachPastedText(key, "first", uploader) {}
         runtime.attachPastedText(key, "second", uploader) {}
         drain()
 
-        assertEquals(listOf("pasted-text-1.txt", "pasted-text-2.txt"), uploader.names)
+        assertEquals(listOf("pasted-text-1.txt"), uploader.names)
         assertEquals(listOf("pasted-text-1.txt", "pasted-text-2.txt"), runtime.uploads.value[key])
+
+        uploader.finish(0, "/saved/pasted-text-1.txt")
+        drain()
+        assertEquals(listOf("pasted-text-1.txt", "pasted-text-2.txt"), uploader.names)
+        assertEquals(listOf("pasted-text-2.txt"), runtime.uploads.value[key])
+    }
+
+    @Test
+    fun `send is held from the pick, before the worker reads it`() {
+        val gate = CountDownLatch(1)
+        worker.execute { gate.await() }
+        runtime.addAttachments(key, listOf(ComposerImageSource("content://spec", "application/pdf", "spec.pdf")), uploader)
+
+        assertTrue(runtime.uploading(key))
+        gate.countDown()
+        drain()
+        assertTrue(runtime.uploading(key))
+        uploader.finish(0, "/saved/spec.pdf")
+        drain()
+        assertFalse(runtime.uploading(key))
+    }
+
+    @Test
+    fun `a paste that uploads but cannot be saved returns the reason`() {
+        val reasons = mutableListOf<String>()
+        runtime.attachPastedText(key, "text", uploader) { reasons += it }
+        drain()
+
+        draftStore.failSave = true
+        uploader.finish(0, "/saved/pasted-text-1.txt")
+        drain()
+
+        assertEquals(listOf("disk full"), reasons)
+        assertFalse(runtime.uploading(key))
     }
 
     @Test
@@ -127,8 +164,10 @@ class DurableComposerRuntimeUploadTest {
     }
 
     private class MemoryDraftStore : ComposerDraftStore {
+        var failSave = false
         override fun load() = ComposerDraftLoadResult.Success(emptyList())
-        override fun save(draft: ComposerDraft) = ComposerDraftStorageResult.Success
+        override fun save(draft: ComposerDraft) =
+            if (failSave) ComposerDraftStorageResult.Failure("disk full") else ComposerDraftStorageResult.Success
         override fun delete(key: ComposerDraftKey) = ComposerDraftStorageResult.Success
     }
 

@@ -66,6 +66,9 @@ class ComposerFilesTest {
         val paste = ComposerFiles.largePaste("hello world", "hello $big world")
         assertEquals(big, paste?.inserted?.trim())
         assertEquals("hello world", paste?.kept)
+        // A refused paste goes back where it was typed, not at the end.
+        assertEquals("hello $big world", paste?.restore("hello world"))
+        assertEquals("hi$big ", paste?.restore("hi"))
         // Exactly at the limit stays inline; UTF-8 bytes count, not characters.
         assertNull(ComposerFiles.largePaste("", "x".repeat(ComposerFiles.LARGE_PASTE_BYTES)))
         val wide = "é".repeat(ComposerFiles.LARGE_PASTE_BYTES / 2 + 1)
@@ -83,6 +86,8 @@ class ComposerFilesTest {
         assertEquals(file.label, attachment.displayName)
         assertEquals(file, ComposerFiles.uploaded(attachment.privateUri, attachment.mimeType))
         assertNull(ComposerFiles.uploaded("/files/draft-attachments/x", "image/png"))
+        val dated = file.copy(savedAtMs = 1_700_000_000_000)
+        assertEquals(dated, ComposerFiles.uploaded(ComposerFiles.encode(dated), ComposerFiles.UPLOADED_FILE_MIME))
     }
 
     @Test

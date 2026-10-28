@@ -94,10 +94,16 @@ interface RootNavigationRuntime {
 
     fun saveComposerDraft(draft: ComposerDraft) = Unit
 
+    /** Saves a text or mode edit; the draft keeps its stored attachments. */
+    fun saveComposerText(draft: ComposerDraft) = Unit
+
     /** Picked files: images are staged, other files go to [uploader], or are refused without one. */
     fun addComposerImages(key: ComposerDraftKey, sources: List<ComposerImageSource>, uploader: ComposerFileUploader? = null) = Unit
 
     fun attachPastedText(key: ComposerDraftKey, text: String, uploader: ComposerFileUploader, onFailed: (String) -> Unit) = Unit
+
+    /** A pick or a paste is still on its way into the draft. */
+    fun composerUploading(key: ComposerDraftKey): Boolean = false
 
     fun removeComposerImage(key: ComposerDraftKey, attachmentId: String) = Unit
 

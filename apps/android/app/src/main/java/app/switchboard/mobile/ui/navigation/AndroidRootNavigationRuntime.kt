@@ -141,11 +141,15 @@ class AndroidRootNavigationRuntime(
 
     override fun saveComposerDraft(draft: ComposerDraft) = composer.save(draft)
 
+    override fun saveComposerText(draft: ComposerDraft) = composer.saveText(draft)
+
     override fun addComposerImages(key: ComposerDraftKey, sources: List<ComposerImageSource>, uploader: ComposerFileUploader?) =
         composer.addAttachments(key, sources, uploader)
 
     override fun attachPastedText(key: ComposerDraftKey, text: String, uploader: ComposerFileUploader, onFailed: (String) -> Unit) =
         composer.attachPastedText(key, text, uploader, onFailed)
+
+    override fun composerUploading(key: ComposerDraftKey): Boolean = composer.uploading(key)
 
     override fun removeComposerImage(key: ComposerDraftKey, attachmentId: String) =
         composer.removeImage(key, attachmentId)

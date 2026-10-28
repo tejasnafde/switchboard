@@ -3,6 +3,7 @@ package app.switchboard.mobile.data.outbox
 import app.switchboard.mobile.data.remote.SwitchboardRemoteClient
 import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.composer.FileAttachmentTurn
+import app.switchboard.mobile.domain.composer.UploadedFile
 import app.switchboard.mobile.domain.outbox.DeliveryReadiness
 import app.switchboard.mobile.domain.outbox.ORIGIN_CONFLICT_RECOVERY
 import app.switchboard.mobile.domain.outbox.QueuedTurn
@@ -55,6 +56,7 @@ class OutboxRemoteSender(
     private val clients: OutboxClientLookup,
     private val capabilities: OutboxCapabilityLookup,
     private val images: OutboxImageMaterializer,
+    private val clock: OutboxClock = OutboxClock(System::currentTimeMillis),
 ) : OutboxSender {
     override fun send(turn: QueuedTurn, callback: (SendOutcome) -> Unit) {
         val runtimeMode = when (val wire = turn.runtimeMode) {
@@ -62,6 +64,7 @@ class OutboxRemoteSender(
             else -> RuntimeMode.entries.firstOrNull { it.wire == wire }
                 ?: return callback(SendOutcome.Permanent("Unsupported runtime mode"))
         }
+        turn.fileProblem(clock.nowMs())?.let { return callback(SendOutcome.Permanent(it)) }
         val materialized = when (val result = images.materialize(turn)) {
             is OutboxImageMaterialization.Failure -> {
                 callback(SendOutcome.Permanent(result.reason))
@@ -147,6 +150,23 @@ fun QueuedTurn.fileTurn(providerText: String = text, displayText: String = text)
         files = attachments.mapNotNull { ComposerFiles.uploaded(it.privateUri, it.mimeType) },
         displayText = displayText,
     )
+
+/**
+ * Why the turn's uploaded files cannot send, or null when they can: a row that
+ * does not decode, or a copy the backend has deleted by now. A file saved
+ * before [UploadedFile.savedAtMs] was kept is dated by the turn.
+ */
+fun QueuedTurn.fileProblem(nowMs: Long): String? {
+    for (attachment in attachments) {
+        if (!ComposerFiles.isUploaded(attachment.mimeType)) continue
+        val file = ComposerFiles.uploaded(attachment.privateUri, attachment.mimeType)
+            ?: return "An attached file could not be read. Attach it again."
+        if (nowMs - (file.savedAtMs ?: createdAtMs) > ComposerFiles.SENDABLE_FOR_MS) {
+            return "${file.name} is no longer on the computer: it deletes saved files after 30 days. Attach it again."
+        }
+    }
+    return null
+}
 
 private fun deterministicRejection(message: String): String? {
     if (ORIGIN_CONFLICT_MESSAGE in message) return ORIGIN_CONFLICT_RECOVERY

@@ -136,6 +136,24 @@ class ComposerDraftCoordinatorTest {
         assertFalse(fixture.log.contains("discard:/private/drafts/old-draft"))
     }
 
+    @Test
+    fun `a text save keeps a file added after the caller read the draft`() {
+        val fixture = Fixture()
+        fixture.coordinator.hydrate()
+        val stale = draft(text = "typed")
+        fixture.coordinator.addUploaded(key(), listOf(attachment("uploaded")))
+
+        fixture.coordinator.saveText(stale)
+
+        val saved = fixture.coordinator.drafts.value.getValue(key())
+        assertEquals("typed", saved.text)
+        assertEquals(listOf("uploaded"), saved.attachments.map(ComposerAttachment::id))
+        // A text save never brings back files the store no longer holds.
+        fixture.coordinator.clear(key())
+        fixture.coordinator.saveText(draft(text = "again", attachments = listOf(attachment("sent"))))
+        assertEquals(emptyList<ComposerAttachment>(), fixture.coordinator.drafts.value.getValue(key()).attachments)
+    }
+
     private fun key() = ComposerDraftKey("machine", "thread")
 
     private fun draft(

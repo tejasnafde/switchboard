@@ -23,6 +23,7 @@ import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 class DurableComposerRuntime(
     private val coordinator: ComposerDraftCoordinator,
@@ -39,12 +40,19 @@ class DurableComposerRuntime(
 
     /** Names of the files each draft is still uploading; its send waits until they land. */
     val uploads = mutableUploads.asStateFlow()
+    private val pending = MutableStateFlow<Map<ComposerDraftKey, Int>>(emptyMap())
+
+    // Worker only.
+    private val waitingUploads = ArrayDeque<() -> Unit>()
+    private var uploadRunning = false
 
     fun hydrate() {
         worker.execute { coordinator.hydrate() }
     }
 
     fun save(draft: ComposerDraft) = mutate(draft.key) { coordinator.save(draft) }
+
+    fun saveText(draft: ComposerDraft) = mutate(draft.key) { coordinator.saveText(draft) }
 
     fun addImages(key: ComposerDraftKey, sources: List<ComposerImageSource>) =
         mutate(key) { coordinator.addImages(key, sources) }
@@ -56,25 +64,37 @@ class DurableComposerRuntime(
      * in the composer's error area.
      */
     fun addAttachments(key: ComposerDraftKey, sources: List<ComposerImageSource>, uploader: ComposerFileUploader?) {
+        holdSend(key)
         worker.execute {
-            val intake = ComposerFiles.sort(sources, uploads = uploader != null)
-            val images = if (intake.images.isEmpty()) {
-                ComposerDraftMutation.Success
-            } else {
-                coordinator.addImages(key, intake.images)
-            }
-            val lines = intake.refused + when (images) {
-                ComposerDraftMutation.Success -> emptyList()
-                is ComposerDraftMutation.Failure -> listOf(images.reason)
-                is ComposerDraftMutation.PartlyAdded -> listOf(images.reason)
-            }
-            if (lines.isEmpty()) mutableErrors.value = mutableErrors.value - key else recordError(key, lines.joinToString("\n"))
-            if (uploader != null) intake.files.forEach { source ->
-                trackUpload(key, source.displayName, { done -> uploader.upload(source, done) }) { result ->
-                    addUploaded(key, result)
+            try {
+                val intake = ComposerFiles.sort(sources, uploads = uploader != null)
+                addIntake(key, intake)
+                if (uploader != null) intake.files.forEach { source ->
+                    trackUpload(key, source.displayName, { done -> uploader.upload(source, done) }) { result ->
+                        when (result) {
+                            is ComposerUploadResult.Refused -> appendError(key, result.line)
+                            is ComposerUploadResult.Uploaded -> saveUploaded(key, result)?.let { appendError(key, it) }
+                        }
+                    }
                 }
+            } finally {
+                releaseSend(key)
             }
         }
+    }
+
+    private fun addIntake(key: ComposerDraftKey, intake: ComposerFiles.Intake) {
+        val images = if (intake.images.isEmpty()) {
+            ComposerDraftMutation.Success
+        } else {
+            coordinator.addImages(key, intake.images)
+        }
+        val lines = intake.refused + when (images) {
+            ComposerDraftMutation.Success -> emptyList()
+            is ComposerDraftMutation.Failure -> listOf(images.reason)
+            is ComposerDraftMutation.PartlyAdded -> listOf(images.reason)
+        }
+        if (lines.isEmpty()) mutableErrors.value = mutableErrors.value - key else recordError(key, lines.joinToString("\n"))
     }
 
     /**
@@ -82,33 +102,52 @@ class DurableComposerRuntime(
      * reason when it is not saved, so the caller can put the text back.
      */
     fun attachPastedText(key: ComposerDraftKey, text: String, uploader: ComposerFileUploader, onFailed: (String) -> Unit) {
+        holdSend(key)
         worker.execute {
-            val labels = drafts.value[key]?.attachments.orEmpty().map(ComposerAttachment::displayName)
-            val name = ComposerFiles.nextPastedTextName(labels + uploads.value[key].orEmpty())
-            trackUpload(key, name, { done -> uploader.uploadText(name, text, done) }) { result ->
-                when (result) {
-                    is ComposerUploadResult.Refused -> onFailed(result.line)
-                    is ComposerUploadResult.Uploaded -> addUploaded(key, result)
+            try {
+                val labels = drafts.value[key]?.attachments.orEmpty().map(ComposerAttachment::displayName)
+                val name = ComposerFiles.nextPastedTextName(labels + uploads.value[key].orEmpty())
+                trackUpload(key, name, { done -> uploader.uploadText(name, text, done) }) { result ->
+                    when (result) {
+                        is ComposerUploadResult.Refused -> onFailed(result.line)
+                        is ComposerUploadResult.Uploaded -> saveUploaded(key, result)?.let(onFailed)
+                    }
                 }
+            } finally {
+                releaseSend(key)
             }
         }
     }
 
-    private fun addUploaded(key: ComposerDraftKey, result: ComposerUploadResult) {
-        val line = when (result) {
-            is ComposerUploadResult.Refused -> result.line
-            is ComposerUploadResult.Uploaded -> {
-                val attachment = ComposerFiles.attachment(UUID.randomUUID().toString(), result.file)
-                (coordinator.addUploaded(key, listOf(attachment)) as? ComposerDraftMutation.Failure)?.reason ?: return
-            }
-        }
-        // Keep the refusals of the same pick: each file is one line.
-        recordError(key, listOfNotNull(errors.value[key], line).joinToString("\n"))
+    /**
+     * True while a pick or a paste for [key] is not yet in its draft. It is
+     * set before the worker runs, so a send tapped right after a pick waits.
+     */
+    fun uploading(key: ComposerDraftKey): Boolean =
+        (pending.value[key] ?: 0) > 0 || !uploads.value[key].isNullOrEmpty()
+
+    private fun holdSend(key: ComposerDraftKey) = pending.update { it + (key to (it[key] ?: 0) + 1) }
+
+    private fun releaseSend(key: ComposerDraftKey) = pending.update {
+        val left = (it[key] ?: 1) - 1
+        if (left <= 0) it - key else it + (key to left)
     }
+
+    /** Saves an uploaded file into the draft; the reason when it could not be saved. */
+    private fun saveUploaded(key: ComposerDraftKey, result: ComposerUploadResult.Uploaded): String? {
+        val attachment = ComposerFiles.attachment(UUID.randomUUID().toString(), result.file)
+        return (coordinator.addUploaded(key, listOf(attachment)) as? ComposerDraftMutation.Failure)?.reason
+    }
+
+    /** Keeps the refusals of the same pick: each file is one line. */
+    private fun appendError(key: ComposerDraftKey, line: String) =
+        recordError(key, listOfNotNull(errors.value[key], line).joinToString("\n"))
 
     /**
      * Lists [name] in [uploads] until [handle] has run on the worker, so a send
      * never sees the upload done without its file. A throwing uploader is a refusal.
+     * Uploads run one at a time: each carries up to 10 MiB as base64, and two
+     * queued together can overflow the socket's 16 MiB send buffer.
      */
     private fun trackUpload(
         key: ComposerDraftKey,
@@ -116,19 +155,37 @@ class DurableComposerRuntime(
         upload: ((ComposerUploadResult) -> Unit) -> Unit,
         handle: (ComposerUploadResult) -> Unit,
     ) {
-        mutableUploads.value = mutableUploads.value + (key to uploads.value[key].orEmpty() + name)
+        mutableUploads.update { it + (key to it[key].orEmpty() + name) }
         val done = { result: ComposerUploadResult ->
             worker.execute {
-                handle(result)
-                val left = uploads.value[key].orEmpty() - name
-                mutableUploads.value = if (left.isEmpty()) mutableUploads.value - key else mutableUploads.value + (key to left)
+                try {
+                    handle(result)
+                } finally {
+                    mutableUploads.update {
+                        val left = it[key].orEmpty() - name
+                        if (left.isEmpty()) it - key else it + (key to left)
+                    }
+                    uploadRunning = false
+                    startNextUpload()
+                }
             }
         }
-        try {
-            upload(done)
-        } catch (_: RuntimeException) {
-            done(ComposerUploadResult.Refused(ComposerFiles.refusal(name, "It could not be saved.")))
+        waitingUploads.addLast {
+            try {
+                upload(done)
+            } catch (_: RuntimeException) {
+                done(ComposerUploadResult.Refused(ComposerFiles.refusal(name, "It could not be saved.")))
+            }
         }
+        startNextUpload()
+    }
+
+    /** Worker only. */
+    private fun startNextUpload() {
+        if (uploadRunning) return
+        val next = waitingUploads.removeFirstOrNull() ?: return
+        uploadRunning = true
+        next()
     }
 
     fun removeImage(key: ComposerDraftKey, attachmentId: String) =

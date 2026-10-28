@@ -1,8 +1,10 @@
 package app.switchboard.mobile.domain.composer
 
 import app.switchboard.mobile.protocol.JsonCodec
+import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
+import app.switchboard.mobile.protocol.JsonValue
 import java.text.NumberFormat
 import java.util.Locale
 import java.util.UUID
@@ -12,6 +14,8 @@ data class UploadedFile(
     val name: String,
     val path: String,
     val label: String,
+    /** When the phone got the saved path; null on a file attached before this was kept. */
+    val savedAtMs: Long? = null,
 ) {
     /** Stable for one saved copy, so a retried turn keeps the backend's origin fingerprint. */
     val pillId: String get() = "file-" + UUID.nameUUIDFromBytes(path.toByteArray(Charsets.UTF_8))
@@ -45,6 +49,13 @@ object ComposerFiles {
      * on the backend: its `privateUri` holds [encode]'s JSON, not a phone path.
      */
     const val UPLOADED_FILE_MIME = "application/x-switchboard-uploaded-file"
+
+    /**
+     * The backend deletes saved copies older than 30 days (`KEEP_DAYS` in
+     * `src/main/attachments.ts`). A queued file older than this is refused
+     * before it sends; the day of margin covers clock skew.
+     */
+    const val SENDABLE_FOR_MS = 29L * 24 * 60 * 60 * 1000
 
     private val IMAGE_TYPES = setOf("image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif", "image/heic", "image/heif")
     private val IMAGE_EXTENSIONS = mapOf(
@@ -142,10 +153,17 @@ object ComposerFiles {
         if (start + suffix != previous.length) return null
         val inserted = next.substring(start, next.length - suffix)
         if (inserted.toByteArray(Charsets.UTF_8).size <= LARGE_PASTE_BYTES) return null
-        return LargePaste(inserted = inserted, kept = previous)
+        return LargePaste(inserted = inserted, kept = previous, offset = start)
     }
 
-    data class LargePaste(val inserted: String, val kept: String)
+    /** [offset] is where [inserted] went in [kept]. */
+    data class LargePaste(val inserted: String, val kept: String, val offset: Int) {
+        /** Puts the paste back at its place in [current], or at the end when [current] is now shorter. */
+        fun restore(current: String): String {
+            val at = offset.coerceAtMost(current.length)
+            return current.substring(0, at) + inserted + current.substring(at)
+        }
+    }
 
     fun attachment(id: String, file: UploadedFile): ComposerAttachment = ComposerAttachment(
         id = id,
@@ -156,11 +174,11 @@ object ComposerFiles {
 
     fun encode(file: UploadedFile): String = JsonCodec.encode(
         JsonObject(
-            linkedMapOf(
+            linkedMapOf<String, JsonValue>(
                 "name" to JsonString(file.name),
                 "path" to JsonString(file.path),
                 "label" to JsonString(file.label),
-            ),
+            ).apply { file.savedAtMs?.let { put("savedAtMs", JsonNumber(it.toString())) } },
         ),
     )
 
@@ -171,7 +189,8 @@ object ComposerFiles {
         fun field(key: String) = (values[key] as? JsonString)?.value
         val path = field("path") ?: return null
         val name = field("name") ?: return null
-        return UploadedFile(name = name, path = path, label = field("label") ?: name)
+        val savedAtMs = (values["savedAtMs"] as? JsonNumber)?.source?.toLongOrNull()
+        return UploadedFile(name = name, path = path, label = field("label") ?: name, savedAtMs = savedAtMs)
     }
 
     fun isUploaded(mimeType: String?): Boolean = mimeType == UPLOADED_FILE_MIME

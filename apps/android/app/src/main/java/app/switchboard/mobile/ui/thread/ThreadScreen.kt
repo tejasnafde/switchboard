@@ -1012,7 +1012,7 @@ private fun ThreadComposer(
                             onDraftChange(paste.kept)
                             fold(paste.inserted) { reason ->
                                 pasteError = reason
-                                onDraftChange(currentDraft + paste.inserted)
+                                onDraftChange(paste.restore(currentDraft))
                             }
                         } else {
                             voice.userEdited(text)
