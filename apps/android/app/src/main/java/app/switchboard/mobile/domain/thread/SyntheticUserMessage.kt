@@ -100,6 +100,8 @@ object SyntheticUserMessage {
         Block("<switchboard-approval-result>", "</switchboard-approval-result>"),
         // A resume after a usage limit; the chat shows its own row for it.
         Block("<switchboard-limit-resume>", "</switchboard-limit-resume>"),
+        // Child updates for a parent; the chat shows its own row for them.
+        Block("<switchboard-hub-update>", "</switchboard-hub-update>"),
         // A fork's merge-back; the parent shows its own row for it.
         Block("<switchboard-fork-merge-back>", "</switchboard-fork-merge-back>"),
         // The backend wraps a transcript's compact summary by its isCompactSummary flag.

@@ -27,6 +27,7 @@ import { promisify } from 'node:util'
 import {
   HUB_MAIN_CHECKOUT_WARNING,
   HUB_OPEN_CHILDREN_MAX,
+  HUB_REPORT_LINE,
   grantedMode,
   hubBatchDetail,
   hubBriefTurn,
@@ -563,7 +564,7 @@ export class HubStarter {
         ...(c.instanceId ? { instanceId: c.instanceId } : {}),
         ...(c.model ? { model: c.model } : {}),
       })
-      const brief = depsLine ? `${c.brief}\n\n${depsLine}` : c.brief
+      const brief = [c.brief, depsLine, HUB_REPORT_LINE].filter(Boolean).join('\n\n')
       const result = await this.host.submitTurn({
         version: 1,
         threadId: c.childId,

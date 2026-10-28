@@ -67,17 +67,26 @@ function ChildRow({ parent, child }: { parent: HubChatRef; child: HubChildView }
   )
 }
 
+function deliverHeld(parent: HubChatRef): void {
+  window.api.provider
+    .hubDeliverHeldWakes(parent.id)
+    .catch((err: unknown) => log.warn('delivering held updates failed', err))
+}
+
 export function ChildrenStrip({
   parent,
   items,
   state,
+  heldUpdates,
 }: {
   parent: HubChatRef
   items: HubChildView[]
   state: ParentState | null
+  /** Updates waiting for Deliver (after a Stop, failed deliveries or the hourly cap). */
+  heldUpdates: number
 }) {
   const [showAll, setShowAll] = useState(false)
-  if (items.length === 0) return null
+  if (items.length === 0 && heldUpdates === 0) return null
   const running = items.filter((c) => c.state === 'working').length
   const stoppable = items.filter(canStop)
   const tokens = items.reduce((sum, c) => sum + (c.lastTurn?.usedTokens ?? 0), 0)
@@ -97,6 +106,16 @@ export function ChildrenStrip({
         {stateLabel && <span className="min-w-0 truncate">{stateLabel}</span>}
         <span className="flex-1" />
         {tokens > 0 && <span>{kTokens(tokens)} tokens</span>}
+        {heldUpdates > 0 && (
+          <>
+            <span className="text-[var(--warning)]">
+              {heldUpdates === 1 ? '1 update held' : `${heldUpdates} updates held`}
+            </span>
+            <button type="button" className={linkClass} onClick={() => deliverHeld(parent)}>
+              Deliver
+            </button>
+          </>
+        )}
         {items.length > FOLDED_ROWS && (
           <button type="button" className={linkClass} onClick={() => setShowAll((v) => !v)}>
             {showAll ? 'Show fewer' : `Show all ${items.length}`}

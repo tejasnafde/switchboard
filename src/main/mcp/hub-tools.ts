@@ -1,19 +1,20 @@
 /**
  * The hub tools on the Switchboard MCP server, only while the `hub_children`
  * flag is on (the registry decides when it builds a chat's tool list). A chat
- * that is not an open child gets the parent tools `start_children` and
- * `list_children`; an open child gets `own_dependencies`. Starting is
+ * that is not an open child gets the parent tools `start_children`,
+ * `list_children` and `read_child`; an open child gets `report_to_hub` and
+ * `own_dependencies`. Starting is
  * `HubStarter`'s; this binds it to MCP and gathers what `list_children` reports.
  */
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { HUB_MAX_TASKS_PER_BATCH, parseHubTasks } from '@shared/hub'
+import { HUB_MAX_TASKS_PER_BATCH, HUB_REPORT_STATUSES, parseHubTasks, type HubReportStatus } from '@shared/hub'
 import { RUNTIME_MODES, type RuntimeEvent, type RuntimeMode } from '@shared/provider-events'
-import { getConversationById, getLimitResume, listHubChildren, listPendingHubWakes } from '../db/database'
+import { getConversationById, getLimitResume, lastHubWakes, listHubChildren } from '../db/database'
 import type { ChatResources } from '../hub/hub-measure'
 import type { HubParentContext, HubStarter } from '../hub/hub-start'
 import { createMainLogger } from '../logger'
-import { toolText, type McpTool } from './mcp-session'
+import { toolText, type McpTool, type McpToolResult } from './mcp-session'
 
 const log = createMainLogger('mcp:hub-tools')
 const execFileP = promisify(execFile)
@@ -21,13 +22,16 @@ const execFileP = promisify(execFile)
 export const START_CHILDREN_TOOL = 'start_children'
 export const LIST_CHILDREN_TOOL = 'list_children'
 export const OWN_DEPENDENCIES_TOOL = 'own_dependencies'
+export const READ_CHILD_TOOL = 'read_child'
+export const REPORT_TO_HUB_TOOL = 'report_to_hub'
 
 /** The hub paragraph of the MCP instructions, for a chat that has the parent tools. Kept short: every such chat pays for it. */
 export const HUB_INSTRUCTIONS = [
   'start_children starts child chats: each is an agent on one task, by default in its own worktree and branch.',
   'A child cannot see this chat, so each brief must stand on its own. list_children shows their state; do not poll',
-  'it in a loop. You merge their branches yourself with git. When this chat works in the main checkout, ask the user',
-  'before you merge into a branch checked out there.',
+  'it in a loop. Their reports reach you as one Switchboard update turn while you are idle: a summary per child and',
+  'a read_child line; call read_child only when you need the full report. You merge their branches yourself with git.',
+  'When this chat works in the main checkout, ask the user before you merge into a branch checked out there.',
 ].join(' ')
 
 export interface HubMcpToolContext {
@@ -36,6 +40,8 @@ export interface HubMcpToolContext {
   starter: Pick<HubStarter, 'propose' | 'waitingForSlot' | 'lastTurnOf' | 'diskUseOf'>
   resources(threadId: string): ChatResources | undefined
   publish(event: RuntimeEvent): void
+  /** `read_child`, bound to the calling parent. */
+  read(args: Record<string, unknown>): Promise<McpToolResult>
   gitStats?(cwd: string, base: string): Promise<GitStats | null>
 }
 
@@ -130,7 +136,7 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         const parent = ctx.parent()
         const children = listHubChildren(parent.parentId)
         if (children.length === 0) return toolText('This chat has no children.')
-        const lastWake = new Map(listPendingHubWakes(parent.parentId).map((w) => [w.childId, w]))
+        const lastWake = lastHubWakes(parent.parentId)
         const rows = await Promise.all(
           children.map(async (c) => {
             const worktree = getConversationById(c.childId)?.worktree_path ?? null
@@ -181,6 +187,30 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         )
       },
     },
+    {
+      name: READ_CHILD_TOOL,
+      description: [
+        "Read one of this chat's child chats: its messages with ids, its tool calls (a report_to_hub call whole, with",
+        'its full report; other tool input and output shortened) and its own subagents. at: a tool call id or message',
+        'id from an update; the window starts there. offset and limit page (default 20 messages, at most 200);',
+        'nextOffset is where the next page starts. query searches the whole history. Without at or offset you get',
+        'the newest messages. A Codex or ACP child keeps at most 32 KiB of a report; its summary is always whole.',
+      ].join(' '),
+      inputSchema: {
+        type: 'object',
+        properties: {
+          childId: { type: 'string', description: 'The id list_children and the update show.' },
+          at: { type: 'string', description: 'A tool call id or message id from an update.' },
+          offset: { type: 'integer', minimum: 0, description: 'Absolute message index to start at.' },
+          limit: { type: 'integer', minimum: 1, maximum: 200 },
+          query: { type: 'string', description: 'Only messages that hold this text, case-insensitive.' },
+        },
+        required: ['childId'],
+        additionalProperties: false,
+      },
+      annotations: { title: 'Read a child chat', readOnlyHint: true, openWorldHint: false },
+      call: (args) => ctx.read(args),
+    },
   ]
 }
 
@@ -188,11 +218,45 @@ export interface ChildHubMcpToolContext {
   threadId: string
   runtimeMode(): RuntimeMode
   starter: Pick<HubStarter, 'ownDependencies'>
+  /** Stores the report as a wake for the parent; the reply tells the child it went. */
+  report(input: { status: HubReportStatus; summary: string }): Promise<McpToolResult>
 }
 
 /** The tools of an open child. */
 export function buildChildHubMcpTools(ctx: ChildHubMcpToolContext): McpTool[] {
   return [
+    {
+      name: REPORT_TO_HUB_TOOL,
+      description: [
+        'Report to your parent chat. status: done (your work is finished), question (you need its answer) or blocked',
+        '(you cannot go on). summary: a few short lines for your parent: what you did or need, and what is left.',
+        'report: your full report. It stays in your own transcript; your parent reads it with read_child. Your parent',
+        'gets the summary as an update when it is idle; each call is its own update, so call it once per result.',
+      ].join(' '),
+      inputSchema: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', enum: [...HUB_REPORT_STATUSES] },
+          summary: { type: 'string', description: 'A few short lines.' },
+          report: { type: 'string', description: 'Your full report, as long as it needs to be.' },
+        },
+        required: ['status', 'summary'],
+        additionalProperties: false,
+      },
+      annotations: {
+        title: 'Report to the parent chat',
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
+      async call(args) {
+        const status = HUB_REPORT_STATUSES.find((s) => s === args.status)
+        if (!status) return toolText(`status is one of ${HUB_REPORT_STATUSES.join(', ')}.`, true)
+        if (typeof args.summary !== 'string' || !args.summary.trim()) return toolText('Give a summary.', true)
+        if (args.report !== undefined && typeof args.report !== 'string') return toolText('report is text.', true)
+        return ctx.report({ status, summary: args.summary.trim() })
+      },
+    },
     {
       name: OWN_DEPENDENCIES_TOOL,
       description:

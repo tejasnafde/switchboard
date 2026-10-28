@@ -136,6 +136,9 @@ const BLOCKS: readonly Block[] = [
   // A resume after a usage limit (shared/limit-resume.ts): the chat shows its
   // own `[[sb:limit-resume]]` row for it.
   { start: '<switchboard-limit-resume>', end: '</switchboard-limit-resume>' },
+  // Child updates for a parent (shared/hub.ts): the chat shows its own
+  // `[[sb:hub-update]]` row for them, and a user turn carrying them keeps its text.
+  { start: '<switchboard-hub-update>', end: '</switchboard-hub-update>' },
   // A fork's merge-back (shared/merge-back.ts): the parent shows its own
   // delivered row for it, so only what the user typed after it stays a bubble.
   { start: '<switchboard-fork-merge-back>', end: '</switchboard-fork-merge-back>' },

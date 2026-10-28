@@ -417,17 +417,19 @@ export function listPendingHubWakes(parentId: string): HubWakeRow[] {
   const rows = getDb()
     .prepare('SELECT * FROM hub_wakes WHERE parent_id = ? AND delivered_revision IS NULL ORDER BY created_at, id')
     .all(resolveRootThreadId(parentId)) as WakeDbRow[]
-  return rows.map((r) => ({
-    id: r.id,
-    parentId: r.parent_id,
-    childId: r.child_id,
-    kind: r.kind,
-    summary: r.summary,
-    pointer: parseHubPointer(r.pointer_json),
-    createdAt: r.created_at,
-    deliveredRevision: r.delivered_revision,
-  }))
+  return rows.map(toWake)
 }
+
+const toWake = (r: WakeDbRow): HubWakeRow => ({
+  id: r.id,
+  parentId: r.parent_id,
+  childId: r.child_id,
+  kind: r.kind,
+  summary: r.summary,
+  pointer: parseHubPointer(r.pointer_json),
+  createdAt: r.created_at,
+  deliveredRevision: r.delivered_revision,
+})
 
 /** Each child's newest wake, delivered or not, keyed by child id. */
 export function lastHubWakes(parentId: string): Map<string, { kind: HubWakeKind; summary: string }> {
@@ -437,9 +439,11 @@ export function lastHubWakes(parentId: string): Map<string, { kind: HubWakeKind;
   return new Map(rows.map((r) => [r.child_id, { kind: r.kind, summary: r.summary }]))
 }
 
-/** Marks wakes delivered by the parent turn `revision`; a wake already delivered keeps its first revision. */
-export function markHubWakesDelivered(ids: readonly string[], revision: number): number {
-  const db = getDb()
+/**
+ * Marks wakes delivered by the parent turn `revision`; a wake already delivered
+ * keeps its first revision. Pass `db` to join a transaction already open on it.
+ */
+export function markHubWakesDelivered(ids: readonly string[], revision: number, db = getDb()): number {
   const stmt = db.prepare('UPDATE hub_wakes SET delivered_revision = ? WHERE id = ? AND delivered_revision IS NULL')
   return db.transaction(() => ids.reduce((n, id) => n + stmt.run(revision, id).changes, 0))()
 }
@@ -458,4 +462,20 @@ export function listHubChildrenInPhase(phase: HubChildPhase): HubChildRow[] {
     .prepare('SELECT * FROM hub_children WHERE phase = ? ORDER BY created_at, ordinal')
     .all(phase) as ChildDbRow[]
   return rows.map(toChild)
+}
+
+/** Parents with undelivered wakes: the wake scheduler's work at startup. */
+export function listParentsWithPendingHubWakes(): string[] {
+  const rows = getDb()
+    .prepare('SELECT DISTINCT parent_id FROM hub_wakes WHERE delivered_revision IS NULL')
+    .all() as Array<{ parent_id: string }>
+  return rows.map((r) => r.parent_id)
+}
+
+/** A child's newest wake that points into its transcript: where `read_child` starts and what a gone transcript leaves. */
+export function lastHubWakeOf(childId: string): HubWakeRow | null {
+  const r = getDb()
+    .prepare('SELECT * FROM hub_wakes WHERE child_id = ? ORDER BY created_at DESC, id DESC LIMIT 1')
+    .get(resolveRootThreadId(childId)) as WakeDbRow | undefined
+  return r ? toWake(r) : null
 }
