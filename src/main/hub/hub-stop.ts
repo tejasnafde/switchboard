@@ -70,6 +70,12 @@ export class NativeSubagents {
     return { running: this.runningOf(threadId), ...ended }
   }
 
+  /** The session is gone: nothing of it is counted any more. */
+  clear(threadId: string): void {
+    this.running.delete(threadId)
+    this.ended.delete(threadId)
+  }
+
   /** The thread was stopped: its subagents count as failed. */
   stopped(threadId: string): void {
     const set = this.running.get(threadId)
@@ -110,10 +116,6 @@ export class ChildTaskNotes {
     if (this.told.get(childId) !== false) return false
     this.told.set(childId, true)
     return true
-  }
-
-  forget(childId: string): void {
-    this.told.delete(childId)
   }
 }
 
@@ -238,6 +240,11 @@ export class HubIdleReaper {
       } catch (err) {
         log.warn(`could not list the processes of child ${childId}; only its session is stopped`, err)
       }
+    }
+    // A parent message may have started a turn while the tree was read.
+    if (!this.host.idle(threadId) || this.host.subagentsRunning(threadId) > 0) {
+      span.end({ outcome: 'busy', processes: pids.length })
+      return
     }
     try {
       await this.host.stop(childId, threadId)

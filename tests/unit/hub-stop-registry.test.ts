@@ -233,6 +233,18 @@ describe('Stop on one child', () => {
     expect(db.held.size).toBe(0)
   })
 
+  it('stops a child that runs only a background subagent', async () => {
+    const { host, adapter, event, task } = await setup()
+    task('child1')
+    event({ type: 'tool.started', threadId: 'child1', toolId: 'ag1', toolName: 'Agent', input: {} })
+    event({ type: 'tool.completed', threadId: 'child1', toolId: 'ag1', output: 'Async agent launched successfully.' })
+    event({ type: 'turn.completed', threadId: 'child1' })
+    event({ type: 'status', threadId: 'child1', status: 'idle' })
+    expect(await host.invoke(ProviderChannels.INTERRUPT, 'child1')).toEqual({ live: true })
+    expect(adapter.interrupted).toEqual(['child1'])
+    await vi.waitFor(() => expect(db.wakes.map((w) => w.kind)).toEqual(['stopped']))
+  })
+
   it('lets the parent stop its own child with interrupt_child, quietly, and not in plan mode', async () => {
     const { adapter, busy, tool } = await setup()
     const interrupt = tool('parent1', 'interrupt_child')
@@ -279,29 +291,35 @@ describe("Switchboard's wakes for a child", () => {
     expect(db.wakes.map((w) => w.kind)).toEqual(['report'])
   })
 
-  it('writes failed for a turn error and blocked for a full context window', async () => {
-    const { event, task } = await setup()
+  it('writes failed for a turn that ends on an error, blocked for a full context window, none for a usage limit', async () => {
+    const { event, task } = await setup(3)
     task('child1')
     event({ type: 'error', threadId: 'child1', message: 'API error 500\nat line 3' })
+    event({ type: 'turn.completed', threadId: 'child1' })
+    // Adapters send the error before the end that carries the limit.
     task('child2')
+    event({ type: 'error', threadId: 'child2', message: 'Prompt is too long' })
     event({ type: 'turn.completed', threadId: 'child2', limit: { limitClass: 'context_full', resetAt: null } })
-    await vi.waitFor(() => expect(db.wakes).toHaveLength(2))
-    expect(db.wakes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ childId: 'child1', kind: 'failed', summary: 'Failed: API error 500' }),
-        expect.objectContaining({ childId: 'child2', kind: 'blocked' }),
-      ]),
-    )
-  })
-
-  it('writes nothing for a usage limit', async () => {
-    const { event, task } = await setup()
-    task('child1')
+    task('child3')
+    event({ type: 'error', threadId: 'child3', message: 'Usage limit reached' })
     event({
       type: 'turn.completed',
-      threadId: 'child1',
+      threadId: 'child3',
       limit: { limitClass: 'usage_limit', resetAt: Date.now() + 60_000 },
     })
+    await vi.waitFor(() => expect(db.wakes).toHaveLength(2))
+    await settle()
+    expect(db.wakes).toEqual([
+      expect.objectContaining({ childId: 'child1', kind: 'failed', summary: 'Failed: API error 500' }),
+      expect.objectContaining({ childId: 'child2', kind: 'blocked' }),
+    ])
+  })
+
+  it('writes nothing when a session Switchboard stops ends', async () => {
+    const { host, event, task } = await setup()
+    task('child1')
+    await host.invoke(ProviderChannels.STOP_SESSION, 'child1')
+    event({ type: 'status', threadId: 'child1', status: 'error' })
     await settle()
     expect(db.wakes).toEqual([])
   })

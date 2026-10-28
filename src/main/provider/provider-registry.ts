@@ -685,6 +685,8 @@ export class ProviderRegistry implements PeerToolHost {
     } catch (err) {
       span.end({ outcome: 'failed' })
       log.warn(`could not resume reaped child ${childId}`, err)
+      // The next message tries again.
+      this.reapedChildren.set(childId, opts)
       throw err
     }
     return this.liveSessionId(childId) ?? opts.threadId
@@ -702,7 +704,11 @@ export class ProviderRegistry implements PeerToolHost {
     this.closeAgentCards(root)
     const live = this.liveSessionId(root)
     const adapter = live ? this.sessionAdapters.get(live) : undefined
-    const running = !!live && (this.hasOutstandingTurn(live) || this.sessionStatus.get(live) === 'running')
+    const running =
+      !!live &&
+      (this.hasOutstandingTurn(live) ||
+        this.sessionStatus.get(live) === 'running' ||
+        this.hubSubagents.runningOf(live) > 0)
     if (running || by === 'parent') this.hubNotes.tell(root)
     if (live && adapter) {
       if (running) {
@@ -715,7 +721,7 @@ export class ProviderRegistry implements PeerToolHost {
         if (!dropped.ok) log.warn(`could not drop a held message of stopped child ${root}: ${dropped.message}`)
       }
       this.hubSubagents.stopped(live)
-    }
+    } else this.hubStarter.cancelStart(root)
     const parentId = this.hubStarter.parentOfOpenChild(root)
     if (running && by !== 'parent' && parentId) {
       this.childWake(parentId, root, 'stopped', by === 'user' ? 'Stopped by the user.' : 'Stopped with this chat.')
@@ -769,34 +775,40 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   /**
-   * Switchboard's own wakes for a child, once per task: a turn error is
-   * `failed` at once, a full context window `blocked`, and a turn or session
-   * that ends with no report and no subagent running `stopped`. A usage limit
-   * gives none here.
+   * Switchboard's own wakes for a child, once per task, decided where its turn
+   * or session ends: an error on that turn is `failed`, a full context window
+   * `blocked`, and an end with no report and no subagent running `stopped`.
+   * A usage limit gives none here. Adapters send the `error` before the end
+   * that carries the limit, so an error only marks the turn.
    */
   private onChildEvent(event: RuntimeEvent): void {
-    const ended =
-      event.type === 'turn.completed' ||
-      event.type === 'error' ||
-      (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))
-    if (!ended || !this.hubChildrenOn()) return
+    if (event.type === 'error') {
+      this.turnErrors.set(event.threadId, event.message)
+      return
+    }
+    const sessionEnded = event.type === 'status' && (event.status === 'stopped' || event.status === 'error')
+    if (event.type !== 'turn.completed' && !sessionEnded) return
+    const error = this.turnErrors.get(event.threadId)
+    this.turnErrors.delete(event.threadId)
+    // Switchboard's own stop, a profile switch or a quit, not the agent's.
+    if (sessionEnded && (this.stoppingThreads.has(event.threadId) || !this.sessionAdapters.has(event.threadId))) return
+    if (this.switchingSessions.has(event.threadId) || this.stoppingAll || !this.hubChildrenOn()) return
     const childId = resolveRootThreadId(event.threadId)
     const parentId = this.hubStarter.parentOfOpenChild(childId)
     if (!parentId) return
     let wake: { kind: HubWakeKind; summary: string } | null = null
-    if (event.type === 'error') wake = { kind: 'failed', summary: `Failed: ${oneLine(event.message)}` }
+    if (event.type === 'turn.completed' && event.limit)
+      wake =
+        event.limit.limitClass === 'context_full'
+          ? { kind: 'blocked', summary: 'Blocked: its context window is full.' }
+          : null
+    else if (error) wake = { kind: 'failed', summary: `Failed: ${oneLine(error)}` }
     else if (event.type === 'status')
       wake =
         event.status === 'error'
           ? { kind: 'failed', summary: 'Failed: its agent process ended with an error.' }
           : { kind: 'stopped', summary: 'Its session ended without a report.' }
-    else if (event.limit?.limitClass === 'context_full')
-      wake = { kind: 'blocked', summary: 'Blocked: its context window is full.' }
-    else if (
-      !event.limit &&
-      !this.hasOutstandingTurn(event.threadId) &&
-      this.hubSubagents.runningOf(event.threadId) === 0
-    )
+    else if (!this.hasOutstandingTurn(event.threadId) && this.hubSubagents.runningOf(event.threadId) === 0)
       wake = { kind: 'stopped', summary: 'Ended its turn without a report.' }
     if (wake && this.hubNotes.claim(childId)) this.childWake(parentId, childId, wake.kind, wake.summary)
   }
@@ -1040,6 +1052,11 @@ export class ProviderRegistry implements PeerToolHost {
   readonly hubReaper: HubIdleReaper
   /** How to restart each reaped child, by root id, until its parent's next message. */
   private readonly reapedChildren = new Map<string, SessionStartOpts>()
+  /** The last error of each thread's running turn, for its child wake. */
+  private readonly turnErrors = new Map<string, string>()
+  /** Threads Switchboard is stopping: their exit is not the agent's. */
+  private readonly stoppingThreads = new Set<string>()
+  private stoppingAll = false
   private readonly approvalStore: ApprovalCardStore<AgentWritePlan>
   /** Agent messages a link refused only for time, until they are delivered (`shared/peer-held-messages.ts`). */
   private readonly heldPeerStore: HeldPeerMessageStore
@@ -3162,7 +3179,7 @@ export class ProviderRegistry implements PeerToolHost {
             wakes?.release()
             throw error
           }
-          if (!wakes && this.hubChildrenOn()) this.hubWakes.liftHold(threadId)
+          if (!queuedId && !wakes && this.hubChildrenOn()) this.hubWakes.liftHold(threadId)
           return joinDispatched(providerText, [mergeBack?.dispatched(providerText), wakes?.dispatched()])
         },
       })
@@ -3283,11 +3300,15 @@ export class ProviderRegistry implements PeerToolHost {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) return null
       const stopSpan = perfSpan('provider.stop', { thread: threadId })
+      this.stoppingThreads.add(threadId)
       try {
         await adapter.stopSession(threadId)
       } finally {
+        this.stoppingThreads.delete(threadId)
         stopSpan.end()
       }
+      this.hubSubagents.clear(threadId)
+      this.turnErrors.delete(threadId)
       this.switchFirstEventSpans.get(threadId)?.span.end({ outcome: 'stopped-before-event' })
       this.switchFirstEventSpans.delete(threadId)
       this.firstEventSpans.get(threadId)?.end({ outcome: 'stopped-before-event' })
@@ -4366,6 +4387,7 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   async stopAll(): Promise<void> {
+    this.stoppingAll = true
     for (const { span } of this.switchFirstEventSpans.values()) span.end({ outcome: 'shutdown' })
     this.switchFirstEventSpans.clear()
     for (const span of this.firstEventSpans.values()) span.end({ outcome: 'shutdown' })
