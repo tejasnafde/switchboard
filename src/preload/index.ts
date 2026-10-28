@@ -845,6 +845,9 @@ const api = {
     /** Auto-resume after a usage limit: whether the flag is on, a chat's Limited row, Cancel, Resume now. */
     hubListChildren: (threadId: string): Promise<import('@shared/hub').HubChatView> =>
       transport.invoke(ProviderChannels.HUB_LIST_CHILDREN, threadId),
+    /** Stop all of a parent's open children and hold its updates; routed like `interruptHubChild`. */
+    hubStopChildren: (parentFamilyIds: readonly string[], parentId: string): Promise<void> =>
+      router.invokeOn(routingTable.resolveThread(parentFamilyIds), ProviderChannels.HUB_STOP_CHILDREN, parentId),
     /** Lift a parent's hold on its child updates and send them. */
     hubDeliverHeldWakes: (threadId: string): Promise<void> =>
       transport.invoke(ProviderChannels.HUB_DELIVER_HELD_WAKES, threadId),

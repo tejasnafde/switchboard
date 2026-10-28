@@ -30,6 +30,13 @@ function stopChild(parent: HubChatRef, child: HubChildView): void {
     .catch((err: unknown) => log.warn('stopping a child failed', err))
 }
 
+/** Every open child, with the parent's updates held until its next message or Deliver. */
+function stopAll(parent: HubChatRef): void {
+  window.api.provider
+    .hubStopChildren(parent.familyIds, parent.id)
+    .catch((err: unknown) => log.warn('stopping the children failed', err))
+}
+
 const kTokens = (n: number) => `${Math.round(n / 1000)}k`
 
 function ChildRow({ parent, child }: { parent: HubChatRef; child: HubChildView }) {
@@ -122,7 +129,7 @@ export function ChildrenStrip({
           </button>
         )}
         {stoppable.length > 0 && (
-          <button type="button" className={stopClass} onClick={() => stoppable.forEach((c) => stopChild(parent, c))}>
+          <button type="button" className={stopClass} onClick={() => stopAll(parent)}>
             Stop all
           </button>
         )}
