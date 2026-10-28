@@ -249,6 +249,7 @@ import { loadConversationHistory, transcriptPathOf } from '../conversations/hist
 import { peekCatalog, probeCatalog } from './catalog-probe'
 import { pendingRequestKey, type PendingBlockingEvent } from '@shared/pending-requests'
 import { turnPreviewLine } from '@shared/turn-preview'
+import { reapOrphanedClaudeChildrenOnce } from './claude-orphans'
 
 const log = createLogger('provider:registry')
 
@@ -475,6 +476,9 @@ export class ProviderRegistry implements PeerToolHost {
     })
     activeRegistry = this
     this.host = host
+    // Every session start waits for it: a CLI left by a crashed or restarted
+    // backend would otherwise run beside the one a resumed chat starts.
+    this.orphanReap = adapters ? Promise.resolve(0) : reapOrphanedClaudeChildrenOnce()
     // SB_DEMO_ADAPTER=1 swaps in the scripted adapter so the tour recorder
     // (videos/capture-tour.mjs) can capture agent-driven scenes without
     // credentials. Never set by a normal launch.
@@ -1044,6 +1048,7 @@ export class ProviderRegistry implements PeerToolHost {
   private stopChildSession: ((threadId: string) => Promise<StoppedSessionSnapshot | null>) | null = null
   /** Samples the agent process trees of open children; null in tests that inject adapters. */
   private readonly hubSampler: HubResourceSampler | null
+  private readonly orphanReap: Promise<number>
   /** Running Agent/Task calls per thread: a child with one is Working and is never reaped. */
   readonly hubSubagents = new NativeSubagents()
   /** Whether each child told its parent something since its last task (`hub/hub-stop.ts`). */
@@ -3691,6 +3696,7 @@ export class ProviderRegistry implements PeerToolHost {
           this.sessionEpochs.set(opts.threadId, executionEpoch)
           const switchboardMcp = await this.openSwitchboardMcp(opts.threadId, opts.provider)
           if (switchboardMcp) enrichedOpts.switchboardMcp = switchboardMcp
+          await this.orphanReap
           if (this.stopRequestedDuringStart.delete(opts.threadId)) throw new Error(SESSION_START_STOPPED)
           const session = await adapter.startSession(enrichedOpts, (event) => {
             if (this.sessionEpochs.get(opts.threadId) !== executionEpoch) return
