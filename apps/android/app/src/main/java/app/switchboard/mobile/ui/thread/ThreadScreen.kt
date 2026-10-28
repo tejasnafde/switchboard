@@ -74,6 +74,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -185,6 +186,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.Date
 import java.util.Locale
 
@@ -220,7 +222,7 @@ fun ThreadScreen(
     pendingActions: ThreadPendingActions = ThreadPendingActions(),
     onImagesSelected: (List<ComposerImageSource>) -> Unit = {},
     /** Takes a paste over 32 KiB as a file; null when the backend cannot. */
-    onLargePaste: ((text: String, onFailed: (String) -> Unit) -> Unit)? = null,
+    onLargePaste: ((paste: ComposerFiles.LargePaste, onFailed: (String) -> Boolean) -> Unit)? = null,
     onRemoveImage: (String) -> Unit = {},
     onRemoveReviewPill: () -> Unit = {},
     queuedTurns: List<QueuedTurn> = emptyList(),
@@ -794,7 +796,7 @@ private fun ThreadBottomArea(
     onClearLocalFeed: () -> Unit,
     skills: List<ProviderSkill>,
     onImagesSelected: (List<ComposerImageSource>) -> Unit,
-    onLargePaste: ((text: String, onFailed: (String) -> Unit) -> Unit)?,
+    onLargePaste: ((paste: ComposerFiles.LargePaste, onFailed: (String) -> Boolean) -> Unit)?,
     onRemoveImage: (String) -> Unit,
     onRemoveReviewPill: () -> Unit,
 ) {
@@ -850,7 +852,7 @@ private fun ThreadComposer(
     onClearLocalFeed: () -> Unit,
     skills: List<ProviderSkill>,
     onImagesSelected: (List<ComposerImageSource>) -> Unit,
-    onLargePaste: ((text: String, onFailed: (String) -> Unit) -> Unit)?,
+    onLargePaste: ((paste: ComposerFiles.LargePaste, onFailed: (String) -> Boolean) -> Unit)?,
     onRemoveImage: (String) -> Unit,
     onRemoveReviewPill: () -> Unit,
 ) {
@@ -897,6 +899,9 @@ private fun ThreadComposer(
     // A large paste that could not be saved as a file comes back into the field with why.
     var pasteError by remember { mutableStateOf<String?>(null) }
     val currentDraft by rememberUpdatedState(state.draft)
+    // A refusal can arrive after this screen is gone; the runtime then restores the stored draft.
+    val shown = remember { AtomicBoolean(true) }
+    DisposableEffect(Unit) { onDispose { shown.set(false) } }
     val focusRequester = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     val slashQuery = ThreadSlashPolicy.query(state.draft)
@@ -1010,9 +1015,13 @@ private fun ThreadComposer(
                         val paste = fold?.let { ComposerFiles.largePaste(state.draft, text) }
                         if (fold != null && paste != null) {
                             onDraftChange(paste.kept)
-                            fold(paste.inserted) { reason ->
-                                pasteError = reason
-                                onDraftChange(paste.restore(currentDraft))
+                            fold(paste) { reason ->
+                                shown.get().also { open ->
+                                    if (open) {
+                                        pasteError = reason
+                                        onDraftChange(paste.restore(currentDraft))
+                                    }
+                                }
                             }
                         } else {
                             voice.userEdited(text)

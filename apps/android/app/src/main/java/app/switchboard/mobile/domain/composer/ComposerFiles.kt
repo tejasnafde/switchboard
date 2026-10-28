@@ -140,20 +140,19 @@ object ComposerFiles {
 
     /**
      * The run of text one edit inserted, when it is over [LARGE_PASTE_BYTES]
-     * in UTF-8, with the text the field keeps; null for any other edit.
+     * in UTF-8, with the text the field keeps; null for any other edit. A
+     * paste over a selection counts: the selection is not kept.
      */
     fun largePaste(previous: String, next: String): LargePaste? {
-        if (next.length <= previous.length) return null
+        val limit = minOf(previous.length, next.length)
         var start = 0
-        val limit = previous.length
         while (start < limit && previous[start] == next[start]) start++
         var suffix = 0
         while (suffix < limit - start && previous[previous.length - 1 - suffix] == next[next.length - 1 - suffix]) suffix++
-        // Only a pure insertion: the old text must survive around the new run.
-        if (start + suffix != previous.length) return null
         val inserted = next.substring(start, next.length - suffix)
         if (inserted.toByteArray(Charsets.UTF_8).size <= LARGE_PASTE_BYTES) return null
-        return LargePaste(inserted = inserted, kept = previous, offset = start)
+        val kept = previous.substring(0, start) + previous.substring(previous.length - suffix)
+        return LargePaste(inserted = inserted, kept = kept, offset = start)
     }
 
     /** [offset] is where [inserted] went in [kept]. */

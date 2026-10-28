@@ -52,7 +52,8 @@ class DurableComposerRuntime(
 
     fun save(draft: ComposerDraft) = mutate(draft.key) { coordinator.save(draft) }
 
-    fun saveText(draft: ComposerDraft) = mutate(draft.key) { coordinator.saveText(draft) }
+    fun saveText(draft: ComposerDraft, added: List<ComposerAttachment> = emptyList()) =
+        mutate(draft.key) { coordinator.saveText(draft, added) }
 
     fun addImages(key: ComposerDraftKey, sources: List<ComposerImageSource>) =
         mutate(key) { coordinator.addImages(key, sources) }
@@ -99,19 +100,26 @@ class DurableComposerRuntime(
 
     /**
      * Attaches a large paste as `pasted-text-N.txt`. [onFailed] gets the
-     * reason when it is not saved, so the caller can put the text back.
+     * reason when it is not saved and returns true when its screen put the
+     * text back; when the screen is gone, the stored draft gets it instead.
      */
-    fun attachPastedText(key: ComposerDraftKey, text: String, uploader: ComposerFileUploader, onFailed: (String) -> Unit) {
+    fun attachPastedText(
+        key: ComposerDraftKey,
+        paste: ComposerFiles.LargePaste,
+        uploader: ComposerFileUploader,
+        onFailed: (String) -> Boolean,
+    ) {
         holdSend(key)
         worker.execute {
             try {
                 val labels = drafts.value[key]?.attachments.orEmpty().map(ComposerAttachment::displayName)
                 val name = ComposerFiles.nextPastedTextName(labels + uploads.value[key].orEmpty())
-                trackUpload(key, name, { done -> uploader.uploadText(name, text, done) }) { result ->
-                    when (result) {
-                        is ComposerUploadResult.Refused -> onFailed(result.line)
-                        is ComposerUploadResult.Uploaded -> saveUploaded(key, result)?.let(onFailed)
+                trackUpload(key, name, { done -> uploader.uploadText(name, paste.inserted, done) }) { result ->
+                    val reason = when (result) {
+                        is ComposerUploadResult.Refused -> result.line
+                        is ComposerUploadResult.Uploaded -> saveUploaded(key, result)
                     }
+                    if (reason != null && !onFailed(reason)) restorePaste(key, paste, reason)
                 }
             } finally {
                 releaseSend(key)
@@ -131,6 +139,13 @@ class DurableComposerRuntime(
     private fun releaseSend(key: ComposerDraftKey) = pending.update {
         val left = (it[key] ?: 1) - 1
         if (left <= 0) it - key else it + (key to left)
+    }
+
+    /** Puts a refused paste back into the newest stored draft, at its place. */
+    private fun restorePaste(key: ComposerDraftKey, paste: ComposerFiles.LargePaste, reason: String) {
+        val stored = drafts.value[key] ?: ComposerDraft(key)
+        val saved = coordinator.saveText(stored.copy(text = paste.restore(stored.text)))
+        recordError(key, (saved as? ComposerDraftMutation.Failure)?.reason ?: reason)
     }
 
     /** Saves an uploaded file into the draft; the reason when it could not be saved. */
@@ -193,6 +208,11 @@ class DurableComposerRuntime(
 
     fun beginEdit(key: ComposerDraftKey, origin: String) {
         worker.execute {
+            // A file still uploading would land in the edited message.
+            if (uploading(key)) {
+                recordError(key, "Wait for the attachments to finish uploading, then edit the queued message")
+                return@execute
+            }
             val turn = outbox.beginEdit(origin)
             if (turn == null || turn.connectionId != key.connectionId || turn.threadId != key.threadId) {
                 if (turn != null) outbox.setEditing(origin, false)

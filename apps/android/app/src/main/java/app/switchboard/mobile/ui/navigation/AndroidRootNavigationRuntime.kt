@@ -25,6 +25,7 @@ import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerDraft
+import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.ComposerImageSource
 import app.switchboard.mobile.runtime.DurableComposerRuntime
@@ -141,13 +142,18 @@ class AndroidRootNavigationRuntime(
 
     override fun saveComposerDraft(draft: ComposerDraft) = composer.save(draft)
 
-    override fun saveComposerText(draft: ComposerDraft) = composer.saveText(draft)
+    override fun saveComposerText(draft: ComposerDraft, added: List<ComposerAttachment>) =
+        composer.saveText(draft, added)
 
     override fun addComposerImages(key: ComposerDraftKey, sources: List<ComposerImageSource>, uploader: ComposerFileUploader?) =
         composer.addAttachments(key, sources, uploader)
 
-    override fun attachPastedText(key: ComposerDraftKey, text: String, uploader: ComposerFileUploader, onFailed: (String) -> Unit) =
-        composer.attachPastedText(key, text, uploader, onFailed)
+    override fun attachPastedText(
+        key: ComposerDraftKey,
+        paste: ComposerFiles.LargePaste,
+        uploader: ComposerFileUploader,
+        onFailed: (String) -> Boolean,
+    ) = composer.attachPastedText(key, paste, uploader, onFailed)
 
     override fun composerUploading(key: ComposerDraftKey): Boolean = composer.uploading(key)
 

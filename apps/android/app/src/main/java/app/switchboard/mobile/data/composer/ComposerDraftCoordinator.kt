@@ -89,12 +89,13 @@ class ComposerDraftCoordinator(
     }
 
     /**
-     * Saves a text or mode edit. The attachments stay the stored ones, read
-     * under this lock: the caller's copy can predate a file the worker added.
+     * Saves a text or mode edit, plus [added] files. The other attachments stay
+     * the stored ones, read under this lock: the caller's copy can predate a
+     * file the worker added.
      */
     @Synchronized
-    fun saveText(draft: ComposerDraft): ComposerDraftMutation =
-        save(draft.copy(attachments = mutableDrafts.value[draft.key]?.attachments.orEmpty()))
+    fun saveText(draft: ComposerDraft, added: List<ComposerAttachment> = emptyList()): ComposerDraftMutation =
+        save(draft.copy(attachments = mutableDrafts.value[draft.key]?.attachments.orEmpty() + added))
 
     @Synchronized
     fun addImages(

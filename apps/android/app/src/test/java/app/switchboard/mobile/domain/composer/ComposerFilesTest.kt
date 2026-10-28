@@ -73,9 +73,14 @@ class ComposerFilesTest {
         assertNull(ComposerFiles.largePaste("", "x".repeat(ComposerFiles.LARGE_PASTE_BYTES)))
         val wide = "é".repeat(ComposerFiles.LARGE_PASTE_BYTES / 2 + 1)
         assertEquals(wide, ComposerFiles.largePaste("", wide)?.inserted)
-        // A replacement is not a paste into the text.
-        assertNull(ComposerFiles.largePaste("abc", "z$big"))
+        // A paste over a selection folds too; the selection is not kept.
+        val replaced = ComposerFiles.largePaste("hello cruel world", "hello $big world")
+        assertEquals(big, replaced?.inserted)
+        assertEquals("hello  world", replaced?.kept)
+        assertEquals("", ComposerFiles.largePaste("abc", "z$big")?.kept)
+        // A shorter or small edit is not a paste.
         assertNull(ComposerFiles.largePaste("abc", "ab"))
+        assertNull(ComposerFiles.largePaste("abc", "xyz"))
     }
 
     @Test

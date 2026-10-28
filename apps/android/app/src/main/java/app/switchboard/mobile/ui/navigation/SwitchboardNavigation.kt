@@ -56,6 +56,7 @@ import app.switchboard.mobile.data.thread.ThreadComposerPersistence
 import app.switchboard.mobile.data.thread.ThreadSessionClock
 import app.switchboard.mobile.data.thread.ThreadSessionCoordinator
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
+import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.OutboxUiAction
@@ -1245,7 +1246,8 @@ private fun ConnectedThreadRoute(
             composerPersistence = object : ThreadComposerPersistence {
                 override fun save(draft: ComposerDraft) = runtime.saveComposerDraft(draft)
 
-                override fun saveText(draft: ComposerDraft) = runtime.saveComposerText(draft)
+                override fun saveText(draft: ComposerDraft, added: List<ComposerAttachment>) =
+                    runtime.saveComposerText(draft, added)
 
                 override fun clear(key: ComposerDraftKey): Boolean =
                     runtime.clearComposerDraftBlocking(key)
@@ -1327,7 +1329,7 @@ private fun ConnectedThreadRoute(
             onBack = onBack,
             onImagesSelected = { sources -> runtime.addComposerImages(composerKey, sources, uploader) },
             onLargePaste = uploader?.let { files ->
-                { text, onFailed -> runtime.attachPastedText(composerKey, text, files, onFailed) }
+                { paste, onFailed -> runtime.attachPastedText(composerKey, paste, files, onFailed) }
             },
             onRemoveImage = { attachmentId -> runtime.removeComposerImage(composerKey, attachmentId) },
             queuedTurns = queuedTurns,

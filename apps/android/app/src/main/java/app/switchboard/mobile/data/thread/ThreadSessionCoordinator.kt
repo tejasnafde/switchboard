@@ -282,8 +282,8 @@ data class WithdrawnTurn(
 interface ThreadComposerPersistence {
     fun save(draft: ComposerDraft)
 
-    /** A text or mode edit: the stored draft keeps its own attachments. */
-    fun saveText(draft: ComposerDraft) = save(draft)
+    /** A text or mode edit: the stored draft keeps its own attachments, plus [added]. */
+    fun saveText(draft: ComposerDraft, added: List<ComposerAttachment>) = save(draft)
 
     fun clear(key: ComposerDraftKey): Boolean
 
@@ -1992,7 +1992,7 @@ class ThreadSessionCoordinator(
             error = withdrawn.firstNotNullOfOrNull(WithdrawnTurn::attachmentError),
         )
         composerHasUnacknowledgedLocalChanges = true
-        persistComposer(textOnly = false)
+        persistComposer(added = withdrawn.flatMap(WithdrawnTurn::attachments))
     }
 
     private fun submitFailed(message: String): ComposerSubmitResult.Failed {
@@ -2464,8 +2464,11 @@ class ThreadSessionCoordinator(
         if (pickedMode == null) composer = composer.copy(runtimeMode = mode)
     }
 
-    /** [textOnly] keeps the stored attachments: [composer] can lag a file the worker just added. */
-    private fun persistComposer(textOnly: Boolean = true) {
+    /**
+     * Saves the text and mode. The stored attachments stay, plus [added]:
+     * [composer] can lag a file the worker just added.
+     */
+    private fun persistComposer(added: List<ComposerAttachment> = emptyList()) {
         val draft = ComposerDraft(
             key = composerKey,
             text = composer.draft,
@@ -2473,7 +2476,7 @@ class ThreadSessionCoordinator(
             attachments = composer.attachments,
             editingOrigin = composer.editingOrigin,
         )
-        if (textOnly) composerPersistence.saveText(draft) else composerPersistence.save(draft)
+        composerPersistence.saveText(draft, added)
     }
 
     private fun persistSnapshot() {

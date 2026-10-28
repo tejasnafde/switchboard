@@ -21,7 +21,9 @@ import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.iap.IapTarget
 import app.switchboard.mobile.domain.iap.IapTargetSelection
+import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerDraft
+import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.ComposerImageSource
 import app.switchboard.mobile.domain.thread.ThreadEventScope
@@ -94,13 +96,18 @@ interface RootNavigationRuntime {
 
     fun saveComposerDraft(draft: ComposerDraft) = Unit
 
-    /** Saves a text or mode edit; the draft keeps its stored attachments. */
-    fun saveComposerText(draft: ComposerDraft) = Unit
+    /** Saves a text or mode edit; the draft keeps its stored attachments, plus [added]. */
+    fun saveComposerText(draft: ComposerDraft, added: List<ComposerAttachment> = emptyList()) = Unit
 
     /** Picked files: images are staged, other files go to [uploader], or are refused without one. */
     fun addComposerImages(key: ComposerDraftKey, sources: List<ComposerImageSource>, uploader: ComposerFileUploader? = null) = Unit
 
-    fun attachPastedText(key: ComposerDraftKey, text: String, uploader: ComposerFileUploader, onFailed: (String) -> Unit) = Unit
+    fun attachPastedText(
+        key: ComposerDraftKey,
+        paste: ComposerFiles.LargePaste,
+        uploader: ComposerFileUploader,
+        onFailed: (String) -> Boolean,
+    ) = Unit
 
     /** A pick or a paste is still on its way into the draft. */
     fun composerUploading(key: ComposerDraftKey): Boolean = false

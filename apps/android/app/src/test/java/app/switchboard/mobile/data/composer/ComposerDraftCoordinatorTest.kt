@@ -152,6 +152,10 @@ class ComposerDraftCoordinatorTest {
         fixture.coordinator.clear(key())
         fixture.coordinator.saveText(draft(text = "again", attachments = listOf(attachment("sent"))))
         assertEquals(emptyList<ComposerAttachment>(), fixture.coordinator.drafts.value.getValue(key()).attachments)
+        // Withdrawn turns add their files to the stored ones.
+        fixture.coordinator.addUploaded(key(), listOf(attachment("late")))
+        fixture.coordinator.saveText(draft(text = "back"), added = listOf(attachment("withdrawn")))
+        assertEquals(listOf("late", "withdrawn"), fixture.coordinator.drafts.value.getValue(key()).attachments.map(ComposerAttachment::id))
     }
 
     private fun key() = ComposerDraftKey("machine", "thread")

@@ -83,8 +83,8 @@ class DurableComposerRuntimeUploadTest {
 
     @Test
     fun `two pastes in flight get different names and upload one at a time`() {
-        runtime.attachPastedText(key, "first", uploader) {}
-        runtime.attachPastedText(key, "second", uploader) {}
+        runtime.attachPastedText(key, paste("first"), uploader) { true }
+        runtime.attachPastedText(key, paste("second"), uploader) { true }
         drain()
 
         assertEquals(listOf("pasted-text-1.txt"), uploader.names)
@@ -114,7 +114,7 @@ class DurableComposerRuntimeUploadTest {
     @Test
     fun `a paste that uploads but cannot be saved returns the reason`() {
         val reasons = mutableListOf<String>()
-        runtime.attachPastedText(key, "text", uploader) { reasons += it }
+        runtime.attachPastedText(key, paste("text"), uploader) { reasons += it; true }
         drain()
 
         draftStore.failSave = true
@@ -128,7 +128,7 @@ class DurableComposerRuntimeUploadTest {
     @Test
     fun `a refused paste ends its upload and returns the reason`() {
         val reasons = mutableListOf<String>()
-        runtime.attachPastedText(key, "text", uploader) { reasons += it }
+        runtime.attachPastedText(key, paste("text"), uploader) { reasons += it; true }
         drain()
 
         uploader.refuse(0, "pasted-text-1.txt was not attached: It could not be saved.")
@@ -137,6 +137,32 @@ class DurableComposerRuntimeUploadTest {
         assertEquals(listOf("pasted-text-1.txt was not attached: It could not be saved."), reasons)
         assertNull(runtime.uploads.value[key])
     }
+
+    @Test
+    fun `a paste refused after its screen closed goes back into the newest stored draft`() {
+        runtime.save(ComposerDraft(key, text = "ab"))
+        runtime.attachPastedText(key, ComposerFiles.LargePaste(inserted = "PASTE", kept = "ab", offset = 1), uploader) { false }
+        drain()
+        runtime.save(ComposerDraft(key, text = "ab newer"))
+        drain()
+
+        uploader.refuse(0, "pasted-text-1.txt was not attached: It could not be saved.")
+        drain()
+
+        assertEquals("aPASTEb newer", runtime.drafts.value[key]?.text)
+        assertEquals("pasted-text-1.txt was not attached: It could not be saved.", runtime.errors.value[key])
+    }
+
+    @Test
+    fun `a queued edit waits while a file uploads`() {
+        runtime.addAttachments(key, listOf(ComposerImageSource("content://spec", "application/pdf", "spec.pdf")), uploader)
+        runtime.beginEdit(key, "origin-1")
+        drain()
+
+        assertEquals("Wait for the attachments to finish uploading, then edit the queued message", runtime.errors.value[key])
+    }
+
+    private fun paste(text: String) = ComposerFiles.LargePaste(inserted = text, kept = "", offset = 0)
 
     /** Runs every task queued so far, including the ones those tasks queue. */
     private fun drain() {
