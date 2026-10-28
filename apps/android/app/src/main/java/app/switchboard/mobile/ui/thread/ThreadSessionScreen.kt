@@ -39,6 +39,8 @@ fun ThreadSessionScreen(
     modifier: Modifier = Modifier,
     commandDispatcher: ThreadCommandDispatcher? = null,
     onImagesSelected: (List<ComposerImageSource>) -> Unit = {},
+    /** Takes a paste over 32 KiB as a file; null when the backend cannot. */
+    onLargePaste: ((text: String, onFailed: (String) -> Unit) -> Unit)? = null,
     onRemoveImage: (String) -> Unit = {},
     queuedTurns: List<QueuedTurn> = emptyList(),
     onOutboxAction: (String, OutboxUiAction) -> Unit = { _, _ -> },
@@ -102,6 +104,7 @@ fun ThreadSessionScreen(
         skills = session.skills,
         pendingActions = session.pendingActions,
         onImagesSelected = onImagesSelected,
+        onLargePaste = onLargePaste,
         onRemoveImage = onRemoveImage,
         onRemoveReviewPill = coordinator::removeReviewPill,
         queuedTurns = queuedTurns,

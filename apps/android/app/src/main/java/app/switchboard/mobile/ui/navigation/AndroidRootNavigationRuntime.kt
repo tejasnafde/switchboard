@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.navigation
 
+import app.switchboard.mobile.data.composer.ComposerFileUploader
 import app.switchboard.mobile.data.connection.ConnectionFleet
 import app.switchboard.mobile.data.composer.ComposerAttachmentStageResult
 import app.switchboard.mobile.data.outbox.OutboxRuntime
@@ -139,8 +140,11 @@ class AndroidRootNavigationRuntime(
 
     override fun saveComposerDraft(draft: ComposerDraft) = composer.save(draft)
 
-    override fun addComposerImages(key: ComposerDraftKey, sources: List<ComposerImageSource>) =
-        composer.addImages(key, sources)
+    override fun addComposerImages(key: ComposerDraftKey, sources: List<ComposerImageSource>, uploader: ComposerFileUploader?) =
+        composer.addAttachments(key, sources, uploader)
+
+    override fun attachPastedText(key: ComposerDraftKey, text: String, uploader: ComposerFileUploader, onFailed: (String) -> Unit) =
+        composer.attachPastedText(key, text, uploader, onFailed)
 
     override fun removeComposerImage(key: ComposerDraftKey, attachmentId: String) =
         composer.removeImage(key, attachmentId)

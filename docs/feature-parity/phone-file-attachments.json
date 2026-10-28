@@ -6,19 +6,32 @@
   "surfaces": {
     "desktop": {
       "status": "implemented",
-      "evidence": ["src/renderer/services/attachment-intake.ts", "src/renderer/components/chat/ChatInput.tsx"]
+      "evidence": [
+        "src/renderer/services/attachment-intake.ts",
+        "src/renderer/components/chat/ChatInput.tsx"
+      ]
     },
     "reactNativeIos": {
       "status": "staged",
       "flag": "attachment_upload_v1",
       "followUpRelease": "The Expo composer gains file attach, refusals and the large-paste chip; until then it sends images only, as before",
-      "evidence": ["src/shared/attachments.ts"]
+      "evidence": [
+        "src/shared/attachments.ts"
+      ]
     },
     "nativeAndroid": {
-      "status": "staged",
-      "flag": "attachment_upload_v1",
-      "followUpRelease": "The Android composer gains file attach, refusals, the large-paste chip and the GIF size check; until then it sends images only, as before",
-      "evidence": ["src/shared/attachments.ts"]
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/composer/ComposerFiles.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/composer/ImageResizePlan.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/outbox/RemoteComposerFileUploader.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/runtime/DurableComposerRuntime.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/OutboxRemoteSender.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/composer/ComposerFilesTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/composer/ImageResizePlanTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/outbox/OutboxRemoteSenderTest.kt"
+      ]
     },
     "sharedBackendApi": {
       "status": "implemented",
@@ -40,15 +53,23 @@
     },
     "updateRelease": {
       "status": "implemented",
-      "evidence": ["src/shared/ws-protocol.ts"]
+      "evidence": [
+        "src/shared/ws-protocol.ts"
+      ]
     }
   },
   "verification": {
     "automated": [
       "vitest: tests/unit/main-attachments.test.ts (upload saves base64 bytes, refuses over 25 MB before decoding, refuses a source path; attachmentTurn lines, tokens and pills; pasted-text names).",
-      "vitest: tests/unit/provider-image-limits.test.ts (EXIF orientation 6 and 8, big- and little-endian, come out upright after the shrink)."
+      "vitest: tests/unit/provider-image-limits.test.ts (EXIF orientation 6 and 8, big- and little-endian, come out upright after the shrink).",
+      "Android JUnit: ComposerFilesTest (image/file/refusal sort, images only without attachment_upload_v1, 10 MB refusal copy, pasted-text names, chip labels, large paste detection by UTF-8 bytes, the attachmentTurn shape and stable pill ids).",
+      "Android JUnit: ImageResizePlanTest (a GIF size read from its header; a GIF over 2000 px on its long side is refused).",
+      "Android JUnit: OutboxRemoteSenderTest (an uploaded file goes as a prompt line, a [[pill:id]] token and a file pill, and never as an image)."
     ],
     "hardware": [],
-    "notExercised": ["An upload from a real phone over the LAN and over the IAP tunnel."]
+    "notExercised": [
+      "An upload from a real phone over the LAN and over the IAP tunnel.",
+      "Android: the file picker, the file chip, the large paste and an upload on a real device or emulator; only unit tests and the build ran."
+    ]
   }
 }

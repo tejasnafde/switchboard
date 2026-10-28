@@ -1,5 +1,8 @@
 package app.switchboard.mobile.ui.navigation
 
+import app.switchboard.mobile.domain.composer.ComposerFiles
+import app.switchboard.mobile.platform.outbox.AndroidContentUriSource
+import app.switchboard.mobile.platform.outbox.RemoteComposerFileUploader
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
@@ -9,6 +12,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import app.switchboard.mobile.BuildConfig
 import app.switchboard.mobile.ui.demo.DemoStrip
@@ -1292,6 +1296,14 @@ private fun ConnectedThreadRoute(
     val htmlLive = remember(lease.capabilities, route.threadId, lease.client) {
         HtmlLiveImages(lease.capabilities, route.threadId, lease.client)
     }
+    val context = LocalContext.current
+    val uploader = remember(lease.capabilities, lease.client) {
+        if (ComposerFiles.UPLOAD_CAPABILITY in lease.capabilities) {
+            RemoteComposerFileUploader(lease.client, AndroidContentUriSource(context.contentResolver))
+        } else {
+            null
+        }
+    }
     CompositionLocalProvider(LocalHtmlLive provides htmlLive) {
         ThreadSessionScreen(
             coordinator = coordinator,
@@ -1299,7 +1311,10 @@ private fun ConnectedThreadRoute(
             title = route.title,
             backendLabel = route.connectionLabel,
             onBack = onBack,
-            onImagesSelected = { sources -> runtime.addComposerImages(composerKey, sources) },
+            onImagesSelected = { sources -> runtime.addComposerImages(composerKey, sources, uploader) },
+            onLargePaste = uploader?.let { files ->
+                { text, onFailed -> runtime.attachPastedText(composerKey, text, files, onFailed) }
+            },
             onRemoveImage = { attachmentId -> runtime.removeComposerImage(composerKey, attachmentId) },
             queuedTurns = queuedTurns,
             onOutboxAction = { origin, action ->

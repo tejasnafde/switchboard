@@ -88,4 +88,25 @@ class ImageResizePlanTest {
             ImageResizePlan.refusalMessage("IMG_1.jpg", Refusal.TOO_LARGE),
         )
     }
+
+    private fun gifHeader(width: Int, height: Int): ByteArray =
+        "GIF89a".toByteArray(Charsets.US_ASCII) +
+            byteArrayOf(width.toByte(), (width shr 8).toByte(), height.toByte(), (height shr 8).toByte())
+
+    @Test
+    fun `reads a GIF size from its header`() {
+        assertEquals(ImageResizePlan.Size(2400, 300), ImageResizePlan.gifSize(gifHeader(2400, 300)))
+        assertNull(ImageResizePlan.gifSize("PNG...........".toByteArray()))
+        assertNull(ImageResizePlan.gifSize(byteArrayOf(0x47, 0x49)))
+    }
+
+    @Test
+    fun `refuses a GIF over the long side limit and keeps one at it`() {
+        assertEquals(Refusal.GIF_TOO_WIDE, ImageResizePlan.gifRefusal(ImageResizePlan.gifSize(gifHeader(300, 2001))!!))
+        assertNull(ImageResizePlan.gifRefusal(ImageResizePlan.gifSize(gifHeader(2000, 2000))!!))
+        assertEquals(
+            "a.gif is a GIF over 2000 px on its long side; GIFs are sent unchanged to keep their animation",
+            ImageResizePlan.refusalMessage("a.gif", Refusal.GIF_TOO_WIDE),
+        )
+    }
 }

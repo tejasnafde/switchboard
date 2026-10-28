@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.navigation
 
+import app.switchboard.mobile.data.composer.ComposerFileUploader
 import app.switchboard.mobile.data.remote.ReadyClientLease
 import app.switchboard.mobile.data.remote.BrowseSnapshotStore
 import app.switchboard.mobile.data.remote.EmptyBrowseSnapshotStore
@@ -88,7 +89,10 @@ interface RootNavigationRuntime {
 
     fun saveComposerDraft(draft: ComposerDraft) = Unit
 
-    fun addComposerImages(key: ComposerDraftKey, sources: List<ComposerImageSource>) = Unit
+    /** Picked files: images are staged, other files go to [uploader], or are refused without one. */
+    fun addComposerImages(key: ComposerDraftKey, sources: List<ComposerImageSource>, uploader: ComposerFileUploader? = null) = Unit
+
+    fun attachPastedText(key: ComposerDraftKey, text: String, uploader: ComposerFileUploader, onFailed: (String) -> Unit) = Unit
 
     fun removeComposerImage(key: ComposerDraftKey, attachmentId: String) = Unit
 

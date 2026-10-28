@@ -1,5 +1,7 @@
 package app.switchboard.mobile.data.thread
 
+import app.switchboard.mobile.data.outbox.fileTurn
+import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
@@ -2003,12 +2005,14 @@ class ThreadSessionCoordinator(
         val pillTurn = turn.reviewPill?.let { pill ->
             PhonePullRequests.reviewPillTurn(turn.text, PhoneReviewPill(pill.label, pill.content), pill.id)
         }
+        val fileTurn = turn.fileTurn(displayText = pillTurn?.displayBody ?: turn.text)
         val item = FeedItem.User(
             id = turn.bubbleId,
-            text = pillTurn?.displayBody ?: turn.text,
-            pillsMeta = pillTurn?.pillsMeta?.mapValues { (_, label) -> MessagePill(label, "review") }.orEmpty(),
+            text = fileTurn.displayBody,
+            pillsMeta = pillTurn?.pillsMeta?.mapValues { (_, label) -> MessagePill(label, "review") }.orEmpty() +
+                fileTurn.pillsMeta.mapValues { (_, label) -> MessagePill(label, "file") },
             at = turn.createdAtMs,
-            images = turn.attachments.map { attachment ->
+            images = turn.attachments.filterNot { ComposerFiles.isUploaded(it.mimeType) }.map { attachment ->
                 val file = File(attachment.privateUri)
                 app.switchboard.mobile.domain.remote.MessageImage(
                     url = file.toURI().toString(),

@@ -40,6 +40,8 @@ data class ComposerImageSource(
     val mimeType: String?,
     val displayName: String,
     val privateSourcePath: String? = null,
+    /** Bytes the picker reported; null when unknown. */
+    val sizeBytes: Long? = null,
 )
 
 data class ComposerDraft(

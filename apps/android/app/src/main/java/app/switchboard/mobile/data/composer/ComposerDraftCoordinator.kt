@@ -4,6 +4,7 @@ import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.ComposerImageSource
+import app.switchboard.mobile.domain.composer.UploadedFile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -36,6 +37,20 @@ interface ComposerAttachmentStager {
     /** [existing] are the draft's attachments, which count against the message's image budget. */
     fun stage(sources: List<ComposerImageSource>, existing: List<ComposerAttachment>): ComposerAttachmentStageResult
     fun discard(attachments: List<ComposerAttachment>)
+}
+
+sealed interface ComposerUploadResult {
+    data class Uploaded(val file: UploadedFile) : ComposerUploadResult
+
+    /** One line naming the file and why it was not saved. */
+    data class Refused(val line: String) : ComposerUploadResult
+}
+
+/** Saves a picked file or pasted text on the backend (`app:upload-attachment`). Calls back on any thread. */
+interface ComposerFileUploader {
+    fun upload(source: ComposerImageSource, callback: (ComposerUploadResult) -> Unit)
+
+    fun uploadText(name: String, text: String, callback: (ComposerUploadResult) -> Unit)
 }
 
 sealed interface ComposerDraftMutation {
@@ -128,6 +143,14 @@ class ComposerDraftCoordinator(
                 ComposerDraftMutation.Failure(saved.reason)
             }
         }
+    }
+
+    /** Adds files already saved on the backend to the draft. */
+    @Synchronized
+    fun addUploaded(key: ComposerDraftKey, attachments: List<ComposerAttachment>): ComposerDraftMutation {
+        if (attachments.isEmpty()) return ComposerDraftMutation.Success
+        val current = mutableDrafts.value[key] ?: ComposerDraft(key)
+        return save(current.copy(attachments = current.attachments + attachments))
     }
 
     /** Copies images into draft storage without saving a draft; the caller saves them with one. */

@@ -2,6 +2,8 @@ package app.switchboard.mobile.data.outbox
 
 import app.switchboard.mobile.data.remote.RemoteRpc
 import app.switchboard.mobile.data.remote.SwitchboardRemoteClient
+import app.switchboard.mobile.domain.composer.ComposerFiles
+import app.switchboard.mobile.domain.composer.UploadedFile
 import app.switchboard.mobile.domain.outbox.OutboxDeliveryState
 import app.switchboard.mobile.domain.outbox.QueuedReviewPill
 import app.switchboard.mobile.domain.outbox.QueuedTurn
@@ -228,6 +230,27 @@ class OutboxRemoteSenderTest {
         // An older backend has no display body; the agent still reads the context.
         sender(rpc).send(turn(origin = "origin-2", reviewPill = pill), {})
         assertEquals(JsonString("CONTEXT\n\nhello"), rpc.lastArgs.values[1])
+    }
+
+    @Test
+    fun anUploadedFileRidesAsAPromptLineAndAFileChip() {
+        val rpc = FakeRpc(synchronousOutcome = RpcOutcome.Success(null))
+        val envelope = MutableAvailability(4, extra = setOf(ATOMIC_USER_TURN_CAPABILITY))
+        val file = UploadedFile("spec.pdf", "/att/1/spec.pdf", "spec.pdf (2 pages)")
+        val staged = StagedAttachment(ComposerFiles.encode(file), ComposerFiles.UPLOADED_FILE_MIME)
+        val noImages = OutboxImageMaterializer { OutboxImageMaterialization.Success(emptyList()) }
+        sender(rpc, envelope, noImages).send(turn(attachments = listOf(staged)), {})
+
+        val body = rpc.lastArgs.values.single() as JsonObject
+        assertEquals(JsonString("hello\n\n[Attached file \"spec.pdf\" is saved at: /att/1/spec.pdf]"), body.values["providerText"])
+        assertEquals(JsonString("hello\n\n[[pill:${file.pillId}]]"), body.values["displayBody"])
+        val meta = (body.values["pillsMeta"] as JsonObject).values[file.pillId] as JsonObject
+        assertEquals(JsonString("spec.pdf (2 pages)"), meta.values["label"])
+        assertEquals(JsonString("file"), meta.values["kind"])
+
+        // The real materializer leaves the uploaded file out of the images.
+        val images = PrivateFileOutboxImageMaterializer { error("an uploaded file is never read on the phone") }
+        assertEquals(OutboxImageMaterialization.Success(emptyList()), images.materialize(turn(attachments = listOf(staged))))
     }
 
     @Test

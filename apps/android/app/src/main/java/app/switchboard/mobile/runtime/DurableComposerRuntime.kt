@@ -3,10 +3,13 @@ package app.switchboard.mobile.runtime
 import app.switchboard.mobile.data.composer.ComposerAttachmentStageResult
 import app.switchboard.mobile.data.composer.ComposerDraftCoordinator
 import app.switchboard.mobile.data.composer.ComposerDraftMutation
+import app.switchboard.mobile.data.composer.ComposerFileUploader
+import app.switchboard.mobile.data.composer.ComposerUploadResult
 import app.switchboard.mobile.data.outbox.OutboxRuntime
 import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
+import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.composer.ComposerImageSource
 import app.switchboard.mobile.domain.outbox.AttachmentDraft
 import app.switchboard.mobile.domain.outbox.EnqueueResult
@@ -14,6 +17,7 @@ import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.outbox.StagedAttachment
 import java.io.Closeable
+import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +44,63 @@ class DurableComposerRuntime(
 
     fun addImages(key: ComposerDraftKey, sources: List<ComposerImageSource>) =
         mutate(key) { coordinator.addImages(key, sources) }
+
+    /**
+     * Attaches picked files: images are shrunk into draft storage, other files
+     * are uploaded when [uploader] is set (the backend has
+     * `attachment_upload_v1`) and refused otherwise. Each refusal is one line
+     * in the composer's error area.
+     */
+    fun addAttachments(key: ComposerDraftKey, sources: List<ComposerImageSource>, uploader: ComposerFileUploader?) {
+        worker.execute {
+            val intake = ComposerFiles.sort(sources, uploads = uploader != null)
+            val images = if (intake.images.isEmpty()) {
+                ComposerDraftMutation.Success
+            } else {
+                coordinator.addImages(key, intake.images)
+            }
+            val lines = intake.refused + when (images) {
+                ComposerDraftMutation.Success -> emptyList()
+                is ComposerDraftMutation.Failure -> listOf(images.reason)
+                is ComposerDraftMutation.PartlyAdded -> listOf(images.reason)
+            }
+            if (lines.isEmpty()) mutableErrors.value = mutableErrors.value - key else recordError(key, lines.joinToString("\n"))
+            intake.files.forEach { source ->
+                uploader?.upload(source) { result -> worker.execute { addUploaded(key, result) } }
+            }
+        }
+    }
+
+    /**
+     * Attaches a large paste as `pasted-text-N.txt`. [onFailed] gets the
+     * reason when it is not saved, so the caller can put the text back.
+     */
+    fun attachPastedText(key: ComposerDraftKey, text: String, uploader: ComposerFileUploader, onFailed: (String) -> Unit) {
+        worker.execute {
+            val labels = drafts.value[key]?.attachments.orEmpty().map(ComposerAttachment::displayName)
+            val name = ComposerFiles.nextPastedTextName(labels)
+            uploader.uploadText(name, text) { result ->
+                worker.execute {
+                    when (result) {
+                        is ComposerUploadResult.Refused -> onFailed(result.line)
+                        is ComposerUploadResult.Uploaded -> addUploaded(key, result)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun addUploaded(key: ComposerDraftKey, result: ComposerUploadResult) {
+        val line = when (result) {
+            is ComposerUploadResult.Refused -> result.line
+            is ComposerUploadResult.Uploaded -> {
+                val attachment = ComposerFiles.attachment(UUID.randomUUID().toString(), result.file)
+                (coordinator.addUploaded(key, listOf(attachment)) as? ComposerDraftMutation.Failure)?.reason ?: return
+            }
+        }
+        // Keep the refusals of the same pick: each file is one line.
+        recordError(key, listOfNotNull(errors.value[key], line).joinToString("\n"))
+    }
 
     fun removeImage(key: ComposerDraftKey, attachmentId: String) =
         mutate(key) { coordinator.removeImage(key, attachmentId) }

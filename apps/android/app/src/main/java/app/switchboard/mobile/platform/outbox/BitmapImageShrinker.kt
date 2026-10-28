@@ -52,6 +52,7 @@ class BitmapImageShrinker : ComposerImageShrinker {
         // Read no more than could fit, so a huge GIF is refused without loading it.
         val limit = ImageResizePlan.MESSAGE_WIRE_BUDGET * 3 / 4 + 1
         val bytes = open().use { input -> ByteArray(limit.toInt()).let { it.copyOf(input.readUpTo(it)) } }
+        ImageResizePlan.gifSize(bytes)?.let(ImageResizePlan::gifRefusal)?.let { return ShrinkResult.Refused(it) }
         val refusal = ImageResizePlan.sendAsIs(ImageResizePlan.dataUrlWireBytes(mimeType, bytes.size.toLong()), remaining)
         return refusal?.let(ShrinkResult::Refused) ?: ShrinkResult.Shrunk(bytes, mimeType)
     }
