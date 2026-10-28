@@ -167,6 +167,38 @@ export function runSlotFree(
   return sameInstance < perInstance && sameParent < perParent
 }
 
+// ─── Moving a limited child ─────────────────────────────────────
+
+/**
+ * Why `move_child` may not move a child to `target` now, or null. The usage
+ * reading of the target and its run slot are checked after this, since both
+ * need I/O. `agent` and `target.agent` are agent kinds (`claude`, `codex`).
+ */
+export function moveChildProblem(m: {
+  parentMode: RuntimeMode
+  limit: LimitState['kind']
+  limitedTurnId: string | null
+  movedAfterLimitTurnId: string | null
+  agent: string
+  currentInstanceId: string | null
+  targetId: string
+  target: { agent: string; enabled: boolean; name: string } | null
+}): string | null {
+  if (m.parentMode === 'plan') return 'Plan mode does not move child chats.'
+  if (m.limit === 'none') return 'The child is not stopped by a usage limit, so it stays on its account.'
+  if (m.limitedTurnId !== null && m.limitedTurnId === m.movedAfterLimitTurnId)
+    return 'The child was already moved for this limit. It can move again only after a new limit.'
+  if (!m.target || !m.target.enabled) return `No enabled account has the id ${m.targetId}.`
+  if (m.target.agent !== m.agent)
+    return (
+      `${m.target.name} is a ${m.target.agent} account and the child runs ${m.agent}. move_child keeps the agent. ` +
+      "To go on with another agent, call interrupt_child, then start_children with a brief that sums up the child's " +
+      'work and points to its transcript (read_child shows it).'
+    )
+  if (m.targetId === m.currentInstanceId) return `The child already runs on ${m.target.name}.`
+  return null
+}
+
 // ─── Shown states ───────────────────────────────────────────────
 
 export type ChildState =
