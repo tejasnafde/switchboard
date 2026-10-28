@@ -1,6 +1,7 @@
 package app.switchboard.mobile.platform.outbox
 
 import app.switchboard.mobile.data.outbox.OutboxImageMaterialization
+import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.data.outbox.OutboxImageMaterializer
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.remote.ImageInput
@@ -42,6 +43,7 @@ class PrivateFileOutboxImageMaterializer(
             }
 
             turn.attachments.forEach { attachment ->
+                if (ComposerFiles.isUploaded(attachment.mimeType)) return@forEach
                 val bytes = files.read(attachment.privateUri)
                 val mimeType = canonicalMimeType(attachment.mimeType, bytes)
                     ?: return OutboxImageMaterialization.Failure(UNSUPPORTED_IMAGE_TYPE)

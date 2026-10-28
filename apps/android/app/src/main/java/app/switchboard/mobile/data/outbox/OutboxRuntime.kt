@@ -56,7 +56,7 @@ class OutboxRuntime(
         coordinator = OutboxCoordinator(
             store = store,
             attachmentStager = attachmentStager,
-            sender = OutboxRemoteSender(clients, capabilities, imageMaterializer),
+            sender = OutboxRemoteSender(clients, capabilities, imageMaterializer, clock),
             environment = OutboxEnvironment(::deliveryGate),
             clock = clock,
             scheduler = scheduler,

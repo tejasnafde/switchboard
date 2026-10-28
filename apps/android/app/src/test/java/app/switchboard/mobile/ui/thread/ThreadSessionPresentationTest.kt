@@ -63,4 +63,16 @@ class ThreadSessionPresentationTest {
         assertFalse(submitting.canSendNow())
         assertTrue(submitting.showInterrupt)
     }
+
+    @Test
+    fun `an upload shows a waiting send button`() {
+        val uploading = ThreadSessionState(
+            load = ThreadSessionLoad.Ready(ThreadState(status = "running")),
+            composer = ThreadComposerState(uploading = 1),
+        ).toComposerPresentation()
+
+        assertTrue(uploading.canSend)
+        assertTrue(uploading.sendWaits)
+        assertFalse(uploading.copy(uploading = 0).sendWaits)
+    }
 }

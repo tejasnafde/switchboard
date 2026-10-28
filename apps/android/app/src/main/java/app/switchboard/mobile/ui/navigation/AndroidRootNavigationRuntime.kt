@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.navigation
 
+import app.switchboard.mobile.data.composer.ComposerFileUploader
 import app.switchboard.mobile.data.connection.ConnectionFleet
 import app.switchboard.mobile.data.composer.ComposerAttachmentStageResult
 import app.switchboard.mobile.data.outbox.OutboxRuntime
@@ -24,6 +25,7 @@ import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerDraft
+import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.ComposerImageSource
 import app.switchboard.mobile.runtime.DurableComposerRuntime
@@ -86,6 +88,7 @@ class AndroidRootNavigationRuntime(
     override val statuses: StateFlow<Map<String, ConnectionRuntimeState>> = fleet.statuses
     override val composerDrafts = composer.drafts
     override val composerErrors = composer.errors
+    override val composerUploads = composer.uploads
     override val queuedTurns: StateFlow<List<QueuedTurn>> = composer.queuedTurns
 
     override fun lease(connectionId: String): ReadyClientLease? = clients.lease(connectionId)
@@ -139,8 +142,20 @@ class AndroidRootNavigationRuntime(
 
     override fun saveComposerDraft(draft: ComposerDraft) = composer.save(draft)
 
-    override fun addComposerImages(key: ComposerDraftKey, sources: List<ComposerImageSource>) =
-        composer.addImages(key, sources)
+    override fun saveComposerText(draft: ComposerDraft, added: List<ComposerAttachment>) =
+        composer.saveText(draft, added)
+
+    override fun addComposerImages(key: ComposerDraftKey, sources: List<ComposerImageSource>, uploader: ComposerFileUploader?) =
+        composer.addAttachments(key, sources, uploader)
+
+    override fun attachPastedText(
+        key: ComposerDraftKey,
+        paste: ComposerFiles.LargePaste,
+        uploader: ComposerFileUploader,
+        onFailed: (String) -> Boolean,
+    ) = composer.attachPastedText(key, paste, uploader, onFailed)
+
+    override fun composerUploading(key: ComposerDraftKey): Boolean = composer.uploading(key)
 
     override fun removeComposerImage(key: ComposerDraftKey, attachmentId: String) =
         composer.removeImage(key, attachmentId)

@@ -3,6 +3,7 @@ package app.switchboard.mobile.platform.outbox
 import app.switchboard.mobile.data.composer.ComposerAttachmentStageResult
 import app.switchboard.mobile.data.composer.ComposerAttachmentStager
 import app.switchboard.mobile.domain.composer.ComposerAttachment
+import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.composer.ComposerImageSource
 import app.switchboard.mobile.domain.composer.ImageResizePlan
 import java.io.File
@@ -48,6 +49,11 @@ class PrivateComposerAttachmentStager(
                 "draft attachment directory is unavailable"
             }
             sources.forEach { source ->
+                val uploaded = source.privateSourcePath?.let { ComposerFiles.uploaded(it, source.mimeType) }
+                if (uploaded != null) {
+                    staged += ComposerFiles.attachment(fileNames.nextName(), uploaded)
+                    return@forEach
+                }
                 // A queued message's own images were shrunk when they were picked.
                 val shrunk = if (source.privateSourcePath != null) {
                     ShrinkResult.Shrunk(openOwnedSource(source.privateSourcePath).use { it.readBytes() }, source.mimeType.orEmpty())
@@ -106,7 +112,11 @@ class PrivateComposerAttachmentStager(
     }
 
     private fun wireBytesOf(attachment: ComposerAttachment): Long =
-        ImageResizePlan.dataUrlWireBytes(attachment.mimeType ?: "", File(attachment.privateUri).length())
+        if (ComposerFiles.isUploaded(attachment.mimeType)) {
+            0
+        } else {
+            ImageResizePlan.dataUrlWireBytes(attachment.mimeType ?: "", File(attachment.privateUri).length())
+        }
 
     override fun discard(attachments: List<ComposerAttachment>) {
         attachments.forEach { attachment ->

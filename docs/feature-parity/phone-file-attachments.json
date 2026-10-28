@@ -26,10 +26,26 @@
       ]
     },
     "nativeAndroid": {
-      "status": "staged",
-      "flag": "attachment_upload_v1",
-      "followUpRelease": "The Android composer gains file attach, refusals, the large-paste chip and the GIF size check; until then it sends images only, as before",
-      "evidence": ["src/shared/attachments.ts"]
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/composer/ComposerFiles.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/composer/ImageResizePlan.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/outbox/BitmapImageShrinker.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/outbox/RemoteComposerFileUploader.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/outbox/PrivateComposerAttachmentStager.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/runtime/DurableComposerRuntime.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/OutboxRemoteSender.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/composer/ComposerFilesTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/composer/ImageResizePlanTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/platform/outbox/PrivateComposerAttachmentStagerTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/outbox/OutboxRemoteSenderTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/runtime/DurableComposerRuntimeUploadTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadSessionPresentationTest.kt"
+      ]
     },
     "sharedBackendApi": {
       "status": "implemented",
@@ -47,7 +63,7 @@
     },
     "storageDataMigration": {
       "status": "not_applicable",
-      "reason": "An uploaded file is saved in the same attachments folder as a desktop attachment, and a sent one is an ordinary file pill in pills_meta. No stored shape changes."
+      "reason": "An uploaded file is saved in the same attachments folder as a desktop attachment, and a sent one is an ordinary file pill in pills_meta. On Android a draft or queued file is an ordinary attachment row whose path column holds the saved file as JSON under its own MIME type; no table or column changes."
     },
     "updateRelease": {
       "status": "implemented",
@@ -58,6 +74,11 @@
     "automated": [
       "vitest: tests/unit/main-attachments.test.ts (upload saves base64 bytes, refuses over 10 MB before decoding, refuses a source path; attachmentTurn lines, tokens and pills; pasted-text names).",
       "vitest: tests/unit/provider-image-limits.test.ts (EXIF orientation 6 and 8, big- and little-endian, come out upright after the shrink).",
+      "Android JUnit: ComposerFilesTest (image/file/refusal sort, images only without attachment_upload_v1, the desktop refusal copy, the 10 MB limit, pasted-text names, chip labels, large paste detection by UTF-8 bytes, the uploaded-file draft encoding, the attachmentTurn shape and stable pill ids).",
+      "Android JUnit: ImageResizePlanTest (a GIF over 2000 px on its long side is refused at attach with the desktop copy; one at 2000 px is kept).",
+      "Android JUnit: PrivateComposerAttachmentStagerTest (an uploaded file in a queued turn comes back to the draft as the same file chip, with no file read or written on the phone).",
+      "Android JUnit: OutboxRemoteSenderTest (an uploaded file goes as a prompt line, a [[pill:id]] token and a file pill, and never as an image).",
+      "Android JUnit: DurableComposerRuntimeUploadTest, ThreadSessionCoordinatorTest and ThreadSessionPresentationTest (send waits while a file uploads and then carries it; two pastes in flight get different pasted-text names; a refused paste ends its upload).",
       "vitest: tests/unit/mobile-file-attachments.test.ts (Expo: image or file routing by type and extension, HEIC as a photo, refusals for other image formats, a backend without attachment_upload_v1 and a file over MAX_UPLOAD_ATTACHMENT_BYTES; UTF-8 base64; the large-paste rule by UTF-8 growth, caret position and surrogate pairs; put-back on failure; only uploaded chips are sent).",
       "vitest: tests/unit/mobile-outbox.test.ts (Expo: QueuedMessage.attachments survives a restart, malformed entries dropped; queuedTurnBody puts the review pill first, then the text, then the file lines and chips; rejected and returned drafts give the files back).",
       "jest: apps/mobile/src/components/__tests__/FileAttachments.test.tsx (Expo: file chip label, 'Remove <name>' control, upload spinner, one refusal line per file, the Photos and Files sheet)."
@@ -65,6 +86,7 @@
     "hardware": [],
     "notExercised": [
       "An upload from a real phone over the LAN and over the IAP tunnel.",
+      "Android: the file picker, the file chip, the large paste and an upload on a real device or emulator; only unit tests and the build ran.",
       "Expo iOS: the document picker, a GIF picked from Files (its pixel size from Image.getSize), the upload and the large-paste fold on a real iPhone. expo-document-picker is a new native module, so this needs a new iOS build; none was made."
     ]
   }
