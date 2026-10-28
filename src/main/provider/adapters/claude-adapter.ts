@@ -2490,14 +2490,17 @@ function parseQuestions(input: unknown): import('../types').Question[] {
   }))
 }
 
-/** Why Claude asked, from the SDK's own reason and the ask rule it matched. */
+/**
+ * Why Claude asked, from the ask rule it matched and the SDK's own reason. The
+ * rule goes first: Android cuts the Reason line at four lines.
+ */
 function claudeApprovalReason(mode: RuntimeMode, options: CanUseToolOptions): string | undefined {
   const rule = options.matchedAskRule
   const parts = [
-    options.decisionReason?.trim(),
     rule &&
       `Your ask rule ${rule.ruleContent ? `${rule.toolName}(${rule.ruleContent})` : rule.toolName} from ${rule.source} matched.`,
     !rule && options.decisionReasonType === 'rule' && 'An ask rule in your settings matched.',
+    options.decisionReason?.trim(),
   ].filter((part): part is string => Boolean(part))
   if (mode === 'full-access') parts.unshift('A safety check or your ask rule stopped this action.')
   return parts.length > 0 ? parts.join(' ') : undefined

@@ -90,6 +90,24 @@ describe('Claude approval reason', () => {
     await adapter.stopSession('t1')
   })
 
+  it('puts the matched rule before a long SDK reason', async () => {
+    const { adapter, onEvent } = await startTurn('sandbox')
+    void captured!.canUseTool(
+      'Bash',
+      { command: 'git push' },
+      {
+        ...baseOptions,
+        decisionReason: 'This pushes to a remote.',
+        matchedAskRule: { source: 'userSettings', toolName: 'Bash', ruleContent: 'git push:*' },
+      },
+    )
+    await vi.waitFor(() => expect(openedRequest(onEvent)).toBeDefined())
+    expect(openedRequest(onEvent).reason).toBe(
+      'Your ask rule Bash(git push:*) from userSettings matched. This pushes to a remote.',
+    )
+    await adapter.stopSession('t1')
+  })
+
   it('opens a card in full access for a safety check, and says why', async () => {
     const { adapter, onEvent } = await startTurn('full-access')
     void captured!.canUseTool(
