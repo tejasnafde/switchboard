@@ -2376,6 +2376,22 @@ export class ProviderRegistry implements PeerToolHost {
     )
   }
 
+  private async interruptOwnTurn(threadId: string): Promise<{ live: boolean }> {
+    const adapter = this.sessionAdapters.get(threadId)
+    if (!adapter) {
+      // A profile switch restarts the session itself; a Stop there is not
+      // a cancel of the switch.
+      if (this.startingSessions.has(threadId) && !this.switchingSessions.has(threadId))
+        this.stopRequestedDuringStart.add(threadId)
+      return { live: false }
+    }
+    const live = this.hasOutstandingTurn(threadId) || this.sessionStatus.get(threadId) === 'running'
+    this.limitResumer?.disarm(threadId, 'stop')
+    if (live) this.steerBlocked.add(threadId)
+    await adapter.interruptTurn(threadId)
+    return { live }
+  }
+
   /** The user stopped or archived the chat: its open cards close unanswered. */
   closeAgentCards(threadId: string): void {
     this.agentApprovals.closeChat(resolveRootThreadId(threadId))
@@ -4161,34 +4177,15 @@ export class ProviderRegistry implements PeerToolHost {
     // status says running after a resume gap clears it on `live: false`,
     // since no closing event will ever come for a turn that is not there.
     this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string): Promise<{ live: boolean }> => {
-      if (this.hubChildrenOn()) {
-        if (this.hubStarter.isOpenChild(threadId)) {
-          if (
-            !this.sessionAdapters.has(threadId) &&
-            this.startingSessions.has(threadId) &&
-            !this.switchingSessions.has(threadId)
-          ) {
-            this.stopRequestedDuringStart.add(threadId)
-            return { live: false }
-          }
-          return { live: await this.stopHubChild(threadId, 'user') }
-        }
-        // Stop on a parent stops its children too, whether or not its own turn runs.
-        await this.stopHubChildren(threadId)
+      if (!this.hubChildrenOn()) return this.interruptOwnTurn(threadId)
+      if (this.hubStarter.isOpenChild(threadId)) {
+        if (this.startingSessions.has(threadId) && !this.sessionAdapters.has(threadId))
+          return this.interruptOwnTurn(threadId)
+        return { live: await this.stopHubChild(threadId, 'user') }
       }
-      const adapter = this.sessionAdapters.get(threadId)
-      if (!adapter) {
-        // A profile switch restarts the session itself; a Stop there is not
-        // a cancel of the switch.
-        if (this.startingSessions.has(threadId) && !this.switchingSessions.has(threadId))
-          this.stopRequestedDuringStart.add(threadId)
-        return { live: false }
-      }
-      const live = this.hasOutstandingTurn(threadId) || this.sessionStatus.get(threadId) === 'running'
-      this.limitResumer?.disarm(threadId, 'stop')
-      if (live) this.steerBlocked.add(threadId)
-      await adapter.interruptTurn(threadId)
-      return { live }
+      // Stop on a parent stops its children too, whether or not its own turn runs.
+      const [, own] = await Promise.all([this.stopHubChildren(threadId), this.interruptOwnTurn(threadId)])
+      return own
     })
 
     this.host.handle(ProviderChannels.SET_RUNTIME_MODE, async (threadId: string, mode: RuntimeMode) => {
