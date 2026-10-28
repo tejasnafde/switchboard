@@ -193,6 +193,25 @@ describe('HubStarter', () => {
     expect(h.started).toHaveLength(4)
   })
 
+  it('gives a child stopped while it waits for a slot no first turn, with a stopped wake', async () => {
+    const h = harness()
+    await h.starter.propose(parent('auto'), [task('A'), task('B'), task('C'), task('D')])
+    for (let i = 0; i < 6; i++) await settle()
+    const fourth = listHubChildren('agent_parent')[3]!
+    h.starter.cancelStart(fourth.childId)
+    for (let i = 0; i < 3; i++) await settle()
+    expect(h.started).toHaveLength(3)
+    expect(h.starter.waitingForSlot(fourth.childId)).toBe(false)
+    expect(getHubChild(fourth.childId)?.phase).toBe('failed_start')
+    expect(listPendingHubWakes('agent_parent').filter((w) => w.childId === fourth.childId)).toEqual([
+      expect.objectContaining({ kind: 'stopped', summary: 'Stopped before its first turn.' }),
+    ])
+    // Its slot was never taken: a turn end starts nobody else.
+    h.starter.onTurnEnded(listHubChildren('agent_parent')[0]!.childId, { usedTokens: 10 })
+    for (let i = 0; i < 3; i++) await settle()
+    expect(h.started).toHaveLength(3)
+  })
+
   it('marks one failed child and starts the others', async () => {
     const h = harness({ failWorktree: (r) => r.creationId.endsWith('-1') })
     await h.starter.propose(parent('auto'), [task('A'), task('B'), task('C')])

@@ -439,6 +439,7 @@ import { decidePermission, CUSTOM_UI_TOOLS, denialMessage, notebookWriteRedirect
 import { notebookManager } from '../../notebooks/manager'
 import { AGENT_DIGEST_PROMPT_RULE } from '@shared/agent-digest'
 import { markAgentSpawnEnv } from '../agent-spawn-env'
+import { noteClaudeChildStarted } from '../claude-orphans'
 import { applyEnvOverlay } from '../env-overlay'
 import { applyClaudeHome, canonicalClaudeHome } from '../claude-home'
 import { createExecutableCache, executableIdentity, managedPath, preferManagedExecutable } from '../managed-bin'
@@ -627,7 +628,7 @@ export function parseClaudeSlashCommands(input: unknown): ProviderSkill[] {
 
 interface PendingApproval {
   requestId: string
-  resolve: (decision: ApprovalDecision) => void
+  resolve: (answer: { decision: ApprovalDecision; reason?: string }) => void
 }
 
 interface PendingQuestion {
@@ -1129,7 +1130,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       const detail =
         typeof toolInput === 'object' ? JSON.stringify(toolInput, null, 2).slice(0, 500) : String(toolInput)
-      const reason = claudeApprovalReason(currentMode, options)
+      const askReason = claudeApprovalReason(currentMode, options)
 
       active.onEvent({
         type: 'request.opened',
@@ -1138,12 +1139,12 @@ export class ClaudeAdapter implements ProviderAdapter {
         requestType: classifyTool(toolName),
         toolName,
         detail,
-        ...(reason ? { reason } : {}),
+        ...(askReason ? { reason: askReason } : {}),
       })
 
       // Waiting on the user - expected silence, hold stall reports.
       active.watchdog.suspend()
-      const decision = await new Promise<ApprovalDecision>((resolve) => {
+      const { decision, reason } = await new Promise<{ decision: ApprovalDecision; reason?: string }>((resolve) => {
         active.pendingApprovals.set(requestId, { requestId, resolve })
       })
       active.watchdog.resume(Date.now())
@@ -1152,7 +1153,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
       return decision === 'approve'
         ? ({ behavior: 'allow', updatedInput: toolInput } as PermissionResult)
-        : ({ behavior: 'deny', message: 'User denied permission' } as PermissionResult)
+        : ({ behavior: 'deny', message: reason ?? 'User denied permission' } as PermissionResult)
     }
 
     const claudeBin = findClaudeBin()
@@ -1857,7 +1858,12 @@ export class ClaudeAdapter implements ProviderAdapter {
     log.info(`question answered: ${requestId}`)
   }
 
-  async respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision): Promise<void> {
+  async respondToRequest(
+    threadId: string,
+    requestId: string,
+    decision: ApprovalDecision,
+    reason?: string,
+  ): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) return
 
@@ -1868,7 +1874,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     }
 
     active.pendingApprovals.delete(requestId)
-    pending.resolve(decision)
+    pending.resolve({ decision, reason })
     log.info(`approval responded: ${requestId} → ${decision}`)
   }
 
@@ -1898,7 +1904,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
     // Reject pending approvals
     for (const [, pending] of active.pendingApprovals) {
-      pending.resolve('deny')
+      pending.resolve({ decision: 'deny' })
     }
     active.pendingApprovals.clear()
 
@@ -1975,6 +1981,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         // arrived. Cached on the active session so listSkills() can return
         // it without re-asking the SDK.
         if (sys.subtype === 'init') {
+          noteClaudeChildStarted()
           const parsed = parseClaudeSlashCommands(sys.commands ?? sys.slash_commands)
           if (parsed.length > 0) {
             active.skills = parsed

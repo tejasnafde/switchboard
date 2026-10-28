@@ -2,7 +2,7 @@
  * The hub tools on the Switchboard MCP server, only while the `hub_children`
  * flag is on (the registry decides when it builds a chat's tool list). A chat
  * that is not an open child gets the parent tools `start_children`,
- * `list_children` and `read_child`; an open child gets `report_to_hub` and
+ * `list_children`, `read_child` and `interrupt_child`; an open child gets `report_to_hub` and
  * `own_dependencies`. Starting is
  * `HubStarter`'s; this binds it to MCP and gathers what `list_children` reports.
  */
@@ -12,6 +12,7 @@ import { HUB_MAX_TASKS_PER_BATCH, HUB_REPORT_STATUSES, parseHubTasks, type HubRe
 import { RUNTIME_MODES, type RuntimeEvent, type RuntimeMode } from '@shared/provider-events'
 import { getConversationById, getLimitResume, lastHubWakes, listHubChildren } from '../db/database'
 import type { ChatResources } from '../hub/hub-measure'
+import type { SubagentCounts } from '../hub/hub-stop'
 import type { HubParentContext, HubStarter } from '../hub/hub-start'
 import { createMainLogger } from '../logger'
 import { toolText, type McpTool, type McpToolResult } from './mcp-session'
@@ -23,6 +24,7 @@ export const START_CHILDREN_TOOL = 'start_children'
 export const LIST_CHILDREN_TOOL = 'list_children'
 export const OWN_DEPENDENCIES_TOOL = 'own_dependencies'
 export const READ_CHILD_TOOL = 'read_child'
+export const INTERRUPT_CHILD_TOOL = 'interrupt_child'
 export const REPORT_TO_HUB_TOOL = 'report_to_hub'
 
 /** The hub paragraph of the MCP instructions, for a chat that has the parent tools. Kept short: every such chat pays for it. */
@@ -42,6 +44,10 @@ export interface HubMcpToolContext {
   publish(event: RuntimeEvent): void
   /** `read_child`, bound to the calling parent. */
   read(args: Record<string, unknown>): Promise<McpToolResult>
+  /** `interrupt_child`: stops one of the calling parent's open children. */
+  interrupt(childId: string): Promise<McpToolResult>
+  /** The child's own Agent/Task calls. */
+  subagents(childId: string): SubagentCounts
   gitStats?(cwd: string, base: string): Promise<GitStats | null>
 }
 
@@ -129,7 +135,8 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
       name: LIST_CHILDREN_TOOL,
       description:
         "List this chat's child chats: phase, agent, account, branch, ahead and behind, uncommitted changes, " +
-        'diffstat, tokens and cost of the last turn, memory and CPU of its agent, disk use, and its last update.',
+        'diffstat, tokens and cost of the last turn, memory and CPU of its agent, disk use, its own subagents ' +
+        '(running, done, failed) and its last update.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { title: 'List child chats', readOnlyHint: true, openWorldHint: false },
       async call() {
@@ -165,6 +172,7 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
                 : null,
               diskMb: disk === undefined ? null : Math.round(disk / MB),
               limit: getLimitResume(c.childId)?.state ?? null,
+              nativeSubagents: ctx.subagents(c.childId),
               lastUpdate: wake ? { kind: wake.kind, summary: wake.summary } : null,
               conflicts: null,
             }
@@ -210,6 +218,38 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
       },
       annotations: { title: 'Read a child chat', readOnlyHint: true, openWorldHint: false },
       call: (args) => ctx.read(args),
+    },
+    {
+      name: INTERRUPT_CHILD_TOOL,
+      description: [
+        "Stop one of this chat's child chats: its running turn, its auto-resume after a usage limit, its open cards",
+        'and its queued messages. Its worktree, branch and history stay, and a message from this chat starts it',
+        'again. A child with no running turn is left as it is, and the call still succeeds.',
+      ].join(' '),
+      inputSchema: {
+        type: 'object',
+        properties: { childId: { type: 'string', description: 'The id list_children and the update show.' } },
+        required: ['childId'],
+        additionalProperties: false,
+      },
+      annotations: { title: 'Stop a child chat', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      async call(args) {
+        const parent = ctx.parent()
+        if (parent.mode === 'plan') {
+          const reason = 'Plan mode does not stop child chats.'
+          ctx.publish({
+            type: 'tool.denied',
+            threadId: parent.threadId,
+            toolName: INTERRUPT_CHILD_TOOL,
+            reason,
+            mode: 'plan',
+          })
+          return toolText(`${reason} Ask the user to leave plan mode first.`, true)
+        }
+        if (typeof args.childId !== 'string' || !args.childId)
+          return toolText('Give the childId list_children shows.', true)
+        return ctx.interrupt(args.childId)
+      },
     },
   ]
 }

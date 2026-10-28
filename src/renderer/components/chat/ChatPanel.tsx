@@ -37,6 +37,7 @@ import { CompactionOfferBanner } from './CompactionOfferBanner'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
 import { isDraftSessionId } from '@shared/new-chat-draft'
 import { runningPlaceholder } from '@shared/turn-delivery'
+import { AGENT_APPROVAL_ID_PREFIX } from '@shared/agent-approval-cards'
 import { materializeDraft, takeFirstSend } from '../../services/draft-chat'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import { onSessionRename, emitSessionRename, onReducedProviderEvent } from '../../services/session-events'
@@ -203,6 +204,20 @@ export function ChatPanel({
     }
     return undefined
   }, [messages])
+  // A send denies an approval the turn waits on (the backend does it). The
+  // agent's own cards (host writes, child batches, peer sends) do not hold the
+  // turn and are left open.
+  const approvalHoldsTurn = useMemo(
+    () =>
+      messages.some(
+        (m) =>
+          m.approval?.status === 'pending' &&
+          !m.approval.hostWrite &&
+          !m.approval.hubBatch &&
+          !m.id.startsWith(`approval_${AGENT_APPROVAL_ID_PREFIX}`),
+      ),
+    [messages],
+  )
   const hasSession = activeSession !== undefined || opening !== undefined
   const sessionId = opening?.id ?? activeSession?.id ?? null
   useEffect(() => {
@@ -1349,11 +1364,13 @@ export function ChatPanel({
               ? `${wait.label} You can keep typing.`
               : status === 'exited'
                 ? 'Agent has exited. Start a new session.'
-                : !hasSession
-                  ? (emptyPlaceholder ?? 'Click "+ New Chat" or select a session to start...')
-                  : status === 'running' || status === 'thinking'
-                    ? runningPlaceholder(activeSession?.type, followUpDefault)
-                    : 'Message the agent...'
+                : approvalHoldsTurn
+                  ? 'Send a message to decline and redirect'
+                  : !hasSession
+                    ? (emptyPlaceholder ?? 'Click "+ New Chat" or select a session to start...')
+                    : status === 'running' || status === 'thinking'
+                      ? runningPlaceholder(activeSession?.type, followUpDefault)
+                      : 'Message the agent...'
           }
           agentType={agentType}
           onAgentTypeChange={handleAgentTypeChange}

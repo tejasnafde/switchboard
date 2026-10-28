@@ -2,6 +2,8 @@ package app.switchboard.mobile.data.outbox
 
 import app.switchboard.mobile.data.remote.RemoteRpc
 import app.switchboard.mobile.data.remote.SwitchboardRemoteClient
+import app.switchboard.mobile.domain.composer.ComposerFiles
+import app.switchboard.mobile.domain.composer.UploadedFile
 import app.switchboard.mobile.domain.outbox.OutboxDeliveryState
 import app.switchboard.mobile.domain.outbox.QueuedReviewPill
 import app.switchboard.mobile.domain.outbox.QueuedTurn
@@ -231,6 +233,50 @@ class OutboxRemoteSenderTest {
     }
 
     @Test
+    fun anUploadedFileRidesAsAPromptLineAndAFileChip() {
+        val rpc = FakeRpc(synchronousOutcome = RpcOutcome.Success(null))
+        val envelope = MutableAvailability(4, extra = setOf(ATOMIC_USER_TURN_CAPABILITY))
+        val file = UploadedFile("spec.pdf", "/att/1/spec.pdf", "spec.pdf (2 pages)")
+        val staged = StagedAttachment(ComposerFiles.encode(file), ComposerFiles.UPLOADED_FILE_MIME)
+        val noImages = OutboxImageMaterializer { OutboxImageMaterialization.Success(emptyList()) }
+        sender(rpc, envelope, noImages).send(turn(attachments = listOf(staged)), {})
+
+        val body = rpc.lastArgs.values.single() as JsonObject
+        assertEquals(JsonString("hello\n\n[Attached file \"spec.pdf\" is saved at: /att/1/spec.pdf]"), body.values["providerText"])
+        assertEquals(JsonString("hello\n\n[[pill:${file.pillId}]]"), body.values["displayBody"])
+        val meta = (body.values["pillsMeta"] as JsonObject).values[file.pillId] as JsonObject
+        assertEquals(JsonString("spec.pdf (2 pages)"), meta.values["label"])
+        assertEquals(JsonString("file"), meta.values["kind"])
+
+        // The real materializer leaves the uploaded file out of the images.
+        val images = PrivateFileOutboxImageMaterializer { error("an uploaded file is never read on the phone") }
+        assertEquals(OutboxImageMaterialization.Success(emptyList()), images.materialize(turn(attachments = listOf(staged))))
+    }
+
+    @Test
+    fun aFileThatDoesNotDecodeOrWasPrunedIsRefusedBeforeSending() {
+        val rpc = FakeRpc(synchronousOutcome = RpcOutcome.Success(null))
+        val noImages = OutboxImageMaterializer { OutboxImageMaterialization.Success(emptyList()) }
+        val outcomes = mutableListOf<SendOutcome>()
+        val broken = StagedAttachment("not json", ComposerFiles.UPLOADED_FILE_MIME)
+        sender(rpc, materializer = noImages).send(turn(attachments = listOf(broken)), outcomes::add)
+
+        val old = UploadedFile("a.pdf", "/att/a.pdf", "a.pdf", savedAtMs = 10)
+        val staged = StagedAttachment(ComposerFiles.encode(old), ComposerFiles.UPLOADED_FILE_MIME)
+        val late = OutboxClock { 10 + ComposerFiles.SENDABLE_FOR_MS + 1 }
+        sender(rpc, materializer = noImages, clock = late).send(turn(attachments = listOf(staged)), outcomes::add)
+
+        assertEquals(null, rpc.lastChannel)
+        assertEquals(2, outcomes.size)
+        assertTrue(outcomes.all { it is SendOutcome.Permanent })
+
+        // Inside the window it sends.
+        val fresh = OutboxClock { 10 + ComposerFiles.SENDABLE_FOR_MS }
+        sender(rpc, materializer = noImages, clock = fresh).send(turn(attachments = listOf(staged)), outcomes::add)
+        assertEquals("provider:send-turn", rpc.lastChannel)
+    }
+
+    @Test
     fun aReviewPillSurvivesTheOutboxRow() {
         val pill = QueuedReviewPill("review-1", "label", "content \"quoted\"")
         val queued = turn(reviewPill = pill)
@@ -257,10 +303,12 @@ class OutboxRemoteSenderTest {
         materializer: OutboxImageMaterializer = OutboxImageMaterializer {
             OutboxImageMaterialization.Success(listOf(ImageInput("data:image/png;base64,AQID", "image/png")))
         },
+        clock: OutboxClock = OutboxClock { 1 },
     ) = OutboxRemoteSender(
         clients = OutboxClientLookup { SwitchboardRemoteClient(it, rpc) },
         capabilities = availability,
         images = materializer,
+        clock = clock,
     )
 
     private fun turn(

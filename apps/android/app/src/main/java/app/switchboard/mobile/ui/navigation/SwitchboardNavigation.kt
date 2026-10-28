@@ -1,5 +1,8 @@
 package app.switchboard.mobile.ui.navigation
 
+import app.switchboard.mobile.domain.composer.ComposerFiles
+import app.switchboard.mobile.platform.outbox.AndroidContentUriSource
+import app.switchboard.mobile.platform.outbox.RemoteComposerFileUploader
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
@@ -9,6 +12,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import app.switchboard.mobile.BuildConfig
 import app.switchboard.mobile.ui.demo.DemoStrip
@@ -52,6 +56,7 @@ import app.switchboard.mobile.data.thread.ThreadComposerPersistence
 import app.switchboard.mobile.data.thread.ThreadSessionClock
 import app.switchboard.mobile.data.thread.ThreadSessionCoordinator
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
+import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.OutboxUiAction
@@ -120,6 +125,7 @@ private val EmptyRuntimeStatuses = MutableStateFlow<Map<String, ConnectionRuntim
 private val SteerFollowUp = kotlinx.coroutines.flow.MutableStateFlow(app.switchboard.mobile.domain.thread.TurnDelivery.Steer)
 private val EmptyComposerDrafts = MutableStateFlow<Map<ComposerDraftKey, ComposerDraft>>(emptyMap())
 private val EmptyComposerErrors = MutableStateFlow<Map<ComposerDraftKey, String>>(emptyMap())
+private val EmptyComposerUploads = MutableStateFlow<Map<ComposerDraftKey, List<String>>>(emptyMap())
 private val EmptyQueuedTurns = MutableStateFlow<List<QueuedTurn>>(emptyList())
 
 @Composable
@@ -1057,6 +1063,8 @@ private fun ThreadRouteHost(
     }
     val composerDrafts by (runtime?.composerDrafts ?: EmptyComposerDrafts).collectAsState()
     val composerErrors by (runtime?.composerErrors ?: EmptyComposerErrors).collectAsState()
+    val composerUploads by (runtime?.composerUploads ?: EmptyComposerUploads).collectAsState()
+    val uploading = composerUploads[composerKey]?.size ?: 0
     val allQueuedTurns by (runtime?.queuedTurns ?: EmptyQueuedTurns).collectAsState()
     val savedDraft = composerDrafts[composerKey]
     val queuedTurns = remember(allQueuedTurns, route.connectionId, route.threadId) {
@@ -1104,15 +1112,16 @@ private fun ThreadRouteHost(
                     showInterrupt = false,
                     attachments = localDraft.attachments,
                     editingOrigin = localDraft.editingOrigin,
+                    uploading = uploading,
                 )
             },
             onDraftChange = { text ->
                 localDraft = localDraft.copy(text = text)
-                runtime?.saveComposerDraft(localDraft)
+                runtime?.saveComposerText(localDraft)
             },
             onRuntimeModeChange = { mode ->
                 localDraft = localDraft.copy(runtimeMode = mode.wire)
-                runtime?.saveComposerDraft(localDraft)
+                runtime?.saveComposerText(localDraft)
             },
             onImagesSelected = { sources -> runtime?.addComposerImages(composerKey, sources) },
             onRemoveImage = { attachmentId ->
@@ -1137,6 +1146,7 @@ private fun ThreadRouteHost(
         offlineSnapshot = offlineSnapshot,
         savedDraft = savedDraft,
         composerError = composerErrors[composerKey],
+        uploading = uploading,
         queuedTurns = queuedTurns,
         onBack = onBack,
         onForked = onForked,
@@ -1151,6 +1161,7 @@ private fun ConnectedThreadRoute(
     offlineSnapshot: OfflineSnapshot?,
     savedDraft: ComposerDraft?,
     composerError: String?,
+    uploading: Int,
     queuedTurns: List<QueuedTurn>,
     onBack: () -> Unit,
     onForked: (app.switchboard.mobile.domain.remote.ForkConversationState) -> Unit,
@@ -1235,8 +1246,13 @@ private fun ConnectedThreadRoute(
             composerPersistence = object : ThreadComposerPersistence {
                 override fun save(draft: ComposerDraft) = runtime.saveComposerDraft(draft)
 
+                override fun saveText(draft: ComposerDraft, added: List<ComposerAttachment>) =
+                    runtime.saveComposerText(draft, added)
+
                 override fun clear(key: ComposerDraftKey): Boolean =
                     runtime.clearComposerDraftBlocking(key)
+
+                override fun uploading(key: ComposerDraftKey): Boolean = runtime.composerUploading(key)
             },
             reviewPills = runtime.reviewPills,
         )
@@ -1244,6 +1260,10 @@ private fun ConnectedThreadRoute(
 
     LaunchedEffect(coordinator, savedDraft) {
         coordinator.installComposerDraft(savedDraft)
+    }
+    // Declared after the draft, so a finished upload's file is installed before send is enabled.
+    LaunchedEffect(coordinator, uploading) {
+        coordinator.installUploads(uploading)
     }
     val pendingPills by runtime.reviewPills.state.collectAsState()
     val pendingPill = pendingPills[composerKey]
@@ -1292,6 +1312,14 @@ private fun ConnectedThreadRoute(
     val htmlLive = remember(lease.capabilities, route.threadId, lease.client) {
         HtmlLiveImages(lease.capabilities, route.threadId, lease.client)
     }
+    val context = LocalContext.current
+    val uploader = remember(lease.capabilities, lease.client) {
+        if (ComposerFiles.UPLOAD_CAPABILITY in lease.capabilities) {
+            RemoteComposerFileUploader(lease.client, AndroidContentUriSource(context.contentResolver))
+        } else {
+            null
+        }
+    }
     CompositionLocalProvider(LocalHtmlLive provides htmlLive) {
         ThreadSessionScreen(
             coordinator = coordinator,
@@ -1299,7 +1327,10 @@ private fun ConnectedThreadRoute(
             title = route.title,
             backendLabel = route.connectionLabel,
             onBack = onBack,
-            onImagesSelected = { sources -> runtime.addComposerImages(composerKey, sources) },
+            onImagesSelected = { sources -> runtime.addComposerImages(composerKey, sources, uploader) },
+            onLargePaste = uploader?.let { files ->
+                { paste, onFailed -> runtime.attachPastedText(composerKey, paste, files, onFailed) }
+            },
             onRemoveImage = { attachmentId -> runtime.removeComposerImage(composerKey, attachmentId) },
             queuedTurns = queuedTurns,
             onOutboxAction = { origin, action ->

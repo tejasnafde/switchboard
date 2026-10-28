@@ -2,11 +2,13 @@ package app.switchboard.mobile.platform.outbox
 
 import app.switchboard.mobile.data.composer.ComposerAttachmentStageResult
 import app.switchboard.mobile.domain.composer.ComposerAttachment
+import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.composer.ComposerImageSource
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.file.Files
 import app.switchboard.mobile.domain.composer.ImageResizePlan
+import app.switchboard.mobile.domain.composer.UploadedFile
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -138,6 +140,32 @@ class PrivateComposerAttachmentStagerTest {
                 listOf("b.jpg did not fit: the images in one message can total at most 3 MB"),
                 result.refused,
             )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `an uploaded file comes back from a queued turn as the same file chip`() {
+        val root = Files.createTempDirectory("sb-draft-root").toFile()
+        try {
+            val stager = PrivateComposerAttachmentStager(
+                rootDirectory = root,
+                contentUris = ContentUriSource { error("an uploaded file is never read on the phone") },
+                shrinker = { _, _ -> error("an uploaded file is never shrunk") },
+                fileNames = AttachmentFileNameSource { "chip" },
+            )
+            val file = UploadedFile("log.txt", "/att/1/log.txt", "log.txt (40 lines)")
+
+            val result = stager.stage(
+                listOf(ComposerImageSource("", ComposerFiles.UPLOADED_FILE_MIME, "Image 1", ComposerFiles.encode(file))),
+                emptyList(),
+            ) as ComposerAttachmentStageResult.Success
+
+            val staged = result.attachments.single()
+            assertEquals("log.txt (40 lines)", staged.displayName)
+            assertEquals(file, ComposerFiles.uploaded(staged.privateUri, staged.mimeType))
+            assertEquals(emptyList<String>(), root.list()!!.toList())
         } finally {
             root.deleteRecursively()
         }

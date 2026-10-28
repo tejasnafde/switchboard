@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.navigation
 
+import app.switchboard.mobile.data.composer.ComposerFileUploader
 import app.switchboard.mobile.data.remote.ReadyClientLease
 import app.switchboard.mobile.data.remote.BrowseSnapshotStore
 import app.switchboard.mobile.data.remote.EmptyBrowseSnapshotStore
@@ -20,7 +21,9 @@ import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.iap.IapTarget
 import app.switchboard.mobile.domain.iap.IapTargetSelection
+import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerDraft
+import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.ComposerImageSource
 import app.switchboard.mobile.domain.thread.ThreadEventScope
@@ -42,6 +45,7 @@ private val EmptyBrowseActivity = MutableStateFlow<Map<String, BrowseThreadActiv
 private val DefaultFollowUp = MutableStateFlow(app.switchboard.mobile.domain.thread.TurnDelivery.Steer)
 private val EmptyComposerDrafts = MutableStateFlow<Map<ComposerDraftKey, ComposerDraft>>(emptyMap())
 private val EmptyComposerErrors = MutableStateFlow<Map<ComposerDraftKey, String>>(emptyMap())
+private val EmptyComposerUploads = MutableStateFlow<Map<ComposerDraftKey, List<String>>>(emptyMap())
 private val EmptyQueuedTurns = MutableStateFlow<List<QueuedTurn>>(emptyList())
 
 /** Process-wide, so a pill left by Reviews survives the Activity being recreated. */
@@ -53,6 +57,10 @@ interface RootNavigationRuntime {
         get() = EmptyComposerDrafts
     val composerErrors: StateFlow<Map<ComposerDraftKey, String>>
         get() = EmptyComposerErrors
+
+    /** Names of the files each draft is still uploading. */
+    val composerUploads: StateFlow<Map<ComposerDraftKey, List<String>>>
+        get() = EmptyComposerUploads
     val queuedTurns: StateFlow<List<QueuedTurn>>
         get() = EmptyQueuedTurns
     val threadSnapshots: ThreadSnapshotStore
@@ -88,7 +96,21 @@ interface RootNavigationRuntime {
 
     fun saveComposerDraft(draft: ComposerDraft) = Unit
 
-    fun addComposerImages(key: ComposerDraftKey, sources: List<ComposerImageSource>) = Unit
+    /** Saves a text or mode edit; the draft keeps its stored attachments, plus [added]. */
+    fun saveComposerText(draft: ComposerDraft, added: List<ComposerAttachment> = emptyList()) = Unit
+
+    /** Picked files: images are staged, other files go to [uploader], or are refused without one. */
+    fun addComposerImages(key: ComposerDraftKey, sources: List<ComposerImageSource>, uploader: ComposerFileUploader? = null) = Unit
+
+    fun attachPastedText(
+        key: ComposerDraftKey,
+        paste: ComposerFiles.LargePaste,
+        uploader: ComposerFileUploader,
+        onFailed: (String) -> Boolean,
+    ) = Unit
+
+    /** A pick or a paste is still on its way into the draft. */
+    fun composerUploading(key: ComposerDraftKey): Boolean = false
 
     fun removeComposerImage(key: ComposerDraftKey, attachmentId: String) = Unit
 

@@ -66,6 +66,8 @@ import {
   listPendingHubWakes,
   lastHubWakes,
   getHubParent,
+  setHubParentHeld,
+  getHubChild,
   resolveRootThreadId,
   rewriteSystemMarker,
   getDb,
@@ -107,6 +109,7 @@ import { queuedTurnComposerText } from '@shared/queued-turns'
 import { echoMessageId, isRuntimeMode, REQUEST_EXPIRED, SESSION_START_STOPPED } from '@shared/provider-events'
 import { isReasoningEffort } from '@shared/provider-option-memory'
 import {
+  canSteer,
   promoteUnavailableReason,
   peerDelivery,
   startsOwnProviderTurn,
@@ -160,6 +163,7 @@ import { appMetrics } from '../runtime'
 import { HubResourceSampler } from '../hub/hub-measure'
 import { HubWakeScheduler, type HubWakeHost } from '../hub/hub-wakes'
 import { readChild } from '../hub/hub-read'
+import { ChildTaskNotes, HubIdleReaper, NativeSubagents, type HubReaperHost } from '../hub/hub-stop'
 import {
   CHILD_READ_ONLY_CODE,
   CHILD_READ_ONLY_TEXT,
@@ -173,6 +177,8 @@ import {
   type HubChatView,
   type HubChildView,
   type HubWakeKind,
+  isOpenChildPhase,
+  readHubSettings,
 } from '@shared/hub'
 import type { HubChildRow } from '../db/hubs'
 import { sqliteApprovalCardStore } from '../db/agent-approval-cards'
@@ -244,8 +250,12 @@ import { loadConversationHistory, transcriptPathOf } from '../conversations/hist
 import { peekCatalog, probeCatalog } from './catalog-probe'
 import { pendingRequestKey, type PendingBlockingEvent } from '@shared/pending-requests'
 import { turnPreviewLine } from '@shared/turn-preview'
+import { reapOrphanedClaudeChildrenOnce } from './claude-orphans'
 
 const log = createLogger('provider:registry')
+
+/** What the agent is told when the user answers an approval card by sending a message. */
+export const SEND_DECLINES_APPROVAL_REASON = 'The user sent a new message instead of answering this request.'
 
 /** A child's events that can change its shown state, so its parent's view is read again. */
 const HUB_VIEW_EVENTS: ReadonlySet<RuntimeEvent['type']> = new Set([
@@ -291,6 +301,12 @@ function hubChatRef(id: string, fallbackTitle = 'Untitled'): HubChatRef {
     projectPath: conv?.project_path ?? '',
     updatedAt: conv?.updated_at ?? 0,
   }
+}
+
+/** An error's first line, short enough for a wake summary. */
+function oneLine(text: string): string {
+  const line = text.trim().split('\n')[0] ?? ''
+  return line.length > 200 ? `${line.slice(0, 199)}…` : line
 }
 
 /** Old plus new content. A bigger card still streams live, but is not stored. */
@@ -464,6 +480,9 @@ export class ProviderRegistry implements PeerToolHost {
     })
     activeRegistry = this
     this.host = host
+    // Every session start waits for it: a CLI left by a crashed or restarted
+    // backend would otherwise run beside the one a resumed chat starts.
+    this.orphanReap = adapters ? Promise.resolve(0) : reapOrphanedClaudeChildrenOnce()
     // SB_DEMO_ADAPTER=1 swaps in the scripted adapter so the tour recorder
     // (videos/capture-tour.mjs) can capture agent-driven scenes without
     // credentials. Never set by a normal launch.
@@ -512,9 +531,11 @@ export class ProviderRegistry implements PeerToolHost {
         log.error('could not recover child chats cut off mid-start', err)
       }
     }
+    this.hubReaper = new HubIdleReaper(this.hubReaperHost())
     this.syncLineageLinks()
     this.hubSampler?.start()
     this.hubWakes.start()
+    if (!adapters) this.hubReaper.start()
   }
 
   /**
@@ -550,7 +571,10 @@ export class ProviderRegistry implements PeerToolHost {
     return {
       createWorktree: hubWorktreeCreator,
       startSession: (opts: SessionStartOpts) => this.startManagedSession(opts),
-      submitTurn: (input: UserTurnSubmissionV1) => this.submitManagedUserTurn(input),
+      submitTurn: (input: UserTurnSubmissionV1) => {
+        this.hubNotes.task(resolveRootThreadId(input.threadId))
+        return this.submitManagedUserTurn(input)
+      },
       openCard: (input: { threadId: string; parentId: string; detail: string; plan: HubBatchPlan }) =>
         this.agentApprovals.open({
           threadId: input.threadId,
@@ -566,7 +590,9 @@ export class ProviderRegistry implements PeerToolHost {
           ...row,
           at: Date.now(),
         }),
+      // Its blocked wake is written: the stop adds no wake of its own.
       stopChild: async (childId: string) => {
+        this.hubNotes.tell(childId)
         await this.stopChildSession?.(this.liveSessionId(childId) ?? childId)
       },
       changed: (parentId: string) => {
@@ -616,9 +642,189 @@ export class ProviderRegistry implements PeerToolHost {
     }
   }
 
+  private hubReaperHost(): HubReaperHost {
+    return {
+      idleReapMinutes: () => (this.hubChildrenOn() ? readHubSettings(getSetting).idleReapMinutes : null),
+      openChildren: () => listHubChildrenInPhase('open').map((c) => ({ childId: c.childId, parentId: c.parentId })),
+      lastWakes: (parentId) => lastHubWakes(parentId),
+      liveThread: (childId) => this.liveSessionId(childId),
+      idle: (threadId) =>
+        this.sessionStatus.get(threadId) === 'idle' &&
+        !this.preparingTurns.has(threadId) &&
+        !this.hasOutstandingTurn(threadId) &&
+        this.getPendingRequests(threadId).length === 0 &&
+        !this.switchingSessions.has(threadId),
+      subagentsRunning: (threadId) => this.hubSubagents.runningOf(threadId),
+      agentPid: (threadId) => this.switchboardMcp?.agentPid(threadId) ?? null,
+      stop: async (childId, threadId) => {
+        const snapshot = await this.stopChildSession?.(threadId)
+        if (!snapshot) return
+        const { descriptor, credentials } = snapshot
+        this.reapedChildren.set(childId, {
+          threadId,
+          provider: descriptor.provider,
+          cwd: descriptor.cwd,
+          model: descriptor.model,
+          runtimeMode: descriptor.runtimeMode,
+          resumeSessionId: descriptor.sessionId,
+          instanceId: credentials.instanceId,
+          remoteConfigDir: credentials.remoteConfigDir,
+        })
+        this.publishHubChange(resolveRootThreadId(childId))
+      },
+    }
+  }
+
+  /**
+   * A reaped child resumes for its parent's message: its session starts again
+   * from where the reaper stopped it. Returns the id it runs under.
+   */
+  private async resumeReapedChild(childId: string, threadId: string): Promise<string> {
+    const opts = this.reapedChildren.get(childId)
+    if (!opts) return threadId
+    this.reapedChildren.delete(childId)
+    // The user opened it meanwhile.
+    const live = this.liveSessionId(childId)
+    if (live) return live
+    const span = perfSpan('hub.resume-reaped', { childId })
+    try {
+      await this.startManagedSession(opts)
+      span.end({ outcome: 'started' })
+    } catch (err) {
+      span.end({ outcome: 'failed' })
+      log.warn(`could not resume reaped child ${childId}`, err)
+      // The next message tries again.
+      this.reapedChildren.set(childId, opts)
+      throw err
+    }
+    return this.liveSessionId(childId) ?? opts.threadId
+  }
+
+  /**
+   * Stops one open child: its turn, its auto-resume, its cards and provider
+   * requests, its held messages and its subagents. True when a turn ran.
+   * A user's Stop and a parent's Stop tell the parent with a `stopped` wake;
+   * `interrupt_child` does not, since the parent did it.
+   */
+  async stopHubChild(childId: string, by: 'user' | 'parent' | 'cascade'): Promise<boolean> {
+    const root = resolveRootThreadId(childId)
+    this.limitResumer?.disarm(root, by === 'user' ? 'stop' : by === 'parent' ? 'interrupt_child' : 'parent_stop')
+    this.closeAgentCards(root)
+    const live = this.liveSessionId(root)
+    const adapter = live ? this.sessionAdapters.get(live) : undefined
+    const running =
+      !!live &&
+      (this.hasOutstandingTurn(live) ||
+        this.sessionStatus.get(live) === 'running' ||
+        this.hubSubagents.runningOf(live) > 0)
+    if (running || by === 'parent') this.hubNotes.tell(root)
+    if (live && adapter) {
+      if (running) {
+        this.steerBlocked.add(live)
+        await adapter.interruptTurn(live)
+      }
+      this.expirePendingRequests(live, 'The child chat was stopped before it was answered.')
+      for (const q of this.queuedTurns.list(live)) {
+        const dropped = await this.actOnQueuedTurn('cancel', live, q.messageId)
+        if (!dropped.ok) log.warn(`could not drop a held message of stopped child ${root}: ${dropped.message}`)
+      }
+      this.hubSubagents.stopped(live)
+    } else this.hubStarter.cancelStart(root)
+    const parentId = this.hubStarter.parentOfOpenChild(root)
+    if (running && by !== 'parent' && parentId) {
+      this.childWake(parentId, root, 'stopped', by === 'user' ? 'Stopped by the user.' : 'Stopped with this chat.')
+    }
+    log.info('child stopped', { childId: root, by, running })
+    return running
+  }
+
+  /**
+   * Stop on a parent: every open child stops in parallel, the parent's
+   * updates are held until the user's next message or Deliver, and the
+   * auto-resume rows of the parent and its children are disarmed.
+   */
+  async stopHubChildren(parentId: string): Promise<void> {
+    const root = resolveRootThreadId(parentId)
+    const open = listHubChildren(root).filter((c) => isOpenChildPhase(c.phase))
+    if (open.length === 0) return
+    const span = perfSpan('hub.stop', { parentId: root, children: open.length })
+    setHubParentHeld(root, true, 'stop')
+    this.limitResumer?.disarm(root, 'stop')
+    const results = await Promise.allSettled(open.map((c) => this.stopHubChild(c.childId, 'cascade')))
+    const failed = results.filter((r) => r.status === 'rejected')
+    for (const r of failed) log.warn(`a child of ${root} did not stop`, (r as PromiseRejectedResult).reason)
+    span.end({
+      stopped: results.filter((r) => r.status === 'fulfilled' && r.value).length,
+      failed: failed.length,
+    })
+    this.publishHubChange(root)
+  }
+
+  /** A wake Switchboard writes for a child (stopped, failed, blocked), with a pointer by time and transcript. */
+  private childWake(parentId: string, childId: string, kind: HubWakeKind, summary: string): void {
+    const at = Date.now()
+    void transcriptPathOf(childId)
+      .catch((err) => {
+        log.warn(`could not find the transcript file of child ${childId}`, err)
+        return null
+      })
+      .then((transcriptPath) => {
+        this.hubWakes.record({
+          parentId,
+          childId,
+          kind,
+          summary,
+          pointer: { childId, at, ...(transcriptPath ? { transcriptPath } : {}) },
+        })
+        log.info('child wake', { childId, parentId, kind })
+        this.publishHubChange(parentId)
+      })
+      .catch((err) => log.error(`could not store the ${kind} wake of child ${childId}`, err))
+  }
+
+  /**
+   * Switchboard's own wakes for a child, once per task, decided where its turn
+   * or session ends: an error on that turn is `failed`, a full context window
+   * `blocked`, and an end with no report and no subagent running `stopped`.
+   * A usage limit gives none here. Adapters send the `error` before the end
+   * that carries the limit, so an error only marks the turn.
+   */
+  private onChildEvent(event: RuntimeEvent): void {
+    if (event.type === 'error') {
+      this.turnErrors.set(event.threadId, event.message)
+      return
+    }
+    const sessionEnded = event.type === 'status' && (event.status === 'stopped' || event.status === 'error')
+    if (event.type !== 'turn.completed' && !sessionEnded) return
+    const error = this.turnErrors.get(event.threadId)
+    this.turnErrors.delete(event.threadId)
+    // Switchboard's own stop, a profile switch or a quit, not the agent's.
+    if (sessionEnded && (this.stoppingThreads.has(event.threadId) || !this.sessionAdapters.has(event.threadId))) return
+    if (this.switchingSessions.has(event.threadId) || this.stoppingAll || !this.hubChildrenOn()) return
+    const childId = resolveRootThreadId(event.threadId)
+    const parentId = this.hubStarter.parentOfOpenChild(childId)
+    if (!parentId) return
+    let wake: { kind: HubWakeKind; summary: string } | null = null
+    if (event.type === 'turn.completed' && event.limit)
+      wake =
+        event.limit.limitClass === 'context_full'
+          ? { kind: 'blocked', summary: 'Blocked: its context window is full.' }
+          : null
+    else if (error) wake = { kind: 'failed', summary: `Failed: ${oneLine(error)}` }
+    else if (event.type === 'status')
+      wake =
+        event.status === 'error'
+          ? { kind: 'failed', summary: 'Failed: its agent process ended with an error.' }
+          : { kind: 'stopped', summary: 'Its session ended without a report.' }
+    else if (!this.hasOutstandingTurn(event.threadId) && this.hubSubagents.runningOf(event.threadId) === 0)
+      wake = { kind: 'stopped', summary: 'Ended its turn without a report.' }
+    if (wake && this.hubNotes.claim(childId)) this.childWake(parentId, childId, wake.kind, wake.summary)
+  }
+
   /** `report_to_hub`: the child's summary and a pointer to the call in its transcript become a wake for its parent. */
   private async reportToHub(threadId: string, input: { status: HubReportStatus; summary: string }) {
     const childId = resolveRootThreadId(threadId)
+    this.hubNotes.tell(childId)
     // Oldest first: two calls in one message start in order and run in order.
     const toolCallId = this.reportCalls.get(threadId)?.shift()
     const parentId = this.hubStarter.parentOfOpenChild(childId)
@@ -715,7 +921,7 @@ export class ProviderRegistry implements PeerToolHost {
       sessionKnown: true,
       blockingRequest: this.getPendingRequests(c.childId).length > 0,
       running: this.liveTurnRunning(c.childId),
-      nativeSubagentsRunning: false,
+      nativeSubagentsRunning: this.hubSubagents.runningOf(this.liveSessionId(c.childId) ?? c.childId) > 0,
       limit,
       lastWake: wake?.kind ?? null,
       parentRepliedSinceWake: false,
@@ -843,9 +1049,23 @@ export class ProviderRegistry implements PeerToolHost {
   /** Started `report_to_hub` tool call ids per thread, oldest first, for the wakes' pointers. */
   private readonly reportCalls = new Map<string, string[]>()
   /** The user's Stop for one thread; set when the IPC handlers are registered. */
-  private stopChildSession: ((threadId: string) => Promise<void>) | null = null
+  private stopChildSession: ((threadId: string) => Promise<StoppedSessionSnapshot | null>) | null = null
   /** Samples the agent process trees of open children; null in tests that inject adapters. */
   private readonly hubSampler: HubResourceSampler | null
+  private readonly orphanReap: Promise<number>
+  /** Running Agent/Task calls per thread: a child with one is Working and is never reaped. */
+  readonly hubSubagents = new NativeSubagents()
+  /** Whether each child told its parent something since its last task (`hub/hub-stop.ts`). */
+  private readonly hubNotes = new ChildTaskNotes()
+  /** Stops reported children left idle (`hub.idleReapMinutes`). */
+  readonly hubReaper: HubIdleReaper
+  /** How to restart each reaped child, by root id, until its parent's next message. */
+  private readonly reapedChildren = new Map<string, SessionStartOpts>()
+  /** The last error of each thread's running turn, for its child wake. */
+  private readonly turnErrors = new Map<string, string>()
+  /** Threads Switchboard is stopping: their exit is not the agent's. */
+  private readonly stoppingThreads = new Set<string>()
+  private stoppingAll = false
   private readonly approvalStore: ApprovalCardStore<AgentWritePlan>
   /** Agent messages a link refused only for time, until they are delivered (`shared/peer-held-messages.ts`). */
   private readonly heldPeerStore: HeldPeerMessageStore
@@ -1217,6 +1437,33 @@ export class ProviderRegistry implements PeerToolHost {
       if (event.type === 'plan.proposed') byKey.delete(key)
     }
     if (byKey.size === 0) this.pendingRequests.delete(threadId)
+  }
+
+  /**
+   * A message the user sends while an approval card waits answers the card:
+   * each open approval of the chat is denied with a reason, so the turn it
+   * blocked goes on and takes the message as a steer (or, on an agent that
+   * cannot steer, ends, and the queued message starts). Questions and plans are left alone, and so are the
+   * broker's cards, which never hold a turn. A deny that fails refuses the send.
+   */
+  private async declinePendingApprovals(adapter: ProviderAdapter, threadId: string): Promise<void> {
+    const open = new Set<string>()
+    for (const id of [threadId, resolveRootThreadId(threadId)]) {
+      for (const event of this.pendingRequests.get(id)?.values() ?? []) {
+        if (event.type === 'request.opened') open.add(event.requestId)
+      }
+    }
+    for (const requestId of open) {
+      log.info(`request ${requestId} on ${threadId} declined by a user message`)
+      try {
+        await adapter.respondToRequest(threadId, requestId, 'deny', SEND_DECLINES_APPROVAL_REASON)
+      } catch (error) {
+        log.warn(`could not decline request ${requestId} on ${threadId}; the message is not sent`, error)
+        throw new TurnNotAcceptedError('The waiting approval could not be declined, so the message was not sent.', {
+          cause: error,
+        })
+      }
+    }
   }
 
   /**
@@ -1635,11 +1882,16 @@ export class ProviderRegistry implements PeerToolHost {
     // a live chat as "not running" whenever its session id had rotated.
     // A "not delivered" row names its target by root id, so a session running
     // under another id of that root is found too.
-    const targetThreadId = this.liveSessionId(input.targetThreadId) ?? resolveRootThreadId(input.targetThreadId)
+    let targetThreadId = this.liveSessionId(input.targetThreadId) ?? resolveRootThreadId(input.targetThreadId)
     // An open child hears only from its parent (`/send-to` from the user included).
     const childParent = this.hubStarter.parentOfOpenChild(targetThreadId)
     if (childParent && (initiator === 'user' || resolveRootThreadId(input.fromThreadId) !== childParent)) {
       throw new Error(CHILD_READ_ONLY_TEXT)
+    }
+    if (childParent) {
+      const childId = resolveRootThreadId(targetThreadId)
+      this.hubNotes.task(childId)
+      targetThreadId = await this.resumeReapedChild(childId, targetThreadId)
     }
     const senderParent = initiator === 'agent' ? this.hubStarter.parentOfOpenChild(input.fromThreadId) : null
     if (senderParent && resolveRootThreadId(targetThreadId) !== senderParent) {
@@ -2177,6 +2429,22 @@ export class ProviderRegistry implements PeerToolHost {
     )
   }
 
+  private async interruptOwnTurn(threadId: string): Promise<{ live: boolean }> {
+    const adapter = this.sessionAdapters.get(threadId)
+    if (!adapter) {
+      // A profile switch restarts the session itself; a Stop there is not
+      // a cancel of the switch.
+      if (this.startingSessions.has(threadId) && !this.switchingSessions.has(threadId))
+        this.stopRequestedDuringStart.add(threadId)
+      return { live: false }
+    }
+    const live = this.hasOutstandingTurn(threadId) || this.sessionStatus.get(threadId) === 'running'
+    this.limitResumer?.disarm(threadId, 'stop')
+    if (live) this.steerBlocked.add(threadId)
+    await adapter.interruptTurn(threadId)
+    return { live }
+  }
+
   /** The user stopped or archived the chat: its open cards close unanswered. */
   closeAgentCards(threadId: string): void {
     this.agentApprovals.closeChat(resolveRootThreadId(threadId))
@@ -2243,6 +2511,14 @@ export class ProviderRegistry implements PeerToolHost {
                 starter: this.hubStarter,
                 resources: (id) => this.hubSampler?.resourcesOf(id),
                 publish,
+                subagents: (id) => this.hubSubagents.countsOf(this.liveSessionId(id) ?? id),
+                interrupt: async (childId) => {
+                  const child = getHubChild(resolveRootThreadId(childId))
+                  if (!child || child.parentId !== chatId() || !isOpenChildPhase(child.phase))
+                    return toolText('That is not an open child of this chat.', true)
+                  const ran = await this.stopHubChild(child.childId, 'parent')
+                  return toolText(ran ? `Stopped ${child.title}.` : `${child.title} had no running turn.`)
+                },
                 read: (args) =>
                   readChild(
                     {
@@ -2492,6 +2768,9 @@ export class ProviderRegistry implements PeerToolHost {
     }
     if (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))
       this.hubStarter.onTurnEnded(event.threadId)
+    this.hubSubagents.observe(event)
+    this.onChildEvent(event)
+    if (event.type === 'turn.completed') this.hubReaper.onTurnEnded(event.threadId)
     if (event.type === 'tool.started' && /report_to_hub$/.test(event.toolName))
       this.reportCalls.set(event.threadId, [...(this.reportCalls.get(event.threadId) ?? []), event.toolId])
     if (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))
@@ -2759,10 +3038,10 @@ export class ProviderRegistry implements PeerToolHost {
   private submitClientUserTurn(input: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> {
     if (typeof input?.threadId === 'string' && this.hubStarter.isOpenChild(input.threadId))
       return Promise.resolve({ ...rejectedAtomicTurn(CHILD_READ_ONLY_TEXT), code: CHILD_READ_ONLY_CODE })
-    if (typeof input?.providerText !== 'string') return this.submitAtomicUserTurn(input)
+    if (typeof input?.providerText !== 'string') return this.submitAtomicUserTurn(input, null, true)
     const providerText = stripSenderLine(input.providerText)
     const turn = providerText === input.providerText ? input : { ...input, providerText }
-    return this.submitAtomicUserTurn(turn, senderLineForTurn(providerText, this.threadCwd(input.threadId)))
+    return this.submitAtomicUserTurn(turn, senderLineForTurn(providerText, this.threadCwd(input.threadId)), true)
   }
 
   private threadCwd(threadId: string): string | undefined {
@@ -2796,6 +3075,7 @@ export class ProviderRegistry implements PeerToolHost {
   private async submitAtomicUserTurn(
     input: UserTurnSubmissionV1,
     senderLine: string | null = null,
+    declineApprovals = false,
   ): Promise<UserTurnSubmissionResult> {
     const threadId = input.threadId
     if (this.switchingSessions.has(threadId)) {
@@ -2885,6 +3165,11 @@ export class ProviderRegistry implements PeerToolHost {
         },
         finalize: (turn) => this.withPendingHandoff(threadId, adapter, turn),
         dispatch: async (turn) => {
+          // Here, past every check that can still refuse the turn, so an agent
+          // is never told of a message that then does not arrive. A message
+          // queued on purpose where a steer was possible waits for the card.
+          if (declineApprovals && !(input.delivery === 'queue' && canSteer(adapter.provider)))
+            await this.declinePendingApprovals(adapter, threadId)
           // A queued message becomes a turn of its own once the running one
           // ends, so it counts; a Codex steer joins the running turn and does not.
           const startsNewProviderTurn = startsOwnProviderTurn(
@@ -2936,6 +3221,7 @@ export class ProviderRegistry implements PeerToolHost {
             wakes?.release()
             throw error
           }
+          if (!queuedId && !wakes && this.hubChildrenOn()) this.hubWakes.liftHold(threadId)
           return joinDispatched(providerText, [mergeBack?.dispatched(providerText), wakes?.dispatched()])
         },
       })
@@ -3056,11 +3342,15 @@ export class ProviderRegistry implements PeerToolHost {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) return null
       const stopSpan = perfSpan('provider.stop', { thread: threadId })
+      this.stoppingThreads.add(threadId)
       try {
         await adapter.stopSession(threadId)
       } finally {
+        this.stoppingThreads.delete(threadId)
         stopSpan.end()
       }
+      this.hubSubagents.clear(threadId)
+      this.turnErrors.delete(threadId)
       this.switchFirstEventSpans.get(threadId)?.span.end({ outcome: 'stopped-before-event' })
       this.switchFirstEventSpans.delete(threadId)
       this.firstEventSpans.get(threadId)?.end({ outcome: 'stopped-before-event' })
@@ -3107,7 +3397,7 @@ export class ProviderRegistry implements PeerToolHost {
     this.stopChildSession = async (threadId) => {
       this.dropPeerLinks(threadId)
       this.closeAgentCards(threadId)
-      await stopSession(threadId)
+      return stopSession(threadId)
     }
 
     // ── Execution-root relocation ──────────────────────────────────
@@ -3443,6 +3733,7 @@ export class ProviderRegistry implements PeerToolHost {
           this.sessionEpochs.set(opts.threadId, executionEpoch)
           const switchboardMcp = await this.openSwitchboardMcp(opts.threadId, opts.provider)
           if (switchboardMcp) enrichedOpts.switchboardMcp = switchboardMcp
+          await this.orphanReap
           if (this.stopRequestedDuringStart.delete(opts.threadId)) throw new Error(SESSION_START_STOPPED)
           const session = await adapter.startSession(enrichedOpts, (event) => {
             if (this.sessionEpochs.get(opts.threadId) !== executionEpoch) return
@@ -3866,6 +4157,7 @@ export class ProviderRegistry implements PeerToolHost {
             } catch (error) {
               throw new TurnNotAcceptedError('turn preparation failed before provider dispatch', { cause: error })
             }
+            await this.declinePendingApprovals(adapter, threadId)
 
             const startsNewProviderTurn = startsOwnProviderTurn(
               adapter.provider,
@@ -3950,19 +4242,15 @@ export class ProviderRegistry implements PeerToolHost {
     // status says running after a resume gap clears it on `live: false`,
     // since no closing event will ever come for a turn that is not there.
     this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string): Promise<{ live: boolean }> => {
-      const adapter = this.sessionAdapters.get(threadId)
-      if (!adapter) {
-        // A profile switch restarts the session itself; a Stop there is not
-        // a cancel of the switch.
-        if (this.startingSessions.has(threadId) && !this.switchingSessions.has(threadId))
-          this.stopRequestedDuringStart.add(threadId)
-        return { live: false }
+      if (!this.hubChildrenOn()) return this.interruptOwnTurn(threadId)
+      if (this.hubStarter.isOpenChild(threadId)) {
+        if (this.startingSessions.has(threadId) && !this.sessionAdapters.has(threadId))
+          return this.interruptOwnTurn(threadId)
+        return { live: await this.stopHubChild(threadId, 'user') }
       }
-      const live = this.hasOutstandingTurn(threadId) || this.sessionStatus.get(threadId) === 'running'
-      this.limitResumer?.disarm(threadId, 'stop')
-      if (live) this.steerBlocked.add(threadId)
-      await adapter.interruptTurn(threadId)
-      return { live }
+      // Stop on a parent stops its children too, whether or not its own turn runs.
+      const [, own] = await Promise.all([this.stopHubChildren(threadId), this.interruptOwnTurn(threadId)])
+      return own
     })
 
     this.host.handle(ProviderChannels.SET_RUNTIME_MODE, async (threadId: string, mode: RuntimeMode) => {
@@ -4089,6 +4377,14 @@ export class ProviderRegistry implements PeerToolHost {
     this.host.handle(ProviderChannels.LIST_QUEUED_TURNS, (threadId: string) => this.listQueuedTurns(threadId))
     this.host.handle(ProviderChannels.RESUME_QUEUED_TURNS, (threadId: string) => this.resumeQueuedTurns(threadId))
     this.host.handle(ProviderChannels.HUB_LIST_CHILDREN, (threadId: string) => this.hubView(threadId))
+    // Stop all, or one child, from any client: routed by the parent's machine.
+    this.host.handle(ProviderChannels.HUB_STOP_CHILDREN, async (parentId: string, childId?: string) => {
+      if (typeof parentId !== 'string' || !this.hubChildrenOn()) return
+      if (childId === undefined) return this.stopHubChildren(parentId)
+      if (typeof childId !== 'string' || this.hubStarter.parentOfOpenChild(childId) !== resolveRootThreadId(parentId))
+        throw new Error('That is not an open child of this chat.')
+      await this.stopHubChild(childId, 'user')
+    })
     this.host.handle(ProviderChannels.HUB_DELIVER_HELD_WAKES, (threadId: string) => {
       if (typeof threadId !== 'string' || !this.hubChildrenOn()) return
       this.hubWakes.deliverHeld(threadId)
@@ -4135,6 +4431,7 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   async stopAll(): Promise<void> {
+    this.stoppingAll = true
     for (const { span } of this.switchFirstEventSpans.values()) span.end({ outcome: 'shutdown' })
     this.switchFirstEventSpans.clear()
     for (const span of this.firstEventSpans.values()) span.end({ outcome: 'shutdown' })
@@ -4145,6 +4442,7 @@ export class ProviderRegistry implements PeerToolHost {
     this.limitResumer?.dispose()
     this.hubSampler?.stop()
     this.hubWakes.stop()
+    this.hubReaper.stop()
     // Open approval cards stay in the store: a quit or a closed window is not an answer.
     for (const threadId of this.sessionAdapters.keys()) this.switchboardMcp?.close(threadId)
     for (const [threadId, adapter] of this.sessionAdapters) {

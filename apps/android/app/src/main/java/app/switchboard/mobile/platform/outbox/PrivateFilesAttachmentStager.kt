@@ -2,6 +2,7 @@ package app.switchboard.mobile.platform.outbox
 
 import app.switchboard.mobile.data.outbox.AttachmentStageResult
 import app.switchboard.mobile.data.outbox.AttachmentStager
+import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.outbox.AttachmentDraft
 import app.switchboard.mobile.domain.outbox.StagedAttachment
 import java.io.File
@@ -36,6 +37,11 @@ class PrivateFilesAttachmentStager(
         return try {
             ensurePrivateDirectory()
             attachments.forEach { draft ->
+                // A file already saved on the backend has nothing on the phone to copy.
+                if (ComposerFiles.isUploaded(draft.mimeType)) {
+                    staged += StagedAttachment(requireNotNull(draft.privateSourcePath), draft.mimeType)
+                    return@forEach
+                }
                 val name = fileNames.nextName()
                 require(name.isSafeFileName()) { "attachment file name is unsafe" }
                 val target = File(root, name)

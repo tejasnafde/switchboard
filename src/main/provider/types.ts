@@ -164,9 +164,10 @@ export interface ProviderAdapter {
   interruptTurn(threadId: string): Promise<void>
 
   /**
-   * Respond to an approval request (tool permission prompt).
+   * Respond to an approval request (tool permission prompt). A deny's
+   * `reason` reaches the agent where the provider's answer carries one.
    */
-  respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision): Promise<void>
+  respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision, reason?: string): Promise<void>
 
   /**
    * Stop and clean up a session.

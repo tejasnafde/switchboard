@@ -74,11 +74,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -119,6 +121,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.switchboard.mobile.domain.composer.ComposerAttachment
+import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.composer.ComposerImageSource
 import app.switchboard.mobile.domain.composer.OutboxPresentationPolicy
 import app.switchboard.mobile.domain.composer.OutboxUiAction
@@ -183,6 +186,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.Date
 import java.util.Locale
 
@@ -217,6 +221,8 @@ fun ThreadScreen(
     skills: List<ProviderSkill> = emptyList(),
     pendingActions: ThreadPendingActions = ThreadPendingActions(),
     onImagesSelected: (List<ComposerImageSource>) -> Unit = {},
+    /** Takes a paste over 32 KiB as a file; null when the backend cannot. */
+    onLargePaste: ((paste: ComposerFiles.LargePaste, onFailed: (String) -> Boolean) -> Unit)? = null,
     onRemoveImage: (String) -> Unit = {},
     onRemoveReviewPill: () -> Unit = {},
     queuedTurns: List<QueuedTurn> = emptyList(),
@@ -379,6 +385,7 @@ fun ThreadScreen(
                 onClearLocalFeed = onClearLocalFeed,
                 skills = skills,
                 onImagesSelected = onImagesSelected,
+                onLargePaste = onLargePaste,
                 onRemoveImage = onRemoveImage,
                 onRemoveReviewPill = onRemoveReviewPill,
             )
@@ -789,6 +796,7 @@ private fun ThreadBottomArea(
     onClearLocalFeed: () -> Unit,
     skills: List<ProviderSkill>,
     onImagesSelected: (List<ComposerImageSource>) -> Unit,
+    onLargePaste: ((paste: ComposerFiles.LargePaste, onFailed: (String) -> Boolean) -> Unit)?,
     onRemoveImage: (String) -> Unit,
     onRemoveReviewPill: () -> Unit,
 ) {
@@ -821,6 +829,7 @@ private fun ThreadBottomArea(
                 onClearLocalFeed = onClearLocalFeed,
                 skills = skills,
                 onImagesSelected = onImagesSelected,
+                onLargePaste = onLargePaste,
                 onRemoveImage = onRemoveImage,
                 onRemoveReviewPill = onRemoveReviewPill,
             )
@@ -843,6 +852,7 @@ private fun ThreadComposer(
     onClearLocalFeed: () -> Unit,
     skills: List<ProviderSkill>,
     onImagesSelected: (List<ComposerImageSource>) -> Unit,
+    onLargePaste: ((paste: ComposerFiles.LargePaste, onFailed: (String) -> Boolean) -> Unit)?,
     onRemoveImage: (String) -> Unit,
     onRemoveReviewPill: () -> Unit,
 ) {
@@ -871,15 +881,27 @@ private fun ThreadComposer(
                     )?.use { cursor ->
                         if (cursor.moveToFirst()) cursor.getString(0) else null
                     }
-                }.getOrNull() ?: uri.lastPathSegment ?: "image"
+                }.getOrNull() ?: uri.lastPathSegment ?: "file"
+                val size = runCatching {
+                    context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
+                    }
+                }.getOrNull()
                 ComposerImageSource(
                     contentUri = uri.toString(),
                     mimeType = context.contentResolver.getType(uri),
                     displayName = displayName,
+                    sizeBytes = size,
                 )
             },
         )
     }
+    // A large paste that could not be saved as a file comes back into the field with why.
+    var pasteError by remember { mutableStateOf<String?>(null) }
+    val currentDraft by rememberUpdatedState(state.draft)
+    // A refusal can arrive after this screen is gone; the runtime then restores the stored draft.
+    val shown = remember { AtomicBoolean(true) }
+    DisposableEffect(Unit) { onDispose { shown.set(false) } }
     val focusRequester = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     val slashQuery = ThreadSlashPolicy.query(state.draft)
@@ -894,7 +916,7 @@ private fun ThreadComposer(
             ThreadSlashAction.ClearLocalFeed -> onClearLocalFeed()
             ThreadSlashAction.Interrupt -> onInterrupt()
             ThreadSlashAction.AttachImage ->
-                if (demo) demoNotice = PhoneDemoCopy.NOT_IN_DEMO else imagePicker.launch(arrayOf("image/*"))
+                if (demo) demoNotice = PhoneDemoCopy.NOT_IN_DEMO else imagePicker.launch(arrayOf("*/*"))
             is ThreadSlashAction.Insert -> focusRequester.requestFocus()
         }
     }
@@ -938,6 +960,13 @@ private fun ThreadComposer(
         demoNotice?.let {
             Text(it, color = Violet, style = MaterialTheme.typography.bodySmall)
         }
+        pasteError?.let {
+            Text(it, color = Red, style = MaterialTheme.typography.bodySmall)
+        }
+        if (state.sendWaits) {
+            val files = if (state.uploading == 1) "1 file" else "${state.uploading} files"
+            Text("Uploading $files. Send waits until it is done.", color = TextDim, style = MaterialTheme.typography.bodySmall)
+        }
         if (slashQuery != null && slashCommands.isNotEmpty()) {
             ThreadSlashMenu(slashCommands, ::runSlash)
         }
@@ -970,19 +999,34 @@ private fun ThreadComposer(
             Row(verticalAlignment = Alignment.Bottom) {
                 if (!demo) {
                     IconButton(
-                        onClick = { imagePicker.launch(arrayOf("image/*")) },
+                        onClick = { imagePicker.launch(arrayOf("*/*")) },
                         enabled = !state.submitting,
                         modifier = Modifier.size(SwitchboardDimensions.minimumTouchTarget),
                     ) {
-                        Icon(Icons.Filled.Add, contentDescription = "Attach image")
+                        Icon(Icons.Filled.Add, contentDescription = "Attach file")
                     }
                 }
                 TextField(
                     value = state.draft,
                     onValueChange = { text ->
                         demoNotice = null
-                        voice.userEdited(text)
-                        onDraftChange(text)
+                        pasteError = null
+                        val fold = onLargePaste
+                        val paste = fold?.let { ComposerFiles.largePaste(state.draft, text) }
+                        if (fold != null && paste != null) {
+                            onDraftChange(paste.kept)
+                            fold(paste) { reason ->
+                                shown.get().also { open ->
+                                    if (open) {
+                                        pasteError = reason
+                                        onDraftChange(paste.restore(currentDraft))
+                                    }
+                                }
+                            }
+                        } else {
+                            voice.userEdited(text)
+                            onDraftChange(text)
+                        }
                     },
                     modifier = Modifier
                         .weight(1f)
@@ -1009,7 +1053,7 @@ private fun ThreadComposer(
                     voice = voice,
                     canSend = state.canSend,
                     agentRunning = state.showInterrupt,
-                    enabled = !state.submitting && !state.interrupting,
+                    enabled = !state.submitting && !state.interrupting && !state.sendWaits,
                     onSend = onSend,
                     onStopAgent = onInterrupt,
                     modifier = Modifier.padding(bottom = 1.dp),
@@ -1519,6 +1563,7 @@ private fun ComposerAttachmentPreview(
     attachment: ComposerAttachment,
     onRemove: () -> Unit,
 ) {
+    if (ComposerFiles.isUploaded(attachment.mimeType)) return ComposerFileChip(attachment.displayName, onRemove)
     val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(
         initialValue = null,
         key1 = attachment.privateUri,
@@ -1556,6 +1601,34 @@ private fun ComposerAttachmentPreview(
                 imageVector = Icons.Filled.Close,
                 contentDescription = "Remove ${attachment.displayName}",
             )
+        }
+    }
+}
+
+/** A file saved on the computer: the file glyph and its label, in the attachment tile's style. */
+@Composable
+private fun ComposerFileChip(label: String, onRemove: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .height(64.dp)
+            .widthIn(max = 220.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(SurfaceRaised)
+            .padding(start = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(toolGlyph(ToolIconKind.READ), color = TextDim, style = MaterialTheme.typography.labelMedium)
+        Text(
+            text = label,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .padding(start = 6.dp),
+        )
+        IconButton(onClick = onRemove, modifier = Modifier.size(SwitchboardDimensions.minimumTouchTarget)) {
+            Icon(imageVector = Icons.Filled.Close, contentDescription = "Remove $label")
         }
     }
 }
