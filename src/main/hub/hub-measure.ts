@@ -42,8 +42,8 @@ export interface TreeUsage {
   processes: number
 }
 
-/** The sum over `rootPid` and every process below it, or null when it is gone. */
-export function treeUsage(rows: readonly ProcessRow[], rootPid: number): TreeUsage | null {
+/** `rootPid` and every process below it, or null when it is gone. */
+export function processTree(rows: readonly ProcessRow[], rootPid: number): ProcessRow[] | null {
   const children = new Map<number, ProcessRow[]>()
   let root: ProcessRow | undefined
   for (const r of rows) {
@@ -53,17 +53,27 @@ export function treeUsage(rows: readonly ProcessRow[], rootPid: number): TreeUsa
     else children.set(r.ppid, [r])
   }
   if (!root) return null
-  const usage: TreeUsage = { rssBytes: 0, cpuPct: 0, processes: 0 }
+  const tree: ProcessRow[] = []
   const stack = [root]
   const seen = new Set<number>()
   while (stack.length) {
     const r = stack.pop()!
     if (seen.has(r.pid)) continue
     seen.add(r.pid)
+    tree.push(r)
+    stack.push(...(children.get(r.pid) ?? []))
+  }
+  return tree
+}
+
+/** The sum over `rootPid` and every process below it, or null when it is gone. */
+export function treeUsage(rows: readonly ProcessRow[], rootPid: number): TreeUsage | null {
+  const tree = processTree(rows, rootPid)
+  if (!tree) return null
+  const usage: TreeUsage = { rssBytes: 0, cpuPct: 0, processes: tree.length }
+  for (const r of tree) {
     usage.rssBytes += r.rssKb * 1024
     usage.cpuPct += r.cpu
-    usage.processes++
-    stack.push(...(children.get(r.pid) ?? []))
   }
   usage.cpuPct = Math.round(usage.cpuPct * 10) / 10
   return usage
@@ -171,6 +181,6 @@ function fields(u: TreeUsage) {
   return { rssMb: mb(u.rssBytes), cpuPct: u.cpuPct, processes: u.processes }
 }
 
-async function defaultPs(): Promise<string> {
+export async function defaultPs(): Promise<string> {
   return (await execFileP('ps', ['-A', '-o', 'pid=,ppid=,rss=,%cpu='], { maxBuffer: 8 * MB })).stdout
 }

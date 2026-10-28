@@ -224,6 +224,21 @@ export class HubWakeScheduler {
     this.poke(parentId)
   }
 
+  /** The user's turn to a held parent with no wakes to carry: the hold lifts all the same. */
+  liftHold(threadId: string): void {
+    const parentId = resolveRootThreadId(threadId)
+    try {
+      if (!getHubParent(parentId)?.held) return
+      setHubParentHeld(parentId, false)
+    } catch (err) {
+      log.warn(`could not lift the hold of ${parentId}`, err)
+      return
+    }
+    this.failures.delete(parentId)
+    this.host.changed(parentId)
+    this.poke(parentId)
+  }
+
   /**
    * The parent's pending wakes, carried on the user's turn to it. They are
    * delivered in the turn's own commit, and a held parent is released after it.

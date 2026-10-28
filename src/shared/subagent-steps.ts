@@ -141,6 +141,10 @@ export interface SubagentView {
 }
 
 const ASYNC_LAUNCH = /^Async agent launched/
+
+/** The result of a background agent call: the agent runs on until its completion notice. */
+export const isAsyncAgentLaunch = (output: string): boolean => ASYNC_LAUNCH.test(output)
+
 const AGENT_TRAILER = /(?:^|\n)agentId: \S+[^\n]*(?:\n<usage>[\s\S]*?<\/usage>)?\s*$/
 const TOOL_ERROR_TAGS = /<\/?tool_use_error>/g
 

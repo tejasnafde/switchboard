@@ -34,6 +34,10 @@ export const PERF_THRESHOLDS = {
   // Every wake turn (wakes, bytes, attempt, outcome, ms to first activity) and every read_child call.
   'hub.wake': 0,
   'hub.read-child': 0,
+  // Stop on a parent (children, stopped, failed, ms), each idle reap, and each reaped child's restart.
+  'hub.stop': 0,
+  'hub.reap': 0,
+  'hub.resume-reaped': 0,
   ipc: 200,
 } as const
 
