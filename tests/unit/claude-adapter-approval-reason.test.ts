@@ -118,6 +118,33 @@ describe('Claude approval reason', () => {
     await adapter.stopSession('t1')
   })
 
+  // Claude Code 2.1.301 sends an ask rule as this bare payload, with no matchedAskRule.
+  it('opens a card in full access for a bare rule decision, with a fallback reason', async () => {
+    const { adapter, onEvent } = await startTurn('full-access')
+    void captured!.canUseTool('Bash', { command: 'touch a.txt' }, { ...baseOptions, decisionReasonType: 'rule' })
+    await vi.waitFor(() => expect(openedRequest(onEvent)).toBeDefined())
+    expect(openedRequest(onEvent).reason).toBe(
+      'A safety check or your ask rule stopped this action. An ask rule in your settings matched.',
+    )
+    await adapter.stopSession('t1')
+  })
+
+  it('opens a card in accept edits for a bare rule decision', async () => {
+    const { adapter, onEvent } = await startTurn('accept-edits')
+    void captured!.canUseTool('Edit', { file_path: '/tmp/a.txt' }, { ...baseOptions, decisionReasonType: 'rule' })
+    await vi.waitFor(() => expect(openedRequest(onEvent)).toBeDefined())
+    expect(openedRequest(onEvent).reason).toBe('An ask rule in your settings matched.')
+    await adapter.stopSession('t1')
+  })
+
+  it('gives the fallback reason for a bare rule decision in supervised mode', async () => {
+    const { adapter, onEvent } = await startTurn('sandbox')
+    void captured!.canUseTool('Bash', { command: 'touch b.txt' }, { ...baseOptions, decisionReasonType: 'rule' })
+    await vi.waitFor(() => expect(openedRequest(onEvent)).toBeDefined())
+    expect(openedRequest(onEvent).reason).toBe('An ask rule in your settings matched.')
+    await adapter.stopSession('t1')
+  })
+
   it('opens a card in accept edits for an edit tool a safety check stopped', async () => {
     const { adapter, onEvent } = await startTurn('accept-edits')
     void captured!.canUseTool(

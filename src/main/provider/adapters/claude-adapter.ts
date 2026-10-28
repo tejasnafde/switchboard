@@ -1116,7 +1116,11 @@ export class ClaudeAdapter implements ProviderAdapter {
       // Plan keeps its read-only allows; sandbox and auto prompt anyway.
       const forcedAsk =
         (currentMode === 'full-access' || currentMode === 'accept-edits') &&
-        (Boolean(options.matchedAskRule) || options.decisionReasonType === 'safetyCheck')
+        (Boolean(options.matchedAskRule) ||
+          options.decisionReasonType === 'safetyCheck' ||
+          // canUseTool runs only for an ask, so a rule here is an ask rule. CLI 2.1.301
+          // sends only this, with no matchedAskRule.
+          options.decisionReasonType === 'rule')
       if (policy === 'allow' && !forcedAsk) {
         return { behavior: 'allow', updatedInput: toolInput } as PermissionResult
       }
@@ -2486,6 +2490,7 @@ function claudeApprovalReason(mode: RuntimeMode, options: CanUseToolOptions): st
     options.decisionReason?.trim(),
     rule &&
       `Your ask rule ${rule.ruleContent ? `${rule.toolName}(${rule.ruleContent})` : rule.toolName} from ${rule.source} matched.`,
+    !rule && options.decisionReasonType === 'rule' && 'An ask rule in your settings matched.',
   ].filter((part): part is string => Boolean(part))
   if (mode === 'full-access') parts.unshift('A safety check or your ask rule stopped this action.')
   return parts.length > 0 ? parts.join(' ') : undefined

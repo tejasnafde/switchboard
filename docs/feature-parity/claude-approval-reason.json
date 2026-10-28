@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "claude-approval-reason",
-  "summary": "Claude approval cards say why Claude asked. The Claude adapter reads the SDK's canUseTool decisionReason and matchedAskRule into a new optional request.opened.reason, and every client shows it as a Reason line on the card. In full access the adapter used to allow every ask; now an ask that carries a matched ask rule, or a decisionReasonType of safetyCheck, opens a card that starts with 'A safety check or your ask rule stopped this action.' An edit tool in Auto-accept edits gets the same card for such an ask. Other asks in those modes are still allowed without a card, and Plan, Supervised and Auto decide as before; they only gain the Reason line.",
+  "summary": "Claude approval cards say why Claude asked. The Claude adapter reads the SDK's canUseTool decisionReason and matchedAskRule into a new optional request.opened.reason, and every client shows it as a Reason line on the card. In full access the adapter used to allow every ask; now an ask that carries a matched ask rule, or a decisionReasonType of rule or safetyCheck, opens a card that starts with 'A safety check or your ask rule stopped this action.' An edit tool in Auto-accept edits gets the same card for such an ask. Other asks in those modes are still allowed without a card, and Plan, Supervised and Auto decide as before; they only gain the Reason line.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -56,7 +56,7 @@
   },
   "verification": {
     "automated": [
-      "tests/unit/claude-adapter-approval-reason.test.ts drives the real ClaudeAdapter canUseTool with a mocked SDK: a decisionReason and a matched ask rule land on request.opened.reason, no reason when the SDK gives none, full access opens a card for a safetyCheck and for an ask rule with the full access sentence first, accept edits opens a card for an edit tool a safety check stopped, plan mode still allows a read-only tool with a safetyCheck or an ask rule with no card, and a plain full access ask is still allowed with no card.",
+      "tests/unit/claude-adapter-approval-reason.test.ts drives the real ClaudeAdapter canUseTool with a mocked SDK: a decisionReason and a matched ask rule land on request.opened.reason, no reason when the SDK gives none, full access opens a card for a safetyCheck and for an ask rule with the full access sentence first, accept edits opens a card for an edit tool a safety check stopped, plan mode still allows a read-only tool with a safetyCheck or an ask rule with no card, a plain full access ask is still allowed with no card, and the bare {decisionReasonType: 'rule'} payload that Claude Code 2.1.301 sends for an ask rule (no matchedAskRule) opens a card in full access and accept edits with the fallback reason 'An ask rule in your settings matched.'",
       "tests/unit/provider-event-reducer.test.ts and tests/unit/pending-request-recovery-desktop.test.ts keep the reason on a live and on a recovered desktop card.",
       "apps/mobile jest src/screens/__tests__/feed-items.test.tsx shows the reason on the Expo approval card; apps/mobile tsc passed.",
       "npm run typecheck, the full vitest suite and npm run validate:feature-parity passed."
