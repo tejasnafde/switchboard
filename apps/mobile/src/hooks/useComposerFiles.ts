@@ -36,7 +36,10 @@ export function useComposerFiles(connectionId: string, onPasteFailed: (at: numbe
 
   const canUpload = useCallback(() => getClient(connectionId)?.canUploadAttachments() === true, [connectionId])
 
-  /** Upload one file; true once its chip holds the saved path. A chip removed meanwhile stays removed. */
+  /**
+   * Upload one file; false only when it failed with its chip still attached.
+   * A chip removed meanwhile stays removed, with no refusal line.
+   */
   const upload = useCallback(
     async (id: string, name: string, readData: () => Promise<string>, label: (pages?: number) => string) => {
       setFiles((prev) => [...prev, { id, name, label: name }])
@@ -51,6 +54,7 @@ export function useComposerFiles(connectionId: string, onPasteFailed: (at: numbe
         return true
       } catch (err) {
         log.warn('attachment upload failed', { name, err })
+        if (!filesRef.current.some((f) => f.id === id)) return true
         setFiles((prev) => prev.filter((f) => f.id !== id))
         setRefusals((prev) => [...prev, refusalLine(name, errorText(err))])
         return false
