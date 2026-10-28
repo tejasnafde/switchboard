@@ -625,7 +625,7 @@ export function parseClaudeSlashCommands(input: unknown): ProviderSkill[] {
 
 interface PendingApproval {
   requestId: string
-  resolve: (decision: ApprovalDecision) => void
+  resolve: (answer: { decision: ApprovalDecision; reason?: string }) => void
 }
 
 interface PendingQuestion {
@@ -1129,7 +1129,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
       // Waiting on the user - expected silence, hold stall reports.
       active.watchdog.suspend()
-      const decision = await new Promise<ApprovalDecision>((resolve) => {
+      const { decision, reason } = await new Promise<{ decision: ApprovalDecision; reason?: string }>((resolve) => {
         active.pendingApprovals.set(requestId, { requestId, resolve })
       })
       active.watchdog.resume(Date.now())
@@ -1138,7 +1138,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
       return decision === 'approve'
         ? ({ behavior: 'allow', updatedInput: toolInput } as PermissionResult)
-        : ({ behavior: 'deny', message: 'User denied permission' } as PermissionResult)
+        : ({ behavior: 'deny', message: reason ?? 'User denied permission' } as PermissionResult)
     }
 
     const claudeBin = findClaudeBin()
@@ -1843,7 +1843,12 @@ export class ClaudeAdapter implements ProviderAdapter {
     log.info(`question answered: ${requestId}`)
   }
 
-  async respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision): Promise<void> {
+  async respondToRequest(
+    threadId: string,
+    requestId: string,
+    decision: ApprovalDecision,
+    reason?: string,
+  ): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) return
 
@@ -1854,7 +1859,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     }
 
     active.pendingApprovals.delete(requestId)
-    pending.resolve(decision)
+    pending.resolve({ decision, reason })
     log.info(`approval responded: ${requestId} → ${decision}`)
   }
 
@@ -1884,7 +1889,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
     // Reject pending approvals
     for (const [, pending] of active.pendingApprovals) {
-      pending.resolve('deny')
+      pending.resolve({ decision: 'deny' })
     }
     active.pendingApprovals.clear()
 

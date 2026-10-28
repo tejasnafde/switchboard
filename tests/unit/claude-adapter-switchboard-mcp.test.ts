@@ -113,3 +113,27 @@ describe('Claude canUseTool for the Switchboard tools', () => {
     await adapter.stopSession('t1')
   })
 })
+
+describe('Claude approval answers', () => {
+  async function denyCard(reason?: string) {
+    const { adapter, onEvent } = await startTurn('sandbox', false)
+    const pending = captured!.canUseTool('mcp__slack__post_message', {})
+    await vi.waitFor(() => expect(onEvent.mock.calls.map(([e]) => e.type)).toContain('request.opened'))
+    const opened = onEvent.mock.calls.map(([e]) => e).find((e) => e.type === 'request.opened')
+    await adapter.respondToRequest('t1', opened.requestId, 'deny', reason)
+    const decision = await pending
+    await adapter.stopSession('t1')
+    return decision
+  }
+
+  it('tells the agent the reason a deny came with', async () => {
+    expect(await denyCard('The user sent a new message instead of answering this request.')).toEqual({
+      behavior: 'deny',
+      message: 'The user sent a new message instead of answering this request.',
+    })
+  })
+
+  it('keeps the plain denial without a reason', async () => {
+    expect((await denyCard()).message).toBe('User denied permission')
+  })
+})

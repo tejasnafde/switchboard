@@ -247,6 +247,9 @@ import { turnPreviewLine } from '@shared/turn-preview'
 
 const log = createLogger('provider:registry')
 
+/** What the agent is told when the user answers an approval card by sending a message. */
+export const SEND_DECLINES_APPROVAL_REASON = 'The user sent a new message instead of answering this request.'
+
 /** A child's events that can change its shown state, so its parent's view is read again. */
 const HUB_VIEW_EVENTS: ReadonlySet<RuntimeEvent['type']> = new Set([
   'status',
@@ -1217,6 +1220,33 @@ export class ProviderRegistry implements PeerToolHost {
       if (event.type === 'plan.proposed') byKey.delete(key)
     }
     if (byKey.size === 0) this.pendingRequests.delete(threadId)
+  }
+
+  /**
+   * A message the user sends while an approval card waits answers the card:
+   * each open approval of the chat is denied with a reason, so the turn it
+   * blocked goes on and takes the message as a steer (or ends, and the queued
+   * message starts). Questions and plans are left alone, and so are the
+   * broker's cards, which never hold a turn. A deny that fails refuses the send.
+   */
+  private async declinePendingApprovals(adapter: ProviderAdapter, threadId: string): Promise<void> {
+    const open = new Set<string>()
+    for (const id of [threadId, resolveRootThreadId(threadId)]) {
+      for (const event of this.pendingRequests.get(id)?.values() ?? []) {
+        if (event.type === 'request.opened') open.add(event.requestId)
+      }
+    }
+    for (const requestId of open) {
+      log.info(`request ${requestId} on ${threadId} declined by a user message`)
+      try {
+        await adapter.respondToRequest(threadId, requestId, 'deny', SEND_DECLINES_APPROVAL_REASON)
+      } catch (error) {
+        log.warn(`could not decline request ${requestId} on ${threadId}; the message is not sent`, error)
+        throw new TurnNotAcceptedError('The waiting approval could not be declined, so the message was not sent.', {
+          cause: error,
+        })
+      }
+    }
   }
 
   /**
@@ -2759,10 +2789,10 @@ export class ProviderRegistry implements PeerToolHost {
   private submitClientUserTurn(input: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> {
     if (typeof input?.threadId === 'string' && this.hubStarter.isOpenChild(input.threadId))
       return Promise.resolve({ ...rejectedAtomicTurn(CHILD_READ_ONLY_TEXT), code: CHILD_READ_ONLY_CODE })
-    if (typeof input?.providerText !== 'string') return this.submitAtomicUserTurn(input)
+    if (typeof input?.providerText !== 'string') return this.submitAtomicUserTurn(input, null, true)
     const providerText = stripSenderLine(input.providerText)
     const turn = providerText === input.providerText ? input : { ...input, providerText }
-    return this.submitAtomicUserTurn(turn, senderLineForTurn(providerText, this.threadCwd(input.threadId)))
+    return this.submitAtomicUserTurn(turn, senderLineForTurn(providerText, this.threadCwd(input.threadId)), true)
   }
 
   private threadCwd(threadId: string): string | undefined {
@@ -2796,6 +2826,7 @@ export class ProviderRegistry implements PeerToolHost {
   private async submitAtomicUserTurn(
     input: UserTurnSubmissionV1,
     senderLine: string | null = null,
+    declineApprovals = false,
   ): Promise<UserTurnSubmissionResult> {
     const threadId = input.threadId
     if (this.switchingSessions.has(threadId)) {
@@ -2866,6 +2897,7 @@ export class ProviderRegistry implements PeerToolHost {
               `${agentLabel(toAgentProvider(adapter.provider))} is mid-turn and cannot take another message yet`,
             )
           }
+          if (declineApprovals) await this.declinePendingApprovals(adapter, threadId)
           try {
             const cwd = this.sessionCwd.get(threadId)
             if (cwd) await this.checkpoints.beginTurn(threadId, cwd, this.hasOutstandingTurn(threadId))
@@ -3849,6 +3881,7 @@ export class ProviderRegistry implements PeerToolHost {
             )
           }
           const dispatch = async (): Promise<void> => {
+            await this.declinePendingApprovals(adapter, threadId)
             // These operations happen before the provider boundary. A failure here
             // is a definite rejection and may safely release the reservation.
             try {
