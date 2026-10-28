@@ -54,6 +54,7 @@ import {
   recordThreadSession,
   updateConversationSessionId,
   saveMessageIfAbsent,
+  markHubWakesDelivered,
   isConversationArchived,
   saveActivityMessageIfAbsent,
   setConversationStatusLine,
@@ -84,6 +85,7 @@ import {
   type LimitState,
 } from '@shared/limit-resume'
 import { LimitResumer, type LimitResumeHost } from './limit-resume'
+import { isCompactingNotice } from './claude-prompt-too-long'
 import { stripSenderLine, withSenderLine } from '@shared/sender-line'
 import { senderLineForTurn } from './sender-context'
 import {
@@ -590,14 +592,17 @@ export class ProviderRegistry implements PeerToolHost {
       interrupt: async (threadId) => {
         await this.sessionAdapters.get(threadId)?.interruptTurn(threadId)
       },
-      announce: (parentId, content) => {
+      commitUpdate: (parentId, ids, revision, content, db = getDb()) => {
         const at = Date.now()
         const messageId = `hubupdate_${at}_${++this.savedMessageSeq}`
-        try {
-          saveMessageIfAbsent(messageId, parentId, 'system', content, undefined, undefined, at)
-        } catch (err) {
-          log.warn(`could not store the update row of ${parentId}`, err)
-        }
+        db.transaction(() => {
+          markHubWakesDelivered(ids, revision, db)
+          if (!saveMessageIfAbsent(messageId, parentId, 'system', content, undefined, undefined, at))
+            throw new Error(`the update row of ${parentId} was not stored`)
+        })()
+        return { messageId, at }
+      },
+      announce: (parentId, { messageId, at }, content) => {
         this.publish({
           type: 'approval.result',
           threadId: this.liveSessionId(parentId) ?? parentId,
@@ -614,8 +619,8 @@ export class ProviderRegistry implements PeerToolHost {
   /** `report_to_hub`: the child's summary and a pointer to the call in its transcript become a wake for its parent. */
   private async reportToHub(threadId: string, input: { status: HubReportStatus; summary: string }) {
     const childId = resolveRootThreadId(threadId)
-    const toolCallId = this.reportCalls.get(threadId)
-    this.reportCalls.delete(threadId)
+    // Oldest first: two calls in one message start in order and run in order.
+    const toolCallId = this.reportCalls.get(threadId)?.shift()
     const parentId = this.hubStarter.parentOfOpenChild(childId)
     if (!parentId) return toolText('This chat is not an open child chat, so it has no parent to report to.', true)
     let transcriptPath: string | null = null
@@ -835,8 +840,8 @@ export class ProviderRegistry implements PeerToolHost {
   readonly hubStarter: HubStarter
   /** Sends children's wakes to their parents (`hub/hub-wakes.ts`). */
   readonly hubWakes: HubWakeScheduler
-  /** The newest `report_to_hub` tool call id per thread, for the wake's pointer. */
-  private readonly reportCalls = new Map<string, string>()
+  /** Started `report_to_hub` tool call ids per thread, oldest first, for the wakes' pointers. */
+  private readonly reportCalls = new Map<string, string[]>()
   /** The user's Stop for one thread; set when the IPC handlers are registered. */
   private stopChildSession: ((threadId: string) => Promise<void>) | null = null
   /** Samples the agent process trees of open children; null in tests that inject adapters. */
@@ -2488,11 +2493,13 @@ export class ProviderRegistry implements PeerToolHost {
     if (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))
       this.hubStarter.onTurnEnded(event.threadId)
     if (event.type === 'tool.started' && /report_to_hub$/.test(event.toolName))
-      this.reportCalls.set(event.threadId, event.toolId)
+      this.reportCalls.set(event.threadId, [...(this.reportCalls.get(event.threadId) ?? []), event.toolId])
     if (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))
       this.reportCalls.delete(event.threadId)
     // Only the agent's own output: adapters announce `status: running` themselves before the CLI does anything.
-    if (event.type === 'content' || event.type === 'tool.started') this.hubWakes.onActivity(event.threadId)
+    // The compaction notice is Switchboard's, not the agent's: its retry can still fail.
+    if ((event.type === 'content' && !isCompactingNotice(event.messageId)) || event.type === 'tool.started')
+      this.hubWakes.onActivity(event.threadId)
     if (
       event.type === 'turn.completed' ||
       (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))
@@ -3503,6 +3510,8 @@ export class ProviderRegistry implements PeerToolHost {
             this.deliverHeldPeerMessages((m) => m.targetRoot === startedRoot)
           }
           resolveStart(session)
+          // A parent's `idle` came before it was live: look at its pending wakes once callers have the session.
+          if (!eventGate) setImmediate(() => this.hubWakes.onIdleChance(opts.threadId))
           return session
         } catch (err) {
           this.switchFirstEventSpans.get(initialOpts.threadId)?.span.end({ outcome: 'start-error' })

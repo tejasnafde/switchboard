@@ -1,6 +1,13 @@
 import { createMigratedDb } from './helpers/test-db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getDb, getHubParent, insertHubChild, listPendingHubWakes, setHubParentHeld } from '../../src/main/db/database'
+import {
+  getDb,
+  getHubParent,
+  insertHubChild,
+  listPendingHubWakes,
+  markHubWakesDelivered,
+  setHubParentHeld,
+} from '../../src/main/db/database'
 import { HubWakeScheduler, type HubWakeHost } from '../../src/main/hub/hub-wakes'
 import {
   HUB_UPDATE_OPEN,
@@ -12,7 +19,15 @@ import {
 
 const PARENT = 'agent_parent'
 
-function harness(opts: { send?: () => Promise<boolean>; enabled?: boolean } = {}) {
+function harness(
+  opts: {
+    send?: () => Promise<boolean>
+    enabled?: boolean
+    interrupt?: () => Promise<void>
+    /** Throws from the delivery write while it returns true. */
+    failWrite?: () => boolean
+  } = {},
+) {
   const sent: Array<{ threadId: string; body: string }> = []
   const rows: string[] = []
   const interrupted: string[] = []
@@ -27,8 +42,14 @@ function harness(opts: { send?: () => Promise<boolean>; enabled?: boolean } = {}
     },
     interrupt: async (threadId) => {
       interrupted.push(threadId)
+      await opts.interrupt?.()
     },
-    announce: (_parentId, content) => rows.push(content),
+    commitUpdate: (_parentId, ids, revision, _content, db) => {
+      if (opts.failWrite?.()) throw new Error('disk I/O error')
+      markHubWakesDelivered(ids, revision, db)
+      return { messageId: `row_${rows.length}`, at: revision }
+    },
+    announce: (_parentId, _row, content) => rows.push(content),
     changed: () => {},
   }
   const s = new HubWakeScheduler(host)
@@ -232,6 +253,55 @@ describe('HubWakeScheduler', () => {
     claim.dispatched().afterCommit(false)
     expect(listPendingHubWakes(PARENT)).toHaveLength(1)
     expect(h.s.claimForTurn(PARENT)).not.toBeNull()
+  })
+
+  it('counts a turn that ends before the send call returns as a failed try', async () => {
+    let finish!: (ok: boolean) => void
+    const h = harness({ send: () => new Promise((r) => (finish = r)) })
+    h.report('agent_a', 'A done')
+    await vi.advanceTimersByTimeAsync(HUB_WAKE_QUIET_MS)
+    h.s.onTurnEnded(PARENT)
+    finish(true)
+    await flush()
+    expect(h.interrupted).toEqual([])
+    expect(listPendingHubWakes(PARENT)).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(HUB_WAKE_QUIET_MS)
+    expect(h.sent).toHaveLength(2)
+  })
+
+  it('does not send a delivered wake again when its write fails, and writes it later', async () => {
+    let fail = true
+    const h = harness({ failWrite: () => fail })
+    h.report('agent_a', 'A done')
+    await vi.advanceTimersByTimeAsync(HUB_WAKE_QUIET_MS)
+    h.s.onActivity(PARENT)
+    expect(h.rows).toHaveLength(0)
+    expect(listPendingHubWakes(PARENT)).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(HUB_WAKE_QUIET_MS * 2)
+    expect(h.sent).toHaveLength(1)
+    expect(h.s.claimForTurn(PARENT)).toBeNull()
+    fail = false
+    await vi.advanceTimersByTimeAsync(HUB_WAKE_QUIET_MS)
+    expect(listPendingHubWakes(PARENT)).toHaveLength(0)
+    expect(h.rows).toHaveLength(1)
+    expect(h.sent).toHaveLength(1)
+  })
+
+  it('counts output that arrives during the interrupt as the delivery, not a failed try', async () => {
+    let s!: HubWakeScheduler
+    const h = harness({
+      interrupt: async () => {
+        s.onActivity(PARENT)
+      },
+    })
+    s = h.s
+    h.report('agent_a', 'A done')
+    await vi.advanceTimersByTimeAsync(HUB_WAKE_QUIET_MS + HUB_WAKE_NO_START_MS)
+    expect(h.interrupted).toEqual([PARENT])
+    expect(listPendingHubWakes(PARENT)).toHaveLength(0)
+    expect(h.rows).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(HUB_WAKE_QUIET_MS * 2)
+    expect(h.sent).toHaveLength(1)
   })
 
   it('picks up wakes left from before a restart', async () => {

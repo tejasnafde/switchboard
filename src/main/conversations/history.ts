@@ -154,18 +154,27 @@ async function loadDiskHistory(conversationId: string, timing: ChatLoadTiming): 
 
 /**
  * The provider file that holds a chat's own transcript: the newest session's
- * most complete Claude copy, or its Codex rollout. Null for a chat with none
- * (ACP agents keep theirs in their own store).
+ * most complete copy, from the chat's current provider first (its newest
+ * segment), then the other one. Null for a chat with none (ACP agents keep
+ * theirs in their own store).
  */
 export async function transcriptPathOf(conversationId: string): Promise<string | null> {
   const { knownSessionIds, claudeIds } = sessionIdsOf(conversationId)
-  for (const sessionId of [...claudeIds].reverse()) {
-    const path = claudeCopyPaths(sessionId)[0]
-    if (path) return path
+  const claudePath = (): string | null => {
+    for (const sessionId of [...claudeIds].reverse()) {
+      const path = claudeCopyPaths(sessionId)[0]
+      if (path) return path
+    }
+    return null
   }
-  const codex = codexCopiesById(await scanCodexSessionCopies(knownSessionIds, codexCandidateDirs()), knownSessionIds)
-  const paths = [...codex.values()].at(-1)
-  return paths ? ((await largestFirst(paths))[0] ?? null) : null
+  const codexPath = async (): Promise<string | null> => {
+    // The scan lists the newest session first.
+    const codex = codexCopiesById(await scanCodexSessionCopies(knownSessionIds, codexCandidateDirs()), knownSessionIds)
+    const paths = [...codex.values()][0]
+    return paths ? ((await largestFirst(paths))[0] ?? null) : null
+  }
+  if (listConversationSegments(conversationId).at(-1)?.provider === 'codex') return (await codexPath()) ?? claudePath()
+  return claudePath() ?? (await codexPath())
 }
 
 export async function loadConversationHistory(

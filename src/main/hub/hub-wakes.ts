@@ -36,7 +36,6 @@ import {
   insertHubWake,
   listParentsWithPendingHubWakes,
   listPendingHubWakes,
-  markHubWakesDelivered,
   resolveRootThreadId,
   setHubParentHeld,
   type HubWakeRow,
@@ -60,10 +59,33 @@ export interface HubWakeHost {
   send(threadId: string, body: string, requestId: string): Promise<boolean>
   /** Ends a wake turn that never started. */
   interrupt(threadId: string): Promise<void>
-  /** Stores and shows the `[[sb:hub-update]]` row in the parent's chat. */
-  announce(parentId: string, content: string): void
+  /**
+   * Marks the wakes delivered and stores the `[[sb:hub-update]]` row in one
+   * transaction (a savepoint inside `db`'s when given); throws when either fails.
+   */
+  commitUpdate(
+    parentId: string,
+    ids: readonly string[],
+    revision: number,
+    content: string,
+    db?: Database.Database,
+  ): HubUpdateRowRef
+  /** Shows a stored update row in the parent's chat. */
+  announce(parentId: string, row: HubUpdateRowRef, content: string): void
   /** The parent's view changed (a hold set or lifted). */
   changed(parentId: string): void
+}
+
+export interface HubUpdateRowRef {
+  messageId: string
+  at: number
+}
+
+/** A delivered update whose database write failed: its wakes stay out of later sends until it is written. */
+interface Unwritten {
+  ids: string[]
+  revision: number
+  content: string
 }
 
 interface InFlight {
@@ -75,6 +97,8 @@ interface InFlight {
   active: boolean
   /** The send call returned true. */
   sent: boolean
+  /** The turn ended before the send call returned. */
+  ended: boolean
   noStart: ReturnType<typeof setTimeout> | null
   span: ReturnType<typeof perfSpan>
 }
@@ -116,6 +140,7 @@ export class HubWakeScheduler {
   /** Wake ids a user turn is carrying, until its commit settles. */
   private readonly claimed = new Set<string>()
   private readonly failures = new Map<string, number>()
+  private readonly unwritten = new Map<string, Unwritten>()
   /** Send times of wake turns in the last hour, per parent. In memory: a restart starts a new hour. */
   private readonly sends = new Map<string, number[]>()
   /** Wake turns being sent, by the thread they went to. */
@@ -174,7 +199,9 @@ export class HubWakeScheduler {
   onTurnEnded(threadId: string): void {
     const parentId = this.byThread.get(threadId)
     const f = parentId ? this.inFlight.get(parentId) : undefined
-    if (parentId && f?.sent && !f.active) this.failed(parentId, f, 'no_start')
+    if (!parentId || !f || f.active) return
+    if (f.sent) this.failed(parentId, f, 'no_start')
+    else f.ended = true
   }
 
   /** The agent's own output (text or a tool call) on a thread: confirms a wake turn sent there. */
@@ -215,6 +242,8 @@ export class HubWakeScheduler {
     if (wakes.length === 0) return null
     for (const w of wakes) this.claimed.add(w.id)
     const { body, rows } = describe(wakes)
+    const content = formatHubUpdateMarker(rows)
+    let row: HubUpdateRowRef | null = null
     let open = true
     const release = () => {
       if (!open) return
@@ -227,9 +256,11 @@ export class HubWakeScheduler {
       release,
       dispatched: () => ({
         commitInTransaction: (db, acceptedAt) => {
-          markHubWakesDelivered(
+          row = this.host.commitUpdate(
+            parentId,
             wakes.map((w) => w.id),
             acceptedAt,
+            content,
             db,
           )
         },
@@ -240,7 +271,7 @@ export class HubWakeScheduler {
             return
           }
           log.info('wakes carried on a user turn', { parentId, wakes: wakes.length, bytes: Buffer.byteLength(body) })
-          this.host.announce(parentId, formatHubUpdateMarker(rows))
+          if (row) this.host.announce(parentId, row, content)
           if (getHubParent(parentId)?.held) setHubParentHeld(parentId, false)
           this.failures.delete(parentId)
           this.host.changed(parentId)
@@ -256,6 +287,14 @@ export class HubWakeScheduler {
     if (timer) {
       clearTimeout(timer)
       this.timers.delete(parentId)
+    }
+    const unwritten = this.unwritten.get(parentId)
+    if (unwritten && !this.write(parentId, unwritten)) {
+      this.timers.set(
+        parentId,
+        setTimeout(() => this.consider(parentId), HUB_WAKE_QUIET_MS),
+      )
+      return
     }
     let wakes: HubWakeRow[]
     let held: boolean
@@ -275,7 +314,7 @@ export class HubWakeScheduler {
     const live = this.host.liveThread(parentId)
     const decision = wakeBatchDecision({
       pending: wakes.length,
-      newestAt: Math.max(0, ...wakes.map((w) => w.createdAt)),
+      newestAt: wakes.reduce((newest, w) => Math.max(newest, w.createdAt), 0),
       now,
       parentIdle: live !== null && this.host.idle(live),
       held,
@@ -322,6 +361,7 @@ export class HubWakeScheduler {
       sentAt: this.now(),
       active: false,
       sent: false,
+      ended: false,
       noStart: null,
       span: perfSpan('hub.wake', {
         parentId,
@@ -350,29 +390,49 @@ export class HubWakeScheduler {
       this.delivered(parentId, f)
       return
     }
+    if (f.ended) {
+      this.failed(parentId, f, 'no_start')
+      return
+    }
     f.noStart = setTimeout(() => void this.noStart(parentId, f), HUB_WAKE_NO_START_MS)
   }
 
   private delivered(parentId: string, f: InFlight): void {
     this.settle(parentId, f)
-    try {
-      markHubWakesDelivered(f.ids, f.sentAt)
-    } catch (err) {
-      log.error(`could not mark the wakes of ${parentId} delivered; they may be sent again`, err)
-    }
     f.span.end({ outcome: 'delivered', startMs: this.now() - f.sentAt })
     this.failures.delete(parentId)
     this.sends.set(parentId, [...(this.sends.get(parentId) ?? []), this.now()])
-    this.host.announce(parentId, formatHubUpdateMarker(f.rows))
+    this.write(parentId, { ids: f.ids, revision: f.sentAt, content: formatHubUpdateMarker(f.rows) })
     this.host.changed(parentId)
     // Wakes that came in while this one was out.
     this.consider(parentId)
+  }
+
+  /**
+   * Writes a delivered update. On failure its wakes are kept out of later
+   * sends (claimed) and the write is tried again at the parent's next look.
+   */
+  private write(parentId: string, u: Unwritten): boolean {
+    let row: HubUpdateRowRef
+    try {
+      row = this.host.commitUpdate(parentId, u.ids, u.revision, u.content)
+    } catch (err) {
+      log.error(`could not mark the wakes of ${parentId} delivered; trying again`, err)
+      this.unwritten.set(parentId, u)
+      for (const id of u.ids) this.claimed.add(id)
+      return false
+    }
+    if (this.unwritten.delete(parentId)) for (const id of u.ids) this.claimed.delete(id)
+    this.host.announce(parentId, row, u.content)
+    return true
   }
 
   private async noStart(parentId: string, f: InFlight): Promise<void> {
     if (this.inFlight.get(parentId) !== f || f.active) return
     log.warn('wake turn showed no activity; ending it', { parentId, threadId: f.threadId })
     await this.host.interrupt(f.threadId).catch((err) => log.warn(`could not end the wake turn of ${parentId}`, err))
+    // Output during the interrupt delivered it, or another wake turn took its place.
+    if (this.inFlight.get(parentId) !== f || f.active) return
     this.failed(parentId, f, 'no_start')
   }
 
@@ -395,7 +455,7 @@ export class HubWakeScheduler {
 
   private settle(parentId: string, f: InFlight): void {
     if (f.noStart) clearTimeout(f.noStart)
-    this.inFlight.delete(parentId)
+    if (this.inFlight.get(parentId) === f) this.inFlight.delete(parentId)
     if (this.byThread.get(f.threadId) === parentId) this.byThread.delete(f.threadId)
   }
 }

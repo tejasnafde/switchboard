@@ -110,7 +110,7 @@ describe('readChild', () => {
     expect(text(r)).not.toContain('gone')
   })
 
-  it('says the transcript is gone and gives the summary', async () => {
+  it('reads the stored rows when the pointer file is gone', async () => {
     insertHubWake({
       id: 'w1',
       parentId: 'agent_parent',
@@ -121,6 +121,22 @@ describe('readChild', () => {
     })
     const r = await readChild(
       { parentId: 'agent_parent', load: async () => history(3), exists: () => false },
+      { childId: 'agent_child' },
+    )
+    expect(JSON.parse(text(r)).total).toBe(3)
+  })
+
+  it('says the transcript is gone and gives the summary', async () => {
+    insertHubWake({
+      id: 'w1',
+      parentId: 'agent_parent',
+      childId: 'agent_child',
+      kind: 'report',
+      summary: 'Login fixed.',
+      pointer: { childId: 'agent_child', at: 1, transcriptPath: '/gone/session.jsonl' },
+    })
+    const r = await readChild(
+      { parentId: 'agent_parent', load: async () => [], exists: () => false },
       { childId: 'agent_child' },
     )
     expect(text(r)).toBe(

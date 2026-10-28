@@ -134,14 +134,6 @@ export async function readChild(ctx: ReadChildContext, raw: Record<string, unkno
     span.end({ outcome: 'not_own' })
     return toolText(`${args.childId} is not a child of this chat. list_children shows your children.`, true)
   }
-  const wake = lastHubWakeOf(child.childId)
-  const path = wake?.pointer?.transcriptPath
-  // A transcript file the pointer named is the record: without it, only the summary is left.
-  if (path && !(ctx.exists ?? existsSync)(path)) {
-    span.end({ outcome: 'gone' })
-    const left = wake ? ` Only its summary is left: ${wake.summary}` : ''
-    return toolText(`The transcript of ${child.title} is gone (${path}).${left}`)
-  }
   let all: ChatMessage[]
   try {
     all = await ctx.load(child.childId)
@@ -149,6 +141,14 @@ export async function readChild(ctx: ReadChildContext, raw: Record<string, unkno
     log.warn(`could not load the history of child ${child.childId}`, err)
     span.end({ outcome: 'error' })
     return toolText(`Could not read the history of ${child.title}. Try again in a moment.`, true)
+  }
+  // The loader also merges the stored rows, so only an empty history with the
+  // pointer's file gone leaves nothing but the summary.
+  const wake = lastHubWakeOf(child.childId)
+  const path = wake?.pointer?.transcriptPath
+  if (all.length === 0 && wake && path && !(ctx.exists ?? existsSync)(path)) {
+    span.end({ outcome: 'gone' })
+    return toolText(`The transcript of ${child.title} is gone (${path}). Only its summary is left: ${wake.summary}`)
   }
   const w = readChildWindow(all, args)
   const reply = JSON.stringify(

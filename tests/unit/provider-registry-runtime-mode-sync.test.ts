@@ -140,7 +140,7 @@ class ModeAdapter implements ProviderAdapter {
     if (next.mode) this.mode = next.mode
   }
   emitContent(threadId: string): void {
-    this.onEvent({ type: 'content', threadId, streamKind: 'assistant', text: 'reply', append: true })
+    this.onEvent({ type: 'content', threadId, messageId: 'm1', streamKind: 'assistant', text: 'reply', append: true })
   }
   runtimeModeOf(): RuntimeMode {
     return this.mode
