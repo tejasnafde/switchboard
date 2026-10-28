@@ -8,6 +8,7 @@
 import { reconnectDelay } from '@shared/backoff'
 import type { UserMessagePillsMeta } from '@shared/provider-events'
 import { reviewPillTurn } from '@shared/pull-request-phone'
+import { attachmentTurn, type SentAttachment } from '@shared/attachments'
 
 /** A message the user has committed to sending, waiting for a live backend. */
 export interface QueuedMessage {
@@ -44,6 +45,8 @@ export interface QueuedMessage {
   whenIdle?: boolean
   /** A review pill ("Work on PR", "Ask the agent") sent before the text (`reviewPillTurn`). */
   reviewPill?: QueuedReviewPill
+  /** Files already saved on the backend, sent as path lines after the text (`attachmentTurn`). */
+  attachments?: SentAttachment[]
 }
 
 export interface QueuedReviewPill {
@@ -52,14 +55,42 @@ export interface QueuedReviewPill {
   content: string
 }
 
-/** What a queued message puts on the wire: its text, or a review pill before it (`reviewPillTurn`). */
-export function queuedTurnBody(message: Pick<QueuedMessage, 'text' | 'reviewPill'>): {
+/**
+ * What a queued message puts on the wire: a review pill first (`reviewPillTurn`),
+ * then the text, then one line and one file chip per attachment (`attachmentTurn`).
+ */
+export function queuedTurnBody(message: Pick<QueuedMessage, 'text' | 'reviewPill' | 'attachments'>): {
   providerText: string
   displayBody: string
   pillsMeta?: UserMessagePillsMeta
 } {
-  if (!message.reviewPill) return { providerText: message.text, displayBody: message.text }
-  return reviewPillTurn(message.text, message.reviewPill, message.reviewPill.id)
+  const base: { providerText: string; displayBody: string; pillsMeta?: UserMessagePillsMeta } = message.reviewPill
+    ? reviewPillTurn(message.text, message.reviewPill, message.reviewPill.id)
+    : { providerText: message.text, displayBody: message.text }
+  const files = message.attachments ?? []
+  if (files.length === 0) return base
+  const provider = attachmentTurn(base.providerText, files)
+  return {
+    providerText: provider.providerText,
+    displayBody: attachmentTurn(base.displayBody, files).displayBody,
+    pillsMeta: { ...base.pillsMeta, ...provider.pillsMeta },
+  }
+}
+
+function parseAttachments(value: unknown): SentAttachment[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const files = value.flatMap((item) => {
+    const a = item as Partial<SentAttachment> | null
+    return a &&
+      typeof a.id === 'string' &&
+      /^[A-Za-z0-9_-]+$/.test(a.id) &&
+      typeof a.name === 'string' &&
+      typeof a.path === 'string' &&
+      typeof a.label === 'string'
+      ? [{ id: a.id, name: a.name, path: a.path, label: a.label }]
+      : []
+  })
+  return files.length > 0 ? files : undefined
 }
 
 function parseReviewPill(value: unknown): QueuedReviewPill | undefined {
@@ -114,6 +145,7 @@ export function parseQueuedMessage(value: unknown): QueuedMessage | null {
     titleCandidate: typeof message.titleCandidate === 'string' ? message.titleCandidate : undefined,
     whenIdle: message.whenIdle === true ? true : undefined,
     reviewPill: parseReviewPill(message.reviewPill),
+    attachments: parseAttachments(message.attachments),
   }
 }
 
@@ -210,19 +242,22 @@ function draftImages(message: QueuedMessage): DraftImage[] {
   }))
 }
 
-export function recoverRejectedDraft(message: QueuedMessage): { text: string; images: DraftImage[] } | null {
+export function recoverRejectedDraft(
+  message: QueuedMessage,
+): { text: string; images: DraftImage[]; files: SentAttachment[] } | null {
   if (!message.blockedReason) return null
-  return { text: message.text, images: draftImages(message) }
+  return { text: message.text, images: draftImages(message), files: message.attachments ?? [] }
 }
 
 /** Messages held through a failed open or switch, put back after what the composer holds. */
 export function returnedDraft(
   draft: string,
   messages: readonly QueuedMessage[],
-): { text: string; images: DraftImage[] } {
+): { text: string; images: DraftImage[]; files: SentAttachment[] } {
   return {
     text: [draft, ...messages.map((message) => message.text)].filter((part) => part.trim()).join('\n\n'),
     images: messages.flatMap(draftImages),
+    files: messages.flatMap((message) => message.attachments ?? []),
   }
 }
 

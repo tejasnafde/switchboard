@@ -301,6 +301,7 @@ describe('deterministic rejection recovery', () => {
           mimeType: 'image/png',
         },
       ],
+      files: [],
     })
     expect(recoverRejectedDraft(message)).toBeNull()
   })
@@ -310,6 +311,7 @@ describe('deterministic rejection recovery', () => {
     expect(returnedDraft('typed since', [message, second])).toEqual({
       text: 'typed since\n\ninspect this\n\nand this',
       images: [{ id: 'recovered-turn-1-0', previewUri: image.url, url: image.url, mimeType: 'image/png' }],
+      files: [],
     })
     expect(returnedDraft('', [second]).text).toBe('and this')
   })
@@ -347,5 +349,59 @@ describe('review pill on a queued message', () => {
       pillsMeta: { 'review-1': { label: 'L', kind: 'review' } },
     })
     expect(queuedTurnBody({ text: 'plain' })).toEqual({ providerText: 'plain', displayBody: 'plain' })
+  })
+})
+
+describe('attachments on a queued message', () => {
+  const file = { id: 'file-a', name: 'log.txt', path: '/data/attachments/u1/log.txt', label: 'log.txt (12 lines)' }
+  const message: QueuedMessage = {
+    connectionId: 'c',
+    threadId: 't',
+    messageId: 'm1',
+    text: 'see the log',
+    createdAt: 1,
+    attempts: 0,
+    attachments: [file],
+  }
+
+  it('survives a restart; malformed entries are dropped', () => {
+    expect(parseQueuedMessage(JSON.parse(JSON.stringify(message)))).toEqual(message)
+    const parsed = parseQueuedMessage({
+      ...message,
+      attachments: [file, { id: 'bad id!', name: 'x', path: '/x', label: 'x' }, { id: 'y' }, null],
+    })
+    expect(parsed?.attachments).toEqual([file])
+    expect(parseQueuedMessage({ ...message, attachments: 'nope' })?.attachments).toBeUndefined()
+  })
+
+  it('puts the text first, then one path line and one file chip per file', () => {
+    expect(queuedTurnBody(message)).toEqual({
+      providerText: 'see the log\n\n[Attached file "log.txt" is saved at: /data/attachments/u1/log.txt]',
+      displayBody: 'see the log\n\n[[pill:file-a]]',
+      pillsMeta: { 'file-a': { label: 'log.txt (12 lines)', kind: 'file' } },
+    })
+  })
+
+  it('puts a review pill first, then the text, then the files', () => {
+    const pill = { id: 'review-1', label: 'L', content: 'Review context' }
+    expect(queuedTurnBody({ ...message, reviewPill: pill })).toEqual({
+      providerText:
+        'Review context\n\nsee the log\n\n[Attached file "log.txt" is saved at: /data/attachments/u1/log.txt]',
+      displayBody: '[[pill:review-1]] see the log\n\n[[pill:file-a]]',
+      pillsMeta: {
+        'review-1': { label: 'L', kind: 'review' },
+        'file-a': { label: 'log.txt (12 lines)', kind: 'file' },
+      },
+    })
+  })
+
+  it('sends a file with no text', () => {
+    expect(queuedTurnBody({ ...message, text: '' }).displayBody).toBe('[[pill:file-a]]')
+  })
+
+  it('gives the files back with a rejected or returned message', () => {
+    const blocked = markRejected(message, new Error('refused'))
+    expect(recoverRejectedDraft(blocked)?.files).toEqual([file])
+    expect(returnedDraft('', [message]).files).toEqual([file])
   })
 })

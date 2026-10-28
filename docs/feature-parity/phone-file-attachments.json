@@ -6,19 +6,35 @@
   "surfaces": {
     "desktop": {
       "status": "implemented",
-      "evidence": ["src/renderer/services/attachment-intake.ts", "src/renderer/components/chat/ChatInput.tsx"]
+      "evidence": [
+        "src/renderer/services/attachment-intake.ts",
+        "src/renderer/components/chat/ChatInput.tsx"
+      ]
     },
     "reactNativeIos": {
-      "status": "staged",
-      "flag": "attachment_upload_v1",
-      "followUpRelease": "The Expo composer gains file attach, refusals and the large-paste chip; until then it sends images only, as before",
-      "evidence": ["src/shared/attachments.ts"]
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/file-attachments.ts",
+        "apps/mobile/src/lib/outbox-model.ts",
+        "apps/mobile/src/lib/turn-submit.ts",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/hooks/useComposerFiles.ts",
+        "apps/mobile/src/components/FileAttachments.tsx",
+        "apps/mobile/src/components/ImageAttachments.tsx",
+        "apps/mobile/src/components/ReviewPillChip.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "tests/unit/mobile-file-attachments.test.ts",
+        "tests/unit/mobile-outbox.test.ts",
+        "apps/mobile/src/components/__tests__/FileAttachments.test.tsx"
+      ]
     },
     "nativeAndroid": {
       "status": "staged",
       "flag": "attachment_upload_v1",
       "followUpRelease": "The Android composer gains file attach, refusals, the large-paste chip and the GIF size check; until then it sends images only, as before",
-      "evidence": ["src/shared/attachments.ts"]
+      "evidence": [
+        "src/shared/attachments.ts"
+      ]
     },
     "sharedBackendApi": {
       "status": "implemented",
@@ -40,15 +56,23 @@
     },
     "updateRelease": {
       "status": "implemented",
-      "evidence": ["src/shared/ws-protocol.ts"]
+      "evidence": [
+        "src/shared/ws-protocol.ts"
+      ]
     }
   },
   "verification": {
     "automated": [
       "vitest: tests/unit/main-attachments.test.ts (upload saves base64 bytes, refuses over 10 MB before decoding, refuses a source path; attachmentTurn lines, tokens and pills; pasted-text names).",
-      "vitest: tests/unit/provider-image-limits.test.ts (EXIF orientation 6 and 8, big- and little-endian, come out upright after the shrink)."
+      "vitest: tests/unit/provider-image-limits.test.ts (EXIF orientation 6 and 8, big- and little-endian, come out upright after the shrink).",
+      "vitest: tests/unit/mobile-file-attachments.test.ts (Expo: image or file routing by type and extension, HEIC as a photo, refusals for other image formats, a backend without attachment_upload_v1 and a file over MAX_UPLOAD_ATTACHMENT_BYTES; UTF-8 base64; the large-paste rule by UTF-8 growth, caret position and surrogate pairs; put-back on failure; only uploaded chips are sent).",
+      "vitest: tests/unit/mobile-outbox.test.ts (Expo: QueuedMessage.attachments survives a restart, malformed entries dropped; queuedTurnBody puts the review pill first, then the text, then the file lines and chips; rejected and returned drafts give the files back).",
+      "jest: apps/mobile/src/components/__tests__/FileAttachments.test.tsx (Expo: file chip label, 'Remove <name>' control, upload spinner, one refusal line per file, the Photos and Files sheet)."
     ],
     "hardware": [],
-    "notExercised": ["An upload from a real phone over the LAN and over the IAP tunnel."]
+    "notExercised": [
+      "An upload from a real phone over the LAN and over the IAP tunnel.",
+      "Expo iOS: the document picker, a GIF picked from Files (its pixel size from Image.getSize), the upload and the large-paste fold on a real iPhone. expo-document-picker is a new native module, so this needs a new iOS build; none was made."
+    ]
   }
 }
