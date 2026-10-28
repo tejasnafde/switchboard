@@ -271,9 +271,17 @@ export function ChatPanel({
         machineName: remoteMachineName,
         projectPath,
         title: chatTitle,
+        parentTitle: hub.parent?.title,
         worktreeBranch: activeSession?.worktreeBranch,
       }),
-    [activeSession?.machineId, activeSession?.worktreeBranch, chatTitle, projectPath, remoteMachineName],
+    [
+      activeSession?.machineId,
+      activeSession?.worktreeBranch,
+      chatTitle,
+      hub.parent?.title,
+      projectPath,
+      remoteMachineName,
+    ],
   )
   const runtimeMode = activeSession?.runtimeMode ?? 'sandbox'
   const model = activeSession?.model
@@ -1491,13 +1499,13 @@ export function ChatPanel({
                     {identity.branch}
                   </span>
                 )}
-                <HubChip view={hub} />
               </div>
             ) : (
               <span className="font-[500] text-[var(--text-primary)]">Switchboard</span>
             )}
 
             <span className="flex-1" />
+            {hasSession && <HubChip view={hub} />}
 
             {activeSession && activeSession.type !== 'terminal' && <LinkedPrControl sessionId={activeSession.id} />}
 
@@ -1622,7 +1630,7 @@ export function ChatPanel({
           )}
 
           {sessionId && <LimitResumeRow sessionId={sessionId} />}
-          {hub.self && <ChildrenStrip parent={hub.self} items={hub.children} />}
+          {hub.self && <ChildrenStrip parent={hub.self} items={hub.children} state={hub.state} />}
           {composer}
         </>
       )}
