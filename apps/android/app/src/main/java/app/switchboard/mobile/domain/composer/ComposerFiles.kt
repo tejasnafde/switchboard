@@ -60,7 +60,6 @@ object ComposerFiles {
     data class Intake(
         val images: List<ComposerImageSource>,
         val files: List<ComposerImageSource>,
-        /** One line per refused file: its name and why. */
         val refused: List<String>,
     )
 
@@ -94,7 +93,7 @@ object ComposerFiles {
         return Intake(images, files, refused)
     }
 
-    fun refusal(name: String, reason: String): String = "$name: $reason"
+    fun refusal(name: String, reason: String): String = "$name was not attached: $reason"
 
     fun tooLarge(name: String, size: Long): String =
         refusal(name, "${megabytes(size)} is over the ${megabytes(MAX_UPLOAD_BYTES)} file limit.")

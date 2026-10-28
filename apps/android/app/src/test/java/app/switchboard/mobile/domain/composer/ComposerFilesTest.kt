@@ -25,8 +25,8 @@ class ComposerFilesTest {
         assertEquals(listOf("c.svg", "e.pdf"), intake.files.map { it.displayName })
         assertEquals(
             listOf(
-                "d.tiff: TIFF images are not supported. Use PNG, JPEG, WebP, GIF or HEIC.",
-                "f.zip: 11 MB is over the 10 MB file limit.",
+                "d.tiff was not attached: TIFF images are not supported. Use PNG, JPEG, WebP, GIF or HEIC.",
+                "f.zip was not attached: 11 MB is over the 10 MB file limit.",
             ),
             intake.refused,
         )
@@ -38,7 +38,7 @@ class ComposerFilesTest {
         assertEquals(listOf("a.jpg"), intake.images.map { it.displayName })
         assertEquals(emptyList<ComposerImageSource>(), intake.files)
         assertEquals(
-            listOf("notes.txt: Only images can be attached. Update Switchboard on the computer to attach other files."),
+            listOf("notes.txt was not attached: Only images can be attached. Update Switchboard on the computer to attach other files."),
             intake.refused,
         )
     }

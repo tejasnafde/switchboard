@@ -61,9 +61,9 @@ class ImageResizePlanTest {
 
     @Test
     fun `a GIF is sent as is or refused`() {
-        assertNull(ImageResizePlan.sendAsIs(10, 20))
-        assertEquals(Refusal.OVER_MESSAGE_BUDGET, ImageResizePlan.sendAsIs(10, 5))
-        assertEquals(Refusal.GIF_TOO_LARGE, ImageResizePlan.sendAsIs(ImageResizePlan.MESSAGE_WIRE_BUDGET + 1, ImageResizePlan.MESSAGE_WIRE_BUDGET))
+        assertNull(ImageResizePlan.sendAsIs(100, 10, 20))
+        assertEquals(Refusal.OVER_MESSAGE_BUDGET, ImageResizePlan.sendAsIs(100, 10, 5))
+        assertEquals(Refusal.GIF_TOO_LARGE, ImageResizePlan.sendAsIs(100, ImageResizePlan.MESSAGE_WIRE_BUDGET + 1, ImageResizePlan.MESSAGE_WIRE_BUDGET))
     }
 
     @Test
@@ -89,21 +89,10 @@ class ImageResizePlanTest {
         )
     }
 
-    private fun gifHeader(width: Int, height: Int): ByteArray =
-        "GIF89a".toByteArray(Charsets.US_ASCII) +
-            byteArrayOf(width.toByte(), (width shr 8).toByte(), height.toByte(), (height shr 8).toByte())
-
-    @Test
-    fun `reads a GIF size from its header`() {
-        assertEquals(ImageResizePlan.Size(2400, 300), ImageResizePlan.gifSize(gifHeader(2400, 300)))
-        assertNull(ImageResizePlan.gifSize("PNG...........".toByteArray()))
-        assertNull(ImageResizePlan.gifSize(byteArrayOf(0x47, 0x49)))
-    }
-
     @Test
     fun `refuses a GIF over the long side limit and keeps one at it`() {
-        assertEquals(Refusal.GIF_TOO_WIDE, ImageResizePlan.gifRefusal(ImageResizePlan.gifSize(gifHeader(300, 2001))!!))
-        assertNull(ImageResizePlan.gifRefusal(ImageResizePlan.gifSize(gifHeader(2000, 2000))!!))
+        assertEquals(Refusal.GIF_TOO_WIDE, ImageResizePlan.sendAsIs(2001, 10, 20))
+        assertNull(ImageResizePlan.sendAsIs(2000, 10, 20))
         assertEquals(
             "a.gif is a GIF over 2000 px on its long side; GIFs are sent unchanged to keep their animation",
             ImageResizePlan.refusalMessage("a.gif", Refusal.GIF_TOO_WIDE),

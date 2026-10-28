@@ -1002,10 +1002,11 @@ private fun ThreadComposer(
                     onValueChange = { text ->
                         demoNotice = null
                         pasteError = null
-                        val paste = onLargePaste?.let { ComposerFiles.largePaste(state.draft, text) }
-                        if (paste != null && onLargePaste != null) {
+                        val fold = onLargePaste
+                        val paste = fold?.let { ComposerFiles.largePaste(state.draft, text) }
+                        if (fold != null && paste != null) {
                             onDraftChange(paste.kept)
-                            onLargePaste(paste.inserted) { reason ->
+                            fold(paste.inserted) { reason ->
                                 pasteError = reason
                                 onDraftChange(currentDraft + paste.inserted)
                             }

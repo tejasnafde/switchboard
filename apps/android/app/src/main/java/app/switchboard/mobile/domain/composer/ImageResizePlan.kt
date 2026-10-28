@@ -82,24 +82,12 @@ object ImageResizePlan {
     }
 
     /** A GIF fits what is left, or is refused with the reason. */
-    fun sendAsIs(wireBytes: Long, remaining: Long): Refusal? = when {
+    fun sendAsIs(longestSide: Int, wireBytes: Long, remaining: Long): Refusal? = when {
+        longestSide > MAX_IMAGE_LONG_SIDE -> Refusal.GIF_TOO_WIDE
         wireBytes <= remaining -> null
         wireBytes <= MESSAGE_WIRE_BUDGET -> Refusal.OVER_MESSAGE_BUDGET
         else -> Refusal.GIF_TOO_LARGE
     }
-
-    /** Width and height from a GIF's logical screen descriptor; null when [header] is not a GIF. */
-    fun gifSize(header: ByteArray): Size? {
-        if (header.size < 10) return null
-        val signature = String(header, 0, 6, Charsets.US_ASCII)
-        if (signature != "GIF87a" && signature != "GIF89a") return null
-        fun u16(at: Int) = (header[at].toInt() and 0xFF) or ((header[at + 1].toInt() and 0xFF) shl 8)
-        return Size(u16(6), u16(8))
-    }
-
-    /** A GIF cannot be scaled without losing its animation, so one over [MAX_IMAGE_LONG_SIDE] is refused. */
-    fun gifRefusal(size: Size): Refusal? =
-        if (maxOf(size.width, size.height) > MAX_IMAGE_LONG_SIDE) Refusal.GIF_TOO_WIDE else null
 
     fun refusalMessage(name: String, reason: Refusal): String = when (reason) {
         Refusal.GIF_TOO_WIDE ->

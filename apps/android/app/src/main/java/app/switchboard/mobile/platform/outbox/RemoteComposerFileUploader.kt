@@ -58,7 +58,7 @@ class RemoteComposerFileUploader(
                     )
                     is RemoteOutcome.Failure -> {
                         Log.w(TAG, "attachment upload failed: ${outcome.message}")
-                        ComposerUploadResult.Refused(ComposerFiles.refusal(name, "It could not be saved on the computer."))
+                        ComposerUploadResult.Refused(ComposerFiles.refusal(name, "It could not be saved."))
                     }
                 },
             )

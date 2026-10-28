@@ -112,7 +112,11 @@ class PrivateComposerAttachmentStager(
     }
 
     private fun wireBytesOf(attachment: ComposerAttachment): Long =
-        if (ComposerFiles.isUploaded(attachment.mimeType)) 0 else ImageResizePlan.dataUrlWireBytes(attachment.mimeType ?: "", File(attachment.privateUri).length())
+        if (ComposerFiles.isUploaded(attachment.mimeType)) {
+            0
+        } else {
+            ImageResizePlan.dataUrlWireBytes(attachment.mimeType ?: "", File(attachment.privateUri).length())
+        }
 
     override fun discard(attachments: List<ComposerAttachment>) {
         attachments.forEach { attachment ->
