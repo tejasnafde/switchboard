@@ -147,7 +147,12 @@ object BackendChannels {
     /** Inline live pages (src/shared/html-live.ts); gated behind `html_live_images_v1`. */
     const val HtmlLiveLoad = "html-live:load"
     const val HtmlLiveOpenOnDesktop = "html-live:open-on-desktop"
+    /** Gated behind `attachment_upload_v1` (src/shared/attachments.ts). */
+    const val UploadAttachment = "app:upload-attachment"
 }
+
+/** A file the backend saved for a phone: its path there and, for a PDF, its page count. */
+data class UploadedAttachment(val path: String, val pages: Int?)
 
 class SwitchboardRemoteClient(
     val connectionId: String,
@@ -459,6 +464,8 @@ class SwitchboardRemoteClient(
         displayBody: String? = null,
         /** pill id to label, kind `review` (the only pill a phone sends). */
         reviewPillsMeta: Map<String, String>? = null,
+        /** pill id to label, kind `file` (an uploaded attachment). */
+        filePillsMeta: Map<String, String>? = null,
     ) = command(
         BackendChannels.SubmitUserTurn,
         array(
@@ -488,13 +495,16 @@ class SwitchboardRemoteClient(
                     }
                     delivery?.let { put("delivery", JsonString(it)) }
                     displayBody?.let { put("displayBody", JsonString(it)) }
-                    reviewPillsMeta?.let { meta ->
+                    if (!reviewPillsMeta.isNullOrEmpty() || !filePillsMeta.isNullOrEmpty()) {
                         put(
                             "pillsMeta",
                             JsonObject(
                                 LinkedHashMap<String, JsonValue>().apply {
-                                    meta.forEach { (id, label) ->
+                                    reviewPillsMeta?.forEach { (id, label) ->
                                         put(id, obj("label" to JsonString(label), "kind" to JsonString("review")))
+                                    }
+                                    filePillsMeta?.forEach { (id, label) ->
+                                        put(id, obj("label" to JsonString(label), "kind" to JsonString("file")))
                                     }
                                 },
                             ),
@@ -505,6 +515,26 @@ class SwitchboardRemoteClient(
         ),
         callback,
     )
+
+    /** Saves a file's bytes on the backend (`attachment_upload_v1`); answers its saved path. */
+    fun uploadAttachment(
+        name: String,
+        base64: String,
+        callback: (RemoteResponse<UploadedAttachment>) -> Unit,
+    ) = call(
+        BackendChannels.UploadAttachment,
+        array(obj("name" to JsonString(name), "data" to JsonString(base64))),
+        ::decodeUploadedAttachment,
+        callback,
+    )
+
+    private fun decodeUploadedAttachment(value: JsonValue?): UploadedAttachment {
+        val body = value as? JsonObject ?: error("Expected upload response object")
+        val path = (body.values["path"] as? JsonString)?.value?.takeIf(String::isNotEmpty)
+            ?: error("Expected upload response path")
+        val pages = (body.values["pages"] as? JsonNumber)?.source?.toDoubleOrNull()?.toInt()
+        return UploadedAttachment(path, pages)
+    }
 
     /** Needs `turn_queue_controls_v1`. */
     fun listQueuedTurns(

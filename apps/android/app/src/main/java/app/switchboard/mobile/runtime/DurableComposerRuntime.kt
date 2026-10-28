@@ -3,10 +3,13 @@ package app.switchboard.mobile.runtime
 import app.switchboard.mobile.data.composer.ComposerAttachmentStageResult
 import app.switchboard.mobile.data.composer.ComposerDraftCoordinator
 import app.switchboard.mobile.data.composer.ComposerDraftMutation
+import app.switchboard.mobile.data.composer.ComposerFileUploader
+import app.switchboard.mobile.data.composer.ComposerUploadResult
 import app.switchboard.mobile.data.outbox.OutboxRuntime
 import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
+import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.composer.ComposerImageSource
 import app.switchboard.mobile.domain.outbox.AttachmentDraft
 import app.switchboard.mobile.domain.outbox.EnqueueResult
@@ -14,11 +17,13 @@ import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.outbox.StagedAttachment
 import java.io.Closeable
+import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 class DurableComposerRuntime(
     private val coordinator: ComposerDraftCoordinator,
@@ -31,6 +36,15 @@ class DurableComposerRuntime(
     val queuedTurns: StateFlow<List<QueuedTurn>> = outbox.state
     private val mutableErrors = MutableStateFlow<Map<ComposerDraftKey, String>>(emptyMap())
     val errors = mutableErrors.asStateFlow()
+    private val mutableUploads = MutableStateFlow<Map<ComposerDraftKey, List<String>>>(emptyMap())
+
+    /** Names of the files each draft is still uploading; its send waits until they land. */
+    val uploads = mutableUploads.asStateFlow()
+    private val pending = MutableStateFlow<Map<ComposerDraftKey, Int>>(emptyMap())
+
+    // Worker only.
+    private val waitingUploads = ArrayDeque<() -> Unit>()
+    private var uploadRunning = false
 
     fun hydrate() {
         worker.execute { coordinator.hydrate() }
@@ -38,14 +52,167 @@ class DurableComposerRuntime(
 
     fun save(draft: ComposerDraft) = mutate(draft.key) { coordinator.save(draft) }
 
+    fun saveText(draft: ComposerDraft, added: List<ComposerAttachment> = emptyList()) =
+        mutate(draft.key) { coordinator.saveText(draft, added) }
+
     fun addImages(key: ComposerDraftKey, sources: List<ComposerImageSource>) =
         mutate(key) { coordinator.addImages(key, sources) }
+
+    /**
+     * Attaches picked files: images are shrunk into draft storage, other files
+     * are uploaded when [uploader] is set (the backend has
+     * `attachment_upload_v1`) and refused otherwise. Each refusal is one line
+     * in the composer's error area.
+     */
+    fun addAttachments(key: ComposerDraftKey, sources: List<ComposerImageSource>, uploader: ComposerFileUploader?) {
+        holdSend(key)
+        worker.execute {
+            try {
+                val intake = ComposerFiles.sort(sources, uploads = uploader != null)
+                addIntake(key, intake)
+                if (uploader != null) intake.files.forEach { source ->
+                    trackUpload(key, source.displayName, { done -> uploader.upload(source, done) }) { result ->
+                        when (result) {
+                            is ComposerUploadResult.Refused -> appendError(key, result.line)
+                            is ComposerUploadResult.Uploaded -> saveUploaded(key, result)?.let { appendError(key, it) }
+                        }
+                    }
+                }
+            } finally {
+                releaseSend(key)
+            }
+        }
+    }
+
+    private fun addIntake(key: ComposerDraftKey, intake: ComposerFiles.Intake) {
+        val images = if (intake.images.isEmpty()) {
+            ComposerDraftMutation.Success
+        } else {
+            coordinator.addImages(key, intake.images)
+        }
+        val lines = intake.refused + when (images) {
+            ComposerDraftMutation.Success -> emptyList()
+            is ComposerDraftMutation.Failure -> listOf(images.reason)
+            is ComposerDraftMutation.PartlyAdded -> listOf(images.reason)
+        }
+        if (lines.isEmpty()) mutableErrors.value = mutableErrors.value - key else recordError(key, lines.joinToString("\n"))
+    }
+
+    /**
+     * Attaches a large paste as `pasted-text-N.txt`. [onFailed] gets the
+     * reason when it is not saved and returns true when its screen put the
+     * text back; when the screen is gone, the stored draft gets it instead.
+     */
+    fun attachPastedText(
+        key: ComposerDraftKey,
+        paste: ComposerFiles.LargePaste,
+        uploader: ComposerFileUploader,
+        onFailed: (String) -> Boolean,
+    ) {
+        holdSend(key)
+        worker.execute {
+            try {
+                val labels = drafts.value[key]?.attachments.orEmpty().map(ComposerAttachment::displayName)
+                val name = ComposerFiles.nextPastedTextName(labels + uploads.value[key].orEmpty())
+                trackUpload(key, name, { done -> uploader.uploadText(name, paste.inserted, done) }) { result ->
+                    val reason = when (result) {
+                        is ComposerUploadResult.Refused -> result.line
+                        is ComposerUploadResult.Uploaded -> saveUploaded(key, result)
+                    }
+                    if (reason != null && !onFailed(reason)) restorePaste(key, paste, reason)
+                }
+            } finally {
+                releaseSend(key)
+            }
+        }
+    }
+
+    /**
+     * True while a pick or a paste for [key] is not yet in its draft. It is
+     * set before the worker runs, so a send tapped right after a pick waits.
+     */
+    fun uploading(key: ComposerDraftKey): Boolean =
+        (pending.value[key] ?: 0) > 0 || !uploads.value[key].isNullOrEmpty()
+
+    private fun holdSend(key: ComposerDraftKey) = pending.update { it + (key to (it[key] ?: 0) + 1) }
+
+    private fun releaseSend(key: ComposerDraftKey) = pending.update {
+        val left = (it[key] ?: 1) - 1
+        if (left <= 0) it - key else it + (key to left)
+    }
+
+    /** Puts a refused paste back into the newest stored draft, at its place. */
+    private fun restorePaste(key: ComposerDraftKey, paste: ComposerFiles.LargePaste, reason: String) {
+        val stored = drafts.value[key] ?: ComposerDraft(key)
+        val saved = coordinator.saveText(stored.copy(text = paste.restore(stored.text)))
+        recordError(key, (saved as? ComposerDraftMutation.Failure)?.reason ?: reason)
+    }
+
+    /** Saves an uploaded file into the draft; the reason when it could not be saved. */
+    private fun saveUploaded(key: ComposerDraftKey, result: ComposerUploadResult.Uploaded): String? {
+        val attachment = ComposerFiles.attachment(UUID.randomUUID().toString(), result.file)
+        return (coordinator.addUploaded(key, listOf(attachment)) as? ComposerDraftMutation.Failure)?.reason
+    }
+
+    /** Keeps the refusals of the same pick: each file is one line. */
+    private fun appendError(key: ComposerDraftKey, line: String) =
+        recordError(key, listOfNotNull(errors.value[key], line).joinToString("\n"))
+
+    /**
+     * Lists [name] in [uploads] until [handle] has run on the worker, so a send
+     * never sees the upload done without its file. A throwing uploader is a refusal.
+     * Uploads run one at a time: each carries up to 10 MiB as base64, and two
+     * queued together can overflow the socket's 16 MiB send buffer.
+     */
+    private fun trackUpload(
+        key: ComposerDraftKey,
+        name: String,
+        upload: ((ComposerUploadResult) -> Unit) -> Unit,
+        handle: (ComposerUploadResult) -> Unit,
+    ) {
+        mutableUploads.update { it + (key to it[key].orEmpty() + name) }
+        val done = { result: ComposerUploadResult ->
+            worker.execute {
+                try {
+                    handle(result)
+                } finally {
+                    mutableUploads.update {
+                        val left = it[key].orEmpty() - name
+                        if (left.isEmpty()) it - key else it + (key to left)
+                    }
+                    uploadRunning = false
+                    startNextUpload()
+                }
+            }
+        }
+        waitingUploads.addLast {
+            try {
+                upload(done)
+            } catch (_: RuntimeException) {
+                done(ComposerUploadResult.Refused(ComposerFiles.refusal(name, "It could not be saved.")))
+            }
+        }
+        startNextUpload()
+    }
+
+    /** Worker only. */
+    private fun startNextUpload() {
+        if (uploadRunning) return
+        val next = waitingUploads.removeFirstOrNull() ?: return
+        uploadRunning = true
+        next()
+    }
 
     fun removeImage(key: ComposerDraftKey, attachmentId: String) =
         mutate(key) { coordinator.removeImage(key, attachmentId) }
 
     fun beginEdit(key: ComposerDraftKey, origin: String) {
         worker.execute {
+            // A file still uploading would land in the edited message.
+            if (uploading(key)) {
+                recordError(key, "Wait for the attachments to finish uploading, then edit the queued message")
+                return@execute
+            }
             val turn = outbox.beginEdit(origin)
             if (turn == null || turn.connectionId != key.connectionId || turn.threadId != key.threadId) {
                 if (turn != null) outbox.setEditing(origin, false)
@@ -124,6 +291,7 @@ class DurableComposerRuntime(
     fun submitSavedDraft(key: ComposerDraftKey) {
         worker.execute {
             val draft = drafts.value[key] ?: return@execute
+            if (!uploads.value[key].isNullOrEmpty()) return@execute
             val result = enqueue(draft)
             if (result is EnqueueResult.Durable) recordResult(key, coordinator.clear(key))
             if (result is EnqueueResult.AttachmentFailure) recordError(key, result.reason)

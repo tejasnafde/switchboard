@@ -5,6 +5,7 @@ import app.switchboard.mobile.data.remote.PhoneDemoFixture
 import app.switchboard.mobile.data.remote.PhoneDemoRpc
 import app.switchboard.mobile.data.remote.ReadyClientLease
 import app.switchboard.mobile.data.remote.SwitchboardRemoteClient
+import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
@@ -139,6 +140,11 @@ class PhoneDemoNavigationRuntime(
 
     override fun saveComposerDraft(draft: ComposerDraft) {
         drafts.value = drafts.value + (draft.key to draft)
+    }
+
+    override fun saveComposerText(draft: ComposerDraft, added: List<ComposerAttachment>) {
+        val stored = drafts.value[draft.key]?.attachments.orEmpty()
+        drafts.value = drafts.value + (draft.key to draft.copy(attachments = stored + added))
     }
 
     override fun clearComposerDraftBlocking(key: ComposerDraftKey): Boolean {

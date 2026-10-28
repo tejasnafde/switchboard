@@ -14,6 +14,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import app.switchboard.mobile.data.thread.ThreadSessionCoordinator
+import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.composer.ComposerImageSource
 import app.switchboard.mobile.domain.composer.OutboxUiAction
 import app.switchboard.mobile.domain.outbox.QueuedTurn
@@ -39,6 +40,8 @@ fun ThreadSessionScreen(
     modifier: Modifier = Modifier,
     commandDispatcher: ThreadCommandDispatcher? = null,
     onImagesSelected: (List<ComposerImageSource>) -> Unit = {},
+    /** Takes a paste over 32 KiB as a file; null when the backend cannot. */
+    onLargePaste: ((paste: ComposerFiles.LargePaste, onFailed: (String) -> Boolean) -> Unit)? = null,
     onRemoveImage: (String) -> Unit = {},
     queuedTurns: List<QueuedTurn> = emptyList(),
     onOutboxAction: (String, OutboxUiAction) -> Unit = { _, _ -> },
@@ -102,6 +105,7 @@ fun ThreadSessionScreen(
         skills = session.skills,
         pendingActions = session.pendingActions,
         onImagesSelected = onImagesSelected,
+        onLargePaste = onLargePaste,
         onRemoveImage = onRemoveImage,
         onRemoveReviewPill = coordinator::removeReviewPill,
         queuedTurns = queuedTurns,

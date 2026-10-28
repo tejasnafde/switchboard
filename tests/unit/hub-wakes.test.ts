@@ -217,6 +217,16 @@ describe('HubWakeScheduler', () => {
     expect(h.sent).toHaveLength(0)
   })
 
+  it('lifts a hold on a user turn that carries no wakes, and sends what comes after', async () => {
+    const h = harness()
+    setHubParentHeld(PARENT, true, 'stop')
+    h.s.liftHold(PARENT)
+    expect(getHubParent(PARENT)?.held).toBe(false)
+    h.report('agent_a', 'A done')
+    await vi.advanceTimersByTimeAsync(HUB_WAKE_QUIET_MS + 1)
+    expect(h.sent).toHaveLength(1)
+  })
+
   it('sends nothing with the flag off and keeps the wakes', async () => {
     const h = harness({ enabled: false })
     h.report('agent_a', 'A done')

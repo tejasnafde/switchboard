@@ -489,6 +489,8 @@ export const ProviderChannels = {
   HUB_LIST_CHILDREN: 'provider:hub-list-children',
   /** Deliver: lift a parent's hold and send its pending child updates at its next idle. */
   HUB_DELIVER_HELD_WAKES: 'provider:hub-deliver-held-wakes',
+  /** Stop all of a parent's open children (holding its updates), or one child: `(parentId, childId?)`. */
+  HUB_STOP_CHILDREN: 'provider:hub-stop-children',
   LIST_SKILLS: 'provider:list-skills',
   ANSWER_QUESTION: 'provider:answer-question',
   /**

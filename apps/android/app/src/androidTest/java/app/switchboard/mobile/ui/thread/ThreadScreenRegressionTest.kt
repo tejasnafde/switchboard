@@ -144,7 +144,7 @@ class ThreadScreenRegressionTest {
         compose.onNodeWithTag(ThreadTestTags.COMPOSER_INPUT)
             .assertIsFocused()
             .assertTextContains("hello")
-        compose.onNodeWithContentDescription("Attach image").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Attach file").assertIsDisplayed()
     }
 
     @Test
@@ -176,7 +176,7 @@ class ThreadScreenRegressionTest {
             }
         }
 
-        compose.onNodeWithContentDescription("Attach image")
+        compose.onNodeWithContentDescription("Attach file")
             .assertIsDisplayed()
             .assertIsEnabled()
         compose.onNodeWithTag(ThreadTestTags.COMPOSER_INPUT)

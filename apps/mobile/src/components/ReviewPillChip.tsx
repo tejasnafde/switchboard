@@ -1,23 +1,59 @@
 /**
- * A review pill waiting in the composer ("Work on PR", "Ask the agent"). The
- * next send carries it before the typed text; the cross drops it.
+ * Chips waiting in the composer: a review pill ("Work on PR", "Ask the agent")
+ * that the next send carries before the typed text, and attached files that it
+ * carries after it. The cross drops the chip.
  */
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import type { ComponentProps } from 'react'
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, fonts, radius, space, type } from '../theme'
 
-export function ReviewPillChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+export function ComposerChip({
+  icon,
+  kind,
+  label,
+  removeLabel,
+  busy,
+  onRemove,
+  testID,
+}: {
+  icon: ComponentProps<typeof Ionicons>['name']
+  kind: string
+  label: string
+  removeLabel: string
+  /** A spinner in place of the icon, for an upload still running. */
+  busy?: boolean
+  onRemove: () => void
+  testID?: string
+}) {
   return (
-    <View style={styles.chip} testID="review-pill-chip">
-      <Ionicons name="git-pull-request-outline" size={14} color={colors.accent} />
-      <Text style={styles.kind}>Review</Text>
+    <View style={styles.chip} testID={testID}>
+      {busy ? (
+        <ActivityIndicator size="small" color={colors.accent} accessibilityLabel={`Uploading ${label}`} />
+      ) : (
+        <Ionicons name={icon} size={14} color={colors.accent} />
+      )}
+      <Text style={styles.kind}>{kind}</Text>
       <Text style={styles.label} numberOfLines={1}>
         {label}
       </Text>
-      <Pressable onPress={onRemove} accessibilityRole="button" accessibilityLabel="Remove review context" hitSlop={10}>
+      <Pressable onPress={onRemove} accessibilityRole="button" accessibilityLabel={removeLabel} hitSlop={10}>
         <Ionicons name="close" size={14} color={colors.textDim} />
       </Pressable>
     </View>
+  )
+}
+
+export function ReviewPillChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <ComposerChip
+      icon="git-pull-request-outline"
+      kind="Review"
+      label={label}
+      removeLabel="Remove review context"
+      onRemove={onRemove}
+      testID="review-pill-chip"
+    />
   )
 }
 
