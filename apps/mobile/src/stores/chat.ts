@@ -88,6 +88,8 @@ export type FeedItem =
       detail: string
       requestType: string
       state: 'pending' | 'approve' | 'deny'
+      /** Why the provider asked. */
+      reason?: string
       /** A pull request write an agent asked for. */
       hostWrite?: HostWriteCard
       /** A Codex permissions request: every permission and path an approval grants. */
@@ -561,6 +563,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
             detail: event.detail,
             requestType: event.requestType,
             state: 'pending',
+            ...(event.reason ? { reason: event.reason } : {}),
             ...(event.hostWrite ? { hostWrite: event.hostWrite } : {}),
             ...(event.permissions ? { permissions: event.permissions } : {}),
           },

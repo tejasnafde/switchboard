@@ -135,6 +135,8 @@ sealed interface ThreadEventPayload {
         val toolName: String,
         val detail: String,
         val hostWrite: HostWriteCard? = null,
+        /** Why the provider asked. */
+        val reason: String? = null,
     ) : ThreadEventPayload
     data class RequestClosed(val requestId: String, val decision: String) : ThreadEventPayload
     /** The provider can no longer take an answer for this approval or question. */
@@ -308,6 +310,8 @@ sealed interface FeedItem {
         val state: String,
         /** A pull request write an agent asked for. */
         val hostWrite: HostWriteCard? = null,
+        /** Why the provider asked. */
+        val reason: String? = null,
     ) : FeedItem
     data class Retry(override val id: String, val turnId: String, val message: String, val active: Boolean) : FeedItem
     data class Error(override val id: String, val message: String, val turnId: String?) : FeedItem

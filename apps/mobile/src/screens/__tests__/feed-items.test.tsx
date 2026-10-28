@@ -213,6 +213,19 @@ describe('ApprovalItem', () => {
     expect(text).toContain('Deny')
   })
 
+  it('says why the provider asked', () => {
+    const text = renderComponent(
+      <ApprovalItem
+        item={approval({ reason: 'A safety check or your ask rule stopped this action.' })}
+        backendTakesPhoneApproval
+        onDecide={() => {}}
+      />,
+    )
+      .texts()
+      .join(' ')
+    expect(text).toContain('A safety check or your ask rule stopped this action.')
+  })
+
   it('offers only Deny for a pull request write on a backend that refuses a phone approval', () => {
     const texts = renderComponent(
       <ApprovalItem item={approval({ hostWrite: reply })} backendTakesPhoneApproval={false} onDecide={() => {}} />,

@@ -191,6 +191,8 @@ type SDKOptions = import('@anthropic-ai/claude-agent-sdk').Options
 type CanUseTool = import('@anthropic-ai/claude-agent-sdk').CanUseTool
 type PermissionMode = import('@anthropic-ai/claude-agent-sdk').PermissionMode
 type PermissionResult = import('@anthropic-ai/claude-agent-sdk').PermissionResult
+/** The SDK also passes `decisionReasonType` (e.g. `safetyCheck`, `rule`, `mode`), which its types leave out. */
+type CanUseToolOptions = Parameters<CanUseTool>[2] & { decisionReasonType?: string }
 
 /**
  * Build the env passed to the Claude SDK query, applying the per-instance
@@ -983,7 +985,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     const mode = active.session.runtimeMode
     const permissionMode = RUNTIME_MODE_TO_PERMISSION[mode]
 
-    const canUseTool: CanUseTool = async (toolName, toolInput) => {
+    const canUseTool: CanUseTool = async (toolName, toolInput, options: CanUseToolOptions) => {
       // ── Special: ExitPlanMode ────────────────────────────────
       // The agent produced a plan while in Plan mode and wants to exit.
       // We capture the plan and surface it as a proposed plan for user review.
@@ -1109,7 +1111,10 @@ export class ClaudeAdapter implements ProviderAdapter {
         return { behavior: 'deny', message: redirect.message } as PermissionResult
       }
 
-      if (policy === 'allow') {
+      // In full access the SDK asks only when a safety check or the user's
+      // ask rule stopped the action. Those asks get a card, not an allow.
+      const forcedAsk = Boolean(options.matchedAskRule) || options.decisionReasonType === 'safetyCheck'
+      if (policy === 'allow' && !forcedAsk) {
         return { behavior: 'allow', updatedInput: toolInput } as PermissionResult
       }
       // 'prompt' - fall through to approval request flow below
@@ -1117,6 +1122,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       const detail =
         typeof toolInput === 'object' ? JSON.stringify(toolInput, null, 2).slice(0, 500) : String(toolInput)
+      const reason = claudeApprovalReason(currentMode, options)
 
       active.onEvent({
         type: 'request.opened',
@@ -1125,6 +1131,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         requestType: classifyTool(toolName),
         toolName,
         detail,
+        ...(reason ? { reason } : {}),
       })
 
       // Waiting on the user - expected silence, hold stall reports.
@@ -2467,6 +2474,18 @@ function parseQuestions(input: unknown): import('../types').Question[] {
       : [],
     multiSelect: typeof q.multiSelect === 'boolean' ? q.multiSelect : false,
   }))
+}
+
+/** Why Claude asked, from the SDK's own reason and the ask rule it matched. */
+function claudeApprovalReason(mode: RuntimeMode, options: CanUseToolOptions): string | undefined {
+  const rule = options.matchedAskRule
+  const parts = [
+    options.decisionReason?.trim(),
+    rule &&
+      `Your ask rule ${rule.ruleContent ? `${rule.toolName}(${rule.ruleContent})` : rule.toolName} from ${rule.source} matched.`,
+  ].filter((part): part is string => Boolean(part))
+  if (mode === 'full-access') parts.unshift('A safety check or your ask rule stopped this action.')
+  return parts.length > 0 ? parts.join(' ') : undefined
 }
 
 function classifyTool(toolName: string): 'command' | 'file' | 'tool' {

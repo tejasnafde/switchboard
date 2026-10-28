@@ -121,6 +121,15 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
         </span>
       </div>
 
+      {message.approval.reason && (
+        <div
+          data-testid="approval-reason"
+          style={{ padding: '8px 12px 0', fontSize: '11.5px', color: 'var(--text-secondary)' }}
+        >
+          Reason: {message.approval.reason}
+        </div>
+      )}
+
       {/* Detail - collapsible. Long JSON tool inputs used to overflow a
           160px box silently; now default-collapsed with a summary line. */}
       {message.approval.hubBatch ? (

@@ -54,6 +54,15 @@ describe('pendingRequestToChatMessage', () => {
     })
   })
 
+  it('keeps the reason on a recovered approval card', () => {
+    expect(pendingRequestToChatMessage({ ...approval, reason: 'A safety check stopped this.' }, 123).approval).toEqual({
+      toolName: 'Bash',
+      detail: 'ls',
+      status: 'pending',
+      reason: 'A safety check stopped this.',
+    })
+  })
+
   it('builds a question card', () => {
     expect(pendingRequestToChatMessage(question, 123)).toEqual({
       id: 'question_q1',

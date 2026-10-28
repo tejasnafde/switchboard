@@ -693,6 +693,8 @@ export interface RuntimeRequestOpenedEvent {
   requestType: 'command' | 'file' | 'tool'
   toolName: string
   detail: string
+  /** Why the provider asked (Claude's decision reason and matched ask rule), in plain text. */
+  reason?: string
   /** A pull request write an agent asked for through the Switchboard MCP server. `detail` still describes it for clients that do not render the card. */
   hostWrite?: HostWriteCard
   /** A Codex permissions request: every permission and path an approval grants. `detail` lists the same in plain text. */

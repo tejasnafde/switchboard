@@ -69,7 +69,7 @@ object ThreadEventDecoder {
             "request.opened" -> ThreadEventKind.RequestOpened to ThreadEventPayload.RequestOpened(
                 raw.requiredString("requestId"), raw.requiredString("requestType"),
                 raw.requiredString("toolName"), raw.requiredString("detail"),
-                HostWriteCards.decode(raw.values["hostWrite"]),
+                HostWriteCards.decode(raw.values["hostWrite"]), raw.string("reason"),
             )
             "request.closed" -> ThreadEventKind.RequestClosed to ThreadEventPayload.RequestClosed(
                 raw.requiredString("requestId"), raw.requiredString("decision"),
