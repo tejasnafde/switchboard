@@ -107,6 +107,7 @@ import { queuedTurnComposerText } from '@shared/queued-turns'
 import { echoMessageId, isRuntimeMode, REQUEST_EXPIRED, SESSION_START_STOPPED } from '@shared/provider-events'
 import { isReasoningEffort } from '@shared/provider-option-memory'
 import {
+  canSteer,
   promoteUnavailableReason,
   peerDelivery,
   startsOwnProviderTurn,
@@ -1225,8 +1226,8 @@ export class ProviderRegistry implements PeerToolHost {
   /**
    * A message the user sends while an approval card waits answers the card:
    * each open approval of the chat is denied with a reason, so the turn it
-   * blocked goes on and takes the message as a steer (or ends, and the queued
-   * message starts). Questions and plans are left alone, and so are the
+   * blocked goes on and takes the message as a steer (or, on an agent that
+   * cannot steer, ends, and the queued message starts). Questions and plans are left alone, and so are the
    * broker's cards, which never hold a turn. A deny that fails refuses the send.
    */
   private async declinePendingApprovals(adapter: ProviderAdapter, threadId: string): Promise<void> {
@@ -2917,8 +2918,10 @@ export class ProviderRegistry implements PeerToolHost {
         finalize: (turn) => this.withPendingHandoff(threadId, adapter, turn),
         dispatch: async (turn) => {
           // Here, past every check that can still refuse the turn, so an agent
-          // is never told of a message that then does not arrive.
-          if (declineApprovals) await this.declinePendingApprovals(adapter, threadId)
+          // is never told of a message that then does not arrive. A message
+          // queued on purpose where a steer was possible waits for the card.
+          if (declineApprovals && !(input.delivery === 'queue' && canSteer(adapter.provider)))
+            await this.declinePendingApprovals(adapter, threadId)
           // A queued message becomes a turn of its own once the running one
           // ends, so it counts; a Codex steer joins the running turn and does not.
           const startsNewProviderTurn = startsOwnProviderTurn(

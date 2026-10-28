@@ -50,7 +50,7 @@
   },
   "verification": {
     "automated": [
-      "tests/unit/provider-registry-send-declines-approval.test.ts drives the registry with SUBMIT_USER_TURN and the legacy SEND_TURN: the open approval is denied with the reason before the message is steered (Claude, Codex) or queued (OpenCode); every open card of the chat is denied; a failed deny rejects the send and sends nothing; an open question is left alone; a managed turn (not typed by the user) does not answer a card; a turn that the durable store refuses to dispatch, or whose checkpoint fails, leaves the card open; a card stored under the root id is denied when the send names the rotated session id.",
+      "tests/unit/provider-registry-send-declines-approval.test.ts drives the registry with SUBMIT_USER_TURN and the legacy SEND_TURN: the open approval is denied with the reason before the message is steered (Claude, Codex) or queued (OpenCode); every open card of the chat is denied; a failed deny rejects the send and sends nothing; an open question is left alone; a managed turn (not typed by the user) does not answer a card; a turn that the durable store refuses to dispatch, or whose checkpoint fails, leaves the card open; a card stored under the root id is denied when the send names the rotated session id; a message queued on purpose on an agent that can steer leaves the card open.",
       "tests/unit/claude-adapter-switchboard-mcp.test.ts checks that the Claude adapter returns the deny reason as the canUseTool message, and keeps 'User denied permission' without one.",
       "npm run typecheck and the full vitest suite."
     ],

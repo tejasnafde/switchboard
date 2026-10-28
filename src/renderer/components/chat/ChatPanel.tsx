@@ -205,11 +205,16 @@ export function ChatPanel({
     return undefined
   }, [messages])
   // A send denies an approval the turn waits on (the backend does it). The
-  // agent's own cards do not hold the turn and are left open.
+  // agent's own cards (host writes, child batches, peer sends) do not hold the
+  // turn and are left open.
   const approvalHoldsTurn = useMemo(
     () =>
       messages.some(
-        (m) => m.approval?.status === 'pending' && !m.id.startsWith(`approval_${AGENT_APPROVAL_ID_PREFIX}`),
+        (m) =>
+          m.approval?.status === 'pending' &&
+          !m.approval.hostWrite &&
+          !m.approval.hubBatch &&
+          !m.id.startsWith(`approval_${AGENT_APPROVAL_ID_PREFIX}`),
       ),
     [messages],
   )

@@ -313,4 +313,17 @@ describe('a user send while an approval card waits', () => {
 
     expect(adapter.calls).toEqual([`respond r1 deny ${SEND_DECLINES_APPROVAL_REASON}`, 'send redirect default'])
   })
+
+  it('leaves the card open for a message queued on purpose where a steer was possible', async () => {
+    const { adapter, registry, submit, openApproval } = await setup('codex')
+    await submit('first')
+    openApproval('r1')
+    adapter.calls = []
+
+    const result = await submit('also cover the retry path', 'queue')
+
+    expect(result.accepted).toBe(true)
+    expect(adapter.calls).toEqual(['send also cover the retry path queue'])
+    expect(registry.getPendingRequests('t1').map((e) => e.type)).toEqual(['request.opened'])
+  })
 })
