@@ -18,6 +18,7 @@ import {
   WorktreeCreationChannels,
 } from '@shared/ipc-channels'
 import type { HtmlLiveOpenRequest, HtmlLiveState } from '@shared/html-live'
+import { ATTACHMENT_UPLOAD_CAPABILITY } from '@shared/attachments'
 import type { LimitState } from '@shared/limit-resume'
 import type { SttTranscribeRequest, SttTranscribeResult } from '@shared/stt'
 import type {
@@ -265,6 +266,16 @@ export class SwitchboardClient {
   /** Every chat's saved messages on this machine, best match first. */
   searchMessages(query: string): Promise<MessageSearchResult[]> {
     return this.transport.invoke(AppChannels.SEARCH_MESSAGES, query)
+  }
+
+  /** True when the backend saves uploaded files (`attachment_upload_v1`); without it the phone sends images only. */
+  canUploadAttachments(): boolean {
+    return this.supportsCapability(ATTACHMENT_UPLOAD_CAPABILITY) === true
+  }
+
+  /** Save a file's bytes on the backend; the answer's path goes in the turn (`attachmentTurn`). */
+  uploadAttachment(input: { name: string; data: string }): Promise<{ path: string; size: number; pages?: number }> {
+    return this.transport.invoke(AppChannels.UPLOAD_ATTACHMENT, input)
   }
 
   renameConversation(conversationId: string, title: string): Promise<unknown> {
