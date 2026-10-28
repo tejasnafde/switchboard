@@ -30,7 +30,10 @@
         "apps/android/app/src/test/java/app/switchboard/mobile/domain/composer/ComposerFilesTest.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/domain/composer/ImageResizePlanTest.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/platform/outbox/PrivateComposerAttachmentStagerTest.kt",
-        "apps/android/app/src/test/java/app/switchboard/mobile/data/outbox/OutboxRemoteSenderTest.kt"
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/outbox/OutboxRemoteSenderTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/runtime/DurableComposerRuntimeUploadTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadSessionPresentationTest.kt"
       ]
     },
     "sharedBackendApi": {
@@ -63,7 +66,8 @@
       "Android JUnit: ComposerFilesTest (image/file/refusal sort, images only without attachment_upload_v1, the desktop refusal copy, the 10 MB limit, pasted-text names, chip labels, large paste detection by UTF-8 bytes, the uploaded-file draft encoding, the attachmentTurn shape and stable pill ids).",
       "Android JUnit: ImageResizePlanTest (a GIF over 2000 px on its long side is refused at attach with the desktop copy; one at 2000 px is kept).",
       "Android JUnit: PrivateComposerAttachmentStagerTest (an uploaded file in a queued turn comes back to the draft as the same file chip, with no file read or written on the phone).",
-      "Android JUnit: OutboxRemoteSenderTest (an uploaded file goes as a prompt line, a [[pill:id]] token and a file pill, and never as an image)."
+      "Android JUnit: OutboxRemoteSenderTest (an uploaded file goes as a prompt line, a [[pill:id]] token and a file pill, and never as an image).",
+      "Android JUnit: DurableComposerRuntimeUploadTest, ThreadSessionCoordinatorTest and ThreadSessionPresentationTest (send waits while a file uploads and then carries it; two pastes in flight get different pasted-text names; a refused paste ends its upload)."
     ],
     "hardware": [],
     "notExercised": [

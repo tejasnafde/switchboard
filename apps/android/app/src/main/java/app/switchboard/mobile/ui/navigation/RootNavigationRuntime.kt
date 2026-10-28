@@ -43,6 +43,7 @@ private val EmptyBrowseActivity = MutableStateFlow<Map<String, BrowseThreadActiv
 private val DefaultFollowUp = MutableStateFlow(app.switchboard.mobile.domain.thread.TurnDelivery.Steer)
 private val EmptyComposerDrafts = MutableStateFlow<Map<ComposerDraftKey, ComposerDraft>>(emptyMap())
 private val EmptyComposerErrors = MutableStateFlow<Map<ComposerDraftKey, String>>(emptyMap())
+private val EmptyComposerUploads = MutableStateFlow<Map<ComposerDraftKey, List<String>>>(emptyMap())
 private val EmptyQueuedTurns = MutableStateFlow<List<QueuedTurn>>(emptyList())
 
 /** Process-wide, so a pill left by Reviews survives the Activity being recreated. */
@@ -54,6 +55,10 @@ interface RootNavigationRuntime {
         get() = EmptyComposerDrafts
     val composerErrors: StateFlow<Map<ComposerDraftKey, String>>
         get() = EmptyComposerErrors
+
+    /** Names of the files each draft is still uploading. */
+    val composerUploads: StateFlow<Map<ComposerDraftKey, List<String>>>
+        get() = EmptyComposerUploads
     val queuedTurns: StateFlow<List<QueuedTurn>>
         get() = EmptyQueuedTurns
     val threadSnapshots: ThreadSnapshotStore

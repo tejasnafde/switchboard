@@ -87,6 +87,7 @@ class AndroidRootNavigationRuntime(
     override val statuses: StateFlow<Map<String, ConnectionRuntimeState>> = fleet.statuses
     override val composerDrafts = composer.drafts
     override val composerErrors = composer.errors
+    override val composerUploads = composer.uploads
     override val queuedTurns: StateFlow<List<QueuedTurn>> = composer.queuedTurns
 
     override fun lease(connectionId: String): ReadyClientLease? = clients.lease(connectionId)

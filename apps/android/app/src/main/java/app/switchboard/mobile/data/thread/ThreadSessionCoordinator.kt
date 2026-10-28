@@ -96,6 +96,8 @@ data class ThreadComposerState(
     val flipNextDelivery: Boolean = false,
     /** A review pill the next send carries (Reviews > Work on PR). */
     val reviewPill: PhoneReviewPill? = null,
+    /** Files still uploading into this draft; send waits for them. */
+    val uploading: Int = 0,
 )
 
 data class ThreadSessionState(
@@ -957,7 +959,7 @@ class ThreadSessionCoordinator(
 
     @Synchronized
     fun submit(): ComposerSubmitResult {
-        if (composer.submitting) return ComposerSubmitResult.Busy
+        if (composer.submitting || composer.uploading > 0) return ComposerSubmitResult.Busy
         val text = composer.draft.trim()
         val pill = composer.reviewPill
         if (text.isEmpty() && composer.attachments.isEmpty() && pill == null) return ComposerSubmitResult.Empty
@@ -2394,6 +2396,13 @@ class ThreadSessionCoordinator(
             )
             publish()
         }
+    }
+
+    @Synchronized
+    fun installUploads(count: Int) {
+        if (composer.uploading == count) return
+        composer = composer.copy(uploading = count)
+        publish()
     }
 
     @Synchronized

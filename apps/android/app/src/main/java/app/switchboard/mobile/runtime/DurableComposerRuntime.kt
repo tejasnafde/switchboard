@@ -35,6 +35,10 @@ class DurableComposerRuntime(
     val queuedTurns: StateFlow<List<QueuedTurn>> = outbox.state
     private val mutableErrors = MutableStateFlow<Map<ComposerDraftKey, String>>(emptyMap())
     val errors = mutableErrors.asStateFlow()
+    private val mutableUploads = MutableStateFlow<Map<ComposerDraftKey, List<String>>>(emptyMap())
+
+    /** Names of the files each draft is still uploading; its send waits until they land. */
+    val uploads = mutableUploads.asStateFlow()
 
     fun hydrate() {
         worker.execute { coordinator.hydrate() }
@@ -65,8 +69,10 @@ class DurableComposerRuntime(
                 is ComposerDraftMutation.PartlyAdded -> listOf(images.reason)
             }
             if (lines.isEmpty()) mutableErrors.value = mutableErrors.value - key else recordError(key, lines.joinToString("\n"))
-            intake.files.forEach { source ->
-                uploader?.upload(source) { result -> worker.execute { addUploaded(key, result) } }
+            if (uploader != null) intake.files.forEach { source ->
+                trackUpload(key, source.displayName, { done -> uploader.upload(source, done) }) { result ->
+                    addUploaded(key, result)
+                }
             }
         }
     }
@@ -78,13 +84,11 @@ class DurableComposerRuntime(
     fun attachPastedText(key: ComposerDraftKey, text: String, uploader: ComposerFileUploader, onFailed: (String) -> Unit) {
         worker.execute {
             val labels = drafts.value[key]?.attachments.orEmpty().map(ComposerAttachment::displayName)
-            val name = ComposerFiles.nextPastedTextName(labels)
-            uploader.uploadText(name, text) { result ->
-                worker.execute {
-                    when (result) {
-                        is ComposerUploadResult.Refused -> onFailed(result.line)
-                        is ComposerUploadResult.Uploaded -> addUploaded(key, result)
-                    }
+            val name = ComposerFiles.nextPastedTextName(labels + uploads.value[key].orEmpty())
+            trackUpload(key, name, { done -> uploader.uploadText(name, text, done) }) { result ->
+                when (result) {
+                    is ComposerUploadResult.Refused -> onFailed(result.line)
+                    is ComposerUploadResult.Uploaded -> addUploaded(key, result)
                 }
             }
         }
@@ -100,6 +104,31 @@ class DurableComposerRuntime(
         }
         // Keep the refusals of the same pick: each file is one line.
         recordError(key, listOfNotNull(errors.value[key], line).joinToString("\n"))
+    }
+
+    /**
+     * Lists [name] in [uploads] until [handle] has run on the worker, so a send
+     * never sees the upload done without its file. A throwing uploader is a refusal.
+     */
+    private fun trackUpload(
+        key: ComposerDraftKey,
+        name: String,
+        upload: ((ComposerUploadResult) -> Unit) -> Unit,
+        handle: (ComposerUploadResult) -> Unit,
+    ) {
+        mutableUploads.value = mutableUploads.value + (key to uploads.value[key].orEmpty() + name)
+        val done = { result: ComposerUploadResult ->
+            worker.execute {
+                handle(result)
+                val left = uploads.value[key].orEmpty() - name
+                mutableUploads.value = if (left.isEmpty()) mutableUploads.value - key else mutableUploads.value + (key to left)
+            }
+        }
+        try {
+            upload(done)
+        } catch (_: RuntimeException) {
+            done(ComposerUploadResult.Refused(ComposerFiles.refusal(name, "It could not be saved.")))
+        }
     }
 
     fun removeImage(key: ComposerDraftKey, attachmentId: String) =
@@ -185,6 +214,7 @@ class DurableComposerRuntime(
     fun submitSavedDraft(key: ComposerDraftKey) {
         worker.execute {
             val draft = drafts.value[key] ?: return@execute
+            if (!uploads.value[key].isNullOrEmpty()) return@execute
             val result = enqueue(draft)
             if (result is EnqueueResult.Durable) recordResult(key, coordinator.clear(key))
             if (result is EnqueueResult.AttachmentFailure) recordError(key, result.reason)

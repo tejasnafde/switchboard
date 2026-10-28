@@ -958,6 +958,10 @@ private fun ThreadComposer(
         pasteError?.let {
             Text(it, color = Red, style = MaterialTheme.typography.bodySmall)
         }
+        if (state.sendWaits) {
+            val files = if (state.uploading == 1) "1 file" else "${state.uploading} files"
+            Text("Uploading $files. Send waits until it is done.", color = TextDim, style = MaterialTheme.typography.bodySmall)
+        }
         if (slashQuery != null && slashCommands.isNotEmpty()) {
             ThreadSlashMenu(slashCommands, ::runSlash)
         }
@@ -1040,7 +1044,7 @@ private fun ThreadComposer(
                     voice = voice,
                     canSend = state.canSend,
                     agentRunning = state.showInterrupt,
-                    enabled = !state.submitting && !state.interrupting,
+                    enabled = !state.submitting && !state.interrupting && !state.sendWaits,
                     onSend = onSend,
                     onStopAgent = onInterrupt,
                     modifier = Modifier.padding(bottom = 1.dp),

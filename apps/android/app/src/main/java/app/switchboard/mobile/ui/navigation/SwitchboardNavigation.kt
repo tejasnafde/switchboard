@@ -124,6 +124,7 @@ private val EmptyRuntimeStatuses = MutableStateFlow<Map<String, ConnectionRuntim
 private val SteerFollowUp = kotlinx.coroutines.flow.MutableStateFlow(app.switchboard.mobile.domain.thread.TurnDelivery.Steer)
 private val EmptyComposerDrafts = MutableStateFlow<Map<ComposerDraftKey, ComposerDraft>>(emptyMap())
 private val EmptyComposerErrors = MutableStateFlow<Map<ComposerDraftKey, String>>(emptyMap())
+private val EmptyComposerUploads = MutableStateFlow<Map<ComposerDraftKey, List<String>>>(emptyMap())
 private val EmptyQueuedTurns = MutableStateFlow<List<QueuedTurn>>(emptyList())
 
 @Composable
@@ -1061,6 +1062,8 @@ private fun ThreadRouteHost(
     }
     val composerDrafts by (runtime?.composerDrafts ?: EmptyComposerDrafts).collectAsState()
     val composerErrors by (runtime?.composerErrors ?: EmptyComposerErrors).collectAsState()
+    val composerUploads by (runtime?.composerUploads ?: EmptyComposerUploads).collectAsState()
+    val uploading = composerUploads[composerKey]?.size ?: 0
     val allQueuedTurns by (runtime?.queuedTurns ?: EmptyQueuedTurns).collectAsState()
     val savedDraft = composerDrafts[composerKey]
     val queuedTurns = remember(allQueuedTurns, route.connectionId, route.threadId) {
@@ -1108,6 +1111,7 @@ private fun ThreadRouteHost(
                     showInterrupt = false,
                     attachments = localDraft.attachments,
                     editingOrigin = localDraft.editingOrigin,
+                    uploading = uploading,
                 )
             },
             onDraftChange = { text ->
@@ -1141,6 +1145,7 @@ private fun ThreadRouteHost(
         offlineSnapshot = offlineSnapshot,
         savedDraft = savedDraft,
         composerError = composerErrors[composerKey],
+        uploading = uploading,
         queuedTurns = queuedTurns,
         onBack = onBack,
         onForked = onForked,
@@ -1155,6 +1160,7 @@ private fun ConnectedThreadRoute(
     offlineSnapshot: OfflineSnapshot?,
     savedDraft: ComposerDraft?,
     composerError: String?,
+    uploading: Int,
     queuedTurns: List<QueuedTurn>,
     onBack: () -> Unit,
     onForked: (app.switchboard.mobile.domain.remote.ForkConversationState) -> Unit,
@@ -1248,6 +1254,10 @@ private fun ConnectedThreadRoute(
 
     LaunchedEffect(coordinator, savedDraft) {
         coordinator.installComposerDraft(savedDraft)
+    }
+    // Declared after the draft, so a finished upload's file is installed before send is enabled.
+    LaunchedEffect(coordinator, uploading) {
+        coordinator.installUploads(uploading)
     }
     val pendingPills by runtime.reviewPills.state.collectAsState()
     val pendingPill = pendingPills[composerKey]
