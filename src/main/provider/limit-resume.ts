@@ -261,11 +261,14 @@ export class LimitResumer {
     return limitState(true, forThisLimit ? row : null)
   }
 
-  /** The turn whose usage limit the chat waits on, or null when it is not limited. */
+  /** The turn whose usage limit the chat waits on, or null when it is not limited. Also with the setting off. */
   limitedTurnOf(threadId: string): string | null {
-    if (this.view(threadId).kind === 'none') return null
+    if (!this.host.enabled()) return null
     const id = resolveRootThreadId(threadId)
-    return this.limited.get(id)?.turnId ?? getLimitResume(id)?.limitedTurnId ?? null
+    const current = this.limited.get(id)
+    if (current) return current.turnId
+    const row = getLimitResume(id)
+    return row?.state === 'armed' || row?.state === 'gave_up' ? row.limitedTurnId : null
   }
 
   /** The chat went on another way (a move to another account): it is no longer limited. */
@@ -284,7 +287,7 @@ export class LimitResumer {
     return this.slotWaiters.has(resolveRootThreadId(threadId))
   }
 
-  /** A child's turn ended: resumes that wait for a run slot try again, oldest first. */
+  /** A session stopped running: resumes that wait for a run slot try again, oldest first. */
   slotFreed(): void {
     for (const [id, requestId] of [...this.slotWaiters]) {
       this.slotWaiters.delete(id)
@@ -399,7 +402,7 @@ export class LimitResumer {
         if (decision.reason === 'early')
           this.schedule(id, requestId, getLimitResume(id)!.resetAt + LIMIT_RESUME_FIRE_DELAY_MS)
         else if (!manual) this.schedule(id, requestId, this.now() + RETRY_MS)
-        // The timer above stays as a fallback in case no child turn ends.
+        // The timer above stays as a fallback in case no session stops running.
         if (decision.reason === 'no_slot') {
           this.slotWaiters.set(id, requestId)
           this.notify(id, false)

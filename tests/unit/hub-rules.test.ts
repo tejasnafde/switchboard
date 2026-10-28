@@ -162,7 +162,6 @@ describe('hub update rows and reports', () => {
 describe('moveChildProblem', () => {
   const ok = {
     parentMode: 'full-access' as const,
-    limit: 'armed' as const,
     limitedTurnId: 't1',
     movedAfterLimitTurnId: null,
     agent: 'Claude',
@@ -172,12 +171,10 @@ describe('moveChildProblem', () => {
   }
   it('lets a limited child move to another enabled account of its agent', () => {
     expect(moveChildProblem(ok)).toBeNull()
-    expect(moveChildProblem({ ...ok, limit: 'gave_up' })).toBeNull()
-    expect(moveChildProblem({ ...ok, limit: 'no_reset', limitedTurnId: null })).toBeNull()
   })
   it('refuses plan mode, a child that is not limited, and a second move in one limit', () => {
     expect(moveChildProblem({ ...ok, parentMode: 'plan' })).toMatch(/Plan mode/)
-    expect(moveChildProblem({ ...ok, limit: 'none' })).toMatch(/not stopped by a usage limit/)
+    expect(moveChildProblem({ ...ok, limitedTurnId: null })).toMatch(/not stopped by a usage limit/)
     expect(moveChildProblem({ ...ok, movedAfterLimitTurnId: 't1' })).toMatch(/already moved/)
     expect(moveChildProblem({ ...ok, movedAfterLimitTurnId: 't0' })).toBeNull()
   })

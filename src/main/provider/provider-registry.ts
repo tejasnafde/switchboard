@@ -425,6 +425,8 @@ export class ProviderRegistry implements PeerToolHost {
   /** Threads whose user pressed Stop while their session was still starting. */
   private stopRequestedDuringStart = new Set<string>()
   private managedSessionStarter: ((opts: SessionStartOpts) => Promise<ProviderSession>) | null = null
+  /** Children `move_child` is moving, with the slot they take on the target account. */
+  private readonly movingChildren = new Map<string, HubRunningChild>()
   /** The SWITCH_INSTANCE handler, for `move_child`. Set with the handlers. */
   private instanceSwitcher:
     | ((threadId: string, input: ProviderInstanceSwitchRequest) => Promise<{ ok: boolean; message?: string }>)
@@ -1004,9 +1006,10 @@ export class ProviderRegistry implements PeerToolHost {
       .filter(
         (c) =>
           c.childId !== child.childId &&
-          (this.liveTurnRunning(c.childId) || this.limitResumer?.isResuming(c.childId) === true),
+          (this.turnInFlight(c.childId) || this.limitResumer?.isResuming(c.childId) === true),
       )
       .map((c) => this.childSlot(c))
+    for (const [id, slot] of this.movingChildren) if (id !== child.childId) running.push(slot)
     return {
       settled: child.phase === 'settled',
       parentHeld: getHubParent(child.parentId)?.held === true,
@@ -1015,6 +1018,12 @@ export class ProviderRegistry implements PeerToolHost {
       perInstance: settings.runningPerInstance,
       perParent: settings.runningPerParent,
     }
+  }
+
+  /** A turn runs or is being prepared. Not hasOutstandingTurn: messages held behind a limited turn count there. */
+  private turnInFlight(conversationId: string): boolean {
+    const live = this.liveSessionId(conversationId)
+    return live !== null && (this.sessionStatus.get(live) === 'running' || this.preparingTurns.has(live))
   }
 
   /** The run slot a child takes: the account its session runs on now. */
@@ -1074,7 +1083,6 @@ export class ProviderRegistry implements PeerToolHost {
     const fromId = descriptor.instanceId ?? null
     const problem = moveChildProblem({
       parentMode,
-      limit: resumer.view(child.childId).kind,
       limitedTurnId,
       movedAfterLimitTurnId: child.movedAfterLimitTurnId,
       agent: agentLabel(toAgentProvider(descriptor.provider)),
@@ -1085,6 +1093,20 @@ export class ProviderRegistry implements PeerToolHost {
         : null,
     })
     if (problem) return refuse('refused', problem)
+    // The switch refuses both; checked here so the refusal leaves the auto-resume armed.
+    if (speaksAcp(descriptor.provider))
+      return refuse(
+        'refused',
+        `${agentLabel(toAgentProvider(descriptor.provider))} cannot keep its thread across accounts. ` +
+          'Interrupt the child and start a new one with a brief that points to its transcript.',
+      )
+    if (
+      this.preparingTurns.has(live) ||
+      this.hasOutstandingTurn(live) ||
+      this.sessionStatus.get(live) === 'running' ||
+      this.switchingSessions.has(live)
+    )
+      return refuse('busy', `${child.title} runs a turn or holds queued messages, so it cannot move now.`)
     const toName = target!.displayName
     // Not forced: a forced Claude reading can ask for the keychain password. The cache is 45 s old at most.
     let usage: ProviderUsage
@@ -1108,38 +1130,44 @@ export class ProviderRegistry implements PeerToolHost {
     )
       return refuse('no_slot', `${toName} has no free slot: other children run on it or under this chat.`)
 
-    // First, so a timer cannot send the resume turn to the session the switch stops.
-    resumer.disarm(child.childId, 'moved')
-    const fromName =
-      (fromId && getProviderInstanceFull(fromId, { withEnv: false })?.displayName) || fromId || 'its account'
-    const switched = await this.instanceSwitcher(live, {
-      targetInstanceId: targetId,
-      expectedCurrentInstanceId: fromId,
-    })
-    if (!switched.ok)
-      return refuse(
-        'switch_failed',
-        `Could not move ${child.title}: ${switched.message ?? 'the switch failed'}. Its auto-resume is off now; ` +
-          'try the move again, or send it a message after the reset.',
+    // Holds the target's slot until the resume turn is out: the switch's own stop frees slots for waiters.
+    this.movingChildren.set(child.childId, { parentId, providerInstanceId: targetId })
+    try {
+      // First, so a timer cannot send the resume turn to the session the switch stops.
+      resumer.disarm(child.childId, 'moved')
+      const fromName =
+        (fromId && getProviderInstanceFull(fromId, { withEnv: false })?.displayName) || fromId || 'its account'
+      const switched = await this.instanceSwitcher(live, {
+        targetInstanceId: targetId,
+        expectedCurrentInstanceId: fromId,
+      })
+      if (!switched.ok)
+        return refuse(
+          'switch_failed',
+          `Could not move ${child.title}: ${switched.message ?? 'the switch failed'}. Its auto-resume is off now; ` +
+            'try the move again, or send it a message after the reset.',
+        )
+      updateHubChild(child.childId, { providerInstanceId: targetId, movedAfterLimitTurnId: limitedTurnId ?? undefined })
+      this.postSystemRow(child.childId, 'rotation', `${ROTATION_MARKER_PREFIX} ${fromName} → ${toName}`)
+      resumer.clearLimited(child.childId)
+      const sent = await this.sendLimitResume(this.liveSessionId(child.childId) ?? live)
+      const summary = `Moved from ${fromName} to ${toName}.`
+      this.postSystemRow(
+        parentId,
+        'hubmoved',
+        formatHubUpdateMarker([{ childId: child.childId, title: child.title, kind: 'resumed', summary }]),
       )
-    updateHubChild(child.childId, { providerInstanceId: targetId, movedAfterLimitTurnId: limitedTurnId ?? undefined })
-    this.postSystemRow(child.childId, 'rotation', `${ROTATION_MARKER_PREFIX} ${fromName} → ${toName}`)
-    resumer.clearLimited(child.childId)
-    const sent = await this.sendLimitResume(this.liveSessionId(child.childId) ?? live)
-    const summary = `Moved from ${fromName} to ${toName}.`
-    this.postSystemRow(
-      parentId,
-      'hubmoved',
-      formatHubUpdateMarker([{ childId: child.childId, title: child.title, kind: 'resumed', summary }]),
-    )
-    log.info('child moved', { childId: child.childId, parentId, from: fromId, to: targetId, resumed: sent })
-    span.end({ outcome: sent ? 'moved' : 'moved_not_resumed' })
-    this.publishHubChange(parentId)
-    return toolText(
-      `Moved ${child.title} from ${fromName} to ${toName}.` +
-        (sent ? ' It goes on with its task there.' : ' The resume turn did not go out: send it a message.') +
-        ' Tell the user what you moved and why.',
-    )
+      log.info('child moved', { childId: child.childId, parentId, from: fromId, to: targetId, resumed: sent })
+      span.end({ outcome: sent ? 'moved' : 'moved_not_resumed' })
+      this.publishHubChange(parentId)
+      return toolText(
+        `Moved ${child.title} from ${fromName} to ${toName}.` +
+          (sent ? ' It goes on with its task there.' : ' The resume turn did not go out: send it a message.') +
+          ' Tell the user what you moved and why.',
+      )
+    } finally {
+      this.movingChildren.delete(child.childId)
+    }
   }
 
   /** The resume turn, through the approval result path, then the held queue behind it in enqueue order. */

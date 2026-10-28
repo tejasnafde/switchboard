@@ -290,6 +290,9 @@ describe('move_child', () => {
     expect(text(await move('child1', 'claude-b'))).toMatch(/Claude B is at its usage limit too/)
     usage.closed.clear()
     expect(text(await move('someone', 'claude-b'))).toMatch(/not an open child/)
+    event({ type: 'status', threadId: 'child1', status: 'running' })
+    expect(text(await move('child1', 'claude-b'))).toMatch(/runs a turn or holds queued messages/)
+    event({ type: 'status', threadId: 'child1', status: 'idle' })
     adapter.mode = 'plan'
     expect(text(await move('child1', 'claude-b'))).toMatch(/Plan mode/)
     expect(getLimitResume('child1')?.state).toBe('armed')

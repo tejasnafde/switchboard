@@ -176,7 +176,7 @@ export function runSlotFree(
  */
 export function moveChildProblem(m: {
   parentMode: RuntimeMode
-  limit: LimitState['kind']
+  /** The turn whose limit the child waits on; null when it is not limited. */
   limitedTurnId: string | null
   movedAfterLimitTurnId: string | null
   agent: string
@@ -185,8 +185,8 @@ export function moveChildProblem(m: {
   target: { agent: string; enabled: boolean; name: string } | null
 }): string | null {
   if (m.parentMode === 'plan') return 'Plan mode does not move child chats.'
-  if (m.limit === 'none') return 'The child is not stopped by a usage limit, so it stays on its account.'
-  if (m.limitedTurnId !== null && m.limitedTurnId === m.movedAfterLimitTurnId)
+  if (m.limitedTurnId === null) return 'The child is not stopped by a usage limit, so it stays on its account.'
+  if (m.limitedTurnId === m.movedAfterLimitTurnId)
     return 'The child was already moved for this limit. It can move again only after a new limit.'
   if (!m.target || !m.target.enabled) return `No enabled account has the id ${m.targetId}.`
   if (m.target.agent !== m.agent)
