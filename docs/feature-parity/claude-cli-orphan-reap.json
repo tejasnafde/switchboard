@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "claude-cli-orphan-reap",
-  "summary": "A Claude Code CLI keeps running its current turn after the backend that started it dies (desktop main process crash, headless server restart). Each backend now records the CLIs it runs in a ledger under its data folder, and on its next start stops the CLIs, with the processes they started, of every ledger whose backend is gone, before any session starts. A recorded pid is stopped only when it still runs the exact recorded command line.",
+  "summary": "A Claude Code CLI keeps running its current turn after the backend that started it dies (desktop main process crash, headless server restart). Each backend now records the CLIs it runs (pid, start time and a sha256 of the command line, mode 0600) in a ledger under its data folder. On its next start it stops the CLIs, with the processes they started, of every ledger whose backend is gone, and every session start waits until they have exited. A process is known by its pid and start time, so a reused pid is never stopped.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -31,7 +31,7 @@
     "storageDataMigration": {
       "status": "implemented",
       "evidence": [
-        "src/main/provider/claude-orphans.ts"
+        "tests/unit/claude-orphans.test.ts"
       ]
     },
     "updateRelease": {
@@ -43,7 +43,7 @@
   },
   "verification": {
     "automated": [
-      "tests/unit/claude-orphans.test.ts: a stand-in backend starts a stand-in CLI (ignores stdin EOF, starts a tool process); after the backend is SIGKILLed the CLI still runs, and the reap stops the CLI and its tool. A live backend's CLI is left alone, and a recorded pid that now runs another command is not killed.",
+      "tests/unit/claude-orphans.test.ts: a stand-in backend starts a stand-in CLI (ignores stdin EOF, starts a tool process); after the backend is SIGKILLed the CLI still runs, and the reap stops the CLI and its tool before it resolves. Also: SIGKILL after the grace time for a CLI that ignores SIGTERM, a live backend's CLI left alone, a ledger of the current pid treated as stale, a reused pid not killed, unfinished .tmp writes of dead backends removed, the ledger written 0600 without the command line, and parsePs on macOS and Linux procps rows.",
       "npm run typecheck",
       "npx vitest run --maxWorkers=2"
     ],
