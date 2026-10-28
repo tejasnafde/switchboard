@@ -125,6 +125,7 @@ object CachedThreadStateMapper {
                 requestType = value.string("requestType") ?: "tool",
                 state = value.string("state") ?: "pending",
                 hostWrite = HostWriteCards.decode(value.values["hostWrite"]),
+                reason = value.string("reason"),
             )
 
             "question" -> FeedItem.Question(

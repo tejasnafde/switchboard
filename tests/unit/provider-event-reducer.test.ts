@@ -162,6 +162,18 @@ describe('reduceProviderEvent (desktop)', () => {
     expect(messages()[1].approval?.status).toBe('rejected')
   })
 
+  it('request.opened carries the reason onto the approval card', () => {
+    reduce({
+      type: 'request.opened',
+      requestId: 'r3',
+      requestType: 'command',
+      toolName: 'Bash',
+      detail: 'git push',
+      reason: 'Your ask rule Bash from userSettings matched.',
+    })
+    expect(messages()[0].approval?.reason).toBe('Your ask rule Bash from userSettings matched.')
+  })
+
   it('turn.completed stamps duration on the last assistant message, clears retry, and notifies', () => {
     upsertAssistantContent(T, 'a1', { text: 'one' })
     upsertAssistantContent(T, 'a2', { text: 'two' })

@@ -191,6 +191,8 @@ type SDKOptions = import('@anthropic-ai/claude-agent-sdk').Options
 type CanUseTool = import('@anthropic-ai/claude-agent-sdk').CanUseTool
 type PermissionMode = import('@anthropic-ai/claude-agent-sdk').PermissionMode
 type PermissionResult = import('@anthropic-ai/claude-agent-sdk').PermissionResult
+/** The SDK also passes `decisionReasonType` (e.g. `safetyCheck`, `rule`, `mode`), which its types leave out. */
+type CanUseToolOptions = Parameters<CanUseTool>[2] & { decisionReasonType?: string }
 
 /**
  * Build the env passed to the Claude SDK query, applying the per-instance
@@ -984,7 +986,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     const mode = active.session.runtimeMode
     const permissionMode = RUNTIME_MODE_TO_PERMISSION[mode]
 
-    const canUseTool: CanUseTool = async (toolName, toolInput) => {
+    const canUseTool: CanUseTool = async (toolName, toolInput, options: CanUseToolOptions) => {
       // ── Special: ExitPlanMode ────────────────────────────────
       // The agent produced a plan while in Plan mode and wants to exit.
       // We capture the plan and surface it as a proposed plan for user review.
@@ -1110,7 +1112,17 @@ export class ClaudeAdapter implements ProviderAdapter {
         return { behavior: 'deny', message: redirect.message } as PermissionResult
       }
 
-      if (policy === 'allow') {
+      // In full access, and for an edit tool in accept-edits, an ask that a
+      // safety check or the user's ask rule forced gets a card, not an allow.
+      // Plan keeps its read-only allows; sandbox and auto prompt anyway.
+      const forcedAsk =
+        (currentMode === 'full-access' || currentMode === 'accept-edits') &&
+        (Boolean(options.matchedAskRule) ||
+          options.decisionReasonType === 'safetyCheck' ||
+          // canUseTool runs only for an ask, so a rule here is an ask rule. CLI 2.1.301
+          // sends only this, with no matchedAskRule.
+          options.decisionReasonType === 'rule')
+      if (policy === 'allow' && !forcedAsk) {
         return { behavior: 'allow', updatedInput: toolInput } as PermissionResult
       }
       // 'prompt' - fall through to approval request flow below
@@ -1118,6 +1130,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       const detail =
         typeof toolInput === 'object' ? JSON.stringify(toolInput, null, 2).slice(0, 500) : String(toolInput)
+      const askReason = claudeApprovalReason(currentMode, options)
 
       active.onEvent({
         type: 'request.opened',
@@ -1126,6 +1139,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         requestType: classifyTool(toolName),
         toolName,
         detail,
+        ...(askReason ? { reason: askReason } : {}),
       })
 
       // Waiting on the user - expected silence, hold stall reports.
@@ -2474,6 +2488,22 @@ function parseQuestions(input: unknown): import('../types').Question[] {
       : [],
     multiSelect: typeof q.multiSelect === 'boolean' ? q.multiSelect : false,
   }))
+}
+
+/**
+ * Why Claude asked, from the ask rule it matched and the SDK's own reason. The
+ * rule goes first: Android cuts the Reason line at four lines.
+ */
+function claudeApprovalReason(mode: RuntimeMode, options: CanUseToolOptions): string | undefined {
+  const rule = options.matchedAskRule
+  const parts = [
+    rule &&
+      `Your ask rule ${rule.ruleContent ? `${rule.toolName}(${rule.ruleContent})` : rule.toolName} from ${rule.source} matched.`,
+    !rule && options.decisionReasonType === 'rule' && 'An ask rule in your settings matched.',
+    options.decisionReason?.trim(),
+  ].filter((part): part is string => Boolean(part))
+  if (mode === 'full-access') parts.unshift('A safety check or your ask rule stopped this action.')
+  return parts.length > 0 ? parts.join(' ') : undefined
 }
 
 function classifyTool(toolName: string): 'command' | 'file' | 'tool' {

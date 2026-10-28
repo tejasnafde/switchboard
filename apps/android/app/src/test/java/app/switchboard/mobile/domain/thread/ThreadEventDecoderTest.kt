@@ -104,6 +104,15 @@ class ThreadEventDecoderTest {
     }
 
     @Test
+    fun requestOpenedDecodesTheReasonAndOlderPayloadsHaveNone() {
+        fun payload(raw: JsonObject) = (ThreadEventDecoder.decode(raw) as ThreadRuntimeEvent.Known).payload as ThreadEventPayload.RequestOpened
+        val fields = arrayOf<Pair<String, JsonValue>>("requestId" to s("r1"), "requestType" to s("command"), "toolName" to s("Bash"), "detail" to s("git push"))
+
+        assertEquals("Your ask rule Bash matched.", payload(event("request.opened", *fields, "reason" to s("Your ask rule Bash matched."))).reason)
+        assertEquals(null, payload(event("request.opened", *fields)).reason)
+    }
+
+    @Test
     fun subagentFieldsDecodeAndOlderPayloadsKeepTheirDefaults() {
         fun payload(raw: JsonObject) = (ThreadEventDecoder.decode(raw) as ThreadRuntimeEvent.Known).payload
 

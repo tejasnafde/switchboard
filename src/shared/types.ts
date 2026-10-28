@@ -290,6 +290,8 @@ export interface ChatMessage {
     toolName: string
     detail: string
     status: 'pending' | 'accepted' | 'rejected'
+    /** Why the provider asked. */
+    reason?: string
     /** A pull request write the Switchboard MCP server holds for the user. */
     hostWrite?: import('./agent-host-writes').HostWriteCard
     /** A Codex permissions request, listed in full. */

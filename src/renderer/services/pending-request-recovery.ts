@@ -63,6 +63,7 @@ export function pendingRequestToChatMessage(event: PendingBlockingEvent, timesta
           toolName: event.toolName,
           detail: event.detail,
           status: 'pending',
+          ...(event.reason ? { reason: event.reason } : {}),
           ...(event.hostWrite ? { hostWrite: event.hostWrite } : {}),
           ...(event.permissions ? { permissions: event.permissions } : {}),
           ...(event.hubBatch ? { hubBatch: event.hubBatch } : {}),

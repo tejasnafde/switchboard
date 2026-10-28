@@ -6,7 +6,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-type CanUseTool = (toolName: string, input: Record<string, unknown>) => Promise<{ behavior: string; message?: string }>
+type CanUseTool = (
+  toolName: string,
+  input: Record<string, unknown>,
+  options?: Record<string, unknown>,
+) => Promise<{ behavior: string; message?: string }>
 let captured: { mcpServers?: Record<string, unknown>; canUseTool: CanUseTool } | null = null
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
@@ -117,7 +121,11 @@ describe('Claude canUseTool for the Switchboard tools', () => {
 describe('Claude approval answers', () => {
   async function denyCard(reason?: string) {
     const { adapter, onEvent } = await startTurn('sandbox', false)
-    const pending = captured!.canUseTool('mcp__slack__post_message', {})
+    const pending = captured!.canUseTool(
+      'mcp__slack__post_message',
+      {},
+      { signal: new AbortController().signal, toolUseID: 'tu1' },
+    )
     await vi.waitFor(() => expect(onEvent.mock.calls.map(([e]) => e.type)).toContain('request.opened'))
     const opened = onEvent.mock.calls.map(([e]) => e).find((e) => e.type === 'request.opened')
     await adapter.respondToRequest('t1', opened.requestId, 'deny', reason)

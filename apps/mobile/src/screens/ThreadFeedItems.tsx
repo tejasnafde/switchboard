@@ -218,6 +218,11 @@ export const ApprovalItem = memo(function ApprovalItem({
       ) : (
         <Text style={styles.toolName}>{item.toolName}</Text>
       )}
+      {item.reason ? (
+        <Text style={styles.toolOutput} testID="approval-reason">
+          Reason: {item.reason}
+        </Text>
+      ) : null}
       {actions.kind === 'host-write' ? (
         <>
           <View style={hidden && styles.hostWritePreviewCollapsed} testID="host-write-preview">
