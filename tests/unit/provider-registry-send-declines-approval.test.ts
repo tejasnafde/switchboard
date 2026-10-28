@@ -31,6 +31,9 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
   return { ...actual, remoteProviderLoginPrompt: () => null }
 })
 
+/** A Claude session's rotated UUID, mapped back to the chat's root id. */
+const rotated = new Map<string, string>([['session-uuid', 't1']])
+
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
   recordConversationSegment: () => {},
@@ -38,7 +41,7 @@ vi.mock('../../src/main/db/database', () => ({
   saveMessageIfAbsent: () => true,
   getConversationById: (id: string) => ({ id }),
   getConversationTitle: () => null,
-  resolveRootThreadId: (id: string) => id,
+  resolveRootThreadId: (id: string) => rotated.get(id) ?? id,
   getConversationRuntimeMode: () => null,
   getConversationModel: () => null,
   getConversationReasoningEffort: () => null,
@@ -122,31 +125,39 @@ class RecordingAdapter implements ProviderAdapter {
   }
 }
 
-const passThroughSubmission = {
-  async submit(input: UserTurnSubmissionV1, context: AtomicUserTurnContext): Promise<UserTurnSubmissionResult> {
-    try {
-      await context.prepare()
-    } catch (error) {
-      if (error instanceof TurnNotAcceptedError) {
-        return { status: 'rejected', accepted: false, duplicate: false, state: 'rejected', error: error.message }
+/** Runs prepare and dispatch like the durable store; `refuseDispatch` is its `beginDispatch` saying no. */
+function passThroughSubmission() {
+  return {
+    refuseDispatch: false,
+    async submit(input: UserTurnSubmissionV1, context: AtomicUserTurnContext): Promise<UserTurnSubmissionResult> {
+      try {
+        await context.prepare()
+        if (this.refuseDispatch) {
+          return { status: 'pending', accepted: false, duplicate: true, state: 'pending', reason: 'refused' }
+        }
+        await context.dispatch(context.finalize ? await context.finalize(input) : input)
+      } catch (error) {
+        if (error instanceof TurnNotAcceptedError) {
+          return { status: 'rejected', accepted: false, duplicate: false, state: 'rejected', error: error.message }
+        }
+        throw error
       }
-      throw error
-    }
-    await context.dispatch(context.finalize ? await context.finalize(input) : input)
-    return { status: 'accepted', accepted: true, duplicate: false, state: 'completed', acceptedAt: 1 }
-  },
+      return { status: 'accepted', accepted: true, duplicate: false, state: 'completed', acceptedAt: 1 }
+    },
+  }
 }
 
-async function setup(provider: ProviderKind) {
+async function setup(provider: ProviderKind, threadId = 't1') {
   const host = new FakeHost()
   const adapter = new RecordingAdapter(provider)
-  const registry = new ProviderRegistry(host, new Map([[provider, adapter]]), undefined, passThroughSubmission)
+  const submission = passThroughSubmission()
+  const registry = new ProviderRegistry(host, new Map([[provider, adapter]]), undefined, submission)
   registry.registerIpcHandlers()
-  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider, cwd: '/tmp' })
+  await host.invoke(ProviderChannels.START_SESSION, { threadId, provider, cwd: '/tmp' })
   const submit = (text: string, delivery?: TurnDelivery) =>
     host.invoke<UserTurnSubmissionResult>(ProviderChannels.SUBMIT_USER_TURN, {
       version: 1,
-      threadId: 't1',
+      threadId,
       origin: `o-${text}`,
       providerText: text,
       ...(delivery ? { delivery } : {}),
@@ -160,7 +171,7 @@ async function setup(provider: ProviderKind) {
       toolName: 'Bash',
       detail: 'rm -rf build',
     })
-  return { host, adapter, registry, submit, openApproval }
+  return { host, adapter, registry, submission, submit, openApproval }
 }
 
 describe('a user send while an approval card waits', () => {
@@ -255,5 +266,51 @@ describe('a user send while an approval card waits', () => {
 
     expect(adapter.calls).toEqual(['send brief default'])
     expect(registry.getPendingRequests('t1').map((e) => e.type)).toEqual(['request.opened'])
+  })
+
+  it('leaves the card open when the turn cannot enter dispatch', async () => {
+    const { adapter, registry, submission, submit, openApproval } = await setup('claude')
+    await submit('first')
+    openApproval('r1')
+    adapter.calls = []
+    submission.refuseDispatch = true
+
+    const result = await submit('do it differently')
+
+    expect(result.accepted).toBe(false)
+    expect(adapter.calls).toEqual([])
+    expect(registry.getPendingRequests('t1').map((e) => e.type)).toEqual(['request.opened'])
+  })
+
+  it('leaves the card open when the turn checkpoint refuses', async () => {
+    const { adapter, registry, submit, openApproval } = await setup('claude')
+    await submit('first')
+    openApproval('r1')
+    adapter.calls = []
+    vi.spyOn(Reflect.get(registry, 'checkpoints'), 'beginTurn').mockRejectedValueOnce(new Error('disk full'))
+
+    const result = await submit('do it differently')
+
+    expect(result.accepted).toBe(false)
+    expect(adapter.calls).toEqual([])
+    expect(registry.getPendingRequests('t1').map((e) => e.type)).toEqual(['request.opened'])
+  })
+
+  it('denies a card stored under the root id when the send names the rotated session id', async () => {
+    const { adapter, submit } = await setup('claude', 'session-uuid')
+    await submit('first')
+    adapter.emit({
+      type: 'request.opened',
+      threadId: 't1',
+      requestId: 'r1',
+      requestType: 'command',
+      toolName: 'Bash',
+      detail: 'ls',
+    })
+    adapter.calls = []
+
+    await submit('redirect')
+
+    expect(adapter.calls).toEqual([`respond r1 deny ${SEND_DECLINES_APPROVAL_REASON}`, 'send redirect default'])
   })
 })

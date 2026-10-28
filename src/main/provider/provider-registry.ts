@@ -2897,7 +2897,6 @@ export class ProviderRegistry implements PeerToolHost {
               `${agentLabel(toAgentProvider(adapter.provider))} is mid-turn and cannot take another message yet`,
             )
           }
-          if (declineApprovals) await this.declinePendingApprovals(adapter, threadId)
           try {
             const cwd = this.sessionCwd.get(threadId)
             if (cwd) await this.checkpoints.beginTurn(threadId, cwd, this.hasOutstandingTurn(threadId))
@@ -2917,6 +2916,9 @@ export class ProviderRegistry implements PeerToolHost {
         },
         finalize: (turn) => this.withPendingHandoff(threadId, adapter, turn),
         dispatch: async (turn) => {
+          // Here, past every check that can still refuse the turn, so an agent
+          // is never told of a message that then does not arrive.
+          if (declineApprovals) await this.declinePendingApprovals(adapter, threadId)
           // A queued message becomes a turn of its own once the running one
           // ends, so it counts; a Codex steer joins the running turn and does not.
           const startsNewProviderTurn = startsOwnProviderTurn(
@@ -3881,7 +3883,6 @@ export class ProviderRegistry implements PeerToolHost {
             )
           }
           const dispatch = async (): Promise<void> => {
-            await this.declinePendingApprovals(adapter, threadId)
             // These operations happen before the provider boundary. A failure here
             // is a definite rejection and may safely release the reservation.
             try {
@@ -3899,6 +3900,7 @@ export class ProviderRegistry implements PeerToolHost {
             } catch (error) {
               throw new TurnNotAcceptedError('turn preparation failed before provider dispatch', { cause: error })
             }
+            await this.declinePendingApprovals(adapter, threadId)
 
             const startsNewProviderTurn = startsOwnProviderTurn(
               adapter.provider,
