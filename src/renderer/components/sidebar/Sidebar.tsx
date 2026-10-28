@@ -29,6 +29,7 @@ import {
 } from './sidebar-helpers'
 import type { Workspace } from '@shared/types'
 import { nestHubChildren } from '@shared/hub'
+import { ChildStateDot, ChildStateWord, HubViewMount } from '../hub/SidebarChildState'
 import { moveProjectToWorkspace, projectOrganizationItems, reorderWorkspacesById } from '@shared/workspace-organization'
 import { createRendererLogger } from '../../logger'
 
@@ -819,8 +820,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                 return [hubRow, ...(folded ? [] : children)].map((s) => {
                   const isActive = activeSessionId === s.id
                   const isChild = s !== hubRow
-                  // An open child keeps its parent highlighted.
-                  const isDisplayed = displayedSessionIds.includes(s.id) || (!isChild && childActive)
+                  const isDisplayed = displayedSessionIds.includes(s.id)
                   return (
                     <div
                       key={s.id}
@@ -864,6 +864,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                         </div>
                       ) : (
                         <>
+                          {!isChild && children.length > 0 && !folded && <HubViewMount parentId={s.id} />}
                           {!isChild && children.length > 0 && (
                             <button
                               type="button"
@@ -878,9 +879,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                                   return next
                                 })
                               }}
-                            >
-                              {folded ? '▶' : '▼'}
-                            </button>
+                            />
                           )}
                           <button
                             type="button"
@@ -888,12 +887,8 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                             aria-current={isActive ? 'page' : undefined}
                             onClick={() => onSessionSelect?.(s, project.path)}
                           >
+                            {isChild && <ChildStateDot parentId={hubRow.id} childId={s.id} />}
                             <span className="sidebar-thread-title">{s.title}</span>
-                            {!isChild && children.length > 0 && (
-                              <span className="sidebar-project-count" title="Child chats">
-                                {children.length}
-                              </span>
-                            )}
                             {s.worktreeRecovery?.cleanupDisposition === 'retained' && (
                               <span
                                 title="This worktree was retained and needs recovery before the conversation can start."
@@ -903,7 +898,15 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                               </span>
                             )}
                             <UnreadBadge sessionId={s.id} />
-                            <RelativeTimeLabel className="sidebar-thread-time" timestamp={s.startedAt} />
+                            {isChild ? (
+                              <ChildStateWord parentId={hubRow.id} childId={s.id} />
+                            ) : children.length > 0 ? (
+                              <span className="sidebar-thread-time" title="Open child chats">
+                                {children.length}
+                              </span>
+                            ) : (
+                              <RelativeTimeLabel className="sidebar-thread-time" timestamp={s.startedAt} />
+                            )}
                           </button>
                           <button
                             className="sidebar-thread-archive"

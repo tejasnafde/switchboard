@@ -23,9 +23,20 @@ export function ChildBanner({
       data-testid="hub-child-banner"
       className="mx-6 mb-4 flex items-center gap-[10px] rounded-[10px] border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-2 text-[12px] text-[var(--text-secondary)]"
     >
+      <span aria-hidden className="size-[10px] shrink-0 rounded-[3px] border-[1.5px] border-[var(--text-secondary)]" />
       <div className="min-w-0 flex-1">
-        <span className="font-[600] text-[var(--text-primary)]">Child of {parent.title}.</span> It works on its brief
-        and reports to its parent. To steer it, message the hub.
+        <b className="font-[600] text-[var(--text-primary)]">
+          Read-only: a child of{' '}
+          <button
+            type="button"
+            className="cursor-pointer border-0 bg-transparent p-0 [font:inherit] text-[var(--accent)] hover:underline"
+            onClick={() => void openHubChat(parent, child)}
+          >
+            {parent.title}
+          </button>
+          .
+        </b>{' '}
+        Message the hub to steer it.
       </div>
       <div className="flex shrink-0 gap-[6px]">
         {onStop && (
@@ -33,9 +44,6 @@ export function ChildBanner({
             Stop
           </Button>
         )}
-        <Button variant="outline" size="sm" onClick={() => void openHubChat(parent, child)}>
-          Open hub
-        </Button>
         <Button variant="default" size="sm" onClick={() => void nudgeChild(parent, child)}>
           Message the hub
         </Button>

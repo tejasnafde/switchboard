@@ -878,6 +878,7 @@ html, body, #root {
 .sidebar-recent-dot[data-dot='needs-you'] { background: var(--error); }
 .sidebar-recent-dot[data-dot='working'] { background: var(--warning); }
 .sidebar-recent-dot[data-dot='finished'] { background: var(--success); }
+.sidebar-recent-dot[data-dot='limited'] { background: transparent; border: 1.5px solid var(--text-muted); }
 
 /* Translucent shows whatever sits behind the window, and a red or amber dot
    on a warm wallpaper disappears. A light ring keeps it readable on any
@@ -1281,28 +1282,56 @@ html, body, #root {
   outline-offset: -2px;
 }
 
-/* Child chats: indented under their parent, which gets a fold caret in its left padding. */
+/* Child chats: a 22px step under their parent, whose fold caret sits in its
+   left padding, with a tree line just right of the caret. */
 .sidebar-thread-hub .sidebar-thread-main {
-  padding-left: 18px;
+  padding-left: 22px;
 }
 
 .sidebar-thread-child .sidebar-thread-main {
-  padding-left: 26px;
+  padding-left: 30px;
+}
+
+.sidebar-thread-child::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border);
 }
 
 .sidebar-hub-caret {
   position: absolute;
   left: 3px;
+  top: 0;
+  bottom: 0;
   z-index: 1;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
   padding: 0;
   border: 0;
+  border-radius: var(--radius);
   background: transparent;
-  color: var(--text-muted);
-  font-size: 8px;
   cursor: pointer;
+}
+
+.sidebar-hub-caret::before {
+  content: '';
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--text-muted);
+}
+
+.sidebar-hub-caret[aria-expanded='false']::before {
+  transform: rotate(-90deg);
+}
+
+.sidebar-hub-caret:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
 }
 
 /* ─── Turn presentation ─────────────────────────────────────────── */

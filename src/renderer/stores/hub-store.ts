@@ -8,8 +8,8 @@ const log = createRendererLogger('store:hub')
 /**
  * Child chats per shown chat: its parent while it is an open child, its
  * children while it has any. Read from `provider:hub-list-children` when a
- * chat panel mounts and again on `hub.children-changed`, so it holds only the
- * chats on screen.
+ * chat panel or an unfolded sidebar parent mounts and again on
+ * `hub.children-changed`, so it holds only the chats on screen.
  */
 interface HubStore {
   views: Record<string, HubChatView>
@@ -49,7 +49,7 @@ const hasChildren = (threadId: string) => (useHubStore.getState().views[threadId
 
 function mount(threadId: string): () => void {
   mounted.set(threadId, (mounted.get(threadId) ?? 0) + 1)
-  // ponytail: any child change re-reads every shown chat (two at most); the event names the parent's root id, which a shown chat may know under a rotated id.
+  // ponytail: any child change re-reads every shown chat (the chat panels and unfolded sidebar parents); the event names the parent's root id, which a shown chat may know under a rotated id.
   offEvents ??= window.api.provider.onEvent((event) => {
     if (event.type === 'hub.children-changed') reloadAll()
     else if ((event.type === 'status' || event.type === 'turn.completed') && hasChildren(event.threadId))

@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CHILD_STATE_LABELS,
   childStateLabel,
+  type ChildState,
+  hubChildCount,
   hubChipText,
   hubNudgeContent,
   nestHubChildren,
   withHubFields,
   type SessionHubField,
 } from '../../src/shared/hub'
+import { childDot } from '../../src/renderer/components/hub/child-dot'
 import { deriveRecentSessions } from '../../src/renderer/components/sidebar/recent-sessions'
 import type { SessionSummary } from '../../src/shared/types'
+
+const CHILD_STATES = Object.keys(CHILD_STATE_LABELS) as ChildState[]
 
 const row = (id: string, hub?: SessionHubField) => ({ id, ...(hub ? { hub } : {}) })
 
@@ -79,6 +85,24 @@ describe('labels', () => {
       'Hub, 2 children · Waiting for children',
     )
     expect(hubChipText({ children: [{}] as never, state: 'idle' })).toBe('Hub, 1 child')
+    expect(hubChildCount(1)).toBe('1 child')
+    expect(hubChildCount(6)).toBe('6 children')
+  })
+
+  it('gives each child state one sidebar dot: attention red, moving amber, done green, limited outlined', () => {
+    const dots = Object.fromEntries(CHILD_STATES.map((s) => [s, childDot(s)]))
+    expect(dots).toEqual({
+      settled: 'finished',
+      starting: 'working',
+      needs_you: 'needs-you',
+      working: 'working',
+      limited: 'limited',
+      asked_hub: 'needs-you',
+      result_ready: 'finished',
+      blocked: 'needs-you',
+      failed: 'needs-you',
+      paused: 'idle',
+    })
   })
 
   it('names the child and the relay tool in a Nudge', () => {
