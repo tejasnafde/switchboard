@@ -5,6 +5,7 @@
  * Every send site builds here so that agreement holds in one place.
  */
 import { echoMessageId } from '@shared/provider-events'
+import type { SentAttachment } from '@shared/attachments'
 import type { QueuedMessage, QueuedReviewPill } from './outbox-model'
 
 /** Random suffix, not the clock alone: two taps can land in one millisecond. */
@@ -22,6 +23,7 @@ export interface BuildTurnInput {
   titleCandidate?: string
   whenIdle?: boolean
   reviewPill?: QueuedReviewPill
+  attachments?: SentAttachment[]
 }
 
 export interface BuiltTurn {
@@ -46,6 +48,7 @@ export function buildTurn(input: BuildTurnInput): BuiltTurn {
       titleCandidate: input.titleCandidate,
       ...(input.whenIdle ? { whenIdle: true } : {}),
       ...(input.reviewPill ? { reviewPill: input.reviewPill } : {}),
+      ...(input.attachments && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
       createdAt: Date.now(),
       attempts: 0,
     },

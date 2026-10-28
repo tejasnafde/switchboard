@@ -1,0 +1,47 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "codex-restart-dead-app-server",
+  "summary": "When a chat's codex app-server exits (killed or crashed) and nobody stopped the session, the next send starts a new app-server, resumes the same Codex thread with thread/resume, and then sends the turn. One start attempt per send: if the new app-server fails to start, that send gets the error and the next send tries again. A stopped session is never restarted. Sends that arrive during a restart wait for its initialize and thread/resume. The skill list and model catalog carry over.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/adapters/codex-adapter.ts",
+        "tests/unit/codex-adapter.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The phone sends turns through the desktop or headless backend, which runs the Codex adapter. No phone code or wire change."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The phone sends turns through the desktop or headless backend, which runs the Codex adapter. No phone code or wire change."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/adapters/codex-adapter.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "The restart keeps the Codex thread id in memory and resumes it. Nothing is stored or migrated."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Main-process change only. It ships with the next desktop and headless server release on their usual lanes."
+    }
+  },
+  "verification": {
+    "automated": [
+      "vitest: tests/unit/codex-adapter.test.ts 'starts a new app-server and resumes the same thread when the old one died', 'fails only the send whose app-server restart fails, and tries again on the next send', 'does not start a new app-server for a session that was stopped', 'runs two sends that arrive together after a crash on one new app-server, after it resumed', 'does not start a new app-server when the chat is stopped while its restart looks up the thread', 'keeps the skill list across an app-server restart'."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Killing a real codex app-server under a running desktop app and sending again.",
+      "Approval answers, stop and model list on a dead app-server still fail until the next send starts a new one."
+    ]
+  }
+}

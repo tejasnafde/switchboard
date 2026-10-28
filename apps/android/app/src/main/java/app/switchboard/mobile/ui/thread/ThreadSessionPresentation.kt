@@ -31,12 +31,18 @@ data class ThreadComposerPresentation(
     val runningPlaceholder: String? = null,
     /** The label of a review pill the next send carries; null without one. */
     val reviewPillLabel: String? = null,
+    /** Files still uploading; Send shows but waits for them. */
+    val uploading: Int = 0,
 ) {
     val canSend: Boolean
         get() = canSendNow()
 
+    /** Send shows instead of the microphone; [sendWaits] says whether it is enabled. */
     fun canSendNow(): Boolean =
-        (draft.isNotBlank() || attachments.isNotEmpty() || reviewPillLabel != null) && !submitting
+        (draft.isNotBlank() || attachments.isNotEmpty() || reviewPillLabel != null || uploading > 0) && !submitting
+
+    val sendWaits: Boolean
+        get() = uploading > 0
 }
 
 /** Messages the backend holds until the running turn ends, as the feed shows them. */
@@ -121,6 +127,7 @@ private fun ThreadComposerState.toPresentation(
     attachments = attachments,
     editingOrigin = editingOrigin,
     reviewPillLabel = reviewPill?.label,
+    uploading = uploading,
 )
 
 fun ThreadUiAction.toSessionControl(): ThreadSessionControl = when (this) {

@@ -1081,6 +1081,21 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `send waits while a file uploads`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val enqueue = FakeEnqueuePort().also { it.results += durable("file-origin", "read this") }
+        val coordinator = coordinator(remote, enqueue = enqueue)
+        coordinator.updateDraft("read this")
+        coordinator.installUploads(1)
+
+        assertEquals(ComposerSubmitResult.Busy, coordinator.submit())
+        assertTrue(enqueue.drafts.isEmpty())
+
+        coordinator.installUploads(0)
+        assertTrue(coordinator.submit() is ComposerSubmitResult.Durable)
+    }
+
+    @Test
     fun `saved composer restores mode attachments and supports image only send`() {
         val remote = FakeThreadSessionRemote(scope)
         val persistence = FakeComposerPersistence()

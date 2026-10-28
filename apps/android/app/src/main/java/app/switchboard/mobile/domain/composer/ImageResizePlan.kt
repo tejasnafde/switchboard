@@ -61,7 +61,7 @@ object ImageResizePlan {
         return wireBytes <= ceiling
     }
 
-    enum class Refusal { TOO_LARGE, OVER_MESSAGE_BUDGET, GIF_TOO_LARGE, UNREADABLE, UNSUPPORTED_TYPE }
+    enum class Refusal { TOO_LARGE, OVER_MESSAGE_BUDGET, GIF_TOO_LARGE, GIF_TOO_WIDE, UNREADABLE, UNSUPPORTED_TYPE }
 
     sealed interface Outcome<out T> {
         data class Fitted<T>(val result: T, val attempt: Attempt) : Outcome<T>
@@ -82,13 +82,16 @@ object ImageResizePlan {
     }
 
     /** A GIF fits what is left, or is refused with the reason. */
-    fun sendAsIs(wireBytes: Long, remaining: Long): Refusal? = when {
+    fun sendAsIs(longestSide: Int, wireBytes: Long, remaining: Long): Refusal? = when {
+        longestSide > MAX_IMAGE_LONG_SIDE -> Refusal.GIF_TOO_WIDE
         wireBytes <= remaining -> null
         wireBytes <= MESSAGE_WIRE_BUDGET -> Refusal.OVER_MESSAGE_BUDGET
         else -> Refusal.GIF_TOO_LARGE
     }
 
     fun refusalMessage(name: String, reason: Refusal): String = when (reason) {
+        Refusal.GIF_TOO_WIDE ->
+            "$name is a GIF over $MAX_IMAGE_LONG_SIDE px on its long side; GIFs are sent unchanged to keep their animation"
         Refusal.TOO_LARGE -> "$name is still over 3 MB after shrinking it to ${JPEG_STEPS.last().maxSide} px"
         Refusal.OVER_MESSAGE_BUDGET -> "$name did not fit: the images in one message can total at most 3 MB"
         Refusal.GIF_TOO_LARGE -> "$name is a GIF over 3 MB; GIFs are sent unchanged to keep their animation"

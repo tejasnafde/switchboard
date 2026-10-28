@@ -25,7 +25,7 @@ class BitmapImageShrinker : ComposerImageShrinker {
             return ShrinkResult.Refused(ImageResizePlan.Refusal.UNREADABLE)
         }
         val sourceType = bounds.outMimeType ?: "image/jpeg"
-        val attempts = ImageResizePlan.attempts(sourceType) ?: return sendAsIs(open, sourceType, remainingWireBytes)
+        val attempts = ImageResizePlan.attempts(sourceType) ?: return sendAsIs(open, sourceType, maxOf(bounds.outWidth, bounds.outHeight), remainingWireBytes)
         val orientation = ImageResizePlan.orientation(
             open().use { ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) },
         )
@@ -48,11 +48,11 @@ class BitmapImageShrinker : ComposerImageShrinker {
         }
     }
 
-    private fun sendAsIs(open: () -> InputStream, mimeType: String, remaining: Long): ShrinkResult {
+    private fun sendAsIs(open: () -> InputStream, mimeType: String, longestSide: Int, remaining: Long): ShrinkResult {
         // Read no more than could fit, so a huge GIF is refused without loading it.
         val limit = ImageResizePlan.MESSAGE_WIRE_BUDGET * 3 / 4 + 1
         val bytes = open().use { input -> ByteArray(limit.toInt()).let { it.copyOf(input.readUpTo(it)) } }
-        val refusal = ImageResizePlan.sendAsIs(ImageResizePlan.dataUrlWireBytes(mimeType, bytes.size.toLong()), remaining)
+        val refusal = ImageResizePlan.sendAsIs(longestSide, ImageResizePlan.dataUrlWireBytes(mimeType, bytes.size.toLong()), remaining)
         return refusal?.let(ShrinkResult::Refused) ?: ShrinkResult.Shrunk(bytes, mimeType)
     }
 

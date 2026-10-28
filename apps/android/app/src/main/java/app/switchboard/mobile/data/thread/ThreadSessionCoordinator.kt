@@ -1,5 +1,7 @@
 package app.switchboard.mobile.data.thread
 
+import app.switchboard.mobile.data.outbox.fileTurn
+import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
@@ -94,6 +96,8 @@ data class ThreadComposerState(
     val flipNextDelivery: Boolean = false,
     /** A review pill the next send carries (Reviews > Work on PR). */
     val reviewPill: PhoneReviewPill? = null,
+    /** Files still uploading into this draft; send waits for them. */
+    val uploading: Int = 0,
 )
 
 data class ThreadSessionState(
@@ -278,7 +282,13 @@ data class WithdrawnTurn(
 interface ThreadComposerPersistence {
     fun save(draft: ComposerDraft)
 
+    /** A text or mode edit: the stored draft keeps its own attachments, plus [added]. */
+    fun saveText(draft: ComposerDraft, added: List<ComposerAttachment>) = save(draft)
+
     fun clear(key: ComposerDraftKey): Boolean
+
+    /** A pick or a paste is still on its way into the draft; read at send time. */
+    fun uploading(key: ComposerDraftKey): Boolean = false
 }
 
 private object NoOpThreadComposerPersistence : ThreadComposerPersistence {
@@ -955,7 +965,11 @@ class ThreadSessionCoordinator(
 
     @Synchronized
     fun submit(): ComposerSubmitResult {
-        if (composer.submitting) return ComposerSubmitResult.Busy
+        // Both: [uploading] goes false as soon as a file lands, while the draft
+        // that carries it reaches [composer] a composition later.
+        if (composer.submitting || composer.uploading > 0 || composerPersistence.uploading(composerKey)) {
+            return ComposerSubmitResult.Busy
+        }
         val text = composer.draft.trim()
         val pill = composer.reviewPill
         if (text.isEmpty() && composer.attachments.isEmpty() && pill == null) return ComposerSubmitResult.Empty
@@ -1978,7 +1992,7 @@ class ThreadSessionCoordinator(
             error = withdrawn.firstNotNullOfOrNull(WithdrawnTurn::attachmentError),
         )
         composerHasUnacknowledgedLocalChanges = true
-        persistComposer()
+        persistComposer(added = withdrawn.flatMap(WithdrawnTurn::attachments))
     }
 
     private fun submitFailed(message: String): ComposerSubmitResult.Failed {
@@ -2003,12 +2017,14 @@ class ThreadSessionCoordinator(
         val pillTurn = turn.reviewPill?.let { pill ->
             PhonePullRequests.reviewPillTurn(turn.text, PhoneReviewPill(pill.label, pill.content), pill.id)
         }
+        val fileTurn = turn.fileTurn(displayText = pillTurn?.displayBody ?: turn.text)
         val item = FeedItem.User(
             id = turn.bubbleId,
-            text = pillTurn?.displayBody ?: turn.text,
-            pillsMeta = pillTurn?.pillsMeta?.mapValues { (_, label) -> MessagePill(label, "review") }.orEmpty(),
+            text = fileTurn.displayBody,
+            pillsMeta = pillTurn?.pillsMeta?.mapValues { (_, label) -> MessagePill(label, "review") }.orEmpty() +
+                fileTurn.pillsMeta.mapValues { (_, label) -> MessagePill(label, "file") },
             at = turn.createdAtMs,
-            images = turn.attachments.map { attachment ->
+            images = turn.attachments.filterNot { ComposerFiles.isUploaded(it.mimeType) }.map { attachment ->
                 val file = File(attachment.privateUri)
                 app.switchboard.mobile.domain.remote.MessageImage(
                     url = file.toURI().toString(),
@@ -2393,6 +2409,13 @@ class ThreadSessionCoordinator(
     }
 
     @Synchronized
+    fun installUploads(count: Int) {
+        if (composer.uploading == count) return
+        composer = composer.copy(uploading = count)
+        publish()
+    }
+
+    @Synchronized
     fun installComposerDraft(draft: ComposerDraft?) {
         if (draft != null && draft.key != composerKey) return
         val incomingMode = draft?.runtimeMode.toRuntimeModeOrNull()
@@ -2441,16 +2464,19 @@ class ThreadSessionCoordinator(
         if (pickedMode == null) composer = composer.copy(runtimeMode = mode)
     }
 
-    private fun persistComposer() {
-        composerPersistence.save(
-            ComposerDraft(
-                key = composerKey,
-                text = composer.draft,
-                runtimeMode = pickedMode?.wire,
-                attachments = composer.attachments,
-                editingOrigin = composer.editingOrigin,
-            ),
+    /**
+     * Saves the text and mode. The stored attachments stay, plus [added]:
+     * [composer] can lag a file the worker just added.
+     */
+    private fun persistComposer(added: List<ComposerAttachment> = emptyList()) {
+        val draft = ComposerDraft(
+            key = composerKey,
+            text = composer.draft,
+            runtimeMode = pickedMode?.wire,
+            attachments = composer.attachments,
+            editingOrigin = composer.editingOrigin,
         )
+        composerPersistence.saveText(draft, added)
     }
 
     private fun persistSnapshot() {

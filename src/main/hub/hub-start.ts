@@ -208,6 +208,8 @@ export class HubStarter {
   private readonly diskUse = new Map<string, number>()
   /** Children this process launched, to their parents. A restart forgets them; restart recovery comes later. */
   private readonly launched = new Map<string, string>()
+  /** Children stopped before their first turn: the launch ends them. */
+  private readonly cancelled = new Set<string>()
   /** Open children with linked dependency folders, for the post-turn check. Rebuilt at startup. */
   private readonly linked = new Map<string, { worktree: string; parentId: string; state: ChildDepsState }>()
 
@@ -545,6 +547,17 @@ export class HubStarter {
     return true
   }
 
+  /**
+   * A Stop on a child still in `starting`: it gets no first turn. One that
+   * waits for a slot stops now; one still being prepared stops at its launch.
+   */
+  cancelStart(childId: string): void {
+    if (getHubChild(childId)?.phase !== 'starting') return
+    this.cancelled.add(childId)
+    const i = this.waiting.findIndex((w) => w.childId === childId)
+    if (i >= 0) this.waiting.splice(i, 1)[0]!.go()
+  }
+
   private async launch(
     c: PlannedChild,
     cwd: string,
@@ -552,6 +565,7 @@ export class HubStarter {
     slot: HubRunningChild,
     depsLine: string | null,
   ): Promise<void> {
+    if (this.cancelled.has(c.childId)) return this.stoppedBeforeStart(slot, c)
     const span = perfSpan('hub.start-child', { childId: c.childId, agent: c.agent, step: 'launch' })
     this.running.set(c.childId, slot)
     this.launched.set(c.childId, slot.parentId)
@@ -564,6 +578,11 @@ export class HubStarter {
         ...(c.instanceId ? { instanceId: c.instanceId } : {}),
         ...(c.model ? { model: c.model } : {}),
       })
+      if (this.cancelled.has(c.childId)) {
+        span.end({ outcome: 'stopped' })
+        await this.host.stopChild(c.childId).catch((err) => log.warn(`could not stop child ${c.childId}`, err))
+        return this.stoppedBeforeStart(slot, c)
+      }
       const brief = [c.brief, depsLine, HUB_REPORT_LINE].filter(Boolean).join('\n\n')
       const result = await this.host.submitTurn({
         version: 1,
@@ -666,6 +685,29 @@ export class HubStarter {
       log.error(`could not record the failed start of ${c.childId}`, writeErr)
     }
     this.host.changed?.(parentId)
+  }
+
+  private stoppedBeforeStart(slot: HubRunningChild, c: PlannedChild): void {
+    this.cancelled.delete(c.childId)
+    if (this.running.get(c.childId) === slot) {
+      this.running.delete(c.childId)
+      this.pump()
+    }
+    log.info('child stopped before its first turn', { childId: c.childId })
+    try {
+      updateHubChild(c.childId, { phase: 'failed_start' })
+      insertHubWake({
+        id: `hw_${Date.now()}_${randomBytes(4).toString('hex')}`,
+        parentId: slot.parentId,
+        childId: c.childId,
+        kind: 'stopped',
+        summary: 'Stopped before its first turn.',
+        pointer: null,
+      })
+    } catch (err) {
+      log.error(`could not record the stop of ${c.childId}`, err)
+    }
+    this.host.changed?.(slot.parentId)
   }
 
   private failedWake(parentId: string, childId: string, summary: string): void {

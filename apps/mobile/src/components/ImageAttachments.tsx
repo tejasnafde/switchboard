@@ -1,10 +1,14 @@
-/** Composer image attachments: pick button and thumbnail strip. Rules in lib/images.ts. */
-import React, { memo, useCallback } from 'react'
+/**
+ * Composer attachments: the attach button (Photos or Files) and the image
+ * thumbnail strip. Image rules in lib/images.ts, file rules in lib/file-attachments.ts.
+ */
+import React, { memo, useCallback, useRef, useState } from 'react'
 import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator'
 import * as FileSystem from 'expo-file-system/legacy'
+import * as DocumentPicker from 'expo-document-picker'
 import { createLogger } from '@shared/logger'
 import {
   dataUrlWireBytes,
@@ -17,6 +21,8 @@ import {
   type ImageRefusal,
 } from '@shared/image-resize'
 import { MAX_TURN_WIRE_BYTES, resizeSourceType, totalWireBytes, type ImagePayload } from '../lib/images'
+import { refusalLine, routePickedFile } from '../lib/file-attachments'
+import { AttachSheet, type AttachSource } from './FileAttachments'
 import { colors, radius, space, type } from '../theme'
 
 const log = createLogger('composer:images')
@@ -29,24 +35,35 @@ export interface Attachment extends ImagePayload {
 
 type Shrunk = { ok: true; payload: ImagePayload } | { ok: false; reason: ImageRefusal }
 
+/** A picked image from either picker. The document picker reports no size in pixels. */
+interface ImageSource {
+  uri: string
+  width?: number
+  height?: number
+  fileSize?: number | null
+}
+
+function pixelSize(uri: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => Image.getSize(uri, (width, height) => resolve({ width, height }), reject))
+}
+
 /**
  * Scale and re-encode one picked image to fit `remaining` bytes. The decoder
  * applies EXIF orientation, and the re-encoded file carries no EXIF.
  */
-async function shrinkAsset(
-  asset: ImagePicker.ImagePickerAsset,
-  sourceType: string,
-  remaining: number,
-): Promise<Shrunk> {
+async function shrinkAsset(asset: ImageSource, sourceType: string, remaining: number): Promise<Shrunk> {
   const attempts = resizeAttempts(sourceType)
   if (!attempts) {
     // A GIF goes as is: re-encoding would drop its animation.
     if (asset.fileSize && sendAsIs(dataUrlWireBytes(sourceType, asset.fileSize), remaining) === 'gif-too-large') {
       return { ok: false, reason: 'gif-too-large' }
     }
+    const size = asset.width && asset.height ? { width: asset.width, height: asset.height } : await pixelSize(asset.uri)
+    if (sendAsIs(0, remaining, Math.max(size.width, size.height)) === 'gif-too-wide')
+      return { ok: false, reason: 'gif-too-wide' }
     const b64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 })
     const url = `data:${sourceType};base64,${b64}`
-    const fit = sendAsIs(url.length, remaining, Math.max(asset.width, asset.height))
+    const fit = sendAsIs(url.length, remaining, Math.max(size.width, size.height))
     return fit === 'ok' ? { ok: true, payload: { url, mimeType: sourceType } } : { ok: false, reason: fit }
   }
   const source = await ImageManipulator.manipulate(asset.uri).renderAsync()
@@ -75,15 +92,61 @@ async function shrinkAsset(
   }
 }
 
+interface PickedImage extends ImageSource {
+  key: string
+  name: string
+  sourceType: string | null
+}
+
+/** Each image is shrunk to fit what is left of the message's budget. */
+async function shrinkAll(
+  existing: Attachment[],
+  images: PickedImage[],
+): Promise<{ added: Attachment[]; rejected: string[] }> {
+  let remaining = MAX_TURN_WIRE_BYTES - totalWireBytes(existing)
+  const added: Attachment[] = []
+  const rejected: string[] = []
+  for (const image of images) {
+    let shrunk: Shrunk
+    try {
+      shrunk = image.sourceType
+        ? await shrinkAsset(image, image.sourceType, remaining)
+        : { ok: false, reason: 'unsupported-type' }
+    } catch (err) {
+      log.warn('image resize failed', { name: image.name, err })
+      shrunk = { ok: false, reason: 'unreadable' }
+    }
+    if (!shrunk.ok) {
+      rejected.push(imageRefusalMessage(image.name, shrunk.reason))
+      continue
+    }
+    remaining -= shrunk.payload.url.length
+    added.push({ ...shrunk.payload, id: image.key, previewUri: image.uri })
+  }
+  return { added, rejected }
+}
+
 export const AttachButton = memo(function AttachButton({
   existing,
   onAdd,
+  onFiles,
+  onRefused,
+  canUploadFiles,
 }: {
   /** Already-attached images, needed to measure the remaining turn budget. */
   existing: Attachment[]
   onAdd: (added: Attachment[]) => void
+  /** Picked files that are not images, to upload. */
+  onFiles: (files: Array<{ name: string; uri: string }>) => void
+  /** One line per file that was not attached; an empty list clears the last ones. */
+  onRefused: (lines: string[]) => void
+  /** The backend's `attachment_upload_v1`, read at pick time. */
+  canUploadFiles: () => boolean
 }) {
-  const pick = useCallback(async () => {
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const chosen = useRef<AttachSource | null>(null)
+
+  const pickPhotos = useCallback(async () => {
     try {
       // The OS picker needs no permission grant on either platform.
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -92,57 +155,89 @@ export const AttachButton = memo(function AttachButton({
         selectionLimit: 0,
       })
       if (result.canceled) return
-
-      // Each image is shrunk to fit what is left of the message's budget.
-      let remaining = MAX_TURN_WIRE_BYTES - totalWireBytes(existing)
-      const added: Attachment[] = []
-      const rejected: string[] = []
-      for (const [i, asset] of result.assets.entries()) {
-        const name = asset.fileName ?? `Image ${i + 1}`
-        const sourceType = resizeSourceType(asset)
-        let shrunk: Shrunk
-        try {
-          shrunk = sourceType
-            ? await shrinkAsset(asset, sourceType, remaining)
-            : { ok: false, reason: 'unsupported-type' }
-        } catch (err) {
-          log.warn('image resize failed', { name, err })
-          shrunk = { ok: false, reason: 'unreadable' }
-        }
-        if (!shrunk.ok) {
-          rejected.push(imageRefusalMessage(name, shrunk.reason))
-          continue
-        }
-        remaining -= shrunk.payload.url.length
-        added.push({
-          ...shrunk.payload,
-          id: `img-${i}-${asset.assetId ?? asset.uri}`,
-          previewUri: asset.uri,
-        })
-      }
-
-      if (rejected.length > 0) {
-        // Silently attaching 2 of 3 is worse than an alert.
-        log.warn('rejected attachments', rejected)
-        Alert.alert('Some images were not attached', rejected.join('\n'))
-      }
+      const { added, rejected } = await shrinkAll(
+        existing,
+        result.assets.map((asset, i) => ({
+          key: `img-${i}-${asset.assetId ?? asset.uri}`,
+          name: asset.fileName ?? `Image ${i + 1}`,
+          uri: asset.uri,
+          width: asset.width,
+          height: asset.height,
+          fileSize: asset.fileSize,
+          sourceType: resizeSourceType(asset),
+        })),
+      )
+      // Silently attaching 2 of 3 is worse than a note.
+      if (rejected.length > 0) log.warn('rejected attachments', rejected)
+      onRefused(rejected)
       if (added.length > 0) onAdd(added)
     } catch (err) {
       log.warn('image pick failed', err)
       Alert.alert('Could not open your photos', err instanceof Error ? err.message : String(err))
     }
-  }, [existing, onAdd])
+  }, [existing, onAdd, onRefused])
+
+  const pickFiles = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: '*/*', multiple: true, copyToCacheDirectory: true })
+      if (result.canceled) return
+      const canUpload = canUploadFiles()
+      const images: PickedImage[] = []
+      const files: Array<{ name: string; uri: string }> = []
+      const refused: string[] = []
+      for (const [i, asset] of result.assets.entries()) {
+        const route = routePickedFile(asset, canUpload)
+        if (route.kind === 'image')
+          images.push({
+            key: `doc-${i}-${asset.uri}`,
+            name: asset.name,
+            uri: asset.uri,
+            fileSize: asset.size,
+            sourceType: route.sourceType,
+          })
+        else if (route.kind === 'file') files.push({ name: asset.name, uri: asset.uri })
+        else refused.push(refusalLine(asset.name, route.reason))
+      }
+      const { added, rejected } = await shrinkAll(existing, images)
+      const lines = [...refused, ...rejected]
+      if (lines.length > 0) log.warn('rejected attachments', lines)
+      onRefused(lines)
+      if (added.length > 0) onAdd(added)
+      if (files.length > 0) onFiles(files)
+    } catch (err) {
+      log.warn('file pick failed', err)
+      Alert.alert('Could not open your files', err instanceof Error ? err.message : String(err))
+    }
+  }, [existing, onAdd, onFiles, onRefused, canUploadFiles])
+
+  const opened = useCallback(() => {
+    const source = chosen.current
+    chosen.current = null
+    if (source === 'photos') void pickPhotos()
+    else if (source === 'files') void pickFiles()
+  }, [pickPhotos, pickFiles])
 
   return (
-    <Pressable
-      onPress={() => void pick()}
-      style={({ pressed }) => [styles.attachButton, pressed && styles.pressed]}
-      accessibilityRole="button"
-      accessibilityLabel="Attach an image"
-      hitSlop={8}
-    >
-      <Ionicons name="add" size={22} color={colors.textDim} />
-    </Pressable>
+    <>
+      <Pressable
+        onPress={() => setSheetOpen(true)}
+        style={({ pressed }) => [styles.attachButton, pressed && styles.pressed]}
+        accessibilityRole="button"
+        accessibilityLabel="Attach photos or files"
+        hitSlop={8}
+      >
+        <Ionicons name="add" size={22} color={colors.textDim} />
+      </Pressable>
+      <AttachSheet
+        visible={sheetOpen}
+        onPick={(source) => {
+          chosen.current = source
+          setSheetOpen(false)
+        }}
+        onClose={() => setSheetOpen(false)}
+        onDismiss={opened}
+      />
+    </>
   )
 })
 
