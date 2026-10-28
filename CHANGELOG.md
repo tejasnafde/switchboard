@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Fixed
+- **A Claude agent no longer keeps working after the backend that started it dies.** When the desktop app crashed or the headless server restarted, the Claude Code CLI finished its running turn on its own, so a resumed chat could put a second agent in the same checkout. Each backend now records the CLIs it runs, and on its next start it stops the CLIs, and the commands they started, that a dead backend left behind. It checks the exact command line first, so a reused process id is never stopped.
+
 ### Changed
 - **A long chat no longer keeps all of its history in memory.** After a search or a long scroll back, a chat could hold every row of a 14,000-row transcript in the window. Now one chat aims to stay within about 1,500 rows or 16 MiB. Past that, the oldest turns leave memory once you are back at the bottom, and they load again when you scroll up. The last 8 turns, rows on screen and pending cards always stay, so a chat with large recent turns can stay above the target, and nothing is trimmed while search is open. Search, fork, export and the agent handoff still load the whole chat when they need it.
 - **Chat history windows read on a read-only database connection.** The desktop opens a second, read-only SQLite connection with a larger page cache and memory-mapped reads for the window rows and the pill and image lookup. All writes stay on the main connection. When the read connection cannot open, the reads use the main connection as before. A synthetic 20,000-message bench shows the same warm time on both connections (about 7 ms).

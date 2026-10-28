@@ -437,6 +437,7 @@ import { decidePermission, CUSTOM_UI_TOOLS, denialMessage, notebookWriteRedirect
 import { notebookManager } from '../../notebooks/manager'
 import { AGENT_DIGEST_PROMPT_RULE } from '@shared/agent-digest'
 import { markAgentSpawnEnv } from '../agent-spawn-env'
+import { noteClaudeChildStarted } from '../claude-orphans'
 import { applyEnvOverlay } from '../env-overlay'
 import { applyClaudeHome, canonicalClaudeHome } from '../claude-home'
 import { createExecutableCache, executableIdentity, managedPath, preferManagedExecutable } from '../managed-bin'
@@ -1961,6 +1962,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         // arrived. Cached on the active session so listSkills() can return
         // it without re-asking the SDK.
         if (sys.subtype === 'init') {
+          noteClaudeChildStarted()
           const parsed = parseClaudeSlashCommands(sys.commands ?? sys.slash_commands)
           if (parsed.length > 0) {
             active.skills = parsed

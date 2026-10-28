@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "claude-cli-orphan-reap",
+  "summary": "A Claude Code CLI keeps running its current turn after the backend that started it dies (desktop main process crash, headless server restart). Each backend now records the CLIs it runs in a ledger under its data folder, and on its next start stops the CLIs, with the processes they started, of every ledger whose backend is gone, before any session starts. A recorded pid is stopped only when it still runs the exact recorded command line.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/claude-orphans.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "tests/unit/claude-orphans.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app starts no agent process. It reaches Claude chats through the backend, and no event, channel or payload changes."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android app starts no agent process. It reaches Claude chats through the backend, and no event, channel or payload changes."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/claude-orphans.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/claude-orphans.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/claude-orphans.test.ts: a stand-in backend starts a stand-in CLI (ignores stdin EOF, starts a tool process); after the backend is SIGKILLed the CLI still runs, and the reap stops the CLI and its tool. A live backend's CLI is left alone, and a recorded pid that now runs another command is not killed.",
+      "npm run typecheck",
+      "npx vitest run --maxWorkers=2"
+    ],
+    "hardware": [
+      "macOS arm64, Claude Code 2.1.301: a node parent started `claude -p --input-format stream-json` in bypass mode with a `sleep 15 && touch sentinel` Bash turn, then SIGKILLed itself at the tool_use. The CLI kept running, wrote the sentinel 15 s later and only then exited. This is the gap the change closes."
+    ],
+    "notExercised": [
+      "No packaged desktop build was crashed and relaunched from existing user data, and no headless server was restarted with a live turn. Both are needed before merge.",
+      "Linux ps output was not run; the parser expects the procps `pid ppid command` columns.",
+      "Windows is skipped: no ledger is written and nothing is reaped there.",
+      "A CLI that never sends system/init (hangs at start) is not recorded."
+    ]
+  }
+}

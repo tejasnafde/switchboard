@@ -244,6 +244,7 @@ import { loadConversationHistory, transcriptPathOf } from '../conversations/hist
 import { peekCatalog, probeCatalog } from './catalog-probe'
 import { pendingRequestKey, type PendingBlockingEvent } from '@shared/pending-requests'
 import { turnPreviewLine } from '@shared/turn-preview'
+import { claudeOrphanLedgerDir, reapOrphanedClaudeChildren } from './claude-orphans'
 
 const log = createLogger('provider:registry')
 
@@ -464,6 +465,9 @@ export class ProviderRegistry implements PeerToolHost {
     })
     activeRegistry = this
     this.host = host
+    // Before any session starts: a CLI left by a crashed or restarted
+    // backend would otherwise run beside the one a resumed chat starts.
+    if (!adapters) reapOrphanedClaudeChildren(claudeOrphanLedgerDir())
     // SB_DEMO_ADAPTER=1 swaps in the scripted adapter so the tour recorder
     // (videos/capture-tour.mjs) can capture agent-driven scenes without
     // credentials. Never set by a normal launch.
