@@ -40,8 +40,8 @@ class SecretRequestRowTest {
         ),
     )!!
 
-    private fun item(state: String) = FeedItem.Approval(
-        "a-sbsec_1", "sbsec_1", "request_secret", "An agent asks for a secret.", "tool", state, secretRequest = card,
+    private fun item(state: String, id: String = "sbsec_1") = FeedItem.Approval(
+        "a-$id", id, "request_secret", "An agent asks for a secret.", "tool", state, secretRequest = card,
     )
 
     @Test
@@ -69,7 +69,8 @@ class SecretRequestRowTest {
 
     @Test
     fun aDenyThisPhoneDidNotSendReadsClosedNotDeclined() {
-        compose.setContent { SwitchboardTheme { SecretRequestRow(item("deny"), card, null) {} } }
+        // Its own id: the declined set is process-wide and other tests decline sbsec_1.
+        compose.setContent { SwitchboardTheme { SecretRequestRow(item("deny", "sbsec_never_declined"), card, null) {} } }
         compose.onNodeWithText("TAILSCALE_AUTHKEY closed").assertExists()
         compose.onNodeWithText("Declined TAILSCALE_AUTHKEY").assertDoesNotExist()
     }
