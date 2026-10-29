@@ -234,4 +234,29 @@ describe('SecretStore', () => {
     store.removeChat('rotated-uuid')
     expect(getSecretDirId('agent_123')).toBeNull()
   })
+
+  it('reads one row and every row of a chat, deleted ones too, by the root id', () => {
+    const first = store.save({
+      threadId: 'agent_9',
+      name: 'KEY_ONE',
+      value: VALUE,
+      cardId: 'c1',
+      expiresAt: now + 1000,
+    })
+    now += 1
+    const second = store.save({
+      threadId: 'agent_9',
+      name: 'KEY_TWO',
+      value: VALUE,
+      cardId: 'c2',
+      expiresAt: now + 1000,
+    })
+    store.save({ threadId: 'other', name: 'KEY_ONE', value: VALUE, cardId: 'c3', expiresAt: now + 1000 })
+    store.remove(first.id)
+    recordThreadSession('rotated-9', 'agent_9')
+    expect(store.get(first.id)).toMatchObject({ rootThreadId: 'agent_9', cardId: 'c1' })
+    expect(store.get(first.id)!.deletedAt).not.toBeNull()
+    expect(store.get('sec_missing')).toBeNull()
+    expect(store.listChat('rotated-9').map((r) => r.id)).toEqual([second.id, first.id])
+  })
 })

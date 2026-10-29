@@ -45,7 +45,8 @@ const SCOPE_REQUIRED_PREFIXES: Record<DeviceScope, readonly string[]> = {
   // every other device. Revocation must be out of reach of a revocable credential.
   // Source control accounts hold a host token. Status is gated too: it names
   // the account, and nothing on the phone configures one.
-  admin: ['mobile-pairing:', 'source-control:'],
+  // The secret answer carries the value; phones answer on the computer (design 7.3).
+  admin: ['mobile-pairing:', 'source-control:', 'agent-secret:'],
   // `chat` gates nothing on its own. It is the baseline every session has.
   chat: [],
   'pr-write': [],

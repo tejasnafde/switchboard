@@ -64,7 +64,7 @@ import type { BackendHost } from '../../src/main/backend/host'
 import type { SecretStore } from '../../src/main/secrets/secret-store'
 import type { McpTool } from '../../src/main/mcp/mcp-session'
 import type { SwitchboardMcpServer } from '../../src/main/mcp/switchboard-mcp-server'
-import { ProviderChannels } from '../../src/shared/ipc-channels'
+import { AgentSecretChannels, ProviderChannels } from '../../src/shared/ipc-channels'
 import { APPROVAL_RESULT_TAG, parseApprovalResultMarker } from '../../src/shared/agent-approval-cards'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
@@ -134,6 +134,18 @@ class RecordingAdapter implements ProviderAdapter {
 class FakeSecretStore {
   readonly saves: Array<{ threadId: string; name: string; value: string; cardId: string }> = []
   readonly removedChats: string[] = []
+  readonly rows = new Map<
+    string,
+    {
+      id: string
+      rootThreadId: string
+      name: string
+      cardId: string
+      createdAt: number
+      expiresAt: number
+      deletedAt: number | null
+    }
+  >()
   fail = false
   start(): void {}
   stop(): void {}
@@ -143,13 +155,35 @@ class FakeSecretStore {
   save(input: { threadId: string; name: string; value: Buffer; cardId: string; expiresAt: number }) {
     if (this.fail) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' })
     this.saves.push({ threadId: input.threadId, name: input.name, value: input.value.toString(), cardId: input.cardId })
-    return { id: 'sec_1', file: `/secrets/dir-${input.threadId}/${input.name}`, expiresAt: input.expiresAt }
+    const id = `sec_${this.saves.length}`
+    this.rows.set(id, {
+      id,
+      rootThreadId: input.threadId,
+      name: input.name,
+      cardId: input.cardId,
+      createdAt: Date.now(),
+      expiresAt: input.expiresAt,
+      deletedAt: null,
+    })
+    return { id, file: `/secrets/dir-${input.threadId}/${input.name}`, expiresAt: input.expiresAt }
   }
-  extend(): boolean {
+  extend(id: string, expiresAt: number): boolean {
+    const row = this.rows.get(id)
+    if (!row || row.deletedAt !== null) return false
+    row.expiresAt = expiresAt
     return true
   }
-  remove(): boolean {
+  remove(id: string): boolean {
+    const row = this.rows.get(id)
+    if (!row || row.deletedAt !== null) return false
+    row.deletedAt = Date.now()
     return true
+  }
+  get(id: string) {
+    return this.rows.get(id) ?? null
+  }
+  listChat(threadId: string) {
+    return [...this.rows.values()].filter((r) => r.rootThreadId === threadId)
   }
   removeChat(threadId: string): void {
     this.removedChats.push(threadId)
@@ -298,5 +332,104 @@ describe('request_secret in the registry', () => {
     expect(await s.host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 'chat')).toEqual([])
     expect(s.store.removedChats).toEqual(['chat'])
     expect(s.registry.answerAgentSecret('chat', id, { save: VALUE })).toMatchObject({ ok: false })
+  })
+})
+
+describe('the agent-secret answer channel', () => {
+  it('saves and declines through agent-secret:answer', async () => {
+    const s = setup()
+    await s.start('chat')
+    const saveId = await s.ask()
+    expect(await s.host.invoke(AgentSecretChannels.ANSWER, 'chat', saveId, { save: VALUE })).toEqual({ ok: true })
+    await resultPublished(s.host, saveId)
+    expect(s.store.saves).toMatchObject([{ value: VALUE, cardId: saveId }])
+    const declineId = await s.ask()
+    expect(await s.host.invoke(AgentSecretChannels.ANSWER, 'chat', declineId, { decline: true })).toEqual({ ok: true })
+    await resultPublished(s.host, declineId)
+    expect(s.store.saves).toHaveLength(1)
+  })
+
+  it('refuses every answer that is not exactly { save: string } or { decline: true }', async () => {
+    const s = setup()
+    await s.start('chat')
+    const id = await s.ask()
+    const bad: unknown[][] = [
+      [42, id, { save: VALUE }],
+      ['', id, { save: VALUE }],
+      ['chat', 'sbapr_1', { decline: true }],
+      ['chat', 7, { decline: true }],
+      ['chat', id, { save: 7 }],
+      ['chat', id, { decline: false }],
+      ['chat', id, { decline: 'true' }],
+      ['chat', id, { save: VALUE, decline: true }],
+      ['chat', id, { save: VALUE, note: 'x' }],
+      ['chat', id, [VALUE]],
+      ['chat', id, VALUE],
+      ['chat', id, null],
+      ['chat', id],
+    ]
+    for (const args of bad)
+      expect(await s.host.invoke(AgentSecretChannels.ANSWER, ...args)).toEqual({
+        ok: false,
+        message: 'That request is not valid.',
+      })
+    expect(s.store.saves).toEqual([])
+    expect(await s.host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 'chat')).toMatchObject([{ requestId: id }])
+  })
+
+  it('refuses every channel with the flag off', async () => {
+    const s = setup()
+    await s.start('chat')
+    const id = await s.ask()
+    expect(await s.host.invoke(AgentSecretChannels.ANSWER, 'chat', id, { save: VALUE })).toEqual({ ok: true })
+    const secretId = [...s.store.rows.keys()][0]
+    delete process.env.SB_AGENT_SECRET_REQUEST
+    const off = { ok: false, message: 'Secret requests are turned off.' }
+    expect(await s.host.invoke(AgentSecretChannels.ANSWER, 'chat', id, { decline: true })).toEqual(off)
+    expect(await s.host.invoke(AgentSecretChannels.EXTEND, 'chat', secretId)).toEqual(off)
+    expect(await s.host.invoke(AgentSecretChannels.DELETE, 'chat', secretId)).toEqual(off)
+    expect(await s.host.invoke(AgentSecretChannels.LIST, 'chat')).toEqual(off)
+    expect(s.store.rows.get(secretId)?.deletedAt).toBeNull()
+  })
+
+  it('lists the chat secrets without a value, and extends and deletes only its own', async () => {
+    const s = setup()
+    await s.start('chat')
+    const id = await s.ask()
+    expect(await s.host.invoke(AgentSecretChannels.ANSWER, 'chat', id, { save: VALUE })).toEqual({ ok: true })
+    const secretId = [...s.store.rows.keys()][0]
+
+    const listed = (await s.host.invoke(AgentSecretChannels.LIST, 'chat')) as {
+      ok: true
+      secrets: Array<Record<string, unknown>>
+    }
+    expect(listed.ok).toBe(true)
+    expect(listed.secrets).toEqual([
+      expect.objectContaining({ id: secretId, name: 'TAILSCALE_AUTHKEY', cardId: id, deletedAt: null, status: 'live' }),
+    ])
+    expect(JSON.stringify(listed)).not.toContain(VALUE)
+    expect(Object.keys(listed.secrets[0]).sort()).toEqual(
+      ['cardId', 'createdAt', 'deletedAt', 'expiresAt', 'id', 'name', 'status'].sort(),
+    )
+    expect(await s.host.invoke(AgentSecretChannels.LIST, 'other')).toEqual({ ok: true, secrets: [] })
+
+    const gone = { ok: false, message: 'That secret is gone.' }
+    const before = s.store.rows.get(secretId)!.expiresAt
+    expect(await s.host.invoke(AgentSecretChannels.EXTEND, 'other', secretId)).toEqual(gone)
+    expect(await s.host.invoke(AgentSecretChannels.DELETE, 'other', secretId)).toEqual(gone)
+    expect(s.store.rows.get(secretId)).toMatchObject({ expiresAt: before, deletedAt: null })
+    expect(await s.host.invoke(AgentSecretChannels.EXTEND, 'chat', 'sec_missing')).toEqual(gone)
+    expect(await s.host.invoke(AgentSecretChannels.EXTEND, 'chat', 42)).toMatchObject({ ok: false })
+
+    const extended = (await s.host.invoke(AgentSecretChannels.EXTEND, 'chat', secretId)) as {
+      ok: true
+      expiresAt: number
+    }
+    expect(extended.ok).toBe(true)
+    expect(s.store.rows.get(secretId)?.expiresAt).toBe(extended.expiresAt)
+    expect(await s.host.invoke(AgentSecretChannels.DELETE, 'chat', secretId)).toEqual({ ok: true })
+    expect(await s.host.invoke(AgentSecretChannels.DELETE, 'chat', secretId)).toEqual(gone)
+    const after = (await s.host.invoke(AgentSecretChannels.LIST, 'chat')) as { secrets: Array<{ status: string }> }
+    expect(after.secrets.map((x) => x.status)).toEqual(['deleted'])
   })
 })

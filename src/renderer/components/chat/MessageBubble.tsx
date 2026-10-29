@@ -27,6 +27,8 @@ import { parseRotationMarker } from '@shared/rotation-marker'
 import { parseUndeliveredMarker } from '@shared/peer-links'
 import { PeerUndeliveredRow } from './PeerUndeliveredRow'
 import { ApprovalResultRow } from './ApprovalResultRow'
+import { SecretRequestCard, SecretResultLine } from './SecretRequestCard'
+import { isSecretCardId } from '@shared/agent-secret-request'
 import { parseApprovalResultMarker } from '@shared/agent-approval-cards'
 import { parseMergeBackMarker } from '@shared/merge-back'
 import { parseHubUpdateMarker } from '@shared/hub'
@@ -260,7 +262,12 @@ export const MessageBubble = memo(function MessageBubble({
   const undelivered = isSystem ? parseUndeliveredMarker(message.content) : null
   if (undelivered) return <PeerUndeliveredRow row={undelivered} messageId={message.id} sessionId={sessionId} />
   const approvalResult = isSystem ? parseApprovalResultMarker(message.content) : null
-  if (approvalResult) return <ApprovalResultRow row={approvalResult} messageId={message.id} />
+  if (approvalResult)
+    return isSecretCardId(approvalResult.requestId) ? (
+      <SecretResultLine row={approvalResult} messageId={message.id} sessionId={sessionId} />
+    ) : (
+      <ApprovalResultRow row={approvalResult} messageId={message.id} />
+    )
   const mergeBack = isSystem ? parseMergeBackMarker(message.content) : null
   if (mergeBack) return <MergeBackRow row={mergeBack} messageId={message.id} sessionId={sessionId} />
   const hubUpdate = isSystem ? parseHubUpdateMarker(message.content) : null
@@ -579,7 +586,9 @@ export const MessageBubble = memo(function MessageBubble({
         ))}
 
         {/* Approval request */}
+        {message.approval?.secretRequest && <SecretRequestCard message={message} sessionId={sessionId} />}
         {message.approval &&
+          !message.approval.secretRequest &&
           onApproval &&
           (message.approval.hostWrite ? (
             <HostWriteApprovalCard message={message} onDecide={onApproval} />

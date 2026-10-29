@@ -23,6 +23,7 @@ import type { DeviceIdentity } from './device-identity'
 import { reconnectDelay } from './backoff'
 import type { Transport } from './transport'
 import { createLogger } from './logger'
+import { carriesSecretArgs } from './ipc-channels'
 
 const log = createLogger('ws-transport')
 
@@ -575,6 +576,9 @@ export class WsTransport implements Transport {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   invoke<T = any>(channel: string, ...args: unknown[]): Promise<T> {
     if (this.closed) return Promise.reject(new Error('transport closed'))
+    // A secret is never held in the reconnect queue: it goes now or not at all.
+    if (!this.open && carriesSecretArgs(channel))
+      return Promise.reject(new Error('Not connected to that machine. Try again when it reconnects.'))
     const id = this.nextId++
     const timeoutMs = channel.startsWith('provider') ? PROVIDER_TIMEOUT_MS : this.timeoutMs
     return new Promise<T>((resolve, reject) => {

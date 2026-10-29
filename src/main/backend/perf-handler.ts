@@ -1,4 +1,5 @@
 import { PERF_THRESHOLDS } from '@shared/perf-timing'
+import { carriesSecretArgs } from '@shared/ipc-channels'
 import { perfSpan } from '../perf'
 
 // These handlers can await an entire turn or a human answer by design.
@@ -14,7 +15,8 @@ export function timeBackendHandler<A extends unknown[]>(
   channel: string,
   fn: (...args: A) => unknown,
 ): (...args: A) => unknown {
-  if (LONG_RUNNING_CHANNELS.has(channel)) return fn
+  // A secret answer is not timed at all: nothing about it reaches the perf log.
+  if (LONG_RUNNING_CHANNELS.has(channel) || carriesSecretArgs(channel)) return fn
   return (...args) => {
     const start = performance.now()
     const span = perfSpan('ipc', { channel })
