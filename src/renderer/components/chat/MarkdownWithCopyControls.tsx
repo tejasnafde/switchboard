@@ -328,6 +328,8 @@ interface AtomicMarkdownRootProps {
 }
 
 function handleDoubleClick(event: MouseEvent<HTMLDivElement>): void {
+  // Shift extends the selection; the browser handles it.
+  if (event.shiftKey) return
   selectInlineCodeOnDoubleClick(event.target, window.getSelection())
 }
 
