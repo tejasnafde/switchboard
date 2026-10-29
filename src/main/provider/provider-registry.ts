@@ -2758,12 +2758,16 @@ export class ProviderRegistry implements PeerToolHost {
    */
   closeAgentCards(threadId: string, opts: { archived?: boolean } = {}): void {
     const root = resolveRootThreadId(threadId)
-    this.agentApprovals.closeChat(root, { secrets: opts.archived })
-    if (!opts.archived || !this.secretStore) return
     try {
-      this.secretStore.removeChat(root)
-    } catch (err) {
-      log.warn(`could not delete the secrets of archived chat ${root}; the sweep retries`, errCode(err))
+      this.agentApprovals.closeChat(root, { secrets: opts.archived })
+    } finally {
+      if (opts.archived && this.secretStore) {
+        try {
+          this.secretStore.removeChat(root)
+        } catch (err) {
+          log.warn(`could not delete the secrets of archived chat ${root}; the sweep retries`, errCode(err))
+        }
+      }
     }
   }
 
@@ -2890,6 +2894,7 @@ export class ProviderRegistry implements PeerToolHost {
                 chatId: chatId(),
                 runtimeMode,
                 isOpenChild: () => this.hubChildrenOn() && this.hubStarter.isOpenChild(threadId),
+                archived: () => isConversationArchived(chatId()),
                 approvals: this.agentApprovals,
                 limiter: this.secretLimiter,
               })

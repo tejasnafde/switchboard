@@ -32,7 +32,7 @@ export function acpFsProblem(
 
 function isInside(file: string, dir: string): boolean {
   const rel = path.relative(dir, file)
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
 }
 
 /** The path with its nearest existing ancestor resolved through symlinks, so a link into the folder is caught. */

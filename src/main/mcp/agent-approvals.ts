@@ -190,12 +190,12 @@ export class AgentApprovalBroker {
     try {
       save(card)
     } catch (err) {
-      try {
-        this.book.add(card)
-      } catch (putErr) {
-        log.error(`secret card ${requestId} could not be put back after a failed save; it is gone`, putErr)
-        this.announceClosed(card, { kind: 'stopped' }, {})
-      }
+      const putErr = this.book.restore(card)
+      if (putErr)
+        log.error(
+          `secret card ${requestId} is open again but not stored after a failed save; a restart drops it`,
+          putErr,
+        )
       throw err
     }
     this.announceClosed(card, { kind: 'approve', wake: true }, {}, threadId)

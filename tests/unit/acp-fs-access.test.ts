@@ -32,6 +32,7 @@ describe('acpFsProblem and the secrets folder', () => {
       expect(acpFsProblem('write', join(secrets, 'new', 'KEY_A'), 'full-access', secrets)).toMatch(/secrets/)
       expect(acpFsProblem('write', join(base, 'link', 'abc', 'KEY_A'), 'full-access', secrets)).toMatch(/secrets/)
       expect(acpFsProblem('write', join(base, 'repo', '..', 'secrets', 'x'), 'full-access', secrets)).toMatch(/secrets/)
+      expect(acpFsProblem('write', join(secrets, '..cache', 'KEY_A'), 'full-access', secrets)).toMatch(/secrets/)
       expect(acpFsProblem('read', join(secrets, 'abc', 'KEY_A'), 'full-access', secrets)).toBeNull()
       expect(acpFsProblem('write', join(base, 'secrets-other', 'a.ts'), 'full-access', secrets)).toBeNull()
     } finally {
