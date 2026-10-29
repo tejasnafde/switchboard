@@ -24,7 +24,7 @@ const PROGRESS_INTERVAL_MS = 10_000
 export const MCP_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const
 
 export interface McpToolResult {
-  content: Array<{ type: 'text'; text: string }>
+  content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }>
   isError?: boolean
 }
 

@@ -19,6 +19,7 @@ import {
 import { HTML_LIVE_MAX_IMAGE_CHARS } from '@shared/html-live'
 import { PreviewController, type InlineOpenRequest } from './preview-controller'
 import { createMainLogger } from '../logger'
+import { registerVisualPreviewHost } from './visual-preview-host'
 
 const log = createMainLogger('preview:session')
 
@@ -125,6 +126,7 @@ function previewGuest(webContentsId: number): WebContents | null {
 
 export function registerHtmlPreviewHandlers(windowGetter: () => BrowserWindow | null): void {
   getWindow = windowGetter
+  registerVisualPreviewHost(windowGetter)
   ipcMain.removeHandler(PreviewChannels.OPEN)
   ipcMain.handle(PreviewChannels.OPEN, (_event, request: PreviewOpenRequest) => {
     ensurePreviewSession()
