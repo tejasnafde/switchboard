@@ -8,12 +8,21 @@
  * it leaves the machine; the install id is the only identifier that is sent.
  */
 
+import { GENERIC_ACP_AGENTS } from './acp-agents'
+import { SECRET_ANSWER_SECONDS_BUCKETS, SECRET_TTLS } from './agent-secret-request'
+
 export type AnalyticsEventName =
   | 'app_launched'
   | 'session_started'
   | 'tour_completed'
   | 'tour_skipped'
   | 'crash_reported'
+  | 'secret_request.opened'
+  | 'secret_request.extended'
+  | 'secret_request.answered'
+  | 'secret_request.closed'
+  | 'secret_request.refused'
+  | 'secret_request.masked'
 
 /** Event names the renderer may report through `AnalyticsChannels.TRACK`. */
 export const RENDERER_ANALYTICS_EVENTS: ReadonlySet<string> = new Set<AnalyticsEventName>([
@@ -28,23 +37,39 @@ export const ANALYTICS_SURFACE = 'desktop'
 export type AnalyticsPlatform = 'macos' | 'windows'
 export type AnalyticsEnvironment = 'production' | 'development'
 
-const ENUM_PROPERTIES: Record<string, ReadonlySet<string>> = {
-  arch: new Set(['arm64', 'x64']),
-  translated: new Set(['true', 'false']),
-  provider: new Set(['claude', 'codex', 'opencode']),
-  kind: new Set(['renderer_gone', 'child_process_gone', 'uncaught']),
-}
-
 /** Free text with a shape check; mirrors the Worker's `app_version` rule. */
 export const APP_VERSION_PATTERN = /^\d+\.\d+\.\d+/
 export const APP_VERSION_MAX_LENGTH = 32
 
-const EVENT_PROPERTIES: Record<AnalyticsEventName, readonly string[]> = {
-  app_launched: ['arch', 'translated', 'app_version'],
-  session_started: ['provider'],
-  tour_completed: [],
-  tour_skipped: [],
-  crash_reported: ['kind'],
+/** A closed list of values, or the `app_version` shape check. */
+type PropertyRule = ReadonlySet<string> | 'app_version'
+
+const BOOLEAN: ReadonlySet<string> = new Set(['true', 'false'])
+
+/**
+ * Each event's properties and the values each may take. A secret request
+ * event never carries the secret's name, title, instructions, value, length
+ * or a hash of it: only these buckets.
+ */
+const EVENT_PROPERTIES: Record<AnalyticsEventName, Readonly<Record<string, PropertyRule>>> = {
+  app_launched: { arch: new Set(['arm64', 'x64']), translated: BOOLEAN, app_version: 'app_version' },
+  session_started: { provider: new Set(['claude', 'codex', 'opencode']) },
+  tour_completed: {},
+  tour_skipped: {},
+  crash_reported: { kind: new Set(['renderer_gone', 'child_process_gone', 'uncaught']) },
+  'secret_request.opened': {
+    agentKind: new Set(['claude', 'codex', 'opencode', ...GENERIC_ACP_AGENTS]),
+    ttlBucket: new Set(SECRET_TTLS),
+    remote: BOOLEAN,
+  },
+  'secret_request.extended': { count: new Set(['1', '2', '3', 'more']) },
+  'secret_request.answered': {
+    outcome: new Set(['saved', 'declined']),
+    secondsBucket: new Set(SECRET_ANSWER_SECONDS_BUCKETS),
+  },
+  'secret_request.closed': { outcome: new Set(['expired', 'withdrawn', 'archived', 'deleted']) },
+  'secret_request.refused': { reason: new Set(['plan', 'child', 'cap', 'invalid']) },
+  'secret_request.masked': { where: new Set(['tool', 'text', 'diff']) },
 }
 
 export interface AnalyticsContext {
@@ -83,14 +108,14 @@ export function whitelistAnalyticsProperties(
   properties: Record<string, unknown>,
 ): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const key of EVENT_PROPERTIES[event]) {
+  for (const [key, rule] of Object.entries(EVENT_PROPERTIES[event])) {
     const value = properties[key]
     if (typeof value !== 'string') continue
-    if (key === 'app_version') {
+    if (rule === 'app_version') {
       if (value.length <= APP_VERSION_MAX_LENGTH && APP_VERSION_PATTERN.test(value)) out[key] = value
       continue
     }
-    if (ENUM_PROPERTIES[key]?.has(value)) out[key] = value
+    if (rule.has(value)) out[key] = value
   }
   return out
 }

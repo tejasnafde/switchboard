@@ -5,7 +5,7 @@
  * (`ProviderRegistry.reportAgentCard`), with the file path and never the value.
  * Rules and texts in `shared/agent-secret-request.ts`.
  */
-import type { RuntimeMode } from '@shared/provider-events'
+import type { ProviderKind, RuntimeMode } from '@shared/provider-events'
 import {
   REQUEST_SECRET_TOOL,
   SECRET_OPEN_CARD_CAP,
@@ -18,6 +18,7 @@ import {
 } from '@shared/agent-secret-request'
 import type { AgentApprovalBroker } from './agent-approvals'
 import { toolText, type McpTool } from './mcp-session'
+import { trackSecretOpened, trackSecretRefused, type SecretRefusalReason } from '../secrets/secret-analytics'
 
 export const SECRET_INSTRUCTIONS = [
   `When a command needs a secret (an API key, an auth key, a token), call ${REQUEST_SECRET_TOOL}.`,
@@ -53,6 +54,15 @@ export interface SecretToolContext {
   archived(): boolean
   approvals: Pick<AgentApprovalBroker, 'open' | 'openSecretCards'>
   limiter: SecretRequestLimiter
+  /** For the usage count only. */
+  agentKind: ProviderKind
+  /** This backend runs on an SSH machine. For the usage count only. */
+  remote: boolean
+}
+
+function refuse(reason: SecretRefusalReason, text: string) {
+  trackSecretRefused(reason)
+  return toolText(text, true)
 }
 
 export function buildSecretMcpTools(ctx: SecretToolContext): McpTool[] {
@@ -94,21 +104,21 @@ export function buildSecretMcpTools(ctx: SecretToolContext): McpTool[] {
         openWorldHint: false,
       },
       async call(args) {
-        if (ctx.runtimeMode() === 'plan') return toolText(SECRET_PLAN_MODE_REFUSAL, true)
+        if (ctx.runtimeMode() === 'plan') return refuse('plan', SECRET_PLAN_MODE_REFUSAL)
         if (ctx.archived()) return toolText('This chat is archived. It cannot ask for a secret.', true)
         if (ctx.isOpenChild())
-          return toolText('A child chat cannot ask for a secret. Report to the parent chat that you need one.', true)
+          return refuse('child', 'A child chat cannot ask for a secret. Report to the parent chat that you need one.')
         const checked = checkSecretRequestArgs(args)
-        if (!checked.ok) return toolText(checked.message, true)
+        if (!checked.ok) return refuse('invalid', checked.message)
         if (ctx.approvals.openSecretCards(ctx.chatId) >= SECRET_OPEN_CARD_CAP)
-          return toolText(
+          return refuse(
+            'cap',
             `This chat already has ${SECRET_OPEN_CARD_CAP} open secret requests. Wait for the user to answer one.`,
-            true,
           )
         if (!ctx.limiter.allow(ctx.chatId))
-          return toolText(
+          return refuse(
+            'cap',
             `This chat asked for ${SECRET_RATE_LIMIT} secrets in the last 10 minutes. Wait before you ask again.`,
-            true,
           )
         const opened = ctx.approvals.open({
           threadId: ctx.threadId,
@@ -117,8 +127,9 @@ export function buildSecretMcpTools(ctx: SecretToolContext): McpTool[] {
           detail: '',
           plan: { kind: 'secret-request', card: checked.card },
         })
-        if (!opened.ok) return toolText(opened.message, true)
+        if (!opened.ok) return refuse('cap', opened.message)
         ctx.limiter.record(ctx.chatId)
+        trackSecretOpened(ctx.agentKind, checked.card.ttl, ctx.remote)
         return toolText(secretQueuedText(checked.card.name, opened.requestId))
       },
     },

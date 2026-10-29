@@ -1,9 +1,23 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { checkSecretRequestArgs, secretSavedText } from '../../src/shared/agent-secret-request'
 import { SecretRequestLimiter, buildSecretMcpTools } from '../../src/main/mcp/secret-tools'
 import { AgentApprovalBroker, type AgentApprovalCard, type AgentWritePlan } from '../../src/main/mcp/agent-approvals'
 import { AGENT_CARD_MAX_AGE_MS, type ApprovalCardStore } from '../../src/shared/agent-approval-cards'
 import type { RuntimeEvent, RuntimeMode } from '../../src/shared/provider-events'
+
+const tracked = vi.hoisted(() => [] as Array<{ event: string; properties: Record<string, unknown> }>)
+vi.mock('../../src/main/analytics', () => ({
+  trackAnalyticsEvent: (event: string, properties: Record<string, unknown> = {}) => tracked.push({ event, properties }),
+}))
+
+beforeEach(() => {
+  tracked.length = 0
+  process.env.SB_AGENT_SECRET_REQUEST = '1'
+})
+
+afterEach(() => {
+  delete process.env.SB_AGENT_SECRET_REQUEST
+})
 
 const ARGS = { name: 'TAILSCALE_AUTHKEY', title: 'Tailscale auth key', instructions: 'Make a key in the admin page.' }
 
@@ -67,6 +81,8 @@ function setup(
     archived: () => archived,
     approvals: broker,
     limiter,
+    agentKind: 'codex',
+    remote: false,
   })
   const call = (args: Record<string, unknown> = ARGS) => tool.call(args)
   return {
@@ -94,6 +110,27 @@ describe('request_secret', () => {
     const s = setup()
     expect((await s.call({ ...ARGS, extra: 1 })).isError).toBe(true)
     expect(s.events).toEqual([])
+  })
+
+  it('counts each refusal by its reason and each open with its buckets, never the name, title or instructions', async () => {
+    await setup('plan').call()
+    await setup('sandbox', true).call()
+    await setup('sandbox', false, undefined, true).call()
+    await setup().call({ ...ARGS, ttl: '48h' })
+    const s = setup()
+    await s.call({ ...ARGS, ttl: '1h' })
+    for (let i = 0; i < 2; i++) await s.call()
+    await s.call()
+    expect(tracked).toEqual([
+      { event: 'secret_request.refused', properties: { reason: 'plan' } },
+      { event: 'secret_request.refused', properties: { reason: 'child' } },
+      { event: 'secret_request.refused', properties: { reason: 'invalid' } },
+      { event: 'secret_request.opened', properties: { agentKind: 'codex', ttlBucket: '1h', remote: 'false' } },
+      { event: 'secret_request.opened', properties: { agentKind: 'codex', ttlBucket: '24h', remote: 'false' } },
+      { event: 'secret_request.opened', properties: { agentKind: 'codex', ttlBucket: '24h', remote: 'false' } },
+      { event: 'secret_request.refused', properties: { reason: 'cap' } },
+    ])
+    for (const text of Object.values(ARGS)) expect(JSON.stringify(tracked)).not.toContain(text)
   })
 
   it('caps open cards at 3 and requests at 5 per 10 minutes', async () => {

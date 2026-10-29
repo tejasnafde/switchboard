@@ -8,6 +8,7 @@ import {
   whitelistAnalyticsProperties,
   type AnalyticsContext,
 } from '@shared/analytics-envelope'
+import { secretAnswerSecondsBucket, secretExtendCountBucket } from '@shared/agent-secret-request'
 
 const ctx: AnalyticsContext = {
   enabled: true,
@@ -101,6 +102,53 @@ describe('whitelistAnalyticsProperties', () => {
     for (const kind of ['renderer_gone', 'child_process_gone', 'uncaught']) {
       expect(whitelistAnalyticsProperties('crash_reported', { kind })).toEqual({ kind })
     }
+  })
+})
+
+describe('secret request events', () => {
+  it.each([
+    ['secret_request.opened', { agentKind: 'gemini', ttlBucket: '4h', remote: 'true' }],
+    ['secret_request.extended', { count: 'more' }],
+    ['secret_request.answered', { outcome: 'declined', secondsBucket: '2m_10m' }],
+    ['secret_request.closed', { outcome: 'withdrawn' }],
+    ['secret_request.refused', { reason: 'cap' }],
+    ['secret_request.masked', { where: 'diff' }],
+  ] as const)('%s keeps its closed-list properties', (event, properties) => {
+    expect(isAnalyticsEventName(event)).toBe(true)
+    expect(whitelistAnalyticsProperties(event, properties)).toEqual(properties)
+  })
+
+  it('drops values off the closed list and any name, title, instructions, value or length', () => {
+    expect(
+      whitelistAnalyticsProperties('secret_request.opened', {
+        agentKind: 'claude',
+        ttlBucket: '48h',
+        remote: true,
+        name: 'TAILSCALE_AUTHKEY',
+        title: 'Tailscale auth key',
+        instructions: 'Make a key',
+        value: 'tskey-123',
+        length: '9',
+      }),
+    ).toEqual({ agentKind: 'claude' })
+    expect(whitelistAnalyticsProperties('secret_request.extended', { count: '4' })).toEqual({})
+    expect(
+      whitelistAnalyticsProperties('secret_request.answered', { outcome: 'expired', secondsBucket: '42' }),
+    ).toEqual({})
+    expect(whitelistAnalyticsProperties('secret_request.closed', { outcome: 'saved' })).toEqual({})
+    expect(whitelistAnalyticsProperties('secret_request.refused', { reason: 'archived' })).toEqual({})
+    expect(whitelistAnalyticsProperties('secret_request.masked', { where: 'log' })).toEqual({})
+  })
+
+  it('buckets the answer time and the extend count', () => {
+    expect(
+      [0, 29_999, 30_000, 119_999, 120_000, 599_999, 600_000, 3_599_999, 3_600_000].map(secretAnswerSecondsBucket),
+    ).toEqual(['under_30s', 'under_30s', '30s_2m', '30s_2m', '2m_10m', '2m_10m', '10m_1h', '10m_1h', 'over_1h'])
+    expect([1, 2, 3, 4, 40].map(secretExtendCountBucket)).toEqual(['1', '2', '3', 'more', 'more'])
+  })
+
+  it('the renderer cannot report them', () => {
+    for (const event of RENDERER_ANALYTICS_EVENTS) expect(event.startsWith('secret_request.')).toBe(false)
   })
 })
 

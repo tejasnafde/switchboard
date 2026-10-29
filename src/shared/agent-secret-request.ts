@@ -41,6 +41,24 @@ export const SECRET_TTL_MS: Record<SecretTtl, number> = {
 /** Each "Extend" sets the expiry to this long from now. */
 export const SECRET_EXTEND_MS = 24 * 60 * 60_000
 
+/** How long the user took to answer a card, as the analytics bucket (`secret_request.answered`). */
+export const SECRET_ANSWER_SECONDS_BUCKETS = ['under_30s', '30s_2m', '2m_10m', '10m_1h', 'over_1h'] as const
+export type SecretAnswerSecondsBucket = (typeof SECRET_ANSWER_SECONDS_BUCKETS)[number]
+
+export function secretAnswerSecondsBucket(ms: number): SecretAnswerSecondsBucket {
+  const s = ms / 1000
+  if (s < 30) return 'under_30s'
+  if (s < 120) return '30s_2m'
+  if (s < 600) return '2m_10m'
+  if (s < 3600) return '10m_1h'
+  return 'over_1h'
+}
+
+/** The how-many-th Extend of one secret, as the analytics bucket (`secret_request.extended`). */
+export function secretExtendCountBucket(count: number): '1' | '2' | '3' | 'more' {
+  return count <= 1 ? '1' : count === 2 ? '2' : count === 3 ? '3' : 'more'
+}
+
 /** At most this many open secret cards per chat, and this many requests per window. */
 export const SECRET_OPEN_CARD_CAP = 3
 export const SECRET_RATE_LIMIT = 5
