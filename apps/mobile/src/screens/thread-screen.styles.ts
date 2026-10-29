@@ -329,6 +329,81 @@ export const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  /** An agent's secret request: the approval card's frame, header row, and an outline Decline. */
+  secretCard: {
+    backgroundColor: 'rgba(229, 165, 58, 0.06)',
+    borderWidth: 1,
+    borderColor: colors.amber,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  secretHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  secretWho: {
+    color: colors.textDim,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  secretBody: {
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    gap: 4,
+  },
+  secretText: {
+    color: colors.textDim,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  secretHost: {
+    color: colors.text,
+    fontWeight: '600',
+  },
+  secretNote: {
+    color: colors.textDim,
+    fontSize: 12,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+  },
+  secretActions: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingTop: 4,
+    paddingBottom: 10,
+  },
+  outlineButton: {
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  outlineLabel: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  secretLine: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  secretLineText: {
+    color: colors.textDim,
+    fontSize: 13,
+  },
+  secretLineSaved: {
+    color: colors.text,
+  },
+  secretName: {
+    fontFamily: mono,
+    fontSize: 12,
+  },
   questionCard: {
     backgroundColor: 'rgba(229, 165, 58, 0.04)',
     borderWidth: 1,

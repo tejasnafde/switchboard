@@ -151,11 +151,16 @@ object SystemMarkers {
 
     private fun approvalResult(content: String): SystemRowView.Notice? {
         val raw = payload(content, APPROVAL_RESULT_PREFIX) ?: return null
-        if (raw.str("requestId") == null) return null
+        val requestId = raw.str("requestId") ?: return null
         val title = raw.str("title") ?: return null
         val text = raw.str("text") ?: return null
-        val outcome = OUTCOME_LABELS[raw.str("outcome")] ?: return null
+        val outcomeKey = raw.str("outcome") ?: return null
+        val outcome = OUTCOME_LABELS[outcomeKey] ?: return null
         val delivery = DELIVERY_LABELS[raw.str("delivery")] ?: return null
+        // A secret card's row is its one line, as on the desktop.
+        if (SecretRequestCards.isSecretCard(requestId)) {
+            return SystemRowView.Notice(SecretRequestCards.resultLine(title, outcomeKey), "")
+        }
         return SystemRowView.Notice(listOf(title, outcome, delivery).filter(String::isNotEmpty).joinToString(" · "), text)
     }
 

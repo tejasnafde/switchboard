@@ -110,6 +110,7 @@ import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -131,6 +132,9 @@ import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.thread.AgentDigest
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.HostWriteCards
+import app.switchboard.mobile.domain.thread.SecretInstructionPart
+import app.switchboard.mobile.domain.thread.SecretRequestCard
+import app.switchboard.mobile.domain.thread.SecretRequestCards
 import app.switchboard.mobile.domain.thread.HostWritePreview
 import app.switchboard.mobile.domain.thread.LimitResume
 import app.switchboard.mobile.domain.thread.LimitState
@@ -371,6 +375,7 @@ fun ThreadScreen(
                 },
                 backendTakesPhoneApproval = pendingActions.backendTakesPhoneApproval,
                 backendAsyncApproval = pendingActions.backendAsyncApproval,
+                backendSecretRequest = pendingActions.backendSecretRequest,
                 composer = composer,
                 queuedTurns = queuedTurns,
                 onRetry = onRetry,
@@ -782,6 +787,7 @@ private fun ThreadBottomArea(
     pendingDecision: ApprovalDecision?,
     backendTakesPhoneApproval: Boolean,
     backendAsyncApproval: Boolean,
+    backendSecretRequest: Boolean,
     composer: ThreadComposerPresentation?,
     queuedTurns: List<QueuedTurn>,
     onRetry: () -> Unit,
@@ -814,7 +820,14 @@ private fun ThreadBottomArea(
                     .background(MaterialTheme.colorScheme.background)
                     .testTag(ThreadTestTags.APPROVAL_SLOT),
             ) {
-                ApprovalRow(pendingApproval.source, pendingDecision, backendTakesPhoneApproval, backendAsyncApproval, onAction)
+                ApprovalRow(
+                    pendingApproval.source,
+                    pendingDecision,
+                    backendTakesPhoneApproval,
+                    backendAsyncApproval,
+                    backendSecretRequest,
+                    onAction,
+                )
             }
         }
         if (composer != null) {
@@ -1773,6 +1786,7 @@ private fun ThreadRow(
             pendingActions.approvalDecisions[row.source.requestId],
             pendingActions.backendTakesPhoneApproval,
             pendingActions.backendAsyncApproval,
+            pendingActions.backendSecretRequest,
             onAction,
         )
         is ThreadRowPresentation.Retry -> NoticeCard(
@@ -2451,8 +2465,15 @@ private fun ApprovalRow(
     pendingDecision: ApprovalDecision?,
     backendTakesPhoneApproval: Boolean,
     backendAsyncApproval: Boolean,
+    backendSecretRequest: Boolean,
     onAction: (ThreadUiAction) -> Unit,
 ) {
+    // Without the capability the card is the plain approval with its detail, as older releases show it.
+    val secret = item.secretRequest
+    if (secret != null && backendSecretRequest) {
+        SecretRequestRow(item, secret, pendingDecision, onAction)
+        return
+    }
     val pending = item.state == "pending"
     val actions = remember(item, backendTakesPhoneApproval) {
         ThreadInteractionPolicy.approvalActions(item, backendTakesPhoneApproval)
@@ -2558,6 +2579,72 @@ private fun ApprovalRow(
                     modifier = Modifier.heightIn(min = 48.dp),
                 ) { Text(if (quiet) "Dismiss" else "Deny") }
             }
+        }
+    }
+}
+
+/**
+ * An agent's secret request, read-only: who asked, the title, the
+ * instructions with each URL's host in bold, and Decline. The value is only
+ * ever typed on the computer; Decline is the ordinary deny with no response.
+ * Once answered it is one line until the result row replaces it.
+ */
+@Composable
+internal fun SecretRequestRow(
+    item: FeedItem.Approval,
+    card: SecretRequestCard,
+    pendingDecision: ApprovalDecision?,
+    onAction: (ThreadUiAction) -> Unit,
+) {
+    if (item.state != "pending") {
+        NoticeCard(
+            title = if (item.state == "approve") "Saved ${card.name}" else "Declined ${card.name}",
+            body = "",
+            tint = TextDim,
+        )
+        return
+    }
+    CardContainer(tint = Amber) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(toolGlyph(ToolIconKind.SHELL), color = TextDim, fontFamily = GeistMono)
+            Text(
+                SecretRequestCards.HEADER,
+                color = TextDim,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Text(card.title, fontWeight = FontWeight.SemiBold)
+        Text(
+            buildAnnotatedString {
+                SecretRequestCards.instructionParts(card.instructions).forEach { part ->
+                    when (part) {
+                        is SecretInstructionPart.Text -> append(part.text)
+                        is SecretInstructionPart.Host -> {
+                            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(part.host) }
+                            append(part.rest)
+                        }
+                    }
+                }
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextDim,
+        )
+        Text(SecretRequestCards.ANSWER_ON_COMPUTER, color = TextDim)
+        if (pendingDecision != null) {
+            Row(
+                modifier = Modifier.heightIn(min = 48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Text("Declining…", color = TextDim)
+            }
+        } else {
+            OutlinedButton(
+                onClick = { ThreadInteractionPolicy.approval(item, ThreadApprovalDecision.DENY)?.let(onAction) },
+                modifier = Modifier.heightIn(min = 48.dp).testTag(ThreadTestTags.SECRET_DECLINE),
+            ) { Text("Decline") }
         }
     }
 }

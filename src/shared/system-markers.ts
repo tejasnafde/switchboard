@@ -5,6 +5,7 @@
  * phones follow, ported to Android as `SystemMarkers.kt` with the same vectors.
  */
 import { approvalResultLabel, parseApprovalResultMarker } from './agent-approval-cards'
+import { secretResultLine } from './agent-secret-request'
 import { LIMIT_RESUME_MARKER_PREFIX } from './limit-resume'
 import { mergeBackRowDetails, mergeBackRowTitle, parseMergeBackMarker } from './merge-back'
 import { parseUndeliveredMarker, type PeerUndelivered } from './peer-links'
@@ -54,7 +55,12 @@ export function systemRowView(content: string): SystemRowView {
   const undelivered = parseUndeliveredMarker(content)
   if (undelivered) return { kind: 'peer-undelivered', row: undelivered }
   const approval = parseApprovalResultMarker(content)
-  if (approval) return { kind: 'notice', title: approvalResultLabel(approval), body: approval.text }
+  if (approval) {
+    // A secret card's row is its one line, as on the desktop.
+    const secret = secretResultLine(approval)
+    if (secret) return { kind: 'notice', title: secret.text, body: '' }
+    return { kind: 'notice', title: approvalResultLabel(approval), body: approval.text }
+  }
   // Read-only on a phone: the card's heading and bullets, not the whole summary.
   const mergeBack = parseMergeBackMarker(content)
   if (mergeBack)

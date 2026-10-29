@@ -13,6 +13,7 @@ object ThreadTestTags {
     const val APPROVAL_QUIET = "thread-approval-quiet"
     const val HOST_WRITE_PREVIEW = "thread-host-write-preview"
     const val HOST_WRITE_EXPAND = "thread-host-write-expand"
+    const val SECRET_DECLINE = "thread-secret-decline"
     const val QUEUE_TOGGLE = "thread-queue-next-toggle"
     const val PR_CHIP = "thread-pr-links-chip"
     const val PR_SHEET = "thread-pr-links-sheet"

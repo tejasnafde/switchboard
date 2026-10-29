@@ -37,6 +37,7 @@ import {
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { HostWriteCard } from '@shared/agent-host-writes'
 import type { CodexPermissionView } from '@shared/codex-permission-request'
+import { isSecretCardId, type SecretRequestCard } from '@shared/agent-secret-request'
 import { approvalResultLabel, parseApprovalResultMarker } from '@shared/agent-approval-cards'
 import type { PeerUndelivered } from '@shared/peer-links'
 import { parseMergeBackMarker, type MergeBackRow } from '@shared/merge-back'
@@ -94,6 +95,8 @@ export type FeedItem =
       hostWrite?: HostWriteCard
       /** A Codex permissions request: every permission and path an approval grants. */
       permissions?: CodexPermissionView
+      /** An agent asks for a secret. Read-only here: the phone can only decline it. */
+      secretRequest?: SecretRequestCard
       /** Written by releases that kept only this flag for a pull request write; such a card offers Deny only. */
       desktopOnly?: boolean
       closed?: true
@@ -109,6 +112,15 @@ export type FeedItem =
       newContent: string
     }
   | { kind: 'error'; id: string; message: string }
+  /** A closed secret card as its one line (`Saved NAME`, `Declined NAME`, `NAME expired`). `messageId` is its stored row. */
+  | {
+      kind: 'secretLine'
+      id: string
+      messageId: string
+      requestId: string
+      name: string
+      state: 'saved' | 'declined' | 'expired'
+    }
   /** Non-agent row the UI inserts itself, e.g. "showing last N of M messages". */
   | { kind: 'notice'; id: string; text: string }
   /** Provider-generated user-role block, e.g. a background-task notification. */
@@ -566,6 +578,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
             ...(event.reason ? { reason: event.reason } : {}),
             ...(event.hostWrite ? { hostWrite: event.hostWrite } : {}),
             ...(event.permissions ? { permissions: event.permissions } : {}),
+            ...(event.secretRequest ? { secretRequest: event.secretRequest } : {}),
           },
         ],
       }
@@ -768,6 +781,17 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
       }
     // An agent's approval card closed; the desktop shows the same row on reload.
     case 'approval.result': {
+      // A secret card's result row is its one line, and the card goes, as a reload shows it.
+      if (isSecretCardId(event.requestId)) {
+        const line = systemRowItem(event.messageId, event.content)
+        if (line.kind !== 'secretLine') return {}
+        return {
+          items: upsertItem(
+            t.items.filter((i) => i.id !== `a-${event.requestId}`),
+            line,
+          ),
+        }
+      }
       if (t.items.some((i) => i.id === event.messageId)) return {}
       const row = parseApprovalResultMarker(event.content)
       if (!row) return {}

@@ -71,6 +71,7 @@ import { AgentSecretChannels, ProviderChannels } from '../../src/shared/ipc-chan
 import { APPROVAL_RESULT_TAG, parseApprovalResultMarker } from '../../src/shared/agent-approval-cards'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
+import { PHONE_SCOPES, isChannelAllowed } from '../../src/shared/device-auth'
 
 const PROJECT_DIR = mkdtempSync(join(tmpdir(), 'sb-secret-registry-'))
 afterAll(() => rmSync(PROJECT_DIR, { recursive: true, force: true }))
@@ -328,6 +329,9 @@ describe('request_secret in the registry', () => {
   })
 
   it('refuses an approval on the generic channel but takes a deny there', async () => {
+    // The channel a phone's Decline goes through; its answer channel is admin only.
+    expect(isChannelAllowed(PHONE_SCOPES, ProviderChannels.RESPOND_TO_REQUEST)).toBe(true)
+    expect(isChannelAllowed(PHONE_SCOPES, AgentSecretChannels.ANSWER)).toBe(false)
     const s = setup()
     await s.start('chat')
     const id = await s.ask()

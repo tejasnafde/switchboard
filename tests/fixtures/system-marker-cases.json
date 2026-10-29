@@ -102,6 +102,33 @@
     }
   },
   {
+    "id": "secret-saved",
+    "content": "[[sb:approval-result]] {\"requestId\": \"sbsec_1\", \"title\": \"Secret TAILSCALE_AUTHKEY\", \"outcome\": \"done\", \"text\": \"Saved TAILSCALE_AUTHKEY.\", \"delivery\": \"turn\"}",
+    "expected": {
+      "kind": "notice",
+      "title": "Saved TAILSCALE_AUTHKEY",
+      "body": ""
+    }
+  },
+  {
+    "id": "secret-declined",
+    "content": "[[sb:approval-result]] {\"requestId\": \"sbsec_2\", \"title\": \"Secret STRIPE_TEST_KEY\", \"outcome\": \"declined\", \"text\": \"The user declined to give STRIPE_TEST_KEY.\", \"delivery\": \"turn\"}",
+    "expected": {
+      "kind": "notice",
+      "title": "Declined STRIPE_TEST_KEY",
+      "body": ""
+    }
+  },
+  {
+    "id": "secret-expired",
+    "content": "[[sb:approval-result]] {\"requestId\": \"sbsec_3\", \"title\": \"Secret TAILSCALE_AUTHKEY\", \"outcome\": \"expired\", \"text\": \"Nobody answered.\", \"delivery\": \"none\"}",
+    "expected": {
+      "kind": "notice",
+      "title": "TAILSCALE_AUTHKEY expired",
+      "body": ""
+    }
+  },
+  {
     "id": "approval-bad-outcome",
     "content": "[[sb:approval-result]] {\"requestId\": \"sbmcp_3\", \"title\": \"T\", \"outcome\": \"weird\", \"text\": \"x\", \"delivery\": \"none\"}",
     "expected": {
