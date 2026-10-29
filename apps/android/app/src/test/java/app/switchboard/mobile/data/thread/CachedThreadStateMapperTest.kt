@@ -5,6 +5,9 @@ import app.switchboard.mobile.data.local.CachedThreadEntity
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.HostWriteCards
+import app.switchboard.mobile.domain.thread.SecretRequestCards
+import app.switchboard.mobile.protocol.JsonObject
+import app.switchboard.mobile.protocol.JsonString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -143,6 +146,24 @@ class CachedThreadStateMapperTest {
         assertEquals("reply", card.action)
         assertEquals("Bitbucket · app #7", HostWriteCards.context(card))
         assertTrue(card.suggestResolve)
+    }
+
+    @Test
+    fun `round-trips a secret request card on its approval row`() {
+        val card = SecretRequestCards.decode(
+            JsonObject(
+                linkedMapOf(
+                    "name" to JsonString("TAILSCALE_AUTHKEY"),
+                    "title" to JsonString("Tailscale key"),
+                    "instructions" to JsonString("Open https://login.tailscale.com/admin"),
+                    "ttl" to JsonString("24h"),
+                ),
+            ),
+        )!!
+        val feed = listOf(FeedItem.Approval("a-sbsec_1", "sbsec_1", "request_secret", "detail", "tool", "pending", secretRequest = card))
+        val encoded = ThreadSnapshotCacheCodec.encode("mac", "thread-1", ThreadState(feed = feed))
+        val restored = CachedThreadStateMapper.from(snapshot(encoded.thread, encoded.feed), "mac", "thread-1")!!
+        assertEquals(card, (restored.feed.single() as FeedItem.Approval).secretRequest)
     }
 
     private fun snapshot(

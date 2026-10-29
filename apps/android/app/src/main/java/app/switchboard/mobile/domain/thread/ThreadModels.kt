@@ -137,6 +137,8 @@ sealed interface ThreadEventPayload {
         val hostWrite: HostWriteCard? = null,
         /** Why the provider asked. */
         val reason: String? = null,
+        /** An agent asks for a secret; the phone can only decline it. */
+        val secretRequest: SecretRequestCard? = null,
     ) : ThreadEventPayload
     data class RequestClosed(val requestId: String, val decision: String) : ThreadEventPayload
     /** The provider can no longer take an answer for this approval or question. */
@@ -312,6 +314,8 @@ sealed interface FeedItem {
         val hostWrite: HostWriteCard? = null,
         /** Why the provider asked. */
         val reason: String? = null,
+        /** An agent asks for a secret; the phone can only decline it. */
+        val secretRequest: SecretRequestCard? = null,
     ) : FeedItem
     data class Retry(override val id: String, val turnId: String, val message: String, val active: Boolean) : FeedItem
     data class Error(override val id: String, val message: String, val turnId: String?) : FeedItem

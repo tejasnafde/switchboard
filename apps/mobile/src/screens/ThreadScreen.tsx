@@ -107,6 +107,8 @@ import {
   PeerUndeliveredItem,
   PlanItem,
   QuestionItem,
+  SecretLine,
+  SecretRequestItem,
   TextItem,
   ToolItem,
   UserMessageText,
@@ -1328,6 +1330,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
             </View>
           )
         case 'approval':
+          // Only a backend with agent_secret_request_v1 sends the card; an older backend's card stays the plain approval.
+          if (item.secretRequest) return <SecretRequestItem item={item} onDecide={decideApproval} />
           return (
             <ApprovalItem
               item={item}
@@ -1351,6 +1355,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
           )
         case 'fileGroup':
           return <FileGroupItem row={item} onToggle={toggleFileGroup} />
+        case 'secretLine':
+          return <SecretLine name={item.name} state={item.state} />
         case 'notice':
           return (
             <View style={styles.noticeRow}>

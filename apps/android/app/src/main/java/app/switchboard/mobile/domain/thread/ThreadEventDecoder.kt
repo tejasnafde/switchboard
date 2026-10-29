@@ -70,6 +70,7 @@ object ThreadEventDecoder {
                 raw.requiredString("requestId"), raw.requiredString("requestType"),
                 raw.requiredString("toolName"), raw.requiredString("detail"),
                 HostWriteCards.decode(raw.values["hostWrite"]), raw.string("reason"),
+                SecretRequestCards.decode(raw.values["secretRequest"]),
             )
             "request.closed" -> ThreadEventKind.RequestClosed to ThreadEventPayload.RequestClosed(
                 raw.requiredString("requestId"), raw.requiredString("decision"),

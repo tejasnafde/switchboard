@@ -20,6 +20,7 @@ import { hostWriteTitle, type HostWriteResponse } from '@shared/agent-host-write
 import { PR_HOST_LABEL } from '@shared/pull-requests'
 import { peerUndeliveredHeading } from '@shared/peer-links'
 import { AGENT_CARD_LIFETIME_TEXT } from '@shared/agent-approval-cards'
+import { SECRET_CARD_HEADER, SECRET_PHONE_ANSWER_TEXT, secretInstructionParts } from '@shared/agent-secret-request'
 import { peerUndeliveredReasonText } from '@shared/system-markers'
 import { mergeBackRowDetails, mergeBackRowTitle } from '@shared/merge-back'
 import { showsTurnDuration } from '../lib/thread-chrome'
@@ -328,6 +329,82 @@ export const ApprovalItem = memo(function ApprovalItem({
     </View>
   )
 })
+
+/** Secret cards this phone declined, so their closed line reads Declined until the result row replaces it. */
+const secretsDeclinedHere = new Set<string>()
+
+/**
+ * An agent's secret request, read-only: the phone shows what was asked and
+ * can decline it, never take the value. Decline goes through the ordinary
+ * approval answer as a deny with no response.
+ */
+export const SecretRequestItem = memo(function SecretRequestItem({
+  item,
+  onDecide,
+}: {
+  item: Extract<FeedItem, { kind: 'approval' }>
+  onDecide: (requestId: string, decision: 'approve' | 'deny') => void
+}) {
+  const card = item.secretRequest
+  if (!card) return null
+  if (item.state !== 'pending') {
+    // Until the result row replaces it. A close that is not a save also arrives as a deny
+    // (expiry, withdraw, archive), so Declined only for this phone's own tap.
+    const state = item.state === 'approve' ? 'saved' : secretsDeclinedHere.has(item.requestId) ? 'declined' : 'closed'
+    return <SecretLine name={card.name} state={state} />
+  }
+  return (
+    <View style={[styles.itemBlock, styles.secretCard]} testID="secret-request-card">
+      <View style={styles.secretHead}>
+        <Ionicons name="terminal-outline" size={13} color={colors.textDim} />
+        <Text style={styles.secretWho}>{SECRET_CARD_HEADER}</Text>
+      </View>
+      <View style={styles.secretBody}>
+        <Text style={styles.hostWriteTitle}>{card.title}</Text>
+        <Text style={styles.secretText}>
+          {secretInstructionParts(card.instructions).map((part, i) =>
+            part.kind === 'text' ? (
+              part.text
+            ) : (
+              <Text key={i}>
+                <Text style={styles.secretHost}>{part.host}</Text>
+                {part.rest}
+              </Text>
+            ),
+          )}
+        </Text>
+      </View>
+      <Text style={styles.secretNote}>{SECRET_PHONE_ANSWER_TEXT}</Text>
+      <View style={styles.secretActions}>
+        <Pressable
+          accessibilityRole="button"
+          style={[styles.actionButton, styles.outlineButton]}
+          onPress={() => {
+            secretsDeclinedHere.add(item.requestId)
+            onDecide(item.requestId, 'deny')
+          }}
+        >
+          <Text style={styles.outlineLabel}>Decline</Text>
+        </Pressable>
+      </View>
+    </View>
+  )
+})
+
+/** A closed secret card as one line, as on the desktop but with no Extend or Delete now. */
+export function SecretLine({ name, state }: { name: string; state: 'saved' | 'declined' | 'expired' | 'closed' }) {
+  const nameEl = <Text style={styles.secretName}>{name}</Text>
+  return (
+    <View style={[styles.itemBlock, styles.secretLine]} testID="secret-line">
+      <Text style={[styles.secretLineText, state === 'saved' && styles.secretLineSaved]}>
+        {state === 'saved' && <>Saved {nameEl}</>}
+        {state === 'declined' && <>Declined {nameEl}</>}
+        {state === 'expired' && <>{nameEl} expired</>}
+        {state === 'closed' && <>{nameEl} closed</>}
+      </Text>
+    </View>
+  )
+}
 
 export const QuestionItem = memo(function QuestionItem({
   item,

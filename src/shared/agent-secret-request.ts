@@ -6,6 +6,7 @@
  * tool, the broker and the clients.
  */
 import type { SettingReader } from './limit-resume'
+import type { ApprovalResultOutcome, ApprovalResultRow } from './agent-approval-cards'
 
 /**
  * Staged flag `agent_secret_request`. Off until the card ships on every
@@ -206,4 +207,98 @@ export function agentSecretStatus(
 ): AgentSecretView['status'] {
   if (row.deletedAt === null) return row.expiresAt > now ? 'live' : 'expired'
   return row.deletedAt >= row.expiresAt ? 'expired' : 'deleted'
+}
+
+export type SecretLineState =
+  | { kind: 'saved'; expiresAt: number | null; secretId: string | null }
+  | { kind: 'declined' }
+  | { kind: 'expired' }
+  | { kind: 'deleted' }
+
+/**
+ * The collapsed line of a closed card, from its result row and the chat's
+ * saved secrets. `secrets` is null until the list loads, or when it cannot
+ * be read (a phone may not call the list): a saved card then shows
+ * "Saved NAME" with no time and no buttons.
+ */
+export function secretLineState(
+  outcome: ApprovalResultOutcome,
+  cardId: string,
+  secrets: readonly AgentSecretView[] | null,
+  now: number,
+): SecretLineState {
+  if (outcome === 'declined' || outcome === 'dismissed') return { kind: 'declined' }
+  if (outcome !== 'done') return { kind: 'expired' }
+  if (!secrets) return { kind: 'saved', expiresAt: null, secretId: null }
+  const row = secrets.find((s) => s.cardId === cardId)
+  if (!row) return { kind: 'expired' }
+  if (row.status === 'deleted') return { kind: 'deleted' }
+  if (row.status === 'expired' || row.expiresAt <= now) return { kind: 'expired' }
+  return { kind: 'saved', expiresAt: row.expiresAt, secretId: row.id }
+}
+
+/** The secret's name from its result row title (`Secret NAME`). */
+export function secretNameFromResultTitle(title: string): string {
+  return title.startsWith('Secret ') ? title.slice('Secret '.length) : title
+}
+
+/** The card header on every surface. The agent asked, never Switchboard. */
+export const SECRET_CARD_HEADER = 'Asked by the agent in this chat'
+/** The phone card's line above Decline. Phones never take a value in v1. */
+export const SECRET_PHONE_ANSWER_TEXT = 'Answer this on your computer.'
+
+/**
+ * A secret result row as the one line a phone shows: "Saved NAME",
+ * "Declined NAME" or "NAME expired". Phones cannot read the saved list, so a
+ * saved line has no time left and no buttons. Null for any other row.
+ */
+export function secretResultLine(
+  row: ApprovalResultRow,
+): { kind: 'saved' | 'declined' | 'expired'; name: string; text: string } | null {
+  if (!isSecretCardId(row.requestId)) return null
+  const name = secretNameFromResultTitle(row.title)
+  const kind = secretLineState(row.outcome, row.requestId, null, 0).kind
+  if (kind === 'saved') return { kind, name, text: `Saved ${name}` }
+  if (kind === 'declined') return { kind, name, text: `Declined ${name}` }
+  return { kind: 'expired', name, text: `${name} expired` }
+}
+
+export type SecretInstructionPart = { kind: 'text'; text: string } | { kind: 'host'; host: string; rest: string }
+
+const PHONE_URL_PATTERN = /https?:\/\/[^\s<>"'`]+/g
+const PHONE_TRAILING_PUNCTUATION = /[.,;:!?)\]}]+$/
+const PHONE_HOST = /^(?:[A-Za-z0-9-]+\.)*[A-Za-z0-9-]+(?::\d{1,5})?$/
+
+/**
+ * The instructions as plain text with each http(s) URL's host split out to
+ * show bold, for the phones: no URL parser (the phone runtimes do not all
+ * have one), no scheme and no user part shown, and nothing is a link. A URL
+ * whose host is not a plain name stays text.
+ */
+export function secretInstructionParts(text: string): SecretInstructionPart[] {
+  const parts: SecretInstructionPart[] = []
+  let last = 0
+  const push = (t: string) => {
+    if (!t) return
+    const prev = parts[parts.length - 1]
+    if (prev?.kind === 'text') prev.text += t
+    else parts.push({ kind: 'text', text: t })
+  }
+  for (const match of text.matchAll(PHONE_URL_PATTERN)) {
+    const start = match.index ?? 0
+    const raw = match[0].replace(PHONE_TRAILING_PUNCTUATION, '')
+    push(text.slice(last, start))
+    last = start + raw.length
+    const afterScheme = raw.slice(raw.indexOf('//') + 2)
+    const end = afterScheme.search(/[/?#]/)
+    const authority = end < 0 ? afterScheme : afterScheme.slice(0, end)
+    const host = authority.slice(authority.lastIndexOf('@') + 1).toLowerCase()
+    if (!PHONE_HOST.test(host)) {
+      push(raw)
+      continue
+    }
+    parts.push({ kind: 'host', host, rest: end < 0 ? '' : afterScheme.slice(end) })
+  }
+  push(text.slice(last))
+  return parts
 }

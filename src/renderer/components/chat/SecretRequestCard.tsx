@@ -9,7 +9,11 @@
  */
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { ChatMessage } from '@shared/types'
-import type { AgentSecretView, SecretRequestCard as SecretCard } from '@shared/agent-secret-request'
+import {
+  SECRET_CARD_HEADER,
+  type AgentSecretView,
+  type SecretRequestCard as SecretCard,
+} from '@shared/agent-secret-request'
 import type { ApprovalResultRow } from '@shared/agent-approval-cards'
 import { Button } from '../ui/button'
 import { confirm } from '../ui/confirm'
@@ -175,7 +179,7 @@ function PendingSecretCard({
     >
       <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-2">
         <TerminalIcon />
-        <span className="text-[11px] font-[600] text-[var(--text-secondary)]">Asked by the agent in this chat</span>
+        <span className="text-[11px] font-[600] text-[var(--text-secondary)]">{SECRET_CARD_HEADER}</span>
       </div>
       <div className="px-3 pb-1 pt-2.5">
         <div className="text-[13px] font-[600] text-[var(--text-primary)] [overflow-wrap:anywhere]">{card.title}</div>

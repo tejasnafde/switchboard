@@ -830,6 +830,25 @@ class ThreadStoreReducerTest {
     }
 
     @Test
+    fun aSecretCardKeepsItsPayloadAndGoesWhenItsResultRowArrives() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        val card = JsonObject(linkedMapOf("name" to s("TAILSCALE_AUTHKEY"), "title" to s("Tailscale key"), "instructions" to s("Open the admin page"), "ttl" to s("24h")))
+        state = ingest(
+            state, "mac-a", 1, 1,
+            event("request.opened", "requestId" to s("sbsec_1"), "requestType" to s("tool"), "toolName" to s("request_secret"), "detail" to s("An agent asks for a secret."), "secretRequest" to card),
+        )
+        val opened = state.thread("mac-a", "thread-1")!!.feed.single() as FeedItem.Approval
+        assertEquals("TAILSCALE_AUTHKEY", opened.secretRequest?.name)
+
+        val content = "[[sb:approval-result]] {\"requestId\":\"sbsec_1\",\"title\":\"Secret TAILSCALE_AUTHKEY\",\"outcome\":\"declined\",\"text\":\"x\",\"delivery\":\"turn\"}"
+        state = ingest(state, "mac-a", 1, 2, event("approval.result", "messageId" to s("apr_sbsec_1"), "requestId" to s("sbsec_1"), "content" to s(content), "at" to n(2)))
+
+        val feed = state.thread("mac-a", "thread-1")!!.feed
+        assertEquals(listOf("h-apr_sbsec_1"), feed.map { it.id })
+        assertEquals(SystemRowView.Notice("Declined TAILSCALE_AUTHKEY", ""), SystemMarkers.view((feed.single() as FeedItem.RawNotice).text))
+    }
+
+    @Test
     fun aForkSummaryCardUpdatesInPlaceAndGoesAwayWhenDiscarded() {
         var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
         val pending = "[[sb:merge-back]] {\"id\":\"mb1\",\"fork\":\"f\",\"forkTitle\":\"paging\",\"state\":\"pending\",\"turns\":1,\"omittedTurns\":0,\"files\":[],\"moreFiles\":0,\"text\":\"x\"}"

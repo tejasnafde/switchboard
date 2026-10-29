@@ -2,6 +2,8 @@ import { visibleUserMessageText, type UserMessagePillsMeta } from '@shared/provi
 import { pillBodyText } from '@shared/pill-body-text'
 import { splitSyntheticUserText } from '@shared/synthetic-message'
 import { systemRowView } from '@shared/system-markers'
+import { parseApprovalResultMarker } from '@shared/agent-approval-cards'
+import { secretResultLine } from '@shared/agent-secret-request'
 import { parseMergeBackMarker } from '@shared/merge-back'
 import type { ChatMessage } from '@shared/types'
 import type { FeedItem } from '../stores/chat'
@@ -125,6 +127,10 @@ export function systemRowItem(messageId: string, content: string): FeedItem {
   const id = `h-${messageId}`
   const mergeBack = parseMergeBackMarker(content)
   if (mergeBack) return { kind: 'mergeBack', id, messageId, row: mergeBack }
+  const approval = parseApprovalResultMarker(content)
+  const secret = approval && secretResultLine(approval)
+  if (approval && secret)
+    return { kind: 'secretLine', id, messageId, requestId: approval.requestId, name: secret.name, state: secret.kind }
   const view = systemRowView(content)
   if (view.kind === 'peer-undelivered') return { kind: 'undelivered', id, messageId, row: view.row }
   if (view.kind === 'error') return { kind: 'error', id, message: view.message }

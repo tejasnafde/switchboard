@@ -4,8 +4,10 @@
  * trim and size check on the value, and the provider-key note. Nothing here
  * keeps a value: every function takes it and returns at once.
  */
-import { SECRET_VALUE_MAX_BYTES, type AgentSecretView, type SecretTtl } from '@shared/agent-secret-request'
-import type { ApprovalResultOutcome } from '@shared/agent-approval-cards'
+import { SECRET_VALUE_MAX_BYTES, type SecretTtl } from '@shared/agent-secret-request'
+
+// Shared with the phones, which render the same collapsed line.
+export { secretLineState, secretNameFromResultTitle, type SecretLineState } from '@shared/agent-secret-request'
 
 /** The eye button shows the value this long, then masks it again. */
 export const SECRET_REVEAL_MS = 10_000
@@ -138,36 +140,4 @@ export const PROVIDER_KEY_NOTE = "Switchboard does not need this. Only this agen
 export function asksForProviderKey(name: string, title: string): boolean {
   const titleAsName = title.toUpperCase().replace(/[^A-Z0-9]+/g, '_')
   return PROVIDER_KEY_NAMES.some((key) => name === key || `_${titleAsName}_`.includes(`_${key}_`))
-}
-
-export type SecretLineState =
-  | { kind: 'saved'; expiresAt: number | null; secretId: string | null }
-  | { kind: 'declined' }
-  | { kind: 'expired' }
-  | { kind: 'deleted' }
-
-/**
- * The collapsed line of a closed card, from its result row and the chat's
- * saved secrets. `secrets` is null until the list loads (or when it cannot):
- * a saved card then shows "Saved NAME" with no time and no buttons.
- */
-export function secretLineState(
-  outcome: ApprovalResultOutcome,
-  cardId: string,
-  secrets: readonly AgentSecretView[] | null,
-  now: number,
-): SecretLineState {
-  if (outcome === 'declined' || outcome === 'dismissed') return { kind: 'declined' }
-  if (outcome !== 'done') return { kind: 'expired' }
-  if (!secrets) return { kind: 'saved', expiresAt: null, secretId: null }
-  const row = secrets.find((s) => s.cardId === cardId)
-  if (!row) return { kind: 'expired' }
-  if (row.status === 'deleted') return { kind: 'deleted' }
-  if (row.status === 'expired' || row.expiresAt <= now) return { kind: 'expired' }
-  return { kind: 'saved', expiresAt: row.expiresAt, secretId: row.id }
-}
-
-/** The secret's name from its result row title (`Secret NAME`). */
-export function secretNameFromResultTitle(title: string): string {
-  return title.startsWith('Secret ') ? title.slice('Secret '.length) : title
 }

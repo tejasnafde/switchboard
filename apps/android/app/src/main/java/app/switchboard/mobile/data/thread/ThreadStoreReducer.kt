@@ -6,6 +6,7 @@ import app.switchboard.mobile.domain.thread.EXPIRED_EVENT_TYPE
 import app.switchboard.mobile.domain.thread.ExpiredRequests
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.PeerUndelivered
+import app.switchboard.mobile.domain.thread.SecretRequestCards
 import app.switchboard.mobile.domain.thread.SpendBlock
 import app.switchboard.mobile.domain.thread.SyntheticUserMessage
 import app.switchboard.mobile.domain.thread.SystemMarkers
@@ -359,6 +360,7 @@ object ThreadStoreReducer {
                     FeedItem.Approval(
                         "a-${event.requestId}", event.requestId, event.toolName,
                         event.detail, event.requestType, "pending", event.hostWrite, event.reason,
+                        event.secretRequest,
                     ),
                 ),
             )
@@ -604,7 +606,14 @@ object ThreadStoreReducer {
             return thread.copy(feed = thread.feed.filterNot { it.id == "h-$messageId" })
         }
         if (event is ThreadRuntimeEvent.Extension) systemRow(event)?.let { row ->
-            return thread.copy(feed = upsert(thread.feed, row))
+            // A secret card's result row is its one line, and the card goes, as a reload shows it.
+            val requestId = (event.raw.values["requestId"] as? JsonString)?.value
+            val feed = if (event.type == "approval.result" && requestId != null && SecretRequestCards.isSecretCard(requestId)) {
+                thread.feed.filterNot { it.id == "a-$requestId" }
+            } else {
+                thread.feed
+            }
+            return thread.copy(feed = upsert(feed, row))
         }
         val text = when (event) {
             is ThreadRuntimeEvent.Malformed -> "Malformed ${event.type}: ${event.error}"
