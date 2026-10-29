@@ -18,6 +18,8 @@ import { SecretStore } from '../../src/main/secrets/secret-store'
 import { getAgentSecret, getSecretDirId, listLiveAgentSecrets } from '../../src/main/db/agent-secrets'
 import { recordThreadSession } from '../../src/main/db/conversations'
 
+// Windows has no POSIX modes, and a symlink needs a privilege there.
+const posixIt = it.skipIf(process.platform === 'win32')
 const VALUE = Buffer.from('sb-test-not-a-secret')
 let root: string
 let now: number
@@ -57,7 +59,7 @@ afterEach(() => {
 })
 
 describe('SecretStore', () => {
-  it('makes the root 0700 with a Spotlight marker and a 0300 chat folder named by 128 random bits', () => {
+  posixIt('makes the root 0700 with a Spotlight marker and a 0300 chat folder named by 128 random bits', () => {
     const excluded: string[] = []
     store = new SecretStore({ root, now: () => now, excludeFromBackup: (d) => excluded.push(d) })
     const dir = store.chatDir('chat-a')
@@ -71,7 +73,7 @@ describe('SecretStore', () => {
     expect(store.chatDir('chat-b')).not.toBe(dir)
   })
 
-  it('saves a 0600 file with the exact bytes and no .partial left, and records no value', () => {
+  posixIt('saves a 0600 file with the exact bytes and no .partial left, and records no value', () => {
     const saved = store.save({
       threadId: 'chat-a',
       name: 'TAILSCALE_AUTHKEY',
@@ -95,7 +97,7 @@ describe('SecretStore', () => {
     expect(() => store.save({ ...base, name: 'OK_NAME', value: Buffer.alloc(16 * 1024 + 1) })).toThrow()
   })
 
-  it('never follows a symlink planted at the .partial path', () => {
+  posixIt('never follows a symlink planted at the .partial path', () => {
     const dir = store.chatDir('chat-a')
     const target = join(dirname(root), 'outside')
     writeFileSync(target, 'untouched')
@@ -203,7 +205,7 @@ describe('SecretStore', () => {
     expect(readdirSync(root).sort()).toEqual(['.metadata_never_index', basename(dir)])
   })
 
-  it('unlinks a symlink in the root without touching its target', () => {
+  posixIt('unlinks a symlink in the root without touching its target', () => {
     store.chatDir('chat-a')
     const target = join(dirname(root), 'outside')
     writeFileSync(target, 'untouched', { mode: 0o644 })
