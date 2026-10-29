@@ -21,6 +21,7 @@ import {
   chmodSync,
   closeSync,
   existsSync,
+  fstatSync,
   fsyncSync,
   mkdirSync,
   openSync,
@@ -216,12 +217,16 @@ export class SecretStore {
   /** The chat was archived or deleted: every file, the folder and its dir row go. */
   removeChat(threadId: string): void {
     for (const row of listLiveAgentSecrets(threadId)) this.deleteRow(row)
-    this.redactor.dropChat(resolveRootThreadId(threadId))
+    // A value stays masked until its file is surely gone.
     const dirId = getSecretDirId(threadId)
-    if (!dirId) return
+    if (!dirId) {
+      this.redactor.dropChat(resolveRootThreadId(threadId))
+      return
+    }
     try {
       this.removeDirTree(join(this.root, dirId))
       deleteSecretDir(threadId)
+      this.redactor.dropChat(resolveRootThreadId(threadId))
     } catch (err) {
       log.warn('could not remove a chat secrets folder; the sweep retries', errCode(err))
     }
@@ -309,14 +314,27 @@ export class SecretStore {
     this.timers.clear()
   }
 
-  /** A live file from before a restart: read its value back so output is masked again. */
+  /**
+   * A live file from before a restart: read its value back so output is
+   * masked again. A file grown past the save limit is not the saved value, so
+   * it is not read.
+   */
   private rearm(row: AgentSecretRow): void {
     let value: Buffer
+    let fd: number | null = null
     try {
-      value = readFileSync(join(this.root, row.dirId, row.name))
+      fd = openSync(join(this.root, row.dirId, row.name), 'r')
+      const size = fstatSync(fd).size
+      if (size > SECRET_MAX_BYTES) {
+        log.warn(`secret ${row.id} is over the size limit; not read back for masking`)
+        return
+      }
+      value = readFileSync(fd)
     } catch (err) {
       log.warn(`could not read secret ${row.id} back for masking`, errCode(err))
       return
+    } finally {
+      if (fd !== null) closeSync(fd)
     }
     try {
       this.redactor.add(row.rootThreadId, row.id, row.name, value)

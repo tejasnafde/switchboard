@@ -4,8 +4,9 @@
  * here as `Buffer`s, one set per chat (keyed by the root conversation id),
  * and zero-filled when the file is deleted, expires, or its chat is archived.
  *
- * Each value is matched as its exact bytes, its base64 (and base64url) form
- * and its URL-encoded form, and replaced with `[secret NAME]`. Values under
+ * Each value is matched as its exact bytes, its base64 form (padded and
+ * not), its base64url form and its URL-encoded form (upper and lower case
+ * escapes), and replaced with `[secret NAME]`. Values under
  * `SECRET_MATCH_MIN_CHARS` characters are not matched: they hit too often.
  * Masking changes only our copies: the model saw the value, and the
  * provider's own transcript still holds it.
@@ -24,12 +25,18 @@ interface Armed {
 }
 
 function forms(value: Buffer): Buffer[] {
-  const text = value.toString('utf8')
+  const base64 = value.toString('base64')
+  const url = encodeURIComponent(value.toString('utf8'))
   const found = [
     Buffer.from(value),
-    Buffer.from(value.toString('base64').replace(/=+$/, ''), 'latin1'),
+    Buffer.from(base64, 'latin1'),
+    Buffer.from(base64.replace(/=+$/, ''), 'latin1'),
     Buffer.from(value.toString('base64url'), 'latin1'),
-    Buffer.from(encodeURIComponent(text), 'latin1'),
+    Buffer.from(url, 'latin1'),
+    Buffer.from(
+      url.replace(/%[0-9A-F]{2}/g, (escape) => escape.toLowerCase()),
+      'latin1',
+    ),
   ]
   const unique: Buffer[] = []
   for (const form of found) {
@@ -146,8 +153,9 @@ export class SecretRedactor {
   }
 
   /**
-   * Every string inside `value` (plain objects and arrays) masked. Returns the
-   * same object when nothing matched, and copies only the changed path.
+   * Every string inside `value` (plain objects and arrays), object keys too,
+   * masked. Returns the same object when nothing matched, and copies only the
+   * changed path. Two keys that mask to the same text both stay.
    */
   redactDeep<T>(scope: SecretScope, value: T): { value: T; hit: boolean } {
     if (!this.armed(scope)) return { value, hit: false }
@@ -171,12 +179,24 @@ export class SecretRedactor {
       if (v && typeof v === 'object') {
         const proto = Object.getPrototypeOf(v)
         if (proto !== Object.prototype && proto !== null) return v
-        let out: Record<string, unknown> | null = null
-        for (const [key, item] of Object.entries(v)) {
-          const next = walk(item)
-          if (next !== item) (out ??= { ...(v as Record<string, unknown>) })[key] = next
+        const entries = Object.entries(v)
+        let changed = false
+        const next = entries.map(([key, item]): [string, unknown] => {
+          const maskedKey = this.redactText(scope, key)
+          const nextItem = walk(item)
+          if (maskedKey !== null) hit = true
+          if (maskedKey !== null || nextItem !== item) changed = true
+          return [maskedKey ?? key, nextItem]
+        })
+        if (!changed) return v
+        const out: Record<string, unknown> = {}
+        for (const [key, item] of next) {
+          let unique = key
+          for (let n = 2; Object.hasOwn(out, unique); n++) unique = `${key} (${n})`
+          // Not `out[unique] =`: a `__proto__` key would set the prototype.
+          Object.defineProperty(out, unique, { value: item, enumerable: true, writable: true, configurable: true })
         }
-        return out ?? v
+        return out
       }
       return v
     }

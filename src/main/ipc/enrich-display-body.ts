@@ -14,9 +14,14 @@ const log = createMainLogger('ipc:enrich-display-body')
 type PillsMetaParsed = NonNullable<ChatMessage['pillsMeta']>
 type ImagesParsed = NonNullable<ChatMessage['images']>
 
+/**
+ * `storedContent` turns a transcript's text into the stored row's, which has
+ * live saved secrets masked (`db/secret-mask.ts`).
+ */
 export function enrichMessagesWithDisplayBody(
   messages: ChatMessage[],
   enrichments: Map<string, DisplayBodyEnrichment>,
+  storedContent?: (content: string) => string,
 ): ChatMessage[] {
   if (enrichments.size === 0) return messages
   // One stored row can match many messages (a repeated prompt with images
@@ -24,7 +29,7 @@ export function enrichMessagesWithDisplayBody(
   const parsed = new Map<DisplayBodyEnrichment, Partial<ChatMessage>>()
   return messages.map((m) => {
     if (m.role !== 'user') return m
-    const hit = enrichments.get(m.content)
+    const hit = enrichments.get(m.content) ?? (storedContent && enrichments.get(storedContent(m.content)))
     if (!hit) return m
     let updates = parsed.get(hit)
     if (!updates) {

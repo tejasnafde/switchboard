@@ -5,8 +5,8 @@
  * value split across two deltas still matches. The held tail goes out ahead
  * of the thread's next event that ends or interrupts the message: another
  * message, a tool call, a card, an error, the turn end. Events that carry no
- * agent output (a Switchboard notice row, a repeated `running`, token counts)
- * pass without releasing it.
+ * agent output (a Switchboard notice row, a repeated `running`, token counts,
+ * a message the user queued) pass without releasing it.
  */
 import type { RuntimeContentEvent, RuntimeEvent } from '@shared/provider-events'
 import type { SecretRedactor, SecretScope } from './secret-redactor'
@@ -18,6 +18,9 @@ const KEEPS_STREAM: ReadonlySet<RuntimeEvent['type']> = new Set([
   'session',
   'session.provider',
   'model.variants',
+  'turn.queued',
+  'turn.dequeued',
+  'turn.queue-held',
 ])
 
 function keepsStream(event: RuntimeEvent): boolean {

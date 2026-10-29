@@ -65,6 +65,26 @@ describe('SecretRedactor', () => {
     expect(input.nested.env.K).toBe(VALUE)
   })
 
+  it('masks padded base64 and lower-case percent escapes as one whole mask', () => {
+    const r = armed('abcdefgh/x')
+    const padded = Buffer.from('abcdefgh/x').toString('base64')
+    expect(padded.endsWith('=')).toBe(true)
+    expect(r.redactText('chat', `b=${padded};`)).toBe(`b=${MASK};`)
+    expect(r.redactText('chat', '?k=abcdefgh%2fx&x')).toBe(`?k=${MASK}&x`)
+    expect(r.redactText('chat', '?k=abcdefgh%2Fx&x')).toBe(`?k=${MASK}&x`)
+  })
+
+  it('masks object keys, keeps two keys that mask alike, and reports the hit', () => {
+    const r = armed()
+    const input = { [VALUE]: 1, [Buffer.from(VALUE).toString('base64url')]: 2, ok: 3 }
+    const { value, hit } = r.redactDeep('chat', input)
+    expect(hit).toBe(true)
+    expect(value).toEqual({ [MASK]: 1, [`${MASK} (2)`]: 2, ok: 3 })
+    expect(JSON.stringify(value)).not.toContain(VALUE)
+    const plain = { a: { b: 1 } }
+    expect(r.redactDeep('chat', plain).value).toBe(plain)
+  })
+
   it('masks the whole span when two values overlap, leaving no tail of either', () => {
     const r = new SecretRedactor()
     r.add('chat', 'sec_a', 'KEY_A', Buffer.from('abcdefgh12'))
@@ -162,6 +182,17 @@ describe('RuntimeEventRedaction', () => {
     out.push(...red.apply(delta(`${VALUE.slice(9)} end`)).events)
     out.push(...red.apply({ type: 'turn.completed', threadId: 'chat' }).events)
     expect(folded(out)).toBe(`first ${MASK} then ${MASK} end`)
+    expect(JSON.stringify(out)).not.toContain(VALUE.slice(0, 9))
+  })
+
+  it('keeps the carry across a message the user queued', () => {
+    const red = redaction()
+    const out: RuntimeEvent[] = []
+    out.push(...red.apply(delta(`key ${VALUE.slice(0, 9)}`)).events)
+    out.push(...red.apply({ type: 'turn.queued', threadId: 'chat', messageId: 'q1', text: 'later' }).events)
+    out.push(...red.apply(delta(`${VALUE.slice(9)} end`)).events)
+    out.push(...red.apply({ type: 'turn.completed', threadId: 'chat' }).events)
+    expect(folded(out)).toBe(`key ${MASK} end`)
     expect(JSON.stringify(out)).not.toContain(VALUE.slice(0, 9))
   })
 

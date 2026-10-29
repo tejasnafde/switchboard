@@ -49,7 +49,7 @@ export function sqliteQueuedTurnRowStore(db: () => Database.Database): QueuedTur
     row: { message_id: string; conversation_id: string; text: string; queued_at: number },
     cause: QueuedTurnNotSentCause,
   ): NotSentRow => {
-    const content = `Error: ${queuedTurnNotSentMessage(row.text, cause)}`
+    const content = maskStoredText(row.conversation_id, `Error: ${queuedTurnNotSentMessage(row.text, cause)}`)
     // The images go onto the not-sent row, so the whole message can be sent again.
     const images =
       (
@@ -64,14 +64,7 @@ export function sqliteQueuedTurnRowStore(db: () => Database.Database): QueuedTur
     d.prepare(
       `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, images, timestamp)
        SELECT ?, ?, 'system', ?, ?, ? WHERE EXISTS (SELECT 1 FROM conversations WHERE id = ?)`,
-    ).run(
-      `queued_not_sent_${row.message_id}`,
-      row.conversation_id,
-      maskStoredText(row.conversation_id, content),
-      images,
-      row.queued_at,
-      row.conversation_id,
-    )
+    ).run(`queued_not_sent_${row.message_id}`, row.conversation_id, content, images, row.queued_at, row.conversation_id)
     d.prepare('DELETE FROM queued_turn_rows WHERE message_id = ?').run(row.message_id)
     return { conversationId: row.conversation_id, messageId: row.message_id, content }
   }
@@ -82,7 +75,7 @@ export function sqliteQueuedTurnRowStore(db: () => Database.Database): QueuedTur
         .prepare(
           'INSERT OR REPLACE INTO queued_turn_rows (message_id, conversation_id, text, queued_at, launch) VALUES (?, ?, ?, ?, ?)',
         )
-        .run(row.messageId, row.conversationId, row.text, row.queuedAt, LAUNCH)
+        .run(row.messageId, row.conversationId, maskStoredText(row.conversationId, row.text), row.queuedAt, LAUNCH)
     },
     forget(messageId) {
       db().prepare('DELETE FROM queued_turn_rows WHERE message_id = ?').run(messageId)

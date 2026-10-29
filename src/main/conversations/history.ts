@@ -12,8 +12,8 @@ import {
   messageWindowRows,
   threadFamilyIds,
 } from '../db/database'
-import { armedSecretScope, maskStoredValue } from '../db/secret-mask'
-import { secretRedactor } from '../secrets/secret-redactor'
+import { armedSecretScope } from '../db/secret-mask'
+import { secretRedactor, type SecretScope } from '../secrets/secret-redactor'
 import { compareSessionCopies, listClaudeSessionCopies, claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
 import { scanCodexSessionCopies } from '../projects/session-scanner'
@@ -205,7 +205,7 @@ export async function loadConversationHistory(
   const merged = mergeConversationMessages(diskMessages, databaseMessages)
   timing.mergeMs = performance.now() - mergeStart
   const enrichStart = performance.now()
-  const messages = enrichMessagesWithDisplayBody(merged, enrichments)
+  const messages = enrichMessagesWithDisplayBody(merged, enrichments, storedContentOf(conversationId))
   timing.enrichMs = performance.now() - enrichStart
 
   const history = {
@@ -233,15 +233,42 @@ export async function loadConversationHistory(
 function maskedHistory(conversationId: string, history: ConversationHistory): ConversationHistory {
   const scope = armedSecretScope(conversationId)
   if (scope === null) return history
+  const forkMessages = secretRedactor.redactDeep(scope, history.forkMessages).value
   return {
     ...history,
-    messages: secretRedactor.redactDeep(scope, history.messages).value,
-    forkMessages: secretRedactor.redactDeep(scope, history.forkMessages).value,
+    messages: maskMessages(scope, history.messages),
+    forkMessages:
+      forkMessages === history.forkMessages
+        ? forkMessages
+        : forkMessages.map((entry, i) => {
+            const message = withoutRevert(entry.message, history.forkMessages[i].message)
+            return message === entry.message ? entry : { ...entry, message }
+          }),
   }
 }
 
-const maskedMessages = (conversationId: string, messages: ChatMessage[]): ChatMessage[] =>
-  maskStoredValue(conversationId, messages)
+function maskedMessages(conversationId: string, messages: ChatMessage[]): ChatMessage[] {
+  const scope = armedSecretScope(conversationId)
+  return scope === null ? messages : maskMessages(scope, messages)
+}
+
+function maskMessages(scope: SecretScope, messages: ChatMessage[]): ChatMessage[] {
+  const masked = secretRedactor.redactDeep(scope, messages).value
+  return masked === messages ? messages : masked.map((message, i) => withoutRevert(message, messages[i]))
+}
+
+/** A masked changed-file card: Accept or Reject would write the mask into the file. */
+function withoutRevert(message: ChatMessage, before: ChatMessage): ChatMessage {
+  const { fileDiff } = message
+  if (!fileDiff || fileDiff === before.fileDiff || fileDiff.noRevert) return message
+  return { ...message, fileDiff: { ...fileDiff, noRevert: 'unknown' } }
+}
+
+/** A stored row's text for a transcript's: live saved secrets masked. */
+function storedContentOf(conversationId: string): ((content: string) => string) | undefined {
+  const scope = armedSecretScope(conversationId)
+  return scope === null ? undefined : (content) => secretRedactor.redactText(scope, content) ?? content
+}
 
 export interface ConversationHistoryWindow extends Omit<MergedWindow, 'rowsRead'> {
   familyIds: string[]
@@ -293,8 +320,12 @@ async function loadWindow(
   const enrichStart = performance.now()
   timing.dbMs += readMs
   timing.mergeMs = enrichStart - start - readMs - sliceMs
-  const enrichments = displayBodyEnrichments(familyIds, userContents(window.messages))
-  const messages = maskedMessages(conversationId, enrichMessagesWithDisplayBody(window.messages, enrichments))
+  const storedContent = storedContentOf(conversationId)
+  const enrichments = displayBodyEnrichments(familyIds, userContents(window.messages, storedContent))
+  const messages = maskedMessages(
+    conversationId,
+    enrichMessagesWithDisplayBody(window.messages, enrichments, storedContent),
+  )
   timing.enrichMs = performance.now() - enrichStart
   return {
     ...window,
@@ -398,8 +429,14 @@ function displayBodyEnrichments(familyIds: readonly string[], contents?: Readonl
   return enrichments
 }
 
-function userContents(messages: readonly ChatMessage[]): Set<string> {
-  return new Set(messages.filter((message) => message.role === 'user').map((message) => message.content))
+function userContents(messages: readonly ChatMessage[], storedContent?: (content: string) => string): Set<string> {
+  const contents = new Set<string>()
+  for (const message of messages) {
+    if (message.role !== 'user') continue
+    contents.add(message.content)
+    if (storedContent) contents.add(storedContent(message.content))
+  }
+  return contents
 }
 
 // ponytail: bounded by chats and total messages, not bytes. The strings are

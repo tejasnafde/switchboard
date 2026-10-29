@@ -8,9 +8,6 @@ import { getDb } from './database'
 import { resolveRootThreadId } from './conversations'
 import { secretRedactor, type SecretScope } from '../secrets/secret-redactor'
 
-/** Fork chains are short; this only stops a corrupt cycle. */
-const MAX_FORK_DEPTH = 32
-
 /**
  * The root ids whose secrets apply to a conversation: its own root, then the
  * root of each chat it was forked from. A fork's transcript starts with a copy
@@ -20,8 +17,9 @@ export function secretScope(conversationId: string): string[] {
   const parentOf = getDb().prepare('SELECT parent_conversation_id AS parent FROM conversations WHERE id = ?')
   const roots: string[] = []
   let current: string | null = conversationId
-  while (current !== null && roots.length < MAX_FORK_DEPTH) {
+  while (current !== null) {
     const root = resolveRootThreadId(current)
+    // A corrupt parent cycle ends here.
     if (roots.includes(root)) break
     roots.push(root)
     current = (parentOf.get(root) as { parent: string | null } | undefined)?.parent ?? null

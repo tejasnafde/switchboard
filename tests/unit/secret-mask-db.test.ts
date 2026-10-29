@@ -10,6 +10,7 @@ vi.mock('../../src/main/perf', () => ({ perfSpan: () => ({ end: () => {} }) }))
 import { bulkSaveMessages, rewriteSystemMarker } from '../../src/main/db/database'
 import { SqliteMergeBackStore } from '../../src/main/db/merge-backs'
 import { SqliteTurnAcceptanceStore } from '../../src/main/db/turn-acceptance'
+import { sqliteQueuedTurnRowStore } from '../../src/main/db/queued-turn-rows'
 import { secretScope, maskStoredText } from '../../src/main/db/secret-mask'
 import { secretMask, secretRedactor } from '../../src/main/secrets/secret-redactor'
 import { clearMergedHistories, loadConversationHistory } from '../../src/main/conversations/history'
@@ -94,6 +95,16 @@ describe('message writers mask a live saved secret', () => {
     expect(stored()).not.toContain(VALUE)
   })
 
+  it('a queued message that never ran, in its row and in what it returns', () => {
+    const rows = sqliteQueuedTurnRowStore(() => db)
+    rows.record({ messageId: 'q1', conversationId: 'chat', text: `queued ${VALUE}`, queuedAt: 1 })
+    expect(JSON.stringify(db.prepare('SELECT * FROM queued_turn_rows').all())).not.toContain(VALUE)
+    const notSent = rows.markNotSent('q1', 'stopped')
+    expect(notSent?.content).toContain(MASK)
+    expect(notSent?.content).not.toContain(VALUE)
+    expect(stored()).not.toContain(VALUE)
+  })
+
   it('leaves text alone when no secret is live', () => {
     secretRedactor.clear()
     expect(maskStoredText('chat', VALUE)).toBe(VALUE)
@@ -107,6 +118,37 @@ describe('a fork masks the secrets of the chats it came from', () => {
     expect(secretScope('fork2')).toEqual(['fork2', 'fork', 'chat'])
     expect(maskStoredText('fork2', VALUE)).toBe(MASK)
     expect(maskStoredText('unrelated', VALUE)).toBe(VALUE)
+  })
+
+  it('follows a fork chain of any depth', () => {
+    let parent = 'chat'
+    for (let i = 0; i < 40; i++) {
+      conversation(`f${i}`, parent)
+      parent = `f${i}`
+    }
+    expect(secretScope(parent).at(-1)).toBe('chat')
+    expect(maskStoredText(parent, VALUE)).toBe(MASK)
+  })
+
+  it('turns off Accept and Reject on a changed-file card masked on read', async () => {
+    secretRedactor.clear()
+    const fileDiff = {
+      fileEditId: 't:a.env',
+      repoRoot: '/repo',
+      relPath: 'a.env',
+      changeKind: 'modify',
+      oldContent: '',
+      newContent: `TOKEN=${VALUE}`,
+      status: 'pending',
+    }
+    db.prepare(
+      "INSERT INTO messages (id, conversation_id, role, content, timestamp, attachments_json) VALUES ('d1', 'chat', 'assistant', '', 1, ?)",
+    ).run(JSON.stringify({ fileDiff }))
+    secretRedactor.add('chat', 'sec_1', 'DB_TOKEN', Buffer.from(VALUE))
+    const history = await loadConversationHistory('chat', '/repo')
+    const card = history.messages.find((m) => m.fileDiff)?.fileDiff
+    expect(card).toMatchObject({ newContent: `TOKEN=${MASK}`, noRevert: 'unknown' })
+    expect(history.forkMessages.find((f) => f.message.fileDiff)?.message.fileDiff?.noRevert).toBe('unknown')
   })
 
   it("masks the parent's value in a fork's history", async () => {

@@ -170,7 +170,7 @@ import { appMetrics, secretsRootDir } from '../runtime'
 import { onConversationArchived } from '../db/archive-events'
 import { SecretStore, errCode, type SavedSecret } from '../secrets/secret-store'
 import { secretRedactor } from '../secrets/secret-redactor'
-import { secretScope } from '../db/secret-mask'
+import { maskStoredText, maskStoredValue, secretScope } from '../db/secret-mask'
 import { RuntimeEventRedaction, type RedactedEvents } from '../secrets/runtime-event-redaction'
 import { SecretRequestLimiter, SECRET_INSTRUCTIONS, buildSecretMcpTools } from '../mcp/secret-tools'
 import {
@@ -1416,8 +1416,9 @@ export class ProviderRegistry implements PeerToolHost {
     return this.sessionAdapters.has(threadId) ? threadId : resolveRootThreadId(threadId)
   }
 
+  /** The ledger keeps the text as typed, for delivery; what goes out is masked. */
   listQueuedTurns(threadId: string): QueuedTurnSummary[] {
-    return this.queuedTurns.list(this.liveThreadId(threadId))
+    return maskStoredValue(threadId, this.queuedTurns.list(this.liveThreadId(threadId)))
   }
 
   /**
@@ -1909,9 +1910,12 @@ export class ProviderRegistry implements PeerToolHost {
   ): void {
     let rewritten: string | null = null
     try {
+      // The row holds the text with live secrets masked.
+      const storedText = maskStoredText(fromThreadId, delivered.text)
       rewritten = rewriteSystemMarker(fromThreadId, messageId, PEER_UNDELIVERED_MARKER_PREFIX, (content) => {
         const row = parseUndeliveredMarker(content)
-        if (!row || row.to !== delivered.targetRoot || row.text !== delivered.text) return null
+        if (!row || row.to !== delivered.targetRoot || (row.text !== delivered.text && row.text !== storedText))
+          return null
         const { held: _held, ...rest } = row
         return formatUndeliveredMarker(
           delivered.bySwitchboard ? { ...rest, sent: true, held: true } : { ...rest, sent: true },
@@ -3123,8 +3127,9 @@ export class ProviderRegistry implements PeerToolHost {
     if (event.type === 'turn.queued' || event.type === 'turn.dequeued' || event.type === 'turn.queue-held') {
       const observed = this.queuedTurns.observe(event, this.sessionAdapters.get(event.threadId)?.provider)
       if (observed.releasesOutstandingTurn) this.finishOutstandingTurn(event.threadId)
-      event = observed.event
-      this.trackQueuedRow(event)
+      this.trackQueuedRow(observed.event)
+      // The ledger filled in the text as typed, after the masking in `publish`.
+      event = this.secretRedaction.mask(observed.event).event
     }
     // Persisted here, not in ChatPanel, which only exists when a desktop window
     // is attached - a phone on a headless server saw a 529 once and lost it on

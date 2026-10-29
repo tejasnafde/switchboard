@@ -358,6 +358,19 @@ describe('saved secret canary', () => {
     again.stop()
     expect(restarted.any()).toBe(false)
 
+    // A message the user queued: the ledger keeps it as typed for delivery,
+    // the event and the list show it masked.
+    host.events.length = 0
+    const ledger = (registry as unknown as { queuedTurns: { expect(id: string, text: string, at: number): void } })
+      .queuedTurns
+    ledger.expect('q_canary', `queued ${canary}`, 1)
+    agent.emit({ type: 'turn.queued', threadId: SESSION, messageId: 'q_canary' })
+    await until(() => expect(host.events).toContainEqual(expect.objectContaining({ type: 'turn.queued' })))
+    for (const out of [host.events, registry.listQueuedTurns(SESSION)]) {
+      expect(JSON.stringify(out)).toContain(`queued ${mask}`)
+      expect(JSON.stringify(out)).not.toContain(canary)
+    }
+
     // Delete now drops the value from memory.
     const listed = registry.listAgentSecrets(SESSION)
     if (!listed.ok) throw new Error(listed.message)

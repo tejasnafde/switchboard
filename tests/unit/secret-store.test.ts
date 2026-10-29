@@ -14,7 +14,8 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
-import { SecretStore } from '../../src/main/secrets/secret-store'
+import { SECRET_MAX_BYTES, SecretStore } from '../../src/main/secrets/secret-store'
+import { SecretRedactor } from '../../src/main/secrets/secret-redactor'
 import { getAgentSecret, getSecretDirId, listLiveAgentSecrets } from '../../src/main/db/agent-secrets'
 import { archiveConversation, createConversation, recordThreadSession } from '../../src/main/db/conversations'
 import { addProject } from '../../src/main/db/database'
@@ -170,6 +171,18 @@ describe('SecretStore', () => {
     expect(getSecretDirId('chat-a')).toBeNull()
     expect(listLiveAgentSecrets('chat-a')).toEqual([])
     expect(existsSync(other.file)).toBe(true)
+  })
+
+  posixIt('reads a live file back for masking after a restart, but not one grown past the size limit', () => {
+    const a = store.save({ threadId: 'chat-a', name: 'KEY_A', value: VALUE, cardId: 'c', expiresAt: now + 60_000 })
+    const b = store.save({ threadId: 'chat-a', name: 'KEY_B', value: VALUE, cardId: 'c', expiresAt: now + 60_000 })
+    writeFileSync(b.file, Buffer.alloc(SECRET_MAX_BYTES + 1, 'x'))
+    store.stop()
+    const redactor = new SecretRedactor()
+    store = new SecretStore({ root, now: () => now, excludeFromBackup: () => {}, redactor })
+    store.sweep()
+    expect(redactor.has(a.id)).toBe(true)
+    expect(redactor.has(b.id)).toBe(false)
   })
 
   it('sweeps expired files, orphan folders, .partial files and unknown files, and keeps live ones', () => {
