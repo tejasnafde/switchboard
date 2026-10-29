@@ -25,7 +25,9 @@ import {
   PullRequestChannels,
   PullRequestWriteChannels,
   SourceControlChannels,
+  AgentSecretChannels,
 } from '@shared/ipc-channels'
+import type { AgentSecretAnswer, AgentSecretView } from '@shared/agent-secret-request'
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { PeerLinkView } from '@shared/peer-links'
@@ -93,6 +95,8 @@ import { createWorktreeManagerApi } from './worktree-manager-api'
 import type { AgentProvider, ToolCall } from '@shared/types'
 
 const log = createRendererLogger('preload:provider')
+
+type AgentSecretResult = { ok: true } | { ok: false; message: string }
 
 /**
  * Options passed to `provider.startSession`. Duplicated from main's
@@ -983,6 +987,24 @@ const api = {
         event.machineId = machineId
         callback(event)
       }),
+  },
+
+  // ─── Agent secret requests (request_secret) ───────────────────
+  // Routed by the chat's thread id, so an SSH chat's answer goes through the
+  // tunnel to the backend that keeps the file. The answer holds the value:
+  // nothing here logs or keeps it.
+  agentSecret: {
+    answer: (threadId: string, cardId: string, answer: AgentSecretAnswer): Promise<AgentSecretResult> =>
+      transport.invoke(AgentSecretChannels.ANSWER, threadId, cardId, answer),
+    extend: (
+      threadId: string,
+      secretId: string,
+    ): Promise<{ ok: true; expiresAt: number } | { ok: false; message: string }> =>
+      transport.invoke(AgentSecretChannels.EXTEND, threadId, secretId),
+    delete: (threadId: string, secretId: string): Promise<AgentSecretResult> =>
+      transport.invoke(AgentSecretChannels.DELETE, threadId, secretId),
+    list: (threadId: string): Promise<{ ok: true; secrets: AgentSecretView[] } | { ok: false; message: string }> =>
+      transport.invoke(AgentSecretChannels.LIST, threadId),
   },
 
   // ─── Embedded IDE (code-server webview) ────────────────────────

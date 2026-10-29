@@ -36,6 +36,7 @@
 @source '../components/chat/PeerLinkBanner.tsx';
 @source '../components/chat/PeerUndeliveredRow.tsx';
 @source '../components/chat/ApprovalResultRow.tsx';
+@source '../components/chat/SecretRequestCard.tsx';
 @source '../components/chat/ForkLineageBanner.tsx';
 @source '../components/chat/MergeBackDialog.tsx';
 @source '../components/chat/MergeBackRow.tsx';

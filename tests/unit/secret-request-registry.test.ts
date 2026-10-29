@@ -33,11 +33,13 @@ vi.mock('../../src/main/db/provider-instances', () => ({
 }))
 
 const archived = new Set<string>()
+/** Rotated session id to root id, as `thread_sessions` maps them. */
+const rotatedRoots = new Map<string, string>()
 const saved: Array<{ id: string; conversationId: string; role: string; content: string }> = []
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
   updateConversationSessionId: () => {},
-  resolveRootThreadId: (id: string) => id,
+  resolveRootThreadId: (id: string) => rotatedRoots.get(id) ?? id,
   getConversationTitle: () => null,
   rewriteSystemMarker: () => null,
   saveMessageIfAbsent: (id: string, conversationId: string, role: string, content: string) => {
@@ -65,7 +67,7 @@ import type { BackendHost } from '../../src/main/backend/host'
 import type { SecretStore } from '../../src/main/secrets/secret-store'
 import type { McpTool } from '../../src/main/mcp/mcp-session'
 import type { SwitchboardMcpServer } from '../../src/main/mcp/switchboard-mcp-server'
-import { ProviderChannels } from '../../src/shared/ipc-channels'
+import { AgentSecretChannels, ProviderChannels } from '../../src/shared/ipc-channels'
 import { APPROVAL_RESULT_TAG, parseApprovalResultMarker } from '../../src/shared/agent-approval-cards'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
@@ -136,6 +138,18 @@ class FakeSecretStore {
   readonly saves: Array<{ threadId: string; name: string; value: string; cardId: string; machineId?: string | null }> =
     []
   readonly removedChats: string[] = []
+  readonly rows = new Map<
+    string,
+    {
+      id: string
+      rootThreadId: string
+      name: string
+      cardId: string
+      createdAt: number
+      expiresAt: number
+      deletedAt: number | null
+    }
+  >()
   fail = false
   start(): void {}
   stop(): void {}
@@ -158,13 +172,35 @@ class FakeSecretStore {
       cardId: input.cardId,
       ...(input.machineId ? { machineId: input.machineId } : {}),
     })
-    return { id: 'sec_1', file: `/secrets/dir-${input.threadId}/${input.name}`, expiresAt: input.expiresAt }
+    const id = `sec_${this.saves.length}`
+    this.rows.set(id, {
+      id,
+      rootThreadId: input.threadId,
+      name: input.name,
+      cardId: input.cardId,
+      createdAt: Date.now(),
+      expiresAt: input.expiresAt,
+      deletedAt: null,
+    })
+    return { id, file: `/secrets/dir-${input.threadId}/${input.name}`, expiresAt: input.expiresAt }
   }
-  extend(): boolean {
+  extend(id: string, expiresAt: number): boolean {
+    const row = this.rows.get(id)
+    if (!row || row.deletedAt !== null) return false
+    row.expiresAt = expiresAt
     return true
   }
-  remove(): boolean {
+  remove(id: string): boolean {
+    const row = this.rows.get(id)
+    if (!row || row.deletedAt !== null) return false
+    row.deletedAt = Date.now()
     return true
+  }
+  get(id: string) {
+    return this.rows.get(id) ?? null
+  }
+  listChat(threadId: string) {
+    return [...this.rows.values()].filter((r) => r.rootThreadId === threadId)
   }
   removeChat(threadId: string): void {
     this.removedChats.push(threadId)
@@ -202,6 +238,7 @@ function setup() {
   registries.push(registry)
   saved.length = 0
   archived.clear()
+  rotatedRoots.clear()
   const start = (threadId: string) =>
     host.invoke(ProviderChannels.START_SESSION, { threadId, provider: 'claude', cwd: PROJECT_DIR })
   const tool = (name: string) => tools().find((t) => t.name === name)
@@ -370,5 +407,116 @@ describe('request_secret in the registry', () => {
     expect(names).toContain('withdraw_approval')
     expect(names).not.toContain('request_secret')
     expect(instructions ?? '').not.toContain('request_secret')
+  })
+})
+
+describe('the agent-secret answer channel', () => {
+  it('saves and declines through agent-secret:answer', async () => {
+    const s = setup()
+    await s.start('chat')
+    const saveId = await s.ask()
+    expect(await s.host.invoke(AgentSecretChannels.ANSWER, 'chat', saveId, { save: VALUE })).toEqual({ ok: true })
+    await resultPublished(s.host, saveId)
+    expect(s.store.saves).toMatchObject([{ value: VALUE, cardId: saveId }])
+    const declineId = await s.ask()
+    expect(await s.host.invoke(AgentSecretChannels.ANSWER, 'chat', declineId, { decline: true })).toEqual({ ok: true })
+    await resultPublished(s.host, declineId)
+    expect(s.store.saves).toHaveLength(1)
+  })
+
+  it('refuses every answer that is not exactly { save: string } or { decline: true }', async () => {
+    const s = setup()
+    await s.start('chat')
+    const id = await s.ask()
+    const bad: unknown[][] = [
+      [42, id, { save: VALUE }],
+      ['', id, { save: VALUE }],
+      ['chat', 'sbapr_1', { decline: true }],
+      ['chat', 7, { decline: true }],
+      ['chat', id, { save: 7 }],
+      ['chat', id, { decline: false }],
+      ['chat', id, { decline: 'true' }],
+      ['chat', id, { save: VALUE, decline: true }],
+      ['chat', id, { save: VALUE, note: 'x' }],
+      ['chat', id, [VALUE]],
+      ['chat', id, VALUE],
+      ['chat', id, null],
+      ['chat', id],
+    ]
+    for (const args of bad)
+      expect(await s.host.invoke(AgentSecretChannels.ANSWER, ...args)).toEqual({
+        ok: false,
+        message: 'That request is not valid.',
+      })
+    expect(s.store.saves).toEqual([])
+    expect(await s.host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 'chat')).toMatchObject([{ requestId: id }])
+  })
+
+  it('refuses every channel with the flag off', async () => {
+    const s = setup()
+    await s.start('chat')
+    const id = await s.ask()
+    expect(await s.host.invoke(AgentSecretChannels.ANSWER, 'chat', id, { save: VALUE })).toEqual({ ok: true })
+    const secretId = [...s.store.rows.keys()][0]
+    delete process.env.SB_AGENT_SECRET_REQUEST
+    const off = { ok: false, message: 'Secret requests are turned off.' }
+    expect(await s.host.invoke(AgentSecretChannels.ANSWER, 'chat', id, { decline: true })).toEqual(off)
+    expect(await s.host.invoke(AgentSecretChannels.EXTEND, 'chat', secretId)).toEqual(off)
+    expect(await s.host.invoke(AgentSecretChannels.DELETE, 'chat', secretId)).toEqual(off)
+    expect(await s.host.invoke(AgentSecretChannels.LIST, 'chat')).toEqual(off)
+    expect(s.store.rows.get(secretId)?.deletedAt).toBeNull()
+  })
+
+  it('lists the chat secrets without a value, and extends and deletes only its own', async () => {
+    const s = setup()
+    await s.start('chat')
+    const id = await s.ask()
+    expect(await s.host.invoke(AgentSecretChannels.ANSWER, 'chat', id, { save: VALUE })).toEqual({ ok: true })
+    const secretId = [...s.store.rows.keys()][0]
+
+    const listed = (await s.host.invoke(AgentSecretChannels.LIST, 'chat')) as {
+      ok: true
+      secrets: Array<Record<string, unknown>>
+    }
+    expect(listed.ok).toBe(true)
+    expect(listed.secrets).toEqual([
+      expect.objectContaining({ id: secretId, name: 'TAILSCALE_AUTHKEY', cardId: id, deletedAt: null, status: 'live' }),
+    ])
+    expect(JSON.stringify(listed)).not.toContain(VALUE)
+    expect(Object.keys(listed.secrets[0]).sort()).toEqual(
+      ['cardId', 'createdAt', 'deletedAt', 'expiresAt', 'id', 'name', 'status'].sort(),
+    )
+    expect(await s.host.invoke(AgentSecretChannels.LIST, 'other')).toEqual({ ok: true, secrets: [] })
+
+    const gone = { ok: false, message: 'That secret is gone.' }
+    const before = s.store.rows.get(secretId)!.expiresAt
+    expect(await s.host.invoke(AgentSecretChannels.EXTEND, 'other', secretId)).toEqual(gone)
+    expect(await s.host.invoke(AgentSecretChannels.DELETE, 'other', secretId)).toEqual(gone)
+    expect(s.store.rows.get(secretId)).toMatchObject({ expiresAt: before, deletedAt: null })
+    expect(await s.host.invoke(AgentSecretChannels.EXTEND, 'chat', 'sec_missing')).toEqual(gone)
+    expect(await s.host.invoke(AgentSecretChannels.EXTEND, 'chat', 42)).toMatchObject({ ok: false })
+
+    const extended = (await s.host.invoke(AgentSecretChannels.EXTEND, 'chat', secretId)) as {
+      ok: true
+      expiresAt: number
+    }
+    expect(extended.ok).toBe(true)
+    expect(s.store.rows.get(secretId)?.expiresAt).toBe(extended.expiresAt)
+    expect(await s.host.invoke(AgentSecretChannels.DELETE, 'chat', secretId)).toEqual({ ok: true })
+    expect(await s.host.invoke(AgentSecretChannels.DELETE, 'chat', secretId)).toEqual(gone)
+    const after = (await s.host.invoke(AgentSecretChannels.LIST, 'chat')) as { secrets: Array<{ status: string }> }
+    expect(after.secrets.map((x) => x.status)).toEqual(['deleted'])
+  })
+
+  it('answers, extends and deletes through a rotated session id of the chat', async () => {
+    const s = setup()
+    await s.start('chat')
+    const id = await s.ask()
+    rotatedRoots.set('chat-rotated', 'chat')
+    expect(await s.host.invoke(AgentSecretChannels.ANSWER, 'chat-rotated', id, { save: VALUE })).toEqual({ ok: true })
+    const secretId = [...s.store.rows.keys()][0]
+    expect(await s.host.invoke(AgentSecretChannels.EXTEND, 'chat-rotated', secretId)).toMatchObject({ ok: true })
+    expect(await s.host.invoke(AgentSecretChannels.DELETE, 'chat-rotated', secretId)).toEqual({ ok: true })
+    expect(s.store.rows.get(secretId)?.deletedAt).not.toBeNull()
   })
 })

@@ -37,6 +37,7 @@ import {
   getSecretDirId,
   insertAgentSecret,
   listArchivedSecretChats,
+  listChatAgentSecrets,
   listLiveAgentSecrets,
   listSecretDirIds,
   markAgentSecretDeleted,
@@ -179,6 +180,16 @@ export class SecretStore {
     if (!setAgentSecretExpiry(id, expiresAt)) return false
     this.arm(id, expiresAt)
     return true
+  }
+
+  /** One secret's row, deleted or not. Metadata only. */
+  get(id: string): AgentSecretRow | null {
+    return getAgentSecret(id)
+  }
+
+  /** A chat's rows, deleted ones too, for its saved lines. Metadata only. */
+  listChat(threadId: string): AgentSecretRow[] {
+    return listChatAgentSecrets(threadId)
   }
 
   /** Delete one secret now (the user's "Delete now"). False when it was already gone. */

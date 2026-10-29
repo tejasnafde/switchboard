@@ -214,6 +214,7 @@ export function ChatPanel({
           m.approval?.status === 'pending' &&
           !m.approval.hostWrite &&
           !m.approval.hubBatch &&
+          !m.approval.secretRequest &&
           !m.id.startsWith(`approval_${AGENT_APPROVAL_ID_PREFIX}`),
       ),
     [messages],

@@ -24,6 +24,7 @@ import { peerMessageToChatMessage } from './send-to-command'
 import { formatUndeliveredMarker } from '@shared/peer-links'
 import { clearProviderRetry, upsertProviderRetry } from './provider-retry'
 import { expireRequestCard } from './expired-request'
+import { isSecretCardId } from '@shared/agent-secret-request'
 
 const log = createRendererLogger('chat:panel')
 
@@ -172,6 +173,8 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
         ?.messages.some((m) => m.id === event.messageId)
       if (!exists)
         appendMessage(tid, { id: event.messageId, role: 'system', content: event.content, timestamp: event.at })
+      // A secret card's result row is its collapsed line (saved, declined, expired), as a reload shows it.
+      if (isSecretCardId(event.requestId)) useAgentStore.getState().removeMessage(tid, `approval_${event.requestId}`)
       break
     }
     case 'limit-resume.changed': {
@@ -291,6 +294,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
           ...(event.hostWrite ? { hostWrite: event.hostWrite } : {}),
           ...(event.permissions ? { permissions: event.permissions } : {}),
           ...(event.hubBatch ? { hubBatch: event.hubBatch } : {}),
+          ...(event.secretRequest ? { secretRequest: event.secretRequest } : {}),
         },
         timestamp: Date.now(),
       })

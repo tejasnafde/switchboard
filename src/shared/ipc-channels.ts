@@ -566,3 +566,28 @@ export const ProjectCloneChannels = {
   STATUS: 'project-clone:status',
   WRITE_IGNORED: 'project-clone:write-ignored',
 } as const
+
+/**
+ * The desktop's answer to an agent's secret request (`request_secret`) and the
+ * saved line's Extend and Delete now. Request and response only, never an
+ * event, and `admin` scope in device-auth, so no phone can call them. The
+ * answer carries the value: nothing may log or trace its arguments.
+ */
+export const AgentSecretChannels = {
+  /** (threadId, cardId, { save: string } | { decline: true }) */
+  ANSWER: 'agent-secret:answer',
+  /** (threadId, secretId) → { ok, expiresAt } */
+  EXTEND: 'agent-secret:extend',
+  /** (threadId, secretId) */
+  DELETE: 'agent-secret:delete',
+  /** (threadId) → the chat's saved secrets: id, name, card id and times, never a value */
+  LIST: 'agent-secret:list',
+} as const
+
+/**
+ * Whether a channel's arguments may hold a secret value. Nothing logs, times,
+ * traces or queues such a call's arguments (`perf-handler`, `ws-transport`).
+ */
+export function carriesSecretArgs(channel: string): boolean {
+  return channel.startsWith('agent-secret:')
+}

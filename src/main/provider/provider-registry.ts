@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import type { PerfSpan } from '@shared/perf-timing'
 import { perfSpan } from '../perf'
 import type { BackendHost } from '../backend/host'
-import { AppChannels, ProviderChannels } from '@shared/ipc-channels'
+import { AgentSecretChannels, AppChannels, ProviderChannels } from '@shared/ipc-channels'
 import { applyContentText } from '@shared/content-stream'
 import { fitImagesToProviderLimit } from './image-limits'
 import { createMainLogger as createLogger } from '../logger'
@@ -176,6 +176,10 @@ import {
   SECRET_VALUE_MAX_BYTES,
   SECRETS_DIR_ENV,
   agentSecretRequestEnabled,
+  agentSecretStatus,
+  isAgentSecretAnswer,
+  isSecretCardId,
+  type AgentSecretView,
   isSecretRequestPlan,
   secretClosedText,
   secretDeclinedText,
@@ -2783,6 +2787,7 @@ export class ProviderRegistry implements PeerToolHost {
   ): { ok: true } | { ok: false; message: string } {
     if (!this.secretStore || !this.secretRequestOn()) return { ok: false, message: 'Secret requests are turned off.' }
     if (isConversationArchived(resolveRootThreadId(threadId))) return { ok: false, message: 'This chat is archived.' }
+    if (!isSecretCardId(cardId)) return { ok: false, message: 'That request is no longer open.' }
     // The answer crosses IPC, so its shape is checked here, not trusted from the type.
     const raw = answer as { save?: unknown; decline?: unknown } | null
     if (raw?.decline === true && raw.save === undefined)
@@ -2814,22 +2819,54 @@ export class ProviderRegistry implements PeerToolHost {
     }
   }
 
+  /**
+   * A secret of this chat, or null. Extend and Delete now act only on a
+   * secret the asking chat owns, so another chat's id does nothing.
+   */
+  private ownedSecret(threadId: string, secretId: string) {
+    const row = this.secretStore?.get(secretId) ?? null
+    return row && row.rootThreadId === resolveRootThreadId(threadId) ? row : null
+  }
+
   /** The headless server on an SSH machine names itself, so the agent's result says where the file is. */
   setMachineLabel(label: string): void {
     this.machineLabel = label
   }
 
   /** "Extend" on the saved line: 24 hours from now. The agent is not told. */
-  extendAgentSecret(secretId: string): { ok: true; expiresAt: number } | { ok: false; message: string } {
+  extendAgentSecret(
+    threadId: string,
+    secretId: string,
+  ): { ok: true; expiresAt: number } | { ok: false; message: string } {
+    if (!this.secretStore || !this.secretRequestOn()) return { ok: false, message: 'Secret requests are turned off.' }
     const expiresAt = Date.now() + SECRET_EXTEND_MS
-    if (!this.secretStore?.extend(secretId, expiresAt)) return { ok: false, message: 'That secret is gone.' }
+    if (!this.ownedSecret(threadId, secretId) || !this.secretStore.extend(secretId, expiresAt))
+      return { ok: false, message: 'That secret is gone.' }
     return { ok: true, expiresAt }
   }
 
   /** "Delete now" on the saved line. The agent is not told. */
-  deleteAgentSecret(secretId: string): { ok: true } | { ok: false; message: string } {
-    if (!this.secretStore?.remove(secretId)) return { ok: false, message: 'That secret is gone.' }
+  deleteAgentSecret(threadId: string, secretId: string): { ok: true } | { ok: false; message: string } {
+    if (!this.secretStore || !this.secretRequestOn()) return { ok: false, message: 'Secret requests are turned off.' }
+    if (!this.ownedSecret(threadId, secretId) || !this.secretStore.remove(secretId))
+      return { ok: false, message: 'That secret is gone.' }
     return { ok: true }
+  }
+
+  /** The chat's saved secrets for its saved lines: names, card ids and times, never a value. */
+  listAgentSecrets(threadId: string): { ok: true; secrets: AgentSecretView[] } | { ok: false; message: string } {
+    if (!this.secretStore || !this.secretRequestOn()) return { ok: false, message: 'Secret requests are turned off.' }
+    const now = Date.now()
+    const secrets = this.secretStore.listChat(threadId).map((row) => ({
+      id: row.id,
+      name: row.name,
+      cardId: row.cardId,
+      createdAt: row.createdAt,
+      expiresAt: row.expiresAt,
+      deletedAt: row.deletedAt,
+      status: agentSecretStatus(row, now),
+    }))
+    return { ok: true, secrets }
   }
 
   /**
@@ -4830,6 +4867,24 @@ export class ProviderRegistry implements PeerToolHost {
     )
     this.host.handle(ProviderChannels.CANCEL_QUEUED_TURN, (threadId: string, messageId: string) =>
       this.actOnQueuedTurn('cancel', threadId, messageId),
+    )
+
+    // The secret card's answer channel. Its arguments hold the value: never log them.
+    // Every shape is checked here, since a remote backend gets them off the wire.
+    const badRequest = { ok: false, message: 'That request is not valid.' } as const
+    const isId = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 512
+    this.host.handle(AgentSecretChannels.ANSWER, (threadId: unknown, cardId: unknown, answer: unknown) => {
+      if (!isId(threadId) || !isId(cardId) || !isSecretCardId(cardId) || !isAgentSecretAnswer(answer)) return badRequest
+      return this.answerAgentSecret(threadId, cardId, answer)
+    })
+    this.host.handle(AgentSecretChannels.EXTEND, (threadId: unknown, secretId: unknown) =>
+      isId(threadId) && isId(secretId) ? this.extendAgentSecret(threadId, secretId) : badRequest,
+    )
+    this.host.handle(AgentSecretChannels.DELETE, (threadId: unknown, secretId: unknown) =>
+      isId(threadId) && isId(secretId) ? this.deleteAgentSecret(threadId, secretId) : badRequest,
+    )
+    this.host.handle(AgentSecretChannels.LIST, (threadId: unknown) =>
+      isId(threadId) ? this.listAgentSecrets(threadId) : badRequest,
     )
 
     // A user stop is deliberate: a relocation waiting for a turn that will

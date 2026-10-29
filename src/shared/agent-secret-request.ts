@@ -164,3 +164,43 @@ export function secretClosedText(name: string, why: 'expired' | 'stopped' | 'wit
     return `Nobody answered the request for ${name} within 7 days, so it closed and nothing was saved.`
   return `The chat ended before the user answered, so ${name} was not saved.`
 }
+
+/** Backend capability: it serves `AgentSecretChannels` (`ws-protocol` BACKEND_CAPABILITIES). */
+export const AGENT_SECRET_REQUEST_CAPABILITY = 'agent_secret_request_v1'
+
+/** The desktop's answer to a secret card. Exactly one of these shapes, nothing else. */
+export type AgentSecretAnswer = { save: string } | { decline: true }
+
+/** Whether `answer` is exactly `{ save: string }` or `{ decline: true }`, with no other key. */
+export function isAgentSecretAnswer(answer: unknown): answer is AgentSecretAnswer {
+  if (!answer || typeof answer !== 'object' || Array.isArray(answer)) return false
+  const keys = Object.keys(answer)
+  if (keys.length !== 1) return false
+  const o = answer as Record<string, unknown>
+  if (keys[0] === 'save') return typeof o.save === 'string'
+  return keys[0] === 'decline' && o.decline === true
+}
+
+/**
+ * One saved secret of a chat, as `agent-secret:list` answers it. Metadata
+ * only: never the value, its length or a hash. `status` is `expired` when the
+ * file went at or after its expiry, `deleted` when it went before (Delete
+ * now, an archive, or a newer save of the same name).
+ */
+export interface AgentSecretView {
+  id: string
+  name: string
+  cardId: string
+  createdAt: number
+  expiresAt: number
+  deletedAt: number | null
+  status: 'live' | 'expired' | 'deleted'
+}
+
+export function agentSecretStatus(
+  row: { expiresAt: number; deletedAt: number | null },
+  now: number,
+): AgentSecretView['status'] {
+  if (row.deletedAt === null) return row.expiresAt > now ? 'live' : 'expired'
+  return row.deletedAt >= row.expiresAt ? 'expired' : 'deleted'
+}

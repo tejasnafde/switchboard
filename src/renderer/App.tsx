@@ -91,6 +91,7 @@ import { recoverPendingRequests } from './services/pending-request-recovery'
 import { ProviderChannels } from '@shared/ipc-channels'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import { resolveGlobalKeydown } from './services/global-keybindings'
+import { isSecretCardKeyTarget } from './components/chat/secret-request-card-model'
 import {
   LANDING_COMPOSER_ID,
   landingPickFor,
@@ -1542,6 +1543,8 @@ export function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Keys typed into an agent's secret request belong to that card only.
+      if (isSecretCardKeyTarget(e.target)) return
       const action = resolveGlobalKeydown(e)
       if (!action) return
       switch (action.type) {

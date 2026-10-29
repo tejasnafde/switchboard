@@ -160,3 +160,11 @@ export function setAgentSecretExpiry(id: string, expiresAt: number): boolean {
 export function markAgentSecretDeleted(id: string, now: number): void {
   getDb().prepare('UPDATE agent_secrets SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL').run(now, id)
 }
+
+/** Every row of one chat, deleted ones too, newest first: the saved lines read their state from it. */
+export function listChatAgentSecrets(threadId: string, limit = 200): AgentSecretRow[] {
+  const rows = getDb()
+    .prepare('SELECT * FROM agent_secrets WHERE root_thread_id = ? ORDER BY created_at DESC LIMIT ?')
+    .all(resolveRootThreadId(threadId), limit) as Row[]
+  return rows.map(fromRow)
+}

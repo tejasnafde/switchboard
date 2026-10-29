@@ -102,6 +102,10 @@ export const BACKEND_CAPABILITIES = [
   /** `app:upload-attachment` saves a phone's file and answers its path
    *  (`ATTACHMENT_UPLOAD_CAPABILITY` in shared/attachments). */
   'attachment_upload_v1',
+  /** `agent-secret:*`: the desktop answers an agent's secret request card and
+   *  extends or deletes a saved secret (`AGENT_SECRET_REQUEST_CAPABILITY` in
+   *  shared/agent-secret-request). Admin scope only; phones cannot answer. */
+  'agent_secret_request_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {
