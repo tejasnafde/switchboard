@@ -7,6 +7,7 @@
  * theme and source, so re-renders and streaming never redraw one.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent, type RefObject } from 'react'
+import { CHART_SERIES_COLORS } from '@shared/chart-colors'
 import { chartDataText, parseChartSpec, renderChart, type ChartPalette, type VisualKind } from '@shared/chat-visuals'
 import { createRendererLogger } from '../../../logger'
 import { useLayoutStore } from '../../../stores/layout-store'
@@ -19,16 +20,7 @@ const CHART_PALETTE: ChartPalette = {
   muted: 'var(--text-secondary)',
   grid: 'var(--border)',
   font: 'var(--font-sans)',
-  series: [
-    'var(--accent)',
-    'var(--success)',
-    'var(--warning)',
-    '#a371f7',
-    '#39c5cf',
-    '#db61a2',
-    'var(--error)',
-    'var(--text-muted)',
-  ],
+  series: CHART_SERIES_COLORS,
 }
 
 const CACHE_LIMIT = 64

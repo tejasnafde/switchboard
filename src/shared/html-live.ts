@@ -13,6 +13,8 @@
  * the desktop stored under `htmlLiveImageKey`). No fs, no Electron, no DOM.
  */
 
+import { CHART_SERIES_COLORS } from './chart-colors'
+
 export const HTML_LIVE_FENCE = 'html-live'
 
 /** Largest block that runs. Libraries are loaded from /_sb/, not pasted. */
@@ -185,9 +187,26 @@ export interface HtmlLiveTheme {
   error: string
   font: string
   mono: string
+  radius: string
+  /** Chart series colours, `--sb-chart-1` onward (`htmlLiveChartColors`). */
+  chart: readonly string[]
 }
 
-const THEME_VARS: ReadonlyArray<[keyof HtmlLiveTheme, string]> = [
+/** How many chart colours a live page gets. */
+export const HTML_LIVE_CHART_COLORS = 6
+
+/**
+ * The first `HTML_LIVE_CHART_COLORS` chart series colours with every
+ * `var(--x)` read through `read`, since a page cannot see the app's variables.
+ */
+export function htmlLiveChartColors(read: (name: string) => string): string[] {
+  return CHART_SERIES_COLORS.slice(0, HTML_LIVE_CHART_COLORS).map((color) => {
+    const name = /^var\((--[\w-]+)\)$/.exec(color)?.[1]
+    return name ? read(name) : color
+  })
+}
+
+const THEME_VARS: ReadonlyArray<[Exclude<keyof HtmlLiveTheme, 'chart'>, string]> = [
   ['bg', '--sb-bg'],
   ['surface', '--sb-surface'],
   ['text', '--sb-text'],
@@ -199,6 +218,7 @@ const THEME_VARS: ReadonlyArray<[keyof HtmlLiveTheme, string]> = [
   ['error', '--sb-error'],
   ['font', '--sb-font'],
   ['mono', '--sb-mono'],
+  ['radius', '--sb-radius'],
 ]
 
 /** A CSS value that cannot close the style block or the declaration. */
@@ -223,10 +243,16 @@ const IMPORT_MAP = JSON.stringify({ imports: { three: '/_sb/three.js', 'three/ad
 /** What the frame injects at the top of `<head>`: theme, import map, size reporter. */
 export function htmlLiveHead(theme: HtmlLiveTheme): string {
   const scheme = theme.scheme === 'light' ? 'light' : 'dark'
-  const vars = THEME_VARS.map(([key, name]) => {
-    const value = safeCssValue(theme[key])
-    return value ? `${name}:${value};` : ''
-  }).join('')
+  const named: Array<[string, unknown]> = THEME_VARS.map(([key, name]) => [name, theme[key]])
+  const chart: Array<[string, unknown]> = (Array.isArray(theme.chart) ? theme.chart : [])
+    .slice(0, HTML_LIVE_CHART_COLORS)
+    .map((color, i) => [`--sb-chart-${i + 1}`, color])
+  const vars = [...named, ...chart]
+    .map(([name, raw]) => {
+      const value = safeCssValue(raw)
+      return value ? `${name}:${value};` : ''
+    })
+    .join('')
   return [
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',

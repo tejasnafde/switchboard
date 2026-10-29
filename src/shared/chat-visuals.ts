@@ -236,7 +236,7 @@ export interface ChartPalette {
   muted: string
   grid: string
   font: string
-  series: string[]
+  series: readonly string[]
 }
 
 function escapeXml(value: string): string {
