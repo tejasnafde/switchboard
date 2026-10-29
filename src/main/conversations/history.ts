@@ -10,9 +10,9 @@ import {
   listConversationSegments,
   messageRowsToChatMessages,
   messageWindowRows,
-  resolveRootThreadId,
   threadFamilyIds,
 } from '../db/database'
+import { armedSecretScope, maskStoredValue } from '../db/secret-mask'
 import { secretRedactor } from '../secrets/secret-redactor'
 import { compareSessionCopies, listClaudeSessionCopies, claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
@@ -226,22 +226,22 @@ export async function loadConversationHistory(
 /**
  * Transcripts are read as the provider wrote them, so a live saved secret is
  * masked on the way out. The memo keeps the read as it was: a secret saved or
- * deleted later changes what is masked, not what is cached.
+ * deleted later changes what is masked, not what is cached. A fork also
+ * masks the secrets of the chats it was forked from, whose transcript it
+ * copied (`secretScope`).
  */
 function maskedHistory(conversationId: string, history: ConversationHistory): ConversationHistory {
-  const root = secretRedactor.any() ? resolveRootThreadId(conversationId) : null
-  if (root === null || !secretRedactor.armed(root)) return history
+  const scope = armedSecretScope(conversationId)
+  if (scope === null) return history
   return {
     ...history,
-    messages: secretRedactor.redactDeep(root, history.messages).value,
-    forkMessages: secretRedactor.redactDeep(root, history.forkMessages).value,
+    messages: secretRedactor.redactDeep(scope, history.messages).value,
+    forkMessages: secretRedactor.redactDeep(scope, history.forkMessages).value,
   }
 }
 
-function maskedMessages(conversationId: string, messages: ChatMessage[]): ChatMessage[] {
-  if (!secretRedactor.any()) return messages
-  return secretRedactor.redactDeep(resolveRootThreadId(conversationId), messages).value
-}
+const maskedMessages = (conversationId: string, messages: ChatMessage[]): ChatMessage[] =>
+  maskStoredValue(conversationId, messages)
 
 export interface ConversationHistoryWindow extends Omit<MergedWindow, 'rowsRead'> {
   familyIds: string[]

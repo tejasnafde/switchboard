@@ -39,6 +39,14 @@ function forms(value: Buffer): Buffer[] {
   return unique.sort((a, b) => b.length - a.length)
 }
 
+/**
+ * The chats whose secrets apply: a root conversation id, or a list of them (a
+ * fork matches its own secrets and those of the chats it was forked from).
+ */
+export type SecretScope = string | readonly string[]
+
+const scopeRoots = (scope: SecretScope): readonly string[] => (typeof scope === 'string' ? [scope] : scope)
+
 export class SecretRedactor {
   /** Root conversation id to its armed secrets, by secret id. */
   private readonly chats = new Map<string, Map<string, Armed>>()
@@ -90,25 +98,28 @@ export class SecretRedactor {
     return this.chats.size > 0
   }
 
-  armed(rootThreadId: string): boolean {
-    return this.chats.has(rootThreadId)
+  armed(scope: SecretScope): boolean {
+    return scopeRoots(scope).some((root) => this.chats.has(root))
   }
 
-  /** Bytes in the chat's longest pattern, 0 when none: the stream carry holds one less. */
-  longest(rootThreadId: string): number {
+  /** Bytes in the scope's longest pattern, 0 when none: the stream carry holds one less. */
+  longest(scope: SecretScope): number {
     let max = 0
-    for (const armed of this.chats.get(rootThreadId)?.values() ?? [])
-      for (const pattern of armed.patterns) max = Math.max(max, pattern.length)
+    for (const armed of this.armedIn(scope)) for (const pattern of armed.patterns) max = Math.max(max, pattern.length)
     return max
   }
 
+  private armedIn(scope: SecretScope): Armed[] {
+    return scopeRoots(scope).flatMap((root) => [...(this.chats.get(root)?.values() ?? [])])
+  }
+
   /** `text` with every match masked, or null when nothing matched. */
-  redactText(rootThreadId: string, text: string): string | null {
-    const chat = this.chats.get(rootThreadId)
-    if (!chat || text.length === 0) return null
+  redactText(scope: SecretScope, text: string): string | null {
+    const armed = this.armedIn(scope)
+    if (armed.length === 0 || text.length === 0) return null
     const bytes = Buffer.from(text, 'utf8')
     const hits: Array<{ start: number; end: number; name: string }> = []
-    for (const { name, patterns } of chat.values()) {
+    for (const { name, patterns } of armed) {
       for (const pattern of patterns) {
         for (let at = bytes.indexOf(pattern); at !== -1; at = bytes.indexOf(pattern, at + pattern.length))
           hits.push({ start: at, end: at + pattern.length, name })
@@ -121,7 +132,12 @@ export class SecretRedactor {
     const parts: Buffer[] = []
     let from = 0
     for (const hit of hits) {
-      if (hit.start < from) continue
+      // An overlapping hit (two values that share bytes) widens the mask
+      // already placed, so no tail of the later value is left in the clear.
+      if (hit.start < from) {
+        from = Math.max(from, hit.end)
+        continue
+      }
       parts.push(bytes.subarray(from, hit.start), Buffer.from(secretMask(hit.name), 'utf8'))
       from = hit.end
     }
@@ -133,12 +149,12 @@ export class SecretRedactor {
    * Every string inside `value` (plain objects and arrays) masked. Returns the
    * same object when nothing matched, and copies only the changed path.
    */
-  redactDeep<T>(rootThreadId: string, value: T): { value: T; hit: boolean } {
-    if (!this.chats.has(rootThreadId)) return { value, hit: false }
+  redactDeep<T>(scope: SecretScope, value: T): { value: T; hit: boolean } {
+    if (!this.armed(scope)) return { value, hit: false }
     let hit = false
     const walk = (v: unknown): unknown => {
       if (typeof v === 'string') {
-        const masked = this.redactText(rootThreadId, v)
+        const masked = this.redactText(scope, v)
         if (masked === null) return v
         hit = true
         return masked

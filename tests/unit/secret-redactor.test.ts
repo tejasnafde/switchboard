@@ -65,6 +65,19 @@ describe('SecretRedactor', () => {
     expect(input.nested.env.K).toBe(VALUE)
   })
 
+  it('masks the whole span when two values overlap, leaving no tail of either', () => {
+    const r = new SecretRedactor()
+    r.add('chat', 'sec_a', 'KEY_A', Buffer.from('abcdefgh12'))
+    r.add('chat', 'sec_b', 'KEY_B', Buffer.from('gh12345678'))
+    expect(r.redactText('chat', 'x abcdefgh12345678 y')).toBe(`x ${secretMask('KEY_A')} y`)
+  })
+
+  it('matches the values of every chat in a scope (a fork and its parents)', () => {
+    const r = armed()
+    expect(r.redactText(['fork', 'chat'], VALUE)).toBe(MASK)
+    expect(r.armed(['fork'])).toBe(false)
+  })
+
   it('matches only in its own chat', () => {
     const r = armed()
     expect(r.redactText('other', VALUE)).toBeNull()
@@ -127,6 +140,29 @@ describe('RuntimeEventRedaction', () => {
     expect(folded(out)).toBe(`The key is ${MASK} and done.`)
     expect(JSON.stringify(out)).not.toContain(VALUE.slice(0, 11))
     expect(out.at(-1)).toEqual({ type: 'turn.completed', threadId: 'chat' })
+  })
+
+  it('keeps the carry across a notice row, so a second value split after the first hit is masked', () => {
+    const red = redaction()
+    const out: RuntimeEvent[] = []
+    // The first hit and the start of a second value arrive in one delta.
+    out.push(...red.apply(delta(`first ${VALUE} then ${VALUE.slice(0, 9)}`)).events)
+    // The registry posts its masked-secret row here, on the same thread.
+    out.push(
+      ...red.apply({
+        type: 'approval.result',
+        threadId: 'chat',
+        messageId: 'n',
+        requestId: 'n',
+        content: 'notice',
+        at: 0,
+      }).events,
+    )
+    out.push(...red.apply({ type: 'status', threadId: 'chat', status: 'running' }).events)
+    out.push(...red.apply(delta(`${VALUE.slice(9)} end`)).events)
+    out.push(...red.apply({ type: 'turn.completed', threadId: 'chat' }).events)
+    expect(folded(out)).toBe(`first ${MASK} then ${MASK} end`)
+    expect(JSON.stringify(out)).not.toContain(VALUE.slice(0, 9))
   })
 
   it('flushes the held tail before another message or a tool call', () => {

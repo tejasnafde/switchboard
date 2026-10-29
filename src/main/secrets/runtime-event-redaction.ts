@@ -3,11 +3,26 @@
  * publishes them. Streamed text is matched with a carry: the last
  * (longest pattern - 1) characters of a message's deltas are held back, so a
  * value split across two deltas still matches. The held tail goes out ahead
- * of the thread's next event that is not a delta of the same message (the
- * turn end at the latest).
+ * of the thread's next event that ends or interrupts the message: another
+ * message, a tool call, a card, an error, the turn end. Events that carry no
+ * agent output (a Switchboard notice row, a repeated `running`, token counts)
+ * pass without releasing it.
  */
 import type { RuntimeContentEvent, RuntimeEvent } from '@shared/provider-events'
-import type { SecretRedactor } from './secret-redactor'
+import type { SecretRedactor, SecretScope } from './secret-redactor'
+
+/** Events that leave a streamed message open, so its held tail stays held. */
+const KEEPS_STREAM: ReadonlySet<RuntimeEvent['type']> = new Set([
+  'approval.result',
+  'context_window',
+  'session',
+  'session.provider',
+  'model.variants',
+])
+
+function keepsStream(event: RuntimeEvent): boolean {
+  return KEEPS_STREAM.has(event.type) || (event.type === 'status' && event.status === 'running')
+}
 
 export type SecretMaskWhere = 'tool' | 'text' | 'diff'
 
@@ -39,7 +54,7 @@ export class RuntimeEventRedaction {
 
   constructor(
     private readonly redactor: SecretRedactor,
-    private readonly resolveRoot: (threadId: string) => string,
+    private readonly resolveScope: (threadId: string) => SecretScope,
   ) {}
 
   apply(event: RuntimeEvent): RedactedEvents {
@@ -52,7 +67,7 @@ export class RuntimeEventRedaction {
       event.messageId === held.messageId &&
       event.streamKind === held.streamKind &&
       event.parentToolCallId === held.parentToolCallId
-    if (held && !sameStream) {
+    if (held && !sameStream && !keepsStream(event)) {
       this.held.delete(event.threadId)
       if (held.text) events.push(heldEvent(event.threadId, held))
     }
@@ -60,7 +75,7 @@ export class RuntimeEventRedaction {
       events.push(event)
       return { events, masked: null }
     }
-    const root = this.resolveRoot(event.threadId)
+    const root = this.resolveScope(event.threadId)
     if (!this.redactor.armed(root)) {
       events.push(event)
       return { events, masked: null }
@@ -75,10 +90,13 @@ export class RuntimeEventRedaction {
   /** One whole event masked, with no carry: for events that bypass the stream (changed-file cards). */
   mask<T extends RuntimeEvent>(event: T): { event: T; masked: RedactedEvents['masked'] } {
     if (!this.redactor.any()) return { event, masked: null }
-    return this.maskWhole(this.resolveRoot(event.threadId), event)
+    return this.maskWhole(this.resolveScope(event.threadId), event)
   }
 
-  private maskWhole<T extends RuntimeEvent>(root: string, event: T): { event: T; masked: RedactedEvents['masked'] } {
+  private maskWhole<T extends RuntimeEvent>(
+    root: SecretScope,
+    event: T,
+  ): { event: T; masked: RedactedEvents['masked'] } {
     const { value, hit } = this.redactor.redactDeep(root, event)
     if (!hit) return { event, masked: null }
     if (value.type === 'file.edited') {
@@ -93,7 +111,7 @@ export class RuntimeEventRedaction {
   }
 
   private applyDelta(
-    root: string,
+    root: SecretScope,
     event: RuntimeContentEvent,
     held: Held | undefined,
     events: RuntimeEvent[],

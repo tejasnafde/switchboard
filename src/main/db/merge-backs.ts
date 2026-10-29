@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import { formatMergeBackMarker, type MergeBackCursor, type MergeBackRow } from '../../shared/merge-back'
+import { maskStoredText } from './secret-mask'
 
 /**
  * A fork's merge-back to its parent (shared/merge-back.ts), stored so it
@@ -172,7 +173,7 @@ export class SqliteMergeBackStore {
       db.prepare(`
         INSERT INTO messages (id, conversation_id, role, content, tool_calls, images, timestamp)
         VALUES (?, ?, 'system', ?, NULL, NULL, ?)
-      `).run(messageId, input.parentId, formatMergeBackMarker(input.row), input.now)
+      `).run(messageId, input.parentId, maskStoredText(input.parentId, formatMergeBackMarker(input.row)), input.now)
       const created = this.get(input.id)
       if (!created) throw new Error('merge-back row was not persisted')
       return { created, replaced }
@@ -191,7 +192,7 @@ export class SqliteMergeBackStore {
          WHERE id = ? AND state = 'pending'
       `).run(JSON.stringify(row), now, id)
       db.prepare('UPDATE messages SET content = ? WHERE id = ? AND conversation_id = ?').run(
-        formatMergeBackMarker(row),
+        maskStoredText(current.parentId, formatMergeBackMarker(row)),
         current.messageId,
         current.parentId,
       )
@@ -243,7 +244,7 @@ export class SqliteMergeBackStore {
         id,
       )
       db.prepare('UPDATE messages SET content = ?, timestamp = ? WHERE id = ? AND conversation_id = ?').run(
-        content,
+        maskStoredText(stored.parentId, content),
         at,
         stored.messageId,
         stored.parentId,

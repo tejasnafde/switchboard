@@ -274,16 +274,19 @@ describe('saved secret canary', () => {
     })
     agent.emit({ type: 'tool.completed', threadId: SESSION, toolId: 'toolu_1', output: `${canary}\n` })
     const text = `The key is ${canary}, encoded ${forms[1]}.`
-    for (let i = 0; i < text.length; i += 7)
-      agent.emit({
-        type: 'content',
-        threadId: SESSION,
-        messageId: 'msg_1',
-        text: text.slice(i, i + 7),
-        append: true,
-        streamKind: 'assistant',
-      })
+    const stream = (messageId: string, parts: string[]) => {
+      for (const part of parts)
+        agent.emit({ type: 'content', threadId: SESSION, messageId, text: part, append: true, streamKind: 'assistant' })
+    }
+    const deltas: string[] = []
+    for (let i = 0; i < text.length; i += 7) deltas.push(text.slice(i, i + 7))
+    stream('msg_1', deltas)
     agent.emit({ type: 'error', threadId: SESSION, message: `failed near ${canary}` })
+    agent.emit({ type: 'turn.completed', threadId: SESSION })
+    // A second turn whose first hit (and so its notice row, posted
+    // mid-stream) shares a delta with the start of another copy.
+    agent.emit({ type: 'status', threadId: SESSION, status: 'running', newTurn: true })
+    stream('msg_2', [`Again ${canary} and ${canary.slice(0, 12)}`, `${canary.slice(12)} end.`])
     agent.emit({ type: 'turn.completed', threadId: SESSION })
     await until(() => expect(host.events.at(-1)?.type).toBeDefined())
     writeTranscript(canary)
@@ -295,14 +298,21 @@ describe('saved secret canary', () => {
       .filter((e) => e.type === 'content' && e.messageId === 'msg_1')
       .map((e) => (e as { text: string }).text)
       .join('')
-    expect(streamed).toBe(`The key is ${secretMask('CANARY_TOKEN')}, encoded ${secretMask('CANARY_TOKEN')}.`)
+    const mask = secretMask('CANARY_TOKEN')
+    expect(streamed).toBe(`The key is ${mask}, encoded ${mask}.`)
+    const second = host.events
+      .filter((e) => e.type === 'content' && e.messageId === 'msg_2')
+      .map((e) => (e as { text: string }).text)
+      .join('')
+    expect(second).toBe(`Again ${mask} and ${mask} end.`)
+    expect(emitted).not.toContain(canary.slice(0, 12))
 
-    // One notice row for the turn, stored and published.
+    // One notice row per turn, stored and published.
     const notices = db
       .prepare("SELECT content FROM messages WHERE role = 'system' AND content = ?")
       .all(SECRET_MASKED_TEXT) as unknown[]
-    expect(notices).toHaveLength(1)
-    expect(host.events.filter((e) => e.type === 'approval.result' && e.content === SECRET_MASKED_TEXT)).toHaveLength(1)
+    expect(notices).toHaveLength(2)
+    expect(host.events.filter((e) => e.type === 'approval.result' && e.content === SECRET_MASKED_TEXT)).toHaveLength(2)
 
     // Stored rows and the search index.
     const rows = JSON.stringify(db.prepare('SELECT * FROM messages').all())

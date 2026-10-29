@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import { STORED_TASK_NOTICE_PREFIX } from '@shared/synthetic-message'
+import { maskStoredText } from './secret-mask'
 
 export type TurnAcceptanceState = 'reserved' | 'dispatching' | 'completed' | 'abandoned'
 
@@ -320,11 +321,11 @@ export class SqliteTurnAcceptanceStore implements TurnAcceptanceStore {
         .run(
           turn.messageId,
           key.threadId,
-          turn.providerText,
+          maskStoredText(key.threadId, turn.providerText),
           turn.imagesJson ?? null,
           turn.acceptedAt,
-          turn.displayBody ?? null,
-          turn.pillsMetaJson ?? null,
+          maskStoredText(key.threadId, turn.displayBody ?? null),
+          maskStoredText(key.threadId, turn.pillsMetaJson ?? null),
         )
       if (transcript.changes !== 1) {
         throw new Error('canonical user message id belongs to another turn')
@@ -335,7 +336,12 @@ export class SqliteTurnAcceptanceStore implements TurnAcceptanceStore {
           INSERT OR IGNORE INTO messages
             (id, conversation_id, role, content, tool_calls, images, timestamp, display_body, pills_meta)
           VALUES (?, ?, 'system', ?, NULL, NULL, ?, NULL, NULL)
-        `).run(turn.handoff.markerId, key.threadId, turn.handoff.markerText, turn.acceptedAt - 1)
+        `).run(
+          turn.handoff.markerId,
+          key.threadId,
+          maskStoredText(key.threadId, turn.handoff.markerText),
+          turn.acceptedAt - 1,
+        )
         db.prepare(`
           UPDATE conversations
              SET pending_handoff_from = NULL

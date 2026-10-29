@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { queuedTurnNotSentMessage, type QueuedTurnNotSentCause } from '@shared/queued-turns'
+import { maskStoredText } from './secret-mask'
 
 /** Rows written by an earlier process are the ones a restart left behind. */
 const LAUNCH = randomUUID()
@@ -63,7 +64,14 @@ export function sqliteQueuedTurnRowStore(db: () => Database.Database): QueuedTur
     d.prepare(
       `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, images, timestamp)
        SELECT ?, ?, 'system', ?, ?, ? WHERE EXISTS (SELECT 1 FROM conversations WHERE id = ?)`,
-    ).run(`queued_not_sent_${row.message_id}`, row.conversation_id, content, images, row.queued_at, row.conversation_id)
+    ).run(
+      `queued_not_sent_${row.message_id}`,
+      row.conversation_id,
+      maskStoredText(row.conversation_id, content),
+      images,
+      row.queued_at,
+      row.conversation_id,
+    )
     d.prepare('DELETE FROM queued_turn_rows WHERE message_id = ?').run(row.message_id)
     return { conversationId: row.conversation_id, messageId: row.message_id, content }
   }

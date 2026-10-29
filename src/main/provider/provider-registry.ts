@@ -170,6 +170,7 @@ import { appMetrics, secretsRootDir } from '../runtime'
 import { onConversationArchived } from '../db/archive-events'
 import { SecretStore, errCode, type SavedSecret } from '../secrets/secret-store'
 import { secretRedactor } from '../secrets/secret-redactor'
+import { secretScope } from '../db/secret-mask'
 import { RuntimeEventRedaction, type RedactedEvents } from '../secrets/runtime-event-redaction'
 import { SecretRequestLimiter, SECRET_INSTRUCTIONS, buildSecretMcpTools } from '../mcp/secret-tools'
 import {
@@ -3084,13 +3085,14 @@ export class ProviderRegistry implements PeerToolHost {
     for (const next of events) this.publishEvent(next)
     if (masked) this.noteSecretMasked(event.threadId, masked)
     if (
-      event.type === 'turn.completed' ||
-      (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))
+      this.maskedTurns.size > 0 &&
+      (event.type === 'turn.completed' ||
+        (event.type === 'status' && (event.status === 'stopped' || event.status === 'error')))
     )
       this.maskedTurns.delete(resolveRootThreadId(event.threadId))
   }
 
-  private readonly secretRedaction = new RuntimeEventRedaction(secretRedactor, resolveRootThreadId)
+  private readonly secretRedaction = new RuntimeEventRedaction(secretRedactor, secretScope)
   /** Chats whose running turn already got its masked-secret row. */
   private readonly maskedTurns = new Set<string>()
 
