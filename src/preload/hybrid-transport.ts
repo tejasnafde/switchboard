@@ -17,6 +17,7 @@ import {
 const LOCAL_CHANNELS = new Set<string>([
   AppChannels.OPEN_FOLDER,
   AppChannels.EXPORT_MARKDOWN,
+  AppChannels.SAVE_IMAGE,
   AppChannels.RELAUNCH,
   AppChannels.SET_VIBRANCY,
   AppChannels.CHECK_FOR_UPDATES,

@@ -7,6 +7,8 @@
 import React, { useEffect, useState } from 'react'
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native'
 import * as Clipboard from 'expo-clipboard'
+import * as FileSystem from 'expo-file-system/legacy'
+import * as Sharing from 'expo-sharing'
 import { HTML_LIVE_CAPABILITY, HTML_LIVE_MAX_HEIGHT, type HtmlLiveState } from '@shared/html-live'
 import { createLogger } from '@shared/logger'
 import { htmlLiveImageKey } from '../lib/html-live-key'
@@ -36,7 +38,16 @@ export function clearHtmlLiveCache(): void {
   loaded.clear()
 }
 
-type ImageState = { status: 'loading' } | { status: 'none' } | { status: 'image'; url: string }
+type ImageState =
+  | { status: 'loading' }
+  | { status: 'none' }
+  | { status: 'image'; url: string; savedPath: string | null }
+
+/** The shared file's name: the saved page's name when there is one, else the title. */
+function imageStem(savedPath: string | null, label: string): string {
+  const base = savedPath ? (savedPath.split('/').pop() ?? '').replace(/\.[^.]*$/, '') : label
+  return base.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[-.]+|-+$/g, '') || 'live-page'
+}
 
 const NO_IMAGE = 'No image yet. Your Mac makes one the next time it is online.'
 
@@ -55,6 +66,7 @@ export function HtmlLiveCard({
   const [showSource, setShowSource] = useState(false)
   const [copied, setCopied] = useState(false)
   const [opened, setOpened] = useState<string | null>(null)
+  const [shareError, setShareError] = useState<string | null>(null)
   const [size, setSize] = useState<{ width: number; height: number } | null>(null)
   const [cardWidth, setCardWidth] = useState(0)
   const [zoomed, setZoomed] = useState(false)
@@ -78,7 +90,9 @@ export function HtmlLiveCard({
           // A missing image is not cached: the desktop may store one later.
           if (state.image) remember(cacheKey, state)
         }
-        if (current) setImage(state.image ? { status: 'image', url: state.image } : { status: 'none' })
+        if (current) {
+          setImage(state.image ? { status: 'image', url: state.image, savedPath: state.savedPath } : { status: 'none' })
+        }
       } catch (error) {
         log.warn('still image did not load', error)
         if (current) setImage({ status: 'none' })
@@ -128,6 +142,30 @@ export function HtmlLiveCard({
     )
   }
 
+  const shareImage = (): void => {
+    if (image.status !== 'image') return
+    const { url, savedPath } = image
+    setShareError(null)
+    void (async () => {
+      try {
+        // A tall page's still is a JPEG: share it as one.
+        const jpeg = url.startsWith('data:image/jpeg')
+        const uri = `${FileSystem.cacheDirectory}${imageStem(savedPath, label)}.${jpeg ? 'jpg' : 'png'}`
+        await FileSystem.writeAsStringAsync(uri, url.slice(url.indexOf(',') + 1), {
+          encoding: FileSystem.EncodingType.Base64,
+        })
+        await Sharing.shareAsync(uri, {
+          mimeType: jpeg ? 'image/jpeg' : 'image/png',
+          UTI: jpeg ? 'public.jpeg' : 'public.png',
+          dialogTitle: 'Share image',
+        })
+      } catch (error) {
+        log.warn('still image share failed', error)
+        setShareError('Could not share the image.')
+      }
+    })()
+  }
+
   const fullHeight = size && cardWidth > 0 ? (cardWidth * size.height) / size.width : null
   const cropped = fullHeight !== null && fullHeight > HTML_LIVE_MAX_HEIGHT
 
@@ -167,7 +205,18 @@ export function HtmlLiveCard({
                 <Text style={styles.buttonText}>Open on desktop</Text>
               </Pressable>
             )}
+            {image.status === 'image' && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Share image"
+                onPress={shareImage}
+                style={styles.button}
+              >
+                <Text style={styles.buttonText}>Share image</Text>
+              </Pressable>
+            )}
             {opened !== null && <Text style={styles.result}>{opened}</Text>}
+            {shareError !== null && <Text style={styles.result}>{shareError}</Text>}
           </View>
         </View>
       ) : image.status === 'image' ? (

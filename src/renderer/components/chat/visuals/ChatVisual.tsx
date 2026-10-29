@@ -1,7 +1,8 @@
 /**
  * A ```mermaid or ```chart block drawn in a chat message, or at full size in
- * the right pane (variant 'pane'). Header: Source (raw text), Copy (SVG for a
- * diagram, tab-separated data for a chart) and Open in pane / Close.
+ * the right pane (variant 'pane'). Header: Source (raw text), Copy image, Open in
+ * pane / Close, and a menu with Save image and Copy SVG (a diagram) or Copy
+ * data (a chart, tab-separated).
  *
  * Diagrams render only once scrolled into view, and each result is cached by
  * theme and source, so re-renders and streaming never redraw one.
@@ -13,6 +14,8 @@ import { createRendererLogger } from '../../../logger'
 import { useLayoutStore } from '../../../stores/layout-store'
 import { diagramTheme } from '../../../services/diagram-theme'
 import { renderDiagram, type DiagramResult } from './diagram-render'
+import { VisualMenu } from './VisualMenu'
+import { copyPngToClipboard, svgBoxToPng, visualFileStem, visualMenuItems } from './visual-image'
 
 const log = createRendererLogger('chat:visual')
 
@@ -135,23 +138,67 @@ export function ChatVisual({
   const [ref, visible] = useInView(!pane)
   const drawn = useDrawn(kind, source, visible)
   const [showSource, setShowSource] = useState(false)
-  const [copied, setCopied] = useState(false)
+  // A count, not a flag: each copy restarts the timer.
+  const [copied, setCopied] = useState(0)
+  const [notice, setNotice] = useState<string | null>(null)
+  const boxRef = useRef<HTMLDivElement>(null)
   const noun = kind === 'mermaid' ? 'Diagram' : 'Chart'
 
   useEffect(() => {
     if (!copied) return
-    const timer = window.setTimeout(() => setCopied(false), 1500)
+    const timer = window.setTimeout(() => setCopied(0), 1500)
     return () => window.clearTimeout(timer)
   }, [copied])
 
-  const copy = (): void => {
+  useEffect(() => {
+    if (!notice) return
+    const timer = window.setTimeout(() => setNotice(null), 2500)
+    return () => window.clearTimeout(timer)
+  }, [notice])
+
+  const copyText = (): void => {
     if (drawn.status !== 'ok') return
     navigator.clipboard.writeText(drawn.copyText).then(
-      () => setCopied(true),
+      () => setNotice('Copied'),
       (error: unknown) => {
         log.warn('visual copy failed', error)
+        setNotice('Could not copy')
       },
     )
+  }
+
+  const png = (): Promise<string> =>
+    boxRef.current ? svgBoxToPng(boxRef.current) : Promise.reject(new Error('Nothing is drawn yet.'))
+
+  const copyImage = (): void => {
+    png()
+      .then(copyPngToClipboard)
+      .then(
+        () => setCopied((n) => n + 1),
+        (error: unknown) => {
+          log.warn('visual image copy failed', error)
+          setNotice('Could not copy image')
+        },
+      )
+  }
+
+  const saveImage = (): void => {
+    const name = `${visualFileStem(kind, source)}.png`
+    png()
+      .then((dataUrl) => window.api.app.saveImage({ suggestedFilename: name, dataUrl }))
+      .then(
+        (result) => {
+          if (result.ok) setNotice(`Saved ${result.path.split(/[\\/]/).pop()}`)
+          else if (!('canceled' in result)) {
+            log.warn('visual image save failed', result.error)
+            setNotice('Could not save')
+          }
+        },
+        (error: unknown) => {
+          log.warn('visual image save failed', error)
+          setNotice('Could not save')
+        },
+      )
   }
 
   const sourceView = showSource || drawn.status === 'error'
@@ -169,7 +216,9 @@ export function ChatVisual({
       }
     >
       <div className="flex items-center gap-[8px] border-b border-[var(--border)] px-[10px] py-[6px] text-[12px] text-[var(--text-secondary)]">
-        <span className="flex-1">{noun}</span>
+        <span className="flex-1 truncate" aria-live="polite">
+          {notice ?? noun}
+        </span>
         {drawn.status === 'ok' && (
           <>
             <button
@@ -180,8 +229,8 @@ export function ChatVisual({
             >
               Source
             </button>
-            <button type="button" className={headerButton} aria-live="polite" onClick={copy}>
-              {copied ? 'Copied' : kind === 'mermaid' ? 'Copy SVG' : 'Copy data'}
+            <button type="button" className={headerButton} aria-live="polite" onClick={copyImage} disabled={showSource}>
+              {copied ? 'Copied' : 'Copy image'}
             </button>
           </>
         )}
@@ -198,6 +247,12 @@ export function ChatVisual({
             Open in pane
           </button>
         )}
+        {drawn.status === 'ok' && (
+          <VisualMenu
+            items={visualMenuItems(kind, { saveImage: showSource ? undefined : saveImage, copyText })}
+            className={headerButton}
+          />
+        )}
       </div>
       {drawn.status === 'error' && (
         <div role="alert" className="whitespace-pre-wrap px-[10px] pt-[8px] text-[12px] text-[var(--error)]">
@@ -213,6 +268,7 @@ export function ChatVisual({
         <div className="p-[10px] text-[12px] text-[var(--text-muted)]">Drawing {noun.toLowerCase()}...</div>
       ) : (
         <div
+          ref={boxRef}
           className={
             pane
               ? 'flex-1 overflow-auto p-[16px] [&_svg]:h-auto [&_svg]:max-w-none'

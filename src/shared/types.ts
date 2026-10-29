@@ -486,3 +486,6 @@ export interface ConversationRow {
   /** See `SessionSummary.statusLine`. */
   status_line?: string | null
 }
+
+/** A chat visual's Save image: the chosen path, a cancelled dialog, or why the write failed. */
+export type SaveImageResult = { ok: true; path: string } | { ok: false; canceled: true } | { ok: false; error: string }

@@ -55,6 +55,9 @@ import {
   previewErrorsForAgent,
 } from '../../../services/html-preview-console'
 import { HtmlFileCard } from '../HtmlFileCard'
+import { VisualMenu } from './VisualMenu'
+import { asPng, copyPngToClipboard, visualMenuItems } from './visual-image'
+import { saveLivePage } from '../../../services/html-live-save'
 import { PreviewIcon } from '../../preview/preview-icons'
 import { createRendererLogger } from '../../../logger'
 import { cn } from '../../../lib/utils'
@@ -210,7 +213,9 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
   const [blocked, setBlocked] = useState<string[]>([])
   const [openError, setOpenError] = useState<string | null>(null)
   const [showSource, setShowSource] = useState(false)
-  const [copied, setCopied] = useState(false)
+  // A count, not a flag: each copy restarts the timer.
+  const [copied, setCopied] = useState(0)
+  const [notice, setNotice] = useState<string | null>(null)
   const [backendHasImage, setBackendHasImage] = useState(false)
   // The key whose backend state has loaded: a hidden capture waits for it.
   const [loadedKey, setLoadedKey] = useState<string | null>(null)
@@ -446,14 +451,80 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
 
   useEffect(() => {
     if (!copied) return
-    const timer = window.setTimeout(() => setCopied(false), 1500)
+    const timer = window.setTimeout(() => setCopied(0), 1500)
     return () => window.clearTimeout(timer)
   }, [copied])
 
+  useEffect(() => {
+    if (!notice) return
+    const timer = window.setTimeout(() => setNotice(null), 2500)
+    return () => window.clearTimeout(timer)
+  }, [notice])
+
   const copySource = () => {
     navigator.clipboard.writeText(source).then(
-      () => setCopied(true),
-      (err: unknown) => log.warn('live page copy failed', err),
+      () => setNotice('Copied source'),
+      (err: unknown) => {
+        log.warn('live page copy failed', err)
+        setNotice('Could not copy')
+      },
+    )
+  }
+  /** The running page as drawn now, else its still image. */
+  const pagePng = async (): Promise<string> => {
+    let wcId: number | undefined
+    try {
+      wcId = running ? webviewRef.current?.getWebContentsId?.() : undefined
+    } catch (err) {
+      // Throws until the guest is attached: the still image stands in.
+      log.debug('live page not attached yet', err)
+    }
+    const still = (wcId === undefined ? null : await window.api.preview.captureInline(wcId)) ?? memory.image
+    if (!still) throw new Error('This page has no image yet.')
+    return asPng(still)
+  }
+  const copyImage = () => {
+    pagePng()
+      .then(copyPngToClipboard)
+      .then(
+        () => setCopied((n) => n + 1),
+        (err: unknown) => {
+          log.warn('live page image copy failed', err)
+          setNotice('Could not copy image')
+        },
+      )
+  }
+  const saveImage = () => {
+    const name = htmlLiveFileName(title).replace(/\.html$/, '.png')
+    pagePng()
+      .then((dataUrl) => window.api.app.saveImage({ suggestedFilename: name, dataUrl }))
+      .then(
+        (result) => {
+          if (result.ok) setNotice(`Saved ${result.path.split(/[\\/]/).pop()}`)
+          else if (!('canceled' in result)) {
+            log.warn('live page image save failed', result.error)
+            setNotice('Could not save')
+          }
+        },
+        (err: unknown) => {
+          log.warn('live page image save failed', err)
+          setNotice('Could not save')
+        },
+      )
+  }
+  const saveAsFile = () => {
+    if (!key || !root) return
+    const target = { path: htmlLiveFileName(title), root, machineId, sessionId: sessionId ?? null }
+    saveLivePage({ ...target, live: { key, source, title } }).then(
+      (result) => {
+        if (result.ok) return
+        log.warn('live page save as file failed', result.error)
+        setNotice('Could not save')
+      },
+      (err: unknown) => {
+        log.warn('live page save as file failed', err)
+        setNotice('Could not save')
+      },
     )
   }
   const openInPane = () => {
@@ -513,7 +584,13 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
       className="my-[10px] w-[640px] max-w-full overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--bg-secondary)]"
     >
       <div className="flex items-center gap-[8px] border-b border-[var(--border)] px-[10px] py-[6px] text-[12px]">
-        <span className="min-w-0 truncate font-[500] text-[var(--text-primary)]">{label}</span>
+        {notice ? (
+          <span className="min-w-0 truncate text-[var(--text-muted)]" aria-live="polite">
+            {notice}
+          </span>
+        ) : (
+          <span className="min-w-0 truncate font-[500] text-[var(--text-primary)]">{label}</span>
+        )}
         <span className="flex-1 truncate text-[11px] text-[var(--text-muted)]">{libraries}</span>
         {errors.length > 0 && (
           <span className="whitespace-nowrap text-[11px] text-[var(--error)]">
@@ -533,14 +610,28 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
         </button>
         {verdict.ok && (
           <>
-            <button type="button" className={headerButton} aria-live="polite" onClick={copySource}>
-              {copied ? 'Copied' : 'Copy source'}
+            <button
+              type="button"
+              className={headerButton}
+              aria-live="polite"
+              onClick={copyImage}
+              disabled={!running && !image}
+            >
+              {copied ? 'Copied' : 'Copy image'}
             </button>
             {!inPane && (
               <button type="button" className={headerButton} onClick={openInPane} disabled={!key}>
                 Open in pane
               </button>
             )}
+            <VisualMenu
+              className={headerButton}
+              items={visualMenuItems('html-live', {
+                saveImage: running || image ? saveImage : undefined,
+                copyText: copySource,
+                saveAsFile: key && root ? saveAsFile : undefined,
+              })}
+            />
           </>
         )}
       </div>

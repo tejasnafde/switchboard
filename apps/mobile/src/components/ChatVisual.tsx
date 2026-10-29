@@ -10,6 +10,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Asset } from 'expo-asset'
 import * as Clipboard from 'expo-clipboard'
 import * as FileSystem from 'expo-file-system/legacy'
+import * as Sharing from 'expo-sharing'
+import { captureRef } from 'react-native-view-shot'
 import { WebView, type WebViewMessageEvent } from 'react-native-webview'
 import { chartDataText, parseChartSpec, type VisualKind } from '@shared/chat-visuals'
 import { createLogger } from '@shared/logger'
@@ -70,6 +72,7 @@ export function ChatVisual({ kind, source }: { kind: VisualKind; source: string 
   const [html, setHtml] = useState<string | null>(null)
   const [showSource, setShowSource] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [shareError, setShareError] = useState<string | null>(null)
   const webRef = useRef<WebView>(null)
   const invalid = chart && !chart.ok ? chart.error : state.status === 'error' ? state.error : null
   const noun = kind === 'mermaid' ? 'Diagram' : 'Chart'
@@ -124,7 +127,21 @@ export function ChatVisual({ kind, source }: { kind: VisualKind; source: string 
     )
   }
 
+  const share = (): void => {
+    setShareError(null)
+    void (async () => {
+      try {
+        const uri = await captureRef(webRef, { format: 'png', quality: 1, result: 'tmpfile' })
+        await Sharing.shareAsync(uri, { mimeType: 'image/png', UTI: 'public.png', dialogTitle: 'Share image' })
+      } catch (error) {
+        log.warn('visual share failed', error)
+        setShareError(`Could not share the ${noun.toLowerCase()}.`)
+      }
+    })()
+  }
+
   const canCopy = invalid === null && (chart?.ok === true || state.status === 'drawn')
+  const canShare = invalid === null && !showSource && html !== null && state.status === 'drawn'
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -149,7 +166,13 @@ export function ChatVisual({ kind, source }: { kind: VisualKind; source: string 
             <Text style={styles.buttonText}>{copied ? 'Copied' : kind === 'mermaid' ? 'Copy SVG' : 'Copy data'}</Text>
           </Pressable>
         )}
+        {canShare && (
+          <Pressable accessibilityRole="button" accessibilityLabel="Share image" onPress={share} style={styles.button}>
+            <Text style={styles.buttonText}>Share</Text>
+          </Pressable>
+        )}
       </View>
+      {shareError !== null && <Text style={styles.error}>{shareError}</Text>}
       {invalid !== null && (
         <Text style={styles.error}>{`This ${noun.toLowerCase()} could not be drawn: ${invalid}`}</Text>
       )}
