@@ -34,12 +34,19 @@ import { HOST_WRITE_SHOWN_REQUIRED, hostWriteApprovalProblem, hostWriteShownDige
 import type { PrWritePlan } from './pr-tools'
 import type { PeerSendPlan } from './peer-mcp-tools'
 import type { HubBatchPlan } from '../hub/hub-start'
+import {
+  SECRET_CARD_ID_PREFIX,
+  SECRET_REQUEST_DETAIL,
+  isSecretCardId,
+  isSecretRequestPlan,
+  type SecretRequestPlan,
+} from '@shared/agent-secret-request'
 import { createMainLogger } from '../logger'
 
 const log = createMainLogger('mcp:approvals')
 
 /** The write an approval runs, as data, so it survives a restart. */
-export type AgentWritePlan = PrWritePlan | PeerSendPlan | HubBatchPlan
+export type AgentWritePlan = PrWritePlan | PeerSendPlan | HubBatchPlan | SecretRequestPlan
 
 export type AgentApprovalCard = StoredApprovalCard<AgentWritePlan>
 
@@ -77,7 +84,12 @@ export class AgentApprovalBroker {
   }
 
   static owns(requestId: unknown): boolean {
-    return isAgentApprovalCardId(requestId)
+    return isAgentApprovalCardId(requestId) || isSecretCardId(requestId)
+  }
+
+  /** The chat's open secret request cards (`request_secret`), which have their own cap. */
+  openSecretCards(chatId: string): number {
+    return this.book.forChat(chatId).filter((c) => isSecretRequestPlan(c.plan)).length
   }
 
   /** Why the chat may not open another card (the cap), or null. Asked before the write budget is charged. */
@@ -89,13 +101,15 @@ export class AgentApprovalBroker {
     this.expireOld()
     const problem = this.book.openProblem(req.chatId)
     if (problem) return { ok: false, message: problem }
-    const requestId = `${AGENT_APPROVAL_ID_PREFIX}${Date.now()}_${randomBytes(4).toString('hex')}`
+    const secret = isSecretRequestPlan(req.plan)
+    const prefix = secret ? SECRET_CARD_ID_PREFIX : AGENT_APPROVAL_ID_PREFIX
+    const requestId = `${prefix}${Date.now()}_${randomBytes(4).toString('hex')}`
     const card: AgentApprovalCard = {
       requestId,
       chatId: req.chatId,
       threadId: req.threadId,
       toolName: req.toolName,
-      detail: `${req.detail}\n\n${AGENT_CARD_LIFETIME_TEXT}`,
+      detail: `${secret ? SECRET_REQUEST_DETAIL : req.detail}\n\n${AGENT_CARD_LIFETIME_TEXT}`,
       hostWrite: req.hostWrite ?? null,
       plan: req.plan,
       openedAt: this.deps.now?.() ?? Date.now(),
@@ -133,6 +147,9 @@ export class AgentApprovalBroker {
     if (!card) return { ok: false, message: 'That request is no longer open.' }
     const same = this.deps.sameChat ?? ((a, b) => a === b)
     if (!same(card.threadId, threadId)) return { ok: false, message: 'That request belongs to another chat.' }
+    // A secret is saved only through `saveSecret`, never by an approval: this path may carry free-form arguments.
+    if (decision === 'approve' && isSecretRequestPlan(card.plan))
+      return { ok: false, message: 'Answer this on your computer.' }
     if (decision === 'approve' && card.hostWrite) {
       if (!approver.mayApproveHostWrite) {
         log.warn(`refused a host write approval from ${approver.label}, which lacks the scope: ${requestId}`)
@@ -154,6 +171,22 @@ export class AgentApprovalBroker {
     return { ok: true }
   }
 
+  /**
+   * The user saved a secret. `save` writes the file and its row; when it
+   * throws, the card stays open. Runs synchronously, so the card cannot close
+   * between the check and the write.
+   */
+  saveSecret(threadId: string, requestId: string, save: (card: AgentApprovalCard) => void): AgentApprovalAnswer {
+    this.expireOld()
+    const card = this.book.get(requestId)
+    if (!card || !isSecretRequestPlan(card.plan)) return { ok: false, message: 'That request is no longer open.' }
+    const same = this.deps.sameChat ?? ((a, b) => a === b)
+    if (!same(card.threadId, threadId)) return { ok: false, message: 'That request belongs to another chat.' }
+    save(card)
+    this.close(requestId, { kind: 'approve', wake: true }, {}, threadId)
+    return { ok: true }
+  }
+
   /** The agent took a card back (`withdraw_approval`). Only one of its own chat's. */
   withdraw(chatId: string, requestId: string): AgentApprovalAnswer {
     const card = this.book.get(requestId)
@@ -163,9 +196,16 @@ export class AgentApprovalBroker {
     return { ok: true }
   }
 
-  /** The user stopped or archived the chat: nothing it asked for can still happen. */
-  closeChat(chatId: string): void {
-    for (const card of this.book.forChat(chatId)) this.close(card.requestId, { kind: 'stopped' }, {})
+  /**
+   * The user stopped or archived the chat: nothing it asked for can still
+   * happen. A secret request lives with the chat, so only an archive
+   * (`secrets: true`) closes it, not a Stop.
+   */
+  closeChat(chatId: string, opts: { secrets?: boolean } = {}): void {
+    for (const card of this.book.forChat(chatId)) {
+      if (!opts.secrets && isSecretRequestPlan(card.plan)) continue
+      this.close(card.requestId, { kind: 'stopped' }, {})
+    }
   }
 
   /** Close every card past the safety cap. Nothing it would have written is sent. */
@@ -214,5 +254,6 @@ function openedEvent(card: AgentApprovalCard): RuntimeRequestOpenedEvent {
     detail: card.detail,
     ...(card.hostWrite ? { hostWrite: card.hostWrite } : {}),
     ...(card.plan.kind === 'hub-batch' ? { hubBatch: card.plan.view } : {}),
+    ...(card.plan.kind === 'secret-request' ? { secretRequest: card.plan.card } : {}),
   }
 }

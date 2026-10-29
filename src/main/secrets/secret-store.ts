@@ -67,7 +67,7 @@ export interface SecretStoreOptions {
 }
 
 /** Fs errors carry the path, which names the secret and the chat folder: log the code only. */
-function errCode(err: unknown): string {
+export function errCode(err: unknown): string {
   return (err as NodeJS.ErrnoException)?.code ?? (err instanceof Error ? err.name : 'unknown')
 }
 

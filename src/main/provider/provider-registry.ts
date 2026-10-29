@@ -165,7 +165,19 @@ import { toolText, type McpToolResult } from '../mcp/mcp-session'
 import { buildChildHubMcpTools, buildHubMcpTools, HUB_INSTRUCTIONS, START_CHILDREN_TOOL } from '../mcp/hub-tools'
 import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } from '../hub/hub-start'
 import { appMetrics, userDataDir } from '../runtime'
-import { SecretStore } from '../secrets/secret-store'
+import { SecretStore, errCode, type SavedSecret } from '../secrets/secret-store'
+import { SecretRequestLimiter, SECRET_INSTRUCTIONS, buildSecretMcpTools } from '../mcp/secret-tools'
+import {
+  SECRET_EXTEND_MS,
+  SECRET_TTL_MS,
+  SECRET_VALUE_MAX_BYTES,
+  SECRETS_DIR_ENV,
+  agentSecretRequestEnabled,
+  isSecretRequestPlan,
+  secretClosedText,
+  secretDeclinedText,
+  secretSavedText,
+} from '@shared/agent-secret-request'
 import { join } from 'node:path'
 import { HubResourceSampler } from '../hub/hub-measure'
 import { HubWakeScheduler, type HubWakeHost } from '../hub/hub-wakes'
@@ -580,6 +592,16 @@ export class ProviderRegistry implements PeerToolHost {
     }
     const changed = this.peerLinks.syncLineage(pairs, Date.now())
     if (changed.length > 0) log.info('lineage links synced', { open: pairs.length, changed: changed.length })
+  }
+
+  private secretRequestOn(): boolean {
+    if (!this.secretStore) return false
+    try {
+      return agentSecretRequestEnabled(process.env, getSetting)
+    } catch (err) {
+      log.warn('could not read the agent_secret_request flag; it counts as off', err)
+      return false
+    }
   }
 
   private hubChildrenOn(): boolean {
@@ -1292,6 +1314,9 @@ export class ProviderRegistry implements PeerToolHost {
 
   /** Pull request writes per chat, shared by every client of this backend. */
   private readonly agentWriteBudget = new AgentWriteBudget()
+  private readonly secretLimiter = new SecretRequestLimiter()
+  /** A save's file, from `answerAgentSecret` to the card's result in `reportAgentCard`. */
+  private readonly savedSecrets = new Map<string, SavedSecret>()
 
   /**
    * Hop depth of each thread's current turn - how many consecutive
@@ -2438,6 +2463,7 @@ export class ProviderRegistry implements PeerToolHost {
     response: HostWriteResponse,
   ): Promise<void> {
     const plan = card.plan
+    if (isSecretRequestPlan(plan)) return this.reportSecretCard(card, plan.card.name, close)
     const what = isPrWritePlan(plan)
       ? prWritePlanSummary(plan)
       : isHubBatchPlan(plan)
@@ -2499,6 +2525,55 @@ export class ProviderRegistry implements PeerToolHost {
     })
   }
 
+  /** A secret card closed: tell the agent the path (never the value) or why nothing was saved, and leave a row. */
+  private async reportSecretCard(card: AgentApprovalCard, name: string, close: ApprovalCardClose): Promise<void> {
+    let outcome: ApprovalResultOutcome
+    let text: string
+    if (close.kind === 'approve') {
+      const saved = this.savedSecrets.get(card.requestId)
+      this.savedSecrets.delete(card.requestId)
+      if (!saved) {
+        log.error(`secret card ${card.requestId} closed as saved without a saved file`)
+        return
+      }
+      outcome = 'done'
+      text = secretSavedText({
+        name,
+        file: saved.file,
+        expiresAt: saved.expiresAt,
+        planMode: this.chatRuntimeMode(card.threadId) === 'plan',
+      })
+    } else if (close.kind === 'deny') {
+      outcome = close.wake ? 'declined' : 'dismissed'
+      text = secretDeclinedText(name)
+    } else {
+      outcome = close.kind
+      text = secretClosedText(name, close.kind)
+    }
+    const delivery = await this.deliverApprovalResult(card, text, closeWakesAgent(close))
+    const messageId = `apr_${card.requestId}`
+    const content = formatApprovalResultMarker({
+      requestId: card.requestId,
+      title: `Secret ${name}`,
+      outcome,
+      text: close.kind === 'approve' ? `Saved ${name}.` : text,
+      delivery,
+    })
+    try {
+      saveMessageIfAbsent(messageId, card.chatId, 'system', content)
+    } catch (err) {
+      log.warn(`failed to persist the result of secret card ${card.requestId}`, err)
+    }
+    this.publish({
+      type: 'approval.result',
+      threadId: this.liveSessionId(card.threadId) ?? card.threadId,
+      messageId,
+      requestId: card.requestId,
+      content,
+      at: Date.now(),
+    })
+  }
+
   private async runAgentWrite(card: AgentApprovalCard, response: HostWriteResponse) {
     const threadId = this.liveSessionId(card.threadId) ?? card.threadId
     const runtimeMode = (): RuntimeMode => this.chatRuntimeMode(card.threadId)
@@ -2515,6 +2590,8 @@ export class ProviderRegistry implements PeerToolHost {
       if (!this.hubChildrenOn()) return toolText('Child chats are turned off, so no children were started.', true)
       return this.hubStarter.approve(plan.batchId, runtimeMode())
     }
+    // Saved only through answerAgentSecret, which reports its own result.
+    if (isSecretRequestPlan(plan)) return toolText('A secret is not saved by an approval.', true)
     return runPeerSendPlan({ threadId, runtimeMode, publish, peers: this }, plan)
   }
 
@@ -2658,9 +2735,71 @@ export class ProviderRegistry implements PeerToolHost {
     return { live }
   }
 
-  /** The user stopped or archived the chat: its open cards close unanswered. */
-  closeAgentCards(threadId: string): void {
-    this.agentApprovals.closeChat(resolveRootThreadId(threadId))
+  /**
+   * The user stopped or archived the chat: its open cards close unanswered.
+   * A secret request and its saved files live with the chat, so only an
+   * archive closes and deletes them.
+   */
+  closeAgentCards(threadId: string, opts: { archived?: boolean } = {}): void {
+    const root = resolveRootThreadId(threadId)
+    this.agentApprovals.closeChat(root, { secrets: opts.archived })
+    if (!opts.archived || !this.secretStore) return
+    try {
+      this.secretStore.removeChat(root)
+    } catch (err) {
+      log.warn(`could not delete the secrets of archived chat ${root}; the sweep retries`, errCode(err))
+    }
+  }
+
+  /**
+   * The user's answer to a secret card, from the desktop's answer channel.
+   * A save writes the file and its row, then closes the card, whose result
+   * turn names the path. The value is dropped here and never logged.
+   */
+  answerAgentSecret(
+    threadId: string,
+    cardId: string,
+    answer: { save: string } | { decline: true },
+  ): { ok: true } | { ok: false; message: string } {
+    if (!this.secretStore || !this.secretRequestOn()) return { ok: false, message: 'Secret requests are turned off.' }
+    if (isConversationArchived(resolveRootThreadId(threadId))) return { ok: false, message: 'This chat is archived.' }
+    if ('decline' in answer)
+      return this.agentApprovals.respond(threadId, cardId, 'deny', {}, { mayApproveHostWrite: false, label: 'desktop' })
+    const value = Buffer.from(answer.save, 'utf8')
+    try {
+      if (value.length === 0 || value.length > SECRET_VALUE_MAX_BYTES)
+        return { ok: false, message: 'The value must be 1 byte to 16 KiB.' }
+      const store = this.secretStore
+      return this.agentApprovals.saveSecret(threadId, cardId, (card) => {
+        if (!isSecretRequestPlan(card.plan)) throw new Error('not a secret card')
+        const saved = store.save({
+          threadId: card.chatId,
+          name: card.plan.card.name,
+          value,
+          cardId,
+          expiresAt: Date.now() + SECRET_TTL_MS[card.plan.card.ttl],
+        })
+        this.savedSecrets.set(cardId, saved)
+      })
+    } catch (err) {
+      log.warn(`could not save the secret for card ${cardId}; the card stays open`, errCode(err))
+      return { ok: false, message: 'Switchboard could not save it. Try again.' }
+    } finally {
+      value.fill(0)
+    }
+  }
+
+  /** "Extend" on the saved line: 24 hours from now. The agent is not told. */
+  extendAgentSecret(secretId: string): { ok: true; expiresAt: number } | { ok: false; message: string } {
+    const expiresAt = Date.now() + SECRET_EXTEND_MS
+    if (!this.secretStore?.extend(secretId, expiresAt)) return { ok: false, message: 'That secret is gone.' }
+    return { ok: true, expiresAt }
+  }
+
+  /** "Delete now" on the saved line. The agent is not told. */
+  deleteAgentSecret(secretId: string): { ok: true } | { ok: false; message: string } {
+    if (!this.secretStore?.remove(secretId)) return { ok: false, message: 'That secret is gone.' }
+    return { ok: true }
   }
 
   /**
@@ -2677,6 +2816,10 @@ export class ProviderRegistry implements PeerToolHost {
     const hubOn = this.hubChildrenOn()
     const openChild = hubOn && this.hubStarter.isOpenChild(threadId)
     const parentTools = hubOn && !openChild
+    const secretsOn = this.secretRequestOn()
+    const instructions = [parentTools ? HUB_INSTRUCTIONS : '', secretsOn ? SECRET_INSTRUCTIONS : '']
+      .filter(Boolean)
+      .join(' ')
     try {
       return await this.switchboardMcp.open(
         threadId,
@@ -2709,6 +2852,16 @@ export class ProviderRegistry implements PeerToolHost {
             hubChildren: hubOn,
           }),
           ...buildApprovalMcpTools({ chatId: chatId(), approvals: this.agentApprovals }),
+          ...(secretsOn
+            ? buildSecretMcpTools({
+                threadId,
+                chatId: chatId(),
+                runtimeMode,
+                isOpenChild: () => this.hubChildrenOn() && this.hubStarter.isOpenChild(threadId),
+                approvals: this.agentApprovals,
+                limiter: this.secretLimiter,
+              })
+            : []),
           ...(parentTools
             ? buildHubMcpTools({
                 parent: () => ({
@@ -2752,7 +2905,7 @@ export class ProviderRegistry implements PeerToolHost {
               })
             : []),
         ],
-        parentTools ? HUB_INSTRUCTIONS : undefined,
+        instructions || undefined,
       )
     } catch (err) {
       log.warn(`Switchboard MCP server unavailable for ${threadId}; starting without its tools`, err)
@@ -3949,6 +4102,17 @@ export class ProviderRegistry implements PeerToolHost {
           this.sessionEpochs.set(opts.threadId, executionEpoch)
           const switchboardMcp = await this.openSwitchboardMcp(opts.threadId, opts.provider)
           if (switchboardMcp) enrichedOpts.switchboardMcp = switchboardMcp
+          // A folder path, never a value: a secret saved later lands in it, so the running agent finds it.
+          if (switchboardMcp && this.secretRequestOn() && this.secretStore) {
+            try {
+              enrichedOpts.resolvedEnv = {
+                ...enrichedOpts.resolvedEnv,
+                [SECRETS_DIR_ENV]: this.secretStore.chatDir(opts.threadId),
+              }
+            } catch (err) {
+              log.warn(`could not make the secrets folder for ${opts.threadId}; starting without it`, errCode(err))
+            }
+          }
           await this.orphanReap
           if (this.stopRequestedDuringStart.delete(opts.threadId)) throw new Error(SESSION_START_STOPPED)
           const session = await adapter.startSession(enrichedOpts, (event) => {
@@ -4690,7 +4854,7 @@ export function notifyWorktreeSwap(threadId: string, cwd: string | null): void {
 export function notifyConversationArchived(conversationId: string): void {
   activeRegistry?.dropPeerLinks(conversationId)
   activeRegistry?.releaseHeldPeerMessages(conversationId)
-  activeRegistry?.closeAgentCards(conversationId)
+  activeRegistry?.closeAgentCards(conversationId, { archived: true })
   activeRegistry?.limitResumer?.disarm(conversationId, 'archive')
 }
 
