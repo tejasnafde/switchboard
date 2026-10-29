@@ -15,6 +15,7 @@ import { ensureBookmarksTable } from './bookmarks'
 import { ensurePullRequestLinkSchema } from './pull-request-links'
 import { ensurePullRequestHiddenSchema } from './pull-request-hidden'
 import { ensureAgentApprovalCardSchema } from './agent-approval-cards'
+import { ensureAgentSecretsSchema } from './agent-secrets'
 import { ensurePeerHeldMessageSchema } from './peer-held-messages'
 import { ensureQueuedTurnRowsSchema } from './queued-turn-rows'
 import { ensureTurnCheckpointSchema } from './turn-checkpoints'
@@ -698,6 +699,7 @@ export function migrate(db: Database.Database): void {
   ensurePullRequestLinkSchema(db)
   ensurePullRequestHiddenSchema(db)
   ensureAgentApprovalCardSchema(db)
+  ensureAgentSecretsSchema(db)
   ensurePeerHeldMessageSchema(db)
   ensureQueuedTurnRowsSchema(db)
   ensureTurnCheckpointSchema(db)
