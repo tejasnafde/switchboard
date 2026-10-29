@@ -169,10 +169,13 @@ import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } fro
 import { appMetrics, secretsRootDir } from '../runtime'
 import { onConversationArchived } from '../db/archive-events'
 import { SecretStore, errCode, type SavedSecret } from '../secrets/secret-store'
+import { secretRedactor } from '../secrets/secret-redactor'
+import { RuntimeEventRedaction, type RedactedEvents } from '../secrets/runtime-event-redaction'
 import { SecretRequestLimiter, SECRET_INSTRUCTIONS, buildSecretMcpTools } from '../mcp/secret-tools'
 import {
   SECRET_EXTEND_MS,
   SECRET_TTL_MS,
+  SECRET_MASKED_TEXT,
   SECRET_VALUE_MAX_BYTES,
   SECRETS_DIR_ENV,
   agentSecretRequestEnabled,
@@ -3071,7 +3074,52 @@ export class ProviderRegistry implements PeerToolHost {
     }
   }
 
+  /**
+   * Saved secrets are masked before anything below stores or sends the event
+   * (`secrets/runtime-event-redaction.ts`). A streamed delta may come out
+   * later, with the thread's next event.
+   */
   private publish(event: RuntimeEvent): void {
+    const { events, masked } = this.secretRedaction.apply(event)
+    for (const next of events) this.publishEvent(next)
+    if (masked) this.noteSecretMasked(event.threadId, masked)
+    if (
+      event.type === 'turn.completed' ||
+      (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))
+    )
+      this.maskedTurns.delete(resolveRootThreadId(event.threadId))
+  }
+
+  private readonly secretRedaction = new RuntimeEventRedaction(secretRedactor, (threadId) =>
+    resolveRootThreadId(threadId),
+  )
+  /** Chats whose running turn already got its masked-secret row. */
+  private readonly maskedTurns = new Set<string>()
+
+  /**
+   * One row per turn tells the user a saved secret showed up and was masked.
+   * The turn goes on. A hit in a changed file names the file.
+   */
+  private noteSecretMasked(
+    threadId: string,
+    masked: NonNullable<RedactedEvents['masked']>,
+    paths: string[] = [],
+  ): void {
+    const root = resolveRootThreadId(threadId)
+    if (masked.where !== 'diff') {
+      if (this.maskedTurns.has(root)) return
+      this.maskedTurns.add(root)
+    }
+    log.info('saved secret masked', { threadId: root, where: masked.where })
+    const files = paths.length > 0 ? paths : masked.path ? [masked.path] : []
+    this.postSystemRow(
+      root,
+      'secretmasked',
+      SECRET_MASKED_TEXT + (files.length > 0 ? ` It is in ${files.join(', ')}. Remove it before you commit.` : ''),
+    )
+  }
+
+  private publishEvent(event: RuntimeEvent): void {
     if (event.type === 'turn.queued' || event.type === 'turn.dequeued' || event.type === 'turn.queue-held') {
       const observed = this.queuedTurns.observe(event, this.sessionAdapters.get(event.threadId)?.provider)
       if (observed.releasesOutstandingTurn) this.finishOutstandingTurn(event.threadId)
@@ -3471,10 +3519,14 @@ export class ProviderRegistry implements PeerToolHost {
       const events = filterNotebookFileEdits(await this.checkpoints.finishTurn(threadId), (ev) =>
         notebookManager.explainsFileEdit(ev),
       )
-      for (const ev of [...events, ...notebookManager.drainTurnEdits(threadId)]) {
+      const maskedPaths: string[] = []
+      for (const edit of [...events, ...notebookManager.drainTurnEdits(threadId)]) {
+        const { event: ev, masked } = this.secretRedaction.mask(edit)
+        if (masked?.path) maskedPaths.push(masked.path)
         this.mirrorFileEdit(ev, turnEndedAt)
         this.bus.publish(ev)
       }
+      if (maskedPaths.length > 0) this.noteSecretMasked(threadId, { where: 'diff' }, maskedPaths)
     } catch (err) {
       log.warn(`emitFileEdits failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
     }

@@ -10,8 +10,10 @@ import {
   listConversationSegments,
   messageRowsToChatMessages,
   messageWindowRows,
+  resolveRootThreadId,
   threadFamilyIds,
 } from '../db/database'
+import { secretRedactor } from '../secrets/secret-redactor'
 import { compareSessionCopies, listClaudeSessionCopies, claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
 import { scanCodexSessionCopies } from '../projects/session-scanner'
@@ -194,7 +196,7 @@ export async function loadConversationHistory(
     timing.mergeHit = true
     mergedHistories.delete(conversationId)
     mergedHistories.set(conversationId, memo)
-    return { ...memo.history, timing }
+    return maskedHistory(conversationId, { ...memo.history, timing })
   }
   const databaseMessages = familyIds.flatMap((id) => messageRowsToChatMessages(getMessagesForConversation(id)))
   const enrichments = displayBodyEnrichments(familyIds)
@@ -218,7 +220,27 @@ export async function loadConversationHistory(
     databaseMessageCount: databaseMessages.length,
   }
   rememberMergedHistory(conversationId, key, history)
-  return { ...history, timing }
+  return maskedHistory(conversationId, { ...history, timing })
+}
+
+/**
+ * Transcripts are read as the provider wrote them, so a live saved secret is
+ * masked on the way out. The memo keeps the read as it was: a secret saved or
+ * deleted later changes what is masked, not what is cached.
+ */
+function maskedHistory(conversationId: string, history: ConversationHistory): ConversationHistory {
+  const root = secretRedactor.any() ? resolveRootThreadId(conversationId) : null
+  if (root === null || !secretRedactor.armed(root)) return history
+  return {
+    ...history,
+    messages: secretRedactor.redactDeep(root, history.messages).value,
+    forkMessages: secretRedactor.redactDeep(root, history.forkMessages).value,
+  }
+}
+
+function maskedMessages(conversationId: string, messages: ChatMessage[]): ChatMessage[] {
+  if (!secretRedactor.any()) return messages
+  return secretRedactor.redactDeep(resolveRootThreadId(conversationId), messages).value
 }
 
 export interface ConversationHistoryWindow extends Omit<MergedWindow, 'rowsRead'> {
@@ -272,7 +294,7 @@ async function loadWindow(
   timing.dbMs += readMs
   timing.mergeMs = enrichStart - start - readMs - sliceMs
   const enrichments = displayBodyEnrichments(familyIds, userContents(window.messages))
-  const messages = enrichMessagesWithDisplayBody(window.messages, enrichments)
+  const messages = maskedMessages(conversationId, enrichMessagesWithDisplayBody(window.messages, enrichments))
   timing.enrichMs = performance.now() - enrichStart
   return {
     ...window,
@@ -407,7 +429,8 @@ function sameKey(a: unknown[], b: unknown[]): boolean {
 
 /** The last merged history of a conversation, unchecked: only for rows that do not change. */
 export function mergedHistoryMessages(conversationId: string): ChatMessage[] | undefined {
-  return mergedHistories.get(conversationId)?.history.messages
+  const messages = mergedHistories.get(conversationId)?.history.messages
+  return messages && maskedMessages(conversationId, messages)
 }
 
 /** Test seam. */

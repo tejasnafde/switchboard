@@ -9,8 +9,10 @@
  * `agent_secret_dirs`, so it cannot be guessed from a transcript path. The
  * table rows (`db/agent-secrets.ts`) list the names, so nothing here needs to
  * list a chat folder except the sweep, which opens it to 0700 for the read.
- * No encryption at rest: the agent's commands read plaintext, and the short
- * expiry is the control. Logs name row ids only, never a name or a value.
+ * While a file is live its value is also armed in the redactor
+ * (`secret-redactor.ts`): on save, and by the sweep at start, which reads the
+ * live files back. Every delete drops it. No encryption at rest: the agent's
+ * commands read plaintext, and the short expiry is the control. Logs name row ids only, never a name or a value.
  */
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -21,6 +23,7 @@ import {
   fsyncSync,
   mkdirSync,
   openSync,
+  readFileSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -30,6 +33,8 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { createMainLogger } from '../logger'
+import { resolveRootThreadId } from '../db/conversations'
+import { secretRedactor, type SecretRedactor } from './secret-redactor'
 import {
   claimSecretDirId,
   deleteSecretDir,
@@ -66,6 +71,8 @@ export interface SecretStoreOptions {
   onExpired?: (row: AgentSecretRow) => void
   /** Exclude the root from backups. Defaults to `tmutil addexclusion` on macOS. */
   excludeFromBackup?: (dir: string) => void
+  /** Masks live values in output. Defaults to the backend's one matcher. */
+  redactor?: SecretRedactor
 }
 
 /** Fs errors carry the path, which names the secret and the chat folder: log the code only. */
@@ -85,6 +92,7 @@ export class SecretStore {
   private readonly now: () => number
   private readonly onExpired?: (row: AgentSecretRow) => void
   private readonly excludeFromBackup: (dir: string) => void
+  private readonly redactor: SecretRedactor
   private readonly timers = new Map<string, NodeJS.Timeout>()
   private sweepTimer: NodeJS.Timeout | null = null
   private rootReady = false
@@ -94,6 +102,7 @@ export class SecretStore {
     this.now = opts.now ?? Date.now
     this.onExpired = opts.onExpired
     this.excludeFromBackup = opts.excludeFromBackup ?? tmutilExclude
+    this.redactor = opts.redactor ?? secretRedactor
   }
 
   /** Create the root with its mode, backup exclusion and Spotlight marker, once per process. */
@@ -170,7 +179,11 @@ export class SecretStore {
       this.unlinkQuiet(partial)
       throw err
     }
-    for (const row of replaced) this.clearTimer(row.id)
+    for (const row of replaced) {
+      this.clearTimer(row.id)
+      this.redactor.drop(row.id)
+    }
+    this.redactor.add(resolveRootThreadId(input.threadId), id, input.name, input.value)
     this.arm(id, input.expiresAt)
     return { id, file, expiresAt: input.expiresAt }
   }
@@ -202,6 +215,7 @@ export class SecretStore {
   /** The chat was archived or deleted: every file, the folder and its dir row go. */
   removeChat(threadId: string): void {
     for (const row of listLiveAgentSecrets(threadId)) this.deleteRow(row)
+    this.redactor.dropChat(resolveRootThreadId(threadId))
     const dirId = getSecretDirId(threadId)
     if (!dirId) return
     try {
@@ -220,7 +234,8 @@ export class SecretStore {
    * Delete every archived chat's files and folder (an archive whose own
    * delete failed), every expired file, every folder with no dir row (a crash
    * orphan), every `.partial` file and every file no live row names. A file
-   * that has not expired stays: the chat is still there after a restart.
+   * that has not expired stays: the chat is still there after a restart, and
+   * its value is read back into the redactor.
    */
   sweep(): void {
     if (!existsSync(this.root)) return
@@ -236,7 +251,10 @@ export class SecretStore {
     for (const row of listLiveAgentSecrets()) {
       if (row.expiresAt <= now) {
         if (this.deleteRow(row)) this.onExpired?.(row)
-      } else if (!this.timers.has(row.id)) this.arm(row.id, row.expiresAt)
+        continue
+      }
+      if (!this.timers.has(row.id)) this.arm(row.id, row.expiresAt)
+      if (!this.redactor.has(row.id)) this.rearm(row)
     }
     const keep = new Map<string, Set<string>>()
     for (const row of listLiveAgentSecrets()) {
@@ -278,13 +296,32 @@ export class SecretStore {
     this.sweepTimer.unref?.()
   }
 
-  /** Quit: a last sweep of expired files, then drop the timers. Files that live on stay. */
+  /** Quit: a last sweep of expired files, then drop the timers and values. Files that live on stay. */
   stop(): void {
     this.runSweep()
     if (this.sweepTimer) clearInterval(this.sweepTimer)
     this.sweepTimer = null
-    for (const t of this.timers.values()) clearTimeout(t)
+    for (const [id, t] of this.timers) {
+      clearTimeout(t)
+      this.redactor.drop(id)
+    }
     this.timers.clear()
+  }
+
+  /** A live file from before a restart: read its value back so output is masked again. */
+  private rearm(row: AgentSecretRow): void {
+    let value: Buffer
+    try {
+      value = readFileSync(join(this.root, row.dirId, row.name))
+    } catch (err) {
+      log.warn(`could not read secret ${row.id} back for masking`, errCode(err))
+      return
+    }
+    try {
+      this.redactor.add(row.rootThreadId, row.id, row.name, value)
+    } finally {
+      value.fill(0)
+    }
   }
 
   private runSweep(): void {
@@ -330,6 +367,7 @@ export class SecretStore {
       return false
     }
     markAgentSecretDeleted(row.id, this.now())
+    this.redactor.drop(row.id)
     return true
   }
 
