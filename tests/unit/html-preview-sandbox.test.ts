@@ -234,6 +234,8 @@ describe('inline live frames (```html-live) in the same sandbox', () => {
     error: '#f85149',
     font: 'sans-serif',
     mono: 'monospace',
+    radius: '6px',
+    chart: ['#58a6ff', '#3fb950', '#d29922', '#a371f7', '#39c5cf', '#db61a2'],
   }
   let events: PreviewEvent[]
   let ctl: PreviewController

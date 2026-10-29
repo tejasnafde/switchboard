@@ -49,6 +49,8 @@ export interface SecretToolContext {
   runtimeMode(): RuntimeMode
   /** An open child chat (`hub_children`) is not where the user is looking. */
   isOpenChild(): boolean
+  /** The root chat is archived. An archived chat cannot take a secret. */
+  archived(): boolean
   approvals: Pick<AgentApprovalBroker, 'open' | 'openSecretCards'>
   limiter: SecretRequestLimiter
 }
@@ -93,6 +95,7 @@ export function buildSecretMcpTools(ctx: SecretToolContext): McpTool[] {
       },
       async call(args) {
         if (ctx.runtimeMode() === 'plan') return toolText(SECRET_PLAN_MODE_REFUSAL, true)
+        if (ctx.archived()) return toolText('This chat is archived. It cannot ask for a secret.', true)
         if (ctx.isOpenChild())
           return toolText('A child chat cannot ask for a secret. Report to the parent chat that you need one.', true)
         const checked = checkSecretRequestArgs(args)

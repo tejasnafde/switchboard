@@ -7,10 +7,12 @@
  * theme and source, so re-renders and streaming never redraw one.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent, type RefObject } from 'react'
+import { CHART_SERIES_COLORS } from '@shared/chart-colors'
 import { chartDataText, parseChartSpec, renderChart, type ChartPalette, type VisualKind } from '@shared/chat-visuals'
 import { createRendererLogger } from '../../../logger'
 import { useLayoutStore } from '../../../stores/layout-store'
-import { renderDiagram, type DiagramResult, type DiagramTheme } from './diagram-render'
+import { diagramTheme } from '../../../services/diagram-theme'
+import { renderDiagram, type DiagramResult } from './diagram-render'
 
 const log = createRendererLogger('chat:visual')
 
@@ -19,16 +21,7 @@ const CHART_PALETTE: ChartPalette = {
   muted: 'var(--text-secondary)',
   grid: 'var(--border)',
   font: 'var(--font-sans)',
-  series: [
-    'var(--accent)',
-    'var(--success)',
-    'var(--warning)',
-    '#a371f7',
-    '#39c5cf',
-    '#db61a2',
-    'var(--error)',
-    'var(--text-muted)',
-  ],
+  series: CHART_SERIES_COLORS,
 }
 
 const CACHE_LIMIT = 64
@@ -45,19 +38,6 @@ function cachedDiagram(source: string, themeKey: string): Promise<DiagramResult>
     if (diagramCache.size > CACHE_LIMIT) diagramCache.delete(diagramCache.keys().next().value as string)
   }
   return hit
-}
-
-function diagramTheme(): DiagramTheme {
-  const css = getComputedStyle(document.documentElement)
-  const v = (name: string): string => css.getPropertyValue(name).trim()
-  return {
-    dark: !document.documentElement.classList.contains('theme-light'),
-    surface: v('--bg-tertiary'),
-    text: v('--text-primary'),
-    line: v('--text-secondary'),
-    border: v('--text-muted'),
-    font: v('--font-sans'),
-  }
 }
 
 function subscribeThemeClass(onChange: () => void): () => void {

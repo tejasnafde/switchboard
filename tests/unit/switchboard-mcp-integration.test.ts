@@ -67,6 +67,7 @@ import { SwitchboardMcpServer, type SwitchboardMcpLaunch } from '../../src/main/
 import { toolText, type McpTool } from '../../src/main/mcp/mcp-session'
 import { setAgentPullRequestAccess, type AgentPullRequestAccess } from '../../src/main/mcp/pr-tools'
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
+import { setVisualPreviewRenderer } from '../../src/main/mcp/visual-preview-tool'
 import { withBackendRequestContext } from '../../src/main/backend/request-context'
 import { ProviderChannels } from '../../src/shared/ipc-channels'
 import { HOST_WRITE_SHOWN_REQUIRED, hostWriteShownDigest } from '../../src/shared/host-write-phone'
@@ -454,5 +455,66 @@ describe('through the provider registry', () => {
     expect(posted).toEqual([])
     await server.stop()
     setAgentPullRequestAccess(null)
+  })
+})
+
+describe('preview_visual through the registry (flag agent_visual_preview)', () => {
+  async function toolsAndInstructions(threadId: string) {
+    const host = new FakeHost()
+    const adapter = new LaunchRecordingAdapter()
+    const server = new SwitchboardMcpServer({ bridgeDir: () => bridgeDir })
+    const registry = new ProviderRegistry(host, new Map([['codex', adapter]]), undefined, undefined, server)
+    registry.registerIpcHandlers()
+    await host.invoke(ProviderChannels.START_SESSION, { threadId, provider: 'codex', cwd: projectDir })
+    const client = connect(adapter.launches[0]!)
+    const init = await client.request('initialize', {})
+    const list = await client.request('tools/list')
+    const names = (list.result as { tools: Array<{ name: string }> }).tools.map((t) => t.name)
+    return { client, server, names, instructions: (init.result as { instructions: string }).instructions }
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    setVisualPreviewRenderer(null)
+  })
+
+  it('is absent with the flag off, even on a desktop', async () => {
+    setVisualPreviewRenderer(async () => ({ ok: false, error: 'unused' }))
+    const { server, names, instructions } = await toolsAndInstructions('vp-off')
+    expect(names).not.toContain('preview_visual')
+    expect(instructions).not.toContain('preview_visual')
+    await server.stop()
+  })
+
+  it('is absent on a backend with no window to draw in (the headless server), even with the flag on', async () => {
+    vi.stubEnv('SB_AGENT_VISUAL_PREVIEW', '1')
+    const { server, names } = await toolsAndInstructions('vp-headless')
+    expect(names).not.toContain('preview_visual')
+    await server.stop()
+  })
+
+  it('is listed with the flag on, and a call returns the image the desktop drew', async () => {
+    vi.stubEnv('SB_AGENT_VISUAL_PREVIEW', '1')
+    setVisualPreviewRenderer(async (request) => ({
+      ok: true,
+      image: 'data:image/png;base64,iVBORw0KGgo=',
+      contentHeight: 200,
+      frameHeight: 200,
+      width: 600,
+      errors: [],
+      blocked: request.source.includes('fetch') ? ['https://example.com/x'] : [],
+    }))
+    const { client, server, names, instructions } = await toolsAndInstructions('vp-on')
+    expect(names).toContain('preview_visual')
+    expect(instructions).toContain('Before you post a complex ```html-live page')
+    const call = await client.request('tools/call', {
+      name: 'preview_visual',
+      arguments: { block: '```html-live\n<script>fetch("https://example.com/x")</script>\n```' },
+    })
+    const content = (call.result as { content: Array<{ type: string; data?: string; text?: string }> }).content
+    expect(content[0]).toEqual({ type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' })
+    expect(content[1].text).toContain('Content height 200 px')
+    expect(content[1].text).toContain('Blocked requests')
+    await server.stop()
   })
 })

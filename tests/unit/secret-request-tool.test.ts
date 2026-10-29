@@ -43,11 +43,17 @@ describe('checkSecretRequestArgs', () => {
     const text = secretSavedText({ name: 'K_EY', file: '/s/d/K_EY', expiresAt: 0, planMode: true })
     expect(text).toContain('/s/d/K_EY')
     expect(text).toContain('$SWITCHBOARD_SECRETS_DIR/K_EY')
+    expect(text).toContain('$env:SWITCHBOARD_SECRETS_DIR/K_EY')
     expect(text).toContain('plan mode')
   })
 })
 
-function setup(mode: RuntimeMode = 'sandbox', child = false, store?: ApprovalCardStore<AgentWritePlan>) {
+function setup(
+  mode: RuntimeMode = 'sandbox',
+  child = false,
+  store?: ApprovalCardStore<AgentWritePlan>,
+  archived = false,
+) {
   const events: RuntimeEvent[] = []
   let now = 0
   let clock = Date.now()
@@ -58,6 +64,7 @@ function setup(mode: RuntimeMode = 'sandbox', child = false, store?: ApprovalCar
     chatId: 'chat',
     runtimeMode: () => mode,
     isOpenChild: () => child,
+    archived: () => archived,
     approvals: broker,
     limiter,
   })
@@ -83,6 +90,7 @@ describe('request_secret', () => {
   it('refuses plan mode, an open child, and bad arguments without opening a card', async () => {
     expect((await setup('plan').call()).content[0].text).toMatch(/plan mode/)
     expect((await setup('sandbox', true).call()).isError).toBe(true)
+    expect((await setup('sandbox', false, undefined, true).call()).content[0].text).toMatch(/archived/)
     const s = setup()
     expect((await s.call({ ...ARGS, extra: 1 })).isError).toBe(true)
     expect(s.events).toEqual([])
@@ -179,6 +187,24 @@ describe('saveSecret when the card store fails', () => {
     expect(store.rows.has(id)).toBe(true)
     expect(s.broker.pendingEvents('chat')).toHaveLength(1)
     expect(s.events.filter((e) => e.type === 'request.closed')).toEqual([])
+  })
+
+  it('keeps the card open in memory when the save and the put back both throw', async () => {
+    const store = failingStore()
+    const s = setup('sandbox', false, store)
+    await s.call()
+    const id = (s.events[0] as { requestId: string }).requestId
+    store.failPut = true
+    expect(() =>
+      s.broker.saveSecret('chat', id, () => {
+        throw new Error('disk')
+      }),
+    ).toThrow(/disk/)
+    expect(store.rows.has(id)).toBe(false)
+    expect(s.broker.pendingEvents('chat')).toHaveLength(1)
+    expect(s.events.filter((e) => e.type === 'request.closed')).toEqual([])
+    store.failPut = false
+    expect(s.broker.saveSecret('chat', id, () => {})).toEqual({ ok: true })
   })
 })
 

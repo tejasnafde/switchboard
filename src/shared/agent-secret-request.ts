@@ -141,7 +141,7 @@ export function secretSavedText(input: {
     `env: ${SECRETS_DIR_ENV}`,
     `name: ${input.name}`,
     `expiresAt: ${expires}`,
-    `Read it only inside a command, for example --authkey "$(cat "$${SECRETS_DIR_ENV}/${input.name}")".`,
+    `Read it only inside a command. In bash: --authkey "$(cat "$${SECRETS_DIR_ENV}/${input.name}")". In PowerShell: --authkey (Get-Content -Raw "$env:${SECRETS_DIR_ENV}/${input.name}").`,
     'Never print it, echo it, write it to a file in the repo, or put it in a commit, a log or a message.',
     `It stays until ${expires} or until this chat is archived; a Stop does not remove it.`,
     `If reading it fails later, it expired or the user deleted it: call ${REQUEST_SECRET_TOOL} again.`,
