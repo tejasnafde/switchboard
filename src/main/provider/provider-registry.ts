@@ -164,7 +164,9 @@ import { buildApprovalMcpTools } from '../mcp/approval-mcp-tools'
 import { toolText, type McpToolResult } from '../mcp/mcp-session'
 import { buildChildHubMcpTools, buildHubMcpTools, HUB_INSTRUCTIONS, START_CHILDREN_TOOL } from '../mcp/hub-tools'
 import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } from '../hub/hub-start'
-import { appMetrics } from '../runtime'
+import { appMetrics, userDataDir } from '../runtime'
+import { SecretStore } from '../secrets/secret-store'
+import { join } from 'node:path'
 import { HubResourceSampler } from '../hub/hub-measure'
 import { HubWakeScheduler, type HubWakeHost } from '../hub/hub-wakes'
 import { readChild } from '../hub/hub-read'
@@ -475,7 +477,10 @@ export class ProviderRegistry implements PeerToolHost {
     turnCheckpoints: TurnCheckpointStore | null = adapters ? null : sqliteTurnCheckpointStore(() => getDb()),
     heldPeerStore: HeldPeerMessageStore = adapters ? memoryHeldPeerMessageStore() : sqliteHeldPeerMessageStore(),
     limitResume = !adapters,
+    secretStore: SecretStore | null = adapters ? null : new SecretStore({ root: join(userDataDir(), 'secrets') }),
   ) {
+    this.secretStore = secretStore
+    this.secretStore?.start()
     this.heldPeerStore = heldPeerStore
     try {
       for (const m of heldPeerStore.all()) this.heldPeerMessages.set(m.id, m)
@@ -1246,6 +1251,8 @@ export class ProviderRegistry implements PeerToolHost {
    * agent's turn and a restart (`shared/agent-approval-cards.ts`).
    */
   private readonly agentApprovals: AgentApprovalBroker
+  /** Files `request_secret` saved; null in tests that inject adapters. */
+  private readonly secretStore: SecretStore | null
   /** Auto-resume after a usage limit; null in tests that inject adapters. */
   readonly limitResumer: LimitResumer | null
   /** Starts child chats (`start_children`) and holds their run slots. */
@@ -4652,6 +4659,7 @@ export class ProviderRegistry implements PeerToolHost {
     this.hubSampler?.stop()
     this.hubWakes.stop()
     this.hubReaper.stop()
+    this.secretStore?.stop()
     // Open approval cards stay in the store: a quit or a closed window is not an answer.
     for (const threadId of this.sessionAdapters.keys()) this.switchboardMcp?.close(threadId)
     for (const [threadId, adapter] of this.sessionAdapters) {

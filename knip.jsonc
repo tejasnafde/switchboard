@@ -38,6 +38,7 @@
     "sqlite3",
     "ffmpeg",
     "codex",
-    "unset"
+    "unset",
+    "tmutil"
   ]
 }
