@@ -36,6 +36,7 @@ import {
   getAgentSecret,
   getSecretDirId,
   insertAgentSecret,
+  listArchivedSecretChats,
   listLiveAgentSecrets,
   listSecretDirIds,
   markAgentSecretDeleted,
@@ -67,7 +68,7 @@ export interface SecretStoreOptions {
 }
 
 /** Fs errors carry the path, which names the secret and the chat folder: log the code only. */
-function errCode(err: unknown): string {
+export function errCode(err: unknown): string {
   return (err as NodeJS.ErrnoException)?.code ?? (err instanceof Error ? err.name : 'unknown')
 }
 
@@ -205,13 +206,21 @@ export class SecretStore {
    * microseconds per chat; track dirty folders if a profile ever holds tens of
    * thousands of them.
    *
-   * Delete every expired file, every folder with no dir row (a crash orphan),
-   * every `.partial` file and every file no live row names. A file that has
-   * not expired stays: the chat is still there after a restart.
+   * Delete every archived chat's files and folder (an archive whose own
+   * delete failed), every expired file, every folder with no dir row (a crash
+   * orphan), every `.partial` file and every file no live row names. A file
+   * that has not expired stays: the chat is still there after a restart.
    */
   sweep(): void {
     if (!existsSync(this.root)) return
     this.ensureRoot()
+    for (const chat of listArchivedSecretChats()) {
+      try {
+        this.removeChat(chat)
+      } catch (err) {
+        log.warn('secrets sweep could not clean an archived chat; the next sweep retries', errCode(err))
+      }
+    }
     const now = this.now()
     for (const row of listLiveAgentSecrets()) {
       if (row.expiresAt <= now) {

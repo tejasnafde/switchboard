@@ -24,6 +24,7 @@ import {
 } from './pr-tools'
 import { PR_LINK_TOOL, PR_LIST_LINKS_TOOL, PR_UNLINK_TOOL } from './pr-link-tools'
 import { WITHDRAW_APPROVAL_TOOL } from './approval-mcp-tools'
+import { SECRETS_DIR_ENV } from '@shared/agent-secret-request'
 
 /**
  * Codex gives up on an MCP call after 60 seconds by default. No call waits on
@@ -54,6 +55,17 @@ export function codexSwitchboardMcpArgs(launch: SwitchboardMcpLaunch): string[] 
     '-c',
     `${key}.tool_timeout_sec=${CODEX_SWITCHBOARD_TOOL_TIMEOUT_SEC}`,
   ]
+}
+
+/**
+ * Codex drops every variable whose name holds KEY, SECRET or TOKEN from the
+ * env of the commands it runs (`shell_environment_policy`'s default
+ * excludes), so `SWITCHBOARD_SECRETS_DIR` would never reach them. `set` adds
+ * it back after the excludes. It holds a folder path, never a value.
+ */
+export function codexSecretsDirArgs(dir: string | undefined): string[] {
+  if (!dir) return []
+  return ['-c', `shell_environment_policy.set.${SECRETS_DIR_ENV}=${tomlString(dir)}`]
 }
 
 /** Codex's yes/no confirm for one of OUR tools: accepted, because the server shows the real card. */

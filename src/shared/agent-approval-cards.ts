@@ -174,11 +174,27 @@ export class ApprovalCardBook<Plan = unknown> {
     return this.all().filter((c) => nowMs - c.openedAt >= maxAgeMs)
   }
 
+  /**
+   * Put a taken card back. It is open in memory even when the store write
+   * throws, so it can still be answered in this run; the store error is
+   * returned, and a restart drops the card.
+   */
+  restore(card: StoredApprovalCard<Plan>): unknown {
+    this.cards.set(card.requestId, card)
+    try {
+      this.store.putCard(card)
+      return null
+    } catch (err) {
+      return err
+    }
+  }
+
+  /** The store first: when its delete throws, the card stays open in both places. */
   take(requestId: string): StoredApprovalCard<Plan> | null {
     const card = this.cards.get(requestId)
     if (!card) return null
-    this.cards.delete(requestId)
     this.store.removeCard(requestId)
+    this.cards.delete(requestId)
     return card
   }
 }

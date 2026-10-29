@@ -62,6 +62,9 @@ export function pushForEvent(event: RuntimeEvent, ctx: PushContext = {}): PushMe
 
   switch (event.type) {
     case 'request.opened':
+      // Never the title or the instructions of a secret request on a lock screen.
+      if (event.secretRequest)
+        return { title, body: 'An agent asks for a secret', data: { threadId, kind: 'approval' } }
       // The detail of a pull request write is the whole draft, so name the write instead.
       if (event.hostWrite) {
         return {

@@ -13,6 +13,7 @@
 import type { HostWriteCard } from './agent-host-writes'
 import type { CodexPermissionView } from './codex-permission-request'
 import type { HubBatchView } from './hub'
+import type { SecretRequestCard } from './agent-secret-request'
 import type { OverageScope } from './claude-rate-limit'
 import type { PeerMessageInitiator } from './peer-messaging'
 import type { PeerLinkRefusal } from './peer-links'
@@ -701,6 +702,8 @@ export interface RuntimeRequestOpenedEvent {
   permissions?: CodexPermissionView
   /** A batch of child chats an agent asked to start (`start_children`). `detail` lists the same in plain text. */
   hubBatch?: HubBatchView
+  /** An agent asks the user for a secret (`request_secret`). `detail` says to answer on the computer, without the title. */
+  secretRequest?: SecretRequestCard
 }
 
 export interface RuntimeRequestClosedEvent {
