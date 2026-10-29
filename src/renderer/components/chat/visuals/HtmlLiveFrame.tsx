@@ -56,7 +56,7 @@ import {
 } from '../../../services/html-preview-console'
 import { HtmlFileCard } from '../HtmlFileCard'
 import { VisualMenu } from './VisualMenu'
-import { copyPngToClipboard, visualMenuItems } from './visual-image'
+import { asPng, copyPngToClipboard, visualMenuItems } from './visual-image'
 import { saveLivePage } from '../../../services/html-live-save'
 import { PreviewIcon } from '../../preview/preview-icons'
 import { createRendererLogger } from '../../../logger'
@@ -471,11 +471,16 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
   }
   /** The running page as drawn now, else its still image. */
   const pagePng = async (): Promise<string> => {
-    const wcId = running ? webviewRef.current?.getWebContentsId?.() : undefined
-    const live = wcId === undefined ? null : await window.api.preview.captureInline(wcId)
-    const png = live ?? memory.image
-    if (!png) throw new Error('This page has no image yet.')
-    return png
+    let wcId: number | undefined
+    try {
+      wcId = running ? webviewRef.current?.getWebContentsId?.() : undefined
+    } catch (err) {
+      // Throws until the guest is attached: the still image stands in.
+      log.debug('live page not attached yet', err)
+    }
+    const still = (wcId === undefined ? null : await window.api.preview.captureInline(wcId)) ?? memory.image
+    if (!still) throw new Error('This page has no image yet.')
+    return asPng(still)
   }
   const copyImage = () => {
     pagePng()
@@ -507,8 +512,8 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
       )
   }
   const saveAsFile = () => {
-    if (!key) return
-    const target = { path: htmlLiveFileName(title), root: root ?? '', machineId, sessionId: sessionId ?? null }
+    if (!key || !root) return
+    const target = { path: htmlLiveFileName(title), root, machineId, sessionId: sessionId ?? null }
     saveLivePage({ ...target, live: { key, source, title } }).then(
       (result) => {
         if (result.ok) return

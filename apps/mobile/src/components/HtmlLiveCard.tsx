@@ -148,11 +148,17 @@ export function HtmlLiveCard({
     setShareError(null)
     void (async () => {
       try {
-        const uri = `${FileSystem.cacheDirectory}${imageStem(savedPath, label)}.png`
+        // A tall page's still is a JPEG: share it as one.
+        const jpeg = url.startsWith('data:image/jpeg')
+        const uri = `${FileSystem.cacheDirectory}${imageStem(savedPath, label)}.${jpeg ? 'jpg' : 'png'}`
         await FileSystem.writeAsStringAsync(uri, url.slice(url.indexOf(',') + 1), {
           encoding: FileSystem.EncodingType.Base64,
         })
-        await Sharing.shareAsync(uri, { mimeType: 'image/png', UTI: 'public.png', dialogTitle: 'Share image' })
+        await Sharing.shareAsync(uri, {
+          mimeType: jpeg ? 'image/jpeg' : 'image/png',
+          UTI: jpeg ? 'public.jpeg' : 'public.png',
+          dialogTitle: 'Share image',
+        })
       } catch (error) {
         log.warn('still image share failed', error)
         setShareError('Could not share the image.')

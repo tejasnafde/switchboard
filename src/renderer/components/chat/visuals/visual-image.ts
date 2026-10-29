@@ -57,19 +57,20 @@ export interface PngLayout {
 }
 
 /**
- * The image keeps the box's width and padding. The SVG keeps its drawn width
+ * The image keeps the box's width (or the SVG's, when wider) and padding. The SVG keeps its drawn width
  * and takes its full height from the viewBox, so a diagram cut off by the
  * card's max height is saved whole.
  */
 export function pngLayout(
-  box: { width: number; padTop: number; padBottom: number },
+  box: { width: number; padTop: number; padBottom: number; padRight: number },
   svg: { left: number; width: number },
   viewBox: { width: number; height: number } | null,
   drawnHeight: number,
 ): PngLayout {
   const svgHeight = viewBox && viewBox.width > 0 ? (svg.width * viewBox.height) / viewBox.width : drawnHeight
   return {
-    width: Math.round(box.width),
+    // A diagram wider than the pane scrolls sideways there; the image holds all of it.
+    width: Math.round(Math.max(box.width, svg.left + svg.width + box.padRight)),
     height: Math.round(box.padTop + svgHeight + box.padBottom),
     x: svg.left,
     y: box.padTop,
@@ -91,24 +92,32 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   })
 }
 
-/** A PNG data URL: `background`, then `draw`, on a canvas `scale` times the given size. */
-async function paint(
-  width: number,
-  height: number,
+/** `img` drawn at `at` on a `width` x `height` canvas filled with `background`, `scale` times over, as a PNG data URL. */
+function drawPng(
+  img: HTMLImageElement,
+  size: { width: number; height: number },
+  at: { x: number; y: number; width: number; height: number },
   scale: number,
   background: string,
-  draw: (ctx: CanvasRenderingContext2D) => Promise<void>,
-): Promise<string> {
+): string {
   const canvas = document.createElement('canvas')
-  canvas.width = Math.round(width * scale)
-  canvas.height = Math.round(height * scale)
+  canvas.width = Math.round(size.width * scale)
+  canvas.height = Math.round(size.height * scale)
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('No canvas to draw on.')
   ctx.scale(scale, scale)
   ctx.fillStyle = background
-  ctx.fillRect(0, 0, width, height)
-  await draw(ctx)
+  ctx.fillRect(0, 0, size.width, size.height)
+  ctx.drawImage(img, at.x, at.y, at.width, at.height)
   return canvas.toDataURL('image/png')
+}
+
+/** A PNG data URL as is; any other image (a tall live page's still is a JPEG) redrawn as a PNG. */
+export async function asPng(dataUrl: string): Promise<string> {
+  if (dataUrl.startsWith('data:image/png')) return dataUrl
+  const img = await loadImage(dataUrl)
+  const size = { width: img.naturalWidth, height: img.naturalHeight }
+  return drawPng(img, size, { x: 0, y: 0, ...size }, 1, readVar('--bg-secondary').trim())
 }
 
 /** The drawn box (an element holding one `<svg>`) as a PNG data URL. */
@@ -124,6 +133,7 @@ export async function svgBoxToPng(box: HTMLElement, scale = 2): Promise<string> 
       width: boxRect.width,
       padTop: parseFloat(style.paddingTop) || 0,
       padBottom: parseFloat(style.paddingBottom) || 0,
+      padRight: parseFloat(style.paddingRight) || 0,
     },
     { left: svgRect.left - boxRect.left + box.scrollLeft, width: svgRect.width },
     vb && vb.width > 0 ? { width: vb.width, height: vb.height } : null,
@@ -139,9 +149,8 @@ export async function svgBoxToPng(box: HTMLElement, scale = 2): Promise<string> 
   const url = URL.createObjectURL(new Blob([markup], { type: 'image/svg+xml' }))
   try {
     const img = await loadImage(url)
-    return await paint(layout.width, layout.height, scale, readVar('--bg-secondary').trim(), async (ctx) => {
-      ctx.drawImage(img, layout.x, layout.y, layout.svgWidth, layout.svgHeight)
-    })
+    const at = { x: layout.x, y: layout.y, width: layout.svgWidth, height: layout.svgHeight }
+    return drawPng(img, layout, at, scale, readVar('--bg-secondary').trim())
   } finally {
     URL.revokeObjectURL(url)
   }

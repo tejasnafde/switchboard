@@ -23,7 +23,6 @@ export function VisualMenu({ items, className }: { items: VisualMenuItem[]; clas
           <MenuItem
             key={item.label}
             hint={item.hint}
-            // The hint sits at the right edge, as a column.
             className="[&>span]:flex-1 [&>span>span]:ml-auto [&>span>span]:pl-[16px]"
             onClick={() => {
               setOpen(false)

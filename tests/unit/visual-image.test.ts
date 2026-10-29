@@ -43,7 +43,7 @@ describe('pngLayout', () => {
   it('keeps the box width and padding and takes the full SVG height from the viewBox', () => {
     // A diagram 600 wide drawn into 300 px, cut off at 460 px by the card.
     const layout = pngLayout(
-      { width: 638, padTop: 10, padBottom: 10 },
+      { width: 638, padTop: 10, padBottom: 10, padRight: 10 },
       { left: 169, width: 300 },
       { width: 600, height: 1200 },
       460,
@@ -51,8 +51,20 @@ describe('pngLayout', () => {
     expect(layout).toEqual({ width: 638, height: 620, x: 169, y: 10, svgWidth: 300, svgHeight: 600 })
   })
 
+  it('widens to a diagram wider than the pane', () => {
+    const layout = pngLayout(
+      { width: 400, padTop: 16, padBottom: 16, padRight: 16 },
+      { left: 16, width: 900 },
+      null,
+      300,
+    )
+    expect(layout.width).toBe(932)
+  })
+
   it('uses the drawn height without a viewBox', () => {
-    expect(pngLayout({ width: 100, padTop: 0, padBottom: 0 }, { left: 0, width: 100 }, null, 40).height).toBe(40)
+    expect(
+      pngLayout({ width: 100, padTop: 0, padBottom: 0, padRight: 0 }, { left: 0, width: 100 }, null, 40).height,
+    ).toBe(40)
   })
 })
 
