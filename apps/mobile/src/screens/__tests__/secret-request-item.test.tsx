@@ -82,9 +82,20 @@ describe('SecretRequestItem', () => {
   it('is one line once answered, with no buttons', () => {
     const saved = renderComponent(<SecretRequestItem item={card({ state: 'approve' })} onDecide={() => {}} />)
     expect(saved.texts().join('')).toBe('Saved TAILSCALE_AUTHKEY')
-    const declined = renderComponent(<SecretRequestItem item={card({ state: 'deny' })} onDecide={() => {}} />)
+    const closed = renderComponent(
+      <SecretRequestItem item={card({ requestId: 'sbsec_9', state: 'deny' })} onDecide={() => {}} />,
+    )
+    expect(closed.texts().join('')).toBe('TAILSCALE_AUTHKEY closed')
+    expect(closed.texts()).not.toContain('Decline')
+  })
+
+  it('reads Declined only after a Decline from this phone', () => {
+    const pending = renderComponent(<SecretRequestItem item={card({ requestId: 'sbsec_2' })} onDecide={() => {}} />)
+    press(pending.root, 'Decline')
+    const declined = renderComponent(
+      <SecretRequestItem item={card({ requestId: 'sbsec_2', state: 'deny' })} onDecide={() => {}} />,
+    )
     expect(declined.texts().join('')).toBe('Declined TAILSCALE_AUTHKEY')
-    expect(declined.texts()).not.toContain('Decline')
   })
 })
 

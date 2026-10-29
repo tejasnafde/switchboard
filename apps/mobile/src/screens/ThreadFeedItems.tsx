@@ -330,6 +330,9 @@ export const ApprovalItem = memo(function ApprovalItem({
   )
 })
 
+/** Secret cards this phone declined, so their closed line reads Declined until the result row replaces it. */
+const secretsDeclinedHere = new Set<string>()
+
 /**
  * An agent's secret request, read-only: the phone shows what was asked and
  * can decline it, never take the value. Decline goes through the ordinary
@@ -345,8 +348,10 @@ export const SecretRequestItem = memo(function SecretRequestItem({
   const card = item.secretRequest
   if (!card) return null
   if (item.state !== 'pending') {
-    // Until the result row replaces it.
-    return <SecretLine name={card.name} state={item.state === 'approve' ? 'saved' : 'declined'} />
+    // Until the result row replaces it. A close that is not a save also arrives as a deny
+    // (expiry, withdraw, archive), so Declined only for this phone's own tap.
+    const state = item.state === 'approve' ? 'saved' : secretsDeclinedHere.has(item.requestId) ? 'declined' : 'closed'
+    return <SecretLine name={card.name} state={state} />
   }
   return (
     <View style={[styles.itemBlock, styles.secretCard]} testID="secret-request-card">
@@ -374,7 +379,10 @@ export const SecretRequestItem = memo(function SecretRequestItem({
         <Pressable
           accessibilityRole="button"
           style={[styles.actionButton, styles.outlineButton]}
-          onPress={() => onDecide(item.requestId, 'deny')}
+          onPress={() => {
+            secretsDeclinedHere.add(item.requestId)
+            onDecide(item.requestId, 'deny')
+          }}
         >
           <Text style={styles.outlineLabel}>Decline</Text>
         </Pressable>
@@ -384,7 +392,7 @@ export const SecretRequestItem = memo(function SecretRequestItem({
 })
 
 /** A closed secret card as one line, as on the desktop but with no Extend or Delete now. */
-export function SecretLine({ name, state }: { name: string; state: 'saved' | 'declined' | 'expired' }) {
+export function SecretLine({ name, state }: { name: string; state: 'saved' | 'declined' | 'expired' | 'closed' }) {
   const nameEl = <Text style={styles.secretName}>{name}</Text>
   return (
     <View style={[styles.itemBlock, styles.secretLine]} testID="secret-line">
@@ -392,6 +400,7 @@ export function SecretLine({ name, state }: { name: string; state: 'saved' | 'de
         {state === 'saved' && <>Saved {nameEl}</>}
         {state === 'declined' && <>Declined {nameEl}</>}
         {state === 'expired' && <>{nameEl} expired</>}
+        {state === 'closed' && <>{nameEl} closed</>}
       </Text>
     </View>
   )

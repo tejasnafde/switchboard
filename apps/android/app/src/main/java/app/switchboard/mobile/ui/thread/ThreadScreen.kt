@@ -375,7 +375,6 @@ fun ThreadScreen(
                 },
                 backendTakesPhoneApproval = pendingActions.backendTakesPhoneApproval,
                 backendAsyncApproval = pendingActions.backendAsyncApproval,
-                backendSecretRequest = pendingActions.backendSecretRequest,
                 composer = composer,
                 queuedTurns = queuedTurns,
                 onRetry = onRetry,
@@ -787,7 +786,6 @@ private fun ThreadBottomArea(
     pendingDecision: ApprovalDecision?,
     backendTakesPhoneApproval: Boolean,
     backendAsyncApproval: Boolean,
-    backendSecretRequest: Boolean,
     composer: ThreadComposerPresentation?,
     queuedTurns: List<QueuedTurn>,
     onRetry: () -> Unit,
@@ -820,14 +818,7 @@ private fun ThreadBottomArea(
                     .background(MaterialTheme.colorScheme.background)
                     .testTag(ThreadTestTags.APPROVAL_SLOT),
             ) {
-                ApprovalRow(
-                    pendingApproval.source,
-                    pendingDecision,
-                    backendTakesPhoneApproval,
-                    backendAsyncApproval,
-                    backendSecretRequest,
-                    onAction,
-                )
+                ApprovalRow(pendingApproval.source, pendingDecision, backendTakesPhoneApproval, backendAsyncApproval, onAction)
             }
         }
         if (composer != null) {
@@ -1786,7 +1777,6 @@ private fun ThreadRow(
             pendingActions.approvalDecisions[row.source.requestId],
             pendingActions.backendTakesPhoneApproval,
             pendingActions.backendAsyncApproval,
-            pendingActions.backendSecretRequest,
             onAction,
         )
         is ThreadRowPresentation.Retry -> NoticeCard(
@@ -2465,12 +2455,11 @@ private fun ApprovalRow(
     pendingDecision: ApprovalDecision?,
     backendTakesPhoneApproval: Boolean,
     backendAsyncApproval: Boolean,
-    backendSecretRequest: Boolean,
     onAction: (ThreadUiAction) -> Unit,
 ) {
-    // Without the capability the card is the plain approval with its detail, as older releases show it.
+    // Only a backend with agent_secret_request_v1 sends the card; an older backend's card stays the plain approval.
     val secret = item.secretRequest
-    if (secret != null && backendSecretRequest) {
+    if (secret != null) {
         SecretRequestRow(item, secret, pendingDecision, onAction)
         return
     }
@@ -2583,6 +2572,9 @@ private fun ApprovalRow(
     }
 }
 
+/** Secret cards this phone declined, so their closed line reads Declined until the result row replaces it. */
+private val secretsDeclinedHere = mutableSetOf<String>()
+
 /**
  * An agent's secret request, read-only: who asked, the title, the
  * instructions with each URL's host in bold, and Decline. The value is only
@@ -2597,11 +2589,13 @@ internal fun SecretRequestRow(
     onAction: (ThreadUiAction) -> Unit,
 ) {
     if (item.state != "pending") {
-        NoticeCard(
-            title = if (item.state == "approve") "Saved ${card.name}" else "Declined ${card.name}",
-            body = "",
-            tint = TextDim,
-        )
+        // A close that is not a save also arrives as a deny (expiry, withdraw, archive): Declined only for this phone's tap.
+        val line = when {
+            item.state == "approve" -> "Saved ${card.name}"
+            item.requestId in secretsDeclinedHere -> "Declined ${card.name}"
+            else -> "${card.name} closed"
+        }
+        NoticeCard(title = line, body = "", tint = TextDim)
         return
     }
     CardContainer(tint = Amber) {
@@ -2642,7 +2636,12 @@ internal fun SecretRequestRow(
             }
         } else {
             OutlinedButton(
-                onClick = { ThreadInteractionPolicy.approval(item, ThreadApprovalDecision.DENY)?.let(onAction) },
+                onClick = {
+                    ThreadInteractionPolicy.approval(item, ThreadApprovalDecision.DENY)?.let {
+                        secretsDeclinedHere += item.requestId
+                        onAction(it)
+                    }
+                },
                 modifier = Modifier.heightIn(min = 48.dp).testTag(ThreadTestTags.SECRET_DECLINE),
             ) { Text("Decline") }
         }

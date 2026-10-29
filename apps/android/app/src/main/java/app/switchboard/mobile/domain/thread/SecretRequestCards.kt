@@ -23,9 +23,6 @@ sealed interface SecretInstructionPart {
 }
 
 object SecretRequestCards {
-    /** Port of `AGENT_SECRET_REQUEST_CAPABILITY`: without it the card is the plain approval with its detail. */
-    const val CAPABILITY = "agent_secret_request_v1"
-
     /** Port of `SECRET_CARD_HEADER`. The agent asked, never Switchboard. */
     const val HEADER = "Asked by the agent in this chat"
 

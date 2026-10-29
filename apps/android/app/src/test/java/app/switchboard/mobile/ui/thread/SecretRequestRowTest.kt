@@ -1,6 +1,9 @@
 package app.switchboard.mobile.ui.thread
 
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -62,5 +65,21 @@ class SecretRequestRowTest {
         compose.setContent { SwitchboardTheme { SecretRequestRow(item("approve"), card, null) {} } }
         compose.onNodeWithText("Saved TAILSCALE_AUTHKEY").assertExists()
         compose.onNodeWithTag(ThreadTestTags.SECRET_DECLINE).assertDoesNotExist()
+    }
+
+    @Test
+    fun aDenyThisPhoneDidNotSendReadsClosedNotDeclined() {
+        compose.setContent { SwitchboardTheme { SecretRequestRow(item("deny"), card, null) {} } }
+        compose.onNodeWithText("TAILSCALE_AUTHKEY closed").assertExists()
+        compose.onNodeWithText("Declined TAILSCALE_AUTHKEY").assertDoesNotExist()
+    }
+
+    @Test
+    fun aDeclineFromThisPhoneReadsDeclined() {
+        var state by mutableStateOf("pending")
+        compose.setContent { SwitchboardTheme { SecretRequestRow(item(state), card, null) {} } }
+        compose.onNodeWithTag(ThreadTestTags.SECRET_DECLINE).performClick()
+        state = "deny"
+        compose.onNodeWithText("Declined TAILSCALE_AUTHKEY").assertExists()
     }
 }

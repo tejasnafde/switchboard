@@ -35,7 +35,6 @@ import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.MessagePill
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWriteResponse
-import app.switchboard.mobile.domain.thread.SecretRequestCards
 import app.switchboard.mobile.domain.thread.FORK_MERGE_BACK_CAPABILITY
 import app.switchboard.mobile.domain.thread.LIMIT_AUTO_RESUME_CAPABILITY
 import app.switchboard.mobile.domain.thread.LimitResumeNowResult
@@ -207,8 +206,6 @@ data class ThreadPendingActions(
     val backendTakesPhoneApproval: Boolean = false,
     /** The backend's agent cards wait without a time limit and take a quiet answer. */
     val backendAsyncApproval: Boolean = false,
-    /** The backend sends an agent's secret request as its own card. */
-    val backendSecretRequest: Boolean = false,
 )
 
 sealed interface ComposerSubmitResult {
@@ -2081,7 +2078,6 @@ class ThreadSessionCoordinator(
                 planIds = pendingPlanOrigins.keys.toSet(),
                 backendTakesPhoneApproval = HostWriteCards.PHONE_APPROVAL_CAPABILITY in capabilities,
                 backendAsyncApproval = HostWriteCards.ASYNC_APPROVAL_CAPABILITY in capabilities,
-                backendSecretRequest = SecretRequestCards.CAPABILITY in capabilities,
             ),
             forkMetadata = forkMetadata,
             followUp = ThreadFollowUpState(

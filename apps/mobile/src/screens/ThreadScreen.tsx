@@ -100,7 +100,6 @@ import { forgetMobileForkRequest, mobileForkRequest } from '../lib/conversation-
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { HOST_WRITE_PHONE_APPROVAL_CAPABILITY } from '@shared/host-write-phone'
 import { AGENT_ASYNC_APPROVAL_CAPABILITY } from '@shared/agent-approval-cards'
-import { AGENT_SECRET_REQUEST_CAPABILITY } from '@shared/agent-secret-request'
 import {
   ApprovalItem,
   HeldTurnBar,
@@ -1132,7 +1131,6 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const phoneApprovesHostWrites =
     getClient(connectionId)?.supportsCapability(HOST_WRITE_PHONE_APPROVAL_CAPABILITY) === true
   const asyncApprovals = getClient(connectionId)?.supportsCapability(AGENT_ASYNC_APPROVAL_CAPABILITY) === true
-  const secretCards = getClient(connectionId)?.supportsCapability(AGENT_SECRET_REQUEST_CAPABILITY) === true
 
   // A refused Send now / Cancel belongs on its row: reporting it as a thread
   // error would mark a still-running thread as failed and hide Stop.
@@ -1332,8 +1330,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
             </View>
           )
         case 'approval':
-          // Without the capability the card is the plain approval with its detail, as older releases show it.
-          if (item.secretRequest && secretCards) return <SecretRequestItem item={item} onDecide={decideApproval} />
+          // Only a backend with agent_secret_request_v1 sends the card; an older backend's card stays the plain approval.
+          if (item.secretRequest) return <SecretRequestItem item={item} onDecide={decideApproval} />
           return (
             <ApprovalItem
               item={item}
@@ -1410,7 +1408,6 @@ export default function ThreadScreen({ route, navigation }: Props) {
       decideApproval,
       phoneApprovesHostWrites,
       asyncApprovals,
-      secretCards,
       submitAnswers,
       implementPlan,
       focusComposer,
