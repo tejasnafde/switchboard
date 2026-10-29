@@ -1,0 +1,48 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "inline-code-dblclick",
+  "summary": "A double-click on inline code in desktop chat markdown selects the whole span, so a command, flag or path with hyphens, dots or slashes copies in one step.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/inline-code-selection.ts",
+        "src/renderer/components/chat/MarkdownWithCopyControls.tsx",
+        "tests/unit/inline-code-dblclick.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "apps/mobile renders chat markdown as non-selectable Text inside a Pressable whose long press shows the turn time, so there is no word selection to widen; making message text selectable is a separate feature."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "ThreadRichTextRenderer.kt chat text is not in a SelectionContainer and a long press on a turn forks the conversation or shows the turn time, so there is no word selection to widen; making message text selectable is a separate feature."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Renderer-only DOM selection change; no wire message, event or API changes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data; the selection is transient browser state."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Unconditional desktop renderer fix with no flag, identity, signing, deep-link or update-channel change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/inline-code-dblclick.test.ts (fails without the onDoubleClick wiring)",
+      "npm run typecheck",
+      "npx vitest run --maxWorkers=2"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not exercised in a running Electron window; jsdom dispatches the dblclick after a simulated word selection, which is the order Chromium uses (word selection on the second mousedown, dblclick after mouseup).",
+      "Phones are not applicable: their chat text has no word selection."
+    ]
+  }
+}

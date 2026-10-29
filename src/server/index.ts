@@ -5,7 +5,7 @@
  * passphrase), SWITCHBOARD_TOKEN (WS connection auth - required when binding
  * beyond loopback, e.g. HOST=0.0.0.0 for LAN/tailnet mobile clients).
  */
-import { homedir, networkInterfaces } from 'node:os'
+import { homedir, hostname, networkInterfaces } from 'node:os'
 import { randomBytes } from 'node:crypto'
 import { join, dirname } from 'node:path'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -171,6 +171,8 @@ registerTerminalHandlers(host)
 host.handle(SERVER_VERSION_CHANNEL, () => __SERVER_VERSION__)
 
 const registry = new ProviderRegistry(host)
+// This backend runs on an SSH machine, so a saved secret's result names it.
+registry.setMachineLabel(hostname())
 const worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(host, () => registry)
 configureHubWorktreeCreator((request) => worktreeCreationRuntime.createWorktreeTransaction(request))
 registerAppHandlers(host, { isTurnInFlight: (id) => registry.isTurnInFlight(id) })

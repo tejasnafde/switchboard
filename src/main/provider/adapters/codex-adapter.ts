@@ -39,7 +39,12 @@ import { withTimeout } from '@shared/promise-timeout'
 import { conversationSessionHints, resolveResumeSegment } from '../../db/database'
 import { scanCodexSessionCopies } from '../../projects/session-scanner'
 import { codexCandidateDirs } from '../codex-session-dirs'
-import { codexSwitchboardMcpArgs, isSwitchboardCodexElicitation } from '../../mcp/agent-registration'
+import {
+  codexSecretsDirArgs,
+  codexSwitchboardMcpArgs,
+  isSwitchboardCodexElicitation,
+} from '../../mcp/agent-registration'
+import { SECRETS_DIR_ENV } from '@shared/agent-secret-request'
 
 /**
  * Map our runtime modes to Codex app-server approval policies.
@@ -744,7 +749,11 @@ export class CodexAdapter implements ProviderAdapter {
     // Spawn codex app-server. One per chat, so the Switchboard MCP server's
     // per-chat token can ride config overrides; the user's own servers in
     // config.toml load as before.
-    const appServerArgs = ['app-server', ...(opts.switchboardMcp ? codexSwitchboardMcpArgs(opts.switchboardMcp) : [])]
+    const appServerArgs = [
+      'app-server',
+      ...(opts.switchboardMcp ? codexSwitchboardMcpArgs(opts.switchboardMcp) : []),
+      ...codexSecretsDirArgs(opts.resolvedEnv?.[SECRETS_DIR_ENV]),
+    ]
     const child = spawn(executable.path, appServerArgs, {
       cwd: opts.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],

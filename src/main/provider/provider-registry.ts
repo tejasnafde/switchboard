@@ -164,7 +164,8 @@ import { buildApprovalMcpTools } from '../mcp/approval-mcp-tools'
 import { toolText, type McpToolResult } from '../mcp/mcp-session'
 import { buildChildHubMcpTools, buildHubMcpTools, HUB_INSTRUCTIONS, START_CHILDREN_TOOL } from '../mcp/hub-tools'
 import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } from '../hub/hub-start'
-import { appMetrics, userDataDir } from '../runtime'
+import { appMetrics, secretsRootDir } from '../runtime'
+import { onConversationArchived } from '../db/archive-events'
 import { SecretStore, errCode, type SavedSecret } from '../secrets/secret-store'
 import { SecretRequestLimiter, SECRET_INSTRUCTIONS, buildSecretMcpTools } from '../mcp/secret-tools'
 import {
@@ -182,7 +183,6 @@ import {
   secretDeclinedText,
   secretSavedText,
 } from '@shared/agent-secret-request'
-import { join } from 'node:path'
 import { HubResourceSampler } from '../hub/hub-measure'
 import { HubWakeScheduler, type HubWakeHost } from '../hub/hub-wakes'
 import { readChild } from '../hub/hub-read'
@@ -493,7 +493,7 @@ export class ProviderRegistry implements PeerToolHost {
     turnCheckpoints: TurnCheckpointStore | null = adapters ? null : sqliteTurnCheckpointStore(() => getDb()),
     heldPeerStore: HeldPeerMessageStore = adapters ? memoryHeldPeerMessageStore() : sqliteHeldPeerMessageStore(),
     limitResume = !adapters,
-    secretStore: SecretStore | null = adapters ? null : new SecretStore({ root: join(userDataDir(), 'secrets') }),
+    secretStore: SecretStore | null = adapters ? null : new SecretStore({ root: secretsRootDir() }),
   ) {
     this.secretStore = secretStore
     this.secretStore?.start()
@@ -1319,6 +1319,8 @@ export class ProviderRegistry implements PeerToolHost {
   /** Pull request writes per chat, shared by every client of this backend. */
   private readonly agentWriteBudget = new AgentWriteBudget()
   private readonly secretLimiter = new SecretRequestLimiter()
+  /** The machine this backend runs on, named in a saved secret's result. Null on the desktop's own backend. */
+  private machineLabel: string | null = null
   /** A save's file, from `answerAgentSecret` to the card's result in `reportAgentCard`. */
   private readonly savedSecrets = new Map<string, SavedSecret>()
 
@@ -2545,6 +2547,7 @@ export class ProviderRegistry implements PeerToolHost {
         name,
         file: saved.file,
         expiresAt: saved.expiresAt,
+        machine: this.machineLabel ?? undefined,
         planMode: this.chatRuntimeMode(card.threadId) === 'plan',
       })
     } else if (close.kind === 'deny') {
@@ -2768,9 +2771,13 @@ export class ProviderRegistry implements PeerToolHost {
     if (!this.secretStore || !this.secretRequestOn()) return { ok: false, message: 'Secret requests are turned off.' }
     if (isConversationArchived(resolveRootThreadId(threadId))) return { ok: false, message: 'This chat is archived.' }
     if (!isSecretCardId(cardId)) return { ok: false, message: 'That request is no longer open.' }
-    if ('decline' in answer)
+    // The answer crosses IPC, so its shape is checked here, not trusted from the type.
+    const raw = answer as { save?: unknown; decline?: unknown } | null
+    if (raw?.decline === true && raw.save === undefined)
       return this.agentApprovals.respond(threadId, cardId, 'deny', {}, { mayApproveHostWrite: false, label: 'desktop' })
-    const value = Buffer.from(answer.save, 'utf8')
+    if (typeof raw?.save !== 'string' || raw.decline !== undefined)
+      return { ok: false, message: 'The answer must be a value to save or a decline.' }
+    const value = Buffer.from(raw.save, 'utf8')
     try {
       if (value.length === 0 || value.length > SECRET_VALUE_MAX_BYTES)
         return { ok: false, message: 'The value must be 1 byte to 16 KiB.' }
@@ -2783,6 +2790,7 @@ export class ProviderRegistry implements PeerToolHost {
           value,
           cardId,
           expiresAt: Date.now() + SECRET_TTL_MS[card.plan.card.ttl],
+          machineId: this.machineLabel,
         })
         this.savedSecrets.set(cardId, saved)
       })
@@ -2801,6 +2809,11 @@ export class ProviderRegistry implements PeerToolHost {
   private ownedSecret(threadId: string, secretId: string) {
     const row = this.secretStore?.get(secretId) ?? null
     return row && row.rootThreadId === resolveRootThreadId(threadId) ? row : null
+  }
+
+  /** The headless server on an SSH machine names itself, so the agent's result says where the file is. */
+  setMachineLabel(label: string): void {
+    this.machineLabel = label
   }
 
   /** "Extend" on the saved line: 24 hours from now. The agent is not told. */
@@ -2853,7 +2866,8 @@ export class ProviderRegistry implements PeerToolHost {
     const hubOn = this.hubChildrenOn()
     const openChild = hubOn && this.hubStarter.isOpenChild(threadId)
     const parentTools = hubOn && !openChild
-    const secretsOn = this.secretRequestOn()
+    // An open child chat is not where the user is looking, so it gets neither the tool nor the instructions.
+    const secretsOn = this.secretRequestOn() && !openChild
     const instructions = [parentTools ? HUB_INSTRUCTIONS : '', secretsOn ? SECRET_INSTRUCTIONS : '']
       .filter(Boolean)
       .join(' ')
@@ -4905,13 +4919,18 @@ export function notifyWorktreeSwap(threadId: string, cwd: string | null): void {
   if (cwd) activeRegistry?.updateSessionCwd(threadId, cwd)
 }
 
-/** An archived conversation loses its session links (ipc/app.ts's archive handler). */
+/**
+ * An archived conversation loses its session links, cards and secrets. Runs
+ * on every archive (the sidebar, a kanban card moved to Done) through
+ * `onConversationArchived`.
+ */
 export function notifyConversationArchived(conversationId: string): void {
   activeRegistry?.dropPeerLinks(conversationId)
   activeRegistry?.releaseHeldPeerMessages(conversationId)
   activeRegistry?.closeAgentCards(conversationId, { archived: true })
   activeRegistry?.limitResumer?.disarm(conversationId, 'archive')
 }
+onConversationArchived(notifyConversationArchived)
 
 /**
  * Fan an event that no adapter produced out to every client.

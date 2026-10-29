@@ -77,6 +77,14 @@ export function isSecretCardId(requestId: unknown): boolean {
 /** The plain-text `detail` for clients that do not render the card, and for push. No title, no instructions. */
 export const SECRET_REQUEST_DETAIL = 'An agent asks for a secret. Answer it in Switchboard on your computer.'
 
+/**
+ * C0 and C1 controls, and the bidi marks, embeddings, overrides and isolates
+ * that can make a card read differently from what it says. `\n` and `\t`
+ * are allowed in the instructions only.
+ */
+const UNSAFE_TEXT = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/
+const UNSAFE_INSTRUCTIONS = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/
+
 export type SecretArgsCheck = { ok: true; card: SecretRequestCard } | { ok: false; message: string }
 
 /** The tool's arguments, refused with the rule in the message. Any unknown field is refused. */
@@ -88,11 +96,21 @@ export function checkSecretRequestArgs(args: Record<string, unknown>): SecretArg
   if (!SECRET_NAME_RULE.test(name))
     return { ok: false, message: 'name must match ^[A-Z][A-Z0-9_]{1,63}$, for example TAILSCALE_AUTHKEY.' }
   const title = typeof args.title === 'string' ? args.title.trim() : ''
-  if (title.length < 1 || title.length > SECRET_TITLE_MAX || /[\r\n]/.test(title))
-    return { ok: false, message: `title must be one line of 1 to ${SECRET_TITLE_MAX} characters.` }
+  if (title.length < 1 || title.length > SECRET_TITLE_MAX || UNSAFE_TEXT.test(title))
+    return {
+      ok: false,
+      message: `title must be one line of 1 to ${SECRET_TITLE_MAX} characters, with no control or direction characters.`,
+    }
   const instructions = typeof args.instructions === 'string' ? args.instructions.trim() : ''
-  if (instructions.length < 1 || instructions.length > SECRET_INSTRUCTIONS_MAX)
-    return { ok: false, message: `instructions must be 1 to ${SECRET_INSTRUCTIONS_MAX} characters of plain text.` }
+  if (
+    instructions.length < 1 ||
+    instructions.length > SECRET_INSTRUCTIONS_MAX ||
+    UNSAFE_INSTRUCTIONS.test(instructions)
+  )
+    return {
+      ok: false,
+      message: `instructions must be 1 to ${SECRET_INSTRUCTIONS_MAX} characters of plain text. Only new lines and tabs are allowed as control characters.`,
+    }
   const ttl = args.ttl === undefined ? '24h' : args.ttl
   if (!SECRET_TTLS.includes(ttl as SecretTtl))
     return { ok: false, message: `ttl must be one of ${SECRET_TTLS.join(', ')}. The default is 24h.` }

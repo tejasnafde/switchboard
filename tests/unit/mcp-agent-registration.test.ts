@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   acpSwitchboardMcpServer,
   CODEX_SWITCHBOARD_TOOL_TIMEOUT_SEC,
+  codexSecretsDirArgs,
   codexSwitchboardMcpArgs,
   isSwitchboardCodexElicitation,
   isSwitchboardOpencodeReadTool,
@@ -71,5 +72,18 @@ describe('OpenCode', () => {
     expect(isSwitchboardOpencodeReadTool('switchboard_list_thread_pull_requests')).toBe(true)
     expect(isSwitchboardOpencodeReadTool('switchboard_link_pull_request')).toBe(false)
     expect(isSwitchboardOpencodeReadTool('switchboard_draft_review')).toBe(false)
+  })
+})
+
+describe('codexSecretsDirArgs', () => {
+  it('sets the secrets folder through the shell env policy, past the default SECRET exclude', () => {
+    expect(codexSecretsDirArgs('/data/secrets/ab "c')).toEqual([
+      '-c',
+      'shell_environment_policy.set.SWITCHBOARD_SECRETS_DIR="/data/secrets/ab \\"c"',
+    ])
+  })
+
+  it('adds nothing without a folder', () => {
+    expect(codexSecretsDirArgs(undefined)).toEqual([])
   })
 })

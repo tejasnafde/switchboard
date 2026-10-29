@@ -89,6 +89,7 @@ export class AgentApprovalBroker {
 
   /** The chat's open secret request cards (`request_secret`), which have their own cap. */
   openSecretCards(chatId: string): number {
+    this.expireOld()
     return this.book.forChat(chatId).filter((c) => isSecretRequestPlan(c.plan)).length
   }
 
@@ -172,18 +173,32 @@ export class AgentApprovalBroker {
   }
 
   /**
-   * The user saved a secret. `save` writes the file and its row; when it
-   * throws, the card stays open. Runs synchronously, so the card cannot close
-   * between the check and the write.
+   * The user saved a secret. The card leaves the book (and its table) before
+   * `save` writes the file and its row, so a saved file never has a card that
+   * can be saved again. When the take throws, nothing was written; when `save`
+   * throws, the card goes back. Either way the error reaches the caller and
+   * the card stays open. Runs synchronously, so the card closes exactly once.
    */
   saveSecret(threadId: string, requestId: string, save: (card: AgentApprovalCard) => void): AgentApprovalAnswer {
     this.expireOld()
-    const card = this.book.get(requestId)
-    if (!card || !isSecretRequestPlan(card.plan)) return { ok: false, message: 'That request is no longer open.' }
+    const open = this.book.get(requestId)
+    if (!open || !isSecretRequestPlan(open.plan)) return { ok: false, message: 'That request is no longer open.' }
     const same = this.deps.sameChat ?? ((a, b) => a === b)
-    if (!same(card.threadId, threadId)) return { ok: false, message: 'That request belongs to another chat.' }
-    save(card)
-    this.close(requestId, { kind: 'approve', wake: true }, {}, threadId)
+    if (!same(open.threadId, threadId)) return { ok: false, message: 'That request belongs to another chat.' }
+    const card = this.book.take(requestId)
+    if (!card) return { ok: false, message: 'That request is no longer open.' }
+    try {
+      save(card)
+    } catch (err) {
+      try {
+        this.book.add(card)
+      } catch (putErr) {
+        log.error(`secret card ${requestId} could not be put back after a failed save; it is gone`, putErr)
+        this.announceClosed(card, { kind: 'stopped' }, {})
+      }
+      throw err
+    }
+    this.announceClosed(card, { kind: 'approve', wake: true }, {}, threadId)
     return { ok: true }
   }
 
@@ -215,7 +230,17 @@ export class AgentApprovalBroker {
 
   private close(requestId: string, close: ApprovalCardClose, response: HostWriteResponse, answeredOn?: string): void {
     const card = this.book.take(requestId)
-    if (!card) return
+    if (card) this.announceClosed(card, close, response, answeredOn)
+  }
+
+  /** Tell every client and the registry about a card already taken out of the book. */
+  private announceClosed(
+    card: AgentApprovalCard,
+    close: ApprovalCardClose,
+    response: HostWriteResponse,
+    answeredOn?: string,
+  ): void {
+    const requestId = card.requestId
     if (close.kind === 'stopped' || close.kind === 'withdrawn' || close.kind === 'expired')
       log.info(`card ${requestId} closed without an answer: ${close.kind}`)
     const decision: ApprovalDecision = close.kind === 'approve' ? 'approve' : 'deny'

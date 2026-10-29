@@ -92,6 +92,24 @@ export function listSecretDirIds(): Set<string> {
   return new Set(rows.map((r) => r.dir_id))
 }
 
+/**
+ * Root chats that still hold a secrets folder or a live secret but are
+ * archived. A chat with no conversation row is left alone: a new chat's
+ * folder is made at session start, which can come before its row.
+ */
+export function listArchivedSecretChats(): string[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT DISTINCT r.root_thread_id AS id FROM (
+         SELECT root_thread_id FROM agent_secret_dirs
+         UNION SELECT root_thread_id FROM agent_secrets WHERE deleted_at IS NULL
+       ) r JOIN conversations c ON c.id = r.root_thread_id
+       WHERE c.archived = 1`,
+    )
+    .all() as { id: string }[]
+  return rows.map((r) => r.id)
+}
+
 export function deleteSecretDir(threadId: string): void {
   getDb().prepare('DELETE FROM agent_secret_dirs WHERE root_thread_id = ?').run(resolveRootThreadId(threadId))
 }

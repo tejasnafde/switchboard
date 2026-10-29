@@ -4,14 +4,51 @@
  * session folder is not a boundary here; what we enforce is the protocol's
  * absolute-path rule, a live session, and plan mode staying read-only.
  */
+import { existsSync, realpathSync } from 'fs'
 import path from 'path'
 import type { RuntimeMode } from '../../types'
+import { createMainLogger } from '../../../logger'
 
-export function acpFsProblem(op: 'read' | 'write', filePath: string, mode: RuntimeMode | undefined): string | null {
+const log = createMainLogger('provider:acp-fs')
+
+/**
+ * `secretsRoot` is where Switchboard keeps the secrets a user gave an agent
+ * (`<userData>/secrets`): a write there is refused, so this handler cannot
+ * replace one. Reads stay allowed.
+ */
+export function acpFsProblem(
+  op: 'read' | 'write',
+  filePath: string,
+  mode: RuntimeMode | undefined,
+  secretsRoot?: string,
+): string | null {
   if (mode === undefined) return 'No active session for this request.'
   if (!filePath || !path.isAbsolute(filePath)) return 'The path must be absolute.'
   if (op === 'write' && mode === 'plan') return 'Plan mode is read-only: the file was not written.'
+  if (op === 'write' && secretsRoot && isInside(realish(filePath), realish(secretsRoot)))
+    return 'Switchboard keeps secrets in that folder: the file was not written.'
   return null
+}
+
+function isInside(file: string, dir: string): boolean {
+  const rel = path.relative(dir, file)
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+}
+
+/** The path with its nearest existing ancestor resolved through symlinks, so a link into the folder is caught. */
+function realish(filePath: string): string {
+  const rest: string[] = []
+  let current = path.resolve(filePath)
+  while (!existsSync(current) && path.dirname(current) !== current) {
+    rest.unshift(path.basename(current))
+    current = path.dirname(current)
+  }
+  try {
+    return path.join(realpathSync.native(current), ...rest)
+  } catch (err) {
+    log.warn('could not resolve a path for the secrets folder check', (err as NodeJS.ErrnoException).code)
+    return path.resolve(filePath)
+  }
 }
 
 /**

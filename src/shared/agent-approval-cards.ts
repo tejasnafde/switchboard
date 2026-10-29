@@ -174,11 +174,12 @@ export class ApprovalCardBook<Plan = unknown> {
     return this.all().filter((c) => nowMs - c.openedAt >= maxAgeMs)
   }
 
+  /** The store first: when its delete throws, the card stays open in both places. */
   take(requestId: string): StoredApprovalCard<Plan> | null {
     const card = this.cards.get(requestId)
     if (!card) return null
-    this.cards.delete(requestId)
     this.store.removeCard(requestId)
+    this.cards.delete(requestId)
     return card
   }
 }
