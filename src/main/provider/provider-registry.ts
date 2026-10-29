@@ -505,11 +505,10 @@ export class ProviderRegistry implements PeerToolHost {
     turnCheckpoints: TurnCheckpointStore | null = adapters ? null : sqliteTurnCheckpointStore(() => getDb()),
     heldPeerStore: HeldPeerMessageStore = adapters ? memoryHeldPeerMessageStore() : sqliteHeldPeerMessageStore(),
     limitResume = !adapters,
-    secretStore: SecretStore | null = adapters
-      ? null
-      : new SecretStore({ root: secretsRootDir(), onExpired: () => trackSecretClosed('expired') }),
+    secretStore: SecretStore | null = adapters ? null : new SecretStore({ root: secretsRootDir() }),
   ) {
     this.secretStore = secretStore
+    this.secretStore?.setOnExpired((row) => this.secretFileExpired(row.id))
     this.secretStore?.start()
     this.heldPeerStore = heldPeerStore
     try {
@@ -2794,7 +2793,9 @@ export class ProviderRegistry implements PeerToolHost {
           store.removeChat(root)
           for (const row of live) {
             const deletedAt = store.get(row.id)?.deletedAt ?? null
-            if (deletedAt !== null) trackSecretClosed('archived')
+            if (deletedAt === null) continue
+            this.secretExtends.delete(row.id)
+            trackSecretClosed('archived')
           }
         } catch (err) {
           log.warn(`could not delete the secrets of archived chat ${root}; the sweep retries`, errCode(err))
@@ -2874,6 +2875,12 @@ export class ProviderRegistry implements PeerToolHost {
     this.secretExtends.set(secretId, count)
     trackSecretExtended(count)
     return { ok: true, expiresAt }
+  }
+
+  /** A saved file reached its expiry and the store deleted it. */
+  private secretFileExpired(secretId: string): void {
+    this.secretExtends.delete(secretId)
+    trackSecretClosed('expired')
   }
 
   /** "Delete now" on the saved line. The agent is not told. */
