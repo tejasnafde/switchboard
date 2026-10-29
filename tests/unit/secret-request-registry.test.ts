@@ -33,11 +33,13 @@ vi.mock('../../src/main/db/provider-instances', () => ({
 }))
 
 const archived = new Set<string>()
+/** Rotated session id to root id, as `thread_sessions` maps them. */
+const rotatedRoots = new Map<string, string>()
 const saved: Array<{ id: string; conversationId: string; role: string; content: string }> = []
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
   updateConversationSessionId: () => {},
-  resolveRootThreadId: (id: string) => id,
+  resolveRootThreadId: (id: string) => rotatedRoots.get(id) ?? id,
   getConversationTitle: () => null,
   rewriteSystemMarker: () => null,
   saveMessageIfAbsent: (id: string, conversationId: string, role: string, content: string) => {
@@ -236,6 +238,7 @@ function setup() {
   registries.push(registry)
   saved.length = 0
   archived.clear()
+  rotatedRoots.clear()
   const start = (threadId: string) =>
     host.invoke(ProviderChannels.START_SESSION, { threadId, provider: 'claude', cwd: PROJECT_DIR })
   const tool = (name: string) => tools().find((t) => t.name === name)
@@ -503,5 +506,17 @@ describe('the agent-secret answer channel', () => {
     expect(await s.host.invoke(AgentSecretChannels.DELETE, 'chat', secretId)).toEqual(gone)
     const after = (await s.host.invoke(AgentSecretChannels.LIST, 'chat')) as { secrets: Array<{ status: string }> }
     expect(after.secrets.map((x) => x.status)).toEqual(['deleted'])
+  })
+
+  it('answers, extends and deletes through a rotated session id of the chat', async () => {
+    const s = setup()
+    await s.start('chat')
+    const id = await s.ask()
+    rotatedRoots.set('chat-rotated', 'chat')
+    expect(await s.host.invoke(AgentSecretChannels.ANSWER, 'chat-rotated', id, { save: VALUE })).toEqual({ ok: true })
+    const secretId = [...s.store.rows.keys()][0]
+    expect(await s.host.invoke(AgentSecretChannels.EXTEND, 'chat-rotated', secretId)).toMatchObject({ ok: true })
+    expect(await s.host.invoke(AgentSecretChannels.DELETE, 'chat-rotated', secretId)).toEqual({ ok: true })
+    expect(s.store.rows.get(secretId)?.deletedAt).not.toBeNull()
   })
 })

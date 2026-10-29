@@ -4845,8 +4845,8 @@ export class ProviderRegistry implements PeerToolHost {
     const badRequest = { ok: false, message: 'That request is not valid.' } as const
     const isId = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 512
     this.host.handle(AgentSecretChannels.ANSWER, (threadId: unknown, cardId: unknown, answer: unknown) => {
-      if (!isId(threadId) || !isSecretCardId(cardId) || !isAgentSecretAnswer(answer)) return badRequest
-      return this.answerAgentSecret(threadId, cardId as string, answer)
+      if (!isId(threadId) || !isId(cardId) || !isSecretCardId(cardId) || !isAgentSecretAnswer(answer)) return badRequest
+      return this.answerAgentSecret(threadId, cardId, answer)
     })
     this.host.handle(AgentSecretChannels.EXTEND, (threadId: unknown, secretId: unknown) =>
       isId(threadId) && isId(secretId) ? this.extendAgentSecret(threadId, secretId) : badRequest,

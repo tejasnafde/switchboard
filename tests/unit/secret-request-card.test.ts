@@ -88,6 +88,7 @@ describe('SecretRequestCard', () => {
     expect(input().getAttribute('spellcheck')).toBe('false')
     expect(input().getAttribute('autocorrect')).toBe('off')
     expect(input().hasAttribute('value')).toBe(false)
+    expect(input().placeholder).toBe('Paste the key')
     expect(container.querySelector('[data-testid="secret-footer"]')?.textContent).toBe(
       "Kept out of chat, in a private file this agent's commands can read for 24 hours.",
     )

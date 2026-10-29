@@ -196,7 +196,7 @@ function PendingSecretCard({
             autoCorrect="off"
             autoCapitalize="off"
             aria-label={card.name}
-            placeholder="Paste the value"
+            placeholder="Paste the key"
             disabled={submitting !== null}
             onInput={onInput}
             onKeyDown={(e) => {
