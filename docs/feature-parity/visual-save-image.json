@@ -1,0 +1,71 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "visual-save-image",
+  "summary": "Save image and Copy image on every chat visual. Desktop: a chart, diagram or html-live header shows Source, Copy image and Open in pane (Close in the pane), and a dots menu (ui/menu) holds Save image (PNG, 2x), then Copy data (chart, TSV), Copy SVG (diagram) or Copy source (live page, HTML), and Save as file for a live page with a chat folder. A chart or diagram PNG is the drawn box only, at 2x, opaque on the theme's --bg-secondary, with every var(--x) in the SVG inlined from the document before the canvas draw; a diagram cut off by the card's max height is saved at its full viewBox height. A live page uses the existing still-image capture of the running page, or its stored still while paused. Copy image says Copied for 1.5 s; Save image goes through the native save dialog (AppChannels.SAVE_IMAGE, a desktop-local channel) and shows Saved <name> in the header for 2.5 s; a failure is logged and shown in the header. Expo and Android: a Share button on chart and diagram cards captures the WebView as a PNG and opens the system share sheet; a live page shares its stored still image.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/visuals/visual-image.ts",
+        "src/renderer/components/chat/visuals/VisualMenu.tsx",
+        "src/renderer/components/chat/visuals/ChatVisual.tsx",
+        "src/renderer/components/chat/visuals/HtmlLiveFrame.tsx",
+        "src/main/ipc/app-desktop.ts",
+        "tests/unit/visual-image.test.ts",
+        "e2e/visual-regressions.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/components/ChatVisual.tsx",
+        "apps/mobile/src/components/HtmlLiveCard.tsx",
+        "apps/mobile/src/components/__tests__/ChatVisual.test.tsx",
+        "apps/mobile/src/components/__tests__/HtmlLiveCard.test.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ChatVisualCard.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/HtmlLiveCard.kt",
+        "apps/android/app/src/main/AndroidManifest.xml",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/share/ShareImage.kt",
+        "apps/android/app/src/main/res/xml/file_paths.xml",
+        "apps/android/app/src/test/java/app/switchboard/mobile/platform/share/ShareImageTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ShareVisualUiTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No API changes. Phones share an image they draw themselves or the live page still they already load; the save dialog channel is local to the desktop and never reaches a backend."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored. Images go to the clipboard, a file the user picks, or the share sheet; shared phone files sit in the app cache."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md",
+        "apps/mobile/AGENTS.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/visual-image.test.ts: theme variables are inlined (nested and fallback), file stems are stable per source, the PNG layout keeps the box width and takes the full viewBox height, and the menu lists the right items per kind.",
+      "e2e/visual-regressions.e2e.mjs: Copy image on the chart puts a PNG on the clipboard at 2x the box width in Dark, Light and Translucent; the chart, diagram and live page header screenshots were refreshed and checked.",
+      "Expo jest: the Share button captures and shares, a failure shows a message, and Share image writes the still and shares it only when one is stored.",
+      "Android Robolectric: the share helper writes into cache/shared and builds an ACTION_SEND image/png intent with the content Uri and the read grant; the Share controls appear on the cards.",
+      "npm run typecheck and npx vitest run pass; Expo tsc and jest pass; gradle testDebugUnitTest passes."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The Expo WebView capture and share sheet were not run on a real iPhone; react-native-view-shot and expo-sharing need a new native build, not an OTA update.",
+      "The Android WebView draw and share sheet were not run on a real phone.",
+      "The desktop save dialog was not clicked through by a test (native dialog)."
+    ]
+  }
+}

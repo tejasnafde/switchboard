@@ -40,11 +40,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -55,6 +57,7 @@ import androidx.compose.ui.window.DialogProperties
 import app.switchboard.mobile.data.remote.HtmlLiveImages
 import app.switchboard.mobile.domain.thread.HtmlLivePages
 import app.switchboard.mobile.domain.thread.MessageSegment
+import app.switchboard.mobile.platform.share.ShareImage
 import app.switchboard.mobile.ui.theme.Background
 import app.switchboard.mobile.ui.theme.GeistMono
 import app.switchboard.mobile.ui.theme.Surface
@@ -73,19 +76,24 @@ val LocalHtmlLive = staticCompositionLocalOf<HtmlLiveImages?> { null }
 private sealed interface LiveImage {
     data object Loading : LiveImage
     data object Missing : LiveImage
-    data class Shown(val bitmap: ImageBitmap) : LiveImage
+    data class Shown(val still: StillImage) : LiveImage
 }
+
+/** A decoded still image and, when the stored image is a PNG, its bytes as stored. */
+private class StillImage(val bitmap: ImageBitmap, val png: ByteArray?)
 
 /** Decoded still images by key, so a row scrolled back into view does not decode again. */
-private val bitmapCache = object : LinkedHashMap<String, ImageBitmap>(8, 0.75f, true) {
-    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ImageBitmap>?) = size > 8
+private val bitmapCache = object : LinkedHashMap<String, StillImage>(8, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, StillImage>?) = size > 8
 }
 
-private fun decodeImage(dataUrl: String): ImageBitmap? {
+private fun decodeImage(dataUrl: String): StillImage? {
     val payload = HtmlLivePages.imageBase64(dataUrl) ?: return null
     return runCatching {
         val bytes = Base64.decode(payload, Base64.DEFAULT)
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let {
+            StillImage(it.asImageBitmap(), bytes.takeIf(ShareImage::isPng))
+        }
     }.onFailure { Log.w(TAG, "still image did not decode", it) }.getOrNull()
 }
 
@@ -98,6 +106,7 @@ private fun decodeImage(dataUrl: String): ImageBitmap? {
 @Composable
 fun HtmlLiveCard(segment: MessageSegment.HtmlLive) {
     val live = LocalHtmlLive.current
+    val context = LocalContext.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val name = segment.title ?: "Live page"
@@ -109,14 +118,15 @@ fun HtmlLiveCard(segment: MessageSegment.HtmlLive) {
     var sheet by remember { mutableStateOf(false) }
     var fullScreen by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
-    val shown = (image as? LiveImage.Shown)?.bitmap
+    val still = (image as? LiveImage.Shown)?.still
+    val shown = still?.bitmap
 
     LaunchedEffect(key, live) {
         if (image is LiveImage.Shown) return@LaunchedEffect
         val dataUrl = live?.load(key)?.image
-        val bitmap = dataUrl?.let { withContext(Dispatchers.Default) { decodeImage(it) } }
-        if (bitmap != null) synchronized(bitmapCache) { bitmapCache[key] = bitmap }
-        image = bitmap?.let(LiveImage::Shown) ?: LiveImage.Missing
+        val decoded = dataUrl?.let { withContext(Dispatchers.Default) { decodeImage(it) } }
+        if (decoded != null) synchronized(bitmapCache) { bitmapCache[key] = decoded }
+        image = decoded?.let(LiveImage::Shown) ?: LiveImage.Missing
     }
 
     Column(
@@ -148,7 +158,7 @@ fun HtmlLiveCard(segment: MessageSegment.HtmlLive) {
             when (val state = image) {
                 LiveImage.Loading -> Muted("Loading image...")
                 LiveImage.Missing -> Muted("No image yet. Your Mac makes one the next time it is online.")
-                is LiveImage.Shown -> FoldedImage(state.bitmap, name)
+                is LiveImage.Shown -> FoldedImage(state.still.bitmap, name)
             }
         }
         result?.let { Muted(it) }
@@ -164,6 +174,17 @@ fun HtmlLiveCard(segment: MessageSegment.HtmlLive) {
             SheetAction("Copy source", null) {
                 sheet = false
                 scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(name, segment.source))) }
+            }
+            if (still != null && !showSource) {
+                SheetAction("Share image", "PNG, as captured") {
+                    sheet = false
+                    result = null
+                    scope.launch {
+                        result = ShareImage.share(context, name) {
+                            still.png ?: ShareImage.encodePng(still.bitmap.asAndroidBitmap())
+                        }
+                    }
+                }
             }
             if (live?.canOpenOnDesktop == true) {
                 SheetAction("Open on desktop", "in the pane on your Mac") {

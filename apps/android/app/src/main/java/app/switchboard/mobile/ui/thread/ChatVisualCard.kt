@@ -3,6 +3,8 @@ package app.switchboard.mobile.ui.thread
 import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.net.Uri
 import android.util.Log
 import android.webkit.WebMessage
@@ -48,6 +50,7 @@ import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonCodec
 import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
+import app.switchboard.mobile.platform.share.ShareImage
 import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.Amber
@@ -142,6 +145,8 @@ fun ChatVisualCard(kind: VisualKind, source: String) {
     var state by remember(cacheKey) { mutableStateOf<VisualState>(synchronized(drawnCache) { drawnCache[cacheKey] } ?: VisualState.Drawing) }
     var html by remember { mutableStateOf(hostHtml) }
     var showSource by remember { mutableStateOf(false) }
+    var webView by remember(cacheKey) { mutableStateOf<WebView?>(null) }
+    var shareError by remember(cacheKey) { mutableStateOf<String?>(null) }
     val invalid = (chart as? ChartParse.Invalid)?.error ?: (state as? VisualState.Failed)?.error
     val noun = if (kind == VisualKind.MERMAID) "Diagram" else "Chart"
 
@@ -175,6 +180,28 @@ fun ChatVisualCard(kind: VisualKind, source: String) {
                     Text(if (kind == VisualKind.MERMAID) "Copy SVG" else "Copy data", color = TextDim, fontSize = 12.sp)
                 }
             }
+            val drawnView = webView
+            if (invalid == null && !showSource && state is VisualState.Drawn && drawnView != null) {
+                TextButton(onClick = {
+                    shareError = null
+                    val bitmap = runCatching { captureView(drawnView) }
+                        .onFailure { Log.w(TAG, "visual capture failed", it) }
+                        .getOrNull()
+                    if (bitmap == null) {
+                        shareError = ShareImage.FAILED
+                    } else {
+                        scope.launch {
+                            shareError = ShareImage.share(context, noun) { ShareImage.encodePng(bitmap) }
+                            bitmap.recycle()
+                        }
+                    }
+                }) {
+                    Text("Share", color = TextDim, fontSize = 12.sp)
+                }
+            }
+        }
+        shareError?.let {
+            Text(it, color = Red, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp))
         }
         if (invalid != null) {
             Text(
@@ -209,13 +236,27 @@ fun ChatVisualCard(kind: VisualKind, source: String) {
                         visualWebView(viewContext, page, requestJson(kind, source)) { answer ->
                             if (answer is VisualState.Drawn) synchronized(drawnCache) { drawnCache[cacheKey] = answer }
                             state = answer
-                        }
+                        }.also { webView = it }
                     },
-                    onRelease = { it.destroy() },
+                    onRelease = {
+                        if (webView === it) webView = null
+                        it.destroy()
+                    },
                 )
             }
         }
     }
+}
+
+/** The view as drawn now, at its laid-out size. Main thread only. */
+private fun captureView(view: WebView): Bitmap {
+    check(view.width > 0 && view.height > 0) { "visual has no size" }
+    return Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888).also { view.draw(Canvas(it)) }
+}
+
+/** Seeds the drawn state for a visual, so a test can show the drawn card without running the page. */
+internal fun seedDrawnVisual(kind: VisualKind, source: String, heightDp: Int) {
+    synchronized(drawnCache) { drawnCache["${kind.wire}\n$source"] = VisualState.Drawn(heightDp, "<svg/>") }
 }
 
 /**
