@@ -1,0 +1,37 @@
+[
+  {
+    "id": "latency-trend",
+    "prompt": "p95 latency in ms, Mon 210, Tue 230, Wed 380, Thu 360, Fri 240. Did Wednesday's deploy hurt?",
+    "expect": "visual",
+    "pass": "Yes. p95 rose 65% on Wednesday and came back by Friday.\n\n```chart\n{\"type\":\"line\",\"title\":\"p95 latency (ms)\",\"labels\":[\"Mon\",\"Tue\",\"Wed\",\"Thu\",\"Fri\"],\"series\":[{\"name\":\"p95\",\"values\":[210,230,380,360,240]}]}\n```\n",
+    "fail": "Yes. p95 went from 230 ms on Tuesday to 380 ms on Wednesday, then back to 240 ms by Friday."
+  },
+  {
+    "id": "plan-comparison",
+    "prompt": "Plan A costs 12, 14, 15 per month for 3 months. Plan B costs 18, 11, 9. Which is cheaper over the quarter?",
+    "expect": "visual",
+    "pass": "Plan B, by 3.\n\n```html-live title=\"Plan cost per month\"\n<script src=\"/_sb/chart.js\"></script>\n<div style=\"height:240px\"><canvas id=\"c\"></canvas></div>\n<script>new Chart(c, { type: 'bar', data: { labels: ['M1','M2','M3'], datasets: [{ label: 'A', data: [12,14,15] }, { label: 'B', data: [18,11,9] }] } })</script>\n```\n",
+    "fail": "Plan A totals 41 and plan B totals 38, so plan B is cheaper by 3.\n\n```text\nA: 12 + 14 + 15 = 41\nB: 18 + 11 + 9 = 38\n```\n"
+  },
+  {
+    "id": "error-counts-by-service",
+    "prompt": "Errors last week: auth 120, billing 40, search 310, upload 15. Where should we look first?",
+    "expect": "visual",
+    "pass": "Search, with 63% of all errors.\n\n~~~chart\n{\"type\":\"bar\",\"labels\":[\"auth\",\"billing\",\"search\",\"upload\"],\"series\":[{\"name\":\"errors\",\"values\":[120,40,310,15]}]}\n~~~\n",
+    "fail": "```mermaid-ish\nsearch > auth > billing > upload\n```\nLook at search first."
+  },
+  {
+    "id": "code-fix",
+    "prompt": "Fix the off-by-one in paginate(): the last page is always empty.",
+    "expect": "none",
+    "pass": "The loop used `<=`. Changed it to `<`:\n\n```ts\nfor (let i = 0; i < pages; i++) yield items.slice(i * size, (i + 1) * size)\n```\n",
+    "fail": "Fixed. Here is the page count per call:\n\n```chart\n{\"type\":\"bar\",\"labels\":[\"before\",\"after\"],\"series\":[{\"name\":\"pages\",\"values\":[4,3]}]}\n```\n"
+  },
+  {
+    "id": "code-refactor-with-numbers",
+    "prompt": "Rename fetchUsers to loadUsers in src/api.ts and its 3 callers.",
+    "expect": "none",
+    "pass": "Renamed in `src/api.ts` and in the 3 callers. Typecheck is green.",
+    "fail": "Renamed.\n\n```html-live title=\"Callers\"\n<ul><li>a.ts</li><li>b.ts</li><li>c.ts</li></ul>\n```\n"
+  }
+]

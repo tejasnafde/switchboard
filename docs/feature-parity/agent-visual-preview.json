@@ -1,0 +1,58 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "agent-visual-preview",
+  "summary": "The Switchboard MCP tool preview_visual, behind the staged flag agent_visual_preview (AGENT_VISUAL_PREVIEW_ENABLED in src/shared/visual-preview.ts, false; SB_AGENT_VISUAL_PREVIEW=1 or the backend setting labs.agent_visual_preview turns it on). The agent passes one ```mermaid, ```chart or ```html-live block (block, fences included, or body plus kind). The tool checks the same caps as the chat (128 KB and the bundled library list for a live page, 20,000 characters for a chart or diagram) and a chart's spec before anything renders. Main asks its desktop window (visual-preview:request); the window draws the block as a hidden inline live page through the same preview sandbox and capture as an html-live still image (partition sb-html-preview, no network, no Node, /_sb/ libraries only), at the chat column's block width and in the current theme. A chart or diagram is drawn to SVG in the window first and placed in that page. The window answers visual-preview:result with the image; the tool returns an MCP image content block (PNG, JPEG past the image cap) and a text part with the width, the content height, the folded frame height, console errors and blocked requests. A mermaid parse error, a chart parse error, a timeout (20 s) and the per-turn cap (5 per chat, reset at the turn end) come back as an error result. Nothing is posted to the chat and nothing is stored. With the tool present the MCP instructions tell the agent to preview a complex html-live page once before it posts it, and only then. A backend with no desktop window (the headless server, and so every remote chat) never sets a renderer, so the tool and its instructions are absent there.",
+  "surfaces": {
+    "desktop": {
+      "status": "staged",
+      "flag": "agent_visual_preview",
+      "followUpRelease": "The release that turns agent_visual_preview on, after the preview has run in real agent chats on Claude, Codex and OpenCode and the image size and per-turn cap are confirmed.",
+      "evidence": [
+        "src/main/mcp/visual-preview-tool.ts",
+        "src/main/preview/visual-preview-host.ts",
+        "src/renderer/components/chat/visuals/VisualPreviewHost.tsx",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/visual-preview-tool.test.ts",
+        "tests/unit/switchboard-mcp-integration.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The tool answers the agent only. Nothing is posted to the chat, so a phone has nothing to show, and phones never run a live page."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The tool answers the agent only. Nothing is posted to the chat, so a phone has nothing to show, and phones never run a live page."
+    },
+    "sharedBackendApi": {
+      "status": "staged",
+      "flag": "agent_visual_preview",
+      "followUpRelease": "The same release as the desktop. The headless server stays without the tool: it has no window to draw in. A remote chat could later ask a connected desktop to draw; not planned.",
+      "evidence": ["src/shared/visual-preview.ts", "src/shared/ipc-channels.ts", "src/main/mcp/mcp-session.ts"]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored: the image goes to the agent only, and the per-turn count lives in memory."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["CHANGELOG.md"]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/visual-preview-tool.test.ts: the flag is off by default and on by env or the labs setting; one fence of each kind or a body with its kind is read; an empty block, a wrong fence, an over-cap page, an unknown library and an over-long diagram are refused; a bad chart is a parse error and never reaches the renderer; a diagram parse error is passed on; a render that never answers times out and is aborted; the per-turn cap refuses the sixth call, a refused argument costs nothing and a turn end gives the count back; the renderer draws through openInline and captureInline in the sandboxed partition and makes no request of its own.",
+      "tests/unit/switchboard-mcp-integration.test.ts: through the registry and the real stdio bridge, the tool and its instructions are absent with the flag off, absent with the flag on and no renderer (the headless server), and listed with both; a call returns the image content block and the summary.",
+      "tests/unit/html-preview-sandbox.test.ts (unchanged): the inline document the preview uses cancels every network request and blames the frame.",
+      "npm run typecheck and npx vitest run pass."
+    ],
+    "hardware": [
+      "Packaged build (electron-builder --mac --dir) started on a copy of the real data directory: see the pull request for the tool list with the flag off and on, a call that returned a PNG and a height, a bad chart's parse error and a page whose fetch got no network."
+    ],
+    "notExercised": [
+      "No live agent called the tool: whether Claude, Codex and OpenCode pass the image to the model was not measured.",
+      "Codex and OpenCode handling of an MCP image content block was not checked live."
+    ]
+  }
+}

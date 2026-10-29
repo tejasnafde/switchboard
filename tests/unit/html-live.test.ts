@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { CHART_SERIES_COLORS } from '../../src/shared/chart-colors'
 import { splitVisualBlocks, MAX_VISUAL_SOURCE_CHARS } from '../../src/shared/chat-visuals'
 import {
+  HTML_LIVE_CHART_COLORS,
   HTML_LIVE_MAX_BYTES,
+  htmlLiveChartColors,
   htmlLiveDocument,
   htmlLiveFileName,
   htmlLiveFolds,
@@ -32,6 +36,8 @@ const theme: HtmlLiveTheme = {
   error: '#f85149',
   font: '-apple-system, "Segoe UI", sans-serif',
   mono: 'ui-monospace, monospace',
+  radius: '6px',
+  chart: ['#58a6ff', '#3fb950', '#d29922', '#a371f7', '#39c5cf', '#db61a2'],
 }
 
 describe('parseHtmlLiveInfo', () => {
@@ -129,6 +135,24 @@ describe('htmlLiveDocument', () => {
     expect(noHead).toMatch(/^<html lang="en"><head><meta charset/)
   })
 
+  it('sets the radius and six chart colours, and drops any past six', () => {
+    const doc = htmlLiveDocument('x', { ...theme, chart: [...theme.chart, '#ffffff'] })
+    expect(doc).toContain('--sb-radius:6px;')
+    expect(doc).toContain('--sb-chart-1:#58a6ff;')
+    expect(doc).toContain('--sb-chart-6:#db61a2;')
+    expect(doc).not.toContain('--sb-chart-7')
+  })
+
+  it('drops a chart colour that could break out of the style block, and a missing list', () => {
+    const doc = htmlLiveDocument('x', { ...theme, chart: ['red}</style><script>alert(1)</script>', '#fff'] })
+    expect(doc).not.toContain('alert(1)')
+    expect(doc).not.toContain('--sb-chart-1')
+    expect(doc).toContain('--sb-chart-2:#fff;')
+    const old = { ...theme } as Partial<HtmlLiveTheme>
+    delete old.chart
+    expect(htmlLiveDocument('x', old as HtmlLiveTheme)).not.toContain('--sb-chart')
+  })
+
   it('drops a theme value that could break out of the style block', () => {
     const doc = htmlLiveDocument('x', { ...theme, accent: 'red}</style><script>alert(1)</script>' })
     expect(doc).not.toContain('alert(1)')
@@ -178,5 +202,30 @@ describe('htmlLiveStillHeight', () => {
 
   it('is unknown before the page has run here', () => {
     expect(htmlLiveStillHeight(0, false)).toBeNull()
+  })
+})
+
+describe('htmlLiveChartColors', () => {
+  const css = readFileSync(new URL('../../src/renderer/styles/global.css', import.meta.url), 'utf8')
+  /** The value of `name` in the first rule whose selector list holds `selector`. */
+  const themeVar = (selector: string, name: string): string => {
+    const body = new RegExp(`(^|,)\\s*${selector.replace('.', '\\.')}\\s*[,{][^}]*`, 'm').exec(css)?.[0] ?? ''
+    return new RegExp(`${name}:\\s*([^;]+);`).exec(body)?.[1].trim() ?? ''
+  }
+
+  it('is the first six chart block colours with each theme variable read', () => {
+    expect(HTML_LIVE_CHART_COLORS).toBe(6)
+    const read = (name: string): string => `<${name}>`
+    expect(htmlLiveChartColors(read)).toEqual(
+      CHART_SERIES_COLORS.slice(0, 6).map((c) => c.replace(/^var\((--[\w-]+)\)$/, '<$1>')),
+    )
+  })
+
+  it.each(['.theme-dark', '.theme-light', '.theme-translucent'])('gives real colours in %s', (selector) => {
+    const colors = htmlLiveChartColors((name) => themeVar(selector, name))
+    expect(colors).toHaveLength(6)
+    for (const color of colors) expect(color).toMatch(/^#[0-9a-f]{6}$/i)
+    expect(colors[0]).toBe(themeVar(selector, '--accent'))
+    expect(new Set(colors).size).toBe(6)
   })
 })

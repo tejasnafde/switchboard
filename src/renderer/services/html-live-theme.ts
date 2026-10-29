@@ -1,5 +1,5 @@
 /** The app theme as an inline live page receives it (`--sb-*` variables). */
-import type { HtmlLiveTheme } from '@shared/html-live'
+import { htmlLiveChartColors, type HtmlLiveTheme } from '@shared/html-live'
 
 export function htmlLiveTheme(): HtmlLiveTheme {
   const root = document.documentElement
@@ -18,6 +18,8 @@ export function htmlLiveTheme(): HtmlLiveTheme {
     error: v('--error'),
     font: v('--font-sans'),
     mono: v('--font-mono'),
+    radius: v('--radius'),
+    chart: htmlLiveChartColors(v),
   }
 }
 

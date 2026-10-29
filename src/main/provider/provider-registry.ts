@@ -163,6 +163,8 @@ import { buildPeerMcpTools, runPeerSendPlan } from '../mcp/peer-mcp-tools'
 import { buildApprovalMcpTools } from '../mcp/approval-mcp-tools'
 import { toolText, type McpToolResult } from '../mcp/mcp-session'
 import { buildChildHubMcpTools, buildHubMcpTools, HUB_INSTRUCTIONS, START_CHILDREN_TOOL } from '../mcp/hub-tools'
+import { buildVisualPreviewTool, VisualPreviewTurnCounter, visualPreviewRenderer } from '../mcp/visual-preview-tool'
+import { agentVisualPreviewEnabled, VISUAL_PREVIEW_INSTRUCTIONS } from '@shared/visual-preview'
 import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } from '../hub/hub-start'
 import { appMetrics, secretsRootDir } from '../runtime'
 import { onConversationArchived } from '../db/archive-events'
@@ -601,6 +603,16 @@ export class ProviderRegistry implements PeerToolHost {
     } catch (err) {
       log.warn('could not read the agent_secret_request flag; it counts as off', err)
       return false
+    }
+  }
+
+  /** The renderer `preview_visual` draws with: flag `agent_visual_preview` on, on a desktop backend. */
+  private visualPreviewRender() {
+    try {
+      return agentVisualPreviewEnabled(process.env, getSetting) ? visualPreviewRenderer() : null
+    } catch (err) {
+      log.warn('could not read the agent_visual_preview flag; it counts as off', err)
+      return null
     }
   }
 
@@ -1290,6 +1302,7 @@ export class ProviderRegistry implements PeerToolHost {
   private readonly orphanReap: Promise<number>
   /** Running Agent/Task calls per thread: a child with one is Working and is never reaped. */
   readonly hubSubagents = new NativeSubagents()
+  private readonly visualPreviews = new VisualPreviewTurnCounter()
   /** Whether each child told its parent something since its last task (`hub/hub-stop.ts`). */
   private readonly hubNotes = new ChildTaskNotes()
   /** Stops reported children left idle (`hub.idleReapMinutes`). */
@@ -2479,7 +2492,7 @@ export class ProviderRegistry implements PeerToolHost {
       try {
         const result = await this.runAgentWrite(card, response)
         outcome = result.isError ? 'failed' : 'done'
-        text = result.content.map((c) => c.text).join('\n')
+        text = result.content.map((c) => (c.type === 'text' ? c.text : '')).join('\n')
       } catch (err) {
         // The tools report refusals as results; a throw is a bug, and the agent still hears something it can act on.
         log.error(`running approved card ${card.requestId} threw`, err)
@@ -2831,7 +2844,12 @@ export class ProviderRegistry implements PeerToolHost {
     const parentTools = hubOn && !openChild
     // An open child chat is not where the user is looking, so it gets neither the tool nor the instructions.
     const secretsOn = this.secretRequestOn() && !openChild
-    const instructions = [parentTools ? HUB_INSTRUCTIONS : '', secretsOn ? SECRET_INSTRUCTIONS : '']
+    const previewRender = this.visualPreviewRender()
+    const instructions = [
+      parentTools ? HUB_INSTRUCTIONS : '',
+      secretsOn ? SECRET_INSTRUCTIONS : '',
+      previewRender ? VISUAL_PREVIEW_INSTRUCTIONS : '',
+    ]
       .filter(Boolean)
       .join(' ')
     try {
@@ -2917,6 +2935,9 @@ export class ProviderRegistry implements PeerToolHost {
                 starter: this.hubStarter,
                 report: (input) => this.reportToHub(threadId, input),
               })
+            : []),
+          ...(previewRender
+            ? [buildVisualPreviewTool({ threadId, chatId, render: previewRender, counter: this.visualPreviews })]
             : []),
         ],
         instructions || undefined,
@@ -3129,7 +3150,10 @@ export class ProviderRegistry implements PeerToolHost {
     if (event.type === 'tool.completed')
       this.checkpoints.noteToolCompleted(event.threadId, event.toolId, event.writtenPaths)
     if (event.type === 'turn.dequeued' && event.reason === 'started') this.checkpoints.startQueuedTurn(event.threadId)
-    if (event.type === 'turn.completed') this.finishOutstandingTurn(event.threadId)
+    if (event.type === 'turn.completed') {
+      this.finishOutstandingTurn(event.threadId)
+      this.visualPreviews.reset(resolveRootThreadId(event.threadId))
+    }
     // Counter for limit classification: one line per turn that ended on a
     // usage limit or a full context, so auto-resume arms can be counted per provider.
     if (event.type === 'turn.completed' && event.limit) {
