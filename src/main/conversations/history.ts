@@ -12,6 +12,8 @@ import {
   messageWindowRows,
   threadFamilyIds,
 } from '../db/database'
+import { armedSecretScope } from '../db/secret-mask'
+import { secretRedactor, type SecretScope } from '../secrets/secret-redactor'
 import { compareSessionCopies, listClaudeSessionCopies, claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
 import { scanCodexSessionCopies } from '../projects/session-scanner'
@@ -194,7 +196,7 @@ export async function loadConversationHistory(
     timing.mergeHit = true
     mergedHistories.delete(conversationId)
     mergedHistories.set(conversationId, memo)
-    return { ...memo.history, timing }
+    return maskedHistory(conversationId, { ...memo.history, timing })
   }
   const databaseMessages = familyIds.flatMap((id) => messageRowsToChatMessages(getMessagesForConversation(id)))
   const enrichments = displayBodyEnrichments(familyIds)
@@ -203,7 +205,7 @@ export async function loadConversationHistory(
   const merged = mergeConversationMessages(diskMessages, databaseMessages)
   timing.mergeMs = performance.now() - mergeStart
   const enrichStart = performance.now()
-  const messages = enrichMessagesWithDisplayBody(merged, enrichments)
+  const messages = enrichMessagesWithDisplayBody(merged, enrichments, storedContentOf(conversationId))
   timing.enrichMs = performance.now() - enrichStart
 
   const history = {
@@ -218,7 +220,54 @@ export async function loadConversationHistory(
     databaseMessageCount: databaseMessages.length,
   }
   rememberMergedHistory(conversationId, key, history)
-  return { ...history, timing }
+  return maskedHistory(conversationId, { ...history, timing })
+}
+
+/**
+ * Transcripts are read as the provider wrote them, so a live saved secret is
+ * masked on the way out. The memo keeps the read as it was: a secret saved or
+ * deleted later changes what is masked, not what is cached. A fork also
+ * masks the secrets of the chats it was forked from, whose transcript it
+ * copied (`secretScope`).
+ */
+function maskedHistory(conversationId: string, history: ConversationHistory): ConversationHistory {
+  const scope = armedSecretScope(conversationId)
+  if (scope === null) return history
+  const forkMessages = secretRedactor.redactDeep(scope, history.forkMessages).value
+  return {
+    ...history,
+    messages: maskMessages(scope, history.messages),
+    forkMessages:
+      forkMessages === history.forkMessages
+        ? forkMessages
+        : forkMessages.map((entry, i) => {
+            const message = withoutRevert(entry.message, history.forkMessages[i].message)
+            return message === entry.message ? entry : { ...entry, message }
+          }),
+  }
+}
+
+function maskedMessages(conversationId: string, messages: ChatMessage[]): ChatMessage[] {
+  const scope = armedSecretScope(conversationId)
+  return scope === null ? messages : maskMessages(scope, messages)
+}
+
+function maskMessages(scope: SecretScope, messages: ChatMessage[]): ChatMessage[] {
+  const masked = secretRedactor.redactDeep(scope, messages).value
+  return masked === messages ? messages : masked.map((message, i) => withoutRevert(message, messages[i]))
+}
+
+/** A masked changed-file card: Accept or Reject would write the mask into the file. */
+function withoutRevert(message: ChatMessage, before: ChatMessage): ChatMessage {
+  const { fileDiff } = message
+  if (!fileDiff || fileDiff === before.fileDiff || fileDiff.noRevert) return message
+  return { ...message, fileDiff: { ...fileDiff, noRevert: 'unknown' } }
+}
+
+/** A stored row's text for a transcript's: live saved secrets masked. */
+function storedContentOf(conversationId: string): ((content: string) => string) | undefined {
+  const scope = armedSecretScope(conversationId)
+  return scope === null ? undefined : (content) => secretRedactor.redactText(scope, content) ?? content
 }
 
 export interface ConversationHistoryWindow extends Omit<MergedWindow, 'rowsRead'> {
@@ -271,8 +320,12 @@ async function loadWindow(
   const enrichStart = performance.now()
   timing.dbMs += readMs
   timing.mergeMs = enrichStart - start - readMs - sliceMs
-  const enrichments = displayBodyEnrichments(familyIds, userContents(window.messages))
-  const messages = enrichMessagesWithDisplayBody(window.messages, enrichments)
+  const storedContent = storedContentOf(conversationId)
+  const enrichments = displayBodyEnrichments(familyIds, userContents(window.messages, storedContent))
+  const messages = maskedMessages(
+    conversationId,
+    enrichMessagesWithDisplayBody(window.messages, enrichments, storedContent),
+  )
   timing.enrichMs = performance.now() - enrichStart
   return {
     ...window,
@@ -376,8 +429,14 @@ function displayBodyEnrichments(familyIds: readonly string[], contents?: Readonl
   return enrichments
 }
 
-function userContents(messages: readonly ChatMessage[]): Set<string> {
-  return new Set(messages.filter((message) => message.role === 'user').map((message) => message.content))
+function userContents(messages: readonly ChatMessage[], storedContent?: (content: string) => string): Set<string> {
+  const contents = new Set<string>()
+  for (const message of messages) {
+    if (message.role !== 'user') continue
+    contents.add(message.content)
+    if (storedContent) contents.add(storedContent(message.content))
+  }
+  return contents
 }
 
 // ponytail: bounded by chats and total messages, not bytes. The strings are
@@ -407,7 +466,8 @@ function sameKey(a: unknown[], b: unknown[]): boolean {
 
 /** The last merged history of a conversation, unchecked: only for rows that do not change. */
 export function mergedHistoryMessages(conversationId: string): ChatMessage[] | undefined {
-  return mergedHistories.get(conversationId)?.history.messages
+  const messages = mergedHistories.get(conversationId)?.history.messages
+  return messages && maskedMessages(conversationId, messages)
 }
 
 /** Test seam. */

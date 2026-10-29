@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { queuedTurnNotSentMessage, type QueuedTurnNotSentCause } from '@shared/queued-turns'
+import { maskStoredText } from './secret-mask'
 
 /** Rows written by an earlier process are the ones a restart left behind. */
 const LAUNCH = randomUUID()
@@ -48,7 +49,7 @@ export function sqliteQueuedTurnRowStore(db: () => Database.Database): QueuedTur
     row: { message_id: string; conversation_id: string; text: string; queued_at: number },
     cause: QueuedTurnNotSentCause,
   ): NotSentRow => {
-    const content = `Error: ${queuedTurnNotSentMessage(row.text, cause)}`
+    const content = maskStoredText(row.conversation_id, `Error: ${queuedTurnNotSentMessage(row.text, cause)}`)
     // The images go onto the not-sent row, so the whole message can be sent again.
     const images =
       (
@@ -74,7 +75,7 @@ export function sqliteQueuedTurnRowStore(db: () => Database.Database): QueuedTur
         .prepare(
           'INSERT OR REPLACE INTO queued_turn_rows (message_id, conversation_id, text, queued_at, launch) VALUES (?, ?, ?, ?, ?)',
         )
-        .run(row.messageId, row.conversationId, row.text, row.queuedAt, LAUNCH)
+        .run(row.messageId, row.conversationId, maskStoredText(row.conversationId, row.text), row.queuedAt, LAUNCH)
     },
     forget(messageId) {
       db().prepare('DELETE FROM queued_turn_rows WHERE message_id = ?').run(messageId)

@@ -14,6 +14,7 @@ import { emitConversationArchived } from './archive-events'
 import type { ReasoningEffort } from '@shared/models'
 import { isReasoningEffort, normalizeProviderOptionMemory, switchProviderOptions } from '@shared/provider-option-memory'
 import { parseFollowSuggestionMode, recordWorkedWorktree, type FollowSuggestionMode } from '@shared/follow-suggestions'
+import { maskStoredText } from './secret-mask'
 
 const log = createLogger('db')
 
@@ -937,7 +938,7 @@ export function switchConversationAgent(
       db.prepare(`
         INSERT OR IGNORE INTO messages (id, conversation_id, role, content, timestamp)
         VALUES (?, ?, 'system', ?, ?)
-      `).run(marker.id, rootId, marker.content, marker.timestamp)
+      `).run(marker.id, rootId, maskStoredText(rootId, marker.content), marker.timestamp)
     }
     const pendingHandoffFrom = nextPendingHandoffFrom(
       row?.pending_handoff_from ?? null,
@@ -1077,7 +1078,7 @@ export function bulkSaveMessages(
   const tx = db.transaction(() => {
     for (const msg of messages) {
       if (!msg.content) continue
-      insert.run(msg.id, conversationId, msg.role, msg.content, msg.timestamp)
+      insert.run(msg.id, conversationId, msg.role, maskStoredText(conversationId, msg.content), msg.timestamp)
     }
   })
   tx()

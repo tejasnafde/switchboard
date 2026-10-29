@@ -36,6 +36,15 @@ describe('enrichMessagesWithDisplayBody', () => {
     expect(out.pillsMeta).toEqual({ ok: { label: 'a.ts', kind: 'file' } })
   })
 
+  it('finds the stored row of a transcript message whose stored text has a secret masked', () => {
+    const [out] = enrichMessagesWithDisplayBody(
+      [userMsg('1', 'use s3cr3t-value now')],
+      new Map([['use [secret K] now', { displayBody: 'see [[pill:abc]]', pillsMeta: samplePillsMeta }]]),
+      (content) => content.replace('s3cr3t-value', '[secret K]'),
+    )
+    expect(out.displayBody).toBe('see [[pill:abc]]')
+  })
+
   it('returns input unchanged when enrichments map is empty', () => {
     const messages = [userMsg('1', 'hi')]
     expect(enrichMessagesWithDisplayBody(messages, new Map())).toBe(messages)

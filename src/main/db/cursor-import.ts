@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { maskStoredText } from './secret-mask'
 
 export interface CursorSnapshotMessage {
   id: string
@@ -100,7 +101,13 @@ export function importCursorSnapshot(db: Database.Database, snapshot: CursorSnap
     `)
     for (const message of snapshot.messages) {
       if (!message.content) continue
-      insertMessage.run(message.id, conversationId, message.role, message.content, message.timestamp)
+      insertMessage.run(
+        message.id,
+        conversationId,
+        message.role,
+        maskStoredText(conversationId, message.content),
+        message.timestamp,
+      )
     }
     return { conversationId, refreshed: true }
   })()

@@ -4,6 +4,8 @@ import Database from 'better-sqlite3'
 import type { ChatMessage, FileDiffAttachment, ToolCall } from '@shared/types'
 import { getDb, getReadDb } from './database'
 import { threadFamilyIds } from './conversations'
+import { armedSecretScope, maskStoredText, maskStoredValue } from './secret-mask'
+import { secretRedactor } from '../secrets/secret-redactor'
 import { parsePersistedPillsMeta } from '../provider/pill-metadata'
 import type { WindowRows } from '../conversations/history-window'
 
@@ -26,6 +28,24 @@ interface SaveMessageArgs {
   displayBody: string | null
   pillsMeta: string | null
 }
+/**
+ * A row through `saveMessage` or `saveMessageIfAbsent` with the chat's live
+ * saved secrets masked (`secret-mask.ts`, which every other writer of message
+ * text uses too), so neither the row nor the FTS index holds one.
+ */
+function maskedArgs(a: SaveMessageArgs): SaveMessageArgs {
+  const scope = armedSecretScope(a.conversationId)
+  if (scope === null) return a
+  const mask = (text: string | null) => (text === null ? null : (secretRedactor.redactText(scope, text) ?? text))
+  return {
+    ...a,
+    content: mask(a.content) ?? '',
+    toolCalls: mask(a.toolCalls),
+    displayBody: mask(a.displayBody),
+    pillsMeta: mask(a.pillsMeta),
+  }
+}
+
 let saveMsg: {
   db: Database.Database
   convExists: Database.Statement
@@ -45,8 +65,20 @@ function saveMessageStmts(db: Database.Database) {
     // an orphaned index row behind.
     const insertIfAbsent = db.prepare(`INSERT OR IGNORE INTO messages ${cols} ${values}`)
     const touch = db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?')
-    const run = (stmt: Database.Statement, a: SaveMessageArgs): Database.RunResult =>
-      stmt.run(a.id, a.conversationId, a.role, a.content, a.toolCalls, a.images, a.now, a.displayBody, a.pillsMeta)
+    const run = (stmt: Database.Statement, args: SaveMessageArgs): Database.RunResult => {
+      const a = maskedArgs(args)
+      return stmt.run(
+        a.id,
+        a.conversationId,
+        a.role,
+        a.content,
+        a.toolCalls,
+        a.images,
+        a.now,
+        a.displayBody,
+        a.pillsMeta,
+      )
+    }
     const write = db.transaction((a: SaveMessageArgs) => {
       run(insert, a)
       touch.run(a.now, a.conversationId)
@@ -418,13 +450,15 @@ export function saveActivityMessageIfAbsent(row: {
     log.warn(`saveActivityMessageIfAbsent: conversation ${row.conversationId} not found, skipping`)
     return false
   }
+  const toolCalls = maskStoredValue(row.conversationId, row.toolCalls)
+  const fileDiff = maskStoredValue(row.conversationId, row.fileDiff)
   return (
     activityMessageStmts(db).insert.run(
       row.id,
       row.conversationId,
-      row.toolCalls ? JSON.stringify(row.toolCalls) : null,
+      toolCalls ? JSON.stringify(toolCalls) : null,
       row.timestamp,
-      row.fileDiff ? JSON.stringify({ fileDiff: row.fileDiff }) : null,
+      fileDiff ? JSON.stringify({ fileDiff }) : null,
     ).changes > 0
   )
 }
@@ -467,8 +501,9 @@ export function rewriteSystemMarker(
     if (!row) continue
     const next = rewrite(row.content)
     if (next === null) return null
-    write.run(next, messageId, row.conversationId)
-    return next
+    const stored = maskStoredText(row.conversationId, next)
+    write.run(stored, messageId, row.conversationId)
+    return stored
   }
   return null
 }

@@ -168,6 +168,9 @@ export function secretClosedText(name: string, why: 'expired' | 'stopped' | 'wit
 /** Backend capability: it serves `AgentSecretChannels` (`ws-protocol` BACKEND_CAPABILITIES). */
 export const AGENT_SECRET_REQUEST_CAPABILITY = 'agent_secret_request_v1'
 
+/** The system row a turn gets when a saved secret showed up in its output and was masked. */
+export const SECRET_MASKED_TEXT = 'A saved secret appeared in the output and was masked. The agent saw it.'
+
 /** The desktop's answer to a secret card. Exactly one of these shapes, nothing else. */
 export type AgentSecretAnswer = { save: string } | { decline: true }
 

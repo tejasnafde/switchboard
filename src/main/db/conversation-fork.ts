@@ -5,6 +5,7 @@ import type {
   ForkConversationState,
 } from '../../shared/conversation-fork'
 import type { ForkMessageRow } from '../conversations/fork-message-codec'
+import { maskStoredText } from './secret-mask'
 
 export type ConversationForkOperationStatus = 'pending' | 'completed' | 'failed'
 
@@ -318,13 +319,13 @@ export class SqliteConversationForkStore {
         message.id,
         message.conversationId,
         message.role,
-        message.content,
-        message.toolCallsJson,
+        maskStoredText(message.conversationId, message.content),
+        maskStoredText(message.conversationId, message.toolCallsJson),
         message.imagesJson,
         message.timestamp,
-        message.displayBody,
-        message.pillsMetaJson,
-        message.attachmentsJson,
+        maskStoredText(message.conversationId, message.displayBody),
+        maskStoredText(message.conversationId, message.pillsMetaJson),
+        maskStoredText(message.conversationId, message.attachmentsJson),
       )
     }
 
