@@ -266,6 +266,18 @@ export const HtmlLiveChannels = {
 } as const
 
 /**
+ * The agent's `preview_visual` (desktop only, shared/visual-preview.ts):
+ * main pushes REQUEST `(id, VisualPreviewRequest)` to its window, which draws
+ * the block hidden and answers RESULT `(id, VisualPreviewResult)`. CANCEL
+ * `(id)`: main stopped waiting, so the window drops it.
+ */
+export const VisualPreviewChannels = {
+  REQUEST: 'visual-preview:request',
+  RESULT: 'visual-preview:result',
+  CANCEL: 'visual-preview:cancel',
+} as const
+
+/**
  * Per-thread branch picker. `LIST_REFS` returns local + remote branches
  * annotated with which one is `current` and the absolute path of the
  * worktree (if any) each branch is checked out in. `SWITCH_REF` runs

@@ -11,7 +11,8 @@ import { CHART_SERIES_COLORS } from '@shared/chart-colors'
 import { chartDataText, parseChartSpec, renderChart, type ChartPalette, type VisualKind } from '@shared/chat-visuals'
 import { createRendererLogger } from '../../../logger'
 import { useLayoutStore } from '../../../stores/layout-store'
-import { renderDiagram, type DiagramResult, type DiagramTheme } from './diagram-render'
+import { diagramTheme } from '../../../services/diagram-theme'
+import { renderDiagram, type DiagramResult } from './diagram-render'
 
 const log = createRendererLogger('chat:visual')
 
@@ -37,19 +38,6 @@ function cachedDiagram(source: string, themeKey: string): Promise<DiagramResult>
     if (diagramCache.size > CACHE_LIMIT) diagramCache.delete(diagramCache.keys().next().value as string)
   }
   return hit
-}
-
-function diagramTheme(): DiagramTheme {
-  const css = getComputedStyle(document.documentElement)
-  const v = (name: string): string => css.getPropertyValue(name).trim()
-  return {
-    dark: !document.documentElement.classList.contains('theme-light'),
-    surface: v('--bg-tertiary'),
-    text: v('--text-primary'),
-    line: v('--text-secondary'),
-    border: v('--text-muted'),
-    font: v('--font-sans'),
-  }
 }
 
 function subscribeThemeClass(onChange: () => void): () => void {

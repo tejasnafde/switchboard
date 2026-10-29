@@ -39,6 +39,7 @@ import { QuickPromptModal } from './components/QuickPromptModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { UpdateToast } from './components/UpdateToast'
 import { AnalyticsNotice } from './components/AnalyticsNotice'
+import { VisualPreviewHost } from './components/chat/visuals/VisualPreviewHost'
 import { ConfirmHost, unlessConfirmOpen } from './components/ui/confirm'
 import { loadKeyboardOverrides, reloadKeyboardOverrides } from './services/keyboard-overrides'
 import { attachSettingsFileSync } from './services/settings-file-sync'
@@ -2090,6 +2091,7 @@ export function App() {
       <UpdateToast />
       <AnalyticsNotice />
       <ConfirmHost />
+      <VisualPreviewHost />
     </div>
   )
 }

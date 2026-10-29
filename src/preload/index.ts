@@ -14,6 +14,7 @@ import {
   IdeChannels,
   PreviewChannels,
   HtmlLiveChannels,
+  VisualPreviewChannels,
   KanbanChannels,
   MachineChannels,
   ProviderInstanceChannels,
@@ -30,6 +31,7 @@ import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { PeerLinkView } from '@shared/peer-links'
 import type { PreviewEvent, PreviewOpenRequest, PreviewOpenResult } from '@shared/html-preview'
 import type { HtmlLiveState, HtmlLiveTheme } from '@shared/html-live'
+import type { VisualPreviewRequest, VisualPreviewResult } from '@shared/visual-preview'
 import type { ReasoningEffort } from '@shared/models'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanWorktreeCreationIntent } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
@@ -1001,6 +1003,15 @@ const api = {
     closeInline: (token: string): Promise<{ ok: boolean }> => transport.invoke(HtmlLiveChannels.INLINE_CLOSE, token),
     captureInline: (webContentsId: number): Promise<string | null> =>
       transport.invoke(HtmlLiveChannels.INLINE_CAPTURE, webContentsId),
+    /** The agent's `preview_visual`: main asks this window to draw a block hidden and answer the image. */
+    onVisualPreviewRequest: (callback: (id: string, request: VisualPreviewRequest) => void) =>
+      transport.on<[string, VisualPreviewRequest]>(VisualPreviewChannels.REQUEST, (id, request) =>
+        callback(id, request),
+      ),
+    onVisualPreviewCancel: (callback: (id: string) => void) =>
+      transport.on<[string]>(VisualPreviewChannels.CANCEL, (id) => callback(id)),
+    answerVisualPreview: (id: string, result: VisualPreviewResult): Promise<void> =>
+      transport.invoke(VisualPreviewChannels.RESULT, id, result),
   },
 
   // ─── Inline live pages: still images and Save as file, on the chat's machine ──
