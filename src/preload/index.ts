@@ -92,7 +92,7 @@ import type { DiagnosticsSnapshot } from '@shared/diagnostics-report'
 import { createRendererLogger } from '../renderer/logger'
 import { createWorktreeCreationApi } from './worktree-creation-api'
 import { createWorktreeManagerApi } from './worktree-manager-api'
-import type { AgentProvider, ToolCall } from '@shared/types'
+import type { AgentProvider, SaveImageResult, ToolCall } from '@shared/types'
 
 const log = createRendererLogger('preload:provider')
 
@@ -350,6 +350,9 @@ const api = {
     getArchivedConversations: () => transport.invoke(AppChannels.GET_ARCHIVED_CONVERSATIONS),
     exportMarkdown: (params: { suggestedFilename: string; content: string }) =>
       transport.invoke(AppChannels.EXPORT_MARKDOWN, params),
+    /** Save dialog, then writes a PNG data URL. A chat visual's Save image. */
+    saveImage: (params: { suggestedFilename: string; dataUrl: string }): Promise<SaveImageResult> =>
+      transport.invoke(AppChannels.SAVE_IMAGE, params),
     getLaunchConfig: (projectPath: string) => transport.invoke(AppChannels.GET_LAUNCH_CONFIG, projectPath),
     saveLaunchConfig: (projectPath: string, yamlContent: string) =>
       transport.invoke(AppChannels.SAVE_LAUNCH_CONFIG, projectPath, yamlContent),

@@ -1,6 +1,8 @@
 import React from 'react'
 import { Image } from 'react-native'
 import { act } from 'react-test-renderer'
+import * as FileSystem from 'expo-file-system/legacy'
+import * as Sharing from 'expo-sharing'
 import { renderComponent } from '../../test/render'
 import { HtmlLiveCard, clearHtmlLiveCache } from '../HtmlLiveCard'
 import { Markdown } from '../Markdown'
@@ -24,10 +26,10 @@ const IMAGE = 'data:image/png;base64,iVBORw0KGgo='
 const THREAD = { connectionId: 'mac', threadId: 'thread-1' }
 const NO_IMAGE = 'No image yet. Your Mac makes one the next time it is online.'
 
-function fakeClient(capable: boolean, image: string | null) {
+function fakeClient(capable: boolean, image: string | null, savedPath: string | null = null) {
   return {
     supportsCapability: jest.fn((name: string) => capable && name === 'html_live_images_v1'),
-    htmlLiveLoad: jest.fn(async () => ({ image, savedPath: null })),
+    htmlLiveLoad: jest.fn(async () => ({ image, savedPath })),
     htmlLiveOpenOnDesktop: jest.fn(async () => ({ ok: true })),
   }
 }
@@ -124,6 +126,36 @@ it('shows the backend refusal when the desktop rate-limits the open', async () =
   })
   await flush()
   expect(root.texts()).toContain(limited)
+})
+
+it('shares the still image as a PNG named after the saved page', async () => {
+  const client = fakeClient(true, IMAGE, 'pages/latency chart.html')
+  jest.mocked(getClient).mockReturnValue(client as never)
+  const root = renderComponent(<HtmlLiveCard source={SOURCE} title="Latency" thread={THREAD} />)
+  await flush()
+  act(() => root.byLabel('Show source').props.onPress())
+  await act(async () => {
+    root.byLabel('Share image').props.onPress()
+  })
+  await flush()
+  expect(FileSystem.writeAsStringAsync).toHaveBeenCalledWith('file:///cache/latency-chart.png', 'iVBORw0KGgo=', {
+    encoding: 'base64',
+  })
+  expect(Sharing.shareAsync).toHaveBeenCalledWith('file:///cache/latency-chart.png', {
+    mimeType: 'image/png',
+    UTI: 'public.png',
+    dialogTitle: 'Share image',
+  })
+})
+
+it('offers no Share image without a still image', async () => {
+  const client = fakeClient(true, null)
+  jest.mocked(getClient).mockReturnValue(client as never)
+  const root = renderComponent(<HtmlLiveCard source={SOURCE} title="Latency" thread={THREAD} />)
+  await flush()
+  act(() => root.byLabel('Show source').props.onPress())
+  expect(root.byLabel('Open on desktop')).toBeTruthy()
+  expect(root.allByLabel('Share image')).toHaveLength(0)
 })
 
 it('renders an html-live block in Markdown, an unclosed one as code', async () => {

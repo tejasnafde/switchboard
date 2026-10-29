@@ -33,6 +33,7 @@ export const AppChannels = {
   UNARCHIVE_CONVERSATION: 'app:unarchive-conversation',
   GET_ARCHIVED_CONVERSATIONS: 'app:get-archived-conversations',
   EXPORT_MARKDOWN: 'app:export-markdown',
+  SAVE_IMAGE: 'app:save-image',
   LOAD_SESSION_BY_ID: 'app:load-session-by-id',
   LOAD_HISTORY_IMAGE: 'app:load-history-image',
   LOAD_TOOL_CALL: 'app:load-tool-call',

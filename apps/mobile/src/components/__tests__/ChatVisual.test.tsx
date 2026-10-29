@@ -1,6 +1,8 @@
 import React from 'react'
 import { act } from 'react-test-renderer'
 import * as Clipboard from 'expo-clipboard'
+import * as Sharing from 'expo-sharing'
+import { captureRef } from 'react-native-view-shot'
 import { renderComponent } from '../../test/render'
 import { ChatVisual } from '../ChatVisual'
 import { Markdown } from '../Markdown'
@@ -41,6 +43,45 @@ it('copies a chart as tab-separated data', async () => {
     root.byLabel('Copy data').props.onPress()
   })
   expect(Clipboard.setStringAsync).toHaveBeenCalledWith('\ts\na\t1\nb\t2')
+})
+
+it('shares a drawn chart as a PNG image', async () => {
+  const root = renderComponent(<ChatVisual kind="chart" source={CHART} />)
+  await flush()
+  expect(root.allByLabel('Share image')).toHaveLength(0)
+  const webview = root.root.find((n) => n.props.testID === 'webview' && typeof n.type === 'string')
+  act(() =>
+    webview.props.onMessage({ nativeEvent: { data: JSON.stringify({ type: 'drawn', height: 200, svg: '<svg/>' }) } }),
+  )
+  await act(async () => {
+    root.byLabel('Share image').props.onPress()
+  })
+  await flush()
+  expect(captureRef).toHaveBeenCalledWith(expect.anything(), { format: 'png', quality: 1, result: 'tmpfile' })
+  expect(Sharing.shareAsync).toHaveBeenCalledWith('file:///tmp/visual.png', {
+    mimeType: 'image/png',
+    UTI: 'public.png',
+    dialogTitle: 'Share image',
+  })
+})
+
+it('says so when the share fails', async () => {
+  jest.mocked(captureRef).mockRejectedValueOnce(new Error('no view'))
+  const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+  const root = renderComponent(<ChatVisual kind="chart" source={CHART} />)
+  await flush()
+  const webview = root.root.find((n) => n.props.testID === 'webview' && typeof n.type === 'string')
+  act(() =>
+    webview.props.onMessage({ nativeEvent: { data: JSON.stringify({ type: 'drawn', height: 200, svg: '<svg/>' }) } }),
+  )
+  await act(async () => {
+    root.byLabel('Share image').props.onPress()
+  })
+  await flush()
+  expect(root.texts()).toContain('Could not share the chart.')
+  expect(Sharing.shareAsync).not.toHaveBeenCalled()
+  expect(warn).toHaveBeenCalled()
+  warn.mockRestore()
 })
 
 it('falls back to the source when the diagram does not draw', async () => {

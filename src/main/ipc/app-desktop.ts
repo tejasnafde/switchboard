@@ -12,7 +12,7 @@ import { createMainLogger as createLogger } from '../logger'
 import { getManagedRootConversationsForProject } from '../db/database'
 import { projectManagedRootSessions } from './terminal-sessions'
 import { addProject } from '../db/database'
-import type { Project } from '@shared/types'
+import type { Project, SaveImageResult } from '@shared/types'
 import { noteQuitSource } from '../quit-source'
 import { folderEntryCount, saveAttachment } from '../attachments'
 import { convertHeicToJpeg } from '../heic'
@@ -110,6 +110,28 @@ export function registerAppDesktopHandlers(window: BrowserWindow): void {
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
         log.error(`export failed: ${message}`)
+        return { ok: false, error: message }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    AppChannels.SAVE_IMAGE,
+    async (_event, params: { suggestedFilename: string; dataUrl: string }): Promise<SaveImageResult> => {
+      const base64 = /^data:image\/png;base64,(.*)$/.exec(params.dataUrl)?.[1]
+      if (base64 === undefined) return { ok: false, error: 'Not a PNG image.' }
+      const result = await dialog.showSaveDialog(window, {
+        title: 'Save Image',
+        defaultPath: params.suggestedFilename,
+        filters: [{ name: 'PNG image', extensions: ['png'] }],
+      })
+      if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+      try {
+        await writeFile(result.filePath, Buffer.from(base64, 'base64'))
+        return { ok: true, path: result.filePath }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error'
+        log.error(`save image failed: ${message}`)
         return { ok: false, error: message }
       }
     },

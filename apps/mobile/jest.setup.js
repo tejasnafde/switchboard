@@ -83,4 +83,12 @@ jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }
 jest.mock('expo-asset', () => ({
   Asset: { fromModule: () => ({ downloadAsync: async () => undefined, localUri: 'file:///visual-host.html' }) },
 }))
-jest.mock('expo-file-system/legacy', () => ({ readAsStringAsync: jest.fn(async () => '<html></html>') }))
+jest.mock('expo-file-system/legacy', () => ({
+  cacheDirectory: 'file:///cache/',
+  EncodingType: { Base64: 'base64' },
+  readAsStringAsync: jest.fn(async () => '<html></html>'),
+  writeAsStringAsync: jest.fn(async () => undefined),
+}))
+// Share image on chat visuals: the capture and the share sheet are native.
+jest.mock('react-native-view-shot', () => ({ captureRef: jest.fn(async () => 'file:///tmp/visual.png') }))
+jest.mock('expo-sharing', () => ({ shareAsync: jest.fn(async () => undefined) }))

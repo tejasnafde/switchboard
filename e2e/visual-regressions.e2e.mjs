@@ -26,7 +26,7 @@
  */
 
 import { _electron as electron } from 'playwright'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:net'
@@ -1037,6 +1037,17 @@ async function captureThemeScreens(win, theme) {
   await chart.scrollIntoViewIfNeeded()
   await chart.locator('svg').first().waitFor({ state: 'visible', timeout: 20_000 })
   await snapScreen(win, 'chat-chart', theme, chart)
+  // Copy image puts the drawn box on the clipboard as a 2x PNG (kept with the artifacts to look at).
+  await chart.getByRole('button', { name: 'Copy image', exact: true }).click()
+  await chart.getByRole('button', { name: 'Copied', exact: true }).waitFor({ timeout: 10_000 })
+  const copiedChart = await app.evaluate(({ clipboard }) => {
+    const image = clipboard.readImage()
+    return { ...image.getSize(), png: image.toPNG().toString('base64') }
+  })
+  writeFileSync(join(artifactDir, `copied-chart-${theme.toLowerCase()}.png`), Buffer.from(copiedChart.png, 'base64'))
+  const chartWidth = (await chart.boundingBox())?.width ?? 0
+  if (Math.abs(copiedChart.width - 2 * (chartWidth - 2)) > 2)
+    screenFailures.push(`chat-chart-${theme.toLowerCase()}: Copy image is ${copiedChart.width}px wide, not 2x the box`)
   // Open in pane shows it over the right pane; Close returns the terminals.
   await diagram.getByRole('button', { name: 'Open in pane', exact: true }).click()
   const paneClose = win.getByRole('button', { name: 'Close', exact: true })
