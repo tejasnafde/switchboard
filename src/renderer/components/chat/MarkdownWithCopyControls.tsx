@@ -16,6 +16,7 @@ import { marked, Renderer, type Token, type Tokens } from 'marked'
 import { createRendererLogger } from '../../logger'
 import { tableClipboardPayload, tableToCsv, tableToMarkdown, type CopyTableSource } from './table-copy'
 import { TableCopyMenu, type TableCopyFormat } from './TableCopyMenu'
+import { selectInlineCodeOnDoubleClick } from './inline-code-selection'
 
 const log = createRendererLogger('chat:markdown-copy')
 
@@ -326,6 +327,10 @@ interface AtomicMarkdownRootProps {
   onClick: (event: MouseEvent<HTMLDivElement>) => void
 }
 
+function handleDoubleClick(event: MouseEvent<HTMLDivElement>): void {
+  selectInlineCodeOnDoubleClick(event.target, window.getSelection())
+}
+
 interface FocusedControlSnapshot {
   code: number | null
   table: TableControlTarget | null
@@ -369,6 +374,7 @@ class AtomicMarkdownRoot extends Component<AtomicMarkdownRootProps> {
         className={this.props.className}
         style={this.props.style}
         onClick={this.props.onClick}
+        onDoubleClick={handleDoubleClick}
         dangerouslySetInnerHTML={this.innerHtml}
       />
     )
