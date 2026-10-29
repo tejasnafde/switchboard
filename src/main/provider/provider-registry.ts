@@ -3090,9 +3090,7 @@ export class ProviderRegistry implements PeerToolHost {
       this.maskedTurns.delete(resolveRootThreadId(event.threadId))
   }
 
-  private readonly secretRedaction = new RuntimeEventRedaction(secretRedactor, (threadId) =>
-    resolveRootThreadId(threadId),
-  )
+  private readonly secretRedaction = new RuntimeEventRedaction(secretRedactor, resolveRootThreadId)
   /** Chats whose running turn already got its masked-secret row. */
   private readonly maskedTurns = new Set<string>()
 

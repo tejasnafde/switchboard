@@ -12,7 +12,8 @@
  * While a file is live its value is also armed in the redactor
  * (`secret-redactor.ts`): on save, and by the sweep at start, which reads the
  * live files back. Every delete drops it. No encryption at rest: the agent's
- * commands read plaintext, and the short expiry is the control. Logs name row ids only, never a name or a value.
+ * commands read plaintext, and the short expiry is the control. Logs name row
+ * ids only, never a name or a value.
  */
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
