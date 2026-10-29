@@ -30,6 +30,7 @@ import {
   shouldArm,
   LIMIT_RESUME_FIRE_DELAY_MS,
   type ArmDecision,
+  type FireChildContext,
   type LimitDisarmReason,
   type LimitState,
   type TurnLimit,
@@ -67,6 +68,10 @@ export interface LimitResumeHost {
   sendResume(threadId: string): Promise<boolean>
   /** Tell clients the chat's Limited row changed. `resumed` when a resume turn was just sent, `gaveUp` when it just gave up. */
   changed(conversationId: string, state: LimitState, resumed: boolean, gaveUp?: boolean): void
+  /** For an open child: its phase, its parent's hold and the run slots it competes for. Null for any other chat. */
+  child?(conversationId: string): FireChildContext | null
+  /** A limited turn ended, or a re-arm gave up: what the chat's Limited row says now. */
+  limited?(conversationId: string, state: LimitState): void
 }
 
 /** Whether a reading says the account can run a turn now. A reading we cannot use counts as open: the turn is the test. */
@@ -92,6 +97,8 @@ export class LimitResumer {
   /** A resume turn on its way: when it started, and whether it reported an error. */
   private readonly resumed = new Map<string, { startedAt: number; failed: boolean }>()
   private readonly firing = new Set<string>()
+  /** Children whose resume waits for a run slot, with the request id it waits under. */
+  private readonly slotWaiters = new Map<string, string>()
 
   constructor(
     private readonly host: LimitResumeHost,
@@ -150,6 +157,7 @@ export class LimitResumer {
         })
         this.clearTimer(id)
         this.notify(id, false, true)
+        this.host.limited?.(id, this.view(id))
         return
       }
       row = getLimitResume(id)
@@ -188,6 +196,7 @@ export class LimitResumer {
       this.limited.set(id, { ...mark, skipped: decision.reason })
       log.info('limit resume not armed', { conversationId: id, reason: decision.reason })
       this.notify(id, false)
+      this.host.limited?.(id, this.view(id))
       return
     }
     const requestId = randomUUID()
@@ -204,6 +213,7 @@ export class LimitResumer {
     this.schedule(id, requestId, resetAt! + LIMIT_RESUME_FIRE_DELAY_MS)
     log.info('limit resume armed', { conversationId: id, resetAt })
     this.notify(id, false)
+    this.host.limited?.(id, this.view(id))
   }
 
   /** The adapter reported an error: a resume turn on its way counts as failed. */
@@ -232,6 +242,7 @@ export class LimitResumer {
     }
     if (!disarmed) return
     this.clearTimer(id)
+    this.slotWaiters.delete(id)
     log.info('limit resume disarmed', { conversationId: id, reason })
     this.notify(id, false)
   }
@@ -248,6 +259,40 @@ export class LimitResumer {
     if (current.skipped === 'setting_off') return { kind: 'none' }
     const forThisLimit = row && (row.limitedTurnId === current.turnId || row.state === 'gave_up')
     return limitState(true, forThisLimit ? row : null)
+  }
+
+  /** The turn whose usage limit the chat waits on, or null when it is not limited. Also with the setting off. */
+  limitedTurnOf(threadId: string): string | null {
+    if (!this.host.enabled()) return null
+    const id = resolveRootThreadId(threadId)
+    const current = this.limited.get(id)
+    if (current) return current.turnId
+    const row = getLimitResume(id)
+    return row?.state === 'armed' || row?.state === 'gave_up' ? row.limitedTurnId : null
+  }
+
+  /** The chat went on another way (a move to another account): it is no longer limited. */
+  clearLimited(threadId: string): void {
+    const id = resolveRootThreadId(threadId)
+    this.slotWaiters.delete(id)
+    if (this.limited.delete(id)) this.notify(id, false)
+  }
+
+  /** A resume turn was sent and has not ended: it holds a run slot. */
+  isResuming(threadId: string): boolean {
+    return this.resumed.has(resolveRootThreadId(threadId))
+  }
+
+  waitingForSlot(threadId: string): boolean {
+    return this.slotWaiters.has(resolveRootThreadId(threadId))
+  }
+
+  /** A session stopped running: resumes that wait for a run slot try again, oldest first. */
+  slotFreed(): void {
+    for (const [id, requestId] of [...this.slotWaiters]) {
+      this.slotWaiters.delete(id)
+      this.fire(id, requestId, false).catch((err) => log.warn(`auto-resume of ${id} failed`, err))
+    }
   }
 
   /** Resume now: every fire check except the clock. A closed window keeps the row armed. */
@@ -328,7 +373,7 @@ export class LimitResumer {
         liveRequestForUser: this.host.needsYou(live),
         currentInstanceId: this.host.instanceOf(live) ?? '',
         probe,
-        child: null,
+        child: this.host.child?.(id) ?? null,
       })
     // The cheap checks first: a reading can be a keychain read.
     let decision = checks({ open: true })
@@ -357,13 +402,20 @@ export class LimitResumer {
         if (decision.reason === 'early')
           this.schedule(id, requestId, getLimitResume(id)!.resetAt + LIMIT_RESUME_FIRE_DELAY_MS)
         else if (!manual) this.schedule(id, requestId, this.now() + RETRY_MS)
+        // The timer above stays as a fallback in case no session stops running.
+        if (decision.reason === 'no_slot') {
+          this.slotWaiters.set(id, requestId)
+          this.notify(id, false)
+        }
         return refuse(
           decision.reason,
           decision.reason === 'needs_you'
             ? 'Answer the open card first.'
             : decision.reason === 'closed'
               ? 'The usage window is still closed.'
-              : 'Not yet.',
+              : decision.reason === 'no_slot'
+                ? 'Other children of this account or parent are running. It resumes when one ends.'
+                : 'Not yet.',
         )
       case 'rearm': {
         const row = getLimitResume(id)!
@@ -388,12 +440,14 @@ export class LimitResumer {
           this.schedule(id, next, decision.resetAt + LIMIT_RESUME_FIRE_DELAY_MS)
         }
         this.notify(id, false, streak.gaveUp)
+        if (streak.gaveUp) this.host.limited?.(id, this.view(id))
         return refuse('rearm', 'The usage window is still closed.')
       }
       case 'fire':
         break
     }
 
+    this.slotWaiters.delete(id)
     if (!markLimitResumeFired(id, requestId, this.now())) return refuse('stale', 'This auto-resume is no longer armed.')
     this.resumed.set(id, { startedAt: this.now(), failed: false })
     if (!(await this.host.sendResume(live))) {

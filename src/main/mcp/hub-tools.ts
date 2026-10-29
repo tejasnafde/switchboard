@@ -2,7 +2,7 @@
  * The hub tools on the Switchboard MCP server, only while the `hub_children`
  * flag is on (the registry decides when it builds a chat's tool list). A chat
  * that is not an open child gets the parent tools `start_children`,
- * `list_children`, `read_child` and `interrupt_child`; an open child gets `report_to_hub` and
+ * `list_children`, `read_child`, `interrupt_child` and `move_child`; an open child gets `report_to_hub` and
  * `own_dependencies`. Starting is
  * `HubStarter`'s; this binds it to MCP and gathers what `list_children` reports.
  */
@@ -11,6 +11,7 @@ import { promisify } from 'node:util'
 import { HUB_MAX_TASKS_PER_BATCH, HUB_REPORT_STATUSES, parseHubTasks, type HubReportStatus } from '@shared/hub'
 import { RUNTIME_MODES, type RuntimeEvent, type RuntimeMode } from '@shared/provider-events'
 import { getConversationById, getLimitResume, lastHubWakes, listHubChildren } from '../db/database'
+import { listProviderInstances } from '../db/provider-instances'
 import type { ChatResources } from '../hub/hub-measure'
 import type { SubagentCounts } from '../hub/hub-stop'
 import type { HubParentContext, HubStarter } from '../hub/hub-start'
@@ -25,6 +26,7 @@ export const LIST_CHILDREN_TOOL = 'list_children'
 export const OWN_DEPENDENCIES_TOOL = 'own_dependencies'
 export const READ_CHILD_TOOL = 'read_child'
 export const INTERRUPT_CHILD_TOOL = 'interrupt_child'
+export const MOVE_CHILD_TOOL = 'move_child'
 export const REPORT_TO_HUB_TOOL = 'report_to_hub'
 
 /** The hub paragraph of the MCP instructions, for a chat that has the parent tools. Kept short: every such chat pays for it. */
@@ -34,6 +36,8 @@ export const HUB_INSTRUCTIONS = [
   'it in a loop. Their reports reach you as one Switchboard update turn while you are idle: a summary per child and',
   'a read_child line; call read_child only when you need the full report. You merge their branches yourself with git.',
   'When this chat works in the main checkout, ask the user before you merge into a branch checked out there.',
+  'A child stopped by a usage limit resumes by itself at the reset; move_child can move it to another account of',
+  'its agent now. When you move one, tell the user what you moved and why in your next message.',
 ].join(' ')
 
 export interface HubMcpToolContext {
@@ -46,6 +50,8 @@ export interface HubMcpToolContext {
   read(args: Record<string, unknown>): Promise<McpToolResult>
   /** `interrupt_child`: stops one of the calling parent's open children. */
   interrupt(childId: string): Promise<McpToolResult>
+  /** `move_child`: one of the calling parent's limited children goes on under another account. */
+  move(childId: string, providerInstanceId: string): Promise<McpToolResult>
   /** The child's own Agent/Task calls. */
   subagents(childId: string): SubagentCounts
   gitStats?(cwd: string, base: string): Promise<GitStats | null>
@@ -136,7 +142,7 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
       description:
         "List this chat's child chats: phase, agent, account, branch, ahead and behind, uncommitted changes, " +
         'diffstat, tokens and cost of the last turn, memory and CPU of its agent, disk use, its own subagents ' +
-        '(running, done, failed) and its last update.',
+        '(running, done, failed) and its last update. While a child is limited, accounts lists where move_child can move it.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { title: 'List child chats', readOnlyHint: true, openWorldHint: false },
       async call() {
@@ -180,10 +186,18 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         )
         const own = ctx.resources(parent.parentId)
         const total = rows.reduce((n, r) => n + (r.resources?.rssMb ?? 0), 0)
+        const limitedAgents = new Set(rows.filter((r) => r.limit !== null && r.agent).map((r) => r.agent))
+        const accounts =
+          limitedAgents.size > 0
+            ? listProviderInstances()
+                .filter((i) => i.enabled && limitedAgents.has(i.agentType))
+                .map((i) => ({ id: i.id, name: i.displayName, agent: i.agentType }))
+            : []
         return toolText(
           JSON.stringify(
             {
               children: rows,
+              ...(accounts.length > 0 ? { accounts } : {}),
               resources: {
                 childrenRssMb: total,
                 ...(own ? { ownRssMb: Math.round(own.rssBytes / MB), ownCpuPct: own.cpuPct } : {}),
@@ -249,6 +263,44 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         if (typeof args.childId !== 'string' || !args.childId)
           return toolText('Give the childId list_children shows.', true)
         return ctx.interrupt(args.childId)
+      },
+    },
+    {
+      name: MOVE_CHILD_TOOL,
+      description: [
+        "Move one of this chat's child chats that a usage limit stopped to another account of the same agent, so it",
+        'goes on now instead of at the reset. The target must be signed in, have usage left and a free run slot. The',
+        'child keeps its mode, history and worktree. One move per limit. For another agent, interrupt the child and',
+        'start a new one with a brief that points to its transcript.',
+      ].join(' '),
+      inputSchema: {
+        type: 'object',
+        properties: {
+          childId: { type: 'string', description: 'The id list_children and the update show.' },
+          providerInstanceId: { type: 'string', description: 'The account id to move to.' },
+        },
+        required: ['childId', 'providerInstanceId'],
+        additionalProperties: false,
+      },
+      annotations: { title: 'Move a child chat', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      async call(args) {
+        const parent = ctx.parent()
+        if (parent.mode === 'plan') {
+          const reason = 'Plan mode does not move child chats.'
+          ctx.publish({
+            type: 'tool.denied',
+            threadId: parent.threadId,
+            toolName: MOVE_CHILD_TOOL,
+            reason,
+            mode: 'plan',
+          })
+          return toolText(`${reason} Ask the user to leave plan mode first.`, true)
+        }
+        if (typeof args.childId !== 'string' || !args.childId)
+          return toolText('Give the childId list_children shows.', true)
+        if (typeof args.providerInstanceId !== 'string' || !args.providerInstanceId)
+          return toolText('Give the providerInstanceId of the account to move to.', true)
+        return ctx.move(args.childId, args.providerInstanceId)
       },
     },
   ]

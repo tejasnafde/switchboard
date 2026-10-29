@@ -38,6 +38,8 @@ export const PERF_THRESHOLDS = {
   'hub.stop': 0,
   'hub.reap': 0,
   'hub.resume-reaped': 0,
+  // Every move_child call, with its outcome (moved, or why not).
+  'hub.move': 0,
   ipc: 200,
 } as const
 

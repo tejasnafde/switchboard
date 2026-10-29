@@ -52,6 +52,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - A chat with no running session at fire time waits for `onSessionStarted` (called with the held approval result flush). The runner never starts a session itself.
 - Disarm is durable: `INTERRUPT` (the Stop button) disarms `stop`, `notifyConversationArchived` disarms `archive`, the row's Cancel `cancel`. `STOP_SESSION` does not: closing a chat or switching agents also sends it.
 - The resume turn's block is dropped by `splitSyntheticUserText` (and the Kotlin port); the chat shows the stored `[[sb:limit-resume]]` row, published live on `limit-resume.changed` with the row's `state` (`LimitState`).
+- For an open child the host adds `child` (`FireChildContext`: settled, parent held, run slots) and `limited`; the hub side is in `src/main/mcp/AGENTS.md` (Child chats, Limits). A `no_slot` wait stays armed and fires again on `slotFreed`.
 - Measured: every fire ends a `limit-resume.fire` perf span with its outcome (threshold 0, so all are logged); `limit resume armed`, `not armed`, `disarmed` and `outcome` info lines count arms, skips, disarms and resume success.
 
 ## Subagent steps (2026-10-12)

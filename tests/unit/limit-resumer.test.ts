@@ -44,9 +44,11 @@ class Host implements LimitResumeHost {
   sendOk = true
   sent: string[] = []
   changes: Array<{ id: string; state: LimitState; resumed: boolean; gaveUp?: boolean }> = []
+  child?: LimitResumeHost['child']
+  limited?: LimitResumeHost['limited']
   enabled = () => this.flag
   settingOn = () => this.setting
-  liveThread = () => this.live
+  liveThread: (id: string) => string | null = () => this.live
   busy = () => this.turnRunning
   needsYou = () => this.card
   instanceOf = () => this.instance
@@ -319,5 +321,66 @@ describe('the Limited row and the resume row', () => {
       title: 'Usage limit reset. Resumed the chat.',
       body: '',
     })
+  })
+})
+
+describe('LimitResumer with child chats', () => {
+  it('resumes children of one account that reset together 3 at a time', async () => {
+    host.liveThread = (id: string) => id
+    const kids = ['k1', 'k2', 'k3', 'k4']
+    host.child = (id: string) => ({
+      settled: false,
+      parentHeld: false,
+      slot: { providerInstanceId: 'i1', parentId: 'p' },
+      running: kids
+        .filter((k) => k !== id && resumer.isResuming(k))
+        .map(() => ({ providerInstanceId: 'i1', parentId: 'p' })),
+      perInstance: 3,
+      perParent: 6,
+    })
+    for (const k of kids) resumer.onTurnEnded(k, limited(), `turn-${k}`)
+    await vi.advanceTimersByTimeAsync(3 * MIN)
+    expect(host.sent).toEqual(['k1', 'k2', 'k3'])
+    expect(resumer.waitingForSlot('k4')).toBe(true)
+
+    resumer.onTurnEnded('k1', undefined, 'r1')
+    resumer.slotFreed()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(host.sent).toEqual(['k1', 'k2', 'k3', 'k4'])
+    expect(resumer.waitingForSlot('k4')).toBe(false)
+  })
+
+  it('drops the resume of a settled child or one whose parent is held', async () => {
+    const ctx = {
+      parentHeld: false,
+      slot: { providerInstanceId: 'i1', parentId: 'p' },
+      running: [],
+      perInstance: 3,
+      perParent: 6,
+    }
+    host.child = () => ({ ...ctx, settled: true })
+    resumer.onTurnEnded('c1', limited(), 'turn1')
+    await vi.advanceTimersByTimeAsync(3 * MIN)
+    expect(host.sent).toEqual([])
+    expect(getLimitResume('c1')).toMatchObject({ state: 'disarmed', disarmReason: 'settle' })
+
+    host.child = () => ({ ...ctx, settled: false, parentHeld: true })
+    resumer.onTurnEnded('c1', limited(Date.now() + 2 * MIN), 'turn2')
+    await vi.advanceTimersByTimeAsync(3 * MIN)
+    expect(host.sent).toEqual([])
+    expect(getLimitResume('c1')).toMatchObject({ state: 'disarmed', disarmReason: 'parent_stop' })
+  })
+
+  it('tells the host what a limited turn left, and names the limited turn until a move clears it', () => {
+    const states: LimitState[] = []
+    host.limited = (_id: string, state: LimitState) => states.push(state)
+    resumer.onTurnEnded('c1', limited(), 'turn1')
+    expect(states).toEqual([{ kind: 'armed', resetAt: RESET }])
+    expect(resumer.limitedTurnOf('c1')).toBe('turn1')
+    resumer.disarm('c1', 'moved')
+    expect(resumer.limitedTurnOf('c1')).toBe('turn1')
+    resumer.clearLimited('c1')
+    expect(resumer.view('c1')).toEqual({ kind: 'none' })
+    expect(resumer.limitedTurnOf('c1')).toBeNull()
   })
 })
