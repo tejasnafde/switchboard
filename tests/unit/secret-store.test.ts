@@ -16,7 +16,8 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { SecretStore } from '../../src/main/secrets/secret-store'
 import { getAgentSecret, getSecretDirId, listLiveAgentSecrets } from '../../src/main/db/agent-secrets'
-import { recordThreadSession } from '../../src/main/db/conversations'
+import { archiveConversation, createConversation, recordThreadSession } from '../../src/main/db/conversations'
+import { addProject } from '../../src/main/db/database'
 
 const VALUE = Buffer.from('sb-test-not-a-secret')
 let root: string
@@ -214,6 +215,25 @@ describe('SecretStore', () => {
     expect(mode(target)).toBe(0o644)
   })
 
+  it('deletes the files and folder of an archived chat, and keeps a live chat and a chat with no row', () => {
+    addProject('/tmp/project', 'project')
+    createConversation('chat-archived', '/tmp/project', 'claude-code')
+    createConversation('chat-live', '/tmp/project', 'claude-code')
+    const save = (threadId: string) =>
+      store.save({ threadId, name: 'KEY_A', value: VALUE, cardId: 'c', expiresAt: now + 60_000 })
+    const gone = save('chat-archived')
+    const live = save('chat-live')
+    const unknown = save('chat-no-row')
+    archiveConversation('chat-archived')
+    store.sweep()
+    expect(existsSync(dirname(gone.file))).toBe(false)
+    expect(getSecretDirId('chat-archived')).toBeNull()
+    expect(getAgentSecret(gone.id)!.deletedAt).not.toBeNull()
+    expect(getAgentSecret(live.id)!.deletedAt).toBeNull()
+    expect(getAgentSecret(unknown.id)!.deletedAt).toBeNull()
+    expect(listAs700(dirname(live.file))).toEqual(['KEY_A'])
+  })
+
   it('does nothing when no secret was ever saved', () => {
     store.sweep()
     expect(existsSync(root)).toBe(false)
@@ -233,5 +253,18 @@ describe('SecretStore', () => {
     expect(listLiveAgentSecrets('agent_123').map((r) => r.id)).toEqual([saved.id])
     store.removeChat('rotated-uuid')
     expect(getSecretDirId('agent_123')).toBeNull()
+  })
+
+  // Design 4.4: saved under the root id, the rotated id finds the same folder, and extend, delete and list go by root.
+  it('finds a secret saved under the root id through a rotated session id', () => {
+    const saved = store.save({ threadId: 'agent_456', name: 'KEY_B', value: VALUE, cardId: 'c', expiresAt: now + 1000 })
+    recordThreadSession('rotated-uuid-2', 'agent_456')
+    expect(join(store.chatDir('rotated-uuid-2'), 'KEY_B')).toBe(saved.file)
+    expect(listLiveAgentSecrets('rotated-uuid-2').map((r) => r.id)).toEqual([saved.id])
+    expect(store.extend(saved.id, now + 5000)).toBe(true)
+    expect(listLiveAgentSecrets('agent_456')[0].expiresAt).toBe(now + 5000)
+    expect(store.remove(saved.id)).toBe(true)
+    expect(listLiveAgentSecrets('rotated-uuid-2')).toEqual([])
+    expect(listLiveAgentSecrets('agent_456')).toEqual([])
   })
 })

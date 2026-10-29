@@ -33,6 +33,11 @@ export function userDataDir(): string {
   return override ?? join(homedir(), '.switchboard')
 }
 
+/** Where the files of `request_secret` live (`secrets/secret-store.ts`). */
+export function secretsRootDir(): string {
+  return join(userDataDir(), 'secrets')
+}
+
 export function appRootDir(): string {
   if (isElectron) return electron().app.getAppPath()
   return process.env.SWITCHBOARD_APP_ROOT ?? process.cwd()

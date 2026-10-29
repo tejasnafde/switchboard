@@ -10,6 +10,7 @@ import { agentLabel, type AgentProvider, type AgentType } from '@shared/types'
 import { AGENT_SWITCH_MARKER_PREFIX } from '@shared/rotation-marker'
 import { nextPendingHandoffFrom } from '@shared/handoff'
 import { getDb } from './database'
+import { emitConversationArchived } from './archive-events'
 import type { ReasoningEffort } from '@shared/models'
 import { isReasoningEffort, normalizeProviderOptionMemory, switchProviderOptions } from '@shared/provider-option-memory'
 import { parseFollowSuggestionMode, recordWorkedWorktree, type FollowSuggestionMode } from '@shared/follow-suggestions'
@@ -985,8 +986,10 @@ export function clearConversationPendingHandoff(id: string, expected: string): v
     .run(Date.now(), resolveRootThreadId(id), expected)
 }
 
+/** Archives every id of the thread, then runs the archive listeners (`archive-events.ts`). */
 export function archiveConversation(id: string): void {
   setConversationArchived(id, 1)
+  emitConversationArchived(id)
 }
 
 export function unarchiveConversation(id: string): void {

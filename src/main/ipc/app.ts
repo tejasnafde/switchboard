@@ -2,7 +2,7 @@ import { perfSpan } from '../perf'
 import { registerHtmlLiveHandlers } from './html-live'
 import type { BackendHost } from '../backend/host'
 import { stat } from 'fs/promises'
-import { notifyConversationArchived, notifyWorktreeSwap, publishRuntimeEvent } from '../provider/provider-registry'
+import { notifyWorktreeSwap, publishRuntimeEvent } from '../provider/provider-registry'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { historyWindow, type HistoryLoadOptions } from '@shared/phone-history-window'
 import { imagesByReference } from '@shared/history-image-refs'
@@ -880,7 +880,6 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   // Archive / unarchive conversations
   host.handle(AppChannels.ARCHIVE_CONVERSATION, (id: string) => {
     archiveConversation(id)
-    notifyConversationArchived(id)
     return { ok: true, archived: isConversationArchived(id) }
   })
 

@@ -60,6 +60,7 @@ vi.mock('../../src/main/db/database', () => ({
 }))
 
 import { ProviderRegistry, notifyConversationArchived } from '../../src/main/provider/provider-registry'
+import { emitConversationArchived } from '../../src/main/db/archive-events'
 import type { BackendHost } from '../../src/main/backend/host'
 import type { SecretStore } from '../../src/main/secrets/secret-store'
 import type { McpTool } from '../../src/main/mcp/mcp-session'
@@ -132,7 +133,8 @@ class RecordingAdapter implements ProviderAdapter {
 }
 
 class FakeSecretStore {
-  readonly saves: Array<{ threadId: string; name: string; value: string; cardId: string }> = []
+  readonly saves: Array<{ threadId: string; name: string; value: string; cardId: string; machineId?: string | null }> =
+    []
   readonly removedChats: string[] = []
   fail = false
   start(): void {}
@@ -140,9 +142,22 @@ class FakeSecretStore {
   chatDir(threadId: string): string {
     return `/secrets/dir-${threadId}`
   }
-  save(input: { threadId: string; name: string; value: Buffer; cardId: string; expiresAt: number }) {
+  save(input: {
+    threadId: string
+    name: string
+    value: Buffer
+    cardId: string
+    expiresAt: number
+    machineId?: string | null
+  }) {
     if (this.fail) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' })
-    this.saves.push({ threadId: input.threadId, name: input.name, value: input.value.toString(), cardId: input.cardId })
+    this.saves.push({
+      threadId: input.threadId,
+      name: input.name,
+      value: input.value.toString(),
+      cardId: input.cardId,
+      ...(input.machineId ? { machineId: input.machineId } : {}),
+    })
     return { id: 'sec_1', file: `/secrets/dir-${input.threadId}/${input.name}`, expiresAt: input.expiresAt }
   }
   extend(): boolean {
@@ -214,6 +229,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   delete process.env.SB_AGENT_SECRET_REQUEST
+  delete process.env.SB_HUB_CHILDREN
   for (const registry of registries.splice(0)) await registry.stopAll()
 })
 
@@ -298,5 +314,61 @@ describe('request_secret in the registry', () => {
     expect(await s.host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 'chat')).toEqual([])
     expect(s.store.removedChats).toEqual(['chat'])
     expect(s.registry.answerAgentSecret('chat', id, { save: VALUE })).toMatchObject({ ok: false })
+  })
+
+  it('closes the card and deletes the files on an archive from any path (the archive listeners)', async () => {
+    const s = setup()
+    await s.start('chat')
+    const id = await s.ask()
+    archived.add('chat')
+    emitConversationArchived('chat')
+    expect(await s.host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 'chat')).toEqual([])
+    expect(s.store.removedChats).toEqual(['chat'])
+    await resultPublished(s.host, id)
+  })
+
+  it.each([[{ save: 42 }], [{ save: ['x'] }], [{ decline: 'yes' }], [{ save: VALUE, decline: true }], [null]])(
+    'refuses the answer %j without saving or closing the card',
+    async (answer) => {
+      const s = setup()
+      await s.start('chat')
+      const id = await s.ask()
+      expect(s.registry.answerAgentSecret('chat', id, answer as never)).toMatchObject({ ok: false })
+      expect(s.store.saves).toEqual([])
+      expect(await s.host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 'chat')).toMatchObject([{ requestId: id }])
+    },
+  )
+
+  it('names the machine in the result and the row when the backend runs on one', async () => {
+    const s = setup()
+    s.registry.setMachineLabel('build-box')
+    await s.start('chat')
+    const id = await s.ask()
+    expect(s.registry.answerAgentSecret('chat', id, { save: VALUE })).toEqual({ ok: true })
+    await resultPublished(s.host, id)
+    expect(s.store.saves[0].machineId).toBe('build-box')
+    expect(s.resultTurns('chat')[0].message).toContain('Saved TAILSCALE_AUTHKEY on build-box.')
+  })
+
+  it('gives an open child chat neither the tool nor the instructions', async () => {
+    process.env.SB_HUB_CHILDREN = '1'
+    const s = setup()
+    let instructions: string | undefined
+    let names: string[] = []
+    ;(s.registry as unknown as { hubStarter: { isOpenChild(id: string): boolean } }).hubStarter.isOpenChild = (id) =>
+      id === 'child'
+    ;(s.registry as unknown as { switchboardMcp: { open: unknown } }).switchboardMcp.open = async (
+      _threadId: string,
+      list: () => McpTool[],
+      text?: string,
+    ) => {
+      instructions = text
+      names = list().map((t) => t.name)
+      return { command: 'node', args: [], env: {} }
+    }
+    await s.start('child')
+    expect(names).toContain('withdraw_approval')
+    expect(names).not.toContain('request_secret')
+    expect(instructions ?? '').not.toContain('request_secret')
   })
 })

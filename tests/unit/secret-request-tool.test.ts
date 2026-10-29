@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { checkSecretRequestArgs, secretSavedText } from '../../src/shared/agent-secret-request'
 import { SecretRequestLimiter, buildSecretMcpTools } from '../../src/main/mcp/secret-tools'
-import { AgentApprovalBroker } from '../../src/main/mcp/agent-approvals'
+import { AgentApprovalBroker, type AgentApprovalCard, type AgentWritePlan } from '../../src/main/mcp/agent-approvals'
+import { AGENT_CARD_MAX_AGE_MS, type ApprovalCardStore } from '../../src/shared/agent-approval-cards'
 import type { RuntimeEvent, RuntimeMode } from '../../src/shared/provider-events'
 
 const ARGS = { name: 'TAILSCALE_AUTHKEY', title: 'Tailscale auth key', instructions: 'Make a key in the admin page.' }
@@ -20,10 +21,22 @@ describe('checkSecretRequestArgs', () => {
     [{ ...ARGS, title: 'x'.repeat(81) }, /title/],
     [{ ...ARGS, instructions: 'x'.repeat(1501) }, /instructions/],
     [{ ...ARGS, ttl: '48h' }, /ttl must be one of/],
+    [{ ...ARGS, title: 'Tailscale\u202ekey' }, /title/],
+    [{ ...ARGS, title: 'Tail\u0007scale' }, /title/],
+    [{ ...ARGS, title: 'Tail\tscale' }, /title/],
+    [{ ...ARGS, title: 'Tail\u0085scale' }, /title/],
+    [{ ...ARGS, instructions: 'Open\u2066 the page' }, /instructions/],
+    [{ ...ARGS, instructions: 'Open\u200f the page' }, /instructions/],
+    [{ ...ARGS, instructions: 'Open\u001b[31m the page' }, /instructions/],
+    [{ ...ARGS, instructions: 'Open\r the page' }, /instructions/],
   ])('refuses %j', (args, message) => {
     const result = checkSecretRequestArgs(args)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.message).toMatch(message)
+  })
+
+  it('allows new lines and tabs in the instructions', () => {
+    expect(checkSecretRequestArgs({ ...ARGS, instructions: 'Step 1:\n\tOpen the admin page.' }).ok).toBe(true)
   })
 
   it('names the path and the env var in the saved text, and the plan mode note', () => {
@@ -34,10 +47,11 @@ describe('checkSecretRequestArgs', () => {
   })
 })
 
-function setup(mode: RuntimeMode = 'sandbox', child = false) {
+function setup(mode: RuntimeMode = 'sandbox', child = false, store?: ApprovalCardStore<AgentWritePlan>) {
   const events: RuntimeEvent[] = []
   let now = 0
-  const broker = new AgentApprovalBroker({ publish: (e) => events.push(e) })
+  let clock = Date.now()
+  const broker = new AgentApprovalBroker({ publish: (e) => events.push(e), now: () => clock, store })
   const limiter = new SecretRequestLimiter(() => now)
   const [tool] = buildSecretMcpTools({
     threadId: 'chat',
@@ -48,7 +62,13 @@ function setup(mode: RuntimeMode = 'sandbox', child = false) {
     limiter,
   })
   const call = (args: Record<string, unknown> = ARGS) => tool.call(args)
-  return { broker, call, events, tick: (ms: number) => (now += ms) }
+  return {
+    broker,
+    call,
+    events,
+    tick: (ms: number) => (now += ms),
+    age: (ms: number) => (clock += ms),
+  }
 }
 
 describe('request_secret', () => {
@@ -78,6 +98,15 @@ describe('request_secret', () => {
     s.tick(10 * 60_000 + 1)
     expect((await s.call()).isError).toBeFalsy()
   })
+
+  it('does not count cards past the 7-day cap toward the open card cap', async () => {
+    const s = setup()
+    for (let i = 0; i < 3; i++) expect((await s.call()).isError).toBeFalsy()
+    s.age(AGENT_CARD_MAX_AGE_MS)
+    s.tick(10 * 60_000 + 1)
+    expect(s.broker.openSecretCards('chat')).toBe(0)
+    expect((await s.call()).isError).toBeFalsy()
+  })
 })
 
 describe('the broker and secret cards', () => {
@@ -96,6 +125,60 @@ describe('the broker and secret cards', () => {
     expect(s.broker.saveSecret('chat', id, () => {})).toEqual({ ok: true })
     expect(s.broker.pendingEvents('chat')).toEqual([])
     expect(s.broker.saveSecret('chat', id, () => {})).toMatchObject({ ok: false })
+  })
+})
+
+describe('saveSecret when the card store fails', () => {
+  function failingStore() {
+    const rows = new Map<string, AgentApprovalCard>()
+    const store = {
+      failRemove: false,
+      failPut: false,
+      loadCards: () => [...rows.values()],
+      putCard: (card: AgentApprovalCard) => {
+        if (store.failPut) throw new Error('put failed')
+        rows.set(card.requestId, card)
+      },
+      removeCard: (id: string) => {
+        if (store.failRemove) throw new Error('remove failed')
+        rows.delete(id)
+      },
+      rows,
+    }
+    return store
+  }
+
+  it('writes nothing and keeps the card open in memory and in the store when the close fails', async () => {
+    const store = failingStore()
+    const s = setup('sandbox', false, store)
+    await s.call()
+    const id = (s.events[0] as { requestId: string }).requestId
+    store.failRemove = true
+    const save = vi.fn()
+    expect(() => s.broker.saveSecret('chat', id, save)).toThrow(/remove failed/)
+    expect(save).not.toHaveBeenCalled()
+    expect(s.broker.pendingEvents('chat')).toHaveLength(1)
+    expect(store.rows.has(id)).toBe(true)
+    store.failRemove = false
+    expect(s.broker.saveSecret('chat', id, save)).toEqual({ ok: true })
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(store.rows.has(id)).toBe(false)
+    expect(s.events.filter((e) => e.type === 'request.closed')).toHaveLength(1)
+  })
+
+  it('puts the card back in the store when the save throws', async () => {
+    const store = failingStore()
+    const s = setup('sandbox', false, store)
+    await s.call()
+    const id = (s.events[0] as { requestId: string }).requestId
+    expect(() =>
+      s.broker.saveSecret('chat', id, () => {
+        throw new Error('disk')
+      }),
+    ).toThrow(/disk/)
+    expect(store.rows.has(id)).toBe(true)
+    expect(s.broker.pendingEvents('chat')).toHaveLength(1)
+    expect(s.events.filter((e) => e.type === 'request.closed')).toEqual([])
   })
 })
 

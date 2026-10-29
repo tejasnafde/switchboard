@@ -50,6 +50,7 @@ import {
   type SessionConfigOption,
 } from '@agentclientprotocol/sdk'
 import { createMainLogger as createLogger } from '../../../logger'
+import { secretsRootDir } from '../../../runtime'
 import type {
   ProviderAdapter,
   ProviderSession,
@@ -1307,7 +1308,12 @@ export class AcpAdapter implements ProviderAdapter {
       },
 
       async writeTextFile(params: WriteTextFileRequest): Promise<WriteTextFileResponse> {
-        const problem = acpFsProblem('write', params.path, adapter.sessions.get(threadId)?.session.runtimeMode)
+        const problem = acpFsProblem(
+          'write',
+          params.path,
+          adapter.sessions.get(threadId)?.session.runtimeMode,
+          secretsRootDir(),
+        )
         if (problem) {
           log.warn('acp writeTextFile refused', { threadId, problem })
           throw new RequestError(-32603, `writeTextFile refused: ${problem}`)
