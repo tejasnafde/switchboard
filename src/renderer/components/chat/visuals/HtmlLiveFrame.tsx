@@ -213,7 +213,8 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
   const [blocked, setBlocked] = useState<string[]>([])
   const [openError, setOpenError] = useState<string | null>(null)
   const [showSource, setShowSource] = useState(false)
-  const [copied, setCopied] = useState(false)
+  // A count, not a flag: each copy restarts the timer.
+  const [copied, setCopied] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
   const [backendHasImage, setBackendHasImage] = useState(false)
   // The key whose backend state has loaded: a hidden capture waits for it.
@@ -450,7 +451,7 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
 
   useEffect(() => {
     if (!copied) return
-    const timer = window.setTimeout(() => setCopied(false), 1500)
+    const timer = window.setTimeout(() => setCopied(0), 1500)
     return () => window.clearTimeout(timer)
   }, [copied])
 
@@ -486,7 +487,7 @@ function LiveFrame({ source, title, sessionId }: { source: string; title: string
     pagePng()
       .then(copyPngToClipboard)
       .then(
-        () => setCopied(true),
+        () => setCopied((n) => n + 1),
         (err: unknown) => {
           log.warn('live page image copy failed', err)
           setNotice('Could not copy image')

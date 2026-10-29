@@ -138,14 +138,15 @@ export function ChatVisual({
   const [ref, visible] = useInView(!pane)
   const drawn = useDrawn(kind, source, visible)
   const [showSource, setShowSource] = useState(false)
-  const [copied, setCopied] = useState(false)
+  // A count, not a flag: each copy restarts the timer.
+  const [copied, setCopied] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
   const boxRef = useRef<HTMLDivElement>(null)
   const noun = kind === 'mermaid' ? 'Diagram' : 'Chart'
 
   useEffect(() => {
     if (!copied) return
-    const timer = window.setTimeout(() => setCopied(false), 1500)
+    const timer = window.setTimeout(() => setCopied(0), 1500)
     return () => window.clearTimeout(timer)
   }, [copied])
 
@@ -173,7 +174,7 @@ export function ChatVisual({
     png()
       .then(copyPngToClipboard)
       .then(
-        () => setCopied(true),
+        () => setCopied((n) => n + 1),
         (error: unknown) => {
           log.warn('visual image copy failed', error)
           setNotice('Could not copy image')
@@ -228,7 +229,7 @@ export function ChatVisual({
             >
               Source
             </button>
-            <button type="button" className={headerButton} aria-live="polite" onClick={copyImage}>
+            <button type="button" className={headerButton} aria-live="polite" onClick={copyImage} disabled={showSource}>
               {copied ? 'Copied' : 'Copy image'}
             </button>
           </>
@@ -247,7 +248,10 @@ export function ChatVisual({
           </button>
         )}
         {drawn.status === 'ok' && (
-          <VisualMenu items={visualMenuItems(kind, { saveImage, copyText })} className={headerButton} />
+          <VisualMenu
+            items={visualMenuItems(kind, { saveImage: showSource ? undefined : saveImage, copyText })}
+            className={headerButton}
+          />
         )}
       </div>
       {drawn.status === 'error' && (

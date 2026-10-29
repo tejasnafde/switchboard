@@ -18,6 +18,7 @@ import { folderEntryCount, saveAttachment } from '../attachments'
 import { convertHeicToJpeg } from '../heic'
 
 const log = createLogger('ipc:app-desktop')
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
 export type ResolvedTheme = 'dark' | 'light' | 'translucent'
 
@@ -52,6 +53,7 @@ export function restoreMacWindowGlass(window: BrowserWindow): void {
 export function registerAppDesktopHandlers(window: BrowserWindow): void {
   ipcMain.removeHandler(AppChannels.OPEN_FOLDER)
   ipcMain.removeHandler(AppChannels.EXPORT_MARKDOWN)
+  ipcMain.removeHandler(AppChannels.SAVE_IMAGE)
   ipcMain.removeHandler(AppChannels.RELAUNCH)
   ipcMain.removeHandler(AppChannels.SET_VIBRANCY)
   ipcMain.removeHandler(AppChannels.SAVE_ATTACHMENT)
@@ -118,8 +120,9 @@ export function registerAppDesktopHandlers(window: BrowserWindow): void {
   ipcMain.handle(
     AppChannels.SAVE_IMAGE,
     async (_event, params: { suggestedFilename: string; dataUrl: string }): Promise<SaveImageResult> => {
-      const base64 = /^data:image\/png;base64,(.*)$/.exec(params.dataUrl)?.[1]
-      if (base64 === undefined) return { ok: false, error: 'Not a PNG image.' }
+      const base64 = /^data:image\/png;base64,([A-Za-z0-9+/]+=*)$/.exec(params.dataUrl)?.[1]
+      const png = base64 === undefined ? null : Buffer.from(base64, 'base64')
+      if (!png || !png.subarray(0, 8).equals(PNG_SIGNATURE)) return { ok: false, error: 'Not a PNG image.' }
       const result = await dialog.showSaveDialog(window, {
         title: 'Save Image',
         defaultPath: params.suggestedFilename,
@@ -127,7 +130,7 @@ export function registerAppDesktopHandlers(window: BrowserWindow): void {
       })
       if (result.canceled || !result.filePath) return { ok: false, canceled: true }
       try {
-        await writeFile(result.filePath, Buffer.from(base64, 'base64'))
+        await writeFile(result.filePath, png)
         return { ok: true, path: result.filePath }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'

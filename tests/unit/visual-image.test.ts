@@ -82,7 +82,7 @@ describe('visualMenuItems', () => {
       'Copy SVG (SVG)',
     ])
     expect(labels(visualMenuItems('html-live', { saveImage: noop, copyText: noop, saveAsFile: noop }))).toEqual([
-      'Save image (PNG, 2x)',
+      'Save image (PNG)',
       'Copy source (HTML)',
       'Save as file (.html)',
     ])

@@ -41,7 +41,9 @@ export function visualMenuItems(
   actions: { saveImage?: () => void; copyText: () => void; saveAsFile?: () => void },
 ): VisualMenuItem[] {
   const items: VisualMenuItem[] = []
-  if (actions.saveImage) items.push({ label: 'Save image', hint: 'PNG, 2x', onSelect: actions.saveImage })
+  // A live page is saved as captured, at the screen's pixel ratio.
+  const hint = kind === 'html-live' ? 'PNG' : 'PNG, 2x'
+  if (actions.saveImage) items.push({ label: 'Save image', hint, onSelect: actions.saveImage })
   items.push({ ...COPY_TEXT[kind], onSelect: actions.copyText })
   if (actions.saveAsFile) items.push({ label: 'Save as file', hint: '.html', onSelect: actions.saveAsFile })
   return items
