@@ -15,6 +15,7 @@ import {
   HTML_LIVE_QUIET_MS,
   htmlLiveFrameHeight,
   htmlLiveHeightFromConsole,
+  type HtmlLiveTheme,
 } from '@shared/html-live'
 import { PREVIEW_PARTITION, blockedRequestLabel } from '@shared/html-preview'
 import type { VisualPreviewRequest, VisualPreviewResult } from '@shared/visual-preview'
@@ -45,6 +46,18 @@ function blockWidth(request: VisualPreviewRequest): number {
     if (panel?.clientWidth) return Math.max(240, Math.min(BLOCK_WIDTH, panel.clientWidth - 60))
   }
   return BLOCK_WIDTH
+}
+
+/**
+ * A capture has no window vibrancy behind it, so the translucent theme's
+ * near-clear background would come out light under white text. It takes the
+ * solid colours that theme uses in full screen (global.css, data-fullscreen).
+ */
+function previewTheme(): HtmlLiveTheme {
+  const theme = htmlLiveTheme()
+  return document.documentElement.classList.contains('theme-translucent')
+    ? { ...theme, bg: '#111111', surface: '#1a1a1a' }
+    : theme
 }
 
 function resolveVar(value: string): string {
@@ -152,7 +165,7 @@ function PreviewJob({ job, onDone }: { job: Job; onDone: (job: Job, result: Visu
       const page = await pageSource(job.request)
       if (!page.ok) return done({ ok: false, error: page.error, parse: true })
       const width = blockWidth(job.request)
-      const opened = await window.api.preview.openInline({ source: page.source, theme: htmlLiveTheme() })
+      const opened = await window.api.preview.openInline({ source: page.source, theme: previewTheme() })
       if (!opened.ok)
         return done({
           ok: false,
