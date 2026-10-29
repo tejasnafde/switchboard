@@ -1,0 +1,59 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "agent-visual-guidance",
+  "summary": "The Switchboard MCP server's instructions, which every provider receives, tell the agent to answer data with a trend or a comparison with a ```chart or ```html-live block even when not asked, and never to add one to a plain code task; to write a .png file (a small script plus a headless browser screenshot) and give its path when the user wants an image to share or post; and a short layout guide for live pages (at most 640 px wide, about 360 px on phones, no outer background, border or card, fixed pixel heights, no vh units, under 460 px tall, 480 with the page padding). Live pages get two more theme variables: --sb-radius (the app's --radius) and --sb-chart-1 to --sb-chart-6, the first six ```chart series colours resolved for the current theme (dark, light and translucent). Both read one constant, CHART_SERIES_COLORS in src/shared/chart-colors.ts. The instructions name the new variables. Canned reply cases pin the grader that checks a data question gets a chart or live page and a code task gets none.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/mcp/switchboard-mcp-server.ts",
+        "src/renderer/services/html-live-theme.ts",
+        "src/renderer/components/chat/visuals/ChatVisual.tsx",
+        "tests/unit/switchboard-mcp-instructions.test.ts",
+        "tests/unit/html-live.test.ts",
+        "tests/unit/html-preview-sandbox.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app never runs a live page. It shows the still image the desktop captured, so it gets the chart colours and radius only through that image. Its own ```chart palette and code are unchanged; the rebuilt visual host page only bundles the new shared constant through html-live.ts."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Android never runs a live page. It shows the still image the desktop captured, so it gets the chart colours and radius only through that image. No Android code reads the theme variables."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/chart-colors.ts",
+        "src/shared/html-live.ts",
+        "src/shared/chat-visuals.ts",
+        "tests/fixtures/visual-reply-cases.json",
+        "tests/unit/visual-reply-cases.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored. Still images already stored stay as they were; a page captured after this change uses the new variables only when its source reads them."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["apps/mobile/assets/visual-host/visual-host.html"]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/switchboard-mcp-instructions.test.ts: the instructions hold the chart-unasked rule, the no-chart-on-code-task rule, the .png rule, the layout rules and every --sb-* variable name, with no em dash and under 4000 characters.",
+      "tests/unit/html-live.test.ts: the page head sets --sb-radius and --sb-chart-1 to --sb-chart-6, drops a seventh colour, an unsafe colour and a missing list; htmlLiveChartColors resolves the first six chart colours to real hex values for dark, light and translucent read from global.css.",
+      "tests/unit/visual-reply-cases.test.ts: each case's passing reply passes and its failing reply fails (data questions need a chart or closed html-live block, code tasks need none). No live model is called.",
+      "tests/unit/visual-host-asset.test.ts: the phones' visual host page was rebuilt from the changed shared sources.",
+      "npm run typecheck and npx vitest run pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live agent run: whether each provider follows the new text is not measured. The reply cases are canned.",
+      "The desktop app was not launched: the new variables in a running live page and in its still image are checked only through the page head tests."
+    ]
+  }
+}

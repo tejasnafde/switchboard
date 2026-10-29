@@ -30,7 +30,7 @@ const AUTH_TIMEOUT_MS = 5_000
 /** No MCP message we accept comes near this; a longer line is abuse or a bug. */
 const MAX_LINE_CHARS = 4 * 1024 * 1024
 
-const INSTRUCTIONS = [
+export const SWITCHBOARD_MCP_INSTRUCTIONS = [
   'Switchboard tools for this chat. When the user asks you to raise, open or create a pull request, push the branch',
   'and call create_pull_request: do not use gh pr create, bbpr or a host API for it. It opens the pull request on the',
   "repository of this chat's project with the account the user set up in Switchboard, links it to this chat and",
@@ -51,8 +51,16 @@ const INSTRUCTIONS = [
   'page or fragment, at most 128 KB. The desktop runs it inside the message in a sandbox with no network, so put',
   'the data inline and never fetch. The only scripts that load are /_sb/chart.js (Chart.js 4), /_sb/d3.js (D3 7),',
   '/_sb/mermaid.js and Three.js as a module (import from "three" and "three/addons/controls/OrbitControls.js").',
-  'The page can read the app theme from the --sb-bg, --sb-text, --sb-muted, --sb-border and --sb-accent CSS',
-  'variables. Phones show a still image of it. For a larger page, write an .html file instead.',
+  'The page can read the app theme from the --sb-bg, --sb-text, --sb-muted, --sb-border, --sb-accent and --sb-radius',
+  'CSS variables, and series colours from --sb-chart-1 to --sb-chart-6 (the ```chart colours). Phones show a still',
+  'image of it. For a larger page, write an .html file instead.',
+  'Layout: the block is at most 640 px wide and phones show it about 360 px wide, so fill the width and let it wrap.',
+  'Add no outer background, border or card: the message draws one. Use fixed pixel heights, never vh units, and',
+  'keep it under 460 px tall (480 with the page padding) or it folds.',
+  'When the user gives you data or asks a question whose answer is a trend or a comparison, answer with a ```chart',
+  'or ```html-live block even when not asked. Do not add one to a plain code task.',
+  'When the user wants an image to share or post, write a .png file (a small script that renders the chart, then a',
+  'headless browser screenshot) and give its path.',
 ].join(' ')
 
 /** What an adapter hands its agent to spawn the bridge. */
@@ -217,7 +225,9 @@ export class SwitchboardMcpServer {
       session = new McpSession({
         serverName: SWITCHBOARD_MCP_SERVER_NAME,
         serverVersion: appVersion(),
-        instructions: entry.instructions ? `${INSTRUCTIONS} ${entry.instructions}` : INSTRUCTIONS,
+        instructions: entry.instructions
+          ? `${SWITCHBOARD_MCP_INSTRUCTIONS} ${entry.instructions}`
+          : SWITCHBOARD_MCP_INSTRUCTIONS,
         tools: entry.tools(),
         send,
       })
