@@ -191,6 +191,10 @@ export function ChatVisual({ kind, source }: { kind: VisualKind; source: string 
           onShouldStartLoadWithRequest={onlyTheHostPage}
           onLoadEnd={() => webRef.current?.postMessage(JSON.stringify({ kind, source, theme: THEME }))}
           onMessage={onMessage}
+          onContentProcessDidTerminate={() => {
+            log.warn('visual web process ended', { kind })
+            setState({ status: 'error', error: 'The drawing process stopped.' })
+          }}
           javaScriptEnabled
           domStorageEnabled={false}
           allowFileAccess={false}
