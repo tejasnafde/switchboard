@@ -238,10 +238,10 @@ const SIZE_REPORTER = `(() => {
   addEventListener('load', () => { post(); new ResizeObserver(post).observe(document.documentElement) })
 })()`
 
-const IMPORT_MAP = JSON.stringify({ imports: { three: '/_sb/three.js', 'three/addons/': '/_sb/three/addons/' } })
+const IMPORTS: Record<string, string> = { three: '/_sb/three.js', 'three/addons/': '/_sb/three/addons/' }
 
 /** What the frame injects at the top of `<head>`: theme, import map, size reporter. */
-export function htmlLiveHead(theme: HtmlLiveTheme): string {
+export function htmlLiveHead(theme: HtmlLiveTheme, imports: Record<string, string> = IMPORTS): string {
   const scheme = theme.scheme === 'light' ? 'light' : 'dark'
   const named: Array<[string, unknown]> = THEME_VARS.map(([key, name]) => [name, theme[key]])
   const chart: Array<[string, unknown]> = (Array.isArray(theme.chart) ? theme.chart : [])
@@ -257,7 +257,7 @@ export function htmlLiveHead(theme: HtmlLiveTheme): string {
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<style>:root{${vars}color-scheme:${scheme}}html,body{margin:0;background:var(--sb-bg);color:var(--sb-text);font:13px/1.45 var(--sb-font,sans-serif)}body{padding:10px}</style>`,
-    `<script type="importmap">${IMPORT_MAP}</script>`,
+    `<script type="importmap">${JSON.stringify({ imports })}</script>`,
     `<script>document.documentElement.dataset.sbTheme='${scheme}';${SIZE_REPORTER}</script>`,
   ].join('')
 }
