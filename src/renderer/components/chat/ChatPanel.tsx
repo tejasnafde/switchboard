@@ -94,6 +94,7 @@ import { useHubView } from '../../stores/hub-store'
 import { HubChip } from '../hub/HubChip'
 import { ChildrenStrip } from '../hub/ChildrenStrip'
 import { ChildBanner } from '../hub/ChildBanner'
+import { showArchiveRefusal } from '../hub/hub-actions'
 
 interface ChatPanelProps {
   /**
@@ -1409,13 +1410,16 @@ export function ChatPanel({
           }}
           onArchive={() => {
             if (!sessionId) return
-            messageLifecycle.settleThread(sessionId)
             // Removed once archived: a chat with child chats may refuse and open its settle card here instead.
             window.api.app
               .archiveConversation(sessionId, projectPath, chatTitle)
-              .then(() => removeSession(sessionId))
+              .then(() => {
+                messageLifecycle.settleThread(sessionId)
+                removeSession(sessionId)
+              })
               .catch((err) => {
                 log.warn(`archiveConversation failed for ${sessionId}`, err)
+                showArchiveRefusal(err)
               })
           }}
           onShowSlashHelp={() => setSlashHelpOpen(true)}

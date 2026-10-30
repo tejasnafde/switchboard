@@ -84,39 +84,60 @@ export class HubSettler {
     return { rows: await Promise.all(children.map((c) => this.row(c, parentCwd))), archiveParent }
   }
 
-  async run(parentId: string, parentCwd: string, how: 'card' | 'auto'): Promise<HubSettleResult> {
+  /** `only`: the children a card showed; a child started after it stays open. */
+  async run(
+    parentId: string,
+    parentCwd: string,
+    how: 'card' | 'auto',
+    only?: ReadonlySet<string>,
+  ): Promise<HubSettleResult> {
     if (this.running.has(parentId)) return { ok: false, text: 'A settle of these children is already running.' }
-    const children = listHubChildren(parentId)
+    const all = listHubChildren(parentId)
+    const children = only ? all.filter((c) => only.has(c.childId)) : all
     if (children.length === 0) return { ok: true, text: 'This chat has no children to settle.', rows: [] }
     this.running.add(parentId)
     const span = perfSpan('hub.settle', { parentId, children: children.length, how })
     try {
       const stops = await Promise.allSettled(children.map((c) => this.stop(c.childId)))
-      const stopFailed = stops.filter((s) => s.status === 'rejected').length
+      // A child that did not stop may still run: it stays open, and the settle says so.
+      const failed = children.filter((_, i) => stops[i]!.status === 'rejected')
       for (const s of stops) if (s.status === 'rejected') log.warn('a child did not stop for its settle', s.reason)
+      const stopped = children.filter((c) => !failed.includes(c))
       // Read after the stops, so an agent cut off mid-write is judged by what it left.
-      const rows = await Promise.all(children.map((c) => this.row(c, parentCwd)))
-      for (const child of children) {
-        const row = rows.find((r) => r.childId === child.childId)!
+      const rows = await Promise.all(stopped.map((c) => this.row(c, parentCwd)))
+      for (const [i, child] of stopped.entries()) {
         updateHubChild(child.childId, {
           phase: 'settled',
           settledAt: Date.now(),
-          settleJson: JSON.stringify({ worktree: row.worktree, keepReason: row.keepReason ?? null }),
+          settleJson: JSON.stringify({ worktree: rows[i]!.worktree, keepReason: rows[i]!.keepReason ?? null }),
         })
         archiveConversation(child.childId)
         this.host.forget(child.childId)
       }
       this.host.changed(parentId)
-      for (const row of rows.filter((r) => r.worktree === 'remove')) {
-        const problem = await this.removeWorktree(children.find((c) => c.childId === row.childId)!)
+      for (const [i, row] of rows.entries()) {
+        if (row.worktree !== 'remove') continue
+        const problem = await this.removeWorktree(stopped[i]!)
         if (problem) Object.assign(row, { worktree: 'keep', keepReason: problem })
       }
       const removed = rows.filter((r) => r.worktree === 'remove').length
       const kept = rows.filter((r) => r.worktree === 'keep').length
       const killed = stops.reduce((n, s) => n + (s.status === 'fulfilled' ? s.value : 0), 0)
-      span.end({ outcome: 'settled', removed, kept, stopFailed, killed })
-      log.info('children settled', { parentId, children: children.length, removed, kept, how })
-      return { ok: true, text: hubSettleResult(rows), rows }
+      span.end({ outcome: 'settled', removed, kept, stopFailed: failed.length, killed })
+      log.info('children settled', {
+        parentId,
+        children: stopped.length,
+        removed,
+        kept,
+        stopFailed: failed.length,
+        how,
+      })
+      const text = hubSettleResult(rows)
+      if (failed.length === 0) return { ok: true, text, rows }
+      return {
+        ok: false,
+        text: `${text}\nNot settled, since they did not stop: ${failed.map((c) => c.title).join(', ')}. Stop them, then settle again.`,
+      }
     } catch (err) {
       span.end({ outcome: 'failed' })
       throw err
@@ -178,6 +199,8 @@ export class HubSettler {
     const worktree = getConversationById(child.childId)?.worktree_path
     const key = { machineId: 'local', creationId: child.creationId ?? `${child.batchId}-${child.ordinal}` }
     try {
+      // A chat may have opened the worktree since the plan read it.
+      if (worktree && otherWorktreeUsers(worktree, child.childId) > 0) return 'another chat or card works in it'
       if (worktree) await removeDependencyLinks(worktree)
       const snapshot = await service.getWorktreeCreation(key)
       const done = await service.actOnWorktreeCreation({
@@ -220,15 +243,16 @@ function supportsMergeTree(io: HubSettleIo, cwd: string): Promise<boolean> {
 
 /**
  * Per child id, the files it conflicts on with the parent's HEAD and with
- * each other child. Children without a worktree HEAD are left out. Null when
- * this git cannot tell (older than 2.38).
+ * each other child; null for a child a check could not read. Children
+ * without a worktree HEAD are left out. Null when this git cannot tell
+ * (older than 2.38).
  */
 export async function childConflicts(
   parentId: string,
   parentCwd: string,
   heads: ReadonlyArray<{ childId: string; title: string; worktree: string }>,
   io: HubSettleIo = { git: runGit },
-): Promise<Map<string, ChildConflict[]> | null> {
+): Promise<Map<string, ChildConflict[] | null> | null> {
   if (!(await supportsMergeTree(io, parentCwd))) return null
   const span = perfSpan('hub.conflicts', { parentId, children: heads.length })
   const shas = await Promise.all(heads.map((h) => io.git(h.worktree, ['rev-parse', 'HEAD'])))
@@ -241,25 +265,35 @@ export async function childConflicts(
   sides.forEach((a, i) => {
     for (const b of [...others, ...sides.slice(i + 1)]) pairs.push([a, b])
   })
-  const out = new Map<string, ChildConflict[]>(sides.map((s) => [s.id, []]))
+  const out = new Map<string, ChildConflict[] | null>(sides.map((s) => [s.id, parentHead.code === 0 ? [] : null]))
   let conflicting = 0
   for (const [a, b] of pairs) {
     if (a.sha === b.sha) continue
     const r = await io.git(parentCwd, ['merge-tree', '--write-tree', '--name-only', '--no-messages', a.sha, b.sha])
-    // 0: merges cleanly, 1: conflicts; anything else is an error, read as unknown.
+    // 0: merges cleanly, 1: conflicts; anything else (a timeout) leaves both sides unknown.
+    if (r.code !== 0 && r.code !== 1) {
+      out.set(a.id, null)
+      if (b.id) out.set(b.id, null)
+    }
     if (r.code !== 1) continue
     const files = r.stdout.split('\n').slice(1).filter(Boolean)
     conflicting++
-    out.get(a.id)!.push({ with: b.title, files })
-    if (b.id) out.get(b.id)!.push({ with: a.title, files })
+    out.get(a.id)?.push({ with: b.title, files })
+    if (b.id) out.get(b.id)?.push({ with: a.title, files })
   }
   span.end({ pairs: pairs.length, conflicting })
   return out
 }
 
+/** One git call of a settle or a conflict scan; past it the call counts as unknown. */
+const GIT_TIMEOUT_MS = 20_000
+
 async function runGit(cwd: string, args: string[]): Promise<{ code: number; stdout: string }> {
   try {
-    const { stdout } = await execFileP('git', ['-C', cwd, ...args], { maxBuffer: 8 * 1024 * 1024 })
+    const { stdout } = await execFileP('git', ['-C', cwd, ...args], {
+      maxBuffer: 8 * 1024 * 1024,
+      timeout: GIT_TIMEOUT_MS,
+    })
     return { code: 0, stdout }
   } catch (err) {
     const e = err as { code?: unknown; stdout?: string }

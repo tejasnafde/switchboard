@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react'
 import { Command } from 'cmdk'
+import { showArchiveRefusal } from './hub/hub-actions'
 import { useLayoutStore } from '../stores/layout-store'
 import { useAgentStore } from '../stores/agent-store'
 import { useShallow } from 'zustand/react/shallow'
@@ -206,6 +207,7 @@ function buildCommands(opts: {
           .then(() => agents().removeSession(sid))
           .catch((err) => {
             log.warn(`archiveConversation failed for ${sid}`, err)
+            showArchiveRefusal(err)
           })
       }),
     },

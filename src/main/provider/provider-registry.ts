@@ -228,6 +228,7 @@ import {
   readHubSettings,
   hubNeedsCard,
   hubSettleDetail,
+  type HubSettleView,
 } from '@shared/hub'
 import type { HubChildRow } from '../db/hubs'
 import { sqliteApprovalCardStore } from '../db/agent-approval-cards'
@@ -716,7 +717,7 @@ export class ProviderRegistry implements PeerToolHost {
   private parentCwd(parentId: string): string {
     const live = this.liveSessionId(parentId)
     const conv = getConversationById(parentId)
-    return (live && this.sessionDescriptors.get(live)?.cwd) || conv?.worktree_path || conv?.project_path || ''
+    return (live && this.sessionCwd.get(live)) || conv?.worktree_path || conv?.project_path || ''
   }
 
   /**
@@ -732,6 +733,9 @@ export class ProviderRegistry implements PeerToolHost {
     const live = this.liveSessionId(root)
     const cwd = this.parentCwd(root)
     if (hubNeedsCard(this.chatRuntimeMode(live ?? root))) {
+      // The plan awaits git: a second call meanwhile must not open a second card.
+      if (this.settleCardsOpening.has(root))
+        return { status: 'refused', text: 'A settle card for these children is being opened. Do not send it again.' }
       const open = this.agentApprovals.pendingEvents(root).find((e) => e.toolName === SETTLE_CHILDREN_TOOL)
       // That card does not archive: an archive asks for it to be approved first.
       if (open && archiveParent && !open.hubSettle?.archiveParent)
@@ -744,7 +748,13 @@ export class ProviderRegistry implements PeerToolHost {
           status: 'card',
           text: `A settle card already waits for the user (card ${open.requestId}). Do not send it again.`,
         }
-      const view = await this.hubSettler.plan(root, cwd, archiveParent)
+      this.settleCardsOpening.add(root)
+      let view: HubSettleView
+      try {
+        view = await this.hubSettler.plan(root, cwd, archiveParent)
+      } finally {
+        this.settleCardsOpening.delete(root)
+      }
       const opened = this.agentApprovals.open({
         threadId: live ?? root,
         chatId: root,
@@ -1427,6 +1437,8 @@ export class ProviderRegistry implements PeerToolHost {
   readonly hubStarter: HubStarter
   /** Ends a parent's children (`settle_children`, an archive of the parent). */
   private readonly hubSettler: HubSettler
+  /** Parents whose settle card is being planned. */
+  private readonly settleCardsOpening = new Set<string>()
   /** Sends children's wakes to their parents (`hub/hub-wakes.ts`). */
   readonly hubWakes: HubWakeScheduler
   /** Started `report_to_hub` tool call ids per thread, oldest first, for the wakes' pointers. */
@@ -2656,7 +2668,11 @@ export class ProviderRegistry implements PeerToolHost {
       outcome = 'stopped'
       text = `The chat was stopped before the user answered, so ${what} was not sent.`
     }
-    const delivery = await this.deliverApprovalResult(card, text, closeWakesAgent(close))
+    // A settle card made by an archive archived the chat: its agent is not woken.
+    const wake =
+      closeWakesAgent(close) &&
+      !(isHubSettlePlan(plan) && plan.view.archiveParent && isConversationArchived(card.chatId))
+    const delivery = await this.deliverApprovalResult(card, text, wake)
     const messageId = `apr_${card.requestId}`
     const content = formatApprovalResultMarker({
       requestId: card.requestId,
@@ -2758,12 +2774,15 @@ export class ProviderRegistry implements PeerToolHost {
     }
     if (isHubSettlePlan(plan)) {
       if (!this.hubChildrenOn()) return toolText('Child chats are turned off, so nothing was settled.', true)
-      const settled = await this.hubSettler.run(plan.parentId, this.parentCwd(plan.parentId), 'card')
-      if (settled.ok && plan.view.archiveParent) {
-        archiveConversation(plan.parentId)
-        this.publishHubChange(plan.parentId, true)
-      }
-      return toolText(settled.text, !settled.ok)
+      const shown = new Set(plan.view.rows.map((r) => r.childId))
+      const settled = await this.hubSettler.run(plan.parentId, this.parentCwd(plan.parentId), 'card', shown)
+      if (!settled.ok || !plan.view.archiveParent) return toolText(settled.text, !settled.ok)
+      // Children started after the card opened are not on it: the chat stays until they settle too.
+      if (listHubChildren(plan.parentId).length > 0)
+        return toolText(`${settled.text}\nThis chat has newer children, so it was not archived.`, true)
+      archiveConversation(plan.parentId)
+      this.publishHubChange(plan.parentId, true)
+      return toolText(settled.text)
     }
     // Saved only through answerAgentSecret, which reports its own result.
     if (isSecretRequestPlan(plan)) return toolText('A secret is not saved by an approval.', true)

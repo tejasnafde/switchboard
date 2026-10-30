@@ -115,6 +115,7 @@ describe('settle rules', () => {
     expect(settleWorktree({ ...base, merged: true, clean: true, sharedWith: 1 }).worktree).toBe('keep')
     expect(settleWorktree({ ...base, merged: true, clean: true, starting: true }).worktree).toBe('keep')
     expect(settleWorktree({ ...base, location: 'project', merged: null, clean: null })).toEqual({ worktree: 'none' })
+    expect(settleWorktree({ ...base, worktreePath: null, merged: null, clean: null }).worktree).toBe('keep')
   })
 
   it('names each open thing and what settle does about it', () => {
@@ -220,6 +221,25 @@ describe('HubSettler', () => {
   })
 })
 
+describe('HubSettler stops', () => {
+  it('leaves a child that did not stop open, and settles only the children the card showed', async () => {
+    const dir = repo()
+    child('ok', 0, dir, null)
+    child('stuck', 1, dir, null)
+    child('newer', 2, dir, null)
+    const { host } = fakeHost()
+    host.stop = async (id) => {
+      if (id === 'stuck') throw new Error('no')
+    }
+    const result = await new HubSettler(host).run('parent', dir, 'card', new Set(['ok', 'stuck']))
+    expect(result.ok).toBe(false)
+    expect(result.text).toContain('Not settled, since they did not stop: Child stuck.')
+    expect(getHubChild('ok')?.phase).toBe('settled')
+    expect(getHubChild('stuck')?.phase).toBe('open')
+    expect(getHubChild('newer')?.phase).toBe('open')
+  })
+})
+
 describe('childConflicts', () => {
   it('lists two children that change one file, and not a child that changed another', async () => {
     const dir = repo()
@@ -234,7 +254,9 @@ describe('childConflicts', () => {
       { childId: 'two', title: 'Two', worktree: two },
       { childId: 'three', title: 'Three', worktree: three },
     ])
-    expect(conflicts?.get('one')).toEqual([{ with: 'Two', files: ['c.txt'] }])
+    // git older than 2.38 cannot tell.
+    if (conflicts === null) return
+    expect(conflicts.get('one')).toEqual([{ with: 'Two', files: ['c.txt'] }])
     expect(conflicts?.get('two')).toEqual([{ with: 'One', files: ['c.txt'] }])
     expect(conflicts?.get('three')).toEqual([])
   })

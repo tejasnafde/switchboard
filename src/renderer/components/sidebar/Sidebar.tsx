@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { showArchiveRefusal } from '../hub/hub-actions'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { useAgentStore } from '../../stores/agent-store'
 import { holdsWholeHistory } from '../../services/history-window'
@@ -509,7 +510,8 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     setProjects((prev) =>
       prev.map((p) => (p.path !== projectPath ? p : { ...p, sessions: p.sessions.filter((s) => s.id !== session.id) })),
     )
-    window.api.app.archiveConversation(session.id, projectPath, session.title).catch(() => {
+    window.api.app.archiveConversation(session.id, projectPath, session.title).catch((err) => {
+      showArchiveRefusal(err)
       // Rollback on error
       setProjects((prev) =>
         prev.map((p) =>

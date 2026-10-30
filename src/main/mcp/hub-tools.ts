@@ -163,7 +163,7 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
           const worktree = getConversationById(c.childId)?.worktree_path
           return worktree ? [{ childId: c.childId, title: c.title, worktree }] : []
         })
-        let conflicts: Map<string, ChildConflict[]> | null = null
+        let conflicts: Map<string, ChildConflict[] | null> | null = null
         try {
           conflicts = await conflictsOf(parent.parentId, parent.cwd, worktrees)
         } catch (err) {

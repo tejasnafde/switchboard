@@ -727,8 +727,9 @@ export function settleWorktree(c: {
   sharedWith: number
 }): { worktree: HubSettleWorktree; keepReason?: string } {
   const keep = (keepReason: string) => ({ worktree: 'keep' as const, keepReason })
-  if (c.location === 'project' || !c.worktreePath) return { worktree: 'none' }
+  if (c.location === 'project') return { worktree: 'none' }
   if (c.starting) return keep('it is still being created')
+  if (!c.worktreePath) return keep('no worktree is recorded for it; see Settings, Worktrees')
   if (c.sharedWith > 0) return keep('another chat or card works in it')
   if (c.clean === null || c.merged === null) return keep('git could not read it')
   if (!c.clean) return keep('it has uncommitted or untracked files')
@@ -755,9 +756,8 @@ export function settleBlockers(b: {
 }
 
 const SETTLE_STEPS =
-  'Settle stops their sessions, closes their open cards, cancels their auto-resumes, archives them, ' +
-  'removes dependency links, and removes each worktree that is clean and merged. Branches with commits stay; ' +
-  'nothing is pushed.'
+  'Settle stops their sessions, closes their open cards, cancels their auto-resumes and archives them. Each ' +
+  'worktree that is clean and merged goes, its dependency links first. Branches with commits stay; nothing is pushed.'
 
 function settleRowLine(r: HubSettleRowView, i: number): string {
   const git =
@@ -766,7 +766,7 @@ function settleRowLine(r: HubSettleRowView, i: number): string {
       : `${r.merged === null ? 'merge unknown' : r.merged ? 'merged' : 'not merged'}, ${r.clean === null ? 'state unknown' : r.clean ? 'clean' : 'has changes'}`
   const fate =
     r.worktree === 'remove'
-      ? 'worktree removed'
+      ? 'worktree to be removed'
       : r.worktree === 'keep'
         ? `worktree kept: ${r.keepReason}`
         : 'nothing to remove'
