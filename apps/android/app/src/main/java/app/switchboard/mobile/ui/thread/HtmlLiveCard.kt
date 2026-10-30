@@ -56,6 +56,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.switchboard.mobile.data.remote.HtmlLiveImages
 import app.switchboard.mobile.domain.thread.HtmlLivePages
+import app.switchboard.mobile.domain.thread.HtmlLivePhone
 import app.switchboard.mobile.domain.thread.MessageSegment
 import app.switchboard.mobile.platform.share.ShareImage
 import app.switchboard.mobile.ui.theme.Background
@@ -98,9 +99,10 @@ private fun decodeImage(dataUrl: String): StillImage? {
 }
 
 /**
- * A closed ```html-live page (an unclosed one renders as code). The phone
- * never runs it: it shows the still image the desktop stored, the source,
- * and Open on desktop.
+ * A closed ```html-live page (an unclosed one renders as code). It shows the
+ * still image the desktop stored, the source, and Open on desktop. With
+ * Settings > Labs "Run live pages" on, a page the phone can run runs in
+ * place of the image ([LivePage]).
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -120,6 +122,8 @@ fun HtmlLiveCard(segment: MessageSegment.HtmlLive) {
     var result by remember { mutableStateOf<String?>(null) }
     val still = (image as? LiveImage.Shown)?.still
     val shown = still?.bitmap
+    val runPages = LocalPhoneLiveRun.current
+    val verdict = remember(segment.source, segment.closed) { HtmlLivePhone.verdict(segment.source, segment.closed) }
 
     LaunchedEffect(key, live) {
         if (image is LiveImage.Shown) return@LaunchedEffect
@@ -154,12 +158,23 @@ fun HtmlLiveCard(segment: MessageSegment.HtmlLive) {
         }
         if (showSource) {
             SourceText(segment.source)
+        } else if (runPages && verdict is HtmlLivePhone.Verdict.Ok) {
+            LivePage(
+                key = key,
+                source = segment.source,
+                name = name,
+                still = shown,
+                placeholder = if (image == LiveImage.Loading) "Loading image..." else "No image yet.",
+                onLongPress = { sheet = true },
+                onZoomStill = { fullScreen = true },
+            )
         } else {
             when (val state = image) {
                 LiveImage.Loading -> Muted("Loading image...")
                 LiveImage.Missing -> Muted("No image yet. Your Mac makes one the next time it is online.")
                 is LiveImage.Shown -> FoldedImage(state.still.bitmap, name)
             }
+            if (runPages && verdict is HtmlLivePhone.Verdict.DesktopOnly) Muted(HtmlLivePhone.DESKTOP_ONLY_NOTE)
         }
         result?.let { Muted(it) }
     }

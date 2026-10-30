@@ -112,6 +112,7 @@ import app.switchboard.mobile.data.remote.GitContextCoordinator
 import app.switchboard.mobile.data.remote.ConversationForkWire
 import app.switchboard.mobile.ui.thread.ThreadLoadState
 import app.switchboard.mobile.ui.thread.LocalHtmlLive
+import app.switchboard.mobile.ui.thread.LocalPhoneLiveRun
 import app.switchboard.mobile.ui.thread.ThreadScreen
 import app.switchboard.mobile.ui.thread.ThreadComposerPresentation
 import app.switchboard.mobile.ui.thread.ThreadSessionScreen
@@ -124,6 +125,7 @@ import kotlinx.coroutines.flow.collect
 private val NoPhoneDemo = MutableStateFlow<PhoneDemoNavigationRuntime?>(null)
 private val EmptyRuntimeStatuses = MutableStateFlow<Map<String, ConnectionRuntimeState>>(emptyMap())
 private val SteerFollowUp = kotlinx.coroutines.flow.MutableStateFlow(app.switchboard.mobile.domain.thread.TurnDelivery.Steer)
+private val PhoneLiveRunOff = kotlinx.coroutines.flow.MutableStateFlow(false)
 private val EmptyComposerDrafts = MutableStateFlow<Map<ComposerDraftKey, ComposerDraft>>(emptyMap())
 private val EmptyComposerErrors = MutableStateFlow<Map<ComposerDraftKey, String>>(emptyMap())
 private val EmptyComposerUploads = MutableStateFlow<Map<ComposerDraftKey, List<String>>>(emptyMap())
@@ -451,6 +453,8 @@ private fun SwitchboardNavigationHost(
                 },
                 followUpDefault = (runtime?.followUpDefault ?: SteerFollowUp).collectAsState().value,
                 onFollowUpDefault = { runtime?.setFollowUpDefault(it) },
+                phoneLiveRun = (runtime?.phoneLiveRun ?: PhoneLiveRunOff).collectAsState().value,
+                onPhoneLiveRun = { runtime?.setPhoneLiveRun(it) },
                 onLeaveDemo = onLeaveDemo,
                 onShareLog = { ShareLog.share(shareContext) },
             )
@@ -1327,7 +1331,8 @@ private fun ConnectedThreadRoute(
             null
         }
     }
-    CompositionLocalProvider(LocalHtmlLive provides htmlLive) {
+    val phoneLiveRun by runtime.phoneLiveRun.collectAsState()
+    CompositionLocalProvider(LocalHtmlLive provides htmlLive, LocalPhoneLiveRun provides phoneLiveRun) {
         ThreadSessionScreen(
             coordinator = coordinator,
             threadId = route.threadId,

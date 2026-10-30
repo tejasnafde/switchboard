@@ -2,6 +2,7 @@ package app.switchboard.mobile.runtime
 
 import android.app.Application
 import android.util.Log
+import app.switchboard.mobile.domain.thread.HtmlLivePhone
 import app.switchboard.mobile.data.connection.ConnectionFleet
 import app.switchboard.mobile.data.connection.DeviceConnectionFleetTargetResolver
 import app.switchboard.mobile.data.connection.NativeConnectionRepository
@@ -166,6 +167,21 @@ class NativeAndroidRuntime private constructor(
         if (!followUpDefaultChosen) {
             mutableFollowUpDefault.value = TurnDeliveryPolicy.parseFollowUpDefault(stored.value)
         }
+    }
+    private val mutablePhoneLiveRun = MutableStateFlow(BuildConfig.PHONE_HTML_LIVE_RUN)
+    /** Settings > Labs "Run live pages" (`phone_html_live_run`), per device. */
+    val phoneLiveRun: StateFlow<Boolean> = mutablePhoneLiveRun.asStateFlow()
+    @Volatile private var phoneLiveRunChosen = false
+    private val phoneLiveRunLoad: Job = scope.launch {
+        val stored = database.preferenceDao().findPreference(HtmlLivePhone.FLAG) ?: return@launch
+        if (!phoneLiveRunChosen) mutablePhoneLiveRun.value = stored.value == "true"
+    }
+
+    fun setPhoneLiveRun(value: Boolean) {
+        phoneLiveRunChosen = true
+        phoneLiveRunLoad.cancel()
+        mutablePhoneLiveRun.value = value
+        savePreference(HtmlLivePhone.FLAG, value.toString())
     }
     private var closed = false
 
