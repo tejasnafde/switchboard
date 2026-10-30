@@ -14,6 +14,8 @@ const config = getDefaultConfig(projectRoot)
 config.watchFolders = [path.join(repoRoot, 'src', 'shared')]
 // The visual host page (assets/visual-host) ships as an asset, not as code.
 config.resolver.assetExts.push('html')
+// Live page libraries (assets/live-libs) ship as assets too; metro takes no .js asset.
+config.resolver.assetExts.push('sblib')
 config.resolver.extraNodeModules = {
   '@shared': path.join(repoRoot, 'src', 'shared'),
 }
