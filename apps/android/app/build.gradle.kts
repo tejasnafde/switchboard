@@ -102,6 +102,9 @@ android {
     // The demo fixture is one file shared with the Expo app and the TS player
     // (src/shared/phone-demo/phone-demo.ts), so it ships from its own folder.
     sourceSets["main"].assets.srcDir("../../../src/shared/phone-demo/fixture")
+    // Live page libraries and their licences, vendored once for the desktop.
+    // Asset paths equal the /_sb/ paths (chart.js, three/addons/...).
+    sourceSets["main"].assets.srcDir("../../../resources/sb-live")
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
