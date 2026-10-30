@@ -48,6 +48,7 @@
   --chip-tint-chat: #a371f7;
   --chip-tint-you: #8b949e;
   --chip-tint-review: #3fb9a0;
+  --chip-tint-skill: var(--success);
   --chip-remove-opacity: 0.55;
 }
 
@@ -90,6 +91,7 @@
   --chip-tint-chat: #8250df;
   --chip-tint-you: #57606a;
   --chip-tint-review: #1a7f6b;
+  --chip-tint-skill: var(--success);
   --chip-remove-opacity: 0.75;
 }
 
@@ -132,6 +134,7 @@
   --chip-tint-chat: #a371f7;
   --chip-tint-you: #8b949e;
   --chip-tint-review: #3fb9a0;
+  --chip-tint-skill: var(--success);
   --chip-remove-opacity: 0.65;
 }
 
@@ -349,11 +352,9 @@ html, body, #root {
 }
 
 .sidebar-header-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.8px;
+  font-size: 11px;
+  font-weight: 500;
   color: var(--text-muted);
-  text-transform: uppercase;
 }
 
 .sidebar-header-actions,
@@ -365,8 +366,7 @@ html, body, #root {
 
 .sidebar-saved-count {
   color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -496,10 +496,8 @@ html, body, #root {
 .sidebar-saved-role {
   flex-shrink: 0;
   color: var(--accent);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .sidebar-saved-item.is-user .sidebar-saved-role {
@@ -992,9 +990,7 @@ html, body, #root {
   cursor: pointer;
   user-select: none;
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-weight: 500;
   color: var(--text-secondary);
   border: 0;
   background: transparent;
@@ -1041,7 +1037,7 @@ html, body, #root {
   white-space: nowrap;
 }
 .sidebar-workspace-header .sidebar-workspace-count {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: normal;
   text-transform: none;
@@ -1134,9 +1130,7 @@ html, body, #root {
   user-select: none;
   font-size: 11px;
   color: var(--text-muted);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+  font-weight: 500;
   position: relative;
 }
 
@@ -1202,7 +1196,8 @@ html, body, #root {
 }
 
 .sidebar-project-count {
-  font-size: 10px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
   color: var(--text-muted);
   flex-shrink: 0;
 }
@@ -1632,10 +1627,8 @@ html, body, #root {
 .chat-landing-recents-label {
   margin: 0 8px 6px;
   color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .chat-landing-recent {
@@ -1758,8 +1751,7 @@ html, body, #root {
   max-width: 30%;
   margin-left: 4px;
   color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2220,10 +2212,8 @@ html, body, #root {
   justify-content: space-between;
   padding: 12px 12px 6px 14px;
   color: var(--text-muted);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .workspace-organizer-nav-head button,
@@ -2381,8 +2371,7 @@ html, body, #root {
 
 .workspace-organizer-count {
   color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2767,8 +2756,7 @@ html, body, #root {
   background: var(--bg-secondary);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 10px;
-  font-family: var(--font-mono);
+  font-size: 11px;
   opacity: 1;
   transition: color 0.12s, background 0.12s, border-color 0.12s;
 }
@@ -2878,8 +2866,7 @@ html, body, #root {
   background: var(--bg-secondary);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 10px;
-  font-family: var(--font-mono);
+  font-size: 11px;
   line-height: 1.4;
   transition: color 0.12s, background 0.12s, border-color 0.12s;
 }

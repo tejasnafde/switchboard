@@ -357,4 +357,4 @@ export function BranchPickerPopover({
 }
 
 const emptyRowClass = 'px-[12px] py-[10px] text-[12px] italic text-[var(--text-muted)]'
-const tagClass = 'text-[9.5px] uppercase tracking-[0.5px] text-[var(--text-muted)]'
+const tagClass = 'text-[11px] text-[var(--text-muted)]'
