@@ -40,7 +40,7 @@ class MessageSearchCoordinatorTest {
     }
 
     @Test
-    fun `wrong connection generation is ignored and results are bounded`() {
+    fun `a reply from a replaced connection stops the spinner and results are bounded`() {
         val scheduler = ManualSearchScheduler()
         val remote = FakeMessageSearchRemote()
         val coordinator = MessageSearchCoordinator("mac", 7, remote, scheduler, resultLimit = 40)
@@ -52,11 +52,38 @@ class MessageSearchCoordinatorTest {
             (1..60).map { result("message-$it") },
             key = RemoteRequestKey("mac", 6, BackendChannels.SearchMessages),
         )
-        assertTrue(coordinator.state.value.loading)
+        assertFalse(coordinator.state.value.loading)
+        assertTrue(coordinator.state.value.results.isEmpty())
+        assertEquals("Machine connection changed. Retry search.", coordinator.state.value.error)
 
         coordinator.retry()
         remote.succeed(1, (1..60).map { result("message-$it") })
         assertEquals(40, coordinator.state.value.results.size)
+    }
+
+    @Test
+    fun `a coordinator for a new connection keeps the query typed before it and searches it on start`() {
+        val scheduler = ManualSearchScheduler()
+        val remote = FakeMessageSearchRemote()
+        val coordinator = MessageSearchCoordinator("mac", 8, remote, scheduler, initialQuery = "native")
+        assertEquals("native", coordinator.state.value.query)
+        assertTrue(remote.queries.isEmpty())
+
+        coordinator.retry()
+        assertEquals(listOf("native"), remote.queries)
+        assertTrue(scheduler.pending.isEmpty())
+        remote.succeed(0, listOf(result("found")), key = RemoteRequestKey("mac", 8, BackendChannels.SearchMessages))
+        assertEquals(listOf("found"), coordinator.state.value.results.map { it.messageId })
+    }
+
+    @Test
+    fun `a short carried query is kept but not sent`() {
+        val remote = FakeMessageSearchRemote()
+        val coordinator = MessageSearchCoordinator("mac", 8, remote, ManualSearchScheduler(), initialQuery = "n")
+        coordinator.retry()
+
+        assertEquals("n", coordinator.state.value.query)
+        assertTrue(remote.queries.isEmpty())
     }
 
     @Test

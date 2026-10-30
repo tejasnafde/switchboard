@@ -49,6 +49,9 @@ import kotlinx.coroutines.launch
 fun MessageSearchRouteHost(
     connectionLabel: String,
     lease: ReadyClientLease,
+    /** Owned by the route, so it outlives a reconnect and the time with no connection. */
+    query: String,
+    onQueryChange: (String) -> Unit,
     onBack: () -> Unit,
     onOpenResult: (MessageSearchResult) -> Unit,
 ) {
@@ -65,16 +68,21 @@ fun MessageSearchRouteHost(
                 }
                 Cancelable(job::cancel)
             },
+            initialQuery = query,
         )
     }
     DisposableEffect(coordinator) {
+        coordinator.retry()
         onDispose(coordinator::close)
     }
     val state by coordinator.state.collectAsState()
     MessageSearchScreen(
         connectionLabel = connectionLabel,
         state = state,
-        onQueryChange = coordinator::updateQuery,
+        onQueryChange = { value ->
+            onQueryChange(value)
+            coordinator.updateQuery(value)
+        },
         onRetry = coordinator::retry,
         onBack = onBack,
         onOpenResult = onOpenResult,

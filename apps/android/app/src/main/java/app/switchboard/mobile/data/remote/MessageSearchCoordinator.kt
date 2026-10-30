@@ -3,6 +3,7 @@ package app.switchboard.mobile.data.remote
 import app.switchboard.mobile.domain.remote.MessageSearchResult
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RemoteResponse
+import app.switchboard.mobile.platform.log.SbLog
 import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.platform.protocol.RequestSubmission
 import app.switchboard.mobile.platform.protocol.RpcFailure
@@ -35,12 +36,18 @@ class MessageSearchCoordinator(
     private val scheduler: MessageSearchScheduler,
     private val debounceMillis: Long = 200,
     private val resultLimit: Int = 40,
+    /** The query typed before this connection was ready, or on the one it replaces; [retry] searches it. */
+    initialQuery: String = "",
 ) {
     private val mutableState = MutableStateFlow(MessageSearchState())
     val state = mutableState.asStateFlow()
 
     private var pending: Cancelable? = null
     private var request = 0L
+
+    init {
+        if (initialQuery.isNotEmpty()) mutableState.value = MessageSearchState(query = initialQuery)
+    }
 
     @Synchronized
     fun updateQuery(value: String) {
@@ -96,12 +103,17 @@ class MessageSearchCoordinator(
         query: String,
         response: RemoteResponse<List<MessageSearchResult>>,
     ) {
-        if (
-            token != request ||
-            mutableState.value.query.trim() != query ||
-            response.key.connectionId != connectionId ||
-            response.key.generation != expectedGeneration
-        ) return
+        if (token != request || mutableState.value.query.trim() != query) return
+        if (response.key.connectionId != connectionId || response.key.generation != expectedGeneration) {
+            // The connection was replaced while this search was in flight; a new
+            // coordinator searches again, and this one must not spin forever.
+            SbLog.i(LOG_SCOPE, "$connectionId reply from gen=${response.key.generation}, expected $expectedGeneration")
+            mutableState.value = mutableState.value.copy(
+                loading = false,
+                error = RpcFailure.ConnectionReplaced.searchMessage(),
+            )
+            return
+        }
         mutableState.value = when (val outcome = response.outcome) {
             is RemoteOutcome.Success -> mutableState.value.copy(
                 results = outcome.value.take(resultLimit),
@@ -115,7 +127,7 @@ class MessageSearchCoordinator(
                 loading = false,
                 searched = true,
                 error = outcome.message,
-            )
+            ).also { SbLog.w(LOG_SCOPE, "$connectionId search failed: ${outcome.message}") }
         }
     }
 
@@ -128,6 +140,11 @@ class MessageSearchCoordinator(
             searched = true,
             error = reason.searchMessage(),
         )
+        SbLog.w(LOG_SCOPE, "$connectionId search not sent: $reason")
+    }
+
+    private companion object {
+        const val LOG_SCOPE = "search"
     }
 }
 

@@ -16,7 +16,14 @@ import app.switchboard.mobile.platform.protocol.WebSocketTarget
 import app.switchboard.mobile.protocol.Credential
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.RuntimeEventPayload
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -210,7 +217,8 @@ class ConnectionFleetTest {
         assertTrue(a.networkStates.isEmpty())
         assertEquals(0, a.resumes)
         assertEquals(listOf(false, true), b.networkStates)
-        assertEquals(1, b.resumes)
+        // Once for the network return, once for the foreground probe.
+        assertEquals(2, b.resumes)
         assertEquals(2, fixture.factory.created.size)
     }
 
@@ -257,36 +265,208 @@ class ConnectionFleetTest {
         assertEquals(2, fixture.factory.created.count { it.connectionId == "b" })
     }
 
+    /**
+     * The 2026-10-30 report: back from the background after 10 s or more, every
+     * screen stayed on "The saved machine could not be opened" until a relaunch.
+     * The foreground callback runs on the main thread, and the reconnect read
+     * the stored machine there; Room refuses main-thread reads.
+     */
+    @Test
+    fun `a foreground reconnect reads the stored machine off the calling thread`() {
+        val caller = Thread.currentThread()
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val fixture = Fixture(
+                snapshot(ws("a")),
+                dispatcher = executor.asCoroutineDispatcher(),
+                resolve = { connectionId ->
+                    check(Thread.currentThread() !== caller) { "Cannot access database on the main thread" }
+                    readyTarget(connectionId)
+                },
+            )
+            fixture.fleet.startupReady()
+            fixture.awaitStatus("a", ConnectionStatus.Connecting)
+            runBlocking { withTimeout(5_000) { while (fixture.factory.created.isEmpty()) kotlinx.coroutines.delay(10) } }
+            val first = fixture.factory.latest("a")
+
+            fixture.fleet.onForeground(ForegroundAction.Reconnect)
+
+            runBlocking { withTimeout(5_000) { while (fixture.factory.created.size < 2) kotlinx.coroutines.delay(10) } }
+            assertTrue(first.destroyed)
+            assertEquals(ConnectionStatus.Connecting, fixture.status("a"))
+            assertEquals(listOf("connect"), fixture.factory.latest("a").calls)
+
+            fixture.fleet.retry("a")
+            runBlocking { withTimeout(5_000) { while (fixture.factory.created.size < 3) kotlinx.coroutines.delay(10) } }
+            assertEquals(ConnectionStatus.Connecting, fixture.status("a"))
+            fixture.fleet.close()
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `a retryable resolve failure is tried again on its own`() {
+        var failures = 2
+        val fixture = Fixture(
+            snapshot(ws("a")),
+            resolveRetryDelayMs = { 0L },
+            resolve = { connectionId ->
+                if (failures-- > 0) {
+                    ConnectionTargetResolution.Failure("The saved machine could not be opened", retryable = true)
+                } else {
+                    readyTarget(connectionId)
+                }
+            },
+        )
+
+        fixture.fleet.startupReady()
+
+        assertEquals(3, fixture.resolveCalls.get())
+        assertEquals(1, fixture.factory.created.size)
+        assertEquals(ConnectionStatus.Connecting, fixture.status("a"))
+    }
+
+    @Test
+    fun `a network return or a short foreground return retries a failed resolve at once`() {
+        var failing = true
+        val fixture = Fixture(
+            snapshot(ws("a"), ws("b")),
+            resolve = { connectionId ->
+                if (failing) {
+                    ConnectionTargetResolution.Failure("The saved credential could not be read", retryable = true)
+                } else {
+                    readyTarget(connectionId)
+                }
+            },
+        )
+        fixture.fleet.onNetworkChanged(available = true)
+        fixture.fleet.startupReady()
+        assertEquals(ConnectionStatus.Error, fixture.status("a"))
+        assertTrue(fixture.factory.created.isEmpty())
+
+        failing = false
+        fixture.fleet.onNetworkChanged(available = false)
+        assertTrue(fixture.factory.created.isEmpty())
+        fixture.fleet.onNetworkChanged(available = true)
+        assertEquals(listOf("a", "b"), fixture.factory.created.map { it.connectionId })
+
+        failing = true
+        fixture.fleet.retry("b")
+        assertEquals(ConnectionStatus.Error, fixture.status("b"))
+        failing = false
+        fixture.fleet.onForeground(ForegroundAction.Probe)
+        assertEquals(ConnectionStatus.Connecting, fixture.status("b"))
+        assertEquals(3, fixture.factory.created.size)
+    }
+
+    @Test
+    fun `timer retries of a resolve failure stop after a limit`() {
+        val fixture = Fixture(
+            snapshot(ws("a")),
+            resolveRetryDelayMs = { 0L },
+            resolve = { ConnectionTargetResolution.Failure("The saved credential could not be read", retryable = true) },
+        )
+
+        fixture.fleet.startupReady()
+
+        assertEquals(9, fixture.resolveCalls.get())
+        assertEquals(ConnectionStatus.Error, fixture.status("a"))
+    }
+
+    @Test
+    fun `a terminal resolve failure is not retried by a timer`() {
+        val fixture = Fixture(
+            snapshot(ws("a")),
+            resolveRetryDelayMs = { 0L },
+            resolve = { ConnectionTargetResolution.Failure("That machine no longer exists") },
+        )
+
+        fixture.fleet.startupReady()
+
+        assertEquals(1, fixture.resolveCalls.get())
+        assertEquals(ConnectionStatus.Error, fixture.status("a"))
+    }
+
+    @Test
+    fun `a resolve that finishes after a newer start is dropped`() {
+        val pending = mutableListOf<() -> Unit>()
+        val queued = object : CoroutineDispatcher() {
+            override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+                pending += { block.run() }
+            }
+        }
+        val fixture = Fixture(snapshot(ws("a")), dispatcher = queued)
+        fixture.fleet.startupReady()
+        pending.removeAt(0)()
+        fixture.fleet.retry("a")
+        fixture.fleet.retry("a")
+
+        pending.toList().also { pending.clear() }.forEach { it() }
+
+        assertEquals(1, fixture.factory.created.size)
+        assertEquals(fixture.fleet.statuses.value.getValue("a").generation, fixture.factory.latest("a").generation)
+    }
+
+    /**
+     * Doze or a backend restart while in the background: the socket dies and
+     * the coordinator stops or waits out a backoff. A short return checks it,
+     * and the next Ready names a new transport scope, which every screen keys on.
+     */
+    @Test
+    fun `a socket lost in the background is checked on return and its new scope replaces the old one`() {
+        val fixture = Fixture(snapshot(ws("a"))).also { it.fleet.startupReady() }
+        val first = fixture.factory.latest("a")
+        first.becomeReady(emptySet())
+        val before = fixture.fleet.endpoint("a")?.scope
+
+        first.emit(ConnectionRuntimeEvent.Retrying(first.generation, attempt = 1, closeCode = 1012))
+        assertEquals(null, fixture.fleet.endpoint("a"))
+        fixture.fleet.onForeground(ForegroundAction.Probe)
+        assertEquals(1, first.resumes)
+
+        fixture.fleet.onForeground(ForegroundAction.Reconnect)
+        val second = fixture.factory.latest("a")
+        second.becomeReady(emptySet())
+        val after = fixture.fleet.endpoint("a")?.scope
+        assertTrue(after != null && after != before)
+    }
+
     private class Fixture(
         initial: OfflineSnapshot,
         removeResult: ConnectionRemoveResult = ConnectionRemoveResult.Success,
         failCreate: () -> Boolean = { false },
+        dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
+        resolveRetryDelayMs: (Int) -> Long = { 60_000L },
+        resolve: (String) -> ConnectionTargetResolution = ::readyTarget,
     ) {
         val source = MutableStateFlow<OfflineSnapshot?>(initial)
         val factory = FakeCoordinatorFactory(failCreate)
-        private val scope = CoroutineScope(Job() + Dispatchers.Unconfined)
+        val resolveCalls = AtomicInteger()
+        private val scope = CoroutineScope(Job() + dispatcher)
         val fleet = ConnectionFleet(
             scope = scope,
             snapshots = ConnectionFleetSnapshotSource { source },
             targetResolver = ConnectionFleetTargetResolver { connectionId ->
-                ConnectionTargetResolution.Ready(
-                    WebSocketTarget(
-                        deviceId = "phone",
-                        connectionId = connectionId,
-                        url = "wss://resolved/$connectionId",
-                        credential = Credential.Session("secret"),
-                    ),
-                )
+                resolveCalls.incrementAndGet()
+                resolve(connectionId)
             },
             coordinatorFactory = factory,
             remover = ConnectionFleetRemover { removeResult },
+            resolveRetryDelayMs = resolveRetryDelayMs,
         )
+
+        fun status(connectionId: String): ConnectionStatus = fleet.statuses.value.getValue(connectionId).status
+
+        fun awaitStatus(connectionId: String, status: ConnectionStatus) = runBlocking {
+            withTimeout(5_000) { fleet.statuses.first { it[connectionId]?.status == status } }
+        }
     }
 
     private class FakeCoordinatorFactory(
         private val failCreate: () -> Boolean,
     ) : ConnectionFleetCoordinatorFactory {
-        val created = mutableListOf<FakeCoordinator>()
+        val created: MutableList<FakeCoordinator> = CopyOnWriteArrayList()
 
         override fun create(
             connectionId: String,
@@ -358,6 +538,17 @@ class ConnectionFleetTest {
         override fun onRuntimeEvent(
             listener: (TransportScope, RuntimeEventPayload) -> Unit,
         ): Cancelable = Cancelable {}
+    }
+
+    private companion object {
+        fun readyTarget(connectionId: String): ConnectionTargetResolution = ConnectionTargetResolution.Ready(
+            WebSocketTarget(
+                deviceId = "phone",
+                connectionId = connectionId,
+                url = "wss://resolved/$connectionId",
+                credential = Credential.Session("secret"),
+            ),
+        )
     }
 
     private fun snapshot(vararg rows: ConnectionSpecFixture): OfflineSnapshot = OfflineSnapshot(

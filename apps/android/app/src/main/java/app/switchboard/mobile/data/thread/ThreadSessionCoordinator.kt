@@ -54,6 +54,7 @@ import app.switchboard.mobile.domain.thread.ExpiredRequests
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadSnapshot
 import app.switchboard.mobile.domain.thread.UserMessageVisibility
+import app.switchboard.mobile.platform.log.SbLog
 import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.protocol.JsonCodec
 import app.switchboard.mobile.protocol.JsonBoolean
@@ -836,7 +837,9 @@ class ThreadSessionCoordinator(
     fun start() {
         if (started || closed) return
         started = true
+        SbLog.i(LOG_SCOPE, "${scope.connectionId} gen=${scope.generation} open chat $threadId")
         if (remote.scope != scope) {
+            SbLog.w(LOG_SCOPE, "$threadId opened on a replaced connection")
             load = ThreadSessionLoad.Failed("Connection scope changed", currentThread())
             publish()
             return
@@ -871,6 +874,7 @@ class ThreadSessionCoordinator(
         }
         val request = ++loadRequest
         val providerRevision = providerEventRevision
+        SbLog.i(LOG_SCOPE, "${scope.connectionId} gen=${scope.generation} load history $threadId")
         load = currentThread()?.takeIf { it.feed.isNotEmpty() }?.let {
             ThreadSessionLoad.Ready(it, refreshing = true)
         } ?: ThreadSessionLoad.Loading(null)
@@ -1495,9 +1499,13 @@ class ThreadSessionCoordinator(
 
     private fun acceptLoad(request: Long, providerRevision: Long, response: RemoteResponse<LoadedSession>) {
         synchronized(this) {
-            if (!accepts(response, request, loadRequest)) return
+            if (!accepts(response, request, loadRequest)) {
+                SbLog.d(LOG_SCOPE, "$threadId stale history answer dropped")
+                return
+            }
             when (val outcome = response.outcome) {
                 is RemoteOutcome.Success -> {
+                    SbLog.i(LOG_SCOPE, "$threadId history loaded")
                     forkMetadata = outcome.value.meta?.forkMetadata
                     reduce(
                         ThreadAction.InstallSnapshot(
@@ -1534,6 +1542,7 @@ class ThreadSessionCoordinator(
                 }
 
                 is RemoteOutcome.Failure -> {
+                    SbLog.w(LOG_SCOPE, "$threadId history load failed: ${outcome.message}")
                     load = ThreadSessionLoad.Failed(outcome.message, currentThread())
                 }
             }
@@ -2511,6 +2520,7 @@ class ThreadSessionCoordinator(
 
     companion object {
         const val HISTORY_LIMIT = 250L
+        private const val LOG_SCOPE = "chat"
         private const val LIMIT_RESUME_CHANGED = "limit-resume.changed"
         private const val HELD_RECOVERY_ATTEMPTS = 3
         private const val HELD_LIST_FAILURE = "Could not list queued messages: "

@@ -6,7 +6,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Build
-import android.util.Log
+import app.switchboard.mobile.platform.log.SbLog
 import java.io.Closeable
 
 /** The ConnectivityManager calls the monitor makes, so a test can drive them. */
@@ -91,14 +91,15 @@ class AndroidConnectivityMonitor private constructor(
                     },
                 )
             }
-        } catch (_: RuntimeException) {
+        } catch (error: RuntimeException) {
+            SbLog.w(LOG_SCOPE, "could not read network capabilities: ${SbLog.describe(error)}")
             null
         }
         val reachable = NetworkReachabilityPolicy.isReachable(snapshot)
         val route = try {
             manager.activeNetwork?.toString()
         } catch (error: RuntimeException) {
-            Log.w(TAG, "could not read the default network", error)
+            SbLog.w(LOG_SCOPE, "could not read the default network", error)
             null
         }
         val (reachabilityChanged, routeChanged) = synchronized(this) {
@@ -110,10 +111,12 @@ class AndroidConnectivityMonitor private constructor(
             changed to routeMoved
         }
         if (reachabilityChanged) {
-            runCatching { observer(reachable) }.onFailure { Log.w(TAG, "network observer failed", it) }
+            SbLog.i(LOG_SCOPE, "reachable=$reachable transport=${snapshot?.hasTransport} validated=${snapshot?.validatedInternet}")
+            runCatching { observer(reachable) }.onFailure { SbLog.w(LOG_SCOPE, "network observer failed", it) }
         }
         if (routeChanged) {
-            runCatching(onRouteChanged).onFailure { Log.w(TAG, "network route observer failed", it) }
+            SbLog.i(LOG_SCOPE, "default network moved")
+            runCatching(onRouteChanged).onFailure { SbLog.w(LOG_SCOPE, "network route observer failed", it) }
         }
     }
 
@@ -128,7 +131,7 @@ class AndroidConnectivityMonitor private constructor(
     }
 
     companion object {
-        private const val TAG = "SbConnectivity"
+        private const val LOG_SCOPE = "network"
 
         fun install(
             context: Context,

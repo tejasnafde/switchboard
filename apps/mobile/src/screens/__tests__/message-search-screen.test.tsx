@@ -10,11 +10,36 @@ import MessageSearchScreen from '../MessageSearchScreen'
 import { renderComponent } from '../../test/render'
 
 const mockSearch = jest.fn<Promise<MessageSearchResult[]>, [string]>()
-jest.mock('../../stores/connections', () => ({
-  getClient: () => ({ searchMessages: (query: string) => mockSearch(query) }),
-  useConnectionsStore: (select: (s: { configs: { id: string; label: string }[] }) => unknown) =>
-    select({ configs: [{ id: 'conn', label: 'Studio Mac' }] }),
-}))
+let mockConnected = true
+const mockListeners = new Set<() => void>()
+jest.mock('../../stores/connections', () => {
+  const { useSyncExternalStore } = jest.requireActual<typeof import('react')>('react')
+  return {
+    getClient: () => (mockConnected ? { searchMessages: (query: string) => mockSearch(query) } : undefined),
+    useConnectionsStore: (
+      select: (s: { configs: { id: string; label: string }[]; status: Record<string, string> }) => unknown,
+    ) => {
+      const connected = useSyncExternalStore(
+        (listener) => {
+          mockListeners.add(listener)
+          return () => mockListeners.delete(listener)
+        },
+        () => mockConnected,
+      )
+      return select({
+        configs: [{ id: 'conn', label: 'Studio Mac' }],
+        status: { conn: connected ? 'connected' : 'connecting' },
+      })
+    },
+  }
+})
+
+function setConnected(value: boolean) {
+  act(() => {
+    mockConnected = value
+    mockListeners.forEach((listener) => listener())
+  })
+}
 
 const hit: MessageSearchResult = {
   messageId: 'm1',
@@ -46,6 +71,7 @@ async function type(view: ReturnType<typeof renderScreen>, text: string) {
 }
 
 beforeEach(() => {
+  mockConnected = true
   jest.useFakeTimers()
   mockSearch.mockReset()
   navigation.navigate.mockReset()
@@ -114,6 +140,22 @@ describe('MessageSearchScreen', () => {
     expect(view.byLabel('Fix sync jitter, the sync loop, switchboard · Assistant').props.accessibilityRole).toBe(
       'button',
     )
+  })
+
+  it('searches again when the machine reconnects', async () => {
+    mockSearch.mockResolvedValue([hit])
+    setConnected(false)
+    const view = renderScreen()
+    await type(view, 'sync')
+    expect(mockSearch).not.toHaveBeenCalled()
+
+    setConnected(true)
+    await act(async () => {
+      jest.advanceTimersByTime(200)
+      await Promise.resolve()
+    })
+    expect(mockSearch).toHaveBeenCalledWith('sync')
+    expect(view.texts()).toContain('Fix sync jitter')
   })
 
   it('drops a late answer to an older query', async () => {
