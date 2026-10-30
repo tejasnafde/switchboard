@@ -39,6 +39,7 @@ import {
   MANAGED_BIN_SHELL_DIR,
   BACKEND_CMDLINE_MATCH,
   IDE_CMDLINE_MATCH,
+  TOKEN_LINE_PREFIX,
 } from '../../src/main/machines/remote-bootstrap'
 import { REMOTE_COMMAND } from '../../src/main/machines/connect-deps'
 
@@ -269,6 +270,30 @@ describe('REMOTE_COMMAND', () => {
     expect(pathAt).toBeGreaterThan(-1)
     expect(pathAt).toBeLessThan(codeServerAt)
     expect(pathAt).toBeLessThan(nodeAt)
+  })
+
+  it('reuses a live server of the installed version and reaps only otherwise', () => {
+    const reuseAt = REMOTE_COMMAND.indexOf('reusing switchboard backend')
+    const reapAt = REMOTE_COMMAND.indexOf('kill -TERM "$P"')
+    expect(REMOTE_COMMAND).toContain('[ "$(cat "$D/server.version")" = "$(cat "$D/version" 2>/dev/null)" ]')
+    // A wedged server does not answer the HTTP probe, so it is reaped.
+    expect(REMOTE_COMMAND).toContain("require('http').get({host:'127.0.0.1',port:8765,timeout:3000}")
+    expect(reuseAt).toBeGreaterThan(-1)
+    expect(reapAt).toBeGreaterThan(reuseAt)
+  })
+
+  it('starts the backend and code-server detached, so a tunnel drop does not end them', () => {
+    expect(REMOTE_COMMAND).toContain('command -v setsid >/dev/null 2>&1 && S=setsid')
+    expect(REMOTE_COMMAND).toContain('$S nohup node $D/index.cjs > "$D/server.log" 2>&1 < /dev/null & P=$!')
+    expect(REMOTE_COMMAND).toContain('$S nohup "$D/code-server/bin/code-server"')
+    // The tunnel lives as long as that server, checked by identity, not kill -0.
+    expect(REMOTE_COMMAND).toMatch(/while grep -qsaF -- "\$D\/index\.cjs" "\/proc\/\$P\/cmdline"; do sleep 5; done$/)
+  })
+
+  it('keeps the backend token in a 0600 file and prints it once for the desktop', () => {
+    expect(REMOTE_COMMAND).toContain('(umask 077;')
+    expect(REMOTE_COMMAND).toContain('SWITCHBOARD_TOKEN="$(cat "$D/token")"; export SWITCHBOARD_TOKEN;')
+    expect(REMOTE_COMMAND).toContain(`echo "${TOKEN_LINE_PREFIX}$SWITCHBOARD_TOKEN"`)
   })
 
   it('still mints one shared bridge token before either launch', () => {

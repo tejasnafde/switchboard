@@ -156,13 +156,13 @@ export class WsHost implements BackendHost {
    */
   constructor(
     private readonly wss: WebSocketServer,
-    token?: string,
+    private readonly token?: string,
     private readonly deviceAuth: DeviceAuthPort = NO_DEVICE_AUTH,
     requireAuth = false,
     /** What the legacy URL token grants. Loopback and the ssh tunnel are the
      *  same-user trust boundary as a PTY, so they get everything; a LAN-facing
      *  endpoint must not hand a static, unrevocable token a shell. */
-    legacyTokenScopes: readonly DeviceScope[] = FULL_SCOPES,
+    private readonly legacyTokenScopes: readonly DeviceScope[] = FULL_SCOPES,
   ) {
     this.wss.on('connection', (socket, req: IncomingMessage) => {
       // Legacy path: the shared token in the URL. Still accepted so an already
@@ -391,6 +391,14 @@ export class WsHost implements BackendHost {
       state.clientScope = hashClientScope('device-session', authenticated.id)
       state.touchedAt = Date.now()
       this.reply(socket, { k: 'authed', ok: true, session: result.session, scopes: [...state.scopes] })
+      return
+    }
+    // The server token in a frame: how the desktop reaches a VM backend, so
+    // the token never sits in a URL that gets logged.
+    if (this.token && frame.session && tokenMatches(this.token, frame.session)) {
+      state.scopes = this.legacyTokenScopes
+      state.clientScope = hashClientScope('legacy-ws-token', this.token)
+      this.reply(socket, { k: 'authed', ok: true, scopes: [...state.scopes] })
       return
     }
     const session = frame.session ? this.deviceAuth.authenticate(frame.session, context) : null

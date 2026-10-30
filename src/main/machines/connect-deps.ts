@@ -13,7 +13,7 @@ import { encodeFrame, decodeFrame } from '@shared/ws-protocol'
 import { createMainLogger } from '../logger'
 import { appVersion } from '../runtime'
 import { REMOTE_SERVER_DIR } from './provision-commands'
-import { buildRemoteBootstrapCommand } from './remote-bootstrap'
+import { buildRemoteBootstrapCommand, TOKEN_LINE_PREFIX } from './remote-bootstrap'
 import { summarizeSshError } from './ssh-error'
 import { childProcessEnv } from '../shell-env'
 import type { TunnelProcess } from './connection-manager'
@@ -39,14 +39,12 @@ export const REMOTE_BRIDGE_PORT = 8767
 export const SERVER_VERSION_CHANNEL = 'server:version'
 
 /**
- * The remote bootstrap: reap a lingering server (by the pidfile the server
- * writes once it is listening), restart the managed code-server, put the
- * managed CLI bin dir on PATH, then exec the backend.
+ * The remote bootstrap: print the backend token, then reuse a live backend of
+ * the installed version or reap it and start a detached one.
  *
- * The reaping and PATH rules live in remote-bootstrap.ts, where they are
- * unit-tested; see that file for why the kill escalates TERM -> KILL under a
- * bound, why every signal is identity-guarded against a recycled pid, and why
- * `pkill` is off the table.
+ * The rules live in remote-bootstrap.ts, where they are unit-tested; see that
+ * file for why the kill escalates TERM -> KILL under a bound, why every signal
+ * is identity-guarded against a recycled pid, and why `pkill` is off the table.
  */
 export const REMOTE_COMMAND = buildRemoteBootstrapCommand({
   serverDir: REMOTE_SERVER_DIR,
@@ -73,9 +71,18 @@ export function spawnTunnel(command: string, args: string[]): TunnelProcess {
   // Keep the tail of stderr so a dying tunnel can report WHY it died
   // ("Permission denied", "Connection refused") instead of a bare error pip.
   let stderrTail = ''
-  // Surface ssh + remote-server output: this is where a crashed server, an
-  // EADDRINUSE from a lingering server, or an ssh/forward error shows up.
-  child.stdout.on('data', (d) => log.info(`tunnel stdout: ${String(d).trimEnd()}`))
+  let token: string | undefined
+  let stdoutPartial = ''
+  // Surface ssh + remote output: this is where an ssh/forward error shows up.
+  // The token line is read and never logged.
+  child.stdout.on('data', (d) => {
+    const lines = (stdoutPartial + String(d)).split('\n')
+    stdoutPartial = lines.pop() ?? ''
+    for (const line of lines) {
+      if (line.startsWith(TOKEN_LINE_PREFIX)) token = line.slice(TOKEN_LINE_PREFIX.length).trim() || undefined
+      else if (line.trim()) log.info(`tunnel stdout: ${line.trimEnd()}`)
+    }
+  })
   child.stderr.on('data', (d) => {
     log.warn(`tunnel stderr: ${String(d).trimEnd()}`)
     stderrTail = (stderrTail + String(d)).slice(-4096)
@@ -87,6 +94,7 @@ export function spawnTunnel(command: string, args: string[]): TunnelProcess {
   })
   return {
     kill: () => child.kill(),
+    token: () => token,
     onExit: (cb) => child.once('exit', cb),
     exitReason: () => {
       const summary = summarizeSshError(stderrTail)
@@ -113,6 +121,7 @@ export function waitForHealth(
   url: string,
   attempts = 30,
   intervalMs = 1000,
+  token: () => string | undefined = () => undefined,
 ): Promise<{ ok: boolean; reason?: string }> {
   const expectedVersion = appVersion()
   return new Promise((resolve) => {
@@ -133,7 +142,12 @@ export function waitForHealth(
     const tick = () => {
       let settled = false
       let fallback: ReturnType<typeof setTimeout>
-      const ws = new WebSocket(url, { handshakeTimeout: intervalMs })
+      // The token can land on stdout after the first tick; a tick without it
+      // is refused (4001) and retried like any other failure.
+      const secret = token()
+      const ws = new WebSocket(secret ? `${url}/?token=${encodeURIComponent(secret)}` : url, {
+        handshakeTimeout: intervalMs,
+      })
       const armFallback = (message: string) => {
         fallback = setTimeout(() => fail(new Error(message)), intervalMs)
       }

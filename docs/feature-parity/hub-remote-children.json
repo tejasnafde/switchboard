@@ -1,0 +1,55 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "hub-remote-children",
+  "summary": "Child chats on other machines (design 2026-10-29), built in steps behind the staged flag hub_remote_children. Step 1, the VM backend lifecycle: the remote bootstrap starts the headless backend and the managed code-server detached (setsid nohup, output in ~/.switchboard-server/server.log), so a tunnel drop, a desktop sleep or a quit no longer ends the sessions on the VM. Each connect reuses a live backend when its pid is still ours, it was started from the installed version (server.version equals version) and its HTTP listener answers within 3 s; otherwise it reaps the backend and code-server as before and starts fresh ones. The ssh session waits on the backend pid, so the tunnel ends when the server dies. The backend now always runs with a token: the bootstrap keeps it 0600 in ~/.switchboard-server/token and prints it once on the ssh channel; the desktop reads it from the tunnel output (never logged), keeps it in memory, sends it in the health probe and gives it to the renderer through a desktop-only IPC call (not the backend host, which also serves phones). The renderer sends it in an auth frame; WsHost accepts the server token in an auth frame with the same scopes as the URL token.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/machines/remote-bootstrap.ts",
+        "src/main/machines/connect-deps.ts",
+        "src/main/machines/connection-manager.ts",
+        "src/main/ipc/machines.ts",
+        "src/preload/index.ts",
+        "tests/unit/remote-bootstrap-cleanup.test.ts",
+        "tests/unit/connect-deps.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Phones never dial a VM's tunnelled backend; they reach the desktop only, or a VM's own TCP listener with the token the operator set, which this change does not touch."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Same as iOS: the Android app does not use the ssh bootstrap or the desktop's tunnel, and its IAP path to a VM's TCP listener is unchanged."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/backend/ws-host.ts",
+        "src/shared/ipc-channels.ts",
+        "tests/unit/ws-host-auth.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No database or settings change. The VM gains two flat files under ~/.switchboard-server (token, 0600, and server.version); a missing server.version makes the first connect after the upgrade reap the old foreground server, as every connect did before."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/machines/remote-bootstrap.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/remote-bootstrap-cleanup.test.ts tests/unit/connect-deps.test.ts tests/unit/connection-manager.test.ts tests/unit/ws-host-auth.test.ts --maxWorkers=2: the bootstrap reuses a live server of the installed version and reaps otherwise, starts both processes detached, keeps the token 0600 and prints it once, is valid shell (bash -n); the health probe dials with the token once the tunnel has printed it; the token line is read across stdout chunks; WsHost accepts the server token in an auth frame and closes 4001 on a wrong one."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Phones: no change on that path."
+    ]
+  }
+}

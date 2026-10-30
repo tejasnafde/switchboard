@@ -194,6 +194,9 @@ export const MachineChannels = {
   STATUS: 'machines:status',
   /** Current status + tunnel URL for every machine, so a reloaded renderer can re-dial live connections. */
   GET_STATUSES: 'machines:get-statuses',
+  /** Desktop-only (ipcMain, never a phone): the token a connected machine's
+   *  backend wants in the auth frame. */
+  BACKEND_TOKEN: 'machines:backend-token',
 } as const
 
 export const KanbanChannels = {

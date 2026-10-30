@@ -102,6 +102,20 @@ describe('waitForHealth', () => {
     expect(await promise).toEqual({ ok: true })
   })
 
+  it('dials with the token once the tunnel has printed it', async () => {
+    let token: string | undefined
+    const promise = waitForHealth('ws://127.0.0.1:1', 3, 1000, () => token)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(FakeWebSocket.instances[0].url).toBe('ws://127.0.0.1:1')
+    FakeWebSocket.instances[0].emitError(new Error('unauthorized'))
+    token = 'a b'
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(FakeWebSocket.instances[1].url).toBe('ws://127.0.0.1:1/?token=a%20b')
+    FakeWebSocket.instances[1].emitOpen()
+    FakeWebSocket.instances[1].emitMessage({ k: 'res', id: 1, ok: true, result: LOCAL_VERSION })
+    expect(await promise).toEqual({ ok: true })
+  })
+
   it('sends a server:version request once the socket opens', async () => {
     const promise = waitForHealth('ws://127.0.0.1:1', 1, 1000)
     await vi.advanceTimersByTimeAsync(0)
@@ -254,6 +268,14 @@ describe('spawnTunnel', () => {
     ])
     await new Promise<void>((resolve) => proc.onExit(() => resolve()))
     expect(proc.exitReason?.()).toContain('Permission denied (publickey).')
+  })
+
+  it('reads the token line from stdout, across chunks, and keeps the rest', async () => {
+    vi.useRealTimers()
+    const proc = spawnTunnel('sh', ['-c', "printf 'hello\\nSWITCHBOARD_BACKEND_'; sleep 0.1; printf 'TOKEN=abc123\\n'"])
+    await new Promise<void>((resolve) => proc.onExit(() => resolve()))
+    // 'exit' can fire before the last stdout chunk is read.
+    await vi.waitFor(() => expect(proc.token?.()).toBe('abc123'))
   })
 
   it('reports no reason when the process exits with a silent stderr', async () => {
