@@ -4,6 +4,7 @@ import { focusComposer } from '../../services/composer-registry'
 import { useAgentStore } from '../../stores/agent-store'
 import { useDraftStore } from '../../stores/draft-store'
 import { openReviewChat } from '../reviews/review-to-chat'
+import { confirm } from '../ui/confirm'
 
 /** The machine of an open chat, under any id of its thread; local when it is not open. */
 export function hubMachineOf(chat: HubChatRef): string {
@@ -32,4 +33,15 @@ export async function nudgeChild(parent: HubChatRef, child: HubChatRef): Promise
   })
   drafts.appendDraft(sessionId, `[[pill:${pillId}]] `)
   requestAnimationFrame(() => focusComposer(sessionId))
+}
+
+/** An archive the backend refused (a chat with child chats waits on its settle card): say why. */
+export function showArchiveRefusal(err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err)
+  void confirm({
+    title: 'Chat not archived',
+    body: message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''),
+    confirmLabel: 'OK',
+    notice: true,
+  })
 }

@@ -40,6 +40,9 @@ export const PERF_THRESHOLDS = {
   'hub.resume-reaped': 0,
   // Every move_child call, with its outcome (moved, or why not).
   'hub.move': 0,
+  // Every settle (children, removed, kept, stop failures, killed processes), and each list_children conflict scan.
+  'hub.settle': 0,
+  'hub.conflicts': 0,
   ipc: 200,
 } as const
 

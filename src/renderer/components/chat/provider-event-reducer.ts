@@ -294,6 +294,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
           ...(event.hostWrite ? { hostWrite: event.hostWrite } : {}),
           ...(event.permissions ? { permissions: event.permissions } : {}),
           ...(event.hubBatch ? { hubBatch: event.hubBatch } : {}),
+          ...(event.hubSettle ? { hubSettle: event.hubSettle } : {}),
           ...(event.secretRequest ? { secretRequest: event.secretRequest } : {}),
         },
         timestamp: Date.now(),

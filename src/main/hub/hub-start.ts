@@ -51,6 +51,7 @@ import {
   type WorktreeCreationSnapshot,
 } from '@shared/worktree-creation'
 import { formatApprovalResultMarker } from '@shared/agent-approval-cards'
+import type { WorktreeCreationRuntime } from '../worktree-creation/runtime'
 import {
   createConversation,
   createHubBatch,
@@ -145,18 +146,26 @@ export interface HubParentContext {
   instanceId: string | null
 }
 
-let worktreeCreator: ((request: WorktreeCreationRequest) => Promise<WorktreeCreationSnapshot>) | null = null
+/** The backend's worktree creation service: children's worktrees are made and removed through it. */
+export type HubWorktreeService = Pick<
+  WorktreeCreationRuntime,
+  'createWorktreeTransaction' | 'getWorktreeCreation' | 'actOnWorktreeCreation'
+>
 
-/** The backend's worktree creation service, set once it exists (`createDefaultWorktreeCreationRuntime`). */
-export function configureHubWorktreeCreator(
-  create: (request: WorktreeCreationRequest) => Promise<WorktreeCreationSnapshot>,
-): void {
-  worktreeCreator = create
+let worktreeService: HubWorktreeService | null = null
+
+/** Set once the service exists (`createDefaultWorktreeCreationRuntime`). */
+export function configureHubWorktrees(service: HubWorktreeService): void {
+  worktreeService = service
+}
+
+export function hubWorktrees(): HubWorktreeService | null {
+  return worktreeService
 }
 
 export function hubWorktreeCreator(request: WorktreeCreationRequest): Promise<WorktreeCreationSnapshot> {
-  if (!worktreeCreator) return Promise.reject(new Error('The worktree creation service is not ready.'))
-  return worktreeCreator(request)
+  if (!worktreeService) return Promise.reject(new Error('The worktree creation service is not ready.'))
+  return worktreeService.createWorktreeTransaction(request)
 }
 
 export interface HubStartHost {
@@ -594,7 +603,7 @@ export class HubStarter {
       })
       if (result.status === 'rejected' || result.status === 'conflict')
         throw new Error(`the brief was not accepted: ${result.reason}`)
-      updateHubChild(c.childId, { phase: 'open' })
+      if (!this.settled(c.childId)) updateHubChild(c.childId, { phase: 'open' })
       this.host.changed?.(slot.parentId)
       span.end({ outcome: result.status })
     } catch (err) {
@@ -603,6 +612,20 @@ export class HubStarter {
       this.pump()
       this.fail(slot.parentId, c, err)
     }
+  }
+
+  /** A settle ended the child while it was starting: nothing may move it out of `settled`. */
+  private settled(childId: string): boolean {
+    return getHubChild(childId)?.phase === 'settled'
+  }
+
+  /** A settled child: drop what this process keeps about it. */
+  forget(childId: string): void {
+    if (this.running.delete(childId)) this.pump()
+    this.untrack(childId)
+    this.lastTurn.delete(childId)
+    this.diskUse.delete(childId)
+    this.launched.delete(childId)
   }
 
   private track(childId: string, parentId: string, worktree: string, state: ChildDepsState): void {
@@ -677,6 +700,7 @@ export class HubStarter {
 
   private fail(parentId: string, c: PlannedChild, err: unknown): void {
     const message = err instanceof Error ? err.message : String(err)
+    if (this.settled(c.childId)) return
     log.warn(`child ${c.childId} failed to start: ${message}`)
     try {
       updateHubChild(c.childId, { phase: 'failed_start' })
@@ -693,6 +717,7 @@ export class HubStarter {
       this.running.delete(c.childId)
       this.pump()
     }
+    if (this.settled(c.childId)) return
     log.info('child stopped before its first turn', { childId: c.childId })
     try {
       updateHubChild(c.childId, { phase: 'failed_start' })

@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react'
 import { Command } from 'cmdk'
+import { showArchiveRefusal } from './hub/hub-actions'
 import { useLayoutStore } from '../stores/layout-store'
 import { useAgentStore } from '../stores/agent-store'
 import { useShallow } from 'zustand/react/shallow'
@@ -201,10 +202,13 @@ function buildCommands(opts: {
       label: 'Archive active session',
       run: withFocusedSession((sid) => {
         const s = agents().sessions.find((x) => x.id === sid)
-        window.api.app.archiveConversation(sid, s?.projectPath, s?.title).catch((err) => {
-          log.warn(`archiveConversation failed for ${sid}`, err)
-        })
-        agents().removeSession(sid)
+        window.api.app
+          .archiveConversation(sid, s?.projectPath, s?.title)
+          .then(() => agents().removeSession(sid))
+          .catch((err) => {
+            log.warn(`archiveConversation failed for ${sid}`, err)
+            showArchiveRefusal(err)
+          })
       }),
     },
     {

@@ -298,6 +298,8 @@ export interface ChatMessage {
     permissions?: import('./codex-permission-request').CodexPermissionView
     /** Child chats an agent asked to start, one row each. */
     hubBatch?: import('./hub').HubBatchView
+    /** Child chats a settle ends, one row each. */
+    hubSettle?: import('./hub').HubSettleView
     /** An agent asks for a secret (`request_secret`). Never holds the value. */
     secretRequest?: import('./agent-secret-request').SecretRequestCard
   }

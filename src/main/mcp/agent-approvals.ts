@@ -34,6 +34,7 @@ import { HOST_WRITE_SHOWN_REQUIRED, hostWriteApprovalProblem, hostWriteShownDige
 import type { PrWritePlan } from './pr-tools'
 import type { PeerSendPlan } from './peer-mcp-tools'
 import type { HubBatchPlan } from '../hub/hub-start'
+import type { HubSettlePlan } from '../hub/hub-settle'
 import {
   SECRET_CARD_ID_PREFIX,
   SECRET_REQUEST_DETAIL,
@@ -46,7 +47,7 @@ import { createMainLogger } from '../logger'
 const log = createMainLogger('mcp:approvals')
 
 /** The write an approval runs, as data, so it survives a restart. */
-export type AgentWritePlan = PrWritePlan | PeerSendPlan | HubBatchPlan | SecretRequestPlan
+export type AgentWritePlan = PrWritePlan | PeerSendPlan | HubBatchPlan | HubSettlePlan | SecretRequestPlan
 
 export type AgentApprovalCard = StoredApprovalCard<AgentWritePlan>
 
@@ -279,6 +280,7 @@ function openedEvent(card: AgentApprovalCard): RuntimeRequestOpenedEvent {
     detail: card.detail,
     ...(card.hostWrite ? { hostWrite: card.hostWrite } : {}),
     ...(card.plan.kind === 'hub-batch' ? { hubBatch: card.plan.view } : {}),
+    ...(card.plan.kind === 'hub-settle' ? { hubSettle: card.plan.view } : {}),
     ...(card.plan.kind === 'secret-request' ? { secretRequest: card.plan.card } : {}),
   }
 }

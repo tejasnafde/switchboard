@@ -39,7 +39,7 @@ import { disposeUsageProbes } from '../main/provider/usage'
 import { startBridgeHost } from '../main/ide/bridge-host'
 import { createMainLogger as createLogger } from '../main/logger'
 import { createDefaultWorktreeCreationRuntime } from '../main/worktree-creation/runtime'
-import { configureHubWorktreeCreator } from '../main/hub/hub-start'
+import { configureHubWorktrees } from '../main/hub/hub-start'
 import { createBindLifecycle } from './lifecycle'
 import { nodePidFileIo } from './pidfile'
 
@@ -174,7 +174,7 @@ const registry = new ProviderRegistry(host)
 // This backend runs on an SSH machine, so a saved secret's result names it.
 registry.setMachineLabel(hostname())
 const worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(host, () => registry)
-configureHubWorktreeCreator((request) => worktreeCreationRuntime.createWorktreeTransaction(request))
+configureHubWorktrees(worktreeCreationRuntime)
 registerAppHandlers(host, { isTurnInFlight: (id) => registry.isTurnInFlight(id) })
 void pruneAttachments()
 registerKanbanHandlers(host, {
