@@ -1002,7 +1002,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
           </div>
         ) : (
           <>
-            <span className="sidebar-header-label">THREADS</span>
+            <span className="sidebar-header-label">Threads</span>
             <div className="sidebar-header-actions">
               <button
                 type="button"

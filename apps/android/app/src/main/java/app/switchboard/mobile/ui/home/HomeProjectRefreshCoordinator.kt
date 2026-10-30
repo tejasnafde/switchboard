@@ -4,16 +4,17 @@ import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.data.remote.BrowseCoordinator
 import app.switchboard.mobile.data.remote.BrowseRemote
 import app.switchboard.mobile.data.remote.BrowseSnapshotStore
+import app.switchboard.mobile.platform.log.SbLog
 import app.switchboard.mobile.ui.browse.BrowseState
 import java.io.Closeable
 import kotlinx.coroutines.flow.StateFlow
 
 class HomeProjectRefreshCoordinator(
-    connectionId: String,
+    private val connectionId: String,
     connectionLabel: String,
     offlineSnapshot: OfflineSnapshot,
     remote: BrowseRemote,
-    expectedGeneration: Long,
+    private val expectedGeneration: Long,
     snapshotStore: BrowseSnapshotStore,
 ) : Closeable {
     private val browse = BrowseCoordinator(
@@ -27,7 +28,10 @@ class HomeProjectRefreshCoordinator(
 
     val state: StateFlow<BrowseState> = browse.state
 
-    fun start() = browse.refreshProjectIndex()
+    fun start() {
+        SbLog.i("home", "$connectionId gen=$expectedGeneration refresh projects")
+        browse.refreshProjectIndex()
+    }
 
     override fun close() = browse.close()
 }

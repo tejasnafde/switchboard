@@ -6,52 +6,19 @@
  * post-send that the slash was understood as a real command rather than
  * literal text.
  *
- * Visually distinct from `PillChipVisual` (file/terminal/chat-message
- * context pills): green-tinted dot + monospace label so the user can tell
+ * Same frame as `PillChipVisual`; the green tint and the dot tell
  * "I invoked a skill" apart from "I attached context".
  */
 import type { CSSProperties } from 'react'
+import { INLINE_CHIP_CLASS } from './lexical/PillChipVisual'
 
-interface SkillChipProps {
-  name: string
-}
+const TINT_STYLE = { '--chip-tint': 'var(--chip-tint-skill)' } as CSSProperties
 
-const SKILL_TINT = '#2ea043'
-
-const CHIP_STYLE: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '5px',
-  padding: '0 8px',
-  margin: '0 2px',
-  borderRadius: '12px',
-  background: 'rgba(46, 160, 67, 0.10)',
-  border: '1px solid rgba(46, 160, 67, 0.45)',
-  fontFamily: 'var(--font-mono)',
-  fontSize: '11px',
-  // `middle` aligns the chip's vertical center with the surrounding
-  // text's x-height midline. `baseline` looked floaty because the
-  // chip's content is centered inside the box (alignItems: center) so
-  // the box's baseline is the bottom of its content, not the text's.
-  verticalAlign: 'middle',
-  lineHeight: '18px',
-  whiteSpace: 'nowrap',
-  color: 'var(--text-primary)',
-}
-
-export function SkillChip({ name }: SkillChipProps) {
+export function SkillChip({ name }: { name: string }) {
   return (
-    <span title={`/${name}`} style={CHIP_STYLE}>
-      <span
-        style={{
-          width: 4,
-          height: 4,
-          borderRadius: '50%',
-          background: SKILL_TINT,
-          flexShrink: 0,
-        }}
-      />
-      <span style={{ fontWeight: 600 }}>/{name}</span>
+    <span title={`/${name}`} className={`${INLINE_CHIP_CLASS} px-[5px]`} style={TINT_STYLE}>
+      <span aria-hidden className="h-[4px] w-[4px] shrink-0 rounded-full bg-[var(--chip-tint)]" />
+      <span className="self-baseline font-medium">/{name}</span>
     </span>
   )
 }

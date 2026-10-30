@@ -19,6 +19,12 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -47,7 +53,11 @@ fun SettingsScreen(
     onFollowUpDefault: (TurnDelivery) -> Unit = {},
     /** Set while the demo runs: Settings is the second way out of it. */
     onLeaveDemo: (() -> Unit)? = null,
+    /** Answers null when the share sheet opened, else the line to show. */
+    onShareLog: (suspend () -> String?)? = null,
 ) {
+    val shareScope = rememberCoroutineScope()
+    var shareError by remember { mutableStateOf<String?>(null) }
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -122,6 +132,28 @@ fun SettingsScreen(
                     },
                 )
             }
+            onShareLog?.let { share ->
+                item {
+                    ListItem(
+                        headlineContent = { Text("App log") },
+                        supportingContent = {
+                            Text(
+                                shareError
+                                    ?: "Connection events from this phone, to send with a bug report. It holds no keys or messages.",
+                                color = if (shareError != null) MaterialTheme.colorScheme.error else TextDim,
+                                maxLines = 3,
+                            )
+                        },
+                        trailingContent = { Text("Share", color = MaterialTheme.colorScheme.primary) },
+                        modifier = Modifier
+                            .clickable(role = Role.Button) {
+                                shareError = null
+                                shareScope.launch { shareError = share() }
+                            }
+                            .testTag(SettingsTestTags.SHARE_LOG),
+                    )
+                }
+            }
         }
     }
 }
@@ -153,6 +185,7 @@ private fun FollowUpDefaultRow(value: TurnDelivery, onChange: (TurnDelivery) -> 
 
 object SettingsTestTags {
     const val LEAVE_DEMO = "settings-leave-demo"
+    const val SHARE_LOG = "settings-share-log"
     fun followUp(option: TurnDelivery) = "settings-follow-up-${option.wire}"
 }
 

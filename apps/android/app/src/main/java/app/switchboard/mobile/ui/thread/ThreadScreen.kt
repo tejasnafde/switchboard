@@ -110,6 +110,7 @@ import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -118,6 +119,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -161,6 +163,7 @@ import app.switchboard.mobile.data.thread.ThreadProfileState
 import app.switchboard.mobile.data.thread.ThreadSessionCoordinator
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.Amber
+import app.switchboard.mobile.ui.theme.ChipLabel
 import app.switchboard.mobile.ui.theme.GeistMono
 import app.switchboard.mobile.ui.theme.Green
 import app.switchboard.mobile.ui.theme.Red
@@ -1539,11 +1542,11 @@ private fun ComposerReviewPill(label: String, enabled: Boolean, onRemove: () -> 
             .padding(start = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Review", color = Accent, style = MaterialTheme.typography.labelMedium)
+        Text("Review", color = Accent, style = ChipLabel)
         Text(
             text = label,
             color = TextDim,
-            style = MaterialTheme.typography.labelSmall,
+            style = ChipLabel,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
@@ -2038,8 +2041,12 @@ private fun UserMessageBody(item: FeedItem.User) {
             }
         }
     }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
     val inlineContent = inlineKeys.associate { (index, pill) ->
-        val width = (pill.label.length * 7 + 24).coerceIn(48, 180).sp
+        // The label's real width in ChipLabel, plus the 7 dp padding on each side.
+        val labelSp = with(density) { measurer.measure(pill.label, ChipLabel).size.width.toSp().value }
+        val width = (labelSp + 16f).coerceIn(48f, 180f).sp
         "message-pill-$index" to InlineTextContent(
             placeholder = Placeholder(
                 width = width,
@@ -2058,7 +2065,7 @@ private fun UserMessageBody(item: FeedItem.User) {
                 Text(
                     text = pill.label,
                     color = MaterialTheme.colorScheme.onPrimary,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = ChipLabel,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = 7.dp),

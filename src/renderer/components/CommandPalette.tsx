@@ -356,7 +356,7 @@ export function CommandPalette({
 
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const groupHeadingClass = 'px-[8px] py-[4px] text-[10px] font-[600] text-[var(--text-muted)]'
+  const groupHeadingClass = 'px-[8px] py-[4px] text-[11px] font-[500] text-[var(--text-muted)]'
 
   return (
     <Dialog
@@ -450,7 +450,7 @@ function PaletteItem({
     >
       <span className="flex-1">{children}</span>
       {shortcut && (
-        <span className="rounded-[3px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[6px] py-[2px] text-[11px] [font-family:var(--font-mono)] text-[var(--text-muted)]">
+        <span className="rounded-[3px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[6px] py-[2px] text-[11px] text-[var(--text-muted)]">
           {shortcut}
         </span>
       )}
