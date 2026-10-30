@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "chip-polish",
-  "summary": "Two chip tiers on the desktop (inline 18 px radius 4, control 24 px radius 6), the audit fixes to the context, skill and toolbar chips, a themed rotation marker and denial row, and system sans for every chip and label around the chat (mono only for code and terminal output). The Android chip labels move from Geist Mono to the system sans; the Expo chips already use a sans face.",
+  "summary": "Two chip tiers on the desktop (inline 18 px radius 4, control 24 px radius 6), the audit fixes to the context, skill and toolbar chips, a themed rotation marker and denial row, and system sans for the desktop chips and the labels around the chat (mono only for code and terminal output). On Android only the inline message pill and the composer review pill move from Geist Mono to the system sans; the other Android labels keep Geist Mono. The Expo chips already use a sans face.",
   "surfaces": {
     "desktop": {
       "status": "implemented",

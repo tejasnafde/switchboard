@@ -21,7 +21,12 @@ describe('rotation and notice marker', () => {
   })
 
   it('paints only theme variables that exist, at full opacity', () => {
+    const marker = bubble.slice(
+      bubble.indexOf("if (rotation || markerNotice?.kind === 'notice')"),
+      bubble.indexOf('Switched agent:'),
+    )
+    expect(marker.length).toBeGreaterThan(0)
+    expect(marker).not.toMatch(/opacity/)
     expect(bubble).not.toMatch(/var\(--sb-|var\(--danger/)
-    expect(bubble).not.toMatch(/opacity: 0\.78/)
   })
 })
