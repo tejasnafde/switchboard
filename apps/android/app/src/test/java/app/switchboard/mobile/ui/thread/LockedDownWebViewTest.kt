@@ -15,7 +15,6 @@ import app.switchboard.mobile.domain.thread.VisualKind
 import app.switchboard.mobile.ui.theme.SwitchboardTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -78,10 +77,10 @@ class LockedDownWebViewTest {
     @Test
     fun cardShowsAnErrorWhenTheRendererIsLost() {
         compose.setContent { SwitchboardTheme { ChatVisualCard(VisualKind.MERMAID, "flowchart LR\n A --> B") } }
-        compose.waitForIdle()
-        val view = findWebView(compose.activity.window.decorView)
-        assertNotNull("the card made no WebView", view)
-        compose.runOnUiThread { assertTrue(view!!.webViewClient.onRenderProcessGone(view, crashed)) }
+        // The host page loads off the main thread before the WebView exists.
+        compose.waitUntil(5_000) { findWebView(compose.activity.window.decorView) != null }
+        val view = findWebView(compose.activity.window.decorView)!!
+        compose.runOnUiThread { assertTrue(view.webViewClient.onRenderProcessGone(view, crashed)) }
         compose.onNodeWithText("This diagram could not be drawn: The drawing process stopped.").assertIsDisplayed()
         assertEquals(null, findWebView(compose.activity.window.decorView))
     }
