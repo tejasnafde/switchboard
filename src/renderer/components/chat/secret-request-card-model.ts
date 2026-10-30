@@ -4,7 +4,13 @@
  * trim and size check on the value, and the provider-key note. Nothing here
  * keeps a value: every function takes it and returns at once.
  */
-import { SECRET_VALUE_MAX_BYTES, type SecretTtl } from '@shared/agent-secret-request'
+import {
+  SECRET_MATCH_MIN_CHARS,
+  SECRET_VALUE_MAX_BYTES,
+  secretValueMaskable,
+  type SecretTtl,
+} from '@shared/agent-secret-request'
+import { CLEARTEXT_SECRET_REFUSAL } from '@shared/transport-security'
 
 // Shared with the phones, which render the same collapsed line.
 export { secretLineState, secretNameFromResultTitle, type SecretLineState } from '@shared/agent-secret-request'
@@ -76,6 +82,20 @@ export function utf8ByteLength(s: string): number {
 export function secretValueSavable(raw: string): boolean {
   const bytes = utf8ByteLength(trimSecretValue(raw).value)
   return bytes > 0 && bytes <= SECRET_VALUE_MAX_BYTES
+}
+
+export const SECRET_SHORT_WARNING = `Values shorter than ${SECRET_MATCH_MIN_CHARS} characters cannot be hidden if a command prints them.`
+
+/** Whether a value the user can save is too short for the masker to hide. */
+export function secretTooShortToMask(raw: string): boolean {
+  const { value } = trimSecretValue(raw)
+  return value.length > 0 && !secretValueMaskable(value)
+}
+
+/** The card's error line for a failed answer. Only the fixed cleartext refusal is shown as it came. */
+export function secretAnswerErrorText(err: unknown): string {
+  if (err instanceof Error && err.message === CLEARTEXT_SECRET_REFUSAL) return CLEARTEXT_SECRET_REFUSAL
+  return 'Could not send the answer. Try again.'
 }
 
 export type InstructionPart = { kind: 'text'; text: string } | { kind: 'url'; url: string; host: string; rest: string }

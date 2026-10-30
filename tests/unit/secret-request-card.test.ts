@@ -105,6 +105,27 @@ describe('SecretRequestCard', () => {
     expect(button('Save securely').disabled).toBe(true)
   })
 
+  it('warns while the value is too short to hide, and keeps Save on', () => {
+    act(() => root.render(createElement(SecretRequestCard, { message: cardMessage(), sessionId: 'chat' })))
+    const warning = () => container.querySelector('[data-testid="secret-short-warning"]')
+    expect(warning()).toBeNull()
+    type('abcdefg')
+    expect(warning()?.textContent).toBe('Values shorter than 8 characters cannot be hidden if a command prints them.')
+    expect(button('Save securely').disabled).toBe(false)
+    expect(container.innerHTML).not.toContain('abcdefg')
+    type('abcdefgh')
+    expect(warning()).toBeNull()
+  })
+
+  it('shows the cleartext refusal on the card', async () => {
+    const { CLEARTEXT_SECRET_REFUSAL } = await import('../../src/shared/transport-security')
+    api.answer.mockRejectedValue(new Error(CLEARTEXT_SECRET_REFUSAL))
+    act(() => root.render(createElement(SecretRequestCard, { message: cardMessage(), sessionId: 'chat' })))
+    type(VALUE)
+    await act(async () => button('Save securely').click())
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(CLEARTEXT_SECRET_REFUSAL)
+  })
+
   it('stops keys at the card', () => {
     const seen = vi.fn()
     document.addEventListener('keydown', seen)

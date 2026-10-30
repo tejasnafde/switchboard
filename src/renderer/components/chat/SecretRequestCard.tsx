@@ -25,12 +25,15 @@ import {
   PROVIDER_KEY_NOTE,
   SECRET_CARD_ATTR,
   SECRET_REVEAL_MS,
+  SECRET_SHORT_WARNING,
   SECRET_TRIMMED_TEXT,
   asksForProviderKey,
+  secretAnswerErrorText,
   secretFooterText,
   secretLineState,
   secretNameFromResultTitle,
   secretTimeLeftText,
+  secretTooShortToMask,
   secretValueSavable,
   splitInstructionUrls,
   trimSecretValue,
@@ -123,6 +126,7 @@ function PendingSecretCard({
   const inputRef = useRef<HTMLInputElement>(null)
   const [canSave, setCanSave] = useState(false)
   const [willTrim, setWillTrim] = useState(false)
+  const [tooShort, setTooShort] = useState(false)
   const [revealed, setRevealed] = useState(false)
   const [submitting, setSubmitting] = useState<null | 'save' | 'decline'>(null)
   const [error, setError] = useState<string | null>(null)
@@ -133,11 +137,12 @@ function PendingSecretCard({
     return () => clearTimeout(timer)
   }, [revealed])
 
-  // Checked on every input event; only the two answers are kept, never the value.
+  // Checked on every input event; only the answers are kept, never the value.
   const onInput = () => {
     const raw = inputRef.current?.value ?? ''
     setCanSave(secretValueSavable(raw))
     setWillTrim(trimSecretValue(raw).trimmed)
+    setTooShort(secretTooShortToMask(raw))
   }
 
   const send = async (kind: 'save' | 'decline') => {
@@ -150,6 +155,7 @@ function PendingSecretCard({
     }
     if (input) input.value = ''
     setCanSave(false)
+    setTooShort(false)
     setRevealed(false)
     setSubmitting(kind)
     setError(null)
@@ -162,7 +168,7 @@ function PendingSecretCard({
       setError(result.message)
     } catch (err) {
       log.warn('secret answer failed', { cardId, kind, message: err instanceof Error ? err.message : 'unknown' })
-      setError('Could not send the answer. Try again.')
+      setError(secretAnswerErrorText(err))
     }
     setSubmitting(null)
   }
@@ -236,6 +242,11 @@ function PendingSecretCard({
           Decline
         </Button>
       </div>
+      {tooShort && (
+        <div data-testid="secret-short-warning" className="px-3 pb-1 text-[12px] text-[var(--text-secondary)]">
+          {SECRET_SHORT_WARNING}
+        </div>
+      )}
       {error && (
         <div role="alert" className="px-3 pb-1 text-[12px] text-[var(--error)]">
           {error}
