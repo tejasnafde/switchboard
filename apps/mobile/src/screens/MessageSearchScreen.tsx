@@ -43,6 +43,8 @@ export default function MessageSearchScreen({ route, navigation }: Props) {
   const machine =
     useConnectionsStore((s) => s.configs.find((c) => c.id === connectionId)?.label) ??
     (isDemoConnection(connectionId) ? DEMO_LABEL : null)
+  // A search typed while the machine was away, or cut by a reconnect, runs again once it is back.
+  const connected = useConnectionsStore((s) => s.status[connectionId] === 'connected')
 
   // Android's title and subtitle: which machine is searched.
   useLayoutEffect(() => {
@@ -92,7 +94,7 @@ export default function MessageSearchScreen({ route, navigation }: Props) {
       clearTimeout(timer)
       request.current += 1
     }
-  }, [query, run])
+  }, [query, run, connected])
 
   const rows = useMemo(() => state.results.map(messageSearchRow), [state.results])
   const text = searchableQuery(query)

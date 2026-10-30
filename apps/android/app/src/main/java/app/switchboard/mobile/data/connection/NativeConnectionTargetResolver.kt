@@ -84,6 +84,10 @@ class NativeConnectionTargetResolver(
                 credentialRef = logicalKey,
             ),
         )
+    } catch (exception: IllegalArgumentException) {
+        // A stored URL that does not parse; a later try reads the same row.
+        SbLog.w(LOG_SCOPE, "resolve $connectionId: invalid target ${SbLog.describe(exception)}")
+        ConnectionTargetResolution.Failure("That machine has an invalid address")
     } catch (exception: Exception) {
         SbLog.w(LOG_SCOPE, "resolve $connectionId threw ${SbLog.describe(exception)}")
         ConnectionTargetResolution.Failure("The saved machine could not be opened", retryable = true)

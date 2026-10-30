@@ -120,7 +120,6 @@ import app.switchboard.mobile.ui.settings.SettingsPresenter
 import app.switchboard.mobile.ui.settings.SettingsScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.launch
 
 private val NoPhoneDemo = MutableStateFlow<PhoneDemoNavigationRuntime?>(null)
 private val EmptyRuntimeStatuses = MutableStateFlow<Map<String, ConnectionRuntimeState>>(emptyMap())
@@ -206,7 +205,6 @@ private fun SwitchboardNavigationHost(
     val reviewsRegistry = remember { ReviewsCoordinatorRegistry() }
     val runtimeStatuses by (runtime?.statuses ?: EmptyRuntimeStatuses).collectAsState()
     val shareContext = LocalContext.current
-    val shareScope = rememberCoroutineScope()
     val visibleConnections = remember(connectionsState, runtimeStatuses) {
         RuntimeConnectionsMapper.overlay(connectionsState, runtimeStatuses)
     }
@@ -454,7 +452,7 @@ private fun SwitchboardNavigationHost(
                 followUpDefault = (runtime?.followUpDefault ?: SteerFollowUp).collectAsState().value,
                 onFollowUpDefault = { runtime?.setFollowUpDefault(it) },
                 onLeaveDemo = onLeaveDemo,
-                onShareLog = { shareScope.launch { ShareLog.share(shareContext) } },
+                onShareLog = { ShareLog.share(shareContext) },
             )
 
             is AppRoute.Pair -> PairingScreen(

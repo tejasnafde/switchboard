@@ -2,15 +2,18 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "android-foreground-machine-recovery",
-  "summary": "Native Android: a machine connection now recovers on its own after a background, a network drop, a VPN drop or a backend restart. The connection fleet reads the stored machine and its credential on a background thread (a foreground return and a Retry tap run on the main thread, where Room refuses to read, so the read threw and the machine stayed on 'The saved machine could not be opened' on every screen until a relaunch). A read that throws or a locked keystore key is now a retryable failure: the fleet tries it again with a backoff (2 s doubling to 60 s), at once when the network returns, and at once on a foreground return; a missing or invalid machine stays a terminal error. Message search keeps the typed query while the machine connects and searches it again on the new connection, and a reply from a replaced connection no longer leaves the spinner on. The app writes connection, lifecycle, network, resolver, socket, search and screen refresh events to logcat under the tag SB, and to a small rotating file that Settings > App log shares. No token, key or message text is logged.",
+  "summary": "Native Android: a machine connection now recovers on its own after a background, a network drop, a VPN drop or a backend restart. The connection fleet reads the stored machine and its credential on a background thread (a foreground return and a Retry tap run on the main thread, where Room refuses to read, so the read threw and the machine stayed on 'The saved machine could not be opened' on every screen until a relaunch). A read that throws or a locked keystore key is now a retryable failure: the fleet tries it again with a backoff (2 s doubling to 60 s), at once when the network returns, and at once on a foreground return; a missing or invalid machine stays a terminal error. Message search keeps the typed query while the machine connects and searches it again on the new connection, and a reply from a replaced connection no longer leaves the spinner on. The app writes connection, lifecycle, network, resolver, socket, search and screen refresh events to logcat under the tag SB, and to a small rotating file that Settings > App log shares. No token, key or message text is logged. The Expo app's message search runs the typed query again when the machine reconnects.",
   "surfaces": {
     "desktop": {
       "status": "not_applicable",
       "reason": "No src/main, src/preload or src/renderer file changed. The desktop backend logs on 2026-10-29 show every phone reconnect served (re-attach plus app:load-session-by-id within 2 s), so the fault was on the phone."
     },
     "reactNativeIos": {
-      "status": "not_applicable",
-      "reason": "The Expo app does not have this flaw: installLifecycleReconnect in apps/mobile/src/stores/connections.ts resumes or force-reconnects the existing transport on a foreground return and never reads a database on the UI thread; its target comes from the in-memory connection config. Its message search keeps the query in component state and shows a not-ready message with no client; it does not search again on its own after a reconnect, the user taps Retry. That is a smaller gap than the Android one and is left as is."
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/MessageSearchScreen.tsx",
+        "apps/mobile/src/screens/__tests__/message-search-screen.test.tsx"
+      ]
     },
     "nativeAndroid": {
       "status": "implemented",
@@ -49,7 +52,9 @@
       "ConnectionFleetTest: a retryable resolve failure is tried again on its own; a network return and a short foreground return retry at once; a terminal failure is not retried by a timer; a resolve answer that a newer start replaced is dropped.",
       "ConnectionFleetTest: a socket lost in the background (Doze, a backend restart) is resumed on a short return, and the Ready after a long return publishes a new transport scope, which every screen keys its loads on.",
       "NativeConnectionTargetResolverTest: a database read that throws and an unreadable credential are retryable; a missing machine is terminal.",
-      "MessageSearchCoordinatorTest: a coordinator for a new connection searches the carried query at once; a reply from a replaced connection clears the spinner with a retry message."
+      "MessageSearchCoordinatorTest: a coordinator for a new connection searches the carried query at once; a reply from a replaced connection clears the spinner with a retry message.",
+      "message-search-screen.test.tsx (Expo): a query typed while the machine is away is searched once it reconnects; the test fails without the fix. The Expo app has no main-thread resolve flaw: installLifecycleReconnect resumes or force-reconnects the existing transport and its target comes from the in-memory connection config.",
+      "NativeConnectionTargetResolverTest: a stored URL that does not parse is a terminal failure, not a retry."
     ],
     "hardware": [
       "The orchestrator reproduced the fault on a OnePlus 11R with the Play internal build 0.5.22 on 2026-10-30: with Tailscale off and back on, a return from the background showed 'The saved machine could not be opened' for 25 s and more, cleared only by a relaunch. The fixed build was not yet run on that phone when this PR was written; the release PR names the steps."

@@ -188,6 +188,15 @@ class NativeConnectionTargetResolverTest {
             ConnectionTargetResolution.Failure("That machine no longer exists"),
             locked.resolve("gone", "phone", "Pixel"),
         )
+        val badUrl = NativeConnectionTargetResolver(
+            FakeDatabase(mapOf("bad" to stored("bad", "ref-bad", url = "http://not-a-socket"))),
+            FakeCredentials(emptyMap()),
+            requireEncryption = false,
+        )
+        assertEquals(
+            ConnectionTargetResolution.Failure("That machine has an invalid address"),
+            badUrl.resolve("bad", "phone", "Pixel"),
+        )
     }
 
     private class FakeDatabase(
