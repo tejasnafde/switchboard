@@ -25,15 +25,32 @@ export function isLoopbackHost(host: string): boolean {
   return h === 'localhost' || h === '::1' || h === '10.0.2.2' || /^127\.\d+\.\d+\.\d+$/.test(h)
 }
 
+const WS_HOST = /^ws:\/\/(\[[^\]]*\]|[^/:?#]*)/i
+
 /**
  * Why a build that requires encryption must not dial `url`, or null when it may.
  * Only plain ws:// to a host off this device is refused.
  */
 export function cleartextRefusal(url: string): string | null {
-  const match = /^ws:\/\/(\[[^\]]*\]|[^/:?#]*)/i.exec(url.trim())
+  const match = WS_HOST.exec(url.trim())
   if (!match || isLoopbackHost(match[1])) return null
   return 'This build needs an encrypted connection. Use a wss:// address or Cloud IAP.'
 }
+
+/**
+ * Whether `url` is plain ws:// to a host off this computer. Unlike
+ * `isLoopbackHost`, 10.0.2.2 counts as off it: only an Android emulator
+ * reaches its own host there. A managed SSH machine dials a 127.0.0.1 forward.
+ */
+export function isCleartextOffDevice(url: string): boolean {
+  const match = WS_HOST.exec(url.trim())
+  if (!match) return false
+  return match[1] === '10.0.2.2' || !isLoopbackHost(match[1])
+}
+
+/** Shown on the secret card when a typed value would cross the network unencrypted. */
+export const CLEARTEXT_SECRET_REFUSAL =
+  'Not sent: this connection is not encrypted. Use a wss:// address or a Switchboard SSH machine.'
 
 /** The pairing URL with the certificate pin appended, when there is one. */
 export function withCertPin(url: string, fingerprint: string | null | undefined): string {

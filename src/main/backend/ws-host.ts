@@ -92,8 +92,8 @@ interface ClientState {
   missedPings: number
   /** Session id this connection authenticated as, so a revoke can find it. */
   sessionId?: string
-  /** null until authenticated. A legacy client presenting the URL token gets
-   *  FULL_SCOPES at once; an auth frame grants what its session carries. */
+  /** null until authenticated. A legacy client presenting a URL token gets
+   *  that token's scopes at once; an auth frame grants what its session carries. */
   scopes: readonly DeviceScope[] | null
   /** Missed pings are only acted on once a client has proved it answers them:
    *  a pre-heartbeat client never sends `pong`, and a phone updates over OTA
@@ -163,12 +163,16 @@ export class WsHost implements BackendHost {
      *  same-user trust boundary as a PTY, so they get everything; a LAN-facing
      *  endpoint must not hand a static, unrevocable token a shell. */
     legacyTokenScopes: readonly DeviceScope[] = FULL_SCOPES,
+    /** A second URL token that grants FULL_SCOPES, for a host whose `token`
+     *  is a phone credential: the headless backend's desktop token. */
+    fullScopeToken?: string,
   ) {
     this.wss.on('connection', (socket, req: IncomingMessage) => {
       // Legacy path: the shared token in the URL. Still accepted so an already
-      // paired phone keeps working, but it grants everything and cannot be
-      // revoked per device, which is why the auth frame exists.
+      // paired phone keeps working, but it cannot be revoked per device, which
+      // is why the auth frame exists.
       let legacyScopes: readonly DeviceScope[] | null = token || requireAuth ? null : FULL_SCOPES
+      let matchedToken: string | null = null
       if (token || requireAuth) {
         let presented: string | null = null
         let url: URL | null = null
@@ -183,18 +187,21 @@ export class WsHost implements BackendHost {
         // that now instead of discovering every request is refused. The flag
         // carries no secret.
         const framed = url?.searchParams.get('auth') === 'frame'
-        if (token && tokenMatches(token, presented)) {
+        if (fullScopeToken && tokenMatches(fullScopeToken, presented)) {
+          legacyScopes = FULL_SCOPES
+          matchedToken = fullScopeToken
+        } else if (token && tokenMatches(token, presented)) {
           legacyScopes = legacyTokenScopes
+          matchedToken = token
         } else if (!framed) {
           log.warn(`rejected connection with ${presented === null ? 'missing' : 'bad'} token`)
           socket.close(4001, 'unauthorized')
           return
         }
       }
-      const clientScope =
-        token && legacyScopes
-          ? hashClientScope('legacy-ws-token', token)
-          : hashClientScope('trusted-ws', 'local-trust-boundary')
+      const clientScope = matchedToken
+        ? hashClientScope('legacy-ws-token', matchedToken)
+        : hashClientScope('trusted-ws', 'local-trust-boundary')
       this.clients.set(socket, {
         missedPings: 0,
         sawPong: false,

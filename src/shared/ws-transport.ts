@@ -23,7 +23,8 @@ import type { DeviceIdentity } from './device-identity'
 import { reconnectDelay } from './backoff'
 import type { Transport } from './transport'
 import { createLogger } from './logger'
-import { carriesSecretArgs } from './ipc-channels'
+import { AgentSecretChannels, carriesSecretArgs } from './ipc-channels'
+import { CLEARTEXT_SECRET_REFUSAL, isCleartextOffDevice } from './transport-security'
 
 const log = createLogger('ws-transport')
 
@@ -101,6 +102,10 @@ interface QueuedFrame {
   encoded: string
   /** Set for invoke frames so a flush can mark their pending entry as sent. */
   id?: number
+}
+
+function isSaveAnswer(answer: unknown): boolean {
+  return typeof answer === 'object' && answer !== null && 'save' in answer
 }
 
 /** Drop trailing `undefined` args before serializing - JSON.stringify would
@@ -579,6 +584,9 @@ export class WsTransport implements Transport {
     // A secret is never held in the reconnect queue: it goes now or not at all.
     if (!this.open && carriesSecretArgs(channel))
       return Promise.reject(new Error('Not connected to that machine. Try again when it reconnects.'))
+    // Anyone on the network path reads plain ws://, so a typed value never crosses it.
+    if (channel === AgentSecretChannels.ANSWER && isSaveAnswer(args[2]) && isCleartextOffDevice(this.url))
+      return Promise.reject(new Error(CLEARTEXT_SECRET_REFUSAL))
     const id = this.nextId++
     const timeoutMs = channel.startsWith('provider') ? PROVIDER_TIMEOUT_MS : this.timeoutMs
     return new Promise<T>((resolve, reject) => {

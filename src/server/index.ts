@@ -11,7 +11,8 @@ import { join, dirname } from 'node:path'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { WebSocketServer } from 'ws'
-import { WsHost, wsServerOptions } from '../main/backend/ws-host'
+import { wsServerOptions } from '../main/backend/ws-host'
+import { createHeadlessWsHost } from './ws-credentials'
 import { DualWebSocketServer, loadOrCreateTlsIdentity, type TlsIdentity } from '../main/backend/tls'
 import { userDataDir } from '../main/runtime'
 import { withCertPin } from '@shared/transport-security'
@@ -98,8 +99,8 @@ const bindLifecycle = createBindLifecycle({
  * remotes with no token at all, and switching that on would break the existing
  * remote-machines flow.
  */
-function stableToken(): string {
-  const file = join(homedir(), '.switchboard-server', 'token')
+function stableToken(name: string): string {
+  const file = join(homedir(), '.switchboard-server', name)
   try {
     const existing = readFileSync(file, 'utf8').trim()
     if (existing) return existing
@@ -111,14 +112,17 @@ function stableToken(): string {
   try {
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, fresh, { mode: 0o600 })
-    log.info(`generated a pairing token and saved it to ${file}`)
+    log.info(`generated a ${name} and saved it to ${file}`)
   } catch (err) {
-    log.warn('could not persist the pairing token, it will change on restart', err)
+    log.warn(`could not persist the ${name}, it will change on restart`, err)
   }
   return fresh
 }
 
-const token = process.env.SWITCHBOARD_TOKEN ?? (isLoopback ? undefined : stableToken())
+const token = process.env.SWITCHBOARD_TOKEN ?? (isLoopback ? undefined : stableToken('token'))
+// The pairing token above is a phone credential. A desktop dialing this
+// server directly (SWITCHBOARD_BACKEND_URL) presents this one for full scope.
+const desktopToken = token ? (process.env.SWITCHBOARD_DESKTOP_TOKEN ?? stableToken('desktop-token')) : undefined
 /** The install's certificate for wss:// on the same port, or null for ws:// only. */
 function tlsIdentity(): TlsIdentity | null {
   try {
@@ -133,7 +137,7 @@ const identity = tlsIdentity()
 const wss = identity
   ? new DualWebSocketServer(port, bindHost, identity)
   : new WebSocketServer(wsServerOptions(port, bindHost))
-const wsHost = new WsHost(wss, token)
+const wsHost = createHeadlessWsHost(wss, { pairingToken: token, desktopToken })
 
 // Second listener speaking newline-delimited JSON over raw TCP. This is what a
 // phone reaches through Google's IAP relay: IAP forwards an arbitrary VM port
@@ -250,7 +254,12 @@ async function printPairingInfo(): Promise<void> {
   }
   console.log(`  URL:   ${url}`)
   if (addresses.length > 1) console.log(`  other addresses: ${addresses.slice(1).join(', ')}`)
-  console.log(`  token: ${token}\n`)
+  console.log(`  token: ${token}`)
+  if (desktopToken) {
+    // Full access, terminals and secret answers included. Never put it in a QR.
+    const desktopUrl = withCertPin(`ws://${addresses[0]}:${port}?token=${desktopToken}`, identity?.fingerprint)
+    console.log(`  desktop (SWITCHBOARD_BACKEND_URL, never a phone): ${desktopUrl}\n`)
+  }
 }
 // A pre-listen failure (EADDRINUSE, EACCES) is fatal and exits nonzero without
 // touching the pidfile; a post-listen socket fault is logged and survived.

@@ -12,7 +12,7 @@
  * provider's own transcript still holds it.
  */
 
-export const SECRET_MATCH_MIN_CHARS = 8
+import { secretValueMaskable } from '@shared/agent-secret-request'
 
 export function secretMask(name: string): string {
   return `[secret ${name}]`
@@ -65,7 +65,7 @@ export class SecretRedactor {
    */
   add(rootThreadId: string, secretId: string, name: string, value: Buffer): boolean {
     this.drop(secretId)
-    if ([...value.toString('utf8')].length < SECRET_MATCH_MIN_CHARS) return false
+    if (!secretValueMaskable(value.toString('utf8'))) return false
     let chat = this.chats.get(rootThreadId)
     if (!chat) {
       chat = new Map()
