@@ -536,6 +536,7 @@ export class ProviderRegistry implements PeerToolHost {
       publish: (event) => this.publish(event),
       sameChat: (a, b) => a === b || resolveRootThreadId(a) === resolveRootThreadId(b),
       store: approvalStore,
+      secrets: { redactor: secretRedactor, scope: secretScope },
       onClosed: (card, close, response) => {
         this.reportAgentCard(card, close, response).catch((err) =>
           log.error(`reporting approval card ${card.requestId} failed`, err),
@@ -1880,7 +1881,8 @@ export class ProviderRegistry implements PeerToolHost {
   getPendingRequests(threadId: string): PendingBlockingEvent[] {
     const root = resolveRootThreadId(threadId)
     const byKey = this.pendingRequests.get(root)
-    return [...(byKey ? byKey.values() : []), ...this.agentApprovals.pendingEvents(root)]
+    // Masked again: a secret saved after a card opened was not live when the card was published.
+    return maskStoredValue(root, [...(byKey ? byKey.values() : []), ...this.agentApprovals.pendingEvents(root)])
   }
 
   /** Whether any id of the thread has an accepted turn that has not completed. */

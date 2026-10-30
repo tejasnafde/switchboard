@@ -42,6 +42,7 @@ import {
   isSecretRequestPlan,
   type SecretRequestPlan,
 } from '@shared/agent-secret-request'
+import { secretRedactor, type SecretRedactor, type SecretScope } from '../secrets/secret-redactor'
 import { createMainLogger } from '../logger'
 
 const log = createMainLogger('mcp:approvals')
@@ -73,12 +74,23 @@ export interface AgentApprovalBrokerDeps {
   /** A card closed: run the write on an approval, and tell the chat and the agent. */
   onClosed?(card: AgentApprovalCard, close: ApprovalCardClose, response: HostWriteResponse): void
   now?(): number
+  /** The live secrets a chat's cards are checked and masked against. */
+  secrets?: { redactor: SecretRedactor; scope(chatId: string): SecretScope }
 }
+
+export const SECRET_IN_DRAFT_REFUSAL =
+  'This request holds the value of a secret saved in this chat, so it was not opened. ' +
+  'Never put a secret value in a request. Refer to the secret by its name or its file path instead.'
+
+export const SECRET_IN_CARD_APPROVAL_REFUSAL =
+  'This card holds the value of a secret saved in this chat, so it cannot be approved. Deny it.'
 
 export class AgentApprovalBroker {
   private readonly book: ApprovalCardBook<AgentWritePlan>
+  private readonly secrets: NonNullable<AgentApprovalBrokerDeps['secrets']>
 
   constructor(private readonly deps: AgentApprovalBrokerDeps) {
+    this.secrets = deps.secrets ?? { redactor: secretRedactor, scope: (chatId) => chatId }
     this.book = new ApprovalCardBook(restoreSafely(deps.store ?? memoryApprovalCardStore()))
     const restored = this.book.all().length
     if (restored > 0) log.info(`restored ${restored} open approval cards`)
@@ -116,6 +128,11 @@ export class AgentApprovalBroker {
       plan: req.plan,
       openedAt: this.deps.now?.() ?? Date.now(),
     }
+    // Masking a stored plan would change what an approval runs, so a draft with a live value is refused.
+    if (this.holdsSecret(req.chatId, card)) {
+      log.warn(`refused a ${req.toolName} card that holds a live secret value in ${req.chatId}`)
+      return { ok: false, message: SECRET_IN_DRAFT_REFUSAL }
+    }
     this.book.add(card)
     this.deps.publish(openedEvent(card))
     return { ok: true, requestId }
@@ -124,7 +141,15 @@ export class AgentApprovalBroker {
   /** The chat's open cards as their `request.opened` events, for a client recovering them. */
   pendingEvents(chatId: string): RuntimeRequestOpenedEvent[] {
     this.expireOld()
-    return this.book.forChat(chatId).map(openedEvent)
+    const events = this.book.forChat(chatId).map(openedEvent)
+    // A card opened before its chat saved the secret still holds the value.
+    if (events.length === 0 || !this.secrets.redactor.any()) return events
+    return this.secrets.redactor.redactDeep(this.secrets.scope(chatId), events).value
+  }
+
+  private holdsSecret(chatId: string, card: AgentApprovalCard): boolean {
+    const { redactor, scope } = this.secrets
+    return redactor.any() && redactor.redactDeep(scope(chatId), card).hit
   }
 
   /**
@@ -152,6 +177,11 @@ export class AgentApprovalBroker {
     // A secret is saved only through `saveSecret`, never by an approval: this path may carry free-form arguments.
     if (decision === 'approve' && isSecretRequestPlan(card.plan))
       return { ok: false, message: 'Answer this on your computer.' }
+    // Opened before its chat saved the secret: the user saw it masked, the plan would send it in full.
+    if (decision === 'approve' && this.holdsSecret(card.chatId, card)) {
+      log.warn(`refused to approve card ${requestId}, which holds a live secret value`)
+      return { ok: false, message: SECRET_IN_CARD_APPROVAL_REFUSAL }
+    }
     if (decision === 'approve' && card.hostWrite) {
       if (!approver.mayApproveHostWrite) {
         log.warn(`refused a host write approval from ${approver.label}, which lacks the scope: ${requestId}`)
