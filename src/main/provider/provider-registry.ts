@@ -174,6 +174,12 @@ import { maskStoredText, maskStoredValue, secretScope } from '../db/secret-mask'
 import { RuntimeEventRedaction, type RedactedEvents } from '../secrets/runtime-event-redaction'
 import { SecretRequestLimiter, SECRET_INSTRUCTIONS, buildSecretMcpTools } from '../mcp/secret-tools'
 import {
+  trackSecretAnswered,
+  trackSecretClosed,
+  trackSecretExtended,
+  trackSecretMasked,
+} from '../secrets/secret-analytics'
+import {
   SECRET_EXTEND_MS,
   SECRET_TTL_MS,
   SECRET_MASKED_TEXT,
@@ -502,6 +508,7 @@ export class ProviderRegistry implements PeerToolHost {
     secretStore: SecretStore | null = adapters ? null : new SecretStore({ root: secretsRootDir() }),
   ) {
     this.secretStore = secretStore
+    this.secretStore?.setOnExpired((row) => this.secretFileExpired(row.id))
     this.secretStore?.start()
     this.heldPeerStore = heldPeerStore
     try {
@@ -1340,6 +1347,8 @@ export class ProviderRegistry implements PeerToolHost {
   private machineLabel: string | null = null
   /** A save's file, from `answerAgentSecret` to the card's result in `reportAgentCard`. */
   private readonly savedSecrets = new Map<string, SavedSecret>()
+  /** Extends per secret id since this backend started, for the usage count only. */
+  private readonly secretExtends = new Map<string, number>()
 
   /**
    * Hop depth of each thread's current turn - how many consecutive
@@ -2564,6 +2573,7 @@ export class ProviderRegistry implements PeerToolHost {
         return
       }
       outcome = 'done'
+      trackSecretAnswered('saved', Date.now() - card.openedAt)
       text = secretSavedText({
         name,
         file: saved.file,
@@ -2573,9 +2583,12 @@ export class ProviderRegistry implements PeerToolHost {
       })
     } else if (close.kind === 'deny') {
       outcome = close.wake ? 'declined' : 'dismissed'
+      trackSecretAnswered('declined', Date.now() - card.openedAt)
       text = secretDeclinedText(name)
     } else {
       outcome = close.kind
+      // A Stop leaves secret cards open, so a secret card closed as stopped was archived.
+      trackSecretClosed(close.kind === 'stopped' ? 'archived' : close.kind)
       text = secretClosedText(name, close.kind)
     }
     const delivery = await this.deliverApprovalResult(card, text, closeWakesAgent(close))
@@ -2774,8 +2787,16 @@ export class ProviderRegistry implements PeerToolHost {
       this.agentApprovals.closeChat(root, { secrets: opts.archived })
     } finally {
       if (opts.archived && this.secretStore) {
+        const store = this.secretStore
         try {
-          this.secretStore.removeChat(root)
+          const live = store.listChat(root).filter((row) => row.deletedAt === null)
+          store.removeChat(root)
+          for (const row of live) {
+            const deletedAt = store.get(row.id)?.deletedAt ?? null
+            if (deletedAt === null) continue
+            this.secretExtends.delete(row.id)
+            trackSecretClosed('archived')
+          }
         } catch (err) {
           log.warn(`could not delete the secrets of archived chat ${root}; the sweep retries`, errCode(err))
         }
@@ -2850,7 +2871,25 @@ export class ProviderRegistry implements PeerToolHost {
     const expiresAt = Date.now() + SECRET_EXTEND_MS
     if (!this.ownedSecret(threadId, secretId) || !this.secretStore.extend(secretId, expiresAt))
       return { ok: false, message: 'That secret is gone.' }
+    // A same-name save retires a row without a callback here, so drop counts of retired rows on the way.
+    // The expiry is already moved, so a failed lookup here must not fail the Extend.
+    for (const id of this.secretExtends.keys()) {
+      try {
+        if (this.secretStore.get(id)?.deletedAt !== null) this.secretExtends.delete(id)
+      } catch (err) {
+        log.warn('could not read a secret row while pruning extend counts', errCode(err))
+      }
+    }
+    const count = (this.secretExtends.get(secretId) ?? 0) + 1
+    this.secretExtends.set(secretId, count)
+    trackSecretExtended(count)
     return { ok: true, expiresAt }
+  }
+
+  /** A saved file reached its expiry and the store deleted it. */
+  private secretFileExpired(secretId: string): void {
+    this.secretExtends.delete(secretId)
+    trackSecretClosed('expired')
   }
 
   /** "Delete now" on the saved line. The agent is not told. */
@@ -2858,6 +2897,8 @@ export class ProviderRegistry implements PeerToolHost {
     if (!this.secretStore || !this.secretRequestOn()) return { ok: false, message: 'Secret requests are turned off.' }
     if (!this.ownedSecret(threadId, secretId) || !this.secretStore.remove(secretId))
       return { ok: false, message: 'That secret is gone.' }
+    this.secretExtends.delete(secretId)
+    trackSecretClosed('deleted')
     return { ok: true }
   }
 
@@ -2942,6 +2983,8 @@ export class ProviderRegistry implements PeerToolHost {
                 archived: () => isConversationArchived(chatId()),
                 approvals: this.agentApprovals,
                 limiter: this.secretLimiter,
+                agentKind: provider,
+                remote: this.machineLabel !== null,
               })
             : []),
           ...(parentTools
@@ -3115,6 +3158,7 @@ export class ProviderRegistry implements PeerToolHost {
       this.maskedTurns.add(root)
     }
     log.info('saved secret masked', { threadId: root, where: masked.where })
+    trackSecretMasked(masked.where)
     const files = paths.length > 0 ? paths : masked.path ? [masked.path] : []
     this.postSystemRow(
       root,

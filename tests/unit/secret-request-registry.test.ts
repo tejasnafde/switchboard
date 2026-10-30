@@ -32,6 +32,11 @@ vi.mock('../../src/main/db/provider-instances', () => ({
   listOauthDirsForAgent: () => [],
 }))
 
+const tracked = vi.hoisted(() => [] as Array<{ event: string; properties: Record<string, unknown> }>)
+vi.mock('../../src/main/analytics', () => ({
+  trackAnalyticsEvent: (event: string, properties: Record<string, unknown> = {}) => tracked.push({ event, properties }),
+}))
+
 const archived = new Set<string>()
 /** Rotated session id to root id, as `thread_sessions` maps them. */
 const rotatedRoots = new Map<string, string>()
@@ -68,7 +73,11 @@ import type { SecretStore } from '../../src/main/secrets/secret-store'
 import type { McpTool } from '../../src/main/mcp/mcp-session'
 import type { SwitchboardMcpServer } from '../../src/main/mcp/switchboard-mcp-server'
 import { AgentSecretChannels, ProviderChannels } from '../../src/shared/ipc-channels'
-import { APPROVAL_RESULT_TAG, parseApprovalResultMarker } from '../../src/shared/agent-approval-cards'
+import {
+  AGENT_CARD_MAX_AGE_MS,
+  APPROVAL_RESULT_TAG,
+  parseApprovalResultMarker,
+} from '../../src/shared/agent-approval-cards'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 import { PHONE_SCOPES, isChannelAllowed } from '../../src/shared/device-auth'
@@ -152,6 +161,17 @@ class FakeSecretStore {
     }
   >()
   fail = false
+  private onExpired: (row: { id: string }) => void = () => {}
+  setOnExpired(fn: (row: { id: string }) => void): void {
+    this.onExpired = fn
+  }
+  /** What the real store's timer or sweep does when a file's time is up. */
+  expire(id: string): void {
+    const row = this.rows.get(id)
+    if (!row || row.deletedAt !== null) return
+    row.deletedAt = Date.now()
+    this.onExpired(row)
+  }
   start(): void {}
   stop(): void {}
   chatDir(threadId: string): string {
@@ -205,6 +225,7 @@ class FakeSecretStore {
   }
   removeChat(threadId: string): void {
     this.removedChats.push(threadId)
+    for (const row of this.listChat(threadId)) row.deletedAt ??= Date.now()
   }
 }
 
@@ -263,6 +284,7 @@ const resultPublished = (host: FakeHost, requestId: string) =>
 
 beforeEach(() => {
   process.env.SB_AGENT_SECRET_REQUEST = '1'
+  tracked.length = 0
 })
 
 afterEach(async () => {
@@ -522,5 +544,116 @@ describe('the agent-secret answer channel', () => {
     expect(await s.host.invoke(AgentSecretChannels.EXTEND, 'chat-rotated', secretId)).toMatchObject({ ok: true })
     expect(await s.host.invoke(AgentSecretChannels.DELETE, 'chat-rotated', secretId)).toEqual({ ok: true })
     expect(s.store.rows.get(secretId)?.deletedAt).not.toBeNull()
+  })
+})
+
+describe('secret request usage counts', () => {
+  const secretEvents = () => tracked.filter((t) => t.event.startsWith('secret_request.'))
+
+  it('counts the open, a save with its time bucket, two extends and a delete', async () => {
+    const s = setup()
+    await s.start('chat')
+    const id = await s.ask()
+    expect(s.registry.answerAgentSecret('chat', id, { save: VALUE })).toEqual({ ok: true })
+    await resultPublished(s.host, id)
+    const secretId = [...s.store.rows.keys()][0]
+    await s.host.invoke(AgentSecretChannels.EXTEND, 'chat', secretId)
+    await s.host.invoke(AgentSecretChannels.EXTEND, 'chat', secretId)
+    await s.host.invoke(AgentSecretChannels.DELETE, 'chat', secretId)
+    expect(secretEvents()).toEqual([
+      { event: 'secret_request.opened', properties: { agentKind: 'claude', ttlBucket: '24h', remote: 'false' } },
+      { event: 'secret_request.answered', properties: { outcome: 'saved', secondsBucket: 'under_30s' } },
+      { event: 'secret_request.extended', properties: { count: '1' } },
+      { event: 'secret_request.extended', properties: { count: '2' } },
+      { event: 'secret_request.closed', properties: { outcome: 'deleted' } },
+    ])
+  })
+
+  it('marks the open as remote on an SSH machine, and counts a decline', async () => {
+    const s = setup()
+    s.registry.setMachineLabel('build-box')
+    await s.start('chat')
+    const id = await s.ask()
+    expect(s.registry.answerAgentSecret('chat', id, { decline: true })).toEqual({ ok: true })
+    await resultPublished(s.host, id)
+    expect(secretEvents()).toEqual([
+      { event: 'secret_request.opened', properties: { agentKind: 'claude', ttlBucket: '24h', remote: 'true' } },
+      { event: 'secret_request.answered', properties: { outcome: 'declined', secondsBucket: 'under_30s' } },
+    ])
+  })
+
+  it('counts a withdrawn card, and an archive once for the open card and once per live file', async () => {
+    const s = setup()
+    await s.start('chat')
+    const withdrawn = await s.ask()
+    await s.tool('withdraw_approval')!.call({ card: withdrawn })
+    await resultPublished(s.host, withdrawn)
+    const saved = await s.ask()
+    expect(s.registry.answerAgentSecret('chat', saved, { save: VALUE })).toEqual({ ok: true })
+    await resultPublished(s.host, saved)
+    const open = await s.ask()
+    tracked.length = 0
+    archived.add('chat')
+    notifyConversationArchived('chat')
+    await resultPublished(s.host, open)
+    expect(secretEvents()).toEqual([
+      { event: 'secret_request.closed', properties: { outcome: 'archived' } },
+      { event: 'secret_request.closed', properties: { outcome: 'archived' } },
+    ])
+  })
+
+  it('counts nothing with the flag off, also when an archive closes a card opened while it was on', async () => {
+    const s = setup()
+    await s.start('chat')
+    const id = await s.ask()
+    tracked.length = 0
+    delete process.env.SB_AGENT_SECRET_REQUEST
+    archived.add('chat')
+    notifyConversationArchived('chat')
+    await resultPublished(s.host, id)
+    expect(secretEvents()).toEqual([])
+  })
+
+  it('counts one closed expired for an expired file and one for an unanswered card past the card age cap', async () => {
+    const s = setup()
+    await s.start('chat')
+    const saved = await s.ask()
+    expect(s.registry.answerAgentSecret('chat', saved, { save: VALUE })).toEqual({ ok: true })
+    await resultPublished(s.host, saved)
+    const secretId = [...s.store.rows.keys()][0]
+    await s.host.invoke(AgentSecretChannels.EXTEND, 'chat', secretId)
+    const open = await s.ask()
+    tracked.length = 0
+    s.store.expire(secretId)
+    const later = Date.now() + AGENT_CARD_MAX_AGE_MS + 1
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later)
+    try {
+      expect(await s.host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 'chat')).toEqual([])
+    } finally {
+      clock.mockRestore()
+    }
+    await resultPublished(s.host, open)
+    expect(secretEvents()).toEqual([
+      { event: 'secret_request.closed', properties: { outcome: 'expired' } },
+      { event: 'secret_request.closed', properties: { outcome: 'expired' } },
+    ])
+    // The expired secret's extend count is gone: a new secret under its id starts at 1.
+    s.store.rows.get(secretId)!.deletedAt = null
+    tracked.length = 0
+    await s.host.invoke(AgentSecretChannels.EXTEND, 'chat', secretId)
+    expect(secretEvents()).toEqual([{ event: 'secret_request.extended', properties: { count: '1' } }])
+  })
+
+  it('counts each refusal by its reason', async () => {
+    const s = setup()
+    await s.start('chat')
+    const request = s.tool('request_secret')!
+    await request.call({ name: 'lower', title: 'x', instructions: 'y' })
+    for (let i = 0; i < 3; i++) await s.ask()
+    await request.call({ name: 'FOURTH_KEY', title: 'x', instructions: 'y' })
+    expect(secretEvents().filter((t) => t.event === 'secret_request.refused')).toEqual([
+      { event: 'secret_request.refused', properties: { reason: 'invalid' } },
+      { event: 'secret_request.refused', properties: { reason: 'cap' } },
+    ])
   })
 })

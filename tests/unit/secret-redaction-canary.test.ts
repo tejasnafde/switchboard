@@ -339,12 +339,22 @@ describe('saved secret canary', () => {
     for (const file of filesUnder(join(userDataDir(), 'data', 'transcript-index')))
       for (const form of forms) expect(file).not.toContain(form)
 
-    // Logs and analytics.
+    // Logs and analytics. The counts carry buckets only: one masked count per
+    // turn, and never the name, title or instructions.
     expect(captured.logs.some((l) => l.includes('saved secret masked'))).toBe(true)
     for (const form of forms) {
       expect(captured.logs.join('\n')).not.toContain(form)
       expect(captured.analytics.join('\n')).not.toContain(form)
     }
+    expect(captured.analytics.map((a) => JSON.parse(a))).toEqual([
+      { event: 'session_started', properties: { provider: 'claude' } },
+      { event: 'secret_request.opened', properties: { agentKind: 'claude', ttlBucket: '24h', remote: 'false' } },
+      { event: 'secret_request.answered', properties: { outcome: 'saved', secondsBucket: 'under_30s' } },
+      { event: 'secret_request.masked', properties: { where: 'tool' } },
+      { event: 'secret_request.masked', properties: { where: 'text' } },
+    ])
+    for (const text of ['CANARY_TOKEN', 'Canary', 'Paste the canary'])
+      expect(captured.analytics.join('\n')).not.toContain(text)
 
     // The secret file is the one place that holds it.
     const dirId = (db.prepare('SELECT dir_id FROM agent_secret_dirs').get() as { dir_id: string }).dir_id

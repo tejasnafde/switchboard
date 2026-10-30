@@ -92,7 +92,7 @@ function tmutilExclude(dir: string): void {
 export class SecretStore {
   private readonly root: string
   private readonly now: () => number
-  private readonly onExpired?: (row: AgentSecretRow) => void
+  private onExpired?: (row: AgentSecretRow) => void
   private readonly excludeFromBackup: (dir: string) => void
   private readonly redactor: SecretRedactor
   private readonly timers = new Map<string, NodeJS.Timeout>()
@@ -105,6 +105,11 @@ export class SecretStore {
     this.onExpired = opts.onExpired
     this.excludeFromBackup = opts.excludeFromBackup ?? tmutilExclude
     this.redactor = opts.redactor ?? secretRedactor
+  }
+
+  /** Replace the expiry listener. The registry sets it before `start`, so the first sweep's expiries reach it. */
+  setOnExpired(fn: (row: AgentSecretRow) => void): void {
+    this.onExpired = fn
   }
 
   /** Create the root with its mode, backup exclusion and Spotlight marker, once per process. */
