@@ -2872,8 +2872,14 @@ export class ProviderRegistry implements PeerToolHost {
     if (!this.ownedSecret(threadId, secretId) || !this.secretStore.extend(secretId, expiresAt))
       return { ok: false, message: 'That secret is gone.' }
     // A same-name save retires a row without a callback here, so drop counts of retired rows on the way.
-    for (const id of this.secretExtends.keys())
-      if (this.secretStore.get(id)?.deletedAt !== null) this.secretExtends.delete(id)
+    // The expiry is already moved, so a failed lookup here must not fail the Extend.
+    for (const id of this.secretExtends.keys()) {
+      try {
+        if (this.secretStore.get(id)?.deletedAt !== null) this.secretExtends.delete(id)
+      } catch (err) {
+        log.warn('could not read a secret row while pruning extend counts', errCode(err))
+      }
+    }
     const count = (this.secretExtends.get(secretId) ?? 0) + 1
     this.secretExtends.set(secretId, count)
     trackSecretExtended(count)
