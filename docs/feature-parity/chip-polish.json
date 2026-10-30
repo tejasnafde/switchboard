@@ -1,0 +1,59 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "chip-polish",
+  "summary": "Two chip tiers on the desktop (inline 18 px radius 4, control 24 px radius 6), the audit fixes to the context, skill and toolbar chips, a themed rotation marker and denial row, and system sans for every chip and label around the chat (mono only for code and terminal output). The Android chip labels move from Geist Mono to the system sans; the Expo chips already use a sans face.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/lexical/PillChipVisual.tsx",
+        "src/renderer/components/chat/SkillChip.tsx",
+        "src/renderer/components/ui/chip.tsx",
+        "src/renderer/components/chat/visuals/ChatVisual.tsx",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/styles/global.css",
+        "tests/unit/system-marker-contrast.test.ts",
+        "tests/unit/chat-visuals-button-reset.test.ts",
+        "e2e/visual-regressions.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app does not draw these components. Its sent-message pill uses type.meta (the system face, 13 pt) and its review chip uses Instrument Sans, so no chip label is mono and the typography rule already holds."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/theme/Type.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Styling only. No IPC channel, wire message or backend handler changes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table, setting or stored format changes; pills_meta and [[pill:id]] tokens are read as before."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships in the normal desktop and Android releases; no channel, packaging or identity change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck and npx vitest run --maxWorkers=2 pass.",
+      "tests/unit/system-marker-contrast.test.ts asserts --text-secondary on --bg-secondary reads at 4.5:1 or better in dark and light, and that MessageBubble paints no --sb-* or --danger variable and no 0.78 opacity.",
+      "The screenshot regression run (screens phase) was refreshed: 108 baselines changed in dark, light and translucent (chips, the rotation marker, the visual header, sidebar and picker labels). Baselines with no pixel change were reverted, and the changed ones were compared old against new."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Android: only the chip labels change. The app-wide label styles (labelMedium, labelSmall) stay Geist Mono; moving every Android label to sans is a separate type-scale change, follow-up 'Android label typography'.",
+      "The Play store screenshots (StoreScreenshotsTest) were not regenerated; the chip label change is too small to show at store size.",
+      "Translucent is checked through the flattened screenshot backdrop only, not over a live wallpaper.",
+      "Desktop follow-up 'Chat card and tool row typography': the subagent row model label and tool output details stay mono, and the approval, plan and question card headers stay in caps. They are not chips and need their own pass over every card."
+    ]
+  }
+}

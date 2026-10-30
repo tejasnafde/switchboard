@@ -11,6 +11,8 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseE
 import { CHART_SERIES_COLORS } from '@shared/chart-colors'
 import { chartDataText, parseChartSpec, renderChart, type ChartPalette, type VisualKind } from '@shared/chat-visuals'
 import { createRendererLogger } from '../../../logger'
+import { cn } from '../../../lib/utils'
+import { chipClass } from '../../ui/chip'
 import { useLayoutStore } from '../../../stores/layout-store'
 import { diagramTheme } from '../../../services/diagram-theme'
 import { renderDiagram, type DiagramResult } from './diagram-render'
@@ -122,8 +124,7 @@ function blockNavigation(event: MouseEvent): void {
   if ((event.target as Element).closest?.('a')) event.preventDefault()
 }
 
-const headerButton =
-  'rounded-[5px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[7px] py-[1px] text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+const headerButton = cn(chipClass, 'hover:text-[var(--text-primary)]')
 
 export function ChatVisual({
   kind,
@@ -223,7 +224,7 @@ export function ChatVisual({
           <>
             <button
               type="button"
-              className={headerButton}
+              className={cn(headerButton, 'aria-[pressed=true]:border-[var(--accent)]')}
               aria-pressed={showSource}
               onClick={() => setShowSource((s) => !s)}
             >

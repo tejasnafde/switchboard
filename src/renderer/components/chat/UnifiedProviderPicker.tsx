@@ -48,6 +48,7 @@ import { resolveVisibleLoginInstanceId, nextTermInstanceId } from '../../shared/
 import { startTerminalSession } from '../../shared/terminal-login-start'
 import { cn } from '../../lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
+import { ChipCaret } from '../ui/chip'
 import { filterModels, groupModelsByProvider } from './provider-picker-models'
 
 interface UnifiedProviderPickerProps {
@@ -201,10 +202,10 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
                 {showInstanceBadge && effectiveInstance ? ` · ${effectiveInstance.displayName}` : ''}
               </span>
               <span className="whitespace-nowrap text-[var(--text-muted)] @max-[680px]/toolbar:hidden">·</span>
-              <span className="truncate [font-family:var(--font-mono)] text-[var(--text-secondary)]">{modelLabel}</span>
+              <span className="truncate text-[var(--text-secondary)]">{modelLabel}</span>
             </>
           )}
-          <span className="ml-[2px] text-[9px] text-[var(--text-muted)]">▾</span>
+          <ChipCaret />
         </button>
       </PopoverTrigger>
 
@@ -336,7 +337,7 @@ interface PopoverProps {
 
 const inputClass =
   'rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] text-[11px] text-[var(--text-primary)] outline-none'
-const sectionLabelClass = 'mb-[6px] text-[10px] font-[600] uppercase tracking-[0.7px] text-[var(--text-muted)]'
+const sectionLabelClass = 'mb-[6px] text-[11px] font-[500] text-[var(--text-muted)]'
 
 function UnifiedPickerPopover(props: PopoverProps) {
   const {
@@ -465,7 +466,7 @@ function UnifiedPickerPopover(props: PopoverProps) {
                 ))}
                 {grouped.groups.map((g) => (
                   <div key={g.provider}>
-                    <div className="px-[12px] pt-[6px] pb-[2px] text-[9px] font-[700] uppercase tracking-[0.06em] text-[var(--text-muted)]">
+                    <div className="px-[12px] pt-[6px] pb-[2px] text-[11px] font-[500] text-[var(--text-muted)]">
                       {g.provider}
                     </div>
                     {g.models.map((m) => (
@@ -566,7 +567,7 @@ function TerminalTabBody({
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* CLI selector */}
       <div className="border-b border-[var(--border)] px-[8px] pt-[8px] pb-[6px]">
-        <div className={sectionLabelClass}>CLI Binary</div>
+        <div className={sectionLabelClass}>CLI binary</div>
         <div className="flex items-center gap-[4px]">
           {(['claude', 'codex'] as const).map((cmd) => (
             <button
@@ -621,9 +622,7 @@ function TerminalTabBody({
                   )}
                 />
                 <span className="flex-1 truncate">{inst.displayName}</span>
-                {inst.id.endsWith('-default') && (
-                  <span className="text-[9px] [font-family:var(--font-mono)] text-[var(--text-muted)]">default</span>
-                )}
+                {inst.id.endsWith('-default') && <span className="text-[11px] text-[var(--text-muted)]">default</span>}
               </button>
             )
           })}
@@ -729,11 +728,7 @@ function ModelRow({
       )}
     >
       <span className="truncate">{label}</span>
-      {monoId && (
-        <span className="max-w-[50%] truncate text-[10px] [font-family:var(--font-mono)] text-[var(--text-muted)]">
-          {monoId}
-        </span>
-      )}
+      {monoId && <span className="max-w-[50%] truncate text-[11px] text-[var(--text-muted)]">{monoId}</span>}
     </button>
   )
 }

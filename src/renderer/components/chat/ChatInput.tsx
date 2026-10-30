@@ -192,8 +192,7 @@ const recoveryActionClass = cn(
   bannerFocusClass,
 )
 
-const LIGHTBOX_KBD =
-  'rounded-[3px] bg-[rgba(255,255,255,0.14)] px-[4px] text-[10px] text-[#fff] [font-family:var(--font-mono)]'
+const LIGHTBOX_KBD = 'rounded-[3px] bg-[rgba(255,255,255,0.14)] px-[4px] text-[11px] text-[#fff]'
 
 /** Attachments other than images need this Mac's disk. */
 function onRemoteMachine(sessionId: string): boolean {
@@ -1664,9 +1663,7 @@ export function ChatInput({
           {bannerError && <div className="pr-[18px]">{bannerError}</div>}
           {refusals.map((refusal, i) => (
             <div key={i} data-attachment-refusal className="flex gap-[6px] pr-[18px]">
-              <span className="shrink-0 text-[11.5px] text-[var(--text-primary)] [font-family:var(--font-mono)]">
-                {refusal.name}
-              </span>
+              <span className="shrink-0 text-[var(--text-primary)]">{refusal.name}</span>
               <span>was not attached: {refusal.reason}</span>
             </div>
           ))}
@@ -1700,10 +1697,8 @@ export function ChatInput({
           </span>
           <span>
             Pasted {pasteNotice.kb} KB as <span className="text-[var(--text-primary)]">{pasteNotice.name}</span>.{' '}
-            <kbd className="mr-[2px] rounded-[3px] bg-[var(--bg-secondary)] px-[4px] text-[10px] [font-family:var(--font-mono)]">
-              {'⌘⇧V'}
-            </kbd>{' '}
-            pastes text inline.
+            <kbd className="mr-[2px] rounded-[3px] bg-[var(--bg-secondary)] px-[4px] text-[11px]">{'⌘⇧V'}</kbd> pastes
+            text inline.
           </span>
           <button
             type="button"
@@ -2037,7 +2032,7 @@ export function ChatInput({
               {costLabel && (
                 <span
                   title="Session cost reported by the agent"
-                  className="text-[10.5px] [font-family:var(--font-mono)] text-[var(--text-muted)]"
+                  className="text-[11px] tabular-nums text-[var(--text-muted)]"
                 >
                   {costLabel}
                 </span>

@@ -161,6 +161,7 @@ import app.switchboard.mobile.data.thread.ThreadProfileState
 import app.switchboard.mobile.data.thread.ThreadSessionCoordinator
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.Amber
+import app.switchboard.mobile.ui.theme.ChipLabel
 import app.switchboard.mobile.ui.theme.GeistMono
 import app.switchboard.mobile.ui.theme.Green
 import app.switchboard.mobile.ui.theme.Red
@@ -1539,11 +1540,11 @@ private fun ComposerReviewPill(label: String, enabled: Boolean, onRemove: () -> 
             .padding(start = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Review", color = Accent, style = MaterialTheme.typography.labelMedium)
+        Text("Review", color = Accent, style = ChipLabel)
         Text(
             text = label,
             color = TextDim,
-            style = MaterialTheme.typography.labelSmall,
+            style = ChipLabel,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
@@ -2058,7 +2059,7 @@ private fun UserMessageBody(item: FeedItem.User) {
                 Text(
                     text = pill.label,
                     color = MaterialTheme.colorScheme.onPrimary,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = ChipLabel,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = 7.dp),

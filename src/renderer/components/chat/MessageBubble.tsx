@@ -205,8 +205,10 @@ export const MessageBubble = memo(function MessageBubble({
           'border:1px solid var(--border)',
           'border-radius:4px',
           'background:var(--bg-tertiary)',
-          'font-family:var(--font-mono)',
+          'font-family:var(--font-sans)',
           'font-size:12px',
+          'font-weight:500',
+          'font-variant-numeric:tabular-nums',
           'cursor:pointer',
           'vertical-align:baseline',
         ].join(';')
@@ -288,21 +290,20 @@ export const MessageBubble = memo(function MessageBubble({
           display: 'flex',
           justifyContent: 'center',
           margin: '8px 0',
-          opacity: 0.78,
         }}
       >
         <div
           style={{
             fontSize: 11,
-            color: 'var(--sb-text-secondary, #999)',
+            color: 'var(--text-secondary)',
             padding: '4px 10px',
-            borderRadius: 999,
-            border: '1px solid var(--sb-border, rgba(120,120,120,0.25))',
-            background: 'var(--sb-surface-2, rgba(120,120,120,0.08))',
+            borderRadius: 'var(--radius)',
+            border: '1px solid var(--border)',
+            background: 'var(--bg-secondary)',
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6,
-            fontFamily: '-apple-system, system-ui, sans-serif',
+            fontFamily: 'var(--font-sans)',
           }}
         >
           <span aria-hidden style={{ fontSize: 10 }}>
@@ -506,24 +507,27 @@ export const MessageBubble = memo(function MessageBubble({
           width: message.fileDiff ? '100%' : undefined,
           padding: body ? '10px 14px' : '0',
           borderRadius: 'var(--radius)',
-          background: queued
-            ? 'transparent'
-            : isUser
-              ? 'var(--bg-tertiary)'
-              : isError
-                ? 'rgba(248, 81, 73, 0.08)'
-                : isSystem
-                  ? 'rgba(210, 153, 34, 0.08)'
-                  : body
-                    ? 'var(--bg-secondary)'
-                    : 'transparent',
+          background:
+            queued || message.denial
+              ? 'transparent'
+              : isUser
+                ? 'var(--bg-tertiary)'
+                : isError
+                  ? 'rgba(248, 81, 73, 0.08)'
+                  : isSystem
+                    ? 'rgba(210, 153, 34, 0.08)'
+                    : body
+                      ? 'var(--bg-secondary)'
+                      : 'transparent',
           border: queued
             ? '1px dashed var(--border)'
-            : isError
-              ? '1px solid rgba(248, 81, 73, 0.35)'
-              : isSystem
-                ? '1px solid rgba(210, 153, 34, 0.35)'
-                : 'none',
+            : message.denial
+              ? 'none'
+              : isError
+                ? '1px solid rgba(248, 81, 73, 0.35)'
+                : isSystem
+                  ? '1px solid rgba(210, 153, 34, 0.35)'
+                  : 'none',
           fontSize: '13px',
           lineHeight: 1.6,
           position: 'relative',
@@ -632,14 +636,11 @@ export const MessageBubble = memo(function MessageBubble({
               alignItems: 'center',
               gap: '8px',
               padding: '6px 10px',
-              margin: '4px 0',
               borderRadius: 'var(--radius)',
-              border: '1px solid rgba(248, 81, 73, 0.35)',
-              borderLeft: '3px solid var(--danger, #f85149)',
-              background: 'rgba(248, 81, 73, 0.08)',
-              fontSize: '11.5px',
+              border: '1px solid color-mix(in srgb, var(--error) 35%, transparent)',
+              background: 'color-mix(in srgb, var(--error) 8%, transparent)',
+              fontSize: '12px',
               color: 'var(--text-secondary)',
-              fontFamily: 'var(--font-mono)',
             }}
           >
             <svg
@@ -647,7 +648,7 @@ export const MessageBubble = memo(function MessageBubble({
               height="12"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="var(--danger, #f85149)"
+              stroke="var(--error)"
               strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -660,7 +661,7 @@ export const MessageBubble = memo(function MessageBubble({
             <span style={{ color: 'var(--text-muted)' }}>·</span>
             <span style={{ fontWeight: 500 }}>{message.denial.toolName}</span>
             <span style={{ color: 'var(--text-muted)' }}>·</span>
-            <span style={{ color: 'var(--text-muted)', fontFamily: 'inherit' }}>
+            <span style={{ color: 'var(--text-muted)' }}>
               {message.denial.mode === 'plan'
                 ? 'Plan mode - switch to Sandbox/Edits to execute'
                 : message.denial.reason}
@@ -673,11 +674,10 @@ export const MessageBubble = memo(function MessageBubble({
         {!hideTurnDuration && message.role === 'assistant' && typeof message.turnDurationMs === 'number' && (
           <div
             style={{
-              fontSize: '10.5px',
+              fontSize: '11px',
               color: 'var(--text-muted)',
               marginTop: '4px',
-              fontFamily: 'var(--font-mono)',
-              letterSpacing: '0.2px',
+              fontVariantNumeric: 'tabular-nums',
               userSelect: 'none',
             }}
             title={`Turn took ${message.turnDurationMs}ms`}
@@ -733,7 +733,7 @@ export const MessageBubble = memo(function MessageBubble({
           style={{
             marginTop: '2px',
             paddingRight: isUser ? '2px' : 0,
-            fontSize: '10px',
+            fontSize: '11px',
             color: 'var(--text-muted)',
           }}
         >
@@ -775,8 +775,7 @@ export const MessageBubble = memo(function MessageBubble({
               background: isBookmarked ? 'var(--accent-subtle, rgba(88,166,255,0.1))' : 'var(--bg-tertiary)',
               color: isBookmarked ? 'var(--accent)' : 'var(--text-muted)',
               cursor: 'pointer',
-              fontSize: '10px',
-              fontFamily: 'var(--font-mono)',
+              fontSize: '11px',
               lineHeight: 1,
               transition: 'color 0.12s, border-color 0.12s, background 0.12s',
             }}
@@ -808,8 +807,7 @@ export const MessageBubble = memo(function MessageBubble({
               background: 'var(--bg-tertiary)',
               color: copied ? 'var(--success)' : 'var(--text-muted)',
               cursor: 'pointer',
-              fontSize: '10px',
-              fontFamily: 'var(--font-mono)',
+              fontSize: '11px',
               lineHeight: 1,
             }}
           >
@@ -1052,8 +1050,7 @@ function ForwardMenu({ content, sourceSessionId }: { content: string; sourceSess
           background: 'var(--bg-tertiary)',
           color: 'var(--text-muted)',
           cursor: 'pointer',
-          fontSize: '10px',
-          fontFamily: 'var(--font-mono)',
+          fontSize: '11px',
           lineHeight: 1,
         }}
       >
@@ -1098,11 +1095,9 @@ function ForwardMenu({ content, sourceSessionId }: { content: string; sourceSess
             <div
               style={{
                 padding: '6px 10px 4px',
-                fontSize: '10px',
+                fontSize: '11px',
                 color: 'var(--text-muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.7px',
-                fontWeight: 600,
+                fontWeight: 500,
                 borderBottom: '1px solid var(--border)',
               }}
             >
@@ -1140,7 +1135,7 @@ function ForwardMenu({ content, sourceSessionId }: { content: string; sourceSess
                   ;(e.currentTarget as HTMLElement).style.background = 'transparent'
                 }}
               >
-                <span style={{ color: 'var(--text-muted)', fontSize: '10px', marginRight: '6px' }}>
+                <span style={{ color: 'var(--text-muted)', fontSize: '11px', marginRight: '6px' }}>
                   {agentShortLabel(sess.type)}
                 </span>
                 {displayedSessionIds.includes(sess.id)
@@ -1287,7 +1282,7 @@ function ForkContextMenu({
           style={{
             padding: '6px 10px',
             fontSize: '11px',
-            color: 'var(--danger, #f85149)',
+            color: 'var(--error)',
             borderTop: '1px solid var(--border)',
             marginTop: '4px',
           }}
@@ -1298,7 +1293,7 @@ function ForkContextMenu({
       <div
         style={{
           padding: '4px 10px 2px',
-          fontSize: '10px',
+          fontSize: '11px',
           color: 'var(--text-muted)',
           borderTop: '1px solid var(--border)',
           marginTop: '4px',
@@ -1356,7 +1351,7 @@ function ForkMenuItem({
       {icon}
       <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.3 }}>
         <span>{label}</span>
-        {sublabel && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{sublabel}</span>}
+        {sublabel && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{sublabel}</span>}
       </span>
     </button>
   )
