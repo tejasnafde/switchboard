@@ -1,0 +1,65 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "phone-html-live-run",
+  "summary": "The phones run an agent's ```html-live page from the message text they already have, instead of only showing the desktop's still image. This PR adds the shared rules (src/shared/html-live-phone.ts): the phone document puts our bytes first (the CSP meta, the guard script, the libraries on iOS, the theme, the import map and the size reporter) so no page byte runs before the CSP; the phone CSP allows only the page's own origin (Android), data: and blob:, with default-src, form-action and base-uri 'none'; the guard removes RTCPeerConnection, webkitRTCPeerConnection, RTCDataChannel, Notification and service worker registration, reports CSP violations, and caps console output at 50 lines a second; htmlLivePhoneVerdict refuses an open fence, the desktop cap and library list, and mermaid (desktop only); phoneLiveRunning gives one slot to the full-screen view or the most visible page once the list is still for 300 ms, needs Run on a phone under 3 GB RAM and after a crash, and blocks a key after two crashes; the iOS message parser reads only {t:'h'|'e'|'b'} under 1 KB, and a per-second gate caps reads at 100. Accepted rest risk (user decision 2026-10-29): CSP does not cover WebRTC, and a page can take a clean RTCPeerConnection from an about:blank iframe, so it can reveal the phone's IP over STUN. The page holds nothing the agent could not already send from the desktop. Revisit if a page ever holds data the agent could not send itself. No UI yet: every phone surface is staged behind phone_html_live_run, off by default.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop already runs html-live pages in its own sandbox (src/main/ide/html-preview-*). The phone rules add an optional import map argument to htmlLiveHead; the desktop passes none and its document is byte for byte unchanged (tests/unit/html-live.test.ts)."
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "phone_html_live_run",
+      "followUpRelease": "The release that turns phone_html_live_run on per platform (plan PR 6): Android after the instrumented probe passes on an old (2 GB) and a current device; iOS after the probe page passes on a real iPhone. Until then store builds keep the flag off.",
+      "evidence": [
+        "src/shared/html-live-phone.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "phone_html_live_run",
+      "followUpRelease": "The release that turns phone_html_live_run on per platform (plan PR 6): Android after the instrumented probe passes on an old (2 GB) and a current device; iOS after the probe page passes on a real iPhone. Until then store builds keep the flag off.",
+      "evidence": [
+        "src/shared/html-live-phone.ts",
+        "tests/fixtures/html-live-phone-document.json"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/html-live-phone.ts",
+        "src/shared/html-live.ts",
+        "tests/unit/html-live-phone.test.ts",
+        "tests/unit/html-live-phone-sandbox.test.ts",
+        "tests/fixtures/html-live-phone-document.json"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored. The page comes from the message text already on the phone, the libraries ship in the app, and the crash counts live in memory for one app run. No table, setting row or wire field changes; older desktops and phones are unaffected."
+    },
+    "updateRelease": {
+      "status": "staged",
+      "flag": "phone_html_live_run",
+      "followUpRelease": "The release that turns phone_html_live_run on per platform (plan PR 6): Android after the instrumented probe passes on an old (2 GB) and a current device; iOS after the probe page passes on a real iPhone. Until then store builds keep the flag off.",
+      "evidence": [
+        "src/shared/html-live-phone.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/html-live-phone.test.ts: the CSP meta comes before every page byte for a fragment, a full document, a script before <head> and a <head> inside a comment, with and without inlined libraries; a leading doctype is removed; iOS inlines only the named libraries (classic as scripts, three and OrbitControls in the import map, mermaid never); every fetch directive refuses https, LAN, loopback, ws, wss, file:, content:, intent: and another page's origin on both origins; the verdict, run slot, low-RAM rule, crash rule, message and console parsers and the rate gate; the fixture equals the builder.",
+      "tests/unit/html-live-phone-sandbox.test.ts (headless Chromium, run here with SB_CHROMIUM set to Playwright's chrome-headless-shell 1248): a probe page tries fetch (internet, 10.0.2.2, 127.0.0.1), XHR, WebSocket, EventSource, sendBeacon, a worker, <img> (internet, LAN, file:), CSS url(), @import, @font-face, a stylesheet link, preload and prefetch, an iframe, an object, a video, a script and a form post. With the Android header CSP on https://tok.sb-live.invalid and with the meta CSP alone on an opaque page, no request reaches the network layer and no WebSocket opens; fetch, XHR and both RTCPeerConnection names throw; the guard reports blocked URLs. A copy of the CSP with connect-src and img-src set to * fails the test (ten requests leak). A three page imports data: modules through the import map.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No phone runs a page yet: the Android and iOS WebViews come in plan PRs 4 and 5.",
+      "The Chromium sandbox test is skipped where no Chromium is installed (CI has none); it ran on this Mac.",
+      "Android System WebView and WKWebView may differ from desktop Chromium; the instrumented device probe (plan PR 4) and an iPhone probe run are the proof for each phone.",
+      "The WebRTC rest risk through an about:blank iframe is accepted, not tested."
+    ]
+  }
+}
