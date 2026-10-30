@@ -41,6 +41,20 @@ describe('acpFsProblem and the secrets folder', () => {
   })
 })
 
+describe('acpFsProblem and a symlink before a .. segment', () => {
+  it('refuses a write whose path climbs out of a symlink into the secrets folder', () => {
+    const base = mkdtempSync(join(tmpdir(), 'sb-acp-secrets-'))
+    try {
+      const secrets = join(base, 'secrets')
+      mkdirSync(join(secrets, 'abc'), { recursive: true })
+      symlinkSync(join(secrets, 'abc'), join(base, 'l'))
+      expect(acpFsProblem('write', `${base}/l/../abc/KEY_A`, 'full-access', secrets)).toMatch(/\.\./)
+    } finally {
+      rmSync(base, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('sliceTextLines', () => {
   const text = 'one\ntwo\nthree\nfour'
 
