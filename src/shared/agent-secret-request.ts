@@ -77,6 +77,10 @@ export interface SecretRequestCard {
   ttl: SecretTtl
   /** The SSH machine whose backend keeps the file; the desktop fills it from its routing. */
   machineLabel?: string
+  /** The backend that keeps the file runs on Windows: no ACL of its own, no backup exclusion. */
+  hostPlatform?: 'win32'
+  /** The backend could not exclude its secrets folder from Time Machine. */
+  backupNotExcluded?: true
 }
 
 /** The stored plan of an `sbsec_` card. Holds no value. */

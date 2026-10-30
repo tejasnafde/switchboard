@@ -14,6 +14,14 @@
  * live files back. Every delete drops it. No encryption at rest: the agent's
  * commands read plaintext, and the short expiry is the control. Logs name row
  * ids only, never a name or a value.
+ *
+ * The root and each chat folder must be real folders owned by this user
+ * (`assertPrivateDir`): a symlink there is refused before any write or chmod.
+ * This is a check, not a lock: a same-user process that swaps a folder for a
+ * link between the check and the write can still win.
+ *
+ * On Windows `chmod` sets no ACL and there is no backup exclusion, so the
+ * files have only the user profile's own ACL. `limits()` tells the card.
  */
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -23,6 +31,7 @@ import {
   existsSync,
   fstatSync,
   fsyncSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -37,6 +46,7 @@ import { join } from 'node:path'
 import { createMainLogger } from '../logger'
 import { resolveRootThreadId } from '../db/conversations'
 import { secretRedactor, type SecretRedactor } from './secret-redactor'
+import type { SecretRequestCard } from '@shared/agent-secret-request'
 import {
   claimSecretDirId,
   deleteSecretDir,
@@ -48,6 +58,7 @@ import {
   listLiveAgentSecrets,
   listSecretDirIds,
   markAgentSecretDeleted,
+  pruneSecretOwnerDeleted,
   setAgentSecretExpiry,
   type AgentSecretRow,
 } from '../db/agent-secrets'
@@ -71,30 +82,61 @@ export interface SecretStoreOptions {
   now?: () => number
   /** A live file was deleted by its expiry, not by the user or an archive. */
   onExpired?: (row: AgentSecretRow) => void
-  /** Exclude the root from backups. Defaults to `tmutil addexclusion` on macOS. */
-  excludeFromBackup?: (dir: string) => void
+  /**
+   * Exclude the root from backups: true when the exclusion is verified, false
+   * when it failed, null where there is none. Defaults to `excludeFromTimeMachine`.
+   */
+  excludeFromBackup?: (dir: string) => Promise<boolean | null>
   /** Masks live values in output. Defaults to the backend's one matcher. */
   redactor?: SecretRedactor
+  platform?: NodeJS.Platform
 }
+
+/** What this store cannot promise, shown on the secret card. Empty when it keeps every promise. */
+export type SecretStoreLimits = Pick<SecretRequestCard, 'hostPlatform' | 'backupNotExcluded'>
 
 /** Fs errors carry the path, which names the secret and the chat folder: log the code only. */
 export function errCode(err: unknown): string {
   return (err as NodeJS.ErrnoException)?.code ?? (err instanceof Error ? err.name : 'unknown')
 }
 
-function tmutilExclude(dir: string): void {
-  if (process.platform !== 'darwin') return
-  execFile('tmutil', ['addexclusion', dir], (err) => {
-    if (err) log.warn('could not exclude the secrets folder from Time Machine', errCode(err))
-  })
+function runTmutil(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) =>
+    execFile('tmutil', args, (err, stdout) => (err ? reject(err) : resolve(stdout))),
+  )
+}
+
+/** Add a Time Machine exclusion for `dir` and check that it took. Null off macOS. */
+export async function excludeFromTimeMachine(
+  dir: string,
+  run: (args: string[]) => Promise<string> = runTmutil,
+  platform: NodeJS.Platform = process.platform,
+): Promise<boolean | null> {
+  if (platform !== 'darwin') return null
+  try {
+    await run(['addexclusion', dir])
+    return (await run(['isexcluded', dir])).includes('[Excluded]')
+  } catch (err) {
+    log.warn('tmutil failed for the secrets folder', errCode(err))
+    return false
+  }
+}
+
+/** Refuse a symlink, a non-folder, or (POSIX) a folder another user owns: a write or chmod would follow it. */
+function assertPrivateDir(path: string): void {
+  const st = lstatSync(path)
+  if (st.isSymbolicLink() || !st.isDirectory()) throw new Error('a secrets folder is not a real folder')
+  if (process.getuid && st.uid !== process.getuid()) throw new Error('a secrets folder is owned by another user')
 }
 
 export class SecretStore {
   private readonly root: string
   private readonly now: () => number
   private onExpired?: (row: AgentSecretRow) => void
-  private readonly excludeFromBackup: (dir: string) => void
+  private readonly excludeFromBackup: (dir: string) => Promise<boolean | null>
   private readonly redactor: SecretRedactor
+  private readonly platform: NodeJS.Platform
+  private backupFailed = false
   private readonly timers = new Map<string, NodeJS.Timeout>()
   private sweepTimer: NodeJS.Timeout | null = null
   private rootReady = false
@@ -103,8 +145,21 @@ export class SecretStore {
     this.root = opts.root
     this.now = opts.now ?? Date.now
     this.onExpired = opts.onExpired
-    this.excludeFromBackup = opts.excludeFromBackup ?? tmutilExclude
+    this.excludeFromBackup = opts.excludeFromBackup ?? excludeFromTimeMachine
     this.redactor = opts.redactor ?? secretRedactor
+    this.platform = opts.platform ?? process.platform
+  }
+
+  /**
+   * What the card should say this store does not do. A failed Time Machine
+   * exclusion leaves Save on: the card says it, and each sweep and each start
+   * tries the exclusion again.
+   */
+  limits(): SecretStoreLimits {
+    return {
+      ...(this.platform === 'win32' ? { hostPlatform: 'win32' as const } : {}),
+      ...(this.backupFailed ? { backupNotExcluded: true as const } : {}),
+    }
   }
 
   /** Replace the expiry listener. The registry sets it before `start`, so the first sweep's expiries reach it. */
@@ -116,11 +171,19 @@ export class SecretStore {
   private ensureRoot(): void {
     if (this.rootReady) return
     mkdirSync(this.root, { recursive: true, mode: 0o700 })
+    assertPrivateDir(this.root)
     chmodSync(this.root, 0o700)
     const marker = join(this.root, '.metadata_never_index')
     if (!existsSync(marker)) writeFileSync(marker, '', { mode: 0o600 })
-    this.excludeFromBackup(this.root)
+    this.excludeRoot()
     this.rootReady = true
+  }
+
+  private excludeRoot(): void {
+    void this.excludeFromBackup(this.root).then((ok) => {
+      this.backupFailed = ok === false
+      if (this.backupFailed) log.warn('the secrets folder is not excluded from Time Machine; the next sweep retries')
+    })
   }
 
   /**
@@ -132,6 +195,7 @@ export class SecretStore {
     const dirId = claimSecretDirId(threadId, randomBytes(16).toString('hex'), this.now())
     const dir = join(this.root, dirId)
     mkdirSync(dir, { recursive: true, mode: 0o300 })
+    assertPrivateDir(dir)
     chmodSync(dir, 0o300)
     return dir
   }
@@ -242,7 +306,7 @@ export class SecretStore {
    * microseconds per chat; track dirty folders if a profile ever holds tens of
    * thousands of them.
    *
-   * Delete every archived chat's files and folder (an archive whose own
+   * Delete every archived or deleted chat's files and folder (one whose own
    * delete failed), every expired file, every folder with no dir row (a crash
    * orphan), every `.partial` file and every file no live row names. A file
    * that has not expired stays: the chat is still there after a restart, and
@@ -251,6 +315,7 @@ export class SecretStore {
   sweep(): void {
     if (!existsSync(this.root)) return
     this.ensureRoot()
+    if (this.backupFailed) this.excludeRoot()
     for (const chat of listArchivedSecretChats()) {
       try {
         this.removeChat(chat)
@@ -258,6 +323,7 @@ export class SecretStore {
         log.warn('secrets sweep could not clean an archived chat; the next sweep retries', errCode(err))
       }
     }
+    pruneSecretOwnerDeleted()
     const now = this.now()
     for (const row of listLiveAgentSecrets()) {
       if (row.expiresAt <= now) {
@@ -395,8 +461,10 @@ export class SecretStore {
     return true
   }
 
+  /** A symlink in a chat folder's place is unlinked, never chmodded or followed. */
   private removeDirTree(path: string): void {
     try {
+      if (!lstatSync(path).isDirectory()) return rmSync(path, { force: true })
       chmodSync(path, 0o700)
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return

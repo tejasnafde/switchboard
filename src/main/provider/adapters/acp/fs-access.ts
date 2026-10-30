@@ -25,6 +25,9 @@ export function acpFsProblem(
   if (mode === undefined) return 'No active session for this request.'
   if (!filePath || !path.isAbsolute(filePath)) return 'The path must be absolute.'
   if (op === 'write' && mode === 'plan') return 'Plan mode is read-only: the file was not written.'
+  // `path.resolve` drops `..` before symlinks resolve, so `<link>/../x` could name a secrets folder it hides.
+  if (op === 'write' && secretsRoot && filePath.split(/[\\/]/).includes('..'))
+    return 'The path must not contain .. segments: the file was not written.'
   if (op === 'write' && secretsRoot && isInside(realish(filePath), realish(secretsRoot)))
     return 'Switchboard keeps secrets in that folder: the file was not written.'
   return null

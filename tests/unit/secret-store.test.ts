@@ -14,11 +14,12 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
-import { SECRET_MAX_BYTES, SecretStore } from '../../src/main/secrets/secret-store'
+import { SECRET_MAX_BYTES, SecretStore, excludeFromTimeMachine } from '../../src/main/secrets/secret-store'
 import { SecretRedactor } from '../../src/main/secrets/secret-redactor'
 import { getAgentSecret, getSecretDirId, listLiveAgentSecrets } from '../../src/main/db/agent-secrets'
 import { archiveConversation, createConversation, recordThreadSession } from '../../src/main/db/conversations'
-import { addProject } from '../../src/main/db/database'
+import { addProject, removeProject } from '../../src/main/db/database'
+import { onConversationArchived } from '../../src/main/db/archive-events'
 
 // Windows has no POSIX modes, and a symlink needs a privilege there.
 const posixIt = it.skipIf(process.platform === 'win32')
@@ -44,7 +45,7 @@ beforeEach(() => {
   createMigratedDb()
   root = join(mkdtempSync(join(tmpdir(), 'sb-secret-test-')), 'secrets')
   now = 1_000_000
-  store = new SecretStore({ root, now: () => now, excludeFromBackup: () => {} })
+  store = new SecretStore({ root, now: () => now, excludeFromBackup: async () => true })
 })
 
 afterEach(() => {
@@ -63,7 +64,7 @@ afterEach(() => {
 describe('SecretStore', () => {
   posixIt('makes the root 0700 with a Spotlight marker and a 0300 chat folder named by 128 random bits', () => {
     const excluded: string[] = []
-    store = new SecretStore({ root, now: () => now, excludeFromBackup: (d) => excluded.push(d) })
+    store = new SecretStore({ root, now: () => now, excludeFromBackup: async (d) => (excluded.push(d), true) })
     const dir = store.chatDir('chat-a')
     expect(mode(root)).toBe(0o700)
     expect(existsSync(join(root, '.metadata_never_index'))).toBe(true)
@@ -142,7 +143,7 @@ describe('SecretStore', () => {
       store = new SecretStore({
         root,
         now: () => now,
-        excludeFromBackup: () => {},
+        excludeFromBackup: async () => true,
         onExpired: (r) => expired.push(r.id),
       })
       const a = store.save({ threadId: 'chat-a', name: 'KEY_A', value: VALUE, cardId: 'c', expiresAt: now + 1000 })
@@ -179,7 +180,7 @@ describe('SecretStore', () => {
     writeFileSync(b.file, Buffer.alloc(SECRET_MAX_BYTES + 1, 'x'))
     store.stop()
     const redactor = new SecretRedactor()
-    store = new SecretStore({ root, now: () => now, excludeFromBackup: () => {}, redactor })
+    store = new SecretStore({ root, now: () => now, excludeFromBackup: async () => true, redactor })
     store.sweep()
     expect(redactor.has(a.id)).toBe(true)
     expect(redactor.has(b.id)).toBe(false)
@@ -207,7 +208,7 @@ describe('SecretStore', () => {
 
     now += 100
     // A fresh process: no timers armed, as after a crash.
-    const restarted = new SecretStore({ root, now: () => now, excludeFromBackup: () => {} })
+    const restarted = new SecretStore({ root, now: () => now, excludeFromBackup: async () => true })
     restarted.sweep()
     restarted.stop()
 
@@ -247,6 +248,129 @@ describe('SecretStore', () => {
     expect(getAgentSecret(live.id)!.deletedAt).toBeNull()
     expect(getAgentSecret(unknown.id)!.deletedAt).toBeNull()
     expect(listAs700(dirname(live.file))).toEqual(['KEY_A'])
+  })
+
+  it("deletes a chat's file and folder when its project is removed", () => {
+    addProject('/tmp/project', 'project')
+    createConversation('chat-p', '/tmp/project', 'claude-code')
+    const off = onConversationArchived((id) => store.removeChat(id))
+    try {
+      const saved = store.save({
+        threadId: 'chat-p',
+        name: 'KEY_A',
+        value: Buffer.from('sbcanary_4_0123456789'),
+        cardId: 'c',
+        expiresAt: now + 60_000,
+      })
+      removeProject('/tmp/project')
+      expect(existsSync(dirname(saved.file))).toBe(false)
+      expect(getAgentSecret(saved.id)!.deletedAt).not.toBeNull()
+      expect(getSecretDirId('chat-p')).toBeNull()
+    } finally {
+      off()
+    }
+  })
+
+  it("the next sweep deletes a removed project's secrets when the delete at removal failed", () => {
+    addProject('/tmp/project', 'project')
+    createConversation('chat-p', '/tmp/project', 'claude-code')
+    const off = onConversationArchived(() => {
+      throw new Error('simulated failure')
+    })
+    try {
+      const saved = store.save({
+        threadId: 'chat-p',
+        name: 'KEY_A',
+        value: Buffer.from('sbcanary_4_0123456789'),
+        cardId: 'c',
+        expiresAt: now + 60_000,
+      })
+      const provisional = store.chatDir('chat-no-row-yet')
+      removeProject('/tmp/project')
+      expect(existsSync(dirname(saved.file))).toBe(true)
+      store.sweep()
+      expect(existsSync(dirname(saved.file))).toBe(false)
+      expect(getAgentSecret(saved.id)!.deletedAt).not.toBeNull()
+      expect(getSecretDirId('chat-p')).toBeNull()
+      expect(existsSync(provisional)).toBe(true)
+      expect(getSecretDirId('chat-no-row-yet')).not.toBeNull()
+    } finally {
+      off()
+    }
+  })
+
+  it("keeps the secrets of a removed project's chat once the chat is added back", () => {
+    addProject('/tmp/project', 'project')
+    createConversation('chat-p', '/tmp/project', 'claude-code')
+    store.chatDir('chat-p')
+    const off = onConversationArchived(() => {
+      throw new Error('simulated failure')
+    })
+    try {
+      removeProject('/tmp/project')
+    } finally {
+      off()
+    }
+    addProject('/tmp/project', 'project')
+    createConversation('chat-p', '/tmp/project', 'claude-code')
+    const saved = store.save({ threadId: 'chat-p', name: 'KEY_A', value: VALUE, cardId: 'c', expiresAt: now + 60_000 })
+    store.sweep()
+    expect(getAgentSecret(saved.id)!.deletedAt).toBeNull()
+    expect(existsSync(saved.file)).toBe(true)
+  })
+
+  posixIt('refuses to save through a chat folder replaced by a symlink, and leaves the target alone', () => {
+    const dir = store.chatDir('chat-a')
+    const outside = join(dirname(root), 'repo')
+    mkdirSync(outside, { mode: 0o755 })
+    chmodSync(dir, 0o700)
+    rmSync(dir, { recursive: true })
+    symlinkSync(outside, dir)
+    const save = () =>
+      store.save({
+        threadId: 'chat-a',
+        name: 'KEY_A',
+        value: Buffer.from('sbcanary_11_0123456789'),
+        cardId: 'c',
+        expiresAt: now + 60_000,
+      })
+    expect(save).toThrow(/not a real folder/)
+    expect(readdirSync(outside)).toEqual([])
+    expect(mode(outside)).toBe(0o755)
+    store.removeChat('chat-a')
+    expect(existsSync(dir)).toBe(false)
+    expect(existsSync(outside)).toBe(true)
+    expect(mode(outside)).toBe(0o755)
+  })
+
+  posixIt('refuses a secrets root that is a symlink, and leaves the target alone', () => {
+    const outside = join(dirname(root), 'repo')
+    mkdirSync(outside, { mode: 0o755 })
+    symlinkSync(outside, root)
+    expect(() => store.chatDir('chat-a')).toThrow(/not a real folder/)
+    expect(readdirSync(outside)).toEqual([])
+    expect(mode(outside)).toBe(0o755)
+  })
+
+  it('notes a failed backup exclusion for the card, and retries it on the next sweep', async () => {
+    let ok = false
+    let calls = 0
+    store = new SecretStore({
+      root,
+      now: () => now,
+      excludeFromBackup: async () => (calls++, ok),
+    })
+    store.chatDir('chat-a')
+    await vi.waitFor(() => expect(store.limits()).toEqual({ backupNotExcluded: true }))
+    ok = true
+    store.sweep()
+    await vi.waitFor(() => expect(store.limits()).toEqual({}))
+    expect(calls).toBe(2)
+  })
+
+  it('names Windows as the host for the card', () => {
+    store = new SecretStore({ root, now: () => now, excludeFromBackup: async () => null, platform: 'win32' })
+    expect(store.limits()).toEqual({ hostPlatform: 'win32' })
   })
 
   it('does nothing when no secret was ever saved', () => {
@@ -306,5 +430,31 @@ describe('SecretStore', () => {
     expect(store.remove(saved.id)).toBe(true)
     expect(listLiveAgentSecrets('rotated-uuid-2')).toEqual([])
     expect(listLiveAgentSecrets('agent_456')).toEqual([])
+  })
+})
+
+describe('excludeFromTimeMachine', () => {
+  const ok = (stdout = '') => Promise.resolve(stdout)
+  it('adds the exclusion and checks it took', async () => {
+    const calls: string[][] = []
+    const run = (args: string[]) => (calls.push(args), ok(args[0] === 'isexcluded' ? '[Excluded]    /x\n' : ''))
+    expect(await excludeFromTimeMachine('/x', run, 'darwin')).toBe(true)
+    expect(calls).toEqual([
+      ['addexclusion', '/x'],
+      ['isexcluded', '/x'],
+    ])
+  })
+
+  it('is false when tmutil fails or the folder is still included', async () => {
+    expect(await excludeFromTimeMachine('/x', () => Promise.reject(new Error('tmutil failed')), 'darwin')).toBe(false)
+    expect(
+      await excludeFromTimeMachine('/x', (args) => ok(args[0] === 'isexcluded' ? '[Included]  /x' : ''), 'darwin'),
+    ).toBe(false)
+  })
+
+  it('is null off macOS, with no tmutil run', async () => {
+    const run = vi.fn(() => ok())
+    expect(await excludeFromTimeMachine('/x', run, 'win32')).toBeNull()
+    expect(run).not.toHaveBeenCalled()
   })
 })

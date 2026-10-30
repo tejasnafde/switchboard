@@ -1,6 +1,8 @@
 import Database from 'better-sqlite3'
 import type { ProjectOrganizationItem } from '@shared/types'
 import { getDb } from './database'
+import { markProjectSecretOwnersDeleted } from './agent-secrets'
+import { emitConversationArchived } from './archive-events'
 
 // ─── Project CRUD ────────────────────────────────────────────────
 
@@ -42,15 +44,23 @@ export function getProjects(): Array<{
   }>
 }
 
+/**
+ * Delete a project; the FK cascade drops its conversations and kanban cards.
+ * Chats that held secrets are recorded first (the sweep retries their
+ * cleanup), then run the archive listeners, which delete their cards and files.
+ */
 export function removeProject(path: string): void {
   const db = getDb()
-  db.transaction(() => {
+  const secretChats = db.transaction(() => {
+    const chats = markProjectSecretOwnersDeleted(db, path, Date.now())
     const row = db.prepare('SELECT workspace_id FROM projects WHERE path = ?').get(path) as
       | { workspace_id: string | null }
       | undefined
     db.prepare('DELETE FROM projects WHERE path = ?').run(path)
     if (row) normalizeProjectGroup(db, row.workspace_id)
+    return chats
   })()
+  for (const id of secretChats) emitConversationArchived(id)
 }
 
 export function renameProject(path: string, name: string): void {
