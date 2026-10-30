@@ -20,6 +20,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -83,6 +84,7 @@ class LockedDownWebViewTest {
         compose.runOnUiThread { assertTrue(view.webViewClient.onRenderProcessGone(view, crashed)) }
         compose.onNodeWithText("This diagram could not be drawn: The drawing process stopped.").assertIsDisplayed()
         assertEquals(null, findWebView(compose.activity.window.decorView))
+        assertTrue(shadowOf(view).wasDestroyCalled())
     }
 
     private fun findWebView(view: View): WebView? = when (view) {

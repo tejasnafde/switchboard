@@ -104,6 +104,7 @@ it('shows an error when the system ends the drawing process', async () => {
   const webview = root.root.find((n) => n.props.testID === 'webview' && typeof n.type === 'string')
   act(() => webview.props.onContentProcessDidTerminate({ nativeEvent: {} }))
   expect(root.texts().join('|')).toContain('This diagram could not be drawn: The drawing process stopped.')
+  expect(root.root.findAll((n) => n.props.testID === 'webview' && typeof n.type === 'string')).toHaveLength(0)
   warn.mockRestore()
 })
 
