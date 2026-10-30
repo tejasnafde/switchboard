@@ -1,5 +1,6 @@
 package app.switchboard.mobile.platform.protocol
 
+import app.switchboard.mobile.platform.log.SbLog
 import app.switchboard.mobile.protocol.ConnectionEffect
 import app.switchboard.mobile.protocol.ConnectionEvent
 import app.switchboard.mobile.protocol.ConnectionGeneration
@@ -165,6 +166,7 @@ class AuthenticatedWsCoordinator(
     private fun setNetworkAvailableLocked(available: Boolean) {
         if (destroyed || networkAvailable == available) return
         networkAvailable = available
+        SbLog.i(LOG_SCOPE, "${target?.connectionId} network available=$available phase=${state?.phase}")
         if (!available) {
             cancelRetry()
             val currentState = state
@@ -253,6 +255,11 @@ class AuthenticatedWsCoordinator(
         if (destroyed || target == null) return
         val currentState = state ?: return
         val connection = socket
+        SbLog.i(
+            LOG_SCOPE,
+            "${currentState.generation.connectionId} resume phase=${currentState.phase} " +
+                "socket=${connection != null} redialPending=$redialPending handshakeTimedOut=$handshakeTimedOut",
+        )
         when (currentState.phase) {
             ConnectionPhase.Ready -> probeLocked(probeTimeoutMs)
             ConnectionPhase.Disconnected -> {
@@ -438,6 +445,7 @@ class AuthenticatedWsCoordinator(
     private fun dialCurrentGeneration() {
         val currentTarget = target ?: return
         val generation = state?.generation ?: return
+        SbLog.i(LOG_SCOPE, "${generation.connectionId} gen=${generation.value} dial")
         val callbacks = callbacksFor(generation)
         val opened = try {
             dialer.open(currentTarget, callbacks)
@@ -594,6 +602,7 @@ class AuthenticatedWsCoordinator(
         if (destroyed || currentState.generation != generation) return
         val failedSocket = socket
         val connectionId = currentState.generation.connectionId
+        SbLog.w(LOG_SCOPE, "$connectionId gen=${generation.value} socket failed: ${SbLog.describe(error)}")
         defer { observer.onTransportFailure(connectionId, error) }
         val cause = if (error is NonRetryableTransportFailure) {
             DisconnectCause.UserRequested
@@ -628,7 +637,15 @@ class AuthenticatedWsCoordinator(
         disconnectCause: DisconnectCause? = null,
     ): Boolean {
         val previousCursor = state?.resumeCursor
+        val previousPhase = state?.phase
         state = transition.state
+        if (previousPhase != transition.state.phase) {
+            SbLog.i(
+                LOG_SCOPE,
+                "${transition.state.generation.connectionId} gen=${transition.state.generation.value} " +
+                    "$previousPhase -> ${transition.state.phase}${disconnectCause?.let { " cause=$it" }.orEmpty()}",
+            )
+        }
         var allSendsSucceeded = true
         var credentialVerified = true
         transition.effects.forEach { effect ->
@@ -704,7 +721,8 @@ class AuthenticatedWsCoordinator(
                 currentTarget.credentialRef,
                 session,
             )
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
+            SbLog.w(LOG_SCOPE, "${currentTarget.connectionId} session save threw ${SbLog.describe(error)}")
             false
         }
         if (!verified) return false
@@ -762,9 +780,16 @@ class AuthenticatedWsCoordinator(
             return
         }
         redialPending = true
-        if (!networkAvailable) return
+        if (!networkAvailable) {
+            SbLog.i(LOG_SCOPE, "${target?.connectionId} redial waits for a network")
+            return
+        }
         retryAttempts++
         val generation = state?.generation ?: return
+        SbLog.i(
+            LOG_SCOPE,
+            "${generation.connectionId} retry $retryAttempts in ${decision.delayMs} ms after $disconnectCause",
+        )
         retryTask = scheduler.schedule(decision.delayMs) {
             synchronized(this) {
                 retryTask = null
@@ -814,6 +839,7 @@ class AuthenticatedWsCoordinator(
                 socket = null
                 handshakeTimedOut = true
                 val connectionId = currentState.generation.connectionId
+                SbLog.w(LOG_SCOPE, "$connectionId gen=${generation.value} handshake timed out")
                 defer { observer.onTransportFailure(connectionId, HandshakeTimeoutFailure()) }
                 applyTransition(
                     ConnectionStateMachine.reduce(
@@ -842,6 +868,7 @@ class AuthenticatedWsCoordinator(
         connection: LineConnection,
     ) {
         if (destroyed || state?.generation != generation || socket !== connection) return
+        SbLog.w(LOG_SCOPE, "${generation.connectionId} gen=${generation.value} probe failed, reconnecting")
         socket = null
         closed(generation, DisconnectCause.Network)
         connection.close()
@@ -921,6 +948,7 @@ class AuthenticatedWsCoordinator(
     private companion object {
         const val DEFAULT_PROBE_TIMEOUT_MS = 3_000L
         const val DEFAULT_HANDSHAKE_TIMEOUT_MS = 15_000L
+        const val LOG_SCOPE = "socket"
     }
 }
 

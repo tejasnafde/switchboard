@@ -2,6 +2,7 @@ package app.switchboard.mobile.data.connection
 
 import app.switchboard.mobile.domain.connection.CleartextPolicy
 import app.switchboard.mobile.domain.iap.IapTarget
+import app.switchboard.mobile.platform.log.SbLog
 import app.switchboard.mobile.platform.protocol.LineEndpoint
 import app.switchboard.mobile.platform.protocol.LineTarget
 import app.switchboard.mobile.platform.protocol.withoutEmbeddedAuth
@@ -11,7 +12,11 @@ import app.switchboard.mobile.protocol.DeviceIdentityPayload
 
 sealed interface ConnectionTargetResolution {
     data class Ready(val target: LineTarget) : ConnectionTargetResolution
-    data class Failure(val message: String) : ConnectionTargetResolution
+    /**
+     * [retryable] failures (a database or keystore read that threw, a key that
+     * is locked) can pass on a later try; the others need the user to act.
+     */
+    data class Failure(val message: String, val retryable: Boolean = false) : ConnectionTargetResolution
 }
 
 class NativeConnectionTargetResolver(
@@ -26,6 +31,17 @@ class NativeConnectionTargetResolver(
         deviceId: String,
         deviceLabel: String,
         device: DeviceIdentityPayload? = null,
+    ): ConnectionTargetResolution = resolveOrThrow(connectionId, deviceId, deviceLabel, device).also { result ->
+        if (result is ConnectionTargetResolution.Failure) {
+            SbLog.w(LOG_SCOPE, "resolve $connectionId failed (retryable=${result.retryable}): ${result.message}")
+        }
+    }
+
+    private fun resolveOrThrow(
+        connectionId: String,
+        deviceId: String,
+        deviceLabel: String,
+        device: DeviceIdentityPayload?,
     ): ConnectionTargetResolution = try {
         val stored = database.find(connectionId)
             ?: return ConnectionTargetResolution.Failure("That machine no longer exists")
@@ -54,7 +70,7 @@ class NativeConnectionTargetResolver(
         val logicalKey = stored.activeCredentialKey
             ?: return ConnectionTargetResolution.Failure("That machine has no active credential")
         val native = credentials.read(logicalKey)
-            ?: return ConnectionTargetResolution.Failure("The saved credential could not be read")
+            ?: return ConnectionTargetResolution.Failure("The saved credential could not be read", retryable = true)
         val credential = native.toTransportCredential(deviceLabel, device)
         if (endpoint is LineEndpoint.CloudIap && credential !is Credential.LegacySharedToken) {
             return ConnectionTargetResolution.Failure("That Cloud IAP machine has no backend credential")
@@ -68,11 +84,13 @@ class NativeConnectionTargetResolver(
                 credentialRef = logicalKey,
             ),
         )
-    } catch (_: Exception) {
-        ConnectionTargetResolution.Failure("The saved machine could not be opened")
+    } catch (exception: Exception) {
+        SbLog.w(LOG_SCOPE, "resolve $connectionId threw ${SbLog.describe(exception)}")
+        ConnectionTargetResolution.Failure("The saved machine could not be opened", retryable = true)
     }
 
     private companion object {
+        const val LOG_SCOPE = "resolver"
         const val WEBSOCKET_KIND = "ws"
         const val IAP_KIND = "iap"
     }

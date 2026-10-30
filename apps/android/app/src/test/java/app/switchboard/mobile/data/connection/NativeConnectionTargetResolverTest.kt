@@ -166,10 +166,38 @@ class NativeConnectionTargetResolverTest {
         assertTrue(debug.resolve("emulator-host", "phone", "Pixel") is ConnectionTargetResolution.Ready)
     }
 
+    @Test
+    fun `a read that throws or a locked key is retryable, a missing or invalid machine is not`() {
+        val database = FakeDatabase(stored = mapOf("a" to stored("a", "ref-a")))
+        val locked = NativeConnectionTargetResolver(database, FakeCredentials(emptyMap()), requireEncryption = true)
+        val throwing = NativeConnectionTargetResolver(
+            FakeDatabase(emptyMap()) { error("Cannot access database on the main thread") },
+            FakeCredentials(emptyMap()),
+            requireEncryption = true,
+        )
+
+        assertEquals(
+            ConnectionTargetResolution.Failure("The saved credential could not be read", retryable = true),
+            locked.resolve("a", "phone", "Pixel"),
+        )
+        assertEquals(
+            ConnectionTargetResolution.Failure("The saved machine could not be opened", retryable = true),
+            throwing.resolve("a", "phone", "Pixel"),
+        )
+        assertEquals(
+            ConnectionTargetResolution.Failure("That machine no longer exists"),
+            locked.resolve("gone", "phone", "Pixel"),
+        )
+    }
+
     private class FakeDatabase(
         private val stored: Map<String, StoredConnection>,
+        private val failFind: (() -> Unit)? = null,
     ) : ConnectionDatabase {
-        override fun find(connectionId: String): StoredConnection? = stored[connectionId]
+        override fun find(connectionId: String): StoredConnection? {
+            failFind?.invoke()
+            return stored[connectionId]
+        }
         override fun upsert(connection: ConnectionEntity, activeCredentialKey: String) = Unit
         override fun delete(connectionId: String): Boolean = false
         override fun snapshot(): OfflineSnapshot = error("unused")

@@ -47,6 +47,7 @@ fun SettingsScreen(
     onFollowUpDefault: (TurnDelivery) -> Unit = {},
     /** Set while the demo runs: Settings is the second way out of it. */
     onLeaveDemo: (() -> Unit)? = null,
+    onShareLog: (() -> Unit)? = null,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -122,6 +123,24 @@ fun SettingsScreen(
                     },
                 )
             }
+            onShareLog?.let { share ->
+                item {
+                    ListItem(
+                        headlineContent = { Text("App log") },
+                        supportingContent = {
+                            Text(
+                                "Connection events from this phone, to send with a bug report. It holds no keys or messages.",
+                                color = TextDim,
+                                maxLines = 3,
+                            )
+                        },
+                        trailingContent = { Text("Share", color = MaterialTheme.colorScheme.primary) },
+                        modifier = Modifier
+                            .clickable(role = Role.Button, onClick = share)
+                            .testTag(SettingsTestTags.SHARE_LOG),
+                    )
+                }
+            }
         }
     }
 }
@@ -153,6 +172,7 @@ private fun FollowUpDefaultRow(value: TurnDelivery, onChange: (TurnDelivery) -> 
 
 object SettingsTestTags {
     const val LEAVE_DEMO = "settings-leave-demo"
+    const val SHARE_LOG = "settings-share-log"
     fun followUp(option: TurnDelivery) = "settings-follow-up-${option.wire}"
 }
 
