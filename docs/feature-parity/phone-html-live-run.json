@@ -72,7 +72,7 @@
       "The Chromium sandbox test is skipped where no Chromium is installed (CI has none); it ran on this Mac.",
       "Android System WebView and WKWebView may differ from desktop Chromium; the instrumented device probe (plan PR 4) and an iPhone probe run are the proof for each phone.",
       "The WebRTC rest risk through an about:blank iframe is accepted, not tested.",
-      "The phones have no third-party notices screen. The Android APK carries the licence files as assets; the iOS bundle will carry the libraries' own licence headers. A notices screen is not built."
+      "The phones have no third-party notices screen. The Android APK carries licence files for chart.js, d3 and three (three's covers OrbitControls). The iOS bundle carries the vendored source headers where present: chart.js and three have licence headers, d3 has a copyright header, and OrbitControls has none. A notices screen is not built."
     ]
   }
 }
