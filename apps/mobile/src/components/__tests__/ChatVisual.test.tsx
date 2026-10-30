@@ -97,6 +97,16 @@ it('falls back to the source when the diagram does not draw', async () => {
   expect(root.texts()).toContain('flowchart LR\n A -->')
 })
 
+it('shows an error when the system ends the drawing process', async () => {
+  const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+  const root = renderComponent(<ChatVisual kind="mermaid" source={'flowchart LR\n A --> B'} />)
+  await flush()
+  const webview = root.root.find((n) => n.props.testID === 'webview' && typeof n.type === 'string')
+  act(() => webview.props.onContentProcessDidTerminate({ nativeEvent: {} }))
+  expect(root.texts().join('|')).toContain('This diagram could not be drawn: The drawing process stopped.')
+  warn.mockRestore()
+})
+
 it('refuses every navigation but the bundled page', async () => {
   const root = renderComponent(<ChatVisual kind="mermaid" source={'flowchart LR\n A --> B'} />)
   await flush()
