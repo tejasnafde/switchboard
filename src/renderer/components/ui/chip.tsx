@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from './popover'
  * and no native <select> sits among the popovers.
  */
 export const chipClass =
-  'inline-flex h-[24px] shrink-0 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] focus-visible:border-[var(--accent)] data-[state=open]:border-[var(--accent)]'
+  'inline-flex h-[24px] shrink-0 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] hover:border-[color-mix(in_srgb,var(--text-muted)_45%,transparent)] focus-visible:border-[var(--accent)] data-[state=open]:border-[var(--accent)]'
 
 export const chipValueClass = 'font-[500] text-[var(--text-primary)]'
 
@@ -25,9 +25,18 @@ export function ChipLabel({ full, short }: { full: ReactNode; short?: ReactNode 
 
 export function ChipCaret() {
   return (
-    <span aria-hidden className="text-[9px] text-[var(--text-muted)]">
-      ▾
-    </span>
+    <svg
+      viewBox="0 0 8 8"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="h-[8px] w-[8px] shrink-0 text-[var(--text-muted)]"
+    >
+      <path d="M1.5 3l2.5 2.5L6.5 3" />
+    </svg>
   )
 }
 
@@ -115,7 +124,7 @@ export function OptionList({
             )}
           >
             <span className="min-w-0 truncate">{option.label}</span>
-            {option.hint && <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{option.hint}</span>}
+            {option.hint && <span className="shrink-0 text-[11px] text-[var(--text-muted)]">{option.hint}</span>}
           </button>
         )
       })}

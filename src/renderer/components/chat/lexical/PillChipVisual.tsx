@@ -84,14 +84,24 @@ function KindIcon({ kind, className }: { kind: PillChipKind; className?: string 
   )
 }
 
-const CHIP_CLASS = classes(
-  'group relative mx-px inline-flex h-[18px] max-w-[min(220px,100%)] cursor-pointer items-center gap-[4px] rounded-[4px] pl-[5px] pr-px align-[-3px]',
+/** The inline chip tier (18 px, radius 4, tinted by `--chip-tint`), shared with `SkillChip`. */
+export const INLINE_CHIP_CLASS = classes(
+  'mx-[2px] inline-flex h-[18px] items-center gap-[4px] rounded-[4px] align-baseline',
   'whitespace-nowrap text-[12px] leading-[18px] [font-family:var(--font-sans)] [font-variant-numeric:tabular-nums]',
   'bg-[color-mix(in_srgb,var(--chip-tint)_12%,transparent)] text-[color-mix(in_srgb,var(--chip-tint)_70%,var(--text-primary))]',
-  'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--chip-tint)_20%,transparent)] transition-[background-color,box-shadow] duration-[120ms]',
+  'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--chip-tint)_20%,transparent)]',
+  // Light: an opaque fill, so the chip reads as a card on the grey user bubble.
+  '[.theme-light_&]:bg-[color-mix(in_srgb,var(--chip-tint)_10%,var(--bg-primary))] [.theme-light_&]:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--chip-tint)_26%,transparent)]',
+)
+
+const CHIP_CLASS = classes(
+  INLINE_CHIP_CLASS,
+  'group relative max-w-[min(220px,100%)] cursor-pointer pl-[5px] transition-[background-color,box-shadow] duration-[120ms]',
   'hover:bg-[color-mix(in_srgb,var(--chip-tint)_20%,transparent)] hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--chip-tint)_40%,transparent)]',
-  'data-[selected=true]:bg-[color-mix(in_srgb,var(--chip-tint)_26%,transparent)] data-[selected=true]:shadow-[inset_0_0_0_1.5px_var(--chip-tint)]',
+  'data-[selected=true]:bg-[color-mix(in_srgb,var(--chip-tint)_26%,transparent)] data-[selected=true]:shadow-[inset_0_0_0_1px_var(--chip-tint)]',
   'data-[selected=true]:text-[color-mix(in_srgb,var(--chip-tint)_80%,var(--text-primary))]',
+  '[.theme-light_&]:hover:bg-[color-mix(in_srgb,var(--chip-tint)_18%,var(--bg-primary))] [.theme-light_&]:hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--chip-tint)_40%,transparent)]',
+  '[.theme-light_&]:data-[selected=true]:bg-[color-mix(in_srgb,var(--chip-tint)_26%,var(--bg-primary))] [.theme-light_&]:data-[selected=true]:shadow-[inset_0_0_0_1px_var(--chip-tint)]',
 )
 
 const REMOVE_CLASS = classes(
@@ -103,8 +113,7 @@ const REMOVE_CLASS = classes(
 /** How the card offers to view the chip: Enter for a keyboard-selected chip, a click otherwise. */
 export type PillOpenHint = 'keyboard' | 'pointer' | null
 
-const KBD_CLASS =
-  'mr-[2px] rounded-[3px] bg-[var(--bg-tertiary)] px-[4px] text-[10px] text-[var(--text-secondary)] [font-family:var(--font-mono)]'
+const KBD_CLASS = 'mr-[2px] rounded-[3px] bg-[var(--bg-tertiary)] px-[4px] text-[11px] text-[var(--text-secondary)]'
 
 export function PillChipCard({
   model,
@@ -118,14 +127,12 @@ export function PillChipCard({
   const header = [model.source, model.detail].filter(Boolean).join(' · ')
   return (
     <>
-      <div className="mb-[6px] flex items-center gap-[6px] text-[11.5px] text-[var(--text-secondary)]">
+      <div className="mb-[6px] flex items-center gap-[6px] text-[12px] text-[var(--text-secondary)]">
         <KindIcon kind={model.kind} className="text-[var(--chip-tint)]" />
         <b className="min-w-0 truncate font-semibold text-[var(--text-primary)]">{model.name}</b>
         <span className="shrink-0">{header}</span>
         {model.where && (
-          <span className="ml-auto min-w-0 truncate text-[10.5px] text-[var(--text-muted)] [font-family:var(--font-mono)]">
-            {model.where}
-          </span>
+          <span className="ml-auto min-w-0 truncate text-[11px] text-[var(--text-muted)]">{model.where}</span>
         )}
       </div>
       {model.preview.length > 0 && (
@@ -138,7 +145,7 @@ export function PillChipCard({
         </pre>
       )}
       {(openHint || removable || model.moreLines > 0) && (
-        <div className="mt-[7px] flex items-center gap-[12px] border-0 border-t border-solid border-[var(--border)] pt-[6px] text-[10.5px] text-[var(--text-muted)]">
+        <div className="mt-[7px] flex items-center gap-[12px] border-0 border-t border-solid border-[var(--border)] pt-[6px] text-[11px] text-[var(--text-muted)]">
           {openHint === 'keyboard' && (
             <span data-pill-open-hint="keyboard">
               <kbd className={KBD_CLASS}>{'↵'}</kbd> view
@@ -239,7 +246,7 @@ export function PillChipVisual({
           data-selected={selected || undefined}
           aria-label={ariaLabel}
           {...rootProps}
-          className={classes(CHIP_CLASS, selectable ? 'select-text' : 'select-none')}
+          className={classes(CHIP_CLASS, onRemove ? 'pr-px' : 'pr-[5px]', selectable ? 'select-text' : 'select-none')}
           style={tintStyle}
           // Over the chip body the card opens after a rest; over the cross it does not.
           onPointerOver={(e) => {
@@ -263,7 +270,7 @@ export function PillChipVisual({
           }}
         >
           <KindIcon kind={model.kind} />
-          <span className="inline-flex min-w-0 font-medium tracking-[-0.005em]">
+          <span className="inline-flex min-w-0 self-baseline font-medium">
             <span className="min-w-0 overflow-hidden text-ellipsis">{head}</span>
             {tail && <span className="shrink-0">{tail}</span>}
           </span>

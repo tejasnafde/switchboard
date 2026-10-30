@@ -156,7 +156,7 @@ export function Combobox({
               <Command.Group
                 key={group.heading ?? ''}
                 heading={group.heading}
-                className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-[600] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.07em] [&_[cmdk-group-heading]]:text-[var(--text-muted)]"
+                className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-[500] [&_[cmdk-group-heading]]:text-[var(--text-muted)]"
               >
                 {group.options.map((option) => (
                   <Command.Item
