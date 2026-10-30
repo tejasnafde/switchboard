@@ -2,11 +2,13 @@ package app.switchboard.mobile.ui.thread
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.annotation.RequiresApi
 
 private const val TAG = "LockedDownWebView"
 
@@ -19,6 +21,8 @@ private const val TAG = "LockedDownWebView"
 internal open class LockedDownWebViewClient(private val onGone: () -> Unit) : WebViewClient() {
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
 
+    // The system calls this only on API 26 and later.
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
         Log.w(TAG, "web renderer gone, crashed=${detail.didCrash()}")
         onGone()
