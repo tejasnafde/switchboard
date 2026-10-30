@@ -298,9 +298,22 @@ describe('REMOTE_COMMAND', () => {
     expect(REMOTE_COMMAND).toContain(`! grep -qsaF -- "${IDE_CMDLINE_MATCH}" "/proc/$IP/cmdline"; then`)
   })
 
+  it('restarts a code-server that does not answer next to a reused backend', () => {
+    const reuseAt = REMOTE_COMMAND.indexOf('reusing switchboard backend')
+    const ideProbeAt = REMOTE_COMMAND.indexOf('port:8766,timeout:3000')
+    expect(ideProbeAt).toBeGreaterThan(reuseAt)
+    expect(REMOTE_COMMAND.indexOf('kill -TERM "$IP"', ideProbeAt)).toBeGreaterThan(ideProbeAt)
+  })
+
+  it('never starts the backend without a token, and tightens an existing token file', () => {
+    expect(REMOTE_COMMAND).toContain('chmod 600 "$D/token"')
+    expect(REMOTE_COMMAND).toContain('if [ -z "$SWITCHBOARD_TOKEN" ]; then')
+    expect(REMOTE_COMMAND.indexOf('exit 1; fi;')).toBeLessThan(REMOTE_COMMAND.indexOf('nohup node'))
+  })
+
   it('keeps the backend token in a 0600 file and prints it once for the desktop', () => {
     expect(REMOTE_COMMAND).toContain('(umask 077;')
-    expect(REMOTE_COMMAND).toContain('SWITCHBOARD_TOKEN="$(cat "$D/token")"; export SWITCHBOARD_TOKEN;')
+    expect(REMOTE_COMMAND).toContain('SWITCHBOARD_TOKEN="$(cat "$D/token" 2>/dev/null)"; export SWITCHBOARD_TOKEN;')
     expect(REMOTE_COMMAND).toContain(`echo "${TOKEN_LINE_PREFIX}$SWITCHBOARD_TOKEN"`)
   })
 

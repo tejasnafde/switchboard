@@ -138,14 +138,18 @@ const MINT_HEX = `(cat /proc/sys/kernel/random/uuid 2>/dev/null || od -An -tx1 -
  * wedged server at 99% CPU does not). A plain GET gets 426 from the
  * WebSocket server, which is enough to prove the event loop runs.
  */
-function reusableServerTest(port: number): string {
+function httpAnswers(port: number): string {
   const probe =
     `require('http').get({host:'127.0.0.1',port:${port},timeout:3000},()=>process.exit(0))` +
     `.on('timeout',()=>process.exit(1)).on('error',()=>process.exit(1))`
+  return `node -e "${probe}" 2>/dev/null`
+}
+
+function reusableServerTest(port: number): string {
   return (
     `[ -n "$P" ] && grep -qsaF -- "${BACKEND_CMDLINE_MATCH}" "/proc/$P/cmdline" && ` +
     `[ -s "$D/server.version" ] && [ "$(cat "$D/server.version")" = "$(cat "$D/version" 2>/dev/null)" ] && ` +
-    `node -e "${probe}" 2>/dev/null`
+    httpAnswers(port)
   )
 }
 
@@ -174,14 +178,22 @@ export function buildRemoteBootstrapCommand(opts: RemoteBootstrapOpts): string {
     `D=${opts.serverDir}; ` +
     `${buildManagedPathExport()} ` +
     `if [ ! -s "$D/token" ]; then (umask 077; ${MINT_HEX} > "$D/token.tmp" && mv "$D/token.tmp" "$D/token"); fi; ` +
-    `SWITCHBOARD_TOKEN="$(cat "$D/token")"; export SWITCHBOARD_TOKEN; ` +
+    `chmod 600 "$D/token" 2>/dev/null; ` +
+    `SWITCHBOARD_TOKEN="$(cat "$D/token" 2>/dev/null)"; export SWITCHBOARD_TOKEN; ` +
+    // Without a token the loopback backend would trust every local user.
+    `if [ -z "$SWITCHBOARD_TOKEN" ]; then echo "could not create the backend token in $D" >&2; exit 1; fi; ` +
     `echo "${TOKEN_LINE_PREFIX}$SWITCHBOARD_TOKEN"; ` +
     `S=; command -v setsid >/dev/null 2>&1 && S=setsid; ` +
     `P="$(cat "$D/server.pid" 2>/dev/null)"; ` +
     ` IP="$(cat "$D/ide.pid" 2>/dev/null)"; ` +
     `SB_BRIDGE_PORT=${opts.bridgePort}; export SB_BRIDGE_PORT; ` +
     `FRESH=; if ${reusableServerTest(opts.port)}; then echo "reusing switchboard backend $P"; ` +
-    `SB_BRIDGE_TOKEN="$(cat "$D/bridge-token" 2>/dev/null)"; else FRESH=1; ` +
+    `SB_BRIDGE_TOKEN="$(cat "$D/bridge-token" 2>/dev/null)"; ` +
+    // A code-server that is alive but not serving keeps its pid; reap it so
+    // the launch below starts a fresh one.
+    `if ! ${httpAnswers(opts.idePort)}; then ` +
+    buildStaleProcessKill({ pidVar: 'IP', cmdlineMatch: IDE_CMDLINE_MATCH, graceSeconds: grace }) +
+    ` fi; else FRESH=1; ` +
     // `$D` here is a shell variable reference, not yet expanded - it is
     // resolved on the REMOTE, from the `D=` assignment above, when the
     // generated grep actually runs (see buildStaleProcessKill).
