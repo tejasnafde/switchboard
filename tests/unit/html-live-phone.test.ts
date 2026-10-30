@@ -86,7 +86,7 @@ describe('htmlLivePhoneDocument', () => {
       expect(doc.startsWith(`<!doctype html><html data-sb-theme="dark"><head>${CSP_META}<script>`)).toBe(true)
       const page = source.replace(/^<!doctype[^>]*>/i, '')
       expect(doc.indexOf(page)).toBeGreaterThan(doc.indexOf(CSP_META))
-      expect(doc.indexOf('<script', doc.indexOf(CSP_META))).toBeGreaterThan(doc.indexOf(CSP_META))
+      expect(doc.indexOf('RTCPeerConnection')).toBeLessThan(doc.indexOf(page))
     }
   })
 
@@ -265,6 +265,7 @@ describe('report parsers', () => {
     expect(parsePhoneLiveConsole('Uncaught TypeError', true)).toEqual({ t: 'e', v: 'Uncaught TypeError' })
     expect(parsePhoneLiveConsole('hello', false)).toBeNull()
     expect(parsePhoneLiveConsole('__sb_live_height__:NaN', false)).toBeNull()
+    expect(parsePhoneLiveConsole(`__sb_live_blocked__:${'x'.repeat(5000)}`, false)?.v).toHaveLength(300)
   })
 
   it('lets at most the limit through in each second', () => {

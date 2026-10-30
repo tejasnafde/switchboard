@@ -183,4 +183,66 @@ console.info('PROBE_DONE ' + NAME + ',' + ADDON)
     expect(holder.run!.outside).toEqual([])
     await page.context().close()
   })
+
+  const FLOOD = `<p>flood</p><script>
+console.error('PROBE_DONE first')
+console.error(Object.create(null))
+for (let i = 0; i < 60; i++) console.error('line ' + i)
+</script>`
+
+  it('Android: a page that floods the console still reports its height, and the CSP parses cleanly', async () => {
+    const page = await newPage(() => null)
+    const errors: string[] = []
+    const heights: string[] = []
+    page.on('console', (msg) => {
+      // The page's own error lines are expected; an engine complaint about our CSP is not.
+      if (msg.type() === 'error' && msg.text().includes('Content-Security-Policy')) errors.push(msg.text())
+      if (msg.text().startsWith('__sb_live_height__:')) heights.push(msg.text())
+    })
+    await page.route(`${ORIGIN}/index.html`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        headers: { 'Content-Security-Policy': PHONE_LIVE_CSP },
+        body: htmlLivePhoneDocument(FLOOD, THEME),
+      }),
+    )
+    await page.goto(`${ORIGIN}/index.html`)
+    await page.waitForTimeout(500)
+    expect(heights.length).toBeGreaterThan(0)
+    expect(errors).toEqual([])
+    await page.context().close()
+  })
+
+  it('iOS: the bridge gets only report shapes, the height despite a flood, and odd log arguments do not throw', async () => {
+    const page = await newPage(() => null)
+    await page.addInitScript(() => {
+      const posts: string[] = []
+      ;(window as unknown as { __posts: string[] }).__posts = posts
+      ;(window as unknown as { ReactNativeWebView: unknown }).ReactNativeWebView = {
+        postMessage: (m: string) => posts.push(m),
+      }
+    })
+    // Init scripts run on a navigation, so the document comes from the route (meta CSP only).
+    await page.route(`${ORIGIN}/index.html`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: htmlLivePhoneDocument(`${FLOOD}<img src="https://example.com/x.png">`, THEME),
+      }),
+    )
+    await page.goto(`${ORIGIN}/index.html`)
+    await page.waitForTimeout(500)
+    const posts = (await page.evaluate(() => (window as unknown as { __posts: string[] }).__posts)).map((m) =>
+      JSON.parse(m),
+    )
+    expect(posts.every((m) => ['h', 'e', 'b'].includes(m.t))).toBe(true)
+    expect(posts.some((m) => m.t === 'h')).toBe(true)
+    expect(posts).toContainEqual({ t: 'e', v: 'PROBE_DONE first' })
+    expect(posts).toContainEqual({ t: 'e', v: '[object]' })
+    expect(posts).toContainEqual({ t: 'b', v: 'https://example.com/x.png' })
+    // 50 page lines a second leave the page: the two above and 48 of the flood.
+    expect(posts.filter((m) => m.t === 'e')).toHaveLength(50)
+    await page.context().close()
+  })
 })

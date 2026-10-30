@@ -24,8 +24,8 @@ export const PHONE_HTML_LIVE_FLAG = 'phone_html_live_run'
 
 /**
  * The phone CSP. On Android `'self'` is the page's own origin; on iOS the
- * origin is opaque, so `'self'` matches nothing. `navigate-to` is ignored by
- * current engines and stays as a marker: navigation is stopped natively.
+ * origin is opaque, so `'self'` matches nothing. There is no `navigate-to`:
+ * engines log an error for it, and navigation is stopped natively.
  */
 export const PHONE_LIVE_CSP = [
   "default-src 'none'",
@@ -41,7 +41,6 @@ export const PHONE_LIVE_CSP = [
   'child-src blob:',
   "form-action 'none'",
   "base-uri 'none'",
-  "navigate-to 'none'",
 ].join('; ')
 
 /** Host suffix of a page's origin on Android. `.invalid` never resolves (RFC 2606). */
@@ -100,8 +99,9 @@ export function htmlLivePhoneVerdict(source: string, closed: boolean): HtmlLiveP
  * is removed here (a page can still take a clean copy from an about:blank
  * iframe; that rest risk is accepted). With the iOS bridge present, height,
  * errors and blocked URLs go out as `{t,v}` JSON and nothing else does; on
- * Android they stay on the console. At most 50 console lines a second leave
- * the page either way.
+ * Android they stay on the console. At most 50 other console lines a second
+ * leave the page either way; height and blocked lines have their own budget,
+ * so a page that floods the console still reports its height.
  */
 export const PHONE_LIVE_GUARD = `(() => {
   const off = function () { throw new Error('WebRTC is off in live pages') }
@@ -116,27 +116,33 @@ export const PHONE_LIVE_GUARD = `(() => {
   } catch (e) {}
   const bridge = window.ReactNativeWebView
   const H = '${HTML_LIVE_HEIGHT_MARKER}', B = '${HTML_LIVE_BLOCKED_MARKER}'
-  let second = 0, sent = 0
-  const allow = () => {
-    const now = Math.floor(Date.now() / 1000)
-    if (now !== second) { second = now; sent = 0 }
-    return ++sent <= 50
+  const gate = () => {
+    let second = 0, sent = 0
+    return () => {
+      const now = Math.floor(Date.now() / 1000)
+      if (now !== second) { second = now; sent = 0 }
+      return ++sent <= 50
+    }
   }
-  const post = (t, v) => { if (allow()) bridge.postMessage(JSON.stringify({ t, v: typeof v === 'string' ? v.slice(0, 300) : v })) }
+  const pageLines = gate(), ownLines = gate()
+  const str = (a) => { try { return String(a) } catch (e) { return '[object]' } }
+  const post = (t, v) => bridge.postMessage(JSON.stringify({ t, v: typeof v === 'string' ? v.slice(0, 300) : v }))
   for (const level of ['log', 'info', 'warn', 'error', 'debug']) {
     const original = console[level].bind(console)
     console[level] = (...args) => {
-      if (!bridge) { if (allow()) original(...args); return }
-      const text = args.map((a) => String(a)).join(' ')
-      if (text.startsWith(H)) post('h', Number(text.slice(H.length)))
-      else if (text.startsWith(B)) post('b', text.slice(B.length))
-      else if (level === 'error') post('e', text)
+      const first = typeof args[0] === 'string' ? args[0] : ''
+      const own = first.startsWith(H) || first.startsWith(B)
+      if (!(own ? ownLines() : pageLines())) return
+      if (!bridge) return original(...args)
+      if (first.startsWith(H)) post('h', Number(first.slice(H.length)))
+      else if (first.startsWith(B)) post('b', first.slice(B.length))
+      else if (level === 'error') post('e', args.map(str).join(' '))
     }
   }
   addEventListener('securitypolicyviolation', (e) => console.warn(B + e.blockedURI))
   if (bridge) {
-    addEventListener('error', (e) => post('e', String(e.message)))
-    addEventListener('unhandledrejection', (e) => post('e', String(e.reason)))
+    addEventListener('error', (e) => { if (pageLines()) post('e', str(e.message)) })
+    addEventListener('unhandledrejection', (e) => { if (pageLines()) post('e', str(e.reason)) })
   }
 })()`
 
@@ -205,7 +211,9 @@ export function parsePhoneLiveConsole(message: string, isError: boolean): PhoneL
     const v = Number(message.slice(HTML_LIVE_HEIGHT_MARKER.length))
     return Number.isFinite(v) && v >= 0 ? { t: 'h', v } : null
   }
-  if (message.startsWith(HTML_LIVE_BLOCKED_MARKER)) return { t: 'b', v: message.slice(HTML_LIVE_BLOCKED_MARKER.length) }
+  if (message.startsWith(HTML_LIVE_BLOCKED_MARKER)) {
+    return { t: 'b', v: message.slice(HTML_LIVE_BLOCKED_MARKER.length, HTML_LIVE_BLOCKED_MARKER.length + 300) }
+  }
   return isError ? { t: 'e', v: message.slice(0, 300) } : null
 }
 
