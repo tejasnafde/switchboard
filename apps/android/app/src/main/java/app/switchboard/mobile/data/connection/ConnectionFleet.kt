@@ -8,12 +8,14 @@ import app.switchboard.mobile.domain.connection.ConnectionStatus
 import app.switchboard.mobile.domain.connection.ConnectionStatusReducer
 import app.switchboard.mobile.domain.connection.ForegroundAction
 import app.switchboard.mobile.data.remote.RemoteRpc
+import app.switchboard.mobile.platform.log.SbLog
 import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.platform.protocol.WebSocketTarget
 import app.switchboard.mobile.protocol.DeviceIdentityPayload
 import java.io.Closeable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -73,12 +75,21 @@ class DeviceConnectionFleetTargetResolver(
         resolver.resolve(connectionId, deviceId, deviceLabel, device)
 }
 
+/**
+ * [scope] must not run on the main thread: a target is resolved on it, and
+ * that reads Room and the keystore. A foreground return and a Retry tap
+ * reach [start] on the main thread.
+ */
 class ConnectionFleet(
     private val scope: CoroutineScope,
     private val snapshots: ConnectionFleetSnapshotSource,
     private val targetResolver: ConnectionFleetTargetResolver,
     private val coordinatorFactory: ConnectionFleetCoordinatorFactory,
     private val remover: ConnectionFleetRemover,
+    /** Wait before the next try of a retryable resolve failure, by count of failures so far. */
+    private val resolveRetryDelayMs: (Int) -> Long = { failures ->
+        (RESOLVE_RETRY_BASE_MS shl failures.coerceAtMost(5)).coerceAtMost(RESOLVE_RETRY_MAX_MS)
+    },
 ) : Closeable {
     private data class StoredSpec(
         val row: ConnectionEntity,
@@ -124,7 +135,13 @@ class ConnectionFleet(
         var generation: Long,
         var desiredConnected: Boolean,
         var coordinator: ConnectionFleetCoordinator? = null,
-    )
+        var resolving: Job? = null,
+        var retry: Job? = null,
+        var failedResolves: Int = 0,
+    ) {
+        /** No socket and none on the way: only a new [start] connects it. */
+        val idle: Boolean get() = coordinator == null && resolving?.isActive != true
+    }
 
     private val mutableStatuses = MutableStateFlow<Map<String, ConnectionRuntimeState>>(emptyMap())
     val statuses = mutableStatuses.asStateFlow()
@@ -158,7 +175,7 @@ class ConnectionFleet(
             return
         }
         entry.desiredConnected = true
-        if (entry.coordinator == null) start(entry)
+        if (entry.idle) start(entry, "connect")
     }
 
     @Synchronized
@@ -180,32 +197,46 @@ class ConnectionFleet(
             return
         }
         entry.desiredConnected = true
+        entry.failedResolves = 0
         stop(entry)
-        start(entry)
+        start(entry, "retry")
     }
 
     @Synchronized
     fun onNetworkChanged(available: Boolean) {
         if (closed || networkAvailable == available) return
         networkAvailable = available
-        entries.values.forEach { entry ->
-            if (entry.desiredConnected) entry.coordinator?.setNetworkAvailable(available)
+        SbLog.i(LOG_SCOPE, "network available=$available")
+        entries.values.filter(Entry::desiredConnected).forEach { entry ->
+            val coordinator = entry.coordinator
+            when {
+                coordinator != null -> {
+                    coordinator.setNetworkAvailable(available)
+                    // A handshake that timed out while the network was gone stays stopped otherwise.
+                    if (available) coordinator.resume()
+                }
+                available && entry.idle -> start(entry, "network back")
+            }
         }
     }
 
     @Synchronized
     fun onForeground(action: ForegroundAction) {
         if (closed) return
+        SbLog.i(LOG_SCOPE, "foreground $action")
         entries.values.filter(Entry::desiredConnected).forEach { entry ->
             when (action) {
                 ForegroundAction.Probe -> {
                     // A connection whose start failed is retried on return, too.
                     val coordinator = entry.coordinator
-                    if (coordinator == null) start(entry) else coordinator.resume()
+                    when {
+                        coordinator != null -> coordinator.resume()
+                        entry.idle -> start(entry, "foreground")
+                    }
                 }
                 ForegroundAction.Reconnect -> {
                     stop(entry)
-                    start(entry)
+                    start(entry, "foreground reconnect")
                 }
             }
         }
@@ -218,7 +249,14 @@ class ConnectionFleet(
     @Synchronized
     fun onNetworkRouteChanged() {
         if (closed) return
-        entries.values.filter(Entry::desiredConnected).forEach { entry -> entry.coordinator?.resume() }
+        SbLog.i(LOG_SCOPE, "network route changed")
+        entries.values.filter(Entry::desiredConnected).forEach { entry ->
+            val coordinator = entry.coordinator
+            when {
+                coordinator != null -> coordinator.resume()
+                entry.idle -> start(entry, "network route")
+            }
+        }
     }
 
     @Synchronized
@@ -327,7 +365,7 @@ class ConnectionFleet(
                     connectionId,
                     ConnectionRuntimeState(entry.generation, ConnectionStatus.Disconnected, ""),
                 )
-                if (desired) start(entry)
+                if (desired) start(entry, "discovered")
             } else if (existing.spec != spec) {
                 stop(existing)
                 existing.spec = spec
@@ -336,7 +374,7 @@ class ConnectionFleet(
                     connectionId,
                     ConnectionRuntimeState(existing.generation, ConnectionStatus.Disconnected, ""),
                 )
-                if (existing.desiredConnected) start(existing)
+                if (existing.desiredConnected) start(existing, "target changed")
             }
         }
     }
@@ -352,29 +390,49 @@ class ConnectionFleet(
         }
     }
 
-    private fun start(entry: Entry) {
+    private fun start(entry: Entry, reason: String) {
         val connectionId = entry.spec.row.id
         val generation = allocateGeneration()
         entry.generation = generation
+        cancelPending(entry)
         setStatus(connectionId, ConnectionRuntimeState(generation, ConnectionStatus.Connecting, ""))
+        SbLog.i(LOG_SCOPE, "$connectionId gen=$generation start ($reason)")
+        entry.resolving = scope.launch { resolveAndConnect(connectionId, generation) }
+    }
+
+    private fun resolveAndConnect(connectionId: String, generation: Long) {
         val resolution = try {
             targetResolver.resolve(connectionId)
         } catch (exception: Exception) {
-            setStatus(
-                connectionId,
-                ConnectionRuntimeState(
-                    generation,
-                    ConnectionStatus.Error,
-                    exception.message ?: "Could not resolve connection target",
-                ),
+            SbLog.w(LOG_SCOPE, "$connectionId gen=$generation resolve threw ${SbLog.describe(exception)}")
+            ConnectionTargetResolution.Failure(
+                exception.message ?: "Could not resolve connection target",
+                retryable = true,
             )
-            return
         }
+        synchronized(this) {
+            val entry = entries[connectionId]
+            if (closed || entry == null || entry.generation != generation || !entry.desiredConnected) {
+                SbLog.d(LOG_SCOPE, "$connectionId gen=$generation resolve result dropped, start superseded")
+                return
+            }
+            // The job is still active until this block returns; clear it so a
+            // network or foreground event in that gap still sees the entry idle.
+            entry.resolving = null
+            connectResolved(entry, generation, resolution)
+        }
+    }
+
+    private fun connectResolved(entry: Entry, generation: Long, resolution: ConnectionTargetResolution) {
+        val connectionId = entry.spec.row.id
         when (resolution) {
-            is ConnectionTargetResolution.Failure -> setStatus(
-                connectionId,
-                ConnectionRuntimeState(generation, ConnectionStatus.Error, resolution.message),
-            )
+            is ConnectionTargetResolution.Failure -> {
+                setStatus(
+                    connectionId,
+                    ConnectionRuntimeState(generation, ConnectionStatus.Error, resolution.message),
+                )
+                if (resolution.retryable) scheduleResolveRetry(entry, generation)
+            }
             is ConnectionTargetResolution.Ready -> {
                 if (resolution.target.connectionId != connectionId) {
                     setStatus(
@@ -383,11 +441,13 @@ class ConnectionFleet(
                     )
                     return
                 }
+                entry.failedResolves = 0
                 val coordinator = try {
                     coordinatorFactory.create(connectionId, generation) { event ->
                         runtimeEvent(connectionId, generation, event)
                     }
                 } catch (exception: Exception) {
+                    SbLog.w(LOG_SCOPE, "$connectionId gen=$generation create threw ${SbLog.describe(exception)}")
                     setStatus(
                         connectionId,
                         ConnectionRuntimeState(
@@ -403,6 +463,7 @@ class ConnectionFleet(
                     if (networkAvailable == false) coordinator.setNetworkAvailable(false)
                     coordinator.connect(resolution.target)
                 } catch (exception: Exception) {
+                    SbLog.w(LOG_SCOPE, "$connectionId gen=$generation connect threw ${SbLog.describe(exception)}")
                     runCatching(coordinator::destroy)
                     if (entry.coordinator === coordinator) entry.coordinator = null
                     setStatus(
@@ -418,6 +479,38 @@ class ConnectionFleet(
         }
     }
 
+    /**
+     * A target that could not be read now (a keystore locked after a
+     * background, a database read that threw) is tried again with a backoff,
+     * [RESOLVE_RETRY_LIMIT] times; a network return or a foreground return
+     * tries at once.
+     */
+    private fun scheduleResolveRetry(entry: Entry, generation: Long) {
+        val connectionId = entry.spec.row.id
+        if (entry.failedResolves >= RESOLVE_RETRY_LIMIT) {
+            SbLog.w(LOG_SCOPE, "$connectionId resolve failed $RESOLVE_RETRY_LIMIT times, waiting for a network, foreground or Retry")
+            return
+        }
+        val delayMs = resolveRetryDelayMs(entry.failedResolves)
+        entry.failedResolves++
+        SbLog.i(LOG_SCOPE, "$connectionId gen=$generation resolve retry ${entry.failedResolves} in $delayMs ms")
+        entry.retry = scope.launch {
+            delay(delayMs)
+            synchronized(this@ConnectionFleet) {
+                if (!closed && entry.generation == generation && entry.desiredConnected && entry.idle) {
+                    start(entry, "resolve retry")
+                }
+            }
+        }
+    }
+
+    private fun cancelPending(entry: Entry) {
+        entry.resolving?.cancel()
+        entry.resolving = null
+        entry.retry?.cancel()
+        entry.retry = null
+    }
+
     @Synchronized
     private fun runtimeEvent(
         connectionId: String,
@@ -431,10 +524,14 @@ class ConnectionFleet(
             mutableStatuses.value[connectionId],
             event,
         ) ?: return
+        if (reduced.status != mutableStatuses.value[connectionId]?.status) {
+            SbLog.i(LOG_SCOPE, "$connectionId gen=$coordinatorGeneration ${reduced.status} ${reduced.detail}".trimEnd())
+        }
         setStatus(connectionId, reduced)
     }
 
     private fun stopAndInvalidate(entry: Entry, detail: String) {
+        cancelPending(entry)
         val coordinator = entry.coordinator
         entry.coordinator = null
         entry.generation = allocateGeneration()
@@ -449,6 +546,7 @@ class ConnectionFleet(
     }
 
     private fun stop(entry: Entry) {
+        cancelPending(entry)
         val coordinator = entry.coordinator
         entry.coordinator = null
         if (coordinator != null) {
@@ -470,5 +568,9 @@ class ConnectionFleet(
     private companion object {
         const val WEBSOCKET_KIND = "ws"
         const val IAP_KIND = "iap"
+        const val LOG_SCOPE = "fleet"
+        const val RESOLVE_RETRY_BASE_MS = 2_000L
+        const val RESOLVE_RETRY_MAX_MS = 60_000L
+        const val RESOLVE_RETRY_LIMIT = 8
     }
 }

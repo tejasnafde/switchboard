@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalContext
+import app.switchboard.mobile.platform.log.ShareLog
 import androidx.compose.ui.platform.LocalUriHandler
 import app.switchboard.mobile.BuildConfig
 import app.switchboard.mobile.ui.demo.DemoStrip
@@ -205,6 +206,7 @@ private fun SwitchboardNavigationHost(
     var navigationState by rememberSaveable { mutableStateOf(NavigationState.root()) }
     val reviewsRegistry = remember { ReviewsCoordinatorRegistry() }
     val runtimeStatuses by (runtime?.statuses ?: EmptyRuntimeStatuses).collectAsState()
+    val shareContext = LocalContext.current
     val visibleConnections = remember(connectionsState, runtimeStatuses) {
         RuntimeConnectionsMapper.overlay(connectionsState, runtimeStatuses)
     }
@@ -454,6 +456,7 @@ private fun SwitchboardNavigationHost(
                 phoneLiveRun = (runtime?.phoneLiveRun ?: PhoneLiveRunOff).collectAsState().value,
                 onPhoneLiveRun = { runtime?.setPhoneLiveRun(it) },
                 onLeaveDemo = onLeaveDemo,
+                onShareLog = { ShareLog.share(shareContext) },
             )
 
             is AppRoute.Pair -> PairingScreen(
@@ -496,16 +499,18 @@ private fun SwitchboardNavigationHost(
             )
 
             is AppRoute.MessageSearch -> {
+                var searchQuery by rememberSaveable(route.connectionId) { mutableStateOf("") }
                 val lease = runtime?.lease(route.connectionId)
                 if (lease == null) {
                     MessageSearchScreen(
                         connectionLabel = route.connectionLabel,
                         state = MessageSearchState(
+                            query = searchQuery,
                             error = RootNavigationPolicy.fallback(
                                 runtimeStatuses[route.connectionId],
                             ).message(),
                         ),
-                        onQueryChange = {},
+                        onQueryChange = { searchQuery = it },
                         onRetry = { runtime?.retry(route.connectionId) },
                         onBack = ::navigateBack,
                         onOpenResult = {},
@@ -514,6 +519,8 @@ private fun SwitchboardNavigationHost(
                     MessageSearchRouteHost(
                         connectionLabel = route.connectionLabel,
                         lease = lease,
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
                         onBack = ::navigateBack,
                         onOpenResult = { result ->
                             navigationState = navigationState.push(

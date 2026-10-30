@@ -86,3 +86,11 @@ val SwitchboardTypography = Typography(
         lineHeight = 16.sp,
     ),
 )
+
+/** Context chip labels: the system sans with tabular numbers, never mono (same rule as the desktop chips). */
+val ChipLabel = TextStyle(
+    fontWeight = FontWeight.Medium,
+    fontSize = 12.sp,
+    lineHeight = 16.sp,
+    fontFeatureSettings = "tnum",
+)

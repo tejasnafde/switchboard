@@ -2,6 +2,7 @@ package app.switchboard.mobile.runtime
 
 import app.switchboard.mobile.domain.connection.ConnectionLifecycle
 import app.switchboard.mobile.domain.connection.ForegroundAction
+import app.switchboard.mobile.platform.log.SbLog
 import java.io.Closeable
 
 class ViewingLeaseRenewalHooks {
@@ -37,19 +38,23 @@ class LifecycleResilienceCoordinator(
             foreground = false
             backgroundedAtMs = clock()
         }
+        SbLog.i(LOG_SCOPE, "background")
     }
 
     fun onForeground() {
-        val action = synchronized(this) {
+        val (action, awayMs) = synchronized(this) {
             if (foreground) return
             foreground = true
-            ConnectionLifecycle.foregroundAction(backgroundedAtMs, clock()).also {
+            val now = clock()
+            val away = backgroundedAtMs?.let { now - it }
+            ConnectionLifecycle.foregroundAction(backgroundedAtMs, now).also {
                 backgroundedAtMs = null
-            }
+            } to away
         }
-        runCatching(renewViewingLeases)
-        runCatching(wakeOutbox)
-        runCatching { onForegroundAction(action) }
+        SbLog.i(LOG_SCOPE, "foreground after ${awayMs ?: "-"} ms: $action")
+        runLogged("renew viewing leases", renewViewingLeases)
+        runLogged("wake outbox", wakeOutbox)
+        runLogged("foreground action") { onForegroundAction(action) }
     }
 
     fun onNetworkAvailability(available: Boolean) {
@@ -59,8 +64,9 @@ class LifecycleResilienceCoordinator(
             networkAvailable = available
             current
         }
-        runCatching { onNetworkChanged(available) }
-        if (previous == false && available) runCatching(wakeOutbox)
+        SbLog.i(LOG_SCOPE, "network available=$available (was $previous)")
+        runLogged("network change") { onNetworkChanged(available) }
+        if (previous == false && available) runLogged("wake outbox", wakeOutbox)
     }
 
     /** The default network moved while still connected; a foreground app checks its sockets. */
@@ -68,6 +74,19 @@ class LifecycleResilienceCoordinator(
         val visible = synchronized(this) { foreground }
         // In the background the process is about to be frozen, and the next
         // foreground return checks the sockets anyway.
-        if (visible) runCatching(onNetworkRouteChanged)
+        SbLog.i(LOG_SCOPE, "network route changed, foreground=$visible")
+        if (visible) runLogged("network route", onNetworkRouteChanged)
+    }
+
+    private fun runLogged(step: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (error: Throwable) {
+            SbLog.w(LOG_SCOPE, "$step threw ${SbLog.describe(error)}")
+        }
+    }
+
+    private companion object {
+        const val LOG_SCOPE = "lifecycle"
     }
 }

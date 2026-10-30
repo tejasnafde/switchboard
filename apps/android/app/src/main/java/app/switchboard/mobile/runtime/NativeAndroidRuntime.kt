@@ -36,6 +36,7 @@ import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
 import app.switchboard.mobile.domain.connection.ConnectionStatus
 import app.switchboard.mobile.domain.outbox.DeliveryReadiness
 import app.switchboard.mobile.domain.outbox.QueuedTurn
+import app.switchboard.mobile.platform.log.SbLog
 import app.switchboard.mobile.platform.migration.DialGate
 import app.switchboard.mobile.platform.google.VerifiedGoogleCredentialStore
 import app.switchboard.mobile.platform.google.OkHttpGoogleRevokeTransport
@@ -316,6 +317,8 @@ class NativeAndroidRuntime private constructor(
 
         fun create(application: Application): NativeAndroidRuntime {
             val applicationContext = application.applicationContext
+            SbLog.installFile(java.io.File(applicationContext.cacheDir, "logs"))
+            SbLog.i("app", "runtime start ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             val database = SwitchboardDatabase.open(applicationContext)
             val credentialPlatform = AndroidNativeCredentialPlatform(applicationContext)
             val credentials = VerifiedNativeCredentialStore(credentialPlatform)

@@ -7,6 +7,7 @@ import app.switchboard.mobile.compat.stringOrNull
 import app.switchboard.mobile.platform.migration.CredentialWriteVerification
 import app.switchboard.mobile.platform.migration.NativeCredentialStore
 import app.switchboard.mobile.platform.migration.SelectedCredential
+import app.switchboard.mobile.platform.log.SbLog
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
@@ -73,11 +74,17 @@ class VerifiedNativeCredentialStore(
         val envelope = encoded.decodeEnvelope()
         when (val decrypted = platform.decrypt(KEY_ALIAS, envelope)) {
             is NativeDecryption.Plaintext -> decrypted.bytes.decodeCredential()
-            NativeDecryption.KeyUnavailable,
-            is NativeDecryption.Failed,
-            -> null
+            NativeDecryption.KeyUnavailable -> {
+                SbLog.w(LOG_SCOPE, "read: keystore key unavailable")
+                null
+            }
+            is NativeDecryption.Failed -> {
+                SbLog.w(LOG_SCOPE, "read: decrypt failed: ${decrypted.detail}")
+                null
+            }
         }
-    } catch (_: Exception) {
+    } catch (exception: Exception) {
+        SbLog.w(LOG_SCOPE, "read threw ${SbLog.describe(exception)}")
         null
     }
 
@@ -123,6 +130,7 @@ class VerifiedNativeCredentialStore(
         "$PREFERENCE_KEY_PREFIX${logicalKey.replace(UNSAFE_KEY_CHARS, "_")}"
 
     companion object {
+        private const val LOG_SCOPE = "credentials"
         const val KEY_ALIAS = "switchboard.native.credentials.v1"
         const val PREFERENCE_FILE = "SwitchboardNativeCredentials"
         const val PREFERENCE_KEY_PREFIX = "credential_v1-"
