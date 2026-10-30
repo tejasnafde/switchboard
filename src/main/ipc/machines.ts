@@ -33,6 +33,7 @@ import {
 import { makeProvision } from '../machines/provision-deps'
 import { getSetting, setSetting } from '../db/database'
 import { createServer } from 'node:net'
+import { ipcMain } from 'electron'
 
 const log = createMainLogger('ipc:machines')
 
@@ -93,7 +94,7 @@ export function registerMachineHandlers(host: BackendHost): void {
       allocateIdePort: stableIdePort,
       remoteIdePort: REMOTE_IDE_PORT,
       spawnTunnel,
-      waitForHealth,
+      waitForHealth: (url, token) => waitForHealth(url, undefined, undefined, token),
       remotePort: REMOTE_PORT,
       remoteCommand: REMOTE_COMMAND,
       provision: makeProvision((msg) => log.info(msg)),
@@ -142,6 +143,13 @@ export function registerMachineHandlers(host: BackendHost): void {
 
   host.handle(MachineChannels.GET_STATUSES, () => mgr.statuses())
 
+  // ipcMain, not host.handle: the host also serves paired phones, and this
+  // token opens a full-scope session on the machine.
+  ipcMain.removeAllListeners(MachineChannels.BACKEND_TOKEN)
+  ipcMain.on(MachineChannels.BACKEND_TOKEN, (event, id: string) => {
+    event.returnValue = mgr.tokenOf(id)
+  })
+
   host.handle(MachineChannels.GET_SNAPSHOTS, () => getMachineSnapshots())
 
   host.handle(MachineChannels.SAVE_SNAPSHOT, (id: string, snapshot: MachineSnapshot) => {
@@ -181,8 +189,8 @@ export function registerMachineHandlers(host: BackendHost): void {
 
 /**
  * Kill every live tunnel. Call from `before-quit` - without this, ssh
- * reparents to launchd on app exit and both the tunnel and the remote server
- * it forwards to outlive Switchboard.
+ * reparents to launchd on app exit. The remote backends run detached and
+ * keep their sessions; the next connect reuses them.
  */
 export function stopAllMachineConnections(): Promise<void> {
   return connections?.disconnectAll() ?? Promise.resolve()

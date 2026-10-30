@@ -16,6 +16,8 @@ export interface TunnelProcess {
   onExit: (cb: () => void) => void
   /** Human-readable cause of an exit (summarized ssh stderr), if any was captured. */
   exitReason?: () => string | undefined
+  /** The backend token the remote bootstrap printed, once it has arrived. */
+  token?: () => string | undefined
 }
 
 export interface ConnectionManagerDeps {
@@ -28,7 +30,7 @@ export interface ConnectionManagerDeps {
   remoteIdePort?: number
   spawnTunnel: (command: string, args: string[]) => TunnelProcess
   /** Resolves ok once the remote backend answers over the tunnel; reason carries the last failure (version mismatch, timeout). */
-  waitForHealth: (url: string) => Promise<{ ok: boolean; reason?: string }>
+  waitForHealth: (url: string, token: () => string | undefined) => Promise<{ ok: boolean; reason?: string }>
   remotePort: number
   remoteCommand: string
   /**
@@ -67,6 +69,8 @@ interface Conn {
   /** Local forward to the machine's code-server, when the IDE forward is on. */
   idePort: number | null
   proc: TunnelProcess | null
+  /** The backend token, kept after a drop so the next tunnel has it at once. Memory only. */
+  token: string | null
   attempts: number
   intentional: boolean
   epoch: number
@@ -90,6 +94,12 @@ export class ConnectionManager {
   idePortOf(machineId: string): number | null {
     const conn = this.conns.get(machineId)
     return conn?.status === 'connected' ? conn.idePort : null
+  }
+
+  /** The remote backend's token, when connected. Never send it to a phone. */
+  tokenOf(machineId: string): string | null {
+    const conn = this.conns.get(machineId)
+    return conn?.status === 'connected' ? conn.token : null
   }
 
   /** Snapshot of every tracked connection, for a reloaded renderer to resync from. */
@@ -141,6 +151,7 @@ export class ConnectionManager {
       port: prev?.port ?? null,
       idePort: prev?.idePort ?? null,
       proc: null,
+      token: prev?.token ?? null,
       attempts: prev?.attempts ?? 0,
       intentional: false,
       epoch,
@@ -193,7 +204,11 @@ export class ConnectionManager {
       conn.proc = proc
 
       this.progress(machine.id, epoch, 'waiting for the remote server')
-      const health = await this.deps.waitForHealth(url)
+      const health = await this.deps.waitForHealth(url, () => {
+        const fresh = proc.token?.()
+        if (fresh) conn.token = fresh
+        return conn.token ?? undefined
+      })
       if (this.conns.get(machine.id)?.epoch !== epoch) return
       if (health.ok) {
         conn.attempts = 0

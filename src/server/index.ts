@@ -54,9 +54,9 @@ const SERVER_VERSION_CHANNEL = 'server:version'
 
 const log = createLogger('server')
 
-// Same dir as the uploaded bundle. A lingering process from an ungraceful
-// tunnel drop can hold the port; connect-deps.ts REMOTE_COMMAND kills whatever
-// pid is recorded here before launching a fresh server.
+// Same dir as the uploaded bundle. The bootstrap (connect-deps.ts
+// REMOTE_COMMAND) reuses the pid recorded here when it is live and current,
+// and otherwise kills it before launching a fresh server.
 /** Matches provisionCommands.REMOTE_SERVER_DIR, which is the shell form of this
  *  path and so cannot be imported here. */
 const SERVER_HOME = join(homedir(), '.switchboard-server')
@@ -94,9 +94,9 @@ const bindLifecycle = createBindLifecycle({
  * network fault rather than an auth one. So when binding beyond loopback without
  * an explicit token, persist one and reuse it across restarts.
  *
- * Deliberately NOT done for a loopback bind: the desktop dials its ssh-tunnelled
- * remotes with no token at all, and switching that on would break the existing
- * remote-machines flow.
+ * Not done for a loopback bind: the desktop's ssh bootstrap passes its own
+ * SWITCHBOARD_TOKEN (see machines/remote-bootstrap.ts), and a server started
+ * by hand on loopback keeps the open trust model.
  */
 function stableToken(): string {
   const file = join(homedir(), '.switchboard-server', 'token')

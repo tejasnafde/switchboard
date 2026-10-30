@@ -1,7 +1,7 @@
 /**
- * The shell the tunnel runs on the remote before `node index.cjs`: reap a
- * lingering server, restart the managed code-server, publish the managed CLI
- * PATH, then exec the backend.
+ * The shell the tunnel runs on the remote: publish the managed CLI PATH and
+ * the backend token, then reuse a live backend or reap it and start a fresh
+ * detached backend and code-server.
  *
  * Built as fragments rather than one literal so the two rules that failed in
  * the field are stated once and unit-testable as strings (the remote itself is
@@ -126,24 +126,78 @@ export interface RemoteBootstrapOpts {
   graceSeconds?: number
 }
 
+/** Prefix of the stdout line that carries the backend token to the desktop.
+ *  spawnTunnel reads it and never logs it. */
+export const TOKEN_LINE_PREFIX = 'SWITCHBOARD_BACKEND_TOKEN='
+
+const MINT_HEX = `(cat /proc/sys/kernel/random/uuid 2>/dev/null || od -An -tx1 -N16 /dev/urandom) | tr -dc 'a-f0-9'`
+
 /**
+ * True when the server on `$P` is ours (pid identity), was started from the
+ * installed bundle version, and its HTTP listener answers within 3 s (a
+ * wedged server at 99% CPU does not). A plain GET gets 426 from the
+ * WebSocket server, which is enough to prove the event loop runs.
+ */
+function httpAnswers(port: number): string {
+  const probe =
+    `require('http').get({host:'127.0.0.1',port:${port},timeout:3000},()=>process.exit(0))` +
+    `.on('timeout',()=>process.exit(1)).on('error',()=>process.exit(1))`
+  return `node -e "${probe}" 2>/dev/null`
+}
+
+function reusableServerTest(port: number): string {
+  return (
+    `[ -n "$P" ] && grep -qsaF -- "${BACKEND_CMDLINE_MATCH}" "/proc/$P/cmdline" && ` +
+    `[ -s "$D/server.version" ] && [ "$(cat "$D/server.version")" = "$(cat "$D/version" 2>/dev/null)" ] && ` +
+    httpAnswers(port)
+  )
+}
+
+/**
+ * The backend runs detached (`setsid nohup`), so a tunnel drop, a desktop
+ * sleep or a quit does not end the sessions on the VM. Each connect reuses a
+ * live server of the installed version and reaps it only on a version change
+ * or a failed probe. The ssh session then waits on that server's pid, so the
+ * tunnel ends (and the desktop reconnects) when the server dies.
+ *
+ * The backend token lives 0600 in `$D/token` and is printed once on stdout
+ * for the desktop, which holds it in memory only. Any local user on a shared
+ * VM can reach the loopback port, so the port alone is not a guard.
+ *
  * SB_BRIDGE_PORT/SB_BRIDGE_TOKEN are exported BEFORE both launches so the
  * code-server tree (its extension hosts inherit the env, which is how
  * resources/sb-bridge/extension.js finds the socket) and the backend that hosts
  * the bridge agree on one token. Minting it here, in the single shell that
  * starts both, is what keeps them in sync - a token generated independently on
- * either side could never match.
+ * either side could never match. The token is kept in `$D/bridge-token` so a
+ * reused backend's code-server can be started again with it.
  */
 export function buildRemoteBootstrapCommand(opts: RemoteBootstrapOpts): string {
   const grace = opts.graceSeconds ?? 10
   return (
     `D=${opts.serverDir}; ` +
+    `${buildManagedPathExport()} ` +
+    `if [ ! -s "$D/token" ]; then (umask 077; ${MINT_HEX} > "$D/token.tmp" && mv "$D/token.tmp" "$D/token"); fi; ` +
+    `chmod 600 "$D/token" 2>/dev/null; ` +
+    `SWITCHBOARD_TOKEN="$(cat "$D/token" 2>/dev/null)"; export SWITCHBOARD_TOKEN; ` +
+    // Without a token the loopback backend would trust every local user.
+    `if [ -z "$SWITCHBOARD_TOKEN" ]; then echo "could not create the backend token in $D" >&2; exit 1; fi; ` +
+    `echo "${TOKEN_LINE_PREFIX}$SWITCHBOARD_TOKEN"; ` +
+    `S=; command -v setsid >/dev/null 2>&1 && S=setsid; ` +
     `P="$(cat "$D/server.pid" 2>/dev/null)"; ` +
+    ` IP="$(cat "$D/ide.pid" 2>/dev/null)"; ` +
+    `SB_BRIDGE_PORT=${opts.bridgePort}; export SB_BRIDGE_PORT; ` +
+    `FRESH=; if ${reusableServerTest(opts.port)}; then echo "reusing switchboard backend $P"; ` +
+    `SB_BRIDGE_TOKEN="$(cat "$D/bridge-token" 2>/dev/null)"; ` +
+    // A code-server that is alive but not serving keeps its pid; reap it so
+    // the launch below starts a fresh one.
+    `if ! ${httpAnswers(opts.idePort)}; then ` +
+    buildStaleProcessKill({ pidVar: 'IP', cmdlineMatch: IDE_CMDLINE_MATCH, graceSeconds: grace }) +
+    ` fi; else FRESH=1; ` +
     // `$D` here is a shell variable reference, not yet expanded - it is
     // resolved on the REMOTE, from the `D=` assignment above, when the
     // generated grep actually runs (see buildStaleProcessKill).
     buildStaleProcessKill({ pidVar: 'P', cmdlineMatch: BACKEND_CMDLINE_MATCH, graceSeconds: grace }) +
-    ` IP="$(cat "$D/ide.pid" 2>/dev/null)"; ` +
     // NOT the launched path (`nohup "$D/code-server/bin/code-server" ...`):
     // that script `exec`s into "$D/code-server/lib/node" "$D/code-server", so
     // by the time this guard runs on the NEXT connection, `cmdline` no longer
@@ -153,14 +207,25 @@ export function buildRemoteBootstrapCommand(opts: RemoteBootstrapOpts): string {
     // separate from and as precise as the backend's own match so a shared
     // VM's other processes, including someone else's code-server, can never
     // satisfy either guard.
+    ' ' +
     buildStaleProcessKill({ pidVar: 'IP', cmdlineMatch: IDE_CMDLINE_MATCH, graceSeconds: grace }) +
-    ` ${buildManagedPathExport()} ` +
-    `SB_BRIDGE_PORT=${opts.bridgePort}; export SB_BRIDGE_PORT; ` +
-    `SB_BRIDGE_TOKEN="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || ` +
-    `od -An -tx1 -N16 /dev/urandom | tr -dc 'a-f0-9')"; export SB_BRIDGE_TOKEN; ` +
-    `if [ -x "$D/code-server/bin/code-server" ]; then ` +
-    `nohup "$D/code-server/bin/code-server" --auth none --bind-addr 127.0.0.1:${opts.idePort} ` +
-    `--extensions-dir "$D/ide-extensions" --user-data-dir "$D/ide-data" > "$D/ide.log" 2>&1 & echo $! > "$D/ide.pid"; fi; ` +
-    `SWITCHBOARD_REMOTE=1 PORT=${opts.port} node $D/index.cjs`
+    ` SB_BRIDGE_TOKEN="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || ` +
+    `od -An -tx1 -N16 /dev/urandom | tr -dc 'a-f0-9')"; ` +
+    `(umask 077; printf '%s' "$SB_BRIDGE_TOKEN" > "$D/bridge-token"); fi; ` +
+    `export SB_BRIDGE_TOKEN; ` +
+    // A reused backend keeps its bridge token, so a code-server that died
+    // is started again with the same one.
+    `if [ -x "$D/code-server/bin/code-server" ] && ! grep -qsaF -- "${IDE_CMDLINE_MATCH}" "/proc/$IP/cmdline"; then ` +
+    `$S nohup "$D/code-server/bin/code-server" --auth none --bind-addr 127.0.0.1:${opts.idePort} ` +
+    `--extensions-dir "$D/ide-extensions" --user-data-dir "$D/ide-data" > "$D/ide.log" 2>&1 < /dev/null & echo $! > "$D/ide.pid"; fi; ` +
+    `if [ -n "$FRESH" ]; then cat "$D/version" > "$D/server.version" 2>/dev/null; ` +
+    `SWITCHBOARD_REMOTE=1 PORT=${opts.port} $S nohup node $D/index.cjs > "$D/server.log" 2>&1 < /dev/null & P=$!; ` +
+    // Until the child execs, its cmdline is still this shell's.
+    `sleep 1; fi; ` +
+    // Not `kill -0`: a recycled pid would keep the tunnel up on a stranger.
+    // The newline is a heartbeat: sshd does not signal a command without a
+    // pty when the client goes, so a write to the closed channel (SIGPIPE)
+    // is what ends this loop after a tunnel drop.
+    `while grep -qsaF -- "${BACKEND_CMDLINE_MATCH}" "/proc/$P/cmdline"; do printf '\\n' || exit; sleep 5; done`
   )
 }
