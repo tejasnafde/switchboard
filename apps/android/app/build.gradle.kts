@@ -43,6 +43,8 @@ android {
         versionName = "0.5.23"
         buildConfigField("String", "EXPO_PROJECT_ID", "\"$easProjectId\"")
         buildConfigField("String", "PUSH_APPLICATION_ID", "\"$canonicalApplicationId\"")
+        // Settings > Labs "Run live pages" default (phone_html_live_run), off until a device probe passes.
+        buildConfigField("boolean", "PHONE_HTML_LIVE_RUN", "false")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

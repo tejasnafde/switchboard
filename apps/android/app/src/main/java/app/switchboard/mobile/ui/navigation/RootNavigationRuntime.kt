@@ -43,6 +43,7 @@ import kotlinx.coroutines.launch
 
 private val EmptyBrowseActivity = MutableStateFlow<Map<String, BrowseThreadActivity>>(emptyMap())
 private val DefaultFollowUp = MutableStateFlow(app.switchboard.mobile.domain.thread.TurnDelivery.Steer)
+private val DefaultPhoneLiveRun = MutableStateFlow(false)
 private val EmptyComposerDrafts = MutableStateFlow<Map<ComposerDraftKey, ComposerDraft>>(emptyMap())
 private val EmptyComposerErrors = MutableStateFlow<Map<ComposerDraftKey, String>>(emptyMap())
 private val EmptyComposerUploads = MutableStateFlow<Map<ComposerDraftKey, List<String>>>(emptyMap())
@@ -148,6 +149,12 @@ interface RootNavigationRuntime {
         get() = DefaultFollowUp
 
     fun setFollowUpDefault(value: app.switchboard.mobile.domain.thread.TurnDelivery) = Unit
+
+    /** Settings > Labs "Run live pages" (`phone_html_live_run`). */
+    val phoneLiveRun: StateFlow<Boolean>
+        get() = DefaultPhoneLiveRun
+
+    fun setPhoneLiveRun(value: Boolean) = Unit
 
     fun collapsedWorkspaceIds(connectionId: String, snapshot: OfflineSnapshot): Set<String> =
         BrowseCollapsePreferences.initial(snapshot, connectionId)

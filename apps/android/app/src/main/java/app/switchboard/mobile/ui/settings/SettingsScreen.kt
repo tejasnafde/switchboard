@@ -17,6 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -27,6 +28,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.FilterChip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.role
@@ -45,6 +47,8 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     followUpDefault: TurnDelivery = TurnDelivery.Steer,
     onFollowUpDefault: (TurnDelivery) -> Unit = {},
+    phoneLiveRun: Boolean = false,
+    onPhoneLiveRun: (Boolean) -> Unit = {},
     /** Set while the demo runs: Settings is the second way out of it. */
     onLeaveDemo: (() -> Unit)? = null,
 ) {
@@ -113,6 +117,25 @@ fun SettingsScreen(
             item { FollowUpDefaultRow(followUpDefault, onFollowUpDefault) }
             item { HorizontalDivider() }
 
+            item { SectionLabel("LABS", Modifier.padding(top = 24.dp, bottom = 8.dp)) }
+            item {
+                ListItem(
+                    headlineContent = { Text("Run live pages") },
+                    supportingContent = {
+                        Text(
+                            "Runs an agent's live page in the chat, offline and with no network. Off shows the image your Mac took.",
+                            color = TextDim,
+                            maxLines = 3,
+                        )
+                    },
+                    trailingContent = { Switch(checked = phoneLiveRun, onCheckedChange = null) },
+                    modifier = Modifier
+                        .toggleable(value = phoneLiveRun, role = Role.Switch, onValueChange = onPhoneLiveRun)
+                        .testTag(SettingsTestTags.PHONE_LIVE_RUN),
+                )
+            }
+            item { HorizontalDivider() }
+
             item { SectionLabel("APP", Modifier.padding(top = 24.dp, bottom = 8.dp)) }
             item {
                 ListItem(
@@ -153,6 +176,7 @@ private fun FollowUpDefaultRow(value: TurnDelivery, onChange: (TurnDelivery) -> 
 
 object SettingsTestTags {
     const val LEAVE_DEMO = "settings-leave-demo"
+    const val PHONE_LIVE_RUN = "settings-phone-live-run"
     fun followUp(option: TurnDelivery) = "settings-follow-up-${option.wire}"
 }
 
