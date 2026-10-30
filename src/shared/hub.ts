@@ -689,3 +689,110 @@ export function hubNudgeContent(child: HubChatRef): string {
     'Pass them on with send_agent_message, in your own words where that helps.'
   )
 }
+
+// ─── Settle ─────────────────────────────────────────────────────
+
+/** What settle does with a child's worktree. `none`: the child has no worktree of its own. */
+export type HubSettleWorktree = 'remove' | 'keep' | 'none'
+
+/** One child on the settle card. */
+export interface HubSettleRowView {
+  childId: string
+  title: string
+  branch: string | null
+  /** Its HEAD is in the parent's HEAD; null without a worktree or when git could not tell. */
+  merged: boolean | null
+  /** No uncommitted or untracked files; null without a worktree or when git could not tell. */
+  clean: boolean | null
+  /** What is still open on the child, each with what settle does about it. */
+  blockers: string[]
+  worktree: HubSettleWorktree
+  keepReason?: string
+}
+
+export interface HubSettleView {
+  rows: HubSettleRowView[]
+  /** An archive of the parent asked for this settle: the parent is archived after it. */
+  archiveParent: boolean
+}
+
+/** A worktree is removed only when nothing in it or on its branch can be lost, and no other chat uses it. */
+export function settleWorktree(c: {
+  location: HubChildLocation
+  worktreePath: string | null
+  starting: boolean
+  merged: boolean | null
+  clean: boolean | null
+  /** Other chats and cards with this worktree as their folder (a fork of the child). */
+  sharedWith: number
+}): { worktree: HubSettleWorktree; keepReason?: string } {
+  const keep = (keepReason: string) => ({ worktree: 'keep' as const, keepReason })
+  if (c.location === 'project' || !c.worktreePath) return { worktree: 'none' }
+  if (c.starting) return keep('it is still being created')
+  if (c.sharedWith > 0) return keep('another chat or card works in it')
+  if (c.clean === null || c.merged === null) return keep('git could not read it')
+  if (!c.clean) return keep('it has uncommitted or untracked files')
+  if (!c.merged) return keep("its branch is not merged into this chat's branch")
+  return { worktree: 'remove' }
+}
+
+/** Each thing still open on a child, with what settle does about it. */
+export function settleBlockers(b: {
+  running: boolean
+  starting: boolean
+  cards: number
+  queued: number
+  resumeArmed: boolean
+}): string[] {
+  const n = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
+  return [
+    ...(b.starting ? ['Still starting: its start is cancelled.'] : []),
+    ...(b.running ? ['Working: its turn is stopped.'] : []),
+    ...(b.cards > 0 ? [`${n(b.cards, 'open card')}: closed unanswered.`] : []),
+    ...(b.queued > 0 ? [`${n(b.queued, 'queued message')}: dropped.`] : []),
+    ...(b.resumeArmed ? ['Auto-resume armed: cancelled.'] : []),
+  ]
+}
+
+const SETTLE_STEPS =
+  'Settle stops their sessions, closes their open cards, cancels their auto-resumes, archives them, ' +
+  'removes dependency links, and removes each worktree that is clean and merged. Branches with commits stay; ' +
+  'nothing is pushed.'
+
+function settleRowLine(r: HubSettleRowView, i: number): string {
+  const git =
+    r.worktree === 'none'
+      ? 'no worktree'
+      : `${r.merged === null ? 'merge unknown' : r.merged ? 'merged' : 'not merged'}, ${r.clean === null ? 'state unknown' : r.clean ? 'clean' : 'has changes'}`
+  const fate =
+    r.worktree === 'remove'
+      ? 'worktree removed'
+      : r.worktree === 'keep'
+        ? `worktree kept: ${r.keepReason}`
+        : 'nothing to remove'
+  const blockers = r.blockers.length > 0 ? ` ${r.blockers.join(' ')}` : ''
+  return `${i + 1}. ${r.title}${r.branch ? ` (${r.branch})` : ''}: ${git}; ${fate}.${blockers}`
+}
+
+/** The settle card as plain text, for clients that do not draw it. */
+export function hubSettleDetail(view: HubSettleView): string {
+  return [
+    `Settle ${hubChildCount(view.rows.length)}:`,
+    ...view.rows.map(settleRowLine),
+    SETTLE_STEPS,
+    ...(view.archiveParent ? ['Then this chat is archived.'] : []),
+  ].join('\n')
+}
+
+/** What a settle did, for the agent and the result row: removed and kept worktrees by child. */
+export function hubSettleResult(
+  rows: ReadonlyArray<Pick<HubSettleRowView, 'title' | 'worktree' | 'keepReason'>>,
+): string {
+  const removed = rows.filter((r) => r.worktree === 'remove').map((r) => r.title)
+  const kept = rows.filter((r) => r.worktree === 'keep').map((r) => `${r.title} (${r.keepReason})`)
+  return [
+    `Settled ${hubChildCount(rows.length)}. Branches with commits stay.`,
+    `Worktrees removed: ${removed.length > 0 ? removed.join(', ') : 'none'}.`,
+    ...(kept.length > 0 ? [`Worktrees kept: ${kept.join('; ')}.`] : []),
+  ].join('\n')
+}

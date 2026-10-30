@@ -2,7 +2,7 @@ import { perfSpan } from '../perf'
 import { registerHtmlLiveHandlers } from './html-live'
 import type { BackendHost } from '../backend/host'
 import { stat } from 'fs/promises'
-import { notifyWorktreeSwap, publishRuntimeEvent } from '../provider/provider-registry'
+import { notifyWorktreeSwap, publishRuntimeEvent, settleBeforeArchive } from '../provider/provider-registry'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { historyWindow, type HistoryLoadOptions } from '@shared/phone-history-window'
 import { imagesByReference } from '@shared/history-image-refs'
@@ -878,7 +878,10 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   })
 
   // Archive / unarchive conversations
-  host.handle(AppChannels.ARCHIVE_CONVERSATION, (id: string) => {
+  host.handle(AppChannels.ARCHIVE_CONVERSATION, async (id: string) => {
+    // A chat with unsettled children settles them first, or waits on its settle card.
+    const notYet = await settleBeforeArchive(id)
+    if (notYet) throw new Error(notYet)
     archiveConversation(id)
     return { ok: true, archived: isConversationArchived(id) }
   })

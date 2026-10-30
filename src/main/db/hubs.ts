@@ -479,3 +479,16 @@ export function lastHubWakeOf(childId: string): HubWakeRow | null {
     .get(resolveRootThreadId(childId)) as WakeDbRow | undefined
   return r ? toWake(r) : null
 }
+
+/** Chats and cards other than the child's own thread that work in `worktreePath` (a fork of the child). */
+export function otherWorktreeUsers(worktreePath: string, childId: string): number {
+  const db = getDb()
+  const root = resolveRootThreadId(childId)
+  const chats = db.prepare('SELECT id FROM conversations WHERE worktree_path = ?').all(worktreePath) as Array<{
+    id: string
+  }>
+  const cards = db.prepare('SELECT COUNT(*) AS n FROM kanban_cards WHERE worktree_path = ?').get(worktreePath) as {
+    n: number
+  }
+  return chats.filter((c) => resolveRootThreadId(c.id) !== root).length + cards.n
+}

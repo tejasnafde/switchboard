@@ -233,14 +233,7 @@ export class HubIdleReaper {
     const span = perfSpan('hub.reap', { childId, parentId, idleMin: Math.round(idleMs / 60_000) })
     // Read before the stop: once the agent exits, its children move to another parent.
     const pid = this.host.agentPid(threadId)
-    let pids: number[] = []
-    if (pid) {
-      try {
-        pids = (processTree(parsePs(await this.io.ps()), pid) ?? []).map((r) => r.pid)
-      } catch (err) {
-        log.warn(`could not list the processes of child ${childId}; only its session is stopped`, err)
-      }
-    }
+    const pids = await treePids(pid, this.io, childId)
     // A parent message may have started a turn while the tree was read.
     if (!this.host.idle(threadId) || this.host.subagentsRunning(threadId) > 0) {
       span.end({ outcome: 'busy', processes: pids.length })
@@ -253,26 +246,37 @@ export class HubIdleReaper {
       log.warn(`could not stop idle child ${childId}`, err)
       return
     }
-    const killed = await this.killLeft(pids.filter((p) => p > 1 && p !== process.pid))
+    const killed = await killLeft(pids, this.io)
     span.end({ outcome: 'reaped', processes: pids.length, killed })
     log.info('idle child reaped', { childId, parentId, processes: pids.length, killed })
   }
+}
 
-  /** SIGTERM to every process still alive, then SIGKILL to what is left after the grace time. */
-  private async killLeft(pids: number[]): Promise<number> {
-    const left = pids.filter((p) => this.io.alive(p))
-    if (left.length === 0) return 0
-    for (const p of left) this.signal(p, 'SIGTERM')
-    await this.io.wait(KILL_GRACE_MS)
-    for (const p of left) if (this.io.alive(p)) this.signal(p, 'SIGKILL')
-    return left.length
+/** The pids of an agent's process tree, read before its session stops: after that its children move to another parent. */
+export async function treePids(pid: number | null, io: HubReaperIo = defaultIo, childId = ''): Promise<number[]> {
+  if (!pid) return []
+  try {
+    return (processTree(parsePs(await io.ps()), pid) ?? []).map((r) => r.pid)
+  } catch (err) {
+    log.warn(`could not list the processes of child ${childId}; only its session is stopped`, err)
+    return []
   }
+}
 
-  private signal(pid: number, signal: NodeJS.Signals): void {
-    try {
-      this.io.kill(pid, signal)
-    } catch (err) {
-      log.warn(`could not send ${signal} to ${pid}`, err)
-    }
+/** SIGTERM to every process of `pids` still alive, then SIGKILL to what is left after the grace time. */
+export async function killLeft(pids: number[], io: HubReaperIo = defaultIo): Promise<number> {
+  const left = pids.filter((p) => p > 1 && p !== process.pid && io.alive(p))
+  if (left.length === 0) return 0
+  for (const p of left) signal(io, p, 'SIGTERM')
+  await io.wait(KILL_GRACE_MS)
+  for (const p of left) if (io.alive(p)) signal(io, p, 'SIGKILL')
+  return left.length
+}
+
+function signal(io: HubReaperIo, pid: number, sig: NodeJS.Signals): void {
+  try {
+    io.kill(pid, sig)
+  } catch (err) {
+    log.warn(`could not send ${sig} to ${pid}`, err)
   }
 }

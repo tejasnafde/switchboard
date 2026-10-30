@@ -54,6 +54,7 @@ import {
   recordThreadSession,
   updateConversationSessionId,
   saveMessageIfAbsent,
+  archiveConversation,
   markHubWakesDelivered,
   isConversationArchived,
   saveActivityMessageIfAbsent,
@@ -162,7 +163,14 @@ import { buildPrLinkTools } from '../mcp/pr-link-tools'
 import { buildPeerMcpTools, runPeerSendPlan } from '../mcp/peer-mcp-tools'
 import { buildApprovalMcpTools } from '../mcp/approval-mcp-tools'
 import { toolText, type McpToolResult } from '../mcp/mcp-session'
-import { buildChildHubMcpTools, buildHubMcpTools, HUB_INSTRUCTIONS, START_CHILDREN_TOOL } from '../mcp/hub-tools'
+import {
+  buildChildHubMcpTools,
+  buildHubMcpTools,
+  HUB_INSTRUCTIONS,
+  SETTLE_CHILDREN_TOOL,
+  START_CHILDREN_TOOL,
+} from '../mcp/hub-tools'
+import { HubSettler, isHubSettlePlan, type HubSettleHost } from '../hub/hub-settle'
 import { buildVisualPreviewTool, VisualPreviewTurnCounter, visualPreviewRenderer } from '../mcp/visual-preview-tool'
 import { agentVisualPreviewEnabled, VISUAL_PREVIEW_INSTRUCTIONS } from '@shared/visual-preview'
 import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } from '../hub/hub-start'
@@ -218,6 +226,8 @@ import {
   type HubWakeKind,
   isOpenChildPhase,
   readHubSettings,
+  hubNeedsCard,
+  hubSettleDetail,
 } from '@shared/hub'
 import type { HubChildRow } from '../db/hubs'
 import { sqliteApprovalCardStore } from '../db/agent-approval-cards'
@@ -566,6 +576,7 @@ export class ProviderRegistry implements PeerToolHost {
     this.limitResumer = limitResume ? new LimitResumer(this.limitResumeHost()) : null
     this.limitResumer?.start()
     this.hubStarter = new HubStarter(this.hubStartHost(), (key) => getSetting(key))
+    this.hubSettler = new HubSettler(this.hubSettleHost())
     this.hubWakes = new HubWakeScheduler(this.hubWakeHost())
     this.hubSampler = adapters
       ? null
@@ -674,6 +685,114 @@ export class ProviderRegistry implements PeerToolHost {
         this.hubWakes.poke(parentId)
       },
     }
+  }
+
+  private hubSettleHost(): HubSettleHost {
+    return {
+      sessionFacts: (childId) => {
+        const live = this.liveSessionId(childId)
+        return {
+          running: !!live && (this.hasOutstandingTurn(live) || this.sessionStatus.get(live) === 'running'),
+          cards: this.getPendingRequests(live ?? childId).length,
+          queued: live ? this.queuedTurns.list(live).length : 0,
+        }
+      },
+      agentPid: (childId) => {
+        const live = this.liveSessionId(childId)
+        return live ? (this.switchboardMcp?.agentPid(live) ?? null) : null
+      },
+      stop: async (childId) => {
+        this.reapedChildren.delete(childId)
+        await this.stopHubChild(childId, 'parent')
+        const live = this.liveSessionId(childId)
+        if (live) await this.stopChildSession?.(live)
+      },
+      changed: (parentId) => this.publishHubChange(parentId, true),
+      forget: (childId) => this.hubStarter.forget(childId),
+    }
+  }
+
+  /** The folder a parent's git runs in: its live session's, else its worktree or project. */
+  private parentCwd(parentId: string): string {
+    const live = this.liveSessionId(parentId)
+    const conv = getConversationById(parentId)
+    return (live && this.sessionDescriptors.get(live)?.cwd) || conv?.worktree_path || conv?.project_path || ''
+  }
+
+  /**
+   * `settle_children` and an archive of a parent: in ask and plan modes one
+   * card (approving it runs the settle, and for an archive then archives the
+   * parent); in the modes above, the settle runs now with a result row.
+   */
+  private async settleChildren(
+    parentId: string,
+    archiveParent: boolean,
+  ): Promise<{ status: 'card' | 'done' | 'refused'; text: string }> {
+    const root = resolveRootThreadId(parentId)
+    const live = this.liveSessionId(root)
+    const cwd = this.parentCwd(root)
+    if (hubNeedsCard(this.chatRuntimeMode(live ?? root))) {
+      const open = this.agentApprovals.pendingEvents(root).find((e) => e.toolName === SETTLE_CHILDREN_TOOL)
+      // That card does not archive: an archive asks for it to be approved first.
+      if (open && archiveParent && !open.hubSettle?.archiveParent)
+        return {
+          status: 'refused',
+          text: 'This chat has child chats and a settle card waits in it. Approve it, then archive the chat again.',
+        }
+      if (open)
+        return {
+          status: 'card',
+          text: `A settle card already waits for the user (card ${open.requestId}). Do not send it again.`,
+        }
+      const view = await this.hubSettler.plan(root, cwd, archiveParent)
+      const opened = this.agentApprovals.open({
+        threadId: live ?? root,
+        chatId: root,
+        toolName: SETTLE_CHILDREN_TOOL,
+        detail: hubSettleDetail(view),
+        plan: { kind: 'hub-settle', parentId: root, view },
+      })
+      if (!opened.ok) return { status: 'refused', text: opened.message }
+      return {
+        status: 'card',
+        text:
+          `Queued for the user's approval (card ${opened.requestId}). The children are settled when the user ` +
+          'approves; you get a message in this chat with the result. Do not send it again.',
+      }
+    }
+    const result = await this.hubSettler.run(root, cwd, 'auto')
+    if (!result.ok) return { status: 'refused', text: result.text }
+    const at = Date.now()
+    const messageId = `hubsettle_${at}_${++this.savedMessageSeq}`
+    const content = formatApprovalResultMarker({
+      requestId: messageId,
+      title: 'Settle child chats',
+      outcome: 'done',
+      text: result.text,
+      delivery: 'none',
+    })
+    try {
+      saveMessageIfAbsent(messageId, root, 'system', content, undefined, undefined, at)
+      this.publish({ type: 'approval.result', threadId: live ?? root, messageId, requestId: messageId, content, at })
+    } catch (err) {
+      log.warn(`could not store the settle row of ${root}`, err)
+    }
+    return { status: 'done', text: result.text }
+  }
+
+  /**
+   * An archive of a chat with unsettled children (flag on) settles them first.
+   * Null: archive it now. Otherwise why not yet (a settle card opened, or the settle was refused).
+   */
+  async settleBeforeArchive(conversationId: string): Promise<string | null> {
+    if (!this.hubChildrenOn()) return null
+    const root = resolveRootThreadId(conversationId)
+    if (listHubChildren(root).length === 0) return null
+    const r = await this.settleChildren(root, true)
+    if (r.status === 'done') return null
+    return r.status === 'card'
+      ? 'This chat has child chats. Approve the settle card in the chat: it settles them, then archives the chat.'
+      : r.text
   }
 
   private hubWakeHost(): HubWakeHost {
@@ -1306,6 +1425,8 @@ export class ProviderRegistry implements PeerToolHost {
   readonly limitResumer: LimitResumer | null
   /** Starts child chats (`start_children`) and holds their run slots. */
   readonly hubStarter: HubStarter
+  /** Ends a parent's children (`settle_children`, an archive of the parent). */
+  private readonly hubSettler: HubSettler
   /** Sends children's wakes to their parents (`hub/hub-wakes.ts`). */
   readonly hubWakes: HubWakeScheduler
   /** Started `report_to_hub` tool call ids per thread, oldest first, for the wakes' pointers. */
@@ -2504,7 +2625,9 @@ export class ProviderRegistry implements PeerToolHost {
       ? prWritePlanSummary(plan)
       : isHubBatchPlan(plan)
         ? `the ${plan.view.rows.length} child chats`
-        : `the message to session ${plan.sessionId}`
+        : isHubSettlePlan(plan)
+          ? 'the settle of the child chats'
+          : `the message to session ${plan.sessionId}`
     if (isHubBatchPlan(plan) && close.kind !== 'approve')
       this.hubStarter.closed(plan.batchId, close.kind === 'withdrawn' ? 'withdrawn' : 'denied')
     let outcome: ApprovalResultOutcome
@@ -2541,7 +2664,9 @@ export class ProviderRegistry implements PeerToolHost {
         ? hostWriteTitle(card.hostWrite)
         : isHubBatchPlan(plan)
           ? 'Start child chats'
-          : 'Message another session',
+          : isHubSettlePlan(plan)
+            ? 'Settle child chats'
+            : 'Message another session',
       outcome,
       text,
       delivery,
@@ -2630,6 +2755,15 @@ export class ProviderRegistry implements PeerToolHost {
     if (isHubBatchPlan(plan)) {
       if (!this.hubChildrenOn()) return toolText('Child chats are turned off, so no children were started.', true)
       return this.hubStarter.approve(plan.batchId, runtimeMode())
+    }
+    if (isHubSettlePlan(plan)) {
+      if (!this.hubChildrenOn()) return toolText('Child chats are turned off, so nothing was settled.', true)
+      const settled = await this.hubSettler.run(plan.parentId, this.parentCwd(plan.parentId), 'card')
+      if (settled.ok && plan.view.archiveParent) {
+        archiveConversation(plan.parentId)
+        this.publishHubChange(plan.parentId, true)
+      }
+      return toolText(settled.text, !settled.ok)
     }
     // Saved only through answerAgentSecret, which reports its own result.
     if (isSecretRequestPlan(plan)) return toolText('A secret is not saved by an approval.', true)
@@ -3004,6 +3138,10 @@ export class ProviderRegistry implements PeerToolHost {
                 publish,
                 subagents: (id) => this.hubSubagents.countsOf(this.liveSessionId(id) ?? id),
                 move: (childId, targetId) => this.moveHubChild(chatId(), runtimeMode(), childId, targetId),
+                settle: async () => {
+                  const r = await this.settleChildren(chatId(), false)
+                  return toolText(r.text, r.status === 'refused')
+                },
                 interrupt: async (childId) => {
                   const child = getHubChild(resolveRootThreadId(childId))
                   if (!child || child.parentId !== chatId() || !isOpenChildPhase(child.phase))
@@ -5039,6 +5177,11 @@ export class ProviderRegistry implements PeerToolHost {
     }
     this.bus.clear()
   }
+}
+
+/** See `ProviderRegistry.settleBeforeArchive`. */
+export function settleBeforeArchive(conversationId: string): Promise<string | null> {
+  return activeRegistry ? activeRegistry.settleBeforeArchive(conversationId) : Promise.resolve(null)
 }
 
 /** Last-constructed registry, for callers without a reference (ipc/app.ts's

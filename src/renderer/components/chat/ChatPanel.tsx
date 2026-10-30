@@ -1410,10 +1410,13 @@ export function ChatPanel({
           onArchive={() => {
             if (!sessionId) return
             messageLifecycle.settleThread(sessionId)
-            window.api.app.archiveConversation(sessionId, projectPath, chatTitle).catch((err) => {
-              log.warn(`archiveConversation failed for ${sessionId}`, err)
-            })
-            removeSession(sessionId)
+            // Removed once archived: a chat with child chats may refuse and open its settle card here instead.
+            window.api.app
+              .archiveConversation(sessionId, projectPath, chatTitle)
+              .then(() => removeSession(sessionId))
+              .catch((err) => {
+                log.warn(`archiveConversation failed for ${sessionId}`, err)
+              })
           }}
           onShowSlashHelp={() => setSlashHelpOpen(true)}
           onMergeBack={() => setMergeBackFor(sessionId ?? null)}

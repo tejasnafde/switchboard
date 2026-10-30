@@ -201,10 +201,12 @@ function buildCommands(opts: {
       label: 'Archive active session',
       run: withFocusedSession((sid) => {
         const s = agents().sessions.find((x) => x.id === sid)
-        window.api.app.archiveConversation(sid, s?.projectPath, s?.title).catch((err) => {
-          log.warn(`archiveConversation failed for ${sid}`, err)
-        })
-        agents().removeSession(sid)
+        window.api.app
+          .archiveConversation(sid, s?.projectPath, s?.title)
+          .then(() => agents().removeSession(sid))
+          .catch((err) => {
+            log.warn(`archiveConversation failed for ${sid}`, err)
+          })
       }),
     },
     {

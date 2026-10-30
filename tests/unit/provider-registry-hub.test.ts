@@ -69,9 +69,10 @@ vi.mock('../../src/main/db/database', () => ({
   listParentsWithPendingHubWakes: () => [],
   insertHubWake: (w: Record<string, unknown>) => hubFlag.wakes.push(w),
   getHubParent: () => null,
+  getLimitResume: () => null,
 }))
 
-import { ProviderRegistry } from '../../src/main/provider/provider-registry'
+import { ProviderRegistry, settleBeforeArchive } from '../../src/main/provider/provider-registry'
 import { COMPACTING_NOTICE, compactingNoticeId } from '../../src/main/provider/claude-prompt-too-long'
 import { ProviderChannels } from '../../src/shared/ipc-channels'
 import type { BackendHost } from '../../src/main/backend/host'
@@ -187,6 +188,24 @@ describe('child chats in the registry', () => {
     expect(names('child1')).not.toContain('read_child')
     expect(names('child1')).toContain('report_to_hub')
     expect(names('parent1')).not.toContain('report_to_hub')
+  })
+
+  it('opens one settle card in ask mode, and an archive of the parent waits on it', async () => {
+    const { host, mcp } = setup()
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'parent1', provider: 'claude', cwd: '/tmp' })
+    const settle = mcp.opened.get('parent1')!.tools.find((t) => t.name === 'settle_children')!
+    const first = await settle.call({})
+    expect(first.isError).toBeFalsy()
+    expect(JSON.stringify(first.content)).toContain("Queued for the user's approval")
+    expect(JSON.stringify((await settle.call({})).content)).toContain('already waits')
+    const opened = host.emitted
+      .map((e) => e[1] as RuntimeEvent)
+      .filter((e) => e?.type === 'request.opened' && e.toolName === 'settle_children')
+    expect(opened).toHaveLength(1)
+    expect(opened[0]).toMatchObject({ hubSettle: { rows: [{ childId: 'child1', title: 'Usage export' }] } })
+    expect(await settleBeforeArchive('parent1')).toContain('Approve it, then archive the chat again')
+    // A chat with no children archives as before.
+    expect(await settleBeforeArchive('other')).toBeNull()
   })
 
   it('stores a report as a wake for the parent, pointing at the tool call', async () => {

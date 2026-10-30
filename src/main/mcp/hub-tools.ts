@@ -2,8 +2,8 @@
  * The hub tools on the Switchboard MCP server, only while the `hub_children`
  * flag is on (the registry decides when it builds a chat's tool list). A chat
  * that is not an open child gets the parent tools `start_children`,
- * `list_children`, `read_child`, `interrupt_child` and `move_child`; an open child gets `report_to_hub` and
- * `own_dependencies`. Starting is
+ * `list_children`, `read_child`, `interrupt_child`, `move_child` and `settle_children`; an open child gets
+ * `report_to_hub` and `own_dependencies`. Starting is
  * `HubStarter`'s; this binds it to MCP and gathers what `list_children` reports.
  */
 import { execFile } from 'node:child_process'
@@ -15,6 +15,7 @@ import { listProviderInstances } from '../db/provider-instances'
 import type { ChatResources } from '../hub/hub-measure'
 import type { SubagentCounts } from '../hub/hub-stop'
 import type { HubParentContext, HubStarter } from '../hub/hub-start'
+import { childConflicts, type ChildConflict } from '../hub/hub-settle'
 import { createMainLogger } from '../logger'
 import { toolText, type McpTool, type McpToolResult } from './mcp-session'
 
@@ -27,6 +28,7 @@ export const OWN_DEPENDENCIES_TOOL = 'own_dependencies'
 export const READ_CHILD_TOOL = 'read_child'
 export const INTERRUPT_CHILD_TOOL = 'interrupt_child'
 export const MOVE_CHILD_TOOL = 'move_child'
+export const SETTLE_CHILDREN_TOOL = 'settle_children'
 export const REPORT_TO_HUB_TOOL = 'report_to_hub'
 
 /** The hub paragraph of the MCP instructions, for a chat that has the parent tools. Kept short: every such chat pays for it. */
@@ -38,6 +40,7 @@ export const HUB_INSTRUCTIONS = [
   'When this chat works in the main checkout, ask the user before you merge into a branch checked out there.',
   'A child stopped by a usage limit resumes by itself at the reset; move_child can move it to another account of',
   'its agent now. When you move one, tell the user what you moved and why in your next message.',
+  'Once their work is merged, settle_children ends the children and removes their clean, merged worktrees.',
 ].join(' ')
 
 export interface HubMcpToolContext {
@@ -52,9 +55,12 @@ export interface HubMcpToolContext {
   interrupt(childId: string): Promise<McpToolResult>
   /** `move_child`: one of the calling parent's limited children goes on under another account. */
   move(childId: string, providerInstanceId: string): Promise<McpToolResult>
+  /** `settle_children`: ends the calling parent's children, through a card in ask mode. */
+  settle(): Promise<McpToolResult>
   /** The child's own Agent/Task calls. */
   subagents(childId: string): SubagentCounts
   gitStats?(cwd: string, base: string): Promise<GitStats | null>
+  conflicts?: typeof childConflicts
 }
 
 export interface GitStats {
@@ -68,6 +74,7 @@ const MB = 1024 * 1024
 
 export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
   const stats = ctx.gitStats ?? gitStats
+  const conflictsOf = ctx.conflicts ?? childConflicts
   return [
     {
       name: START_CHILDREN_TOOL,
@@ -142,7 +149,9 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
       description:
         "List this chat's child chats: phase, agent, account, branch, ahead and behind, uncommitted changes, " +
         'diffstat, tokens and cost of the last turn, memory and CPU of its agent, disk use, its own subagents ' +
-        '(running, done, failed) and its last update. While a child is limited, accounts lists where move_child can move it.',
+        '(running, done, failed), its last update, and conflicts: the files its branch conflicts on with this ' +
+        "chat's HEAD and with each other child (null when git is older than 2.38). While a child is limited, " +
+        'accounts lists where move_child can move it.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { title: 'List child chats', readOnlyHint: true, openWorldHint: false },
       async call() {
@@ -150,6 +159,16 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         const children = listHubChildren(parent.parentId)
         if (children.length === 0) return toolText('This chat has no children.')
         const lastWake = lastHubWakes(parent.parentId)
+        const worktrees = children.flatMap((c) => {
+          const worktree = getConversationById(c.childId)?.worktree_path
+          return worktree ? [{ childId: c.childId, title: c.title, worktree }] : []
+        })
+        let conflicts: Map<string, ChildConflict[]> | null = null
+        try {
+          conflicts = await conflictsOf(parent.parentId, parent.cwd, worktrees)
+        } catch (err) {
+          log.warn(`could not read the conflicts of the children of ${parent.parentId}`, err)
+        }
         const rows = await Promise.all(
           children.map(async (c) => {
             const worktree = getConversationById(c.childId)?.worktree_path ?? null
@@ -180,7 +199,7 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
               limit: getLimitResume(c.childId)?.state ?? null,
               nativeSubagents: ctx.subagents(c.childId),
               lastUpdate: wake ? { kind: wake.kind, summary: wake.summary } : null,
-              conflicts: null,
+              conflicts: conflicts?.get(c.childId) ?? null,
             }
           }),
         )
@@ -301,6 +320,33 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         if (typeof args.providerInstanceId !== 'string' || !args.providerInstanceId)
           return toolText('Give the providerInstanceId of the account to move to.', true)
         return ctx.move(args.childId, args.providerInstanceId)
+      },
+    },
+    {
+      name: SETTLE_CHILDREN_TOOL,
+      description: [
+        "End this chat's child chats once you have merged what you need: each child's session stops and it is",
+        'archived, its dependency links go, and its worktree is removed when it is clean and its HEAD is in this',
+        "chat's HEAD. A worktree with changes, untracked files or unmerged commits stays, and branches with commits",
+        'stay; nothing is pushed. In ask mode the user approves it on a card first; in other modes it runs at once. The reply',
+        'lists the worktrees removed and kept.',
+      ].join(' '),
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      annotations: { title: 'Settle child chats', readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      async call() {
+        const parent = ctx.parent()
+        if (parent.mode === 'plan') {
+          const reason = 'Plan mode does not settle child chats.'
+          ctx.publish({
+            type: 'tool.denied',
+            threadId: parent.threadId,
+            toolName: SETTLE_CHILDREN_TOOL,
+            reason,
+            mode: 'plan',
+          })
+          return toolText(`${reason} Ask the user to leave plan mode first.`, true)
+        }
+        return ctx.settle()
       },
     },
   ]
