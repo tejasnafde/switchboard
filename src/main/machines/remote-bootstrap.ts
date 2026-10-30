@@ -165,8 +165,8 @@ function reusableServerTest(port: number): string {
  * resources/sb-bridge/extension.js finds the socket) and the backend that hosts
  * the bridge agree on one token. Minting it here, in the single shell that
  * starts both, is what keeps them in sync - a token generated independently on
- * either side could never match. A reused backend keeps its code-server too,
- * for the same reason.
+ * either side could never match. The token is kept in `$D/bridge-token` so a
+ * reused backend's code-server can be started again with it.
  */
 export function buildRemoteBootstrapCommand(opts: RemoteBootstrapOpts): string {
   const grace = opts.graceSeconds ?? 10
@@ -178,12 +178,14 @@ export function buildRemoteBootstrapCommand(opts: RemoteBootstrapOpts): string {
     `echo "${TOKEN_LINE_PREFIX}$SWITCHBOARD_TOKEN"; ` +
     `S=; command -v setsid >/dev/null 2>&1 && S=setsid; ` +
     `P="$(cat "$D/server.pid" 2>/dev/null)"; ` +
-    `if ${reusableServerTest(opts.port)}; then echo "reusing switchboard backend $P"; else ` +
+    ` IP="$(cat "$D/ide.pid" 2>/dev/null)"; ` +
+    `SB_BRIDGE_PORT=${opts.bridgePort}; export SB_BRIDGE_PORT; ` +
+    `FRESH=; if ${reusableServerTest(opts.port)}; then echo "reusing switchboard backend $P"; ` +
+    `SB_BRIDGE_TOKEN="$(cat "$D/bridge-token" 2>/dev/null)"; else FRESH=1; ` +
     // `$D` here is a shell variable reference, not yet expanded - it is
     // resolved on the REMOTE, from the `D=` assignment above, when the
     // generated grep actually runs (see buildStaleProcessKill).
     buildStaleProcessKill({ pidVar: 'P', cmdlineMatch: BACKEND_CMDLINE_MATCH, graceSeconds: grace }) +
-    ` IP="$(cat "$D/ide.pid" 2>/dev/null)"; ` +
     // NOT the launched path (`nohup "$D/code-server/bin/code-server" ...`):
     // that script `exec`s into "$D/code-server/lib/node" "$D/code-server", so
     // by the time this guard runs on the NEXT connection, `cmdline` no longer
@@ -193,17 +195,25 @@ export function buildRemoteBootstrapCommand(opts: RemoteBootstrapOpts): string {
     // separate from and as precise as the backend's own match so a shared
     // VM's other processes, including someone else's code-server, can never
     // satisfy either guard.
+    ' ' +
     buildStaleProcessKill({ pidVar: 'IP', cmdlineMatch: IDE_CMDLINE_MATCH, graceSeconds: grace }) +
-    ` SB_BRIDGE_PORT=${opts.bridgePort}; export SB_BRIDGE_PORT; ` +
-    `SB_BRIDGE_TOKEN="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || ` +
-    `od -An -tx1 -N16 /dev/urandom | tr -dc 'a-f0-9')"; export SB_BRIDGE_TOKEN; ` +
-    `if [ -x "$D/code-server/bin/code-server" ]; then ` +
+    ` SB_BRIDGE_TOKEN="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || ` +
+    `od -An -tx1 -N16 /dev/urandom | tr -dc 'a-f0-9')"; ` +
+    `(umask 077; printf '%s' "$SB_BRIDGE_TOKEN" > "$D/bridge-token"); fi; ` +
+    `export SB_BRIDGE_TOKEN; ` +
+    // A reused backend keeps its bridge token, so a code-server that died
+    // is started again with the same one.
+    `if [ -x "$D/code-server/bin/code-server" ] && ! grep -qsaF -- "${IDE_CMDLINE_MATCH}" "/proc/$IP/cmdline"; then ` +
     `$S nohup "$D/code-server/bin/code-server" --auth none --bind-addr 127.0.0.1:${opts.idePort} ` +
     `--extensions-dir "$D/ide-extensions" --user-data-dir "$D/ide-data" > "$D/ide.log" 2>&1 < /dev/null & echo $! > "$D/ide.pid"; fi; ` +
-    `cat "$D/version" > "$D/server.version" 2>/dev/null; ` +
+    `if [ -n "$FRESH" ]; then cat "$D/version" > "$D/server.version" 2>/dev/null; ` +
     `SWITCHBOARD_REMOTE=1 PORT=${opts.port} $S nohup node $D/index.cjs > "$D/server.log" 2>&1 < /dev/null & P=$!; ` +
-    `fi; ` +
+    // Until the child execs, its cmdline is still this shell's.
+    `sleep 1; fi; ` +
     // Not `kill -0`: a recycled pid would keep the tunnel up on a stranger.
-    `while grep -qsaF -- "${BACKEND_CMDLINE_MATCH}" "/proc/$P/cmdline"; do sleep 5; done`
+    // The newline is a heartbeat: sshd does not signal a command without a
+    // pty when the client goes, so a write to the closed channel (SIGPIPE)
+    // is what ends this loop after a tunnel drop.
+    `while grep -qsaF -- "${BACKEND_CMDLINE_MATCH}" "/proc/$P/cmdline"; do printf '\\n' || exit; sleep 5; done`
   )
 }

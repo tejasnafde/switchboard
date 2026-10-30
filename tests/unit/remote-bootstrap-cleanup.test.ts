@@ -287,7 +287,15 @@ describe('REMOTE_COMMAND', () => {
     expect(REMOTE_COMMAND).toContain('$S nohup node $D/index.cjs > "$D/server.log" 2>&1 < /dev/null & P=$!')
     expect(REMOTE_COMMAND).toContain('$S nohup "$D/code-server/bin/code-server"')
     // The tunnel lives as long as that server, checked by identity, not kill -0.
-    expect(REMOTE_COMMAND).toMatch(/while grep -qsaF -- "\$D\/index\.cjs" "\/proc\/\$P\/cmdline"; do sleep 5; done$/)
+    expect(REMOTE_COMMAND).toMatch(
+      /while grep -qsaF -- "\$D\/index\.cjs" "\/proc\/\$P\/cmdline"; do printf '\\n' \|\| exit; sleep 5; done$/,
+    )
+  })
+
+  it('starts a dead code-server again next to a reused backend, with the kept bridge token', () => {
+    expect(REMOTE_COMMAND).toContain(`SB_BRIDGE_TOKEN="$(cat "$D/bridge-token" 2>/dev/null)"`)
+    expect(REMOTE_COMMAND).toContain(`(umask 077; printf '%s' "$SB_BRIDGE_TOKEN" > "$D/bridge-token")`)
+    expect(REMOTE_COMMAND).toContain(`! grep -qsaF -- "${IDE_CMDLINE_MATCH}" "/proc/$IP/cmdline"; then`)
   })
 
   it('keeps the backend token in a 0600 file and prints it once for the desktop', () => {
