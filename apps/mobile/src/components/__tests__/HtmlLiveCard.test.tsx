@@ -3,7 +3,10 @@ import { Image } from 'react-native'
 import { act } from 'react-test-renderer'
 import * as FileSystem from 'expo-file-system/legacy'
 import * as Sharing from 'expo-sharing'
-import { renderComponent } from '../../test/render'
+import { PHONE_LIVE_DESKTOP_ONLY_NOTE } from '@shared/html-live-phone'
+import { renderComponent, type Node } from '../../test/render'
+import { noteLivePageScroll, resetLivePages, setLivePagesActive } from '../../lib/live-pages'
+import { usePrefsStore } from '../../stores/prefs'
 import { HtmlLiveCard, clearHtmlLiveCache } from '../HtmlLiveCard'
 import { Markdown } from '../Markdown'
 import { getClient } from '../../stores/connections'
@@ -168,4 +171,173 @@ it('renders an html-live block in Markdown, an unclosed one as code', async () =
   await flush()
   expect(closed.texts()).toContain('Chart')
   expect(closed.texts()).toContain(NO_IMAGE)
+})
+
+describe('live pages (phone_html_live_run)', () => {
+  const LIVE_TITLE = 'Latency'
+  let top = 100
+  // Every mocked host view shares this instance method.
+  const { measureInWindow } = jest.requireActual('@react-native/jest-preset/jest/MockNativeMethods').default
+
+  async function settle(ms = 0): Promise<void> {
+    await flush()
+    act(() => jest.advanceTimersByTime(ms))
+    await flush()
+  }
+
+  function liveWebView(root: Node): Node | undefined {
+    return root.findAll((n) => n.props.testID === 'html-live-webview' && typeof n.type === 'string')[0]
+  }
+
+  async function renderLive(source = SOURCE, image: string | null = IMAGE) {
+    const client = fakeClient(true, image)
+    jest.mocked(getClient).mockReturnValue(client as never)
+    const rendered = renderComponent(<HtmlLiveCard source={source} title={LIVE_TITLE} thread={THREAD} />)
+    await settle(400)
+    return { ...rendered, client }
+  }
+
+  async function run(rendered: { byLabel: (label: string) => Node }, label = 'Run'): Promise<void> {
+    act(() => rendered.byLabel(label).props.onPress())
+    await settle(400)
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers()
+    top = 100
+    measureInWindow.mockImplementation((cb: (x: number, y: number, w: number, h: number) => void) =>
+      cb(0, top, 300, 200),
+    )
+    resetLivePages()
+    setLivePagesActive(true)
+    usePrefsStore.setState({ liveHtmlPages: true })
+  })
+  afterEach(() => {
+    resetLivePages()
+    jest.useRealTimers()
+  })
+
+  it('never runs and offers no Run while the flag is off', async () => {
+    usePrefsStore.setState({ liveHtmlPages: false })
+    const { root, allByLabel, texts } = await renderLive()
+    expect(allByLabel('Run')).toHaveLength(0)
+    expect(liveWebView(root)).toBeUndefined()
+    expect(texts()).toContain('Still image. Interactive on your Mac.')
+  })
+
+  it('waits for Run on a phone whose memory is unknown, then runs in view', async () => {
+    const rendered = await renderLive()
+    expect(liveWebView(rendered.root)).toBeUndefined()
+    expect(rendered.byLabel('Run')).toBeTruthy()
+    await run(rendered)
+    expect(liveWebView(rendered.root)).toBeDefined()
+    expect(rendered.texts()).toContain('Live. Tap to open full screen.')
+  })
+
+  it('offers no Run when the verdict fails', async () => {
+    const rendered = await renderLive('<script src="/_sb/jquery.js"></script>')
+    expect(rendered.allByLabel('Run')).toHaveLength(0)
+    expect(liveWebView(rendered.root)).toBeUndefined()
+  })
+
+  it('keeps a mermaid page on its still image with the desktop-only note', async () => {
+    const rendered = await renderLive(
+      '<script src="/_sb/mermaid.js"></script><div class="mermaid">graph TD; A-->B</div>',
+    )
+    expect(rendered.allByLabel('Run')).toHaveLength(0)
+    expect(rendered.texts()).toContain(PHONE_LIVE_DESKTOP_ONLY_NOTE)
+  })
+
+  it('keeps the row height when the still image and the page swap', async () => {
+    const rendered = await renderLive()
+    const card = rendered.root.find((n) => typeof n.type === 'string' && typeof n.props.onLayout === 'function')
+    act(() => card.props.onLayout({ nativeEvent: { layout: { width: 300, height: 0 } } }))
+    const stillBox = () => rendered.byLabel(`View the whole image of ${LIVE_TITLE}`).props.style.height
+    expect(stillBox()).toBe(480)
+    await run(rendered)
+    const liveBox = () => rendered.byLabel(`Open ${LIVE_TITLE} full screen`).props.style.height
+    expect(liveBox()).toBe(480)
+    act(() =>
+      liveWebView(rendered.root)?.props.onMessage({ nativeEvent: { data: JSON.stringify({ t: 'h', v: 210 }) } }),
+    )
+    await settle(100)
+    expect(liveBox()).toBe(210)
+    act(() => setLivePagesActive(false))
+    expect(liveWebView(rendered.root)).toBeUndefined()
+    expect(stillBox()).toBe(210)
+  })
+
+  it('takes no touches inline and opens a full-screen view that gets them', async () => {
+    const rendered = await renderLive()
+    await run(rendered)
+    const inline = liveWebView(rendered.root)
+    expect(inline?.props.scrollEnabled).toBe(false)
+    expect(rendered.root.findAll((n) => n.props.pointerEvents === 'none' && typeof n.type === 'string')).toHaveLength(1)
+    act(() => rendered.byLabel(`Open ${LIVE_TITLE} full screen`).props.onPress())
+    await settle(0)
+    expect(rendered.texts()).toContain('Live page from the agent')
+    const full = liveWebView(rendered.root)
+    expect(full?.props.scrollEnabled).toBe(true)
+    expect(
+      rendered.root.findAll((n) => n.props.testID === 'html-live-webview' && typeof n.type === 'string'),
+    ).toHaveLength(1)
+    act(() => rendered.byLabel('Close live page').props.onPress())
+    await settle(0)
+    expect(liveWebView(rendered.root)?.props.scrollEnabled).toBe(false)
+  })
+
+  it('stops when the page leaves view, on blur and in the background', async () => {
+    const rendered = await renderLive()
+    await run(rendered)
+    top = -190
+    act(() => noteLivePageScroll())
+    await settle(299)
+    expect(liveWebView(rendered.root)).toBeDefined()
+    await settle(1)
+    expect(liveWebView(rendered.root)).toBeUndefined()
+    top = 100
+    act(() => noteLivePageScroll())
+    await settle(300)
+    expect(liveWebView(rendered.root)).toBeDefined()
+    act(() => setLivePagesActive(false))
+    expect(liveWebView(rendered.root)).toBeUndefined()
+  })
+
+  it('shows the crash text, offers Run again once, then no Run after a second crash', async () => {
+    const rendered = await renderLive()
+    await run(rendered)
+    act(() => liveWebView(rendered.root)?.props.onContentProcessDidTerminate({ nativeEvent: {} }))
+    await settle(400)
+    expect(liveWebView(rendered.root)).toBeUndefined()
+    expect(rendered.texts()).toContain('This page stopped.')
+    expect(rendered.byLabel('Run again')).toBeTruthy()
+    expect(rendered.byLabel(`View the whole image of ${LIVE_TITLE}`)).toBeTruthy()
+    await run(rendered, 'Run again')
+    act(() => liveWebView(rendered.root)?.props.onContentProcessDidTerminate({ nativeEvent: {} }))
+    await settle(400)
+    expect(rendered.texts()).toContain('This page stopped.')
+    expect(rendered.allByLabel('Run again')).toHaveLength(0)
+    expect(rendered.allByLabel('Run')).toHaveLength(0)
+    act(() => rendered.byLabel('Show source').props.onPress())
+    expect(rendered.byLabel('Copy source')).toBeTruthy()
+    expect(rendered.byLabel('Open on desktop')).toBeTruthy()
+  })
+
+  it('keeps Source, Copy source and Open on desktop while a page runs', async () => {
+    const rendered = await renderLive()
+    await run(rendered)
+    act(() => rendered.byLabel('Show source').props.onPress())
+    expect(rendered.byLabel('Copy source')).toBeTruthy()
+    expect(rendered.byLabel('Open on desktop')).toBeTruthy()
+  })
+
+  it('stops a page that reports no height within 8 s', async () => {
+    const rendered = await renderLive(SOURCE, null)
+    await run(rendered)
+    expect(liveWebView(rendered.root)).toBeDefined()
+    await settle(8000)
+    expect(liveWebView(rendered.root)).toBeUndefined()
+    expect(rendered.texts()).toContain('This page stopped.')
+    expect(rendered.byLabel('Run again')).toBeTruthy()
+  })
 })

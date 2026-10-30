@@ -96,6 +96,20 @@ describe('ProjectsScreen offline', () => {
 })
 
 describe('SettingsScreen', () => {
+  it('has the live pages switch, off by default', async () => {
+    expect(usePrefsStore.getState().liveHtmlPages).toBe(false)
+    const view = renderComponent(<SettingsScreen />)
+    const toggle = view.root.find(
+      (n) => n.props.testID === 'settings-phone_html_live_run' && typeof n.type === 'string',
+    )
+    expect(toggle.props.value).toBe(false)
+    await act(async () => {
+      view.byLabel('Run live pages').props.onValueChange?.(true)
+      await Promise.resolve()
+    })
+    expect(usePrefsStore.getState().liveHtmlPages).toBe(true)
+  })
+
   it('lists the account, the follow-up default and the build', async () => {
     usePrefsStore.setState({ followUpDefault: 'steer' })
     const view = renderComponent(<SettingsScreen />)
