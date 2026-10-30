@@ -3,10 +3,11 @@
  * as Android's Settings screen; machines are the home screen under this one.
  */
 import { useCallback, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import { useFocusEffect, useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import type { TurnDelivery } from '@shared/turn-delivery'
+import { PHONE_HTML_LIVE_FLAG } from '@shared/html-live-phone'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { getSignedInEmail } from '../lib/google-auth'
@@ -86,6 +87,7 @@ export default function SettingsScreen() {
 
       <Text style={styles.overline}>Chat</Text>
       <FollowUpDefaultSetting />
+      <LiveHtmlPagesSetting />
 
       <Text style={styles.overline}>App</Text>
       <BuildStamp />
@@ -124,6 +126,29 @@ function FollowUpDefaultSetting() {
           )
         })}
       </View>
+    </View>
+  )
+}
+
+/** The `phone_html_live_run` flag: off by default, nothing turns it on for the user. */
+function LiveHtmlPagesSetting() {
+  const value = usePrefsStore((s) => s.liveHtmlPages)
+  const setValue = usePrefsStore((s) => s.setLiveHtmlPages)
+  return (
+    <View style={styles.row}>
+      <View style={styles.rowBody}>
+        <Text style={styles.rowTitle}>Run live pages</Text>
+        <Text style={styles.rowDetail}>
+          Experimental. Runs a live page from the agent on this phone, with no network.
+        </Text>
+      </View>
+      <Switch
+        value={value}
+        onValueChange={setValue}
+        testID={`settings-${PHONE_HTML_LIVE_FLAG}`}
+        accessibilityLabel="Run live pages"
+        trackColor={{ true: colors.accent }}
+      />
     </View>
   )
 }
