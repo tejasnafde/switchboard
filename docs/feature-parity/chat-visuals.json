@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "chat-visuals",
-  "summary": "An agent's ```mermaid block is drawn as a diagram and a ```chart block (a small versioned JSON spec: type bar, line or table, labels, named series of numbers, optional title and axis titles) as a chart, inside the chat on desktop, the Expo app and native Android. Only a closed top-level fence is drawn, so a block still streaming stays code; a block over 20,000 characters, an empty one or one past the twelfth in a message stays code. Each visual has a header with Source (raw text) and Copy (the SVG for a diagram, tab-separated data for a chart); the desktop adds Open in pane, which shows it at full size over the right pane while the terminal and IDE stay mounted underneath. An invalid chart or a diagram Mermaid cannot parse shows its error and its source. Mermaid is bundled (no network) and runs with securityLevel strict and HTML labels off; its SVG passes through DOMPurify, which removes scripts, event handlers, links, foreignObject and any url() outside the SVG. The desktop draws in the renderer, lazily when the block scrolls into view, with results cached by theme and source; charts use the theme variables. The phones load one bundled page (scripts/build-visual-host.mjs, committed as apps/mobile/assets/visual-host/visual-host.html) in a WebView that blocks navigation, file access and network loads, and send it the source as a JSON message. Agents learn the chart format from the Switchboard MCP server's instructions.",
+  "summary": "An agent's ```mermaid block is drawn as a diagram and a ```chart block (a small versioned JSON spec: type bar, line or table, labels, named series of numbers, optional title and axis titles) as a chart, inside the chat on desktop, the Expo app and native Android. Only a closed top-level fence is drawn, so a block still streaming stays code; a block over 20,000 characters, an empty one or one past the twelfth in a message stays code. Each visual has a header with Source (raw text) and Copy (the SVG for a diagram, tab-separated data for a chart); the desktop adds Open in pane, which shows it at full size over the right pane while the terminal and IDE stay mounted underneath. An invalid chart or a diagram Mermaid cannot parse shows its error and its source. Mermaid is bundled (no network) and runs with securityLevel strict and HTML labels off; its SVG passes through DOMPurify, which removes scripts, event handlers, links, foreignObject and any url() outside the SVG. The desktop draws in the renderer, lazily when the block scrolls into view, with results cached by theme and source; charts use the theme variables. The phones load one bundled page (scripts/build-visual-host.mjs, committed as apps/mobile/assets/visual-host/visual-host.html) in a WebView that blocks navigation, file access and network loads, and send it the source as a JSON message. Agents learn the chart format from the Switchboard MCP server's instructions. When the system ends the WebView's web process (Android renderer, iOS WebContent), the card reports it handled, drops that WebView and shows \"This diagram could not be drawn: The drawing process stopped.\"; an unhandled renderer loss on Android ends the whole app. Android builds every visual WebView through one locked-down helper (LockedDownWebView.kt).",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -45,6 +45,8 @@
       "evidence": [
         "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ChatVisuals.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ChatVisualCard.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/LockedDownWebView.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/LockedDownWebViewTest.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadRichTextRenderer.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/ChatVisualsFixturesTest.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ChatVisualColorTest.kt",
@@ -84,6 +86,8 @@
       "tests/unit/diagram-sanitize.test.ts (jsdom): scripts, event handlers, links, images and foreignObject removed; url(#id) kept, external url() and @import dropped.",
       "tests/unit/visual-host-asset.test.ts: the committed page is built from the current sources and library versions, and its CSP allows nothing outside the page. The input hash ignores line endings, so a Windows (CRLF) checkout matches the stamp. The page was rebuilt for dompurify 3.4.17 (PR #418); the stamp moved and the test passes.",
       "apps/mobile jest ChatVisual.test.tsx: an invalid chart shows its error and source with no WebView, Source toggles the drawing, Copy writes the chart data, a diagram error falls back to the source, every navigation but the page is refused, and a streaming block stays code.",
+      "apps/mobile jest ChatVisual.test.tsx: onContentProcessDidTerminate moves the card to the error text.",
+      "Android LockedDownWebViewTest (Robolectric): every WebView setting, every navigation scheme refused, onRenderProcessGone returns true, and a ChatVisualCard whose renderer is lost shows the error and holds no WebView.",
       "Android ChatVisualsFixturesTest runs both shared fixture files and the copied data format, and ChatVisualColorTest formats the theme colours as ASCII hex under an Arabic default locale (./gradlew testDebugUnitTest).",
       "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens npm run test:e2e:visual: new chat-diagram and chat-chart baselines in Dark, Light and Translucent, read; Open in pane and Close driven; two runs pass without updating.",
       "The built visual host page was loaded in a hidden Electron window with its CSP: a flowchart, a sequence diagram and a chart drew through both answer paths (window.ReactNativeWebView and a MessagePort), a click directive and HTML in a label left no link or script, a parse error came back as an error, and no request left the page.",
@@ -92,7 +96,8 @@
     "hardware": [],
     "notExercised": [
       "The Expo app and native Android were not run on a device or emulator: the WebView settings, the asset loading (expo-asset in an APK, Android assets from the shared folder) and the measured heights are untested on hardware.",
-      "iOS was not run (no simulator on this Mac)."
+      "iOS was not run (no simulator on this Mac).",
+      "A real renderer kill (Android `adb shell am kill` of the sandboxed renderer, or memory pressure) was not run on a device; the Robolectric test calls the callback directly."
     ]
   }
 }
