@@ -66,6 +66,7 @@ import {
   type HubDepsMode,
   type HubRunningChild,
   type HubTask,
+  type HubWakeKind,
 } from '@shared/hub'
 import {
   HUB_REMOTE_OFF_TEXT,
@@ -113,6 +114,7 @@ import {
   getHubChild,
   insertHubChild,
   insertHubWake,
+  newHubRowId,
   listHubChildren,
   listHubChildrenInPhase,
   openChildParentId,
@@ -261,6 +263,8 @@ export interface HubStartHost {
   startRemoteChild?(machineId: string, request: HubRemoteStartRequest): Promise<unknown>
   /** Whether a saved machine is connected now, or was removed. Absent: every machine counts as connected. */
   remoteMachineState?(machineId: string): 'connected' | 'offline' | 'gone'
+  /** A wake for a parent stub went into the outbox: tell the hub that owns it. */
+  outboxAdded?(): void
 }
 
 /** Git and disk reads, replaceable in tests. */
@@ -1029,6 +1033,26 @@ export class HubStarter {
     await Promise.all(rows.map((row) => this.reconcileOne(row)))
   }
 
+  /**
+   * A child on another machine wrote a failed or stopped wake at its start
+   * there (the desktop imports it): the row here ends `failed_start` as a
+   * local child's would, with no wake of its own. Runs inside the import's
+   * transaction; the answer is what to do once it committed, or null when the
+   * row was not starting or open.
+   */
+  remoteChildFailedStart(childId: string): (() => void) | null {
+    const row = getHubChild(childId)
+    if (!row?.machineId || (row.phase !== 'starting' && row.phase !== 'open')) return null
+    updateHubChild(childId, { phase: 'failed_start' })
+    return () => {
+      this.endFollowUp(childId)
+      log.info('child on another machine failed to start', { childId, machineId: row.machineId })
+      // A remote child counts for its parent's slots while it is open: a waiter may go now.
+      this.pump()
+      this.host.changed?.(row.parentId)
+    }
+  }
+
   /** The machine was removed: its children still `starting` never get an answer. */
   remoteMachineRemoved(machineId: string): void {
     try {
@@ -1411,8 +1435,7 @@ export class HubStarter {
     this.linked.delete(childId)
     log.warn('child changed shared dependencies; stopping it', { childId, problems })
     try {
-      insertHubWake({
-        id: `hw_${Date.now()}_${randomBytes(4).toString('hex')}`,
+      this.wake({
         parentId: entry.parentId,
         childId,
         kind: 'blocked',
@@ -1473,8 +1496,7 @@ export class HubStarter {
     log.info('child stopped before its first turn', { childId: c.childId })
     try {
       updateHubChild(c.childId, { phase: 'failed_start' })
-      insertHubWake({
-        id: `hw_${Date.now()}_${randomBytes(4).toString('hex')}`,
+      this.wake({
         parentId: slot.parentId,
         childId: c.childId,
         kind: 'stopped',
@@ -1488,14 +1510,19 @@ export class HubStarter {
   }
 
   private failedWake(parentId: string, childId: string, summary: string): void {
-    insertHubWake({
-      id: `hw_${Date.now()}_${randomBytes(4).toString('hex')}`,
+    this.wake({
       parentId,
       childId,
       kind: 'failed',
       summary,
       pointer: null,
     })
+  }
+
+  /** Stores one of Switchboard's own wakes; one for a parent stub goes to the outbox and the hub client hears of it. */
+  private wake(w: { parentId: string; childId: string; kind: HubWakeKind; summary: string; pointer: null }): void {
+    const where = insertHubWake({ id: newHubRowId('hw'), ...w })
+    if (where === 'outbox') this.host.outboxAdded?.()
   }
 
   private whenSlotFree(childId: string, slot: HubRunningChild): Promise<void> {

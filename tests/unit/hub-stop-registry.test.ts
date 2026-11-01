@@ -62,6 +62,7 @@ vi.mock('../../src/main/db/database', () => ({
   listPendingHubWakes: () => [],
   listParentsWithPendingHubWakes: () => [],
   insertHubWake: (w: Record<string, unknown>) => db.wakes.push(w),
+  newHubRowId: (prefix: string) => `${prefix}_${db.wakes.length}`,
   getHubParent: (id: string) =>
     db.held.has(id) ? { parentId: id, held: true, heldReason: db.held.get(id), heldAt: 0 } : null,
   setHubParentHeld: (id: string, held: boolean, reason: string | null = null) => {

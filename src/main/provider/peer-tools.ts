@@ -14,6 +14,7 @@ import type { ProviderKind } from './types'
 import { heldPeerMessageText } from '@shared/peer-held-messages'
 import type { TurnDelivery } from '@shared/turn-delivery'
 import { PEER_LINEAGE_MESSAGE_BUDGET } from '@shared/peer-links'
+import { HUB_OUTBOX_MESSAGE_SENT_TEXT } from '@shared/hub-remote'
 
 const log = createLogger('provider:peer-tools')
 
@@ -84,7 +85,8 @@ export interface PeerSessionSummary {
   sessionId: string
   title: string
   folder: string
-  provider: ProviderKind
+  /** Absent for a parent chat on another machine, which has no session on this backend. */
+  provider?: ProviderKind
   /** A busy session still receives the message; it just answers later. */
   midTurn: boolean
   /** The user linked it with the caller, so the two may message back and forth. */
@@ -107,8 +109,9 @@ export interface PeerToolHost {
   /**
    * `held`: the link's time was up, so the message waits to be delivered later.
    * `queued`: the target was mid-turn, so the message runs after that turn.
+   * `relayed`: the target is the sender's parent on another machine; the message waits in the outbox.
    */
-  deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string; held?: true; queued?: true }>
+  deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string; held?: true; queued?: true; relayed?: true }>
 }
 
 /**
@@ -178,7 +181,7 @@ export function createPeerToolHandlers(host: PeerToolHost, fromThreadId: string)
       }
 
       try {
-        const { id, held, queued } = await host.deliverPeerMessage({
+        const { id, held, queued, relayed } = await host.deliverPeerMessage({
           fromThreadId,
           targetThreadId: sessionId,
           text: message,
@@ -186,6 +189,10 @@ export function createPeerToolHandlers(host: PeerToolHost, fromThreadId: string)
           ...(args.requireLink ? { requireLink: true } : {}),
           ...(args.delivery ? { delivery: args.delivery } : {}),
         })
+        if (relayed) {
+          log.info(`agent-initiated peer send ${id} stored for a parent on another machine: ${fromThreadId}`)
+          return say(HUB_OUTBOX_MESSAGE_SENT_TEXT)
+        }
         if (held) {
           log.info(`agent-initiated peer send ${id} held: ${fromThreadId} -> ${sessionId}`)
           return say(

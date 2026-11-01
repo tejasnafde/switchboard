@@ -63,6 +63,8 @@ describe('isChannelAllowed with the hub scope', () => {
       expect(isChannelAllowed(scopes, HubRemoteChannels.DESCRIBE)).toBe(true)
       expect(isChannelAllowed(scopes, HubRemoteChannels.CHILDREN_CHANGED)).toBe(true)
       expect(isChannelAllowed(scopes, HubRemoteChannels.START_CHILD)).toBe(true)
+      expect(isChannelAllowed(scopes, HubRemoteChannels.OUTBOX_PULL)).toBe(true)
+      expect(isChannelAllowed(scopes, HubRemoteChannels.OUTBOX_ACK)).toBe(true)
     }
   })
 
@@ -71,6 +73,8 @@ describe('isChannelAllowed with the hub scope', () => {
       expect(isChannelAllowed(scopes, HubRemoteChannels.DESCRIBE), scopes.join(',')).toBe(false)
       expect(isChannelAllowed(scopes, HubRemoteChannels.OUTBOX), scopes.join(',')).toBe(false)
       expect(isChannelAllowed(scopes, HubRemoteChannels.START_CHILD), scopes.join(',')).toBe(false)
+      expect(isChannelAllowed(scopes, HubRemoteChannels.OUTBOX_PULL), scopes.join(',')).toBe(false)
+      expect(isChannelAllowed(scopes, HubRemoteChannels.OUTBOX_ACK), scopes.join(',')).toBe(false)
     }
   })
 
@@ -116,9 +120,10 @@ describe('scope helpers', () => {
     expect(isHubAuthGrant(undefined)).toBe(false)
   })
 
-  it('advertises hub_remote_child_v1 and hub_remote_start_v1', () => {
+  it('advertises hub_remote_child_v1, hub_remote_start_v1 and hub_remote_outbox_v1', () => {
     expect(BACKEND_CAPABILITIES).toContain('hub_remote_child_v1')
     expect(BACKEND_CAPABILITIES).toContain('hub_remote_start_v1')
+    expect(BACKEND_CAPABILITIES).toContain('hub_remote_outbox_v1')
   })
 })
 
@@ -334,6 +339,33 @@ describe('WsHost and the hub scope', () => {
     ws.send(JSON.stringify({ k: 'hello', since: 1, epoch: host.epoch }))
     expect(await next()).toMatchObject({ k: 'evt', ch: HubRemoteChannels.CHILDREN_CHANGED })
     expect(await next()).toMatchObject({ k: 'ready', replayed: 1 })
+  })
+
+  it('sends hub-remote:outbox to a hub session and not to a phone, and refuses the phone a pull', async () => {
+    const { host, port } = await boot('s3cret', {
+      redeem: () => ({ ok: false }),
+      authenticate: (session) => (session === 'phone' ? { id: 'phone-1', scopes: ['chat'] } : null),
+    })
+    host.handle(HubRemoteChannels.OUTBOX_PULL, () => ({ v: 1, items: [] }))
+    const hub = await client(port)
+    hub.ws.send(JSON.stringify({ k: 'auth', session: 's3cret', scopes: ['hub'] }))
+    expect(await hub.next()).toMatchObject({ k: 'authed', ok: true })
+    const phone = await client(port)
+    phone.ws.send(JSON.stringify({ k: 'auth', session: 'phone' }))
+    expect(await phone.next()).toMatchObject({ k: 'authed', ok: true, scopes: ['chat'] })
+
+    host.emit(HubRemoteChannels.OUTBOX)
+    host.emit('provider:event', { n: 1 })
+    expect(await hub.next()).toMatchObject({ k: 'evt', ch: HubRemoteChannels.OUTBOX })
+    // The phone's first event is the one after: it never got the outbox event.
+    expect(await phone.next()).toMatchObject({ k: 'evt', ch: 'provider:event' })
+
+    phone.ws.send(JSON.stringify({ k: 'req', id: 1, ch: HubRemoteChannels.OUTBOX_PULL, args: [] }))
+    expect(await phone.next()).toMatchObject({ k: 'res', id: 1, ok: false })
+    hub.ws.send(
+      JSON.stringify({ k: 'req', id: 2, ch: HubRemoteChannels.OUTBOX_PULL, args: [{ v: 1, desktopInstallId: 'h' }] }),
+    )
+    expect(await hub.next()).toEqual({ k: 'res', id: 2, ok: true, result: { v: 1, items: [] } })
   })
 
   it('keeps the full set for the server token without scopes', async () => {

@@ -115,6 +115,10 @@ export const BACKEND_CAPABILITIES = [
   /** `hub-remote:start-child` starts a child for a hub on another machine
    *  (`HubStarter.startRemote`): parent stub, clone, fetch, worktree, session. */
   'hub_remote_start_v1',
+  /** `hub-remote:outbox-pull` and `hub-remote:outbox-ack`: what a child here
+   *  sends its parent on another machine waits in `hub_outbox` until that
+   *  desktop pulls and acks it; `hub-remote:outbox` says something waits. */
+  'hub_remote_outbox_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {

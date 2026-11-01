@@ -216,9 +216,9 @@ export function registerMachineHandlers(host: BackendHost): RemoteHubClients {
   return hub
 }
 
-/** After a write of `labs.hub_remote_children`: turning it off closes every hub client. */
+/** After a write of `labs.hub_remote_children`: off closes every hub client; on pulls and reconciles each connected machine. */
 export function hubRemoteSettingChanged(): void {
-  if (!hubRemoteOn()) hubClients?.closeAll()
+  hubClients?.enabledChanged()
 }
 
 /**

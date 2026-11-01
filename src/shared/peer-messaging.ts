@@ -235,6 +235,12 @@ export class PeerMessageGuard {
     return { ok: true, id }
   }
 
+  /** Whether the pair's rate leaves room for one more send now. Records nothing. */
+  hasRoom(fromThreadId: string, targetThreadId: string, nowMs: number): boolean {
+    this.expire(nowMs)
+    return (this.sends.get(`${fromThreadId}\u0000${targetThreadId}`)?.length ?? 0) < this.rateLimit
+  }
+
   /**
    * Undo an accepted send whose delivery then failed.
    *

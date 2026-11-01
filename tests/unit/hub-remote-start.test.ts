@@ -852,8 +852,13 @@ describe('startRemote on the child machine', () => {
     const other = await vm.starter.startRemote(requestFor('agent_c3'))
     expect(other).toMatchObject({ ok: false, error: expect.stringContaining('is not a checkout of') })
     expect(vm.sessions).toEqual([])
-    // Each failed child is a stored failed wake for the stub, never a turn.
-    expect(vm.dbm.listPendingHubWakes('agent_parent').map((w) => w.kind)).toEqual(['failed', 'failed'])
+    // Each failed child is a failed wake in the outbox for the desktop, never a turn or a wake here.
+    expect(vm.dbm.listPendingHubWakes('agent_parent')).toEqual([])
+    const { items } = vm.dbm.listHubOutbox('hub-desk', { limit: 10 })
+    expect(items.map((i) => (i.kind === 'wake' ? [i.wake.kind, i.wake.childPhase] : null))).toEqual([
+      ['failed', 'failed_start'],
+      ['failed', 'failed_start'],
+    ])
   })
 
   it('refuses a parent id that names a chat or a hub parent here, before any stub', async () => {
@@ -1082,7 +1087,7 @@ describe('a local batch', () => {
 })
 
 describe('a parent stub', () => {
-  it('keeps its wakes stored and never gets a turn', async () => {
+  it('gets no wake and never a turn: the wake goes to the outbox for its hub', async () => {
     expect(db.claimHubParentStub('agent_stub', 'hub-desk')).toBe(true)
     expect(db.claimHubParentStub('agent_stub', 'hub-other')).toBe(false)
     const sent: string[] = []
@@ -1105,7 +1110,10 @@ describe('a parent stub', () => {
     wakes.poke('agent_stub')
     await new Promise((r) => setTimeout(r, 20))
     expect(sent).toEqual([])
-    expect(db.listPendingHubWakes('agent_stub')).toHaveLength(1)
+    expect(db.listPendingHubWakes('agent_stub')).toEqual([])
+    expect(db.listHubOutbox('hub-desk', { limit: 10 }).items).toMatchObject([
+      { kind: 'wake', parentId: 'agent_stub', childId: 'agent_child', wake: { kind: 'report', summary: 'done' } },
+    ])
   })
 })
 

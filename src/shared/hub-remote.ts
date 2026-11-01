@@ -13,10 +13,13 @@ import {
   type HubChildLocation,
   type HubChildPhase,
   type HubDepsMode,
+  type HubWakeKind,
 } from './hub'
 import { modelsForAgent } from './models'
+import { peerMessageTooLarge } from './peer-messaging'
 import { isNetworkCloneUrl, isSafeCloneUrl } from './project-clone'
 import { RUNTIME_MODES, type RuntimeMode } from './provider-events'
+import type { TurnDelivery } from './turn-delivery'
 import { agentLabel, isAgentProvider, type AgentProvider, type AgentType } from './types'
 
 /** What the hub client asks for in its auth frame. */
@@ -674,4 +677,178 @@ function remotePathProblem(path: string): string | null {
 /** `~/x` under `home`; any other accepted path as it is. */
 export function expandHubPath(path: string, home: string): string {
   return path.startsWith('~/') ? `${home.replace(/\/+$/, '')}/${path.slice(2)}` : path
+}
+
+// ─── Outbox: what a child machine holds for the desktop ─────────
+
+/** The backend answers `hub-remote:outbox-pull` and `hub-remote:outbox-ack`. */
+export const HUB_REMOTE_OUTBOX_CAPABILITY = 'hub_remote_outbox_v1'
+export const HUB_OUTBOX_PULL_DEFAULT = 100
+export const HUB_OUTBOX_PULL_MAX = 500
+export const HUB_OUTBOX_ACK_MAX = 500
+/** A wake summary longer than this is cut on the child machine and refused on the desktop. */
+export const HUB_OUTBOX_SUMMARY_MAX = 16 * 1024
+/** A wake pointer's `toolCallId` longer than this is left out on the child machine and refused on the desktop. */
+export const HUB_OUTBOX_TOOL_CALL_ID_MAX = 200
+/** Acked rows older than this are deleted on the child machine. */
+export const HUB_OUTBOX_KEEP_ACKED_MS = 7 * 24 * 60 * 60_000
+/** Unacked messages one child may have waiting before a further send is refused there. */
+export const HUB_OUTBOX_MESSAGES_PER_CHILD_MAX = 60
+
+export const HUB_OUTBOX_MESSAGE_SENT_TEXT =
+  'Sent to your parent chat on the other machine. It reaches the parent when that machine collects it; ' +
+  'nothing comes back here unless the parent writes to you, so continue without waiting.'
+export const HUB_OUTBOX_MESSAGES_FULL_TEXT =
+  'Your parent chat has not collected your earlier messages yet, so this one was not sent. ' +
+  'Put it in your report instead.'
+
+/** A wake for the parent: what the desktop needs to make its own `hub_wakes` row. */
+export interface HubOutboxWake {
+  kind: HubWakeKind
+  summary: string
+  /** The report call in the child's transcript, and when; no path, which names this machine's files. */
+  pointer: { toolCallId?: string; at: number } | null
+  /** The child's phase here when the wake was written (`failed_start` after a failed or stopped start). */
+  childPhase: HubChildPhase
+}
+
+/** A child's `send_agent_message` to its parent. */
+export interface HubOutboxMessage {
+  text: string
+  delivery: TurnDelivery
+}
+
+interface HubOutboxBase {
+  id: string
+  /** The child, under the id the desktop gave it. */
+  childId: string
+  /** The parent stub's id: the parent chat's id on the desktop. */
+  parentId: string
+  createdAt: number
+}
+
+export type HubOutboxItem =
+  | (HubOutboxBase & { kind: 'wake'; wake: HubOutboxWake })
+  | (HubOutboxBase & { kind: 'message'; message: HubOutboxMessage })
+
+export interface HubOutboxPullRequest {
+  v: 1
+  desktopInstallId: string
+  /** The last item id of the page before; items after it in (created_at, id) order. */
+  after?: string
+  limit: number
+}
+
+export interface HubOutboxPullAnswer {
+  v: 1
+  items: HubOutboxItem[]
+  /**
+   * After a full page, the last row read, valid or not: the next page starts
+   * after it. Null after a short page. A child machine from before it sends none.
+   */
+  cursor: string | null
+}
+
+export interface HubOutboxAckRequest {
+  v: 1
+  desktopInstallId: string
+  ids: string[]
+}
+
+const HUB_WAKE_KINDS: readonly HubWakeKind[] = [
+  'report',
+  'question',
+  'blocked',
+  'failed',
+  'stopped',
+  'limited',
+  'resumed',
+  'restart',
+]
+const HUB_CHILD_PHASES: readonly HubChildPhase[] = ['starting', 'open', 'settled', 'failed_start']
+
+/** An id as outbox items and requests carry them. */
+export const isHubOutboxId = (v: unknown): v is string => typeof v === 'string' && ID_RE.test(v)
+const isId = isHubOutboxId
+
+/** A pull request off the wire. */
+export function parseHubOutboxPullRequest(
+  value: unknown,
+): { ok: true; request: HubOutboxPullRequest } | { ok: false; message: string } {
+  const bad = (field: string) => ({ ok: false as const, message: `The outbox pull has an invalid ${field}.` })
+  if (!value || typeof value !== 'object') return bad('body')
+  const r = value as Record<string, unknown>
+  if (r.v !== 1) return bad('version')
+  if (!isId(r.desktopInstallId)) return bad('desktopInstallId')
+  if (r.after !== undefined && r.after !== null && !isId(r.after)) return bad('after')
+  let limit = HUB_OUTBOX_PULL_DEFAULT
+  if (r.limit !== undefined && r.limit !== null) {
+    if (typeof r.limit !== 'number' || !Number.isInteger(r.limit) || r.limit < 1) return bad('limit')
+    limit = Math.min(r.limit, HUB_OUTBOX_PULL_MAX)
+  }
+  return {
+    ok: true,
+    request: { v: 1, desktopInstallId: r.desktopInstallId, ...(isId(r.after) ? { after: r.after } : {}), limit },
+  }
+}
+
+/** An ack request off the wire: at most `HUB_OUTBOX_ACK_MAX` ids. */
+export function parseHubOutboxAckRequest(
+  value: unknown,
+): { ok: true; request: HubOutboxAckRequest } | { ok: false; message: string } {
+  const bad = (field: string) => ({ ok: false as const, message: `The outbox ack has an invalid ${field}.` })
+  if (!value || typeof value !== 'object') return bad('body')
+  const r = value as Record<string, unknown>
+  if (r.v !== 1) return bad('version')
+  if (!isId(r.desktopInstallId)) return bad('desktopInstallId')
+  if (!Array.isArray(r.ids) || r.ids.length > HUB_OUTBOX_ACK_MAX || !r.ids.every(isId)) return bad('ids')
+  return { ok: true, request: { v: 1, desktopInstallId: r.desktopInstallId, ids: [...new Set(r.ids)] } }
+}
+
+/**
+ * One outbox item off the wire, or null when its shape is wrong. The desktop
+ * trusts nothing in it: the ids are checked against its own rows after this.
+ */
+export function parseHubOutboxItem(value: unknown): HubOutboxItem | null {
+  if (!value || typeof value !== 'object') return null
+  const r = value as Record<string, unknown>
+  if (!isId(r.id) || !isId(r.childId) || !isId(r.parentId)) return null
+  if (typeof r.createdAt !== 'number' || !Number.isFinite(r.createdAt)) return null
+  const base = { id: r.id, childId: r.childId, parentId: r.parentId, createdAt: r.createdAt }
+  if (r.kind === 'wake') {
+    const w = r.wake as Record<string, unknown> | null
+    if (!w || typeof w !== 'object') return null
+    if (typeof w.kind !== 'string' || !(HUB_WAKE_KINDS as readonly string[]).includes(w.kind)) return null
+    if (typeof w.summary !== 'string' || w.summary.length > HUB_OUTBOX_SUMMARY_MAX) return null
+    if (typeof w.childPhase !== 'string' || !(HUB_CHILD_PHASES as readonly string[]).includes(w.childPhase)) return null
+    let pointer: HubOutboxWake['pointer'] = null
+    if (w.pointer !== null && w.pointer !== undefined) {
+      const p = w.pointer as Record<string, unknown>
+      if (typeof p !== 'object' || typeof p.at !== 'number' || !Number.isFinite(p.at)) return null
+      if (
+        p.toolCallId != null &&
+        (typeof p.toolCallId !== 'string' || p.toolCallId.length > HUB_OUTBOX_TOOL_CALL_ID_MAX)
+      )
+        return null
+      pointer = { at: p.at, ...(typeof p.toolCallId === 'string' ? { toolCallId: p.toolCallId } : {}) }
+    }
+    return {
+      ...base,
+      kind: 'wake',
+      wake: {
+        kind: w.kind as HubWakeKind,
+        summary: w.summary,
+        pointer,
+        childPhase: w.childPhase as HubChildPhase,
+      },
+    }
+  }
+  if (r.kind === 'message') {
+    const m = r.message as Record<string, unknown> | null
+    if (!m || typeof m !== 'object' || typeof m.text !== 'string' || !m.text.trim()) return null
+    if (peerMessageTooLarge(m.text) !== null) return null
+    if (m.delivery !== 'queue' && m.delivery !== 'steer') return null
+    return { ...base, kind: 'message', message: { text: m.text, delivery: m.delivery } }
+  }
+  return null
 }

@@ -71,6 +71,7 @@ vi.mock('../../src/main/db/database', () => ({
   listPendingHubWakes: () => [],
   listParentsWithPendingHubWakes: () => [],
   insertHubWake: (w: Record<string, unknown>) => hubFlag.wakes.push(w),
+  newHubRowId: (prefix: string) => `${prefix}_${hubFlag.wakes.length}`,
   getHubParent: () => null,
   getLimitResume: () => null,
 }))
@@ -343,7 +344,13 @@ describe('the hub view', () => {
 })
 
 describe('list_machines exposure', () => {
-  const hubClients = { entries: async () => [], setMachineListener() {} } as unknown as RemoteHubClients
+  const hubClients = {
+    entries: async () => [],
+    setMachineListener() {},
+    on: () => () => {},
+    onResync: () => () => {},
+    connectedMachineIds: () => [],
+  } as unknown as RemoteHubClients
 
   async function toolsOf(threadId: string, clients: RemoteHubClients | null = hubClients) {
     const { host, mcp } = setup(clients)

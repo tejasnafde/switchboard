@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
 import {
+  HUB_OUTBOX_SUMMARY_MAX,
+  HUB_OUTBOX_TOOL_CALL_ID_MAX,
+  parseHubOutboxItem,
+  type HubOutboxItem,
+  type HubOutboxMessage,
+} from '@shared/hub-remote'
+import {
   parseHubPointer,
   type HubBatchStatus,
   type HubChildLocation,
@@ -11,7 +18,10 @@ import {
 } from '@shared/hub'
 import type { RuntimeMode } from '@shared/provider-events'
 import { getDb } from './database'
+import { createMainLogger } from '../logger'
 import { resolveRootThreadId } from './conversations'
+
+const log = createMainLogger('db:hubs')
 
 // ─── Child chats: parents, batches, children, wakes ─────────────
 //
@@ -82,6 +92,71 @@ export function ensureHubSchema(db: Database.Database): void {
     new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name))
   if (!columns('hub_parents').has('remote_hub')) db.exec('ALTER TABLE hub_parents ADD COLUMN remote_hub TEXT')
   if (!columns('hub_children').has('machine_id')) db.exec('ALTER TABLE hub_children ADD COLUMN machine_id TEXT')
+  // A desktop wake imported from a child on another machine names that machine.
+  if (!columns('hub_wakes').has('machine_id')) db.exec('ALTER TABLE hub_wakes ADD COLUMN machine_id TEXT')
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS hub_outbox (
+      id           TEXT PRIMARY KEY,
+      child_id     TEXT NOT NULL,
+      parent_id    TEXT NOT NULL,
+      kind         TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      created_at   INTEGER NOT NULL,
+      acked_at     INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_hub_outbox_order ON hub_outbox(created_at, id);
+    CREATE TABLE IF NOT EXISTS hub_remote_imports (
+      machine_id  TEXT NOT NULL,
+      remote_id   TEXT NOT NULL,
+      kind        TEXT,
+      child_id    TEXT,
+      outcome     TEXT NOT NULL,
+      reason      TEXT,
+      imported_at INTEGER NOT NULL,
+      PRIMARY KEY (machine_id, remote_id)
+    );
+  `)
+  moveStubWakesToOutbox(db)
+}
+
+/**
+ * Wakes stored for a parent stub before the outbox existed go into the
+ * outbox once (same id with an `ho_` prefix, so a second run adds nothing),
+ * without the transcript path, which names this machine's files.
+ */
+function moveStubWakesToOutbox(db: Database.Database): void {
+  db.transaction(() => {
+    const moved = db
+      .prepare(
+        `INSERT OR IGNORE INTO hub_outbox (id, child_id, parent_id, kind, payload_json, created_at)
+         SELECT 'ho_' || w.id, w.child_id, w.parent_id, 'wake',
+           json_object(
+             'kind', w.kind,
+             'summary', substr(w.summary, 1, ${HUB_OUTBOX_SUMMARY_MAX}),
+             'pointer', CASE WHEN json_valid(w.pointer_json) THEN
+               CASE WHEN json_type(w.pointer_json, '$.at') IN ('integer', 'real') THEN
+                 CASE WHEN json_type(w.pointer_json, '$.toolCallId') = 'text'
+                   AND length(json_extract(w.pointer_json, '$.toolCallId')) <= ${HUB_OUTBOX_TOOL_CALL_ID_MAX}
+                 THEN json_object('at', json_extract(w.pointer_json, '$.at'),
+                                  'toolCallId', json_extract(w.pointer_json, '$.toolCallId'))
+                 ELSE json_object('at', json_extract(w.pointer_json, '$.at'))
+                 END
+               END
+             END,
+             'childPhase', COALESCE(c.phase, 'open')),
+           w.created_at
+         FROM hub_wakes w
+         JOIN hub_parents p ON p.parent_id = w.parent_id
+         LEFT JOIN hub_children c ON c.child_id = w.child_id
+         WHERE p.remote_hub IS NOT NULL AND w.delivered_revision IS NULL`,
+      )
+      .run().changes
+    if (moved === 0) return
+    db.prepare(
+      `DELETE FROM hub_wakes WHERE delivered_revision IS NULL
+         AND parent_id IN (SELECT parent_id FROM hub_parents WHERE remote_hub IS NOT NULL)`,
+    ).run()
+  })()
 }
 
 /** This backend's id as a hub to other machines, minted once. */
@@ -93,6 +168,17 @@ export function hubInstallId(): string {
   if (row?.value) return row.value
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('hub.installId', ?)").run(`hub-${randomUUID()}`)
   return (db.prepare("SELECT value FROM settings WHERE key = 'hub.installId'").get() as { value: string }).value
+}
+
+let rowSeq = 0
+
+/**
+ * A wake or outbox id that sorts in the order this process made them, within
+ * one millisecond too: lists order by (created_at, id).
+ */
+export function newHubRowId(prefix: 'hw' | 'ho'): string {
+  rowSeq = (rowSeq + 1) % 1_000_000
+  return `${prefix}_${Date.now()}_${String(rowSeq).padStart(6, '0')}${randomUUID().slice(0, 4)}`
 }
 
 // ─── hub_parents ────────────────────────────────────────────────
@@ -439,6 +525,8 @@ export interface HubWakeRow {
   pointer: HubPointer | null
   createdAt: number
   deliveredRevision: number | null
+  /** Imported from a child on this machine (`hub_children.machine_id`); null for a local child. */
+  machineId: string | null
 }
 
 type WakeDbRow = {
@@ -450,8 +538,14 @@ type WakeDbRow = {
   pointer_json: string | null
   created_at: number
   delivered_revision: number | null
+  machine_id: string | null
 }
 
+/**
+ * Stores a wake for its parent. For a parent stub (the parent runs on another
+ * machine's hub) it becomes an outbox item for that hub instead, and the
+ * answer says so: the caller tells the hub client (`hub-remote:outbox`).
+ */
 export function insertHubWake(w: {
   id: string
   parentId: string
@@ -459,21 +553,53 @@ export function insertHubWake(w: {
   kind: HubWakeKind
   summary: string
   pointer: HubPointer | null
-}): void {
-  getDb()
-    .prepare(
-      `INSERT INTO hub_wakes (id, parent_id, child_id, kind, summary, pointer_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      w.id,
-      resolveRootThreadId(w.parentId),
-      resolveRootThreadId(w.childId),
-      w.kind,
-      w.summary,
-      w.pointer ? JSON.stringify(w.pointer) : null,
-      Date.now(),
-    )
+  machineId?: string | null
+}): 'wake' | 'outbox' {
+  const db = getDb()
+  const parentId = resolveRootThreadId(w.parentId)
+  const childId = resolveRootThreadId(w.childId)
+  const stub = db.prepare('SELECT remote_hub FROM hub_parents WHERE parent_id = ?').get(parentId) as
+    | { remote_hub: string | null }
+    | undefined
+  if (stub?.remote_hub) {
+    const phase = db.prepare('SELECT phase FROM hub_children WHERE child_id = ?').get(childId) as
+      | { phase: HubChildPhase }
+      | undefined
+    insertHubOutbox({
+      id: newHubRowId('ho'),
+      childId,
+      parentId,
+      kind: 'wake',
+      payload: {
+        kind: w.kind,
+        summary: w.summary.slice(0, HUB_OUTBOX_SUMMARY_MAX),
+        pointer: w.pointer
+          ? {
+              at: w.pointer.at,
+              ...(w.pointer.toolCallId && w.pointer.toolCallId.length <= HUB_OUTBOX_TOOL_CALL_ID_MAX
+                ? { toolCallId: w.pointer.toolCallId }
+                : {}),
+            }
+          : null,
+        childPhase: phase?.phase ?? 'open',
+      },
+    })
+    return 'outbox'
+  }
+  db.prepare(
+    `INSERT INTO hub_wakes (id, parent_id, child_id, kind, summary, pointer_json, created_at, machine_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    w.id,
+    parentId,
+    childId,
+    w.kind,
+    w.summary,
+    w.pointer ? JSON.stringify(w.pointer) : null,
+    Date.now(),
+    w.machineId ?? null,
+  )
+  return 'wake'
 }
 
 /** A parent's undelivered wakes, oldest first. */
@@ -493,14 +619,47 @@ const toWake = (r: WakeDbRow): HubWakeRow => ({
   pointer: parseHubPointer(r.pointer_json),
   createdAt: r.created_at,
   deliveredRevision: r.delivered_revision,
+  machineId: r.machine_id ?? null,
 })
 
-/** Each child's newest wake, delivered or not, keyed by child id. */
+/** Each child's newest wake, delivered or not, keyed by child id; a parent stub's are in the outbox. */
 export function lastHubWakes(parentId: string): Map<string, { kind: HubWakeKind; summary: string }> {
+  const root = resolveRootThreadId(parentId)
   const rows = getDb()
-    .prepare('SELECT child_id, kind, summary FROM hub_wakes WHERE parent_id = ? ORDER BY created_at, id')
-    .all(resolveRootThreadId(parentId)) as Array<Pick<WakeDbRow, 'child_id' | 'kind' | 'summary'>>
-  return new Map(rows.map((r) => [r.child_id, { kind: r.kind, summary: r.summary }]))
+    .prepare('SELECT * FROM hub_wakes WHERE parent_id = ? ORDER BY created_at, id')
+    .all(root) as WakeDbRow[]
+  const all = [...rows.map(toWake), ...outboxWakes('parent_id', root)].sort(
+    (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  )
+  return new Map(all.map((w) => [w.childId, { kind: w.kind, summary: w.summary }]))
+}
+
+/** Outbox wakes as wake rows (a child of a parent stub here), oldest first. */
+function outboxWakes(column: 'parent_id' | 'child_id', id: string): HubWakeRow[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, child_id, parent_id, kind, payload_json, created_at FROM hub_outbox
+       WHERE ${column} = ? AND kind = 'wake' ORDER BY created_at, id`,
+    )
+    .all(id) as OutboxDbRow[]
+  return rows.flatMap((r) => {
+    const item = toOutboxItem(r)
+    if (item?.kind !== 'wake') return []
+    const p = item.wake.pointer
+    return [
+      {
+        id: r.id,
+        parentId: r.parent_id,
+        childId: r.child_id,
+        kind: item.wake.kind,
+        summary: item.wake.summary,
+        pointer: p ? { childId: r.child_id, at: p.at, ...(p.toolCallId ? { toolCallId: p.toolCallId } : {}) } : null,
+        createdAt: r.created_at,
+        deliveredRevision: null,
+        machineId: null,
+      },
+    ]
+  })
 }
 
 /**
@@ -553,10 +712,18 @@ export function listParentsWithPendingHubWakes(): string[] {
 
 /** A child's newest wake that points into its transcript: where `read_child` starts and what a gone transcript leaves. */
 export function lastHubWakeOf(childId: string): HubWakeRow | null {
+  const root = resolveRootThreadId(childId)
   const r = getDb()
     .prepare('SELECT * FROM hub_wakes WHERE child_id = ? ORDER BY created_at DESC, id DESC LIMIT 1')
-    .get(resolveRootThreadId(childId)) as WakeDbRow | undefined
-  return r ? toWake(r) : null
+    .get(root) as WakeDbRow | undefined
+  const local = r ? toWake(r) : null
+  // A child of a parent stub: its wakes are in the outbox.
+  const outbox = outboxWakes('child_id', root).at(-1) ?? null
+  if (!outbox) return local
+  if (!local) return outbox
+  return outbox.createdAt > local.createdAt || (outbox.createdAt === local.createdAt && outbox.id > local.id)
+    ? outbox
+    : local
 }
 
 /** Chats and cards other than the child's own thread that work in `worktreePath` (a fork of the child, or a chat opened there). */
@@ -575,4 +742,209 @@ export function otherWorktreeUsers(worktreePath: string, childId: string): numbe
   }
   const project = db.prepare('SELECT COUNT(*) AS n FROM projects WHERE path = ?').get(worktreePath) as { n: number }
   return chats.filter((c) => resolveRootThreadId(c.id) !== root).length + cards.n + project.n
+}
+
+// ─── hub_outbox (a child machine) ───────────────────────────────
+//
+// What a child here sends its parent stub waits here until the desktop that
+// owns the stub (`hub_parents.remote_hub`) pulls and acks it.
+
+function insertHubOutbox(item: {
+  id: string
+  childId: string
+  parentId: string
+  kind: 'wake' | 'message'
+  payload: unknown
+}): void {
+  getDb()
+    .prepare(
+      `INSERT INTO hub_outbox (id, child_id, parent_id, kind, payload_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(item.id, item.childId, item.parentId, item.kind, JSON.stringify(item.payload), Date.now())
+}
+
+/** A child's message to its parent stub. Returns the item id. */
+export function insertHubOutboxMessage(m: { childId: string; parentId: string } & HubOutboxMessage): string {
+  const id = newHubRowId('ho')
+  insertHubOutbox({
+    id,
+    childId: resolveRootThreadId(m.childId),
+    parentId: resolveRootThreadId(m.parentId),
+    kind: 'message',
+    payload: { text: m.text, delivery: m.delivery },
+  })
+  return id
+}
+
+/** A child's messages its parent's hub has not acked yet. */
+export function countUnackedHubOutboxMessages(childId: string): number {
+  const row = getDb()
+    .prepare("SELECT COUNT(*) AS n FROM hub_outbox WHERE child_id = ? AND kind = 'message' AND acked_at IS NULL")
+    .get(resolveRootThreadId(childId)) as { n: number }
+  return row.n
+}
+
+type OutboxDbRow = {
+  id: string
+  child_id: string
+  parent_id: string
+  kind: string
+  payload_json: string
+  created_at: number
+}
+
+/** A stored row as the item the desktop pulls, checked as the desktop checks it; null when it no longer parses. */
+function toOutboxItem(r: OutboxDbRow): HubOutboxItem | null {
+  let payload: unknown
+  try {
+    payload = JSON.parse(r.payload_json)
+  } catch (err) {
+    log.warn(`outbox row ${r.id} holds no JSON`, err)
+    return null
+  }
+  return parseHubOutboxItem({
+    id: r.id,
+    childId: r.child_id,
+    parentId: r.parent_id,
+    createdAt: r.created_at,
+    kind: r.kind,
+    ...(r.kind === 'wake' ? { wake: payload } : { message: payload }),
+  })
+}
+
+/**
+ * Unacked items for parent stubs of the hub `remoteHub`, in (created_at, id)
+ * order, after the item `after` when it is still here. A row that no longer
+ * parses is skipped with its id, so the caller can ack it. `cursor` is the last
+ * row read when the page was full, else null.
+ */
+export function listHubOutbox(
+  remoteHub: string,
+  opts: { after?: string; limit: number },
+): { items: HubOutboxItem[]; malformed: string[]; cursor: string | null } {
+  const db = getDb()
+  const anchor = opts.after
+    ? (db.prepare('SELECT created_at, id FROM hub_outbox WHERE id = ?').get(opts.after) as
+        | { created_at: number; id: string }
+        | undefined)
+    : undefined
+  const rows = db
+    .prepare(
+      `SELECT o.id, o.child_id, o.parent_id, o.kind, o.payload_json, o.created_at
+       FROM hub_outbox o JOIN hub_parents p ON p.parent_id = o.parent_id
+       WHERE p.remote_hub = @hub AND o.acked_at IS NULL
+         AND (@at IS NULL OR o.created_at > @at OR (o.created_at = @at AND o.id > @id))
+       ORDER BY o.created_at, o.id
+       LIMIT @limit`,
+    )
+    .all({ hub: remoteHub, at: anchor?.created_at ?? null, id: anchor?.id ?? null, limit: opts.limit }) as OutboxDbRow[]
+  const items: HubOutboxItem[] = []
+  const malformed: string[] = []
+  for (const r of rows) {
+    const item = toOutboxItem(r)
+    if (item) items.push(item)
+    else malformed.push(r.id)
+  }
+  return { items, malformed, cursor: rows.length === opts.limit ? rows[rows.length - 1]!.id : null }
+}
+
+/** Marks items acked, only those for parent stubs of `remoteHub`; an acked item keeps its first time. */
+export function ackHubOutbox(remoteHub: string, ids: readonly string[], now = Date.now()): number {
+  const db = getDb()
+  const stmt = db.prepare(
+    `UPDATE hub_outbox SET acked_at = ? WHERE id = ? AND acked_at IS NULL
+       AND parent_id IN (SELECT parent_id FROM hub_parents WHERE remote_hub = ?)`,
+  )
+  return db.transaction(() => ids.reduce((n, id) => n + stmt.run(now, id, remoteHub).changes, 0))()
+}
+
+/** Deletes rows of the hub `remoteHub` that no longer parse; they can never be sent. */
+export function dropHubOutbox(remoteHub: string, ids: readonly string[]): number {
+  const db = getDb()
+  const stmt = db.prepare(
+    `DELETE FROM hub_outbox WHERE id = ?
+       AND parent_id IN (SELECT parent_id FROM hub_parents WHERE remote_hub = ?)`,
+  )
+  return db.transaction(() => ids.reduce((n, id) => n + stmt.run(id, remoteHub).changes, 0))()
+}
+
+/** Deletes acked items older than `keepMs`. */
+export function pruneHubOutbox(keepMs: number, now = Date.now()): number {
+  return getDb()
+    .prepare('DELETE FROM hub_outbox WHERE acked_at IS NOT NULL AND acked_at < ?')
+    .run(now - keepMs).changes
+}
+
+// ─── hub_remote_imports (the desktop) ───────────────────────────
+//
+// One row per outbox item imported from a machine, so a pull after a lost ack
+// imports nothing twice.
+
+export type HubRemoteImportOutcome = 'imported' | 'delivering' | 'refused' | 'dropped'
+
+export interface HubRemoteImportRow {
+  machineId: string
+  remoteId: string
+  kind: string | null
+  childId: string | null
+  outcome: HubRemoteImportOutcome
+  reason: string | null
+  importedAt: number
+}
+
+export function getHubRemoteImport(machineId: string, remoteId: string): HubRemoteImportRow | null {
+  const r = getDb()
+    .prepare('SELECT * FROM hub_remote_imports WHERE machine_id = ? AND remote_id = ?')
+    .get(machineId, remoteId) as
+    | {
+        machine_id: string
+        remote_id: string
+        kind: string | null
+        child_id: string | null
+        outcome: HubRemoteImportOutcome
+        reason: string | null
+        imported_at: number
+      }
+    | undefined
+  if (!r) return null
+  return {
+    machineId: r.machine_id,
+    remoteId: r.remote_id,
+    kind: r.kind,
+    childId: r.child_id,
+    outcome: r.outcome,
+    reason: r.reason,
+    importedAt: r.imported_at,
+  }
+}
+
+/** Records an import; false when that item was recorded before (nothing changes then). */
+export function insertHubRemoteImport(i: {
+  machineId: string
+  remoteId: string
+  kind: string | null
+  childId: string | null
+  outcome: HubRemoteImportOutcome
+  reason?: string | null
+}): boolean {
+  return (
+    getDb()
+      .prepare(
+        `INSERT OR IGNORE INTO hub_remote_imports (machine_id, remote_id, kind, child_id, outcome, reason, imported_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(i.machineId, i.remoteId, i.kind, i.childId, i.outcome, i.reason ?? null, Date.now()).changes === 1
+  )
+}
+
+export function setHubRemoteImportOutcome(
+  machineId: string,
+  remoteId: string,
+  outcome: HubRemoteImportOutcome,
+  reason: string | null,
+): void {
+  getDb()
+    .prepare('UPDATE hub_remote_imports SET outcome = ?, reason = ? WHERE machine_id = ? AND remote_id = ?')
+    .run(outcome, reason, machineId, remoteId)
 }
