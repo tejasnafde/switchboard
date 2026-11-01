@@ -36,7 +36,7 @@ function save(value: string, name = 'API_KEY'): string {
 function restart(): void {
   store.stop()
   secretRedactor.clear()
-  store = new SecretStore({ root, now: () => now, excludeFromBackup: () => {} })
+  store = new SecretStore({ root, now: () => now, excludeFromBackup: async () => true })
   store.start()
 }
 
@@ -63,7 +63,7 @@ beforeEach(() => {
   createConversation('chat-a', '/tmp/project', 'claude-code')
   root = join(mkdtempSync(join(tmpdir(), 'sb-secret-retired-')), 'secrets')
   now = 1_000_000
-  store = new SecretStore({ root, now: () => now, excludeFromBackup: () => {} })
+  store = new SecretStore({ root, now: () => now, excludeFromBackup: async () => true })
 })
 
 afterEach(() => {

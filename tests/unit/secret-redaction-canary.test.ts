@@ -228,7 +228,7 @@ describe('saved secret canary', () => {
       SESSION,
     )
     const root = join(TMP, 'secrets')
-    const store = new SecretStore({ root, excludeFromBackup: () => {} })
+    const store = new SecretStore({ root, excludeFromBackup: async () => true })
     const host = new FakeHost()
     const agent = new FakeAgent()
     let tools: () => McpTool[] = () => []
@@ -362,7 +362,7 @@ describe('saved secret canary', () => {
 
     // A restart reads the live file back and masks again.
     const restarted = new SecretRedactor()
-    const again = new SecretStore({ root, excludeFromBackup: () => {}, redactor: restarted })
+    const again = new SecretStore({ root, excludeFromBackup: async () => true, redactor: restarted })
     again.start()
     expect(restarted.redactText(SESSION, `x ${canary}`)).toBe(`x ${secretMask('CANARY_TOKEN')}`)
     again.stop()

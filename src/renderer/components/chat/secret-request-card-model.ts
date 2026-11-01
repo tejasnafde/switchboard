@@ -4,7 +4,7 @@
  * trim and size check on the value, and the provider-key note. Nothing here
  * keeps a value: every function takes it and returns at once.
  */
-import { SECRET_VALUE_MAX_BYTES, type SecretTtl } from '@shared/agent-secret-request'
+import { SECRET_VALUE_MAX_BYTES, type SecretRequestCard, type SecretTtl } from '@shared/agent-secret-request'
 
 // Shared with the phones, which render the same collapsed line.
 export { secretLineState, secretNameFromResultTitle, type SecretLineState } from '@shared/agent-secret-request'
@@ -32,6 +32,18 @@ const TTL_TEXT: Record<SecretTtl, string> = {
 export function secretFooterText(ttl: SecretTtl, machineLabel?: string): string {
   const where = machineLabel ? `, on ${machineLabel}` : ''
   return `Kept out of chat, in a private file this agent's commands can read for ${TTL_TEXT[ttl]}${where}.`
+}
+
+/** What the backend's file store cannot promise for this card, one sentence each; empty when it keeps every promise. */
+export function secretStorageNotes(card: Pick<SecretRequestCard, 'hostPlatform' | 'backupNotExcluded'>): string[] {
+  const notes: string[] = []
+  if (card.hostPlatform === 'win32')
+    notes.push(
+      'On Windows, only your user profile permissions protect the file. Switchboard does not exclude it from backups, and a roaming profile can copy it.',
+    )
+  if (card.backupNotExcluded)
+    notes.push('Switchboard could not exclude the file from Time Machine. A backup can keep it after it is deleted.')
+  return notes
 }
 
 export const SECRET_TRIMMED_TEXT = 'Trimmed spaces at the end'

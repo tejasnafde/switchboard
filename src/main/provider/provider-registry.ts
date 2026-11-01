@@ -3175,6 +3175,7 @@ export class ProviderRegistry implements PeerToolHost {
                 limiter: this.secretLimiter,
                 agentKind: provider,
                 remote: this.machineLabel !== null,
+                storeLimits: () => this.secretStore?.limits() ?? {},
               })
             : []),
           ...(parentTools

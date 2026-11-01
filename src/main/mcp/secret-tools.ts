@@ -15,6 +15,7 @@ import {
   SECRET_TTLS,
   checkSecretRequestArgs,
   secretQueuedText,
+  type SecretRequestCard,
 } from '@shared/agent-secret-request'
 import type { AgentApprovalBroker } from './agent-approvals'
 import { toolText, type McpTool } from './mcp-session'
@@ -58,6 +59,8 @@ export interface SecretToolContext {
   agentKind: ProviderKind
   /** This backend runs on an SSH machine. For the usage count only. */
   remote: boolean
+  /** What the file store cannot promise here, for the card. */
+  storeLimits(): Pick<SecretRequestCard, 'hostPlatform' | 'backupNotExcluded'>
 }
 
 function refuse(reason: SecretRefusalReason, text: string) {
@@ -125,7 +128,7 @@ export function buildSecretMcpTools(ctx: SecretToolContext): McpTool[] {
           chatId: ctx.chatId,
           toolName: REQUEST_SECRET_TOOL,
           detail: '',
-          plan: { kind: 'secret-request', card: checked.card },
+          plan: { kind: 'secret-request', card: { ...checked.card, ...ctx.storeLimits() } },
         })
         if (!opened.ok) return refuse('cap', opened.message)
         ctx.limiter.record(ctx.chatId)
