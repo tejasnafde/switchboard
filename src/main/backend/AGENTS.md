@@ -28,7 +28,7 @@ Three things beyond plain RPC, all driven by the phone case:
 
 `src/shared/*` is the transport-agnostic contract layer (channels, wire protocol, transport interface, events, types) - **no `electron`, no `react` imports**. Consumed by preload AND both backend hosts.
 
-**Remote machines / SSH** (`src/main/machines/`): `ssh-tunnel.ts` builds `ssh -L localPort:127.0.0.1:remotePort … <bootstrap>` (uses the system `ssh` binary - no `ssh2`/native deps; `BatchMode`, `accept-new`), `connection-manager.ts` owns connect/provision/health-probe/auto-reconnect, plus `provisioner.ts`/`remote-exec.ts`/`reconnectBackoff.ts`/`ssh-config.ts`. The renderer then connects to `ws://127.0.0.1:<localPort>` as if local. Docs: `docs/notes/ssh-remote-plan.md`, `docs/notes/remote-machines-handoff.md`. No mobile client and no cloud relay - the "remote client" is the desktop app pointed at a tunneled remote backend.
+**Remote machines / SSH** (`src/main/machines/`): `ssh-tunnel.ts` builds `ssh -L localPort:127.0.0.1:remotePort … <bootstrap>` (uses the system `ssh` binary - no `ssh2`/native deps; `BatchMode`, `accept-new`), `connection-manager.ts` owns connect/provision/health-probe/auto-reconnect, plus `provisioner.ts`/`remote-exec.ts`/`reconnectBackoff.ts`/`ssh-config.ts`. The renderer then connects to `ws://127.0.0.1:<localPort>` as if local. The bootstrap (`remote-bootstrap.ts`) starts the backend and code-server detached and reuses a live backend of the installed version on the next connect (reaped only on a version change or a failed 3 s HTTP probe), so a tunnel drop or a quit does not end the VM's sessions. The backend always has a token (`~/.switchboard-server/token`, 0600), printed once on the ssh channel as `SWITCHBOARD_BACKEND_TOKEN=`; `spawnTunnel` reads that line and never logs it, the health probe sends it, and the renderer gets it from `machines:backend-token`, an `ipcMain` handler and never a backend-host channel (the host also serves phones). The renderer sends it in an auth frame, which `WsHost` accepts like the URL token. Docs: `docs/notes/ssh-remote-plan.md`, `docs/notes/remote-machines-handoff.md`. No mobile client and no cloud relay - the "remote client" is the desktop app pointed at a tunneled remote backend.
 
 **Open a project on another machine** (`shared/project-clone.ts`, `main/ipc/project-clone.ts`, `renderer/services/project-clone.ts`, capabilities `project_clone_v1` and `project_clone_folder_v1` (the optional request `path`, a folder other than `~/projects/<name>`; an older target drops it, so the desktop refuses a changed folder without the capability), channels `project-clone:*` behind the `terminal` scope). The source backend picks the remote the current branch tracks (`chooseCloneRemote`: tracked remote, then `origin`, then the first) and lists ignored files that may be copied; the target clones into the chosen folder (`resolveCloneTarget`: absolute or `~/`, no `.`/`..` or `-` parts; an existing folder must be empty) in the background, records it in `<data dir>/project-clones.json` (`project-clone-journal.ts`, with the folder's device and inode) until it ends, and on the next start removes what a cut-off clone made, only when the folder is still that device and inode, answering status `failed`; lists the project at once, and answers `project-clone:status` (the desktop polls it, so no invoke waits on a transfer). The desktop then reads each picked file from the source and writes it to the target (`write-ignored`: a finished clone made by that backend, ignored there too, never overwrites, mode 0600). Copying is opt-in with nothing checked. `waitForProjectClone` holds a chat start in that project; a clone's end bumps `readyVersion`, which `ProjectFavicon` and `useCurrentBranch` read to drop a cached miss.
 
@@ -184,6 +184,31 @@ for `PR_WRITE_INACTIVE_MS` (30 days). `isChannelAllowed` opens a channel in
 current scopes, so a phone learns a grant without reconnecting. The IAP TCP
 host runs with `PHONE_SCOPES` and never holds `pr-write`. What a write must
 carry is in `src/main/pull-requests/AGENTS.md` (Phone writes).
+
+## Hub client scope (`hub`, `hub_remote_child_v1`)
+
+`DeviceScope` `'hub'` is what one desktop's hub client holds on another
+machine's backend. `isChannelAllowed` opens `hub-remote:*` (`HubRemoteChannels`)
+to `hub` or `admin` only, and requires `chat` for every other channel, so a
+session with only `['hub']` reaches `hub-remote:*` and nothing else: no
+`terminal:*`, settings, accounts, chats, pull requests or pairing. Events
+follow the same rule in `WsHost.emit` and the resume filter. Every other scope
+set holds `chat`: `PHONE_SCOPES`, `FULL_SCOPES`, the IAP TCP host, the server
+token, and stored device sessions (`deviceSessionScopes` adds `chat` to a row
+without it and drops `hub`). Only the server token grants `hub`: its auth frame
+may carry `scopes`, and `WsHost` grants the asked scopes it holds
+(`narrowTokenScopes`; `hub` counts as held when the token has `admin`), and
+refuses the auth when none is left. A device session or a pairing ignores
+`scopes`, and `WsHost` strips `hub` from any device credential, so a phone never
+holds it. An older backend drops `scopes` and grants the token's full set, so
+the hub client accepts only an `authed` of exactly `['hub']`
+(`isHubAuthGrant` in `shared/hub-remote.ts`). `hub-remote:describe`
+(`main/hub/hub-remote-describe.ts`, registered by `ProviderRegistry` on the
+desktop and the headless server) answers a `HubMachineDescription`: flag,
+OS, architecture, backend version, agents with an enabled account and their
+catalog models, up to 200 projects with branch and fetch remote URLs, free
+disk, open children and run slots. It never holds a host name, cloud project,
+zone or user name, and answers with `hub_remote_children` off too. The desktop's caller is `RemoteHubClients` (`main/hub/remote-hub-clients.ts`, see `src/main/mcp/AGENTS.md`, Machines).
 
 ## Device identity (`device_identity_v1`)
 

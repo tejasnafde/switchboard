@@ -82,7 +82,13 @@ import {
 } from '../db/database'
 import { claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
-import { loadConversationHistory, loadConversationHistoryWindow, mergedHistoryMessages } from '../conversations/history'
+import {
+  loadConversationHistory,
+  loadConversationHistoryWindow,
+  maskMessages,
+  mergedHistoryMessages,
+} from '../conversations/history'
+import { secretRedactor } from '../secrets/secret-redactor'
 import { capWindowBytes } from '../conversations/history-window'
 import { sessionPreviewLine } from '@shared/turn-preview'
 import { loadJsonlCached } from '../agent/jsonl-cache'
@@ -484,16 +490,19 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   // `source` selects the parser variant: 'claude-code' (default) or 'codex'.
   // Without this param, Codex sessions loaded as empty because their event
   // schema doesn't match Claude's.
+  // The caller names the file, so nothing proves which chat owns it: saved
+  // secrets of every chat are masked, whatever `conversationId` says.
   host.handle(
     AppChannels.LOAD_SESSION,
     async (filePath: string, conversationId?: string, source?: 'claude-code' | 'codex') => {
       log.info(`loading session: ${filePath} source=${source ?? 'claude-code'}`)
       try {
-        const messages = await loadJsonlCached(filePath, source ?? 'claude-code')
-        if (!messages) {
+        const loaded = await loadJsonlCached(filePath, source ?? 'claude-code')
+        if (!loaded) {
           log.warn(`failed to load session (missing file): ${filePath}`)
           return []
         }
+        const messages = maskMessages(secretRedactor.everyChat(), loaded)
         log.info(`parsed ${messages.length} messages from ${filePath}`)
 
         // Index messages for search (best-effort)
