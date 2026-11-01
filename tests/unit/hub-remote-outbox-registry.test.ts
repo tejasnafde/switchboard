@@ -33,6 +33,9 @@ const state = vi.hoisted(() => ({
   saved: [] as Array<{ id: string; conversationId: string }>,
   /** `labs.hub_remote_children`. */
   remoteFlag: false,
+  /** `listHubChildren` answers with the flag off too. */
+  listAll: false,
+  held: [] as string[],
 }))
 const children = vi.hoisted(() => [
   // On a child machine: its parent runs on another machine's hub.
@@ -40,6 +43,8 @@ const children = vi.hoisted(() => [
   // On the desktop: a child that runs on machine vm1, and a local one.
   { childId: 'rchild', parentId: 'parent1', title: 'Remote child', phase: 'open', machineId: 'vm1' },
   { childId: 'lchild', parentId: 'parent1', title: 'Local child', phase: 'open', machineId: null },
+  // A parent whose only child runs on machine vm1.
+  { childId: 'rchild2', parentId: 'parent2', title: 'Far child', phase: 'open', machineId: 'vm1' },
 ])
 
 vi.mock('../../src/main/db/database', () => ({
@@ -71,7 +76,8 @@ vi.mock('../../src/main/db/database', () => ({
   listHubChildrenInPhase: (phase: string) => children.filter((c) => c.phase === phase),
   threadFamilyIds: (id: string) => [id],
   listHubChildren: (parentId: string) =>
-    state.remoteFlag ? children.filter((c) => c.parentId === parentId && c.phase !== 'settled') : [],
+    state.remoteFlag || state.listAll ? children.filter((c) => c.parentId === parentId && c.phase !== 'settled') : [],
+  setHubParentHeld: (parentId: string) => state.held.push(parentId),
   lastHubWakes: () => new Map(),
   listPendingHubWakes: () => [],
   getHubParent: (id: string) =>
@@ -99,6 +105,8 @@ import type { ProviderAdapter, ProviderKind, ProviderSession, SessionStartOpts }
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 import type { HubChildRow } from '../../src/main/db/hubs'
 import type { HubRemoteOutboxHost } from '../../src/main/hub/hub-remote-outbox'
+import type { RemoteHubClients } from '../../src/main/hub/remote-hub-clients'
+import { HubRemoteControl } from '../../src/main/hub/hub-remote-control'
 
 class FakeHost implements BackendHost {
   readonly emitted: string[] = []
@@ -151,6 +159,7 @@ type Internals = {
   peerLinks: { checkSend(from: string, to: string, now: number): { linked: boolean; ok?: boolean } }
   hubRemoteOutboxHost(clients: unknown): HubRemoteOutboxHost
   hubRemote: unknown
+  settleChildren(parentId: string, archiveParent: boolean): Promise<{ status: string; text: string }>
 }
 
 /** The desktop's control, as a fake that records what would go to the child's machine. */
@@ -161,13 +170,14 @@ function fakeControl(opts: { available?: boolean; refuse?: string } = {}) {
     available: () => opts.available ?? true,
     machineName: () => 'Machine vm1',
     isStopping: () => false,
+    isSettling: () => false,
     factsOf: () => null,
     deliver: async (...args: unknown[]) => {
       calls.push({ op: 'deliver', args: [(args[0] as HubChildRow).childId, ...args.slice(1)] })
       if (opts.refuse) throw new Error(opts.refuse)
     },
-    stop: async (c: HubChildRow) => {
-      calls.push({ op: 'stop', args: [c.childId] })
+    stop: async (c: HubChildRow, by: string) => {
+      calls.push({ op: 'stop', args: [c.childId, by] })
       return { pending: true, ran: false }
     },
     stopAll: async (machineId: string, parentId: string) => {
@@ -185,6 +195,8 @@ async function setup() {
   state.outbox.length = 0
   state.saved.length = 0
   state.remoteFlag = false
+  state.listAll = false
+  state.held.length = 0
   const host = new FakeHost()
   const adapter = new Adapter()
   const registry = new ProviderRegistry(host, new Map<ProviderKind, ProviderAdapter>([['claude', adapter]]))
@@ -375,7 +387,27 @@ describe('Stop of a child on another machine, through the registry', () => {
     const control = fakeControl()
     internals.hubRemote = control
     await host.invoke(ProviderChannels.INTERRUPT, 'rchild')
-    expect(control.calls).toEqual([{ op: 'stop', args: ['rchild'] }])
+    expect(control.calls).toEqual([{ op: 'stop', args: ['rchild', 'user'] }])
+  })
+
+  it("sends the parent's Stop to its child there as the parent's", async () => {
+    const { registry, internals } = await setup()
+    state.remoteFlag = true
+    const control = fakeControl()
+    internals.hubRemote = control
+    await registry.stopHubChildren('parent2')
+    expect(control.calls).toEqual([{ op: 'stop', args: ['rchild2', 'cascade'] }])
+    expect(state.held).toEqual(['parent2'])
+  })
+
+  it('leaves a Stop of a parent whose children all run elsewhere as it was with the flag off', async () => {
+    const { registry, internals } = await setup()
+    state.listAll = true
+    const control = fakeControl()
+    internals.hubRemote = control
+    await registry.stopHubChildren('parent2')
+    expect(control.calls).toEqual([])
+    expect(state.held).toEqual([])
   })
 
   it('keeps the old text for a machine without the control channels', async () => {
@@ -391,5 +423,56 @@ describe('Stop of a child on another machine, through the registry', () => {
     internals.hubRemote = control
     await expect(host.invoke(ProviderChannels.INTERRUPT, 'rchild')).rejects.toThrow(HUB_REMOTE_STOP_LATER_TEXT)
     expect(control.calls).toEqual([])
+  })
+})
+
+describe('archive of a parent with children on another machine', () => {
+  it('sends stop-all to that machine once the settle is done', async () => {
+    const { registry, internals } = await setup()
+    state.remoteFlag = true
+    const control = fakeControl()
+    internals.hubRemote = control
+    const settles: string[] = []
+    internals.settleChildren = async (parentId) => {
+      settles.push(parentId)
+      return { status: 'done', text: '' }
+    }
+    expect(await registry.settleBeforeArchive('parent1')).toBeNull()
+    expect(settles).toEqual(['parent1'])
+    expect(control.calls).toEqual([{ op: 'stopAll', args: ['vm1', 'parent1'] }])
+  })
+
+  it('sends nothing there with the flag off', async () => {
+    const { registry, internals } = await setup()
+    state.listAll = true
+    const control = fakeControl()
+    internals.hubRemote = control
+    internals.settleChildren = async () => ({ status: 'done', text: '' })
+    expect(await registry.settleBeforeArchive('parent1')).toBeNull()
+    expect(control.calls).toEqual([])
+  })
+})
+
+describe('pending stops and the hub client', () => {
+  it('are sent again when the socket of a connected machine reconnects', async () => {
+    const { registry } = await setup()
+    const flushed: string[] = []
+    const flush = vi.spyOn(HubRemoteControl.prototype, 'flush').mockImplementation(async (machineId: string) => {
+      flushed.push(machineId)
+    })
+    let resync: ((machineId: string) => void) | null = null
+    const clients = {
+      setMachineListener: () => {},
+      on: () => () => {},
+      onResync: (fn: (machineId: string) => void) => {
+        resync = fn
+        return () => {}
+      },
+      connectedMachineIds: () => [],
+    } as unknown as RemoteHubClients
+    registry.setRemoteHubClients(clients)
+    resync!('vm1')
+    expect(flushed).toEqual(['vm1'])
+    flush.mockRestore()
   })
 })

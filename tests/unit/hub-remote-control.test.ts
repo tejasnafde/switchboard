@@ -20,8 +20,8 @@ vi.mock('../../src/main/logger', () => ({
 const db = await import('../../src/main/db/database')
 const { ensureHubSchema } = await import('../../src/main/db/hubs')
 const { WsHost } = await import('../../src/main/backend/ws-host')
-const { RemoteHubClients } = await import('../../src/main/hub/remote-hub-clients')
-const { HubRemoteControl } = await import('../../src/main/hub/hub-remote-control')
+const { RemoteHubClients, HubRemoteCallError } = await import('../../src/main/hub/remote-hub-clients')
+const { HubRemoteControl, HUB_REMOTE_PENDING_MAX_ATTEMPTS } = await import('../../src/main/hub/hub-remote-control')
 const { HubSettler } = await import('../../src/main/hub/hub-settle')
 const { readChild } = await import('../../src/main/hub/hub-read')
 const { toolText } = await import('../../src/main/mcp/mcp-session')
@@ -136,9 +136,14 @@ async function bootVm() {
       calls.push({ op: 'interrupt', args: [childId] })
       return true
     },
-    stop: async (childId) => {
-      calls.push({ op: 'stop', args: [childId] })
+    stop: async (childId, cascade) => {
+      calls.push({ op: 'stop', args: cascade ? [childId, 'cascade'] : [childId] })
       return true
+    },
+    settleAll: async (stubId) => {
+      calls.push({ op: 'settleAll', args: [stubId] })
+      for (const c of vmDb.listHubChildren(stubId)) vmDb.updateHubChild(c.childId, { phase: 'settled' })
+      return { ok: true }
     },
     settle: async (stubId, childId, parentHead) => {
       calls.push({ op: 'settle', args: [stubId, childId, parentHead] })
@@ -203,6 +208,7 @@ function desktop(machines: Record<string, { url: string }>, opts: DesktopOpts = 
   cleanups.push(() => clients.closeAll())
   const changed: string[] = []
   const invoked: string[] = []
+  const stoppedStarting: Array<[string, boolean]> = []
   const makeControl = () =>
     new HubRemoteControl({
       enabled: () => enabled.on,
@@ -216,6 +222,7 @@ function desktop(machines: Record<string, { url: string }>, opts: DesktopOpts = 
         return clients.invoke(id, channel, ...args)
       },
       changed: (parentId) => changed.push(parentId),
+      stoppedWhileStarting: (childId, there) => stoppedStarting.push([childId, there]),
       ...(opts.now ? { now: opts.now } : {}),
     })
   const control = makeControl()
@@ -232,7 +239,7 @@ function desktop(machines: Record<string, { url: string }>, opts: DesktopOpts = 
     status.set(id, s)
     clients.statusChanged(id, s)
   }
-  return { clients, control, makeControl, own, setStatus, changed, invoked, enabled }
+  return { clients, control, makeControl, own, setStatus, changed, invoked, enabled, stoppedStarting }
 }
 
 describe('view: the child machine answers its children, the desktop merges them', () => {
@@ -406,8 +413,9 @@ describe('stop and pending stops', () => {
     const d = desktop({ vm1: { url: vm.url } })
     const row = d.own('agent_c1')
     vm.adopt('agent_c1', db.hubInstallId())
-    expect(await d.control.stop(row)).toEqual({ pending: false, ran: true })
-    expect(vm.ops('stop')).toEqual([['agent_c1']])
+    expect(await d.control.stop(row, 'user')).toEqual({ pending: false, ran: true })
+    expect(await d.control.stop(row, 'cascade')).toEqual({ pending: false, ran: true })
+    expect(vm.ops('stop')).toEqual([['agent_c1'], ['agent_c1', 'cascade']])
     expect(db.listHubRemotePending()).toEqual([])
   })
 
@@ -416,9 +424,9 @@ describe('stop and pending stops', () => {
     const d = desktop({ vm1: { url: vm.url } }, { status: 'offline' })
     const row = d.own('agent_c1')
     vm.adopt('agent_c1', db.hubInstallId())
-    expect(await d.control.stop(row)).toEqual({ pending: true, ran: false })
+    expect(await d.control.stop(row, 'user')).toEqual({ pending: true, ran: false })
     // A second Stop of the same child is the same row.
-    expect(await d.control.stop(row)).toEqual({ pending: true, ran: false })
+    expect(await d.control.stop(row, 'user')).toEqual({ pending: true, ran: false })
     expect(db.listHubRemotePending().map((p) => [p.machineId, p.kind, p.targetId])).toEqual([
       ['vm1', 'stop', 'agent_c1'],
     ])
@@ -449,10 +457,76 @@ describe('stop and pending stops', () => {
     const vm = await bootVm()
     const d = desktop({ vm1: { url: vm.url } }, { status: 'offline' })
     const row = d.own('agent_gone')
-    await d.control.stop(row)
+    await d.control.stop(row, 'user')
     d.setStatus('vm1', 'connected')
     await d.control.connected('vm1')
     expect(db.listHubRemotePending()).toEqual([])
+  })
+})
+
+describe('a Stop of a child still starting here', () => {
+  it('fails the row when its machine never got the start, and asks its state when it did', async () => {
+    const vm = await bootVm()
+    const d = desktop({ vm1: { url: vm.url } }, { status: 'offline' })
+    const never = d.own('agent_never')
+    db.updateHubChild('agent_never', { phase: 'starting' })
+    const there = d.own('agent_there')
+    db.updateHubChild('agent_there', { phase: 'starting' })
+    vm.adopt('agent_there', db.hubInstallId())
+    await d.control.stop({ ...never, phase: 'starting' }, 'user')
+    await d.control.stop({ ...there, phase: 'starting' }, 'user')
+    // While the Stop waits, the start is not sent (`HubStartHost.remoteStopping`).
+    expect(d.control.isStopping(never)).toBe(true)
+    expect(d.stoppedStarting).toEqual([])
+    d.setStatus('vm1', 'connected')
+    await d.control.connected('vm1')
+    expect(d.stoppedStarting).toEqual([
+      ['agent_never', false],
+      ['agent_there', true],
+    ])
+    expect(vm.ops('stop')).toEqual([['agent_there']])
+  })
+})
+
+describe('a pending stop that gets no answer', () => {
+  const host = (fail: () => Error) => {
+    const changed: string[] = []
+    const control = new HubRemoteControl({
+      enabled: () => true,
+      installId: () => db.hubInstallId(),
+      machineState: () => 'connected',
+      machineName: () => 'Machine vm1',
+      control: () => 'yes',
+      supportsControl: async () => true,
+      invoke: async () => {
+        throw fail()
+      },
+      changed: (parentId) => changed.push(parentId),
+      stoppedWhileStarting: () => {},
+    })
+    return { control, changed }
+  }
+
+  it('is kept on a dropped socket and a timeout, and dropped after the last try', async () => {
+    db.ensureHubParent(PARENT)
+    db.insertHubChild(child('agent_c1', { machineId: 'vm1' }))
+    db.updateHubChild('agent_c1', { phase: 'open' })
+    const row = db.getHubChild('agent_c1')!
+    const closed = host(() => new Error('WebSocket closed'))
+    expect(await closed.control.stop(row, 'user')).toEqual({ pending: true, ran: false })
+    expect(db.listHubRemotePending()).toMatchObject([{ kind: 'stop', targetId: 'agent_c1', attempts: 1 }])
+
+    // Not connected does not count as a try.
+    const away = host(() => new HubRemoteCallError('not_connected', 'Machine vm1 is not connected'))
+    await away.control.flush('vm1')
+    expect(db.listHubRemotePending()).toMatchObject([{ attempts: 1 }])
+
+    const slow = host(() => new HubRemoteCallError('timeout', 'Machine vm1 did not answer'))
+    for (let i = 2; i < HUB_REMOTE_PENDING_MAX_ATTEMPTS; i++) await slow.control.flush('vm1')
+    expect(db.listHubRemotePending()).toMatchObject([{ attempts: HUB_REMOTE_PENDING_MAX_ATTEMPTS - 1 }])
+    await slow.control.flush('vm1')
+    expect(db.listHubRemotePending()).toEqual([])
+    expect(slow.changed).toEqual([PARENT])
   })
 })
 
@@ -503,7 +577,7 @@ describe('settle and archive', () => {
     expect(db.getHubChild('agent_c1')!.phase).toBe('settled')
   })
 
-  it('sends stop-all for an archive: every open child there stops, the desktop rows settle', async () => {
+  it('sends stop-all for an archive: the children there settle, the desktop rows settle', async () => {
     const vm = await bootVm()
     const d = desktop({ vm1: { url: vm.url } })
     d.own('agent_c1')
@@ -511,7 +585,8 @@ describe('settle and archive', () => {
     vm.adopt('agent_c1', db.hubInstallId())
     vm.adopt('agent_c2', db.hubInstallId())
     expect(await d.control.stopAll('vm1', PARENT)).toEqual({ pending: false })
-    expect(vm.ops('stop').sort()).toEqual([['agent_c1'], ['agent_c2']])
+    expect(vm.ops('settleAll')).toEqual([[PARENT]])
+    expect(vm.dbm.listHubChildren(PARENT)).toEqual([])
     expect(db.listHubChildren(PARENT)).toEqual([])
     // Idempotent: nothing is open there any more.
     expect(await d.control.stopAll('vm1', PARENT)).toEqual({ pending: false })
@@ -526,7 +601,7 @@ describe('older backend and the flag', () => {
     vm.adopt('agent_c1', db.hubInstallId())
     expect(await d.clients.supportsControl('vm1')).toBe(false)
     expect(d.control.available(row)).toBe(false)
-    await expect(d.control.stop(row)).rejects.toThrow(HUB_REMOTE_STOP_LATER_TEXT)
+    await expect(d.control.stop(row, 'user')).rejects.toThrow(HUB_REMOTE_STOP_LATER_TEXT)
     const read = await readChild(
       {
         parentId: PARENT,
@@ -545,7 +620,7 @@ describe('older backend and the flag', () => {
     const d = desktop({ vm1: { url: vm.url } }, { enabled: { on: false } })
     const row = d.own('agent_c1')
     vm.adopt('agent_c1', db.hubInstallId())
-    await expect(d.control.stop(row)).rejects.toThrow(/off/)
+    await expect(d.control.stop(row, 'user')).rejects.toThrow(/off/)
     await d.control.refreshParent(PARENT)
     await d.control.connected('vm1')
     expect(d.invoked).toEqual([])
@@ -564,6 +639,6 @@ describe('migration', () => {
     const cols = (old.prepare('PRAGMA table_info(hub_remote_pending)').all() as Array<{ name: string }>).map(
       (c) => c.name,
     )
-    expect(cols).toEqual(['machine_id', 'kind', 'target_id', 'parent_id', 'payload_json', 'created_at'])
+    expect(cols).toEqual(['machine_id', 'kind', 'target_id', 'parent_id', 'payload_json', 'created_at', 'attempts'])
   })
 })

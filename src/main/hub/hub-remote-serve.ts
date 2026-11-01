@@ -12,7 +12,9 @@
  *
  * The work itself is the registry's (`HubRemoteServeDeps`): the same stop,
  * interrupt, settle, read, move and peer delivery a local parent gets, so the
- * rules stay in one place. `HubRemoteChangeNotifier` sends
+ * rules stay in one place: `stop` is the user's Stop (the turn, not the
+ * session), and `stop-all` settles the stub's children as an archive of a
+ * local parent does. `HubRemoteChangeNotifier` sends
  * `hub-remote:children-changed` with the stub ids that changed, at most every
  * 500 ms; `WsHost` sends it only to sessions holding `hub` or `admin`.
  */
@@ -54,8 +56,10 @@ export interface HubRemoteServeDeps {
   deliver(child: HubChildRow, text: string, delivery: TurnDelivery, fromLabel: string): Promise<void>
   /** `interrupt_child`: true when a turn ran. */
   interrupt(childId: string): Promise<boolean>
-  /** The Stop: the child's turn, cards, queue and resume, then its session. True when a turn ran. */
-  stop(childId: string): Promise<boolean>
+  /** The user's Stop of one child (`cascade`: the parent's Stop), as a local Stop runs it. True when a turn ran. */
+  stop(childId: string, cascade: boolean): Promise<boolean>
+  /** An archive of the parent: every unsettled child of the stub settles here, worktrees kept. */
+  settleAll(stubId: string): Promise<{ ok: true } | { ok: false; text: string }>
   /** The local settle of one child against the parent's HEAD. */
   settle(
     stubId: string,
@@ -153,7 +157,7 @@ export function registerHubRemoteControlHandlers(host: BackendHost, deps: HubRem
   host.handle(HubRemoteChannels.STOP, async (raw: unknown): Promise<HubRemoteStopAnswer> => {
     const parsed = parseHubRemoteStopRequest(raw)
     if (!parsed.ok) return hubRemoteRefusal('invalid', parsed.message)
-    const { desktopInstallId, childId, settle } = parsed.request
+    const { desktopInstallId, childId, settle, cascade } = parsed.request
     const owned = ownedChild(desktopInstallId, childId)
     if (!owned.ok) return owned.answer
     const child = owned.child
@@ -166,7 +170,7 @@ export function registerHubRemoteControlHandlers(host: BackendHost, deps: HubRem
         return { v: 1, ok: true, ran: false, ...(r.row ? { settled: r.row } : {}) }
       }
       if (!isOpenChildPhase(child.phase)) return { v: 1, ok: true, ran: false }
-      return { v: 1, ok: true, ran: await deps.stop(child.childId) }
+      return { v: 1, ok: true, ran: await deps.stop(child.childId, cascade === true) }
     } catch (err) {
       log.warn(`could not stop child ${child.childId} for its hub`, err)
       return failed(err)
@@ -196,11 +200,14 @@ export function registerHubRemoteControlHandlers(host: BackendHost, deps: HubRem
       const refusal = stubRefusal(desktopInstallId, parentId)
       if (refusal) return refusal
       const open = getHubParent(parentId) ? listHubChildren(parentId).filter((c) => isOpenChildPhase(c.phase)) : []
-      const results = await Promise.allSettled(open.map((c) => deps.stop(c.childId)))
-      const failures = results.filter((r) => r.status === 'rejected')
-      for (const r of failures) log.warn('a child did not stop for its hub', (r as PromiseRejectedResult).reason)
-      if (failures.length > 0)
-        return hubRemoteRefusal('failed', `${failures.length} of ${open.length} children did not stop.`)
+      if (open.length === 0) return { v: 1, ok: true, stopped: 0 }
+      try {
+        const r = await deps.settleAll(parentId)
+        if (!r.ok) return hubRemoteRefusal('failed', r.text)
+      } catch (err) {
+        log.warn(`could not settle the children of stub ${parentId} for its hub`, err)
+        return failed(err)
+      }
       log.info('children stopped for their hub', { parentId, stopped: open.length })
       return { v: 1, ok: true, stopped: open.length }
     },

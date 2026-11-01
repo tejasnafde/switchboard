@@ -203,6 +203,7 @@ interface DesktopOpts {
   machineState?: (machineId: string) => 'connected' | 'offline' | 'gone'
   io?: Partial<HubStartIo>
   flag?: { on: boolean }
+  remoteStopping?: (childId: string) => boolean
 }
 
 /** The desktop: its HubStarter, with the real hub client to the given machines. */
@@ -249,6 +250,7 @@ function desktop(
       return opts.intercept?.(machineId, request) ?? clients.invoke(machineId, HubRemoteChannels.START_CHILD, request)
     },
     ...(opts.machineState ? { remoteMachineState: opts.machineState } : {}),
+    ...(opts.remoteStopping ? { remoteStopping: opts.remoteStopping } : {}),
   }
   const io: Partial<HubStartIo> = {
     freeBytes: async () => 100 * GIB,
@@ -462,6 +464,31 @@ describe('a remote start with no final answer', () => {
     await next.starter.reconcileRemote({ machineId: 'vm1' })
     expect(db.getHubChild(child!.childId)!.phase).toBe('open')
     expect(next.requests[0]).toEqual(d.requests[0])
+  })
+
+  it('sends no start while a Stop of that child waits for its machine', async () => {
+    const vm = await bootVm()
+    const stopping = { on: false }
+    const d = desktop(
+      { vm1: { name: 'Work VM', url: vm.url } },
+      {},
+      {
+        intercept: () => (d.requests.length === 1 ? Promise.reject(new Error('closed')) : undefined),
+        remoteStopping: () => stopping.on,
+      },
+    )
+    await d.starter.propose(parent(), [task('Remote', { machine: 'vm1' })])
+    await d.starter.approve(d.cards.at(-1)!, 'auto')
+    await until(() => d.requests.length === 1)
+    const [child] = db.listHubChildren('agent_parent')
+    stopping.on = true
+    await d.starter.reconcileRemote({ machineId: 'vm1' })
+    expect(d.requests).toHaveLength(1)
+    expect(vm.sessions).toEqual([])
+    expect(db.getHubChild(child!.childId)!.phase).toBe('starting')
+    stopping.on = false
+    await d.starter.reconcileRemote({ machineId: 'vm1' })
+    expect(db.getHubChild(child!.childId)!.phase).toBe('open')
   })
 
   it('fails the row with the machine refusal on a later answer', async () => {

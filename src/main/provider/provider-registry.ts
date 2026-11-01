@@ -747,6 +747,10 @@ export class ProviderRegistry implements PeerToolHost {
         return this.remoteHubClients.invoke(machineId, HubRemoteChannels.START_CHILD, request)
       },
       remoteMachineState: (machineId: string) => this.remoteHubClients?.machineState(machineId) ?? 'offline',
+      remoteStopping: (childId: string) => {
+        const row = getHubChild(childId)
+        return !!row && this.hubRemote?.isStopping(row) === true
+      },
       outboxAdded: () => this.notifyHubOutbox(),
     }
   }
@@ -779,11 +783,12 @@ export class ProviderRegistry implements PeerToolHost {
       changed: (parentId) => this.publishHubChange(parentId, true),
       forget: (childId) => this.hubStarter.forget(childId),
       remote: {
-        available: (child) => this.hubRemoteChildrenOn() && this.hubRemote?.available(child) === true,
+        available: (child) => this.remoteControlOf(child) !== null,
         machineName: (child) => this.hubRemote?.machineName(child) ?? child.machineId ?? 'another machine',
         settle: (child, parentHead) => {
-          if (!this.hubRemote) return Promise.reject(new Error(HUB_REMOTE_STOP_LATER_TEXT))
-          return this.hubRemote.settle(child, parentHead)
+          const control = this.remoteControlOf(child)
+          if (!control) return Promise.reject(new Error(HUB_REMOTE_STOP_LATER_TEXT))
+          return control.settle(child, parentHead)
         },
       },
     }
@@ -795,15 +800,13 @@ export class ProviderRegistry implements PeerToolHost {
    * connected). A failure is logged; the archive goes on.
    */
   private async stopRemoteChildrenForArchive(parentId: string): Promise<void> {
-    const control = this.hubRemote
-    if (!control || !this.hubRemoteChildrenOn()) return
     const machines = new Set(
-      listHubChildren(parentId).flatMap((c) => (c.machineId && control.available(c) ? [c.machineId] : [])),
+      listHubChildren(parentId).flatMap((c) => (c.machineId && this.remoteControlOf(c) ? [c.machineId] : [])),
     )
     await Promise.all(
       [...machines].map(async (machineId) => {
         try {
-          const r = await control.stopAll(machineId, parentId)
+          const r = await this.hubRemote!.stopAll(machineId, parentId)
           log.info('children on another machine stopped with their archived parent', { parentId, machineId, ...r })
         } catch (err) {
           log.warn(`could not stop the children of ${parentId} on machine ${machineId}`, err)
@@ -812,9 +815,15 @@ export class ProviderRegistry implements PeerToolHost {
     )
   }
 
-  /** Unsettled children of a parent, less those whose machine has a Stop waiting for them. */
+  /** Unsettled children of a parent, less those whose machine has a settle or stop-all waiting for them. */
   private unsettledChildren(parentId: string): HubChildRow[] {
-    return listHubChildren(parentId).filter((c) => !c.machineId || !this.hubRemote?.isStopping(c))
+    return listHubChildren(parentId).filter((c) => !c.machineId || !this.remoteControlOf(c)?.isSettling(c))
+  }
+
+  /** The control of a child on another machine, while the flag is on and its backend takes the control channels. */
+  private remoteControlOf(child: Pick<HubChildRow, 'machineId'>): HubRemoteControl | null {
+    const control = this.hubRemote
+    return control && this.hubRemoteChildrenOn() && control.available(child) ? control : null
   }
 
   /** The folder a parent's git runs in: its live session's, else its worktree or project. */
@@ -860,10 +869,7 @@ export class ProviderRegistry implements PeerToolHost {
         this.settleCardsOpening.delete(root)
       }
       // Only children on machines that cannot settle them: a card with no rows would settle nothing.
-      const remote =
-        view.rows.length === 0
-          ? remoteSettleRefusal(root, (c) => this.hubRemoteChildrenOn() && this.hubRemote?.available(c) === true)
-          : null
+      const remote = view.rows.length === 0 ? remoteSettleRefusal(root, (c) => this.remoteControlOf(c) !== null) : null
       if (remote) return { status: 'refused', text: remote }
       const opened = this.agentApprovals.open({
         threadId: live ?? root,
@@ -1066,7 +1072,7 @@ export class ProviderRegistry implements PeerToolHost {
     const root = resolveRootThreadId(parentId)
     // Children on other machines are interrupted there, where their machine can.
     const open = listHubChildren(root).filter(
-      (c) => isOpenChildPhase(c.phase) && (!c.machineId || this.hubRemote?.available(c) === true),
+      (c) => isOpenChildPhase(c.phase) && (!c.machineId || this.remoteControlOf(c) !== null),
     )
     if (open.length === 0) return
     const span = perfSpan('hub.stop', { parentId: root, children: open.length })
@@ -1083,26 +1089,21 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   /**
-   * A Stop of a child on another machine. The user's Stop goes to its machine
-   * (kept pending while that machine is not connected; a child still starting
-   * here gets no start); a parent's cascade interrupts it there when it is
-   * connected. A machine without the control channels keeps the old text.
+   * A Stop of a child on another machine: the user's or the parent's Stop
+   * runs there as it runs here (kept pending while that machine is not
+   * connected), and `interrupt_child` interrupts it there. A machine without
+   * the control channels keeps the old text.
    */
   private async stopRemoteChild(child: HubChildRow, by: 'user' | 'parent' | 'cascade'): Promise<boolean> {
-    const control = this.hubRemote
-    if (!control || !this.hubRemoteChildrenOn() || !control.available(child)) {
+    const control = this.remoteControlOf(child)
+    if (!control) {
       if (by === 'user') throw new Error(HUB_REMOTE_STOP_LATER_TEXT)
       return false
     }
-    if (by !== 'user') {
-      if (this.remoteHubClients?.machineState(child.machineId!) !== 'connected') return false
-      return control.interrupt(child)
-    }
-    const r = await control.stop(child)
-    // Its start may not have reached the machine: it must not be asked again.
-    if (child.phase === 'starting') this.hubStarter.remoteChildFailedStart(child.childId)?.()
-    log.info('child on another machine stopped', { childId: child.childId, pending: r.pending, ran: r.ran })
-    this.publishHubChange(child.parentId, child.phase === 'starting')
+    if (by === 'parent') return control.interrupt(child)
+    const r = await control.stop(child, by)
+    log.info('child on another machine stopped', { childId: child.childId, by, pending: r.pending, ran: r.ran })
+    this.publishHubChange(child.parentId)
     return r.ran
   }
 
@@ -1294,32 +1295,23 @@ export class ProviderRegistry implements PeerToolHost {
   private withRemoteFacts(c: HubChildRow, view: HubChildView): HubChildView {
     const facts = this.hubRemoteChildrenOn() ? (this.hubRemote?.factsOf(c) ?? null) : null
     if (!facts) return view
-    const s = facts.state
+    const { state: s, ...remote } = facts
     const { reported: _reported, ...rest } = view
-    return {
-      ...(s ? rest : view),
-      ...(s
-        ? {
-            state: s.state,
-            ...(s.reported ? { reported: true as const } : {}),
-            limit: s.limit,
-            waitingForSlot: s.waitingForSlot,
-            account: s.account,
-            branch: s.branch,
-            lastWake: view.lastWake ?? s.lastWake,
-            lastTurn: s.lastTurn,
-          }
-        : {}),
-      // The desktop row decides the phase: a settle here is final.
-      phase: c.phase,
-      remote: {
-        machineId: facts.machineId,
-        machine: facts.machine,
-        connected: facts.connected,
-        ageMs: facts.ageMs,
-        stopping: facts.stopping,
-      },
-    }
+    const merged: HubChildView = s
+      ? {
+          ...rest,
+          ...(s.reported ? { reported: true as const } : {}),
+          state: s.state,
+          limit: s.limit,
+          waitingForSlot: s.waitingForSlot,
+          account: s.account,
+          branch: s.branch,
+          lastWake: view.lastWake ?? s.lastWake,
+          lastTurn: s.lastTurn,
+        }
+      : view
+    // The desktop row decides the phase: a settle here is final.
+    return { ...merged, phase: c.phase, remote }
   }
 
   private limitResumeHost(): LimitResumeHost {
@@ -1440,7 +1432,7 @@ export class ProviderRegistry implements PeerToolHost {
       const problem = await this.remoteMoveProblem(child, targetId)
       if (problem) return refuse(problem.outcome, problem.text)
       try {
-        const result = await this.hubRemote!.move(child, targetId, parentMode)
+        const result = await this.remoteControlOf(child)!.move(child, targetId, parentMode)
         span.end({ outcome: result.isError ? 'remote_refused' : 'remote_moved' })
         if (!result.isError) this.publishHubChange(parentId)
         return result
@@ -1558,11 +1550,10 @@ export class ProviderRegistry implements PeerToolHost {
     child: HubChildRow,
     targetId: string,
   ): Promise<{ outcome: string; text: string } | null> {
-    const control = this.hubRemote
-    if (!control || !this.hubRemoteChildrenOn() || !control.available(child))
+    if (!this.remoteControlOf(child))
       return {
         outcome: 'remote_unsupported',
-        text: `Moving a child on ${control?.machineName(child) ?? 'another machine'} comes in a later version.`,
+        text: `Moving a child on ${this.hubRemote?.machineName(child) ?? 'another machine'} comes in a later version.`,
       }
     let entries: HubMachineEntry[] = []
     try {
@@ -2229,11 +2220,10 @@ export class ProviderRegistry implements PeerToolHost {
 
   /** An open child of this hub that runs on another machine whose backend takes messages, or null. */
   private remoteChildTarget(targetThreadId: string): HubChildRow | null {
-    const control = this.hubRemote
-    if (!control || !this.hubChildrenOn() || !this.hubRemoteChildrenOn()) return null
+    if (!this.hubRemote || !this.hubChildrenOn() || !this.hubRemoteChildrenOn()) return null
     try {
       const row = getHubChild(resolveRootThreadId(targetThreadId))
-      return row?.machineId && isOpenChildPhase(row.phase) && control.available(row) ? row : null
+      return row?.machineId && isOpenChildPhase(row.phase) && this.remoteControlOf(row) ? row : null
     } catch (err) {
       log.warn(`could not read the hub row of ${targetThreadId}`, err)
       return null
@@ -3424,6 +3414,10 @@ export class ProviderRegistry implements PeerToolHost {
       supportsControl: (machineId) => clients.supportsControl(machineId),
       invoke: (machineId, channel, ...args) => clients.invoke(machineId, channel, ...args),
       changed: (parentId, rows) => this.publishHubChange(parentId, rows),
+      stoppedWhileStarting: (childId, there) => {
+        if (there) void this.hubStarter.reconcileRemote({ childId })
+        else this.hubStarter.remoteChildFailedStart(childId)?.()
+      },
     })
     this.hubRemote = control
     // A connect sends that machine's pending stops first; then remote starts left `starting`
@@ -3444,7 +3438,11 @@ export class ProviderRegistry implements PeerToolHost {
     this.hubOutboxSubscriptions.push(
       clients.on(HubRemoteChannels.OUTBOX, (machineId) => void outbox.pull(machineId)),
       clients.on(HubRemoteChannels.CHILDREN_CHANGED, (machineId, ids) => control.childrenChanged(machineId, ids)),
-      clients.onResync((machineId) => void outbox.pull(machineId)),
+      // A socket that reconnected under a connected machine: a Stop kept on a lost answer goes now.
+      clients.onResync((machineId) => {
+        void control.flush(machineId)
+        void outbox.pull(machineId)
+      }),
     )
     // At launch too, pending stops go before the starts are asked again.
     const already = clients.connectedMachineIds()
@@ -3670,14 +3668,10 @@ export class ProviderRegistry implements PeerToolHost {
                   const child = getHubChild(resolveRootThreadId(childId))
                   if (!child || child.parentId !== chatId() || !isOpenChildPhase(child.phase))
                     return toolText('That is not an open child of this chat.', true)
-                  const control = this.hubRemote
-                  if (child.machineId && (!control || !this.hubRemoteChildrenOn() || !control.available(child)))
-                    return toolText(HUB_REMOTE_STOP_LATER_TEXT, true)
+                  if (child.machineId && !this.remoteControlOf(child)) return toolText(HUB_REMOTE_STOP_LATER_TEXT, true)
                   let ran: boolean
                   try {
-                    ran = child.machineId
-                      ? await control!.interrupt(child)
-                      : await this.stopHubChild(child.childId, 'parent')
+                    ran = await this.stopHubChild(child.childId, 'parent')
                   } catch (err) {
                     return toolText(
                       `Could not stop ${child.title}: ${err instanceof Error ? err.message : String(err)}`,
@@ -3691,11 +3685,7 @@ export class ProviderRegistry implements PeerToolHost {
                     {
                       parentId: chatId(),
                       load: async (id) => (await loadConversationHistory(id, '')).messages,
-                      remote: (child, readArgs) => {
-                        const control = this.hubRemote
-                        if (!control || !this.hubRemoteChildrenOn() || !control.available(child)) return null
-                        return control.read(child, { ...readArgs })
-                      },
+                      remote: (child, readArgs) => this.remoteControlOf(child)?.read(child, readArgs) ?? null,
                     },
                     args,
                   ),
@@ -4584,14 +4574,10 @@ export class ProviderRegistry implements PeerToolHost {
         )
       },
       interrupt: (childId) => this.stopHubChild(childId, 'parent'),
-      // The user's Stop, then the session, as `HubStartHost.stopChild` ends it.
-      stop: async (childId) => {
-        const ran = await this.stopHubChild(childId, 'user')
-        this.reapedChildren.delete(childId)
-        this.hubNotes.tell(childId)
-        const live = this.liveSessionId(childId)
-        if (live) await this.stopChildSession?.(live)
-        return ran
+      stop: (childId, cascade) => this.stopHubChild(childId, cascade ? 'cascade' : 'user'),
+      settleAll: async (stubId) => {
+        const r = await this.hubSettler.run(stubId, '', 'auto', undefined, { parentHead: null })
+        return r.ok ? { ok: true } : { ok: false, text: r.text }
       },
       settle: async (stubId, childId, parentHead) => {
         const r = await this.hubSettler.run(stubId, '', 'auto', new Set([childId]), { parentHead })

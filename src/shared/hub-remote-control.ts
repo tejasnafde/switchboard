@@ -59,6 +59,8 @@ export interface HubRemoteDeliverRequest extends HubRemoteChildRequest {
   fromLabel: string
 }
 export interface HubRemoteStopRequest extends HubRemoteChildRequest {
+  /** The parent's Stop rather than the user's: the child's wake says it stopped with its parent. */
+  cascade?: true
   /** A settle: the child machine's settle rules decide its worktree, with the parent's HEAD (null: unknown, kept). */
   settle?: { parentHead: string | null }
 }
@@ -144,12 +146,15 @@ export function parseHubRemoteStopRequest(value: unknown): Parsed<HubRemoteStopR
   const what = 'stop request'
   const c = parseHubRemoteChildRequest(value, what)
   if (!c.ok) return c
-  const s = (value as Record<string, unknown>).settle
-  if (s === undefined) return c
+  const r = value as Record<string, unknown>
+  if (r.cascade !== undefined && r.cascade !== true) return invalid(what, 'cascade')
+  const request: HubRemoteStopRequest = { ...c.request, ...(r.cascade ? { cascade: true as const } : {}) }
+  const s = r.settle
+  if (s === undefined) return { ok: true, request }
   if (!s || typeof s !== 'object') return invalid(what, 'settle')
   const head = (s as Record<string, unknown>).parentHead
   if (head !== null && (typeof head !== 'string' || !SHA_RE.test(head))) return invalid(what, 'parentHead')
-  return { ok: true, request: { ...c.request, settle: { parentHead: head } } }
+  return { ok: true, request: { ...request, settle: { parentHead: head } } }
 }
 
 export function parseHubRemoteMoveRequest(value: unknown): Parsed<HubRemoteMoveRequest> {

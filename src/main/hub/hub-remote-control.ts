@@ -17,9 +17,13 @@
  * connected (or that did not answer in time) is a `hub_remote_pending` row,
  * sent on that machine's next connect before anything else, one machine at a
  * time; until its answer the child shows "Stopping on <machine>". A row is
- * deleted on an answer (`not_found` counts: nothing is left to stop) and kept
- * when the call fails again. Rows of a machine whose backend lacks the
- * capability are dropped with a log line, since it can never take them.
+ * deleted on an answer (`not_found` counts: nothing is left to stop) or a
+ * refusal, kept while the machine is not connected, and dropped after
+ * `HUB_REMOTE_PENDING_MAX_ATTEMPTS` sends that got no answer from it. Rows of
+ * a machine whose backend lacks the capability are dropped with a log line,
+ * since it can never take them. A Stop of a child still `starting` here keeps
+ * its start from being sent (`isStopping`); its answer fails the row (the
+ * machine never had it) or asks its state again.
  */
 import { HubRemoteChannels } from '@shared/ipc-channels'
 import { HUB_REMOTE_STOP_LATER_TEXT, isHubOutboxId, isNoHandlerError } from '@shared/hub-remote'
@@ -38,6 +42,8 @@ import type { TurnDelivery } from '@shared/turn-delivery'
 import {
   addHubRemotePending,
   deleteHubRemotePending,
+  failHubRemotePending,
+  getHubChild,
   listHubChildren,
   listHubRemotePending,
   listOpenRemoteHubChildren,
@@ -48,6 +54,7 @@ import {
 import { toolText, type McpToolResult } from '../mcp/mcp-session'
 import { createMainLogger } from '../logger'
 import { perfSpan } from '../perf'
+import type { ReadChildArgs } from './hub-read'
 import { HubRemoteCallError, type HubControlSupport } from './remote-hub-clients'
 
 const log = createMainLogger('hub:remote-control')
@@ -65,6 +72,8 @@ export interface HubRemoteControlHost {
   invoke(machineId: string, channel: string, ...args: unknown[]): Promise<unknown>
   /** Clients read the parent's view again; `rows`: the sidebar rows too (a child settled). */
   changed(parentId: string, rows?: boolean): void
+  /** A Stop was answered for a child still `starting` here; `there`: that machine has it. */
+  stoppedWhileStarting(childId: string, there: boolean): void
   now?(): number
 }
 
@@ -88,12 +97,21 @@ interface ParentView {
 
 /** A view read that failed is not tried again from a list call for this long. */
 const VIEW_RETRY_MS = 15_000
+/** Sends of one pending row that got no answer from a connected machine before it is dropped. */
+export const HUB_REMOTE_PENDING_MAX_ATTEMPTS = 5
+
+/** The child machine answered and refused, or cannot take the channel: sending it again changes nothing. */
+class HubRemoteRefused extends Error {}
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 export class HubRemoteControl {
   private readonly views = new Map<string, Map<string, ParentView>>()
   private readonly reading = new Map<string, Promise<void>>()
   private readonly failedAt = new Map<string, number>()
   private readonly flushing = new Map<string, Promise<void>>()
+  /** Children whose Stop is on its way to their machine now. */
+  private readonly sending = new Set<string>()
   private readonly now: () => number
 
   constructor(private readonly host: HubRemoteControlHost) {
@@ -202,7 +220,7 @@ export class HubRemoteControl {
     })()
       .catch((err: unknown) => {
         this.failedAt.set(key, this.now())
-        log.warn(`could not read the view of machine ${machineId}: ${err instanceof Error ? err.message : String(err)}`)
+        log.warn(`could not read the view of machine ${machineId}: ${errorText(err)}`)
       })
       .finally(() => {
         if (this.reading.get(key) === read) this.reading.delete(key)
@@ -216,9 +234,22 @@ export class HubRemoteControl {
   /** A Stop, settle or stop-all waits for this child (or its parent on that machine). */
   isStopping(child: Pick<HubChildRow, 'childId' | 'parentId' | 'machineId'>): boolean {
     if (!child.machineId) return false
+    if (this.sending.has(child.childId)) return true
+    return this.pendingFor(child, () => true)
+  }
+
+  /** A settle or stop-all waits for this child: it settles there, so an archive need not wait for it. */
+  isSettling(child: Pick<HubChildRow, 'childId' | 'parentId' | 'machineId'>): boolean {
+    return !!child.machineId && this.pendingFor(child, (kind) => kind !== 'stop')
+  }
+
+  private pendingFor(
+    child: Pick<HubChildRow, 'childId' | 'parentId' | 'machineId'>,
+    kinds: (kind: HubRemotePendingRow['kind']) => boolean,
+  ): boolean {
     try {
-      return listHubRemotePending(child.machineId).some((p) =>
-        p.kind === 'stop_all' ? p.targetId === child.parentId : p.targetId === child.childId,
+      return listHubRemotePending(child.machineId!).some(
+        (p) => kinds(p.kind) && (p.kind === 'stop_all' ? p.targetId === child.parentId : p.targetId === child.childId),
       )
     } catch (err) {
       log.warn('could not read the pending stops', err)
@@ -226,17 +257,35 @@ export class HubRemoteControl {
     }
   }
 
-  /** The user's Stop (strip, Stop button). `pending`: sent when the machine connects. */
-  async stop(child: HubChildRow): Promise<{ pending: boolean; ran: boolean }> {
+  /**
+   * The user's Stop (strip, Stop button), or the parent's (`cascade`): the
+   * turn there, as a local Stop. `pending`: sent when the machine connects.
+   */
+  async stop(child: HubChildRow, by: 'user' | 'cascade'): Promise<{ pending: boolean; ran: boolean }> {
     const machineId = this.machineOf(child)
-    const r = await this.send(machineId, {
-      kind: 'stop',
-      targetId: child.childId,
-      parentId: child.parentId,
-      payload: null,
-    })
-    if (r.pending) this.host.changed(child.parentId)
-    return { pending: r.pending, ran: r.answer?.ran === true }
+    this.sending.add(child.childId)
+    try {
+      const r = await this.send(machineId, {
+        kind: 'stop',
+        targetId: child.childId,
+        parentId: child.parentId,
+        payload: by === 'cascade' ? { cascade: true } : null,
+      })
+      if (r.pending) this.host.changed(child.parentId)
+      else this.stopped(child.childId, r.answer)
+      return { pending: r.pending, ran: r.answer?.ran === true }
+    } finally {
+      this.sending.delete(child.childId)
+    }
+  }
+
+  /**
+   * A stop answered for a child whose start this desktop has not seen answered:
+   * not there means it never got the start, which is now never sent; there,
+   * its state is asked again.
+   */
+  private stopped(childId: string, answer: Record<string, unknown> | null): void {
+    if (getHubChild(childId)?.phase === 'starting') this.host.stoppedWhileStarting(childId, answer !== null)
   }
 
   /**
@@ -261,9 +310,8 @@ export class HubRemoteControl {
     return { status: 'settled', row: this.markSettled(child, r.answer) }
   }
 
-  /** An archive of the parent: every child of it on that machine stops there. Idempotent. */
+  /** An archive of the parent: every child of it on that machine settles there. Idempotent. */
   async stopAll(machineId: string, parentId: string): Promise<{ pending: boolean }> {
-    if (this.host.control(machineId) === 'no') throw new Error(HUB_REMOTE_STOP_LATER_TEXT)
     const r = await this.send(machineId, { kind: 'stop_all', targetId: parentId, parentId, payload: null })
     if (!r.pending) this.settleAllOf(machineId, parentId)
     else this.host.changed(parentId)
@@ -272,36 +320,40 @@ export class HubRemoteControl {
 
   /**
    * Sends one stop now, or keeps it pending when the machine is not connected
-   * or did not answer. Throws the machine's refusal, or the old text for a
-   * machine without the capability.
+   * or the call did not get an answer. Throws the machine's refusal, or the
+   * old text for a machine without the capability.
    */
   private async send(
     machineId: string,
-    p: Omit<HubRemotePendingRow, 'createdAt' | 'machineId'>,
+    p: Omit<HubRemotePendingRow, 'createdAt' | 'machineId' | 'attempts'>,
   ): Promise<{ pending: true; answer?: undefined } | { pending: false; answer: Record<string, unknown> | null }> {
     if (!this.host.enabled()) throw new Error('hub_remote_children is off on this desktop')
-    const keep = () => {
+    const keep = (failed: boolean) => {
       addHubRemotePending({ ...p, machineId })
+      if (failed) failHubRemotePending(machineId, p.kind, p.targetId)
       log.info('remote stop kept until the machine connects', { machineId, kind: p.kind, targetId: p.targetId })
       return { pending: true as const }
     }
-    if (this.host.machineState(machineId) !== 'connected') return keep()
+    if (this.host.machineState(machineId) !== 'connected') return keep(false)
     if (!(await this.host.supportsControl(machineId))) {
       if (this.host.control(machineId) === 'no') throw new Error(HUB_REMOTE_STOP_LATER_TEXT)
-      return keep()
+      return keep(false)
     }
     try {
       const answer = await this.call(machineId, p)
       deleteHubRemotePending(machineId, p.kind, p.targetId)
       return { pending: false, answer }
     } catch (err) {
-      if (err instanceof HubRemoteCallError && (err.outcome === 'not_connected' || err.outcome === 'timeout'))
-        return keep()
-      throw err
+      if (err instanceof HubRemoteRefused) throw err
+      return keep(!(err instanceof HubRemoteCallError && err.outcome === 'not_connected'))
     }
   }
 
-  /** One stop call; resolves with the ok answer (null for a child the machine does not have), throws a refusal. */
+  /**
+   * One stop call; resolves with the ok answer (null for a child the machine
+   * does not have). Throws `HubRemoteRefused` for the machine's refusal and
+   * the transport's error when no answer came.
+   */
   private async call(
     machineId: string,
     p: Pick<HubRemotePendingRow, 'kind' | 'targetId' | 'payload'>,
@@ -320,20 +372,21 @@ export class HubRemoteControl {
               v: 1,
               desktopInstallId: installId,
               childId: p.targetId,
+              ...(p.payload?.cascade === true ? { cascade: true } : {}),
               ...(p.kind === 'settle'
                 ? { settle: { parentHead: typeof p.payload?.parentHead === 'string' ? p.payload.parentHead : null } }
                 : {}),
             })
     } catch (err) {
-      if (err instanceof Error && isNoHandlerError(err.message)) throw new Error(HUB_REMOTE_STOP_LATER_TEXT)
+      if (err instanceof Error && isNoHandlerError(err.message)) throw new HubRemoteRefused(HUB_REMOTE_STOP_LATER_TEXT)
       throw err
     }
     const refusal = parseHubRemoteRefusal(raw)
     // Nothing of it is there (never started, or gone): the stop is done.
     if (refusal?.code === 'not_found') return null
-    if (refusal) throw new Error(refusal.message)
+    if (refusal) throw new HubRemoteRefused(refusal.message)
     const ok = parseHubRemoteOk(raw)
-    if (!ok) throw new Error(`${this.host.machineName(machineId)} answered the stop with a malformed answer`)
+    if (!ok) throw new HubRemoteRefused(`${this.host.machineName(machineId)} answered the stop with a malformed answer`)
     return ok
   }
 
@@ -374,19 +427,26 @@ export class HubRemoteControl {
         else if (row.kind === 'settle') {
           const child = listHubChildren(row.parentId).find((c) => c.childId === row.targetId)
           if (child) this.markSettled(child, answer)
-        }
+        } else this.stopped(row.targetId, answer)
         this.host.changed(row.parentId, row.kind !== 'stop')
       } catch (err) {
-        if (err instanceof HubRemoteCallError) {
-          // The connection went again: the rest waits for the next connect.
-          log.warn(`pending stops of machine ${machineId} wait for its next connect: ${err.message}`)
-          span.end({ outcome: 'interrupted', sent })
-          return
+        if (err instanceof HubRemoteRefused) {
+          // A refusal will not change on its own: dropped, and the child stays as it is.
+          deleteHubRemotePending(machineId, row.kind, row.targetId)
+          log.warn(`machine ${machineId} refused a pending ${row.kind}; it is dropped: ${err.message}`)
+          this.host.changed(row.parentId)
+          continue
         }
-        // A refusal will not change on its own: dropped, and the child stays as it is.
-        deleteHubRemotePending(machineId, row.kind, row.targetId)
-        log.warn(`machine ${machineId} refused a pending ${row.kind}; it is dropped`, err)
-        this.host.changed(row.parentId)
+        // No answer: the rest waits for the next connect. A row that never gets one is dropped in the end.
+        const notConnected = err instanceof HubRemoteCallError && err.outcome === 'not_connected'
+        const attempts = notConnected ? row.attempts : failHubRemotePending(machineId, row.kind, row.targetId)
+        if (attempts >= HUB_REMOTE_PENDING_MAX_ATTEMPTS) {
+          deleteHubRemotePending(machineId, row.kind, row.targetId)
+          log.warn(`machine ${machineId} never answered a pending ${row.kind} in ${attempts} tries; it is dropped`)
+          this.host.changed(row.parentId)
+        } else log.warn(`pending stops of machine ${machineId} wait for its next connect: ${errorText(err)}`)
+        span.end({ outcome: 'interrupted', sent })
+        return
       }
     }
     span.end({ outcome: 'sent', sent })
@@ -454,7 +514,7 @@ export class HubRemoteControl {
   }
 
   /** `read_child` on the child's machine. */
-  async read(child: HubChildRow, args: Record<string, unknown>): Promise<McpToolResult> {
+  async read(child: HubChildRow, args: ReadChildArgs): Promise<McpToolResult> {
     const { childId: _id, ...rest } = args
     return this.toolCall(child, HubRemoteChannels.READ_CHILD, { childId: child.childId, args: rest })
   }

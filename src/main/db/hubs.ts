@@ -122,6 +122,7 @@ export function ensureHubSchema(db: Database.Database): void {
       parent_id    TEXT NOT NULL,
       payload_json TEXT,
       created_at   INTEGER NOT NULL,
+      attempts     INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (machine_id, kind, target_id)
     );
   `)
@@ -963,7 +964,8 @@ export function setHubRemoteImportOutcome(
 // A Stop, a settle or a stop-all for a machine that is not connected waits
 // here and is sent on that machine's next connect, before anything else.
 // One row per (machine, kind, target): a second Stop of the same child is the
-// same row. Survives a restart.
+// same row. Survives a restart. `attempts` counts sends that failed with the
+// machine connected (a timeout, a dropped socket), so the row is not tried forever.
 
 export type HubRemotePendingKind = 'stop' | 'settle' | 'stop_all'
 
@@ -973,12 +975,13 @@ export interface HubRemotePendingRow {
   /** The child for `stop` and `settle`, the parent for `stop_all`. */
   targetId: string
   parentId: string
-  /** `settle`: `{ parentHead }`. */
+  /** `settle`: `{ parentHead }`; `stop`: `{ cascade: true }` for the parent's Stop. */
   payload: Record<string, unknown> | null
   createdAt: number
+  attempts: number
 }
 
-export function addHubRemotePending(p: Omit<HubRemotePendingRow, 'createdAt'>): void {
+export function addHubRemotePending(p: Omit<HubRemotePendingRow, 'createdAt' | 'attempts'>): void {
   getDb()
     .prepare(
       `INSERT INTO hub_remote_pending (machine_id, kind, target_id, parent_id, payload_json, created_at)
@@ -1000,6 +1003,7 @@ export function listHubRemotePending(machineId?: string): HubRemotePendingRow[] 
     parent_id: string
     payload_json: string | null
     created_at: number
+    attempts: number
   }>
   return rows.flatMap((r) => {
     if (r.kind !== 'stop' && r.kind !== 'settle' && r.kind !== 'stop_all') return []
@@ -1018,6 +1022,7 @@ export function listHubRemotePending(machineId?: string): HubRemotePendingRow[] 
         parentId: r.parent_id,
         payload,
         createdAt: r.created_at,
+        attempts: r.attempts,
       },
     ]
   })
@@ -1027,4 +1032,14 @@ export function deleteHubRemotePending(machineId: string, kind: HubRemotePending
   getDb()
     .prepare('DELETE FROM hub_remote_pending WHERE machine_id = ? AND kind = ? AND target_id = ?')
     .run(machineId, kind, targetId)
+}
+
+/** One more failed send of a pending row; the attempts now, or 0 when the row is gone. */
+export function failHubRemotePending(machineId: string, kind: HubRemotePendingKind, targetId: string): number {
+  const row = getDb()
+    .prepare(
+      'UPDATE hub_remote_pending SET attempts = attempts + 1 WHERE machine_id = ? AND kind = ? AND target_id = ? RETURNING attempts',
+    )
+    .get(machineId, kind, targetId) as { attempts: number } | undefined
+  return row?.attempts ?? 0
 }
