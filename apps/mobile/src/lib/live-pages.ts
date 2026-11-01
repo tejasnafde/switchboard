@@ -14,7 +14,7 @@ const log = createLogger('html-live')
  * Whether this phone must wait for Run. expo-device is not a dependency, so
  * the app cannot read the phone's memory, and unknown memory counts as low.
  */
-export const LIVE_PAGES_LOW_RAM = true
+const LIVE_PAGES_LOW_RAM = true
 
 interface Entry {
   pageKey: string

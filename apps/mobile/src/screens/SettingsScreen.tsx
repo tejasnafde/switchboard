@@ -130,7 +130,7 @@ function FollowUpDefaultSetting() {
   )
 }
 
-/** The `phone_html_live_run` flag: off by default, nothing turns it on for the user. */
+/** The `phone_html_live_run` flag: off by default, and only this switch turns it on. */
 function LiveHtmlPagesSetting() {
   const value = usePrefsStore((s) => s.liveHtmlPages)
   const setValue = usePrefsStore((s) => s.setLiveHtmlPages)
