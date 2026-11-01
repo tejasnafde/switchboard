@@ -4,7 +4,7 @@
  * token and the tokenless loopback forward keep every scope.
  */
 import { describe, it, expect, afterEach } from 'vitest'
-import { WebSocketServer, type AddressInfo } from 'ws'
+import { WebSocket, WebSocketServer, type AddressInfo } from 'ws'
 import { createHeadlessWsHost } from '../../src/server/ws-credentials'
 import { WsTransport } from '../../src/shared/ws-transport'
 import { AgentSecretChannels, FilesChannels, TerminalChannels } from '../../src/shared/ipc-channels'
@@ -39,6 +39,20 @@ async function connect(url: string): Promise<WsTransport> {
   cleanups.push(() => client.close())
   await client.invoke(FilesChannels.LIST_DIR, '/', '')
   return client
+}
+
+/** The scopes an auth frame with `session` gets, or null when refused. */
+function frameScopes(port: number, session: string): Promise<string[] | null> {
+  return new Promise((resolve) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/?auth=frame`)
+    cleanups.push(() => ws.close())
+    ws.on('open', () => ws.send(JSON.stringify({ k: 'auth', session })))
+    ws.on('message', (data) => {
+      const reply = JSON.parse(String(data)) as { ok: boolean; scopes?: string[] }
+      resolve(reply.ok ? (reply.scopes ?? []) : null)
+    })
+    ws.on('close', () => resolve(null))
+  })
 }
 
 const answer = (client: WsTransport): Promise<unknown> =>
@@ -81,6 +95,24 @@ describe('headless backend credentials', () => {
   it('accepts a secret answer over the tokenless loopback forward the desktop dials', async () => {
     const { port, answers } = await boot({})
     const desktop = await connect(`ws://127.0.0.1:${port}`)
+    await expect(answer(desktop)).resolves.toEqual({ ok: true })
+    expect(answers).toHaveLength(1)
+  })
+
+  it('gives the desktop token full scopes in an auth frame and the pairing token phone scopes', async () => {
+    const { port } = await boot({ pairingToken: 'phone-token', desktopToken: 'desktop-token' })
+    expect(await frameScopes(port, 'desktop-token')).toEqual(expect.arrayContaining(['terminal', 'admin']))
+    const phone = await frameScopes(port, 'phone-token')
+    expect(phone).toContain('chat')
+    expect(phone).not.toContain('admin')
+    expect(phone).not.toContain('terminal')
+  })
+
+  it('gives the managed loopback token (desktop only) full scopes by URL and by auth frame', async () => {
+    const { port, answers } = await boot({ desktopToken: 'vm-token' })
+    expect(await frameScopes(port, 'vm-token')).toEqual(expect.arrayContaining(['terminal', 'admin']))
+    expect(await frameScopes(port, 'other')).toBeNull()
+    const desktop = await connect(`ws://127.0.0.1:${port}/?token=vm-token`)
     await expect(answer(desktop)).resolves.toEqual({ ok: true })
     expect(answers).toHaveLength(1)
   })

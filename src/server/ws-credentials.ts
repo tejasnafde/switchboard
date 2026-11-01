@@ -10,6 +10,9 @@ import { PHONE_SCOPES } from '@shared/device-auth'
  * source control). The desktop token grants every scope and is printed apart
  * from the QR, for `SWITCHBOARD_BACKEND_URL`.
  *
+ * With only a desktop token (a loopback bind by the managed bootstrap) that
+ * token gets every scope, by URL or auth frame.
+ *
  * With no tokens (a loopback bind) every connection gets every scope. That is
  * the ssh -L forward the desktop's managed machines dial, and it is the same
  * trust boundary as the PTY this server spawns: a local process of that user
@@ -21,5 +24,6 @@ export function createHeadlessWsHost(
   wss: WebSocketServer,
   credentials: { pairingToken?: string; desktopToken?: string },
 ): WsHost {
+  if (!credentials.pairingToken) return new WsHost(wss, credentials.desktopToken)
   return new WsHost(wss, credentials.pairingToken, undefined, false, PHONE_SCOPES, credentials.desktopToken)
 }

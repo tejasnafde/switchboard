@@ -55,9 +55,9 @@ const SERVER_VERSION_CHANNEL = 'server:version'
 
 const log = createLogger('server')
 
-// Same dir as the uploaded bundle. A lingering process from an ungraceful
-// tunnel drop can hold the port; connect-deps.ts REMOTE_COMMAND kills whatever
-// pid is recorded here before launching a fresh server.
+// Same dir as the uploaded bundle. The bootstrap (connect-deps.ts
+// REMOTE_COMMAND) reuses the pid recorded here when it is live and current,
+// and otherwise kills it before launching a fresh server.
 /** Matches provisionCommands.REMOTE_SERVER_DIR, which is the shell form of this
  *  path and so cannot be imported here. */
 const SERVER_HOME = join(homedir(), '.switchboard-server')
@@ -95,9 +95,9 @@ const bindLifecycle = createBindLifecycle({
  * network fault rather than an auth one. So when binding beyond loopback without
  * an explicit token, persist one and reuse it across restarts.
  *
- * Deliberately NOT done for a loopback bind: the desktop dials its ssh-tunnelled
- * remotes with no token at all, and switching that on would break the existing
- * remote-machines flow.
+ * Not done for a loopback bind: the desktop's ssh bootstrap passes its own
+ * SWITCHBOARD_TOKEN (see machines/remote-bootstrap.ts), and a server started
+ * by hand on loopback keeps the open trust model.
  */
 function stableToken(name: string): string {
   const file = join(homedir(), '.switchboard-server', name)
@@ -120,9 +120,11 @@ function stableToken(name: string): string {
 }
 
 const token = process.env.SWITCHBOARD_TOKEN ?? (isLoopback ? undefined : stableToken('token'))
-// The pairing token above is a phone credential. A desktop dialing this
-// server directly (SWITCHBOARD_BACKEND_URL) presents this one for full scope.
-const desktopToken = token ? (process.env.SWITCHBOARD_DESKTOP_TOKEN ?? stableToken('desktop-token')) : undefined
+// On loopback only the desktop's ssh -L forward reaches the port, so the token
+// (the managed bootstrap's 0600 file) is the desktop's credential. Beyond
+// loopback it is the pairing token in the QR, a phone credential, and a desktop
+// dialing directly (SWITCHBOARD_BACKEND_URL) presents its own token.
+const desktopToken = isLoopback ? token : (process.env.SWITCHBOARD_DESKTOP_TOKEN ?? stableToken('desktop-token'))
 /** The install's certificate for wss:// on the same port, or null for ws:// only. */
 function tlsIdentity(): TlsIdentity | null {
   try {
@@ -137,7 +139,7 @@ const identity = tlsIdentity()
 const wss = identity
   ? new DualWebSocketServer(port, bindHost, identity)
   : new WebSocketServer(wsServerOptions(port, bindHost))
-const wsHost = createHeadlessWsHost(wss, { pairingToken: token, desktopToken })
+const wsHost = createHeadlessWsHost(wss, { pairingToken: isLoopback ? undefined : token, desktopToken })
 
 // Second listener speaking newline-delimited JSON over raw TCP. This is what a
 // phone reaches through Google's IAP relay: IAP forwards an arbitrary VM port
@@ -177,6 +179,7 @@ host.handle(SERVER_VERSION_CHANNEL, () => __SERVER_VERSION__)
 const registry = new ProviderRegistry(host)
 // This backend runs on an SSH machine, so a saved secret's result names it.
 registry.setMachineLabel(hostname())
+registry.setBackendVersion(__SERVER_VERSION__)
 const worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(host, () => registry)
 configureHubWorktrees(worktreeCreationRuntime)
 registerAppHandlers(host, { isTurnInFlight: (id) => registry.isTurnInFlight(id) })

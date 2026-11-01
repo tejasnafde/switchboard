@@ -25,6 +25,24 @@ export function hubChildrenEnabled(env: NodeJS.ProcessEnv, getSetting: SettingRe
   return HUB_CHILDREN_ENABLED || env.SB_HUB_CHILDREN === '1' || getSetting(HUB_CHILDREN_LABS_SETTING) === 'true'
 }
 
+/**
+ * Staged flag `hub_remote_children`: children on other machines. On only while
+ * `hub_children` is on too. `SB_HUB_REMOTE_CHILDREN=1` or the labs setting
+ * turns it on for testing. It must be on at both ends: a machine with it off
+ * refuses new starts but still answers `hub-remote:describe`.
+ */
+export const HUB_REMOTE_CHILDREN_ENABLED = false
+export const HUB_REMOTE_CHILDREN_LABS_SETTING = 'labs.hub_remote_children'
+
+export function hubRemoteChildrenEnabled(env: NodeJS.ProcessEnv, getSetting: SettingReader): boolean {
+  if (!hubChildrenEnabled(env, getSetting)) return false
+  return (
+    HUB_REMOTE_CHILDREN_ENABLED ||
+    env.SB_HUB_REMOTE_CHILDREN === '1' ||
+    getSetting(HUB_REMOTE_CHILDREN_LABS_SETTING) === 'true'
+  )
+}
+
 // ─── Stored shapes ──────────────────────────────────────────────
 
 export type HubChildPhase = 'starting' | 'open' | 'settled' | 'failed_start'
