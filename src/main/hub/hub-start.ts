@@ -333,6 +333,7 @@ export class HubStarter {
   /** Remote children still `starting` that are asked again: tries so far and the timer. */
   private readonly followUps = new Map<string, { tries: number; timer: ReturnType<typeof setTimeout> | null }>()
   private readonly followUpMs: number
+  private disposed = false
 
   constructor(
     private readonly host: HubStartHost,
@@ -959,10 +960,7 @@ export class HubStarter {
     updateHubChild(c.childId, { phase: answer.phase, grantedMode: mode })
     log.info('child started on another machine', { childId: c.childId, machineId: machine.id, phase: answer.phase })
     if (answer.phase === 'starting') this.followUp(c.childId)
-    else {
-      this.endFollowUp(c.childId)
-      this.pump()
-    }
+    else this.endFollowUp(c.childId)
     this.host.changed?.(parentId)
     return answer.phase
   }
@@ -975,6 +973,7 @@ export class HubStarter {
 
   /** Asks again in `followUpMs`, at most `REMOTE_FOLLOW_UPS` times in a row; after that, on the next connect. */
   private followUp(childId: string): void {
+    if (this.disposed) return
     const prev = this.followUps.get(childId)
     if (prev?.timer) clearTimeout(prev.timer)
     const tries = (prev?.tries ?? 0) + 1
@@ -998,15 +997,23 @@ export class HubStarter {
     this.followUps.delete(childId)
   }
 
+  /** The registry stopped: no more follow-ups or reconciles from this starter. */
+  dispose(): void {
+    this.disposed = true
+    for (const { timer } of this.followUps.values()) if (timer) clearTimeout(timer)
+    this.followUps.clear()
+  }
+
   /**
    * Desktop rows of children on other machines still `starting` (a quit, a
    * timeout or a `starting` answer left them so) send the same start request
    * again, rebuilt from the stored plan; that machine answers the child's
    * state or starts it. Run at startup, on a machine's connect and by
    * `followUp`. A machine that is not connected waits for its connect; a
-   * removed one fails its rows.
+   * removed one fails its rows. Nothing is sent with `hub_remote_children` off.
    */
   async reconcileRemote(only: { machineId?: string; childId?: string } = {}): Promise<void> {
+    if (this.disposed || !this.host.remoteChildren?.().flagOn) return
     let rows: HubChildRow[]
     try {
       rows = listHubChildrenInPhase('starting', { includeRemote: true }).filter(

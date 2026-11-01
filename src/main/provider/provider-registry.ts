@@ -3068,9 +3068,9 @@ export class ProviderRegistry implements PeerToolHost {
     // Remote starts left `starting` (a quit, a timeout) are asked again on each connect, failed on removal.
     clients.setMachineListener((machineId, change) => {
       if (change === 'removed') this.hubStarter.remoteMachineRemoved(machineId)
-      else if (this.hubRemoteChildrenOn()) void this.hubStarter.reconcileRemote({ machineId })
+      else void this.hubStarter.reconcileRemote({ machineId })
     })
-    if (this.hubRemoteChildrenOn()) void this.hubStarter.reconcileRemote()
+    void this.hubStarter.reconcileRemote()
   }
 
   /** The headless server's build version, for `hub-remote:describe`; the desktop answers its app version. */
@@ -5274,6 +5274,7 @@ export class ProviderRegistry implements PeerToolHost {
     this.hubSampler?.stop()
     this.hubWakes.stop()
     this.hubReaper.stop()
+    this.hubStarter.dispose()
     this.secretStore?.stop()
     // Open approval cards stay in the store: a quit or a closed window is not an answer.
     for (const threadId of this.sessionAdapters.keys()) this.switchboardMcp?.close(threadId)

@@ -202,6 +202,7 @@ interface DesktopOpts {
   followUpMs?: number
   machineState?: (machineId: string) => 'connected' | 'offline' | 'gone'
   io?: Partial<HubStartIo>
+  flag?: { on: boolean }
 }
 
 /** The desktop: its HubStarter, with the real hub client to the given machines. */
@@ -241,7 +242,7 @@ function desktop(
     },
     announceRow() {},
     async stopChild() {},
-    remoteChildren: () => ({ flagOn: true, onVm: false }),
+    remoteChildren: () => ({ flagOn: opts.flag?.on ?? true, onVm: false }),
     machineEntries: async () => Object.entries(machines).map(([id, m]) => machineEntry(id, m.name)),
     startRemoteChild: (machineId, request) => {
       requests.push(request)
@@ -519,6 +520,27 @@ describe('a remote start with no final answer', () => {
     await until(() => d.requests.length === 1)
     d.starter.remoteMachineRemoved('vm1')
     expect(db.listHubChildren('agent_parent')[0]!.phase).toBe('failed_start')
+  })
+
+  it('asks nothing again once the flag is off or the starter is disposed', async () => {
+    for (const end of ['flag', 'dispose'] as const) {
+      createMigratedDb()
+      const flag = { on: true }
+      const d = desktop(
+        { vm1: { name: 'Work VM', url: 'ws://127.0.0.1:9' } },
+        {},
+        { followUpMs: 20, flag, intercept: () => Promise.reject(new Error('closed')) },
+      )
+      await d.starter.propose(parent(), [task('Remote', { machine: 'vm1' })])
+      await d.starter.approve(d.cards.at(-1)!, 'auto')
+      await until(() => d.requests.length === 1)
+      if (end === 'flag') flag.on = false
+      else d.starter.dispose()
+      await new Promise((r) => setTimeout(r, 100))
+      await d.starter.reconcileRemote()
+      expect(d.requests, end).toHaveLength(1)
+      expect(db.listHubChildren('agent_parent')[0]!.phase).toBe('starting')
+    }
   })
 
   it('tells its listener about a connect and a removal, and the state of a machine', () => {
