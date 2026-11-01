@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   asksForProviderKey,
   isSecretCardKeyTarget,
+  secretAnswerErrorText,
   secretFooterText,
   secretLineState,
+  secretTooShortToMask,
   secretNameFromResultTitle,
   secretTimeLeftText,
   secretValueSavable,
@@ -11,6 +13,7 @@ import {
   trimSecretValue,
   utf8ByteLength,
 } from '../../src/renderer/components/chat/secret-request-card-model'
+import { CLEARTEXT_SECRET_REFUSAL } from '../../src/shared/transport-security'
 import { agentSecretStatus, isAgentSecretAnswer, type AgentSecretView } from '../../src/shared/agent-secret-request'
 
 const MIN = 60_000
@@ -157,5 +160,29 @@ describe('answer shape and key targets', () => {
     expect(isSecretCardKeyTarget(inside as unknown as EventTarget)).toBe(true)
     expect(isSecretCardKeyTarget(outside as unknown as EventTarget)).toBe(false)
     expect(isSecretCardKeyTarget(null)).toBe(false)
+  })
+})
+
+describe('short values', () => {
+  it('warns at 7 characters and not at 8, counted after the trim', () => {
+    expect(secretTooShortToMask('')).toBe(false)
+    expect(secretTooShortToMask('abcdefg')).toBe(true)
+    expect(secretTooShortToMask('abcdefgh')).toBe(false)
+    expect(secretTooShortToMask('abcdefg   \n')).toBe(true)
+  })
+
+  it('counts code points, as the matcher does', () => {
+    expect(secretTooShortToMask('\u{1F511}'.repeat(7))).toBe(true)
+    expect(secretTooShortToMask('\u{1F511}'.repeat(8))).toBe(false)
+  })
+})
+
+describe('answer errors', () => {
+  it('shows the cleartext refusal as it is, and a fixed text for anything else', () => {
+    expect(secretAnswerErrorText(new Error(CLEARTEXT_SECRET_REFUSAL))).toBe(CLEARTEXT_SECRET_REFUSAL)
+    expect(secretAnswerErrorText(new Error('sbcanary_finding6_0123456789'))).toBe(
+      'Could not send the answer. Try again.',
+    )
+    expect(secretAnswerErrorText('x')).toBe('Could not send the answer. Try again.')
   })
 })
