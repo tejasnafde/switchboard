@@ -44,7 +44,7 @@ import {
 } from '@shared/hub'
 import type { SettingReader } from '@shared/limit-resume'
 import type { RuntimeMode, UserTurnSubmissionResult, UserTurnSubmissionV1 } from '@shared/provider-events'
-import { providerKindFor, type AgentProvider } from '@shared/types'
+import { defaultInstanceId, providerKindFor, type AgentProvider } from '@shared/types'
 import {
   WORKTREE_CREATION_SCHEMA_VERSION,
   type WorktreeCreationRequest,
@@ -553,7 +553,8 @@ export class HubStarter {
     const mode = getHubChild(c.childId)?.grantedMode ?? 'sandbox'
     setConversationRuntimeMode(c.childId, mode)
     if (c.instanceId) setConversationProviderInstanceId(c.childId, c.instanceId)
-    const slot: HubRunningChild = { providerInstanceId: c.instanceId ?? c.agent, parentId }
+    // The default account's id, as a resumed or moved child's slot names it.
+    const slot: HubRunningChild = { providerInstanceId: c.instanceId ?? defaultInstanceId(c.agent), parentId }
     const depsLine = depsState ? depsBriefLine(depsState) : null
     void this.whenSlotFree(c.childId, slot)
       .then(() => this.launch(c, cwd, mode, slot, depsLine))

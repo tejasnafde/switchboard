@@ -57,6 +57,7 @@ export async function describeThisMachine(deps: HubDescribeDeps): Promise<HubMac
     arch: arch(),
     backendVersion: deps.backendVersion(),
     availableAgents,
+    homeDir: homedir(),
     instances: listProviderInstances(),
     projects,
     freeDiskBytes,

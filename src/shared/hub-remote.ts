@@ -7,7 +7,7 @@
  */
 import type { DeviceScope } from './device-auth'
 import { modelsForAgent } from './models'
-import { defaultInstanceId, type AgentProvider, type AgentType } from './types'
+import type { AgentProvider, AgentType } from './types'
 
 /** What the hub client asks for in its auth frame. */
 export const HUB_REMOTE_AUTH_SCOPES: readonly DeviceScope[] = ['hub']
@@ -77,10 +77,12 @@ export interface HubDescribeFacts {
   /** Agents whose program runs on this backend. */
   availableAgents: readonly AgentProvider[]
   instances: ReadonlyArray<{ id: string; agentType: AgentType; displayName: string; enabled: boolean }>
+  /** The backend's home folder: project paths under it are sent as `~/...`. */
+  homeDir: string
   projects: readonly HubMachineProject[]
   freeDiskBytes: number | null
   openChildren: number
-  /** The run-slot key of each child with a turn in flight: an instance id, or the agent for its default account. */
+  /** The account id of each child with a turn in flight. */
   runningSlotKeys: readonly string[]
   runningPerInstance: number
 }
@@ -102,10 +104,9 @@ export function buildHubMachineDescription(f: HubDescribeFacts): HubMachineDescr
       models: modelsForAgent(agent).map((m) => m.id),
     })
     for (const i of accounts) {
-      const isDefault = i.id === defaultInstanceId(agent)
       runSlots.push({
         instanceId: i.id,
-        running: f.runningSlotKeys.filter((k) => k === i.id || (isDefault && k === agent)).length,
+        running: f.runningSlotKeys.filter((k) => k === i.id).length,
         limit: f.runningPerInstance,
       })
     }
@@ -117,20 +118,44 @@ export function buildHubMachineDescription(f: HubDescribeFacts): HubMachineDescr
     arch: f.arch,
     backendVersion: f.backendVersion,
     agents,
-    projects: f.projects.slice(0, HUB_DESCRIBE_MAX_PROJECTS).map((p) => ({
-      path: p.path,
-      branch: p.branch,
-      remoteUrls: [...new Set(p.remoteUrls.map(withoutCredentials))],
-    })),
+    projects: f.projects.slice(0, HUB_DESCRIBE_MAX_PROJECTS).flatMap((p) => {
+      const path = pathFromHome(p.path, f.homeDir)
+      if (path === null) return []
+      const urls = p.remoteUrls.map(cleanRemoteUrl).filter((u): u is string => u !== null)
+      return [{ path, branch: p.branch, remoteUrls: [...new Set(urls)] }]
+    }),
     freeDiskBytes: f.freeDiskBytes,
     openChildren: f.openChildren,
     runSlots,
   }
 }
 
-/** An http(s) URL loses its user part, which can be a token (`https://token@host/...`). */
-function withoutCredentials(url: string): string {
-  return url.replace(/^(https?:\/\/)[^/@\s]*@/i, '$1')
+/**
+ * A project path as the hub sees it: `~/...` under the home folder, so the
+ * user name stays on the machine. A path in another user's home is left out.
+ */
+function pathFromHome(path: string, home: string): string | null {
+  const root = home.replace(/\/+$/, '')
+  if (path === root) return '~'
+  if (path.startsWith(`${root}/`)) return `~${path.slice(root.length)}`
+  if (/^\/(home|Users)\//.test(path)) return null
+  return path
+}
+
+/**
+ * A git remote without its user part, which can be a token
+ * (`https://token@host/...`) or a login name (`ssh://user@host/...`,
+ * `user@host:repo`). A local path or `file://` remote is null: it names
+ * folders on this machine, not a remote another machine can reach.
+ */
+export function cleanRemoteUrl(url: string): string | null {
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(url)
+  if (scheme) {
+    if (scheme[1].toLowerCase() === 'file') return null
+    return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/i, '$1')
+  }
+  const scp = /^(?:[^/@:\s]+@)?([^/:\s]+):(?!\/\/)(.+)$/.exec(url)
+  return scp ? `${scp[1]}:${scp[2]}` : null
 }
 
 /** The fetch URLs in `git remote -v` output, deduplicated, in order. */

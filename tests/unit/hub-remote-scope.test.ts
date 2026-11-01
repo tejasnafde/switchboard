@@ -23,8 +23,13 @@ const { AppChannels, HubRemoteChannels, ProjectCloneChannels, ProviderChannels, 
 const { PullRequestWriteChannels, TerminalChannels } = await import('../../src/shared/ipc-channels')
 const { hubRemoteChildrenEnabled, HUB_REMOTE_CHILDREN_LABS_SETTING, HUB_CHILDREN_LABS_SETTING } =
   await import('../../src/shared/hub')
-const { buildHubMachineDescription, isHubAuthGrant, parseGitRemoteFetchUrls, HUB_DESCRIBE_MAX_PROJECTS } =
-  await import('../../src/shared/hub-remote')
+const {
+  buildHubMachineDescription,
+  cleanRemoteUrl,
+  isHubAuthGrant,
+  parseGitRemoteFetchUrls,
+  HUB_DESCRIBE_MAX_PROJECTS,
+} = await import('../../src/shared/hub-remote')
 
 import type { DeviceScope } from '../../src/shared/device-auth'
 import type { DeviceAuthPort } from '../../src/main/backend/ws-host'
@@ -146,10 +151,11 @@ describe('buildHubMachineDescription', () => {
       { id: 'codex-default', agentType: 'codex' as const, displayName: 'Codex', enabled: false },
       { id: 'gemini-default', agentType: 'gemini' as const, displayName: 'Gemini', enabled: true },
     ],
+    homeDir: '/home/u',
     projects: [],
     freeDiskBytes: 5_000,
     openChildren: 2,
-    runningSlotKeys: ['claude-work', 'claude-code', 'claude-work'],
+    runningSlotKeys: ['claude-work', 'claude-code-default', 'claude-work'],
     runningPerInstance: 3,
   }
 
@@ -199,10 +205,29 @@ describe('buildHubMachineDescription', () => {
     const d = buildHubMachineDescription({ ...base, availableAgents: [], projects })
     expect(d.projects).toHaveLength(HUB_DESCRIBE_MAX_PROJECTS)
     expect(d.projects[0]).toEqual({
-      path: '/home/u/p0',
+      path: '~/p0',
       branch: null,
-      remoteUrls: ['https://example.com/a.git', 'HTTPS://example.com/b.git', 'git@example.com:a.git'],
+      remoteUrls: ['https://example.com/a.git', 'HTTPS://example.com/b.git', 'example.com:a.git'],
     })
+  })
+
+  it('sends paths from home and leaves out another user home', () => {
+    const projects = ['/home/u', '/home/u/a/b', '/home/other/x', '/Users/someone/y', '/srv/app', '/home/uu/z'].map(
+      (path) => ({ path, branch: 'main', remoteUrls: [] }),
+    )
+    const d = buildHubMachineDescription({ ...base, availableAgents: [], projects })
+    expect(d.projects.map((p) => p.path)).toEqual(['~', '~/a/b', '/srv/app'])
+  })
+
+  it('strips the user part from every remote form and drops local remotes', () => {
+    expect(cleanRemoteUrl('ssh://tejas@vm.internal/r.git')).toBe('ssh://vm.internal/r.git')
+    expect(cleanRemoteUrl('ssh://git@github.com:22/o/r.git')).toBe('ssh://github.com:22/o/r.git')
+    expect(cleanRemoteUrl('tejas@vm.internal:r.git')).toBe('vm.internal:r.git')
+    expect(cleanRemoteUrl('github.com:o/r.git')).toBe('github.com:o/r.git')
+    expect(cleanRemoteUrl('https://github.com/o/r.git')).toBe('https://github.com/o/r.git')
+    expect(cleanRemoteUrl('file:///home/u/r.git')).toBeNull()
+    expect(cleanRemoteUrl('/home/u/r.git')).toBeNull()
+    expect(cleanRemoteUrl('../r.git')).toBeNull()
   })
 
   it('reads fetch URLs from git remote -v', () => {
