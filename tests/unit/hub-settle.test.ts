@@ -13,6 +13,7 @@ import { hubSettleDetail, hubSettleResult, settleBlockers, settleWorktree } from
 import {
   addProject,
   armLimitResume,
+  claimHubParentStub,
   createConversation,
   getHubChild,
   insertHubChild,
@@ -251,6 +252,7 @@ describe('HubSettler for a hub on another machine', () => {
   it("removes a clean merged child's worktree as this machine's own action", async () => {
     const dir = repo()
     const parentHead = mergedChild(dir)
+    claimHubParentStub('parent', 'hub-desktop')
     const removed = fakeService()
     const result = await hubCaller(() =>
       new HubSettler(fakeHost().host).run('parent', '', 'auto', new Set(['c1']), { parentHead }),
@@ -258,6 +260,20 @@ describe('HubSettler for a hub on another machine', () => {
     expect(result.ok && result.rows[0]).toMatchObject({ merged: true, clean: true, worktree: 'remove' })
     expect(removed).toEqual(['b1-0@3'])
     expect(JSON.parse(getHubChild('c1')!.settleJson!)).toEqual({ worktree: 'remove', keepReason: null })
+  })
+
+  it("keeps the caller's scopes when the parent is on this machine", async () => {
+    const dir = repo()
+    const parentHead = mergedChild(dir)
+    const removed = fakeService()
+    const result = await hubCaller(() =>
+      new HubSettler(fakeHost().host).run('parent', '', 'auto', new Set(['c1']), { parentHead }),
+    )
+    expect(removed).toEqual([])
+    expect(result.ok && result.rows[0]).toMatchObject({
+      worktree: 'keep',
+      keepReason: 'Remote worktree removal requires the terminal device scope.',
+    })
   })
 
   it('still refuses a removal the hub asks for directly', async () => {
@@ -277,6 +293,7 @@ describe('HubSettler for a hub on another machine', () => {
   it('keeps a worktree whose creation was made for another chat, and records why', async () => {
     const dir = repo()
     const parentHead = mergedChild(dir)
+    claimHubParentStub('parent', 'hub-desktop')
     const removed = fakeService(() => ({ kind: 'conversation', conversationId: 'other-chat' }))
     const result = await hubCaller(() =>
       new HubSettler(fakeHost().host).run('parent', '', 'auto', new Set(['c1']), { parentHead }),

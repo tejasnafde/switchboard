@@ -42,6 +42,7 @@ import { asThisMachine } from '../backend/request-context'
 import {
   archiveConversation,
   getConversationById,
+  getHubParent,
   getLimitResume,
   listHubChildren,
   otherWorktreeUsers,
@@ -310,10 +311,11 @@ export class HubSettler {
   }
 
   /**
-   * Null when the worktree is gone; else why it stays. The removal is this
-   * machine's own (`asThisMachine`), also when a hub on another machine asked
-   * for the settle: the creation is the one this machine's hub made for this
-   * child row, and the settle rules chose it.
+   * Null when the worktree is gone; else why it stays. For a child of a parent
+   * stub the removal is this machine's own (`asThisMachine`): the hub on the
+   * other machine asked for the settle, the creation is the one this machine's
+   * hub made for this child row, and the settle rules chose it. A local settle
+   * keeps the caller's scopes.
    */
   private async removeWorktree(child: HubChildRow): Promise<string | null> {
     const service = hubWorktrees()
@@ -327,9 +329,9 @@ export class HubSettler {
       if (snapshot.owner.kind !== 'conversation' || snapshot.owner.conversationId !== child.childId)
         return 'the worktree was not made for this child'
       if (worktree) await removeDependencyLinks(worktree)
-      const done = await asThisMachine(() =>
-        service.actOnWorktreeCreation({ ...key, expectedRevision: snapshot.revision, action: 'remove' }),
-      )
+      const remove = () =>
+        service.actOnWorktreeCreation({ ...key, expectedRevision: snapshot.revision, action: 'remove' })
+      const done = await (getHubParent(child.parentId)?.remoteHub ? asThisMachine(remove) : remove())
       if (done.cleanupDisposition === 'removed') return null
       return done.error?.message ?? 'git refused to remove it'
     } catch (err) {
