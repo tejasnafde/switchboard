@@ -103,6 +103,7 @@ export function buildListMachinesTool(ctx: ListMachinesToolContext): McpTool {
         description: local,
         ageMs: null,
         problem: local ? null : 'could not read this desktop',
+        canStart: false,
       }
       return toolText(formatHubMachineList([self, ...remote], callerRemotes))
     },
@@ -122,7 +123,7 @@ async function gitRemoteUrls(cwd: string): Promise<string[]> {
 export interface HubMcpToolContext {
   /** The calling chat as it is now (mode, folder, agent). */
   parent(): HubParentContext
-  starter: Pick<HubStarter, 'propose' | 'waitingForSlot' | 'lastTurnOf' | 'diskUseOf'>
+  starter: Pick<HubStarter, 'propose' | 'waitingForSlot' | 'lastTurnOf' | 'diskUseOf' | 'remoteChildFacts'>
   /** `list_machines` is offered too: `start_children` documents `machine`. */
   machines?: boolean
   resources(threadId: string): ChatResources | undefined
@@ -163,12 +164,7 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         'report. In ask and plan modes the user approves the batch on a card first; in other modes the children start',
         'at once. A child never gets more access than this chat. The tool returns at once; use list_children to follow',
         'them. You merge their branches yourself with git.',
-        ...(ctx.machines
-          ? [
-              'machine names another machine from list_machines. In this version an approved child on another machine',
-              'fails at start.',
-            ]
-          : []),
+        ...(ctx.machines ? ['machine names another machine from list_machines.'] : []),
       ].join('\n'),
       inputSchema: {
         type: 'object',
@@ -214,7 +210,7 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
                         description:
                           'A machine id from list_machines. Default: local, this machine. A child on another ' +
                           'machine works in a worktree there, off a commit a remote branch holds; the user ' +
-                          'approves such a batch on a card in every mode. In this version such a child fails at start.',
+                          'approves such a batch on a card in every mode.',
                       },
                     }
                   : {}),
@@ -252,7 +248,8 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         "List this chat's child chats: phase, agent, account, branch, ahead and behind, uncommitted changes, " +
         'diffstat, tokens and cost of the last turn, memory and CPU of its agent, disk use, its own subagents ' +
         '(running, done, failed), its last update, and conflicts: the files its branch conflicts on with this ' +
-        "chat's HEAD and with each other child (null when git is older than 2.38). While a child is limited, " +
+        "chat's HEAD and with each other child (null when git is older than 2.38). A child on another machine " +
+        'names its machine. While a child is limited, ' +
         'accounts lists where move_child can move it.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { title: 'List child chats', readOnlyHint: true, openWorldHint: false },
@@ -280,11 +277,14 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
             const turn = ctx.starter.lastTurnOf(c.childId)
             const disk = ctx.starter.diskUseOf(c.childId)
             const wake = lastWake.get(c.childId)
+            // A child on another machine has no conversation here: its plan names the agent and machine.
+            const remote = ctx.starter.remoteChildFacts(c)
             return {
               childId: c.childId,
               title: c.title,
               phase: ctx.starter.waitingForSlot(c.childId) ? 'waiting for a run slot' : c.phase,
-              agent: getConversationById(c.childId)?.agent_type ?? null,
+              agent: getConversationById(c.childId)?.agent_type ?? remote?.agent ?? null,
+              ...(remote ? { machine: remote.machine } : {}),
               account: c.providerInstanceId,
               model: c.requestedModel,
               mode: c.grantedMode,

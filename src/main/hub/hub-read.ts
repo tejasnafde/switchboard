@@ -12,6 +12,7 @@
  * bytes of the reply, outcome).
  */
 import { existsSync } from 'node:fs'
+import { HUB_REMOTE_READ_LATER_TEXT } from '@shared/hub-remote'
 import { isSubagentToolName } from '@shared/subagent-steps'
 import type { ChatMessage, ToolCall } from '@shared/types'
 import { getHubChild, lastHubWakeOf, resolveRootThreadId } from '../db/database'
@@ -133,6 +134,11 @@ export async function readChild(ctx: ReadChildContext, raw: Record<string, unkno
   if (!child || child.parentId !== resolveRootThreadId(ctx.parentId)) {
     span.end({ outcome: 'not_own' })
     return toolText(`${args.childId} is not a child of this chat. list_children shows your children.`, true)
+  }
+  // Its history is on that machine; nothing here holds it.
+  if (child.machineId) {
+    span.end({ outcome: 'remote' })
+    return toolText(HUB_REMOTE_READ_LATER_TEXT, true)
   }
   let all: ChatMessage[]
   try {

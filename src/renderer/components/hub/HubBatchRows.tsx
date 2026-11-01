@@ -17,7 +17,7 @@ function rowWho(r: HubBatchRowView): string {
 
 function rowPlace(r: HubBatchRowView): string {
   if (r.location === 'project') return 'project folder'
-  return r.machine ? `worktree off ${r.baseRef}` : `worktree off ${r.baseRef} · deps: ${r.deps}`
+  return `worktree off ${r.baseRef} · deps: ${r.deps}`
 }
 
 /** The body of a `start_children` card: one row per child, the disk it needs per machine, and the main checkout warning. */

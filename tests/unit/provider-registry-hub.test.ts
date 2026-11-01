@@ -343,7 +343,7 @@ describe('the hub view', () => {
 })
 
 describe('list_machines exposure', () => {
-  const hubClients = { entries: async () => [] } as unknown as RemoteHubClients
+  const hubClients = { entries: async () => [], setMachineListener() {} } as unknown as RemoteHubClients
 
   async function toolsOf(threadId: string, clients: RemoteHubClients | null = hubClients) {
     const { host, mcp } = setup(clients)

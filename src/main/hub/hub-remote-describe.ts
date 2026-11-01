@@ -3,6 +3,9 @@
  * Reads the facts and hands them to the pure `buildHubMachineDescription`.
  * It answers with `hub_remote_children` off too (`flagOn: false`), so the
  * desktop can say why the machine takes no children.
+ *
+ * `hub-remote:start-child` is registered here too and runs
+ * `HubStarter.startRemote` (`hub-start.ts`).
  */
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -17,6 +20,7 @@ import {
   parseGitRemoteFetchUrls,
   type HubMachineDescription,
   type HubMachineProject,
+  type HubRemoteStartAnswer,
 } from '@shared/hub-remote'
 import { hubRemoteChildrenEnabled, readHubSettings } from '@shared/hub'
 import { AGENT_PROVIDERS, type AgentProvider } from '@shared/types'
@@ -38,6 +42,8 @@ export interface HubDescribeDeps {
   /** Whether the agent's program runs on this backend. */
   agentAvailable: (agent: AgentProvider) => Promise<boolean>
   runningSlotKeys: () => readonly string[]
+  /** `hub-remote:start-child`: starts a child for a hub on another machine. */
+  startChild: (request: unknown) => Promise<HubRemoteStartAnswer>
 }
 
 export function registerHubRemoteHandlers(host: BackendHost, deps: HubDescribeDeps): void {
@@ -49,6 +55,7 @@ export function registerHubRemoteHandlers(host: BackendHost, deps: HubDescribeDe
     })
     return inFlight
   })
+  host.handle(HubRemoteChannels.START_CHILD, (request: unknown) => deps.startChild(request))
 }
 
 export async function describeThisMachine(deps: HubDescribeDeps): Promise<HubMachineDescription> {
