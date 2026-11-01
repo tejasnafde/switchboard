@@ -56,6 +56,14 @@ describe('headless backend credentials', () => {
     expect(answers).toEqual([])
   })
 
+  it('keeps the pairing token at phone scopes when the desktop token equals it', async () => {
+    const { port, answers } = await boot({ pairingToken: 'same-token', desktopToken: 'same-token' })
+    const phone = await connect(`ws://127.0.0.1:${port}/?token=same-token`)
+    await expect(answer(phone)).rejects.toThrow(`not permitted: ${AgentSecretChannels.ANSWER}`)
+    await expect(phone.invoke(TerminalChannels.CREATE, {})).rejects.toThrow('not permitted')
+    expect(answers).toEqual([])
+  })
+
   it('keeps the chat surface open to the pairing token', async () => {
     const { port } = await boot({ pairingToken: 'phone-token', desktopToken: 'desktop-token' })
     const phone = await connect(`ws://127.0.0.1:${port}/?token=phone-token`)

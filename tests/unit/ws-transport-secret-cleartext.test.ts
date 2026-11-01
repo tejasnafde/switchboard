@@ -59,7 +59,7 @@ describe('secret answers over cleartext WebSocket', () => {
 
   it('still sends a decline to a remote ws:// backend', () => {
     const { transport, sent } = openTransport('ws://vm-host:8765')
-    void transport.invoke(AgentSecretChannels.ANSWER, 'thread-1', 'card-1', { decline: true })
+    transport.invoke(AgentSecretChannels.ANSWER, 'thread-1', 'card-1', { decline: true }).catch(() => {})
     expect(sent.some((f) => f.includes(AgentSecretChannels.ANSWER))).toBe(true)
     transport.close()
   })
@@ -72,7 +72,7 @@ describe('secret answers over cleartext WebSocket', () => {
     'wss://vm-host:8765/?fp=00',
   ])('sends a saved value over %s', (url) => {
     const { transport, sent } = openTransport(url)
-    void save(transport)
+    save(transport).catch(() => {})
     expect(sent.some((f) => f.includes(CANARY))).toBe(true)
     transport.close()
   })

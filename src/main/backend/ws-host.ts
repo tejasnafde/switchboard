@@ -187,7 +187,7 @@ export class WsHost implements BackendHost {
         // that now instead of discovering every request is refused. The flag
         // carries no secret.
         const framed = url?.searchParams.get('auth') === 'frame'
-        if (fullScopeToken && tokenMatches(fullScopeToken, presented)) {
+        if (fullScopeToken && fullScopeToken !== token && tokenMatches(fullScopeToken, presented)) {
           legacyScopes = FULL_SCOPES
           matchedToken = fullScopeToken
         } else if (token && tokenMatches(token, presented)) {
