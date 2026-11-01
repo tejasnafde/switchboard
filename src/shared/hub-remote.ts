@@ -170,3 +170,152 @@ export function parseGitRemoteFetchUrls(out: string): string[] {
   }
   return urls
 }
+
+/** The capability a backend advertises when it answers `hub-remote:*`. */
+export const HUB_REMOTE_CAPABILITY = 'hub_remote_child_v1'
+
+/** The desktop's own entry in `list_machines`. */
+export const LOCAL_MACHINE_ID = 'local'
+
+export type HubMachineTransport = 'local' | 'ssh' | 'gcloud-iap'
+export type HubMachineStatus = 'connected' | 'connecting' | 'offline' | 'error'
+
+/**
+ * One machine for `list_machines`. It holds the id and the name the user gave
+ * the machine, never its host name, ssh alias, cloud project, zone or user.
+ */
+export interface HubMachineEntry {
+  id: string
+  name: string
+  transport: HubMachineTransport
+  status: HubMachineStatus
+  /** The newest description; null before the first answer. */
+  description: HubMachineDescription | null
+  /** How old the description is; null for the desktop, which is read now. */
+  ageMs: number | null
+  /** Why the hub client does not use this machine, for example an older backend. */
+  problem: string | null
+}
+
+/**
+ * A description from another machine, or null when its shape is wrong. The
+ * answer comes over the wire, so nothing in it is trusted.
+ */
+export function parseHubMachineDescription(value: unknown): HubMachineDescription | null {
+  if (!value || typeof value !== 'object') return null
+  const d = value as Record<string, unknown>
+  const isArray = (x: unknown): x is unknown[] => Array.isArray(x)
+  if (d.v !== 1 || typeof d.flagOn !== 'boolean' || typeof d.os !== 'string' || typeof d.arch !== 'string') return null
+  if (typeof d.backendVersion !== 'string' || typeof d.openChildren !== 'number' || d.openChildren < 0) return null
+  if (d.freeDiskBytes !== null && (typeof d.freeDiskBytes !== 'number' || d.freeDiskBytes < 0)) return null
+  if (!isArray(d.agents) || !isArray(d.projects) || !isArray(d.runSlots)) return null
+  const agentsOk = d.agents.every((a) => {
+    const x = a as HubMachineAgent | null
+    return (
+      !!x &&
+      typeof x.agent === 'string' &&
+      isArray(x.models) &&
+      x.models.every((m) => typeof m === 'string') &&
+      isArray(x.accounts) &&
+      x.accounts.every((c) => !!c && typeof c.instanceId === 'string' && typeof c.name === 'string')
+    )
+  })
+  const projectsOk = d.projects.every((p) => {
+    const x = p as HubMachineProject | null
+    return (
+      !!x &&
+      typeof x.path === 'string' &&
+      (x.branch === null || typeof x.branch === 'string') &&
+      isArray(x.remoteUrls) &&
+      x.remoteUrls.every((u) => typeof u === 'string')
+    )
+  })
+  const slotsOk = d.runSlots.every((s) => {
+    const x = s as HubMachineRunSlots | null
+    return !!x && typeof x.instanceId === 'string' && typeof x.running === 'number' && typeof x.limit === 'number'
+  })
+  return agentsOk && projectsOk && slotsOk ? (value as HubMachineDescription) : null
+}
+
+/**
+ * One key for every form of a git remote, so `https://host/o/r.git`,
+ * `ssh://git@host:22/o/r` and `git@host:o/r.git` match: host and path, lower
+ * case, without user, port, query or a trailing `.git`. Null for a local path.
+ */
+export function remoteUrlKey(url: string): string | null {
+  const clean = cleanRemoteUrl(url.trim())
+  if (clean === null) return null
+  const scheme = /^[a-z][a-z0-9+.-]*:\/\/([^/]+)(\/.*)?$/i.exec(clean)
+  const [host, path] = scheme
+    ? [scheme[1].replace(/:\d*$/, ''), scheme[2] ?? '']
+    : [clean.slice(0, clean.indexOf(':')), clean.slice(clean.indexOf(':') + 1)]
+  const repo = path
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    .replace(/\.git$/i, '')
+  if (!host || !repo) return null
+  return `${host}/${repo}`.toLowerCase()
+}
+
+/**
+ * The text `list_machines` answers: one block per machine, in the given order
+ * (the desktop first). Only what the entries hold is written, so a host name
+ * or a cloud project never reaches the agent.
+ */
+export function formatHubMachineList(entries: readonly HubMachineEntry[], callerRemoteUrls: readonly string[]): string {
+  const keys = new Set(callerRemoteUrls.map(remoteUrlKey).filter((k): k is string => k !== null))
+  const blocks = entries.map((e) => machineBlock(e, keys))
+  return [`${entries.length} machine${entries.length === 1 ? '' : 's'}. Name a machine by its id.`, ...blocks].join(
+    '\n\n',
+  )
+}
+
+/** Text from a machine on one line, so a line break cannot start a fake block. */
+function oneLine(text: string): string {
+  return text.replace(/\p{Cc}/gu, ' ')
+}
+
+function machineBlock(e: HubMachineEntry, callerKeys: ReadonlySet<string>): string {
+  const age = e.ageMs === null ? '' : e.description ? `, described ${formatAge(e.ageMs)} ago` : ', not described yet'
+  const lines = [`${e.id}: ${oneLine(e.name)}`, `  transport ${e.transport}, ${e.status}${age}`]
+  if (e.problem) lines.push(`  ${e.problem}`)
+  const d = e.description
+  if (!d) return lines.join('\n')
+  if (!d.flagOn) lines.push('  does not take children: hub_remote_children is off there')
+  lines.push(`  os ${oneLine(d.os)} ${oneLine(d.arch)}`)
+  if (d.agents.length === 0) lines.push('  agents: none with a login')
+  else {
+    lines.push('  agents:')
+    for (const a of d.agents) {
+      const accounts = a.accounts.map((c) => `${oneLine(c.instanceId)} (${oneLine(c.name)})`).join(', ')
+      lines.push(`    ${oneLine(a.agent)}: accounts ${accounts}; models ${oneLine(a.models.join(', ')) || 'none'}`)
+    }
+  }
+  lines.push(`  projects with this chat's remote: ${matchingProjects(d.projects, callerKeys)}`)
+  const disk = d.freeDiskBytes === null ? 'unknown' : formatGb(d.freeDiskBytes)
+  lines.push(`  free disk ${disk}, open children ${d.openChildren}`)
+  if (d.runSlots.length > 0) {
+    const slots = d.runSlots.map((s) => `${oneLine(s.instanceId)} ${Math.max(0, s.limit - s.running)} of ${s.limit}`)
+    lines.push(`  free run slots: ${slots.join(', ')}`)
+  }
+  return lines.join('\n')
+}
+
+function matchingProjects(projects: readonly HubMachineProject[], callerKeys: ReadonlySet<string>): string {
+  if (callerKeys.size === 0) return "none (this chat's project has no git remote)"
+  const hits = projects.filter((p) => p.remoteUrls.some((u) => callerKeys.has(remoteUrlKey(u) ?? '')))
+  if (hits.length === 0) return 'none'
+  return hits.map((p) => `${oneLine(p.path)} (${p.branch === null ? 'no branch' : oneLine(p.branch)})`).join(', ')
+}
+
+function formatAge(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  if (s < 60) return `${s} s`
+  if (s < 3600) return `${Math.round(s / 60)} min`
+  if (s < 48 * 3600) return `${Math.round(s / 3600)} h`
+  return `${Math.round(s / 86400)} days`
+}
+
+function formatGb(bytes: number): string {
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`
+}
