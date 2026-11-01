@@ -123,7 +123,7 @@ async function gitRemoteUrls(cwd: string): Promise<string[]> {
 export interface HubMcpToolContext {
   /** The calling chat as it is now (mode, folder, agent). */
   parent(): HubParentContext
-  starter: Pick<HubStarter, 'propose' | 'waitingForSlot' | 'lastTurnOf' | 'diskUseOf'>
+  starter: Pick<HubStarter, 'propose' | 'waitingForSlot' | 'lastTurnOf' | 'diskUseOf' | 'remoteChildFacts'>
   /** `list_machines` is offered too: `start_children` documents `machine`. */
   machines?: boolean
   resources(threadId: string): ChatResources | undefined
@@ -248,7 +248,8 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         "List this chat's child chats: phase, agent, account, branch, ahead and behind, uncommitted changes, " +
         'diffstat, tokens and cost of the last turn, memory and CPU of its agent, disk use, its own subagents ' +
         '(running, done, failed), its last update, and conflicts: the files its branch conflicts on with this ' +
-        "chat's HEAD and with each other child (null when git is older than 2.38). While a child is limited, " +
+        "chat's HEAD and with each other child (null when git is older than 2.38). A child on another machine " +
+        'names its machine. While a child is limited, ' +
         'accounts lists where move_child can move it.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { title: 'List child chats', readOnlyHint: true, openWorldHint: false },
@@ -276,11 +277,14 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
             const turn = ctx.starter.lastTurnOf(c.childId)
             const disk = ctx.starter.diskUseOf(c.childId)
             const wake = lastWake.get(c.childId)
+            // A child on another machine has no conversation here: its plan names the agent and machine.
+            const remote = ctx.starter.remoteChildFacts(c)
             return {
               childId: c.childId,
               title: c.title,
               phase: ctx.starter.waitingForSlot(c.childId) ? 'waiting for a run slot' : c.phase,
-              agent: getConversationById(c.childId)?.agent_type ?? null,
+              agent: getConversationById(c.childId)?.agent_type ?? remote?.agent ?? null,
+              ...(remote ? { machine: remote.machine } : {}),
               account: c.providerInstanceId,
               model: c.requestedModel,
               mode: c.grantedMode,

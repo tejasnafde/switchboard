@@ -7,6 +7,7 @@
  */
 import type { DeviceScope } from './device-auth'
 import {
+  HUB_BRANCH_RE,
   HUB_DEPS_MODES,
   type HubBatchMachine,
   type HubChildLocation,
@@ -343,6 +344,8 @@ function formatGb(bytes: number): string {
 export const HUB_REMOTE_OFF_TEXT = 'Starting children on other machines is off.'
 export const HUB_REMOTE_VM_PARENT_TEXT = 'A chat on a remote machine starts children on its own machine only.'
 export const HUB_REMOTE_STOP_LATER_TEXT = 'Stop on another machine comes in a later version.'
+export const HUB_REMOTE_READ_LATER_TEXT = 'Reading a child on another machine comes in a later version.'
+export const HUB_REMOTE_SETTLE_LATER_TEXT = 'Settling children on other machines comes in a later version'
 
 /** A description older than this is not trusted at propose; `list_machines` reads one every 60 s. */
 export const HUB_FRESH_DESCRIPTION_MS = 90_000
@@ -497,8 +500,10 @@ export interface HubRemoteStartRequest {
   remoteProjectPath: string
   /** No checkout there: clone `repoUrl` into `remoteProjectPath` first. */
   clonePlanned: boolean
-  /** The desktop's `hub.childDependencies`. */
+  /** The dependency setting the approved plan recorded (the desktop's `hub.childDependencies` then). */
   deps: HubDepsMode
+  /** The task's explicit branch seed (`HUB_BRANCH_RE`); absent or null: the title. */
+  branch?: string | null
 }
 
 /** Why a child machine refused, when the desktop words it with the machine's name. */
@@ -544,6 +549,9 @@ export function parseHubRemoteStartRequest(
     return bad('remoteProjectPath')
   if (typeof r.clonePlanned !== 'boolean') return bad('clonePlanned')
   if (typeof r.deps !== 'string' || !(HUB_DEPS_MODES as readonly string[]).includes(r.deps)) return bad('deps')
+  // Absent from a desktop that predates it.
+  if (r.branch !== undefined && r.branch !== null && (typeof r.branch !== 'string' || !HUB_BRANCH_RE.test(r.branch)))
+    return bad('branch')
   return {
     ok: true,
     request: {
@@ -563,6 +571,7 @@ export function parseHubRemoteStartRequest(
       remoteProjectPath: r.remoteProjectPath as string,
       clonePlanned: r.clonePlanned,
       deps: r.deps as HubDepsMode,
+      branch: typeof r.branch === 'string' ? r.branch : null,
     },
   }
 }
@@ -596,18 +605,24 @@ export function hubRemoteStartFailureText(name: string, answer: Extract<HubRemot
   return `On ${name}: ${answer.error.replace(/\p{Cc}/gu, ' ')}`
 }
 
-/** The text for a start call that never got an answer: an older backend has no such channel. */
-export function hubRemoteCallFailureText(name: string, message: string): string {
-  if (/^no handler: /.test(message)) return `update the backend on ${name}.`
-  return message.endsWith('.') ? message : `${message}.`
+/** A call that a backend refused for want of the channel: an older backend. Any other call error has no answer. */
+export function isNoHandlerError(message: string): boolean {
+  return /^no handler: /.test(message)
 }
 
-/** A branch name as `git check-ref-format --branch` would take it, without shell or option tricks. */
-function isBranchName(name: string): boolean {
+/**
+ * A branch name as `git check-ref-format --branch` would take it, without
+ * shell or option tricks: no component starts with "." or ends with ".lock",
+ * no "..", "@{", "//", control character, space or any of ~^:?*[\, and the
+ * name is not "@" or "HEAD", does not start with "-" or "/" and does not end
+ * with "/" or ".".
+ */
+export function isBranchName(name: string): boolean {
   if (!name || name.length > 255 || name.startsWith('-') || name.startsWith('/') || name.endsWith('/')) return false
+  if (name === '@' || name === 'HEAD') return false
   if (/[\x00-\x20~^:?*[\\\x7f]/.test(name) || name.includes('..') || name.includes('@{') || name.includes('//'))
     return false
-  return !name.endsWith('.lock') && !name.endsWith('.') && !name.split('/').some((p) => p.startsWith('.'))
+  return !name.endsWith('.') && !name.split('/').some((p) => p.startsWith('.') || p.endsWith('.lock'))
 }
 
 /**

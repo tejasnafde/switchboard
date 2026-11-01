@@ -116,6 +116,9 @@ export const HUB_SETTINGS = {
 export const HUB_REMOTE_MAX_MODE_SETTING = 'hub.remoteMaxMode'
 export const HUB_REMOTE_MAX_MODE_DEFAULT: RuntimeMode = 'auto'
 
+/** A task's explicit branch seed: the same rule on the desktop and on a child machine. */
+export const HUB_BRANCH_RE = /^[A-Za-z0-9._/-]{1,80}$/
+
 export const HUB_CHILD_DEPENDENCIES_SETTING = 'hub.childDependencies'
 export const HUB_DEPS_MODES: readonly HubDepsMode[] = ['link', 'clone', 'install', 'none']
 /** Fixed in v1, not a setting row. */
@@ -548,7 +551,7 @@ export function parseHubTasks(raw: unknown): { ok: true; tasks: HubTask[] } | { 
     if (mode !== undefined && !(RUNTIME_MODES as readonly string[]).includes(mode))
       return { ok: false, message: `${n}: mode is one of ${RUNTIME_MODES.join(', ')}.` }
     const branch = str(t.branch)
-    if (branch !== undefined && !/^[A-Za-z0-9._/-]{1,80}$/.test(branch))
+    if (branch !== undefined && !HUB_BRANCH_RE.test(branch))
       return { ok: false, message: `${n}: branch may hold letters, digits, ".", "_", "-" and "/" only.` }
     if (t.machine !== undefined && (typeof t.machine !== 'string' || t.machine.trim().length > MACHINE_ID_MAX))
       return {
@@ -592,7 +595,7 @@ export interface HubBatchRowView {
   mode: RuntimeMode
   location: HubChildLocation
   baseRef: string
-  /** For a child on another machine its machine plans the dependencies. */
+  /** For a child on another machine: the dependency setting its machine plans with. */
   deps: HubDepsMode
   /** Null (or absent, on a card stored before) for the parent's own machine. */
   machine: HubBatchMachine | null
@@ -640,7 +643,7 @@ export function hubDiskProblem(d: { freeBytes: number; needBytes: number; minFre
 export function hubBatchRowPlace(r: HubBatchRowView): string {
   if (r.location === 'project') return 'in the project folder'
   if (!r.machine) return `worktree off ${r.baseRef}, deps: ${r.deps}`
-  const where = `worktree off ${r.baseRef} on ${hubMachineLabel(r.machine)}`
+  const where = `worktree off ${r.baseRef} on ${hubMachineLabel(r.machine)}, deps: ${r.deps}`
   return r.clone && r.remoteProjectPath ? `${where}, clones into ${r.remoteProjectPath} on ${r.machine.name}` : where
 }
 

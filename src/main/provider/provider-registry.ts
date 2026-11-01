@@ -173,7 +173,7 @@ import {
   SETTLE_CHILDREN_TOOL,
   START_CHILDREN_TOOL,
 } from '../mcp/hub-tools'
-import { HubSettler, isHubSettlePlan, type HubSettleHost } from '../hub/hub-settle'
+import { HubSettler, isHubSettlePlan, remoteSettleRefusal, type HubSettleHost } from '../hub/hub-settle'
 import { buildVisualPreviewTool, VisualPreviewTurnCounter, visualPreviewRenderer } from '../mcp/visual-preview-tool'
 import { agentVisualPreviewEnabled, VISUAL_PREVIEW_INSTRUCTIONS } from '@shared/visual-preview'
 import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } from '../hub/hub-start'
@@ -717,6 +717,7 @@ export class ProviderRegistry implements PeerToolHost {
         if (!this.remoteHubClients) return Promise.reject(new Error('This backend has no hub client.'))
         return this.remoteHubClients.invoke(machineId, HubRemoteChannels.START_CHILD, request)
       },
+      remoteMachineState: (machineId: string) => this.remoteHubClients?.machineState(machineId) ?? 'offline',
     }
   }
 
@@ -787,6 +788,9 @@ export class ProviderRegistry implements PeerToolHost {
       } finally {
         this.settleCardsOpening.delete(root)
       }
+      // Only children on other machines: a card with no rows would settle nothing.
+      const remote = view.rows.length === 0 ? remoteSettleRefusal(root) : null
+      if (remote) return { status: 'refused', text: remote }
       const opened = this.agentApprovals.open({
         threadId: live ?? root,
         chatId: root,
@@ -3061,6 +3065,12 @@ export class ProviderRegistry implements PeerToolHost {
   /** The desktop main process hands over its hub client to other machines (`ipc/machines.ts`). */
   setRemoteHubClients(clients: RemoteHubClients): void {
     this.remoteHubClients = clients
+    // Remote starts left `starting` (a quit, a timeout) are asked again on each connect, failed on removal.
+    clients.setMachineListener((machineId, change) => {
+      if (change === 'removed') this.hubStarter.remoteMachineRemoved(machineId)
+      else if (this.hubRemoteChildrenOn()) void this.hubStarter.reconcileRemote({ machineId })
+    })
+    if (this.hubRemoteChildrenOn()) void this.hubStarter.reconcileRemote()
   }
 
   /** The headless server's build version, for `hub-remote:describe`; the desktop answers its app version. */

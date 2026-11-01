@@ -20,8 +20,10 @@
  * card. On approval the desktop sends each such child to its machine
  * (`hub-remote:start-child`, through `HubStartHost.startRemoteChild`, a few at
  * a time per machine) and records the machine (`hub_children.machine_id`) and
- * the mode used; nothing on this machine runs it. A refusal, a closed client or
- * an older backend fails that child only.
+ * the mode used; nothing on this machine runs it. A refusal or an older
+ * backend fails that child only. A call with no answer leaves it `starting`,
+ * and `reconcileRemote` sends the same request again (at launch, on that
+ * machine's connect, and a few times after a `starting` answer).
  *
  * On the child machine `startRemote` takes that request: it checks the flag,
  * the per-machine cap (`hub.remoteChildrenPerMachine`) and the account, lowers
@@ -69,9 +71,9 @@ import {
   HUB_REMOTE_OFF_TEXT,
   HUB_REMOTE_VM_PARENT_TEXT,
   expandHubPath,
-  hubRemoteCallFailureText,
   hubRemoteStartFailureText,
   hubRepoUrl,
+  isNoHandlerError,
   parseGitRemoteFetchUrls,
   parseHubRemoteStartAnswer,
   parseHubRemoteStartRequest,
@@ -120,6 +122,7 @@ import {
   setConversationRuntimeMode,
   setHubBatchStatus,
   updateHubChild,
+  type HubChildRow,
 } from '../db/database'
 import { resolveProviderInstance } from '../db/provider-instances'
 import type { SessionStartOpts } from '../provider/types'
@@ -183,6 +186,14 @@ interface PlannedChild {
   clonePlanned?: boolean
   /** Another machine: the remote branch that machine fetches `baseSha` from. */
   fetch?: { remoteBranch: string } | null
+  /**
+   * Another machine: the URL (no credentials) of the remote `fetch` names and
+   * the branch there, read in the checkout that picked the branch. Absent in a
+   * plan stored before: the start reads it again in the project folder.
+   */
+  repo?: { url: string; branch: string } | null
+  /** Another machine: the dependency setting the card showed, sent as is. Absent in a plan stored before. */
+  depsSetting?: HubDepsMode
 }
 
 interface StoredPlan {
@@ -248,6 +259,8 @@ export interface HubStartHost {
   machineEntries?(): Promise<HubMachineEntry[]>
   /** Calls `hub-remote:start-child` on another machine; resolves with its raw answer. Absent: no hub client. */
   startRemoteChild?(machineId: string, request: HubRemoteStartRequest): Promise<unknown>
+  /** Whether a saved machine is connected now, or was removed. Absent: every machine counts as connected. */
+  remoteMachineState?(machineId: string): 'connected' | 'offline' | 'gone'
 }
 
 /** Git and disk reads, replaceable in tests. */
@@ -291,6 +304,9 @@ export interface HubStartIo {
 export const HUB_REMOTE_START_WAIT_MS = 12_000
 /** Remote children of one batch started at once on one machine. */
 const REMOTE_STARTS_PER_MACHINE = 2
+/** A remote start with no final answer is asked again this often, this many times; then on the next connect. */
+export const HUB_REMOTE_FOLLOW_UP_MS = 15_000
+const REMOTE_FOLLOW_UPS = 8
 
 /** A clone costs about this share of the folder (copy-on-write metadata). */
 const CLONE_SHARE = 0.05
@@ -312,13 +328,20 @@ export class HubStarter {
   private readonly linked = new Map<string, { worktree: string; parentId: string; state: ChildDepsState }>()
   /** The checkout step of remote starts, per project folder on this machine. */
   private readonly checkouts = new Map<string, Promise<void>>()
+  /** Remote children whose start request is in flight from here. */
+  private readonly remoteCalls = new Set<string>()
+  /** Remote children still `starting` that are asked again: tries so far and the timer. */
+  private readonly followUps = new Map<string, { tries: number; timer: ReturnType<typeof setTimeout> | null }>()
+  private readonly followUpMs: number
 
   constructor(
     private readonly host: HubStartHost,
     private readonly getSetting: SettingReader,
     io: Partial<HubStartIo> = {},
+    opts: { followUpMs?: number } = {},
   ) {
     this.io = { ...defaultIo(), ...io }
+    this.followUpMs = opts.followUpMs ?? HUB_REMOTE_FOLLOW_UP_MS
   }
 
   /**
@@ -611,6 +634,15 @@ export class HubStarter {
     const remoteBranch = pickFetchBranch(await this.io.remoteBranchesContaining(ctx.cwd, baseSha), remote.upstream)
     if (!remoteBranch)
       return { ok: false, message: `Task ${n}: commit ${baseSha.slice(0, 7)} is not on any remote. Push it first.` }
+    // Read in the checkout that picked the branch: a linked worktree can configure its own remotes.
+    const source = await this.io.remoteOfBranch(ctx.cwd, remoteBranch)
+    const url = source ? hubRepoUrl(source.url) : null
+    if (!source || !url)
+      return {
+        ok: false,
+        message: `Task ${n}: the remote of ${remoteBranch} cannot be fetched from ${checked.plan.machine.name}.`,
+      }
+    const depsSetting = readHubSettings(this.getSetting).childDependencies
     return {
       ok: true,
       child: {
@@ -627,12 +659,14 @@ export class HubStarter {
         model: task.model ?? null,
         requestedMode: task.mode ?? null,
         shownMode: grantedMode(task.mode, ctx.mode),
-        deps: 'none',
+        deps: depsSetting,
         depsPlan: [],
         machine: checked.plan.machine,
         remoteProjectPath: checked.plan.remoteProjectPath,
         clonePlanned: checked.plan.clonePlanned,
         fetch: { remoteBranch },
+        repo: { url, branch: source.branch },
+        depsSetting,
       },
     }
   }
@@ -792,7 +826,17 @@ export class HubStarter {
     for (const c of children) byMachine.set(c.machine!.id, [...(byMachine.get(c.machine!.id) ?? []), c])
     let failed = 0
     const one = async (c: PlannedChild) => {
-      if (!(await this.startOnMachine(parentId, plan, c, problems.get(c.childId) ?? null))) failed++
+      try {
+        if (!(await this.startOnMachine(parentId, plan, c, problems.get(c.childId) ?? null))) failed++
+      } catch (err) {
+        // One child's throw must not end its lane: the rest of the queue still starts.
+        failed++
+        try {
+          this.fail(parentId, c, err)
+        } catch (failErr) {
+          log.error(`could not fail the remote start of ${c.childId}`, failErr)
+        }
+      }
     }
     await Promise.all(
       [...byMachine.values()].map(async (queue) => {
@@ -825,51 +869,221 @@ export class HubStarter {
     }
     if (problem) return failWith(problem, 'approval')
     if (!this.host.startRemoteChild) return failWith(`${machine.name} cannot be reached from this backend.`, 'client')
+    const built = await this.remoteRequest(parentId, plan, c)
+    if (!built.ok) return failWith(built.message, built.step)
+    const outcome = await this.sendRemoteStart(parentId, c, built.request)
+    span.end({ outcome })
+    return outcome !== 'failed'
+  }
+
+  /** The start request of a planned remote child, from its stored plan and its desktop row. */
+  private async remoteRequest(
+    parentId: string,
+    plan: StoredPlan,
+    c: PlannedChild,
+  ): Promise<{ ok: true; request: HubRemoteStartRequest } | { ok: false; message: string; step: string }> {
     const row = getHubChild(c.childId)
     if (!row || !c.baseSha || !c.instanceId || !c.fetch || !c.remoteProjectPath)
-      return failWith('its plan is incomplete.', 'plan')
-    const source = await this.io.remoteOfBranch(plan.projectPath, c.fetch.remoteBranch)
+      return { ok: false, message: 'its plan is incomplete.', step: 'plan' }
+    // A plan stored before `repo` reads the remote again in the project folder.
+    const source = c.repo ?? (await this.io.remoteOfBranch(plan.projectPath, c.fetch.remoteBranch))
     const repoUrl = source ? hubRepoUrl(source.url) : null
     if (!source || !repoUrl)
-      return failWith(`the remote of ${c.fetch.remoteBranch} cannot be fetched from ${machine.name}.`, 'remote')
-    const request: HubRemoteStartRequest = {
-      v: 1,
-      desktopInstallId: hubInstallId(),
-      parentId,
-      childId: c.childId,
-      title: c.title,
-      brief: c.brief,
-      agent: c.agent,
-      instanceId: c.instanceId,
-      model: c.model,
-      grantedMode: row.grantedMode,
-      baseSha: c.baseSha,
-      fetch: { remoteBranch: source.branch },
-      repoUrl,
-      remoteProjectPath: c.remoteProjectPath,
-      clonePlanned: c.clonePlanned === true,
-      deps: readHubSettings(this.getSetting).childDependencies,
+      return {
+        ok: false,
+        message: `the remote of ${c.fetch.remoteBranch} cannot be fetched from ${c.machine!.name}.`,
+        step: 'remote',
+      }
+    return {
+      ok: true,
+      request: {
+        v: 1,
+        desktopInstallId: hubInstallId(),
+        parentId,
+        childId: c.childId,
+        title: c.title,
+        brief: c.brief,
+        agent: c.agent,
+        instanceId: c.instanceId,
+        model: c.model,
+        grantedMode: row.grantedMode,
+        baseSha: c.baseSha,
+        fetch: { remoteBranch: source.branch },
+        repoUrl,
+        remoteProjectPath: c.remoteProjectPath,
+        clonePlanned: c.clonePlanned === true,
+        deps: c.depsSetting ?? readHubSettings(this.getSetting).childDependencies,
+        // `branchSeed` is the task's branch when it named one.
+        branch: c.branchSeed !== c.title ? c.branchSeed : null,
+      },
     }
-    let answer: HubRemoteStartAnswer | null
+  }
+
+  /**
+   * Sends the start request and applies its answer while the desktop row is
+   * still `starting`. A call with no answer (a timeout, a closed client)
+   * leaves the row `starting`: that machine may have started the child, and
+   * the request is idempotent, so it is asked again (`followUp`, and on the
+   * machine's next connect). Only an answer, or a backend without the
+   * channel, ends the start.
+   */
+  private async sendRemoteStart(
+    parentId: string,
+    c: PlannedChild,
+    request: HubRemoteStartRequest,
+  ): Promise<'open' | 'starting' | 'failed' | 'unknown' | 'superseded'> {
+    const machine = c.machine!
+    this.remoteCalls.add(c.childId)
+    let raw: unknown
     try {
-      answer = parseHubRemoteStartAnswer(await this.host.startRemoteChild(machine.id, request))
+      raw = await this.host.startRemoteChild!(machine.id, request)
     } catch (err) {
-      return failWith(hubRemoteCallFailureText(machine.name, err instanceof Error ? err.message : String(err)), 'call')
+      const message = err instanceof Error ? err.message : String(err)
+      if (isNoHandlerError(message)) return this.failRemote(parentId, c, `update the backend on ${machine.name}.`)
+      log.info('no answer to a remote start; it stays starting', { childId: c.childId, machineId: machine.id, message })
+      this.followUp(c.childId)
+      return 'unknown'
+    } finally {
+      this.remoteCalls.delete(c.childId)
     }
-    if (!answer) return failWith(`update the backend on ${machine.name}.`, 'answer')
-    if (!answer.ok) return failWith(hubRemoteStartFailureText(machine.name, answer), 'refused')
+    const answer = parseHubRemoteStartAnswer(raw)
     // A stop or a settle meanwhile leaves the row where it is.
     if (getHubChild(c.childId)?.phase !== 'starting') {
-      span.end({ outcome: 'superseded' })
-      return true
+      this.endFollowUp(c.childId)
+      return 'superseded'
     }
+    if (!answer) return this.failRemote(parentId, c, `update the backend on ${machine.name}.`)
+    if (!answer.ok) return this.failRemote(parentId, c, hubRemoteStartFailureText(machine.name, answer))
     // That machine only lowers the mode; an answer above the granted one is recorded as granted.
-    const mode = grantedMode(answer.mode, row.grantedMode)
+    const mode = grantedMode(answer.mode, request.grantedMode)
     updateHubChild(c.childId, { phase: answer.phase, grantedMode: mode })
     log.info('child started on another machine', { childId: c.childId, machineId: machine.id, phase: answer.phase })
+    if (answer.phase === 'starting') this.followUp(c.childId)
+    else {
+      this.endFollowUp(c.childId)
+      this.pump()
+    }
     this.host.changed?.(parentId)
-    span.end({ outcome: answer.phase, capped: mode !== row.grantedMode })
-    return true
+    return answer.phase
+  }
+
+  private failRemote(parentId: string, c: PlannedChild, text: string): 'failed' {
+    this.endFollowUp(c.childId)
+    this.fail(parentId, c, new Error(text))
+    return 'failed'
+  }
+
+  /** Asks again in `followUpMs`, at most `REMOTE_FOLLOW_UPS` times in a row; after that, on the next connect. */
+  private followUp(childId: string): void {
+    const prev = this.followUps.get(childId)
+    if (prev?.timer) clearTimeout(prev.timer)
+    const tries = (prev?.tries ?? 0) + 1
+    if (tries > REMOTE_FOLLOW_UPS) {
+      this.followUps.delete(childId)
+      log.info('remote start still unknown; asked again on the next connect', { childId })
+      return
+    }
+    const timer = setTimeout(() => {
+      const entry = this.followUps.get(childId)
+      if (entry) entry.timer = null
+      void this.reconcileRemote({ childId })
+    }, this.followUpMs)
+    timer.unref?.()
+    this.followUps.set(childId, { tries, timer })
+  }
+
+  private endFollowUp(childId: string): void {
+    const entry = this.followUps.get(childId)
+    if (entry?.timer) clearTimeout(entry.timer)
+    this.followUps.delete(childId)
+  }
+
+  /**
+   * Desktop rows of children on other machines still `starting` (a quit, a
+   * timeout or a `starting` answer left them so) send the same start request
+   * again, rebuilt from the stored plan; that machine answers the child's
+   * state or starts it. Run at startup, on a machine's connect and by
+   * `followUp`. A machine that is not connected waits for its connect; a
+   * removed one fails its rows.
+   */
+  async reconcileRemote(only: { machineId?: string; childId?: string } = {}): Promise<void> {
+    let rows: HubChildRow[]
+    try {
+      rows = listHubChildrenInPhase('starting', { includeRemote: true }).filter(
+        (c) =>
+          c.machineId !== null &&
+          (!only.machineId || c.machineId === only.machineId) &&
+          (!only.childId || c.childId === only.childId),
+      )
+    } catch (err) {
+      log.warn('could not read the remote children still starting', err)
+      return
+    }
+    await Promise.all(rows.map((row) => this.reconcileOne(row)))
+  }
+
+  /** The machine was removed: its children still `starting` never get an answer. */
+  remoteMachineRemoved(machineId: string): void {
+    try {
+      for (const row of listHubChildrenInPhase('starting', { includeRemote: true })) {
+        if (row.machineId !== machineId) continue
+        const name = this.storedChild(row)?.c.machine?.name ?? machineId
+        this.endFollowUp(row.childId)
+        this.fail(row.parentId, row, new Error(`${name} was removed before it answered the start.`))
+      }
+    } catch (err) {
+      log.error(`could not fail the children of removed machine ${machineId}`, err)
+    }
+  }
+
+  private async reconcileOne(row: HubChildRow): Promise<void> {
+    if (this.remoteCalls.has(row.childId) || !this.host.startRemoteChild) return
+    try {
+      const stored = this.storedChild(row)
+      if (!stored?.c.machine) {
+        this.fail(row.parentId, row, new Error('its plan is gone.'))
+        return
+      }
+      const { plan, c } = stored
+      const state = this.host.remoteMachineState?.(row.machineId!) ?? 'connected'
+      if (state === 'gone') {
+        this.failRemote(row.parentId, c, `${c.machine!.name} was removed before it answered the start.`)
+        return
+      }
+      if (state === 'offline') return
+      const built = await this.remoteRequest(row.parentId, plan, c)
+      if (!built.ok) {
+        this.failRemote(row.parentId, c, built.message)
+        return
+      }
+      await this.sendRemoteStart(row.parentId, c, built.request)
+    } catch (err) {
+      log.warn(`could not ask again about the remote start of ${row.childId}`, err)
+    }
+  }
+
+  /** A desktop row's planned child, from its batch's stored plan. */
+  private storedChild(row: HubChildRow): { plan: StoredPlan; c: PlannedChild } | null {
+    const batch = getHubBatch(row.batchId)
+    if (!batch) return null
+    const plan = JSON.parse(batch.planJson) as StoredPlan
+    const c = plan.children.find((x) => x.childId === row.childId)
+    return c ? { plan, c } : null
+  }
+
+  /**
+   * What `list_children` shows of a child on another machine that the desktop
+   * has no conversation for: its agent and machine name from the plan.
+   */
+  remoteChildFacts(row: HubChildRow): { agent: AgentProvider; machine: string } | null {
+    if (!row.machineId) return null
+    try {
+      const c = this.storedChild(row)?.c
+      return c?.machine ? { agent: c.agent, machine: c.machine.name } : null
+    } catch (err) {
+      log.warn(`could not read the plan of remote child ${row.childId}`, err)
+      return null
+    }
   }
 
   /**
@@ -902,6 +1116,13 @@ export class HubStarter {
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
+    // A chat here, or a parent here, is never turned into a stub of another hub.
+    if (getConversationById(r.parentId) || resolveRootThreadId(r.parentId) !== r.parentId)
+      return { ok: false, error: 'That parent id names a chat on this machine.' }
+    if (getConversationById(r.childId) || resolveRootThreadId(r.childId) !== r.childId)
+      return { ok: false, error: 'That child id names a chat on this machine.' }
+    const stub = getHubParent(r.parentId)
+    if (stub && !stub.remoteHub) return { ok: false, error: 'That parent id names a chat on this machine.' }
     if (!claimHubParentStub(r.parentId, r.desktopInstallId))
       return { ok: false, error: 'That parent id belongs to another hub here.' }
     const mode = grantedMode(r.grantedMode, settings.remoteMaxMode)
@@ -914,7 +1135,7 @@ export class HubStarter {
       location: 'worktree',
       baseRef: r.baseSha,
       baseSha: r.baseSha,
-      branchSeed: r.title,
+      branchSeed: r.branch ?? r.title,
       agent: r.agent,
       instanceId: r.instanceId,
       model: r.model,
@@ -1220,7 +1441,7 @@ export class HubStarter {
     return toolText(owned.lines.join('\n'))
   }
 
-  private fail(parentId: string, c: PlannedChild, err: unknown): void {
+  private fail(parentId: string, c: Pick<PlannedChild, 'childId'>, err: unknown): void {
     const message = err instanceof Error ? err.message : String(err)
     if (this.settled(c.childId)) return
     log.warn(`child ${c.childId} failed to start: ${message}`)
@@ -1230,6 +1451,8 @@ export class HubStarter {
     } catch (writeErr) {
       log.error(`could not record the failed start of ${c.childId}`, writeErr)
     }
+    // A failed child frees its parent's slot (a remote one counts while starting): a waiter may go now.
+    this.pump()
     this.host.changed?.(parentId)
   }
 

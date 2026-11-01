@@ -302,8 +302,8 @@ describe('hubBatchDetail with machines', () => {
       [
         'Start 3 child chats:',
         '1. Local - claude-code, auto, worktree off HEAD (aaaaaaa), deps: link',
-        '2. Far - claude-code opus, auto, worktree off HEAD (aaaaaaa) on Work VM (IAP), clones into ~/projects/repo on Work VM',
-        '3. Box - codex, sandbox, worktree off main (aaaaaaa) on Box (SSH)',
+        '2. Far - claude-code opus, auto, worktree off HEAD (aaaaaaa) on Work VM (IAP), deps: none, clones into ~/projects/repo on Work VM',
+        '3. Box - codex, sandbox, worktree off main (aaaaaaa) on Box (SSH), deps: none',
         'Disk: needs about 1.0 GiB, 50.0 GiB free.',
         'Disk on Work VM: needs about 2.0 GiB, 30.0 GiB free.',
         'Disk on Box: needs an unknown amount, free space unknown.',
@@ -371,13 +371,15 @@ describe('HubStarter with a remote task', () => {
       })
       // Its checkout plus the clone's own.
       expect(view.remoteDisk).toEqual([{ machineId: 'vm1', name: 'Work VM', needBytes: 2 * GIB, freeBytes: 100 * GIB }])
-      expect(h.cards[0]!.detail).toContain('on Work VM (IAP), clones into ~/projects/repo on Work VM')
+      expect(h.cards[0]!.detail).toContain('on Work VM (IAP), deps: link, clones into ~/projects/repo on Work VM')
       const plan = JSON.parse(getHubBatch(h.cards[0]!.batchId)!.planJson)
       expect(plan.children[1]).toMatchObject({
         machine: { id: 'vm1' },
         remoteProjectPath: '~/projects/repo',
         clonePlanned: true,
         fetch: { remoteBranch: 'origin/main' },
+        repo: { url: 'git@github.com:me/repo.git', branch: 'main' },
+        depsSetting: 'link',
         baseSha: SHA,
       })
     },

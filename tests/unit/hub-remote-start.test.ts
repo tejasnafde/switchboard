@@ -33,9 +33,15 @@ const { RemoteHubClients } = await import('../../src/main/hub/remote-hub-clients
 const { HubStarter } = await import('../../src/main/hub/hub-start')
 const { HubWakeScheduler } = await import('../../src/main/hub/hub-wakes')
 const { HubRemoteChannels } = await import('../../src/shared/ipc-channels')
-const { hubRepoUrl, parseHubRemoteStartRequest } = await import('../../src/shared/hub-remote')
+const { hubRepoUrl, isBranchName, parseHubRemoteStartRequest } = await import('../../src/shared/hub-remote')
+const { hubBatchRowPlace } = await import('../../src/shared/hub')
+const { HubSettler } = await import('../../src/main/hub/hub-settle')
+const { readChild } = await import('../../src/main/hub/hub-read')
+const { buildHubMcpTools } = await import('../../src/main/mcp/hub-tools')
 
 import type { HubParentContext, HubStartHost, HubStartIo } from '../../src/main/hub/hub-start'
+import type { HubSettleHost } from '../../src/main/hub/hub-settle'
+import type { HubMcpToolContext } from '../../src/main/mcp/hub-tools'
 import type { HubMachineDescription, HubMachineEntry, HubRemoteStartRequest } from '../../src/shared/hub-remote'
 import type { HubTask } from '../../src/shared/hub'
 import type { RuntimeMode } from '../../src/shared/provider-events'
@@ -190,8 +196,20 @@ const machineEntry = (id: string, name: string): HubMachineEntry => ({
   canStart: true,
 })
 
+interface DesktopOpts {
+  /** Stands in front of the real call: return undefined to pass it through. */
+  intercept?: (machineId: string, request: HubRemoteStartRequest) => Promise<unknown> | undefined
+  followUpMs?: number
+  machineState?: (machineId: string) => 'connected' | 'offline' | 'gone'
+  io?: Partial<HubStartIo>
+}
+
 /** The desktop: its HubStarter, with the real hub client to the given machines. */
-function desktop(machines: Record<string, { name: string; url: string }>, settings: Record<string, string> = {}) {
+function desktop(
+  machines: Record<string, { name: string; url: string }>,
+  settings: Record<string, string> = {},
+  opts: DesktopOpts = {},
+) {
   const clients = new RemoteHubClients({
     enabled: () => true,
     machines: () => Object.entries(machines).map(([id, m]) => ({ id, name: m.name, transportKind: 'gcloud-iap' })),
@@ -203,6 +221,7 @@ function desktop(machines: Record<string, { name: string; url: string }>, settin
   const started: Array<{ threadId: string; runtimeMode?: RuntimeMode }> = []
   const cards: string[] = []
   const worktrees: string[] = []
+  const requests: HubRemoteStartRequest[] = []
   const host: HubStartHost = {
     async createWorktree(request) {
       const id = request.owner.kind === 'conversation' ? request.owner.conversationId : ''
@@ -224,7 +243,11 @@ function desktop(machines: Record<string, { name: string; url: string }>, settin
     async stopChild() {},
     remoteChildren: () => ({ flagOn: true, onVm: false }),
     machineEntries: async () => Object.entries(machines).map(([id, m]) => machineEntry(id, m.name)),
-    startRemoteChild: (machineId, request) => clients.invoke(machineId, HubRemoteChannels.START_CHILD, request),
+    startRemoteChild: (machineId, request) => {
+      requests.push(request)
+      return opts.intercept?.(machineId, request) ?? clients.invoke(machineId, HubRemoteChannels.START_CHILD, request)
+    },
+    ...(opts.machineState ? { remoteMachineState: opts.machineState } : {}),
   }
   const io: Partial<HubStartIo> = {
     freeBytes: async () => 100 * GIB,
@@ -239,9 +262,10 @@ function desktop(machines: Record<string, { name: string; url: string }>, settin
     remoteBranchesContaining: async () => ['origin/main'],
     upstreamOf: async () => 'origin/main',
     remoteOfBranch: async (_cwd, b) => ({ url: 'https://tok@github.com/me/repo.git', branch: b.slice(7) }),
+    ...opts.io,
   }
-  const starter = new HubStarter(host, (key) => settings[key] ?? null, io)
-  return { starter, started, cards, clients, worktrees }
+  const starter = new HubStarter(host, (key) => settings[key] ?? null, io, { followUpMs: opts.followUpMs ?? 60_000 })
+  return { starter, started, cards, clients, worktrees, requests, settings }
 }
 
 const parent = (mode: RuntimeMode = 'auto'): HubParentContext => ({
@@ -378,6 +402,352 @@ describe('hub-remote:start-child, desktop and child machine', () => {
   })
 })
 
+describe('a remote start with no final answer', () => {
+  it('keeps the row starting on a timeout, with no wake, and asks again until it is open', async () => {
+    const vm = await bootVm()
+    let calls = 0
+    const d = desktop(
+      { vm1: { name: 'Work VM', url: vm.url } },
+      {},
+      {
+        followUpMs: 10,
+        intercept: () => (++calls === 1 ? Promise.reject(new Error('Work VM did not answer in 20 s')) : undefined),
+      },
+    )
+    await d.starter.propose(parent(), [task('Remote', { machine: 'vm1' })])
+    void d.starter.approve(d.cards.at(-1)!, 'auto')
+    await until(() => calls >= 1)
+    const [child] = db.listHubChildren('agent_parent')
+    await until(() => db.getHubChild(child!.childId)!.phase === 'open')
+    expect(db.listPendingHubWakes('agent_parent')).toEqual([])
+    // The same request both times: the machine started it once.
+    expect(d.requests).toHaveLength(2)
+    expect(d.requests[1]).toEqual(d.requests[0])
+    expect(vm.sessions).toHaveLength(1)
+  })
+
+  it('follows a starting answer until that machine says open, and only while the row is still starting', async () => {
+    const vm = await bootVm()
+    let calls = 0
+    const d = desktop(
+      { vm1: { name: 'Work VM', url: vm.url } },
+      {},
+      {
+        followUpMs: 10,
+        intercept: () => (++calls === 1 ? Promise.resolve({ ok: true, phase: 'starting', mode: 'auto' }) : undefined),
+      },
+    )
+    const [child] = await runBatch(d, [task('Remote', { machine: 'vm1' })])
+    expect(child).toMatchObject({ phase: 'open', grantedMode: 'auto' })
+    expect(calls).toBe(2)
+  })
+
+  it('asks again on connect after a quit, rebuilt from the stored plan', async () => {
+    const vm = await bootVm()
+    const d = desktop(
+      { vm1: { name: 'Work VM', url: vm.url } },
+      {},
+      { intercept: (_m, _r) => (d.requests.length === 1 ? Promise.reject(new Error('closed')) : undefined) },
+    )
+    await d.starter.propose(parent(), [task('Remote', { machine: 'vm1' })])
+    await d.starter.approve(d.cards.at(-1)!, 'auto')
+    await until(() => d.requests.length === 1)
+    const [child] = db.listHubChildren('agent_parent')
+    expect(child!.phase).toBe('starting')
+    // A new process: a fresh starter on the same database, as at the next launch.
+    const next = desktop({ vm1: { name: 'Work VM', url: vm.url } })
+    next.starter.recoverInterrupted()
+    expect(db.getHubChild(child!.childId)!.phase).toBe('starting')
+    await next.starter.reconcileRemote({ machineId: 'vm1' })
+    expect(db.getHubChild(child!.childId)!.phase).toBe('open')
+    expect(next.requests[0]).toEqual(d.requests[0])
+  })
+
+  it('fails the row with the machine refusal on a later answer', async () => {
+    const vm = await bootVm()
+    const d = desktop(
+      { vm1: { name: 'Work VM', url: vm.url } },
+      {},
+      { intercept: () => (d.requests.length === 1 ? Promise.reject(new Error('closed')) : undefined) },
+    )
+    await d.starter.propose(parent(), [task('Remote', { machine: 'vm1' })])
+    await d.starter.approve(d.cards.at(-1)!, 'auto')
+    await until(() => d.requests.length === 1)
+    vm.flag.on = false
+    await d.starter.reconcileRemote()
+    expect(db.listHubChildren('agent_parent')[0]!.phase).toBe('failed_start')
+    expect(db.listPendingHubWakes('agent_parent')[0]!.summary).toBe(
+      'Failed to start: Work VM does not take children: turn on hub_remote_children there.',
+    )
+  })
+
+  it('waits for an offline machine, and fails the row of a removed one', async () => {
+    const vm = await bootVm()
+    let state: 'connected' | 'offline' | 'gone' = 'connected'
+    const d = desktop(
+      { vm1: { name: 'Work VM', url: vm.url } },
+      {},
+      {
+        machineState: () => state,
+        intercept: () => (d.requests.length === 1 ? Promise.reject(new Error('closed')) : undefined),
+      },
+    )
+    await d.starter.propose(parent(), [task('Remote', { machine: 'vm1' })])
+    await d.starter.approve(d.cards.at(-1)!, 'auto')
+    await until(() => d.requests.length === 1)
+    state = 'offline'
+    await d.starter.reconcileRemote()
+    expect(d.requests).toHaveLength(1)
+    expect(db.listHubChildren('agent_parent')[0]!.phase).toBe('starting')
+    state = 'gone'
+    await d.starter.reconcileRemote()
+    expect(db.listHubChildren('agent_parent')[0]!.phase).toBe('failed_start')
+    expect(db.listPendingHubWakes('agent_parent')[0]!.summary).toBe(
+      'Failed to start: Work VM was removed before it answered the start.',
+    )
+  })
+
+  it('fails the starting rows of a machine the user removes', async () => {
+    const vm = await bootVm()
+    const d = desktop(
+      { vm1: { name: 'Work VM', url: vm.url } },
+      {},
+      { intercept: () => Promise.reject(new Error('closed')) },
+    )
+    await d.starter.propose(parent(), [task('Remote', { machine: 'vm1' })])
+    await d.starter.approve(d.cards.at(-1)!, 'auto')
+    await until(() => d.requests.length === 1)
+    d.starter.remoteMachineRemoved('vm1')
+    expect(db.listHubChildren('agent_parent')[0]!.phase).toBe('failed_start')
+  })
+
+  it('tells its listener about a connect and a removal, and the state of a machine', () => {
+    const status: Record<string, 'connected' | 'disconnected'> = { vm1: 'connected', vm2: 'disconnected' }
+    const clients = new RemoteHubClients({
+      enabled: () => true,
+      machines: () => [
+        { id: 'vm1', name: 'A', transportKind: 'gcloud-iap' },
+        { id: 'vm2', name: 'B', transportKind: 'ssh' },
+      ],
+      statusOf: (id) => status[id] ?? 'disconnected',
+      urlOf: () => null,
+      tokenOf: () => null,
+    })
+    cleanups.push(() => clients.closeAll())
+    const seen: string[] = []
+    clients.setMachineListener((id, change) => seen.push(`${id}:${change}`))
+    clients.statusChanged('vm1', 'connected')
+    clients.statusChanged('vm2', 'disconnected')
+    clients.remove('vm2')
+    expect(seen).toEqual(['vm1:connected', 'vm2:removed'])
+    expect([clients.machineState('vm1'), clients.machineState('vm2'), clients.machineState('vm3')]).toEqual([
+      'connected',
+      'offline',
+      'gone',
+    ])
+  })
+})
+
+describe('the start lanes', () => {
+  it('fail only the child whose start throws; the rest of its machine queue still starts', async () => {
+    const vm = await bootVm()
+    const d = desktop(
+      { vm1: { name: 'Work VM', url: vm.url } },
+      {},
+      {
+        intercept: (_m, r) =>
+          r.title === 'A'
+            ? Promise.resolve({
+                get ok(): boolean {
+                  throw new Error('a broken answer')
+                },
+              })
+            : undefined,
+      },
+    )
+    const rows = await runBatch(
+      d,
+      ['A', 'B', 'C', 'D'].map((t) => task(t, { machine: 'vm1' })),
+    )
+    expect(rows.map((c) => [c.title, c.phase])).toEqual([
+      ['A', 'failed_start'],
+      ['B', 'open'],
+      ['C', 'open'],
+      ['D', 'open'],
+    ])
+    expect(db.listPendingHubWakes('agent_parent')[0]!.summary).toBe('Failed to start: a broken answer')
+  })
+
+  it('let a local child waiting for its parent slot go once a remote child fails', async () => {
+    const vm = await bootVm()
+    vm.flag.on = false
+    const d = desktop(
+      { vm1: { name: 'Work VM', url: vm.url } },
+      { 'hub.runningPerParent': '1' },
+      {
+        // The local child reaches its slot wait first.
+        intercept: (machineId, request) =>
+          new Promise((r) => setTimeout(r, 50)).then(() =>
+            d.clients.invoke(machineId, HubRemoteChannels.START_CHILD, request),
+          ),
+      },
+    )
+    const rows = await runBatch(d, [task('Far', { machine: 'vm1' }), task('Here')])
+    expect(rows.map((c) => [c.title, c.phase])).toEqual([
+      ['Far', 'failed_start'],
+      ['Here', 'open'],
+    ])
+    expect(d.started).toHaveLength(1)
+  })
+})
+
+describe('the plan of a remote child', () => {
+  it('records the remote read in the parent checkout and the deps setting, and sends both and the branch', async () => {
+    const vm = await bootVm()
+    const cwds: string[] = []
+    const d = desktop(
+      { vm1: { name: 'Work VM', url: vm.url } },
+      { 'hub.childDependencies': 'clone' },
+      {
+        io: {
+          async remoteOfBranch(cwd, b) {
+            cwds.push(cwd)
+            return { url: 'https://tok@github.com/me/repo.git', branch: b.slice(7) }
+          },
+        },
+      },
+    )
+    const r = await d.starter.propose({ ...parent(), cwd: '/repo/.switchboard/worktrees/p' }, [
+      task('Remote', { machine: 'vm1', branch: 'feat/remote-x' }),
+    ])
+    expect(r.isError, JSON.stringify(r)).toBeFalsy()
+    expect(cwds).toEqual(['/repo/.switchboard/worktrees/p'])
+    const batch = db.getHubBatch(d.cards.at(-1)!)!
+    const [planned] = (JSON.parse(batch.planJson) as { children: Array<Record<string, unknown>> }).children
+    expect(planned).toMatchObject({
+      repo: { url: REPO, branch: 'main' },
+      depsSetting: 'clone',
+      deps: 'clone',
+    })
+    // The live setting changes before the approval: the approved one is sent.
+    d.settings['hub.childDependencies'] = 'install'
+    await d.starter.approve(d.cards.at(-1)!, 'auto')
+    await until(() => db.listHubChildren('agent_parent')[0]!.phase !== 'starting')
+    expect(cwds).toHaveLength(1)
+    expect(d.requests[0]).toMatchObject({ repoUrl: REPO, deps: 'clone', branch: 'feat/remote-x' })
+    expect(vm.worktrees[0]!.checkout.branch).toMatchObject({ namespace: 'hub', seed: 'feat/remote-x' })
+  })
+
+  it('shows the deps setting on a remote row of the card', () => {
+    const row = {
+      title: 'Far',
+      agent: 'claude-code' as const,
+      account: 'claude-vm',
+      model: null,
+      mode: 'auto' as const,
+      location: 'worktree' as const,
+      baseRef: 'HEAD (aaaaaaa)',
+      deps: 'clone' as const,
+      machine: { id: 'vm1', name: 'Work VM', transport: 'gcloud-iap' as const },
+    }
+    expect(hubBatchRowPlace(row)).toBe('worktree off HEAD (aaaaaaa) on Work VM (IAP), deps: clone')
+  })
+
+  it('starts an old stored plan without repo and deps setting: the remote is read at start, the live setting sent', async () => {
+    const vm = await bootVm()
+    const d = desktop({ vm1: { name: 'Work VM', url: vm.url } }, { 'hub.childDependencies': 'none' })
+    await d.starter.propose(parent(), [task('Remote', { machine: 'vm1' })])
+    const batchId = d.cards.at(-1)!
+    const batch = db.getHubBatch(batchId)!
+    const plan = JSON.parse(batch.planJson) as { children: Array<Record<string, unknown>> }
+    for (const c of plan.children) {
+      delete c.repo
+      delete c.depsSetting
+      c.deps = 'none'
+    }
+    db.getDb().prepare('UPDATE hub_batches SET plan_json = ? WHERE batch_id = ?').run(JSON.stringify(plan), batchId)
+    d.settings['hub.childDependencies'] = 'link'
+    await d.starter.approve(batchId, 'auto')
+    await until(() => db.listHubChildren('agent_parent')[0]!.phase !== 'starting')
+    expect(db.listHubChildren('agent_parent')[0]!.phase).toBe('open')
+    expect(d.requests[0]).toMatchObject({ repoUrl: REPO, deps: 'link', branch: null })
+  })
+})
+
+describe('list_children and read_child on a child on another machine', () => {
+  it('lists its machine and agent from the plan, and refuses to read it', async () => {
+    const vm = await bootVm()
+    const d = desktop({ vm1: { name: 'Work VM', url: vm.url } })
+    const [child] = await runBatch(d, [task('Remote', { machine: 'vm1', account: 'claude-vm2' })])
+    const ctx = {
+      parent: () => parent(),
+      starter: d.starter,
+      resources: () => undefined,
+      publish() {},
+      read: (args: Record<string, unknown>) => readChild({ parentId: 'agent_parent', load: async () => [] }, args),
+      subagents: () => ({ running: 0, done: 0, failed: 0 }),
+      gitStats: async () => null,
+      conflicts: async () => new Map(),
+    } as unknown as HubMcpToolContext
+    const tools = buildHubMcpTools(ctx)
+    const listed = await tools.find((t) => t.name === 'list_children')!.call({})
+    const rows = JSON.parse((listed.content[0] as { text: string }).text).children
+    expect(rows[0]).toMatchObject({
+      childId: child!.childId,
+      agent: 'claude-code',
+      account: 'claude-vm2',
+      machine: 'Work VM',
+    })
+    const read = await tools.find((t) => t.name === 'read_child')!.call({ childId: child!.childId })
+    expect(read).toMatchObject({
+      isError: true,
+      content: [{ text: 'Reading a child on another machine comes in a later version.' }],
+    })
+  })
+})
+
+describe('settle with children on other machines', () => {
+  const settleHost = (): HubSettleHost => ({
+    sessionFacts: () => ({ running: false, cards: 0, queued: 0 }),
+    agentPid: () => null,
+    stop: async () => {},
+    changed() {},
+    forget() {},
+  })
+  const seed = (childId: string, title: string, machineId: string | null) => {
+    db.insertHubChild({
+      childId,
+      parentId: 'agent_parent',
+      batchId: 'hb_s',
+      ordinal: childId.length,
+      title,
+      brief: 'b',
+      location: 'project',
+      grantedMode: 'auto',
+      depsMode: 'none',
+      machineId,
+    })
+    db.updateHubChild(childId, { phase: 'open' })
+  }
+
+  it('refuses, naming the remote children, when only they are open', async () => {
+    seed('agent_r1', 'Far', 'vm1')
+    const r = await new HubSettler(settleHost()).run('agent_parent', '/repo', 'auto')
+    expect(r).toEqual({ ok: false, text: 'Settling children on other machines comes in a later version: Far.' })
+    expect(db.getHubChild('agent_r1')!.phase).toBe('open')
+  })
+
+  it('settles the local children and still refuses for the remote ones', async () => {
+    seed('agent_r1', 'Far', 'vm1')
+    seed('agent_local1', 'Here', null)
+    const r = await new HubSettler(settleHost()).run('agent_parent', '/repo', 'auto')
+    expect(r.ok).toBe(false)
+    expect(r.text).toMatch(/\nSettling children on other machines comes in a later version: Far\.$/)
+    expect(db.getHubChild('agent_local1')!.phase).toBe('settled')
+    expect(db.getHubChild('agent_r1')!.phase).toBe('open')
+  })
+})
+
 /** A request as the desktop would send it, for calls straight to a child machine. */
 function requestFor(childId: string, over: Partial<HubRemoteStartRequest> = {}): HubRemoteStartRequest {
   return {
@@ -464,6 +834,29 @@ describe('startRemote on the child machine', () => {
     expect(vm.dbm.listPendingHubWakes('agent_parent').map((w) => w.kind)).toEqual(['failed', 'failed'])
   })
 
+  it('refuses a parent id that names a chat or a hub parent here, before any stub', async () => {
+    const vm = await bootVm()
+    vm.dbm.addProject('/home/u/src/repo', 'repo')
+    vm.dbm.createConversation('agent_mine', '/home/u/src/repo', 'claude-code', 'Mine')
+    expect(await vm.starter.startRemote(requestFor('agent_p1', { parentId: 'agent_mine' }))).toEqual({
+      ok: false,
+      error: 'That parent id names a chat on this machine.',
+    })
+    expect(vm.dbm.getHubParent('agent_mine')).toBeNull()
+    vm.dbm.ensureHubParent('agent_hub_here')
+    expect(await vm.starter.startRemote(requestFor('agent_p2', { parentId: 'agent_hub_here' }))).toEqual({
+      ok: false,
+      error: 'That parent id names a chat on this machine.',
+    })
+    expect(vm.dbm.getHubParent('agent_hub_here')).toMatchObject({ remoteHub: null })
+    expect(await vm.starter.startRemote(requestFor('agent_mine'))).toEqual({
+      ok: false,
+      error: 'That child id names a chat on this machine.',
+    })
+    expect(vm.dbm.getHubChild('agent_p1')).toBeNull()
+    expect(vm.sessions).toEqual([])
+  })
+
   it('refuses an account it does not have, and a request that does not parse', async () => {
     const vm = await bootVm()
     expect(await vm.starter.startRemote(requestFor('agent_c4', { instanceId: 'nope-vm' }))).toMatchObject({
@@ -497,6 +890,41 @@ describe('the start request', () => {
     expect(bad({ repoUrl: 'https://u:p@github.com/me/repo' })).toBe(false)
     expect(bad({ grantedMode: 'root' })).toBe(false)
     expect(bad({ baseSha: 'HEAD' })).toBe(false)
+    expect(bad({ branch: 'feat/x' })).toBe(true)
+    expect(bad({ branch: null })).toBe(true)
+    expect(bad({ branch: 'bad branch' })).toBe(false)
+    expect(bad({ branch: 'x'.repeat(81) })).toBe(false)
+  })
+
+  it('takes a branch name only as git check-ref-format --branch would', () => {
+    for (const ok of ['main', 'release/1.0', 'feat/a.b', 'user@x', 'a.locked/b'])
+      expect(isBranchName(ok), ok).toBe(true)
+    for (const no of [
+      'topic.lock/next',
+      'a/b.lock',
+      'x.lock',
+      'a/.hidden',
+      '.a',
+      'a..b',
+      'a//b',
+      'a/',
+      '/a',
+      'a.',
+      '@',
+      'HEAD',
+      'a@{1}',
+      '-x',
+      'a b',
+      'a~1',
+      'a^',
+      'a:b',
+      'a?',
+      'a*',
+      'a[b',
+      'a\b',
+      'a',
+    ])
+      expect(isBranchName(no), no).toBe(false)
   })
 })
 

@@ -21,7 +21,15 @@
  */
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { hubSettleResult, settleBlockers, settleWorktree, type HubSettleRowView, type HubSettleView } from '@shared/hub'
+import {
+  hubSettleResult,
+  isOpenChildPhase,
+  settleBlockers,
+  settleWorktree,
+  type HubSettleRowView,
+  type HubSettleView,
+} from '@shared/hub'
+import { HUB_REMOTE_SETTLE_LATER_TEXT } from '@shared/hub-remote'
 import {
   archiveConversation,
   getConversationById,
@@ -94,7 +102,9 @@ export class HubSettler {
     if (this.running.has(parentId)) return { ok: false, text: 'A settle of these children is already running.' }
     const all = localChildren(parentId)
     const children = only ? all.filter((c) => only.has(c.childId)) : all
-    if (children.length === 0) return { ok: true, text: 'This chat has no children to settle.', rows: [] }
+    const remote = remoteSettleRefusal(parentId)
+    if (children.length === 0)
+      return remote ? { ok: false, text: remote } : { ok: true, text: 'This chat has no children to settle.', rows: [] }
     this.running.add(parentId)
     const span = perfSpan('hub.settle', { parentId, children: children.length, how })
     try {
@@ -133,10 +143,10 @@ export class HubSettler {
         how,
       })
       const text = hubSettleResult(rows)
-      if (failed.length === 0) return { ok: true, text, rows }
+      if (failed.length === 0) return remote ? { ok: false, text: `${text}\n${remote}` } : { ok: true, text, rows }
       return {
         ok: false,
-        text: `${text}\nNot settled, since they did not stop: ${failed.map((c) => c.title).join(', ')}. Stop them, then settle again.`,
+        text: `${text}\nNot settled, since they did not stop: ${failed.map((c) => c.title).join(', ')}. Stop them, then settle again.${remote ? `\n${remote}` : ''}`,
       }
     } catch (err) {
       span.end({ outcome: 'failed' })
@@ -306,4 +316,14 @@ async function runGit(cwd: string, args: string[]): Promise<{ code: number; stdo
 /** Children on another machine are settled there, in a later version: they stay open here. */
 function localChildren(parentId: string) {
   return listHubChildren(parentId).filter((c) => !c.machineId)
+}
+
+/**
+ * The refusal that names a parent's open children on other machines, or
+ * null. A settle that leaves them open is not a success, so an archive
+ * through it is refused too.
+ */
+export function remoteSettleRefusal(parentId: string): string | null {
+  const open = listHubChildren(parentId).filter((c) => c.machineId && isOpenChildPhase(c.phase))
+  return open.length > 0 ? `${HUB_REMOTE_SETTLE_LATER_TEXT}: ${open.map((c) => c.title).join(', ')}.` : null
 }
