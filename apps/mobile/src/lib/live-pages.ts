@@ -61,7 +61,15 @@ async function decide(): Promise<void> {
     const entry = entries.get(id)
     if (!entry) return []
     pageCrashes.set(id, crashes.get(entry.pageKey) ?? 0)
-    return [{ key: id, visible: visible[i], runPressed: entry.runPressed, fullScreen: entry.fullScreen }]
+    return [
+      {
+        key: id,
+        visible: visible[i],
+        runPressed: entry.runPressed,
+        fullScreen: entry.fullScreen,
+        active: id === running,
+      },
+    ]
   })
   setRunning(
     phoneLiveRunning(candidates, {
