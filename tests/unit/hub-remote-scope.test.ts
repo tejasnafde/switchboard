@@ -406,7 +406,7 @@ describe('describeThisMachine', () => {
 
   it('reads branch and remotes per project and survives a folder that is not a repository', async () => {
     const { mkdtempSync, rmSync } = await import('node:fs')
-    const { tmpdir } = await import('node:os')
+    const { platform, tmpdir } = await import('node:os')
     const { join } = await import('node:path')
     const { execFileSync } = await import('node:child_process')
     const { addProject } = await import('../../src/main/db/database')
@@ -426,11 +426,15 @@ describe('describeThisMachine', () => {
     })
     expect(d.backendVersion).toBe('9.9.9')
     expect(d.flagOn).toBe(false)
+    expect(d.agents.map((a) => a.agent)).toEqual(['claude-code'])
+    expect(d.openChildren).toBe(0)
+    // The Windows temp folder is under C:\Users with a short name the home
+    // path does not match, so it reads as another user's home and is left
+    // out. The path rules have their own tests above.
+    if (platform() === 'win32') return
     const byPath = new Map(d.projects.map((p) => [p.path, p]))
     expect(byPath.get(repo)).toEqual({ path: repo, branch: 'trunk', remoteUrls: ['https://example.com/o/r.git'] })
     expect(byPath.get(join(root, 'missing'))).toEqual({ path: join(root, 'missing'), branch: null, remoteUrls: [] })
-    expect(d.agents.map((a) => a.agent)).toEqual(['claude-code'])
-    expect(d.openChildren).toBe(0)
   })
 
   it('shares one describe between calls that overlap', async () => {
