@@ -7,6 +7,8 @@
  * `['hub']` in the auth frame. An `authed` that grants anything else is an
  * older backend that dropped `scopes`, so the client closes and the machine
  * reads as needing an update; so does a `ready` without `hub_remote_child_v1`.
+ * A `ready` without `hub_remote_start_v1` leaves the client open but the
+ * entry's `canStart` false, so `start_children` asks for an update there.
  * It does not share the renderer's transport. A status other than `connected`
  * closes the client; the next connect opens a new one and describes the
  * machine again.
@@ -20,6 +22,7 @@ import { HubRemoteChannels } from '@shared/ipc-channels'
 import {
   HUB_REMOTE_AUTH_SCOPES,
   HUB_REMOTE_CAPABILITY,
+  HUB_REMOTE_START_CAPABILITY,
   isHubAuthGrant,
   parseHubMachineDescription,
   type HubMachineDescription,
@@ -73,6 +76,8 @@ interface Client {
   problem: string | null
   /** Ends `ready` with a problem, for a client closed before it was ready. */
   settle: (problem: string | null) => void
+  /** The backend advertised `hub_remote_start_v1` in its `ready`. */
+  canStart: boolean
 }
 
 interface Snapshot {
@@ -183,7 +188,8 @@ export class RemoteHubClients {
   private entry(m: HubMachineRow): HubMachineEntry {
     const snap = this.snapshots.get(m.id)
     const connection = this.deps.statusOf(m.id)
-    const problem = this.clients.get(m.id)?.problem ?? null
+    const client = this.clients.get(m.id)
+    const problem = client?.problem ?? null
     return {
       id: m.id,
       name: m.name,
@@ -192,6 +198,7 @@ export class RemoteHubClients {
       description: snap?.description ?? null,
       ageMs: snap ? this.now() - snap.at : null,
       problem,
+      canStart: !!client && !problem && client.canStart,
     }
   }
 
@@ -242,7 +249,7 @@ export class RemoteHubClients {
     const update = `update the backend on ${name}`
     if (!token) {
       // A backend from before the token cannot narrow a session to hub.
-      return { transport: null, ready: Promise.resolve(update), problem: update, settle: () => {} }
+      return { transport: null, ready: Promise.resolve(update), problem: update, settle: () => {}, canStart: false }
     }
     const transport = new WsTransport(
       `${url}/?auth=frame`,
@@ -258,6 +265,7 @@ export class RemoteHubClients {
       ready: new Promise((resolve) => (settle = resolve)),
       problem: null,
       settle: (problem) => settle(problem),
+      canStart: false,
     }
     let granted = false
     const refuse = (problem: string, why: string): void => {
@@ -277,6 +285,7 @@ export class RemoteHubClients {
       if (!granted) return refuse(update, 'ready before a hub grant')
       if (transport.supportsCapability(HUB_REMOTE_CAPABILITY) !== true)
         return refuse(update, `no ${HUB_REMOTE_CAPABILITY} capability`)
+      client.canStart = transport.supportsCapability(HUB_REMOTE_START_CAPABILITY) === true
       settle(null)
     }
     transport.onStateChange = (state) => {

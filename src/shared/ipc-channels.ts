@@ -604,6 +604,8 @@ export function carriesSecretArgs(channel: string): boolean {
 export const HubRemoteChannels = {
   /** () → HubMachineDescription (shared/hub-remote.ts). Answers with the flag off too. */
   DESCRIBE: 'hub-remote:describe',
+  /** (HubRemoteStartRequest) → HubRemoteStartAnswer (shared/hub-remote.ts). Refused with the flag off. */
+  START_CHILD: 'hub-remote:start-child',
   /** Event, no emitter yet: a child's outbox has rows to pull. */
   OUTBOX: 'hub-remote:outbox',
   /** Event, no emitter yet: this machine's remote children changed. */

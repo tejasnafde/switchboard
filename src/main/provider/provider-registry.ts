@@ -6,7 +6,8 @@ import { randomUUID } from 'node:crypto'
 import type { PerfSpan } from '@shared/perf-timing'
 import { perfSpan } from '../perf'
 import type { BackendHost } from '../backend/host'
-import { AgentSecretChannels, AppChannels, ProviderChannels } from '@shared/ipc-channels'
+import { AgentSecretChannels, AppChannels, HubRemoteChannels, ProviderChannels } from '@shared/ipc-channels'
+import { HUB_REMOTE_STOP_LATER_TEXT, type HubRemoteStartRequest } from '@shared/hub-remote'
 import { applyContentText } from '@shared/content-stream'
 import { fitImagesToProviderLimit } from './image-limits'
 import { createMainLogger as createLogger } from '../logger'
@@ -712,6 +713,10 @@ export class ProviderRegistry implements PeerToolHost {
       },
       remoteChildren: () => ({ flagOn: this.hubRemoteChildrenOn(), onVm: !!process.env.SWITCHBOARD_REMOTE }),
       machineEntries: () => this.remoteHubClients?.entries() ?? Promise.resolve([]),
+      startRemoteChild: (machineId: string, request: HubRemoteStartRequest) => {
+        if (!this.remoteHubClients) return Promise.reject(new Error('This backend has no hub client.'))
+        return this.remoteHubClients.invoke(machineId, HubRemoteChannels.START_CHILD, request)
+      },
     }
   }
 
@@ -937,6 +942,11 @@ export class ProviderRegistry implements PeerToolHost {
    */
   async stopHubChild(childId: string, by: 'user' | 'parent' | 'cascade'): Promise<boolean> {
     const root = resolveRootThreadId(childId)
+    // A child on another machine: nothing of it runs here.
+    if (getHubChild(root)?.machineId) {
+      if (by === 'user') throw new Error(HUB_REMOTE_STOP_LATER_TEXT)
+      return false
+    }
     this.limitResumer?.disarm(root, by === 'user' ? 'stop' : by === 'parent' ? 'interrupt_child' : 'parent_stop')
     this.closeAgentCards(root)
     const live = this.liveSessionId(root)
@@ -974,7 +984,8 @@ export class ProviderRegistry implements PeerToolHost {
    */
   async stopHubChildren(parentId: string): Promise<void> {
     const root = resolveRootThreadId(parentId)
-    const open = listHubChildren(root).filter((c) => isOpenChildPhase(c.phase))
+    // Children on other machines are stopped there, in a later version.
+    const open = listHubChildren(root).filter((c) => isOpenChildPhase(c.phase) && !c.machineId)
     if (open.length === 0) return
     const span = perfSpan('hub.stop', { parentId: root, children: open.length })
     setHubParentHeld(root, true, 'stop')
@@ -1220,6 +1231,7 @@ export class ProviderRegistry implements PeerToolHost {
       )
       .map((c) => this.childSlot(c))
     for (const [id, slot] of this.movingChildren) if (id !== child.childId) running.push(slot)
+    running.push(...this.hubStarter.remoteSlots())
     return {
       settled: child.phase === 'settled',
       parentHeld: getHubParent(child.parentId)?.held === true,
@@ -3210,6 +3222,7 @@ export class ProviderRegistry implements PeerToolHost {
                   const child = getHubChild(resolveRootThreadId(childId))
                   if (!child || child.parentId !== chatId() || !isOpenChildPhase(child.phase))
                     return toolText('That is not an open child of this chat.', true)
+                  if (child.machineId) return toolText(HUB_REMOTE_STOP_LATER_TEXT, true)
                   const ran = await this.stopHubChild(child.childId, 'parent')
                   return toolText(ran ? `Stopped ${child.title}.` : `${child.title} had no running turn.`)
                 },
@@ -4075,6 +4088,7 @@ export class ProviderRegistry implements PeerToolHost {
         return (await this.getAdapter(provider)?.isAvailable()) === true
       },
       runningSlotKeys: () => this.hubStarter.runningSlotKeys(),
+      startChild: (request) => this.hubStarter.startRemote(request),
     }
   }
 

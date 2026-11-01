@@ -80,7 +80,7 @@ export class HubSettler {
 
   /** What a settle of `parentId`'s unsettled children would do now, for the card. */
   async plan(parentId: string, parentCwd: string, archiveParent: boolean): Promise<HubSettleView> {
-    const children = listHubChildren(parentId)
+    const children = localChildren(parentId)
     return { rows: await Promise.all(children.map((c) => this.row(c, parentCwd))), archiveParent }
   }
 
@@ -92,7 +92,7 @@ export class HubSettler {
     only?: ReadonlySet<string>,
   ): Promise<HubSettleResult> {
     if (this.running.has(parentId)) return { ok: false, text: 'A settle of these children is already running.' }
-    const all = listHubChildren(parentId)
+    const all = localChildren(parentId)
     const children = only ? all.filter((c) => only.has(c.childId)) : all
     if (children.length === 0) return { ok: true, text: 'This chat has no children to settle.', rows: [] }
     this.running.add(parentId)
@@ -301,4 +301,9 @@ async function runGit(cwd: string, args: string[]): Promise<{ code: number; stdo
     log.warn(`git ${args[0]} failed in ${cwd}`, err)
     return { code: -1, stdout: '' }
   }
+}
+
+/** Children on another machine are settled there, in a later version: they stay open here. */
+function localChildren(parentId: string) {
+  return listHubChildren(parentId).filter((c) => !c.machineId)
 }

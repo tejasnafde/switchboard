@@ -67,6 +67,8 @@ describe('readHubSettings', () => {
       idleReapMinutes: 20,
       minFreeGiB: 5,
       childDependencies: 'link',
+      remoteChildrenPerMachine: 4,
+      remoteMaxMode: 'auto',
     })
   })
   it('keeps values in range, drops the rest, and reads off for the reaper', () => {
@@ -83,7 +85,19 @@ describe('readHubSettings', () => {
       idleReapMinutes: null,
       minFreeGiB: 5,
       childDependencies: 'clone',
+      remoteChildrenPerMachine: 4,
+      remoteMaxMode: 'auto',
     })
+  })
+
+  it('clamps the per-machine cap of remote children and reads the remote mode cap', () => {
+    const read = (rows: Record<string, string>) => readHubSettings((k) => rows[k] ?? null)
+    expect(read({ 'hub.remoteChildrenPerMachine': '20' }).remoteChildrenPerMachine).toBe(12)
+    expect(read({ 'hub.remoteChildrenPerMachine': '0' }).remoteChildrenPerMachine).toBe(1)
+    expect(read({ 'hub.remoteChildrenPerMachine': '6' }).remoteChildrenPerMachine).toBe(6)
+    expect(read({ 'hub.remoteChildrenPerMachine': 'many' }).remoteChildrenPerMachine).toBe(4)
+    expect(read({ 'hub.remoteMaxMode': 'full-access' }).remoteMaxMode).toBe('full-access')
+    expect(read({ 'hub.remoteMaxMode': 'root' }).remoteMaxMode).toBe('auto')
   })
 })
 

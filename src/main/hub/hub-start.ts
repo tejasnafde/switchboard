@@ -17,8 +17,20 @@
  * parent on the desktop only). `propose` checks it against the hub client's
  * description of that machine (`planRemoteTask`), resolves the base commit to
  * one a remote branch holds, checks that machine's disk, and always opens the
- * card. Starting such a child comes in a later version: an approved one ends
- * at once as `failed_start` with a `failed` wake, and is never started here.
+ * card. On approval the desktop sends each such child to its machine
+ * (`hub-remote:start-child`, through `HubStartHost.startRemoteChild`, a few at
+ * a time per machine) and records the machine (`hub_children.machine_id`) and
+ * the mode used; nothing on this machine runs it. A refusal, a closed client or
+ * an older backend fails that child only.
+ *
+ * On the child machine `startRemote` takes that request: it checks the flag,
+ * the per-machine cap (`hub.remoteChildrenPerMachine`) and the account, lowers
+ * the mode to `hub.remoteMaxMode`, makes a parent stub (`hub_parents.remote_hub`),
+ * clones the project when one was planned, fetches the base from a configured
+ * remote whose URL matches, and then runs the same pipeline as a local child
+ * (`prepareChild`). It answers once the child started or failed, or after
+ * `HUB_REMOTE_START_WAIT_MS` with `starting`. A repeated request for a child it
+ * knows answers that child's state and starts nothing.
  *
  * Measured: one `hub.batch` and one `hub.start-child` perf line per batch and
  * child (outcome and the time of each step), `hub.child-turn` per child turn
@@ -28,7 +40,8 @@
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { execFile } from 'node:child_process'
-import { statfs } from 'node:fs/promises'
+import { stat, statfs } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import {
@@ -53,16 +66,24 @@ import {
   type HubTask,
 } from '@shared/hub'
 import {
-  HUB_REMOTE_LATER_TEXT,
   HUB_REMOTE_OFF_TEXT,
   HUB_REMOTE_VM_PARENT_TEXT,
+  expandHubPath,
+  hubRemoteCallFailureText,
+  hubRemoteStartFailureText,
+  hubRepoUrl,
   parseGitRemoteFetchUrls,
+  parseHubRemoteStartAnswer,
+  parseHubRemoteStartRequest,
   parseRemoteBranches,
   pickFetchBranch,
   planRemoteTask,
   remoteApprovalProblem,
   remoteMachineId,
+  remoteUrlKey,
   type HubMachineEntry,
+  type HubRemoteStartAnswer,
+  type HubRemoteStartRequest,
 } from '@shared/hub-remote'
 import type { SettingReader } from '@shared/limit-resume'
 import type { RuntimeMode, UserTurnSubmissionResult, UserTurnSubmissionV1 } from '@shared/provider-events'
@@ -75,9 +96,15 @@ import {
 import { formatApprovalResultMarker } from '@shared/agent-approval-cards'
 import type { WorktreeCreationRuntime } from '../worktree-creation/runtime'
 import {
+  claimHubParentStub,
+  countOpenRemoteHubChildren,
   createConversation,
   createHubBatch,
   ensureHubParent,
+  getHubParent,
+  hubInstallId,
+  lastHubWakeOf,
+  listOpenRemoteHubChildren,
   findProposedHubBatch,
   getHubBatch,
   getConversationById,
@@ -219,6 +246,8 @@ export interface HubStartHost {
   remoteChildren?(): { flagOn: boolean; onVm: boolean }
   /** Every other machine as the hub client knows it, descriptions read again when older than 60 s. */
   machineEntries?(): Promise<HubMachineEntry[]>
+  /** Calls `hub-remote:start-child` on another machine; resolves with its raw answer. Absent: no hub client. */
+  startRemoteChild?(machineId: string, request: HubRemoteStartRequest): Promise<unknown>
 }
 
 /** Git and disk reads, replaceable in tests. */
@@ -243,11 +272,31 @@ export interface HubStartIo {
   remoteBranchesContaining(cwd: string, sha: string): Promise<string[]>
   /** The checkout's upstream branch (`origin/main`), or null. */
   upstreamOf(cwd: string): Promise<string | null>
+  /** The remote a remote branch (`fork/main`) lives on: its configured URL and the branch name there. */
+  remoteOfBranch(cwd: string, remoteBranch: string): Promise<{ url: string; branch: string } | null>
+  /** The configured remotes (`remote.<name>.url`, as written), in config order. */
+  configuredRemotes(cwd: string): Promise<Array<{ name: string; url: string }>>
+  homeDir(): string
+  isDir(path: string): Promise<boolean>
+  /** Clones `url` at `branch` into `dest` with this machine's git; throws with git's last line on failure. */
+  clone(url: string, branch: string, dest: string): Promise<void>
+  /**
+   * Fetches `branch` from the configured `remote` into a scratch ref and checks
+   * that `sha` is in it; throws when the fetch fails or the commit is not there.
+   */
+  fetchBase(cwd: string, remote: string, branch: string, sha: string): Promise<void>
 }
+
+/** How long `hub-remote:start-child` waits for the child's first turn before it answers `starting`. */
+export const HUB_REMOTE_START_WAIT_MS = 12_000
+/** Remote children of one batch started at once on one machine. */
+const REMOTE_STARTS_PER_MACHINE = 2
 
 /** A clone costs about this share of the folder (copy-on-write metadata). */
 const CLONE_SHARE = 0.05
 const DIR_BYTES_TTL_MS = 10 * 60_000
+/** A fetch of a child's base on its machine: no prompt can answer it, so it ends. */
+const FETCH_TIMEOUT_MS = 5 * 60_000
 
 export class HubStarter {
   private readonly io: HubStartIo
@@ -261,6 +310,8 @@ export class HubStarter {
   private readonly cancelled = new Set<string>()
   /** Open children with linked dependency folders, for the post-turn check. Rebuilt at startup. */
   private readonly linked = new Map<string, { worktree: string; parentId: string; state: ChildDepsState }>()
+  /** The checkout step of remote starts, per project folder on this machine. */
+  private readonly checkouts = new Map<string, Promise<void>>()
 
   constructor(
     private readonly host: HubStartHost,
@@ -681,17 +732,18 @@ export class HubStarter {
         baseSha: c.baseSha,
         providerInstanceId: c.instanceId,
         requestedModel: c.model,
+        machineId: c.machine?.id ?? null,
       })
     }
     this.host.changed?.(batch.parentId)
     void this.runBatch(batchId, batch.parentId, plan, remoteProblems).catch((err) =>
       log.error(`batch ${batchId} failed`, err),
     )
-    const lines = plan.children.map((c) =>
-      c.machine
-        ? `- ${c.title}: ${c.childId} on ${c.machine.name}: ${remoteProblems.get(c.childId) ?? HUB_REMOTE_LATER_TEXT}`
-        : `- ${c.title}: ${c.childId}`,
-    )
+    const lines = plan.children.map((c) => {
+      if (!c.machine) return `- ${c.title}: ${c.childId}`
+      const problem = remoteProblems.get(c.childId)
+      return `- ${c.title}: ${c.childId} on ${c.machine.name}${problem ? `: ${problem}` : ''}`
+    })
     return [
       `Starting ${plan.children.length} child chat${plan.children.length === 1 ? '' : 's'}. Each starts in its own ` +
         'worktree (or the project folder) and gets its brief as its first turn:',
@@ -709,27 +761,268 @@ export class HubStarter {
     remoteProblems: ReadonlyMap<string, string>,
   ): Promise<void> {
     const span = perfSpan('hub.batch', { batchId, parentId, children: plan.children.length })
+    // Children on other machines start there, next to the local ones.
+    const remote = this.startRemoteChildren(
+      parentId,
+      plan,
+      plan.children.filter((c) => c.machine),
+      remoteProblems,
+    )
     let failed = 0
     for (const c of plan.children) {
-      if (c.machine) {
-        // Never started here: its machine starts it, in a later version.
-        this.fail(parentId, c, new Error(remoteProblems.get(c.childId) ?? HUB_REMOTE_LATER_TEXT))
-        failed++
-        continue
-      }
+      if (c.machine) continue
       // Worktrees and clones go one at a time; the agents start as run slots free.
       if (!(await this.prepareChild(batchId, parentId, plan.projectPath, c))) failed++
     }
+    failed += await remote
     span.end({ failed })
   }
 
-  /** Worktree and dependencies; then the launch waits for a slot. False when the child failed. */
+  /**
+   * Sends each child on another machine to that machine, at most
+   * `REMOTE_STARTS_PER_MACHINE` at once per machine. Returns how many failed.
+   */
+  private async startRemoteChildren(
+    parentId: string,
+    plan: StoredPlan,
+    children: readonly PlannedChild[],
+    problems: ReadonlyMap<string, string>,
+  ): Promise<number> {
+    const byMachine = new Map<string, PlannedChild[]>()
+    for (const c of children) byMachine.set(c.machine!.id, [...(byMachine.get(c.machine!.id) ?? []), c])
+    let failed = 0
+    const one = async (c: PlannedChild) => {
+      if (!(await this.startOnMachine(parentId, plan, c, problems.get(c.childId) ?? null))) failed++
+    }
+    await Promise.all(
+      [...byMachine.values()].map(async (queue) => {
+        const lanes = Array.from({ length: Math.min(REMOTE_STARTS_PER_MACHINE, queue.length) }, async () => {
+          for (let c = queue.shift(); c; c = queue.shift()) await one(c)
+        })
+        await Promise.all(lanes)
+      }),
+    )
+    return failed
+  }
+
+  /** One child on another machine: the start request, and its answer on the desktop row. False when it failed. */
+  private async startOnMachine(
+    parentId: string,
+    plan: StoredPlan,
+    c: PlannedChild,
+    problem: string | null,
+  ): Promise<boolean> {
+    const machine = c.machine!
+    const span = perfSpan('hub.remote-start', {
+      childId: c.childId,
+      machineId: machine.id,
+      transport: machine.transport,
+    })
+    const failWith = (text: string, step: string) => {
+      span.end({ outcome: 'failed', step })
+      this.fail(parentId, c, new Error(text))
+      return false
+    }
+    if (problem) return failWith(problem, 'approval')
+    if (!this.host.startRemoteChild) return failWith(`${machine.name} cannot be reached from this backend.`, 'client')
+    const row = getHubChild(c.childId)
+    if (!row || !c.baseSha || !c.instanceId || !c.fetch || !c.remoteProjectPath)
+      return failWith('its plan is incomplete.', 'plan')
+    const source = await this.io.remoteOfBranch(plan.projectPath, c.fetch.remoteBranch)
+    const repoUrl = source ? hubRepoUrl(source.url) : null
+    if (!source || !repoUrl)
+      return failWith(`the remote of ${c.fetch.remoteBranch} cannot be fetched from ${machine.name}.`, 'remote')
+    const request: HubRemoteStartRequest = {
+      v: 1,
+      desktopInstallId: hubInstallId(),
+      parentId,
+      childId: c.childId,
+      title: c.title,
+      brief: c.brief,
+      agent: c.agent,
+      instanceId: c.instanceId,
+      model: c.model,
+      grantedMode: row.grantedMode,
+      baseSha: c.baseSha,
+      fetch: { remoteBranch: source.branch },
+      repoUrl,
+      remoteProjectPath: c.remoteProjectPath,
+      clonePlanned: c.clonePlanned === true,
+      deps: readHubSettings(this.getSetting).childDependencies,
+    }
+    let answer: HubRemoteStartAnswer | null
+    try {
+      answer = parseHubRemoteStartAnswer(await this.host.startRemoteChild(machine.id, request))
+    } catch (err) {
+      return failWith(hubRemoteCallFailureText(machine.name, err instanceof Error ? err.message : String(err)), 'call')
+    }
+    if (!answer) return failWith(`update the backend on ${machine.name}.`, 'answer')
+    if (!answer.ok) return failWith(hubRemoteStartFailureText(machine.name, answer), 'refused')
+    // A stop or a settle meanwhile leaves the row where it is.
+    if (getHubChild(c.childId)?.phase !== 'starting') {
+      span.end({ outcome: 'superseded' })
+      return true
+    }
+    // That machine only lowers the mode; an answer above the granted one is recorded as granted.
+    const mode = grantedMode(answer.mode, row.grantedMode)
+    updateHubChild(c.childId, { phase: answer.phase, grantedMode: mode })
+    log.info('child started on another machine', { childId: c.childId, machineId: machine.id, phase: answer.phase })
+    this.host.changed?.(parentId)
+    span.end({ outcome: answer.phase, capped: mode !== row.grantedMode })
+    return true
+  }
+
+  /**
+   * `hub-remote:start-child` on the child machine: a child of a parent on
+   * another machine's hub. See the module header for the checks.
+   */
+  async startRemote(raw: unknown): Promise<HubRemoteStartAnswer> {
+    const parsed = parseHubRemoteStartRequest(raw)
+    if (!parsed.ok) return { ok: false, error: parsed.message }
+    const r = parsed.request
+    if (!this.host.remoteChildren?.().flagOn)
+      return {
+        ok: false,
+        error: 'This machine does not take children: turn on hub_remote_children there.',
+        refusal: { kind: 'flag_off' },
+      }
+    const existing = getHubChild(r.childId)
+    if (existing) return this.knownRemoteChild(existing.childId, existing.parentId, r)
+    const settings = readHubSettings(this.getSetting)
+    const open = countOpenRemoteHubChildren()
+    if (open >= settings.remoteChildrenPerMachine)
+      return {
+        ok: false,
+        error: `This machine runs ${open} children from other machines already (limit ${settings.remoteChildrenPerMachine}).`,
+        refusal: { kind: 'cap', open, limit: settings.remoteChildrenPerMachine },
+      }
+    try {
+      if (resolveProviderInstance(r.agent, r.instanceId)?.id !== r.instanceId)
+        return { ok: false, error: `There is no account ${r.instanceId} here.` }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+    if (!claimHubParentStub(r.parentId, r.desktopInstallId))
+      return { ok: false, error: 'That parent id belongs to another hub here.' }
+    const mode = grantedMode(r.grantedMode, settings.remoteMaxMode)
+    const batchId = `remote-${r.childId}`
+    const c: PlannedChild = {
+      childId: r.childId,
+      ordinal: 0,
+      title: r.title,
+      brief: r.brief,
+      location: 'worktree',
+      baseRef: r.baseSha,
+      baseSha: r.baseSha,
+      branchSeed: r.title,
+      agent: r.agent,
+      instanceId: r.instanceId,
+      model: r.model,
+      requestedMode: r.grantedMode,
+      shownMode: mode,
+      deps: r.deps,
+      depsPlan: [],
+      machine: null,
+    }
+    // Before the first await: a repeated request now finds the child.
+    insertHubChild({
+      childId: c.childId,
+      parentId: r.parentId,
+      batchId,
+      ordinal: 0,
+      title: c.title,
+      brief: c.brief,
+      location: 'worktree',
+      grantedMode: mode,
+      depsMode: r.deps,
+      baseRef: r.baseSha,
+      baseSha: r.baseSha,
+      providerInstanceId: r.instanceId,
+      requestedModel: r.model,
+    })
+    log.info('child from another machine', { childId: c.childId, parentId: r.parentId, mode })
+    this.host.changed?.(r.parentId)
+    const started = this.startForRemote(batchId, r, c)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([started, new Promise<void>((go) => (timer = setTimeout(go, HUB_REMOTE_START_WAIT_MS)))])
+    clearTimeout(timer)
+    return this.knownRemoteChild(c.childId, r.parentId, r)
+  }
+
+  /** The answer for a child this machine already has: its state, nothing started. */
+  private knownRemoteChild(childId: string, parentId: string, r: HubRemoteStartRequest): HubRemoteStartAnswer {
+    const child = getHubChild(childId)
+    if (!child || parentId !== r.parentId || getHubParent(parentId)?.remoteHub !== r.desktopInstallId)
+      return { ok: false, error: 'Another chat here already has that child id.' }
+    if (isOpenChildPhase(child.phase))
+      return { ok: true, phase: child.phase as 'starting' | 'open', mode: child.grantedMode }
+    if (child.phase === 'settled') return { ok: false, error: 'That child is settled here.' }
+    const summary = lastHubWakeOf(childId)?.summary ?? 'It failed to start.'
+    // Paths in git and clone errors hold this machine's user name: it stays here.
+    const home = this.io.homeDir().replace(/\/+$/, '')
+    const error = summary.replace(/^Failed to start: /, '')
+    return { ok: false, error: home ? error.split(home).join('~') : error }
+  }
+
+  /**
+   * The checkout (cloned when planned), the base fetched from a configured
+   * remote, then the same steps as a local child. Resolves once the child is
+   * open or failed.
+   */
+  private async startForRemote(batchId: string, r: HubRemoteStartRequest, c: PlannedChild): Promise<void> {
+    const span = perfSpan('hub.remote-start', { childId: c.childId, step: 'checkout', clone: r.clonePlanned })
+    let projectPath: string
+    try {
+      projectPath = expandHubPath(r.remoteProjectPath, this.io.homeDir())
+      const key = remoteUrlKey(r.repoUrl)
+      await this.checkoutOnce(projectPath, async () => {
+        if (await this.io.isDir(projectPath)) return
+        if (!r.clonePlanned) throw new Error(`${r.remoteProjectPath} is not on this machine, and no clone was planned.`)
+        await this.io.clone(r.repoUrl, r.fetch.remoteBranch, projectPath)
+      })
+      const remote = (await this.io.configuredRemotes(projectPath)).find((x) => remoteUrlKey(x.url) === key)
+      if (!remote) throw new Error(`${r.remoteProjectPath} here is not a checkout of ${r.repoUrl}.`)
+      await this.io.fetchBase(projectPath, remote.name, r.fetch.remoteBranch, r.baseSha)
+      c.depsPlan = await this.io.planDeps(projectPath, r.baseSha, r.deps)
+      const disk = await this.diskCheck({ projectPath, children: [c] })
+      if (disk.problem) throw new Error(disk.problem)
+      span.end({ outcome: 'ok' })
+    } catch (err) {
+      span.end({ outcome: 'failed' })
+      this.fail(r.parentId, c, err)
+      return
+    }
+    const prepared = await this.prepareChild(batchId, r.parentId, projectPath, c, r.deps)
+    if (prepared) await prepared.launched
+  }
+
+  /**
+   * Runs `step` for `projectPath` after any earlier one for it has ended, so
+   * two children that plan the same clone clone it once.
+   */
+  private checkoutOnce(projectPath: string, step: () => Promise<void>): Promise<void> {
+    const next = (this.checkouts.get(projectPath) ?? Promise.resolve()).catch(() => {}).then(step)
+    this.checkouts.set(projectPath, next)
+    const forget = () => {
+      if (this.checkouts.get(projectPath) === next) this.checkouts.delete(projectPath)
+    }
+    next.then(forget, forget)
+    return next
+  }
+
+  /**
+   * Worktree and dependencies; then the launch waits for a slot. Null when the
+   * child failed, else its launch, which settles once the child is open or failed
+   * (in an object: an async function would wait for a returned promise).
+   * One path for a local approval and a start from another machine's hub.
+   */
   private async prepareChild(
     batchId: string,
     parentId: string,
     projectPath: string,
     c: PlannedChild,
-  ): Promise<boolean> {
+    depsSetting: HubDepsMode = readHubSettings(this.getSetting).childDependencies,
+  ): Promise<{ launched: Promise<void> } | null> {
     const span = perfSpan('hub.start-child', { childId: c.childId, agent: c.agent, location: c.location, deps: c.deps })
     const t0 = performance.now()
     let cwd = projectPath
@@ -745,8 +1038,7 @@ export class HubStarter {
         worktreeMs = performance.now() - t0
         updateHubChild(c.childId, { branch: snapshot.branch ?? null })
         const t1 = performance.now()
-        const setting = readHubSettings(this.getSetting).childDependencies
-        const plans = c.baseSha ? await this.io.planDeps(projectPath, c.baseSha, setting) : []
+        const plans = c.baseSha ? await this.io.planDeps(projectPath, c.baseSha, depsSetting) : []
         depsState = await this.io.prepareDeps(projectPath, cwd, plans)
         depsMs = performance.now() - t1
         const modes = depsState.folders.map((f) => f.mode)
@@ -772,7 +1064,7 @@ export class HubStarter {
     } catch (err) {
       span.end({ outcome: 'failed', step: 'prepare' })
       this.fail(parentId, c, err)
-      return false
+      return null
     }
     const mode = getHubChild(c.childId)?.grantedMode ?? 'sandbox'
     setConversationRuntimeMode(c.childId, mode)
@@ -780,10 +1072,10 @@ export class HubStarter {
     // The default account's id, as a resumed or moved child's slot names it.
     const slot: HubRunningChild = { providerInstanceId: c.instanceId ?? defaultInstanceId(c.agent), parentId }
     const depsLine = depsState ? depsBriefLine(depsState) : null
-    void this.whenSlotFree(c.childId, slot)
+    const launched = this.whenSlotFree(c.childId, slot)
       .then(() => this.launch(c, cwd, mode, slot, depsLine))
       .catch((err) => log.error(`launching child ${c.childId} threw`, err))
-    return true
+    return { launched }
   }
 
   /**
@@ -982,17 +1274,39 @@ export class HubStarter {
     const ahead = this.waiting.some(
       (w) => w.slot.providerInstanceId === slot.providerInstanceId || w.slot.parentId === slot.parentId,
     )
-    if (!ahead && runSlotFree(slot, [...this.running.values()], s.runningPerInstance, s.runningPerParent))
+    if (!ahead && runSlotFree(slot, this.slotsInUse(), s.runningPerInstance, s.runningPerParent))
       return Promise.resolve()
     log.info('child waits for a run slot', { childId, instance: slot.providerInstanceId })
     return new Promise((go) => this.waiting.push({ childId, slot, go }))
+  }
+
+  /** Local turns in flight, plus every open child on another machine for its parent's count. */
+  private slotsInUse(): HubRunningChild[] {
+    return [...this.running.values(), ...this.remoteSlots()]
+  }
+
+  /**
+   * Each open child of a parent here that runs on another machine, as a slot
+   * of its parent (`runningPerParent` counts it whether or not it runs a turn).
+   * Its account is that machine's, so its key never matches a local account.
+   */
+  remoteSlots(): HubRunningChild[] {
+    try {
+      return listOpenRemoteHubChildren().map((c) => ({
+        providerInstanceId: `${c.machineId}:${c.providerInstanceId ?? c.childId}`,
+        parentId: c.parentId,
+      }))
+    } catch (err) {
+      log.warn('could not read the children on other machines for the run slots', err)
+      return []
+    }
   }
 
   private pump(): void {
     const s = readHubSettings(this.getSetting)
     for (let i = 0; i < this.waiting.length;) {
       const w = this.waiting[i]!
-      if (runSlotFree(w.slot, [...this.running.values()], s.runningPerInstance, s.runningPerParent)) {
+      if (runSlotFree(w.slot, this.slotsInUse(), s.runningPerInstance, s.runningPerParent)) {
         this.waiting.splice(i, 1)
         // Reserved now, so the next waiter sees it; `launch` sets the same entry.
         this.running.set(w.childId, w.slot)
@@ -1187,6 +1501,61 @@ function defaultIo(): HubStartIo {
       } catch (err) {
         log.debug(`${ref} is not a commit in ${cwd}`, err)
         return null
+      }
+    },
+    async remoteOfBranch(cwd, remoteBranch) {
+      try {
+        const names = (await git(cwd, ['remote'])).split('\n').filter(Boolean)
+        // The longest remote name the branch starts with: remote names may hold a slash.
+        const name = names.filter((n) => remoteBranch.startsWith(`${n}/`)).sort((a, b) => b.length - a.length)[0]
+        if (!name) return null
+        const url = (await git(cwd, ['remote', 'get-url', '--end-of-options', name])).trim()
+        return url ? { url, branch: remoteBranch.slice(name.length + 1) } : null
+      } catch (err) {
+        log.warn(`could not read the remote of ${remoteBranch}`, err)
+        return null
+      }
+    },
+    async configuredRemotes(cwd) {
+      try {
+        const out = await git(cwd, ['config', '--get-regexp', '^remote\\..*\\.url$'])
+        return out.split('\n').flatMap((line) => {
+          const m = /^remote\.(.+)\.url (\S+)$/.exec(line.trim())
+          return m ? [{ name: m[1]!, url: m[2]! }] : []
+        })
+      } catch (err) {
+        // Exit 1: no remote at all; anything else: not a repository.
+        log.debug(`no configured remotes in ${cwd}`, err)
+        return []
+      }
+    },
+    homeDir: () => homedir(),
+    async isDir(path) {
+      try {
+        return (await stat(path)).isDirectory()
+      } catch (err) {
+        log.debug(`no folder at ${path}`, err)
+        return false
+      }
+    },
+    // Loaded on use: the clone module pulls in the project and file handlers.
+    clone: async (url, branch, dest) => (await import('../ipc/project-clone')).cloneProjectAndWait(url, branch, dest),
+    async fetchBase(cwd, remote, branch, sha) {
+      const scratch = `refs/switchboard/fetch/hub-${sha.slice(0, 12)}-${randomBytes(3).toString('hex')}`
+      await execFileP(
+        'git',
+        ['-C', cwd, 'fetch', '--no-tags', '--end-of-options', remote, `+refs/heads/${branch}:${scratch}`],
+        { env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, maxBuffer: 16 * 1024 * 1024, timeout: FETCH_TIMEOUT_MS },
+      )
+      try {
+        await git(cwd, ['merge-base', '--is-ancestor', sha, scratch])
+      } catch (err) {
+        log.warn(`commit ${sha} is not on ${remote}/${branch}`, err)
+        throw new Error(`Commit ${sha.slice(0, 7)} is not on ${branch} of that remote.`)
+      } finally {
+        await git(cwd, ['update-ref', '-d', scratch]).catch((err) =>
+          log.warn('could not delete the scratch fetch ref', err),
+        )
       }
     },
   }

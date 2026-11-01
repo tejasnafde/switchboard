@@ -47,6 +47,8 @@ export const PERF_THRESHOLDS = {
   'hub.remote-describe': 500,
   // Each desktop-to-machine hub call: channel, machine id, outcome.
   'hub.remote-call': 200,
+  // One child on another machine: the desktop's start call, and the checkout, clone and fetch there.
+  'hub.remote-start': 0,
   ipc: 200,
 } as const
 

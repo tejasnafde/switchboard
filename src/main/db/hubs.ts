@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
 import {
   parseHubPointer,
@@ -75,6 +76,23 @@ export function ensureHubSchema(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_hub_wakes_parent ON hub_wakes(parent_id, delivered_revision);
   `)
+  // Children on other machines (additive): a parent stub here names the hub
+  // that owns it; a desktop child row names the machine it runs on.
+  const columns = (table: string) =>
+    new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name))
+  if (!columns('hub_parents').has('remote_hub')) db.exec('ALTER TABLE hub_parents ADD COLUMN remote_hub TEXT')
+  if (!columns('hub_children').has('machine_id')) db.exec('ALTER TABLE hub_children ADD COLUMN machine_id TEXT')
+}
+
+/** This backend's id as a hub to other machines, minted once. */
+export function hubInstallId(): string {
+  const db = getDb()
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'hub.installId'").get() as
+    | { value: string }
+    | undefined
+  if (row?.value) return row.value
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('hub.installId', ?)").run(`hub-${randomUUID()}`)
+  return (db.prepare("SELECT value FROM settings WHERE key = 'hub.installId'").get() as { value: string }).value
 }
 
 // ─── hub_parents ────────────────────────────────────────────────
@@ -84,6 +102,8 @@ export interface HubParentRow {
   held: boolean
   heldReason: string | null
   heldAt: number | null
+  /** A parent stub: the parent runs on the hub with this install id, not here. Null for a parent here. */
+  remoteHub: string | null
 }
 
 export function ensureHubParent(parentId: string): void {
@@ -94,12 +114,46 @@ export function ensureHubParent(parentId: string): void {
 
 export function getHubParent(parentId: string): HubParentRow | null {
   const row = getDb()
-    .prepare('SELECT parent_id, held, held_reason, held_at FROM hub_parents WHERE parent_id = ?')
+    .prepare('SELECT parent_id, held, held_reason, held_at, remote_hub FROM hub_parents WHERE parent_id = ?')
     .get(resolveRootThreadId(parentId)) as
-    | { parent_id: string; held: number; held_reason: string | null; held_at: number | null }
+    | { parent_id: string; held: number; held_reason: string | null; held_at: number | null; remote_hub: string | null }
     | undefined
   if (!row) return null
-  return { parentId: row.parent_id, held: row.held === 1, heldReason: row.held_reason, heldAt: row.held_at }
+  return {
+    parentId: row.parent_id,
+    held: row.held === 1,
+    heldReason: row.held_reason,
+    heldAt: row.held_at,
+    remoteHub: row.remote_hub,
+  }
+}
+
+/**
+ * The stub of a parent on another machine's hub, made once. False when the
+ * id is already a parent here or a stub of another hub.
+ */
+export function claimHubParentStub(parentId: string, remoteHub: string): boolean {
+  const db = getDb()
+  db.prepare('INSERT OR IGNORE INTO hub_parents (parent_id, remote_hub, updated_at) VALUES (?, ?, ?)').run(
+    parentId,
+    remoteHub,
+    Date.now(),
+  )
+  const row = db.prepare('SELECT remote_hub FROM hub_parents WHERE parent_id = ?').get(parentId) as {
+    remote_hub: string | null
+  }
+  return row.remote_hub === remoteHub
+}
+
+/** Open (starting or open) children here whose parent is a stub of another machine's hub. */
+export function countOpenRemoteHubChildren(): number {
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS n FROM hub_children c JOIN hub_parents p ON p.parent_id = c.parent_id
+       WHERE p.remote_hub IS NOT NULL AND c.phase IN ('starting', 'open')`,
+    )
+    .get() as { n: number }
+  return row.n
 }
 
 /** Sets or lifts the hold; a parent with no row gets one. */
@@ -210,6 +264,8 @@ export interface HubChildRow {
   settledAt: number | null
   settleJson: string | null
   createdAt: number
+  /** The machine it runs on, for a child of a parent here that runs on another machine. Null: this machine. */
+  machineId: string | null
 }
 
 type ChildDbRow = {
@@ -234,6 +290,7 @@ type ChildDbRow = {
   settled_at: number | null
   settle_json: string | null
   created_at: number
+  machine_id: string | null
 }
 
 const toChild = (r: ChildDbRow): HubChildRow => ({
@@ -258,13 +315,19 @@ const toChild = (r: ChildDbRow): HubChildRow => ({
   settledAt: r.settled_at,
   settleJson: r.settle_json,
   createdAt: r.created_at,
+  machineId: r.machine_id,
 })
 
 export type NewHubChild = Pick<
   HubChildRow,
   'childId' | 'parentId' | 'batchId' | 'ordinal' | 'title' | 'brief' | 'location' | 'grantedMode' | 'depsMode'
 > &
-  Partial<Pick<HubChildRow, 'branch' | 'baseRef' | 'baseSha' | 'providerInstanceId' | 'requestedModel' | 'depsJson'>>
+  Partial<
+    Pick<
+      HubChildRow,
+      'branch' | 'baseRef' | 'baseSha' | 'providerInstanceId' | 'requestedModel' | 'depsJson' | 'machineId'
+    >
+  >
 
 /** A new child in phase `starting`. Its `creation_id` is `<batch_id>-<ordinal>`. */
 export function insertHubChild(c: NewHubChild): void {
@@ -273,10 +336,10 @@ export function insertHubChild(c: NewHubChild): void {
     .prepare(
       `INSERT INTO hub_children (child_id, parent_id, batch_id, ordinal, title, brief, location, creation_id, branch,
          base_ref, base_sha, provider_instance_id, requested_model, granted_mode, deps_mode, deps_json, phase,
-         created_at, updated_at)
+         machine_id, created_at, updated_at)
        VALUES (@childId, @parentId, @batchId, @ordinal, @title, @brief, @location, @creationId, @branch,
          @baseRef, @baseSha, @providerInstanceId, @requestedModel, @grantedMode, @depsMode, @depsJson, 'starting',
-         @now, @now)`,
+         @machineId, @now, @now)`,
     )
     .run({
       ...c,
@@ -286,6 +349,7 @@ export function insertHubChild(c: NewHubChild): void {
       providerInstanceId: c.providerInstanceId ?? null,
       requestedModel: c.requestedModel ?? null,
       depsJson: c.depsJson ?? null,
+      machineId: c.machineId ?? null,
       childId: resolveRootThreadId(c.childId),
       parentId: resolveRootThreadId(c.parentId),
       creationId: `${c.batchId}-${c.ordinal}`,
@@ -456,11 +520,26 @@ export function listOpenHubChildren(): Array<{ childId: string; parentId: string
   return rows.map((r) => ({ childId: r.child_id, parentId: r.parent_id }))
 }
 
-/** Every child in `phase`, across parents: startup recovery and the resource sampler. */
-export function listHubChildrenInPhase(phase: HubChildPhase): HubChildRow[] {
+/**
+ * Every child in `phase`, across parents: startup recovery, the reaper and the
+ * resource sampler. Children that run on another machine are left out unless
+ * asked for: nothing local acts on them.
+ */
+export function listHubChildrenInPhase(phase: HubChildPhase, opts: { includeRemote?: boolean } = {}): HubChildRow[] {
   const rows = getDb()
-    .prepare('SELECT * FROM hub_children WHERE phase = ? ORDER BY created_at, ordinal')
+    .prepare(
+      `SELECT * FROM hub_children WHERE phase = ? ${opts.includeRemote ? '' : 'AND machine_id IS NULL'}
+       ORDER BY created_at, ordinal`,
+    )
     .all(phase) as ChildDbRow[]
+  return rows.map(toChild)
+}
+
+/** Open (starting or open) children of parents here that run on another machine. */
+export function listOpenRemoteHubChildren(): HubChildRow[] {
+  const rows = getDb()
+    .prepare("SELECT * FROM hub_children WHERE machine_id IS NOT NULL AND phase IN ('starting', 'open')")
+    .all() as ChildDbRow[]
   return rows.map(toChild)
 }
 

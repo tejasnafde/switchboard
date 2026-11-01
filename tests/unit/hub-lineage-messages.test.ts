@@ -59,6 +59,7 @@ vi.mock('../../src/main/db/database', () => ({
   lastHubWakes: () => new Map(),
   listPendingHubWakes: () => [],
   getHubParent: () => null,
+  getHubChild: (id: string) => children.find((c) => c.childId === id) ?? null,
 }))
 
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'

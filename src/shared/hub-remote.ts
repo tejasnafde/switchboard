@@ -6,9 +6,17 @@
  * what that machine offers through `hub-remote:describe`.
  */
 import type { DeviceScope } from './device-auth'
-import type { HubBatchMachine, HubChildLocation } from './hub'
+import {
+  HUB_DEPS_MODES,
+  type HubBatchMachine,
+  type HubChildLocation,
+  type HubChildPhase,
+  type HubDepsMode,
+} from './hub'
 import { modelsForAgent } from './models'
-import { agentLabel, type AgentProvider, type AgentType } from './types'
+import { isNetworkCloneUrl, isSafeCloneUrl } from './project-clone'
+import { RUNTIME_MODES, type RuntimeMode } from './provider-events'
+import { agentLabel, isAgentProvider, type AgentProvider, type AgentType } from './types'
 
 /** What the hub client asks for in its auth frame. */
 export const HUB_REMOTE_AUTH_SCOPES: readonly DeviceScope[] = ['hub']
@@ -178,6 +186,8 @@ export function parseGitRemoteFetchUrls(out: string): string[] {
 
 /** The capability a backend advertises when it answers `hub-remote:*`. */
 export const HUB_REMOTE_CAPABILITY = 'hub_remote_child_v1'
+/** The backend answers `hub-remote:start-child`: it starts a child for a hub on another machine. */
+export const HUB_REMOTE_START_CAPABILITY = 'hub_remote_start_v1'
 
 /** The desktop's own entry in `list_machines`. */
 export const LOCAL_MACHINE_ID = 'local'
@@ -200,6 +210,8 @@ export interface HubMachineEntry {
   ageMs: number | null
   /** Why the hub client does not use this machine, for example an older backend. */
   problem: string | null
+  /** The machine's backend answers `hub-remote:start-child` (`hub_remote_start_v1`). */
+  canStart: boolean
 }
 
 /**
@@ -330,7 +342,7 @@ function formatGb(bytes: number): string {
 
 export const HUB_REMOTE_OFF_TEXT = 'Starting children on other machines is off.'
 export const HUB_REMOTE_VM_PARENT_TEXT = 'A chat on a remote machine starts children on its own machine only.'
-export const HUB_REMOTE_LATER_TEXT = 'Starting children on other machines comes in a later version.'
+export const HUB_REMOTE_STOP_LATER_TEXT = 'Stop on another machine comes in a later version.'
 
 /** A description older than this is not trusted at propose; `list_machines` reads one every 60 s. */
 export const HUB_FRESH_DESCRIPTION_MS = 90_000
@@ -375,7 +387,8 @@ export function planRemoteTask(t: {
   if (e.problem) return refuse(`${e.problem}.`)
   if (e.status !== 'connected') return refuse(`connect ${name} first.`)
   const d = e.description
-  if (!d || e.ageMs === null || e.ageMs > HUB_FRESH_DESCRIPTION_MS) return refuse(`update the backend on ${name}.`)
+  if (!d || e.ageMs === null || e.ageMs > HUB_FRESH_DESCRIPTION_MS || !e.canStart)
+    return refuse(`update the backend on ${name}.`)
   if (!d.flagOn) return refuse(`${name} does not take children: turn on hub_remote_children there.`)
   const label = agentLabel(t.agent)
   const agent = d.agents.find((a) => a.agent === t.agent)
@@ -449,10 +462,200 @@ export function remoteApprovalProblem(c: {
   if (!e) return `machine ${c.machineId} is gone.`
   if (e.problem) return `${e.problem}.`
   if (e.status !== 'connected') return `${e.name} is not connected.`
-  if (!e.description) return `update the backend on ${e.name}.`
+  if (!e.description || !e.canStart) return `update the backend on ${e.name}.`
   if (!e.description.flagOn) return `${e.name} does not take children: turn on hub_remote_children there.`
   const accounts = e.description.agents.find((a) => a.agent === c.agent)?.accounts ?? []
   if (!accounts.some((a) => a.instanceId === c.instanceId))
     return `${e.name} no longer has the ${agentLabel(c.agent)} account ${c.instanceId}.`
   return null
+}
+
+// ─── Starting a child on another machine ────────────────────────
+
+/** What the desktop sends `hub-remote:start-child`. Ids are the desktop's; the child keeps its id there. */
+export interface HubRemoteStartRequest {
+  v: 1
+  /** The desktop's own id (`hub.installId`): the parent stub there belongs to it. */
+  desktopInstallId: string
+  /** The parent chat on the desktop; the child machine keeps a stub row under this id. */
+  parentId: string
+  childId: string
+  title: string
+  brief: string
+  agent: AgentProvider
+  /** An account on the child machine. */
+  instanceId: string
+  model: string | null
+  /** The mode the desktop granted; the child machine lowers it to its `hub.remoteMaxMode`. */
+  grantedMode: RuntimeMode
+  baseSha: string
+  /** A branch on the remote at `repoUrl` that holds `baseSha`, without the desktop's remote name. */
+  fetch: { remoteBranch: string }
+  /** The remote, without credentials (`hubRepoUrl`). */
+  repoUrl: string
+  /** The checkout there, `~/...` as that machine names it. */
+  remoteProjectPath: string
+  /** No checkout there: clone `repoUrl` into `remoteProjectPath` first. */
+  clonePlanned: boolean
+  /** The desktop's `hub.childDependencies`. */
+  deps: HubDepsMode
+}
+
+/** Why a child machine refused, when the desktop words it with the machine's name. */
+export type HubRemoteRefusal = { kind: 'flag_off' } | { kind: 'cap'; open: number; limit: number }
+
+export type HubRemoteStartAnswer =
+  | { ok: true; phase: Extract<HubChildPhase, 'starting' | 'open'>; mode: RuntimeMode }
+  | { ok: false; error: string; refusal?: HubRemoteRefusal }
+
+const SHA_RE = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/
+const ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/
+const MAX_BRIEF = 64 * 1024
+
+/** A start request off the wire: every field is checked, nothing is trusted. */
+export function parseHubRemoteStartRequest(
+  value: unknown,
+): { ok: true; request: HubRemoteStartRequest } | { ok: false; message: string } {
+  const bad = (field: string) => ({ ok: false as const, message: `The start request has an invalid ${field}.` })
+  if (!value || typeof value !== 'object') return bad('body')
+  const r = value as Record<string, unknown>
+  const str = (k: string, max: number) =>
+    typeof r[k] === 'string' && (r[k] as string).length > 0 && (r[k] as string).length <= max
+  if (r.v !== 1) return bad('version')
+  for (const k of ['desktopInstallId', 'parentId', 'childId', 'instanceId'])
+    if (!str(k, 128) || !ID_RE.test(r[k] as string)) return bad(k)
+  if (!str('title', 200)) return bad('title')
+  if (!str('brief', MAX_BRIEF)) return bad('brief')
+  if (typeof r.agent !== 'string' || !isAgentProvider(r.agent)) return bad('agent')
+  if (r.model !== null && !str('model', 200)) return bad('model')
+  if (typeof r.grantedMode !== 'string' || !(RUNTIME_MODES as readonly string[]).includes(r.grantedMode))
+    return bad('grantedMode')
+  if (typeof r.baseSha !== 'string' || !SHA_RE.test(r.baseSha)) return bad('baseSha')
+  const fetch = r.fetch as Record<string, unknown> | null
+  if (
+    !fetch ||
+    typeof fetch !== 'object' ||
+    typeof fetch.remoteBranch !== 'string' ||
+    !isBranchName(fetch.remoteBranch)
+  )
+    return bad('fetch')
+  if (typeof r.repoUrl !== 'string' || hubRepoUrlProblem(r.repoUrl) !== null) return bad('repoUrl')
+  if (!str('remoteProjectPath', 1024) || remotePathProblem(r.remoteProjectPath as string) !== null)
+    return bad('remoteProjectPath')
+  if (typeof r.clonePlanned !== 'boolean') return bad('clonePlanned')
+  if (typeof r.deps !== 'string' || !(HUB_DEPS_MODES as readonly string[]).includes(r.deps)) return bad('deps')
+  return {
+    ok: true,
+    request: {
+      v: 1,
+      desktopInstallId: r.desktopInstallId as string,
+      parentId: r.parentId as string,
+      childId: r.childId as string,
+      title: r.title as string,
+      brief: r.brief as string,
+      agent: r.agent,
+      instanceId: r.instanceId as string,
+      model: (r.model as string | null) ?? null,
+      grantedMode: r.grantedMode as RuntimeMode,
+      baseSha: r.baseSha,
+      fetch: { remoteBranch: fetch.remoteBranch },
+      repoUrl: r.repoUrl,
+      remoteProjectPath: r.remoteProjectPath as string,
+      clonePlanned: r.clonePlanned,
+      deps: r.deps as HubDepsMode,
+    },
+  }
+}
+
+/** A start answer off the wire, or null when its shape is wrong. */
+export function parseHubRemoteStartAnswer(value: unknown): HubRemoteStartAnswer | null {
+  if (!value || typeof value !== 'object') return null
+  const a = value as Record<string, unknown>
+  if (a.ok === true) {
+    if (a.phase !== 'starting' && a.phase !== 'open') return null
+    if (typeof a.mode !== 'string' || !(RUNTIME_MODES as readonly string[]).includes(a.mode)) return null
+    return { ok: true, phase: a.phase, mode: a.mode as RuntimeMode }
+  }
+  if (a.ok !== false || typeof a.error !== 'string') return null
+  const r = a.refusal as Record<string, unknown> | undefined
+  const refusal: HubRemoteRefusal | undefined =
+    r?.kind === 'flag_off'
+      ? { kind: 'flag_off' }
+      : r?.kind === 'cap' && typeof r.open === 'number' && typeof r.limit === 'number'
+        ? { kind: 'cap', open: r.open, limit: r.limit }
+        : undefined
+  return { ok: false, error: a.error.slice(0, 2000), ...(refusal ? { refusal } : {}) }
+}
+
+/** The failed wake's text for a refused start on the machine `name`. */
+export function hubRemoteStartFailureText(name: string, answer: Extract<HubRemoteStartAnswer, { ok: false }>): string {
+  const r = answer.refusal
+  if (r?.kind === 'flag_off') return `${name} does not take children: turn on hub_remote_children there.`
+  if (r?.kind === 'cap') return `${name} runs ${r.open} children from other machines already (limit ${r.limit}).`
+  return `On ${name}: ${answer.error.replace(/\p{Cc}/gu, ' ')}`
+}
+
+/** The text for a start call that never got an answer: an older backend has no such channel. */
+export function hubRemoteCallFailureText(name: string, message: string): string {
+  if (/^no handler: /.test(message)) return `update the backend on ${name}.`
+  return message.endsWith('.') ? message : `${message}.`
+}
+
+/** A branch name as `git check-ref-format --branch` would take it, without shell or option tricks. */
+function isBranchName(name: string): boolean {
+  if (!name || name.length > 255 || name.startsWith('-') || name.startsWith('/') || name.endsWith('/')) return false
+  if (/[\x00-\x20~^:?*[\\\x7f]/.test(name) || name.includes('..') || name.includes('@{') || name.includes('//'))
+    return false
+  return !name.endsWith('.lock') && !name.endsWith('.') && !name.split('/').some((p) => p.startsWith('.'))
+}
+
+/**
+ * The remote URL a child machine gets: credentials out, the rest as written,
+ * so that machine's own git and keys reach it. An ssh login name (`git@`)
+ * stays, since ssh needs it and it holds no secret; a password, any http
+ * user part (often a token), a query and a fragment go. Null for a local
+ * path or a URL another machine cannot fetch.
+ */
+export function hubRepoUrl(url: string): string | null {
+  const u = url.trim()
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\/([^/@\s]*@)?(.*)$/i.exec(u)
+  let out: string
+  if (scheme) {
+    const proto = scheme[1]!.toLowerCase()
+    const user = (scheme[2] ?? '').slice(0, -1)
+    const keepUser = (proto === 'ssh' || proto === 'git+ssh') && user !== '' && !user.includes(':')
+    out = `${scheme[1]}://${keepUser ? `${user}@` : ''}${scheme[3]}`.replace(/[?#].*$/, '')
+  } else out = u
+  return hubRepoUrlProblem(out) === null ? out : null
+}
+
+/** Why a child machine must not clone or fetch `url`, or null. */
+export function hubRepoUrlProblem(url: string): string | null {
+  if (url.length > 1024 || !isSafeCloneUrl(url) || !isNetworkCloneUrl(url) || remoteUrlKey(url) === null)
+    return 'This remote URL cannot be cloned on another machine.'
+  if (/[?#]/.test(url)) return 'The remote URL carries a query or fragment.'
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\/([^/@\s]*)@/i.exec(url)
+  if (scheme) {
+    const proto = scheme[1]!.toLowerCase()
+    if ((proto !== 'ssh' && proto !== 'git+ssh') || scheme[2]!.includes(':'))
+      return 'The remote URL carries credentials.'
+  }
+  return null
+}
+
+/** Why a project path from the desktop is not one a child machine accepts, or null. */
+function remotePathProblem(path: string): string | null {
+  if (/[\x00-\x1f\x7f]/.test(path)) return 'control character'
+  if (!path.startsWith('/') && !path.startsWith('~/')) return 'not absolute'
+  const parts = path
+    .slice(path.startsWith('~/') ? 2 : 1)
+    .split('/')
+    .filter(Boolean)
+  if (parts.length === 0 || parts.some((p) => p === '.' || p === '..' || p.startsWith('-'))) return 'unsafe part'
+  return null
+}
+
+/** `~/x` under `home`; any other accepted path as it is. */
+export function expandHubPath(path: string, home: string): string {
+  return path.startsWith('~/') ? `${home.replace(/\/+$/, '')}/${path.slice(2)}` : path
 }

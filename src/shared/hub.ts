@@ -108,7 +108,13 @@ export const HUB_SETTINGS = {
   runningPerParent: { key: 'hub.runningPerParent', defaultValue: 6, min: 1, max: 12 },
   idleReapMinutes: { key: 'hub.idleReapMinutes', defaultValue: 20, min: 5, max: 240, allowOff: true },
   minFreeGiB: { key: 'hub.minFreeGiB', defaultValue: 5, min: 1, max: 50 },
+  /** Read on a child machine: open and starting children there from other machines' hubs. */
+  remoteChildrenPerMachine: { key: 'hub.remoteChildrenPerMachine', defaultValue: 4, min: 1, max: 12 },
 } as const satisfies Record<string, NumberSetting>
+
+/** Read on a child machine: the highest mode a child from another machine's hub gets there. */
+export const HUB_REMOTE_MAX_MODE_SETTING = 'hub.remoteMaxMode'
+export const HUB_REMOTE_MAX_MODE_DEFAULT: RuntimeMode = 'auto'
 
 export const HUB_CHILD_DEPENDENCIES_SETTING = 'hub.childDependencies'
 export const HUB_DEPS_MODES: readonly HubDepsMode[] = ['link', 'clone', 'install', 'none']
@@ -122,6 +128,8 @@ export interface HubSettings {
   idleReapMinutes: number | null
   minFreeGiB: number
   childDependencies: HubDepsMode
+  remoteChildrenPerMachine: number
+  remoteMaxMode: RuntimeMode
 }
 
 function readNumber(s: NumberSetting, stored: string | null): number | null {
@@ -130,15 +138,30 @@ function readNumber(s: NumberSetting, stored: string | null): number | null {
   return Number.isInteger(n) && n >= s.min && n <= s.max ? n : s.defaultValue
 }
 
-/** Every hub setting, with the default for a missing or out-of-range row. */
+/** A number clamped into the setting's range; the default for a missing or non-numeric row. */
+function readClamped(s: NumberSetting, stored: string | null): number {
+  const n = stored === null || stored.trim() === '' ? NaN : Number(stored)
+  return Number.isFinite(n) ? Math.min(s.max, Math.max(s.min, Math.round(n))) : s.defaultValue
+}
+
+/**
+ * Every hub setting, with the default for a missing or out-of-range row. The
+ * two remote settings clamp instead: a per-machine cap of 20 means 12.
+ */
 export function readHubSettings(getSetting: SettingReader): HubSettings {
   const deps = getSetting(HUB_CHILD_DEPENDENCIES_SETTING)
+  const maxMode = getSetting(HUB_REMOTE_MAX_MODE_SETTING)
   return {
     runningPerInstance: readNumber(HUB_SETTINGS.runningPerInstance, getSetting(HUB_SETTINGS.runningPerInstance.key))!,
     runningPerParent: readNumber(HUB_SETTINGS.runningPerParent, getSetting(HUB_SETTINGS.runningPerParent.key))!,
     idleReapMinutes: readNumber(HUB_SETTINGS.idleReapMinutes, getSetting(HUB_SETTINGS.idleReapMinutes.key)),
     minFreeGiB: readNumber(HUB_SETTINGS.minFreeGiB, getSetting(HUB_SETTINGS.minFreeGiB.key))!,
     childDependencies: HUB_DEPS_MODES.find((m) => m === deps) ?? 'link',
+    remoteChildrenPerMachine: readClamped(
+      HUB_SETTINGS.remoteChildrenPerMachine,
+      getSetting(HUB_SETTINGS.remoteChildrenPerMachine.key),
+    ),
+    remoteMaxMode: RUNTIME_MODES.find((m) => m === maxMode) ?? HUB_REMOTE_MAX_MODE_DEFAULT,
   }
 }
 

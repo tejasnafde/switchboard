@@ -50,6 +50,7 @@ describe('hub tables', () => {
       held: false,
       heldReason: null,
       heldAt: null,
+      remoteHub: null,
     })
     setHubParentHeld('agent_parent', true, 'stop')
     expect(getHubParent('agent_parent')).toMatchObject({ held: true, heldReason: 'stop' })
@@ -59,6 +60,7 @@ describe('hub tables', () => {
       held: false,
       heldReason: null,
       heldAt: null,
+      remoteHub: null,
     })
   })
 

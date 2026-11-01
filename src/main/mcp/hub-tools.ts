@@ -103,6 +103,7 @@ export function buildListMachinesTool(ctx: ListMachinesToolContext): McpTool {
         description: local,
         ageMs: null,
         problem: local ? null : 'could not read this desktop',
+        canStart: false,
       }
       return toolText(formatHubMachineList([self, ...remote], callerRemotes))
     },
@@ -163,12 +164,7 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         'report. In ask and plan modes the user approves the batch on a card first; in other modes the children start',
         'at once. A child never gets more access than this chat. The tool returns at once; use list_children to follow',
         'them. You merge their branches yourself with git.',
-        ...(ctx.machines
-          ? [
-              'machine names another machine from list_machines. In this version an approved child on another machine',
-              'fails at start.',
-            ]
-          : []),
+        ...(ctx.machines ? ['machine names another machine from list_machines.'] : []),
       ].join('\n'),
       inputSchema: {
         type: 'object',
@@ -214,7 +210,7 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
                         description:
                           'A machine id from list_machines. Default: local, this machine. A child on another ' +
                           'machine works in a worktree there, off a commit a remote branch holds; the user ' +
-                          'approves such a batch on a card in every mode. In this version such a child fails at start.',
+                          'approves such a batch on a card in every mode.',
                       },
                     }
                   : {}),

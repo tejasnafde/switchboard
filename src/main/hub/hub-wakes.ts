@@ -10,7 +10,9 @@
  * activity for 2 minutes (which is ended), leaves its wakes pending for one
  * more try. A second failure, or more than 30 wake turns in an hour, holds
  * them until Deliver or the user's next message to the parent, which carries
- * every pending wake along (`claimForTurn`).
+ * every pending wake along (`claimForTurn`). A parent stub (`remote_hub`: the
+ * parent runs on another machine's hub) is never sent a turn: its wakes stay
+ * stored for that hub.
  *
  * Measured: one `hub.wake` perf line per wake turn (wakes, children, bytes of
  * the turn, attempt, outcome, ms to the first activity), threshold 0.
@@ -314,8 +316,14 @@ export class HubWakeScheduler {
     let wakes: HubWakeRow[]
     let held: boolean
     try {
+      const parent = getHubParent(parentId)
+      // A stub of a parent on another machine: its wakes stay stored, nothing runs a turn for it here.
+      if (parent?.remoteHub) {
+        this.pending.delete(parentId)
+        return
+      }
       wakes = listPendingHubWakes(parentId).filter((w) => !this.claimed.has(w.id))
-      held = getHubParent(parentId)?.held ?? false
+      held = parent?.held ?? false
     } catch (err) {
       log.warn(`could not read the wakes of ${parentId}`, err)
       return

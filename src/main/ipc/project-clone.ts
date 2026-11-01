@@ -344,6 +344,25 @@ export async function writeIgnoredFile(
   }
 }
 
+/**
+ * Clone `url` at `branch` into `dest` and wait for the end: a child chat on
+ * this machine whose hub planned a clone. The same checks, journal and
+ * cleanup as `project-clone:clone`. Throws with git's last line on failure.
+ */
+export async function cloneProjectAndWait(url: string, branch: string, dest: string): Promise<void> {
+  const { journal, done } = cloneJournal()
+  await done
+  let settled: (status: CloneStatus) => void = () => {}
+  const ended = new Promise<CloneStatus>((resolve) => (settled = resolve))
+  const started = await startClone(
+    { url, remoteBranch: branch, name: basename(dest), path: dest },
+    { homeDir: homedir(), journal, onSettled: (status) => settled(status) },
+  )
+  if (!started.ok) throw new Error(started.error)
+  const status = await ended
+  if (status.phase === 'failed') throw new Error(`The clone failed: ${status.error}`)
+}
+
 let recovered: { journal: CloneJournal; done: Promise<void> } | null = null
 
 /** Once per process: handlers are registered again when the desktop window reopens. */

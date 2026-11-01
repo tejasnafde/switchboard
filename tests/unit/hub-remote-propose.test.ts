@@ -15,7 +15,6 @@ import {
 import { HubStarter, type HubParentContext, type HubStartHost, type HubStartIo } from '../../src/main/hub/hub-start'
 import { hubBatchDetail, parseHubTasks, type HubBatchView, type HubTask } from '../../src/shared/hub'
 import {
-  HUB_REMOTE_LATER_TEXT,
   parseRemoteBranches,
   pickFetchBranch,
   planRemoteTask,
@@ -59,6 +58,7 @@ const entry = (over: Partial<HubMachineEntry> = {}): HubMachineEntry => ({
   description: desc(),
   ageMs: 1_000,
   problem: null,
+  canStart: true,
   ...over,
 })
 
@@ -69,6 +69,7 @@ function harness(
     remoteUrls?: string[]
     containing?: string[]
     upstream?: string | null
+    startRemote?: HubStartHost['startRemoteChild']
   } = {},
 ) {
   const started: string[] = []
@@ -93,6 +94,7 @@ function harness(
     async stopChild() {},
     remoteChildren: () => opts.gate ?? { flagOn: true, onVm: false },
     machineEntries: async () => (opts.entries ?? (() => [entry()]))(),
+    ...(opts.startRemote ? { startRemoteChild: opts.startRemote } : {}),
   }
   const io: Partial<HubStartIo> = {
     freeBytes: async () => 100 * GIB,
@@ -106,6 +108,7 @@ function harness(
     remoteUrls: async () => opts.remoteUrls ?? ['git@github.com:me/repo.git'],
     remoteBranchesContaining: async () => opts.containing ?? ['fork/main', 'origin/main'],
     upstreamOf: async () => (opts.upstream === undefined ? 'origin/main' : opts.upstream),
+    remoteOfBranch: async (_cwd, b) => ({ url: 'git@github.com:me/repo.git', branch: b.slice(b.indexOf('/') + 1) }),
   }
   return { starter: new HubStarter(host, () => null, io), started, cards }
 }
@@ -173,6 +176,8 @@ describe('planRemoteTask', () => {
       'Task 2: update the backend on Work VM.',
     )
     expect(refusal({ entries: [entry({ ageMs: 10 * 60_000 })] })).toBe('Task 2: update the backend on Work VM.')
+    // A backend without hub_remote_start_v1 cannot start the child.
+    expect(refusal({ entries: [entry({ canStart: false })] })).toBe('Task 2: update the backend on Work VM.')
     expect(refusal({ entries: [entry({ description: desc({ flagOn: false }) })] })).toBe(
       'Task 2: Work VM does not take children: turn on hub_remote_children there.',
     )
@@ -378,9 +383,16 @@ describe('HubStarter with a remote task', () => {
     },
   )
 
-  it('at approval fails the children of a machine that went away, ends the rest as later, and starts local ones', async () => {
+  it('at approval fails the children of a machine that went away, starts the rest there, and starts local ones', async () => {
     let entries = [entry(), entry({ id: 'box', name: 'Box', transport: 'ssh' })]
-    const h = harness({ entries: () => entries })
+    const sent: Array<[string, string]> = []
+    const h = harness({
+      entries: () => entries,
+      startRemote: async (machineId, req) => {
+        sent.push([machineId, req.childId])
+        return { ok: true, phase: 'open', mode: 'auto' }
+      },
+    })
     await h.starter.propose(parent('auto'), [
       task('Here'),
       task('VM', { machine: 'vm1' }),
@@ -393,17 +405,24 @@ describe('HubStarter with a remote task', () => {
     const [here, vm, box] = listHubChildren('agent_parent')
     expect(h.started).toEqual([here!.childId])
     expect(getHubChild(here!.childId)!.phase).toBe('open')
-    expect(getHubChild(vm!.childId)!.phase).toBe('failed_start')
+    expect(getHubChild(vm!.childId)).toMatchObject({ phase: 'open', machineId: 'vm1' })
+    expect(sent).toEqual([['vm1', vm!.childId]])
     expect(getHubChild(box!.childId)!.phase).toBe('failed_start')
     const wakes = listPendingHubWakes('agent_parent')
-    expect(wakes.find((w) => w.childId === vm!.childId)).toMatchObject({
-      kind: 'failed',
-      summary: `Failed to start: ${HUB_REMOTE_LATER_TEXT}`,
-    })
+    expect(wakes.find((w) => w.childId === vm!.childId)).toBeUndefined()
     expect(wakes.find((w) => w.childId === box!.childId)).toMatchObject({
       kind: 'failed',
       summary: 'Failed to start: Box is not connected.',
     })
+  })
+
+  it('records at most the granted mode when a machine answers a higher one', async () => {
+    const h = harness({ startRemote: async () => ({ ok: true, phase: 'open', mode: 'full-access' }) })
+    await h.starter.propose(parent('auto'), [task('VM', { machine: 'vm1' })])
+    await h.starter.approve(h.cards[0]!.batchId, 'auto')
+    await settle()
+    const [vm] = listHubChildren('agent_parent')
+    expect(getHubChild(vm!.childId)).toMatchObject({ phase: 'open', grantedMode: 'auto' })
   })
 
   it('fails a child whose account is gone from its machine at approval', async () => {

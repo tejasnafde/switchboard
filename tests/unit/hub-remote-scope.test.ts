@@ -62,6 +62,7 @@ describe('isChannelAllowed with the hub scope', () => {
     for (const scopes of [['hub'], FULL_SCOPES, ['admin']] as DeviceScope[][]) {
       expect(isChannelAllowed(scopes, HubRemoteChannels.DESCRIBE)).toBe(true)
       expect(isChannelAllowed(scopes, HubRemoteChannels.CHILDREN_CHANGED)).toBe(true)
+      expect(isChannelAllowed(scopes, HubRemoteChannels.START_CHILD)).toBe(true)
     }
   })
 
@@ -69,6 +70,7 @@ describe('isChannelAllowed with the hub scope', () => {
     for (const scopes of [['chat'], ['chat', 'terminal'], ['chat', 'pr-write'], PHONE_SCOPES] as DeviceScope[][]) {
       expect(isChannelAllowed(scopes, HubRemoteChannels.DESCRIBE), scopes.join(',')).toBe(false)
       expect(isChannelAllowed(scopes, HubRemoteChannels.OUTBOX), scopes.join(',')).toBe(false)
+      expect(isChannelAllowed(scopes, HubRemoteChannels.START_CHILD), scopes.join(',')).toBe(false)
     }
   })
 
@@ -114,8 +116,9 @@ describe('scope helpers', () => {
     expect(isHubAuthGrant(undefined)).toBe(false)
   })
 
-  it('advertises hub_remote_child_v1', () => {
+  it('advertises hub_remote_child_v1 and hub_remote_start_v1', () => {
     expect(BACKEND_CAPABILITIES).toContain('hub_remote_child_v1')
+    expect(BACKEND_CAPABILITIES).toContain('hub_remote_start_v1')
   })
 })
 

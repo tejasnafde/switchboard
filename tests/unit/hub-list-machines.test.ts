@@ -103,6 +103,14 @@ describe('RemoteHubClients auth', () => {
     await vi.waitFor(() => expect(seen).toEqual([['m1', 'x']]))
   })
 
+  it('marks a machine whose backend advertises hub_remote_start_v1 as able to start children', async () => {
+    const { host, url } = await boot()
+    host.handle(HubRemoteChannels.DESCRIBE, () => description())
+    const { hub } = clients(url)
+    const [entry] = await hub.entries()
+    expect(entry).toMatchObject({ status: 'connected', problem: null, canStart: true })
+  })
+
   it('refuses a backend that grants the full token scopes instead of hub', async () => {
     const { host, url } = await boot()
     host.handle(HubRemoteChannels.DESCRIBE, () => description())
@@ -230,6 +238,7 @@ describe('list_machines text', () => {
     description: description(),
     ageMs: 5_000,
     problem: null,
+    canStart: true,
     ...over,
   })
 

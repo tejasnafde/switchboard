@@ -112,6 +112,9 @@ export const BACKEND_CAPABILITIES = [
    *  to `scopes: ['hub']`. Starting a child is gated by `hub_remote_children`
    *  on this machine; `hub-remote:describe` answers with the flag off too. */
   'hub_remote_child_v1',
+  /** `hub-remote:start-child` starts a child for a hub on another machine
+   *  (`HubStarter.startRemote`): parent stub, clone, fetch, worktree, session. */
+  'hub_remote_start_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {
