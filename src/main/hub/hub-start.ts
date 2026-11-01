@@ -893,7 +893,7 @@ export class HubStarter {
     if (open >= settings.remoteChildrenPerMachine)
       return {
         ok: false,
-        error: `This machine runs ${open} children from other machines already (limit ${settings.remoteChildrenPerMachine}).`,
+        error: `This machine runs ${open} child${open === 1 ? '' : 'ren'} from other machines already (limit ${settings.remoteChildrenPerMachine}).`,
         refusal: { kind: 'cap', open, limit: settings.remoteChildrenPerMachine },
       }
     try {
@@ -1001,7 +1001,7 @@ export class HubStarter {
    * two children that plan the same clone clone it once.
    */
   private checkoutOnce(projectPath: string, step: () => Promise<void>): Promise<void> {
-    const next = (this.checkouts.get(projectPath) ?? Promise.resolve()).catch(() => {}).then(step)
+    const next = (this.checkouts.get(projectPath) ?? Promise.resolve()).then(step, step)
     this.checkouts.set(projectPath, next)
     const forget = () => {
       if (this.checkouts.get(projectPath) === next) this.checkouts.delete(projectPath)

@@ -591,7 +591,8 @@ export function parseHubRemoteStartAnswer(value: unknown): HubRemoteStartAnswer 
 export function hubRemoteStartFailureText(name: string, answer: Extract<HubRemoteStartAnswer, { ok: false }>): string {
   const r = answer.refusal
   if (r?.kind === 'flag_off') return `${name} does not take children: turn on hub_remote_children there.`
-  if (r?.kind === 'cap') return `${name} runs ${r.open} children from other machines already (limit ${r.limit}).`
+  if (r?.kind === 'cap')
+    return `${name} runs ${r.open} child${r.open === 1 ? '' : 'ren'} from other machines already (limit ${r.limit}).`
   return `On ${name}: ${answer.error.replace(/\p{Cc}/gu, ' ')}`
 }
 

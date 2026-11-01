@@ -352,7 +352,7 @@ describe('hub-remote:start-child, desktop and child machine', () => {
     const phases = [a!.phase, b!.phase].sort()
     expect(phases).toEqual(['failed_start', 'open'])
     expect(db.listPendingHubWakes('agent_parent')[0]!.summary).toBe(
-      'Failed to start: Work VM runs 1 children from other machines already (limit 1).',
+      'Failed to start: Work VM runs 1 child from other machines already (limit 1).',
     )
   })
 
