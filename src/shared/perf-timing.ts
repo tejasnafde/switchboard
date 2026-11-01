@@ -43,6 +43,10 @@ export const PERF_THRESHOLDS = {
   // Every settle (children, removed, kept, stop failures, killed processes), and each list_children conflict scan.
   'hub.settle': 0,
   'hub.conflicts': 0,
+  // A hub-remote:describe answer: one git read per project, capped at 200 projects.
+  'hub.remote-describe': 500,
+  // Each desktop-to-machine hub call: channel, machine id, outcome.
+  'hub.remote-call': 200,
   ipc: 200,
 } as const
 

@@ -25,15 +25,50 @@ import type { DeviceIdentity, DevicePlatform } from './device-identity'
 
 /** `terminal` is separate because a PTY is arbitrary code execution and nothing
  *  on the phone needs it. `pr-write` lets a phone post on pull requests as the
- *  user; it is never given at pairing, only granted later from the desktop. */
-export type DeviceScope = 'chat' | 'terminal' | 'admin' | 'pr-write'
+ *  user; it is never given at pairing, only granted later from the desktop.
+ *  `hub` is what one desktop's hub client holds on another machine's backend:
+ *  the `hub-remote:*` channels and nothing else. Only the server token can
+ *  carry it, never a pairing or a device grant. */
+export type DeviceScope = 'chat' | 'terminal' | 'admin' | 'pr-write' | 'hub'
+
+export const DEVICE_SCOPES: readonly DeviceScope[] = ['chat', 'terminal', 'admin', 'pr-write', 'hub']
+
+export function isDeviceScope(value: unknown): value is DeviceScope {
+  return DEVICE_SCOPES.includes(value as DeviceScope)
+}
 
 export const PHONE_SCOPES: readonly DeviceScope[] = ['chat']
 export const FULL_SCOPES: readonly DeviceScope[] = ['chat', 'terminal', 'admin']
 
+/** Every channel of the hub client starts with this. */
+export const HUB_REMOTE_CHANNEL_PREFIX = 'hub-remote:'
+
+/**
+ * The scopes a stored device session holds. A device never holds `hub`, and
+ * every device holds `chat`: it was the baseline that gated nothing before
+ * `hub` existed, so a row written without it keeps the access it had.
+ */
+export function deviceSessionScopes(stored: readonly unknown[]): DeviceScope[] {
+  const scopes = stored.filter((s): s is DeviceScope => isDeviceScope(s) && s !== 'hub')
+  return scopes.includes('chat') ? [...new Set(scopes)] : ['chat', ...new Set(scopes)]
+}
+
+/**
+ * What the server token grants when its auth frame names `scopes`: the asked
+ * ones the token holds. `hub` is never part of the token's own set, but an
+ * admin token may narrow itself to it.
+ */
+export function narrowTokenScopes(
+  requested: readonly DeviceScope[],
+  tokenScopes: readonly DeviceScope[],
+): DeviceScope[] {
+  const allowed = tokenScopes.includes('admin') ? [...tokenScopes, 'hub'] : tokenScopes
+  return [...new Set(requested.filter((s) => allowed.includes(s)))]
+}
+
 /**
  * Channel prefixes a scope is REQUIRED for. Anything unlisted is open to any
- * authenticated session.
+ * session holding `chat`.
  *
  * Deliberately not deny-by-default: that needs a hand-maintained list of every
  * channel, and missing one breaks a feature silently for paired devices only.
@@ -47,9 +82,12 @@ const SCOPE_REQUIRED_PREFIXES: Record<DeviceScope, readonly string[]> = {
   // the account, and nothing on the phone configures one.
   // The secret answer carries the value; phones answer on the computer (design 7.3).
   admin: ['mobile-pairing:', 'source-control:', 'agent-secret:'],
-  // `chat` gates nothing on its own. It is the baseline every session has.
+  // `chat` is the baseline every session but a hub client has; `isChannelAllowed`
+  // requires it for every channel outside `hub-remote:*`.
   chat: [],
   'pr-write': [],
+  // Handled before this table in `isChannelAllowed`: admin opens it too.
+  hub: [],
 }
 
 /** The writes a phone may make on a pull request, plus the account read its
@@ -175,8 +213,17 @@ export function isSettingsFrameAllowed(scopes: readonly DeviceScope[], channel: 
   return true
 }
 
-/** Whether a session holding `scopes` may call `channel`. */
+/**
+ * Whether a session holding `scopes` may call `channel`, or receive an event
+ * named `channel`.
+ *
+ * `hub-remote:*` needs `hub` or `admin`. Every other channel needs `chat`,
+ * which every phone, device session and server token holds, so a session
+ * with only `hub` reaches `hub-remote:*` and nothing else.
+ */
 export function isChannelAllowed(scopes: readonly DeviceScope[], channel: string): boolean {
+  if (channel.startsWith(HUB_REMOTE_CHANNEL_PREFIX)) return scopes.includes('hub') || scopes.includes('admin')
+  if (!scopes.includes('chat')) return false
   for (const [scope, prefixes] of Object.entries(SCOPE_REQUIRED_PREFIXES) as Array<[DeviceScope, readonly string[]]>) {
     if (prefixes.some((prefix) => channel.startsWith(prefix)) && !scopes.includes(scope)) return false
   }
