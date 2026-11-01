@@ -12,6 +12,7 @@ import { join } from 'path'
 import { mkdirSync, appendFileSync, readdirSync, unlinkSync, statSync } from 'fs'
 import { appendFile } from 'fs/promises'
 import { userDataDir } from './runtime'
+import { secretRedactor } from './secrets/secret-redactor'
 
 const RETENTION_DAYS = 7
 const LOG_DIR_NAME = 'logs'
@@ -159,46 +160,45 @@ export function writeCrashBreadcrumb(scope: string, metadata: Record<string, unk
   }
 }
 
+/** The arguments as one string, with any live saved secret masked. */
+function formatArgs(args: unknown[]): string {
+  const text = args
+    .map((a) => {
+      if (typeof a === 'string') return a
+      if (a instanceof Error) return `${a.message}\n${a.stack}`
+      try {
+        return JSON.stringify(a)
+      } catch {
+        return String(a)
+      }
+    })
+    .join(' ')
+  return secretRedactor.any() ? (secretRedactor.redactAnyText(text) ?? text) : text
+}
+
 function formatLine(level: string, scope: string, args: unknown[]): string {
-  const ts = new Date().toISOString()
-  const parts = args.map((a) => {
-    if (typeof a === 'string') return a
-    if (a instanceof Error) return `${a.message}\n${a.stack}`
-    try {
-      return JSON.stringify(a)
-    } catch {
-      return String(a)
-    }
-  })
-  return `${ts} [${level}] [${scope}] ${parts.join(' ')}\n`
+  return `${new Date().toISOString()} [${level}] [${scope}] ${formatArgs(args)}\n`
+}
+
+/**
+ * One log call. While a saved secret is live the console gets the masked
+ * text rather than the arguments, so neither sink holds a value
+ * (`secrets/log-redaction.ts`).
+ */
+function emit(level: string, scope: string, args: unknown[], toConsole: (...data: unknown[]) => void): void {
+  init()
+  const text = formatArgs(args)
+  writeRaw(`${new Date().toISOString()} [${level}] [${scope}] ${text}\n`)
+  if (secretRedactor.any()) toConsole(`[SB:${scope}]`, text)
+  else toConsole(`[SB:${scope}]`, ...args)
 }
 
 export function createMainLogger(scope: string) {
   return {
-    debug: (...args: unknown[]) => {
-      init()
-      const line = formatLine('DBG', scope, args)
-      writeRaw(line)
-      console.debug(`[SB:${scope}]`, ...args)
-    },
-    info: (...args: unknown[]) => {
-      init()
-      const line = formatLine('INF', scope, args)
-      writeRaw(line)
-      console.log(`[SB:${scope}]`, ...args)
-    },
-    warn: (...args: unknown[]) => {
-      init()
-      const line = formatLine('WRN', scope, args)
-      writeRaw(line)
-      console.warn(`[SB:${scope}]`, ...args)
-    },
-    error: (...args: unknown[]) => {
-      init()
-      const line = formatLine('ERR', scope, args)
-      writeRaw(line)
-      console.error(`[SB:${scope}]`, ...args)
-    },
+    debug: (...args: unknown[]) => emit('DBG', scope, args, console.debug),
+    info: (...args: unknown[]) => emit('INF', scope, args, console.log),
+    warn: (...args: unknown[]) => emit('WRN', scope, args, console.warn),
+    error: (...args: unknown[]) => emit('ERR', scope, args, console.error),
   }
 }
 

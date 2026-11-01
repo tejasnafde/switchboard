@@ -17,6 +17,7 @@ import { isReasoningEffort } from '@shared/provider-option-memory'
 import { accessSync, constants } from 'fs'
 import { createInterface } from 'readline'
 import { createMainLogger as createLogger } from '../../logger'
+import { LogLines, maskLog } from '../../secrets/log-redaction'
 import type {
   ProviderAdapter,
   ProviderSession,
@@ -114,7 +115,9 @@ const INIT_TIMEOUT_MS = 30_000
  */
 const INIT_STDERR_CAPTURE_LIMIT = 2000
 
-function truncateLogPayload(value: string): string {
+/** Masked before the cut, so a truncated line never keeps part of a saved secret. */
+function truncateLogPayload(raw: string): string {
+  const value = maskLog(raw)
   return value.length > LOG_PAYLOAD_LIMIT
     ? `${value.slice(0, LOG_PAYLOAD_LIMIT)}…<truncated ${value.length - LOG_PAYLOAD_LIMIT} chars>`
     : value
@@ -771,7 +774,7 @@ export class CodexAdapter implements ProviderAdapter {
         const parsed = JSON.parse(line)
         this.handleMessage(opts.threadId, active, parsed)
       } catch {
-        log.warn(`invalid JSON from codex: ${line.slice(0, 200)}`)
+        log.warn(`invalid JSON from codex: ${maskLog(line).slice(0, 200)}`)
       }
     })
 
@@ -780,15 +783,17 @@ export class CodexAdapter implements ProviderAdapter {
     // error message. Switched off once initialize() succeeds.
     let initStderrBuf = ''
     let captureInitStderr = true
+    const stderrLines = new LogLines((text) => log.warn(`codex stderr: ${truncateLogPayload(text)}`))
     child.stderr?.on('data', (data: Buffer) => {
       const chunk = data.toString()
-      log.warn(`codex stderr: ${truncateLogPayload(chunk)}`)
+      stderrLines.push(chunk)
       if (captureInitStderr && initStderrBuf.length < INIT_STDERR_CAPTURE_LIMIT) {
         initStderrBuf = (initStderrBuf + chunk).slice(0, INIT_STDERR_CAPTURE_LIMIT)
       }
     })
 
     child.on('close', (code) => {
+      stderrLines.end()
       log.info(`codex process exited: code=${code}`)
       active.child = null
       active.session.status = code === 0 ? 'stopped' : 'error'
