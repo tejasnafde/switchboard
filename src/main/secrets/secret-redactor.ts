@@ -10,6 +10,11 @@
  * `SECRET_MATCH_MIN_CHARS` characters are not matched: they hit too often.
  * Masking changes only our copies: the model saw the value, and the
  * provider's own transcript still holds it.
+ *
+ * A value masked at least once is tainted: it is in that transcript. When its
+ * file goes, the store retires it instead of dropping it (`retire`), so the
+ * chat's history stays masked. A retired value is no live secret (`has` is
+ * false) and is kept only for masking.
  */
 
 export const SECRET_MATCH_MIN_CHARS = 8
@@ -19,7 +24,11 @@ export function secretMask(name: string): string {
 }
 
 interface Armed {
+  id: string
   name: string
+  value: Buffer
+  tainted: boolean
+  retired: boolean
   /** Longest first, so a form that contains another wins. */
   patterns: Buffer[]
 }
@@ -58,6 +67,8 @@ export class SecretRedactor {
   /** Root conversation id to its armed secrets, by secret id. */
   private readonly chats = new Map<string, Map<string, Armed>>()
   private readonly rootOf = new Map<string, string>()
+  /** A live value was masked for the first time. */
+  onTainted?: (secretId: string) => void
 
   /**
    * Hold a saved value for `rootThreadId`. Copies it, so the caller may
@@ -71,13 +82,43 @@ export class SecretRedactor {
       chat = new Map()
       this.chats.set(rootThreadId, chat)
     }
-    chat.set(secretId, { name, patterns: forms(value) })
+    chat.set(secretId, {
+      id: secretId,
+      name,
+      value: Buffer.from(value),
+      tainted: false,
+      retired: false,
+      patterns: forms(value),
+    })
     this.rootOf.set(secretId, rootThreadId)
     return true
   }
 
+  /** A previous run's retired value, read back at start. */
+  addRetired(rootThreadId: string, secretId: string, name: string, value: Buffer): void {
+    if (this.add(rootThreadId, secretId, name, value)) this.armedById(secretId)!.retired = true
+  }
+
+  /** Live, not retired. */
   has(secretId: string): boolean {
-    return this.rootOf.has(secretId)
+    return this.armedById(secretId)?.retired === false
+  }
+
+  tainted(secretId: string): boolean {
+    return this.armedById(secretId)?.tainted === true
+  }
+
+  /** The file is gone but history holds the value: keep masking it. A copy of the value, for the store to seal. */
+  retire(secretId: string): Buffer | null {
+    const armed = this.armedById(secretId)
+    if (!armed) return null
+    armed.retired = true
+    return Buffer.from(armed.value)
+  }
+
+  private armedById(secretId: string): Armed | undefined {
+    const root = this.rootOf.get(secretId)
+    return root === undefined ? undefined : this.chats.get(root)?.get(secretId)
   }
 
   /** The file is gone: zero-fill and forget its value. */
@@ -88,12 +129,14 @@ export class SecretRedactor {
     const chat = this.chats.get(root)
     const armed = chat?.get(secretId)
     for (const pattern of armed?.patterns ?? []) pattern.fill(0)
+    armed?.value.fill(0)
     chat?.delete(secretId)
     if (chat?.size === 0) this.chats.delete(root)
   }
 
+  /** Drop the chat's live values. Retired ones stay: archived history can be reopened. */
   dropChat(rootThreadId: string): void {
-    for (const secretId of [...(this.chats.get(rootThreadId)?.keys() ?? [])]) this.drop(secretId)
+    for (const [secretId, armed] of [...(this.chats.get(rootThreadId) ?? [])]) if (!armed.retired) this.drop(secretId)
   }
 
   clear(): void {
@@ -103,6 +146,11 @@ export class SecretRedactor {
   /** Any chat holds a value. Lets hot paths skip the root lookup. */
   any(): boolean {
     return this.chats.size > 0
+  }
+
+  /** Every chat that holds a value: the scope for a read with no trusted owner. */
+  everyChat(): string[] {
+    return [...this.chats.keys()]
   }
 
   armed(scope: SecretScope): boolean {
@@ -126,11 +174,14 @@ export class SecretRedactor {
     if (armed.length === 0 || text.length === 0) return null
     const bytes = Buffer.from(text, 'utf8')
     const hits: Array<{ start: number; end: number; name: string }> = []
-    for (const { name, patterns } of armed) {
+    for (const a of armed) {
+      const before = hits.length
+      const { name, patterns } = a
       for (const pattern of patterns) {
         for (let at = bytes.indexOf(pattern); at !== -1; at = bytes.indexOf(pattern, at + pattern.length))
           hits.push({ start: at, end: at + pattern.length, name })
       }
+      if (hits.length > before) this.taint(a)
     }
     if (hits.length === 0) return null
     hits.sort((a, b) => a.start - b.start || b.end - a.end)
@@ -150,6 +201,12 @@ export class SecretRedactor {
     }
     parts.push(bytes.subarray(from))
     return Buffer.concat(parts).toString('utf8')
+  }
+
+  private taint(armed: Armed): void {
+    if (armed.tainted || armed.retired) return
+    armed.tainted = true
+    this.onTainted?.(armed.id)
   }
 
   /**

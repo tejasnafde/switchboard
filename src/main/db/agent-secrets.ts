@@ -30,7 +30,16 @@ export function ensureAgentSecretsSchema(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_agent_secrets_live
       ON agent_secrets(root_thread_id, name) WHERE deleted_at IS NULL;
+    CREATE TABLE IF NOT EXISTS agent_secret_retired (
+      secret_id      TEXT PRIMARY KEY,
+      root_thread_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      name           TEXT NOT NULL,
+      sealed_value   BLOB NOT NULL,
+      retired_at     INTEGER NOT NULL
+    );
   `)
+  const columns = db.prepare('PRAGMA table_info(agent_secrets)').all() as Array<{ name: string }>
+  if (!columns.some((c) => c.name === 'masked_at')) db.exec('ALTER TABLE agent_secrets ADD COLUMN masked_at INTEGER')
 }
 
 export interface AgentSecretRow {
@@ -43,6 +52,8 @@ export interface AgentSecretRow {
   createdAt: number
   expiresAt: number
   deletedAt: number | null
+  /** When its value was first masked in output: it is then in the provider's transcript. */
+  maskedAt: number | null
 }
 
 interface Row {
@@ -55,6 +66,7 @@ interface Row {
   created_at: number
   expires_at: number
   deleted_at: number | null
+  masked_at: number | null
 }
 
 function fromRow(r: Row): AgentSecretRow {
@@ -68,6 +80,7 @@ function fromRow(r: Row): AgentSecretRow {
     createdAt: r.created_at,
     expiresAt: r.expires_at,
     deletedAt: r.deleted_at,
+    maskedAt: r.masked_at,
   }
 }
 
@@ -119,7 +132,7 @@ export function deleteSecretDir(threadId: string): void {
  * deleted in the same transaction: the rename that wrote this file replaced it.
  */
 export function insertAgentSecret(
-  row: Omit<AgentSecretRow, 'deletedAt' | 'rootThreadId'> & { threadId: string },
+  row: Omit<AgentSecretRow, 'deletedAt' | 'rootThreadId' | 'maskedAt'> & { threadId: string },
 ): void {
   const db = getDb()
   const root = resolveRootThreadId(row.threadId)
@@ -167,4 +180,43 @@ export function listChatAgentSecrets(threadId: string, limit = 200): AgentSecret
     .prepare('SELECT * FROM agent_secrets WHERE root_thread_id = ? ORDER BY created_at DESC LIMIT ?')
     .all(resolveRootThreadId(threadId), limit) as Row[]
   return rows.map(fromRow)
+}
+
+export function markAgentSecretMasked(id: string, now: number): void {
+  getDb().prepare('UPDATE agent_secrets SET masked_at = ? WHERE id = ? AND masked_at IS NULL').run(now, id)
+}
+
+// ─── Retired secrets ────────────────────────────────────────────
+//
+// A deleted secret whose value was masked in output stays masked in that
+// chat's history: the provider's transcript holds it. Its value is kept here
+// sealed (`secrets/retired-seal.ts`), only for masking, and goes with the
+// conversation row.
+
+export interface RetiredSecretRow {
+  secretId: string
+  rootThreadId: string
+  name: string
+  sealedValue: Buffer
+}
+
+export function insertRetiredSecret(row: RetiredSecretRow, now: number): void {
+  getDb()
+    .prepare(
+      `INSERT OR REPLACE INTO agent_secret_retired (secret_id, root_thread_id, name, sealed_value, retired_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .run(row.secretId, row.rootThreadId, row.name, row.sealedValue, now)
+}
+
+export function listRetiredSecrets(): RetiredSecretRow[] {
+  const rows = getDb()
+    .prepare('SELECT secret_id, root_thread_id, name, sealed_value FROM agent_secret_retired')
+    .all() as Array<{ secret_id: string; root_thread_id: string; name: string; sealed_value: Buffer }>
+  return rows.map((r) => ({
+    secretId: r.secret_id,
+    rootThreadId: r.root_thread_id,
+    name: r.name,
+    sealedValue: r.sealed_value,
+  }))
 }

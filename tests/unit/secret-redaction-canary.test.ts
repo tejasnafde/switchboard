@@ -381,10 +381,13 @@ describe('saved secret canary', () => {
       expect(JSON.stringify(out)).not.toContain(canary)
     }
 
-    // Delete now drops the value from memory.
+    // Delete now ends the live secret. The value was masked in output, so it
+    // is retired and the chat's history stays masked.
     const listed = registry.listAgentSecrets(SESSION)
     if (!listed.ok) throw new Error(listed.message)
-    expect(registry.deleteAgentSecret(SESSION, listed.secrets[0].id)).toEqual({ ok: true })
-    expect(secretRedactor.any()).toBe(false)
+    const secretId = listed.secrets[0].id
+    expect(registry.deleteAgentSecret(SESSION, secretId)).toEqual({ ok: true })
+    expect(secretRedactor.has(secretId)).toBe(false)
+    expect(secretRedactor.redactText(secretRedactor.everyChat(), canary)).toBe(mask)
   })
 })
