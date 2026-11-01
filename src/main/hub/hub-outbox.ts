@@ -7,7 +7,7 @@
  * `remote_hub` is the install id the caller names, in (created_at, id) order;
  * `hub-remote:outbox-ack` marks only items of the install id it names. The
  * caller is not bound to that id: the `hub` scope is the trust boundary, with
- * one token per machine. A row that no longer parses is acked here with a log
+ * one token per machine. A row that no longer parses is deleted here with a log
  * line, and a full page answers a `cursor` (the last row read), so such a row
  * never stalls paging. Both answer with `hub_remote_children` off too, so
  * running work can finish. Acked items are deleted after 7 days, at start and
@@ -19,7 +19,7 @@ import {
   parseHubOutboxPullRequest,
   type HubOutboxPullAnswer,
 } from '@shared/hub-remote'
-import { ackHubOutbox, listHubOutbox, pruneHubOutbox } from '../db/database'
+import { ackHubOutbox, dropHubOutbox, listHubOutbox, pruneHubOutbox } from '../db/database'
 import { createMainLogger } from '../logger'
 
 const log = createMainLogger('hub:outbox')
@@ -30,8 +30,8 @@ export function pullHubOutbox(raw: unknown): HubOutboxPullAnswer {
   const { desktopInstallId, after, limit } = parsed.request
   const { items, malformed, cursor } = listHubOutbox(desktopInstallId, { ...(after ? { after } : {}), limit })
   if (malformed.length > 0) {
-    ackHubOutbox(desktopInstallId, malformed)
-    log.warn('acked outbox rows that no longer parse; they are not sent', { ids: malformed })
+    dropHubOutbox(desktopInstallId, malformed)
+    log.warn('deleted outbox rows that no longer parse; they are not sent', { ids: malformed })
   }
   return { v: 1, items, cursor }
 }

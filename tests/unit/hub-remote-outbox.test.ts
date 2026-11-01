@@ -533,7 +533,7 @@ describe('the outbox: rows that do not parse, failed pulls and retries', () => {
     expect(vm.unacked()).toEqual([])
   })
 
-  it('acks rows there that do not parse and pages past a page made only of them', async () => {
+  it('deletes rows there that do not parse and pages past a page made only of them', async () => {
     const vm = await bootVm()
     const d = desktop({ vm1: { url: vm.url } }, { pageSize: 2 })
     d.own('agent_c1', 'vm1')
@@ -554,6 +554,7 @@ describe('the outbox: rows that do not parse, failed pulls and retries', () => {
     await d.outbox.connected('vm1')
     expect(db.listPendingHubWakes(PARENT).map((w) => w.summary)).toEqual(['after the bad rows'])
     expect(vm.unacked()).toEqual([])
+    expect(vm.dbm.getDb().prepare("SELECT id FROM hub_outbox WHERE id LIKE 'ho_bad%'").all()).toEqual([])
   })
 
   it('pages after the last item when the machine answers no cursor', async () => {

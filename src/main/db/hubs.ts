@@ -859,6 +859,16 @@ export function ackHubOutbox(remoteHub: string, ids: readonly string[], now = Da
   return db.transaction(() => ids.reduce((n, id) => n + stmt.run(now, id, remoteHub).changes, 0))()
 }
 
+/** Deletes rows of the hub `remoteHub` that no longer parse; they can never be sent. */
+export function dropHubOutbox(remoteHub: string, ids: readonly string[]): number {
+  const db = getDb()
+  const stmt = db.prepare(
+    `DELETE FROM hub_outbox WHERE id = ?
+       AND parent_id IN (SELECT parent_id FROM hub_parents WHERE remote_hub = ?)`,
+  )
+  return db.transaction(() => ids.reduce((n, id) => n + stmt.run(id, remoteHub).changes, 0))()
+}
+
 /** Deletes acked items older than `keepMs`. */
 export function pruneHubOutbox(keepMs: number, now = Date.now()): number {
   return getDb()
