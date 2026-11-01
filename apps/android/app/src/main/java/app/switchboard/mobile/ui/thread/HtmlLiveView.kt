@@ -297,13 +297,13 @@ private fun LiveFrame(source: String, modifier: Modifier, onReport: (HtmlLivePho
     val token = remember { newLiveToken() }
     var heard by remember { mutableStateOf(false) }
     var ended by remember { mutableStateOf(false) }
-    val report by rememberUpdatedState(onReport)
-    val stopOnce by rememberUpdatedState(onStop)
+    val latestReport by rememberUpdatedState(onReport)
+    val latestStop by rememberUpdatedState(onStop)
     // A frame stops once: a crash after the watchdog must not count twice.
     val stop: (LiveStop) -> Unit = { reason ->
         if (!ended) {
             ended = true
-            stopOnce(reason)
+            latestStop(reason)
         }
     }
     LaunchedEffect(token) {
@@ -316,7 +316,7 @@ private fun LiveFrame(source: String, modifier: Modifier, onReport: (HtmlLivePho
             val listener = object : LivePageListener {
                 override fun onReport(report: HtmlLivePhone.Report) {
                     if (report is HtmlLivePhone.Report.Height) heard = true
-                    report(report)
+                    latestReport(report)
                 }
 
                 override fun onStop(reason: LiveStop) = stop(reason)
@@ -368,7 +368,8 @@ internal fun LivePage(
             LivePages.candidates.remove(fullId)
         }
     }
-    val inline = HtmlLivePhone.Candidate(id, key, if (resumed) visible else 0f, runPressed, fullScreen = false)
+    val running = LivePages.running(lowRam)
+    val inline = HtmlLivePhone.Candidate(id, key, if (resumed) visible else 0f, runPressed, fullScreen = false, active = running == id)
     val full = HtmlLivePhone.Candidate(fullId, key, 1f, runPressed = true, fullScreen = true).takeIf { fullScreen && resumed }
     SideEffect {
         // Write only on a change: an equal write would recompose every card again.
@@ -384,7 +385,6 @@ internal fun LivePage(
         LivePages.still = true
     }
 
-    val running = LivePages.running(lowRam)
     val onReport: (HtmlLivePhone.Report) -> Unit = { report ->
         when (report) {
             is HtmlLivePhone.Report.Height -> contentHeight = report.px

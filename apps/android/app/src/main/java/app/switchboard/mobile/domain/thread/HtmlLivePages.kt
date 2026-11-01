@@ -15,8 +15,8 @@ data class HtmlLiveState(
 )
 
 /**
- * Port of the parts of src/shared/html-live.ts a phone needs. A phone never
- * runs the page: it shows the still image the desktop stored under [imageKey].
+ * Port of the parts of src/shared/html-live.ts a phone needs: the still
+ * image the desktop stored under [imageKey], and Open on desktop.
  */
 object HtmlLivePages {
     const val FENCE = "html-live"
@@ -291,6 +291,8 @@ object HtmlLivePhone {
         val visible: Float,
         val runPressed: Boolean,
         val fullScreen: Boolean,
+        /** This frame holds the slot now. */
+        val active: Boolean = false,
     )
 
     /**
@@ -298,15 +300,15 @@ object HtmlLivePhone {
      * full-screen view takes the slot. Otherwise the most visible frame runs
      * once the list is still, unless it needs Run: on a low-RAM phone, and
      * after a crash. A key that crashed twice never runs again this app run.
+     * While the list moves, the [Candidate.active] frame keeps the slot until
+     * it leaves view: its own height report moves the list.
      */
     fun running(candidates: Collection<Candidate>, listStillMs: Long, lowRam: Boolean, crashes: Map<String, Int>): String? {
         val allowed = candidates.filter { (crashes[it.key] ?: 0) < MAX_CRASHES }
         allowed.firstOrNull { it.fullScreen }?.let { return it.id }
-        if (listStillMs < STILL_MS) return null
-        return allowed
-            .filter { it.visible >= MIN_VISIBLE && (it.runPressed || (!lowRam && (crashes[it.key] ?: 0) == 0)) }
-            .maxByOrNull { it.visible }
-            ?.id
+        val eligible = allowed.filter { it.visible >= MIN_VISIBLE && (it.runPressed || (!lowRam && (crashes[it.key] ?: 0) == 0)) }
+        if (listStillMs < STILL_MS) return eligible.firstOrNull { it.active }?.id
+        return eligible.maxByOrNull { it.visible }?.id
     }
 
     /**

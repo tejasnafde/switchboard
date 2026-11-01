@@ -169,4 +169,17 @@ class HtmlLivePhoneTest {
         assertEquals(120, HtmlLivePhone.frameHeight(10.0))
         assertEquals(480, HtmlLivePhone.frameHeight(4_000.0))
     }
+
+    @Test
+    fun aRunningPageKeepsItsSlotWhileTheListMoves() {
+        val a = Candidate("a", "ka", 0.6f, runPressed = false, fullScreen = false, active = true)
+        val b = Candidate("b", "kb", 0.9f, runPressed = false, fullScreen = false)
+        val none = emptyMap<String, Int>()
+        // Its own height report moves the list: it must not restart.
+        assertEquals("a", HtmlLivePhone.running(listOf(a, b), 0, lowRam = false, crashes = none))
+        assertNull(HtmlLivePhone.running(listOf(a.copy(active = false), b), 0, lowRam = false, crashes = none))
+        assertNull(HtmlLivePhone.running(listOf(a.copy(visible = 0.4f)), 0, lowRam = false, crashes = none))
+        assertNull(HtmlLivePhone.running(listOf(a), 0, lowRam = false, crashes = mapOf("ka" to 1)))
+        assertEquals("b", HtmlLivePhone.running(listOf(a, b), 300, lowRam = false, crashes = none))
+    }
 }

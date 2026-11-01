@@ -183,6 +183,7 @@ class NativeAndroidRuntime private constructor(
         mutablePhoneLiveRun.value = value
         savePreference(HtmlLivePhone.FLAG, value.toString())
     }
+
     private var closed = false
 
     fun setFollowUpDefault(value: TurnDelivery) {
