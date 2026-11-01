@@ -12,6 +12,7 @@ import { TurnWatchdog, StderrTail } from '../../src/main/provider/turn-watchdog'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 import { codexErrorLimit, mergeTurnLimit } from '../../src/shared/limit-resume'
 import { reportedModel } from '../../src/shared/claude-rate-limit'
+import { LogLines } from '../../src/main/secrets/log-redaction'
 
 interface Case {
   name: string
@@ -52,6 +53,7 @@ function claudeActive(onEvent: (e: RuntimeEvent) => void) {
     lastKnownModel: null as string | null,
     watchdog: new TurnWatchdog(180_000, () => {}),
     stderrTail: new StderrTail(2_000),
+    stderrLog: new LogLines(() => {}),
   }
 }
 

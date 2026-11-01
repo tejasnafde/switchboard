@@ -196,14 +196,17 @@ describe('RuntimeEventRedaction', () => {
     expect(JSON.stringify(out)).not.toContain(VALUE.slice(0, 9))
   })
 
-  it('flushes the held tail before another message or a tool call', () => {
+  it('keeps a held tail across a tool call and another message, and sends it before the turn end', () => {
     const red = redaction()
     const out = [
       ...red.apply(delta('first message text')).events,
       ...red.apply({ type: 'tool.started', threadId: 'chat', toolId: 't', toolName: 'Bash', input: {} }).events,
     ]
-    expect(folded(out)).toBe('first message text')
-    expect(out.at(-1)?.type).toBe('tool.started')
+    expect(folded(out)).toBe('first message tex')
+    out.push(...red.apply(delta('second.', 'm2')).events)
+    expect(folded(out)).toBe('first message texsecond.')
+    out.push(...red.apply({ type: 'turn.completed', threadId: 'chat' }).events)
+    expect(out.at(-1)?.type).toBe('turn.completed')
   })
 
   it('masks a whole snapshot, tool input and tool output', () => {

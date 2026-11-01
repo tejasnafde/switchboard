@@ -24,6 +24,7 @@ import {
 } from '@shared/ws-protocol'
 import {
   isChannelAllowed,
+  narrowTokenScopes,
   isFileMutationAllowed,
   isSettingsFrameAllowed,
   FULL_SCOPES,
@@ -86,6 +87,12 @@ function tokenMatches(expected: string, presented: string | null): boolean {
   const a = Buffer.from(expected)
   const b = Buffer.from(presented)
   return a.length === b.length && timingSafeEqual(a, b)
+}
+
+/** A device credential never carries `hub`, whatever its store says: only
+ *  the server token narrows to it. */
+function withoutHub(scopes: readonly DeviceScope[]): DeviceScope[] {
+  return scopes.filter((s) => s !== 'hub')
 }
 
 interface ClientState {
@@ -156,13 +163,13 @@ export class WsHost implements BackendHost {
    */
   constructor(
     private readonly wss: WebSocketServer,
-    token?: string,
+    private readonly token?: string,
     private readonly deviceAuth: DeviceAuthPort = NO_DEVICE_AUTH,
     requireAuth = false,
     /** What the legacy URL token grants. Loopback and the ssh tunnel are the
      *  same-user trust boundary as a PTY, so they get everything; a LAN-facing
      *  endpoint must not hand a static, unrevocable token a shell. */
-    legacyTokenScopes: readonly DeviceScope[] = FULL_SCOPES,
+    private readonly legacyTokenScopes: readonly DeviceScope[] = FULL_SCOPES,
   ) {
     this.wss.on('connection', (socket, req: IncomingMessage) => {
       // Legacy path: the shared token in the URL. Still accepted so an already
@@ -380,7 +387,7 @@ export class WsHost implements BackendHost {
         this.reply(socket, { k: 'authed', ok: false, error: result.error ?? 'pairing failed' })
         return
       }
-      state.scopes = result.scopes ?? PHONE_SCOPES
+      state.scopes = withoutHub(result.scopes ?? PHONE_SCOPES)
       const authenticated = this.deviceAuth.authenticate(result.session, context)
       if (!authenticated) {
         state.scopes = null
@@ -393,6 +400,22 @@ export class WsHost implements BackendHost {
       this.reply(socket, { k: 'authed', ok: true, session: result.session, scopes: [...state.scopes] })
       return
     }
+    // The server token in a frame: how the desktop reaches a VM backend, so
+    // the token never sits in a URL that gets logged.
+    // `scopes` narrows it: the hub client asks for `['hub']` only, so a bug
+    // in it cannot open a shell here. Without `scopes` nothing changes.
+    if (this.token && frame.session && tokenMatches(this.token, frame.session)) {
+      const scopes = frame.scopes ? narrowTokenScopes(frame.scopes, this.legacyTokenScopes) : this.legacyTokenScopes
+      if (scopes.length === 0) {
+        this.reply(socket, { k: 'authed', ok: false, error: 'none of the requested scopes is available' })
+        socket.close(4001, 'unauthorized')
+        return
+      }
+      state.scopes = scopes
+      state.clientScope = hashClientScope('legacy-ws-token', this.token)
+      this.reply(socket, { k: 'authed', ok: true, scopes: [...state.scopes] })
+      return
+    }
     const session = frame.session ? this.deviceAuth.authenticate(frame.session, context) : null
     if (!session) {
       // Close, not just refuse: a revoked device should stop reconnecting
@@ -401,11 +424,11 @@ export class WsHost implements BackendHost {
       socket.close(4001, 'unauthorized')
       return
     }
-    state.scopes = session.scopes
+    state.scopes = withoutHub(session.scopes)
     state.sessionId = session.id
     state.clientScope = hashClientScope('device-session', session.id)
     state.touchedAt = Date.now()
-    this.reply(socket, { k: 'authed', ok: true, scopes: [...session.scopes] })
+    this.reply(socket, { k: 'authed', ok: true, scopes: [...state.scopes] })
   }
 
   /**
@@ -535,7 +558,7 @@ export class WsHost implements BackendHost {
     let changed = 0
     for (const state of this.clients.values()) {
       if (state.sessionId !== sessionId || !state.scopes) continue
-      state.scopes = [...scopes]
+      state.scopes = withoutHub(scopes)
       changed++
     }
     return changed

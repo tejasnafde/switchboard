@@ -1,0 +1,78 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "hub-remote-children",
+  "summary": "Groundwork for child chats on other machines (design 2026-10-29): the VM backend lifecycle and token. This part is not gated by a flag. the remote bootstrap starts the headless backend and the managed code-server detached (setsid nohup, output in ~/.switchboard-server/server.log), so a tunnel drop, a desktop sleep or a quit no longer ends the sessions on the VM. Each connect reuses a live backend when its pid is still ours, it was started from the installed version (server.version equals version) and its HTTP listener answers within 3 s; otherwise it reaps the backend and code-server as before and starts fresh ones. The ssh session waits on the backend pid, so the tunnel ends when the server dies. The backend now always runs with a token: the bootstrap keeps it 0600 in ~/.switchboard-server/token and prints it once on the ssh channel; the desktop reads it from the tunnel output (never logged), keeps it in memory, sends it in the health probe and gives it to the renderer through a desktop-only IPC call (not the backend host, which also serves phones). The renderer sends it in an auth frame; WsHost accepts the server token in an auth frame with the same scopes as the URL token. On reuse, a code-server that does not answer on its port is reaped and started again. The bootstrap sets 0600 on an existing token file and exits when it cannot create a token. Scope hub and the hub-remote skeleton (PR 2), behind the staged flag hub_remote_children (HUB_REMOTE_CHILDREN_ENABLED in src/shared/hub.ts, false; SB_HUB_REMOTE_CHILDREN=1 or the backend setting labs.hub_remote_children turns it on, and only while hub_children is on). A new DeviceScope hub opens the hub-remote:* channels and events and nothing else; every other channel now needs chat, which every phone, device session, server token and the IAP TCP host already holds (a stored device row without chat gets it, and hub is dropped from any device credential). Only the server token grants hub: its auth frame may carry scopes, and the backend grants the asked scopes the token holds (hub when it holds admin) or refuses the auth. The capability hub_remote_child_v1 is advertised. hub-remote:describe answers on the desktop and the headless server, with the flag off too: flag state, OS, architecture, backend version, agents that run there with their enabled accounts and catalog models, up to 200 projects with branch and fetch remote URLs (git with a 5 s timeout, one bad repository does not fail the answer), free disk under ~/projects or home, open children and run slots per account. It holds no host name, cloud project, zone or user name. The events hub-remote:outbox and hub-remote:children-changed are declared without an emitter. The desktop hub client and list_machines (PR 3), behind hub_remote_children: RemoteHubClients in the desktop main process opens one WebSocket client per connected machine from the ConnectionManager status (tunnel URL and backend token, ?auth=frame, auth frame scopes hub), accepts only an authed of exactly hub and a ready with hub_remote_child_v1 (otherwise it closes and the machine reads 'update the backend on <name>'), closes on disconnect, delete and quit, refuses a call to a machine that is not connected at once and times a call out after 20 s, with a hub.remote-call perf line per call. It reads hub-remote:describe on every connect and at most every 60 s on demand, keeps an offline machine's last answer with its age and caches no failure. A parent chat that is not an open child, on the desktop's own backend (not SWITCHBOARD_REMOTE), gets the read-only tool list_machines and one more instruction line while the flag is on: this desktop first, then each saved machine with id, the user's name for it, transport, status, OS and architecture, agents with accounts and models, checkouts whose git remote matches the chat project's (https, ssh and scp forms compare as one key), free disk, open children, free run slots, and a line when the flag is off there or the backend needs an update. It never writes a host name, ssh alias, cloud project, zone or user name. With the flag off no client opens and the tool and line are absent.",
+  "surfaces": {
+    "desktop": {
+      "status": "staged",
+      "flag": "hub_remote_children",
+      "followUpRelease": "The release that turns hub_remote_children on by default (HUB_REMOTE_CHILDREN_ENABLED true), after hub_children is on by default and children on another machine run end to end from the desktop on the beta channel.",
+      "evidence": [
+        "src/main/machines/remote-bootstrap.ts",
+        "src/main/machines/connect-deps.ts",
+        "src/main/machines/connection-manager.ts",
+        "src/main/ipc/machines.ts",
+        "src/preload/index.ts",
+        "tests/unit/remote-bootstrap-cleanup.test.ts",
+        "tests/unit/connect-deps.test.ts",
+        "src/main/hub/hub-remote-describe.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/hub-remote-scope.test.ts",
+        "src/main/hub/remote-hub-clients.ts",
+        "src/main/mcp/hub-tools.ts",
+        "tests/unit/hub-list-machines.test.ts",
+        "tests/unit/provider-registry-hub.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Phones never dial a VM's tunnelled backend; they reach the desktop only, or a VM's own TCP listener with the token the operator set, which this change does not touch. The hub scope is never granted to a phone: pairing and device grants cannot carry it, and every phone scope set holds chat, so no phone channel changes."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Same as iOS: the Android app does not use the ssh bootstrap or the desktop's tunnel, and its IAP path to a VM's TCP listener is unchanged. Same for the hub scope: Android sessions hold chat and never hub."
+    },
+    "sharedBackendApi": {
+      "status": "staged",
+      "flag": "hub_remote_children",
+      "followUpRelease": "The release that turns hub_remote_children on by default (HUB_REMOTE_CHILDREN_ENABLED true), after hub_children is on by default and children on another machine run end to end from the desktop on the beta channel.",
+      "evidence": [
+        "src/main/backend/ws-host.ts",
+        "src/shared/ipc-channels.ts",
+        "tests/unit/ws-host-auth.test.ts",
+        "src/shared/device-auth.ts",
+        "src/shared/ws-protocol.ts",
+        "src/shared/hub.ts",
+        "src/shared/hub-remote.ts",
+        "src/main/backend/device-sessions.ts",
+        "src/server/index.ts",
+        "tests/unit/hub-remote-scope.test.ts",
+        "src/shared/ws-transport.ts",
+        "src/shared/perf-timing.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No database or settings change. The VM gains two flat files under ~/.switchboard-server (token, 0600, and server.version); a missing server.version makes the first connect after the upgrade reap the old foreground server, as every connect did before. The hub scope adds no column or setting; a stored device session row is read with chat added when it lacks it and hub dropped, which never narrows what it could reach before."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/machines/remote-bootstrap.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/remote-bootstrap-cleanup.test.ts tests/unit/connect-deps.test.ts tests/unit/connection-manager.test.ts tests/unit/ws-host-auth.test.ts --maxWorkers=2: the bootstrap reuses a live server of the installed version and reaps otherwise, starts both processes detached, keeps the token 0600 and prints it once, is valid shell (bash -n); the health probe dials with the token once the tunnel has printed it; the token line is read across stdout chunks; WsHost accepts the server token in an auth frame and closes 4001 on a wrong one.",
+      "npx vitest run tests/unit/hub-remote-scope.test.ts --maxWorkers=2: a hub-only session is refused terminal, settings, accounts, app, provider, pull request writes, mobile-pairing, project-clone and an unlisted channel, and allowed hub-remote:describe; hub-remote is refused to chat, chat+terminal and chat+pr-write and allowed to FULL_SCOPES and hub; the server token with scopes hub gets exactly hub over a real WsHost, app:get-projects is refused, hub-remote:describe answers, a non-hub event is not delivered live or on resume and a hub-remote event is; a device session and a pairing asking for scopes get their own; stored rows gain chat and lose hub; the flag needs hub_children; the description builder, the git remote parser and describe against a real repository and a missing folder.",
+      "npx vitest run tests/unit/hub-list-machines.test.ts tests/unit/provider-registry-hub.test.ts --maxWorkers=2: the hub client against a real WsHost with a server token gets exactly hub, calls hub-remote:describe and receives hub-remote events; a backend that drops scopes and grants the full set is refused with 'update the backend on <name>' and the machine reads error; a machine that is not connected is refused at once, nothing opens with the flag off, and a call with no answer times out; the describe cache reads on connect, at most every 60 s, retries a failure without caching it and keeps an offline snapshot with its age; the list_machines text puts this desktop first, matches remotes across https, ssh and scp forms, holds no ssh alias, IAP instance, project, zone, user or host from the machine row, and writes the flag off, update and offline lines; the tool and its instruction line are offered to a desktop parent with the flag on and absent with the flag off, on an open child, without the hub client and under SWITCHBOARD_REMOTE."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Phones: no change on that path.",
+      "PR 3: list_machines was not run against a real VM through an IAP or ssh tunnel, nor on a packaged build from existing user data; the hub client was exercised against an in-process WsHost only."
+    ]
+  }
+}

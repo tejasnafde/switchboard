@@ -11,7 +11,10 @@
  * list a chat folder except the sweep, which opens it to 0700 for the read.
  * While a file is live its value is also armed in the redactor
  * (`secret-redactor.ts`): on save, and by the sweep at start, which reads the
- * live files back. Every delete drops it. No encryption at rest: the agent's
+ * live files back. Every delete drops it, unless the value was masked in
+ * output: it is then in the provider's transcript, so the delete retires it
+ * (sealed in `agent_secret_retired`, read back at start) and that chat's
+ * history stays masked. No encryption at rest for live files: the agent's
  * commands read plaintext, and the short expiry is the control. Logs name row
  * ids only, never a name or a value.
  *
@@ -46,6 +49,7 @@ import { join } from 'node:path'
 import { createMainLogger } from '../logger'
 import { resolveRootThreadId } from '../db/conversations'
 import { secretRedactor, type SecretRedactor } from './secret-redactor'
+import { openRetired, sealRetired } from './retired-seal'
 import type { SecretRequestCard } from '@shared/agent-secret-request'
 import {
   claimSecretDirId,
@@ -53,7 +57,10 @@ import {
   getAgentSecret,
   getSecretDirId,
   insertAgentSecret,
+  insertRetiredSecret,
   listArchivedSecretChats,
+  listRetiredSecrets,
+  markAgentSecretMasked,
   listChatAgentSecrets,
   listLiveAgentSecrets,
   listSecretDirIds,
@@ -140,6 +147,7 @@ export class SecretStore {
   private readonly timers = new Map<string, NodeJS.Timeout>()
   private sweepTimer: NodeJS.Timeout | null = null
   private rootReady = false
+  private retiredLoaded = false
 
   constructor(opts: SecretStoreOptions) {
     this.root = opts.root
@@ -147,6 +155,13 @@ export class SecretStore {
     this.onExpired = opts.onExpired
     this.excludeFromBackup = opts.excludeFromBackup ?? excludeFromTimeMachine
     this.redactor = opts.redactor ?? secretRedactor
+    this.redactor.onTainted = (id) => {
+      try {
+        markAgentSecretMasked(id, this.now())
+      } catch (err) {
+        log.warn(`could not record that secret ${id} was masked`, errCode(err))
+      }
+    }
     this.platform = opts.platform ?? process.platform
   }
 
@@ -252,7 +267,7 @@ export class SecretStore {
     }
     for (const row of replaced) {
       this.clearTimer(row.id)
-      this.redactor.drop(row.id)
+      this.retireOrDrop(row)
     }
     this.redactor.add(resolveRootThreadId(input.threadId), id, input.name, input.value)
     this.arm(id, input.expiresAt)
@@ -368,6 +383,7 @@ export class SecretStore {
 
   /** Sweep now, then every 15 minutes until `stop`. */
   start(): void {
+    this.loadRetired()
     this.runSweep()
     this.sweepTimer ??= setInterval(() => this.runSweep(), SECRET_SWEEP_INTERVAL_MS)
     this.sweepTimer.unref?.()
@@ -457,8 +473,46 @@ export class SecretStore {
       return false
     }
     markAgentSecretDeleted(row.id, this.now())
-    this.redactor.drop(row.id)
+    this.retireOrDrop(row)
     return true
+  }
+
+  /** The file is gone. A value masked in output is retired, so that chat's history stays masked. */
+  private retireOrDrop(row: AgentSecretRow): void {
+    const tainted = this.redactor.tainted(row.id) || getAgentSecret(row.id)?.maskedAt != null
+    const value = tainted ? this.redactor.retire(row.id) : null
+    if (!value) return this.redactor.drop(row.id)
+    try {
+      const sealedValue = sealRetired(value)
+      if (!sealedValue) {
+        log.warn(`secret ${row.id} cannot be sealed on this host; its history is masked until quit`)
+        return
+      }
+      insertRetiredSecret({ secretId: row.id, rootThreadId: row.rootThreadId, name: row.name, sealedValue }, this.now())
+    } catch (err) {
+      log.warn(`could not keep retired secret ${row.id}; its history is masked until quit`, errCode(err))
+    } finally {
+      value.fill(0)
+    }
+  }
+
+  /** Retired values of earlier runs, once per process. */
+  private loadRetired(): void {
+    if (this.retiredLoaded) return
+    this.retiredLoaded = true
+    try {
+      for (const row of listRetiredSecrets()) {
+        const value = openRetired(row.sealedValue)
+        if (!value) continue
+        try {
+          this.redactor.addRetired(row.rootThreadId, row.secretId, row.name, value)
+        } finally {
+          value.fill(0)
+        }
+      }
+    } catch (err) {
+      log.warn('could not read retired secrets back for masking', errCode(err))
+    }
   }
 
   /** A symlink in a chat folder's place is unlinked, never chmodded or followed. */

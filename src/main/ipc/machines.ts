@@ -32,7 +32,10 @@ import {
 } from '../machines/connect-deps'
 import { makeProvision } from '../machines/provision-deps'
 import { getSetting, setSetting } from '../db/database'
+import { RemoteHubClients } from '../hub/remote-hub-clients'
+import { hubRemoteChildrenEnabled } from '@shared/hub'
 import { createServer } from 'node:net'
+import { ipcMain } from 'electron'
 
 const log = createMainLogger('ipc:machines')
 
@@ -64,6 +67,7 @@ function portFree(port: number): Promise<boolean> {
 // instance. `currentHost` is kept mutable so the singleton's onStatus always
 // emits on whichever host is current.
 let connections: ConnectionManager | null = null
+let hubClients: RemoteHubClients | null = null
 let currentHost: BackendHost | null = null
 
 async function readSshConfig(): Promise<string> {
@@ -85,7 +89,21 @@ async function enrichIapTransport(machine: ReturnType<typeof listMachines>[numbe
   }
 }
 
-export function registerMachineHandlers(host: BackendHost): void {
+/** `hub_remote_children` for the desktop's hub client; a read failure counts as off. */
+function hubRemoteOn(): boolean {
+  try {
+    return hubRemoteChildrenEnabled(process.env, getSetting)
+  } catch (err) {
+    log.warn('could not read the hub_remote_children flag; it counts as off', err)
+    return false
+  }
+}
+
+/**
+ * Registers the machine channels and returns the desktop's hub client, made
+ * once next to the `ConnectionManager` whose status drives it.
+ */
+export function registerMachineHandlers(host: BackendHost): RemoteHubClients {
   currentHost = host
   if (!connections) {
     connections = new ConnectionManager({
@@ -93,7 +111,7 @@ export function registerMachineHandlers(host: BackendHost): void {
       allocateIdePort: stableIdePort,
       remoteIdePort: REMOTE_IDE_PORT,
       spawnTunnel,
-      waitForHealth,
+      waitForHealth: (url, token) => waitForHealth(url, undefined, undefined, token),
       remotePort: REMOTE_PORT,
       remoteCommand: REMOTE_COMMAND,
       provision: makeProvision((msg) => log.info(msg)),
@@ -104,10 +122,19 @@ export function registerMachineHandlers(host: BackendHost): void {
           `status ${machineId}: ${status}${url ? ` (${url})` : ''}${reason ? ` - ${reason}` : ''}${willRetry ? ' (will retry)' : ''}${idePort ? ` idePort=${idePort}` : ''}`,
         )
         currentHost?.emit(MachineChannels.STATUS, machineId, status, url, reason, willRetry, idePort)
+        hubClients?.statusChanged(machineId, status)
       },
     })
   }
   const mgr = connections
+  hubClients ??= new RemoteHubClients({
+    enabled: hubRemoteOn,
+    machines: () => listMachines(),
+    statusOf: (id) => mgr.statusOf(id),
+    urlOf: (id) => mgr.urlOf(id),
+    tokenOf: (id) => mgr.tokenOf(id),
+  })
+  const hub = hubClients
 
   host.handle(MachineChannels.CONNECT, async (id: string) => {
     log.info(`connect requested: ${id}`)
@@ -131,6 +158,7 @@ export function registerMachineHandlers(host: BackendHost): void {
   host.handle(MachineChannels.DELETE, async (id: string) => {
     // Kill any live tunnel first, or it keeps auto-reconnecting a deleted machine.
     await mgr.disconnect(id)
+    hub.remove(id)
     deleteMachine(id)
     return { ok: true }
   })
@@ -141,6 +169,13 @@ export function registerMachineHandlers(host: BackendHost): void {
   })
 
   host.handle(MachineChannels.GET_STATUSES, () => mgr.statuses())
+
+  // ipcMain, not host.handle: the host also serves paired phones, and this
+  // token opens a full-scope session on the machine.
+  ipcMain.removeAllListeners(MachineChannels.BACKEND_TOKEN)
+  ipcMain.on(MachineChannels.BACKEND_TOKEN, (event, id: string) => {
+    event.returnValue = mgr.tokenOf(id)
+  })
 
   host.handle(MachineChannels.GET_SNAPSHOTS, () => getMachineSnapshots())
 
@@ -177,13 +212,21 @@ export function registerMachineHandlers(host: BackendHost): void {
       return []
     }
   })
+
+  return hub
+}
+
+/** After a write of `labs.hub_remote_children`: turning it off closes every hub client. */
+export function hubRemoteSettingChanged(): void {
+  if (!hubRemoteOn()) hubClients?.closeAll()
 }
 
 /**
  * Kill every live tunnel. Call from `before-quit` - without this, ssh
- * reparents to launchd on app exit and both the tunnel and the remote server
- * it forwards to outlive Switchboard.
+ * reparents to launchd on app exit. The remote backends run detached and
+ * keep their sessions; the next connect reuses them.
  */
 export function stopAllMachineConnections(): Promise<void> {
+  hubClients?.closeAll()
   return connections?.disconnectAll() ?? Promise.resolve()
 }
