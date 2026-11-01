@@ -151,6 +151,7 @@ interface DesktopOpts {
   /** Stands in front of a real call: return undefined to pass it through. */
   intercept?: (channel: string, args: unknown[]) => Promise<unknown> | undefined
   parentRunning?: () => boolean
+  rateHasRoom?: () => boolean
   createSocket?: (url: string) => TransportSocket
 }
 
@@ -216,6 +217,7 @@ function desktop(machines: Record<string, { url: string }>, opts: DesktopOpts = 
     recordWake: (w, inTx) => wakes.record(w, inTx),
     failedStart: (childId) => starter.remoteChildFailedStart(childId),
     parentRunning: opts.parentRunning ?? (() => true),
+    rateHasRoom: opts.rateHasRoom ?? (() => true),
     deliverMessage: async ({ child: c, text }) => {
       // The registry's lineage edge: charged before delivery, refused once spent.
       const verdict = edges.checkSend(c.childId, c.parentId, Date.now())
@@ -247,7 +249,7 @@ function desktop(machines: Record<string, { url: string }>, opts: DesktopOpts = 
     status.set(id, s)
     clients.statusChanged(id, s)
   }
-  return { clients, outbox, wakes, starter, edges, delivered, sent, idle, calls, own, setStatus, enabled }
+  return { clients, outbox, host, wakes, starter, edges, delivered, sent, idle, calls, own, setStatus, enabled }
 }
 
 const pulls = (d: ReturnType<typeof desktop>) => d.calls.filter((c) => c.channel === HubRemoteChannels.OUTBOX_PULL)
@@ -376,6 +378,35 @@ describe('the outbox: messages along the lineage edge', () => {
     expect(pulls(d).length).toBeGreaterThanOrEqual(MESSAGE_ATTEMPTS)
     expect(d.delivered).toHaveLength(1)
     await until(() => vm.unacked().length === 0)
+  })
+
+  it('delivers a backlog past the per-pair rate over later pulls without using up its tries', async () => {
+    const vm = await bootVm()
+    // Five messages per pull, as the per-pair rate allows five a minute.
+    let room = 5
+    const d = desktop(
+      { vm1: { url: vm.url } },
+      {
+        retryMs: 5,
+        rateHasRoom: () => room > 0,
+        intercept: (channel) => {
+          if (channel === HubRemoteChannels.OUTBOX_PULL) room = 5
+          return undefined
+        },
+      },
+    )
+    d.own('agent_c1', 'vm1')
+    vm.adopt('agent_c1', db.hubInstallId())
+    const n = 5 * (MESSAGE_ATTEMPTS + 2)
+    for (let i = 0; i < n; i++) vm.message('agent_c1', `m${i}`)
+    const deliver = d.host.deliverMessage
+    d.host.deliverMessage = (m) => {
+      room--
+      return deliver(m)
+    }
+    await d.outbox.connected('vm1')
+    await until(() => vm.unacked().length === 0, 5_000)
+    expect(d.delivered.map((m) => m.text)).toEqual(Array.from({ length: n }, (_, i) => `m${i}`))
   })
 })
 

@@ -93,6 +93,7 @@ import type { BackendHost } from '../../src/main/backend/host'
 import type { ProviderAdapter, ProviderKind, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 import type { HubChildRow } from '../../src/main/db/hubs'
+import type { HubRemoteOutboxHost } from '../../src/main/hub/hub-remote-outbox'
 
 class FakeHost implements BackendHost {
   readonly emitted: string[] = []
@@ -143,6 +144,7 @@ type Internals = {
     delivery: 'queue' | 'steer',
   ): Promise<{ ok: true } | { ok: false; reason: string }>
   peerLinks: { checkSend(from: string, to: string, now: number): { linked: boolean; ok?: boolean } }
+  hubRemoteOutboxHost(clients: unknown): HubRemoteOutboxHost
 }
 
 async function setup() {
@@ -226,5 +228,20 @@ describe('an imported message of a child on another machine, on the desktop', ()
       await internals.deliverRemoteChildMessage({ ...row('rchild'), phase: 'failed_start' }, 'x', 'queue'),
     ).toMatchObject({ ok: false, reason: 'the child is not open' })
     expect(adapter.sends).toEqual([])
+  })
+
+  it('holds a message past the per-pair rate for a later pull instead of refusing it', async () => {
+    const { adapter, internals, row } = await setup()
+    const host = internals.hubRemoteOutboxHost({})
+    // A backlog after the machine was away: five go in the minute, the sixth waits.
+    for (let i = 0; i < 5; i++) {
+      expect(host.rateHasRoom(row('rchild'))).toBe(true)
+      expect(await host.deliverMessage({ child: row('rchild'), text: `m${i}`, delivery: 'queue' })).toEqual({
+        ok: true,
+      })
+    }
+    expect(host.rateHasRoom(row('rchild'))).toBe(false)
+    expect(host.parentRunning('parent1')).toBe(true)
+    expect(adapter.sends).toHaveLength(5)
   })
 })

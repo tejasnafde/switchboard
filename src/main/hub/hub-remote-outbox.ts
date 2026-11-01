@@ -20,7 +20,8 @@
  * lineage edge, which charges that edge's budget here (`deliverMessage`); a
  * parent that is not running is tried again on a timer, at most
  * `MESSAGE_ATTEMPTS` times, then recorded as refused, like a refusal of the
- * budget.
+ * budget. Messages past the per-pair rate (a backlog after the machine was
+ * away) wait for the next retry pull without using up those tries.
  *
  * Measured: one `hub.outbox-pull` perf line per pull (machine, pages, items,
  * the oldest item's age, items left for a retry, outcome).
@@ -75,8 +76,10 @@ export interface HubRemoteOutboxHost {
   ): void
   /** `HubStarter.remoteChildFailedStart`: inside the transaction; what to run after it committed. */
   failedStart(childId: string): (() => void) | null
-  /** The parent chat's session runs, so a message can be delivered now. */
+  /** The parent chat's session runs and is not switching profiles, so a message can be delivered now. */
   parentRunning(parentId: string): boolean
+  /** The child's per-pair rate toward its parent has room for one more message now. */
+  rateHasRoom(child: HubChildRow): boolean
   /** Delivers the message to the parent along the lineage edge, charging it; resolves to a refusal's text. */
   deliverMessage(m: { child: HubChildRow } & HubOutboxMessage): Promise<{ ok: true } | { ok: false; reason: string }>
 }
@@ -357,6 +360,8 @@ export class HubRemoteOutbox {
       return 'retry'
     }
     this.attempts.delete(key)
+    // A backlog past the rate waits uncounted: each retry pull, a minute on, delivers more of it.
+    if (!this.host.rateHasRoom(child)) return 'retry'
     // Claimed before the delivery: a crash during it delivers it at most once.
     if (
       !insertHubRemoteImport({

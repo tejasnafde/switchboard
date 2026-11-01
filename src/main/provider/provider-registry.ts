@@ -3178,7 +3178,13 @@ export class ProviderRegistry implements PeerToolHost {
         this.publishHubChange(w.parentId)
       },
       failedStart: (childId) => this.hubStarter.remoteChildFailedStart(childId),
-      parentRunning: (parentId) => this.isLiveSession(parentId),
+      parentRunning: (parentId) => {
+        const target = this.liveSessionId(parentId)
+        return target !== null && !this.switchingSessions.has(target)
+      },
+      // The pair `deliverPeerMessage` checks the rate on.
+      rateHasRoom: (child) =>
+        this.peerGuard.hasRoom(child.childId, this.liveSessionId(child.parentId) ?? child.parentId, Date.now()),
       deliverMessage: (m) => this.deliverRemoteChildMessage(m.child, m.text, m.delivery),
     }
   }
