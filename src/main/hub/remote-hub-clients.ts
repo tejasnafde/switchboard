@@ -8,7 +8,10 @@
  * older backend that dropped `scopes`, so the client closes and the machine
  * reads as needing an update; so does a `ready` without `hub_remote_child_v1`.
  * A `ready` without `hub_remote_start_v1` leaves the client open but the
- * entry's `canStart` false, so `start_children` asks for an update there.
+ * entry's `canStart` false, so `start_children` asks for an update there;
+ * one without `hub_remote_outbox_v1` is never pulled (`supportsOutbox`).
+ * Each later `ready` of the same client (its socket reconnected) and each
+ * resume gap tells the `onResync` listeners, which pull the outbox again.
  * It does not share the renderer's transport. A status other than `connected`
  * closes the client; the next connect opens a new one and describes the
  * machine again.
@@ -22,6 +25,7 @@ import { HubRemoteChannels } from '@shared/ipc-channels'
 import {
   HUB_REMOTE_AUTH_SCOPES,
   HUB_REMOTE_CAPABILITY,
+  HUB_REMOTE_OUTBOX_CAPABILITY,
   HUB_REMOTE_START_CAPABILITY,
   isHubAuthGrant,
   parseHubMachineDescription,
@@ -78,6 +82,8 @@ interface Client {
   settle: (problem: string | null) => void
   /** The backend advertised `hub_remote_start_v1` in its `ready`. */
   canStart: boolean
+  /** The backend advertised `hub_remote_outbox_v1` in its `ready`. */
+  canOutbox: boolean
 }
 
 interface Snapshot {
@@ -93,6 +99,7 @@ export class RemoteHubClients {
   private readonly now: () => number
   private readonly callTimeoutMs: number
   private machineListener: ((machineId: string, change: 'connected' | 'removed') => void) | null = null
+  private readonly resyncListeners = new Set<(machineId: string) => void>()
 
   constructor(private readonly deps: RemoteHubClientsDeps) {
     this.now = deps.now ?? Date.now
@@ -127,6 +134,50 @@ export class RemoteHubClients {
   machineState(machineId: string): 'connected' | 'offline' | 'gone' {
     if (!this.deps.machines().some((m) => m.id === machineId)) return 'gone'
     return this.deps.statusOf(machineId) === 'connected' ? 'connected' : 'offline'
+  }
+
+  /** Saved machines that are connected now. */
+  connectedMachineIds(): string[] {
+    return this.deps
+      .machines()
+      .filter((m) => this.deps.statusOf(m.id) === 'connected')
+      .map((m) => m.id)
+  }
+
+  /**
+   * Whether the machine's backend answers the outbox channels, once its client
+   * is ready (it opens one when there is none). False when it is not connected.
+   */
+  async supportsOutbox(machineId: string): Promise<boolean> {
+    if (!this.deps.enabled() || this.deps.statusOf(machineId) !== 'connected') return false
+    let client: Client
+    try {
+      client = this.clientFor(machineId)
+    } catch (err) {
+      log.warn(`no outbox pull from machine ${machineId}: ${err instanceof Error ? err.message : String(err)}`)
+      return false
+    }
+    const problem = await client.ready
+    return !problem && this.clients.get(machineId) === client && client.canOutbox
+  }
+
+  /**
+   * Listen to a machine's client becoming ready again after its socket
+   * reconnected, or missing events it could not replay. Returns the unsubscribe.
+   */
+  onResync(fn: (machineId: string) => void): () => void {
+    this.resyncListeners.add(fn)
+    return () => this.resyncListeners.delete(fn)
+  }
+
+  private notifyResync(machineId: string): void {
+    for (const fn of this.resyncListeners) {
+      try {
+        fn(machineId)
+      } catch (err) {
+        log.warn('a resync listener threw', err)
+      }
+    }
   }
 
   private notifyMachine(machineId: string, change: 'connected' | 'removed'): void {
@@ -275,7 +326,14 @@ export class RemoteHubClients {
     const update = `update the backend on ${name}`
     if (!token) {
       // A backend from before the token cannot narrow a session to hub.
-      return { transport: null, ready: Promise.resolve(update), problem: update, settle: () => {}, canStart: false }
+      return {
+        transport: null,
+        ready: Promise.resolve(update),
+        problem: update,
+        settle: () => {},
+        canStart: false,
+        canOutbox: false,
+      }
     }
     const transport = new WsTransport(
       `${url}/?auth=frame`,
@@ -292,8 +350,10 @@ export class RemoteHubClients {
       problem: null,
       settle: (problem) => settle(problem),
       canStart: false,
+      canOutbox: false,
     }
     let granted = false
+    let readyOnce = false
     const refuse = (problem: string, why: string): void => {
       if (client.problem) return
       log.warn(`hub client refused machine ${machineId}: ${why}`)
@@ -312,7 +372,14 @@ export class RemoteHubClients {
       if (transport.supportsCapability(HUB_REMOTE_CAPABILITY) !== true)
         return refuse(update, `no ${HUB_REMOTE_CAPABILITY} capability`)
       client.canStart = transport.supportsCapability(HUB_REMOTE_START_CAPABILITY) === true
+      client.canOutbox = transport.supportsCapability(HUB_REMOTE_OUTBOX_CAPABILITY) === true
       settle(null)
+      // A later ready is the same client after its socket reconnected: events may have been missed.
+      if (readyOnce && this.clients.get(machineId) === client) this.notifyResync(machineId)
+      readyOnce = true
+    }
+    transport.onResumeGap = () => {
+      if (!client.problem && this.clients.get(machineId) === client) this.notifyResync(machineId)
     }
     transport.onStateChange = (state) => {
       if (state !== 'closed' || client.problem) return

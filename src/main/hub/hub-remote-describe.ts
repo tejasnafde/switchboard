@@ -5,7 +5,8 @@
  * desktop can say why the machine takes no children.
  *
  * `hub-remote:start-child` is registered here too and runs
- * `HubStarter.startRemote` (`hub-start.ts`).
+ * `HubStarter.startRemote` (`hub-start.ts`), and so are
+ * `hub-remote:outbox-pull` and `hub-remote:outbox-ack` (`hub-outbox.ts`).
  */
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -23,6 +24,7 @@ import {
   type HubRemoteStartAnswer,
 } from '@shared/hub-remote'
 import { hubRemoteChildrenEnabled, readHubSettings } from '@shared/hub'
+import { ackHubOutboxItems, pullHubOutbox } from './hub-outbox'
 import { AGENT_PROVIDERS, type AgentProvider } from '@shared/types'
 import type { BackendHost } from '../backend/host'
 import { getProjects, getSetting, listOpenHubChildren } from '../db/database'
@@ -56,6 +58,9 @@ export function registerHubRemoteHandlers(host: BackendHost, deps: HubDescribeDe
     return inFlight
   })
   host.handle(HubRemoteChannels.START_CHILD, (request: unknown) => deps.startChild(request))
+  // Answered with the flag off too: work already running there may finish.
+  host.handle(HubRemoteChannels.OUTBOX_PULL, (request: unknown) => pullHubOutbox(request))
+  host.handle(HubRemoteChannels.OUTBOX_ACK, (request: unknown) => ackHubOutboxItems(request))
 }
 
 export async function describeThisMachine(deps: HubDescribeDeps): Promise<HubMachineDescription> {

@@ -10,9 +10,10 @@
  * activity for 2 minutes (which is ended), leaves its wakes pending for one
  * more try. A second failure, or more than 30 wake turns in an hour, holds
  * them until Deliver or the user's next message to the parent, which carries
- * every pending wake along (`claimForTurn`). A parent stub (`remote_hub`: the
- * parent runs on another machine's hub) is never sent a turn: its wakes stay
- * stored for that hub.
+ * every pending wake along (`claimForTurn`). A wake for a parent stub
+ * (`remote_hub`: the parent runs on another machine's hub) is an outbox item
+ * for that hub (`insertHubWake`), never a turn here; the desktop imports it
+ * as a wake of its own (`hub-remote-outbox.ts`).
  *
  * Measured: one `hub.wake` perf line per wake turn (wakes, children, bytes of
  * the turn, attempt, outcome, ms to the first activity), threshold 0.
@@ -33,11 +34,13 @@ import {
   type HubWakeKind,
 } from '@shared/hub'
 import {
+  getDb,
   getHubChild,
   getHubParent,
   insertHubWake,
   listParentsWithPendingHubWakes,
   listPendingHubWakes,
+  newHubRowId,
   resolveRootThreadId,
   setHubParentHeld,
   type HubWakeRow,
@@ -76,6 +79,8 @@ export interface HubWakeHost {
   announce(parentId: string, row: HubUpdateRowRef, content: string): void
   /** The parent's view changed (a hold set or lifted). */
   changed(parentId: string): void
+  /** A wake for a parent stub went into the outbox: tell the hub that owns it. */
+  outboxAdded?(): void
 }
 
 export interface HubUpdateRowRef {
@@ -114,8 +119,6 @@ export interface HubWakeClaim {
     afterCommit: (committed: boolean) => void
   }
 }
-
-const newWakeId = () => `hw_${Date.now()}_${randomBytes(4).toString('hex')}`
 
 /** The update turn and the row for these wakes, in wake order. */
 function describe(wakes: readonly HubWakeRow[]): { body: string; rows: HubUpdateRowEntry[]; children: number } {
@@ -168,15 +171,34 @@ export class HubWakeScheduler {
     for (const f of this.inFlight.values()) if (f.noStart) clearTimeout(f.noStart)
   }
 
-  /** Stores a wake and schedules its parent. */
-  record(w: {
-    parentId: string
-    childId: string
-    kind: HubWakeKind
-    summary: string
-    pointer: HubPointer | null
-  }): void {
-    insertHubWake({ id: newWakeId(), ...w })
+  /**
+   * Stores a wake and schedules its parent. A wake for a parent stub goes to
+   * the outbox for the hub that owns it. `inTransaction` runs in the same
+   * transaction as the insert (an imported wake records its import there).
+   */
+  record(
+    w: {
+      parentId: string
+      childId: string
+      kind: HubWakeKind
+      summary: string
+      pointer: HubPointer | null
+      /** A wake imported from a child on that machine. */
+      machineId?: string
+    },
+    inTransaction?: () => void,
+  ): void {
+    const insert = () => insertHubWake({ id: newHubRowId('hw'), ...w })
+    const where = inTransaction
+      ? getDb().transaction(() => {
+          inTransaction()
+          return insert()
+        })()
+      : insert()
+    if (where === 'outbox') {
+      this.host.outboxAdded?.()
+      return
+    }
     this.poke(w.parentId)
   }
 

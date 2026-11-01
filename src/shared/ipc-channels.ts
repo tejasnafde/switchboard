@@ -606,7 +606,11 @@ export const HubRemoteChannels = {
   DESCRIBE: 'hub-remote:describe',
   /** (HubRemoteStartRequest) → HubRemoteStartAnswer (shared/hub-remote.ts). Refused with the flag off. */
   START_CHILD: 'hub-remote:start-child',
-  /** Event, no emitter yet: a child's outbox has rows to pull. */
+  /** (HubOutboxPullRequest) → { v: 1, items: HubOutboxItem[] }: unacked items for that desktop. Answers with the flag off too. */
+  OUTBOX_PULL: 'hub-remote:outbox-pull',
+  /** (HubOutboxAckRequest) → { v: 1, acked: number }: marks that desktop's items acked. Idempotent. */
+  OUTBOX_ACK: 'hub-remote:outbox-ack',
+  /** Event, no payload: a child here wrote an outbox item for a parent on another machine. */
   OUTBOX: 'hub-remote:outbox',
   /** Event, no emitter yet: this machine's remote children changed. */
   CHILDREN_CHANGED: 'hub-remote:children-changed',

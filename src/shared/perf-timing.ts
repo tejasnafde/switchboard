@@ -49,6 +49,8 @@ export const PERF_THRESHOLDS = {
   'hub.remote-call': 200,
   // One child on another machine: the desktop's start call, and the checkout, clone and fetch there.
   'hub.remote-start': 0,
+  // One desktop pull of a machine's outbox: pages, items, the oldest item's age, outcome.
+  'hub.outbox-pull': 0,
   ipc: 200,
 } as const
 

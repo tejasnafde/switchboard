@@ -7,7 +7,12 @@ import type { PerfSpan } from '@shared/perf-timing'
 import { perfSpan } from '../perf'
 import type { BackendHost } from '../backend/host'
 import { AgentSecretChannels, AppChannels, HubRemoteChannels, ProviderChannels } from '@shared/ipc-channels'
-import { HUB_REMOTE_STOP_LATER_TEXT, type HubRemoteStartRequest } from '@shared/hub-remote'
+import {
+  HUB_OUTBOX_MESSAGES_FULL_TEXT,
+  HUB_OUTBOX_MESSAGES_PER_CHILD_MAX,
+  HUB_REMOTE_STOP_LATER_TEXT,
+  type HubRemoteStartRequest,
+} from '@shared/hub-remote'
 import { applyContentText } from '@shared/content-stream'
 import { fitImagesToProviderLimit } from './image-limits'
 import { createMainLogger as createLogger } from '../logger'
@@ -68,6 +73,9 @@ import {
   listPendingHubWakes,
   lastHubWakes,
   getHubParent,
+  countUnackedHubOutboxMessages,
+  hubInstallId,
+  insertHubOutboxMessage,
   setHubParentHeld,
   getHubChild,
   updateHubChild,
@@ -122,6 +130,7 @@ import {
   startsOwnProviderTurn,
   type QueuedTurnActionResult,
   type QueuedTurnSummary,
+  type TurnDelivery,
 } from '@shared/turn-delivery'
 import {
   errorMessage,
@@ -177,6 +186,8 @@ import { HubSettler, isHubSettlePlan, remoteSettleRefusal, type HubSettleHost } 
 import { buildVisualPreviewTool, VisualPreviewTurnCounter, visualPreviewRenderer } from '../mcp/visual-preview-tool'
 import { agentVisualPreviewEnabled, VISUAL_PREVIEW_INSTRUCTIONS } from '@shared/visual-preview'
 import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } from '../hub/hub-start'
+import { HubRemoteOutbox, type HubRemoteOutboxHost } from '../hub/hub-remote-outbox'
+import { pruneAckedHubOutbox } from '../hub/hub-outbox'
 import { appMetrics, appVersion, secretsRootDir } from '../runtime'
 import { describeThisMachine, registerHubRemoteHandlers, type HubDescribeDeps } from '../hub/hub-remote-describe'
 import type { RemoteHubClients } from '../hub/remote-hub-clients'
@@ -607,6 +618,7 @@ export class ProviderRegistry implements PeerToolHost {
     this.syncLineageLinks()
     this.hubSampler?.start()
     this.hubWakes.start()
+    if (!adapters) pruneAckedHubOutbox()
     if (!adapters) this.hubReaper.start()
   }
 
@@ -618,10 +630,11 @@ export class ProviderRegistry implements PeerToolHost {
     let pairs: Array<[string, string]> = []
     try {
       if (this.hubChildrenOn())
-        pairs = [...listHubChildrenInPhase('starting'), ...listHubChildrenInPhase('open')].map((c) => [
-          c.parentId,
-          c.childId,
-        ])
+        // A child on another machine too: its messages are charged to this edge when they are imported.
+        pairs = [
+          ...listHubChildrenInPhase('starting', { includeRemote: true }),
+          ...listHubChildrenInPhase('open', { includeRemote: true }),
+        ].map((c) => [c.parentId, c.childId])
     } catch (err) {
       log.warn('could not read open child chats; keeping the lineage links as they are', err)
       return
@@ -718,7 +731,13 @@ export class ProviderRegistry implements PeerToolHost {
         return this.remoteHubClients.invoke(machineId, HubRemoteChannels.START_CHILD, request)
       },
       remoteMachineState: (machineId: string) => this.remoteHubClients?.machineState(machineId) ?? 'offline',
+      outboxAdded: () => this.notifyHubOutbox(),
     }
+  }
+
+  /** A child here wrote an outbox item for its parent on another machine: hub clients pull it. */
+  private notifyHubOutbox(): void {
+    this.host.emit(HubRemoteChannels.OUTBOX)
   }
 
   private hubSettleHost(): HubSettleHost {
@@ -877,6 +896,7 @@ export class ProviderRegistry implements PeerToolHost {
         })
       },
       changed: (parentId) => this.publishHubChange(parentId),
+      outboxAdded: () => this.notifyHubOutbox(),
     }
   }
 
@@ -1524,6 +1544,9 @@ export class ProviderRegistry implements PeerToolHost {
   private backendVersion: string | null = null
   /** The desktop's client to its other machines' backends. Never set on the headless server. */
   private remoteHubClients: RemoteHubClients | null = null
+  /** Pulls and imports the outboxes of those machines; set with the clients. */
+  private hubOutbox: HubRemoteOutbox | null = null
+  private readonly hubOutboxSubscriptions: Array<() => void> = []
   /** A save's file, from `answerAgentSecret` to the card's result in `reportAgentCard`. */
   private readonly savedSecrets = new Map<string, SavedSecret>()
   /** Extends per secret id since this backend started, for the usage count only. */
@@ -1973,6 +1996,17 @@ export class ProviderRegistry implements PeerToolHost {
         ...(lineage ? { hub: root === ownParent ? ('parent' as const) : ('child' as const) } : {}),
       })
     }
+    // A parent on another machine's hub has no session here; the child still reaches it through the outbox.
+    const stub = this.parentStubOf(ownRoot)
+    if (stub && this.peerLinks.isLineage(ownRoot, stub))
+      out.push({
+        sessionId: stub,
+        title: 'Parent chat (on another machine)',
+        folder: '',
+        midTurn: false,
+        linked: false,
+        hub: 'parent',
+      })
     return out
   }
 
@@ -1982,6 +2016,43 @@ export class ProviderRegistry implements PeerToolHost {
 
   isLineagePeer(fromThreadId: string, sessionId: string): boolean {
     return this.peerLinks.isLineage(resolveRootThreadId(fromThreadId), resolveRootThreadId(sessionId))
+  }
+
+  /** The parent stub of an open child here: its parent runs on another machine's hub. */
+  private parentStubOf(threadId: string): string | null {
+    const parentId = this.hubStarter.parentOfOpenChild(threadId)
+    if (!parentId) return null
+    try {
+      return getHubParent(parentId)?.remoteHub ? parentId : null
+    } catch (err) {
+      log.warn(`could not read the parent of ${threadId}`, err)
+      return null
+    }
+  }
+
+  /**
+   * An agent send from an open child to its parent stub, along the lineage
+   * edge only: an outbox `message` item for the hub that owns the stub, which
+   * charges the edge's budget there when it delivers. Any other target from
+   * that child, and every other sender, takes the ordinary path. Null when
+   * this send is not one.
+   */
+  private relayToParentStub(input: PeerMessageInput): { id: string; relayed: true } | null {
+    const childId = resolveRootThreadId(input.fromThreadId)
+    const parentId = this.parentStubOf(childId)
+    if (!parentId || resolveRootThreadId(input.targetThreadId) !== parentId) return null
+    const tooLarge = peerMessageTooLarge(input.text)
+    if (tooLarge) throw new Error(tooLarge)
+    if (countUnackedHubOutboxMessages(childId) >= HUB_OUTBOX_MESSAGES_PER_CHILD_MAX)
+      throw new Error(HUB_OUTBOX_MESSAGES_FULL_TEXT)
+    const id = insertHubOutboxMessage({ childId, parentId, text: input.text, delivery: input.delivery ?? 'queue' })
+    log.info('child message for a parent on another machine stored in the outbox', {
+      childId,
+      parentId,
+      chars: input.text.length,
+    })
+    this.notifyHubOutbox()
+    return { id, relayed: true }
   }
 
   /** The id a live session runs under for this id: itself, its root, or another id rotated from that root. */
@@ -2326,9 +2397,14 @@ export class ProviderRegistry implements PeerToolHost {
    */
   async deliverPeerMessage(
     input: PeerMessageInput,
-    opts: { held?: HeldPeerMessage } = {},
-  ): Promise<{ id: string; held?: true; queued?: true }> {
+    opts: { held?: HeldPeerMessage; remoteChild?: true } = {},
+  ): Promise<{ id: string; held?: true; queued?: true; relayed?: true }> {
     const initiator = input.initiator ?? 'user'
+    // A child here whose parent runs on another machine's hub: its message waits in the outbox for that hub.
+    if (initiator === 'agent' && !opts.remoteChild) {
+      const relayed = this.relayToParentStub(input)
+      if (relayed) return relayed
+    }
     // A held message already met the link once; it is not charged or refused for time again.
     const held = initiator === 'agent' ? opts.held : undefined
     // `sessionAdapters` is keyed by whatever id startSession ran under, so
@@ -2577,12 +2653,14 @@ export class ProviderRegistry implements PeerToolHost {
         // matching the live one.
         try {
           saveMessageIfAbsent(verdict.id, targetThreadId, 'user', body, undefined, `From "${fromLabel}": ${input.text}`)
-          saveMessageIfAbsent(
-            `peer_${verdict.id}`,
-            input.fromThreadId,
-            'system',
-            `${peerSentMarkerPrefix(initiator)} ${fromLabel} → ${targetLabel}`,
-          )
+          // A child on another machine has no chat here: its own transcript is on that machine.
+          if (!opts.remoteChild)
+            saveMessageIfAbsent(
+              `peer_${verdict.id}`,
+              input.fromThreadId,
+              'system',
+              `${peerSentMarkerPrefix(initiator)} ${fromLabel} → ${targetLabel}`,
+            )
         } catch (err) {
           log.warn(`failed to persist peer message ${verdict.id}: ${err}`)
         }
@@ -2593,19 +2671,21 @@ export class ProviderRegistry implements PeerToolHost {
             lineage: this.peerLinks.isLineage(fromRoot, targetRoot),
             requested: input.delivery ?? null,
             delivery: delivery ?? 'turn',
+            ...(opts.remoteChild ? { remoteChild: true } : {}),
           },
         )
-        this.publish({
-          type: 'peer.message',
-          threadId: input.fromThreadId,
-          direction: 'sent',
-          initiator,
-          messageId: verdict.id,
-          peerThreadId: targetThreadId,
-          peerLabel: targetLabel,
-          text: input.text,
-          at,
-        })
+        if (!opts.remoteChild)
+          this.publish({
+            type: 'peer.message',
+            threadId: input.fromThreadId,
+            direction: 'sent',
+            initiator,
+            messageId: verdict.id,
+            peerThreadId: targetThreadId,
+            peerLabel: targetLabel,
+            text: input.text,
+            at,
+          })
         this.publish({
           type: 'peer.message',
           threadId: targetThreadId,
@@ -3065,12 +3145,74 @@ export class ProviderRegistry implements PeerToolHost {
   /** The desktop main process hands over its hub client to other machines (`ipc/machines.ts`). */
   setRemoteHubClients(clients: RemoteHubClients): void {
     this.remoteHubClients = clients
+    this.hubOutbox?.dispose()
+    for (const off of this.hubOutboxSubscriptions.splice(0)) off()
+    const outbox = new HubRemoteOutbox(this.hubRemoteOutboxHost(clients))
+    this.hubOutbox = outbox
+    outbox.start()
     // Remote starts left `starting` (a quit, a timeout) are asked again on each connect, failed on removal.
+    // Each connect also pulls that machine's outbox.
     clients.setMachineListener((machineId, change) => {
       if (change === 'removed') this.hubStarter.remoteMachineRemoved(machineId)
-      else void this.hubStarter.reconcileRemote({ machineId })
+      else {
+        void this.hubStarter.reconcileRemote({ machineId })
+        void outbox.connected(machineId)
+      }
     })
+    this.hubOutboxSubscriptions.push(
+      clients.on(HubRemoteChannels.OUTBOX, (machineId) => void outbox.pull(machineId)),
+      clients.onResync((machineId) => void outbox.pull(machineId)),
+    )
     void this.hubStarter.reconcileRemote()
+    for (const machineId of clients.connectedMachineIds()) void outbox.connected(machineId)
+  }
+
+  private hubRemoteOutboxHost(clients: RemoteHubClients): HubRemoteOutboxHost {
+    return {
+      enabled: () => this.hubRemoteChildrenOn(),
+      installId: () => hubInstallId(),
+      supportsOutbox: (machineId) => clients.supportsOutbox(machineId),
+      invoke: (machineId, channel, ...args) => clients.invoke(machineId, channel, ...args),
+      recordWake: (w, inTransaction) => {
+        this.hubWakes.record(w, inTransaction)
+        this.publishHubChange(w.parentId)
+      },
+      failedStart: (childId) => this.hubStarter.remoteChildFailedStart(childId),
+      parentRunning: (parentId) => this.isLiveSession(parentId),
+      deliverMessage: (m) => this.deliverRemoteChildMessage(m.child, m.text, m.delivery),
+    }
+  }
+
+  /**
+   * A message a child on another machine sent its parent, imported from that
+   * machine's outbox: delivered along the lineage edge as the child's own send
+   * would be, which charges the edge's budget here first. Only for an open
+   * child of that parent with a live edge; never a card, a setting or a mode.
+   */
+  private async deliverRemoteChildMessage(
+    child: HubChildRow,
+    text: string,
+    delivery: TurnDelivery,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    if (!child.machineId || !isOpenChildPhase(child.phase)) return { ok: false, reason: 'the child is not open' }
+    if (!this.peerLinks.isLineage(child.childId, child.parentId))
+      return { ok: false, reason: 'the child has no lineage edge to its parent' }
+    try {
+      await this.deliverPeerMessage(
+        {
+          fromThreadId: child.childId,
+          targetThreadId: child.parentId,
+          text,
+          initiator: 'agent',
+          fromLabel: child.title,
+          delivery,
+        },
+        { remoteChild: true },
+      )
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) }
+    }
   }
 
   /** The headless server's build version, for `hub-remote:describe`; the desktop answers its app version. */
@@ -5275,6 +5417,8 @@ export class ProviderRegistry implements PeerToolHost {
     this.hubWakes.stop()
     this.hubReaper.stop()
     this.hubStarter.dispose()
+    this.hubOutbox?.dispose()
+    for (const off of this.hubOutboxSubscriptions.splice(0)) off()
     this.secretStore?.stop()
     // Open approval cards stay in the store: a quit or a closed window is not an answer.
     for (const threadId of this.sessionAdapters.keys()) this.switchboardMcp?.close(threadId)
