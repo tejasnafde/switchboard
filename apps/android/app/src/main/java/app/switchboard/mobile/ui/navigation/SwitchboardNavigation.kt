@@ -1101,52 +1101,55 @@ private fun ThreadRouteHost(
         LaunchedEffect(savedDraft) {
             if (savedDraft != null) localDraft = savedDraft
         }
-        ThreadScreen(
-            threadId = route.threadId,
-            title = route.title,
-            backendLabel = route.connectionLabel,
-            loadState = load,
-            onRetry = { runtime?.retry(route.connectionId) },
-            onAction = {},
-            onBack = onBack,
-            composer = runtime?.let {
-                ThreadComposerPresentation(
-                    draft = localDraft.text,
-                    // An offline pick, else the chat's own mode from the saved copy.
-                    runtimeMode = (localDraft.runtimeMode ?: cached?.runtimeMode).toRuntimeMode(),
-                    submitting = false,
-                    interrupting = false,
-                    modeChanging = false,
-                    error = composerErrors[composerKey],
-                    controlMessage = null,
-                    focusRequest = 0,
-                    showInterrupt = false,
-                    attachments = localDraft.attachments,
-                    editingOrigin = localDraft.editingOrigin,
-                    uploading = uploading,
-                )
-            },
-            onDraftChange = { text ->
-                localDraft = localDraft.copy(text = text)
-                runtime?.saveComposerText(localDraft)
-            },
-            onRuntimeModeChange = { mode ->
-                localDraft = localDraft.copy(runtimeMode = mode.wire)
-                runtime?.saveComposerText(localDraft)
-            },
-            onImagesSelected = { sources -> runtime?.addComposerImages(composerKey, sources) },
-            onRemoveImage = { attachmentId ->
-                runtime?.removeComposerImage(composerKey, attachmentId)
-            },
-            onSend = { runtime?.submitSavedComposerDraft(composerKey) },
-            onSendOverride = { text ->
-                runtime?.submitComposerText(composerKey, text, localDraft.runtimeMode)
-            },
-            queuedTurns = queuedTurns,
-            onOutboxAction = { origin, action ->
-                runtime?.performOutboxAction(composerKey, origin, action)
-            },
-        )
+        val phoneLiveRun by (runtime?.phoneLiveRun ?: PhoneLiveRunOff).collectAsState()
+        CompositionLocalProvider(LocalPhoneLiveRun provides phoneLiveRun) {
+            ThreadScreen(
+                threadId = route.threadId,
+                title = route.title,
+                backendLabel = route.connectionLabel,
+                loadState = load,
+                onRetry = { runtime?.retry(route.connectionId) },
+                onAction = {},
+                onBack = onBack,
+                composer = runtime?.let {
+                    ThreadComposerPresentation(
+                        draft = localDraft.text,
+                        // An offline pick, else the chat's own mode from the saved copy.
+                        runtimeMode = (localDraft.runtimeMode ?: cached?.runtimeMode).toRuntimeMode(),
+                        submitting = false,
+                        interrupting = false,
+                        modeChanging = false,
+                        error = composerErrors[composerKey],
+                        controlMessage = null,
+                        focusRequest = 0,
+                        showInterrupt = false,
+                        attachments = localDraft.attachments,
+                        editingOrigin = localDraft.editingOrigin,
+                        uploading = uploading,
+                    )
+                },
+                onDraftChange = { text ->
+                    localDraft = localDraft.copy(text = text)
+                    runtime?.saveComposerText(localDraft)
+                },
+                onRuntimeModeChange = { mode ->
+                    localDraft = localDraft.copy(runtimeMode = mode.wire)
+                    runtime?.saveComposerText(localDraft)
+                },
+                onImagesSelected = { sources -> runtime?.addComposerImages(composerKey, sources) },
+                onRemoveImage = { attachmentId ->
+                    runtime?.removeComposerImage(composerKey, attachmentId)
+                },
+                onSend = { runtime?.submitSavedComposerDraft(composerKey) },
+                onSendOverride = { text ->
+                    runtime?.submitComposerText(composerKey, text, localDraft.runtimeMode)
+                },
+                queuedTurns = queuedTurns,
+                onOutboxAction = { origin, action ->
+                    runtime?.performOutboxAction(composerKey, origin, action)
+                },
+            )
+        }
         return
     }
 

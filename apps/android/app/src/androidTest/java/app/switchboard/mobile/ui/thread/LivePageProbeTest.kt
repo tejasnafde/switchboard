@@ -55,14 +55,12 @@ class LivePageProbeTest {
                 }
             }
         }.apply { isDaemon = true }.start()
-        // Matches every activity start and blocks it: an intent: or market: link must start none.
-        activities = instrumentation.addMonitor(null as android.content.IntentFilter?, null, true)
     }
 
     @After
     fun close() {
         server.close()
-        instrumentation.removeMonitor(activities)
+        if (::activities.isInitialized) instrumentation.removeMonitor(activities)
     }
 
     @Test
@@ -80,6 +78,8 @@ class LivePageProbeTest {
         }
         var view: WebView? = null
         ActivityScenario.launch(ComponentActivity::class.java).use { scenario ->
+            // Added after the launch, as it blocks every activity start: an intent: or market: link must start none.
+            activities = instrumentation.addMonitor(null as android.content.IntentFilter?, null, true)
             scenario.onActivity { activity ->
                 view = liveWebView(activity, newLiveToken(), probePage(server.localPort), listener)
                 activity.setContentView(view)

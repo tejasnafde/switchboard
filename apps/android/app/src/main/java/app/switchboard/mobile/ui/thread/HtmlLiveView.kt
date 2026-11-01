@@ -48,6 +48,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -291,21 +292,36 @@ private fun deviceLowRam(): Boolean {
     }
 }
 
-/** A frame that runs one page with an 8 s watchdog. The WebView is destroyed when this leaves composition. */
+/**
+ * Passes on a frame's first stop only: a crash after the watchdog must not
+ * count twice, and a frame that left composition (its WebView destroyed) stops nothing.
+ */
+internal class FrameStops(private val onStop: (LiveStop) -> Unit) {
+    private var ended = false
+
+    fun stop(reason: LiveStop) {
+        if (ended) return
+        ended = true
+        onStop(reason)
+    }
+
+    fun release() {
+        ended = true
+    }
+}
+
+/**
+ * A frame that runs one page with an 8 s watchdog. The WebView is destroyed
+ * when this leaves composition, and a new source gets a new frame.
+ */
 @Composable
-private fun LiveFrame(source: String, modifier: Modifier, onReport: (HtmlLivePhone.Report) -> Unit, onStop: (LiveStop) -> Unit) {
+private fun LiveFrame(source: String, modifier: Modifier, onReport: (HtmlLivePhone.Report) -> Unit, onStop: (LiveStop) -> Unit) = key(source) {
     val token = remember { newLiveToken() }
     var heard by remember { mutableStateOf(false) }
-    var ended by remember { mutableStateOf(false) }
     val latestReport by rememberUpdatedState(onReport)
     val latestStop by rememberUpdatedState(onStop)
-    // A frame stops once: a crash after the watchdog must not count twice.
-    val stop: (LiveStop) -> Unit = { reason ->
-        if (!ended) {
-            ended = true
-            latestStop(reason)
-        }
-    }
+    val stops = remember { FrameStops { latestStop(it) } }
+    val stop: (LiveStop) -> Unit = stops::stop
     LaunchedEffect(token) {
         delay(HtmlLivePhone.WATCHDOG_MS)
         if (!heard) stop(LiveStop.WATCHDOG)
@@ -328,7 +344,10 @@ private fun LiveFrame(source: String, modifier: Modifier, onReport: (HtmlLivePho
                 }
                 .getOrElse { View(context) }
         },
-        onRelease = { (it as? WebView)?.destroy() },
+        onRelease = {
+            stops.release()
+            (it as? WebView)?.destroy()
+        },
     )
 }
 

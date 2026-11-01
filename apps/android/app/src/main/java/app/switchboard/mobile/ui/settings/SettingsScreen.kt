@@ -133,7 +133,8 @@ fun SettingsScreen(
                     headlineContent = { Text("Run live pages") },
                     supportingContent = {
                         Text(
-                            "Runs an agent's live page in the chat, offline and with no network. Off shows the image your Mac took.",
+                            "Runs an agent's live page in the chat. The page cannot load anything from the network, " +
+                                "but it can still learn your IP address. Off shows the image your Mac took.",
                             color = TextDim,
                             maxLines = 3,
                         )

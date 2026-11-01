@@ -144,6 +144,10 @@ class HtmlLivePhoneTest {
         assertEquals(Verdict.Open, HtmlLivePhone.verdict("<p>x</p>", closed = false))
         assertEquals(Verdict.Ok(listOf("Chart.js")), HtmlLivePhone.verdict("<script src=\"/_sb/chart.js\"></script>", true))
         assertEquals(Verdict.Ok(listOf("Three.js")), HtmlLivePhone.verdict("import * as T from 'three'", true))
+        assertEquals(
+            Verdict.UnknownLibrary(listOf("three/addons/x/Unsupported.js", "three/addons/y/Side.js")),
+            HtmlLivePhone.verdict("import('three/addons/x/Unsupported.js'); import 'three/addons/y/Side.js'", true),
+        )
         assertTrue(HtmlLivePhone.verdict("x".repeat(128 * 1024 + 1), true) is Verdict.TooLarge)
         assertEquals(Verdict.UnknownLibrary(listOf("vue.js")), HtmlLivePhone.verdict("/_sb/vue.js", true))
         assertEquals(Verdict.DesktopOnly(listOf("mermaid.js")), HtmlLivePhone.verdict("/_sb/mermaid.js", true))

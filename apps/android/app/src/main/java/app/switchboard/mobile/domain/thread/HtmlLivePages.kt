@@ -176,9 +176,9 @@ object HtmlLivePhone {
     }
 
     private val sbRef = Regex("/_sb/([A-Za-z0-9._/-]*)")
-    private val threeImport = Regex("\\bfrom\\s*['\"](three(?:/addons/[A-Za-z0-9._/-]+)?)['\"]")
+    private val threeImport = Regex("\\b(?:from|import)\\s*\\(?\\s*['\"](three(?:/addons/[A-Za-z0-9._/-]+)?)['\"]")
 
-    /** Every /_sb/ path the page names, plus the `three` import names, in order, once each. */
+    /** Every /_sb/ path the page names, plus the `three` names it imports (static, bare or dynamic), in order, once each. */
     fun libraryRefs(source: String): List<String> {
         val refs = LinkedHashSet<String>()
         sbRef.findAll(source).forEach { refs += it.groupValues[1] }
