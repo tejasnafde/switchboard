@@ -214,6 +214,13 @@ describe('phoneLiveRunning', () => {
     expect(phoneLiveRunning([page('a', 1)], { ...still, listStillMs: 299 })).toBeNull()
   })
 
+  it('keeps the running page while the list moves, until it leaves view', () => {
+    const moving = { ...still, listStillMs: 0 }
+    expect(phoneLiveRunning([page('a', 0.6, { active: true }), page('b', 0.9)], moving)).toBe('a')
+    expect(phoneLiveRunning([page('a', 0.4, { active: true }), page('b', 0.9)], moving)).toBeNull()
+    expect(phoneLiveRunning([page('a', 0.6, { active: true }), page('b', 0.9)], still)).toBe('b')
+  })
+
   it('gives the slot to the full-screen view', () => {
     expect(phoneLiveRunning([page('a', 1), page('b', 0, { fullScreen: true })], { ...still, listStillMs: 0 })).toBe('b')
   })

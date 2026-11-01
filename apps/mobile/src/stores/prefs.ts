@@ -82,6 +82,9 @@ interface PrefsState {
   /** What a send does while the agent works (desktop's "Follow-up" setting, per device). */
   followUpDefault: TurnDelivery
   setFollowUpDefault: (value: TurnDelivery) => void
+  /** Run ```html-live pages in the chat (`phone_html_live_run`). Off until a probe passes on a real iPhone. */
+  liveHtmlPages: boolean
+  setLiveHtmlPages: (on: boolean) => void
   rememberMode: (key: string, mode: RuntimeMode) => void
   rememberModel: (key: string, model: string) => void
   rememberDraft: (key: string, draft: string) => void
@@ -104,6 +107,7 @@ export const usePrefsStore = create<PrefsState>()(
       defaultMode: 'sandbox',
       collapsedWorkspaces: [],
       followUpDefault: 'steer',
+      liveHtmlPages: false,
       prFilters: {},
 
       setPrFilters: (connectionId, filters) => set((s) => ({ prFilters: { ...s.prFilters, [connectionId]: filters } })),
@@ -114,6 +118,8 @@ export const usePrefsStore = create<PrefsState>()(
         })),
 
       setFollowUpDefault: (value) => set({ followUpDefault: value }),
+
+      setLiveHtmlPages: (on) => set({ liveHtmlPages: on }),
 
       rememberMode: (key, mode) =>
         set((s) => ({

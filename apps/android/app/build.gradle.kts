@@ -43,6 +43,8 @@ android {
         versionName = "0.5.24"
         buildConfigField("String", "EXPO_PROJECT_ID", "\"$easProjectId\"")
         buildConfigField("String", "PUSH_APPLICATION_ID", "\"$canonicalApplicationId\"")
+        // Settings > Labs "Run live pages" default (phone_html_live_run), off until a device probe passes.
+        buildConfigField("boolean", "PHONE_HTML_LIVE_RUN", "false")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -102,6 +104,9 @@ android {
     // The demo fixture is one file shared with the Expo app and the TS player
     // (src/shared/phone-demo/phone-demo.ts), so it ships from its own folder.
     sourceSets["main"].assets.srcDir("../../../src/shared/phone-demo/fixture")
+    // Live page libraries and their licences, vendored once for the desktop.
+    // Asset paths equal the /_sb/ paths (chart.js, three/addons/...).
+    sourceSets["main"].assets.srcDir("../../../resources/sb-live")
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"

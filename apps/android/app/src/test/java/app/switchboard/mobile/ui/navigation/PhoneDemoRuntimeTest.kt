@@ -58,6 +58,17 @@ class PhoneDemoRuntimeTest {
     }
 
     @Test
+    fun theLabsLivePagesSwitchHoldsItsValueForTheSession() {
+        val runtime = requireNotNull(controller.start())
+        assertEquals(false, runtime.phoneLiveRun.value)
+        runtime.setPhoneLiveRun(true)
+        assertEquals(true, runtime.phoneLiveRun.value)
+        controller.leave()
+        assertEquals(false, requireNotNull(controller.start()).phoneLiveRun.value)
+        controller.leave()
+    }
+
+    @Test
     fun aNewSessionNeverReusesTheLastOnesScope() {
         val first = requireNotNull(controller.start()).lease("demo")!!.scope
         controller.leave()

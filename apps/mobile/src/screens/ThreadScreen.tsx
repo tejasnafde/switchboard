@@ -42,6 +42,7 @@ import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors } from '../theme'
 import { getClient, onAppBackground, onAppForeground, useConnectionsStore } from '../stores/connections'
+import { noteLivePageScroll, setLivePagesActive } from '../lib/live-pages'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
 import {
   expiredOpenRequests,
@@ -243,6 +244,20 @@ export default function ThreadScreen({ route, navigation }: Props) {
         usePrefsStore.getState().rememberDraft(key, draftRef.current)
       }
     }, [key, connectionId, threadId]),
+  )
+
+  // A live page runs only while this screen is focused and the app is in the foreground.
+  useFocusEffect(
+    useCallback(() => {
+      setLivePagesActive(true)
+      const unsubForeground = onAppForeground(() => setLivePagesActive(true))
+      const unsubBackground = onAppBackground(() => setLivePagesActive(false))
+      return () => {
+        unsubForeground()
+        unsubBackground()
+        setLivePagesActive(false)
+      }
+    }, []),
   )
 
   // Linked pull requests, re-read whenever any chat's links change; the
@@ -1627,6 +1642,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
           maxToRenderPerBatch={8}
           initialNumToRender={12}
           removeClippedSubviews
+          onScroll={noteLivePageScroll}
+          scrollEventThrottle={100}
         />
       )}
 
