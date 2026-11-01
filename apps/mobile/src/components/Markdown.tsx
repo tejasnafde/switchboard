@@ -143,8 +143,9 @@ const BlockView = memo(function BlockView({ block }: { block: Block }): React.Re
  * Re-parsed on change: once per coalesced flush, not once per token. Closed
  * ```mermaid and ```chart blocks are drawn by ChatVisual; one still streaming
  * stays a code block until its fence closes. A closed ```html-live block is an
- * HtmlLiveCard (a still image, never run here); `thread` lets it load the
- * image and offer Open on desktop. An unclosed one stays a code block, like an
+ * HtmlLiveCard (a still image, run in a locked-down WebView only with
+ * `phone_html_live_run` on); `thread` lets it load the image and offer Open
+ * on desktop. An unclosed one stays a code block, like an
  * unclosed ```mermaid fence: a finished message whose fence never closed
  * cannot be told apart from one still streaming.
  */
