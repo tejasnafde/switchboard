@@ -166,7 +166,9 @@ import { toolText, type McpToolResult } from '../mcp/mcp-session'
 import {
   buildChildHubMcpTools,
   buildHubMcpTools,
+  buildListMachinesTool,
   HUB_INSTRUCTIONS,
+  LIST_MACHINES_INSTRUCTIONS,
   SETTLE_CHILDREN_TOOL,
   START_CHILDREN_TOOL,
 } from '../mcp/hub-tools'
@@ -175,7 +177,8 @@ import { buildVisualPreviewTool, VisualPreviewTurnCounter, visualPreviewRenderer
 import { agentVisualPreviewEnabled, VISUAL_PREVIEW_INSTRUCTIONS } from '@shared/visual-preview'
 import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } from '../hub/hub-start'
 import { appMetrics, appVersion, secretsRootDir } from '../runtime'
-import { registerHubRemoteHandlers } from '../hub/hub-remote-describe'
+import { describeThisMachine, registerHubRemoteHandlers, type HubDescribeDeps } from '../hub/hub-remote-describe'
+import type { RemoteHubClients } from '../hub/remote-hub-clients'
 import { onConversationArchived } from '../db/archive-events'
 import { SecretStore, errCode, type SavedSecret } from '../secrets/secret-store'
 import { secretRedactor } from '../secrets/secret-redactor'
@@ -215,6 +218,7 @@ import {
   EMPTY_HUB_VIEW,
   formatHubUpdateMarker,
   hubChildrenEnabled,
+  hubRemoteChildrenEnabled,
   moveChildProblem,
   runSlotFree,
   type HubRunningChild,
@@ -649,6 +653,21 @@ export class ProviderRegistry implements PeerToolHost {
       return hubChildrenEnabled(process.env, getSetting)
     } catch (err) {
       log.warn('could not read the hub_children flag; it counts as off', err)
+      return false
+    }
+  }
+
+  /**
+   * `list_machines` is offered only on the desktop's own backend (a VM's
+   * parent starts children on its own machine), once the desktop has handed
+   * over its hub client, and while `hub_remote_children` is on.
+   */
+  private listMachinesOffered(): boolean {
+    if (process.env.SWITCHBOARD_REMOTE || !this.remoteHubClients) return false
+    try {
+      return hubRemoteChildrenEnabled(process.env, getSetting)
+    } catch (err) {
+      log.warn('could not read the hub_remote_children flag; it counts as off', err)
       return false
     }
   }
@@ -1480,6 +1499,8 @@ export class ProviderRegistry implements PeerToolHost {
   /** The machine this backend runs on, named in a saved secret's result. Null on the desktop's own backend. */
   private machineLabel: string | null = null
   private backendVersion: string | null = null
+  /** The desktop's client to its other machines' backends. Never set on the headless server. */
+  private remoteHubClients: RemoteHubClients | null = null
   /** A save's file, from `answerAgentSecret` to the card's result in `reportAgentCard`. */
   private readonly savedSecrets = new Map<string, SavedSecret>()
   /** Extends per secret id since this backend started, for the usage count only. */
@@ -3017,6 +3038,11 @@ export class ProviderRegistry implements PeerToolHost {
     this.machineLabel = label
   }
 
+  /** The desktop main process hands over its hub client to other machines (`ipc/machines.ts`). */
+  setRemoteHubClients(clients: RemoteHubClients): void {
+    this.remoteHubClients = clients
+  }
+
   /** The headless server's build version, for `hub-remote:describe`; the desktop answers its app version. */
   setBackendVersion(version: string): void {
     this.backendVersion = version
@@ -3092,11 +3118,13 @@ export class ProviderRegistry implements PeerToolHost {
     const hubOn = this.hubChildrenOn()
     const openChild = hubOn && this.hubStarter.isOpenChild(threadId)
     const parentTools = hubOn && !openChild
+    const hubClients = parentTools && this.listMachinesOffered() ? this.remoteHubClients : null
     // An open child chat is not where the user is looking, so it gets neither the tool nor the instructions.
     const secretsOn = this.secretRequestOn() && !openChild
     const previewRender = this.visualPreviewRender()
     const instructions = [
       parentTools ? HUB_INSTRUCTIONS : '',
+      hubClients ? LIST_MACHINES_INSTRUCTIONS : '',
       secretsOn ? SECRET_INSTRUCTIONS : '',
       previewRender ? VISUAL_PREVIEW_INSTRUCTIONS : '',
     ]
@@ -3184,6 +3212,16 @@ export class ProviderRegistry implements PeerToolHost {
                     args,
                   ),
               })
+            : []),
+          ...(hubClients
+            ? [
+                buildListMachinesTool({
+                  projectPath: () =>
+                    getConversationById(chatId())?.project_path ?? this.sessionDescriptors.get(threadId)?.cwd ?? '',
+                  describeLocal: () => describeThisMachine(this.hubDescribeDeps()),
+                  remoteEntries: () => hubClients.entries(),
+                }),
+              ]
             : []),
           ...(openChild
             ? buildChildHubMcpTools({
@@ -4015,8 +4053,8 @@ export class ProviderRegistry implements PeerToolHost {
     return buildHandoffPreamble(answeredHistory(messages), { maxChars: this.handoffMaxChars(provider, rootId) })
   }
 
-  registerIpcHandlers(): void {
-    registerHubRemoteHandlers(this.host, {
+  private hubDescribeDeps(): HubDescribeDeps {
+    return {
       backendVersion: () => this.backendVersion ?? appVersion(),
       agentAvailable: async (agent) => {
         const provider = providerKindFor(agent)
@@ -4024,7 +4062,11 @@ export class ProviderRegistry implements PeerToolHost {
         return (await this.getAdapter(provider)?.isAvailable()) === true
       },
       runningSlotKeys: () => this.hubStarter.runningSlotKeys(),
-    })
+    }
+  }
+
+  registerIpcHandlers(): void {
+    registerHubRemoteHandlers(this.host, this.hubDescribeDeps())
     this.host.handle(ProviderChannels.IS_AVAILABLE, async (provider: ProviderKind) => {
       // On a remote VM, gray out the providers that don't run there.
       if (process.env.SWITCHBOARD_REMOTE && remoteBlockedProviderLabel(provider)) return false

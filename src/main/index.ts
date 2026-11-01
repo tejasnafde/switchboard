@@ -1001,7 +1001,7 @@ app.whenReady().then(() => {
       return dir ? basename(dir) : null
     },
   )
-  registerMachineHandlers(backendHost)
+  const remoteHubClients = registerMachineHandlers(backendHost)
   registerAnalyticsHandlers(backendHost)
   registerDiagnosticsHandlers(backendHost, {
     livePtys: () => livePtyCount(),
@@ -1014,6 +1014,7 @@ app.whenReady().then(() => {
 
   // Provider registry - new agent bridge (SDK-based)
   providerRegistry = new ProviderRegistry(backendHost)
+  providerRegistry.setRemoteHubClients(remoteHubClients)
   worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(backendHost, () => providerRegistry)
   configureHubWorktrees(worktreeCreationRuntime)
   detachPush = attachPushNotifier(providerRegistry.bus, {
@@ -1072,7 +1073,7 @@ app.whenReady().then(() => {
       })
       registerWorktreeManagerHandlers(reactivatedHost)
       worktreeCreationRuntime?.registerHost(reactivatedHost)
-      registerMachineHandlers(reactivatedHost)
+      const reactivatedHubClients = registerMachineHandlers(reactivatedHost)
       registerAnalyticsHandlers(reactivatedHost)
       registerDiagnosticsHandlers(reactivatedHost, {
         livePtys: () => livePtyCount(),
@@ -1081,6 +1082,7 @@ app.whenReady().then(() => {
       registerAutoUpdater(mainWindow)
 
       providerRegistry = new ProviderRegistry(reactivatedHost)
+      providerRegistry.setRemoteHubClients(reactivatedHubClients)
       // New registry means a new bus. Without re-attaching, notifications stop
       // after the window has been closed and reopened once.
       detachPush?.()

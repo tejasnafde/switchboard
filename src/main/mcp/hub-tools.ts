@@ -3,12 +3,20 @@
  * flag is on (the registry decides when it builds a chat's tool list). A chat
  * that is not an open child gets the parent tools `start_children`,
  * `list_children`, `read_child`, `interrupt_child`, `move_child` and `settle_children`; an open child gets
- * `report_to_hub` and `own_dependencies`. Starting is
+ * `report_to_hub` and `own_dependencies`. A parent on the desktop also gets
+ * `list_machines` while `hub_remote_children` is on. Starting is
  * `HubStarter`'s; this binds it to MCP and gathers what `list_children` reports.
  */
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { HUB_MAX_TASKS_PER_BATCH, HUB_REPORT_STATUSES, parseHubTasks, type HubReportStatus } from '@shared/hub'
+import {
+  formatHubMachineList,
+  parseGitRemoteFetchUrls,
+  LOCAL_MACHINE_ID,
+  type HubMachineDescription,
+  type HubMachineEntry,
+} from '@shared/hub-remote'
 import { RUNTIME_MODES, type RuntimeEvent, type RuntimeMode } from '@shared/provider-events'
 import { getConversationById, getLimitResume, lastHubWakes, listHubChildren } from '../db/database'
 import { listProviderInstances } from '../db/provider-instances'
@@ -30,6 +38,10 @@ export const INTERRUPT_CHILD_TOOL = 'interrupt_child'
 export const MOVE_CHILD_TOOL = 'move_child'
 export const SETTLE_CHILDREN_TOOL = 'settle_children'
 export const REPORT_TO_HUB_TOOL = 'report_to_hub'
+export const LIST_MACHINES_TOOL = 'list_machines'
+
+/** The desktop's own name in `list_machines`. */
+export const LOCAL_MACHINE_NAME = 'This desktop'
 
 /** The hub paragraph of the MCP instructions, for a chat that has the parent tools. Kept short: every such chat pays for it. */
 export const HUB_INSTRUCTIONS = [
@@ -42,6 +54,67 @@ export const HUB_INSTRUCTIONS = [
   'its agent now. When you move one, tell the user what you moved and why in your next message.',
   'Once their work is merged, settle_children ends the children and removes their clean, merged worktrees.',
 ].join(' ')
+
+/** Added to `HUB_INSTRUCTIONS` only for a chat that has `list_machines`. */
+export const LIST_MACHINES_INSTRUCTIONS =
+  'list_machines shows the machines this desktop reaches: their agents, accounts, models and checkouts of this project.'
+
+export interface ListMachinesToolContext {
+  /** The calling chat's project folder, whose git remotes pick the matching projects. */
+  projectPath(): string
+  /** This desktop, through the same builder `hub-remote:describe` uses. */
+  describeLocal(): Promise<HubMachineDescription>
+  /** Every other machine, from the hub client's cache. */
+  remoteEntries(): Promise<HubMachineEntry[]>
+  remoteUrls?(cwd: string): Promise<string[]>
+}
+
+/** `list_machines`: read only, no card. */
+export function buildListMachinesTool(ctx: ListMachinesToolContext): McpTool {
+  const remotesOf = ctx.remoteUrls ?? gitRemoteUrls
+  return {
+    name: LIST_MACHINES_TOOL,
+    description: [
+      'List the machines this desktop reaches, this desktop first: id, name, transport, status, OS, the agents with a',
+      "login and their accounts and models, the checkouts of this chat's repository there with their branch, free",
+      'disk, open children and free run slots per account. A machine that is not connected shows its last answer',
+      'and its age.',
+    ].join(' '),
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { title: 'List machines', readOnlyHint: true, openWorldHint: false },
+    async call() {
+      const projectPath = ctx.projectPath()
+      const [local, remote, callerRemotes] = await Promise.all([
+        ctx.describeLocal().catch((err: unknown) => {
+          log.warn('could not describe this desktop for list_machines', err)
+          return null
+        }),
+        ctx.remoteEntries(),
+        projectPath ? remotesOf(projectPath) : Promise.resolve([]),
+      ])
+      const self: HubMachineEntry = {
+        id: LOCAL_MACHINE_ID,
+        name: LOCAL_MACHINE_NAME,
+        transport: 'local',
+        status: 'connected',
+        description: local,
+        ageMs: null,
+        problem: local ? null : 'could not read this desktop',
+      }
+      return toolText(formatHubMachineList([self, ...remote], callerRemotes))
+    },
+  }
+}
+
+async function gitRemoteUrls(cwd: string): Promise<string[]> {
+  try {
+    const { stdout } = await execFileP('git', ['-C', cwd, 'remote', '-v'], { timeout: 5_000 })
+    return parseGitRemoteFetchUrls(stdout)
+  } catch (err) {
+    log.debug('no git remotes for the calling chat', err)
+    return []
+  }
+}
 
 export interface HubMcpToolContext {
   /** The calling chat as it is now (mode, folder, agent). */
