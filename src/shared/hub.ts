@@ -160,9 +160,11 @@ export function grantedMode(requested: RuntimeMode | undefined, parent: RuntimeM
  * Whether the batch and settle steps ask the user with a card. Only plan and
  * supervised modes ask; auto-accept edits and every mode above it start
  * children and settle safely without a card, and say what they did in a row.
+ * A batch with a child on another machine always asks, in every mode: it
+ * spends that machine's accounts and can touch its data.
  */
-export function hubNeedsCard(parent: RuntimeMode): boolean {
-  return parent === 'plan' || parent === 'sandbox'
+export function hubNeedsCard(parent: RuntimeMode, hasRemote = false): boolean {
+  return hasRemote || parent === 'plan' || parent === 'sandbox'
 }
 
 // ─── Run slots ──────────────────────────────────────────────────
@@ -489,9 +491,12 @@ export interface HubTask {
   account?: string
   model?: string
   mode?: RuntimeMode
+  /** A machine id from `list_machines`; absent or `local` is the parent's own machine. */
+  machine?: string
 }
 
 const TITLE_MAX = 120
+const MACHINE_ID_MAX = 64
 const BRIEF_MAX = 32 * 1024
 
 /** The tasks of a `start_children` call, or why they are refused. Agent input, so every field is checked. */
@@ -522,6 +527,12 @@ export function parseHubTasks(raw: unknown): { ok: true; tasks: HubTask[] } | { 
     const branch = str(t.branch)
     if (branch !== undefined && !/^[A-Za-z0-9._/-]{1,80}$/.test(branch))
       return { ok: false, message: `${n}: branch may hold letters, digits, ".", "_", "-" and "/" only.` }
+    if (t.machine !== undefined && (typeof t.machine !== 'string' || t.machine.trim().length > MACHINE_ID_MAX))
+      return {
+        ok: false,
+        message: `${n}: machine is a machine id from list_machines, at most ${MACHINE_ID_MAX} characters.`,
+      }
+    const machine = str(t.machine)
     const task: HubTask = { title, brief, location }
     const baseRef = str(t.baseRef)
     const account = str(t.account)
@@ -532,29 +543,59 @@ export function parseHubTasks(raw: unknown): { ok: true; tasks: HubTask[] } | { 
     if (account) task.account = account
     if (model) task.model = model
     if (mode) task.mode = mode as RuntimeMode
+    if (machine) task.machine = machine
     tasks.push(task)
   }
   return { ok: true, tasks }
 }
 
+/** The machine a child runs on, when it is not the parent's own. */
+export interface HubBatchMachine {
+  id: string
+  name: string
+  transport: 'ssh' | 'gcloud-iap'
+}
+
+export const hubMachineLabel = (m: HubBatchMachine): string =>
+  `${m.name} (${m.transport === 'gcloud-iap' ? 'IAP' : 'SSH'})`
+
 /** One row of the batch card. */
 export interface HubBatchRowView {
   title: string
   agent: AgentProvider
+  /** On another machine, an account id there. */
   account: string | null
   model: string | null
   mode: RuntimeMode
   location: HubChildLocation
   baseRef: string
+  /** For a child on another machine its machine plans the dependencies. */
   deps: HubDepsMode
+  /** Null (or absent, on a card stored before) for the parent's own machine. */
+  machine: HubBatchMachine | null
+  /** Another machine only: no checkout of the project there, so it is cloned into `remoteProjectPath`. */
+  clone?: boolean
+  /** Another machine only: the checkout the child's worktree comes from, `~/...` as that machine names it. */
+  remoteProjectPath?: string
+}
+
+/** Disk on one other machine. Each byte count is null when unknown. */
+export interface HubRemoteDiskView {
+  machineId: string
+  name: string
+  needBytes: number | null
+  freeBytes: number | null
 }
 
 /** What the batch card shows. `needBytes` and `freeBytes` are null when unknown. */
 export interface HubBatchView {
   batchId: string
   rows: HubBatchRowView[]
+  /** This machine only. */
   needBytes: number | null
   freeBytes: number | null
+  /** One entry per other machine in the batch; absent on a card stored before. */
+  remoteDisk?: HubRemoteDiskView[]
   /** The parent works in the main checkout: merging children there changes its branch. */
   mainCheckout: boolean
 }
@@ -572,16 +613,30 @@ export function hubDiskProblem(d: { freeBytes: number; needBytes: number; minFre
   return `Not enough disk: the children need about ${formatGiB(d.needBytes)} and ${formatGiB(d.freeBytes)} is free, which would leave less than ${d.minFreeGiB} GiB.`
 }
 
+/** Where a row's child works, after its agent and mode: shared by the card and its plain text. */
+export function hubBatchRowPlace(r: HubBatchRowView): string {
+  if (r.location === 'project') return 'in the project folder'
+  if (!r.machine) return `worktree off ${r.baseRef}, deps: ${r.deps}`
+  const where = `worktree off ${r.baseRef} on ${hubMachineLabel(r.machine)}`
+  return r.clone && r.remoteProjectPath ? `${where}, clones into ${r.remoteProjectPath} on ${r.machine.name}` : where
+}
+
+/** One other machine's disk line for the card's plain text. */
+export function hubRemoteDiskLine(d: HubRemoteDiskView): string {
+  const need = d.needBytes === null ? 'an unknown amount' : `about ${formatGiB(d.needBytes)}`
+  const free = d.freeBytes === null ? 'free space unknown' : `${formatGiB(d.freeBytes)} free`
+  return `Disk on ${d.name}: needs ${need}, ${free}.`
+}
+
 /** The card as plain text, for clients that do not draw it. */
 export function hubBatchDetail(view: HubBatchView): string {
   const rows = view.rows.map(
-    (r, i) =>
-      `${i + 1}. ${r.title} - ${r.agent}${r.model ? ` ${r.model}` : ''}, ${r.mode}, ` +
-      (r.location === 'project' ? 'in the project folder' : `worktree off ${r.baseRef}, deps: ${r.deps}`),
+    (r, i) => `${i + 1}. ${r.title} - ${r.agent}${r.model ? ` ${r.model}` : ''}, ${r.mode}, ${hubBatchRowPlace(r)}`,
   )
   const lines = [`Start ${view.rows.length} child chat${view.rows.length === 1 ? '' : 's'}:`, ...rows]
   if (view.needBytes !== null && view.freeBytes !== null)
     lines.push(`Disk: needs about ${formatGiB(view.needBytes)}, ${formatGiB(view.freeBytes)} free.`)
+  for (const d of view.remoteDisk ?? []) lines.push(hubRemoteDiskLine(d))
   if (view.mainCheckout) lines.push(HUB_MAIN_CHECKOUT_WARNING)
   return lines.join('\n')
 }

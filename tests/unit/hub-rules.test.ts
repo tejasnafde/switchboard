@@ -35,8 +35,8 @@ describe('hub rules (tests/fixtures/hub-cases.json)', () => {
   it.each(cases.grantedMode)('grantedMode: $name', ({ input, expected }) => {
     expect(grantedMode(input.requested ?? undefined, input.parent)).toBe(expected)
   })
-  it.each(cases.needsCard)('hubNeedsCard: $mode', ({ mode, expected }) => {
-    expect(hubNeedsCard(mode)).toBe(expected)
+  it.each(cases.needsCard)('hubNeedsCard: $mode, remote $hasRemote', ({ mode, hasRemote, expected }) => {
+    expect(hasRemote === undefined ? hubNeedsCard(mode) : hubNeedsCard(mode, hasRemote)).toBe(expected)
   })
   it.each(cases.runSlotFree)('runSlotFree: $name', ({ input, expected }) => {
     expect(runSlotFree(input.slot, input.running, input.perInstance, input.perParent)).toBe(expected)
