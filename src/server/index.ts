@@ -173,6 +173,7 @@ host.handle(SERVER_VERSION_CHANNEL, () => __SERVER_VERSION__)
 const registry = new ProviderRegistry(host)
 // This backend runs on an SSH machine, so a saved secret's result names it.
 registry.setMachineLabel(hostname())
+registry.setBackendVersion(__SERVER_VERSION__)
 const worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(host, () => registry)
 configureHubWorktrees(worktreeCreationRuntime)
 registerAppHandlers(host, { isTurnInFlight: (id) => registry.isTurnInFlight(id) })

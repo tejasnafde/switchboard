@@ -174,7 +174,8 @@ import { HubSettler, isHubSettlePlan, type HubSettleHost } from '../hub/hub-sett
 import { buildVisualPreviewTool, VisualPreviewTurnCounter, visualPreviewRenderer } from '../mcp/visual-preview-tool'
 import { agentVisualPreviewEnabled, VISUAL_PREVIEW_INSTRUCTIONS } from '@shared/visual-preview'
 import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } from '../hub/hub-start'
-import { appMetrics, secretsRootDir } from '../runtime'
+import { appMetrics, appVersion, secretsRootDir } from '../runtime'
+import { registerHubRemoteHandlers } from '../hub/hub-remote-describe'
 import { onConversationArchived } from '../db/archive-events'
 import { SecretStore, errCode, type SavedSecret } from '../secrets/secret-store'
 import { secretRedactor } from '../secrets/secret-redactor'
@@ -286,7 +287,7 @@ import {
   type UserTurnResolutionV1,
   type RuntimeFileEditedEvent,
 } from '@shared/provider-events'
-import { agentLabel, isAgentProvider, toAgentProvider } from '@shared/types'
+import { agentLabel, isAgentProvider, providerKindFor, toAgentProvider } from '@shared/types'
 import { GENERIC_ACP_AGENTS, speaksAcp } from '@shared/acp-agents'
 import {
   answeredHistory,
@@ -1478,6 +1479,7 @@ export class ProviderRegistry implements PeerToolHost {
   private readonly secretLimiter = new SecretRequestLimiter()
   /** The machine this backend runs on, named in a saved secret's result. Null on the desktop's own backend. */
   private machineLabel: string | null = null
+  private backendVersion: string | null = null
   /** A save's file, from `answerAgentSecret` to the card's result in `reportAgentCard`. */
   private readonly savedSecrets = new Map<string, SavedSecret>()
   /** Extends per secret id since this backend started, for the usage count only. */
@@ -3015,6 +3017,11 @@ export class ProviderRegistry implements PeerToolHost {
     this.machineLabel = label
   }
 
+  /** The headless server's build version, for `hub-remote:describe`; the desktop answers its app version. */
+  setBackendVersion(version: string): void {
+    this.backendVersion = version
+  }
+
   /** "Extend" on the saved line: 24 hours from now. The agent is not told. */
   extendAgentSecret(
     threadId: string,
@@ -4009,6 +4016,15 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   registerIpcHandlers(): void {
+    registerHubRemoteHandlers(this.host, {
+      backendVersion: () => this.backendVersion ?? appVersion(),
+      agentAvailable: async (agent) => {
+        const provider = providerKindFor(agent)
+        if (process.env.SWITCHBOARD_REMOTE && remoteBlockedProviderLabel(provider)) return false
+        return (await this.getAdapter(provider)?.isAvailable()) === true
+      },
+      runningSlotKeys: () => this.hubStarter.runningSlotKeys(),
+    })
     this.host.handle(ProviderChannels.IS_AVAILABLE, async (provider: ProviderKind) => {
       // On a remote VM, gray out the providers that don't run there.
       if (process.env.SWITCHBOARD_REMOTE && remoteBlockedProviderLabel(provider)) return false

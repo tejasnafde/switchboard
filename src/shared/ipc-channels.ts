@@ -595,3 +595,17 @@ export const AgentSecretChannels = {
 export function carriesSecretArgs(channel: string): boolean {
   return channel.startsWith('agent-secret:')
 }
+
+/**
+ * What one desktop's hub client calls on another machine's backend. Only a session holding `hub` or `admin` reaches these, and a
+ * `hub`-only session reaches nothing else (`isChannelAllowed`). Events with
+ * these names are the only ones a `hub`-only session receives.
+ */
+export const HubRemoteChannels = {
+  /** () → HubMachineDescription (shared/hub-remote.ts). Answers with the flag off too. */
+  DESCRIBE: 'hub-remote:describe',
+  /** Event, no emitter yet: a child's outbox has rows to pull. */
+  OUTBOX: 'hub-remote:outbox',
+  /** Event, no emitter yet: this machine's remote children changed. */
+  CHILDREN_CHANGED: 'hub-remote:children-changed',
+} as const

@@ -7,6 +7,7 @@
  */
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import {
+  deviceSessionScopes,
   isPairingCodeUsable,
   isRevoked,
   toView,
@@ -149,6 +150,7 @@ export function redeemPairingCode(
     return { ok: false, error: 'pairing code not recognised' }
   }
   setSetting(PAIRING_KEY, JSON.stringify({ ...stored, usedAt: nowMs }))
+  scopes = deviceSessionScopes(scopes)
 
   const token = randomBytes(24).toString('base64url')
   const session = withContext(
@@ -234,15 +236,16 @@ export function renameSession(id: string, name: string | null): boolean {
 /** A pull request write grant does not outlive a month without the device.
  *  The list shows this too, so a lapsed grant never reads as allowed. */
 function effectiveScopes(session: DeviceSession, nowMs: number): DeviceScope[] {
+  const scopes = deviceSessionScopes(Array.isArray(session.scopes) ? session.scopes : [])
   const since = Math.max(session.lastSeenAt, session.prWriteGrantedAt ?? 0)
-  if (!session.scopes.includes('pr-write') || nowMs - since < PR_WRITE_INACTIVE_MS) return session.scopes
-  return session.scopes.filter((s) => s !== 'pr-write')
+  if (!scopes.includes('pr-write') || nowMs - since < PR_WRITE_INACTIVE_MS) return scopes
+  return scopes.filter((s) => s !== 'pr-write')
 }
 
 function activeScopes(session: DeviceSession, nowMs: number): DeviceScope[] {
   const scopes = effectiveScopes(session, nowMs)
-  if (scopes.length === session.scopes.length) return scopes
-  log.info(`dropped pull request writes from inactive device ${session.label}`)
+  if (Array.isArray(session.scopes) && session.scopes.includes('pr-write') && !scopes.includes('pr-write'))
+    log.info(`dropped pull request writes from inactive device ${session.label}`)
   return scopes
 }
 
@@ -264,7 +267,7 @@ export function setPrWriteScope(id: string, allowed: boolean, nowMs: number = Da
   const sessions = listSessions()
   const target = sessions.find((s) => s.id === id)
   if (!target || isRevoked(target)) return false
-  const without = target.scopes.filter((s) => s !== 'pr-write')
+  const without = deviceSessionScopes(Array.isArray(target.scopes) ? target.scopes : []).filter((s) => s !== 'pr-write')
   const scopes: DeviceScope[] = allowed ? [...without, 'pr-write'] : without
   saveSessions(
     sessions.map((s) => (s.id === id ? { ...s, scopes, ...(allowed ? { prWriteGrantedAt: nowMs } : {}) } : s)),
