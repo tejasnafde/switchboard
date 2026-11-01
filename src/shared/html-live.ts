@@ -64,14 +64,14 @@ export function parseHtmlLiveInfo(info: string): { title: string | null } | null
   return { title: title || null }
 }
 
-/** Every /_sb/ path the page names, plus the `three` import map names, in order, once each. */
+/** Every /_sb/ path the page names, plus the `three` names it imports (static, bare or dynamic), in order, once each. */
 export function htmlLiveLibraryRefs(source: string): string[] {
   const refs: string[] = []
   const add = (path: string): void => {
     if (!refs.includes(path)) refs.push(path)
   }
   for (const m of source.matchAll(/\/_sb\/([A-Za-z0-9._/-]*)/g)) add(m[1])
-  for (const m of source.matchAll(/\bfrom\s*['"](three(?:\/addons\/[A-Za-z0-9._/-]+)?)['"]/g)) {
+  for (const m of source.matchAll(/\b(?:from|import)\s*\(?\s*['"](three(?:\/addons\/[A-Za-z0-9._/-]+)?)['"]/g)) {
     add(m[1] === 'three' ? 'three.js' : m[1])
   }
   return refs

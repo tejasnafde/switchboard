@@ -66,6 +66,12 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'</script>`
     expect(htmlLiveVerdict('<p>plain</p>')).toEqual({ ok: true, libraries: [] })
   })
 
+  it('reads dynamic and bare three imports', () => {
+    const source = `import('three/addons/x/Unsupported.js'); import 'three/addons/y/Side.js'; import ( "three" )`
+    expect(htmlLiveLibraryRefs(source)).toEqual(['three/addons/x/Unsupported.js', 'three/addons/y/Side.js', 'three.js'])
+    expect(htmlLiveVerdict(source)).toMatchObject({ ok: false, reason: 'unknown-library' })
+  })
+
   it('refuses an unknown /_sb/ name and lists the real ones', () => {
     const verdict = htmlLiveVerdict('<script src="/_sb/plotly.js"></script>')
     expect(verdict).toEqual({ ok: false, reason: 'unknown-library', names: ['plotly.js'] })
