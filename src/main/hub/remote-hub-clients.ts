@@ -71,6 +71,8 @@ interface Client {
   ready: Promise<string | null>
   /** Set when the client gave up on this machine until its next connect. */
   problem: string | null
+  /** Ends `ready` with a problem, for a client closed before it was ready. */
+  settle: (problem: string | null) => void
 }
 
 interface Snapshot {
@@ -131,6 +133,8 @@ export class RemoteHubClients {
       const call = (async () => {
         const client = this.clientFor(machineId)
         const problem = await client.ready
+        if (this.clients.get(machineId) !== client)
+          throw new HubRemoteCallError('not_connected', `${this.nameOf(machineId)} is not connected`)
         if (problem || !client.transport) throw new HubRemoteCallError('refused', problem ?? 'no hub client')
         return client.transport.invoke<T>(channel, ...args)
       })()
@@ -162,8 +166,12 @@ export class RemoteHubClients {
    * whose description is older than 60 s. Nothing is read with the flag off.
    */
   async entries(): Promise<HubMachineEntry[]> {
+    if (!this.deps.enabled()) {
+      this.closeAll()
+      return []
+    }
     const machines = this.deps.machines()
-    if (this.deps.enabled()) await Promise.all(machines.map((m) => this.refresh(m.id, HUB_DESCRIBE_MAX_AGE_MS)))
+    await Promise.all(machines.map((m) => this.refresh(m.id, HUB_DESCRIBE_MAX_AGE_MS)))
     return machines.map((m) => this.entry(m))
   }
 
@@ -206,14 +214,19 @@ export class RemoteHubClients {
       .catch((err: unknown) => {
         log.warn(`could not describe machine ${machineId}: ${err instanceof Error ? err.message : String(err)}`)
       })
-      .finally(() => this.describing.delete(machineId))
+      .finally(() => {
+        if (this.describing.get(machineId) === read) this.describing.delete(machineId)
+      })
     this.describing.set(machineId, read)
     return read
   }
 
   private clientFor(machineId: string): Client {
     const name = this.nameOf(machineId)
-    if (!this.deps.enabled()) throw new HubRemoteCallError('refused', 'hub_remote_children is off on this desktop')
+    if (!this.deps.enabled()) {
+      this.closeAll()
+      throw new HubRemoteCallError('refused', 'hub_remote_children is off on this desktop')
+    }
     if (this.deps.statusOf(machineId) !== 'connected')
       throw new HubRemoteCallError('not_connected', `${name} is not connected`)
     const existing = this.clients.get(machineId)
@@ -229,7 +242,7 @@ export class RemoteHubClients {
     const update = `update the backend on ${name}`
     if (!token) {
       // A backend from before the token cannot narrow a session to hub.
-      return { transport: null, ready: Promise.resolve(update), problem: update }
+      return { transport: null, ready: Promise.resolve(update), problem: update, settle: () => {} }
     }
     const transport = new WsTransport(
       `${url}/?auth=frame`,
@@ -244,6 +257,7 @@ export class RemoteHubClients {
       transport,
       ready: new Promise((resolve) => (settle = resolve)),
       problem: null,
+      settle: (problem) => settle(problem),
     }
     let granted = false
     const refuse = (problem: string, why: string): void => {
@@ -292,6 +306,9 @@ export class RemoteHubClients {
     const client = this.clients.get(machineId)
     if (!client) return
     this.clients.delete(machineId)
+    // A describe of the closed client must not stand in for the next connect's.
+    this.describing.delete(machineId)
+    client.settle(`${this.nameOf(machineId)} is not connected`)
     if (!client.transport) return
     client.transport.onStateChange = null
     client.transport.close()

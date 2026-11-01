@@ -53,7 +53,7 @@ afterEach(() => {
   for (const fn of cleanups.splice(0)) fn()
 })
 
-async function boot(): Promise<{ host: InstanceType<typeof WsHost>; url: string }> {
+async function boot(): Promise<{ host: InstanceType<typeof WsHost>; url: string; wss: WebSocketServer }> {
   const wss = new WebSocketServer({ port: 0, host: '127.0.0.1' })
   const host = new WsHost(wss, TOKEN)
   cleanups.push(() => {
@@ -61,7 +61,7 @@ async function boot(): Promise<{ host: InstanceType<typeof WsHost>; url: string 
     wss.close()
   })
   await new Promise<void>((resolve) => wss.on('listening', () => resolve()))
-  return { host, url: `ws://127.0.0.1:${(wss.address() as AddressInfo).port}` }
+  return { host, wss, url: `ws://127.0.0.1:${(wss.address() as AddressInfo).port}` }
 }
 
 /** A socket like an older backend sees: the auth frame arrives without `scopes`. */
@@ -128,6 +128,31 @@ describe('RemoteHubClients auth', () => {
     await hub.entries()
     await expect(hub.invoke('m1', HubRemoteChannels.DESCRIBE)).rejects.toThrow('hub_remote_children is off')
     expect(created).toEqual([])
+  })
+
+  it('ends a waiting call at once when its client closes', async () => {
+    // A listener that accepts and never upgrades: the call waits on the client's readiness.
+    const { createServer } = await import('node:net')
+    const silent = createServer(() => {})
+    await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', () => resolve()))
+    cleanups.push(() => silent.close())
+    const port = (silent.address() as AddressInfo).port
+    const { hub, state } = clients(`ws://127.0.0.1:${port}`, { callTimeoutMs: 10_000 })
+    const waiting = hub.invoke('m1', HubRemoteChannels.DESCRIBE)
+    state.status = 'connecting'
+    hub.statusChanged('m1', 'connecting')
+    await expect(waiting).rejects.toThrow('Work VM is not connected')
+  })
+
+  it('closes open clients once the flag is off', async () => {
+    const { host, url, wss } = await boot()
+    host.handle(HubRemoteChannels.DESCRIBE, () => description())
+    const { hub, state } = clients(url)
+    await hub.invoke('m1', HubRemoteChannels.DESCRIBE)
+    expect(wss.clients.size).toBe(1)
+    state.enabled = false
+    expect(await hub.entries()).toEqual([])
+    await vi.waitFor(() => expect(wss.clients.size).toBe(0))
   })
 
   it('fails a call that gets no answer within the timeout', async () => {
