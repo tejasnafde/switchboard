@@ -412,6 +412,7 @@ export function planRemoteTask(t: {
 function repoName(url: string): string {
   const path = url
     .trim()
+    .replace(/[?#].*$/, '')
     .replace(/\/+$/, '')
     .replace(/\.git$/i, '')
   return path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf(':')) + 1)
@@ -449,6 +450,7 @@ export function remoteApprovalProblem(c: {
   if (e.problem) return `${e.problem}.`
   if (e.status !== 'connected') return `${e.name} is not connected.`
   if (!e.description) return `update the backend on ${e.name}.`
+  if (!e.description.flagOn) return `${e.name} does not take children: turn on hub_remote_children there.`
   const accounts = e.description.agents.find((a) => a.agent === c.agent)?.accounts ?? []
   if (!accounts.some((a) => a.instanceId === c.instanceId))
     return `${e.name} no longer has the ${agentLabel(c.agent)} account ${c.instanceId}.`

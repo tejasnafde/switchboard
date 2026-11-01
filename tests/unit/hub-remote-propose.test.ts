@@ -221,6 +221,12 @@ describe('planRemoteTask', () => {
       entries: [entry({ description: desc({ projects: [] }) })],
     })
     expect(cased.ok && cased.plan.remoteProjectPath).toBe('~/projects/My-Repo')
+    const query = planRemoteTask({
+      ...base,
+      parentRemoteUrls: ['https://github.com/me/repo.git?ref=a/b#frag'],
+      entries: [entry({ description: desc({ projects: [] }) })],
+    })
+    expect(query.ok && query.plan.remoteProjectPath).toBe('~/projects/repo')
   })
 })
 
@@ -411,6 +417,16 @@ describe('HubStarter with a remote task', () => {
     expect(listPendingHubWakes('agent_parent')[0]!.summary).toContain(
       'no longer has the Claude Code account claude-vm2',
     )
+  })
+
+  it('names the flag when a machine turned hub_remote_children off before approval', async () => {
+    let entries = [entry()]
+    const h = harness({ entries: () => entries })
+    await h.starter.propose(parent('auto'), [task('VM', { machine: 'vm1' })])
+    entries = [entry({ description: desc({ flagOn: false }) })]
+    await h.starter.approve(h.cards[0]!.batchId, 'auto')
+    await settle()
+    expect(listPendingHubWakes('agent_parent')[0]!.summary).toContain('turn on hub_remote_children there')
   })
 
   it('approves a plan stored before machines existed as local children', async () => {
