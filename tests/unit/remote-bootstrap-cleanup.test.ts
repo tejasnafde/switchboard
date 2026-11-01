@@ -305,8 +305,9 @@ describe('REMOTE_COMMAND', () => {
     expect(REMOTE_COMMAND.indexOf('kill -TERM "$IP"', ideProbeAt)).toBeGreaterThan(ideProbeAt)
   })
 
-  it('never starts the backend without a token, and tightens an existing token file', () => {
+  it('never starts the backend without a token, and tightens existing token files', () => {
     expect(REMOTE_COMMAND).toContain('chmod 600 "$D/token"')
+    expect(REMOTE_COMMAND).toContain('chmod 600 "$D/bridge-token"')
     expect(REMOTE_COMMAND).toContain('if [ -z "$SWITCHBOARD_TOKEN" ]; then')
     expect(REMOTE_COMMAND.indexOf('exit 1; fi;')).toBeLessThan(REMOTE_COMMAND.indexOf('nohup node'))
   })

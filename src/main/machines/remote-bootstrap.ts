@@ -212,6 +212,8 @@ export function buildRemoteBootstrapCommand(opts: RemoteBootstrapOpts): string {
     ` SB_BRIDGE_TOKEN="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || ` +
     `od -An -tx1 -N16 /dev/urandom | tr -dc 'a-f0-9')"; ` +
     `(umask 077; printf '%s' "$SB_BRIDGE_TOKEN" > "$D/bridge-token"); fi; ` +
+    // An older install wrote this file with the default umask.
+    `chmod 600 "$D/bridge-token" 2>/dev/null; ` +
     `export SB_BRIDGE_TOKEN; ` +
     // A reused backend keeps its bridge token, so a code-server that died
     // is started again with the same one.
