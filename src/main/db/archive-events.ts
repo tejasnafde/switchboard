@@ -1,6 +1,7 @@
 /**
  * Every archive of a conversation, whoever wrote it (the sidebar, a kanban
- * card moved to Done), tells the listeners after the row is written. The
+ * card moved to Done), and every chat deleted with its project
+ * (`removeProject`), tells the listeners after the row is written. The
  * registry registers its cleanup here (`notifyConversationArchived`), so the
  * db layer never imports the provider layer and no caller can forget it.
  */

@@ -69,6 +69,14 @@ export const SECRET_TITLE_MAX = 80
 export const SECRET_INSTRUCTIONS_MAX = 1500
 export const SECRET_VALUE_MAX_BYTES = 16 * 1024
 
+/** Values with fewer characters (code points) are not masked: they hit too often. */
+export const SECRET_MATCH_MIN_CHARS = 8
+
+/** Whether the masker matches `value`. The card warns when it does not. */
+export function secretValueMaskable(value: string): boolean {
+  return [...value].length >= SECRET_MATCH_MIN_CHARS
+}
+
 /** What the card shows (`request.opened.secretRequest`). Never a value. */
 export interface SecretRequestCard {
   name: string
@@ -77,6 +85,10 @@ export interface SecretRequestCard {
   ttl: SecretTtl
   /** The SSH machine whose backend keeps the file; the desktop fills it from its routing. */
   machineLabel?: string
+  /** The backend that keeps the file runs on Windows: no ACL of its own, no backup exclusion. */
+  hostPlatform?: 'win32'
+  /** The backend could not exclude its secrets folder from Time Machine. */
+  backupNotExcluded?: true
 }
 
 /** The stored plan of an `sbsec_` card. Holds no value. */

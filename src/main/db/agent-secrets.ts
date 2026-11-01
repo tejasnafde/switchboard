@@ -9,6 +9,9 @@ import { resolveRootThreadId } from './conversations'
 // chat's random folder name, made at session start before any secret exists;
 // `agent_secrets` holds one row per saved file. Both keyed by the ROOT
 // conversation id, so a provider session id rotation finds the same folder.
+// `agent_secret_owner_deleted` lists root chats whose conversation row was
+// deleted (with its project) while it still held secrets, so the sweep can
+// tell them from a new chat whose folder comes before its row.
 
 export function ensureAgentSecretsSchema(db: Database.Database): void {
   db.exec(`
@@ -28,9 +31,22 @@ export function ensureAgentSecretsSchema(db: Database.Database): void {
       expires_at     INTEGER NOT NULL,
       deleted_at     INTEGER
     );
+    CREATE TABLE IF NOT EXISTS agent_secret_owner_deleted (
+      root_thread_id TEXT PRIMARY KEY,
+      deleted_at     INTEGER NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS idx_agent_secrets_live
       ON agent_secrets(root_thread_id, name) WHERE deleted_at IS NULL;
+    CREATE TABLE IF NOT EXISTS agent_secret_retired (
+      secret_id      TEXT PRIMARY KEY,
+      root_thread_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      name           TEXT NOT NULL,
+      sealed_value   BLOB NOT NULL,
+      retired_at     INTEGER NOT NULL
+    );
   `)
+  const columns = db.prepare('PRAGMA table_info(agent_secrets)').all() as Array<{ name: string }>
+  if (!columns.some((c) => c.name === 'masked_at')) db.exec('ALTER TABLE agent_secrets ADD COLUMN masked_at INTEGER')
 }
 
 export interface AgentSecretRow {
@@ -43,6 +59,8 @@ export interface AgentSecretRow {
   createdAt: number
   expiresAt: number
   deletedAt: number | null
+  /** When its value was first masked in output: it is then in the provider's transcript. */
+  maskedAt: number | null
 }
 
 interface Row {
@@ -55,6 +73,7 @@ interface Row {
   created_at: number
   expires_at: number
   deleted_at: number | null
+  masked_at: number | null
 }
 
 function fromRow(r: Row): AgentSecretRow {
@@ -68,6 +87,7 @@ function fromRow(r: Row): AgentSecretRow {
     createdAt: r.created_at,
     expiresAt: r.expires_at,
     deletedAt: r.deleted_at,
+    maskedAt: r.masked_at,
   }
 }
 
@@ -92,22 +112,51 @@ export function listSecretDirIds(): Set<string> {
   return new Set(rows.map((r) => r.dir_id))
 }
 
+const SECRET_HOLDERS = `SELECT root_thread_id FROM agent_secret_dirs
+  UNION SELECT root_thread_id FROM agent_secrets WHERE deleted_at IS NULL`
+
 /**
  * Root chats that still hold a secrets folder or a live secret but are
- * archived. A chat with no conversation row is left alone: a new chat's
- * folder is made at session start, which can come before its row.
+ * archived, or whose conversation was deleted and not added back. A chat with no conversation
+ * row and no deletion record is left alone: a new chat's folder is made at
+ * session start, which can come before its row.
  */
 export function listArchivedSecretChats(): string[] {
   const rows = getDb()
     .prepare(
-      `SELECT DISTINCT r.root_thread_id AS id FROM (
-         SELECT root_thread_id FROM agent_secret_dirs
-         UNION SELECT root_thread_id FROM agent_secrets WHERE deleted_at IS NULL
-       ) r JOIN conversations c ON c.id = r.root_thread_id
-       WHERE c.archived = 1`,
+      `SELECT r.root_thread_id AS id FROM (${SECRET_HOLDERS}) r
+       WHERE r.root_thread_id IN (SELECT id FROM conversations WHERE archived = 1)
+          OR (r.root_thread_id IN (SELECT root_thread_id FROM agent_secret_owner_deleted)
+              AND r.root_thread_id NOT IN (SELECT id FROM conversations))`,
     )
     .all() as { id: string }[]
   return rows.map((r) => r.id)
+}
+
+/**
+ * Record every chat of `projectPath` that holds secrets as deleted. Run in the
+ * transaction that deletes the project, before its conversation rows go, so
+ * the sweep still finds them if the delete right after fails. Returns them.
+ */
+export function markProjectSecretOwnersDeleted(db: Database.Database, projectPath: string, now: number): string[] {
+  const rows = db
+    .prepare(`SELECT id FROM conversations WHERE project_path = ? AND id IN (${SECRET_HOLDERS})`)
+    .all(projectPath) as { id: string }[]
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO agent_secret_owner_deleted (root_thread_id, deleted_at) VALUES (?, ?)',
+  )
+  for (const r of rows) insert.run(r.id, now)
+  return rows.map((r) => r.id)
+}
+
+/** Drop the deletion records of chats that hold nothing any more, or whose conversation is back (a re-added project). */
+export function pruneSecretOwnerDeleted(): void {
+  getDb()
+    .prepare(
+      `DELETE FROM agent_secret_owner_deleted
+       WHERE root_thread_id NOT IN (${SECRET_HOLDERS}) OR root_thread_id IN (SELECT id FROM conversations)`,
+    )
+    .run()
 }
 
 export function deleteSecretDir(threadId: string): void {
@@ -119,7 +168,7 @@ export function deleteSecretDir(threadId: string): void {
  * deleted in the same transaction: the rename that wrote this file replaced it.
  */
 export function insertAgentSecret(
-  row: Omit<AgentSecretRow, 'deletedAt' | 'rootThreadId'> & { threadId: string },
+  row: Omit<AgentSecretRow, 'deletedAt' | 'rootThreadId' | 'maskedAt'> & { threadId: string },
 ): void {
   const db = getDb()
   const root = resolveRootThreadId(row.threadId)
@@ -167,4 +216,43 @@ export function listChatAgentSecrets(threadId: string, limit = 200): AgentSecret
     .prepare('SELECT * FROM agent_secrets WHERE root_thread_id = ? ORDER BY created_at DESC LIMIT ?')
     .all(resolveRootThreadId(threadId), limit) as Row[]
   return rows.map(fromRow)
+}
+
+export function markAgentSecretMasked(id: string, now: number): void {
+  getDb().prepare('UPDATE agent_secrets SET masked_at = ? WHERE id = ? AND masked_at IS NULL').run(now, id)
+}
+
+// ─── Retired secrets ────────────────────────────────────────────
+//
+// A deleted secret whose value was masked in output stays masked in that
+// chat's history: the provider's transcript holds it. Its value is kept here
+// sealed (`secrets/retired-seal.ts`), only for masking, and goes with the
+// conversation row.
+
+export interface RetiredSecretRow {
+  secretId: string
+  rootThreadId: string
+  name: string
+  sealedValue: Buffer
+}
+
+export function insertRetiredSecret(row: RetiredSecretRow, now: number): void {
+  getDb()
+    .prepare(
+      `INSERT OR REPLACE INTO agent_secret_retired (secret_id, root_thread_id, name, sealed_value, retired_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .run(row.secretId, row.rootThreadId, row.name, row.sealedValue, now)
+}
+
+export function listRetiredSecrets(): RetiredSecretRow[] {
+  const rows = getDb()
+    .prepare('SELECT secret_id, root_thread_id, name, sealed_value FROM agent_secret_retired')
+    .all() as Array<{ secret_id: string; root_thread_id: string; name: string; sealed_value: Buffer }>
+  return rows.map((r) => ({
+    secretId: r.secret_id,
+    rootThreadId: r.root_thread_id,
+    name: r.name,
+    sealedValue: r.sealed_value,
+  }))
 }

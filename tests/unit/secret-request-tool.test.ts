@@ -67,6 +67,7 @@ function setup(
   child = false,
   store?: ApprovalCardStore<AgentWritePlan>,
   archived = false,
+  limits: { hostPlatform?: 'win32'; backupNotExcluded?: true } = {},
 ) {
   const events: RuntimeEvent[] = []
   let now = 0
@@ -83,6 +84,7 @@ function setup(
     limiter,
     agentKind: 'codex',
     remote: false,
+    storeLimits: () => limits,
   })
   const call = (args: Record<string, unknown> = ARGS) => tool.call(args)
   return {
@@ -101,6 +103,12 @@ describe('request_secret', () => {
     expect(result.isError).toBeFalsy()
     expect(result.content[0].text).toMatch(/Asked the user for TAILSCALE_AUTHKEY \(card sbsec_/)
     expect(s.events[0]).toMatchObject({ type: 'request.opened', secretRequest: { name: 'TAILSCALE_AUTHKEY' } })
+  })
+
+  it('puts what the store cannot promise on the card', async () => {
+    const s = setup('sandbox', false, undefined, false, { hostPlatform: 'win32', backupNotExcluded: true })
+    await s.call()
+    expect(s.events[0]).toMatchObject({ secretRequest: { hostPlatform: 'win32', backupNotExcluded: true } })
   })
 
   it('refuses plan mode, an open child, and bad arguments without opening a card', async () => {

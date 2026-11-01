@@ -43,7 +43,11 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-function cardMessage(name = 'TAILSCALE_AUTHKEY', title = 'Tailscale auth key for test VMs'): ChatMessage {
+function cardMessage(
+  name = 'TAILSCALE_AUTHKEY',
+  title = 'Tailscale auth key for test VMs',
+  limits: { hostPlatform?: string; backupNotExcluded?: true } = {},
+): ChatMessage {
   return {
     id: 'approval_sbsec_1',
     role: 'assistant',
@@ -58,6 +62,7 @@ function cardMessage(name = 'TAILSCALE_AUTHKEY', title = 'Tailscale auth key for
         title,
         instructions: 'Create it at https://login.tailscale.com/admin/settings/keys.',
         ttl: '24h',
+        ...limits,
       },
     },
   }
@@ -105,6 +110,27 @@ describe('SecretRequestCard', () => {
     expect(button('Save securely').disabled).toBe(true)
   })
 
+  it('warns while the value is too short to hide, and keeps Save on', () => {
+    act(() => root.render(createElement(SecretRequestCard, { message: cardMessage(), sessionId: 'chat' })))
+    const warning = () => container.querySelector('[data-testid="secret-short-warning"]')
+    expect(warning()).toBeNull()
+    type('abcdefg')
+    expect(warning()?.textContent).toBe('Values shorter than 8 characters cannot be hidden if a command prints them.')
+    expect(button('Save securely').disabled).toBe(false)
+    expect(container.innerHTML).not.toContain('abcdefg')
+    type('abcdefgh')
+    expect(warning()).toBeNull()
+  })
+
+  it('shows the cleartext refusal on the card', async () => {
+    const { CLEARTEXT_SECRET_REFUSAL } = await import('../../src/shared/transport-security')
+    api.answer.mockRejectedValue(new Error(CLEARTEXT_SECRET_REFUSAL))
+    act(() => root.render(createElement(SecretRequestCard, { message: cardMessage(), sessionId: 'chat' })))
+    type(VALUE)
+    await act(async () => button('Save securely').click())
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(CLEARTEXT_SECRET_REFUSAL)
+  })
+
   it('stops keys at the card', () => {
     const seen = vi.fn()
     document.addEventListener('keydown', seen)
@@ -149,6 +175,35 @@ describe('SecretRequestCard', () => {
     act(() => root.render(createElement(SecretRequestCard, { message: cardMessage(), sessionId: 'chat' })))
     await act(async () => button('Decline').click())
     expect(api.answer).toHaveBeenCalledWith('chat', 'sbsec_1', { decline: true })
+  })
+
+  it('says what the file store does not enforce on a Windows host', () => {
+    act(() =>
+      root.render(
+        createElement(SecretRequestCard, {
+          message: cardMessage(undefined, undefined, { hostPlatform: 'win32' }),
+          sessionId: 'chat',
+        }),
+      ),
+    )
+    const note = container.querySelector('[data-testid="secret-storage-note"]')?.textContent ?? ''
+    expect(note).toContain('On Windows')
+    expect(note).toContain('backups')
+    expect(note).toContain('roaming')
+  })
+
+  it('says a failed Time Machine exclusion, and shows no note otherwise', () => {
+    act(() => root.render(createElement(SecretRequestCard, { message: cardMessage(), sessionId: 'chat' })))
+    expect(container.querySelector('[data-testid="secret-storage-note"]')).toBeNull()
+    act(() =>
+      root.render(
+        createElement(SecretRequestCard, {
+          message: cardMessage(undefined, undefined, { backupNotExcluded: true }),
+          sessionId: 'chat',
+        }),
+      ),
+    )
+    expect(container.querySelector('[data-testid="secret-storage-note"]')?.textContent).toContain('Time Machine')
   })
 
   it('says a provider key is not needed by Switchboard', () => {

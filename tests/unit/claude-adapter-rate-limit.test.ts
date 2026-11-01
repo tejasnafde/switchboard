@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { ClaudeAdapter } from '../../src/main/provider/adapters/claude-adapter'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 import { TurnWatchdog, StderrTail } from '../../src/main/provider/turn-watchdog'
+import { LogLines } from '../../src/main/secrets/log-redaction'
 
 function makeActive(onEvent = vi.fn()) {
   return {
@@ -33,6 +34,7 @@ function makeActive(onEvent = vi.fn()) {
     lastKnownModel: null as string | null,
     watchdog: new TurnWatchdog(180_000, () => {}),
     stderrTail: new StderrTail(2_000),
+    stderrLog: new LogLines(() => {}),
   }
 }
 
