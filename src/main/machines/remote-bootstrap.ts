@@ -149,6 +149,8 @@ function reusableServerTest(port: number): string {
   return (
     `[ -n "$P" ] && grep -qsaF -- "${BACKEND_CMDLINE_MATCH}" "/proc/$P/cmdline" && ` +
     `[ -s "$D/server.version" ] && [ "$(cat "$D/server.version")" = "$(cat "$D/version" 2>/dev/null)" ] && ` +
+    // A token file replaced while the server ran would never authenticate.
+    `[ "$(tr '\\0' '\\n' < "/proc/$P/environ" 2>/dev/null | sed -n 's/^SWITCHBOARD_TOKEN=//p')" = "$SWITCHBOARD_TOKEN" ] && ` +
     httpAnswers(port)
   )
 }
@@ -177,7 +179,10 @@ export function buildRemoteBootstrapCommand(opts: RemoteBootstrapOpts): string {
   return (
     `D=${opts.serverDir}; ` +
     `${buildManagedPathExport()} ` +
-    `if [ ! -s "$D/token" ]; then (umask 077; ${MINT_HEX} > "$D/token.tmp" && mv "$D/token.tmp" "$D/token"); fi; ` +
+    // `ln` publishes the token only if no other connect did first, so two
+    // first-time connects from two desktops both read one value.
+    `if [ ! -s "$D/token" ]; then (umask 077; T="$D/token.$$"; ${MINT_HEX} > "$T" && ` +
+    `{ [ -s "$D/token" ] || rm -f "$D/token"; ln "$T" "$D/token" 2>/dev/null; rm -f "$T"; }); fi; ` +
     `chmod 600 "$D/token" 2>/dev/null; ` +
     `SWITCHBOARD_TOKEN="$(cat "$D/token" 2>/dev/null)"; export SWITCHBOARD_TOKEN; ` +
     // Without a token the loopback backend would trust every local user.
@@ -211,7 +216,8 @@ export function buildRemoteBootstrapCommand(opts: RemoteBootstrapOpts): string {
     buildStaleProcessKill({ pidVar: 'IP', cmdlineMatch: IDE_CMDLINE_MATCH, graceSeconds: grace }) +
     ` SB_BRIDGE_TOKEN="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || ` +
     `od -An -tx1 -N16 /dev/urandom | tr -dc 'a-f0-9')"; ` +
-    `(umask 077; printf '%s' "$SB_BRIDGE_TOKEN" > "$D/bridge-token"); fi; ` +
+    `(umask 077; printf '%s' "$SB_BRIDGE_TOKEN" > "$D/bridge-token") || ` +
+    `{ echo "could not write the bridge token in $D" >&2; exit 1; }; fi; ` +
     // An older install wrote this file with the default umask.
     `chmod 600 "$D/bridge-token" 2>/dev/null; ` +
     `export SB_BRIDGE_TOKEN; ` +

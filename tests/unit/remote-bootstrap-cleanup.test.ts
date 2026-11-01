@@ -312,6 +312,24 @@ describe('REMOTE_COMMAND', () => {
     expect(REMOTE_COMMAND.indexOf('exit 1; fi;')).toBeLessThan(REMOTE_COMMAND.indexOf('nohup node'))
   })
 
+  it('publishes a new token with ln, so two first connects end on one value', () => {
+    expect(REMOTE_COMMAND).toContain('ln "$T" "$D/token" 2>/dev/null; rm -f "$T";')
+    expect(REMOTE_COMMAND).not.toContain('mv "$D/token.tmp" "$D/token"')
+  })
+
+  it('reuses a backend only when it holds the token in the file', () => {
+    const reuseAt = REMOTE_COMMAND.indexOf('reusing switchboard backend')
+    const tokenCheckAt = REMOTE_COMMAND.indexOf(`sed -n 's/^SWITCHBOARD_TOKEN=//p')" = "$SWITCHBOARD_TOKEN" ]`)
+    expect(tokenCheckAt).toBeGreaterThan(REMOTE_COMMAND.indexOf('export SWITCHBOARD_TOKEN'))
+    expect(tokenCheckAt).toBeLessThan(reuseAt)
+  })
+
+  it('stops the connect when the bridge token cannot be written', () => {
+    expect(REMOTE_COMMAND).toContain(
+      `> "$D/bridge-token") || { echo "could not write the bridge token in $D" >&2; exit 1; }; fi;`,
+    )
+  })
+
   it('keeps the backend token in a 0600 file and prints it once for the desktop', () => {
     expect(REMOTE_COMMAND).toContain('(umask 077;')
     expect(REMOTE_COMMAND).toContain('SWITCHBOARD_TOKEN="$(cat "$D/token" 2>/dev/null)"; export SWITCHBOARD_TOKEN;')
