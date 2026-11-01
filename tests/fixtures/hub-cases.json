@@ -636,6 +636,26 @@
     {
       "mode": "full-access",
       "expected": false
+    },
+    {
+      "mode": "accept-edits",
+      "hasRemote": true,
+      "expected": true
+    },
+    {
+      "mode": "auto",
+      "hasRemote": true,
+      "expected": true
+    },
+    {
+      "mode": "full-access",
+      "hasRemote": true,
+      "expected": true
+    },
+    {
+      "mode": "full-access",
+      "hasRemote": false,
+      "expected": false
     }
   ],
   "runSlotFree": [

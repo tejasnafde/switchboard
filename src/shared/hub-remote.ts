@@ -6,8 +6,9 @@
  * what that machine offers through `hub-remote:describe`.
  */
 import type { DeviceScope } from './device-auth'
+import type { HubBatchMachine, HubChildLocation } from './hub'
 import { modelsForAgent } from './models'
-import type { AgentProvider, AgentType } from './types'
+import { agentLabel, type AgentProvider, type AgentType } from './types'
 
 /** What the hub client asks for in its auth frame. */
 export const HUB_REMOTE_AUTH_SCOPES: readonly DeviceScope[] = ['hub']
@@ -66,6 +67,8 @@ export interface HubMachineDescription {
   freeDiskBytes: number | null
   openChildren: number
   runSlots: HubMachineRunSlots[]
+  /** Its `hub.minFreeGiB`: the free space a batch must leave there. Absent from an older backend. */
+  minFreeGiB?: number
 }
 
 /** What the backend reads before it describes itself. */
@@ -85,6 +88,7 @@ export interface HubDescribeFacts {
   /** The account id of each child with a turn in flight. */
   runningSlotKeys: readonly string[]
   runningPerInstance: number
+  minFreeGiB?: number
 }
 
 /**
@@ -127,6 +131,7 @@ export function buildHubMachineDescription(f: HubDescribeFacts): HubMachineDescr
     freeDiskBytes: f.freeDiskBytes,
     openChildren: f.openChildren,
     runSlots,
+    ...(f.minFreeGiB !== undefined ? { minFreeGiB: f.minFreeGiB } : {}),
   }
 }
 
@@ -208,6 +213,7 @@ export function parseHubMachineDescription(value: unknown): HubMachineDescriptio
   if (d.v !== 1 || typeof d.flagOn !== 'boolean' || typeof d.os !== 'string' || typeof d.arch !== 'string') return null
   if (typeof d.backendVersion !== 'string' || typeof d.openChildren !== 'number' || d.openChildren < 0) return null
   if (d.freeDiskBytes !== null && (typeof d.freeDiskBytes !== 'number' || d.freeDiskBytes < 0)) return null
+  if (d.minFreeGiB !== undefined && (typeof d.minFreeGiB !== 'number' || !(d.minFreeGiB >= 0))) return null
   if (!isArray(d.agents) || !isArray(d.projects) || !isArray(d.runSlots)) return null
   const agentsOk = d.agents.every((a) => {
     const x = a as HubMachineAgent | null
@@ -318,4 +324,135 @@ function formatAge(ms: number): string {
 
 function formatGb(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`
+}
+
+// ─── Proposing a child on another machine ───────────────────────
+
+export const HUB_REMOTE_OFF_TEXT = 'Starting children on other machines is off.'
+export const HUB_REMOTE_VM_PARENT_TEXT = 'A chat on a remote machine starts children on its own machine only.'
+export const HUB_REMOTE_LATER_TEXT = 'Starting children on other machines comes in a later version.'
+
+/** A description older than this is not trusted at propose; `list_machines` reads one every 60 s. */
+export const HUB_FRESH_DESCRIPTION_MS = 90_000
+
+/** Where a clone goes on a machine that has no checkout of the project. */
+export const HUB_REMOTE_CLONE_ROOT = '~/projects'
+
+/** The machine id a task names, or null for the parent's own machine. */
+export function remoteMachineId(machine: string | undefined): string | null {
+  return machine && machine !== LOCAL_MACHINE_ID ? machine : null
+}
+
+/** What `propose` decides for one task on another machine, before the base commit and disk checks. */
+export interface RemoteTaskPlan {
+  machine: HubBatchMachine
+  instanceId: string
+  remoteProjectPath: string
+  clonePlanned: boolean
+}
+
+/**
+ * Checks one task on another machine against that machine's entry (the hub
+ * client's cache) and plans where its checkout comes from. The first problem
+ * wins; `n` is the task number for the message.
+ */
+export function planRemoteTask(t: {
+  n: number
+  machineId: string
+  agent: AgentProvider
+  account?: string
+  model?: string
+  location: HubChildLocation
+  entries: readonly HubMachineEntry[]
+  /** The parent project's git remote URLs. */
+  parentRemoteUrls: readonly string[]
+  now?: number
+}): { ok: true; plan: RemoteTaskPlan } | { ok: false; message: string } {
+  const refuse = (text: string) => ({ ok: false as const, message: `Task ${t.n}: ${text}` })
+  const e = t.entries.find((x) => x.id === t.machineId)
+  if (!e || e.transport === 'local') return refuse(`no machine ${t.machineId}. Call list_machines.`)
+  const name = e.name
+  if (e.problem) return refuse(`${e.problem}.`)
+  if (e.status !== 'connected') return refuse(`connect ${name} first.`)
+  const d = e.description
+  if (!d || e.ageMs === null || e.ageMs > HUB_FRESH_DESCRIPTION_MS) return refuse(`update the backend on ${name}.`)
+  if (!d.flagOn) return refuse(`${name} does not take children: turn on hub_remote_children there.`)
+  const label = agentLabel(t.agent)
+  const agent = d.agents.find((a) => a.agent === t.agent)
+  if (!agent || agent.accounts.length === 0)
+    return refuse(`${label} has no login on ${name}. Log in there first (claude, codex login, opencode auth login).`)
+  const account = t.account ? agent.accounts.find((c) => c.instanceId === t.account) : agent.accounts[0]
+  if (!account) return refuse(`${name} has no ${label} account ${t.account}. Call list_machines.`)
+  if (t.model && !agent.models.includes(t.model))
+    return refuse(`${name} has no ${label} model ${t.model}. Call list_machines.`)
+  if (t.location === 'project')
+    return refuse('a child on another machine works in a worktree; location project is refused there.')
+  const keys = t.parentRemoteUrls.map(remoteUrlKey).filter((k): k is string => k !== null)
+  if (keys.length === 0) return refuse(`this project has no git remote, so ${name} cannot get it.`)
+  const machine: HubBatchMachine = { id: e.id, name, transport: e.transport }
+  const hit = d.projects.find((p) => p.remoteUrls.some((u) => keys.includes(remoteUrlKey(u) ?? '')))
+  if (hit)
+    return {
+      ok: true,
+      plan: { machine, instanceId: account.instanceId, remoteProjectPath: hit.path, clonePlanned: false },
+    }
+  const repo = repoName(t.parentRemoteUrls.find((u) => remoteUrlKey(u) !== null)!)
+  return {
+    ok: true,
+    plan: {
+      machine,
+      instanceId: account.instanceId,
+      remoteProjectPath: `${HUB_REMOTE_CLONE_ROOT}/${repo}`,
+      clonePlanned: true,
+    },
+  }
+}
+
+/** The last path part of a remote URL without `.git`, in its own case. */
+function repoName(url: string): string {
+  const path = url
+    .trim()
+    .replace(/[?#].*$/, '')
+    .replace(/\/+$/, '')
+    .replace(/\.git$/i, '')
+  return path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf(':')) + 1)
+}
+
+/**
+ * The remote branch a child machine fetches the base commit from, out of the
+ * remote branches that contain it: the parent's upstream when it is one of
+ * them, else the first. Null when no remote branch has the commit.
+ */
+export function pickFetchBranch(containing: readonly string[], upstream: string | null): string | null {
+  if (containing.length === 0) return null
+  return upstream && containing.includes(upstream) ? upstream : containing[0]!
+}
+
+/** The remote branches in `git branch -r --contains <sha> --format='%(refname:short) %(symref)'` output, without symbolic ones. */
+export function parseRemoteBranches(out: string): string[] {
+  const branches: string[] = []
+  for (const line of out.split('\n')) {
+    const [name, symref] = line.trim().split(/\s+/)
+    if (name && !symref && !branches.includes(name)) branches.push(name)
+  }
+  return branches
+}
+
+/** Why a task on another machine may not still start at approval, or null. */
+export function remoteApprovalProblem(c: {
+  machineId: string
+  agent: AgentProvider
+  instanceId: string | null
+  entries: readonly HubMachineEntry[]
+}): string | null {
+  const e = c.entries.find((x) => x.id === c.machineId)
+  if (!e) return `machine ${c.machineId} is gone.`
+  if (e.problem) return `${e.problem}.`
+  if (e.status !== 'connected') return `${e.name} is not connected.`
+  if (!e.description) return `update the backend on ${e.name}.`
+  if (!e.description.flagOn) return `${e.name} does not take children: turn on hub_remote_children there.`
+  const accounts = e.description.agents.find((a) => a.agent === c.agent)?.accounts ?? []
+  if (!accounts.some((a) => a.instanceId === c.instanceId))
+    return `${e.name} no longer has the ${agentLabel(c.agent)} account ${c.instanceId}.`
+  return null
 }

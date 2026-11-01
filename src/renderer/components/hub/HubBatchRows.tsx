@@ -1,7 +1,26 @@
-import { formatGiB, HUB_MAIN_CHECKOUT_WARNING, type HubBatchView } from '@shared/hub'
+import {
+  formatGiB,
+  HUB_MAIN_CHECKOUT_WARNING,
+  hubMachineLabel,
+  hubRemoteDiskLine,
+  type HubBatchRowView,
+  type HubBatchView,
+} from '@shared/hub'
 import { agentLabel } from '@shared/types'
 
-/** The body of a `start_children` card: one row per child, the disk it needs, and the main checkout warning. */
+/** Agent, model, and for a child on another machine its account and machine. */
+function rowWho(r: HubBatchRowView): string {
+  const agent = `${agentLabel(r.agent)}${r.model ? ` ${r.model}` : ''}`
+  if (!r.machine) return agent
+  return `${agent}${r.account ? ` · ${r.account}` : ''} on ${hubMachineLabel(r.machine)}`
+}
+
+function rowPlace(r: HubBatchRowView): string {
+  if (r.location === 'project') return 'project folder'
+  return r.machine ? `worktree off ${r.baseRef}` : `worktree off ${r.baseRef} · deps: ${r.deps}`
+}
+
+/** The body of a `start_children` card: one row per child, the disk it needs per machine, and the main checkout warning. */
 export function HubBatchRows({ view }: { view: HubBatchView }) {
   return (
     <div
@@ -22,10 +41,13 @@ export function HubBatchRows({ view }: { view: HubBatchView }) {
           <li key={i} style={{ marginTop: '4px' }}>
             <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.title}</div>
             <div style={{ color: 'var(--text-muted)' }}>
-              {agentLabel(r.agent)}
-              {r.model ? ` ${r.model}` : ''} · {r.mode} ·{' '}
-              {r.location === 'project' ? 'project folder' : `worktree off ${r.baseRef} · deps: ${r.deps}`}
+              {rowWho(r)} · {r.mode} · {rowPlace(r)}
             </div>
+            {r.machine && r.clone && r.remoteProjectPath && (
+              <div style={{ color: 'var(--text-muted)' }}>
+                Clones into {r.remoteProjectPath} on {r.machine.name}.
+              </div>
+            )}
           </li>
         ))}
       </ol>
@@ -34,6 +56,11 @@ export function HubBatchRows({ view }: { view: HubBatchView }) {
           Disk: needs about {formatGiB(view.needBytes)}, {formatGiB(view.freeBytes)} free.
         </div>
       )}
+      {(view.remoteDisk ?? []).map((d) => (
+        <div key={d.machineId} style={{ marginTop: '6px' }}>
+          {hubRemoteDiskLine(d)}
+        </div>
+      ))}
       {view.mainCheckout && (
         <div style={{ marginTop: '6px', color: 'var(--warning)' }}>{HUB_MAIN_CHECKOUT_WARNING}</div>
       )}

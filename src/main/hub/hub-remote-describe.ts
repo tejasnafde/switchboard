@@ -58,6 +58,7 @@ export async function describeThisMachine(deps: HubDescribeDeps): Promise<HubMac
     readProjects(),
     freeDisk(),
   ])
+  const settings = readHubSettings((key) => getSetting(key))
   const description = buildHubMachineDescription({
     flagOn: readFlag(),
     os: platform(),
@@ -70,7 +71,8 @@ export async function describeThisMachine(deps: HubDescribeDeps): Promise<HubMac
     freeDiskBytes,
     openChildren: listOpenHubChildren().length,
     runningSlotKeys: deps.runningSlotKeys(),
-    runningPerInstance: readHubSettings((key) => getSetting(key)).runningPerInstance,
+    runningPerInstance: settings.runningPerInstance,
+    minFreeGiB: settings.minFreeGiB,
   })
   span.end({ agents: description.agents.length, projects: description.projects.length })
   return description

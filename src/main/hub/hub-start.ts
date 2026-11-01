@@ -13,6 +13,13 @@
  * child failing marks it `failed_start` with a `failed` wake, and the batch
  * goes on. A child never gets more access than its parent (`grantedMode`).
  *
+ * A task may name another machine (`machine`, flag `hub_remote_children`, a
+ * parent on the desktop only). `propose` checks it against the hub client's
+ * description of that machine (`planRemoteTask`), resolves the base commit to
+ * one a remote branch holds, checks that machine's disk, and always opens the
+ * card. Starting such a child comes in a later version: an approved one ends
+ * at once as `failed_start` with a `failed` wake, and is never started here.
+ *
  * Measured: one `hub.batch` and one `hub.start-child` perf line per batch and
  * child (outcome and the time of each step), `hub.child-turn` per child turn
  * end (tokens, cost, duration), the worktree's disk use after start,
@@ -28,6 +35,7 @@ import {
   HUB_MAIN_CHECKOUT_WARNING,
   HUB_OPEN_CHILDREN_MAX,
   HUB_REPORT_LINE,
+  HUB_SETTINGS,
   grantedMode,
   hubBatchDetail,
   hubBriefTurn,
@@ -36,12 +44,26 @@ import {
   isOpenChildPhase,
   readHubSettings,
   runSlotFree,
+  type HubBatchMachine,
   type HubBatchView,
   type HubChildLocation,
+  type HubRemoteDiskView,
   type HubDepsMode,
   type HubRunningChild,
   type HubTask,
 } from '@shared/hub'
+import {
+  HUB_REMOTE_LATER_TEXT,
+  HUB_REMOTE_OFF_TEXT,
+  HUB_REMOTE_VM_PARENT_TEXT,
+  parseGitRemoteFetchUrls,
+  parseRemoteBranches,
+  pickFetchBranch,
+  planRemoteTask,
+  remoteApprovalProblem,
+  remoteMachineId,
+  type HubMachineEntry,
+} from '@shared/hub-remote'
 import type { SettingReader } from '@shared/limit-resume'
 import type { RuntimeMode, UserTurnSubmissionResult, UserTurnSubmissionV1 } from '@shared/provider-events'
 import { defaultInstanceId, providerKindFor, type AgentProvider } from '@shared/types'
@@ -124,8 +146,16 @@ interface PlannedChild {
   shownMode: RuntimeMode
   /** The heaviest mode of `depsPlan`, for the card. */
   deps: HubDepsMode
-  /** Per folder, as planned for the card and the disk check; the start plans again. */
+  /** Per folder, as planned for the card and the disk check; the start plans again. Empty on another machine. */
   depsPlan: DepsFolderPlan[]
+  /** The machine it runs on; null, or absent in a plan stored before, for this one. */
+  machine?: HubBatchMachine | null
+  /** Another machine: the checkout there its worktree comes from, `~/...` as that machine names it. */
+  remoteProjectPath?: string | null
+  /** Another machine: no checkout of the project there, so one is cloned into `remoteProjectPath`. */
+  clonePlanned?: boolean
+  /** Another machine: the remote branch that machine fetches `baseSha` from. */
+  fetch?: { remoteBranch: string } | null
 }
 
 interface StoredPlan {
@@ -185,6 +215,10 @@ export interface HubStartHost {
   stopChild(childId: string): Promise<void>
   /** A child of `parentId` was added, changed phase or got a wake: clients read the parent's view again. */
   changed?(parentId: string): void
+  /** Whether a task may name another machine: `hub_remote_children`, and whether this backend runs on a VM. Absent: off. */
+  remoteChildren?(): { flagOn: boolean; onVm: boolean }
+  /** Every other machine as the hub client knows it, descriptions read again when older than 60 s. */
+  machineEntries?(): Promise<HubMachineEntry[]>
 }
 
 /** Git and disk reads, replaceable in tests. */
@@ -203,6 +237,12 @@ export interface HubStartIo {
   ): Promise<{ state: ChildDepsState; lines: string[] }>
   isMainCheckout(cwd: string): Promise<boolean>
   commitOf(cwd: string, ref: string): Promise<string | null>
+  /** Fetch URLs of the checkout's git remotes. */
+  remoteUrls(cwd: string): Promise<string[]>
+  /** Remote branches (`origin/main`) that contain `sha`. */
+  remoteBranchesContaining(cwd: string, sha: string): Promise<string[]>
+  /** The checkout's upstream branch (`origin/main`), or null. */
+  upstreamOf(cwd: string): Promise<string | null>
 }
 
 /** A clone costs about this share of the folder (copy-on-write metadata). */
@@ -288,6 +328,14 @@ export class HubStarter {
     const capProblem = openCapProblem(ctx.parentId, tasks.length)
     if (capProblem) return toolText(capProblem, true)
 
+    const remoteTask = tasks.findIndex((t) => remoteMachineId(t.machine) !== null)
+    if (remoteTask >= 0) {
+      const gate = this.host.remoteChildren?.() ?? { flagOn: false, onVm: false }
+      const refusal = !gate.flagOn ? HUB_REMOTE_OFF_TEXT : gate.onVm ? HUB_REMOTE_VM_PARENT_TEXT : null
+      if (refusal) return toolText(`Task ${remoteTask + 1}: ${refusal}`, true)
+    }
+    const remote = remoteTask >= 0 ? await this.remoteFacts(ctx) : null
+
     const settings = readHubSettings(this.getSetting)
     const head = await this.io.commitOf(ctx.cwd, 'HEAD')
     const depsPlans = new Map<string, Promise<DepsFolderPlan[]>>()
@@ -306,6 +354,13 @@ export class HubStarter {
     const children: PlannedChild[] = []
     for (const [i, task] of tasks.entries()) {
       const agent = task.agent ?? ctx.agent
+      const machineId = remoteMachineId(task.machine)
+      if (machineId !== null && remote) {
+        const planned = await this.planRemoteChild(ctx, i, task, agent, machineId, head, remote)
+        if (!planned.ok) return toolText(planned.message, true)
+        children.push(planned.child)
+        continue
+      }
       let instanceId: string | null
       try {
         instanceId =
@@ -341,12 +396,15 @@ export class HubStarter {
         shownMode: grantedMode(task.mode, ctx.mode),
         deps: depsSummary(depsPlan.map((p) => p.mode)),
         depsPlan,
+        machine: null,
       })
     }
 
     const plan: StoredPlan = { projectPath: ctx.projectPath, children }
     const disk = await this.diskCheck(plan)
     if (disk.problem) return toolText(disk.problem, true)
+    const remoteDisk = remote ? await this.remoteDiskCheck(plan, remote.entries) : null
+    if (remoteDisk?.problem) return toolText(remoteDisk.problem, true)
     const batchId = `hb_${Date.now()}_${randomBytes(4).toString('hex')}`
     const view: HubBatchView = {
       batchId,
@@ -359,9 +417,12 @@ export class HubStarter {
         location: c.location,
         baseRef: c.baseSha ? `${c.baseRef} (${c.baseSha.slice(0, 7)})` : c.baseRef,
         deps: c.deps,
+        machine: c.machine ?? null,
+        ...(c.machine ? { clone: c.clonePlanned === true, remoteProjectPath: c.remoteProjectPath ?? '' } : {}),
       })),
       needBytes: disk.needBytes,
       freeBytes: disk.freeBytes,
+      ...(remoteDisk ? { remoteDisk: remoteDisk.lines } : {}),
       mainCheckout: await this.io.isMainCheckout(ctx.cwd),
     }
 
@@ -371,7 +432,7 @@ export class HubStarter {
     if (same?.cardRequestId)
       return toolText(`This batch already waits for the user (card ${same.cardRequestId}). Do not send it again.`)
 
-    if (hubNeedsCard(ctx.mode)) {
+    if (hubNeedsCard(ctx.mode, remote !== null)) {
       const opened = this.host.openCard({
         threadId: ctx.threadId,
         parentId: ctx.parentId,
@@ -416,13 +477,154 @@ export class HubStarter {
     }
     const plan = JSON.parse(batch.planJson) as StoredPlan
     const disk = await this.diskCheck(plan)
+    const remoteProblems = await this.remoteApprovalProblems(plan)
     // After the last await, so a batch started meanwhile counts.
     const problem = disk.problem ?? openCapProblem(batch.parentId, plan.children.length)
     if (problem) {
       setHubBatchStatus(batchId, 'denied')
       return toolText(`${problem} No children were started.`, true)
     }
-    return toolText(this.startApproved(batchId, parentMode, false))
+    return toolText(this.startApproved(batchId, parentMode, false, remoteProblems))
+  }
+
+  /**
+   * Per child on another machine, why it cannot start: its machine is no
+   * longer connected, lost the capability or the account. A failed machine
+   * fails only its own children.
+   */
+  private async remoteApprovalProblems(plan: StoredPlan): Promise<Map<string, string>> {
+    const problems = new Map<string, string>()
+    const remote = plan.children.filter((c) => c.machine)
+    if (remote.length === 0) return problems
+    let entries: HubMachineEntry[] = []
+    try {
+      entries = (await this.host.machineEntries?.()) ?? []
+    } catch (err) {
+      log.warn('could not read the machines at approval', err)
+    }
+    for (const c of remote) {
+      const problem = remoteApprovalProblem({
+        machineId: c.machine!.id,
+        agent: c.agent,
+        instanceId: c.instanceId,
+        entries,
+      })
+      if (problem) problems.set(c.childId, problem)
+    }
+    return problems
+  }
+
+  /** What every task on another machine needs: the machines, and the parent checkout's remotes and upstream. */
+  private async remoteFacts(ctx: HubParentContext): Promise<RemoteFacts> {
+    const [entries, remoteUrls, upstream] = await Promise.all([
+      (this.host.machineEntries?.() ?? Promise.resolve([])).catch((err: unknown) => {
+        log.warn('could not read the machines for start_children', err)
+        return [] as HubMachineEntry[]
+      }),
+      this.io.remoteUrls(ctx.cwd),
+      this.io.upstreamOf(ctx.cwd),
+    ])
+    return { entries, remoteUrls, upstream }
+  }
+
+  /** One task on another machine: the machine's checks, then a base commit a remote branch holds. */
+  private async planRemoteChild(
+    ctx: HubParentContext,
+    i: number,
+    task: HubTask,
+    agent: AgentProvider,
+    machineId: string,
+    head: string | null,
+    remote: RemoteFacts,
+  ): Promise<{ ok: true; child: PlannedChild } | { ok: false; message: string }> {
+    const n = i + 1
+    const checked = planRemoteTask({
+      n,
+      machineId,
+      agent,
+      account: task.account,
+      model: task.model,
+      location: task.location,
+      entries: remote.entries,
+      parentRemoteUrls: remote.remoteUrls,
+    })
+    if (!checked.ok) return checked
+    const baseSha = task.baseRef ? await this.io.commitOf(ctx.cwd, task.baseRef) : head
+    if (!baseSha)
+      return {
+        ok: false,
+        message: task.baseRef
+          ? `Task ${n}: base ${task.baseRef} is not a commit here. Fetch it first, or name another.`
+          : `Task ${n}: this chat's folder is not a git checkout, so ${checked.plan.machine.name} cannot get it.`,
+      }
+    const remoteBranch = pickFetchBranch(await this.io.remoteBranchesContaining(ctx.cwd, baseSha), remote.upstream)
+    if (!remoteBranch)
+      return { ok: false, message: `Task ${n}: commit ${baseSha.slice(0, 7)} is not on any remote. Push it first.` }
+    return {
+      ok: true,
+      child: {
+        childId: `agent_${Date.now()}_${randomBytes(4).toString('hex')}`,
+        ordinal: i,
+        title: task.title,
+        brief: task.brief,
+        location: 'worktree',
+        baseRef: task.baseRef ?? 'HEAD',
+        baseSha,
+        branchSeed: task.branch ?? task.title,
+        agent,
+        instanceId: checked.plan.instanceId,
+        model: task.model ?? null,
+        requestedMode: task.mode ?? null,
+        shownMode: grantedMode(task.mode, ctx.mode),
+        deps: 'none',
+        depsPlan: [],
+        machine: checked.plan.machine,
+        remoteProjectPath: checked.plan.remoteProjectPath,
+        clonePlanned: checked.plan.clonePlanned,
+        fetch: { remoteBranch },
+      },
+    }
+  }
+
+  /**
+   * Disk on each other machine: the tracked files of each child's base
+   * commit, plus one more checkout where a clone is planned, against the free
+   * space and floor that machine described. Dependencies there are planned by
+   * that machine at start, so they are not counted here.
+   */
+  private async remoteDiskCheck(
+    plan: StoredPlan,
+    entries: readonly HubMachineEntry[],
+  ): Promise<{ problem: string | null; lines: HubRemoteDiskView[] }> {
+    const byMachine = new Map<string, PlannedChild[]>()
+    for (const c of plan.children) {
+      if (c.machine) byMachine.set(c.machine.id, [...(byMachine.get(c.machine.id) ?? []), c])
+    }
+    const lines: HubRemoteDiskView[] = []
+    for (const [machineId, children] of byMachine) {
+      const machine = children[0]!.machine!
+      const description = entries.find((e) => e.id === machineId)?.description ?? null
+      let need = 0
+      let known = true
+      let cloneCounted = false
+      for (const c of children) {
+        const bytes = c.baseSha ? await this.io.checkoutBytes(plan.projectPath, c.baseSha) : null
+        if (bytes === null) known = false
+        need += bytes ?? 0
+        // The clone's own checkout, once per machine.
+        if (c.clonePlanned && !cloneCounted) {
+          need += bytes ?? 0
+          cloneCounted = true
+        }
+      }
+      const freeBytes = description?.freeDiskBytes ?? null
+      lines.push({ machineId, name: machine.name, needBytes: known ? need : null, freeBytes })
+      if (freeBytes === null) continue
+      const minFreeGiB = description?.minFreeGiB ?? HUB_SETTINGS.minFreeGiB.defaultValue
+      const problem = hubDiskProblem({ freeBytes, needBytes: need, minFreeGiB })
+      if (problem) return { problem: `On ${machine.name}: ${problem}`, lines }
+    }
+    return { problem: null, lines }
   }
 
   /** The card closed without an approval. */
@@ -454,7 +656,12 @@ export class HubStarter {
     if (slot) this.pump()
   }
 
-  private startApproved(batchId: string, parentMode: RuntimeMode, mainCheckout: boolean): string {
+  private startApproved(
+    batchId: string,
+    parentMode: RuntimeMode,
+    mainCheckout: boolean,
+    remoteProblems: ReadonlyMap<string, string> = new Map(),
+  ): string {
     const batch = getHubBatch(batchId)!
     setHubBatchStatus(batchId, 'approved')
     const plan = JSON.parse(batch.planJson) as StoredPlan
@@ -477,8 +684,14 @@ export class HubStarter {
       })
     }
     this.host.changed?.(batch.parentId)
-    void this.runBatch(batchId, batch.parentId, plan).catch((err) => log.error(`batch ${batchId} failed`, err))
-    const lines = plan.children.map((c) => `- ${c.title}: ${c.childId}`)
+    void this.runBatch(batchId, batch.parentId, plan, remoteProblems).catch((err) =>
+      log.error(`batch ${batchId} failed`, err),
+    )
+    const lines = plan.children.map((c) =>
+      c.machine
+        ? `- ${c.title}: ${c.childId} on ${c.machine.name}: ${remoteProblems.get(c.childId) ?? HUB_REMOTE_LATER_TEXT}`
+        : `- ${c.title}: ${c.childId}`,
+    )
     return [
       `Starting ${plan.children.length} child chat${plan.children.length === 1 ? '' : 's'}. Each starts in its own ` +
         'worktree (or the project folder) and gets its brief as its first turn:',
@@ -489,10 +702,21 @@ export class HubStarter {
     ].join('\n')
   }
 
-  private async runBatch(batchId: string, parentId: string, plan: StoredPlan): Promise<void> {
+  private async runBatch(
+    batchId: string,
+    parentId: string,
+    plan: StoredPlan,
+    remoteProblems: ReadonlyMap<string, string>,
+  ): Promise<void> {
     const span = perfSpan('hub.batch', { batchId, parentId, children: plan.children.length })
     let failed = 0
     for (const c of plan.children) {
+      if (c.machine) {
+        // Never started here: its machine starts it, in a later version.
+        this.fail(parentId, c, new Error(remoteProblems.get(c.childId) ?? HUB_REMOTE_LATER_TEXT))
+        failed++
+        continue
+      }
       // Worktrees and clones go one at a time; the agents start as run slots free.
       if (!(await this.prepareChild(batchId, parentId, plan.projectPath, c))) failed++
     }
@@ -800,10 +1024,11 @@ export class HubStarter {
     }
   }
 
+  /** This machine's disk; children on other machines are checked by `remoteDiskCheck`. */
   private async diskCheck(
     plan: StoredPlan,
   ): Promise<{ problem: string | null; needBytes: number | null; freeBytes: number | null }> {
-    const worktrees = plan.children.filter((c) => c.location === 'worktree')
+    const worktrees = plan.children.filter((c) => c.location === 'worktree' && !c.machine)
     if (worktrees.length === 0) return { problem: null, needBytes: 0, freeBytes: null }
     const free = await this.io.freeBytes(plan.projectPath)
     let need = 0
@@ -848,6 +1073,12 @@ export class HubStarter {
       log.warn(`could not store the started row of batch ${batchId}`, err)
     }
   }
+}
+
+interface RemoteFacts {
+  entries: HubMachineEntry[]
+  remoteUrls: string[]
+  upstream: string | null
 }
 
 function openCapProblem(parentId: string, adding: number): string | null {
@@ -922,6 +1153,32 @@ function defaultIo(): HubStartIo {
       } catch (err) {
         log.warn(`could not tell whether ${cwd} is the main checkout`, err)
         return false
+      }
+    },
+    async remoteUrls(cwd) {
+      try {
+        return parseGitRemoteFetchUrls(await git(cwd, ['remote', '-v']))
+      } catch (err) {
+        log.debug(`no git remotes in ${cwd}`, err)
+        return []
+      }
+    },
+    async remoteBranchesContaining(cwd, sha) {
+      try {
+        return parseRemoteBranches(
+          await git(cwd, ['branch', '-r', '--contains', sha, '--format=%(refname:short) %(symref)']),
+        )
+      } catch (err) {
+        log.warn(`could not list the remote branches that contain ${sha}`, err)
+        return []
+      }
+    },
+    async upstreamOf(cwd) {
+      try {
+        return (await git(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'])).trim() || null
+      } catch (err) {
+        log.debug(`no upstream in ${cwd}`, err)
+        return null
       }
     },
     async commitOf(cwd, ref) {

@@ -665,6 +665,10 @@ export class ProviderRegistry implements PeerToolHost {
    */
   private listMachinesOffered(): boolean {
     if (process.env.SWITCHBOARD_REMOTE || !this.remoteHubClients) return false
+    return this.hubRemoteChildrenOn()
+  }
+
+  private hubRemoteChildrenOn(): boolean {
     try {
       return hubRemoteChildrenEnabled(process.env, getSetting)
     } catch (err) {
@@ -706,6 +710,8 @@ export class ProviderRegistry implements PeerToolHost {
         // A failed or blocked wake may have been written.
         this.hubWakes.poke(parentId)
       },
+      remoteChildren: () => ({ flagOn: this.hubRemoteChildrenOn(), onVm: !!process.env.SWITCHBOARD_REMOTE }),
+      machineEntries: () => this.remoteHubClients?.entries() ?? Promise.resolve([]),
     }
   }
 
@@ -3191,6 +3197,7 @@ export class ProviderRegistry implements PeerToolHost {
                   instanceId: this.sessionDescriptors.get(threadId)?.instanceId ?? null,
                 }),
                 starter: this.hubStarter,
+                machines: hubClients !== null,
                 resources: (id) => this.hubSampler?.resourcesOf(id),
                 publish,
                 subagents: (id) => this.hubSubagents.countsOf(this.liveSessionId(id) ?? id),

@@ -123,6 +123,8 @@ export interface HubMcpToolContext {
   /** The calling chat as it is now (mode, folder, agent). */
   parent(): HubParentContext
   starter: Pick<HubStarter, 'propose' | 'waitingForSlot' | 'lastTurnOf' | 'diskUseOf'>
+  /** `list_machines` is offered too: `start_children` documents `machine`. */
+  machines?: boolean
   resources(threadId: string): ChatResources | undefined
   publish(event: RuntimeEvent): void
   /** `read_child`, bound to the calling parent. */
@@ -161,6 +163,12 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         'report. In ask and plan modes the user approves the batch on a card first; in other modes the children start',
         'at once. A child never gets more access than this chat. The tool returns at once; use list_children to follow',
         'them. You merge their branches yourself with git.',
+        ...(ctx.machines
+          ? [
+              'machine names another machine from list_machines. In this version an approved child on another machine',
+              'fails at start.',
+            ]
+          : []),
       ].join('\n'),
       inputSchema: {
         type: 'object',
@@ -185,13 +193,31 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
                   description: 'A name for the branch; Switchboard adds a hub/ prefix and a suffix.',
                 },
                 agent: { type: 'string', description: 'claude, codex, opencode, ... Default: the agent of this chat.' },
-                account: { type: 'string', description: 'A provider account id. Default: the account of this chat.' },
+                account: {
+                  type: 'string',
+                  description: ctx.machines
+                    ? 'A provider account id. Default: the account of this chat. With machine, an account id on ' +
+                      "that machine from list_machines; default: that agent's first account there."
+                    : 'A provider account id. Default: the account of this chat.',
+                },
                 model: { type: 'string' },
                 mode: {
                   type: 'string',
                   enum: [...RUNTIME_MODES],
                   description: "At most this chat's own mode; a higher one is lowered to it.",
                 },
+                ...(ctx.machines
+                  ? {
+                      machine: {
+                        type: 'string',
+                        maxLength: 64,
+                        description:
+                          'A machine id from list_machines. Default: local, this machine. A child on another ' +
+                          'machine works in a worktree there, off a commit a remote branch holds; the user ' +
+                          'approves such a batch on a card in every mode. In this version such a child fails at start.',
+                      },
+                    }
+                  : {}),
               },
               required: ['title', 'brief'],
               additionalProperties: false,
