@@ -135,25 +135,28 @@ export function buildHubMachineDescription(f: HubDescribeFacts): HubMachineDescr
  * user name stays on the machine. A path in another user's home is left out.
  */
 function pathFromHome(path: string, home: string): string | null {
-  const root = home.replace(/\/+$/, '')
-  if (path === root) return '~'
-  if (path.startsWith(`${root}/`)) return `~${path.slice(root.length)}`
-  if (/^\/(home|Users)\//.test(path)) return null
+  const p = path.replace(/\\/g, '/')
+  const root = home.replace(/\\/g, '/').replace(/\/+$/, '')
+  if (p === root) return '~'
+  if (p.startsWith(`${root}/`)) return `~${p.slice(root.length)}`
+  if (/^(?:[A-Za-z]:)?\/(home|Users)\//i.test(p)) return null
   return path
 }
 
 /**
  * A git remote without its user part, which can be a token
  * (`https://token@host/...`) or a login name (`ssh://user@host/...`,
- * `user@host:repo`). A local path or `file://` remote is null: it names
+ * `user@host:repo`), and without a query or fragment, which can carry a token
+ * too. A local path, a drive path or a `file://` remote is null: it names
  * folders on this machine, not a remote another machine can reach.
  */
 export function cleanRemoteUrl(url: string): string | null {
   const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(url)
   if (scheme) {
     if (scheme[1].toLowerCase() === 'file') return null
-    return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/i, '$1')
+    return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/i, '$1').replace(/[?#].*$/, '')
   }
+  if (/^[A-Za-z]:[\\/]/.test(url)) return null
   const scp = /^(?:[^/@:\s]+@)?([^/:\s]+):(?!\/\/)(.+)$/.exec(url)
   return scp ? `${scp[1]}:${scp[2]}` : null
 }

@@ -102,6 +102,8 @@ describe('scope helpers', () => {
     expect(frame).toEqual({ k: 'auth', session: 't', pairing: undefined, label: undefined, scopes: ['hub'] })
     const plain = decodeFrame(JSON.stringify({ k: 'auth', session: 't' }))
     expect(plain).not.toHaveProperty('scopes')
+    const malformed = decodeFrame(JSON.stringify({ k: 'auth', session: 't', scopes: 'hub' }))
+    expect(malformed).toMatchObject({ scopes: [] })
   })
 
   it('accepts exactly hub as the hub client grant', () => {
@@ -217,6 +219,17 @@ describe('buildHubMachineDescription', () => {
     )
     const d = buildHubMachineDescription({ ...base, availableAgents: [], projects })
     expect(d.projects.map((p) => p.path)).toEqual(['~', '~/a/b', '/srv/app'])
+    const win = buildHubMachineDescription({
+      ...base,
+      homeDir: 'C:\\Users\\u',
+      availableAgents: [],
+      projects: ['C:\\Users\\u\\proj', 'C:\\Users\\alice\\x', 'D:\\work\\y'].map((path) => ({
+        path,
+        branch: null,
+        remoteUrls: [],
+      })),
+    })
+    expect(win.projects.map((p) => p.path)).toEqual(['~/proj', 'D:\\work\\y'])
   })
 
   it('strips the user part from every remote form and drops local remotes', () => {
@@ -228,6 +241,9 @@ describe('buildHubMachineDescription', () => {
     expect(cleanRemoteUrl('file:///home/u/r.git')).toBeNull()
     expect(cleanRemoteUrl('/home/u/r.git')).toBeNull()
     expect(cleanRemoteUrl('../r.git')).toBeNull()
+    expect(cleanRemoteUrl('https://example.com/r.git?access_token=secret#x')).toBe('https://example.com/r.git')
+    expect(cleanRemoteUrl('C:\\Users\\alice\\repo')).toBeNull()
+    expect(cleanRemoteUrl('C:/Users/alice/repo')).toBeNull()
   })
 
   it('reads fetch URLs from git remote -v', () => {
@@ -415,5 +431,27 @@ describe('describeThisMachine', () => {
     expect(byPath.get(join(root, 'missing'))).toEqual({ path: join(root, 'missing'), branch: null, remoteUrls: [] })
     expect(d.agents.map((a) => a.agent)).toEqual(['claude-code'])
     expect(d.openChildren).toBe(0)
+  })
+
+  it('shares one describe between calls that overlap', async () => {
+    const { registerHubRemoteHandlers } = await import('../../src/main/hub/hub-remote-describe')
+    const handlers = new Map<string, () => Promise<unknown>>()
+    const host = { handle: (ch: string, fn: () => Promise<unknown>) => handlers.set(ch, fn) }
+    let checks = 0
+    registerHubRemoteHandlers(host as never, {
+      backendVersion: () => '1',
+      agentAvailable: async () => {
+        checks++
+        return false
+      },
+      runningSlotKeys: () => [],
+    })
+    const describe = handlers.get(HubRemoteChannels.DESCRIBE)!
+    const [a, b] = [describe(), describe()]
+    expect(a).toBe(b)
+    await a
+    const perCall = checks
+    await describe()
+    expect(checks).toBe(perCall * 2)
   })
 })

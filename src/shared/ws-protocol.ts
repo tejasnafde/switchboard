@@ -235,7 +235,9 @@ export function decodeFrame(data: string): WsFrame | null {
       const device = parseDeviceIdentity(frame.device) ?? undefined
       // Unknown names are dropped, not fatal: a newer client may ask for a
       // scope this backend does not know, and narrowing only ever takes away.
-      const scopes = Array.isArray(frame.scopes) ? frame.scopes.filter(isDeviceScope) : undefined
+      // A malformed value narrows to nothing, so it can never widen the grant.
+      const scopes =
+        frame.scopes === undefined ? undefined : Array.isArray(frame.scopes) ? frame.scopes.filter(isDeviceScope) : []
       return { k: 'auth', session, pairing, label, ...(device ? { device } : {}), ...(scopes ? { scopes } : {}) }
     }
     case 'authed': {

@@ -41,7 +41,14 @@ export interface HubDescribeDeps {
 }
 
 export function registerHubRemoteHandlers(host: BackendHost, deps: HubDescribeDeps): void {
-  host.handle(HubRemoteChannels.DESCRIBE, () => describeThisMachine(deps))
+  // Calls that arrive while one runs share it, so they do not multiply git processes.
+  let inFlight: Promise<HubMachineDescription> | null = null
+  host.handle(HubRemoteChannels.DESCRIBE, () => {
+    inFlight ??= describeThisMachine(deps).finally(() => {
+      inFlight = null
+    })
+    return inFlight
+  })
 }
 
 export async function describeThisMachine(deps: HubDescribeDeps): Promise<HubMachineDescription> {
