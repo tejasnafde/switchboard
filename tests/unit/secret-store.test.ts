@@ -359,6 +359,7 @@ describe('SecretStore', () => {
       root,
       now: () => now,
       excludeFromBackup: async () => (calls++, ok),
+      platform: 'darwin',
     })
     store.chatDir('chat-a')
     await vi.waitFor(() => expect(store.limits()).toEqual({ backupNotExcluded: true }))
