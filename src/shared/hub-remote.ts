@@ -206,8 +206,8 @@ export function parseHubMachineDescription(value: unknown): HubMachineDescriptio
   const d = value as Record<string, unknown>
   const isArray = (x: unknown): x is unknown[] => Array.isArray(x)
   if (d.v !== 1 || typeof d.flagOn !== 'boolean' || typeof d.os !== 'string' || typeof d.arch !== 'string') return null
-  if (typeof d.backendVersion !== 'string' || typeof d.openChildren !== 'number') return null
-  if (d.freeDiskBytes !== null && typeof d.freeDiskBytes !== 'number') return null
+  if (typeof d.backendVersion !== 'string' || typeof d.openChildren !== 'number' || d.openChildren < 0) return null
+  if (d.freeDiskBytes !== null && (typeof d.freeDiskBytes !== 'number' || d.freeDiskBytes < 0)) return null
   if (!isArray(d.agents) || !isArray(d.projects) || !isArray(d.runSlots)) return null
   const agentsOk = d.agents.every((a) => {
     const x = a as HubMachineAgent | null
@@ -270,27 +270,32 @@ export function formatHubMachineList(entries: readonly HubMachineEntry[], caller
   )
 }
 
+/** Text from a machine on one line, so a line break cannot start a fake block. */
+function oneLine(text: string): string {
+  return text.replace(/\p{Cc}/gu, ' ')
+}
+
 function machineBlock(e: HubMachineEntry, callerKeys: ReadonlySet<string>): string {
   const age = e.ageMs === null ? '' : e.description ? `, described ${formatAge(e.ageMs)} ago` : ', not described yet'
-  const lines = [`${e.id}: ${e.name}`, `  transport ${e.transport}, ${e.status}${age}`]
+  const lines = [`${e.id}: ${oneLine(e.name)}`, `  transport ${e.transport}, ${e.status}${age}`]
   if (e.problem) lines.push(`  ${e.problem}`)
   const d = e.description
   if (!d) return lines.join('\n')
   if (!d.flagOn) lines.push('  does not take children: hub_remote_children is off there')
-  lines.push(`  os ${d.os} ${d.arch}`)
+  lines.push(`  os ${oneLine(d.os)} ${oneLine(d.arch)}`)
   if (d.agents.length === 0) lines.push('  agents: none with a login')
   else {
     lines.push('  agents:')
     for (const a of d.agents) {
-      const accounts = a.accounts.map((c) => `${c.instanceId} (${c.name})`).join(', ')
-      lines.push(`    ${a.agent}: accounts ${accounts}; models ${a.models.join(', ') || 'none'}`)
+      const accounts = a.accounts.map((c) => `${oneLine(c.instanceId)} (${oneLine(c.name)})`).join(', ')
+      lines.push(`    ${oneLine(a.agent)}: accounts ${accounts}; models ${oneLine(a.models.join(', ')) || 'none'}`)
     }
   }
   lines.push(`  projects with this chat's remote: ${matchingProjects(d.projects, callerKeys)}`)
   const disk = d.freeDiskBytes === null ? 'unknown' : formatGb(d.freeDiskBytes)
   lines.push(`  free disk ${disk}, open children ${d.openChildren}`)
   if (d.runSlots.length > 0) {
-    const slots = d.runSlots.map((s) => `${s.instanceId} ${Math.max(0, s.limit - s.running)} of ${s.limit}`)
+    const slots = d.runSlots.map((s) => `${oneLine(s.instanceId)} ${Math.max(0, s.limit - s.running)} of ${s.limit}`)
     lines.push(`  free run slots: ${slots.join(', ')}`)
   }
   return lines.join('\n')
@@ -300,7 +305,7 @@ function matchingProjects(projects: readonly HubMachineProject[], callerKeys: Re
   if (callerKeys.size === 0) return "none (this chat's project has no git remote)"
   const hits = projects.filter((p) => p.remoteUrls.some((u) => callerKeys.has(remoteUrlKey(u) ?? '')))
   if (hits.length === 0) return 'none'
-  return hits.map((p) => `${p.path} (${p.branch ?? 'no branch'})`).join(', ')
+  return hits.map((p) => `${oneLine(p.path)} (${p.branch === null ? 'no branch' : oneLine(p.branch)})`).join(', ')
 }
 
 function formatAge(ms: number): string {

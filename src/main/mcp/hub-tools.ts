@@ -89,7 +89,10 @@ export function buildListMachinesTool(ctx: ListMachinesToolContext): McpTool {
           log.warn('could not describe this desktop for list_machines', err)
           return null
         }),
-        ctx.remoteEntries(),
+        ctx.remoteEntries().catch((err: unknown) => {
+          log.warn('could not read the remote machines for list_machines', err)
+          return []
+        }),
         projectPath ? remotesOf(projectPath) : Promise.resolve([]),
       ])
       const self: HubMachineEntry = {

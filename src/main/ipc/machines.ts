@@ -216,6 +216,11 @@ export function registerMachineHandlers(host: BackendHost): RemoteHubClients {
   return hub
 }
 
+/** After a write of `labs.hub_remote_children`: turning it off closes every hub client. */
+export function hubRemoteSettingChanged(): void {
+  if (!hubRemoteOn()) hubClients?.closeAll()
+}
+
 /**
  * Kill every live tunnel. Call from `before-quit` - without this, ssh
  * reparents to launchd on app exit. The remote backends run detached and

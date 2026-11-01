@@ -3217,7 +3217,10 @@ export class ProviderRegistry implements PeerToolHost {
             ? [
                 buildListMachinesTool({
                   projectPath: () =>
-                    getConversationById(chatId())?.project_path ?? this.sessionDescriptors.get(threadId)?.cwd ?? '',
+                    this.sessionCwd.get(threadId) ||
+                    this.parentCwd(chatId()) ||
+                    this.sessionDescriptors.get(threadId)?.cwd ||
+                    '',
                   describeLocal: () => describeThisMachine(this.hubDescribeDeps()),
                   remoteEntries: () => hubClients.entries(),
                 }),
