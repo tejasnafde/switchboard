@@ -149,4 +149,9 @@ class SwitchboardApplication : Application() {
 
     fun setFollowUpDefault(value: app.switchboard.mobile.domain.thread.TurnDelivery) =
         nativeRuntime.setFollowUpDefault(value)
+
+    val phoneLiveRun: StateFlow<Boolean>
+        get() = nativeRuntime.phoneLiveRun
+
+    fun setPhoneLiveRun(value: Boolean) = nativeRuntime.setPhoneLiveRun(value)
 }

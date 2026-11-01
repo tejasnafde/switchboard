@@ -35,3 +35,13 @@ targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^apps/mobile/src/components/__tests__/HtmlLiveCard\.test\.tsx$''']
 regexes = ['''9235215ba9292f8dd21fecf0305a4b7d067e4cb41901b6840e8a6f5f2551a065''']
+
+[[allowlists]]
+description = "Fake live page token in the Android live page tests: a fixed hex string, not a credential"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = [
+  '''^apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/HtmlLivePhoneTest\.kt$''',
+  '''^apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/LiveWebViewTest\.kt$''',
+]
+regexes = ['''0123456789abcdef0123456789abcdef''']

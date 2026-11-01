@@ -1,6 +1,5 @@
 package app.switchboard.mobile.ui.thread
 
-import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.Context
 import android.graphics.Bitmap
@@ -12,7 +11,6 @@ import android.webkit.WebMessagePort
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -260,49 +258,36 @@ internal fun seedDrawnVisual(kind: VisualKind, source: String, heightDp: Int) {
 }
 
 /**
- * A WebView that loads only the bundled page: JavaScript on (Mermaid needs
- * it) but no file, content or network access, no navigation, no new windows
- * and no JavaScript interface. The request goes in over a message channel.
+ * A locked-down WebView that loads only the bundled page. The request goes in
+ * over a message channel. A lost renderer reports a failure, so the card
+ * drops this view.
  */
-@SuppressLint("SetJavaScriptEnabled")
-private fun visualWebView(context: Context, page: String, request: String, onAnswer: (VisualState) -> Unit): WebView =
-    WebView(context).apply {
-        setBackgroundColor(SurfaceRaised.toArgb())
-        isVerticalScrollBarEnabled = false
-        isHorizontalScrollBarEnabled = false
-        settings.apply {
-            javaScriptEnabled = true
-            allowFileAccess = false
-            allowContentAccess = false
-            blockNetworkLoads = true
-            domStorageEnabled = false
-            javaScriptCanOpenWindowsAutomatically = false
-            setSupportMultipleWindows(false)
-        }
-        var sent = false
-        webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
-
-            // The page itself is about:blank data; anything it would fetch is refused.
-            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                if (request.url.scheme == "about" || request.url.scheme == "data") {
-                    null
-                } else {
-                    WebResourceResponse("text/plain", "utf-8", 403, "Blocked", emptyMap(), ByteArrayInputStream(ByteArray(0)))
-                }
-
-            override fun onPageFinished(view: WebView, url: String?) {
-                if (sent) return
-                sent = true
-                val (local, remote) = view.createWebMessageChannel()
-                local.setWebMessageCallback(object : WebMessagePort.WebMessageCallback() {
-                    override fun onMessage(port: WebMessagePort, message: WebMessage) {
-                        parseAnswer(message.data)?.let(onAnswer)
-                        port.close()
-                    }
-                })
-                view.postWebMessage(WebMessage(request, arrayOf(remote)), Uri.EMPTY)
+private fun visualWebView(context: Context, page: String, request: String, onAnswer: (VisualState) -> Unit): WebView {
+    var sent = false
+    val client = object : LockedDownWebViewClient(onGone = { onAnswer(VisualState.Failed("The drawing process stopped.")) }) {
+        // The page itself is about:blank data; anything it would fetch is refused.
+        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+            if (request.url.scheme == "about" || request.url.scheme == "data") {
+                null
+            } else {
+                WebResourceResponse("text/plain", "utf-8", 403, "Blocked", emptyMap(), ByteArrayInputStream(ByteArray(0)))
             }
+
+        override fun onPageFinished(view: WebView, url: String?) {
+            if (sent) return
+            sent = true
+            val (local, remote) = view.createWebMessageChannel()
+            local.setWebMessageCallback(object : WebMessagePort.WebMessageCallback() {
+                override fun onMessage(port: WebMessagePort, message: WebMessage) {
+                    parseAnswer(message.data)?.let(onAnswer)
+                    port.close()
+                }
+            })
+            view.postWebMessage(WebMessage(request, arrayOf(remote)), Uri.EMPTY)
         }
+    }
+    return lockedDownWebView(context, client).apply {
+        setBackgroundColor(SurfaceRaised.toArgb())
         loadDataWithBaseURL(null, page, "text/html", "utf-8", null)
     }
+}
