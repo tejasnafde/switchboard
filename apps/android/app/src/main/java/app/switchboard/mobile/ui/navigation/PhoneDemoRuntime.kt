@@ -77,6 +77,13 @@ class PhoneDemoNavigationRuntime(
     )
     override val composerDrafts: StateFlow<Map<ComposerDraftKey, ComposerDraft>> = drafts.asStateFlow()
 
+    private val liveRun = MutableStateFlow(false)
+    override val phoneLiveRun: StateFlow<Boolean> = liveRun.asStateFlow()
+
+    override fun setPhoneLiveRun(value: Boolean) {
+        liveRun.value = value
+    }
+
     /** The one machine the demo lists. Its target is a label: there is no address to dial. */
     val connections: ConnectionsLoadState = ConnectionsLoadState.Ready(
         listOf(

@@ -12,12 +12,21 @@
  * test runner's transform does not strip one, so the import fails to parse.
  */
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 export const VISUAL_HOST_OUT = join(root, 'apps/mobile/assets/visual-host/visual-host.html')
+/** Live page libraries for the Expo app: metro takes no .js asset, so each is copied as .sblib, the same bytes. */
+export const LIVE_LIBS_SOURCE = join(root, 'resources/sb-live')
+export const LIVE_LIBS_OUT = join(root, 'apps/mobile/assets/live-libs')
+export const LIVE_LIBS = {
+  'chart.js': 'chart.sblib',
+  'd3.js': 'd3.sblib',
+  'three.js': 'three.sblib',
+  'three/addons/controls/OrbitControls.js': 'OrbitControls.sblib',
+}
 const INPUTS = [
   'src/visual-host/index.ts',
   'src/shared/chat-visuals.ts',
@@ -66,6 +75,11 @@ async function build() {
   mkdirSync(dirname(VISUAL_HOST_OUT), { recursive: true })
   writeFileSync(VISUAL_HOST_OUT, html)
   console.log(`wrote ${VISUAL_HOST_OUT} (${(Buffer.byteLength(html) / 1024).toFixed(0)} KiB)`)
+  mkdirSync(LIVE_LIBS_OUT, { recursive: true })
+  for (const [path, name] of Object.entries(LIVE_LIBS)) {
+    copyFileSync(join(LIVE_LIBS_SOURCE, ...path.split('/')), join(LIVE_LIBS_OUT, name))
+  }
+  console.log(`wrote ${LIVE_LIBS_OUT}`)
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await build()

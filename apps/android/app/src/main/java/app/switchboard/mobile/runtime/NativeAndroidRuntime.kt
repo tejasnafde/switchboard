@@ -2,6 +2,7 @@ package app.switchboard.mobile.runtime
 
 import android.app.Application
 import android.util.Log
+import app.switchboard.mobile.domain.thread.HtmlLivePhone
 import app.switchboard.mobile.data.connection.ConnectionFleet
 import app.switchboard.mobile.data.connection.DeviceConnectionFleetTargetResolver
 import app.switchboard.mobile.data.connection.NativeConnectionRepository
@@ -91,6 +92,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import app.switchboard.mobile.domain.thread.TurnDelivery
 import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 
@@ -167,6 +170,22 @@ class NativeAndroidRuntime private constructor(
             mutableFollowUpDefault.value = TurnDeliveryPolicy.parseFollowUpDefault(stored.value)
         }
     }
+    private val mutablePhoneLiveRun = MutableStateFlow(BuildConfig.PHONE_HTML_LIVE_RUN)
+    /** Settings > Labs "Run live pages" (`phone_html_live_run`), per device. */
+    val phoneLiveRun: StateFlow<Boolean> = mutablePhoneLiveRun.asStateFlow()
+    @Volatile private var phoneLiveRunChosen = false
+    private val phoneLiveRunLoad: Job = scope.launch {
+        val stored = database.preferenceDao().findPreference(HtmlLivePhone.FLAG) ?: return@launch
+        if (!phoneLiveRunChosen) mutablePhoneLiveRun.value = stored.value == "true"
+    }
+
+    fun setPhoneLiveRun(value: Boolean) {
+        phoneLiveRunChosen = true
+        phoneLiveRunLoad.cancel()
+        mutablePhoneLiveRun.value = value
+        savePreference(HtmlLivePhone.FLAG, value.toString())
+    }
+
     private var closed = false
 
     fun setFollowUpDefault(value: TurnDelivery) {
@@ -174,10 +193,11 @@ class NativeAndroidRuntime private constructor(
         followUpDefaultLoad.cancel()
         mutableFollowUpDefault.value = value
         scope.launch {
-            // The latest choice, not this tap's: two quick taps may write out of order.
-            database.preferenceDao().upsertPreference(
-                AppPreferenceEntity(TurnDeliveryPolicy.FOLLOW_UP_DEFAULT_KEY, mutableFollowUpDefault.value.wire),
-            )
+            preferenceWrites.withLock {
+                database.preferenceDao().upsertPreference(
+                    AppPreferenceEntity(TurnDeliveryPolicy.FOLLOW_UP_DEFAULT_KEY, mutableFollowUpDefault.value.wire),
+                )
+            }
         }
     }
 
@@ -250,12 +270,16 @@ class NativeAndroidRuntime private constructor(
 
     private val latestPreferences = java.util.concurrent.ConcurrentHashMap<String, String>()
 
+    private val preferenceWrites = Mutex()
+
     fun savePreference(key: String, value: String) {
         latestPreferences[key] = value
         scope.launch {
-            // The latest value for the key, not this call's: two quick writes may run out of order.
-            val latest = latestPreferences[key] ?: return@launch
-            database.preferenceDao().upsertPreference(AppPreferenceEntity(key, latest))
+            // One write at a time, each with the latest value for the key, so the last choice is the one stored.
+            preferenceWrites.withLock {
+                val latest = latestPreferences[key] ?: return@withLock
+                database.preferenceDao().upsertPreference(AppPreferenceEntity(key, latest))
+            }
         }
     }
 

@@ -112,6 +112,7 @@ import app.switchboard.mobile.data.remote.GitContextCoordinator
 import app.switchboard.mobile.data.remote.ConversationForkWire
 import app.switchboard.mobile.ui.thread.ThreadLoadState
 import app.switchboard.mobile.ui.thread.LocalHtmlLive
+import app.switchboard.mobile.ui.thread.LocalPhoneLiveRun
 import app.switchboard.mobile.ui.thread.ThreadScreen
 import app.switchboard.mobile.ui.thread.ThreadComposerPresentation
 import app.switchboard.mobile.ui.thread.ThreadSessionScreen
@@ -124,6 +125,7 @@ import kotlinx.coroutines.flow.collect
 private val NoPhoneDemo = MutableStateFlow<PhoneDemoNavigationRuntime?>(null)
 private val EmptyRuntimeStatuses = MutableStateFlow<Map<String, ConnectionRuntimeState>>(emptyMap())
 private val SteerFollowUp = kotlinx.coroutines.flow.MutableStateFlow(app.switchboard.mobile.domain.thread.TurnDelivery.Steer)
+private val PhoneLiveRunOff = kotlinx.coroutines.flow.MutableStateFlow(false)
 private val EmptyComposerDrafts = MutableStateFlow<Map<ComposerDraftKey, ComposerDraft>>(emptyMap())
 private val EmptyComposerErrors = MutableStateFlow<Map<ComposerDraftKey, String>>(emptyMap())
 private val EmptyComposerUploads = MutableStateFlow<Map<ComposerDraftKey, List<String>>>(emptyMap())
@@ -451,6 +453,8 @@ private fun SwitchboardNavigationHost(
                 },
                 followUpDefault = (runtime?.followUpDefault ?: SteerFollowUp).collectAsState().value,
                 onFollowUpDefault = { runtime?.setFollowUpDefault(it) },
+                phoneLiveRun = (runtime?.phoneLiveRun ?: PhoneLiveRunOff).collectAsState().value,
+                onPhoneLiveRun = { runtime?.setPhoneLiveRun(it) },
                 onLeaveDemo = onLeaveDemo,
                 onShareLog = { ShareLog.share(shareContext) },
             )
@@ -1097,52 +1101,55 @@ private fun ThreadRouteHost(
         LaunchedEffect(savedDraft) {
             if (savedDraft != null) localDraft = savedDraft
         }
-        ThreadScreen(
-            threadId = route.threadId,
-            title = route.title,
-            backendLabel = route.connectionLabel,
-            loadState = load,
-            onRetry = { runtime?.retry(route.connectionId) },
-            onAction = {},
-            onBack = onBack,
-            composer = runtime?.let {
-                ThreadComposerPresentation(
-                    draft = localDraft.text,
-                    // An offline pick, else the chat's own mode from the saved copy.
-                    runtimeMode = (localDraft.runtimeMode ?: cached?.runtimeMode).toRuntimeMode(),
-                    submitting = false,
-                    interrupting = false,
-                    modeChanging = false,
-                    error = composerErrors[composerKey],
-                    controlMessage = null,
-                    focusRequest = 0,
-                    showInterrupt = false,
-                    attachments = localDraft.attachments,
-                    editingOrigin = localDraft.editingOrigin,
-                    uploading = uploading,
-                )
-            },
-            onDraftChange = { text ->
-                localDraft = localDraft.copy(text = text)
-                runtime?.saveComposerText(localDraft)
-            },
-            onRuntimeModeChange = { mode ->
-                localDraft = localDraft.copy(runtimeMode = mode.wire)
-                runtime?.saveComposerText(localDraft)
-            },
-            onImagesSelected = { sources -> runtime?.addComposerImages(composerKey, sources) },
-            onRemoveImage = { attachmentId ->
-                runtime?.removeComposerImage(composerKey, attachmentId)
-            },
-            onSend = { runtime?.submitSavedComposerDraft(composerKey) },
-            onSendOverride = { text ->
-                runtime?.submitComposerText(composerKey, text, localDraft.runtimeMode)
-            },
-            queuedTurns = queuedTurns,
-            onOutboxAction = { origin, action ->
-                runtime?.performOutboxAction(composerKey, origin, action)
-            },
-        )
+        val phoneLiveRun by (runtime?.phoneLiveRun ?: PhoneLiveRunOff).collectAsState()
+        CompositionLocalProvider(LocalPhoneLiveRun provides phoneLiveRun) {
+            ThreadScreen(
+                threadId = route.threadId,
+                title = route.title,
+                backendLabel = route.connectionLabel,
+                loadState = load,
+                onRetry = { runtime?.retry(route.connectionId) },
+                onAction = {},
+                onBack = onBack,
+                composer = runtime?.let {
+                    ThreadComposerPresentation(
+                        draft = localDraft.text,
+                        // An offline pick, else the chat's own mode from the saved copy.
+                        runtimeMode = (localDraft.runtimeMode ?: cached?.runtimeMode).toRuntimeMode(),
+                        submitting = false,
+                        interrupting = false,
+                        modeChanging = false,
+                        error = composerErrors[composerKey],
+                        controlMessage = null,
+                        focusRequest = 0,
+                        showInterrupt = false,
+                        attachments = localDraft.attachments,
+                        editingOrigin = localDraft.editingOrigin,
+                        uploading = uploading,
+                    )
+                },
+                onDraftChange = { text ->
+                    localDraft = localDraft.copy(text = text)
+                    runtime?.saveComposerText(localDraft)
+                },
+                onRuntimeModeChange = { mode ->
+                    localDraft = localDraft.copy(runtimeMode = mode.wire)
+                    runtime?.saveComposerText(localDraft)
+                },
+                onImagesSelected = { sources -> runtime?.addComposerImages(composerKey, sources) },
+                onRemoveImage = { attachmentId ->
+                    runtime?.removeComposerImage(composerKey, attachmentId)
+                },
+                onSend = { runtime?.submitSavedComposerDraft(composerKey) },
+                onSendOverride = { text ->
+                    runtime?.submitComposerText(composerKey, text, localDraft.runtimeMode)
+                },
+                queuedTurns = queuedTurns,
+                onOutboxAction = { origin, action ->
+                    runtime?.performOutboxAction(composerKey, origin, action)
+                },
+            )
+        }
         return
     }
 
@@ -1327,7 +1334,8 @@ private fun ConnectedThreadRoute(
             null
         }
     }
-    CompositionLocalProvider(LocalHtmlLive provides htmlLive) {
+    val phoneLiveRun by runtime.phoneLiveRun.collectAsState()
+    CompositionLocalProvider(LocalHtmlLive provides htmlLive, LocalPhoneLiveRun provides phoneLiveRun) {
         ThreadSessionScreen(
             coordinator = coordinator,
             threadId = route.threadId,
