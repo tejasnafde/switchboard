@@ -1638,9 +1638,18 @@ async function launchSwitchboard({ userData = userDataDir, demo = false, env = {
   app = instance
   const win = await instance.firstWindow({ timeout: 20_000 })
   if (demo) {
-    await instance.evaluate(({ BrowserWindow }, size) => {
-      BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size })
+    // macOS shrinks a window to the screen's free area, which would change
+    // every full-height screen, so a short screen fails here by name.
+    const placed = await instance.evaluate(({ BrowserWindow, screen }, size) => {
+      const window = BrowserWindow.getAllWindows()[0]
+      window?.setBounds({ x: 40, y: 40, ...size })
+      return { bounds: window?.getBounds(), workArea: screen.getPrimaryDisplay().workArea }
     }, SCREEN_SIZE)
+    if (placed.bounds && (placed.bounds.width !== SCREEN_SIZE.width || placed.bounds.height !== SCREEN_SIZE.height))
+      throw new Error(
+        `window is ${placed.bounds.width}x${placed.bounds.height}, not ${SCREEN_SIZE.width}x${SCREEN_SIZE.height}: ` +
+          `the screen's free area is ${JSON.stringify(placed.workArea)}`,
+      )
   }
   await win.waitForLoadState('domcontentloaded')
   await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })

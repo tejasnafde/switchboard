@@ -285,6 +285,17 @@ jobs:
       - name: Build
         run: npm run build:fast
 
+      # The screens run in a 1280x720 window. macOS shrinks a window to the
+      # screen's free area, and on the macos-15 runner the Dock left 684px of
+      # height, so every full-height screen came out 36px short. A hidden Dock
+      # frees that height. The run prints the display so a smaller one shows.
+      - name: Hide the Dock
+        run: |
+          defaults write com.apple.dock autohide -bool true
+          defaults write com.apple.dock autohide-delay -float 1000
+          killall Dock
+          system_profiler SPDisplaysDataType | grep -E 'Resolution|UI Looks like' || true
+
       - name: Theme screenshots
         run: npm run test:e2e:visual
         env:
