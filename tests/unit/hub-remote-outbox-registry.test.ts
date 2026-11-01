@@ -31,6 +31,8 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
 const state = vi.hoisted(() => ({
   outbox: [] as Array<{ childId: string; parentId: string; text: string; delivery: string }>,
   saved: [] as Array<{ id: string; conversationId: string }>,
+  /** `labs.hub_remote_children`. */
+  remoteFlag: false,
 }))
 const children = vi.hoisted(() => [
   // On a child machine: its parent runs on another machine's hub.
@@ -57,7 +59,8 @@ vi.mock('../../src/main/db/database', () => ({
   getConversationReasoningEffort: () => null,
   getConversationAgentType: () => null,
   getConversationProviderInstanceId: () => null,
-  getSetting: (key: string) => (key === 'labs.hub_children' ? 'true' : null),
+  getSetting: (key: string) =>
+    key === 'labs.hub_children' || (key === 'labs.hub_remote_children' && state.remoteFlag) ? 'true' : null,
   getConversationExecutionRoot: () => null,
   commitConversationExecutionRoot: () => {},
   commitConversationProviderSwitch: () => {},
@@ -67,7 +70,8 @@ vi.mock('../../src/main/db/database', () => ({
   openChildParentId: (id: string) => children.find((c) => c.childId === id)?.parentId ?? null,
   listHubChildrenInPhase: (phase: string) => children.filter((c) => c.phase === phase),
   threadFamilyIds: (id: string) => [id],
-  listHubChildren: () => [],
+  listHubChildren: (parentId: string) =>
+    state.remoteFlag ? children.filter((c) => c.parentId === parentId && c.phase !== 'settled') : [],
   lastHubWakes: () => new Map(),
   listPendingHubWakes: () => [],
   getHubParent: (id: string) =>
@@ -84,6 +88,7 @@ import { ProviderRegistry } from '../../src/main/provider/provider-registry'
 import { createPeerToolHandlers } from '../../src/main/provider/peer-tools'
 import { HubRemoteChannels, ProviderChannels } from '../../src/shared/ipc-channels'
 import {
+  HUB_REMOTE_STOP_LATER_TEXT,
   HUB_OUTBOX_MESSAGE_SENT_TEXT,
   HUB_OUTBOX_MESSAGES_FULL_TEXT,
   HUB_OUTBOX_MESSAGES_PER_CHILD_MAX,
@@ -145,11 +150,41 @@ type Internals = {
   ): Promise<{ ok: true } | { ok: false; reason: string }>
   peerLinks: { checkSend(from: string, to: string, now: number): { linked: boolean; ok?: boolean } }
   hubRemoteOutboxHost(clients: unknown): HubRemoteOutboxHost
+  hubRemote: unknown
+}
+
+/** The desktop's control, as a fake that records what would go to the child's machine. */
+function fakeControl(opts: { available?: boolean; refuse?: string } = {}) {
+  const calls: Array<{ op: string; args: unknown[] }> = []
+  return {
+    calls,
+    available: () => opts.available ?? true,
+    machineName: () => 'Machine vm1',
+    isStopping: () => false,
+    factsOf: () => null,
+    deliver: async (...args: unknown[]) => {
+      calls.push({ op: 'deliver', args: [(args[0] as HubChildRow).childId, ...args.slice(1)] })
+      if (opts.refuse) throw new Error(opts.refuse)
+    },
+    stop: async (c: HubChildRow) => {
+      calls.push({ op: 'stop', args: [c.childId] })
+      return { pending: true, ran: false }
+    },
+    stopAll: async (machineId: string, parentId: string) => {
+      calls.push({ op: 'stopAll', args: [machineId, parentId] })
+      return { pending: false }
+    },
+    interrupt: async (c: HubChildRow) => {
+      calls.push({ op: 'interrupt', args: [c.childId] })
+      return true
+    },
+  }
 }
 
 async function setup() {
   state.outbox.length = 0
   state.saved.length = 0
+  state.remoteFlag = false
   const host = new FakeHost()
   const adapter = new Adapter()
   const registry = new ProviderRegistry(host, new Map<ProviderKind, ProviderAdapter>([['claude', adapter]]))
@@ -243,5 +278,118 @@ describe('an imported message of a child on another machine, on the desktop', ()
     expect(host.rateHasRoom(row('rchild'))).toBe(false)
     expect(host.parentRunning('parent1')).toBe(true)
     expect(adapter.sends).toHaveLength(5)
+  })
+})
+
+describe('a parent message to its child on another machine (flag hub_remote_children)', () => {
+  it('charges the lineage edge here once, then delivers there as queue or steer', async () => {
+    const { registry, internals, adapter } = await setup()
+    state.remoteFlag = true
+    const control = fakeControl()
+    internals.hubRemote = control
+    const send = (text: string, delivery: 'queue' | 'steer') =>
+      registry.deliverPeerMessage({
+        fromThreadId: 'parent1',
+        targetThreadId: 'rchild',
+        text,
+        initiator: 'agent',
+        delivery,
+      })
+    await send('rebase first', 'queue')
+    await send('stop that', 'steer')
+    expect(control.calls).toEqual([
+      { op: 'deliver', args: ['rchild', 'rebase first', 'queue', 'Parent chat'] },
+      { op: 'deliver', args: ['rchild', 'stop that', 'steer', 'Parent chat'] },
+    ])
+    expect(adapter.sends).toEqual([])
+    // Two of the edge's 60 messages are spent: 58 are left, then it refuses before any call there.
+    for (let i = 0; i < PEER_LINEAGE_MESSAGE_BUDGET - 2; i++)
+      expect(internals.peerLinks.checkSend('parent1', 'rchild', Date.now())).toMatchObject({ ok: true })
+    await expect(send('one more', 'queue')).rejects.toThrow('used all 60 messages')
+    expect(control.calls).toHaveLength(2)
+  })
+
+  it('gives the charge back when the machine refuses, and refuses a user send', async () => {
+    const { registry, internals } = await setup()
+    state.remoteFlag = true
+    internals.hubRemote = fakeControl({ refuse: 'Machine vm1 is not connected' })
+    await expect(
+      registry.deliverPeerMessage({ fromThreadId: 'parent1', targetThreadId: 'rchild', text: 'x', initiator: 'agent' }),
+    ).rejects.toThrow('not connected')
+    for (let i = 0; i < PEER_LINEAGE_MESSAGE_BUDGET; i++)
+      expect(internals.peerLinks.checkSend('parent1', 'rchild', Date.now())).toMatchObject({ ok: true })
+    await expect(
+      registry.deliverPeerMessage({ fromThreadId: 'parent1', targetThreadId: 'rchild', text: 'x', initiator: 'user' }),
+    ).rejects.toThrow()
+  })
+
+  it('keeps the old "not running" refusal with the flag off', async () => {
+    const { registry, internals } = await setup()
+    const control = fakeControl()
+    internals.hubRemote = control
+    await expect(
+      registry.deliverPeerMessage({ fromThreadId: 'parent1', targetThreadId: 'rchild', text: 'x', initiator: 'agent' }),
+    ).rejects.toThrow('not running')
+    expect(control.calls).toEqual([])
+  })
+
+  it('on the child machine: arrives framed as from the parent, with no budget charged there', async () => {
+    const { host, adapter, internals } = await setup()
+    const answer = await host.invoke(HubRemoteChannels.DELIVER, {
+      v: 1,
+      desktopInstallId: 'hub-desk',
+      childId: 'vmchild',
+      text: 'please rebase',
+      delivery: 'queue',
+      fromLabel: 'Big task',
+    })
+    expect(answer).toEqual({ v: 1, ok: true })
+    expect(adapter.sends).toHaveLength(1)
+    expect(adapter.sends[0]!.threadId).toBe('vmchild')
+    expect(adapter.sends[0]!.message).toContain('Big task')
+    expect(adapter.sends[0]!.message).toContain('please rebase')
+    // The edge here was not charged: all 60 are still there.
+    for (let i = 0; i < PEER_LINEAGE_MESSAGE_BUDGET; i++)
+      expect(internals.peerLinks.checkSend('stub1', 'vmchild', Date.now())).toMatchObject({ ok: true })
+    // Another hub's install id, and a desktop row's child, are refused.
+    expect(
+      await host.invoke(HubRemoteChannels.DELIVER, {
+        v: 1,
+        desktopInstallId: 'hub-other',
+        childId: 'vmchild',
+        text: 'x',
+        delivery: 'queue',
+        fromLabel: 'P',
+      }),
+    ).toMatchObject({ ok: false, code: 'not_own' })
+    expect(
+      await host.invoke(HubRemoteChannels.STOP, { v: 1, desktopInstallId: 'hub-desk', childId: 'lchild' }),
+    ).toMatchObject({ ok: false, code: 'not_own' })
+  })
+})
+
+describe('Stop of a child on another machine, through the registry', () => {
+  it("routes the user's Stop to the child's machine", async () => {
+    const { host, internals } = await setup()
+    state.remoteFlag = true
+    const control = fakeControl()
+    internals.hubRemote = control
+    await host.invoke(ProviderChannels.INTERRUPT, 'rchild')
+    expect(control.calls).toEqual([{ op: 'stop', args: ['rchild'] }])
+  })
+
+  it('keeps the old text for a machine without the control channels', async () => {
+    const { host, internals } = await setup()
+    state.remoteFlag = true
+    internals.hubRemote = fakeControl({ available: false })
+    await expect(host.invoke(ProviderChannels.INTERRUPT, 'rchild')).rejects.toThrow(HUB_REMOTE_STOP_LATER_TEXT)
+  })
+
+  it('keeps the old text with the flag off', async () => {
+    const { host, internals } = await setup()
+    const control = fakeControl()
+    internals.hubRemote = control
+    await expect(host.invoke(ProviderChannels.INTERRUPT, 'rchild')).rejects.toThrow(HUB_REMOTE_STOP_LATER_TEXT)
+    expect(control.calls).toEqual([])
   })
 })

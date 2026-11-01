@@ -15,7 +15,7 @@ import { existsSync } from 'node:fs'
 import { HUB_REMOTE_READ_LATER_TEXT } from '@shared/hub-remote'
 import { isSubagentToolName } from '@shared/subagent-steps'
 import type { ChatMessage, ToolCall } from '@shared/types'
-import { getHubChild, lastHubWakeOf, resolveRootThreadId } from '../db/database'
+import { getHubChild, lastHubWakeOf, resolveRootThreadId, type HubChildRow } from '../db/database'
 import { toolText, type McpToolResult } from '../mcp/mcp-session'
 import { perfSpan } from '../perf'
 import { createMainLogger } from '../logger'
@@ -124,6 +124,11 @@ export interface ReadChildContext {
   load(childId: string): Promise<ChatMessage[]>
   /** A path exists; replaceable in tests. */
   exists?(path: string): boolean
+  /**
+   * A child on another machine, read there (`hub-remote:read-child`); absent
+   * or null for a machine whose backend cannot, which keeps the old text.
+   */
+  remote?(child: HubChildRow, args: ReadChildArgs): Promise<McpToolResult> | null
 }
 
 export async function readChild(ctx: ReadChildContext, raw: Record<string, unknown>): Promise<McpToolResult> {
@@ -137,8 +142,20 @@ export async function readChild(ctx: ReadChildContext, raw: Record<string, unkno
   }
   // Its history is on that machine; nothing here holds it.
   if (child.machineId) {
-    span.end({ outcome: 'remote' })
-    return toolText(HUB_REMOTE_READ_LATER_TEXT, true)
+    const read = ctx.remote?.(child, args) ?? null
+    if (!read) {
+      span.end({ outcome: 'remote_unsupported' })
+      return toolText(HUB_REMOTE_READ_LATER_TEXT, true)
+    }
+    try {
+      const r = await read
+      span.end({ outcome: r.isError ? 'remote_refused' : 'remote' })
+      return r
+    } catch (err) {
+      log.warn(`could not read child ${child.childId} on its machine`, err)
+      span.end({ outcome: 'remote_error' })
+      return toolText(`Could not read ${child.title}: ${err instanceof Error ? err.message : String(err)}`, true)
+    }
   }
   let all: ChatMessage[]
   try {

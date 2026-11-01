@@ -21,6 +21,8 @@ import { RUNTIME_MODES, type RuntimeEvent, type RuntimeMode } from '@shared/prov
 import { getConversationById, getLimitResume, lastHubWakes, listHubChildren } from '../db/database'
 import { listProviderInstances } from '../db/provider-instances'
 import type { ChatResources } from '../hub/hub-measure'
+import type { HubRemoteChildFacts } from '../hub/hub-remote-control'
+import type { HubChildRow } from '../db/database'
 import type { SubagentCounts } from '../hub/hub-stop'
 import type { HubParentContext, HubStarter } from '../hub/hub-start'
 import { childConflicts, type ChildConflict } from '../hub/hub-settle'
@@ -140,6 +142,11 @@ export interface HubMcpToolContext {
   subagents(childId: string): SubagentCounts
   gitStats?(cwd: string, base: string): Promise<GitStats | null>
   conflicts?: typeof childConflicts
+  /** Children on other machines: their views, read again when older than 15 s. Absent: the plan's facts only. */
+  remote?: {
+    refresh(parentId: string): Promise<void>
+    factsOf(child: HubChildRow): HubRemoteChildFacts | null
+  }
 }
 
 export interface GitStats {
@@ -152,7 +159,7 @@ export interface GitStats {
 const MB = 1024 * 1024
 
 export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
-  const stats = ctx.gitStats ?? gitStats
+  const stats = ctx.gitStats ?? childGitStats
   const conflictsOf = ctx.conflicts ?? childConflicts
   return [
     {
@@ -257,6 +264,13 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         const parent = ctx.parent()
         const children = listHubChildren(parent.parentId)
         if (children.length === 0) return toolText('This chat has no children.')
+        if (ctx.remote && children.some((c) => c.machineId)) {
+          try {
+            await ctx.remote.refresh(parent.parentId)
+          } catch (err) {
+            log.warn(`could not read the remote children of ${parent.parentId}`, err)
+          }
+        }
         const lastWake = lastHubWakes(parent.parentId)
         const worktrees = children.flatMap((c) => {
           const worktree = getConversationById(c.childId)?.worktree_path
@@ -279,6 +293,8 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
             const wake = lastWake.get(c.childId)
             // A child on another machine has no conversation here: its plan names the agent and machine.
             const remote = ctx.starter.remoteChildFacts(c)
+            const there = ctx.remote?.factsOf(c) ?? null
+            if (there) return remoteChildRow(c, remote, there, wake ?? null, conflicts?.get(c.childId) ?? null)
             return {
               childId: c.childId,
               title: c.title,
@@ -307,7 +323,10 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         )
         const own = ctx.resources(parent.parentId)
         const total = rows.reduce((n, r) => n + (r.resources?.rssMb ?? 0), 0)
-        const limitedAgents = new Set(rows.filter((r) => r.limit !== null && r.agent).map((r) => r.agent))
+        // A child on another machine moves between accounts there only: this desktop's accounts are not for it.
+        const limitedAgents = new Set(
+          rows.filter((r) => r.limit !== null && r.agent && !('machine' in r)).map((r) => r.agent),
+        )
         const accounts =
           limitedAgents.size > 0
             ? listProviderInstances()
@@ -513,7 +532,7 @@ export function buildChildHubMcpTools(ctx: ChildHubMcpToolContext): McpTool[] {
   ]
 }
 
-async function gitStats(cwd: string, base: string): Promise<GitStats | null> {
+export async function childGitStats(cwd: string, base: string): Promise<GitStats | null> {
   const git = async (args: string[]) => (await execFileP('git', ['-C', cwd, ...args], { maxBuffer: 8 * MB })).stdout
   try {
     const [counts, status, shortstat] = await Promise.all([
@@ -526,5 +545,47 @@ async function gitStats(cwd: string, base: string): Promise<GitStats | null> {
   } catch (err) {
     log.warn(`could not read git state of ${cwd}`, err)
     return null
+  }
+}
+
+/** A `list_children` row of a child on another machine, from that machine's last view. */
+function remoteChildRow(
+  c: HubChildRow,
+  plan: { agent: string; machine: string } | null,
+  there: HubRemoteChildFacts,
+  wake: { kind: string; summary: string } | null,
+  conflicts: ChildConflict[] | null,
+) {
+  const s = there.state
+  const age = there.ageMs === null ? null : Math.round(there.ageMs / 1000)
+  return {
+    childId: c.childId,
+    title: c.title,
+    phase: s?.waitingForSlot ? `waiting for a run slot on ${there.machine}` : c.phase,
+    ...(s ? { state: s.state } : {}),
+    agent: plan?.agent ?? null,
+    machine: there.machine,
+    machineStatus: there.stopping
+      ? `stopping on ${there.machine}`
+      : there.connected
+        ? 'connected'
+        : `not connected${age === null ? '' : `, this view is ${age} s old`}`,
+    ...(age !== null && there.connected ? { viewAgeSec: age } : {}),
+    account: s?.account ?? c.providerInstanceId,
+    model: s?.model ?? c.requestedModel,
+    mode: s?.mode ?? c.grantedMode,
+    location: c.location,
+    branch: s?.branch ?? c.branch,
+    base: c.baseRef,
+    worktree: s?.worktree ?? null,
+    ...(s?.git ?? {}),
+    lastTurn: s?.lastTurn ? { contextTokens: s.lastTurn.usedTokens, knownCostUsd: s.lastTurn.costUsd } : null,
+    resources: s?.resources ?? null,
+    diskMb: s?.diskMb ?? null,
+    lastActivityAt: s?.lastActivityAt ? new Date(s.lastActivityAt).toISOString() : null,
+    limit: s && s.limit !== 'none' ? s.limit : null,
+    nativeSubagents: s?.nativeSubagents ?? { running: 0, done: 0, failed: 0 },
+    lastUpdate: wake ? { kind: wake.kind, summary: wake.summary } : (s?.lastWake ?? null),
+    conflicts,
   }
 }

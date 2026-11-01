@@ -51,6 +51,10 @@ export const PERF_THRESHOLDS = {
   'hub.remote-start': 0,
   // One desktop pull of a machine's outbox: pages, items, the oldest item's age, outcome.
   'hub.outbox-pull': 0,
+  // The pending stops of one machine sent on its connect: rows, sent, outcome.
+  'hub.remote-pending': 0,
+  // A parent's message to its child on another machine, after the charge here: delivery, outcome.
+  'hub.remote-deliver': 200,
   ipc: 200,
 } as const
 

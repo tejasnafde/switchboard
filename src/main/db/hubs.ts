@@ -115,6 +115,15 @@ export function ensureHubSchema(db: Database.Database): void {
       imported_at INTEGER NOT NULL,
       PRIMARY KEY (machine_id, remote_id)
     );
+    CREATE TABLE IF NOT EXISTS hub_remote_pending (
+      machine_id   TEXT NOT NULL,
+      kind         TEXT NOT NULL,
+      target_id    TEXT NOT NULL,
+      parent_id    TEXT NOT NULL,
+      payload_json TEXT,
+      created_at   INTEGER NOT NULL,
+      PRIMARY KEY (machine_id, kind, target_id)
+    );
   `)
   moveStubWakesToOutbox(db)
 }
@@ -947,4 +956,75 @@ export function setHubRemoteImportOutcome(
   getDb()
     .prepare('UPDATE hub_remote_imports SET outcome = ?, reason = ? WHERE machine_id = ? AND remote_id = ?')
     .run(outcome, reason, machineId, remoteId)
+}
+
+// ─── hub_remote_pending (desktop) ───────────────────────────────
+//
+// A Stop, a settle or a stop-all for a machine that is not connected waits
+// here and is sent on that machine's next connect, before anything else.
+// One row per (machine, kind, target): a second Stop of the same child is the
+// same row. Survives a restart.
+
+export type HubRemotePendingKind = 'stop' | 'settle' | 'stop_all'
+
+export interface HubRemotePendingRow {
+  machineId: string
+  kind: HubRemotePendingKind
+  /** The child for `stop` and `settle`, the parent for `stop_all`. */
+  targetId: string
+  parentId: string
+  /** `settle`: `{ parentHead }`. */
+  payload: Record<string, unknown> | null
+  createdAt: number
+}
+
+export function addHubRemotePending(p: Omit<HubRemotePendingRow, 'createdAt'>): void {
+  getDb()
+    .prepare(
+      `INSERT INTO hub_remote_pending (machine_id, kind, target_id, parent_id, payload_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(machine_id, kind, target_id) DO UPDATE SET payload_json = excluded.payload_json`,
+    )
+    .run(p.machineId, p.kind, p.targetId, p.parentId, p.payload ? JSON.stringify(p.payload) : null, Date.now())
+}
+
+export function listHubRemotePending(machineId?: string): HubRemotePendingRow[] {
+  const rows = (
+    machineId === undefined
+      ? getDb().prepare('SELECT * FROM hub_remote_pending ORDER BY created_at')
+      : getDb().prepare('SELECT * FROM hub_remote_pending WHERE machine_id = ? ORDER BY created_at')
+  ).all(...(machineId === undefined ? [] : [machineId])) as Array<{
+    machine_id: string
+    kind: string
+    target_id: string
+    parent_id: string
+    payload_json: string | null
+    created_at: number
+  }>
+  return rows.flatMap((r) => {
+    if (r.kind !== 'stop' && r.kind !== 'settle' && r.kind !== 'stop_all') return []
+    let payload: Record<string, unknown> | null = null
+    try {
+      const parsed: unknown = r.payload_json ? JSON.parse(r.payload_json) : null
+      payload = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null
+    } catch (err) {
+      log.warn('a pending remote stop has a payload that does not parse', err)
+    }
+    return [
+      {
+        machineId: r.machine_id,
+        kind: r.kind,
+        targetId: r.target_id,
+        parentId: r.parent_id,
+        payload,
+        createdAt: r.created_at,
+      },
+    ]
+  })
+}
+
+export function deleteHubRemotePending(machineId: string, kind: HubRemotePendingKind, targetId: string): void {
+  getDb()
+    .prepare('DELETE FROM hub_remote_pending WHERE machine_id = ? AND kind = ? AND target_id = ?')
+    .run(machineId, kind, targetId)
 }
