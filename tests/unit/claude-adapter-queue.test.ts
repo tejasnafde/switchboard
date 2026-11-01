@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { ClaudeAdapter } from '../../src/main/provider/adapters/claude-adapter'
 import { TurnWatchdog, StderrTail } from '../../src/main/provider/turn-watchdog'
+import { LogLines } from '../../src/main/secrets/log-redaction'
 
 function makeActive(query: unknown) {
   return {
@@ -28,6 +29,7 @@ function makeActive(query: unknown) {
     instanceOauthDir: null,
     watchdog: new TurnWatchdog(180_000, () => {}),
     stderrTail: new StderrTail(2_000),
+    stderrLog: new LogLines(() => {}),
   }
 }
 
