@@ -26,7 +26,7 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
   return { ...actual, remoteProviderLoginPrompt: () => null }
 })
 
-const hubFlag = vi.hoisted(() => ({ on: true, wakes: [] as Array<Record<string, unknown>> }))
+const hubFlag = vi.hoisted(() => ({ on: true, remote: false, wakes: [] as Array<Record<string, unknown>> }))
 
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
@@ -41,7 +41,10 @@ vi.mock('../../src/main/db/database', () => ({
   getConversationReasoningEffort: () => null,
   getConversationAgentType: () => null,
   getConversationProviderInstanceId: () => null,
-  getSetting: (key: string) => (key === 'labs.hub_children' && hubFlag.on ? 'true' : null),
+  getSetting: (key: string) =>
+    (key === 'labs.hub_children' && hubFlag.on) || (key === 'labs.hub_remote_children' && hubFlag.remote)
+      ? 'true'
+      : null,
   getConversationExecutionRoot: () => null,
   commitConversationExecutionRoot: () => {},
   commitConversationProviderSwitch: () => {},
@@ -81,6 +84,7 @@ import type { RuntimeEvent } from '../../src/shared/provider-events'
 import type { SwitchboardMcpServer } from '../../src/main/mcp/switchboard-mcp-server'
 import type { McpTool } from '../../src/main/mcp/mcp-session'
 import { CHILD_READ_ONLY_CODE, EMPTY_HUB_VIEW, type HubChatView } from '../../src/shared/hub'
+import type { RemoteHubClients } from '../../src/main/hub/remote-hub-clients'
 
 class FakeHost implements BackendHost {
   private readonly handlers = new Map<string, (...args: unknown[]) => unknown>()
@@ -150,10 +154,11 @@ function fakeMcp() {
   return { opened, server: server as unknown as SwitchboardMcpServer }
 }
 
-function setup() {
+function setup(hubClients?: RemoteHubClients | null) {
   const host = new FakeHost()
   const mcp = fakeMcp()
   const registry = new ProviderRegistry(host, new Map([['claude', new Adapter()]]), undefined, undefined, mcp.server)
+  if (hubClients) registry.setRemoteHubClients(hubClients)
   registry.registerIpcHandlers()
   return { host, mcp }
 }
@@ -333,6 +338,46 @@ describe('the hub view', () => {
       expect(await host.invoke(ProviderChannels.HUB_LIST_CHILDREN, 'child1')).toEqual(EMPTY_HUB_VIEW)
     } finally {
       hubFlag.on = true
+    }
+  })
+})
+
+describe('list_machines exposure', () => {
+  const hubClients = { entries: async () => [] } as unknown as RemoteHubClients
+
+  async function toolsOf(threadId: string, clients: RemoteHubClients | null = hubClients) {
+    const { host, mcp } = setup(clients)
+    await host.invoke(ProviderChannels.START_SESSION, { threadId, provider: 'claude', cwd: '/tmp' })
+    const opened = mcp.opened.get(threadId)!
+    return { names: opened.tools.map((t) => t.name), instructions: opened.instructions ?? '' }
+  }
+
+  it('is offered to a desktop parent while hub_remote_children is on, with one more instruction line', async () => {
+    hubFlag.remote = true
+    try {
+      const on = await toolsOf('parent1')
+      expect(on.names).toContain('list_machines')
+      expect(on.instructions).toContain('list_machines shows the machines')
+      hubFlag.remote = false
+      const off = await toolsOf('parent1')
+      expect(off.names).not.toContain('list_machines')
+      expect(off.instructions).not.toContain('list_machines')
+      expect(on.instructions.startsWith(off.instructions)).toBe(true)
+    } finally {
+      hubFlag.remote = false
+    }
+  })
+
+  it('is absent on an open child, on a VM backend and without the hub client', async () => {
+    hubFlag.remote = true
+    try {
+      expect((await toolsOf('child1')).names).not.toContain('list_machines')
+      expect((await toolsOf('parent1', null)).names).not.toContain('list_machines')
+      vi.stubEnv('SWITCHBOARD_REMOTE', '1')
+      expect((await toolsOf('parent1')).names).not.toContain('list_machines')
+    } finally {
+      vi.unstubAllEnvs()
+      hubFlag.remote = false
     }
   })
 })

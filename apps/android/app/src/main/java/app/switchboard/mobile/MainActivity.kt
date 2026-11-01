@@ -54,6 +54,8 @@ class MainActivity : FragmentActivity() {
             registerViewingRenewal = switchboardApplication::registerViewingLeaseRenewal,
             followUpDefault = switchboardApplication.followUpDefault,
             persistFollowUpDefault = switchboardApplication::setFollowUpDefault,
+            phoneLiveRun = switchboardApplication.phoneLiveRun,
+            persistPhoneLiveRun = switchboardApplication::setPhoneLiveRun,
             seedPending = switchboardApplication::seedPendingRequests,
             refreshStatuses = switchboardApplication::refreshLiveStatuses,
             persistPreference = switchboardApplication::savePreference,

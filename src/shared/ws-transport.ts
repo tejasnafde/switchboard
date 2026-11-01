@@ -20,6 +20,7 @@
  */
 import { encodeFrame, decodeFrame, type WsFrame } from './ws-protocol'
 import type { DeviceIdentity } from './device-identity'
+import type { DeviceScope } from './device-auth'
 import { reconnectDelay } from './backoff'
 import type { Transport } from './transport'
 import { createLogger } from './logger'
@@ -53,6 +54,8 @@ export interface WsAuth {
   pairing?: string
   label?: string
   device?: DeviceIdentity
+  /** Narrows the server token (the hub client asks for `['hub']`). */
+  scopes?: DeviceScope[]
 }
 
 export interface WsReconnectOptions {
@@ -169,6 +172,10 @@ export class WsTransport implements Transport {
   /** The minted session is transmitted exactly once, so the owner must persist
    *  it here or the device has to pair again. */
   onSessionIssued: ((session: string) => void) | null = null
+  /** The scopes each accepted `authed` granted, on every (re)connect. */
+  onAuthed: ((scopes: string[]) => void) | null = null
+  /** Fired on each `ready`, once its capabilities are readable. */
+  onBackendReady: (() => void) | null = null
   private readonly watchdog: ReturnType<typeof setInterval>
 
   private reconnecting = false
@@ -522,6 +529,7 @@ export class WsTransport implements Transport {
         this.auth = { session: frame.session, device: this.auth?.device }
         this.onSessionIssued?.(frame.session)
       }
+      this.onAuthed?.(frame.scopes)
       return
     }
     if (frame.k === 'evt') {
@@ -536,6 +544,7 @@ export class WsTransport implements Transport {
 
   private onReady(frame: Extract<WsFrame, { k: 'ready' }>): void {
     this.capabilities = new Set(frame.capabilities ?? [])
+    this.onBackendReady?.()
     const epochChanged = this.epoch !== null && this.epoch !== frame.epoch
     this.epoch = frame.epoch
     if (epochChanged || frame.gap) {

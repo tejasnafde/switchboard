@@ -1,4 +1,4 @@
-import { contextBridge, webUtils } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IpcTransport, type Transport } from './transport'
 import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
@@ -527,7 +527,10 @@ const api = {
      *  its tunnel port, so a same-URL event on a still-alive transport keeps it
      *  (subscriptions survive the blip). A moved URL or a terminally-closed
      *  transport is torn down and replaced. */
-    connectMachine: (machineId: string, url: string): void => {
+    connectMachine: (machineId: string, tunnelUrl: string): void => {
+      // In-band auth, so the token never sits in a URL. A backend without a
+      // token ignores the flag.
+      const url = `${tunnelUrl}/?auth=frame`
       const existing = remoteTransports.get(machineId)
       if (!shouldReplaceTransport(existing, url)) return
       if (existing) {
@@ -535,7 +538,9 @@ const api = {
         existing.close()
         remoteTransports.delete(machineId)
       }
-      const ws = new WsTransport(url)
+      // ponytail: one synchronous IPC per connect; main answers from memory.
+      const token = ipcRenderer.sendSync(MachineChannels.BACKEND_TOKEN, machineId) as string | null
+      const ws = new WsTransport(url, undefined, undefined, token ? { session: token } : null)
       ws.onResumeGap = () => notifyResumeGap(machineId)
       remoteTransports.set(machineId, ws)
       router.register(machineId, ws)

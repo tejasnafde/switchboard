@@ -239,6 +239,8 @@ export interface PhoneLiveCandidate {
   runPressed: boolean
   /** Shown in the full-screen view. */
   fullScreen: boolean
+  /** This frame holds the slot now. */
+  active?: boolean
 }
 
 export interface PhoneLiveConditions {
@@ -254,19 +256,21 @@ export interface PhoneLiveConditions {
  * The one page a phone runs, or null. The full-screen view takes the slot.
  * Otherwise the most visible frame runs once the list is still, unless it
  * needs Run: on a low-RAM phone, and after a crash (no auto-retry). A key that
- * crashed twice never runs again this app run.
+ * crashed twice never runs again this app run. While the list moves, the
+ * active frame keeps the slot until it leaves view: its own height report
+ * moves the list.
  */
 export function phoneLiveRunning(candidates: readonly PhoneLiveCandidate[], when: PhoneLiveConditions): string | null {
   const allowed = candidates.filter((c) => (when.crashes.get(c.key) ?? 0) < PHONE_LIVE_MAX_CRASHES)
   const full = allowed.find((c) => c.fullScreen)
   if (full) return full.key
-  if (when.listStillMs < PHONE_LIVE_STILL_MS) return null
+  const eligible = allowed.filter(
+    (c) =>
+      c.visible >= PHONE_LIVE_MIN_VISIBLE && (c.runPressed || (!when.lowRam && (when.crashes.get(c.key) ?? 0) === 0)),
+  )
+  if (when.listStillMs < PHONE_LIVE_STILL_MS) return eligible.find((c) => c.active)?.key ?? null
   let best: PhoneLiveCandidate | null = null
-  for (const c of allowed) {
-    if (c.visible < PHONE_LIVE_MIN_VISIBLE) continue
-    if (!c.runPressed && (when.lowRam || (when.crashes.get(c.key) ?? 0) > 0)) continue
-    if (!best || c.visible > best.visible) best = c
-  }
+  for (const c of eligible) if (!best || c.visible > best.visible) best = c
   return best?.key ?? null
 }
 

@@ -74,6 +74,29 @@ describe('WsHost token auth', () => {
     expect(called).toBe(false)
   })
 
+  it('accepts the server token in an auth frame, with full scopes', async () => {
+    const { port } = await boot('s3cret')
+    const verdict = await new Promise<unknown>((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/?auth=frame`)
+      ws.on('open', () => ws.send(JSON.stringify({ k: 'auth', session: 's3cret' })))
+      ws.on('message', (data) => {
+        ws.close()
+        resolve(JSON.parse(String(data)))
+      })
+    })
+    expect(verdict).toEqual({ k: 'authed', ok: true, scopes: ['chat', 'terminal', 'admin'] })
+  })
+
+  it('closes 4001 on a wrong server token in an auth frame', async () => {
+    const { port } = await boot('s3cret')
+    const code = await new Promise<number>((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/?auth=frame`)
+      ws.on('open', () => ws.send(JSON.stringify({ k: 'auth', session: 'nope' })))
+      ws.on('close', (c) => resolve(c))
+    })
+    expect(code).toBe(4001)
+  })
+
   it('tokenless host keeps the open trust model', async () => {
     const { port } = await boot()
     expect(await dial(`ws://127.0.0.1:${port}/`)).toBe('open')

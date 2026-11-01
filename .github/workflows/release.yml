@@ -100,7 +100,7 @@ jobs:
     if: always() && needs.prepare_release.result == 'success'
     uses: ./.github/workflows/release-build.yml
     with:
-      os: macos-14
+      os: macos-15
     secrets: inherit
 
   # windows-2022, not windows-latest: windows-2025 ships no VC++ build toolchain,
