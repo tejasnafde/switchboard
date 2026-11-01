@@ -38,6 +38,7 @@ import {
   type HubSettleView,
 } from '@shared/hub'
 import { HUB_REMOTE_SETTLE_LATER_TEXT } from '@shared/hub-remote'
+import { asThisMachine } from '../backend/request-context'
 import {
   archiveConversation,
   getConversationById,
@@ -168,12 +169,10 @@ export class HubSettler {
       const stopped = children.filter((c) => !failed.includes(c))
       // Read after the stops, so an agent cut off mid-write is judged by what it left.
       const rows = await Promise.all(stopped.map((c) => this.row(c, parentCwd, opts)))
+      const settleJson = (row: HubSettleRowView) =>
+        JSON.stringify({ worktree: row.worktree, keepReason: row.keepReason ?? null })
       for (const [i, child] of stopped.entries()) {
-        updateHubChild(child.childId, {
-          phase: 'settled',
-          settledAt: Date.now(),
-          settleJson: JSON.stringify({ worktree: rows[i]!.worktree, keepReason: rows[i]!.keepReason ?? null }),
-        })
+        updateHubChild(child.childId, { phase: 'settled', settledAt: Date.now(), settleJson: settleJson(rows[i]!) })
         archiveConversation(child.childId)
         this.host.forget(child.childId)
       }
@@ -182,7 +181,9 @@ export class HubSettler {
       for (const [i, row] of rows.entries()) {
         if (row.worktree !== 'remove') continue
         const problem = await this.removeWorktree(stopped[i]!)
-        if (problem) Object.assign(row, { worktree: 'keep', keepReason: problem })
+        if (!problem) continue
+        Object.assign(row, { worktree: 'keep', keepReason: problem })
+        updateHubChild(stopped[i]!.childId, { settleJson: settleJson(row) })
       }
       rows.push(...remoteRows.rows)
       const removed = rows.filter((r) => r.worktree === 'remove').length
@@ -308,7 +309,12 @@ export class HubSettler {
     }
   }
 
-  /** Null when the worktree is gone; else why it stays. */
+  /**
+   * Null when the worktree is gone; else why it stays. The removal is this
+   * machine's own (`asThisMachine`), also when a hub on another machine asked
+   * for the settle: the creation is the one this machine's hub made for this
+   * child row, and the settle rules chose it.
+   */
   private async removeWorktree(child: HubChildRow): Promise<string | null> {
     const service = hubWorktrees()
     if (!service) return 'the worktree service is not ready'
@@ -317,13 +323,13 @@ export class HubSettler {
     try {
       // A chat may have opened the worktree since the plan read it.
       if (worktree && otherWorktreeUsers(worktree, child.childId) > 0) return 'another chat or card works in it'
-      if (worktree) await removeDependencyLinks(worktree)
       const snapshot = await service.getWorktreeCreation(key)
-      const done = await service.actOnWorktreeCreation({
-        ...key,
-        expectedRevision: snapshot.revision,
-        action: 'remove',
-      })
+      if (snapshot.owner.kind !== 'conversation' || snapshot.owner.conversationId !== child.childId)
+        return 'the worktree was not made for this child'
+      if (worktree) await removeDependencyLinks(worktree)
+      const done = await asThisMachine(() =>
+        service.actOnWorktreeCreation({ ...key, expectedRevision: snapshot.revision, action: 'remove' }),
+      )
       if (done.cleanupDisposition === 'removed') return null
       return done.error?.message ?? 'git refused to remove it'
     } catch (err) {

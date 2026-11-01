@@ -795,13 +795,16 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   /**
-   * An archive of a parent: each machine with its children stops all of them
-   * there (`hub-remote:stop-all`, kept pending while that machine is not
-   * connected). A failure is logged; the archive goes on.
+   * An archive of a parent: each machine with any of its children, settled
+   * ones too (the settle before an archive settles them all), stops all of
+   * them there (`hub-remote:stop-all`, idempotent, kept pending while that
+   * machine is not connected). A failure is logged; the archive goes on.
    */
   private async stopRemoteChildrenForArchive(parentId: string): Promise<void> {
     const machines = new Set(
-      listHubChildren(parentId).flatMap((c) => (c.machineId && this.remoteControlOf(c) ? [c.machineId] : [])),
+      listHubChildren(parentId, { includeSettled: true }).flatMap((c) =>
+        c.machineId && this.remoteControlOf(c) ? [c.machineId] : [],
+      ),
     )
     await Promise.all(
       [...machines].map(async (machineId) => {

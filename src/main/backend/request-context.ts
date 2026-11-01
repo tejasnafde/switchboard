@@ -25,6 +25,15 @@ export function withBackendRequestContext<T>(context: BackendRequestContext, fn:
   return requestContext.run(context, fn)
 }
 
+/**
+ * Runs `fn` as this machine's own work, not as the request that led to it:
+ * scope checks inside see a local caller. Only for work whose target this
+ * machine chose and checked itself, never a target a request named.
+ */
+export function asThisMachine<T>(fn: () => T): T {
+  return requestContext.run({ clientScope: 'machine' }, fn)
+}
+
 export function hashClientScope(kind: string, rawIdentity: string): string {
   return `${kind}:${createHash('sha256').update(rawIdentity).digest('hex')}`
 }

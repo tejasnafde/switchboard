@@ -75,8 +75,10 @@ vi.mock('../../src/main/db/database', () => ({
   openChildParentId: (id: string) => children.find((c) => c.childId === id)?.parentId ?? null,
   listHubChildrenInPhase: (phase: string) => children.filter((c) => c.phase === phase),
   threadFamilyIds: (id: string) => [id],
-  listHubChildren: (parentId: string) =>
-    state.remoteFlag || state.listAll ? children.filter((c) => c.parentId === parentId && c.phase !== 'settled') : [],
+  listHubChildren: (parentId: string, opts?: { includeSettled?: boolean }) =>
+    state.remoteFlag || state.listAll
+      ? children.filter((c) => c.parentId === parentId && (opts?.includeSettled || c.phase !== 'settled'))
+      : [],
   setHubParentHeld: (parentId: string) => state.held.push(parentId),
   lastHubWakes: () => new Map(),
   listPendingHubWakes: () => [],
@@ -440,6 +442,33 @@ describe('archive of a parent with children on another machine', () => {
     expect(await registry.settleBeforeArchive('parent1')).toBeNull()
     expect(settles).toEqual(['parent1'])
     expect(control.calls).toEqual([{ op: 'stopAll', args: ['vm1', 'parent1'] }])
+  })
+
+  it('sends stop-all once per machine, also when the settle before it settled every child', async () => {
+    const { registry, internals } = await setup()
+    state.remoteFlag = true
+    const control = fakeControl()
+    internals.hubRemote = control
+    const added = [
+      { childId: 'a1', parentId: 'parent3', title: 'A1', phase: 'open', machineId: 'vm1' },
+      { childId: 'a2', parentId: 'parent3', title: 'A2', phase: 'open', machineId: 'vm1' },
+      { childId: 'b1', parentId: 'parent3', title: 'B1', phase: 'open', machineId: 'vm2' },
+      { childId: 'l1', parentId: 'parent3', title: 'L1', phase: 'open', machineId: null },
+    ]
+    children.push(...added)
+    try {
+      internals.settleChildren = async () => {
+        for (const c of added) c.phase = 'settled'
+        return { status: 'done', text: '' }
+      }
+      expect(await registry.settleBeforeArchive('parent3')).toBeNull()
+      expect(control.calls).toEqual([
+        { op: 'stopAll', args: ['vm1', 'parent3'] },
+        { op: 'stopAll', args: ['vm2', 'parent3'] },
+      ])
+    } finally {
+      children.splice(children.length - added.length, added.length)
+    }
   })
 
   it('sends nothing there with the flag off', async () => {
