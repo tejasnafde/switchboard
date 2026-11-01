@@ -263,6 +263,11 @@ export class HubStarter {
     return this.parentOfOpenChild(threadId) !== null
   }
 
+  /** The run-slot key of each child with a turn in flight now. */
+  runningSlotKeys(): string[] {
+    return [...this.running.values()].map((r) => r.providerInstanceId)
+  }
+
   waitingForSlot(childId: string): boolean {
     return this.waiting.some((w) => w.childId === childId)
   }

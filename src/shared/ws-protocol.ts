@@ -18,6 +18,7 @@
  *    "start over".
  */
 import { parseDeviceIdentity, type DeviceIdentity } from './device-identity'
+import { isDeviceScope, type DeviceScope } from './device-auth'
 
 /**
  * Channels excluded from the replay buffer. Terminal output is high-volume and
@@ -106,6 +107,11 @@ export const BACKEND_CAPABILITIES = [
    *  extends or deletes a saved secret (`AGENT_SECRET_REQUEST_CAPABILITY` in
    *  shared/agent-secret-request). Admin scope only; phones cannot answer. */
   'agent_secret_request_v1',
+  /** The backend answers `hub-remote:*` (`HubRemoteChannels`) to a session
+   *  holding `hub` or `admin`, and the server token's auth frame may narrow it
+   *  to `scopes: ['hub']`. Starting a child is gated by `hub_remote_children`
+   *  on this machine; `hub-remote:describe` answers with the flag off too. */
+  'hub_remote_child_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {
@@ -134,9 +140,11 @@ export type WsFrame =
    * logs and process listings. `pairing` is the one-time QR code, exchanged
    * once for a `session`, which every later connect presents. `device` is the
    * phone's identity (shared/device-identity), on the pair and every session
-   * auth.
+   * auth. `scopes` narrows the server token (the hub client asks for
+   * `['hub']`); a device session or a pairing ignores it. An older backend
+   * drops it and grants the token's full set, so the client checks `authed`.
    */
-  | { k: 'auth'; session?: string; pairing?: string; label?: string; device?: DeviceIdentity }
+  | { k: 'auth'; session?: string; pairing?: string; label?: string; device?: DeviceIdentity; scopes?: DeviceScope[] }
   /** Verdict. `session` carries the minted token on a pairing exchange, which
    *  is the only time it is transmitted. */
   | { k: 'authed'; ok: true; session?: string; scopes: string[] }
@@ -225,7 +233,10 @@ export function decodeFrame(data: string): WsFrame | null {
       // A malformed identity is dropped, not fatal: it is display data, and
       // refusing the credential over it would lock a phone out.
       const device = parseDeviceIdentity(frame.device) ?? undefined
-      return { k: 'auth', session, pairing, label, ...(device ? { device } : {}) }
+      // Unknown names are dropped, not fatal: a newer client may ask for a
+      // scope this backend does not know, and narrowing only ever takes away.
+      const scopes = Array.isArray(frame.scopes) ? frame.scopes.filter(isDeviceScope) : undefined
+      return { k: 'auth', session, pairing, label, ...(device ? { device } : {}), ...(scopes ? { scopes } : {}) }
     }
     case 'authed': {
       if (frame.ok === true) {

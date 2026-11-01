@@ -185,6 +185,31 @@ current scopes, so a phone learns a grant without reconnecting. The IAP TCP
 host runs with `PHONE_SCOPES` and never holds `pr-write`. What a write must
 carry is in `src/main/pull-requests/AGENTS.md` (Phone writes).
 
+## Hub client scope (`hub`, `hub_remote_child_v1`)
+
+`DeviceScope` `'hub'` is what one desktop's hub client holds on another
+machine's backend. `isChannelAllowed` opens `hub-remote:*` (`HubRemoteChannels`)
+to `hub` or `admin` only, and requires `chat` for every other channel, so a
+session with only `['hub']` reaches `hub-remote:*` and nothing else: no
+`terminal:*`, settings, accounts, chats, pull requests or pairing. Events
+follow the same rule in `WsHost.emit` and the resume filter. Every other scope
+set holds `chat`: `PHONE_SCOPES`, `FULL_SCOPES`, the IAP TCP host, the server
+token, and stored device sessions (`deviceSessionScopes` adds `chat` to a row
+without it and drops `hub`). Only the server token grants `hub`: its auth frame
+may carry `scopes`, and `WsHost` grants the asked scopes it holds
+(`narrowTokenScopes`; `hub` counts as held when the token has `admin`), and
+refuses the auth when none is left. A device session or a pairing ignores
+`scopes`, and `WsHost` strips `hub` from any device credential, so a phone never
+holds it. An older backend drops `scopes` and grants the token's full set, so
+the hub client accepts only an `authed` of exactly `['hub']`
+(`isHubAuthGrant` in `shared/hub-remote.ts`). `hub-remote:describe`
+(`main/hub/hub-remote-describe.ts`, registered by `ProviderRegistry` on the
+desktop and the headless server) answers a `HubMachineDescription`: flag,
+OS, architecture, backend version, agents with an enabled account and their
+catalog models, up to 200 projects with branch and fetch remote URLs, free
+disk, open children and run slots. It never holds a host name, cloud project,
+zone or user name, and answers with `hub_remote_children` off too.
+
 ## Device identity (`device_identity_v1`)
 
 Phones send `device { installId, name, manufacturer, model, platform,
