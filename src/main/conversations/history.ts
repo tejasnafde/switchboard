@@ -252,7 +252,7 @@ function maskedMessages(conversationId: string, messages: ChatMessage[]): ChatMe
   return scope === null ? messages : maskMessages(scope, messages)
 }
 
-function maskMessages(scope: SecretScope, messages: ChatMessage[]): ChatMessage[] {
+export function maskMessages(scope: SecretScope, messages: ChatMessage[]): ChatMessage[] {
   const masked = secretRedactor.redactDeep(scope, messages).value
   return masked === messages ? messages : masked.map((message, i) => withoutRevert(message, messages[i]))
 }

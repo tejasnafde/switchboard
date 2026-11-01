@@ -50,6 +50,7 @@ import {
   type SessionConfigOption,
 } from '@agentclientprotocol/sdk'
 import { createMainLogger as createLogger } from '../../../logger'
+import { LogLines, maskLog } from '../../../secrets/log-redaction'
 import { secretsRootDir } from '../../../runtime'
 import type {
   ProviderAdapter,
@@ -87,7 +88,9 @@ const LOG_PAYLOAD_LIMIT = 4000
 /** ACP's JSON-RPC error code for "authentication required". */
 const ACP_AUTH_REQUIRED = -32000
 
-function truncate(v: string): string {
+/** Masked before the cut, so a truncated line never keeps part of a saved secret. */
+function truncate(raw: string): string {
+  const v = maskLog(raw)
   return v.length > LOG_PAYLOAD_LIMIT ? `${v.slice(0, LOG_PAYLOAD_LIMIT)}…<truncated>` : v
 }
 
@@ -532,11 +535,11 @@ export class AcpAdapter implements ProviderAdapter {
     active.child = child
     log.info(`spawned ${this.provider} acp pid=${child.pid} cwd=${spawnCwd}`)
 
-    child.stderr.on('data', (data: Buffer) => {
-      log.info(`${this.provider} acp stderr: ${truncate(data.toString())}`)
-    })
+    const stderrLines = new LogLines((text) => log.info(`${this.provider} acp stderr: ${truncate(text)}`))
+    child.stderr.on('data', (data: Buffer) => stderrLines.push(data.toString()))
 
     child.on('close', (code) => {
+      stderrLines.end()
       log.info(`${this.provider} acp exited: code=${code} threadId=${opts.threadId}`)
       const wasActive = active.child !== null
       active.child = null

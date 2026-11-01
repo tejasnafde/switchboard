@@ -1,18 +1,28 @@
 /**
  * Runtime events with saved secrets masked, before the registry stores or
- * publishes them. Streamed text is matched with a carry: the last
- * (longest pattern - 1) characters of a message's deltas are held back, so a
- * value split across two deltas still matches. The held tail goes out ahead
- * of the thread's next event that ends or interrupts the message: another
- * message, a tool call, a card, an error, the turn end. Events that carry no
- * agent output (a Switchboard notice row, a repeated `running`, token counts,
- * a message the user queued) pass without releasing it.
+ * publishes them. Streamed text is matched with a carry: the tail of a
+ * message's deltas that could still grow into a match is held back
+ * (`SecretRedactor.holdFrom`), so a value split across two deltas still
+ * matches. Each stream (message id, stream kind, parent tool call) has its
+ * own carry, so another message, a reasoning message, a subagent's text or a
+ * tool call that arrives between two deltas does not release it. A held tail
+ * goes out when a snapshot replaces its message, when the thread holds more
+ * than `MAX_HELD_STREAMS` (the oldest), or when the turn stops (the turn end,
+ * an error, a card that waits for the user). Events that carry no agent
+ * output pass without releasing it.
  */
 import type { RuntimeContentEvent, RuntimeEvent } from '@shared/provider-events'
 import type { SecretRedactor, SecretScope } from './secret-redactor'
 
 /** Events that leave a streamed message open, so its held tail stays held. */
 const KEEPS_STREAM: ReadonlySet<RuntimeEvent['type']> = new Set([
+  'content',
+  'tool.started',
+  'tool.completed',
+  'tool.denied',
+  'file.edited',
+  'todo.updated',
+  'task.notification',
   'approval.result',
   'context_window',
   'session',
@@ -36,6 +46,9 @@ export interface RedactedEvents {
   masked: { where: SecretMaskWhere; path?: string } | null
 }
 
+/** Carries one thread keeps at most; past it the oldest is sent. */
+const MAX_HELD_STREAMS = 16
+
 interface Held {
   messageId: string
   streamKind: RuntimeContentEvent['streamKind']
@@ -52,8 +65,12 @@ function safeCut(text: string, at: number): number {
   return at
 }
 
+const streamKey = (e: { messageId: string; streamKind: string; parentToolCallId?: string }) =>
+  `${e.messageId}\u0000${e.streamKind}\u0000${e.parentToolCallId ?? ''}`
+
 export class RuntimeEventRedaction {
-  private readonly held = new Map<string, Held>()
+  /** Thread id to its held streams, by message id, stream kind and parent tool call, oldest first. */
+  private readonly held = new Map<string, Map<string, Held>>()
 
   constructor(
     private readonly redactor: SecretRedactor,
@@ -62,18 +79,21 @@ export class RuntimeEventRedaction {
 
   apply(event: RuntimeEvent): RedactedEvents {
     const events: RuntimeEvent[] = []
-    const held = this.held.get(event.threadId)
-    const sameStream =
-      held !== undefined &&
-      event.type === 'content' &&
-      event.append === true &&
-      event.messageId === held.messageId &&
-      event.streamKind === held.streamKind &&
-      event.parentToolCallId === held.parentToolCallId
-    if (held && !sameStream && !keepsStream(event)) {
-      this.held.delete(event.threadId)
-      if (held.text) events.push(heldEvent(event.threadId, held))
+    const streams = this.held.get(event.threadId)
+    let held: Held | undefined
+    if (streams && event.type === 'content') {
+      const key = streamKey(event)
+      const prior = streams.get(key)
+      if (prior && event.append === true) held = prior
+      else if (prior) {
+        streams.delete(key)
+        if (prior.text) events.push(heldEvent(event.threadId, prior))
+      }
+    } else if (streams && !keepsStream(event)) {
+      for (const prior of streams.values()) if (prior.text) events.push(heldEvent(event.threadId, prior))
+      streams.clear()
     }
+    if (streams?.size === 0) this.held.delete(event.threadId)
     if (!this.redactor.any()) {
       events.push(event)
       return { events, masked: null }
@@ -83,8 +103,7 @@ export class RuntimeEventRedaction {
       events.push(event)
       return { events, masked: null }
     }
-    if (event.type === 'content' && event.append === true)
-      return this.applyDelta(root, event, sameStream ? held : undefined, events)
+    if (event.type === 'content' && event.append === true) return this.applyDelta(root, event, held, events)
     const { event: next, masked } = this.maskWhole(root, event)
     events.push(next)
     return { events, masked }
@@ -122,14 +141,29 @@ export class RuntimeEventRedaction {
     const combined = (held?.text ?? '') + event.text
     const masked = this.redactor.redactText(root, combined)
     const text = masked ?? combined
-    const cut = safeCut(text, Math.max(0, text.length - (this.redactor.longest(root) - 1)))
-    this.held.set(event.threadId, {
-      messageId: event.messageId,
-      streamKind: event.streamKind,
-      ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}),
-      text: text.slice(cut),
-    })
+    const cut = safeCut(text, this.redactor.holdFrom(root, text))
+    let streams = this.held.get(event.threadId)
+    if (!streams) {
+      streams = new Map()
+      this.held.set(event.threadId, streams)
+    }
+    const key = streamKey(event)
+    streams.delete(key)
     if (cut > 0) events.push({ ...event, text: text.slice(0, cut) })
+    if (cut < text.length) {
+      streams.set(key, {
+        messageId: event.messageId,
+        streamKind: event.streamKind,
+        ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}),
+        text: text.slice(cut),
+      })
+      if (streams.size > MAX_HELD_STREAMS) {
+        const [oldestKey, oldest] = streams.entries().next().value as [string, Held]
+        streams.delete(oldestKey)
+        events.unshift(heldEvent(event.threadId, oldest))
+      }
+    }
+    if (streams.size === 0) this.held.delete(event.threadId)
     return { events, masked: masked === null ? null : { where: 'text' } }
   }
 }

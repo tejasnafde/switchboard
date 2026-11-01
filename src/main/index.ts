@@ -45,7 +45,8 @@ import { pruneAttachments } from './attachments'
 import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass } from './ipc/app-desktop'
 import { disposeSettingsFileSync, registerSettingsFileHandlers, settingsFileSync } from './ipc/settings-file'
 import { isSettingsFileKey } from '@shared/settings-file'
-import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
+import { HUB_REMOTE_CHILDREN_LABS_SETTING } from '@shared/hub'
+import { hubRemoteSettingChanged, registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
 import { registerFilesHandlers } from './ipc/files'
 import { registerProjectCloneHandlers } from './ipc/project-clone'
 import { ElectronIpcHost, type BackendHost } from './backend/host'
@@ -336,6 +337,7 @@ function desktopAppHandlerDeps(): AppHandlerDependencies {
 function onSettingChanged(key: string): void {
   if (key === KEYBOARD_OVERRIDES_SETTING) applyKeyboardOverrides()
   if (isSettingsFileKey(key)) settingsFileSync()?.onDbChanged()
+  if (key === HUB_REMOTE_CHILDREN_LABS_SETTING) hubRemoteSettingChanged()
 }
 
 // Custom protocol for onboarding tour videos. Must be registered as
@@ -1001,7 +1003,7 @@ app.whenReady().then(() => {
       return dir ? basename(dir) : null
     },
   )
-  registerMachineHandlers(backendHost)
+  const remoteHubClients = registerMachineHandlers(backendHost)
   registerAnalyticsHandlers(backendHost)
   registerDiagnosticsHandlers(backendHost, {
     livePtys: () => livePtyCount(),
@@ -1014,6 +1016,7 @@ app.whenReady().then(() => {
 
   // Provider registry - new agent bridge (SDK-based)
   providerRegistry = new ProviderRegistry(backendHost)
+  providerRegistry.setRemoteHubClients(remoteHubClients)
   worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(backendHost, () => providerRegistry)
   configureHubWorktrees(worktreeCreationRuntime)
   detachPush = attachPushNotifier(providerRegistry.bus, {
@@ -1072,7 +1075,7 @@ app.whenReady().then(() => {
       })
       registerWorktreeManagerHandlers(reactivatedHost)
       worktreeCreationRuntime?.registerHost(reactivatedHost)
-      registerMachineHandlers(reactivatedHost)
+      const reactivatedHubClients = registerMachineHandlers(reactivatedHost)
       registerAnalyticsHandlers(reactivatedHost)
       registerDiagnosticsHandlers(reactivatedHost, {
         livePtys: () => livePtyCount(),
@@ -1081,6 +1084,7 @@ app.whenReady().then(() => {
       registerAutoUpdater(mainWindow)
 
       providerRegistry = new ProviderRegistry(reactivatedHost)
+      providerRegistry.setRemoteHubClients(reactivatedHubClients)
       // New registry means a new bus. Without re-attaching, notifications stop
       // after the window has been closed and reopened once.
       detachPush?.()

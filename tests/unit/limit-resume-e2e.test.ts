@@ -83,6 +83,7 @@ import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../s
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 import { stripSenderLine } from '../../src/shared/sender-line'
 import type { TurnDelivery } from '../../src/shared/turn-delivery'
+import { LogLines } from '../../src/main/secrets/log-redaction'
 
 interface Case {
   name: string
@@ -126,6 +127,7 @@ function classify(provider: 'claude' | 'codex', frames: object[]): TurnLimit | u
       lastKnownModel: null,
       watchdog: new TurnWatchdog(180_000, () => {}),
       stderrTail: new StderrTail(2_000),
+      stderrLog: new LogLines(() => {}),
     }
     const adapter = new ClaudeAdapter()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

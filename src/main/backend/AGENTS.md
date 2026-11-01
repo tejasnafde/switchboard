@@ -208,7 +208,7 @@ desktop and the headless server) answers a `HubMachineDescription`: flag,
 OS, architecture, backend version, agents with an enabled account and their
 catalog models, up to 200 projects with branch and fetch remote URLs, free
 disk, open children and run slots. It never holds a host name, cloud project,
-zone or user name, and answers with `hub_remote_children` off too.
+zone or user name, and answers with `hub_remote_children` off too. The desktop's caller is `RemoteHubClients` (`main/hub/remote-hub-clients.ts`, see `src/main/mcp/AGENTS.md`, Machines).
 
 ## Device identity (`device_identity_v1`)
 

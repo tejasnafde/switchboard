@@ -30,6 +30,7 @@ import {
   asksForProviderKey,
   secretAnswerErrorText,
   secretFooterText,
+  secretStorageNotes,
   secretLineState,
   secretNameFromResultTitle,
   secretTimeLeftText,
@@ -174,6 +175,7 @@ function PendingSecretCard({
   }
 
   const footer = secretFooterText(card.ttl, machine)
+  const storageNotes = secretStorageNotes(card)
   return (
     <div
       {...{ [SECRET_CARD_ATTR]: '' }}
@@ -250,6 +252,11 @@ function PendingSecretCard({
       {error && (
         <div role="alert" className="px-3 pb-1 text-[12px] text-[var(--error)]">
           {error}
+        </div>
+      )}
+      {storageNotes.length > 0 && (
+        <div data-testid="secret-storage-note" className="px-3 pb-1 text-[11px] text-[var(--warning)]">
+          {storageNotes.join(' ')}
         </div>
       )}
       <div data-testid="secret-footer" className="px-3 pb-2 text-[11px] text-[var(--text-muted)]">

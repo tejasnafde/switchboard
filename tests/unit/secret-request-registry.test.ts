@@ -148,6 +148,9 @@ class FakeSecretStore {
   readonly saves: Array<{ threadId: string; name: string; value: string; cardId: string; machineId?: string | null }> =
     []
   readonly removedChats: string[] = []
+  limits() {
+    return {}
+  }
   readonly rows = new Map<
     string,
     {

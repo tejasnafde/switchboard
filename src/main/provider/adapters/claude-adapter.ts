@@ -35,6 +35,7 @@ import { homedir } from 'os'
 import { join, sep } from 'path'
 import { promisify } from 'util'
 import { createMainLogger as createLogger } from '../../logger'
+import { LogLines, maskLog } from '../../secrets/log-redaction'
 import {
   recordThreadSession,
   listSessionIdsForThread,
@@ -701,6 +702,8 @@ interface ActiveSession {
   watchdog: TurnWatchdog
   /** Rolling tail of the claude subprocess's stderr, attached to stall/error messages. */
   stderrTail: StderrTail
+  /** The subprocess's stderr, logged by whole lines so a saved secret split across chunks is masked. */
+  stderrLog: LogLines
   /** Consecutive turns `resolveResumePlacement` has tolerated a sibling io-error for; see MAX_ALTERNATE_IO_RETRIES. */
   resumeAlternateIoErrorStreak: number
   /** The visible conversation, for a session whose resume failed (see SessionStartOpts). */
@@ -846,6 +849,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       candidateOauthDirs: opts.candidateOauthDirs ?? [defaultClaudeDir()],
       watchdog,
       stderrTail,
+      stderrLog: new LogLines((text) => log.warn(`claude stderr: ${maskLog(text).slice(0, 500)}`)),
       resumeAlternateIoErrorStreak: 0,
       portableHistory: opts.portableHistory,
       resumedNative: Boolean(resumeId),
@@ -1048,7 +1052,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           const shaped = shapeQuestionAnswers(questions, userAnswers)
 
           log.info(
-            `question answered: ${threadId} requestId=${requestId} answers=${JSON.stringify(shaped.answers).slice(0, 300)}`,
+            `question answered: ${threadId} requestId=${requestId} answers=${maskLog(JSON.stringify(shaped.answers)).slice(0, 300)}`,
           )
           return {
             behavior: 'allow',
@@ -1268,7 +1272,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       // Buffered as well as logged, so a stall message can quote what the
       // subprocess actually said instead of leaving it in the dev log.
       stderr: (data: string) => {
-        log.warn(`claude stderr: ${data.slice(0, 500)}`)
+        active.stderrLog.push(data)
         active.stderrTail.push(data)
       },
     }
@@ -1895,6 +1899,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     }
 
     active.watchdog.turnEnded()
+    active.stderrLog.end()
 
     // Close the prompt queue so the SDK generator finishes naturally
     active.prompt.close()
