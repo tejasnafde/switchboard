@@ -18,7 +18,7 @@ vi.mock('../../src/main/logger', () => ({
 const db = await import('../../src/main/db/database')
 const { WsHost } = await import('../../src/main/backend/ws-host')
 const { RemoteHubClients } = await import('../../src/main/hub/remote-hub-clients')
-const { HubRemoteOutbox, MESSAGE_ATTEMPTS } = await import('../../src/main/hub/hub-remote-outbox')
+const { HubRemoteOutbox, MESSAGE_ATTEMPTS, PULL_FAILURE_RETRIES } = await import('../../src/main/hub/hub-remote-outbox')
 const { HubWakeScheduler } = await import('../../src/main/hub/hub-wakes')
 const { HubStarter } = await import('../../src/main/hub/hub-start')
 const { HubRemoteChannels } = await import('../../src/shared/ipc-channels')
@@ -515,7 +515,150 @@ describe('the outbox: pulls, acks and drops', () => {
   })
 })
 
+describe('the outbox: rows that do not parse, failed pulls and retries', () => {
+  it('leaves out a tool call id over the cap when a wake is written there', async () => {
+    const vm = await bootVm()
+    const d = desktop({ vm1: { url: vm.url } })
+    d.own('agent_c1', 'vm1')
+    vm.adopt('agent_c1', db.hubInstallId())
+    vm.wakes.record({
+      parentId: PARENT,
+      childId: 'agent_c1',
+      kind: 'report',
+      summary: 'long id',
+      pointer: { childId: 'agent_c1', toolCallId: 'x'.repeat(201), at: 7 },
+    })
+    await d.outbox.connected('vm1')
+    expect(db.listPendingHubWakes(PARENT).map((w) => w.pointer)).toEqual([{ childId: 'agent_c1', at: 7 }])
+    expect(vm.unacked()).toEqual([])
+  })
+
+  it('acks rows there that do not parse and pages past a page made only of them', async () => {
+    const vm = await bootVm()
+    const d = desktop({ vm1: { url: vm.url } }, { pageSize: 2 })
+    d.own('agent_c1', 'vm1')
+    vm.adopt('agent_c1', db.hubInstallId())
+    const bad = vm.dbm
+      .getDb()
+      .prepare(
+        "INSERT INTO hub_outbox (id, child_id, parent_id, kind, payload_json, created_at) VALUES (?, 'agent_c1', ?, 'wake', 'not json', 1)",
+      )
+    bad.run('ho_bad1', PARENT)
+    bad.run('ho_bad2', PARENT)
+    vm.report('agent_c1', 'after the bad rows')
+    expect(vm.dbm.listHubOutbox(db.hubInstallId(), { limit: 2 })).toMatchObject({
+      items: [],
+      malformed: ['ho_bad1', 'ho_bad2'],
+      cursor: 'ho_bad2',
+    })
+    await d.outbox.connected('vm1')
+    expect(db.listPendingHubWakes(PARENT).map((w) => w.summary)).toEqual(['after the bad rows'])
+    expect(vm.unacked()).toEqual([])
+  })
+
+  it('pages after the last item when the machine answers no cursor', async () => {
+    const vm = await bootVm()
+    const d = desktop(
+      { vm1: { url: vm.url } },
+      {
+        pageSize: 2,
+        intercept: (channel, args) => {
+          if (channel !== HubRemoteChannels.OUTBOX_PULL) return undefined
+          return d.clients.invoke('vm1', channel, ...args).then((a) => ({ items: (a as { items: unknown[] }).items }))
+        },
+      },
+    )
+    d.own('agent_c1', 'vm1')
+    vm.adopt('agent_c1', db.hubInstallId())
+    for (let i = 0; i < 5; i++) vm.report('agent_c1', `r${i}`)
+    await d.outbox.connected('vm1')
+    expect(db.listPendingHubWakes(PARENT).map((w) => w.summary)).toEqual(['r0', 'r1', 'r2', 'r3', 'r4'])
+    expect(pulls(d)).toHaveLength(3)
+  })
+
+  it('keeps an import record however old it is, so a lost ack never imports twice', async () => {
+    const vm = await bootVm()
+    let lose = true
+    const d = desktop(
+      { vm1: { url: vm.url } },
+      {
+        intercept: (channel) => {
+          if (channel !== HubRemoteChannels.OUTBOX_ACK || !lose) return undefined
+          lose = false
+          return Promise.reject(new Error('the socket dropped'))
+        },
+      },
+    )
+    d.own('agent_c1', 'vm1')
+    vm.adopt('agent_c1', db.hubInstallId())
+    vm.report('agent_c1', 'once')
+    await d.outbox.connected('vm1')
+    db.getDb().prepare('UPDATE hub_remote_imports SET imported_at = 0').run()
+    // A later launch: a new importer, and the item still unacked there.
+    const again = new HubRemoteOutbox(d.host)
+    cleanups.push(() => again.dispose())
+    await again.connected('vm1')
+    expect(db.listPendingHubWakes(PARENT)).toHaveLength(1)
+    expect(vm.unacked()).toEqual([])
+  })
+
+  it('tries a pull that threw again on the timer, a bounded number of times', async () => {
+    const vm = await bootVm()
+    const failing = { now: true }
+    const d = desktop(
+      { vm1: { url: vm.url } },
+      {
+        retryMs: 5,
+        intercept: (channel) =>
+          channel === HubRemoteChannels.OUTBOX_PULL && failing.now ? Promise.reject(new Error('timed out')) : undefined,
+      },
+    )
+    d.own('agent_c1', 'vm1')
+    vm.adopt('agent_c1', db.hubInstallId())
+    vm.report('agent_c1', 'late')
+    await d.outbox.connected('vm1')
+    await until(() => pulls(d).length === 1 + PULL_FAILURE_RETRIES)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(pulls(d)).toHaveLength(1 + PULL_FAILURE_RETRIES)
+
+    failing.now = false
+    await d.outbox.pull('vm1')
+    failing.now = true
+    vm.report('agent_c1', 'later')
+    await until(() => pulls(d).length >= 3 + PULL_FAILURE_RETRIES)
+    failing.now = false
+    await until(() => db.listPendingHubWakes(PARENT).length === 2)
+  })
+
+  it('counts a try for a parent that is not running at most once per retry interval', async () => {
+    const vm = await bootVm()
+    const d = desktop({ vm1: { url: vm.url } }, { parentRunning: () => false, retryMs: 60_000 })
+    d.own('agent_c1', 'vm1')
+    vm.adopt('agent_c1', db.hubInstallId())
+    const id = vm.message('agent_c1', 'wait for me')
+    await d.outbox.connected('vm1')
+    for (let i = 0; i < MESSAGE_ATTEMPTS + 2; i++) await d.outbox.pull('vm1')
+    expect(db.getHubRemoteImport('vm1', id)).toBeNull()
+    expect(vm.unacked()).toEqual([id])
+  })
+})
+
 describe('the outbox with the flag off, and an older machine', () => {
+  it('pulls each connected machine when hub_remote_children turns on', async () => {
+    const vm = await bootVm()
+    const enabled = { on: false }
+    const d = desktop({ vm1: { url: vm.url } }, { enabled })
+    d.own('agent_c1', 'vm1')
+    vm.adopt('agent_c1', db.hubInstallId())
+    vm.report('agent_c1', 'waiting')
+    d.clients.enabledChanged()
+    expect(d.calls).toEqual([])
+    enabled.on = true
+    d.clients.enabledChanged()
+    await until(() => db.listPendingHubWakes(PARENT).length === 1)
+    await until(() => vm.unacked().length === 0)
+  })
+
   it('pulls nothing with hub_remote_children off on the desktop; the child machine still answers a pull', async () => {
     const vm = await bootVm()
     const d = desktop({ vm1: { url: vm.url } }, { enabled: { on: false } })
@@ -615,6 +758,8 @@ describe('the outbox tables on an older database', () => {
         VALUES ('hw_2', 'p_stub', 'c1', 'failed', 'bad pointer', 'not json', 11);
       INSERT INTO hub_wakes (id, parent_id, child_id, kind, summary, pointer_json, created_at)
         VALUES ('hw_3', 'p_here', 'c2', 'report', 'local', NULL, 12);
+      INSERT INTO hub_wakes (id, parent_id, child_id, kind, summary, pointer_json, created_at)
+        VALUES ('hw_4', 'p_stub', 'c1', 'report', 'long tool id', '{"toolCallId":"${'t'.repeat(201)}","at":6}', 13);
     `)
     db.migrate(old)
     db.migrate(old)
@@ -639,10 +784,19 @@ describe('the outbox tables on an older database', () => {
         kind: 'wake',
         wake: { kind: 'failed', summary: 'bad pointer', pointer: null, childPhase: 'open' },
       },
+      {
+        id: 'ho_hw_4',
+        childId: 'c1',
+        parentId: 'p_stub',
+        createdAt: 13,
+        kind: 'wake',
+        // A tool call id over the cap is left out, so the item still parses.
+        wake: { kind: 'report', summary: 'long tool id', pointer: { at: 6 }, childPhase: 'open' },
+      },
     ])
     // The child machine reads its child's last wake from the outbox (the reaper and a repeated start do).
-    expect(db.lastHubWakes('p_stub').get('c1')).toEqual({ kind: 'failed', summary: 'bad pointer' })
-    expect(db.lastHubWakeOf('c1')).toMatchObject({ kind: 'failed', summary: 'bad pointer' })
+    expect(db.lastHubWakes('p_stub').get('c1')).toEqual({ kind: 'report', summary: 'long tool id' })
+    expect(db.lastHubWakeOf('c1')).toMatchObject({ kind: 'report', summary: 'long tool id' })
   })
 
   it('prunes acked items after 7 days, and keeps unacked ones', () => {

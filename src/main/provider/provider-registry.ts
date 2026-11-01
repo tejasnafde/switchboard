@@ -3149,7 +3149,6 @@ export class ProviderRegistry implements PeerToolHost {
     for (const off of this.hubOutboxSubscriptions.splice(0)) off()
     const outbox = new HubRemoteOutbox(this.hubRemoteOutboxHost(clients))
     this.hubOutbox = outbox
-    outbox.start()
     // Remote starts left `starting` (a quit, a timeout) are asked again on each connect, failed on removal.
     // Each connect also pulls that machine's outbox.
     clients.setMachineListener((machineId, change) => {

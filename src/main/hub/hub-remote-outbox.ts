@@ -5,13 +5,18 @@
  * A pull runs on that machine's `hub-remote:outbox` event, on its connect,
  * when its client is ready again after a reconnect or missed events it could
  * not replay (`RemoteHubClients.onResync`), and at launch for machines already
- * connected. One pull runs at a time per machine; a request during one runs
- * one more after it. Each pull reads pages of `pageSize` items until a short
- * page, and only from a backend that advertises `hub_remote_outbox_v1`.
+ * connected, and on each machine connected when `hub_remote_children` turns
+ * on. One pull runs at a time per machine; a request during one runs one more
+ * after it. Each pull reads pages of `pageSize` items, the next after the
+ * answer's `cursor` (from a machine without one: after the last item, until a
+ * short page), and only from a backend that advertises `hub_remote_outbox_v1`.
+ * A pull that throws is tried again on the retry timer, at most
+ * `PULL_FAILURE_RETRIES` times in a row.
  *
  * Each item is imported once per (machine, item id) (`hub_remote_imports`),
  * and acked only after its import committed, so a lost ack re-pulls it and the
- * import skips it. An item is trusted only for the machine it came from: its
+ * import skips it. Those records are never pruned: the child machine keeps an
+ * unacked item with no age limit. An item is trusted only for the machine it came from: its
  * child must be a desktop row with that `machine_id` and that parent, or it
  * is recorded as dropped. A wake becomes a desktop wake through the wake
  * scheduler (`recordWake`), with the machine id and no transcript path; a
@@ -19,7 +24,8 @@
  * `failed_start`, as a local one would. A message goes to the parent along the
  * lineage edge, which charges that edge's budget here (`deliverMessage`); a
  * parent that is not running is tried again on a timer, at most
- * `MESSAGE_ATTEMPTS` times, then recorded as refused, like a refusal of the
+ * `MESSAGE_ATTEMPTS` times (a try counts once per `retryMs`, however many
+ * pulls ran), then recorded as refused, like a refusal of the
  * budget. Messages past the per-pair rate (a backlog after the machine was
  * away) wait for the next retry pull without using up those tries.
  *
@@ -39,7 +45,6 @@ import {
   getHubChild,
   getHubRemoteImport,
   insertHubRemoteImport,
-  pruneHubRemoteImports,
   resolveRootThreadId,
   setHubRemoteImportOutcome,
   type HubChildRow,
@@ -49,11 +54,11 @@ import { perfSpan } from '../perf'
 
 const log = createMainLogger('hub:remote-outbox')
 
-/** Tries for a message whose parent is not running, one per retry pull. */
+/** Tries for a message whose parent is not running, at most one per `retryMs`. */
 export const MESSAGE_ATTEMPTS = 5
+/** Timed retries after pulls that threw, in a row. */
+export const PULL_FAILURE_RETRIES = 5
 export const OUTBOX_RETRY_MS = 60_000
-/** Import records older than this are deleted at launch; the child machine deleted those items long before. */
-const IMPORTS_KEEP_MS = 30 * 24 * 60 * 60_000
 
 export interface HubRemoteOutboxHost {
   /** `hub_remote_children` on this desktop, read on every pull. */
@@ -93,7 +98,8 @@ interface MachinePull {
 
 export class HubRemoteOutbox {
   private readonly pulls = new Map<string, MachinePull>()
-  private readonly attempts = new Map<string, number>()
+  private readonly attempts = new Map<string, { n: number; at: number }>()
+  private readonly failedPulls = new Map<string, number>()
   private readonly retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
   /** Machines already logged as too old to pull from, until their next connect. */
   private readonly loggedOld = new Set<string>()
@@ -107,15 +113,6 @@ export class HubRemoteOutbox {
   ) {
     this.pageSize = opts.pageSize ?? HUB_OUTBOX_PULL_DEFAULT
     this.retryMs = opts.retryMs ?? OUTBOX_RETRY_MS
-  }
-
-  /** Deletes old import records. */
-  start(): void {
-    try {
-      pruneHubRemoteImports(IMPORTS_KEEP_MS)
-    } catch (err) {
-      log.warn('could not prune old outbox import records', err)
-    }
   }
 
   /** A machine connected: it is logged again if it is still too old. */
@@ -170,6 +167,7 @@ export class HubRemoteOutbox {
     let items = 0
     let retries = 0
     let oldest: number | null = null
+    let failed = false
     try {
       let after: string | undefined
       for (;;) {
@@ -178,7 +176,7 @@ export class HubRemoteOutbox {
           desktopInstallId: installId,
           ...(after ? { after } : {}),
           limit: this.pageSize,
-        })) as { items?: unknown } | null
+        })) as { items?: unknown; cursor?: unknown } | null
         if (!answer || !Array.isArray(answer.items)) throw new Error('the outbox answer has no item list')
         const raw = answer.items.slice(0, this.pageSize)
         pages++
@@ -203,10 +201,11 @@ export class HubRemoteOutbox {
             desktopInstallId: installId,
             ids: acks,
           })
-        if (raw.length < this.pageSize) break
-        const last = (raw.at(-1) as { id?: unknown } | null)?.id
-        if (!isHubOutboxId(last) || last === after) break
-        after = last
+        let next: unknown
+        if (answer.cursor !== undefined) next = answer.cursor
+        else if (raw.length === this.pageSize) next = (raw.at(-1) as { id?: unknown } | null)?.id
+        if (!isHubOutboxId(next) || next === after) break
+        after = next
       }
       span.end({
         outcome: 'ok',
@@ -216,10 +215,14 @@ export class HubRemoteOutbox {
         ...(oldest !== null ? { oldestAgeMs: Math.max(0, Date.now() - oldest) } : {}),
       })
     } catch (err) {
+      failed = true
       span.end({ outcome: 'error', pages, items })
       log.warn(`could not pull the outbox of machine ${machineId}: ${err instanceof Error ? err.message : String(err)}`)
     }
-    if (retries > 0) this.retryLater(machineId)
+    const failures = failed ? (this.failedPulls.get(machineId) ?? 0) + 1 : 0
+    if (failures > 0) this.failedPulls.set(machineId, failures)
+    else this.failedPulls.delete(machineId)
+    if (retries > 0 || (failed && failures <= PULL_FAILURE_RETRIES)) this.retryLater(machineId)
   }
 
   /** An item that does not parse is recorded and acked when it has an id; otherwise it is only logged. */
@@ -354,9 +357,12 @@ export class HubRemoteOutbox {
     }
     if (child.phase !== 'starting' && child.phase !== 'open') return refuse('the child is not open')
     if (!this.host.parentRunning(child.parentId)) {
-      const tries = (this.attempts.get(key) ?? 0) + 1
+      const now = Date.now()
+      const last = this.attempts.get(key)
+      if (last && now - last.at < this.retryMs) return 'retry'
+      const tries = (last?.n ?? 0) + 1
       if (tries >= MESSAGE_ATTEMPTS) return refuse('the parent chat was not running')
-      this.attempts.set(key, tries)
+      this.attempts.set(key, { n: tries, at: now })
       return 'retry'
     }
     this.attempts.delete(key)

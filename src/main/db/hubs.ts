@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
 import {
   HUB_OUTBOX_SUMMARY_MAX,
+  HUB_OUTBOX_TOOL_CALL_ID_MAX,
   parseHubOutboxItem,
   type HubOutboxItem,
   type HubOutboxMessage,
@@ -133,9 +134,13 @@ function moveStubWakesToOutbox(db: Database.Database): void {
              'kind', w.kind,
              'summary', substr(w.summary, 1, ${HUB_OUTBOX_SUMMARY_MAX}),
              'pointer', CASE WHEN json_valid(w.pointer_json) THEN
-               CASE WHEN json_type(w.pointer_json, '$.at') IN ('integer', 'real')
+               CASE WHEN json_type(w.pointer_json, '$.at') IN ('integer', 'real') THEN
+                 CASE WHEN json_type(w.pointer_json, '$.toolCallId') = 'text'
+                   AND length(json_extract(w.pointer_json, '$.toolCallId')) <= ${HUB_OUTBOX_TOOL_CALL_ID_MAX}
                  THEN json_object('at', json_extract(w.pointer_json, '$.at'),
                                   'toolCallId', json_extract(w.pointer_json, '$.toolCallId'))
+                 ELSE json_object('at', json_extract(w.pointer_json, '$.at'))
+                 END
                END
              END,
              'childPhase', COALESCE(c.phase, 'open')),
@@ -569,7 +574,12 @@ export function insertHubWake(w: {
         kind: w.kind,
         summary: w.summary.slice(0, HUB_OUTBOX_SUMMARY_MAX),
         pointer: w.pointer
-          ? { at: w.pointer.at, ...(w.pointer.toolCallId ? { toolCallId: w.pointer.toolCallId } : {}) }
+          ? {
+              at: w.pointer.at,
+              ...(w.pointer.toolCallId && w.pointer.toolCallId.length <= HUB_OUTBOX_TOOL_CALL_ID_MAX
+                ? { toolCallId: w.pointer.toolCallId }
+                : {}),
+            }
           : null,
         childPhase: phase?.phase ?? 'open',
       },
@@ -806,12 +816,13 @@ function toOutboxItem(r: OutboxDbRow): HubOutboxItem | null {
 /**
  * Unacked items for parent stubs of the hub `remoteHub`, in (created_at, id)
  * order, after the item `after` when it is still here. A row that no longer
- * parses is skipped with its id, so the caller can log it.
+ * parses is skipped with its id, so the caller can ack it. `cursor` is the last
+ * row read when the page was full, else null.
  */
 export function listHubOutbox(
   remoteHub: string,
   opts: { after?: string; limit: number },
-): { items: HubOutboxItem[]; malformed: string[] } {
+): { items: HubOutboxItem[]; malformed: string[]; cursor: string | null } {
   const db = getDb()
   const anchor = opts.after
     ? (db.prepare('SELECT created_at, id FROM hub_outbox WHERE id = ?').get(opts.after) as
@@ -835,7 +846,7 @@ export function listHubOutbox(
     if (item) items.push(item)
     else malformed.push(r.id)
   }
-  return { items, malformed }
+  return { items, malformed, cursor: rows.length === opts.limit ? rows[rows.length - 1]!.id : null }
 }
 
 /** Marks items acked, only those for parent stubs of `remoteHub`; an acked item keeps its first time. */
@@ -926,11 +937,4 @@ export function setHubRemoteImportOutcome(
   getDb()
     .prepare('UPDATE hub_remote_imports SET outcome = ?, reason = ? WHERE machine_id = ? AND remote_id = ?')
     .run(outcome, reason, machineId, remoteId)
-}
-
-/** Deletes import records older than `keepMs`: the child machine deleted those items long before. */
-export function pruneHubRemoteImports(keepMs: number, now = Date.now()): number {
-  return getDb()
-    .prepare('DELETE FROM hub_remote_imports WHERE imported_at < ?')
-    .run(now - keepMs).changes
 }

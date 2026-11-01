@@ -688,6 +688,8 @@ export const HUB_OUTBOX_PULL_MAX = 500
 export const HUB_OUTBOX_ACK_MAX = 500
 /** A wake summary longer than this is cut on the child machine and refused on the desktop. */
 export const HUB_OUTBOX_SUMMARY_MAX = 16 * 1024
+/** A wake pointer's `toolCallId` longer than this is left out on the child machine and refused on the desktop. */
+export const HUB_OUTBOX_TOOL_CALL_ID_MAX = 200
 /** Acked rows older than this are deleted on the child machine. */
 export const HUB_OUTBOX_KEEP_ACKED_MS = 7 * 24 * 60 * 60_000
 /** Unacked messages one child may have waiting before a further send is refused there. */
@@ -735,6 +737,16 @@ export interface HubOutboxPullRequest {
   /** The last item id of the page before; items after it in (created_at, id) order. */
   after?: string
   limit: number
+}
+
+export interface HubOutboxPullAnswer {
+  v: 1
+  items: HubOutboxItem[]
+  /**
+   * After a full page, the last row read, valid or not: the next page starts
+   * after it. Null after a short page. A child machine from before it sends none.
+   */
+  cursor: string | null
 }
 
 export interface HubOutboxAckRequest {
@@ -813,7 +825,11 @@ export function parseHubOutboxItem(value: unknown): HubOutboxItem | null {
     if (w.pointer !== null && w.pointer !== undefined) {
       const p = w.pointer as Record<string, unknown>
       if (typeof p !== 'object' || typeof p.at !== 'number' || !Number.isFinite(p.at)) return null
-      if (p.toolCallId != null && (typeof p.toolCallId !== 'string' || p.toolCallId.length > 200)) return null
+      if (
+        p.toolCallId != null &&
+        (typeof p.toolCallId !== 'string' || p.toolCallId.length > HUB_OUTBOX_TOOL_CALL_ID_MAX)
+      )
+        return null
       pointer = { at: p.at, ...(typeof p.toolCallId === 'string' ? { toolCallId: p.toolCallId } : {}) }
     }
     return {

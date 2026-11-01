@@ -192,6 +192,18 @@ export class RemoteHubClients {
     for (const id of [...this.clients.keys()]) this.close(id)
   }
 
+  /** After a write of `hub_remote_children`: off closes every client; on treats each connected machine as just connected. */
+  enabledChanged(): void {
+    if (!this.deps.enabled()) {
+      this.closeAll()
+      return
+    }
+    for (const machineId of this.connectedMachineIds()) {
+      void this.refresh(machineId, 0)
+      this.notifyMachine(machineId, 'connected')
+    }
+  }
+
   /** Listen to a `hub-remote:*` event from any machine. Returns the unsubscribe. */
   on(event: HubRemoteEvent, handler: (machineId: string, ...args: unknown[]) => void): () => void {
     let set = this.listeners.get(event)
