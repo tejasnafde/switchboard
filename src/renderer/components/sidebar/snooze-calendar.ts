@@ -21,7 +21,7 @@ function dayOf(date: Date): CalendarDay {
   return { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() }
 }
 
-export function dayOfInstant(ms: number): CalendarDay {
+function dayOfInstant(ms: number): CalendarDay {
   return dayOf(new Date(ms))
 }
 

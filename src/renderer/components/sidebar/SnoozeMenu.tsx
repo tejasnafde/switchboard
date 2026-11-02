@@ -3,8 +3,8 @@
  * each with its wake time on the right, and "Until PR #n changes" when the
  * chat links an open PR, then "Custom date and time..." (the dialog). The
  * overflow form of a narrow row adds its other actions (Settle) under a
- * separator. `ui/menu` owns the keys: arrows, Home,
- * End, Enter, and Escape back to the button.
+ * separator. `ui/menu` owns the keys: arrows, Home, End, Enter, and Escape
+ * back to the button.
  */
 import { useRef, useState, type ReactNode } from 'react'
 import { resolvePresets, wakeLabel, type PresetOption } from '@shared/chat-snooze'

@@ -23,7 +23,6 @@ import {
   compareDays,
   compareMonths,
   dayKey,
-  dayOfInstant,
   monthCells,
   moveDay,
   sameDay,
@@ -79,7 +78,7 @@ export function SnoozeCustomDialog({
   const [view, setView] = useState<CalendarDay>(() => ({ ...chosen, day: 1 }))
   const [clock, setClock] = useState(lastClock)
   const stopRef = useRef<HTMLButtonElement>(null)
-  /** Set when the chosen day moved by key into another month, whose grid is new. */
+  /** Set by a key, or a click on another month's day: focus follows the chosen day into the new render. */
   const focusStop = useRef(false)
   const outcome = useRef<CustomSnoozeOutcome>('cancelled')
 
@@ -132,7 +131,6 @@ export function SnoozeCustomDialog({
         aria-describedby={undefined}
         overlayClassName="z-[1300]"
         className="sb-floating-surface inset-x-0 top-[18vh] z-[1300] mx-auto w-[280px] rounded-[10px] border border-[var(--border-strong)] p-[14px] text-[12px] text-[var(--text-primary)]"
-        data-snooze-custom=""
         onOpenAutoFocus={(event) => {
           event.preventDefault()
           stopRef.current?.focus()

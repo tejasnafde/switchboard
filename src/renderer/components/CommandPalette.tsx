@@ -59,8 +59,8 @@ export function commandTargetSessionId(state: {
  * "Snooze chat" for the chat in focus: one entry per preset, resolved when the
  * palette opened (a clock-time entry sends the instant it showed), and one
  * that opens the custom date and time dialog, or "Wake chat" while it is
- * snoozed. A chat that needs the user is refused with the
- * sidebar notice, as the backend would refuse it.
+ * snoozed. A chat that needs the user is refused with the sidebar notice, as
+ * the backend would refuse it.
  */
 export function snoozeCommands(shownAt: Date, onClose: () => void): Cmd[] {
   if (!CHAT_SNOOZE_ENABLED) return []
