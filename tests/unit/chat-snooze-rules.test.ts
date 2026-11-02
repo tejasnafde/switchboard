@@ -2,6 +2,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   NOT_SNOOZED,
@@ -76,7 +77,7 @@ describe('validateCustomWake', () => {
     // The zone is fixed per process, so this runs the rules file in a child with TZ set.
     const dst = cases.customWakeDst
     const script = `
-      import { validateCustomWake } from ${JSON.stringify(join(__dirname, '../../src/shared/chat-snooze.ts'))}
+      import { validateCustomWake } from ${JSON.stringify(pathToFileURL(join(__dirname, '../../src/shared/chat-snooze.ts')).href)}
       const cases = ${JSON.stringify(dst.cases)}
       console.log(JSON.stringify(cases.map((c) => {
         const [year, month, day] = c.date
