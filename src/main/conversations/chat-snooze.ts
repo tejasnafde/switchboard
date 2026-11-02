@@ -56,8 +56,8 @@ export interface ChatSnoozeHost {
   pushWoke?(conversationId: string, title: string, line: string): void
   /** Read a PR by its `prKey`; null when the read failed. */
   readPr?(pr: string): Promise<PrReading | null>
-  /** A PR read found it merged: store that on its links, which settles an idle chat (and so ends its snooze). */
-  noteMerged?(pr: string): void
+  /** A PR read found it merged: settle the chat when it is idle (which ends its snooze, with the Settle notice). */
+  settleMerged?(conversationId: string, prNumber: number): void
 }
 
 export class ChatSnoozer {
@@ -69,6 +69,7 @@ export class ChatSnoozer {
   private resyncTimer: ReturnType<typeof setInterval> | null = null
   private prTimer: ReturnType<typeof setInterval> | null = null
   private polling = false
+  private disposed = false
   private stopArchiveListener: (() => void) | null = null
 
   constructor(
@@ -108,6 +109,7 @@ export class ChatSnoozer {
   }
 
   dispose(): void {
+    this.disposed = true
     for (const { timer } of this.timers.values()) clearTimeout(timer)
     this.timers.clear()
     if (this.resyncTimer) clearInterval(this.resyncTimer)
@@ -139,6 +141,9 @@ export class ChatSnoozer {
       if (!reading) return { ok: false, reason: 'pr_unreadable' }
       if (reading.state !== 'open') return { ok: false, reason: 'pr_closed' }
       prMark = JSON.stringify(prMarkOf(reading))
+      // The chat may have changed during the read; a replaced snoozer takes no new snooze.
+      if (this.disposed || isConversationArchived(root)) return { ok: false, reason: 'no_row' }
+      if (this.host.needsYou(root)) return { ok: false, reason: 'needs_you' }
     }
     const rev = setConversationSnooze(root, { until, pr, prMark, at: this.now(), expectRev: request.expectRev })
     if (rev === null) return { ok: false, reason: getConversationSnooze(root) ? 'stale' : 'no_row' }
@@ -252,6 +257,7 @@ export class ChatSnoozer {
       if (rows.length === 0) return this.watchPrs(false)
       const readings = new Map<string, PrReading | null>()
       for (const row of rows) {
+        if (this.disposed) return
         const pr = row.snoozePr as string
         if (!readings.has(pr)) readings.set(pr, await this.host.readPr(pr))
         const reading = readings.get(pr)
@@ -262,10 +268,10 @@ export class ChatSnoozer {
         const state = getConversationSnooze(row.id)
         const mark = parsePrMark(row.snoozePrMark)
         if (!state || state.snoozeRev !== row.snoozeRev || state.snoozedAt === null || !mark) continue
-        const summary = prWakeSummary(mark, reading, state.snoozedAt)
+        const summary = prWakeSummary(mark, reading)
         if (!summary) continue
         // A merge settles an idle chat first, which ends the snooze with the Settle notice instead.
-        if (reading.state === 'merged') this.host.noteMerged?.(pr)
+        if (reading.state === 'merged') this.host.settleMerged?.(row.id, reading.number)
         this.wake(row.id, 'pr', { expectRev: row.snoozeRev, prSummary: summary })
       }
     } catch (err) {

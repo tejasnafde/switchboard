@@ -286,10 +286,9 @@ export async function readPullRequestForSnooze(key: string): Promise<PrReading |
   }
 }
 
-/** A snooze PR read found the PR merged: store it on the links, which settles an idle linked chat. */
-export function notePullRequestMerged(key: string): void {
-  const ref = refFromKey(key)
-  if (ref) storeLinkState(ref, 'merged')
+/** A snooze PR read found the PR merged: settle the chat by the same rule as a linked PR's merge. */
+export function settleChatOnMerge(chatId: string, prNumber: number): void {
+  settleOnMerge(chatId, prNumber)
 }
 
 function registerLinkHandlers(host: BackendHost): void {

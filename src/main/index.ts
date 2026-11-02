@@ -79,7 +79,7 @@ import { registerWorktreeManagerHandlers } from './ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from './ipc/provider-instances'
 import {
   attachPullRequestAutoLink,
-  notePullRequestMerged,
+  settleChatOnMerge,
   readPullRequestForSnooze,
   registerPullRequestHandlers,
   startPullRequestHistoryScan,
@@ -1126,7 +1126,7 @@ function snoozeHost(host: BackendHost): ChatSnoozeHost {
     needsYou: (id) => providerRegistry?.needsUser(id) ?? false,
     pushWoke: (id, title, line) => pushToThread(id, wokePush(id, title, line)),
     readPr: readPullRequestForSnooze,
-    noteMerged: notePullRequestMerged,
+    settleMerged: settleChatOnMerge,
   }
 }
 

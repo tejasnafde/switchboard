@@ -589,7 +589,8 @@
       "mark": {
         "state": "open",
         "headSha": "a1",
-        "checksFailed": false
+        "checksFailed": false,
+        "changesRequestedAt": null
       },
       "reading": {
         "number": 512,
@@ -598,7 +599,6 @@
         "checksFailed": false,
         "changesRequestedAt": null
       },
-      "snoozedAt": 1000,
       "expect": null
     },
     {
@@ -606,7 +606,8 @@
       "mark": {
         "state": "open",
         "headSha": "a1",
-        "checksFailed": false
+        "checksFailed": false,
+        "changesRequestedAt": null
       },
       "reading": {
         "number": 512,
@@ -615,7 +616,6 @@
         "checksFailed": false,
         "changesRequestedAt": null
       },
-      "snoozedAt": 1000,
       "expect": "PR #512 merged"
     },
     {
@@ -623,7 +623,8 @@
       "mark": {
         "state": "open",
         "headSha": "a1",
-        "checksFailed": false
+        "checksFailed": false,
+        "changesRequestedAt": null
       },
       "reading": {
         "number": 512,
@@ -632,15 +633,15 @@
         "checksFailed": false,
         "changesRequestedAt": null
       },
-      "snoozedAt": 1000,
       "expect": null
     },
     {
-      "name": "changes requested after the snooze",
+      "name": "changes requested after the newest one at the mark",
       "mark": {
         "state": "open",
         "headSha": "a1",
-        "checksFailed": false
+        "checksFailed": false,
+        "changesRequestedAt": 1000
       },
       "reading": {
         "number": 512,
@@ -649,15 +650,15 @@
         "checksFailed": false,
         "changesRequestedAt": 1001
       },
-      "snoozedAt": 1000,
       "expect": "PR #512: changes requested"
     },
     {
-      "name": "changes requested before the snooze",
+      "name": "the same changes request as at the mark",
       "mark": {
         "state": "open",
         "headSha": "a1",
-        "checksFailed": false
+        "checksFailed": false,
+        "changesRequestedAt": 1000
       },
       "reading": {
         "number": 512,
@@ -666,7 +667,6 @@
         "checksFailed": false,
         "changesRequestedAt": 1000
       },
-      "snoozedAt": 1000,
       "expect": null
     },
     {
@@ -674,7 +674,8 @@
       "mark": {
         "state": "open",
         "headSha": "a1",
-        "checksFailed": false
+        "checksFailed": false,
+        "changesRequestedAt": null
       },
       "reading": {
         "number": 512,
@@ -683,7 +684,6 @@
         "checksFailed": true,
         "changesRequestedAt": null
       },
-      "snoozedAt": 1000,
       "expect": "PR #512: checks failed"
     },
     {
@@ -691,7 +691,8 @@
       "mark": {
         "state": "open",
         "headSha": "a1",
-        "checksFailed": true
+        "checksFailed": true,
+        "changesRequestedAt": null
       },
       "reading": {
         "number": 512,
@@ -700,7 +701,6 @@
         "checksFailed": true,
         "changesRequestedAt": null
       },
-      "snoozedAt": 1000,
       "expect": null
     },
     {
@@ -708,7 +708,8 @@
       "mark": {
         "state": "open",
         "headSha": "a1",
-        "checksFailed": true
+        "checksFailed": true,
+        "changesRequestedAt": null
       },
       "reading": {
         "number": 512,
@@ -717,7 +718,6 @@
         "checksFailed": true,
         "changesRequestedAt": null
       },
-      "snoozedAt": 1000,
       "expect": "PR #512: checks failed"
     },
     {
@@ -725,7 +725,8 @@
       "mark": {
         "state": "open",
         "headSha": "a1",
-        "checksFailed": false
+        "checksFailed": false,
+        "changesRequestedAt": null
       },
       "reading": {
         "number": 512,
@@ -734,7 +735,6 @@
         "checksFailed": false,
         "changesRequestedAt": null
       },
-      "snoozedAt": 1000,
       "expect": null
     },
     {
@@ -742,7 +742,8 @@
       "mark": {
         "state": "open",
         "headSha": "a1",
-        "checksFailed": false
+        "checksFailed": false,
+        "changesRequestedAt": null
       },
       "reading": {
         "number": 512,
@@ -751,8 +752,24 @@
         "checksFailed": true,
         "changesRequestedAt": 2000
       },
-      "snoozedAt": 1000,
       "expect": "PR #512 merged"
+    },
+    {
+      "name": "a first changes request",
+      "mark": {
+        "state": "open",
+        "headSha": "a1",
+        "checksFailed": false,
+        "changesRequestedAt": null
+      },
+      "reading": {
+        "number": 512,
+        "state": "open",
+        "headSha": "a1",
+        "checksFailed": false,
+        "changesRequestedAt": 5
+      },
+      "expect": "PR #512: changes requested"
     }
   ]
 }

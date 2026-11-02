@@ -347,10 +347,17 @@ export interface PrMark {
   state: PrReading['state']
   headSha: string | null
   checksFailed: boolean
+  /** The host's own time of the newest changes request then, so the host's clock is compared with itself. */
+  changesRequestedAt: number | null
 }
 
 export function prMarkOf(reading: PrReading): PrMark {
-  return { state: reading.state, headSha: reading.headSha, checksFailed: reading.checksFailed }
+  return {
+    state: reading.state,
+    headSha: reading.headSha,
+    checksFailed: reading.checksFailed,
+    changesRequestedAt: reading.changesRequestedAt,
+  }
 }
 
 export function parsePrMark(raw: string | null): PrMark | null {
@@ -358,7 +365,12 @@ export function parsePrMark(raw: string | null): PrMark | null {
   try {
     const m = JSON.parse(raw) as Partial<PrMark>
     if (m.state !== 'open' && m.state !== 'merged' && m.state !== 'closed') return null
-    return { state: m.state, headSha: m.headSha ?? null, checksFailed: m.checksFailed === true }
+    return {
+      state: m.state,
+      headSha: m.headSha ?? null,
+      checksFailed: m.checksFailed === true,
+      changesRequestedAt: typeof m.changesRequestedAt === 'number' ? m.changesRequestedAt : null,
+    }
   } catch {
     return null
   }
@@ -367,13 +379,13 @@ export function parsePrMark(raw: string | null): PrMark | null {
 /**
  * The status line of a PR wake, or null when the PR gives no reason to wake.
  * Only three events wake, each once and only forward from the mark: the PR
- * merged; a review requested changes after the snooze started; the checks
+ * merged; a review requested changes after the newest one at the mark; the checks
  * failed on a head that had not failed at the mark (a new push counts). A read
  * that goes back (a stale cache, a re-run that is pending) wakes nothing.
  */
-export function prWakeSummary(mark: PrMark, now: PrReading, snoozedAt: number): string | null {
+export function prWakeSummary(mark: PrMark, now: PrReading): string | null {
   if (now.state === 'merged' && mark.state !== 'merged') return `PR #${now.number} merged`
-  if (now.changesRequestedAt !== null && now.changesRequestedAt > snoozedAt)
+  if (now.changesRequestedAt !== null && now.changesRequestedAt > (mark.changesRequestedAt ?? -Infinity))
     return `PR #${now.number}: changes requested`
   if (now.checksFailed && (!mark.checksFailed || now.headSha !== mark.headSha))
     return `PR #${now.number}: checks failed`

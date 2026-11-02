@@ -140,7 +140,7 @@ describe('state', () => {
 describe('prWakeSummary', () => {
   for (const c of cases.prWake) {
     it(c.name, () => {
-      expect(prWakeSummary(c.mark as PrMark, c.reading as PrReading, c.snoozedAt)).toBe(c.expect)
+      expect(prWakeSummary(c.mark as PrMark, c.reading as PrReading)).toBe(c.expect)
     })
   }
 })
