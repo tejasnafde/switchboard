@@ -36,6 +36,8 @@ import app.switchboard.mobile.domain.push.PushBackendResult
 import app.switchboard.mobile.domain.reviews.PrActionResult
 import app.switchboard.mobile.domain.reviews.PrDetail
 import app.switchboard.mobile.domain.reviews.PrLinkChat
+import app.switchboard.mobile.domain.thread.HubChatView
+import app.switchboard.mobile.domain.thread.HubChildren
 import app.switchboard.mobile.domain.reviews.PrListData
 import app.switchboard.mobile.domain.reviews.PrRef
 import app.switchboard.mobile.domain.reviews.PrResult
@@ -146,6 +148,9 @@ object BackendChannels {
     const val LimitResumeGet = "provider:limit-resume-get"
     const val LimitResumeCancel = "provider:limit-resume-cancel"
     const val LimitResumeNow = "provider:limit-resume-resume-now"
+    /** Child chats (src/shared/hub.ts); gated behind `hub_children_v1`. */
+    const val HubListChildren = "provider:hub-list-children"
+    const val HubStopChildren = "provider:hub-stop-children"
     /** Inline live pages (src/shared/html-live.ts); gated behind `html_live_images_v1`. */
     const val HtmlLiveLoad = "html-live:load"
     const val HtmlLiveOpenOnDesktop = "html-live:open-on-desktop"
@@ -823,6 +828,14 @@ class SwitchboardRemoteClient(
 
     fun limitResumeNow(threadId: String, callback: (RemoteResponse<LimitResumeNowResult>) -> Unit) =
         call(BackendChannels.LimitResumeNow, array(JsonString(threadId)), RemoteDecoders::limitResumeNowResult, callback)
+
+    /** A chat's parent and children. */
+    fun hubListChildren(threadId: String, callback: (RemoteResponse<HubChatView>) -> Unit) =
+        call(BackendChannels.HubListChildren, array(JsonString(threadId)), HubChildren::decode, callback)
+
+    /** Stop all: stops every open child of [parentId]. */
+    fun hubStopChildren(parentId: String, callback: (RemoteResponse<CommandBody>) -> Unit) =
+        command(BackendChannels.HubStopChildren, array(JsonString(parentId)), callback)
 
     /** The backend's live sessions with their current status, which the desktop also adopts on launch. */
     fun listSessionStatuses(callback: (RemoteResponse<Map<String, String>>) -> Unit) =

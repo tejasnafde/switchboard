@@ -35,6 +35,8 @@ import { conversationSourceLabel } from '../lib/conversation-source'
 import { threadPreviewLine } from '../lib/thread-preview'
 import { chatGroupKey, groupChats, type ChatActivity } from '../lib/chat-activity'
 import { seedListPendingRequests } from '../stores/list-pending'
+import { HUB_CHILDREN_CAPABILITY } from '@shared/hub'
+import { topLevelChatRows } from '../lib/hub-children'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Conversations'>
 
@@ -106,7 +108,9 @@ export default function ConversationsScreen({ route, navigation }: Props) {
         return
       }
       try {
-        const result = [...(await client.getConversations(projectPath))].sort((a, b) => b.updated_at - a.updated_at)
+        const listed = [...(await client.getConversations(projectPath))].sort((a, b) => b.updated_at - a.updated_at)
+        // An open child shows under its parent's Hub row, not as a chat of its own.
+        const result = client.supportsCapability(HUB_CHILDREN_CAPABILITY) === true ? topLevelChatRows(listed) : listed
         setRows(result)
         setError(null)
         void seedListPendingRequests(

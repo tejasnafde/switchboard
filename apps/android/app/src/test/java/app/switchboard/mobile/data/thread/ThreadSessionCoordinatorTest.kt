@@ -30,6 +30,15 @@ import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWriteResponse
 import app.switchboard.mobile.domain.thread.LIMIT_AUTO_RESUME_CAPABILITY
 import app.switchboard.mobile.domain.thread.LimitResumeNowResult
+import app.switchboard.mobile.domain.thread.ChildState
+import app.switchboard.mobile.domain.thread.HUB_CHILDREN_CAPABILITY
+import app.switchboard.mobile.domain.thread.HUB_REMOTE_CHILDREN_CAPABILITY
+import app.switchboard.mobile.domain.thread.HubChatRef
+import app.switchboard.mobile.domain.thread.HubChatView
+import app.switchboard.mobile.domain.thread.HubChildPhase
+import app.switchboard.mobile.domain.thread.HubChildView
+import app.switchboard.mobile.domain.thread.HubRemoteChild
+import app.switchboard.mobile.domain.thread.ParentState
 import app.switchboard.mobile.domain.thread.LimitState
 import app.switchboard.mobile.domain.thread.MergeBackActionResult
 import app.switchboard.mobile.domain.thread.MergeBackPreview
@@ -1818,6 +1827,110 @@ class ThreadSessionCoordinatorTest {
         assertNull(coordinator.state.value.limitResume.note)
     }
 
+    @Test
+    fun `nothing about children is read or shown without the capability`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote)
+        coordinator.start()
+        remote.emit(scope, event("hub.children-changed", "thread-1"))
+        coordinator.onReplayGap(scope)
+        coordinator.stopAllHubChildren()
+
+        assertFalse(coordinator.state.value.hub.available)
+        assertTrue(remote.hubLists.isEmpty())
+        assertTrue(remote.hubStops.isEmpty())
+    }
+
+    @Test
+    fun `children are read on open, on a change naming this chat and after a gap`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(HUB_CHILDREN_CAPABILITY))
+        coordinator.start()
+        assertEquals(listOf("thread-1"), remote.hubLists)
+        remote.hubListCallbacks.removeAt(0)(success("hub", hubView(hubChild("c1", liveId = "c1-live"))))
+        assertEquals(listOf("c1"), coordinator.state.value.hub.view?.children?.map { it.chat.id })
+
+        // The event names the parent's root id, one of this thread's ids.
+        remote.emit(scope, event("hub.children-changed", "root-1"))
+        assertEquals(2, remote.hubLists.size)
+        remote.emit(scope, event("hub.children-changed", "another-parent"))
+        assertEquals(2, remote.hubLists.size)
+
+        // A stale answer is dropped once a newer read is in flight.
+        val stale = remote.hubListCallbacks.removeAt(0)
+        coordinator.onReplayGap(scope)
+        assertEquals(3, remote.hubLists.size)
+        stale(success("hub", hubView()))
+        assertEquals(1, coordinator.state.value.hub.view?.children?.size)
+        remote.hubListCallbacks.removeAt(0)(success("hub", hubView()))
+        assertEquals(0, coordinator.state.value.hub.view?.children?.size)
+    }
+
+    @Test
+    fun `a remote child keeps its machine only with the remote capability`() {
+        val withRemote = FakeThreadSessionRemote(scope)
+        coordinator(withRemote, capabilities = setOf(HUB_CHILDREN_CAPABILITY, HUB_REMOTE_CHILDREN_CAPABILITY)).also {
+            it.start()
+            withRemote.hubListCallbacks.removeAt(0)(success("hub", hubView(hubChild("c2", remote = true))))
+            assertEquals("build-vm", it.state.value.hub.view?.children?.single()?.remote?.machine)
+        }
+        val localOnly = FakeThreadSessionRemote(scope)
+        coordinator(localOnly, capabilities = setOf(HUB_CHILDREN_CAPABILITY)).also {
+            it.start()
+            localOnly.hubListCallbacks.removeAt(0)(success("hub", hubView(hubChild("c2", remote = true))))
+            assertNull(it.state.value.hub.view?.children?.single()?.remote)
+        }
+    }
+
+    @Test
+    fun `Stop on a child interrupts its live session, or a remote child's own id`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(HUB_CHILDREN_CAPABILITY, HUB_REMOTE_CHILDREN_CAPABILITY))
+        coordinator.start()
+        remote.hubListCallbacks.removeAt(0)(
+            success("hub", hubView(hubChild("c1", liveId = "c1-live"), hubChild("c2", remote = true))),
+        )
+
+        coordinator.stopHubChild("c1")
+        assertEquals(setOf("c1"), coordinator.state.value.hub.stopping)
+        coordinator.stopHubChild("c2")
+        assertEquals(listOf("c1-live", "c2"), remote.interruptedThreadIds)
+        remote.interruptCallbacks.removeAt(0)(failure("interrupt", "Not running"))
+        assertEquals("Not running", coordinator.state.value.hub.note)
+        assertEquals(setOf("c2"), coordinator.state.value.hub.stopping)
+    }
+
+    @Test
+    fun `Stop all calls hub-stop-children with the parent id`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(HUB_CHILDREN_CAPABILITY))
+        coordinator.start()
+        remote.hubListCallbacks.removeAt(0)(success("hub", hubView(hubChild("c1", liveId = "c1-live"))))
+
+        coordinator.stopAllHubChildren()
+        coordinator.stopAllHubChildren()
+        assertEquals(listOf("root-1"), remote.hubStops)
+        assertTrue(coordinator.state.value.hub.stoppingAll)
+        remote.hubStopCallbacks.removeAt(0)(success("stop-all", CommandBody(null)))
+        assertFalse(coordinator.state.value.hub.stoppingAll)
+        assertNull(coordinator.state.value.hub.note)
+    }
+
+    private fun hubView(vararg children: HubChildView) = HubChatView(
+        self = HubChatRef("root-1", listOf("root-1", "thread-1"), "Hub", "claude-code", "/repo", 1),
+        parent = null,
+        children = children.toList(),
+        state = ParentState.Waiting,
+    )
+
+    private fun hubChild(id: String, liveId: String? = null, remote: Boolean = false) = HubChildView(
+        chat = HubChatRef(id, listOf(id), "Child $id", "codex", "/repo", 2),
+        liveId = liveId,
+        phase = HubChildPhase.Open,
+        state = ChildState.Working,
+        remote = if (remote) HubRemoteChild("vm-1", "build-vm", connected = true, ageMs = 0, stopping = false) else null,
+    )
+
     private fun coordinator(
         remote: FakeThreadSessionRemote,
         cached: ThreadState? = null,
@@ -2447,6 +2560,21 @@ private class FakeThreadSessionRemote(
 
     override fun limitResumeCancel(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) {
         limitResumeCancelCallbacks += callback
+    }
+
+    val hubLists = mutableListOf<String>()
+    val hubListCallbacks = mutableListOf<(RemoteResponse<HubChatView>) -> Unit>()
+    val hubStops = mutableListOf<String>()
+    val hubStopCallbacks = mutableListOf<(RemoteResponse<CommandBody>) -> Unit>()
+
+    override fun hubListChildren(threadId: String, callback: (RemoteResponse<HubChatView>) -> Unit) {
+        hubLists += threadId
+        hubListCallbacks += callback
+    }
+
+    override fun hubStopChildren(parentId: String, callback: (RemoteResponse<CommandBody>) -> Unit) {
+        hubStops += parentId
+        hubStopCallbacks += callback
     }
 
     fun <T> RemoteResponse<T>.withScope(scope: ThreadEventScope) = copy(

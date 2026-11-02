@@ -24,11 +24,15 @@ object ThreadTestTags {
     const val LIMIT_RESUME_ROW = "thread-limit-resume-row"
     const val LIMIT_RESUME_NOW = "thread-limit-resume-now"
     const val LIMIT_RESUME_CANCEL = "thread-limit-resume-cancel"
+    const val HUB_ROW = "thread-hub-row"
+    const val HUB_CHIP = "thread-hub-chip"
+    const val HUB_STOP_ALL = "thread-hub-stop-all"
     const val MERGE_BACK_SHEET = "thread-merge-back-sheet"
     const val MERGE_BACK_SHEET_TEXT = "thread-merge-back-sheet-text"
     const val MERGE_BACK_SHEET_SUBMIT = "thread-merge-back-sheet-submit"
     const val MERGE_BACK_SHEET_CANCEL = "thread-merge-back-sheet-cancel"
 
+    fun hubChild(id: String) = "thread-hub-child:$id"
     fun mergeBackEdit(id: String) = "thread-merge-back-edit:$id"
     fun mergeBackDiscard(id: String) = "thread-merge-back-discard:$id"
 

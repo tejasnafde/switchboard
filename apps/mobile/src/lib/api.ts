@@ -20,6 +20,7 @@ import {
 import type { HtmlLiveOpenRequest, HtmlLiveState } from '@shared/html-live'
 import { ATTACHMENT_UPLOAD_CAPABILITY } from '@shared/attachments'
 import type { LimitState } from '@shared/limit-resume'
+import type { HubChatView } from '@shared/hub'
 import type { SttTranscribeRequest, SttTranscribeResult } from '@shared/stt'
 import type {
   RuntimeEvent,
@@ -447,6 +448,16 @@ export class SwitchboardClient {
 
   limitResumeNow(threadId: string): Promise<{ ok: true } | { ok: false; message: string }> {
     return this.transport.invoke(ProviderChannels.LIMIT_RESUME_NOW, threadId)
+  }
+
+  /** A chat's hub view: its parent while it is an open child, else its children (needs `HUB_CHILDREN_CAPABILITY`). */
+  hubListChildren(threadId: string): Promise<HubChatView> {
+    return this.transport.invoke(ProviderChannels.HUB_LIST_CHILDREN, threadId)
+  }
+
+  /** Stop all of a parent's open children; the backend holds its updates until the next message. */
+  hubStopChildren(parentId: string): Promise<void> {
+    return this.transport.invoke(ProviderChannels.HUB_STOP_CHILDREN, parentId)
   }
 
   /** A user send to another session; with `undeliveredId` it sends a kept Not delivered row. */

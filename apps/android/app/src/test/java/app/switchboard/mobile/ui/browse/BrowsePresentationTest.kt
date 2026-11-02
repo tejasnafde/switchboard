@@ -113,6 +113,23 @@ class BrowsePresentationTest {
     }
 
     @Test
+    fun anOpenChildIsLeftOutUnderItsListedParentAndAnOrphanChildStays() {
+        val content = BrowsePresenter.conversations(
+            BrowseLoadState.Ready(
+                listOf(
+                    BrowseConversationRecord(conversation("hub", 10)),
+                    BrowseConversationRecord(conversation("child", 30).copy(hubParentId = "hub")),
+                    BrowseConversationRecord(conversation("orphan", 20).copy(hubParentId = "archived-hub")),
+                ),
+                cached = false,
+            ),
+            OfflineBrowseIndex.empty(),
+        ) as BrowseConversationsPresentation.Content
+
+        assertEquals(listOf("orphan", "hub"), content.rows.map { it.id })
+    }
+
+    @Test
     fun archivedOnlyConversationCachePresentsTheRealEmptyState() {
         val result = BrowsePresenter.conversations(
             BrowseLoadState.Ready(

@@ -1025,5 +1025,146 @@
       ],
       "expected": "4 children on 3 machines"
     }
+  ],
+  "childStop": [
+    {
+      "name": "local child working with a live session",
+      "input": {
+        "chatId": "c1",
+        "state": "working",
+        "phase": "open",
+        "liveId": "live-1"
+      },
+      "expected": {
+        "canStop": true,
+        "target": "live-1"
+      }
+    },
+    {
+      "name": "local child working with no live session",
+      "input": {
+        "chatId": "c1",
+        "state": "working",
+        "phase": "open",
+        "liveId": null
+      },
+      "expected": {
+        "canStop": false,
+        "target": null
+      }
+    },
+    {
+      "name": "local child that reported",
+      "input": {
+        "chatId": "c1",
+        "state": "result_ready",
+        "phase": "open",
+        "liveId": "live-1"
+      },
+      "expected": {
+        "canStop": false,
+        "target": "live-1"
+      }
+    },
+    {
+      "name": "remote child working: its own id",
+      "input": {
+        "chatId": "c2",
+        "state": "working",
+        "phase": "open",
+        "liveId": null,
+        "remote": {
+          "machineId": "vm-1",
+          "machine": "build-vm",
+          "connected": true,
+          "ageMs": 0,
+          "stopping": false
+        }
+      },
+      "expected": {
+        "canStop": true,
+        "target": "c2"
+      }
+    },
+    {
+      "name": "remote child idle on a connected machine",
+      "input": {
+        "chatId": "c2",
+        "state": "paused",
+        "phase": "open",
+        "liveId": null,
+        "remote": {
+          "machineId": "vm-1",
+          "machine": "build-vm",
+          "connected": true,
+          "ageMs": 0,
+          "stopping": false
+        }
+      },
+      "expected": {
+        "canStop": false,
+        "target": "c2"
+      }
+    },
+    {
+      "name": "remote child open on an offline machine",
+      "input": {
+        "chatId": "c2",
+        "state": "paused",
+        "phase": "open",
+        "liveId": null,
+        "remote": {
+          "machineId": "vm-1",
+          "machine": "build-vm",
+          "connected": false,
+          "ageMs": null,
+          "stopping": false
+        }
+      },
+      "expected": {
+        "canStop": true,
+        "target": "c2"
+      }
+    },
+    {
+      "name": "remote child failed to start on an offline machine",
+      "input": {
+        "chatId": "c2",
+        "state": "failed",
+        "phase": "failed_start",
+        "liveId": null,
+        "remote": {
+          "machineId": "vm-1",
+          "machine": "build-vm",
+          "connected": false,
+          "ageMs": null,
+          "stopping": false
+        }
+      },
+      "expected": {
+        "canStop": false,
+        "target": "c2"
+      }
+    },
+    {
+      "name": "remote child with a Stop waiting",
+      "input": {
+        "chatId": "c2",
+        "state": "working",
+        "phase": "open",
+        "liveId": null,
+        "remote": {
+          "machineId": "vm-1",
+          "machine": "build-vm",
+          "connected": true,
+          "ageMs": 0,
+          "stopping": true
+        }
+      },
+      "expected": {
+        "canStop": false,
+        "target": "c2"
+      }
+    }
   ]
 }

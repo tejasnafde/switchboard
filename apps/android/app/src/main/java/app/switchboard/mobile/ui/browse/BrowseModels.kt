@@ -8,6 +8,7 @@ import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.SessionSummary
 import app.switchboard.mobile.domain.remote.Workspace
+import app.switchboard.mobile.domain.thread.HubChildren
 import java.io.Serializable
 import java.util.Locale
 
@@ -224,7 +225,9 @@ object BrowsePresenter {
                 is BrowseLoadState.Failed -> BrowseConversationsPresentation.Failure(state.message)
             }
         }
-        val sorted = BrowseDecisions.sortConversations(visible.map { it.conversation })
+        // An open child sits under its parent on the desktop; here it is left out while its parent is listed.
+        val topLevel = HubChildren.topLevel(visible.map { it.conversation }, Conversation::id, Conversation::hubParentId)
+        val sorted = BrowseDecisions.sortConversations(topLevel)
         return BrowseConversationsPresentation.Content(
             rows = sorted.map { conversation ->
                 BrowseConversationRow(

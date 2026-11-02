@@ -40,6 +40,13 @@ describe('isChannelAllowed', () => {
     expect(isChannelAllowed(PHONE_SCOPES, AppChannels.SAVE_LAUNCH_CONFIG)).toBe(false)
   })
 
+  it("opens a parent's hub view and Stop all to a phone, and the hub change event", () => {
+    expect(isChannelAllowed(PHONE_SCOPES, ProviderChannels.HUB_LIST_CHILDREN)).toBe(true)
+    expect(isChannelAllowed(PHONE_SCOPES, ProviderChannels.HUB_STOP_CHILDREN)).toBe(true)
+    expect(isChannelAllowed(PHONE_SCOPES, ProviderChannels.INTERRUPT)).toBe(true)
+    expect(isChannelAllowed(PHONE_SCOPES, ProviderChannels.EVENT)).toBe(true)
+  })
+
   it('keeps a phone from removing or unprotecting worktrees, while it may still read them', () => {
     expect(isChannelAllowed(PHONE_SCOPES, WorktreeManagerChannels.REMOVE)).toBe(false)
     expect(isChannelAllowed(PHONE_SCOPES, WorktreeManagerChannels.SET_PROTECTION)).toBe(false)

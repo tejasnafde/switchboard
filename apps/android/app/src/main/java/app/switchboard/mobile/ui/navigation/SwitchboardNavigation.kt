@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.navigation
 
+import app.switchboard.mobile.domain.thread.HubChatRef
 import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.platform.outbox.AndroidContentUriSource
 import app.switchboard.mobile.platform.outbox.RemoteComposerFileUploader
@@ -670,6 +671,18 @@ private fun SwitchboardNavigationHost(
                         ),
                     )
                 },
+                onOpenHubChat = { chat ->
+                    navigationState = navigationState.push(
+                        AppRoute.Thread(
+                            connectionId = route.connectionId,
+                            connectionLabel = route.connectionLabel,
+                            threadId = chat.id,
+                            projectPath = chat.projectPath,
+                            title = chat.title,
+                            provider = chat.agentType,
+                        ),
+                    )
+                },
             )
         }
     }
@@ -1069,6 +1082,7 @@ private fun ThreadRouteHost(
     offlineSnapshot: OfflineSnapshot?,
     onBack: () -> Unit,
     onForked: (app.switchboard.mobile.domain.remote.ForkConversationState) -> Unit,
+    onOpenHubChat: (HubChatRef) -> Unit,
 ) {
     val composerKey = remember(route.connectionId, route.threadId) {
         ComposerDraftKey(route.connectionId, route.threadId)
@@ -1165,6 +1179,7 @@ private fun ThreadRouteHost(
         queuedTurns = queuedTurns,
         onBack = onBack,
         onForked = onForked,
+        onOpenHubChat = onOpenHubChat,
     )
 }
 
@@ -1180,6 +1195,7 @@ private fun ConnectedThreadRoute(
     queuedTurns: List<QueuedTurn>,
     onBack: () -> Unit,
     onForked: (app.switchboard.mobile.domain.remote.ForkConversationState) -> Unit,
+    onOpenHubChat: (HubChatRef) -> Unit,
 ) {
     val composerKey = remember(route.connectionId, route.threadId) {
         ComposerDraftKey(route.connectionId, route.threadId)
@@ -1357,6 +1373,7 @@ private fun ConnectedThreadRoute(
             onRefreshGitContext = gitContextCoordinator::refresh,
             viewingLeaseLifecycle = viewingLeaseLifecycle,
             registerViewingLeaseRenewal = viewingRenewalRegistration,
+            onOpenHubChat = onOpenHubChat,
             onFork = { messageId, withWorktree ->
                 lease.client.loadSession(route.threadId) { loadedResponse ->
                     when (val loaded = loadedResponse.outcome) {

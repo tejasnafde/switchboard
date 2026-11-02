@@ -83,6 +83,7 @@ import { QueueSegment } from '../components/QueueSegment'
 import { AgentSettingsSheet } from '../components/AgentSettingsSheet'
 import { settingsChipLabel, usageAccessibilityLabel, usageLine } from '../lib/thread-chrome'
 import { LimitResumeRow } from '../components/LimitResumeRow'
+import { HubChildrenRow } from '../components/HubChildrenRow'
 import { ReviewPillChip } from '../components/ReviewPillChip'
 import { unlinkPrLink } from '../lib/pr-link-unlink'
 import type { PrLink } from '@shared/pull-request-links'
@@ -118,6 +119,7 @@ import {
 import { MergeBackSheet, type MergeBackSheetApi, type MergeBackSheetMode } from '../components/MergeBackSheet'
 import { FORK_MERGE_BACK_CAPABILITY } from '@shared/merge-back'
 import { LIMIT_AUTO_RESUME_CAPABILITY } from '@shared/limit-resume'
+import { HUB_CHILDREN_CAPABILITY, HUB_REMOTE_CHILDREN_CAPABILITY, type HubChatRef } from '@shared/hub'
 import { styles } from './thread-screen.styles'
 import { blockedSendReason } from '../lib/composer'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
@@ -1229,6 +1231,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // An older backend has no Limited row channels; it keeps the held message's Resume only.
   const currentClient = getClient(connectionId)
   const limitRowClient = currentClient?.supportsCapability(LIMIT_AUTO_RESUME_CAPABILITY) === true ? currentClient : null
+  // Child chats (`hub_children_v1`, advertised only while the flag is on).
+  const hubClient = currentClient?.supportsCapability(HUB_CHILDREN_CAPABILITY) === true ? currentClient : null
+  const hubRemoteOn = currentClient?.supportsCapability(HUB_REMOTE_CHILDREN_CAPABILITY) === true
+  const openHubChat = useCallback(
+    (chat: HubChatRef) =>
+      navigation.push('Thread', { connectionId, threadId: chat.id, title: chat.title, projectPath: chat.projectPath }),
+    [connectionId, navigation],
+  )
   const [mergeBackSheet, setMergeBackSheet] = useState<MergeBackSheetMode | null>(null)
   // The client is looked up per call: a reconnect replaces it while the sheet is open.
   const mergeBackApi = useMemo<MergeBackSheetApi>(() => {
@@ -1593,6 +1603,15 @@ export default function ThreadScreen({ route, navigation }: Props) {
       {/* Keyed by the re-seed revision: after a resume gap the row reads its state again. */}
       {limitRowClient && (
         <LimitResumeRow key={`${threadId}:${staleGeneration}`} client={limitRowClient} threadId={threadId} />
+      )}
+      {hubClient && (
+        <HubChildrenRow
+          key={`hub:${threadId}:${staleGeneration}`}
+          client={hubClient}
+          threadId={threadId}
+          remoteOn={hubRemoteOn}
+          onOpenChat={openHubChat}
+        />
       )}
 
       {forkMetadata && (

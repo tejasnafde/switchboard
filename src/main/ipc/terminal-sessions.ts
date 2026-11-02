@@ -84,5 +84,6 @@ export function sessionSummaryToConversationRow(s: SessionSummary, projectPath: 
     snooze_rev: s.snoozeRev ?? 0,
     woke_at: s.wokeAt ?? null,
     woke_reason: s.wokeReason ?? null,
+    ...(s.hub ? { hub: s.hub } : {}),
   } as ConversationRow
 }

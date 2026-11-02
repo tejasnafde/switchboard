@@ -12,15 +12,10 @@
  * would answer the client's hello first, with `gap: false`.
  */
 import { timeBackendHandler } from './perf-handler'
+import { readyCapabilities } from './flag-capabilities'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Server, Socket } from 'node:net'
-import {
-  BACKEND_CAPABILITIES,
-  encodeFrame,
-  decodeFrame,
-  isReplayableEventChannel,
-  type WsFrame,
-} from '@shared/ws-protocol'
+import { encodeFrame, decodeFrame, isReplayableEventChannel, type WsFrame } from '@shared/ws-protocol'
 import { EventReplayBuffer, resumeFrom, type ReplayResult } from '@shared/event-replay-buffer'
 import {
   isChannelAllowed,
@@ -230,7 +225,7 @@ export class TcpHost implements BackendHost {
       seq: this.seq,
       replayed: result.gap ? 0 : result.frames.length,
       gap: result.gap,
-      capabilities: [...BACKEND_CAPABILITIES],
+      capabilities: readyCapabilities(),
     })
   }
 
