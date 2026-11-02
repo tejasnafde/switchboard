@@ -435,7 +435,7 @@ describe('SqliteTurnAcceptanceStore', () => {
   it('rolls back completion when a message id belongs to another thread', () => {
     const db = atomicTurnDb()
     db.exec(`
-      INSERT INTO conversations VALUES ('thread-b', 'Other', NULL, 1, NULL);
+      INSERT INTO conversations VALUES ('thread-b', 'Other', NULL, 1, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL);
       INSERT INTO messages
         (id, conversation_id, role, content, timestamp)
       VALUES ('remote_origin-a', 'thread-b', 'user', 'other turn', 1);
@@ -473,7 +473,14 @@ describe('commitConversationProfileSwitch', () => {
         session_id TEXT,
         pending_handoff_from TEXT,
         updated_at INTEGER NOT NULL,
-        settled_at INTEGER
+        settled_at INTEGER,
+        snoozed_until INTEGER,
+        snoozed_at INTEGER,
+        snooze_pr TEXT,
+        snooze_pr_mark TEXT,
+        snooze_rev INTEGER NOT NULL DEFAULT 0,
+        woke_at INTEGER,
+        woke_reason TEXT
       );
       CREATE TABLE conversation_segments (
         id TEXT PRIMARY KEY,
@@ -491,7 +498,7 @@ describe('commitConversationProfileSwitch', () => {
         thread_id TEXT NOT NULL,
         recorded_at INTEGER NOT NULL
       );
-      INSERT INTO conversations VALUES ('root', 'work', 'native-old', NULL, 1, NULL);
+      INSERT INTO conversations VALUES ('root', 'work', 'native-old', NULL, 1, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL);
     `)
     return db
   }
@@ -599,7 +606,14 @@ function atomicTurnDb(): Database.Database {
       title TEXT NOT NULL,
       pending_handoff_from TEXT,
       updated_at INTEGER NOT NULL,
-        settled_at INTEGER
+        settled_at INTEGER,
+        snoozed_until INTEGER,
+        snoozed_at INTEGER,
+        snooze_pr TEXT,
+        snooze_pr_mark TEXT,
+        snooze_rev INTEGER NOT NULL DEFAULT 0,
+        woke_at INTEGER,
+        woke_reason TEXT
     );
     CREATE TABLE messages (
       id TEXT PRIMARY KEY,
@@ -612,7 +626,7 @@ function atomicTurnDb(): Database.Database {
       display_body TEXT,
       pills_meta TEXT
     );
-    INSERT INTO conversations VALUES ('thread-a', 'New conversation', 'codex', 1, NULL);
+    INSERT INTO conversations VALUES ('thread-a', 'New conversation', 'codex', 1, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL);
   `)
   ensureTurnAcceptanceSchema(db)
   return db

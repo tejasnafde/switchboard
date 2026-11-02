@@ -19,7 +19,9 @@ import { withCertPin } from '@shared/transport-security'
 import { TcpHost } from '../main/backend/tcp-host'
 import { MultiHost } from '../main/backend/multi-host'
 import { registerPushHandlers } from '../main/ipc/push'
-import { attachPushNotifier } from '../main/push/registry'
+import { attachPushNotifier, pushToThread } from '../main/push/registry'
+import { startChatSnoozer } from '../main/conversations/chat-snooze'
+import { wokePush } from '@shared/push-policy'
 import { registerAppHandlers } from '../main/ipc/app'
 import { pruneAttachments } from '../main/attachments'
 import { registerFilesHandlers } from '../main/ipc/files'
@@ -197,6 +199,11 @@ attachPullRequestAutoLink(registry.bus, host, {
   needsUser: (id) => registry.needsUser(id),
 })
 startPullRequestHistoryScan()
+startChatSnoozer({
+  emit: (channel, payload) => host.emit(channel, payload),
+  needsYou: (id) => registry.needsUser(id),
+  pushWoke: (id, title, line) => pushToThread(id, wokePush(id, title, line)),
+})
 registry.registerIpcHandlers()
 
 // The workbench bridge, when the ssh bootstrap minted a token for us (see

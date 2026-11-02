@@ -1,4 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+const snoozer = vi.hoisted(() => ({ throwOnCleared: false, cleared: [] as string[] }))
+vi.mock('../../src/main/conversations/chat-snooze', () => ({
+  chatSnoozer: () => ({
+    onCleared: (id: string) => {
+      snoozer.cleared.push(id)
+      if (snoozer.throwOnCleared) throw new Error('snooze broadcast failed')
+    },
+  }),
+}))
+
 import Database from 'better-sqlite3'
 import * as durable from '../../src/main/provider/durable-turn-acceptance'
 import { SqliteTurnAcceptanceStore, ensureTurnAcceptanceSchema } from '../../src/main/db/turn-acceptance'
@@ -54,6 +65,20 @@ describe('AtomicUserTurnSubmission', () => {
       images: JSON.stringify(input.images),
     })
     harness.close()
+  })
+
+  it('accepts and publishes a committed turn when the snooze cleanup throws', async () => {
+    const harness = fixture()
+    snoozer.throwOnCleared = true
+    try {
+      const result = await harness.service.submit(submission(), harness.context())
+      expect(result).toMatchObject({ status: 'accepted', accepted: true })
+      expect(snoozer.cleared).toContain('thread-1')
+      expect(harness.events).toHaveLength(1)
+    } finally {
+      snoozer.throwOnCleared = false
+      harness.close()
+    }
   })
 
   it('rejects an over-budget aggregate before reservation or dispatch', async () => {
@@ -323,7 +348,14 @@ function fixture() {
       title TEXT NOT NULL,
       pending_handoff_from TEXT,
       updated_at INTEGER NOT NULL,
-      settled_at INTEGER
+      settled_at INTEGER,
+      snoozed_until INTEGER,
+      snoozed_at INTEGER,
+      snooze_pr TEXT,
+      snooze_pr_mark TEXT,
+      snooze_rev INTEGER NOT NULL DEFAULT 0,
+      woke_at INTEGER,
+      woke_reason TEXT
     );
     CREATE TABLE messages (
       id TEXT PRIMARY KEY,
@@ -336,7 +368,7 @@ function fixture() {
       display_body TEXT,
       pills_meta TEXT
     );
-    INSERT INTO conversations VALUES ('thread-1', 'New conversation', 'codex', 1, NULL);
+    INSERT INTO conversations VALUES ('thread-1', 'New conversation', 'codex', 1, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL);
   `)
   ensureTurnAcceptanceSchema(db)
   const store = new SqliteTurnAcceptanceStore(() => db)

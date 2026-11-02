@@ -1,0 +1,167 @@
+{
+  "comment": "Snooze rules (src/shared/chat-snooze.ts, Kotlin ChatSnooze.kt). Times are local wall times YYYY-MM-DDTHH:MM[:SS] in the zone the test runs in. 2026-11-02 is a Monday.",
+  "presets": [
+    {
+      "name": "Monday morning: all four, soonest first",
+      "now": "2026-11-02T09:00",
+      "expect": [
+        ["Later today", "2026-11-02T12:00"],
+        ["Tonight", "2026-11-02T20:00"],
+        ["Tomorrow morning", "2026-11-03T09:00"],
+        ["Next week", "2026-11-09T09:00"]
+      ]
+    },
+    {
+      "name": "a duration rounds up to the next :00 or :30",
+      "now": "2026-11-02T09:10:30",
+      "expect": [
+        ["Later today", "2026-11-02T12:30"],
+        ["Tonight", "2026-11-02T20:00"],
+        ["Tomorrow morning", "2026-11-03T09:00"],
+        ["Next week", "2026-11-09T09:00"]
+      ]
+    },
+    {
+      "name": "18:59: Later today would end at 22:00, Tonight is still more than an hour away",
+      "now": "2026-11-02T18:59",
+      "expect": [
+        ["Tonight", "2026-11-02T20:00"],
+        ["Tomorrow morning", "2026-11-03T09:00"],
+        ["Next week", "2026-11-09T09:00"]
+      ]
+    },
+    {
+      "name": "19:00: Tonight is an hour away and drops",
+      "now": "2026-11-02T19:00",
+      "expect": [
+        ["Tomorrow morning", "2026-11-03T09:00"],
+        ["Next week", "2026-11-09T09:00"]
+      ]
+    },
+    {
+      "name": "17:29: Later today ends at 20:30, before 21:00",
+      "now": "2026-11-02T17:29",
+      "expect": [
+        ["Tonight", "2026-11-02T20:00"],
+        ["Later today", "2026-11-02T20:30"],
+        ["Tomorrow morning", "2026-11-03T09:00"],
+        ["Next week", "2026-11-09T09:00"]
+      ]
+    },
+    {
+      "name": "17:45: Later today would end at 21:00 and drops",
+      "now": "2026-11-02T17:45",
+      "expect": [
+        ["Tonight", "2026-11-02T20:00"],
+        ["Tomorrow morning", "2026-11-03T09:00"],
+        ["Next week", "2026-11-09T09:00"]
+      ]
+    },
+    {
+      "name": "Sunday: Next week is tomorrow 09:00, the same minute as Tomorrow morning, which keeps it",
+      "now": "2026-11-01T10:00",
+      "expect": [
+        ["Later today", "2026-11-01T13:00"],
+        ["Tonight", "2026-11-01T20:00"],
+        ["Tomorrow morning", "2026-11-02T09:00"]
+      ]
+    },
+    {
+      "name": "20:59 on the last day of the year: across the month and year",
+      "now": "2026-12-31T20:59",
+      "expect": [
+        ["Tomorrow morning", "2027-01-01T09:00"],
+        ["Next week", "2027-01-04T09:00"]
+      ]
+    },
+    {
+      "name": "21:00 Friday with custom presets: a two-day duration and a Saturday time",
+      "now": "2026-11-06T21:00",
+      "specs": [
+        { "label": "In an hour", "kind": "duration", "minutes": 60 },
+        { "label": "In 2 days", "kind": "duration", "minutes": 2880 },
+        { "label": "Saturday noon", "kind": "weekday", "weekday": 6, "hour": 12, "minute": 0 }
+      ],
+      "expect": [
+        ["Saturday noon", "2026-11-07T12:00"],
+        ["In 2 days", "2026-11-08T21:00"]
+      ]
+    }
+  ],
+  "pick": [
+    {
+      "name": "a duration counts from the click",
+      "shownAt": "2026-11-02T09:00",
+      "label": "Later today",
+      "clickAt": "2026-11-02T09:20",
+      "expect": "2026-11-02T12:30"
+    },
+    {
+      "name": "a clock time keeps the instant the menu showed, across midnight",
+      "shownAt": "2026-11-02T23:59",
+      "label": "Tomorrow morning",
+      "clickAt": "2026-11-03T00:01",
+      "expect": "2026-11-03T09:00"
+    },
+    {
+      "name": "a clock time that has passed is refused",
+      "shownAt": "2026-11-02T09:00",
+      "label": "Tonight",
+      "clickAt": "2026-11-02T20:00",
+      "expect": "past"
+    }
+  ],
+  "wakeLabel": [
+    { "now": "2026-11-02T10:00", "until": "2026-11-02T20:00", "pr": null, "expect": "20:00" },
+    { "now": "2026-11-02T10:00", "until": "2026-11-03T09:00", "pr": null, "expect": "Tue 09:00" },
+    { "now": "2026-11-02T10:00", "until": "2026-11-08T23:00", "pr": null, "expect": "Sun 23:00" },
+    { "now": "2026-11-02T10:00", "until": "2026-11-09T09:00", "pr": null, "expect": "9 Nov" },
+    { "now": "2026-11-02T10:00", "until": "2027-01-12T09:00", "pr": null, "expect": "12 Jan" },
+    { "now": "2026-11-02T10:00", "until": null, "pr": "acme/app#512", "expect": "PR #512" },
+    { "now": "2026-11-02T10:00", "until": "2026-11-02T20:00", "pr": "acme/app#512", "expect": "20:00" }
+  ],
+  "customWake": [
+    { "now": "2026-11-02T10:00", "date": [2026, 11, 2], "clock": "09:00", "expect": "past" },
+    { "now": "2026-11-02T10:00", "date": [2026, 11, 2], "clock": "10:30", "expect": "ok", "at": "2026-11-02T10:30" },
+    { "now": "2026-11-02T10:00", "date": [2026, 11, 3], "clock": "9:05", "expect": "ok", "at": "2026-11-03T09:05" },
+    { "now": "2026-11-02T10:00", "date": [2027, 2, 30], "clock": "09:00", "expect": "invalid" },
+    { "now": "2026-11-02T10:00", "date": [2027, 4, 31], "clock": "09:00", "expect": "invalid" },
+    { "now": "2026-11-02T10:00", "date": [2026, 11, 3], "clock": "25:00", "expect": "invalid" },
+    { "now": "2026-11-02T10:00", "date": [2026, 11, 3], "clock": "-1:00", "expect": "invalid" },
+    { "now": "2026-11-02T10:00", "date": [2026, 11, 3], "clock": "9:5", "expect": "invalid" },
+    { "now": "2026-11-02T10:00", "date": [2027, 11, 3], "clock": "09:00", "expect": "too_far" }
+  ],
+  "customWakeDst": {
+    "comment": "Run in America/New_York. 2027-03-14 02:30 does not exist; 2026-11-01 01:30 happens twice and takes the first (EDT).",
+    "zone": "America/New_York",
+    "cases": [
+      { "date": [2027, 3, 14], "clock": "02:30", "expect": "invalid" },
+      { "date": [2026, 11, 1], "clock": "01:30", "expect": "ok", "epochMs": 1793511000000 }
+    ],
+    "now": 1793491200000
+  },
+  "shouldWakeOn": [
+    { "name": "the time passed", "state": { "snoozedUntil": 1000, "snoozedAt": 500 }, "event": { "kind": "time", "now": 1000 }, "expect": "time" },
+    { "name": "the time has not passed", "state": { "snoozedUntil": 1000, "snoozedAt": 500 }, "event": { "kind": "time", "now": 999 }, "expect": null },
+    { "name": "a PR-only snooze has no time", "state": { "snoozedUntil": null, "snoozedAt": 500, "snoozePr": "a/b#1" }, "event": { "kind": "time", "now": 99999 }, "expect": null },
+    { "name": "a card opened", "state": { "snoozedUntil": 1000, "snoozedAt": 500 }, "event": { "kind": "needs_you" }, "expect": "needs_you" },
+    { "name": "a failure after the snooze", "state": { "snoozedUntil": 1000, "snoozedAt": 500 }, "event": { "kind": "error", "at": 501 }, "expect": "error" },
+    { "name": "a failure from before the snooze (replayed or late)", "state": { "snoozedUntil": 1000, "snoozedAt": 500 }, "event": { "kind": "error", "at": 500 }, "expect": null },
+    { "name": "a message a person sent", "state": { "snoozedUntil": 1000, "snoozedAt": 500 }, "event": { "kind": "message", "from": "person", "at": 501 }, "expect": "message" },
+    { "name": "a message a person sent before the snooze, delivered after it", "state": { "snoozedUntil": 1000, "snoozedAt": 500 }, "event": { "kind": "message", "from": "person", "at": 500 }, "expect": null },
+    { "name": "a message from an agent", "state": { "snoozedUntil": 1000, "snoozedAt": 500 }, "event": { "kind": "message", "from": "agent", "at": 501 }, "expect": null },
+    { "name": "a normal turn end", "state": { "snoozedUntil": 1000, "snoozedAt": 500 }, "event": { "kind": "turn_completed" }, "expect": null },
+    { "name": "the watched PR changed", "state": { "snoozedUntil": null, "snoozedAt": 500, "snoozePr": "a/b#1" }, "event": { "kind": "pr", "pr": "a/b#1" }, "expect": "pr" },
+    { "name": "another PR changed", "state": { "snoozedUntil": null, "snoozedAt": 500, "snoozePr": "a/b#1" }, "event": { "kind": "pr", "pr": "a/b#2" }, "expect": null },
+    { "name": "not snoozed", "state": { "snoozedUntil": null, "snoozedAt": null }, "event": { "kind": "needs_you" }, "expect": null }
+  ],
+  "parsePreset": [
+    { "raw": { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 }, "ok": true },
+    { "raw": { "label": "  ", "kind": "duration", "minutes": 60 }, "ok": false },
+    { "raw": { "label": "Soon", "kind": "duration", "minutes": 4 }, "ok": false },
+    { "raw": { "label": "Bad hour", "kind": "time", "dayOffset": 0, "hour": 24, "minute": 0 }, "ok": false },
+    { "raw": { "label": "Bad day", "kind": "weekday", "weekday": 7, "hour": 9, "minute": 0 }, "ok": false },
+    { "raw": { "label": "Friday", "kind": "weekday", "weekday": 5, "hour": 17, "minute": 30 }, "ok": true },
+    { "raw": { "label": "Odd", "kind": "month", "hour": 9, "minute": 0 }, "ok": false }
+  ]
+}

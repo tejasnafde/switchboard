@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { chatSnoozer } from '../conversations/chat-snooze'
 import type {
   AcceptedUserTurnRecord,
   CanonicalUserTurnRow,
@@ -351,6 +352,12 @@ export class AtomicUserTurnSubmission {
         state: 'ambiguous',
         reason: 'Provider accepted the turn but the durable transcript commit is unconfirmed',
       }
+    }
+    // The commit ended any snooze; clients hear it here. Best-effort, like `notifyCommit`.
+    try {
+      chatSnoozer()?.onCleared(key.threadId)
+    } catch (err) {
+      log.warn(`snooze cleanup after the commit of ${key.threadId} failed`, err)
     }
     const canonicalRow = this.store.readCanonicalUserTurn(key)
     if (!canonicalRow) {

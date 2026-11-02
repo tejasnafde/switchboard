@@ -123,6 +123,8 @@ import { projectOverrideKey } from '@shared/project-settings'
 import { hubChildrenEnabled, withHubFields } from '@shared/hub'
 import { uploadAttachment } from '../attachments'
 import { storeConversationSettled } from '../conversations/chat-settle'
+import { chatSnoozer } from '../conversations/chat-snooze'
+import type { SnoozeRequest, SnoozeResult } from '@shared/chat-snooze'
 
 const log = createLogger('ipc:app')
 
@@ -909,6 +911,18 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   host.handle(AppChannels.UNSETTLE_CONVERSATION, (id: string) => {
     return { ok: storeConversationSettled(host, id, null) }
   })
+
+  host.handle(AppChannels.SNOOZE_CONVERSATION, (id: string, request: SnoozeRequest): SnoozeResult => {
+    const snoozer = chatSnoozer()
+    if (!snoozer) return { ok: false, reason: 'no_row' }
+    return snoozer.snooze(id, request ?? { until: null })
+  })
+
+  host.handle(AppChannels.UNSNOOZE_CONVERSATION, (id: string, expectRev?: number) => ({
+    ok: chatSnoozer()?.wake(id, expectRev === undefined ? 'wake_now' : 'undo', { expectRev }) ?? false,
+  }))
+
+  host.handle(AppChannels.MARK_WOKE_SEEN, (id: string) => ({ ok: chatSnoozer()?.seen(id) ?? false }))
 
   host.handle(AppChannels.GET_ARCHIVED_CONVERSATIONS, () => {
     return getArchivedConversations()
