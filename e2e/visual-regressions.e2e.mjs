@@ -807,6 +807,18 @@ async function captureThemeScreens(win, theme) {
   const settings = win.locator('.settings-page')
   await settings.waitFor({ state: 'visible' })
   await snapScreen(win, 'settings', theme, settings)
+  // General's Snooze presets editor and its menu preview, each scrolled into view, then back to the top.
+  for (const [screen, part] of [
+    ['settings-snooze-presets', 'snooze-presets-title'],
+    ['settings-snooze-preview', 'snooze-preview-title'],
+  ]) {
+    const section = settings.locator(`section[aria-labelledby="${part}"]`)
+    await section.scrollIntoViewIfNeeded()
+    await snapScreen(win, screen, theme, section)
+  }
+  await settings.locator('[data-setting-row="sidebar.snoozePresets"]').evaluate((el) => {
+    for (let p = el.parentElement; p; p = p.parentElement) if (p.scrollHeight > p.clientHeight) p.scrollTop = 0
+  })
   await settings.getByRole('button', { name: /^Accounts & models/ }).click()
   await settings.locator('[data-account]').nth(4).waitFor({ state: 'visible' })
   await win.waitForFunction(() => document.querySelectorAll('.settings-page [aria-busy="true"]').length === 0)
