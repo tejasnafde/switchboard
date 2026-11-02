@@ -67,6 +67,21 @@ describe('undo that fails', () => {
   })
 })
 
+describe('a settle the backend refuses', () => {
+  beforeEach(() => useAgentStore.getState().setLastUndo(null))
+
+  it('withdraws its own Undo but keeps a newer one for the same chat', async () => {
+    let refuse: (value: { ok: boolean; settledAt: number }) => void = () => {}
+    settleConversation.mockImplementationOnce(() => new Promise((resolve) => (refuse = resolve)))
+    const settling = settleChat({ id: 'c4', title: 'Chat', machineId: 'local' })
+    const newer = { kind: 'snooze' as const, id: 'c4', title: 'Chat', machineId: 'local', until: 1, pr: null }
+    useAgentStore.getState().setLastUndo(newer)
+    refuse({ ok: false, settledAt: 1 })
+    await settling
+    expect(useAgentStore.getState().lastUndo).toBe(newer)
+  })
+})
+
 describe('a merged PR settle from another machine', () => {
   it('routes Undo to the machine that sent the event', () => {
     applySettledEvent({ conversationId: 'r1', settledAt: 9, title: 'Remote', prNumber: 4, machineId: 'vm-1' })

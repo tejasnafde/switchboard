@@ -155,7 +155,8 @@ export async function settleChat(target: InboxTarget): Promise<void> {
   const settledAt = Date.now()
   emitSettled(target.id, settledAt)
   if (isWoke(storedSnooze(target.id))) emitSnooze(target.id, NO_MARKER)
-  offerUndo({ kind: 'settle', ...target, settledAt })
+  const undo: LastUndo = { kind: 'settle', ...target, settledAt }
+  offerUndo(undo)
   try {
     routeTo(target)
     const result = await window.api.app.settleConversation(target.id)
@@ -163,7 +164,7 @@ export async function settleChat(target: InboxTarget): Promise<void> {
   } catch (err) {
     log.warn(`settle failed for ${target.id}; the row comes back`, err)
     emitSettled(target.id, null)
-    if (useAgentStore.getState().lastUndo?.id === target.id) useAgentStore.getState().setLastUndo(null)
+    dropUndo(undo)
   }
 }
 
