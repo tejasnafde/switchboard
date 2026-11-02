@@ -19,6 +19,7 @@
  * (wrong) id straight out of `active.session.sessionId`, so migration could
  * never find the transcript.
  */
+import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
@@ -130,7 +131,7 @@ describe('ProviderRegistry.startSession does not clobber a resolved Claude resum
     const session = await host.invoke<{ sessionId?: string }>(ProviderChannels.START_SESSION, {
       threadId: 't1',
       provider: 'claude',
-      cwd: '/tmp',
+      cwd: tmpdir(),
       resumeSessionId: STALE_HINT,
     })
 

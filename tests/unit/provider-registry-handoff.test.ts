@@ -4,6 +4,7 @@
  * the acceptance transaction. A provider returning to a chat it already took
  * part in, with its native session resumed, gets only what it missed.
  */
+import { tmpdir } from 'node:os'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 import { stripSenderLine } from '../../src/shared/sender-line'
@@ -151,7 +152,7 @@ async function setup() {
   const adapter = new FakeAdapter()
   const registry = new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, submission)
   registry.registerIpcHandlers()
-  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
+  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: tmpdir() })
   const submit = (providerText: string) =>
     host.invoke(ProviderChannels.SUBMIT_USER_TURN, {
       version: 1,
