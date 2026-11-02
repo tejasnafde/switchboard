@@ -580,7 +580,7 @@ function remoteChildRow(
       ? `stopping on ${there.machine}`
       : there.connected
         ? 'connected'
-        : `not connected${age === null ? '' : `, this view is ${age} s old`}`,
+        : `not connected${age === null ? '' : s ? `, this view is ${age} s old` : `, last seen ${age} s ago`}`,
     ...(age !== null && there.connected ? { viewAgeSec: age } : {}),
     account: s?.account ?? c.providerInstanceId,
     model: s?.model ?? c.requestedModel,
