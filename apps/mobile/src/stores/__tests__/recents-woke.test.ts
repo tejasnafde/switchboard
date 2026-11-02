@@ -42,3 +42,40 @@ test('a backend without Snooze is not asked', () => {
   expect(mark).not.toHaveBeenCalled()
   expect(held()?.wokeAt).toBe(900)
 })
+
+const snoozedA = {
+  conversationId: 'a',
+  snoozedUntil: 5_000,
+  snoozedAt: 1_000,
+  snoozePr: null,
+  snoozeRev: 4,
+  wokeAt: null,
+  wokeReason: null,
+} as never
+
+function listingClient(getProjects: jest.Mock) {
+  return { getProjects, listLiveSessions: jest.fn().mockResolvedValue([]) }
+}
+
+test('a snooze broadcast while a list read is out reads the list again', async () => {
+  let answer: (value: unknown) => void = () => {}
+  const getProjects = jest
+    .fn()
+    .mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    .mockResolvedValue([])
+  jest.mocked(getClient).mockReturnValue(listingClient(getProjects) as never)
+  const reading = useRecentsStore.getState().refresh('mac')
+  useRecentsStore.getState().applySnooze('mac', snoozedA)
+  expect(held()?.snoozedAt).toBe(1_000)
+  expect(getProjects).toHaveBeenCalledTimes(2)
+  answer([])
+  await reading
+})
+
+test('a snooze broadcast for a chat the list does not hold reads the list again', () => {
+  const getProjects = jest.fn().mockResolvedValue([])
+  jest.mocked(getClient).mockReturnValue(listingClient(getProjects) as never)
+  useRecentsStore.getState().applySnooze('mac', { ...(snoozedA as object), conversationId: 'rotated' } as never)
+  expect(held()?.snoozedAt).toBeNull()
+  expect(getProjects).toHaveBeenCalledTimes(1)
+})

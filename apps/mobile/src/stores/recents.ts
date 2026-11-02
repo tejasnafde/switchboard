@@ -7,10 +7,12 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { createLogger } from '@shared/logger'
+import type { ConversationSettledEvent } from '@shared/chat-settle'
 import { CHAT_SNOOZE_CAPABILITY, isWoke, snoozeRefusalText, type ConversationSnoozedEvent } from '@shared/chat-snooze'
 import {
   persistedRecents,
   sessionsFromProjects,
+  withSettled,
   withSnoozeEvent,
   type LiveStatuses,
   type RecentSession,
@@ -31,6 +33,8 @@ interface RecentsState {
   live: Record<string, LiveStatuses>
   /** Read one machine's chats and live statuses again. */
   refresh: (connectionId: string) => Promise<void>
+  /** The machine settled or unsettled a chat: patch its row, or read the list again when none matches. */
+  applySettled: (connectionId: string, event: ConversationSettledEvent) => void
   /** The machine left connected: its reply no longer describes it. */
   dropLive: (connectionId: string) => void
   /** The machine was unpaired. */
@@ -41,6 +45,14 @@ interface RecentsState {
 
 /** The newest request per machine; an older reply that lands later is dropped. */
 const requests = new Map<string, number>()
+/** The request whose `getProjects` is still out, per machine. */
+const projectReads = new Map<string, number>()
+
+/** The newest `getProjects` is still out, so its reply could put back a state a broadcast just changed. */
+function newestReadOut(connectionId: string): boolean {
+  const read = projectReads.get(connectionId)
+  return read !== undefined && read === requests.get(connectionId)
+}
 
 function without<T>(byId: Record<string, T>, id: string): Record<string, T> {
   const { [id]: _dropped, ...rest } = byId
@@ -49,7 +61,7 @@ function without<T>(byId: Record<string, T>, id: string): Record<string, T> {
 
 export const useRecentsStore = create<RecentsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       sessions: {},
       live: {},
 
@@ -60,14 +72,20 @@ export const useRecentsStore = create<RecentsState>()(
         const request = (requests.get(connectionId) ?? 0) + 1
         requests.set(connectionId, request)
         const current = () => requests.get(connectionId) === request
+        projectReads.set(connectionId, request)
         await Promise.all([
-          client.getProjects().then(
-            (projects) => {
-              if (current())
-                set((s) => ({ sessions: { ...s.sessions, [connectionId]: sessionsFromProjects(projects) } }))
-            },
-            (err: unknown) => log.warn('could not list chats for Home', err),
-          ),
+          client
+            .getProjects()
+            .finally(() => {
+              if (projectReads.get(connectionId) === request) projectReads.delete(connectionId)
+            })
+            .then(
+              (projects) => {
+                if (current())
+                  set((s) => ({ sessions: { ...s.sessions, [connectionId]: sessionsFromProjects(projects) } }))
+              },
+              (err: unknown) => log.warn('could not list chats for Home', err),
+            ),
           client.listLiveSessions().then(
             (live) => {
               if (!current()) return
@@ -81,6 +99,13 @@ export const useRecentsStore = create<RecentsState>()(
         ])
       },
 
+      applySettled: (connectionId, event) => {
+        const patched = withSettled(get().sessions[connectionId] ?? [], event.conversationId, event.settledAt)
+        if (patched) set((s) => ({ sessions: { ...s.sessions, [connectionId]: patched } }))
+        // No row matched, or a read that is still out would put the old settledAt back.
+        if (!patched || newestReadOut(connectionId)) void get().refresh(connectionId)
+      },
+
       dropLive: (connectionId) => {
         requests.set(connectionId, (requests.get(connectionId) ?? 0) + 1)
         set((s) => (connectionId in s.live ? { live: without(s.live, connectionId) } : {}))
@@ -88,15 +113,17 @@ export const useRecentsStore = create<RecentsState>()(
 
       forget: (connectionId) => {
         requests.delete(connectionId)
+        projectReads.delete(connectionId)
         set((s) => ({ sessions: without(s.sessions, connectionId), live: without(s.live, connectionId) }))
       },
 
       applySnooze: (connectionId, event) => {
-        set((s) => {
-          const list = s.sessions[connectionId]
-          const next = list && withSnoozeEvent(list, event)
-          return next && next !== list ? { sessions: { ...s.sessions, [connectionId]: next } } : {}
-        })
+        const list = get().sessions[connectionId]
+        const held = list?.some((session) => session.id === event.conversationId) === true
+        const next = list && held ? withSnoozeEvent(list, event) : list
+        if (next && next !== list) set((s) => ({ sessions: { ...s.sessions, [connectionId]: next } }))
+        // Same rule as applySettled: an unknown id, or a read still out that would put the old snooze back.
+        if (!held || newestReadOut(connectionId)) void get().refresh(connectionId)
       },
     }),
     {
