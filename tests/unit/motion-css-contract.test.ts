@@ -35,7 +35,7 @@ describe('popover, menu and dialog motion', () => {
     expect(css).toMatch(/@keyframes sb-pop-in \{\s*from \{ opacity: 0; transform: scale\(0\.98\); \}/)
     expect(css).toMatch(/@keyframes sb-pop-out \{\s*to \{ opacity: 0; transform: scale\(0\.98\); \}/)
     expect(css).toMatch(/\.sb-pop\[data-state='open'\] \{\s*animation: sb-pop-in 150ms ease-out;/)
-    expect(css).toMatch(/\.sb-pop\[data-state='closed'\] \{\s*animation: sb-pop-out 100ms ease-out forwards;/)
+    expect(css).toMatch(/\.sb-pop\[data-state='closed'\] \{\s*animation: sb-pop-out 100ms ease-out forwards;\s*pointer-events: none;/)
     expect(css).toMatch(/\.sb-pop-anchored \{\s*transform-origin: var\(--radix-popover-content-transform-origin\);/)
   })
 

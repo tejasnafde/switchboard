@@ -3026,12 +3026,13 @@ mark.sb-search-mark.active {
 
 /* Popovers, menus and dialogs (ui/popover, ui/dialog, ui/alert-dialog): fade
    and scale from 0.98 at the trigger on open, faster on close. Radix keeps
-   the content mounted until the exit animation ends. */
+   the content mounted until the exit animation ends; it takes no clicks then. */
 .sb-pop[data-state='open'] {
   animation: sb-pop-in 150ms ease-out;
 }
 .sb-pop[data-state='closed'] {
   animation: sb-pop-out 100ms ease-out forwards;
+  pointer-events: none;
 }
 .sb-pop-anchored {
   transform-origin: var(--radix-popover-content-transform-origin);
