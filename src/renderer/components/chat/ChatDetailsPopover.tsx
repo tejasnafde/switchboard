@@ -43,6 +43,7 @@ export interface ChatDetailsProps {
   sessionId: string
   machineId: string | undefined
   machineName: string | undefined
+  machineTransport: 'ssh' | 'gcloud-iap' | undefined
   /** The agent's working folder: the worktree, else the project. */
   cwd: string | null
   /** The provider account whose usage limits the bars show. */
@@ -136,6 +137,7 @@ function DetailsBody({
   sessionId,
   machineId,
   machineName,
+  machineTransport,
   cwd,
   instanceId,
   contextUsage,
@@ -163,7 +165,7 @@ function DetailsBody({
   return (
     <>
       <Row label="Machine">
-        <Value value={{ text: machineValue(machineId, machineName) }} />
+        <Value value={{ text: machineValue(machineId, machineName, machineTransport) }} />
       </Row>
       <Row label="Branch">
         <Value value={branchValue(branch)} />

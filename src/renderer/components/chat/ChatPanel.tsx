@@ -279,9 +279,8 @@ export function ChatPanel({
     useLayoutStore.getState().selectChatSession(otherSessionId)
     setTimeout(() => focusComposer(otherSessionId), 0)
   }, [activeSession, chatSlot, chatTitle, otherSessionId, sessionId, sessionIdOverride])
-  const remoteMachineName = useMachineStore(
-    (state) => state.remotes.find((machine) => machine.id === activeSession?.machineId)?.name,
-  )
+  const remoteMachine = useMachineStore((state) => state.remotes.find((m) => m.id === activeSession?.machineId))
+  const remoteMachineName = remoteMachine?.name
   const identity = useMemo(
     () =>
       chatIdentity({
@@ -1537,6 +1536,7 @@ export function ChatPanel({
                   sessionId={activeSession.id}
                   machineId={activeSession.machineId}
                   machineName={remoteMachineName}
+                  machineTransport={remoteMachine?.transportKind}
                   cwd={activeSession.worktreePath ?? projectPath ?? null}
                   instanceId={instanceId ?? defaultInstanceId(activeSession.type)}
                   contextUsage={contextUsage}

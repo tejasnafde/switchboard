@@ -18,8 +18,12 @@ function isLocal(machineId: string | undefined): boolean {
   return !machineId || machineId === 'local'
 }
 
-export function machineValue(machineId: string | undefined, machineName: string | undefined): string {
-  return isLocal(machineId) ? 'This Mac' : `${machineName ?? machineId} · SSH`
+export function machineValue(
+  machineId: string | undefined,
+  machineName: string | undefined,
+  transport: 'ssh' | 'gcloud-iap' = 'ssh',
+): string {
+  return isLocal(machineId) ? 'This Mac' : `${machineName ?? machineId} · ${transport === 'gcloud-iap' ? 'IAP' : 'SSH'}`
 }
 
 export function editorLabel(machineId: string | undefined, machineName: string | undefined): string {

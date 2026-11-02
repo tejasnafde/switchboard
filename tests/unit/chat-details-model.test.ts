@@ -85,6 +85,7 @@ describe('machine and editor labels', () => {
 
   it('names a remote chat by its host', () => {
     expect(machineValue('m1', 'dev-vm')).toBe('dev-vm · SSH')
+    expect(machineValue('m1', 'dev-vm', 'gcloud-iap')).toBe('dev-vm · IAP')
     expect(editorLabel('m1', 'dev-vm')).toBe('Open in editor on dev-vm')
   })
 })
