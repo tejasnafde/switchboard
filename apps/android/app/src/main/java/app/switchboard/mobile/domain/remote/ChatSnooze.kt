@@ -23,6 +23,9 @@ import java.util.TimeZone
 object ChatSnooze {
     const val CAPABILITY = "chat_snooze_v1"
 
+    /** `app:get-snooze-presets` and `app:snooze-presets-changed`: the machine's own presets. */
+    const val PRESETS_CAPABILITY = "chat_snooze_presets_v1"
+
     /** A chat's snooze fields; absent from an older backend. `snoozedAt` is the only test of "is snoozed". */
     data class State(
         val snoozedUntil: Long? = null,
@@ -74,6 +77,39 @@ object ChatSnooze {
     )
 
     private val DEFAULT_PRESET_KINDS = listOf("later_today", "tonight", "tomorrow_morning", "next_week")
+
+    const val MAX_PRESETS = 8
+    private const val MAX_LABEL = 40
+
+    /** A preset as stored (`chats.snoozePresets`), or null when it is not one. */
+    fun parsePresetSpec(raw: JsonValue?): PresetSpec? {
+        val o = raw as? JsonObject ?: return null
+        val label = (o.values["label"] as? JsonString)?.value?.trim().orEmpty()
+        if (label.isEmpty() || label.length > MAX_LABEL) return null
+        fun int(key: String, min: Int, max: Int): Int? {
+            val n = (o.values[key] as? JsonNumber)?.source?.toDoubleOrNull() ?: return null
+            return if (n % 1.0 == 0.0 && n >= min && n <= max) n.toInt() else null
+        }
+        val kind = (o.values["kind"] as? JsonString)?.value
+        if (kind == "duration") return int("minutes", 5, 365 * 24 * 60)?.let { PresetSpec.Duration(label, it) }
+        val hour = int("hour", 0, 23) ?: return null
+        val minute = int("minute", 0, 59) ?: return null
+        return when (kind) {
+            "time" -> int("dayOffset", 0, 1)?.let { PresetSpec.Time(label, it, hour, minute) }
+            "weekday" -> int("weekday", 0, 6)?.let { PresetSpec.Weekday(label, it, hour, minute) }
+            else -> null
+        }
+    }
+
+    /** The stored list, or the defaults when it is missing or holds nothing usable. */
+    fun parsePresetList(raw: JsonValue?): List<PresetSpec> {
+        val specs = (raw as? JsonArray)?.values?.mapNotNull(::parsePresetSpec).orEmpty()
+        return if (specs.isEmpty()) DEFAULT_PRESETS else specs.take(MAX_PRESETS)
+    }
+
+    /** An `app:snooze-presets-changed` broadcast's list. */
+    fun presetsEventOf(args: JsonArray): List<PresetSpec>? =
+        (args.values.firstOrNull() as? JsonObject)?.let { parsePresetList(it.values["presets"]) }
 
     /** The analytics kind of a preset: a default one by name, any other `preset`. */
     fun presetKindOf(spec: PresetSpec): String =

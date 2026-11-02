@@ -54,7 +54,7 @@ const snoozedA = {
 } as never
 
 function listingClient(getProjects: jest.Mock) {
-  return { getProjects, listLiveSessions: jest.fn().mockResolvedValue([]) }
+  return { getProjects, listLiveSessions: jest.fn().mockResolvedValue([]), supportsCapability: () => false }
 }
 
 test('a snooze broadcast while a list read is out reads the list again', async () => {

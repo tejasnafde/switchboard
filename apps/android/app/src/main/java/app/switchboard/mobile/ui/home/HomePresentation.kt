@@ -76,9 +76,11 @@ data class HomeSnoozeSheet(
     val pr: ChatSnooze.PrChoice? = null,
     val notice: String? = null,
     val busy: Boolean = false,
+    /** The machine's presets when the sheet opened. */
+    val presets: List<ChatSnooze.PresetSpec> = ChatSnooze.DEFAULT_PRESETS,
 ) {
     val items: List<HomeSnoozeItem>
-        get() = HomePresenter.snoozeItems(shownAt, pr)
+        get() = HomePresenter.snoozeItems(shownAt, pr, presets)
 }
 
 sealed interface HomeSnoozeChoice {
@@ -94,10 +96,14 @@ data class HomeSnoozeItem(val key: String, val label: String, val detail: String
 data class HomeSnoozeRequest(val until: Long?, val pr: String?, val preset: String)
 
 object HomePresenter {
-    fun snoozeItems(now: Long, pr: ChatSnooze.PrChoice?): List<HomeSnoozeItem> =
-        ChatSnooze.resolvePresets(now).map { option ->
+    fun snoozeItems(
+        now: Long,
+        pr: ChatSnooze.PrChoice?,
+        presets: List<ChatSnooze.PresetSpec> = ChatSnooze.DEFAULT_PRESETS,
+    ): List<HomeSnoozeItem> =
+        ChatSnooze.resolvePresets(now, presets).map { option ->
             HomeSnoozeItem(
-                key = option.label,
+                key = "${option.label}:${option.at}",
                 label = option.label,
                 detail = ChatSnooze.wakeLabel(option.at, null, now),
                 choice = HomeSnoozeChoice.Preset(option),

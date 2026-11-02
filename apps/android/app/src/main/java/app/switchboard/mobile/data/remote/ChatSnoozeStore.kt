@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.update
  * the project list's copy, `app:conversation-snoozed` broadcasts and this
  * phone's own answers, the higher revision winning ([ChatSnooze.newer]).
  * Home and the Thread screen both read it, so a snooze from either shows on both.
+ * It also holds each machine's Snooze presets for the sheet.
  */
 class ChatSnoozeStore {
     private val held = MutableStateFlow<Map<String, Map<String, ChatSnooze.State>>>(emptyMap())
@@ -54,6 +55,24 @@ class ChatSnoozeStore {
     }
 
     fun of(connectionId: String, threadId: String): ChatSnooze.State? = held.value[connectionId]?.get(threadId)
+
+    private val presets = MutableStateFlow<Map<String, List<ChatSnooze.PresetSpec>>>(emptyMap())
+
+    /** The machine's Snooze presets, or the defaults for a backend without `chat_snooze_presets_v1`. */
+    fun presetsOf(connectionId: String): List<ChatSnooze.PresetSpec> =
+        presets.value[connectionId] ?: ChatSnooze.DEFAULT_PRESETS
+
+    fun putPresets(connectionId: String, list: List<ChatSnooze.PresetSpec>) = presets.update { it + (connectionId to list) }
+
+    /** Read the machine's presets; a failed read keeps what is held. */
+    fun loadPresets(client: SwitchboardRemoteClient) {
+        client.getSnoozePresets { response ->
+            when (val outcome = response.outcome) {
+                is RemoteOutcome.Failure -> SbLog.w(LOG_SCOPE, "could not read the snooze presets: ${outcome.message}")
+                is RemoteOutcome.Success -> putPresets(client.connectionId, outcome.value)
+            }
+        }
+    }
 
     /** Snooze from the sheet. Calls back with the line to show when it did not happen, or null. */
     fun snooze(

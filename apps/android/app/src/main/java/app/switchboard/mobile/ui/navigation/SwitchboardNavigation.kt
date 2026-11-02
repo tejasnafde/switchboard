@@ -793,6 +793,13 @@ private fun HomeRouteHost(
                 LaunchedEffect(snoozeStore, projects) {
                     snoozeStore.seed(connection.id, projects.flatMap(Project::sessions))
                 }
+                if (ChatSnooze.PRESETS_CAPABILITY in lease.capabilities) {
+                    DisposableEffect(snoozeStore, lease.scope) {
+                        val subscription = lease.client.onSnoozePresetsChanged { snoozeStore.putPresets(connection.id, it) }
+                        snoozeStore.loadPresets(lease.client)
+                        onDispose(subscription::cancel)
+                    }
+                }
             }
             val threadStates = projects
                 .asSequence()
@@ -825,7 +832,11 @@ private fun HomeRouteHost(
     }
     fun openSnooze(row: HomeRecentRow) {
         val lease = runtime?.lease(row.connectionId) ?: return
-        val opened = HomeSnoozeSheet(row = row, shownAt = System.currentTimeMillis())
+        val opened = HomeSnoozeSheet(
+            row = row,
+            shownAt = System.currentTimeMillis(),
+            presets = snoozeStore.presetsOf(row.connectionId),
+        )
         snoozeSheet = opened
         lease.client.pullRequestLinks(row.threadId) { response ->
             when (val outcome = response.outcome) {
