@@ -8,9 +8,10 @@ import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.protocol.JsonValue
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZonedDateTime
+import java.util.Calendar
+import java.util.GregorianCalendar
+import java.util.Locale
+import java.util.TimeZone
 
 /**
  * Snooze's rules, ported from src/shared/chat-snooze.ts and
@@ -98,7 +99,7 @@ object ChatSnooze {
     fun resolvePresets(
         now: Long,
         specs: List<PresetSpec> = DEFAULT_PRESETS,
-        zone: ZoneId = ZoneId.systemDefault(),
+        zone: TimeZone = TimeZone.getDefault(),
     ): List<PresetOption> {
         val seen = mutableSetOf<Long>()
         val out = mutableListOf<PresetOption>()
@@ -111,7 +112,7 @@ object ChatSnooze {
     }
 
     /** What a tap sends: a duration counts from the tap, a clock time keeps the instant the sheet showed. */
-    fun pickPreset(option: PresetOption, now: Long, zone: ZoneId = ZoneId.systemDefault()): Pick {
+    fun pickPreset(option: PresetOption, now: Long, zone: TimeZone = TimeZone.getDefault()): Pick {
         val spec = option.spec
         if (spec is PresetSpec.Duration) return Pick.At(durationEnd(now, spec.minutes, zone))
         return if (option.at > now) Pick.At(option.at) else Pick.Past
@@ -124,13 +125,13 @@ object ChatSnooze {
     }
 
     /** The time cell of a snoozed row: `20:00` today, `Tue 09:00` within a week, `12 Nov` after, `PR #512` for a PR wake. */
-    fun wakeLabel(until: Long?, pr: String?, now: Long, zone: ZoneId = ZoneId.systemDefault()): String {
+    fun wakeLabel(until: Long?, pr: String?, now: Long, zone: TimeZone = TimeZone.getDefault()): String {
         if (until == null) return if (pr != null) "PR #${prNumberOf(pr)}" else ""
         val at = local(until, zone)
         val days = Math.round((localDay(until, 0, 0, 0, zone) - localDay(now, 0, 0, 0, zone)).toDouble() / DAY_MS)
         if (days <= 0) return hhmm(at)
         if (days < 7) return "${WEEKDAYS[jsDay(at)]} ${hhmm(at)}"
-        return "${at.dayOfMonth} ${MONTHS[at.monthValue - 1]}"
+        return "${at.get(Calendar.DAY_OF_MONTH)} ${MONTHS[at.get(Calendar.MONTH)]}"
     }
 
     /** Snoozed rows: the soonest wake first, PR-only snoozes (no time) last. */
@@ -140,7 +141,7 @@ object ChatSnooze {
     }
 
     /** The line of an open snoozed chat. */
-    fun snoozeLineText(until: Long?, pr: String?, now: Long, zone: ZoneId = ZoneId.systemDefault()): String {
+    fun snoozeLineText(until: Long?, pr: String?, now: Long, zone: TimeZone = TimeZone.getDefault()): String {
         if (until != null) return "Snoozed until ${wakeLabel(until, null, now, zone)}"
         return if (pr != null) "Snoozed until PR #${prNumberOf(pr)} changes" else "Snoozed"
     }
@@ -242,27 +243,49 @@ object ChatSnooze {
 
     private fun JsonObject.string(key: String): String? = (values[key] as? JsonString)?.value
 
-    private fun local(epochMs: Long, zone: ZoneId): ZonedDateTime = Instant.ofEpochMilli(epochMs).atZone(zone)
+    /** A Gregorian calendar in [zone] at [epochMs], whatever the device locale's calendar system. */
+    private fun local(epochMs: Long, zone: TimeZone): Calendar =
+        GregorianCalendar(zone, Locale.ROOT).apply { timeInMillis = epochMs }
 
-    /** Local [hour]:[minute] [days] calendar days from [now] (not 24 h steps, so DST days count once). */
-    private fun localDay(now: Long, days: Long, hour: Int, minute: Int, zone: ZoneId): Long =
-        local(now, zone).toLocalDate().plusDays(days).atTime(hour, minute).atZone(zone).toInstant().toEpochMilli()
+    /**
+     * Local [hour]:[minute] [days] calendar days from [now] (not 24 h steps, so DST days count once).
+     * A time in a DST gap moves forward by the gap; a time a fall-back repeats takes the earlier instant.
+     */
+    private fun localDay(now: Long, days: Long, hour: Int, minute: Int, zone: TimeZone): Long {
+        val day = local(now, zone)
+        val at = GregorianCalendar(zone, Locale.ROOT).apply {
+            clear()
+            val date = day.get(Calendar.DAY_OF_MONTH) + days.toInt()
+            set(day.get(Calendar.YEAR), day.get(Calendar.MONTH), date, hour, minute, 0)
+        }
+        val t = at.timeInMillis
+        val shift = zone.getOffset(t - 6 * 60 * MINUTE_MS) - zone.getOffset(t)
+        if (shift > 0) {
+            val earlier = local(t - shift, zone)
+            if (earlier.get(Calendar.HOUR_OF_DAY) == hour && earlier.get(Calendar.MINUTE) == minute) {
+                return earlier.timeInMillis
+            }
+        }
+        return t
+    }
 
-    private fun durationEnd(now: Long, minutes: Int, zone: ZoneId): Long {
+    private fun durationEnd(now: Long, minutes: Int, zone: TimeZone): Long {
         val end = now + minutes * MINUTE_MS
         val unit = if (minutes >= 60) 30 else 1
         val at = local(end, zone)
-        val rest = (at.minute % unit) * MINUTE_MS + at.second * 1000L + at.nano / 1_000_000
+        val rest = (at.get(Calendar.MINUTE) % unit) * MINUTE_MS +
+            at.get(Calendar.SECOND) * 1000L + at.get(Calendar.MILLISECOND)
         return if (rest == 0L) end else end - rest + unit * MINUTE_MS
     }
 
-    private fun presetTime(spec: PresetSpec, now: Long, zone: ZoneId): Long? = when (spec) {
+    private fun presetTime(spec: PresetSpec, now: Long, zone: TimeZone): Long? = when (spec) {
         is PresetSpec.Duration -> {
             val end = durationEnd(now, spec.minutes, zone)
             val endAt = local(end, zone)
             val nowAt = local(now, zone)
-            val sameDay = endAt.dayOfMonth == nowAt.dayOfMonth && endAt.monthValue == nowAt.monthValue
-            if (spec.minutes < 24 * 60 && (!sameDay || endAt.hour >= DURATION_LAST_HOUR)) null else end
+            val sameDay = endAt.get(Calendar.DAY_OF_MONTH) == nowAt.get(Calendar.DAY_OF_MONTH) &&
+                endAt.get(Calendar.MONTH) == nowAt.get(Calendar.MONTH)
+            if (spec.minutes < 24 * 60 && (!sameDay || endAt.get(Calendar.HOUR_OF_DAY) >= DURATION_LAST_HOUR)) null else end
         }
         is PresetSpec.Time -> {
             val at = localDay(now, spec.dayOffset.toLong(), spec.hour, spec.minute, zone)
@@ -275,8 +298,8 @@ object ChatSnooze {
     }
 
     /** 0 for Sunday, as the shared rules count weekdays. */
-    private fun jsDay(at: ZonedDateTime): Int = at.dayOfWeek.value % 7
+    private fun jsDay(at: Calendar): Int = at.get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY
 
-    private fun hhmm(at: ZonedDateTime): String =
-        "${at.hour.toString().padStart(2, '0')}:${at.minute.toString().padStart(2, '0')}"
+    private fun hhmm(at: Calendar): String =
+        "${at.get(Calendar.HOUR_OF_DAY).toString().padStart(2, '0')}:${at.get(Calendar.MINUTE).toString().padStart(2, '0')}"
 }
