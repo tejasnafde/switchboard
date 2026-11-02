@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import { peerLinkLabel, peerLinksBannerText, PEER_LINK_EXTEND_MESSAGES, type PeerLinkView } from '@shared/peer-links'
 import { createRendererLogger } from '../../logger'
 import { Button } from '../ui/button'
+import { Spinner } from '../ui/spinner'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 
 const log = createRendererLogger('chat:peer-links')
@@ -111,10 +112,7 @@ export function PeerLinkBanner({ sessionId }: { sessionId: string }) {
     >
       {extending.has(peerThreadId) ? (
         <>
-          <span
-            aria-hidden
-            className="mr-1 inline-block size-3 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none"
-          />
+          <Spinner className="mr-1" />
           Extending
         </>
       ) : extended.has(peerThreadId) ? (

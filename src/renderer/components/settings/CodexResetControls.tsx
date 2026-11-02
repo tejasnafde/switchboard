@@ -17,6 +17,7 @@ import {
   type ResetBannerTone,
 } from '@shared/codex-reset'
 import { Button } from '../ui/button'
+import { Spinner } from '../ui/spinner'
 import { cn } from '../../lib/utils'
 
 type Phase =
@@ -126,10 +127,7 @@ export function CodexResetControls({
   if (phase.kind === 'applying') {
     action = (
       <Button variant="outline" size="sm" className="ml-auto" disabled>
-        <span
-          aria-hidden="true"
-          className="inline-block size-[11px] rounded-full border-[1.5px] border-current border-r-transparent motion-safe:animate-spin"
-        />
+        <Spinner size={11} className="border-[1.5px]" />
         Applying reset…
       </Button>
     )

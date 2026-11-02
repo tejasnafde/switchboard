@@ -22,6 +22,7 @@ import { cloneKey, useProjectCloneStore } from '../../services/project-clone'
 import { cloneProgressText } from './OpenOnMachineDialog'
 import { AddRemoteProjectModal } from './AddRemoteProjectModal'
 import { confirm } from '../ui/confirm'
+import { Spinner } from '../ui/spinner'
 import { useRenderCount } from '../../services/render-counter'
 
 function SortableMachine({
@@ -91,7 +92,7 @@ function RemoteProject({
         <span
           {...attributes}
           {...listeners}
-          className="sidebar-drag-handle"
+          className="sidebar-drag-handle sb-tr-quick"
           style={{
             cursor: 'grab',
             display: 'flex',
@@ -99,7 +100,6 @@ function RemoteProject({
             padding: '0 2px',
             color: 'var(--text-muted)',
             opacity: 0,
-            transition: 'opacity 0.12s',
           }}
           title="Drag to reorder"
         >
@@ -282,7 +282,7 @@ export function MachineLayer({
         <div className="cached-banner">
           {node.status === 'connecting' || isReconnecting ? (
             <>
-              <span className="machine-spinner" aria-hidden />
+              <Spinner size={8} className="machine-spinner" />
               <span className="machine-progress">
                 {isReconnecting ? 'Reconnecting…' : (progress[node.id] ?? 'Connecting…')}
               </span>

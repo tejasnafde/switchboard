@@ -116,6 +116,7 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
       <div
         role="button"
         tabIndex={0}
+        className="sb-tr-quick"
         onClick={() => setCollapsed((c) => !c)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') setCollapsed((c) => !c)
@@ -129,10 +130,10 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
           background: 'var(--bg-tertiary)',
           cursor: 'pointer',
           userSelect: 'none',
-          transition: 'border-bottom-color 180ms ease',
         }}
       >
         <span
+          className="sb-tr-turn"
           style={{
             color: 'var(--text-muted)',
             fontSize: 10,
@@ -141,7 +142,6 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transition: 'transform 180ms cubic-bezier(0.4,0,0.2,1), color 180ms ease',
             transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
           }}
         >
@@ -204,10 +204,10 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
 
       {/* Collapsible body - grid trick animates height without knowing it */}
       <div
+        className="sb-tr-reveal"
         style={{
           display: 'grid',
           gridTemplateRows: collapsed ? '0fr' : '1fr',
-          transition: 'grid-template-rows 200ms cubic-bezier(0.4,0,0.2,1)',
         }}
       >
         <div style={{ overflow: 'hidden' }}>

@@ -51,6 +51,7 @@ import { WorktreeManagerModal } from './WorktreeManagerModal'
 import { launchCardChat } from './card-launch'
 import { createRendererLogger } from '../../logger'
 import { Combobox } from '../ui/combobox'
+import { Spinner } from '../ui/spinner'
 import { Toolbar } from '../ui/toolbar'
 import { useRenderCount } from '../../services/render-counter'
 
@@ -426,6 +427,7 @@ function Column({
   return (
     <div
       ref={setNodeRef}
+      className="sb-tr-quick"
       style={{
         ...colStyle,
         ...(isOver ? colDropTargetStyle : null),
@@ -578,7 +580,7 @@ function CardTilePresentation({
                 split only matters at first-launch. */}
             {launching ? (
               <button disabled title="Launching…" style={startBtnStyle}>
-                <Spinner />
+                <Spinner size={10} label="Launching" className="border-[var(--border)] border-t-[var(--accent)]" />
               </button>
             ) : hasSession ? (
               onStartAndOpen && (
@@ -717,23 +719,6 @@ function worktreeActionLabel(action: WorktreeCreationRecoveryAction): string {
   }
 }
 
-function Spinner(): React.ReactElement {
-  return (
-    <span
-      aria-label="Launching"
-      style={{
-        display: 'inline-block',
-        width: 10,
-        height: 10,
-        border: '2px solid var(--border)',
-        borderTopColor: 'var(--accent, #2563eb)',
-        borderRadius: '50%',
-        animation: 'sb-spin 720ms linear infinite',
-      }}
-    />
-  )
-}
-
 function SessionLiveness({ status }: { status: AgentStatus | undefined }): React.ReactElement | null {
   if (!status || status === 'exited') return null
   const active = status === 'running' || status === 'thinking'
@@ -798,7 +783,6 @@ const colStyle: CSSProperties = {
   background: 'var(--bg-elev1, rgba(0,0,0,0.03))',
   borderRadius: 6,
   border: '1px solid var(--border)',
-  transition: 'border-color 120ms ease, box-shadow 120ms ease',
 }
 const colDropTargetStyle: CSSProperties = {
   borderColor: 'var(--accent, #2563eb)',

@@ -1750,6 +1750,7 @@ export function App() {
               gives discoverability for users who don't know the shortcut. */}
           <ViewToggle />
           <button
+            className="sb-tr-quick"
             onClick={() => setSettingsPage('general')}
             style={{
               background: 'none',
@@ -1761,7 +1762,6 @@ export function App() {
               display: 'flex',
               alignItems: 'center',
               WebkitAppRegion: 'no-drag',
-              transition: 'color 0.12s',
             }}
             onMouseEnter={(e) => {
               ;(e.target as HTMLElement).style.color = 'var(--text-primary)'

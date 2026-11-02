@@ -235,6 +235,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
           return (
             <button
               key={`${activeQ.id}:${opt.label}`}
+              className="sb-tr-quick"
               type="button"
               disabled={answered}
               onClick={() => toggleOption(opt.label)}
@@ -250,7 +251,6 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
                 color: 'var(--text-primary)',
                 cursor: answered ? 'default' : 'pointer',
                 textAlign: 'left',
-                transition: 'all 0.12s',
                 opacity: answered && !selected ? 0.4 : 1,
               }}
               onMouseEnter={(e) => {
@@ -483,6 +483,7 @@ function OtherOption({
     return (
       <button
         type="button"
+        className="sb-tr-quick"
         onClick={onOpen}
         style={{
           display: 'flex',
@@ -498,7 +499,6 @@ function OtherOption({
           textAlign: 'left',
           fontSize: '12px',
           fontStyle: 'italic',
-          transition: 'all 0.12s',
         }}
         onMouseEnter={(e) => {
           ;(e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'

@@ -64,7 +64,7 @@ describe('DiagnosticsSection first frame', () => {
     // Pins the fix for the imperative `style.background` mutation that
     // `layout-store.ts` carries a standing warning about.
     expect(html).toContain('class="sb-disclosure-header"')
-    expect(html).toContain('class="sb-disclosure-reveal"')
+    expect(html).toContain('class="sb-disclosure-reveal sb-tr-reveal"')
   })
 
   it('shows a placeholder gist until the snapshot arrives', () => {

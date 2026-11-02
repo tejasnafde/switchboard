@@ -19,7 +19,6 @@ export function ViewToggle(): React.ReactElement {
     color: 'var(--text-muted)',
     borderRadius: '4px',
     WebkitAppRegion: 'no-drag',
-    transition: 'background 0.12s, color 0.12s',
   }
   const activeBtn: React.CSSProperties = {
     ...baseBtn,
@@ -39,13 +38,28 @@ export function ViewToggle(): React.ReactElement {
       }}
       title="Chats, Board (⌘⇧K) or Reviews"
     >
-      <button type="button" style={appView === 'chats' ? activeBtn : baseBtn} onClick={() => setAppView('chats')}>
+      <button
+        type="button"
+        className="sb-tr-quick"
+        style={appView === 'chats' ? activeBtn : baseBtn}
+        onClick={() => setAppView('chats')}
+      >
         Chats
       </button>
-      <button type="button" style={appView === 'kanban' ? activeBtn : baseBtn} onClick={() => setAppView('kanban')}>
+      <button
+        type="button"
+        className="sb-tr-quick"
+        style={appView === 'kanban' ? activeBtn : baseBtn}
+        onClick={() => setAppView('kanban')}
+      >
         Board
       </button>
-      <button type="button" style={appView === 'reviews' ? activeBtn : baseBtn} onClick={() => setAppView('reviews')}>
+      <button
+        type="button"
+        className="sb-tr-quick"
+        style={appView === 'reviews' ? activeBtn : baseBtn}
+        onClick={() => setAppView('reviews')}
+      >
         Reviews
       </button>
     </span>

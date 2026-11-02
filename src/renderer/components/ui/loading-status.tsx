@@ -1,4 +1,5 @@
 import { cn } from '../../lib/utils'
+import { Spinner } from './spinner'
 
 export function LoadingStatus({
   label,
@@ -19,12 +20,7 @@ export function LoadingStatus({
         error && 'text-destructive',
       )}
     >
-      {!error && (
-        <span
-          aria-hidden="true"
-          className="size-3 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none"
-        />
-      )}
+      {!error && <Spinner />}
       <span>{label}</span>
     </div>
   )

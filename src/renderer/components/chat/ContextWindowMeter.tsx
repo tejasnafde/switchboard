@@ -69,7 +69,7 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({ usage }: { 
             strokeLinecap="round"
             strokeDasharray={circumference}
             strokeDashoffset={dashOffset}
-            style={{ transition: 'stroke-dashoffset 0.5s ease-out' }}
+            className="sb-tr-meter"
           />
         </svg>
         <span

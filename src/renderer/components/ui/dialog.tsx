@@ -22,7 +22,7 @@ export const DialogContent = forwardRef<ElementRef<typeof DialogPrimitive.Conten
         <DialogPrimitive.Overlay className={cn('fixed inset-0 bg-[rgba(0,0,0,0.5)]', overlayClassName)} />
         <DialogPrimitive.Content
           ref={ref}
-          className={cn('fixed outline-none', className)}
+          className={cn('sb-pop fixed outline-none', className)}
           onOpenAutoFocus={(event) => {
             returnFocusTo.current = document.activeElement
             onOpenAutoFocus?.(event)

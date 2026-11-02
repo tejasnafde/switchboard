@@ -122,6 +122,7 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
             still surface red regardless of focus. Inactive windows get
             a muted dim dot so the slot is still discoverable. */}
         <span
+          className="sb-tr-quick"
           style={{
             width: '5px',
             height: '5px',
@@ -130,7 +131,6 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
               activePane.status === 'error' ? 'var(--error)' : isActiveWindow ? 'var(--success)' : 'var(--text-muted)',
             opacity: isActiveWindow || activePane.status === 'error' ? 1 : 0.45,
             flexShrink: 0,
-            transition: 'background 0.12s, opacity 0.12s',
           }}
         />
 

@@ -12,6 +12,7 @@ import { useReviewStore } from '../../stores/review-store'
 import { Button } from '../ui/button'
 import { Combobox, type ComboboxOption } from '../ui/combobox'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
+import { Spinner } from '../ui/spinner'
 import { writeErrorText } from './review-states'
 import { Avatar, CardRow, Icon, SideCard } from './review-ui'
 import { useWriteAction, WriteError } from './review-writes'
@@ -102,10 +103,7 @@ export function ReviewersCard({ pr }: { pr: PrDetail }) {
 function PendingLabel({ text }: { text: string }) {
   return (
     <span role="status" className="ml-auto inline-flex items-center gap-[6px] text-[12px] text-[var(--text-muted)]">
-      <span
-        aria-hidden="true"
-        className="size-[10px] rounded-full border-[1.5px] border-solid border-[var(--border)] border-t-[var(--accent)] animate-[sb-spin_720ms_linear_infinite]"
-      />
+      <Spinner size={10} className="border-[1.5px] border-[var(--border)] border-t-[var(--accent)]" />
       {text}
     </span>
   )

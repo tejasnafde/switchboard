@@ -747,7 +747,7 @@ export const MessageBubble = memo(function MessageBubble({
           here for future actions (edit, retry, thread, etc). */}
       {body && !message.deliveryState && !queued && (
         <div
-          className="message-actions"
+          className="message-actions sb-tr-quick"
           style={{
             display: 'flex',
             // Wraps in a narrow pane instead of widening the row, which gave
@@ -758,11 +758,11 @@ export const MessageBubble = memo(function MessageBubble({
             paddingRight: isUser ? '2px' : 0,
             paddingLeft: isUser ? 0 : '2px',
             opacity: 0,
-            transition: 'opacity 0.12s',
           }}
         >
           {sessionId && <ForwardMenu content={body} sourceSessionId={sessionId} />}
           <button
+            className="sb-tr-quick"
             onClick={handleBookmark}
             title={isBookmarked ? 'Remove from saved' : 'Save for later'}
             style={{
@@ -777,7 +777,6 @@ export const MessageBubble = memo(function MessageBubble({
               cursor: 'pointer',
               fontSize: '11px',
               lineHeight: 1,
-              transition: 'color 0.12s, border-color 0.12s, background 0.12s',
             }}
           >
             <svg
