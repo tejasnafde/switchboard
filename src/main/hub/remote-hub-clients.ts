@@ -9,7 +9,9 @@
  * reads as needing an update; so does a `ready` without `hub_remote_child_v1`.
  * A `ready` without `hub_remote_start_v1` leaves the client open but the
  * entry's `canStart` false, so `start_children` asks for an update there;
- * one without `hub_remote_outbox_v1` is never pulled (`supportsOutbox`).
+ * one without `hub_remote_outbox_v1` is never pulled (`supportsOutbox`), and
+ * one without `hub_remote_control_v1` keeps the "later version" texts for its
+ * children (`controlOf`, remembered per machine after the client closes).
  * Each later `ready` of the same client (its socket reconnected) and each
  * resume gap tells the `onResync` listeners, which pull the outbox again.
  * It does not share the renderer's transport. A status other than `connected`
@@ -22,6 +24,7 @@
  */
 import WebSocket from 'ws'
 import { HubRemoteChannels } from '@shared/ipc-channels'
+import { HUB_REMOTE_CONTROL_CAPABILITY } from '@shared/hub-remote-control'
 import {
   HUB_REMOTE_AUTH_SCOPES,
   HUB_REMOTE_CAPABILITY,
@@ -86,6 +89,9 @@ interface Client {
   canOutbox: boolean
 }
 
+/** What a machine's last `ready` said about `hub_remote_control_v1`; unknown before its first. */
+export type HubControlSupport = 'yes' | 'no' | 'unknown'
+
 interface Snapshot {
   description: HubMachineDescription
   at: number
@@ -100,6 +106,8 @@ export class RemoteHubClients {
   private readonly callTimeoutMs: number
   private machineListener: ((machineId: string, change: 'connected' | 'removed') => void) | null = null
   private readonly resyncListeners = new Set<(machineId: string) => void>()
+  /** Per machine, whether its last ready advertised `hub_remote_control_v1`. Kept after a close. */
+  private readonly control = new Map<string, boolean>()
 
   constructor(private readonly deps: RemoteHubClientsDeps) {
     this.now = deps.now ?? Date.now
@@ -118,6 +126,7 @@ export class RemoteHubClients {
   remove(machineId: string): void {
     this.close(machineId)
     this.snapshots.delete(machineId)
+    this.control.delete(machineId)
     this.notifyMachine(machineId, 'removed')
   }
 
@@ -157,8 +166,49 @@ export class RemoteHubClients {
       log.warn(`no outbox pull from machine ${machineId}: ${err instanceof Error ? err.message : String(err)}`)
       return false
     }
-    const problem = await client.ready
+    const problem = await this.readyWithin(client)
     return !problem && this.clients.get(machineId) === client && client.canOutbox
+  }
+
+  /**
+   * Whether the machine's backend answers the control channels, once its
+   * client is ready. False when it is not connected or lacks the capability.
+   */
+  async supportsControl(machineId: string): Promise<boolean> {
+    if (!this.deps.enabled() || this.deps.statusOf(machineId) !== 'connected') return false
+    let client: Client
+    try {
+      client = this.clientFor(machineId)
+    } catch (err) {
+      log.warn(`no control client for machine ${machineId}: ${err instanceof Error ? err.message : String(err)}`)
+      return false
+    }
+    const problem = await this.readyWithin(client)
+    return !problem && this.clients.get(machineId) === client && this.control.get(machineId) === true
+  }
+
+  /** The client's `ready`, or a problem when it does not come within the call timeout. */
+  private async readyWithin(client: Client): Promise<string | null> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<string>((resolve) => {
+      timer = setTimeout(() => resolve('no ready in time'), this.callTimeoutMs)
+    })
+    try {
+      return await Promise.race([client.ready, late])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  /** What the machine's last ready said about the control channels; `unknown` before its first this run. */
+  controlOf(machineId: string): HubControlSupport {
+    const known = this.control.get(machineId)
+    return known === undefined ? 'unknown' : known ? 'yes' : 'no'
+  }
+
+  /** The user's name for a machine, or its id. */
+  machineName(machineId: string): string {
+    return this.nameOf(machineId)
   }
 
   /**
@@ -267,6 +317,11 @@ export class RemoteHubClients {
     const machines = this.deps.machines()
     await Promise.all(machines.map((m) => this.refresh(m.id, HUB_DESCRIBE_MAX_AGE_MS)))
     return machines.map((m) => this.entry(m))
+  }
+
+  /** Reads a connected machine's description now, whatever the age of the cached one. */
+  describeNow(machineId: string): Promise<void> {
+    return this.refresh(machineId, 0)
   }
 
   /** The cached description and its time, for tests and later callers. */
@@ -385,6 +440,7 @@ export class RemoteHubClients {
         return refuse(update, `no ${HUB_REMOTE_CAPABILITY} capability`)
       client.canStart = transport.supportsCapability(HUB_REMOTE_START_CAPABILITY) === true
       client.canOutbox = transport.supportsCapability(HUB_REMOTE_OUTBOX_CAPABILITY) === true
+      this.control.set(machineId, transport.supportsCapability(HUB_REMOTE_CONTROL_CAPABILITY) === true)
       settle(null)
       // A later ready is the same client after its socket reconnected: events may have been missed.
       if (readyOnce && this.clients.get(machineId) === client) this.notifyResync(machineId)

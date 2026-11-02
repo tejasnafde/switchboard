@@ -614,6 +614,20 @@ export const HubRemoteChannels = {
   OUTBOX_ACK: 'hub-remote:outbox-ack',
   /** Event, no payload: a child here wrote an outbox item for a parent on another machine. */
   OUTBOX: 'hub-remote:outbox',
-  /** Event, no emitter yet: this machine's remote children changed. */
+  /** Event (parentIds: string[]): children of these parent stubs changed here; coalesced. Hub and admin sockets only. */
   CHILDREN_CHANGED: 'hub-remote:children-changed',
+  /** (HubRemoteViewRequest) → HubRemoteViewAnswer: the child states of that desktop's parent stub. */
+  VIEW: 'hub-remote:view',
+  /** (HubRemoteReadRequest) → HubRemoteToolAnswer: what `read_child` answers here. */
+  READ_CHILD: 'hub-remote:read-child',
+  /** (HubRemoteDeliverRequest) → HubRemoteActAnswer: the parent's message, through `peerDelivery` here. */
+  DELIVER: 'hub-remote:deliver',
+  /** (HubRemoteChildRequest) → HubRemoteInterruptAnswer: `interrupt_child` here. */
+  INTERRUPT: 'hub-remote:interrupt',
+  /** (HubRemoteStopRequest) → HubRemoteStopAnswer: stops the child, or settles it with `settle`. */
+  STOP: 'hub-remote:stop',
+  /** (HubRemoteMoveRequest) → HubRemoteToolAnswer: `move_child` to an account here. */
+  MOVE: 'hub-remote:move',
+  /** (HubRemoteStopAllRequest) → HubRemoteStopAllAnswer: stops every child of the stub. Idempotent. */
+  STOP_ALL: 'hub-remote:stop-all',
 } as const

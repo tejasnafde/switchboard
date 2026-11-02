@@ -11,6 +11,14 @@
  * commits stays (one still at its base commit goes with the worktree);
  * nothing is pushed.
  *
+ * A child on another machine (`machine_id`) is settled there when that
+ * machine answers `hub_remote_control_v1` (`HubSettleHost.remote`): its
+ * machine stops it and applies these same rules to its worktree, against the
+ * parent's HEAD sent along, and the desktop row is settled with the row it
+ * answers. A machine that is not connected keeps the settle pending and the
+ * child shows "Stopping on <machine>" until it answers. A machine without
+ * the capability keeps the old refusal (`remoteSettleRefusal`).
+ *
  * Also here: the `conflicts` of `list_children`, from `git merge-tree
  * --write-tree` (git 2.38 or later; null before) between each child and the
  * parent's HEAD and between each pair of children.
@@ -30,9 +38,11 @@ import {
   type HubSettleView,
 } from '@shared/hub'
 import { HUB_REMOTE_SETTLE_LATER_TEXT } from '@shared/hub-remote'
+import { asThisMachine } from '../backend/request-context'
 import {
   archiveConversation,
   getConversationById,
+  getHubParent,
   getLimitResume,
   listHubChildren,
   otherWorktreeUsers,
@@ -69,6 +79,24 @@ export interface HubSettleHost {
   changed(parentId: string): void
   /** Drop what the process keeps about a settled child. */
   forget(childId: string): void
+  /** Children on other machines; absent: they keep the old refusal. */
+  remote?: HubSettleRemote
+}
+
+export interface HubSettleRemote {
+  /** False when the child's machine runs a backend without `hub_remote_control_v1`. */
+  available(child: HubChildRow): boolean
+  machineName(child: HubChildRow): string
+  /** Settles the child on its machine; `pending` when that machine is not connected. Throws its refusal. */
+  settle(
+    child: HubChildRow,
+    parentHead: string | null,
+  ): Promise<{ status: 'settled'; row: HubSettleRowView } | { status: 'pending' }>
+}
+
+/** On a child machine: the parent's HEAD came with the request, so git runs in the child's worktree. */
+export interface HubSettleOptions {
+  parentHead?: string | null
 }
 
 export interface HubSettleIo {
@@ -89,7 +117,27 @@ export class HubSettler {
   /** What a settle of `parentId`'s unsettled children would do now, for the card. */
   async plan(parentId: string, parentCwd: string, archiveParent: boolean): Promise<HubSettleView> {
     const children = localChildren(parentId)
-    return { rows: await Promise.all(children.map((c) => this.row(c, parentCwd))), archiveParent }
+    const local = await Promise.all(children.map((c) => this.row(c, parentCwd)))
+    return { rows: [...local, ...this.remoteChildren(parentId).map((c) => this.remotePlanRow(c))], archiveParent }
+  }
+
+  /** Children on machines that settle them there. */
+  private remoteChildren(parentId: string): HubChildRow[] {
+    const remote = this.host.remote
+    return remote ? listHubChildren(parentId).filter((c) => c.machineId && remote.available(c)) : []
+  }
+
+  private remotePlanRow(c: HubChildRow): HubSettleRowView {
+    return {
+      childId: c.childId,
+      title: c.title,
+      branch: c.branch,
+      merged: null,
+      clean: null,
+      blockers: [],
+      worktree: 'keep',
+      keepReason: `${this.host.remote!.machineName(c)} removes it there only when it is clean and merged`,
+    }
   }
 
   /** `only`: the children a card showed; a child started after it stays open. */
@@ -98,15 +146,22 @@ export class HubSettler {
     parentCwd: string,
     how: 'card' | 'auto',
     only?: ReadonlySet<string>,
+    opts: HubSettleOptions = {},
   ): Promise<HubSettleResult> {
     if (this.running.has(parentId)) return { ok: false, text: 'A settle of these children is already running.' }
-    const all = localChildren(parentId)
-    const children = only ? all.filter((c) => only.has(c.childId)) : all
-    const remote = remoteSettleRefusal(parentId)
-    if (children.length === 0)
+    const shown = (c: HubChildRow) => !only || only.has(c.childId)
+    const children = localChildren(parentId).filter(shown)
+    const remoteChildren = this.remoteChildren(parentId).filter(shown)
+    const remote = remoteSettleRefusal(parentId, (c) => this.host.remote?.available(c) === true)
+    if (children.length === 0 && remoteChildren.length === 0)
       return remote ? { ok: false, text: remote } : { ok: true, text: 'This chat has no children to settle.', rows: [] }
     this.running.add(parentId)
-    const span = perfSpan('hub.settle', { parentId, children: children.length, how })
+    const span = perfSpan('hub.settle', {
+      parentId,
+      children: children.length,
+      remoteChildren: remoteChildren.length,
+      how,
+    })
     try {
       const stops = await Promise.allSettled(children.map((c) => this.stop(c.childId)))
       // A child that did not stop may still run: it stays open, and the settle says so.
@@ -114,35 +169,49 @@ export class HubSettler {
       for (const s of stops) if (s.status === 'rejected') log.warn('a child did not stop for its settle', s.reason)
       const stopped = children.filter((c) => !failed.includes(c))
       // Read after the stops, so an agent cut off mid-write is judged by what it left.
-      const rows = await Promise.all(stopped.map((c) => this.row(c, parentCwd)))
+      const rows = await Promise.all(stopped.map((c) => this.row(c, parentCwd, opts)))
+      const settleJson = (row: HubSettleRowView) =>
+        JSON.stringify({ worktree: row.worktree, keepReason: row.keepReason ?? null })
       for (const [i, child] of stopped.entries()) {
-        updateHubChild(child.childId, {
-          phase: 'settled',
-          settledAt: Date.now(),
-          settleJson: JSON.stringify({ worktree: rows[i]!.worktree, keepReason: rows[i]!.keepReason ?? null }),
-        })
+        updateHubChild(child.childId, { phase: 'settled', settledAt: Date.now(), settleJson: settleJson(rows[i]!) })
         archiveConversation(child.childId)
         this.host.forget(child.childId)
       }
-      this.host.changed(parentId)
+      const remoteRows = await this.settleRemote(remoteChildren, parentCwd, failed)
+      if (stopped.length > 0 || remoteRows.rows.length > 0) this.host.changed(parentId)
       for (const [i, row] of rows.entries()) {
         if (row.worktree !== 'remove') continue
         const problem = await this.removeWorktree(stopped[i]!)
-        if (problem) Object.assign(row, { worktree: 'keep', keepReason: problem })
+        if (!problem) continue
+        Object.assign(row, { worktree: 'keep', keepReason: problem })
+        updateHubChild(stopped[i]!.childId, { settleJson: settleJson(row) })
       }
+      rows.push(...remoteRows.rows)
       const removed = rows.filter((r) => r.worktree === 'remove').length
       const kept = rows.filter((r) => r.worktree === 'keep').length
       const killed = stops.reduce((n, s) => n + (s.status === 'fulfilled' ? s.value : 0), 0)
-      span.end({ outcome: 'settled', removed, kept, stopFailed: failed.length, killed })
-      log.info('children settled', {
-        parentId,
-        children: stopped.length,
+      span.end({
+        outcome: 'settled',
         removed,
         kept,
         stopFailed: failed.length,
+        killed,
+        remotePending: remoteRows.pending.length,
+      })
+      log.info('children settled', {
+        parentId,
+        children: rows.length,
+        removed,
+        kept,
+        stopFailed: failed.length,
+        remotePending: remoteRows.pending.length,
         how,
       })
-      const text = hubSettleResult(rows)
+      // A child whose machine is not connected is not settled yet: its own line, not in the count.
+      const waiting = remoteRows.pending.length
+        ? [`Not settled yet, each settles on its machine when that machine connects: ${remoteRows.pending.join(', ')}.`]
+        : []
+      const text = [rows.length > 0 ? hubSettleResult(rows) : 'Nothing was settled.', ...waiting].join('\n')
       if (failed.length === 0) return remote ? { ok: false, text: `${text}\n${remote}` } : { ok: true, text, rows }
       return {
         ok: false,
@@ -156,6 +225,40 @@ export class HubSettler {
     }
   }
 
+  /**
+   * Each child on another machine settles there; a machine that is not
+   * connected keeps it pending (the row stays open here, named in `pending`).
+   * A refusal joins `failed`.
+   */
+  private async settleRemote(
+    children: readonly HubChildRow[],
+    parentCwd: string,
+    failed: HubChildRow[],
+  ): Promise<{ rows: HubSettleRowView[]; pending: string[] }> {
+    const remote = this.host.remote
+    if (!remote || children.length === 0) return { rows: [], pending: [] }
+    const head = await this.io.git(parentCwd, ['rev-parse', 'HEAD'])
+    const parentHead = head.code === 0 && /^[0-9a-f]{40,64}$/.test(head.stdout.trim()) ? head.stdout.trim() : null
+    const results = await Promise.allSettled(children.map((c) => remote.settle(c, parentHead)))
+    const rows: HubSettleRowView[] = []
+    const pending: string[] = []
+    for (const [i, r] of results.entries()) {
+      const child = children[i]!
+      if (r.status === 'rejected') {
+        log.warn(`child ${child.childId} did not settle on its machine`, r.reason)
+        failed.push(child)
+        continue
+      }
+      if (r.value.status === 'pending') {
+        pending.push(`${child.title} (${remote.machineName(child)})`)
+        continue
+      }
+      this.host.forget(child.childId)
+      rows.push(r.value.row)
+    }
+    return { rows, pending }
+  }
+
   /** The child's stop, then the rest of its agent's process tree. The processes killed. */
   private async stop(childId: string): Promise<number> {
     const pids = await treePids(this.host.agentPid(childId), undefined, childId)
@@ -163,7 +266,7 @@ export class HubSettler {
     return killLeft(pids)
   }
 
-  private async row(child: HubChildRow, parentCwd: string): Promise<HubSettleRowView> {
+  private async row(child: HubChildRow, parentCwd: string, opts: HubSettleOptions = {}): Promise<HubSettleRowView> {
     const worktreePath =
       child.location === 'worktree' ? (getConversationById(child.childId)?.worktree_path ?? null) : null
     let merged: boolean | null = null
@@ -174,8 +277,12 @@ export class HubSettler {
         this.io.git(worktreePath, ['status', '--porcelain', '--untracked-files=all']),
       ])
       if (status.code === 0) clean = status.stdout.trim() === ''
-      if (head.code === 0) {
-        const r = await this.io.git(parentCwd, ['merge-base', '--is-ancestor', head.stdout.trim(), 'HEAD'])
+      if (head.code === 0 && opts.parentHead !== null) {
+        // On a child machine the parent's checkout is elsewhere: its HEAD came with the request.
+        const r =
+          opts.parentHead === undefined
+            ? await this.io.git(parentCwd, ['merge-base', '--is-ancestor', head.stdout.trim(), 'HEAD'])
+            : await this.io.git(worktreePath, ['merge-base', '--is-ancestor', head.stdout.trim(), opts.parentHead])
         merged = r.code === 0 ? true : r.code === 1 ? false : null
       }
     }
@@ -202,7 +309,13 @@ export class HubSettler {
     }
   }
 
-  /** Null when the worktree is gone; else why it stays. */
+  /**
+   * Null when the worktree is gone; else why it stays. For a child of a parent
+   * stub the removal is this machine's own (`asThisMachine`): the hub on the
+   * other machine asked for the settle, the creation is the one this machine's
+   * hub made for this child row, and the settle rules chose it. A local settle
+   * keeps the caller's scopes.
+   */
   private async removeWorktree(child: HubChildRow): Promise<string | null> {
     const service = hubWorktrees()
     if (!service) return 'the worktree service is not ready'
@@ -211,13 +324,16 @@ export class HubSettler {
     try {
       // A chat may have opened the worktree since the plan read it.
       if (worktree && otherWorktreeUsers(worktree, child.childId) > 0) return 'another chat or card works in it'
+      const ownedByChild = (snapshot: Awaited<ReturnType<typeof service.getWorktreeCreation>>) =>
+        snapshot.owner.kind === 'conversation' && snapshot.owner.conversationId === child.childId
+      if (!ownedByChild(await service.getWorktreeCreation(key))) return 'the worktree was not made for this child'
       if (worktree) await removeDependencyLinks(worktree)
-      const snapshot = await service.getWorktreeCreation(key)
-      const done = await service.actOnWorktreeCreation({
-        ...key,
-        expectedRevision: snapshot.revision,
-        action: 'remove',
-      })
+      // Read again after the unlink: the removal acts on this revision, and its owner is checked on it.
+      const current = await service.getWorktreeCreation(key)
+      if (!ownedByChild(current)) return 'the worktree was not made for this child'
+      const remove = () =>
+        service.actOnWorktreeCreation({ ...key, expectedRevision: current.revision, action: 'remove' })
+      const done = await (getHubParent(child.parentId)?.remoteHub ? asThisMachine(remove) : remove())
       if (done.cleanupDisposition === 'removed') return null
       return done.error?.message ?? 'git refused to remove it'
     } catch (err) {
@@ -313,17 +429,20 @@ async function runGit(cwd: string, args: string[]): Promise<{ code: number; stdo
   }
 }
 
-/** Children on another machine are settled there, in a later version: they stay open here. */
+/** Children on this machine. */
 function localChildren(parentId: string) {
   return listHubChildren(parentId).filter((c) => !c.machineId)
 }
 
 /**
- * The refusal that names a parent's open children on other machines, or
- * null. A settle that leaves them open is not a success, so an archive
- * through it is refused too.
+ * The refusal that names a parent's open children on machines whose backend
+ * cannot settle them (`available` false), or null. A settle that leaves them
+ * open is not a success, so an archive through it is refused too.
  */
-export function remoteSettleRefusal(parentId: string): string | null {
-  const open = listHubChildren(parentId).filter((c) => c.machineId && isOpenChildPhase(c.phase))
+export function remoteSettleRefusal(
+  parentId: string,
+  available: (child: HubChildRow) => boolean = () => false,
+): string | null {
+  const open = listHubChildren(parentId).filter((c) => c.machineId && isOpenChildPhase(c.phase) && !available(c))
   return open.length > 0 ? `${HUB_REMOTE_SETTLE_LATER_TEXT}: ${open.map((c) => c.title).join(', ')}.` : null
 }

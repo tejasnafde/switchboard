@@ -203,6 +203,7 @@ interface DesktopOpts {
   machineState?: (machineId: string) => 'connected' | 'offline' | 'gone'
   io?: Partial<HubStartIo>
   flag?: { on: boolean }
+  remoteStopping?: (childId: string) => boolean
 }
 
 /** The desktop: its HubStarter, with the real hub client to the given machines. */
@@ -249,6 +250,7 @@ function desktop(
       return opts.intercept?.(machineId, request) ?? clients.invoke(machineId, HubRemoteChannels.START_CHILD, request)
     },
     ...(opts.machineState ? { remoteMachineState: opts.machineState } : {}),
+    ...(opts.remoteStopping ? { remoteStopping: opts.remoteStopping } : {}),
   }
   const io: Partial<HubStartIo> = {
     freeBytes: async () => 100 * GIB,
@@ -462,6 +464,31 @@ describe('a remote start with no final answer', () => {
     await next.starter.reconcileRemote({ machineId: 'vm1' })
     expect(db.getHubChild(child!.childId)!.phase).toBe('open')
     expect(next.requests[0]).toEqual(d.requests[0])
+  })
+
+  it('sends no start while a Stop of that child waits for its machine', async () => {
+    const vm = await bootVm()
+    const stopping = { on: false }
+    const d = desktop(
+      { vm1: { name: 'Work VM', url: vm.url } },
+      {},
+      {
+        intercept: () => (d.requests.length === 1 ? Promise.reject(new Error('closed')) : undefined),
+        remoteStopping: () => stopping.on,
+      },
+    )
+    await d.starter.propose(parent(), [task('Remote', { machine: 'vm1' })])
+    await d.starter.approve(d.cards.at(-1)!, 'auto')
+    await until(() => d.requests.length === 1)
+    const [child] = db.listHubChildren('agent_parent')
+    stopping.on = true
+    await d.starter.reconcileRemote({ machineId: 'vm1' })
+    expect(d.requests).toHaveLength(1)
+    expect(vm.sessions).toEqual([])
+    expect(db.getHubChild(child!.childId)!.phase).toBe('starting')
+    stopping.on = false
+    await d.starter.reconcileRemote({ machineId: 'vm1' })
+    expect(db.getHubChild(child!.childId)!.phase).toBe('open')
   })
 
   it('fails the row with the machine refusal on a later answer', async () => {
@@ -725,6 +752,44 @@ describe('list_children and read_child on a child on another machine', () => {
       isError: true,
       content: [{ text: 'Reading a child on another machine comes in a later version.' }],
     })
+  })
+})
+
+describe('list_children of a child whose machine is ahead of the desktop row', () => {
+  it("shows the machine's failed or settled phase over an open desktop row", async () => {
+    const vm = await bootVm()
+    const d = desktop({ vm1: { name: 'Work VM', url: vm.url } })
+    const [child] = await runBatch(d, [task('Remote', { machine: 'vm1' })])
+    expect(db.getHubChild(child!.childId)!.phase).toBe('open')
+    const listed = async (phase: string) => {
+      const ctx = {
+        parent: () => parent(),
+        starter: d.starter,
+        resources: () => undefined,
+        publish() {},
+        subagents: () => ({ running: 0, done: 0, failed: 0 }),
+        gitStats: async () => null,
+        conflicts: async () => new Map(),
+        remote: {
+          refresh: async () => {},
+          factsOf: () => ({
+            machineId: 'vm1',
+            machine: 'Work VM',
+            connected: true,
+            state: { phase, state: phase === 'open' ? 'working' : 'failed', waitingForSlot: false },
+            ageMs: 0,
+            stopping: false,
+          }),
+        },
+      } as unknown as HubMcpToolContext
+      const r = await buildHubMcpTools(ctx)
+        .find((t) => t.name === 'list_children')!
+        .call({})
+      return JSON.parse((r.content[0] as { text: string }).text).children[0].phase
+    }
+    expect(await listed('failed_start')).toBe('failed_start')
+    expect(await listed('settled')).toBe('settled')
+    expect(await listed('open')).toBe('open')
   })
 })
 

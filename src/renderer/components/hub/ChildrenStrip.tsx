@@ -21,12 +21,15 @@ const textAction = 'cursor-pointer border-0 bg-transparent p-0 [font:inherit] ho
 const linkClass = `${textAction} text-[var(--accent)]`
 const stopClass = `${textAction} text-[var(--error)]`
 
-const canStop = (c: HubChildView) => c.state === 'working' && c.liveId !== null
+/** A child on another machine has no live id here: its machine stops it, or keeps the Stop until it connects. */
+const canStop = (c: HubChildView) =>
+  c.state === 'working' && (c.liveId !== null || (c.remote !== undefined && !c.remote.stopping))
 
 function stopChild(parent: HubChatRef, child: HubChildView): void {
-  if (!child.liveId) return
+  const target = child.liveId ?? (child.remote ? child.chat.id : null)
+  if (!target) return
   window.api.provider
-    .interruptHubChild(parent.familyIds, child.liveId)
+    .interruptHubChild(parent.familyIds, target)
     .catch((err: unknown) => log.warn('stopping a child failed', err))
 }
 

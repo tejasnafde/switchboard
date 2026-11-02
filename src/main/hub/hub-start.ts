@@ -263,6 +263,8 @@ export interface HubStartHost {
   startRemoteChild?(machineId: string, request: HubRemoteStartRequest): Promise<unknown>
   /** Whether a saved machine is connected now, or was removed. Absent: every machine counts as connected. */
   remoteMachineState?(machineId: string): 'connected' | 'offline' | 'gone'
+  /** A Stop of this child waits to be sent or answered on its machine: its start is not sent meanwhile. */
+  remoteStopping?(childId: string): boolean
   /** A wake for a parent stub went into the outbox: tell the hub that owns it. */
   outboxAdded?(): void
 }
@@ -938,6 +940,11 @@ export class HubStarter {
     request: HubRemoteStartRequest,
   ): Promise<'open' | 'starting' | 'failed' | 'unknown' | 'superseded'> {
     const machine = c.machine!
+    // A Stop meanwhile: the start must not reach that machine after it.
+    if (getHubChild(c.childId)?.phase !== 'starting' || this.host.remoteStopping?.(c.childId)) {
+      this.endFollowUp(c.childId)
+      return 'superseded'
+    }
     this.remoteCalls.add(c.childId)
     let raw: unknown
     try {
