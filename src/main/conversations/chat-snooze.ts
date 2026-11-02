@@ -46,7 +46,6 @@ const log = createMainLogger('conversations:snooze')
 /** setTimeout's ceiling; a later wake fires early, finds it early and sets the next timer. */
 const MAX_TIMER_MS = 2 ** 31 - 1
 export const SNOOZE_RESYNC_MS = 5 * 60_000
-/** How often the PRs that snoozed chats wait on are read. */
 export const PR_WAKE_POLL_MS = 5 * 60_000
 
 export interface ChatSnoozeHost {
@@ -258,7 +257,7 @@ export class ChatSnoozer {
 
   /** One read per watched PR, in series. A failed read is tried again at the next tick. */
   private async pollPrs(): Promise<void> {
-    if (this.polling || !this.host.readPr) return
+    if (this.polling) return
     this.polling = true
     try {
       const rows = listSnoozedConversations().filter(
@@ -267,8 +266,9 @@ export class ChatSnoozer {
       if (rows.length === 0) return this.watchPrs(false)
       const readings = new Map<string, PrReading | null>()
       for (const row of rows) {
-        if (this.disposed) return
         if (!readings.has(row.snoozePr)) readings.set(row.snoozePr, await this.readPr(row.snoozePr))
+        // A replaced snoozer wakes nothing: the new one reads again.
+        if (this.disposed) return
         const reading = readings.get(row.snoozePr)
         if (!reading) continue
         // Re-snoozed or woken during the read: the next tick compares against the new baseline.

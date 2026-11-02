@@ -394,6 +394,20 @@ describe('ChatSnoozer', () => {
       expect(host.pushWoke).not.toHaveBeenCalled()
     })
 
+    it('a snoozer disposed during the read wakes nothing', async () => {
+      const s = withPr()
+      await s.snooze('c', { until: null, pr: PR })
+      let release: (r: PrReading) => void = () => {}
+      host.readPr = () => new Promise((resolve) => (release = resolve))
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      s.dispose()
+      release({ ...reading!, state: 'merged', updatedAt: 200 })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(merged).toEqual([])
+      expect(getConversationSnooze('c')?.snoozedAt).not.toBeNull()
+      expect(host.pushWoke).not.toHaveBeenCalled()
+    })
+
     it('a failed read is logged and the next tick reads again', async () => {
       const s = withPr()
       await s.snooze('c', { until: null, pr: PR })
