@@ -11,7 +11,9 @@ import { useBookmarkStore } from '../../stores/bookmark-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useProjectSettingsStore } from '../../stores/project-settings-store'
 import { onSessionRename, emitSessionRename, onSessionCreated, onSessionActivity } from '../../services/session-events'
-import { bumpSessionActivity } from './session-activity'
+import { bumpSessionActivity, patchSession } from './session-activity'
+import { SettleNotice } from './SettleNotice'
+import { applySettledEvent, onSettledChange, settleChat } from '../../services/chat-settle'
 import { serializeConversationToMarkdown, suggestedExportFilename } from '../../services/export-markdown'
 import { SidebarFilter } from './SidebarFilter'
 import { decideDragOutcome } from './drag-logic'
@@ -390,6 +392,19 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     return onSessionActivity((sid, ts) => {
       setProjects((prev) => bumpSessionActivity(prev, sid, ts))
     })
+  }, [])
+
+  // Settle, its undo and a merged PR's settle, from this window or any client.
+  useEffect(() => {
+    const offLocal = onSettledChange((id, settledAt) => {
+      setProjects((prev) => patchSession(prev, id, { settledAt }))
+      useMachineStore.getState().patchSnapshotSession(id, { settledAt })
+    })
+    const offBackend = window.api.app.onConversationSettled(applySettledEvent)
+    return () => {
+      offLocal()
+      offBackend()
+    }
   }, [])
 
   // Refresh project list from disk (e.g., after unarchive)
@@ -1101,6 +1116,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                   item.machineId === 'local' ? undefined : item.machineId,
                 )
               }
+              onSettle={(item) =>
+                void settleChat({ id: item.session.id, title: item.session.title, machineId: item.machineId })
+              }
             />
           )}
           <MachineLayer
@@ -1232,6 +1250,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
       {/* Footer */}
       {sidebarView === 'threads' && (
         <div className="sidebar-footer">
+          <SettleNotice />
           <div className="sidebar-create-wrap">
             <button
               ref={createTriggerRef}

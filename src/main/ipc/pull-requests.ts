@@ -58,6 +58,8 @@ import {
   unlinkConversationPullRequest,
 } from '../db/database'
 import type { RuntimeEventBus } from '../provider/event-bus'
+import { shouldAutoSettle } from '@shared/chat-settle'
+import { storeConversationSettled } from '../conversations/chat-settle'
 import { PullRequestAutoLinker } from '../pull-requests/auto-link'
 import { PullRequestLinkSync } from '../pull-requests/link-sync'
 import {
@@ -154,14 +156,28 @@ function recordLinkProblem(threadId: string, message: string): void {
   linkProblems.set(resolveRootThreadId(threadId), { at: Date.now(), message })
 }
 
-/** Stores a PR's state on its links and tells the chats whose link changed. */
+/** What the PR code asks about a chat before a merge settles it. */
+export interface LinkedChatActivity {
+  busy: (threadId: string) => boolean
+  needsUser: (threadId: string) => boolean
+}
+
+let settleOnMerge: (chatId: string, prNumber: number) => void = () => {}
+
+/**
+ * Stores a PR's state on its links and returns the chats whose link changed.
+ * A change to merged settles each such chat that is idle, once per change.
+ */
 function storeLinkState(ref: PrRef, state: PrState, observedAt = Date.now()): string[] {
+  let changed: string[]
   try {
-    return setPullRequestLinkState(ref, state, observedAt)
+    changed = setPullRequestLinkState(ref, state, observedAt)
   } catch (err) {
     log.warn('storing a linked pull request state failed', { number: ref.number, err: String(err) })
     return []
   }
+  if (state === 'merged') for (const chatId of changed) settleOnMerge(chatId, ref.number)
+  return changed
 }
 
 /** Keys of every linked PR, so a list read writes state only for those. */
@@ -179,9 +195,34 @@ function readLinkedPrKeys(): Set<string> {
  * and tells clients when any chat's links change. Re-attach with each new
  * registry and host, like the push notifier.
  */
-export function attachPullRequestAutoLink(bus: RuntimeEventBus, host: BackendHost): () => void {
+export function attachPullRequestAutoLink(
+  bus: RuntimeEventBus,
+  host: BackendHost,
+  chats: LinkedChatActivity,
+): () => void {
   notifyLinks = (conversationId, created) =>
     host.emit(PullRequestChannels.LINKS_CHANGED, { conversationId, ...(created ? { created: true } : {}) })
+  settleOnMerge = (chatId, prNumber) => {
+    const row = getConversationByThreadId(chatId)
+    if (
+      !row ||
+      !shouldAutoSettle({
+        state: 'merged',
+        busy: chats.busy(row.id),
+        needsUser: chats.needsUser(row.id),
+        settledAt: row.settled_at ?? null,
+        lastActivity: row.updated_at,
+      })
+    )
+      return
+    try {
+      if (storeConversationSettled(host, row.id, Date.now(), prNumber)) {
+        log.info('settled a chat whose linked pull request merged', { chatId: row.id, number: prNumber })
+      }
+    } catch (err) {
+      log.warn('settling a chat after its pull request merged failed', { chatId: row.id, err: String(err) })
+    }
+  }
   const linker = new PullRequestAutoLinker({
     conversationFor: (threadId) => {
       const row = getConversationByThreadId(threadId)

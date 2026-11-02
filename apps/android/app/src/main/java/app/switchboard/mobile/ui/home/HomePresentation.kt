@@ -59,6 +59,10 @@ object HomePresenter {
                     val state = machine.threadStates[session.id]
                     val activity = machine.activity[session.id]
                     val unread = maxOf(state?.unread ?: 0, activity?.unread ?: 0)
+                    val status = status(state, activity, unread)
+                    // A settled chat leaves the desktop's "Done recently" only, so it still shows while it works or waits.
+                    val idle = status == null || status == HomeRecentStatus.Done
+                    if (idle && isSettled(session.settledAt, session.startedAt)) return@mapNotNull null
                     HomeRecentRow(
                         connectionId = machine.connectionId,
                         connectionLabel = machine.connectionLabel,
@@ -71,7 +75,7 @@ object HomePresenter {
                         worktreePath = session.worktreePath,
                         worktreeBranch = session.worktreeBranch,
                         startedAt = session.startedAt,
-                        status = status(state, activity, unread),
+                        status = status,
                         unread = unread,
                     )
                 }
@@ -115,6 +119,10 @@ object HomePresenter {
             else -> if (unread > 0) HomeRecentStatus.Done else null
         }
     }
+
+    /** Port of `isSettled` in `src/shared/chat-settle.ts`: settled until the chat has newer activity. */
+    private fun isSettled(settledAt: Long?, lastActivity: Long): Boolean =
+        settledAt != null && settledAt >= lastActivity
 
     private fun statusPriority(status: HomeRecentStatus?): Int = when (status) {
         HomeRecentStatus.Approval -> 5

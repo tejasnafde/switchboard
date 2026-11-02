@@ -54,6 +54,36 @@ describe('groupRecentSessions', () => {
     expect(groupRecentSessions(items, 6, 12).hiddenCount).toBe(0)
   })
 
+  it('leaves a settled chat out of Done recently only', () => {
+    const settled = { startedAt: 100, settledAt: 200 }
+    const items = [
+      { id: 0, status: 'working' as const, session: settled },
+      { id: 1, status: 'approval' as const, session: settled },
+      { id: 2, status: 'done' as const, session: settled },
+      { id: 3, status: undefined, session: settled },
+      { id: 4, status: undefined, session: { startedAt: 100, settledAt: null } },
+    ]
+    expect(groupRecentSessions(items, 6, 0).groups.map((g) => [g.key, g.items.map((i) => i.id)])).toEqual([
+      ['needs-you', [1]],
+      ['working', [0]],
+      ['done', [4]],
+    ])
+  })
+
+  it('shows a settled chat in Done recently again once it has newer activity', () => {
+    const items = [{ id: 0, status: 'done' as const, session: { startedAt: 300, settledAt: 200 } }]
+    expect(groupRecentSessions(items, 6, 0).groups.map((g) => g.key)).toEqual(['done'])
+  })
+
+  it('does not count settled chats against the limit or Show more', () => {
+    const items = Array.from({ length: 8 }, (_, id) => ({
+      id,
+      status: undefined,
+      session: { startedAt: 100, settledAt: id < 4 ? 200 : null },
+    }))
+    expect(groupRecentSessions(items, 4, 0)).toMatchObject({ hiddenCount: 0 })
+  })
+
   it('drops empty groups', () => {
     expect(ids(groupRecentSessions(rows([undefined]), 4, 0))).toEqual([['done', [0]]])
   })

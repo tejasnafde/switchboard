@@ -6,7 +6,7 @@
  * chat did not jump to the top with "now" until reopen. This bumps the
  * in-memory copy on send/turn so ordering is live.
  */
-import type { Project } from '@shared/types'
+import type { Project, SessionSummary } from '@shared/types'
 
 /**
  * Bump one session's activity time and re-sort its project newest-first.
@@ -25,4 +25,18 @@ export function bumpSessionActivity(projects: Project[], sessionId: string, time
     return { ...p, sessions }
   })
   return found ? next : projects
+}
+
+/** Patch one session's fields wherever it is listed; the same array when it is not present. */
+export function patchSession(
+  projects: Project[],
+  sessionId: string,
+  patch: Partial<Pick<SessionSummary, 'settledAt'>>,
+): Project[] {
+  if (!projects.some((p) => p.sessions.some((s) => s.id === sessionId))) return projects
+  return projects.map((p) =>
+    p.sessions.some((s) => s.id === sessionId)
+      ? { ...p, sessions: p.sessions.map((s) => (s.id === sessionId ? { ...s, ...patch } : s)) }
+      : p,
+  )
 }

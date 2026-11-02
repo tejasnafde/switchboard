@@ -2134,6 +2134,14 @@ export class ProviderRegistry implements PeerToolHost {
     return maskStoredValue(root, [...(byKey ? byKey.values() : []), ...this.agentApprovals.pendingEvents(root)])
   }
 
+  /** Whether the thread waits on the user: an open card, or a session that stopped with an error. */
+  needsUser(threadId: string): boolean {
+    return (
+      this.getPendingRequests(threadId).length > 0 ||
+      threadFamilyIds(threadId).some((id) => this.sessionStatus.get(id) === 'error')
+    )
+  }
+
   /** Whether any id of the thread has an accepted turn that has not completed. */
   isTurnInFlight(threadId: string): boolean {
     return threadFamilyIds(threadId).some((id) => this.hasOutstandingTurn(id))

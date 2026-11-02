@@ -25,7 +25,8 @@ describe('contrastRatio', () => {
 })
 
 describe('light theme muted text', () => {
-  it.each(['--bg-primary', '--bg-secondary'])('reads at 4.5:1 or better on %s', (background) => {
+  // --bg-tertiary is the selected Recents row and the Undo keycap.
+  it.each(['--bg-primary', '--bg-secondary', '--bg-tertiary'])('reads at 4.5:1 or better on %s', (background) => {
     expect(contrastRatio(lightToken('--text-muted'), lightToken(background))).toBeGreaterThanOrEqual(4.5)
   })
 })

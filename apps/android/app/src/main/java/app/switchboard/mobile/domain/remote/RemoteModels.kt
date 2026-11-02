@@ -64,6 +64,8 @@ data class SessionSummary(
     val agentType: String? = null,
     val worktreePath: String? = null,
     val worktreeBranch: String? = null,
+    /** When a desktop settled the chat out of its Done group; see `HomePresenter`. */
+    val settledAt: Long? = null,
 )
 
 data class MessageSearchResult(

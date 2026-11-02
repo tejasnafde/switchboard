@@ -192,7 +192,10 @@ registerKanbanHandlers(host, {
 registerWorktreeManagerHandlers(host)
 // Notify paired phones about approvals, questions, finished turns and errors.
 attachPushNotifier(registry.bus)
-attachPullRequestAutoLink(registry.bus, host)
+attachPullRequestAutoLink(registry.bus, host, {
+  busy: (id) => registry.isTurnInFlight(id),
+  needsUser: (id) => registry.needsUser(id),
+})
 startPullRequestHistoryScan()
 registry.registerIpcHandlers()
 

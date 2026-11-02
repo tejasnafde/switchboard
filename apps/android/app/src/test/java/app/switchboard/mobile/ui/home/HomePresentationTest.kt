@@ -249,6 +249,30 @@ class HomePresentationTest {
         assertEquals(HomeRecentStatus.Working, recent(BrowseThreadActivity(status = "running", unread = 0)))
     }
 
+    @Test
+    fun `a chat settled on the desktop leaves Recents until it works or has newer activity`() {
+        val page = HomePresenter.recents(
+            machines = listOf(
+                machine(
+                    projects = listOf(
+                        project(
+                            "/repo",
+                            summary("settled", startedAt = 100, settledAt = 200),
+                            summary("newer", startedAt = 300, settledAt = 200),
+                            summary("working", startedAt = 50, settledAt = 200),
+                            summary("plain", startedAt = 40),
+                        ),
+                    ),
+                    activity = mapOf("working" to BrowseThreadActivity(status = "running", unread = 0)),
+                ),
+            ),
+            limit = 10,
+        )
+
+        assertEquals(listOf("working", "newer", "plain"), page.items.map(HomeRecentRow::threadId))
+        assertEquals(3, page.total)
+    }
+
     private fun machine(
         id: String = "mac",
         label: String = "Studio Mac",
@@ -270,6 +294,7 @@ class HomePresentationTest {
         startedAt: Long,
         agentType: String? = null,
         worktreePath: String? = null,
+        settledAt: Long? = null,
     ) = SessionSummary(
         id = id,
         source = "codex",
@@ -281,6 +306,7 @@ class HomePresentationTest {
         agentType = agentType,
         worktreePath = worktreePath,
         worktreeBranch = worktreePath?.let { "sb/review" },
+        settledAt = settledAt,
     )
 
     private fun approval(state: String) = FeedItem.Approval(

@@ -13,6 +13,18 @@ function token(selector: RegExp, name: string): string {
   return value
 }
 
+/** A translucent `rgba()` token painted over the opaque `bottom`. */
+function rgbaOver(selector: RegExp, name: string, bottom: string): string {
+  const body = css.match(selector)?.[1]
+  const m = body?.match(new RegExp(`${name}:\\s*rgba\\((\\d+),\\s*(\\d+),\\s*(\\d+),\\s*([\\d.]+)\\)\\s*;`))
+  if (!m) throw new Error(`missing rgba ${name}`)
+  const top = `#${m
+    .slice(1, 4)
+    .map((v) => Number(v).toString(16).padStart(2, '0'))
+    .join('')}`
+  return over(top, Number(m[4]), bottom)
+}
+
 /** `top` at `alpha` over the opaque `bottom`. */
 function over(top: string, alpha: number, bottom: string): string {
   const channel = (hex: string, at: number) => parseInt(hex.slice(at, at + 2), 16)
@@ -52,6 +64,25 @@ describe.each(Object.keys(themes) as (keyof typeof themes)[])(
         expect(contrastRatio(get(name), get('--bg-elevated'))).toBeGreaterThanOrEqual(4.5)
       },
     )
+
+    // The sidebar is --bg-secondary. A selected Recents row is --bg-tertiary, a
+    // hovered one --bg-hover over the sidebar; the status line, the time and
+    // Settle are muted text on them, and the Undo keycap is muted on --bg-tertiary.
+    it('muted text reads at 4.5:1 or better on a selected and a hovered Recents row', () => {
+      const hovered = rgbaOver(themes[theme], '--bg-hover', get('--bg-secondary'))
+      for (const row of [get('--bg-tertiary'), hovered])
+        expect(contrastRatio(get('--text-muted'), row)).toBeGreaterThanOrEqual(4.5)
+    })
+
+    // A hovered Settle or Undo adds --bg-hover over its row and turns --accent-hover.
+    it('a hovered Settle and Undo read at 4.5:1 or better', () => {
+      const hoveredRow = rgbaOver(themes[theme], '--bg-hover', get('--bg-secondary'))
+      for (const under of [hoveredRow, get('--bg-tertiary'), get('--bg-secondary')]) {
+        const fill = rgbaOver(themes[theme], '--bg-hover', under)
+        expect(contrastRatio(get('--accent-hover'), fill)).toBeGreaterThanOrEqual(4.5)
+      }
+      expect(contrastRatio(get('--accent'), get('--bg-secondary'))).toBeGreaterThanOrEqual(4.5)
+    })
 
     it('muted text reads at 4.5:1 or better on the model picker', () => {
       expect(contrastRatio(get('--text-muted'), pickerSurface[theme](get('--bg-primary')))).toBeGreaterThanOrEqual(4.5)

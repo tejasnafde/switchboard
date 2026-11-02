@@ -141,6 +141,10 @@ const isDev = !app.isPackaged
 /** Unsubscribe for the push notifier, so a reactivated window can re-attach. */
 let detachPush: (() => void) | null = null
 let detachAutoLink: (() => void) | null = null
+const linkedChatActivity = {
+  busy: (id: string) => providerRegistry?.isTurnInFlight(id) ?? false,
+  needsUser: (id: string) => providerRegistry?.needsUser(id) ?? false,
+}
 
 let mainWindow: BrowserWindow | null = null
 let providerRegistry: ProviderRegistry | null = null
@@ -1030,7 +1034,7 @@ app.whenReady().then(() => {
     // server passes nothing and therefore never suppresses.
     idleMs: () => powerMonitor.getSystemIdleTime() * 1000,
   })
-  detachAutoLink = attachPullRequestAutoLink(providerRegistry.bus, backendHost)
+  detachAutoLink = attachPullRequestAutoLink(providerRegistry.bus, backendHost, linkedChatActivity)
   startPullRequestHistoryScan()
   providerRegistry.registerIpcHandlers()
 
@@ -1100,7 +1104,7 @@ app.whenReady().then(() => {
         idleMs: () => powerMonitor.getSystemIdleTime() * 1000,
       })
       detachAutoLink?.()
-      detachAutoLink = attachPullRequestAutoLink(providerRegistry.bus, reactivatedHost)
+      detachAutoLink = attachPullRequestAutoLink(providerRegistry.bus, reactivatedHost, linkedChatActivity)
       providerRegistry.registerIpcHandlers()
     }
   })

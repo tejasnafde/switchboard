@@ -4,6 +4,7 @@ import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import type { HistoryLoadOptions } from '@shared/phone-history-window'
+import type { ConversationSettledEvent } from '@shared/chat-settle'
 import { RoutingTable } from './routing-table'
 import {
   TerminalChannels,
@@ -348,6 +349,12 @@ const api = {
       transport.invoke(AppChannels.ARCHIVE_CONVERSATION, id, projectPath, title),
     unarchiveConversation: (id: string) => transport.invoke(AppChannels.UNARCHIVE_CONVERSATION, id),
     getArchivedConversations: () => transport.invoke(AppChannels.GET_ARCHIVED_CONVERSATIONS),
+    settleConversation: (id: string): Promise<{ ok: boolean; settledAt: number }> =>
+      transport.invoke(AppChannels.SETTLE_CONVERSATION, id),
+    unsettleConversation: (id: string): Promise<{ ok: boolean }> =>
+      transport.invoke(AppChannels.UNSETTLE_CONVERSATION, id),
+    onConversationSettled: (callback: (event: ConversationSettledEvent) => void) =>
+      transport.on<[ConversationSettledEvent]>(AppChannels.CONVERSATION_SETTLED, (event) => callback(event)),
     exportMarkdown: (params: { suggestedFilename: string; content: string }) =>
       transport.invoke(AppChannels.EXPORT_MARKDOWN, params),
     /** Save dialog, then writes a PNG data URL. A chat visual's Save image. */

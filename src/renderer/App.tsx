@@ -90,7 +90,9 @@ import type { ReasoningEffort } from '@shared/models'
 import { recoverPendingRequests } from './services/pending-request-recovery'
 import { ProviderChannels } from '@shared/ipc-channels'
 import type { LiveSessionSummary } from '@shared/live-sessions'
-import { resolveGlobalKeydown } from './services/global-keybindings'
+import { isUndoKeydown, resolveGlobalKeydown } from './services/global-keybindings'
+import { undoLastSettle } from './services/chat-settle'
+import { focusRecentRow } from './components/sidebar/recent-row-focus'
 import { toggleChatDetails } from './components/chat/ChatDetailsPopover'
 import { isSecretCardKeyTarget } from './components/chat/secret-request-card-model'
 import {
@@ -1546,6 +1548,12 @@ export function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Keys typed into an agent's secret request belong to that card only.
       if (isSecretCardKeyTarget(e.target)) return
+      if (useAgentStore.getState().lastUndo && isUndoKeydown(e, document.activeElement)) {
+        e.preventDefault()
+        const restored = undoLastSettle()
+        if (restored) focusRecentRow(restored)
+        return
+      }
       const action = resolveGlobalKeydown(e)
       if (!action) return
       switch (action.type) {

@@ -840,18 +840,12 @@ html, body, #root {
   font-variant-numeric: tabular-nums;
 }
 
+/* A div around the row button and, on a "Done recently" row, a sibling
+   Settle button (never a button inside a button). */
 .sidebar-recent-row {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  width: 100%;
-  padding: 5px 7px;
-  border: 0;
+  position: relative;
   border-radius: var(--radius);
-  background: transparent;
   color: var(--text-secondary);
-  cursor: pointer;
-  text-align: left;
 }
 
 .sidebar-recent-row:hover {
@@ -865,9 +859,82 @@ html, body, #root {
   font-weight: 500;
 }
 
-.sidebar-recent-row:focus-visible {
+.sidebar-recent-row-button {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-recent-row-button:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: -2px;
+}
+
+/* Settle sits where the time sits: shown on row hover or focus within the
+   row (always without hover), with the time fading out under it. */
+.sidebar-recent-settle {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  height: 18px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 18px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+}
+
+.sidebar-recent-row:hover .sidebar-recent-settle,
+.sidebar-recent-row:focus-within .sidebar-recent-settle {
+  opacity: 1;
+}
+
+/* --accent-hover, not --accent: light's accent is under 4.5:1 on a hovered row's hover fill. */
+.sidebar-recent-settle:hover {
+  background: var(--bg-hover);
+  color: var(--accent-hover);
+}
+
+.sidebar-recent-settle:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+.sidebar-recent-row.settleable .sidebar-recent-detail {
+  min-width: 42px;
+  text-align: right;
+  transition: opacity 0.12s;
+}
+
+.sidebar-recent-row.settleable:hover .sidebar-recent-detail,
+.sidebar-recent-row.settleable:focus-within .sidebar-recent-detail {
+  opacity: 0;
+}
+
+@media (hover: none) {
+  .sidebar-recent-settle {
+    opacity: 1;
+  }
+
+  .sidebar-recent-row.settleable .sidebar-recent-detail {
+    opacity: 0;
+  }
 }
 
 .sidebar-recent-line {
@@ -2042,6 +2109,7 @@ html, body, #root {
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
 }

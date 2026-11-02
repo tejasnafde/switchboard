@@ -342,6 +342,8 @@ export interface ConversationRow {
   fork_omitted_change_summary?: string | null
   /** Last finished turn's preview line - see `setConversationStatusLine`. */
   status_line?: string | null
+  /** When the chat was settled out of Recents' "Done recently"; null when not settled. */
+  settled_at?: number | null
 }
 
 /** Look up a single conversation by id. Used by search navigation to
@@ -744,6 +746,25 @@ export function getConversationLastRead(id: string): number | null {
     | { last_read_at: number | null }
     | undefined
   return row?.last_read_at ?? null
+}
+
+/**
+ * Settle (or, with null, unsettle) a chat: Recents hides it from "Done
+ * recently" until it has newer activity. Leaves `updated_at` alone, since
+ * the activity time is what a later turn is compared against.
+ */
+export function setConversationSettled(id: string, settledAt: number | null): boolean {
+  return (
+    getDb().prepare('UPDATE conversations SET settled_at = ? WHERE id = ?').run(settledAt, resolveRootThreadId(id))
+      .changes > 0
+  )
+}
+
+export function getConversationSettled(id: string): number | null {
+  const row = getDb().prepare('SELECT settled_at FROM conversations WHERE id = ?').get(resolveRootThreadId(id)) as
+    | { settled_at: number | null }
+    | undefined
+  return row?.settled_at ?? null
 }
 
 /**

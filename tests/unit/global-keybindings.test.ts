@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { resolveGlobalKeydown, type GlobalKeyInput } from '../../src/renderer/services/global-keybindings'
+import {
+  isUndoKeydown,
+  resolveGlobalKeydown,
+  undoKeyName,
+  type GlobalKeyInput,
+} from '../../src/renderer/services/global-keybindings'
 
 function key(k: string, mods: Partial<Omit<GlobalKeyInput, 'key'>> = {}): GlobalKeyInput {
   return { key: k, metaKey: true, ctrlKey: false, shiftKey: false, altKey: false, ...mods }
@@ -59,5 +64,30 @@ describe('resolveGlobalKeydown', () => {
     expect(resolveGlobalKeydown(ctrlB, 'other')).toEqual({ type: 'toggle-sidebar' })
     expect(resolveGlobalKeydown(ctrlB, 'mac')).toBeNull()
     expect(resolveGlobalKeydown(key('b'), 'other')).toBeNull()
+  })
+})
+
+describe('isUndoKeydown', () => {
+  const body = { tagName: 'BODY', isContentEditable: false }
+
+  it('takes Cmd+Z on macOS and Ctrl+Z elsewhere, outside text entry', () => {
+    expect(isUndoKeydown(key('z'), body, 'mac')).toBe(true)
+    expect(isUndoKeydown(key('z', { metaKey: false, ctrlKey: true }), body, 'other')).toBe(true)
+    expect(isUndoKeydown(key('z', { metaKey: false, ctrlKey: true }), body, 'mac')).toBe(false)
+    expect(isUndoKeydown(key('Z', { shiftKey: true }), body, 'mac')).toBe(false)
+    expect(isUndoKeydown(key('z'), null, 'mac')).toBe(true)
+  })
+
+  it.each([
+    ['an input', { tagName: 'INPUT' }],
+    ['a textarea, as a terminal takes keys through', { tagName: 'TEXTAREA' }],
+    ['the composer', { tagName: 'DIV', isContentEditable: true }],
+  ])('leaves Cmd+Z to %s', (_name, element) => {
+    expect(isUndoKeydown(key('z'), element, 'mac')).toBe(false)
+  })
+
+  it('names the keys for a screen reader', () => {
+    expect(undoKeyName('mac')).toBe('Cmd+Z')
+    expect(undoKeyName('other')).toBe('Ctrl+Z')
   })
 })
