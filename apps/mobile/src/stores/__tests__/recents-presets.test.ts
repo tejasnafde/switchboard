@@ -38,6 +38,13 @@ test('an older backend is not asked, and its sheet keeps the defaults', async ()
   expect(labels).toEqual(DEFAULT_SNOOZE_PRESETS.map((p) => p.label))
 })
 
+test('a refresh against a backend without the presets drops the list an earlier backend sent', async () => {
+  useRecentsStore.getState().setPresets('mac', [lunch])
+  jest.mocked(getClient).mockReturnValue(client(false, jest.fn()) as never)
+  await useRecentsStore.getState().refresh('mac')
+  expect(useRecentsStore.getState().presets.mac).toBeUndefined()
+})
+
 test('a broadcast replaces the list, a list with nothing usable reads as the defaults, and unpairing forgets it', () => {
   useRecentsStore.getState().setPresets('mac', [lunch])
   expect(useRecentsStore.getState().presets.mac).toEqual([lunch])

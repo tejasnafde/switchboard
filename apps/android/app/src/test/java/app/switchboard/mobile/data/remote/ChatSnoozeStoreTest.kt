@@ -59,6 +59,19 @@ class ChatSnoozeStoreTest {
         assertEquals(null, store.of("pixel", "kept"))
     }
 
+    @Test
+    fun `forgetting a machine's presets brings back the defaults`() {
+        val store = ChatSnoozeStore()
+        val soon = listOf(ChatSnooze.PresetSpec.Duration("Soon", 30))
+        store.putPresets("mac", soon)
+        store.putPresets("pixel", soon)
+
+        store.forgetPresets("mac")
+
+        assertEquals(ChatSnooze.DEFAULT_PRESETS, store.presetsOf("mac"))
+        assertEquals(soon, store.presetsOf("pixel"))
+    }
+
     private fun state(rev: Long, until: Long?) =
         ChatSnooze.State(snoozedUntil = until, snoozedAt = 10, snoozeRev = rev)
 

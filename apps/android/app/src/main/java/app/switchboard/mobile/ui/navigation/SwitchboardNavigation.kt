@@ -801,6 +801,10 @@ private fun HomeRouteHost(
                     }
                 }
             }
+            val presetsCapable = lease != null && ChatSnooze.PRESETS_CAPABILITY in lease.capabilities
+            if (lease != null && !presetsCapable) {
+                LaunchedEffect(snoozeStore, lease.scope) { snoozeStore.forgetPresets(connection.id) }
+            }
             val threadStates = projects
                 .asSequence()
                 .flatMap { it.sessions.asSequence() }

@@ -148,6 +148,11 @@ export function listToSave(drafts: readonly PresetDraft[]): SnoozePresetSpec[] {
   return savedRows(drafts).map((r) => r.spec)
 }
 
+/** Removing the row at `index` would leave nothing to save, so the menu would keep it. */
+export function removalLeavesNone(drafts: readonly PresetDraft[], index: number): boolean {
+  return listToSave(drafts.filter((_, i) => i !== index)).length === 0
+}
+
 /** Every draft that is valid now takes its spec as saved. */
 export function markSaved(drafts: readonly PresetDraft[]): PresetDraft[] {
   return drafts.map((d) => {
@@ -254,13 +259,14 @@ export function statusLine(drafts: readonly PresetDraft[], save: SaveState): { t
   if (drafts.some((d) => d.dirty))
     return { text: 'You have a change that is not saved. It saves when you leave the field.', bad: false }
   const bad = drafts.filter((d) => !checkDraft(d).spec).length
-  if (bad > 0)
+  const unfixed = `${bad} of ${n} ${n === 1 ? 'preset is' : 'presets are'} not saved until fixed.`
+  if (save.kind === 'failed')
     return {
-      text: `${bad} of ${n} ${n === 1 ? 'preset is' : 'presets are'} not saved until fixed. The menu uses the saved versions.`,
+      text: `Not saved: ${save.reason}. Change a preset to try again.${bad > 0 ? ` ${unfixed}` : ''}`,
       bad: true,
     }
+  if (bad > 0) return { text: `${unfixed} The menu uses the saved versions.`, bad: true }
   if (save.kind === 'saving') return { text: 'Saving...', bad: false }
-  if (save.kind === 'failed') return { text: `Not saved: ${save.reason}. Change a preset to try again.`, bad: true }
   return {
     text: `Saved. Your phones use these ${n} ${n === 1 ? 'preset' : 'presets'} the next time they open Snooze.`,
     bad: false,

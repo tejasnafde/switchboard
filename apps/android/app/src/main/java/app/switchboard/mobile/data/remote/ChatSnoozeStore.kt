@@ -64,6 +64,9 @@ class ChatSnoozeStore {
 
     fun putPresets(connectionId: String, list: List<ChatSnooze.PresetSpec>) = presets.update { it + (connectionId to list) }
 
+    /** The machine now points at a backend without `chat_snooze_presets_v1`: its sheet goes back to the defaults. */
+    fun forgetPresets(connectionId: String) = presets.update { it - connectionId }
+
     /** Read the machine's presets; a failed read keeps what is held. */
     fun loadPresets(client: SwitchboardRemoteClient) {
         client.getSnoozePresets { response ->

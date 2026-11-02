@@ -89,6 +89,10 @@ export const useRecentsStore = create<RecentsState>()(
         requests.set(connectionId, request)
         const current = () => requests.get(connectionId) === request
         projectReads.set(connectionId, request)
+        const presetsCapable = client.supportsCapability(CHAT_SNOOZE_PRESETS_CAPABILITY)
+        // The same machine can point at an older backend after an edit: its sheet goes back to the defaults.
+        if (!presetsCapable)
+          set((s) => (connectionId in s.presets ? { presets: without(s.presets, connectionId) } : {}))
         await Promise.all([
           client
             .getProjects()
@@ -112,7 +116,7 @@ export const useRecentsStore = create<RecentsState>()(
             },
             (err: unknown) => log.warn('could not list live sessions for Home', err),
           ),
-          client.supportsCapability(CHAT_SNOOZE_PRESETS_CAPABILITY)
+          presetsCapable
             ? client.getSnoozePresets().then(
                 (presets) => {
                   if (current()) get().setPresets(connectionId, presets)

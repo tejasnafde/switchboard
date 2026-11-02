@@ -332,6 +332,47 @@ describe('the Snooze presets editor', () => {
   })
 })
 
+describe('the editor against a failing or slow backend', () => {
+  it('waits for the first read, so an edit cannot start from the defaults', () => {
+    useSnoozePresetsStore.setState({ presets: DEFAULT_SNOOZE_PRESETS, loaded: false })
+    act(() => root.render(createElement(SnoozePresetsPanel, { now })))
+    expect(rows()).toHaveLength(0)
+    expect(status()).toBe('Reading the saved presets...')
+    const lunch: SnoozePresetSpec = { label: 'Lunch', kind: 'time', dayOffset: 1, hour: 13, minute: 0 }
+    act(() => useSnoozePresetsStore.getState().take([lunch]))
+    expect(rows().map((r) => r.getAttribute('aria-label'))).toEqual(['Lunch'])
+  })
+
+  it('reports a failed save while another row is not valid, and sends it again when Settings closes', async () => {
+    render()
+    const first = byLabel<HTMLInputElement>('Label of preset 1')
+    type(first, '')
+    blur(first)
+    const second = byLabel<HTMLInputElement>('Label of preset 2')
+    type(second, 'Evening')
+    blur(second)
+    await answer({ ok: false, reason: 'invalid_preset', index: 1 })
+    expect(status()).toBe(
+      'Not saved: Preset 2 is not valid. Change a preset to try again. 1 of 4 presets are not saved until fixed.',
+    )
+    const sent = setSnoozePresets.mock.calls.length
+    act(() => root.unmount())
+    root = createRoot(container)
+    expect(setSnoozePresets).toHaveBeenCalledTimes(sent + 1)
+    expect(setSnoozePresets.mock.calls.at(-1)![0][1]).toMatchObject({ label: 'Evening' })
+  })
+
+  it('keeps Remove on the one saved preset while the other row has no label yet', () => {
+    render([DEFAULT_SNOOZE_PRESETS[1]])
+    act(() => button('Add preset').click())
+    const remove = byLabel('Remove Tonight')
+    expect(remove.getAttribute('aria-disabled')).toBe('true')
+    act(() => remove.click())
+    expect(rows()).toHaveLength(2)
+    expect(setSnoozePresets).not.toHaveBeenCalled()
+  })
+})
+
 describe('the menus follow the backend', () => {
   it('reads the presets once, then takes each broadcast, and a broadcast beats a read still out', async () => {
     useSnoozePresetsStore.setState({ presets: DEFAULT_SNOOZE_PRESETS, loaded: false })
@@ -359,5 +400,27 @@ describe('the menus follow the backend', () => {
     expect(useSnoozePresetsStore.getState().presets).toEqual(DEFAULT_SNOOZE_PRESETS)
     stop()
     expect(off).toHaveBeenCalled()
+  })
+
+  it('reads again after a failed read', async () => {
+    vi.useFakeTimers()
+    try {
+      useSnoozePresetsStore.setState({ presets: DEFAULT_SNOOZE_PRESETS, loaded: false })
+      const lunch = { label: 'Lunch', kind: 'time', dayOffset: 0, hour: 13, minute: 0 }
+      const getSnoozePresets = vi.fn().mockRejectedValueOnce(new Error('not ready')).mockResolvedValueOnce([lunch])
+      ;(window as unknown as { api: unknown }).api = {
+        app: { getSnoozePresets, onSnoozePresetsChanged: () => () => {} },
+      }
+      const { startSnoozePresetsSync } = await import('../../src/renderer/stores/snooze-presets-store')
+      const stop = startSnoozePresetsSync()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(useSnoozePresetsStore.getState().loaded).toBe(false)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(getSnoozePresets).toHaveBeenCalledTimes(2)
+      expect(useSnoozePresetsStore.getState()).toMatchObject({ presets: [lunch], loaded: true })
+      stop()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

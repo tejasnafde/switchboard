@@ -129,6 +129,7 @@ object ChatSnooze {
 
     private const val MINUTE_MS = 60_000L
     private const val DAY_MS = 24 * 60 * MINUTE_MS
+    private const val MAX_SNOOZE_MS = 365 * DAY_MS
     private const val DURATION_LAST_HOUR = 21
     private val WEEKDAYS = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
     private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -313,7 +314,9 @@ object ChatSnooze {
         val at = local(end, zone)
         val rest = (at.get(Calendar.MINUTE) % unit) * MINUTE_MS +
             at.get(Calendar.SECOND) * 1000L + at.get(Calendar.MILLISECOND)
-        return if (rest == 0L) end else end - rest + unit * MINUTE_MS
+        val rounded = if (rest == 0L) end else end - rest + unit * MINUTE_MS
+        // Rounding up a duration near a year would pass the wake limit the backend checks.
+        return minOf(rounded, now + MAX_SNOOZE_MS)
     }
 
     private fun presetTime(spec: PresetSpec, now: Long, zone: TimeZone): Long? = when (spec) {

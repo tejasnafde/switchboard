@@ -86,6 +86,12 @@
         ["Saturday noon", "2026-11-07T12:00"],
         ["In 2 days", "2026-11-08T21:00"]
       ]
+    },
+    {
+      "name": "a 365-day duration wakes at the year limit, not rounded up past it",
+      "now": "2026-07-15T10:07",
+      "specs": [{ "label": "In a year", "kind": "duration", "minutes": 525600 }],
+      "expect": [["In a year", "2027-07-15T10:07"]]
     }
   ],
   "presetsDst": [

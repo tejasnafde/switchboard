@@ -168,7 +168,9 @@ function durationEnd(now: Date, minutes: number): Date {
   const end = new Date(now.getTime() + minutes * 60_000)
   const unit = minutes >= 60 ? 30 : 1
   const rest = (end.getMinutes() % unit) * 60_000 + end.getSeconds() * 1000 + end.getMilliseconds()
-  return rest === 0 ? end : new Date(end.getTime() - rest + unit * 60_000)
+  const rounded = rest === 0 ? end.getTime() : end.getTime() - rest + unit * 60_000
+  // Rounding up a duration near a year would pass the wake limit the backend checks.
+  return new Date(Math.min(rounded, now.getTime() + MAX_SNOOZE_MS))
 }
 
 /**

@@ -29,6 +29,7 @@ import {
   menuHint,
   normalizeField,
   previewAtText,
+  removalLeavesNone,
   resetBody,
   rowNotice,
   savedRows,
@@ -63,10 +64,32 @@ const committedOf = (drafts: readonly PresetDraft[], at: Date): Committed => ({ 
  * valid keeps its last saved preset in the menu until it is fixed.
  */
 export function SnoozePresetsPanel({ now = () => new Date() }: { now?: () => Date }) {
+  const loaded = useSnoozePresetsStore((s) => s.loaded)
+  // An edit made from the defaults before the read answers would replace the saved list.
+  if (!loaded)
+    return (
+      <section aria-labelledby="snooze-presets-title">
+        <h3
+          id="snooze-presets-title"
+          className="mb-1 text-[11px] font-[600] uppercase tracking-[0.07em] text-[var(--text-muted)]"
+        >
+          Snooze presets
+        </h3>
+        <p role="status" className="m-0 text-[12px] text-[var(--text-secondary)]">
+          Reading the saved presets...
+        </p>
+      </section>
+    )
+  return <PresetsEditor now={now} />
+}
+
+function PresetsEditor({ now }: { now: () => Date }) {
   const stored = useSnoozePresetsStore((s) => s.presets)
   const [drafts, setDrafts] = useState<PresetDraft[]>(() => draftsOf(stored))
   const [committed, setCommitted] = useState<Committed>(() => committedOf(drafts, now()))
   const [save, setSave] = useState<SaveState>({ kind: 'idle' })
+  const saveRef = useRef(save)
+  saveRef.current = save
   const [undo, setUndo] = useState<{ draft: PresetDraft; index: number; name: string } | null>(null)
   const [announcement, setAnnouncement] = useState('')
   const draftsRef = useRef(drafts)
@@ -138,9 +161,11 @@ export function SnoozePresetsPanel({ now = () => new Date() }: { now?: () => Dat
   const commitRef = useRef(commit)
   commitRef.current = commit
   // Settings can close (Escape) with a field still focused and no blur: its edit saves as one would.
+  // A save that failed is sent once more, so the close does not drop it.
   useEffect(
     () => () => {
-      if (draftsRef.current.some((d) => d.dirty)) commitRef.current(draftsRef.current)
+      if (draftsRef.current.some((d) => d.dirty) || saveRef.current.kind === 'failed')
+        commitRef.current(draftsRef.current)
     },
     [],
   )
@@ -171,7 +196,7 @@ export function SnoozePresetsPanel({ now = () => new Date() }: { now?: () => Dat
 
   const remove = (index: number) => {
     const rows = [...draftsRef.current]
-    if (rows.length === 1) {
+    if (removalLeavesNone(rows, index)) {
       say(LAST_ROW_REASON)
       return
     }
@@ -222,7 +247,7 @@ export function SnoozePresetsPanel({ now = () => new Date() }: { now?: () => Dat
   }
 
   const full = drafts.length >= MAX_SNOOZE_PRESETS
-  const last = drafts.length === 1
+  const last = drafts.some((_, i) => removalLeavesNone(drafts, i))
   const status = statusLine(drafts, save)
   const rowStanding = new Map<string, PresetStanding>()
   const standingList = standings(
@@ -259,6 +284,7 @@ export function SnoozePresetsPanel({ now = () => new Date() }: { now?: () => Dat
                 draft={draft}
                 index={index}
                 count={drafts.length}
+                only={removalLeavesNone(drafts, index)}
                 at={committed.at}
                 standing={rowStanding.get(draft.id)}
                 onEdit={(patch) => update(draft.id, patch)}
@@ -386,6 +412,7 @@ function PresetRow({
   draft,
   index,
   count,
+  only,
   at,
   standing,
   onEdit,
@@ -397,6 +424,8 @@ function PresetRow({
   draft: PresetDraft
   index: number
   count: number
+  /** Removing this row would leave no preset to save. */
+  only: boolean
   at: Date
   standing: PresetStanding | undefined
   onEdit: (patch: Partial<PresetDraft>) => void
@@ -418,7 +447,6 @@ function PresetRow({
   })
   const first = index === 0
   const lastRow = index === count - 1
-  const only = count === 1
 
   return (
     <div
