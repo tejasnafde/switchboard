@@ -14,7 +14,7 @@ import {
   type RecentSnoozeProps,
 } from '../../src/renderer/components/sidebar/RecentSessionsSection'
 import type { RecentSessionItem } from '../../src/renderer/components/sidebar/recent-sessions'
-import { snoozePrOf } from '../../src/renderer/components/sidebar/snooze-pr'
+import { snoozePrOf } from '../../src/shared/chat-snooze-pr'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 globalThis.ResizeObserver ??= class {

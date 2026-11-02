@@ -4,16 +4,11 @@
  * chat stays open while it is snoozed; its row sits in the sidebar's Snoozed
  * group.
  */
-import { prNumberOf, wakeLabel } from '@shared/chat-snooze'
+import { snoozeLineText } from '@shared/chat-snooze'
 import { useSnoozeStore } from '../../stores/snooze-store'
 import { wakeChat } from '../../services/chat-inbox'
 import { Button } from '../ui/button'
 import { ClockIcon } from './chat-icons'
-
-export function snoozeLineText(until: number | null, pr: string | null, now: Date): string {
-  if (until !== null) return `Snoozed until ${wakeLabel(until, null, now)}`
-  return pr ? `Snoozed until PR #${prNumberOf(pr)} changes` : 'Snoozed'
-}
 
 export function SnoozeComposerLine({
   sessionId,

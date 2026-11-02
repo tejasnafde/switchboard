@@ -26,6 +26,8 @@ object ThreadTestTags {
     const val LIMIT_RESUME_ROW = "thread-limit-resume-row"
     const val LIMIT_RESUME_NOW = "thread-limit-resume-now"
     const val LIMIT_RESUME_CANCEL = "thread-limit-resume-cancel"
+    const val SNOOZE_LINE = "thread-snooze-line"
+    const val SNOOZE_WAKE = "thread-snooze-wake"
     const val MERGE_BACK_SHEET = "thread-merge-back-sheet"
     const val MERGE_BACK_SHEET_TEXT = "thread-merge-back-sheet-text"
     const val MERGE_BACK_SHEET_SUBMIT = "thread-merge-back-sheet-submit"

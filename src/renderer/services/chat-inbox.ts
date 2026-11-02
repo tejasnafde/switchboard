@@ -18,7 +18,7 @@ import {
   type ConversationSnoozedEvent,
   type PresetOption,
   type SnoozePresetKind,
-  type SnoozeRefusal,
+  snoozeRefusalText,
   type SnoozeSurface,
 } from '@shared/chat-snooze'
 import { useAgentStore, type LastUndo } from '../stores/agent-store'
@@ -91,28 +91,7 @@ export function showInboxNotice(text: string): void {
   }, INBOX_NOTICE_MS)
 }
 
-export function refusalText(reason: SnoozeRefusal): string {
-  switch (reason) {
-    case 'needs_you':
-      return 'A chat that needs you cannot be snoozed'
-    case 'past':
-      return 'That time has passed. Pick another'
-    case 'too_far':
-      return 'Pick a time within a year'
-    case 'pr_closed':
-      return 'That pull request is closed'
-    case 'pr_unlinked':
-      return 'That pull request is not linked to this chat'
-    case 'pr_unreadable':
-      return 'The pull request could not be read'
-    case 'stale':
-      return 'The chat changed since. Nothing to undo'
-    case 'empty':
-      return 'Pick a time'
-    case 'no_row':
-      return 'This chat cannot be snoozed'
-  }
-}
+export const refusalText = snoozeRefusalText
 
 export interface InboxTarget {
   id: string

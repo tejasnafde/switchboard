@@ -6,7 +6,7 @@
 import type { RecentSessionStatus } from './recent-sessions'
 import { RECENT_SESSION_PAGE_SIZE } from './recent-session-limit'
 import { isSettled } from '@shared/chat-settle'
-import { isSnoozed, isWoke } from '@shared/chat-snooze'
+import { compareSnoozeWake, isSnoozed, isWoke } from '@shared/chat-snooze'
 
 export type RecentDot = 'needs-you' | 'working' | 'finished' | 'idle' | 'snoozed'
 export type RecentGroupKey = 'needs-you' | 'working' | 'done' | 'snoozed'
@@ -92,7 +92,12 @@ export function groupRecentSessions<T extends { status?: RecentSessionStatus; se
   }
   const woke = byKey.done.filter(isWokeItem)
   if (woke.length > 0) byKey.done = [...woke, ...byKey.done.filter((item) => !isWokeItem(item))]
-  byKey.snoozed.sort((a, b) => (a.session?.snoozedUntil ?? Infinity) - (b.session?.snoozedUntil ?? Infinity))
+  byKey.snoozed.sort((a, b) =>
+    compareSnoozeWake(
+      { snoozedUntil: a.session?.snoozedUntil ?? null },
+      { snoozedUntil: b.session?.snoozedUntil ?? null },
+    ),
+  )
   const urgent = byKey['needs-you'].length + byKey.working.length
   const doneShown = Math.max(woke.length, Math.min(byKey.done.length, Math.max(0, limit - urgent) + revealedCount))
   const hiddenCount = byKey.done.length - doneShown

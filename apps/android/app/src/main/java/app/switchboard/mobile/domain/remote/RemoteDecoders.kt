@@ -317,6 +317,7 @@ object RemoteDecoders {
                 worktreePath = session.string("worktreePath"),
                 worktreeBranch = session.string("worktreeBranch"),
                 settledAt = session.long("settledAt"),
+                snooze = ChatSnooze.stateOf(session),
             )
         },
         workspaceId = raw.string("workspaceId"),

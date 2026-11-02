@@ -3,6 +3,7 @@ package app.switchboard.mobile.data.remote
 import app.switchboard.mobile.domain.remote.AnswerQuestion
 import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.remote.ArchiveConversationResult
+import app.switchboard.mobile.domain.remote.ChatSnooze
 import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.CurrentBranchResult
@@ -154,6 +155,11 @@ object BackendChannels {
     /** Inline live pages (src/shared/html-live.ts); gated behind `html_live_images_v1`. */
     const val HtmlLiveLoad = "html-live:load"
     const val HtmlLiveOpenOnDesktop = "html-live:open-on-desktop"
+    /** Snooze (src/shared/chat-snooze.ts); gated behind `chat_snooze_v1`. */
+    const val SnoozeConversation = "app:snooze-conversation"
+    const val UnsnoozeConversation = "app:unsnooze-conversation"
+    const val MarkWokeSeen = "app:mark-woke-seen"
+    const val ConversationSnoozed = "app:conversation-snoozed"
     /** Gated behind `attachment_upload_v1` (src/shared/attachments.ts). */
     const val UploadAttachment = "app:upload-attachment"
 }
@@ -785,6 +791,31 @@ class SwitchboardRemoteClient(
     fun onPullRequestLinksChanged(listener: () -> Unit): Cancelable =
         rpc.onChannelEvent(BackendChannels.PullRequestLinksChanged) { scope, _ ->
             if (scope.connectionId == connectionId && rpc.scope == scope) listener()
+        }
+
+    /** Only call the snooze channels when the backend advertises `chat_snooze_v1`. */
+    fun snoozeConversation(
+        threadId: String,
+        until: Long?,
+        pr: String?,
+        preset: String,
+        callback: (RemoteResponse<ChatSnooze.SnoozeAnswer>) -> Unit,
+    ) = call(
+        BackendChannels.SnoozeConversation,
+        array(JsonString(threadId), ChatSnooze.request(until, pr, preset)),
+        ChatSnooze::snoozeAnswer,
+        callback,
+    )
+
+    fun unsnoozeConversation(threadId: String, callback: (RemoteResponse<ChatSnooze.WakeAnswer>) -> Unit) =
+        call(BackendChannels.UnsnoozeConversation, array(JsonString(threadId)), ChatSnooze::wakeAnswer, callback)
+
+    fun markWokeSeen(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) =
+        command(BackendChannels.MarkWokeSeen, array(JsonString(threadId)), callback)
+
+    fun onConversationSnoozed(listener: (ChatSnooze.Event) -> Unit): Cancelable =
+        rpc.onChannelEvent(BackendChannels.ConversationSnoozed) { scope, args ->
+            if (scope.connectionId == connectionId && rpc.scope == scope) ChatSnooze.eventOf(args)?.let(listener)
         }
 
     /** A chat was settled or unsettled on any client; the payload names the root chat, so re-read the list. */

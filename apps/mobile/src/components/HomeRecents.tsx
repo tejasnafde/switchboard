@@ -1,23 +1,34 @@
 /**
  * Home > Recents above the machine list: the newest chats on every paired
- * machine, what each needs, and a tap straight into the chat. Rules in
- * lib/home-recents.ts.
+ * machine, what each needs, and a tap straight into the chat. A long press or
+ * a leftward swipe opens the Snooze sheet; snoozed chats wait in the Snoozed
+ * shelf at the end. Rules in lib/home-recents.ts and lib/snooze-sheet.ts.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ActivityIndicator, Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { useFocusEffect } from '@react-navigation/native'
-import { colors, radius, space, type, HIT } from '../theme'
+import { CHAT_SNOOZE_CAPABILITY, wakeLabel } from '@shared/chat-snooze'
+import { snoozePrOf, type SnoozePrChoice } from '@shared/chat-snooze-pr'
+import { createLogger } from '@shared/logger'
+import { colors, fonts, radius, space, type, HIT } from '../theme'
 import {
   HOME_RECENT_PAGE_SIZE,
+  canSnooze,
   homeRecents,
   homeRelativeTime,
   type HomeRecentRow,
   type HomeRecentStatus,
   type HomeRecentsPage,
 } from '../lib/home-recents'
+import { rowSwipeCommits, shouldClaimRowSwipe } from '../lib/gestures'
+import { snoozeSheetItems, type SnoozeSheetItem } from '../lib/snooze-sheet'
 import { useChatStore } from '../stores/chat'
-import { useConnectionsStore } from '../stores/connections'
-import { useRecentsStore } from '../stores/recents'
+import { getClient, useConnectionsStore } from '../stores/connections'
+import { snoozeChat, useRecentsStore, wakeChat } from '../stores/recents'
+import { SnoozeSheet } from './SnoozeSheet'
+
+const log = createLogger('home:snooze')
 
 const STATUS_COLOR: Record<HomeRecentStatus, string> = {
   Approval: colors.amber,
@@ -40,6 +51,10 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
   const threads = useChatStore((s) => s.threads)
   const staleGeneration = useChatStore((s) => s.staleGeneration)
   const [limit, setLimit] = useState(HOME_RECENT_PAGE_SIZE)
+  const [sheet, setSheet] = useState<SnoozeSheetState | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  // The open sheet's opening instant: a reply to an earlier opening of the same row does not apply.
+  const openedAt = useRef<Date | null>(null)
 
   const connected = configs
     .filter((c) => status[c.id] === 'connected')
@@ -71,6 +86,8 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
           connected: status[c.id] === 'connected',
           sessions: sessions[c.id] ?? [],
           live: live[c.id],
+          // The capability arrives with the `ready` frame, before the reply that fills `sessions`.
+          snooze: getClient(c.id)?.supportsCapability(CHAT_SNOOZE_CAPABILITY) === true,
         })),
         threads,
         limit,
@@ -78,37 +95,169 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
     [configs, status, sessions, live, threads, limit],
   )
 
+  useEffect(() => {
+    if (notice === null) return
+    const timer = setTimeout(() => setNotice(null), NOTICE_MS)
+    return () => clearTimeout(timer)
+  }, [notice])
+
+  const openSheet = (row: HomeRecentRow) => {
+    const now = new Date()
+    openedAt.current = now
+    setSheet({ row, now, pr: null, notice: null, busy: false })
+    getClient(row.connectionId)
+      ?.pullRequestLinks(row.id)
+      .then(
+        (links) => {
+          if (openedAt.current === now) setSheet((s) => s && { ...s, pr: snoozePrOf(links) })
+        },
+        (err: unknown) => log.warn(`could not read the PR links of ${row.id}`, err),
+      )
+  }
+
+  const pick = async (item: SnoozeSheetItem) => {
+    if (!sheet) return
+    const { row } = sheet
+    setSheet({ ...sheet, busy: true, notice: null })
+    const refused = await snoozeChat(row.connectionId, row.id, item.choice)
+    if (openedAt.current !== sheet.now) {
+      // The sheet closed while the request ran: the refusal shows above Recents instead.
+      if (refused !== null) setNotice(refused)
+      return
+    }
+    if (refused === null) closeSheet()
+    else setSheet((s) => s && { ...s, busy: false, notice: refused })
+  }
+
+  const closeSheet = () => {
+    openedAt.current = null
+    setSheet(null)
+  }
+
+  const wake = async (row: HomeRecentRow) => {
+    const refused = await wakeChat(row.connectionId, row.id)
+    if (refused !== null) setNotice(refused)
+  }
+
   return (
-    <RecentsList
-      page={page}
-      onOpen={onOpen}
-      onShowMore={() => setLimit((n) => Math.min(n + HOME_RECENT_PAGE_SIZE, page.total))}
-    />
+    <>
+      <RecentsList
+        page={page}
+        notice={notice}
+        onOpen={onOpen}
+        onSnooze={openSheet}
+        onWake={(row) => void wake(row)}
+        onShowMore={() => setLimit((n) => Math.min(n + HOME_RECENT_PAGE_SIZE, page.total))}
+      />
+      {sheet && (
+        <SnoozeSheet
+          title={sheet.row.title}
+          items={snoozeSheetItems(sheet.now, sheet.pr)}
+          notice={sheet.notice}
+          busy={sheet.busy}
+          onPick={(item) => void pick(item)}
+          onClose={closeSheet}
+        />
+      )}
+    </>
   )
+}
+
+const NOTICE_MS = 5000
+
+interface SnoozeSheetState {
+  row: HomeRecentRow
+  /** When the sheet opened: its clock-time presets keep this instant. */
+  now: Date
+  pr: SnoozePrChoice | null
+  notice: string | null
+  busy: boolean
 }
 
 export function RecentsList({
   page,
+  notice = null,
   onOpen,
   onShowMore,
+  onSnooze,
+  onWake,
 }: {
   page: HomeRecentsPage
+  notice?: string | null
   onOpen: (row: HomeRecentRow) => void
   onShowMore: () => void
+  onSnooze?: (row: HomeRecentRow) => void
+  onWake?: (row: HomeRecentRow) => void
 }) {
+  const [shelfOpen, setShelfOpen] = useState(false)
+  const now = new Date()
   return (
     <View>
       <Text style={styles.overline}>Recents</Text>
-      {page.items.length === 0 ? (
+      {notice !== null && (
+        <Text style={styles.notice} accessibilityLiveRegion="polite">
+          {notice}
+        </Text>
+      )}
+      {page.items.length === 0 && page.snoozed.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No recent chats yet</Text>
           <Text style={styles.emptyBody}>Open a machine and choose a project to start or resume a chat.</Text>
         </View>
       ) : (
-        page.items.map((row) => (
+        page.items.map((row) => {
+          const snoozable = onSnooze !== undefined && canSnooze(row)
+          return (
+            <SwipeToSnooze key={`${row.connectionId}:${row.id}`} enabled={snoozable} onSwipe={() => onSnooze?.(row)}>
+              <Pressable
+                testID={`recent-${row.connectionId}:${row.id}`}
+                accessibilityRole="button"
+                accessibilityHint={snoozable ? 'Long press to snooze' : undefined}
+                onPress={() => onOpen(row)}
+                onLongPress={snoozable ? () => onSnooze?.(row) : undefined}
+                style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+              >
+                <View style={styles.body}>
+                  <Text style={[styles.title, row.woke && styles.titleWoke]} numberOfLines={1}>
+                    {row.title}
+                  </Text>
+                  <Text style={styles.meta} numberOfLines={1}>
+                    {`${row.projectName} · ${row.connectionLabel}`}
+                  </Text>
+                </View>
+                <Trailing row={row} />
+              </Pressable>
+            </SwipeToSnooze>
+          )
+        })
+      )}
+      {page.items.length < page.total && (
+        <Pressable
+          testID="recents-show-more"
+          accessibilityRole="button"
+          onPress={onShowMore}
+          style={({ pressed }) => [styles.more, pressed && styles.pressed]}
+        >
+          <Text style={styles.moreText}>Show more</Text>
+        </Pressable>
+      )}
+      {page.snoozed.length > 0 && (
+        <Pressable
+          testID="recents-snoozed"
+          accessibilityRole="button"
+          accessibilityState={{ expanded: shelfOpen }}
+          onPress={() => setShelfOpen((open) => !open)}
+          style={({ pressed }) => [styles.shelf, pressed && styles.pressed]}
+        >
+          <Ionicons name={shelfOpen ? 'chevron-down' : 'chevron-forward'} size={14} color={colors.textDim} />
+          <Text style={styles.shelfText}>{`Snoozed ${page.snoozed.length}`}</Text>
+        </Pressable>
+      )}
+      {shelfOpen &&
+        page.snoozed.map((row) => (
           <Pressable
             key={`${row.connectionId}:${row.id}`}
-            testID={`recent-${row.connectionId}:${row.id}`}
+            testID={`snoozed-${row.connectionId}:${row.id}`}
             accessibilityRole="button"
             onPress={() => onOpen(row)}
             style={({ pressed }) => [styles.row, pressed && styles.pressed]}
@@ -121,25 +270,56 @@ export function RecentsList({
                 {`${row.projectName} · ${row.connectionLabel}`}
               </Text>
             </View>
-            <Trailing row={row} />
+            <Text style={styles.time}>{wakeLabel(row.snoozedUntil ?? null, row.snoozePr ?? null, now)}</Text>
+            {onWake && (
+              <Pressable
+                testID={`wake-${row.connectionId}:${row.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Wake ${row.title}`}
+                hitSlop={8}
+                onPress={() => onWake(row)}
+                style={({ pressed }) => [styles.wake, pressed && styles.pressed]}
+              >
+                <Text style={styles.wakeText}>Wake</Text>
+              </Pressable>
+            )}
           </Pressable>
-        ))
-      )}
-      {page.items.length < page.total && (
-        <Pressable
-          testID="recents-show-more"
-          accessibilityRole="button"
-          onPress={onShowMore}
-          style={({ pressed }) => [styles.more, pressed && styles.pressed]}
-        >
-          <Text style={styles.moreText}>Show more</Text>
-        </Pressable>
-      )}
+        ))}
     </View>
   )
 }
 
+/** A leftward swipe on a row opens its Snooze sheet; the row springs back. */
+function SwipeToSnooze({ enabled, onSwipe, children }: { enabled: boolean; onSwipe: () => void; children: ReactNode }) {
+  const translateX = useRef(new Animated.Value(0)).current
+  const swipe = useRef(onSwipe)
+  swipe.current = onSwipe
+  const responder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_e, g) => shouldClaimRowSwipe(g.dx, g.dy),
+        onPanResponderMove: (_e, g) => translateX.setValue(Math.min(0, g.dx)),
+        onPanResponderRelease: (_e, g) => {
+          if (rowSwipeCommits(g.dx, g.vx)) swipe.current()
+          Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start()
+        },
+        onPanResponderTerminate: () =>
+          Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start(),
+      }),
+    [translateX],
+  )
+  if (!enabled) return <>{children}</>
+  return (
+    <Animated.View style={{ transform: [{ translateX }] }} {...responder.panHandlers}>
+      {children}
+    </Animated.View>
+  )
+}
+
 function Trailing({ row }: { row: HomeRecentRow }) {
+  if (row.woke && (row.status === null || row.status === 'Done'))
+    return <Text style={[styles.statusText, styles.woke]}>Woke</Text>
   if (row.status === null) return <Text style={styles.time}>{homeRelativeTime(row.startedAt)}</Text>
   const color = STATUS_COLOR[row.status]
   return (
@@ -187,4 +367,11 @@ const styles = StyleSheet.create({
   more: { minHeight: HIT, alignItems: 'center', justifyContent: 'center' },
   moreText: { ...type.bodySm, color: colors.accent },
   pressed: { opacity: 0.55 },
+  titleWoke: { fontFamily: fonts.displayBold },
+  woke: { color: colors.accent },
+  notice: { ...type.bodySm, color: colors.amber, paddingBottom: space.xs, paddingHorizontal: 2 },
+  shelf: { minHeight: HIT, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 2 },
+  shelfText: { ...type.bodySm, color: colors.textDim },
+  wake: { paddingHorizontal: space.sm, paddingVertical: 4 },
+  wakeText: { ...type.bodySm, color: colors.accent },
 })

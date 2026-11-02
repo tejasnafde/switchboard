@@ -40,3 +40,16 @@ export function shouldClaimEdgeSwipe(startX: number, dx: number, dy: number): bo
 export function edgeSwipeCommits(dx: number, vx: number): boolean {
   return dx >= COMMIT_DX || vx >= COMMIT_VX
 }
+
+/** Leftward travel on a Home row that opens its Snooze sheet on release. */
+export const ROW_SWIPE_COMMIT_DX = 72
+
+/** Whether a Home row takes a drag: leftward and clearly horizontal, so the list still scrolls. */
+export function shouldClaimRowSwipe(dx: number, dy: number): boolean {
+  return dx <= -CLAIM_DX && -dx > Math.abs(dy) * DOMINANCE
+}
+
+/** Whether a released row swipe opens the sheet. */
+export function rowSwipeCommits(dx: number, vx: number): boolean {
+  return dx <= -ROW_SWIPE_COMMIT_DX || vx <= -COMMIT_VX
+}
