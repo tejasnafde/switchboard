@@ -13,9 +13,11 @@ import app.switchboard.mobile.domain.remote.RemoteRequestKey
 import app.switchboard.mobile.domain.remote.RemoteResponse
 import app.switchboard.mobile.domain.remote.SessionSummary
 import app.switchboard.mobile.domain.remote.Workspace
+import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.ui.browse.BrowseLoadState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -70,9 +72,33 @@ class HomeProjectRefreshCoordinatorTest {
         assertTrue(snapshots.savedProjects.isEmpty())
     }
 
+    @Test
+    fun `a chat settled on another client re-reads the list until home closes`() {
+        val remote = FakeHomeBrowseRemote()
+        val snapshots = FakeHomeSnapshotStore(listOf(project("cached")))
+        var listener: (() -> Unit)? = null
+        val coordinator = coordinator(remote, snapshots) { onSettled ->
+            listener = onSettled
+            Cancelable { listener = null }
+        }
+
+        coordinator.start()
+        remote.projects.removeFirst()(success(listOf(project("fresh"))))
+        assertNull(coordinator.state.value.projects.items().single().project.sessions.single().settledAt)
+
+        listener!!.invoke()
+        assertEquals(1, remote.projects.size)
+        remote.projects.removeFirst()(success(listOf(project("fresh", settledAt = 500))))
+        assertEquals(500L, coordinator.state.value.projects.items().single().project.sessions.single().settledAt)
+
+        coordinator.close()
+        assertNull(listener)
+    }
+
     private fun coordinator(
         remote: FakeHomeBrowseRemote,
         snapshots: FakeHomeSnapshotStore,
+        onConversationSettled: (listener: () -> Unit) -> Cancelable = { Cancelable {} },
     ) = HomeProjectRefreshCoordinator(
         connectionId = "machine",
         connectionLabel = "Studio Mac",
@@ -80,9 +106,10 @@ class HomeProjectRefreshCoordinatorTest {
         remote = remote,
         expectedGeneration = 7,
         snapshotStore = snapshots,
+        onConversationSettled = onConversationSettled,
     )
 
-    private fun project(name: String) = Project(
+    private fun project(name: String, settledAt: Long? = null) = Project(
         path = "/$name",
         name = name,
         sessions = listOf(
@@ -93,6 +120,7 @@ class HomeProjectRefreshCoordinatorTest {
                 startedAt = 1,
                 messageCount = 1,
                 filePath = "/$name.jsonl",
+                settledAt = settledAt,
                 raw = JsonObject(linkedMapOf()),
             ),
         ),

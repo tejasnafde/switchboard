@@ -58,8 +58,8 @@ import {
   unlinkConversationPullRequest,
 } from '../db/database'
 import type { RuntimeEventBus } from '../provider/event-bus'
-import { shouldAutoSettle } from '@shared/chat-settle'
 import { storeConversationSettled } from '../conversations/chat-settle'
+import { createSettleOnMerge, type SettleOnMerge } from '../pull-requests/settle-on-merge'
 import { PullRequestAutoLinker } from '../pull-requests/auto-link'
 import { PullRequestLinkSync } from '../pull-requests/link-sync'
 import {
@@ -163,10 +163,12 @@ export interface LinkedChatActivity {
 }
 
 let settleOnMerge: (chatId: string, prNumber: number) => void = () => {}
+let settleOnMergeRetries: SettleOnMerge | null = null
 
 /**
  * Stores a PR's state on its links and returns the chats whose link changed.
- * A change to merged settles each such chat that is idle, once per change.
+ * A change to merged settles each such chat that is idle, once per change
+ * (a settle that throws is retried a few times, see `settle-on-merge.ts`).
  */
 function storeLinkState(ref: PrRef, state: PrState, observedAt = Date.now()): string[] {
   let changed: string[]
@@ -202,26 +204,18 @@ export function attachPullRequestAutoLink(
 ): () => void {
   notifyLinks = (conversationId, created) =>
     host.emit(PullRequestChannels.LINKS_CHANGED, { conversationId, ...(created ? { created: true } : {}) })
-  settleOnMerge = (chatId, prNumber) => {
-    const row = getConversationByThreadId(chatId)
-    if (
-      !row ||
-      !shouldAutoSettle({
-        state: 'merged',
-        busy: chats.busy(row.id),
-        needsUser: chats.needsUser(row.id),
-        settledAt: row.settled_at ?? null,
-      })
-    )
-      return
-    try {
-      if (storeConversationSettled(host, row.id, Date.now(), prNumber)) {
-        log.info('settled a chat whose linked pull request merged', { chatId: row.id, number: prNumber })
-      }
-    } catch (err) {
-      log.warn('settling a chat after its pull request merged failed', { chatId: row.id, err: String(err) })
-    }
-  }
+  settleOnMergeRetries?.cancel()
+  const settler = createSettleOnMerge({
+    readChat: (chatId) => {
+      const row = getConversationByThreadId(chatId)
+      return row ? { id: row.id, settledAt: row.settled_at ?? null } : null
+    },
+    busy: chats.busy,
+    needsUser: chats.needsUser,
+    store: (id, settledAt, prNumber) => storeConversationSettled(host, id, settledAt, prNumber),
+  })
+  settleOnMergeRetries = settler
+  settleOnMerge = settler.settle
   const linker = new PullRequestAutoLinker({
     conversationFor: (threadId) => {
       const row = getConversationByThreadId(threadId)
@@ -258,6 +252,7 @@ export function attachPullRequestAutoLink(
   return () => {
     stopLinker()
     stopSync()
+    settler.cancel()
   }
 }
 

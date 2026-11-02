@@ -7,7 +7,14 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { createLogger } from '@shared/logger'
-import { persistedRecents, sessionsFromProjects, type LiveStatuses, type RecentSession } from '../lib/home-recents'
+import type { ConversationSettledEvent } from '@shared/chat-settle'
+import {
+  persistedRecents,
+  sessionsFromProjects,
+  withSettled,
+  type LiveStatuses,
+  type RecentSession,
+} from '../lib/home-recents'
 import { statusMark } from './chat'
 import { getClient } from './connections'
 
@@ -21,6 +28,8 @@ interface RecentsState {
   live: Record<string, LiveStatuses>
   /** Read one machine's chats and live statuses again. */
   refresh: (connectionId: string) => Promise<void>
+  /** The machine settled or unsettled a chat: patch its row, or read the list again when none matches. */
+  applySettled: (connectionId: string, event: ConversationSettledEvent) => void
   /** The machine left connected: its reply no longer describes it. */
   dropLive: (connectionId: string) => void
   /** The machine was unpaired. */
@@ -37,7 +46,7 @@ function without<T>(byId: Record<string, T>, id: string): Record<string, T> {
 
 export const useRecentsStore = create<RecentsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       sessions: {},
       live: {},
 
@@ -67,6 +76,12 @@ export const useRecentsStore = create<RecentsState>()(
             (err: unknown) => log.warn('could not list live sessions for Home', err),
           ),
         ])
+      },
+
+      applySettled: (connectionId, event) => {
+        const patched = withSettled(get().sessions[connectionId] ?? [], event.conversationId, event.settledAt)
+        if (patched) set((s) => ({ sessions: { ...s.sessions, [connectionId]: patched } }))
+        else void get().refresh(connectionId)
       },
 
       dropLive: (connectionId) => {

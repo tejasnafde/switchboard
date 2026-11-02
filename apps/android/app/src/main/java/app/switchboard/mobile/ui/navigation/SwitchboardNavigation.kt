@@ -753,6 +753,7 @@ private fun HomeRouteHost(
                         remote = SwitchboardBrowseRemote(lease.client),
                         expectedGeneration = lease.scope.generation,
                         snapshotStore = snapshotStore,
+                        onConversationSettled = lease.client::onConversationSettled,
                     )
                 }
                 DisposableEffect(refreshCoordinator) {
