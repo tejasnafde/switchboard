@@ -70,6 +70,8 @@ export function ChatVisual({ kind, source }: { kind: VisualKind; source: string 
     return hit ? { status: 'drawn', ...hit } : { status: 'drawing' }
   })
   const [html, setHtml] = useState<string | null>(null)
+  // The cached height arrives before this WebView draws; a capture before its own `drawn` answer is blank.
+  const [webDrawn, setWebDrawn] = useState(false)
   const [showSource, setShowSource] = useState(false)
   const [copied, setCopied] = useState(false)
   const [shareError, setShareError] = useState<string | null>(null)
@@ -113,6 +115,7 @@ export function ChatVisual({ kind, source }: { kind: VisualKind; source: string 
       drawnCache.set(cacheKey, drawn)
       if (drawnCache.size > 50) drawnCache.delete(drawnCache.keys().next().value as string)
       setState({ status: 'drawn', ...drawn })
+      setWebDrawn(true)
     } else if (answer.type === 'error') {
       setState({ status: 'error', error: typeof answer.error === 'string' ? answer.error : 'It could not be drawn.' })
     }
@@ -141,7 +144,7 @@ export function ChatVisual({ kind, source }: { kind: VisualKind; source: string 
   }
 
   const canCopy = invalid === null && (chart?.ok === true || state.status === 'drawn')
-  const canShare = invalid === null && !showSource && html !== null && state.status === 'drawn'
+  const canShare = invalid === null && !showSource && html !== null && state.status === 'drawn' && webDrawn
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -150,7 +153,10 @@ export function ChatVisual({ kind, source }: { kind: VisualKind; source: string 
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={showSource ? `Show ${noun.toLowerCase()}` : 'Show source'}
-            onPress={() => setShowSource((s) => !s)}
+            onPress={() => {
+              setWebDrawn(false)
+              setShowSource((s) => !s)
+            }}
             style={styles.button}
           >
             <Text style={styles.buttonText}>Source</Text>
@@ -189,6 +195,7 @@ export function ChatVisual({ kind, source }: { kind: VisualKind; source: string 
           style={{ height: state.status === 'drawn' ? state.height : 160, backgroundColor: THEME.background }}
           originWhitelist={['*']}
           onShouldStartLoadWithRequest={onlyTheHostPage}
+          onLoadStart={() => setWebDrawn(false)}
           onLoadEnd={() => webRef.current?.postMessage(JSON.stringify({ kind, source, theme: THEME }))}
           onMessage={onMessage}
           onContentProcessDidTerminate={() => {

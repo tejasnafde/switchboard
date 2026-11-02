@@ -144,6 +144,8 @@ fun ChatVisualCard(kind: VisualKind, source: String) {
     var html by remember { mutableStateOf(hostHtml) }
     var showSource by remember { mutableStateOf(false) }
     var webView by remember(cacheKey) { mutableStateOf<WebView?>(null) }
+    // The WebView whose own page answered "drawn"; a cached height alone does not make it drawn.
+    var drawnView by remember(cacheKey) { mutableStateOf<WebView?>(null) }
     var shareError by remember(cacheKey) { mutableStateOf<String?>(null) }
     val invalid = (chart as? ChartParse.Invalid)?.error ?: (state as? VisualState.Failed)?.error
     val noun = if (kind == VisualKind.MERMAID) "Diagram" else "Chart"
@@ -178,11 +180,11 @@ fun ChatVisualCard(kind: VisualKind, source: String) {
                     Text(if (kind == VisualKind.MERMAID) "Copy SVG" else "Copy data", color = TextDim, fontSize = 12.sp)
                 }
             }
-            val drawnView = webView
-            if (invalid == null && !showSource && state is VisualState.Drawn && drawnView != null) {
+            val shareView = visualShareTarget(invalid, showSource, state is VisualState.Drawn, webView, drawnView)
+            if (shareView != null) {
                 TextButton(onClick = {
                     shareError = null
-                    val bitmap = runCatching { captureView(drawnView) }
+                    val bitmap = runCatching { captureView(shareView) }
                         .onFailure { Log.w(TAG, "visual capture failed", it) }
                         .getOrNull()
                     if (bitmap == null) {
@@ -231,13 +233,20 @@ fun ChatVisualCard(kind: VisualKind, source: String) {
                         .fillMaxWidth()
                         .height(height.dp),
                     factory = { viewContext ->
-                        visualWebView(viewContext, page, requestJson(kind, source)) { answer ->
-                            if (answer is VisualState.Drawn) synchronized(drawnCache) { drawnCache[cacheKey] = answer }
+                        lateinit var view: WebView
+                        view = visualWebView(viewContext, page, requestJson(kind, source)) { answer ->
+                            if (answer is VisualState.Drawn) {
+                                synchronized(drawnCache) { drawnCache[cacheKey] = answer }
+                                drawnView = view
+                            }
                             state = answer
-                        }.also { webView = it }
+                        }
+                        webView = view
+                        view
                     },
                     onRelease = {
                         if (webView === it) webView = null
+                        if (drawnView === it) drawnView = null
                         it.destroy()
                     },
                 )
@@ -245,6 +254,15 @@ fun ChatVisualCard(kind: VisualKind, source: String) {
         }
     }
 }
+
+/**
+ * The view Share captures, or null while Share must not show: only the
+ * mounted view, and only once its own page said it drew. A row scrolled back
+ * into view takes its height from the cache before the new view draws, and a
+ * capture then is blank.
+ */
+internal fun <V : Any> visualShareTarget(invalid: String?, showSource: Boolean, drawn: Boolean, mounted: V?, drawnView: V?): V? =
+    if (invalid == null && !showSource && drawn && mounted != null && mounted === drawnView) mounted else null
 
 /** The view as drawn now, at its laid-out size. Main thread only. */
 private fun captureView(view: WebView): Bitmap {
