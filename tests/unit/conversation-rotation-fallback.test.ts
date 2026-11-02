@@ -193,7 +193,7 @@ vi.mock('better-sqlite3', () => {
             row.archived = archived
             return { changes: 1 }
           }
-          if (/UPDATE conversations SET settled_at = \? WHERE id = \?/.test(sql)) {
+          if (/UPDATE conversations SET settled_at = \?[^]* WHERE id = \?$/.test(sql)) {
             const [at, id] = args as [number | null, string]
             const row = conversations.get(id)
             if (!row) return { changes: 0 }

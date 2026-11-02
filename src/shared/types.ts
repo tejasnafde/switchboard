@@ -398,6 +398,13 @@ export interface SessionSummary {
   statusLine?: string | null
   /** When the chat was settled out of Recents' "Done recently"; see `isSettled` in `shared/chat-settle.ts`. */
   settledAt?: number | null
+  /** Snooze and the Woke marker (`shared/chat-snooze.ts`). Absent from an older backend: not snoozed. */
+  snoozedUntil?: number | null
+  snoozedAt?: number | null
+  snoozePr?: string | null
+  snoozeRev?: number
+  wokeAt?: number | null
+  wokeReason?: import('./chat-snooze').WakeReason | null
   /** Child chats (flag `hub_children` on): `{ parentId }` on an open child, `{ openChildren }` on its parent. */
   hub?: import('./hub').SessionHubField
 }

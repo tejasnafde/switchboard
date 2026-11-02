@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import { STORED_TASK_NOTICE_PREFIX } from '@shared/synthetic-message'
 import { maskStoredText } from './secret-mask'
+import { CLEAR_INBOX_FOR_TURN_SQL } from './conversations'
 
 export type TurnAcceptanceState = 'reserved' | 'dispatching' | 'completed' | 'abandoned'
 
@@ -367,8 +368,8 @@ export class SqliteTurnAcceptanceStore implements TurnAcceptanceStore {
           .run(turn.autoTitle, key.threadId).changes
         if (changed === 1) conversationTitle = turn.autoTitle
       }
-      // key.threadId is already the root (the registry resolves it), and a new turn brings a settled chat back.
-      db.prepare('UPDATE conversations SET updated_at = ?, settled_at = NULL WHERE id = ?').run(
+      // key.threadId is already the root (the registry resolves it), and a new turn clears the inbox state.
+      db.prepare(`UPDATE conversations SET updated_at = ?, ${CLEAR_INBOX_FOR_TURN_SQL} WHERE id = ?`).run(
         turn.acceptedAt,
         key.threadId,
       )

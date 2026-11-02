@@ -32,6 +32,8 @@ import { isDeviceScope, type DeviceScope } from './device-auth'
 export const NON_REPLAYABLE_EVENT_CHANNELS: ReadonlySet<string> = new Set(['terminal:output', 'terminal:exit'])
 
 export const BACKEND_CAPABILITIES = [
+  /** `app:snooze-conversation`, `app:unsnooze-conversation`, `app:mark-woke-seen` and `app:conversation-snoozed` (`shared/chat-snooze.ts`). */
+  'chat_snooze_v1',
   'durable_turn_origin',
   'atomic_user_turn_v1',
   'worktree_creation_v1',

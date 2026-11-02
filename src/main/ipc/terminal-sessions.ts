@@ -1,6 +1,7 @@
 /** Pure sidebar projections. Managed SQLite roots are authoritative. */
 import type { ConversationRow } from '../db/database'
 import type { SessionSummary, SessionSource } from '@shared/types'
+import type { WakeReason } from '@shared/chat-snooze'
 
 function retainedWorktreeRecovery(conversation: ConversationRow): SessionSummary['worktreeRecovery'] {
   if (conversation.worktree_creation_status !== 'cleanup_required') return undefined
@@ -36,6 +37,12 @@ export function projectManagedRootSessions(
       worktreeRecovery: retainedWorktreeRecovery(conversation),
       statusLine: conversation.status_line ?? null,
       settledAt: conversation.settled_at ?? null,
+      snoozedUntil: conversation.snoozed_until ?? null,
+      snoozedAt: conversation.snoozed_at ?? null,
+      snoozePr: conversation.snooze_pr ?? null,
+      snoozeRev: conversation.snooze_rev ?? 0,
+      wokeAt: conversation.woke_at ?? null,
+      wokeReason: (conversation.woke_reason as WakeReason | null) ?? null,
     }))
     .sort((a, b) => b.startedAt - a.startedAt)
 }
@@ -71,5 +78,11 @@ export function sessionSummaryToConversationRow(s: SessionSummary, projectPath: 
     worktree_creation_id: s.worktreeCreationId ?? null,
     status_line: s.statusLine ?? null,
     settled_at: s.settledAt ?? null,
+    snoozed_until: s.snoozedUntil ?? null,
+    snoozed_at: s.snoozedAt ?? null,
+    snooze_pr: s.snoozePr ?? null,
+    snooze_rev: s.snoozeRev ?? 0,
+    woke_at: s.wokeAt ?? null,
+    woke_reason: s.wokeReason ?? null,
   } as ConversationRow
 }

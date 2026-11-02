@@ -1,6 +1,7 @@
 import type { BackendHost } from '../backend/host'
 import { AppChannels } from '@shared/ipc-channels'
 import type { ConversationSettledEvent } from '@shared/chat-settle'
+import { chatSnoozer } from './chat-snooze'
 import { getConversationTitle, resolveRootThreadId, setConversationSettled } from '../db/database'
 
 /**
@@ -22,5 +23,6 @@ export function storeConversationSettled(
     ...(prNumber === undefined ? {} : { prNumber }),
   }
   host.emit(AppChannels.CONVERSATION_SETTLED, event)
+  if (settledAt !== null) chatSnoozer()?.onCleared(id)
   return true
 }

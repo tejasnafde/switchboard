@@ -188,6 +188,7 @@ import {
   SETTLE_CHILDREN_TOOL,
   START_CHILDREN_TOOL,
 } from '../mcp/hub-tools'
+import { chatSnoozer } from '../conversations/chat-snooze'
 import { HubSettler, isHubSettlePlan, remoteSettleRefusal, type HubSettleHost } from '../hub/hub-settle'
 import { buildVisualPreviewTool, VisualPreviewTurnCounter, visualPreviewRenderer } from '../mcp/visual-preview-tool'
 import { agentVisualPreviewEnabled, VISUAL_PREVIEW_INSTRUCTIONS } from '@shared/visual-preview'
@@ -2942,6 +2943,8 @@ export class ProviderRegistry implements PeerToolHost {
           if (queuedId) this.queuedTurns.settle(queuedId)
         }
 
+        // A message a person sent wakes a snoozed chat; one from an agent does not.
+        chatSnoozer()?.onEvent(targetRoot, { kind: 'message', from: initiator === 'user' ? 'person' : 'agent' })
         const at = Date.now()
         // The receiving turn is persisted under the message id so a redelivery
         // of the same id cannot double-post, and the sender keeps a marker so
@@ -4050,6 +4053,10 @@ export class ProviderRegistry implements PeerToolHost {
       })
     }
     this.bus.publish(event)
+    // A card or a failure wakes a snoozed chat; a normal turn end does not.
+    if (event.type === 'request.opened' || event.type === 'question.asked' || event.type === 'plan.proposed')
+      chatSnoozer()?.onEvent(event.threadId, { kind: 'needs_you' })
+    if (event.type === 'error') chatSnoozer()?.onEvent(event.threadId, { kind: 'error', at: Date.now() })
     // After the event itself, so clients see the turn end before its Limited row.
     if (event.type === 'error') this.limitResumer?.onError(event.threadId)
     if (event.type === 'turn.completed') {

@@ -21,7 +21,7 @@ export interface PushMessage {
   data: { threadId: string; kind: PushKind; projectPath?: string; clientRef?: string; title?: string }
 }
 
-export type PushKind = 'approval' | 'question' | 'done' | 'error' | 'link'
+export type PushKind = 'approval' | 'question' | 'done' | 'error' | 'link' | 'woke'
 
 /**
  * Android 8+ delivers only through a channel, and a payload naming a channel
@@ -127,6 +127,11 @@ export function pushForEvent(event: RuntimeEvent, ctx: PushContext = {}): PushMe
     default:
       return null
   }
+}
+
+/** The one push for a snooze that ended on its time or on a PR event (`shared/chat-snooze.ts`). */
+export function wokePush(threadId: string, title: string, line: string): PushMessage {
+  return { title, body: clampBody(`Woke: ${line}`), data: { threadId, kind: 'woke' } }
 }
 
 /** Expo push tokens look like `ExponentPushToken[…]` or `ExpoPushToken[…]`. */

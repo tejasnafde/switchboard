@@ -5,6 +5,7 @@ import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import type { HistoryLoadOptions } from '@shared/phone-history-window'
 import type { ConversationSettledEvent } from '@shared/chat-settle'
+import type { ConversationSnoozedEvent, SnoozeRequest, SnoozeResult } from '@shared/chat-snooze'
 import { RoutingTable } from './routing-table'
 import {
   TerminalChannels,
@@ -356,6 +357,15 @@ const api = {
     /** `machineId` is the backend that sent it, so Undo goes back to that machine. */
     onConversationSettled: (callback: (event: ConversationSettledEvent & { machineId: string }) => void) =>
       router.onWithSource<[ConversationSettledEvent]>(AppChannels.CONVERSATION_SETTLED, (machineId, event) =>
+        callback({ ...event, machineId }),
+      ),
+    snoozeConversation: (id: string, request: SnoozeRequest): Promise<SnoozeResult> =>
+      transport.invoke(AppChannels.SNOOZE_CONVERSATION, id, request),
+    unsnoozeConversation: (id: string, expectRev?: number): Promise<{ ok: boolean }> =>
+      transport.invoke(AppChannels.UNSNOOZE_CONVERSATION, id, expectRev),
+    markWokeSeen: (id: string): Promise<{ ok: boolean }> => transport.invoke(AppChannels.MARK_WOKE_SEEN, id),
+    onConversationSnoozed: (callback: (event: ConversationSnoozedEvent & { machineId: string }) => void) =>
+      router.onWithSource<[ConversationSnoozedEvent]>(AppChannels.CONVERSATION_SNOOZED, (machineId, event) =>
         callback({ ...event, machineId }),
       ),
     exportMarkdown: (params: { suggestedFilename: string; content: string }) =>

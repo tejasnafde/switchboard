@@ -8,6 +8,7 @@ import { commitConversationProfileSwitch } from './conversation-profile-commit'
 import { SqliteConversationForkStore } from './conversation-fork'
 import type { ForkLineageMetadata } from '@shared/conversation-fork'
 import { agentLabel, type AgentProvider, type AgentType } from '@shared/types'
+import { MARKED_WAKE_REASONS, type SnoozeState, type WakeReason } from '@shared/chat-snooze'
 import { AGENT_SWITCH_MARKER_PREFIX } from '@shared/rotation-marker'
 import { nextPendingHandoffFrom } from '@shared/handoff'
 import { getDb } from './database'
@@ -345,6 +346,13 @@ export interface ConversationRow {
   status_line?: string | null
   /** When the chat was settled out of Recents' "Done recently"; null when not settled. */
   settled_at?: number | null
+  snoozed_until?: number | null
+  snoozed_at?: number | null
+  snooze_pr?: string | null
+  snooze_pr_mark?: string | null
+  snooze_rev?: number
+  woke_at?: number | null
+  woke_reason?: string | null
 }
 
 /** Look up a single conversation by id. Used by search navigation to
@@ -752,20 +760,128 @@ export function getConversationLastRead(id: string): number | null {
 /**
  * Settle (or, with null, unsettle) a chat: Recents hides it from "Done
  * recently" until the user unsettles it or a new user turn starts
- * (`clearConversationSettledForTurn`).
+ * (`clearConversationInboxForTurn`).
  */
 export function setConversationSettled(id: string, settledAt: number | null): boolean {
+  // A settle ends a snooze and its Woke marker; an unsettle leaves both alone.
+  const clear = settledAt === null ? '' : `, ${CLEAR_SNOOZE_SQL}, woke_at = NULL, woke_reason = NULL`
   return (
-    getDb().prepare('UPDATE conversations SET settled_at = ? WHERE id = ?').run(settledAt, resolveRootThreadId(id))
+    getDb()
+      .prepare(`UPDATE conversations SET settled_at = ?${clear} WHERE id = ?`)
+      .run(settledAt, resolveRootThreadId(id)).changes > 0
+  )
+}
+
+/** Ends a snooze; the rev moves only when there was one. */
+const CLEAR_SNOOZE_SQL = `snooze_rev = snooze_rev + (snoozed_at IS NOT NULL), snoozed_until = NULL,
+  snoozed_at = NULL, snooze_pr = NULL, snooze_pr_mark = NULL`
+
+/** What a new user turn clears: the settle, the snooze and the Woke marker. */
+export const CLEAR_INBOX_FOR_TURN_SQL = `settled_at = NULL, ${CLEAR_SNOOZE_SQL}, woke_at = NULL, woke_reason = NULL`
+
+/**
+ * A new user turn brings a settled chat back, ends its snooze and clears its
+ * Woke marker. Takes the caller's connection, for use inside its transaction.
+ */
+export function clearConversationInboxForTurn(db: Database.Database, id: string): void {
+  db.prepare(
+    `UPDATE conversations SET ${CLEAR_INBOX_FOR_TURN_SQL}
+      WHERE id = ? AND (settled_at IS NOT NULL OR snoozed_at IS NOT NULL OR woke_at IS NOT NULL)`,
+  ).run(resolveRootThreadId(id, db))
+}
+
+function snoozeStateOf(row: ConversationRow): SnoozeState {
+  return {
+    snoozedUntil: row.snoozed_until ?? null,
+    snoozedAt: row.snoozed_at ?? null,
+    snoozePr: row.snooze_pr ?? null,
+    snoozeRev: row.snooze_rev ?? 0,
+    wokeAt: row.woke_at ?? null,
+    wokeReason: (row.woke_reason as WakeReason | null) ?? null,
+  }
+}
+
+/** A chat's snooze and Woke marker, or null when it has no row. */
+export function getConversationSnooze(id: string): (SnoozeState & { snoozePrMark: string | null }) | null {
+  const row = getConversationByThreadId(id)
+  return row ? { ...snoozeStateOf(row), snoozePrMark: row.snooze_pr_mark ?? null } : null
+}
+
+/**
+ * Snooze a chat (clears any Woke marker). With `expectRev`, only while the
+ * chat is still at that revision. Returns the new revision, or null when the
+ * row is missing or has moved on.
+ */
+export function setConversationSnooze(
+  id: string,
+  snooze: { until: number | null; pr: string | null; prMark: string | null; at: number; expectRev?: number },
+): number | null {
+  const root = resolveRootThreadId(id)
+  const db = getDb()
+  return db.transaction(() => {
+    const changed = db
+      .prepare(
+        `UPDATE conversations SET snoozed_until = ?, snoozed_at = ?, snooze_pr = ?, snooze_pr_mark = ?,
+           woke_at = NULL, woke_reason = NULL, snooze_rev = snooze_rev + 1
+         WHERE id = ? AND (? IS NULL OR snooze_rev = ?)`,
+      )
+      .run(snooze.until, snooze.at, snooze.pr, snooze.prMark, root, snooze.expectRev ?? null, snooze.expectRev ?? null)
+    if (changed.changes === 0) return null
+    return (db.prepare('SELECT snooze_rev FROM conversations WHERE id = ?').get(root) as { snooze_rev: number })
+      .snooze_rev
+  })()
+}
+
+/**
+ * End a snooze in one statement: every snooze field clears together, and a
+ * reason in `MARKED_WAKE_REASONS` sets the Woke marker. With `expectRev`, only
+ * while the chat is at that revision (a timer or a PR read that raced a change).
+ * False when nothing was snoozed or the revision moved.
+ */
+export function wakeConversation(id: string, reason: WakeReason, at: number, expectRev?: number): boolean {
+  const marked = MARKED_WAKE_REASONS.includes(reason)
+  return (
+    getDb()
+      .prepare(
+        `UPDATE conversations SET ${CLEAR_SNOOZE_SQL},
+           woke_at = CASE WHEN ? THEN ? ELSE NULL END, woke_reason = CASE WHEN ? THEN ? ELSE NULL END
+         WHERE id = ? AND snoozed_at IS NOT NULL AND (? IS NULL OR snooze_rev = ?)`,
+      )
+      .run(marked ? 1 : 0, at, marked ? 1 : 0, reason, resolveRootThreadId(id), expectRev ?? null, expectRev ?? null)
       .changes > 0
   )
 }
 
-/** A new user turn brings a settled chat back. Takes the caller's connection, for use inside its transaction. */
-export function clearConversationSettledForTurn(db: Database.Database, id: string): void {
-  db.prepare('UPDATE conversations SET settled_at = NULL WHERE id = ? AND settled_at IS NOT NULL').run(
-    resolveRootThreadId(id, db),
+/** The user saw the woken chat: drop the marker. False when there was none. */
+export function clearConversationWoke(id: string): boolean {
+  return (
+    getDb()
+      .prepare('UPDATE conversations SET woke_at = NULL, woke_reason = NULL WHERE id = ? AND woke_at IS NOT NULL')
+      .run(resolveRootThreadId(id)).changes > 0
   )
+}
+
+/** Every snoozed chat that is not archived, for the timers and the PR watch. */
+export function listSnoozedConversations(): Array<{
+  id: string
+  snoozedUntil: number | null
+  snoozePr: string | null
+  snoozePrMark: string | null
+  snoozeRev: number
+}> {
+  return getDb()
+    .prepare(
+      `SELECT id, snoozed_until AS snoozedUntil, snooze_pr AS snoozePr, snooze_pr_mark AS snoozePrMark,
+              snooze_rev AS snoozeRev
+         FROM conversations WHERE snoozed_at IS NOT NULL AND archived = 0`,
+    )
+    .all() as Array<{
+    id: string
+    snoozedUntil: number | null
+    snoozePr: string | null
+    snoozePrMark: string | null
+    snoozeRev: number
+  }>
 }
 
 export function getConversationSettled(id: string): number | null {
