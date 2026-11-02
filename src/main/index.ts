@@ -142,7 +142,7 @@ const isDev = !app.isPackaged
 let detachPush: (() => void) | null = null
 let detachAutoLink: (() => void) | null = null
 const linkedChatActivity = {
-  busy: (id: string) => providerRegistry?.isTurnInFlight(id) ?? false,
+  busy: (id: string) => providerRegistry?.isBusy(id) ?? false,
   needsUser: (id: string) => providerRegistry?.needsUser(id) ?? false,
 }
 

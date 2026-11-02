@@ -47,7 +47,7 @@ function routeTo(target: Pick<SettleTarget, 'id' | 'machineId'>): void {
   if (target.machineId !== 'local') window.api.routing.bind(target.id, target.machineId)
 }
 
-/** The machine whose sidebar lists the chat, for an event that does not say. */
+/** The machine whose sidebar lists the chat, for an event that does not name its source. */
 function machineOf(id: string): string {
   const projects = useMachineStore.getState().projects
   for (const [machineId, tree] of Object.entries(projects)) {
@@ -57,8 +57,9 @@ function machineOf(id: string): string {
 }
 
 export async function settleChat(target: SettleTarget): Promise<void> {
-  emitSettled(target.id, Date.now())
-  offerUndo({ kind: 'settle', ...target })
+  const settledAt = Date.now()
+  emitSettled(target.id, settledAt)
+  offerUndo({ kind: 'settle', ...target, settledAt })
   try {
     routeTo(target)
     const result = await window.api.app.settleConversation(target.id)
@@ -77,21 +78,26 @@ export function undoLastSettle(): string | null {
   useAgentStore.getState().setLastUndo(null)
   emitSettled(undo.id, null)
   routeTo(undo)
-  window.api.app.unsettleConversation(undo.id).catch((err: unknown) => {
-    log.warn(`unsettle failed for ${undo.id}`, err)
-  })
+  const stillSettled = (err?: unknown) => {
+    log.warn(`unsettle failed for ${undo.id}; the chat stays settled`, err)
+    emitSettled(undo.id, undo.settledAt)
+  }
+  window.api.app.unsettleConversation(undo.id).then((result) => {
+    if (!result.ok) stillSettled()
+  }, stillSettled)
   return undo.id
 }
 
 /** A backend broadcast: patch the lists, and offer Undo when a merged PR settled the chat. */
-export function applySettledEvent(event: ConversationSettledEvent): void {
+export function applySettledEvent(event: ConversationSettledEvent & { machineId?: string }): void {
   emitSettled(event.conversationId, event.settledAt)
   if (event.settledAt === null || event.prNumber === undefined) return
   offerUndo({
     kind: 'settle',
     id: event.conversationId,
     title: event.title ?? 'Untitled chat',
-    machineId: machineOf(event.conversationId),
+    machineId: event.machineId ?? machineOf(event.conversationId),
+    settledAt: event.settledAt,
     prNumber: event.prNumber,
   })
 }

@@ -415,6 +415,8 @@ export interface LastUndo {
   id: string
   title: string
   machineId: string
+  /** The stamp to put back when the undo fails. */
+  settledAt: number
   /** Set when a merged PR settled the chat, for the notice. */
   prNumber?: number
 }

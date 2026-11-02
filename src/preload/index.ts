@@ -353,8 +353,11 @@ const api = {
       transport.invoke(AppChannels.SETTLE_CONVERSATION, id),
     unsettleConversation: (id: string): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.UNSETTLE_CONVERSATION, id),
-    onConversationSettled: (callback: (event: ConversationSettledEvent) => void) =>
-      transport.on<[ConversationSettledEvent]>(AppChannels.CONVERSATION_SETTLED, (event) => callback(event)),
+    /** `machineId` is the backend that sent it, so Undo goes back to that machine. */
+    onConversationSettled: (callback: (event: ConversationSettledEvent & { machineId: string }) => void) =>
+      router.onWithSource<[ConversationSettledEvent]>(AppChannels.CONVERSATION_SETTLED, (machineId, event) =>
+        callback({ ...event, machineId }),
+      ),
     exportMarkdown: (params: { suggestedFilename: string; content: string }) =>
       transport.invoke(AppChannels.EXPORT_MARKDOWN, params),
     /** Save dialog, then writes a PNG data URL. A chat visual's Save image. */
