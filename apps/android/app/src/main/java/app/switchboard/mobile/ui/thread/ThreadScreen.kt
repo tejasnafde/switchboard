@@ -253,6 +253,8 @@ fun ThreadScreen(
     limitResume: ThreadLimitResumeState = ThreadLimitResumeState(),
     onResumeLimitNow: () -> Unit = {},
     onCancelLimitResume: () -> Unit = {},
+    /** The snoozed chat's line ([ThreadSnoozeLine]); empty when it is not snoozed. */
+    snoozeLine: @Composable () -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
@@ -434,6 +436,7 @@ fun ThreadScreen(
                 )
             }
             LimitResumeRow(limitResume, onResumeNow = onResumeLimitNow, onCancel = onCancelLimitResume)
+            snoozeLine()
             Box(modifier = Modifier.weight(1f)) {
             when (presentation) {
                 ThreadPresentation.Loading -> FullPageLoading()

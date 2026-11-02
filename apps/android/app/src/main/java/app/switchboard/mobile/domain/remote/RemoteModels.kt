@@ -66,6 +66,8 @@ data class SessionSummary(
     val worktreeBranch: String? = null,
     /** When a desktop settled the chat out of its Done group; see `HomePresenter`. */
     val settledAt: Long? = null,
+    /** Snooze and the Woke mark; shown only from a backend with `chat_snooze_v1`. */
+    val snooze: ChatSnooze.State = ChatSnooze.State.None,
 )
 
 data class MessageSearchResult(

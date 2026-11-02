@@ -1,6 +1,7 @@
 package app.switchboard.mobile.ui.home
 
 import app.switchboard.mobile.data.thread.ThreadState
+import app.switchboard.mobile.domain.remote.ChatSnooze
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.ui.browse.BrowseThreadActivity
@@ -21,6 +22,10 @@ data class HomeMachineSnapshot(
     val projects: List<Project>,
     val threadStates: Map<String, ThreadState> = emptyMap(),
     val activity: Map<String, BrowseThreadActivity> = emptyMap(),
+    /** The backend has `chat_snooze_v1`; without it every snooze field is ignored. */
+    val snooze: Boolean = false,
+    /** Newer snooze states than the project list's, from broadcasts and this phone's answers. */
+    val snoozes: Map<String, ChatSnooze.State> = emptyMap(),
 )
 
 data class HomeRecentRow(
@@ -36,23 +41,86 @@ data class HomeRecentRow(
     val startedAt: Long,
     val status: HomeRecentStatus?,
     val unread: Int,
-)
+    /** Its machine can snooze chats. */
+    val snoozable: Boolean = false,
+    val snooze: ChatSnooze.State = ChatSnooze.State.None,
+) {
+    /** Woke from a snooze and not opened since. */
+    val woke: Boolean
+        get() = snoozable && snooze.woke
+
+    /** A chat that needs the user cannot be snoozed: the open card or the error would wake it at once. */
+    val canSnooze: Boolean
+        get() = snoozable && status != HomeRecentStatus.Approval && status != HomeRecentStatus.Input &&
+            status != HomeRecentStatus.Failed
+}
 
 data class HomeRecentsPage(
     val items: List<HomeRecentRow>,
     val total: Int,
+    /** The Snoozed shelf: the soonest wake first, PR-only last. */
+    val snoozed: List<HomeRecentRow> = emptyList(),
 ) {
     val hasMore: Boolean
         get() = items.size < total
 }
 
+/**
+ * The Snooze sheet of a Recents row (long press or a leftward swipe): the
+ * presets resolved when it opened, each with its wake time, and "Until PR #n
+ * changes" once the chat's links name an open PR. A refusal shows as [notice].
+ */
+data class HomeSnoozeSheet(
+    val row: HomeRecentRow,
+    val shownAt: Long,
+    val pr: ChatSnooze.PrChoice? = null,
+    val notice: String? = null,
+    val busy: Boolean = false,
+) {
+    val items: List<HomeSnoozeItem>
+        get() = HomePresenter.snoozeItems(shownAt, pr)
+}
+
+sealed interface HomeSnoozeChoice {
+    data class Preset(val option: ChatSnooze.PresetOption) : HomeSnoozeChoice
+
+    data class Pr(val pr: ChatSnooze.PrChoice) : HomeSnoozeChoice
+}
+
+/** One sheet row; [detail] is the wake time on the right, none for the PR item. */
+data class HomeSnoozeItem(val key: String, val label: String, val detail: String, val choice: HomeSnoozeChoice)
+
+/** What a tap sends on `app:snooze-conversation`. */
+data class HomeSnoozeRequest(val until: Long?, val pr: String?, val preset: String)
+
 object HomePresenter {
+    fun snoozeItems(now: Long, pr: ChatSnooze.PrChoice?): List<HomeSnoozeItem> =
+        ChatSnooze.resolvePresets(now).map { option ->
+            HomeSnoozeItem(
+                key = option.label,
+                label = option.label,
+                detail = ChatSnooze.wakeLabel(option.at, null, now),
+                choice = HomeSnoozeChoice.Preset(option),
+            )
+        } + listOfNotNull(
+            pr?.let { HomeSnoozeItem("pr", "Until PR #${it.number} changes", "", HomeSnoozeChoice.Pr(it)) },
+        )
+
+    /** A duration counts from the tap; a clock time keeps the instant the sheet showed, or is refused once passed. */
+    fun snoozeRequest(choice: HomeSnoozeChoice, now: Long): HomeSnoozeRequest? = when (choice) {
+        is HomeSnoozeChoice.Pr -> HomeSnoozeRequest(until = null, pr = choice.pr.key, preset = "pr")
+        is HomeSnoozeChoice.Preset -> when (val picked = ChatSnooze.pickPreset(choice.option, now)) {
+            is ChatSnooze.Pick.At -> HomeSnoozeRequest(picked.at, null, ChatSnooze.presetKindOf(choice.option.spec))
+            ChatSnooze.Pick.Past -> null
+        }
+    }
+
     fun recents(
         machines: List<HomeMachineSnapshot>,
         limit: Int = 5,
     ): HomeRecentsPage {
         val seen = mutableSetOf<Pair<String, String>>()
-        val rows = machines.flatMap { machine ->
+        val all = machines.flatMap { machine ->
             machine.projects.flatMap { project ->
                 project.sessions.mapNotNull { session ->
                     if (!seen.add(machine.connectionId to session.id)) return@mapNotNull null
@@ -60,9 +128,14 @@ object HomePresenter {
                     val activity = machine.activity[session.id]
                     val unread = maxOf(state?.unread ?: 0, activity?.unread ?: 0)
                     val status = status(state, activity, unread)
+                    val snooze = if (machine.snooze) {
+                        ChatSnooze.newer(session.snooze, machine.snoozes[session.id])
+                    } else {
+                        ChatSnooze.State.None
+                    }
                     // A settled chat leaves the desktop's "Done recently" only, so it still shows while it works or waits.
                     val idle = status == null || status == HomeRecentStatus.Done
-                    if (idle && session.settledAt != null) return@mapNotNull null
+                    if (!snooze.snoozed && idle && session.settledAt != null) return@mapNotNull null
                     HomeRecentRow(
                         connectionId = machine.connectionId,
                         connectionLabel = machine.connectionLabel,
@@ -77,16 +150,25 @@ object HomePresenter {
                         startedAt = session.startedAt,
                         status = status,
                         unread = unread,
+                        snoozable = machine.snooze,
+                        snooze = snooze,
                     )
                 }
             }
-        }.sortedWith(
+        }
+        // A snoozed chat waits in the shelf whatever its live status, until it wakes.
+        val (shelved, rows) = all.partition { it.snooze.snoozed }
+        val sorted = rows.sortedWith(
             compareByDescending<HomeRecentRow> { statusPriority(it.status) }
+                .thenByDescending(HomeRecentRow::woke)
                 .thenByDescending(HomeRecentRow::startedAt),
         )
         return HomeRecentsPage(
-            items = rows.take(limit.coerceAtLeast(0)),
-            total = rows.size,
+            items = sorted.take(limit.coerceAtLeast(0)),
+            total = sorted.size,
+            snoozed = shelved.sortedWith { a, b ->
+                ChatSnooze.compareSnoozeWake(a.snooze.snoozedUntil, b.snooze.snoozedUntil)
+            },
         )
     }
 
