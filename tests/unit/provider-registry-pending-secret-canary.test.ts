@@ -3,6 +3,7 @@
  * or phone reads back, never returns a live secret, even for an adapter card
  * or a stored approval card that held the value before it was saved.
  */
+import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
@@ -178,7 +179,7 @@ describe('GET_PENDING_REQUESTS and live secrets', () => {
     const adapter = new EmittingAdapter()
     const registry = new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, undefined, null, store)
     registry.registerIpcHandlers()
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: tmpdir() })
     adapter.emit({
       type: 'request.opened',
       threadId: 't1',

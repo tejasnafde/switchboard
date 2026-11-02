@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
@@ -33,7 +34,7 @@ vi.mock('../../src/main/db/database', () => ({
   recordConversationSegment: () => {},
   updateConversationSessionId: () => {},
   saveMessageIfAbsent: () => true,
-  getConversationById: (id: string) => ({ id, project_path: '/tmp' }),
+  getConversationById: (id: string) => ({ id, project_path: tmpdir() }),
   getConversationTitle: () => null,
   resolveRootThreadId: (id: string) => id,
   getConversationRuntimeMode: () => null,
@@ -167,7 +168,7 @@ function setup(hubClients?: RemoteHubClients | null) {
 describe('child chats in the registry', () => {
   it('refuses a user turn to an open child on both turn channels', async () => {
     const { host } = setup()
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: '/tmp' })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: tmpdir() })
     const result = await host.invoke<Record<string, unknown>>(ProviderChannels.SUBMIT_USER_TURN, {
       version: 1,
       threadId: 'child1',
@@ -180,8 +181,8 @@ describe('child chats in the registry', () => {
 
   it('gives the parent tools and the hub paragraph to a chat that is not a child, and none to a child', async () => {
     const { host, mcp } = setup()
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'parent1', provider: 'claude', cwd: '/tmp' })
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: '/tmp' })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'parent1', provider: 'claude', cwd: tmpdir() })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: tmpdir() })
     const names = (id: string) => mcp.opened.get(id)!.tools.map((t) => t.name)
     expect(names('parent1')).toEqual(expect.arrayContaining(['start_children', 'list_children']))
     expect(mcp.opened.get('parent1')!.instructions).toContain('start_children')
@@ -198,7 +199,7 @@ describe('child chats in the registry', () => {
 
   it('opens one settle card in ask mode, and an archive of the parent waits on it', async () => {
     const { host, mcp } = setup()
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'parent1', provider: 'claude', cwd: '/tmp' })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'parent1', provider: 'claude', cwd: tmpdir() })
     const settle = mcp.opened.get('parent1')!.tools.find((t) => t.name === 'settle_children')!
     const first = await settle.call({})
     expect(first.isError).toBeFalsy()
@@ -219,7 +220,7 @@ describe('child chats in the registry', () => {
     const host = new FakeHost()
     const mcp = fakeMcp()
     new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, undefined, mcp.server).registerIpcHandlers()
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: '/tmp' })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: tmpdir() })
     adapter.onEvent({
       type: 'tool.started',
       threadId: 'child1',
@@ -249,7 +250,7 @@ describe('child chats in the registry', () => {
     const host = new FakeHost()
     const mcp = fakeMcp()
     new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, undefined, mcp.server).registerIpcHandlers()
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: '/tmp' })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: tmpdir() })
     for (const toolId of ['toolu_1', 'toolu_2'])
       adapter.onEvent({
         type: 'tool.started',
@@ -270,7 +271,7 @@ describe('child chats in the registry', () => {
     const host = new FakeHost()
     const registry = new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, undefined, fakeMcp().server)
     registry.registerIpcHandlers()
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'parent1', provider: 'claude', cwd: '/tmp' })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'parent1', provider: 'claude', cwd: tmpdir() })
     const activity = vi.spyOn(registry.hubWakes, 'onActivity')
     adapter.onEvent({
       type: 'content',
@@ -289,7 +290,7 @@ describe('the hub view', () => {
   it('shows a parent its children with their state, and a child its parent', async () => {
     hubFlag.on = true
     const { host } = setup()
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: '/tmp' })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: tmpdir() })
     const parent = await host.invoke<HubChatView>(ProviderChannels.HUB_LIST_CHILDREN, 'parent1')
     expect(parent.self?.id).toBe('parent1')
     expect(parent.parent).toBeNull()
@@ -319,7 +320,7 @@ describe('the hub view', () => {
     registry.registerIpcHandlers()
     const events: RuntimeEvent[] = []
     registry.bus.subscribe((e) => events.push(e))
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: '/tmp' })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'child1', provider: 'claude', cwd: tmpdir() })
     adapter.onEvent({ type: 'status', threadId: 'child1', status: 'running' })
     // Claude repeats running on each tool call: only the change counts.
     adapter.onEvent({ type: 'status', threadId: 'child1', status: 'running' })
@@ -354,7 +355,7 @@ describe('list_machines exposure', () => {
 
   async function toolsOf(threadId: string, clients: RemoteHubClients | null = hubClients) {
     const { host, mcp } = setup(clients)
-    await host.invoke(ProviderChannels.START_SESSION, { threadId, provider: 'claude', cwd: '/tmp' })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId, provider: 'claude', cwd: tmpdir() })
     const opened = mcp.opened.get(threadId)!
     return { names: opened.tools.map((t) => t.name), instructions: opened.instructions ?? '' }
   }
