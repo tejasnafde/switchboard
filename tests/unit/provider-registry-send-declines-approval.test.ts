@@ -3,6 +3,7 @@
  * the registry denies every open approval of the chat with a reason, then
  * steers (or queues) the message. A failed deny sends nothing.
  */
+import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
@@ -153,7 +154,7 @@ async function setup(provider: ProviderKind, threadId = 't1') {
   const submission = passThroughSubmission()
   const registry = new ProviderRegistry(host, new Map([[provider, adapter]]), undefined, submission)
   registry.registerIpcHandlers()
-  await host.invoke(ProviderChannels.START_SESSION, { threadId, provider, cwd: '/tmp' })
+  await host.invoke(ProviderChannels.START_SESSION, { threadId, provider, cwd: tmpdir() })
   const submit = (text: string, delivery?: TurnDelivery) =>
     host.invoke<UserTurnSubmissionResult>(ProviderChannels.SUBMIT_USER_TURN, {
       version: 1,

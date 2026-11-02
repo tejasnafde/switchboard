@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
@@ -150,7 +151,7 @@ describe('auto-resume in the registry', () => {
       true,
     )
     registry.registerIpcHandlers()
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: tmpdir() })
     // The running turn, and a message queued behind it: both counted as outstanding.
     adapter.onEvent({ type: 'status', threadId: 't1', status: 'running', newTurn: true })
     adapter.onEvent({ type: 'status', threadId: 't1', status: 'running', newTurn: true })

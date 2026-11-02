@@ -7,6 +7,9 @@ import { registerHtmlLiveHandlers } from '../../src/main/ipc/html-live'
 import type { BackendHost } from '../../src/main/backend/host'
 import { withBackendRequestContext } from '../../src/main/backend/request-context'
 import { HTML_LIVE_OPEN_LIMIT } from '../../src/shared/html-live'
+import { getDb } from '../../src/main/db/database'
+import { ensureHtmlLivePagesSchema } from '../../src/main/db/html-live-pages'
+import Database from 'better-sqlite3'
 
 const KEY = 'a'.repeat(64)
 const PNG = 'data:image/png;base64,iVBORw0KGgo='
@@ -35,6 +38,34 @@ describe('html-live backend', () => {
     expect(h.call(HtmlLiveChannels.UPDATE, KEY, { image: PNG })).toEqual({ ok: true })
     expect(h.call(HtmlLiveChannels.UPDATE, KEY, { savedPath: 'p95-latency.html' })).toEqual({ ok: true })
     expect(h.call(HtmlLiveChannels.LOAD, KEY)).toEqual({ image: PNG, savedPath: 'p95-latency.html' })
+  })
+
+  it('treats a still stored before the current drawing rules as missing, keeps its saved path, and takes a new one', () => {
+    // A row written before the version column: a translucent capture with white text on a near-clear background.
+    getDb()
+      .prepare('INSERT INTO html_live_pages (key, image, saved_path, updated_at) VALUES (?, ?, ?, ?)')
+      .run(KEY, PNG, 'old.html', 1)
+    expect(h.call(HtmlLiveChannels.LOAD, KEY)).toEqual({ image: null, savedPath: 'old.html' })
+    const fresh = 'data:image/png;base64,AAAA'
+    expect(h.call(HtmlLiveChannels.UPDATE, KEY, { image: fresh })).toEqual({ ok: true })
+    expect(h.call(HtmlLiveChannels.LOAD, KEY)).toEqual({ image: fresh, savedPath: 'old.html' })
+    // A saved path written later does not make the still stale again.
+    expect(h.call(HtmlLiveChannels.UPDATE, KEY, { savedPath: 'new.html' })).toEqual({ ok: true })
+    expect(h.call(HtmlLiveChannels.LOAD, KEY)).toEqual({ image: fresh, savedPath: 'new.html' })
+  })
+
+  it('adds the still version to a table from before it, keeping its rows', () => {
+    const db = new Database(':memory:')
+    db.exec(
+      'CREATE TABLE html_live_pages (key TEXT PRIMARY KEY, image TEXT, saved_path TEXT, updated_at INTEGER NOT NULL)',
+    )
+    db.prepare('INSERT INTO html_live_pages VALUES (?, ?, ?, ?)').run(KEY, PNG, 'old.html', 1)
+    ensureHtmlLivePagesSchema(db)
+    ensureHtmlLivePagesSchema(db)
+    expect(db.prepare('SELECT key, image, image_version, saved_path FROM html_live_pages').all()).toEqual([
+      { key: KEY, image: PNG, image_version: null, saved_path: 'old.html' },
+    ])
+    db.close()
   })
 
   it('refuses bad keys, non-image data and paths that leave the chat folder', () => {

@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
@@ -113,7 +114,7 @@ function setup() {
   const adapter = new SlowAdapter()
   const registry = new ProviderRegistry(host, new Map([['claude', adapter]]))
   registry.registerIpcHandlers()
-  const start = host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
+  const start = host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: tmpdir() })
   return { host, adapter, start }
 }
 
