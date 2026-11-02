@@ -85,6 +85,20 @@ export function sessionsFromProjects(projects: Project[]): RecentSession[] {
   return out
 }
 
+/**
+ * A settle or unsettle broadcast applied to one machine's chats, matched by
+ * id. Null when no chat has that id (the row is listed under a rotated id),
+ * so the caller reads the list again.
+ */
+export function withSettled(
+  sessions: RecentSession[],
+  conversationId: string,
+  settledAt: number | null,
+): RecentSession[] | null {
+  if (!sessions.some((session) => session.id === conversationId)) return null
+  return sessions.map((session) => (session.id === conversationId ? { ...session, settledAt } : session))
+}
+
 /** The `max` most recently started chats. */
 export function newestSessions(sessions: RecentSession[], max: number): RecentSession[] {
   return [...sessions].sort((a, b) => b.startedAt - a.startedAt).slice(0, max)

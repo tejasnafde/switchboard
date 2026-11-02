@@ -150,21 +150,23 @@ interface ConnectionsState {
   stopDemo: () => void
 }
 
-/** Feed a client's events to the chat store. */
+/** Feed a client's events to the chat store, and its settle broadcasts to Home > Recents. */
 function attachClient(id: string, client: SwitchboardClient): void {
   clients.set(id, client)
-  eventUnsubs.set(
-    id,
-    client.onEvent((event) => {
-      if (event.type === 'user.message' && event.origin) {
-        void acknowledgeAcceptedOrigin(id, event.threadId, event.origin).catch((err: unknown) =>
-          log.warn('could not reconcile an accepted queued message', err),
-        )
-      }
-      useChatStore.getState().ingest(id, event)
-      noticeTurnCompletion(id, event)
-    }),
-  )
+  const stopEvents = client.onEvent((event) => {
+    if (event.type === 'user.message' && event.origin) {
+      void acknowledgeAcceptedOrigin(id, event.threadId, event.origin).catch((err: unknown) =>
+        log.warn('could not reconcile an accepted queued message', err),
+      )
+    }
+    useChatStore.getState().ingest(id, event)
+    noticeTurnCompletion(id, event)
+  })
+  const stopSettled = client.onConversationSettled((event) => useRecentsStore.getState().applySettled(id, event))
+  eventUnsubs.set(id, () => {
+    stopEvents()
+    stopSettled()
+  })
 }
 
 export const useConnectionsStore = create<ConnectionsState>()(

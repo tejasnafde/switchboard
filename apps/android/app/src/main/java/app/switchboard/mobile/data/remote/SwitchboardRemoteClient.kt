@@ -140,6 +140,8 @@ object BackendChannels {
     const val DeviceScopes = "device-session:scopes"
     /** Payload `{ conversationId, created? }`; re-read the open thread's links rather than matching ids. */
     const val PullRequestLinksChanged = "pull-requests:links-changed"
+    /** Payload `{ conversationId, settledAt, title?, prNumber? }` (`src/shared/chat-settle.ts`); a chat was settled or unsettled. */
+    const val ConversationSettled = "app:conversation-settled"
     /** Merge-back (src/shared/merge-back.ts); gated behind `fork_merge_back_v1`. */
     const val MergeBackPreview = "provider:merge-back-preview"
     const val MergeBackSend = "provider:merge-back-send"
@@ -782,6 +784,12 @@ class SwitchboardRemoteClient(
     /** Any chat's links changed; the payload names the root chat, so re-read rather than match ids. */
     fun onPullRequestLinksChanged(listener: () -> Unit): Cancelable =
         rpc.onChannelEvent(BackendChannels.PullRequestLinksChanged) { scope, _ ->
+            if (scope.connectionId == connectionId && rpc.scope == scope) listener()
+        }
+
+    /** A chat was settled or unsettled on any client; the payload names the root chat, so re-read the list. */
+    fun onConversationSettled(listener: () -> Unit): Cancelable =
+        rpc.onChannelEvent(BackendChannels.ConversationSettled) { scope, _ ->
             if (scope.connectionId == connectionId && rpc.scope == scope) listener()
         }
 

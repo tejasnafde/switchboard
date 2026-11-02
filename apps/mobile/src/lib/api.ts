@@ -60,6 +60,7 @@ import type { BranchRead, DiffRead } from '@shared/chat-details'
 import type { ProviderUsage } from '@shared/provider-usage'
 import type { PrConversation, PrDetail, PrListData, PrRef, PrResult, RepoRef } from '@shared/pull-requests'
 import type { PrWriteDone } from '@shared/pull-request-writes'
+import type { ConversationSettledEvent } from '@shared/chat-settle'
 import type { ForkConversationOutcome, ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type {
   GetWorktreeCreationRequest,
@@ -535,6 +536,11 @@ export class SwitchboardClient {
   /** Any chat's links changed; the payload names the root chat, so re-read rather than match ids. */
   onPullRequestLinksChanged(handler: () => void): () => void {
     return this.transport.on(PullRequestChannels.LINKS_CHANGED, () => handler())
+  }
+
+  /** A chat was settled (or unsettled) on any client; `conversationId` is the root id. */
+  onConversationSettled(handler: (event: ConversationSettledEvent) => void): () => void {
+    return this.transport.on<[ConversationSettledEvent]>(AppChannels.CONVERSATION_SETTLED, (event) => handler(event))
   }
 
   interrupt(threadId: string): Promise<InterruptResult | undefined> {
