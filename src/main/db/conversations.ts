@@ -843,11 +843,10 @@ export function wakeConversation(id: string, reason: WakeReason, at: number, exp
   return (
     getDb()
       .prepare(
-        `UPDATE conversations SET ${CLEAR_SNOOZE_SQL},
-           woke_at = CASE WHEN ? THEN ? ELSE NULL END, woke_reason = CASE WHEN ? THEN ? ELSE NULL END
+        `UPDATE conversations SET ${CLEAR_SNOOZE_SQL}, woke_at = ?, woke_reason = ?
          WHERE id = ? AND snoozed_at IS NOT NULL AND (? IS NULL OR snooze_rev = ?)`,
       )
-      .run(marked ? 1 : 0, at, marked ? 1 : 0, reason, resolveRootThreadId(id), expectRev ?? null, expectRev ?? null)
+      .run(marked ? at : null, marked ? reason : null, resolveRootThreadId(id), expectRev ?? null, expectRev ?? null)
       .changes > 0
   )
 }
@@ -861,27 +860,30 @@ export function clearConversationWoke(id: string): boolean {
   )
 }
 
-/** Every snoozed chat that is not archived, for the timers and the PR watch. */
-export function listSnoozedConversations(): Array<{
+/** Chats that show the Woke marker. */
+export function listWokeConversationIds(): string[] {
+  return (getDb().prepare('SELECT id FROM conversations WHERE woke_at IS NOT NULL').all() as Array<{ id: string }>).map(
+    (r) => r.id,
+  )
+}
+
+export interface SnoozedConversationRow {
   id: string
   snoozedUntil: number | null
   snoozePr: string | null
   snoozePrMark: string | null
   snoozeRev: number
-}> {
+}
+
+/** Every snoozed chat that is not archived, for the timers and the PR watch. */
+export function listSnoozedConversations(): SnoozedConversationRow[] {
   return getDb()
     .prepare(
       `SELECT id, snoozed_until AS snoozedUntil, snooze_pr AS snoozePr, snooze_pr_mark AS snoozePrMark,
               snooze_rev AS snoozeRev
          FROM conversations WHERE snoozed_at IS NOT NULL AND archived = 0`,
     )
-    .all() as Array<{
-    id: string
-    snoozedUntil: number | null
-    snoozePr: string | null
-    snoozePrMark: string | null
-    snoozeRev: number
-  }>
+    .all() as SnoozedConversationRow[]
 }
 
 export function getConversationSettled(id: string): number | null {

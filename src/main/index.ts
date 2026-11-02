@@ -175,6 +175,8 @@ const quitCoordinator = new QuitCoordinator(
         {
           name: 'push',
           run: () => {
+            // First, so no snooze wakes after its push can no longer be sent.
+            chatSnoozer()?.dispose()
             detachPush?.()
             detachPush = null
             detachAutoLink?.()

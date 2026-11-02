@@ -4056,7 +4056,9 @@ export class ProviderRegistry implements PeerToolHost {
     // A card or a failure wakes a snoozed chat; a normal turn end does not.
     if (event.type === 'request.opened' || event.type === 'question.asked' || event.type === 'plan.proposed')
       chatSnoozer()?.onEvent(event.threadId, { kind: 'needs_you' })
-    if (event.type === 'error') chatSnoozer()?.onEvent(event.threadId, { kind: 'error', at: Date.now() })
+    // Only a turn's failure: a session that fails to start is not news the user waited for.
+    if (event.type === 'error' && this.isTurnInFlight(event.threadId))
+      chatSnoozer()?.onEvent(event.threadId, { kind: 'error', at: Date.now() })
     // After the event itself, so clients see the turn end before its Limited row.
     if (event.type === 'error') this.limitResumer?.onError(event.threadId)
     if (event.type === 'turn.completed') {

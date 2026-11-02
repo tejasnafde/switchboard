@@ -2,7 +2,13 @@
 import { createMigratedDb } from './helpers/test-db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppChannels } from '../../src/shared/ipc-channels'
-import { archiveConversation, getConversationSnooze, setConversationSnooze } from '../../src/main/db/database'
+import {
+  archiveConversation,
+  clearConversationInboxForTurn,
+  getConversationSnooze,
+  getDb,
+  setConversationSnooze,
+} from '../../src/main/db/database'
 import { ChatSnoozer, SNOOZE_RESYNC_MS, type ChatSnoozeHost } from '../../src/main/conversations/chat-snooze'
 
 const T0 = new Date(2026, 10, 2, 9, 0).getTime()
@@ -158,5 +164,35 @@ describe('ChatSnoozer', () => {
     expect(getConversationSnooze('c')?.snoozedAt).toBeNull()
     vi.advanceTimersByTime(HOUR)
     expect(host.pushWoke).not.toHaveBeenCalled()
+  })
+
+  it('Undo never restores a time that has passed, even inside the grace minute', () => {
+    const s = make()
+    s.snooze('c', { until: T0 + 60_000 })
+    vi.advanceTimersByTime(60_000)
+    expect(host.pushWoke).toHaveBeenCalledTimes(1)
+    s.wake('c', 'wake_now')
+    const rev = getConversationSnooze('c')!.snoozeRev
+    vi.advanceTimersByTime(10_000)
+    expect(s.snooze('c', { until: T0 + 60_000, expectRev: rev })).toEqual({ ok: false, reason: 'past' })
+    expect(host.pushWoke).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses an archived chat, and an archive or a turn clears the Woke marker for every client', () => {
+    const s = make()
+    s.snooze('c', { until: T0 + HOUR })
+    s.onEvent('c', { kind: 'needs_you' })
+    archiveConversation('c')
+    expect(getConversationSnooze('c')?.wokeAt).toBeNull()
+    expect(emitted().at(-1)).toMatchObject({ wokeAt: null })
+    expect(s.snooze('c', { until: T0 + HOUR })).toEqual({ ok: false, reason: 'no_row' })
+
+    s.snooze('d', { until: T0 + HOUR })
+    s.onEvent('d', { kind: 'needs_you' })
+    const before = emitted().length
+    clearConversationInboxForTurn(getDb(), 'd')
+    s.onCleared('d')
+    expect(emitted().length).toBe(before + 1)
+    expect(emitted().at(-1)).toMatchObject({ conversationId: 'd', wokeAt: null })
   })
 })

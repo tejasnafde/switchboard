@@ -13,6 +13,7 @@
 import { AppChannels } from '@shared/ipc-channels'
 import {
   checkWakeTime,
+  MARKED_WAKE_REASONS,
   shouldWakeOn,
   type ConversationSnoozedEvent,
   type InboxEvent,
@@ -24,10 +25,13 @@ import {
   clearConversationWoke,
   getConversationSnooze,
   getConversationTitle,
+  isConversationArchived,
   listSnoozedConversations,
+  listWokeConversationIds,
   resolveRootThreadId,
   setConversationSnooze,
   wakeConversation,
+  type SnoozedConversationRow,
 } from '../db/database'
 import { onConversationArchived } from '../db/archive-events'
 import { createMainLogger } from '../logger'
@@ -50,6 +54,8 @@ export class ChatSnoozer {
   private readonly timers = new Map<string, { timer: ReturnType<typeof setTimeout>; until: number; rev: number }>()
   /** Root ids snoozed now, with or without a time. */
   private readonly snoozed = new Set<string>()
+  /** Root ids that show the Woke marker, so a write that clears it is broadcast. */
+  private readonly woke = new Set<string>()
   private resyncTimer: ReturnType<typeof setInterval> | null = null
   private stopArchiveListener: (() => void) | null = null
 
@@ -67,9 +73,11 @@ export class ChatSnoozer {
 
   /** Rebuild one timer per snoozed row with a time. A time already past fires now. */
   resync(): void {
-    let rows: ReturnType<typeof listSnoozedConversations>
+    let rows: SnoozedConversationRow[]
     try {
       rows = listSnoozedConversations()
+      this.woke.clear()
+      for (const id of listWokeConversationIds()) this.woke.add(id)
     } catch (err) {
       log.warn('could not read snoozed chats', err)
       return
@@ -104,13 +112,17 @@ export class ChatSnoozer {
     if (until !== null) {
       const check = checkWakeTime(until, now)
       if (check !== 'ok') return { ok: false, reason: check }
+      // An Undo restores only a time still ahead; the grace is for a slow click.
+      if (request.expectRev !== undefined && until <= now) return { ok: false, reason: 'past' }
     }
+    if (isConversationArchived(root)) return { ok: false, reason: 'no_row' }
     // An open card would wake it at once.
     if (this.host.needsYou(root)) return { ok: false, reason: 'needs_you' }
     const rev = setConversationSnooze(root, { until, pr, prMark: null, at: now, expectRev: request.expectRev })
     if (rev === null) return { ok: false, reason: getConversationSnooze(root) ? 'stale' : 'no_row' }
     this.clearTimer(root)
     this.snoozed.add(root)
+    this.woke.delete(root)
     if (until !== null) this.schedule(root, until, rev)
     this.broadcast(root)
     return { ok: true, until, pr, rev }
@@ -124,6 +136,7 @@ export class ChatSnoozer {
     const root = resolveRootThreadId(id)
     if (!wakeConversation(root, reason, this.now(), opts.expectRev)) return false
     this.forget(root)
+    if (MARKED_WAKE_REASONS.includes(reason)) this.woke.add(root)
     const title = this.broadcast(root, opts.prSummary)
     log.info('chat woke', { id: root, reason })
     if (reason === 'time' || reason === 'pr')
@@ -147,6 +160,7 @@ export class ChatSnoozer {
   seen(id: string): boolean {
     const root = resolveRootThreadId(id)
     if (!clearConversationWoke(root)) return false
+    this.woke.delete(root)
     this.broadcast(root)
     return true
   }
@@ -158,15 +172,18 @@ export class ChatSnoozer {
    */
   onCleared(id: string): void {
     const root = resolveRootThreadId(id)
-    if (!this.snoozed.has(root)) return
+    if (!this.snoozed.has(root) && !this.woke.has(root)) return
     this.forget(root)
+    this.woke.delete(root)
     this.broadcast(root)
   }
 
   private onArchived(id: string): void {
     const root = resolveRootThreadId(id)
-    if (!wakeConversation(root, 'archive', this.now())) return
+    const ended = wakeConversation(root, 'archive', this.now())
+    if (!clearConversationWoke(root) && !ended) return
     this.forget(root)
+    this.woke.delete(root)
     this.broadcast(root)
   }
 
