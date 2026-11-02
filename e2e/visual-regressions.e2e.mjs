@@ -623,7 +623,7 @@ async function captureFooterWidths(win, theme, composer) {
 
 /**
  * Snooze: the Snoozed group (a time and a PR-only snooze), a woken Done row,
- * and a Done row's "..." menu (presets and Settle). The states come as the backend's broadcast,
+ * a Done row's "..." menu (presets and Settle) and its custom date and time dialog. The states come as the backend's broadcast,
  * sent from the main process with times on the renderer's frozen clock, so the
  * wake labels never move; the database is untouched, so nothing wakes.
  */
@@ -664,8 +664,13 @@ async function captureSnoozeScreens(win, theme, sidebar) {
   const menu = win.getByRole('menu', { name: 'Snooze until' })
   await menu.getByRole('menuitem', { name: 'Until PR #612 changes' }).waitFor({ state: 'visible', timeout: 10_000 })
   await snapAsIs('sidebar-snooze-menu', theme, menu)
+  // Custom date and time: tomorrow at 09:00 on the frozen clock, focus on the chosen day.
+  await menu.getByRole('menuitem', { name: 'Custom date and time...' }).click()
+  const custom = win.getByRole('dialog', { name: 'Snooze until' })
+  await custom.getByText('Wakes Tue 3 Mar at 09:00').waitFor({ state: 'visible' })
+  await snapScreen(win, 'snooze-custom-dialog', theme, custom)
   await win.keyboard.press('Escape')
-  await menu.waitFor({ state: 'hidden' })
+  await custom.waitFor({ state: 'hidden' })
 
   await toggle.click()
   await broadcast(ids.map((conversationId) => ({ ...none, conversationId, snoozeRev: 2 })))
