@@ -869,7 +869,6 @@ html, body, #root {
   border-radius: inherit;
   background: transparent;
   color: inherit;
-  font: inherit;
   cursor: pointer;
   text-align: left;
 }
