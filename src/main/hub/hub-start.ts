@@ -36,7 +36,7 @@
  *
  * Measured: one `hub.batch` and one `hub.start-child` perf line per batch and
  * child (outcome and the time of each step), `hub.child-turn` per child turn
- * end (tokens, cost, duration), the worktree's disk use after start,
+ * end (machine id, tokens, cost, duration), the worktree's disk use after start,
  * `hub.deps-check` per child turn end of a child with links, and
  * `hub.own-deps` per `own_dependencies` call.
  */
@@ -107,6 +107,7 @@ import {
   getHubParent,
   hubInstallId,
   lastHubWakeOf,
+  lastMessageAt,
   listOpenRemoteHubChildren,
   findProposedHubBatch,
   getHubBatch,
@@ -118,11 +119,13 @@ import {
   listHubChildren,
   listHubChildrenInPhase,
   openChildParentId,
+  otherWorktreeUsers,
   resolveRootThreadId,
   saveMessageIfAbsent,
   setConversationProviderInstanceId,
   setConversationRuntimeMode,
   setHubBatchStatus,
+  threadFamilyIds,
   updateHubChild,
   type HubChildRow,
 } from '../db/database'
@@ -143,6 +146,8 @@ import {
   type DepsFolderPlan,
 } from './hub-deps'
 import { toolText, type McpToolResult } from '../mcp/mcp-session'
+import { asThisMachine } from '../backend/request-context'
+import { removeDependencyLinks } from '../git/dependency-links'
 import { createMainLogger } from '../logger'
 import { perfSpan } from '../perf'
 
@@ -236,6 +241,41 @@ export function hubWorktrees(): HubWorktreeService | null {
 export function hubWorktreeCreator(request: WorktreeCreationRequest): Promise<WorktreeCreationSnapshot> {
   if (!worktreeService) return Promise.reject(new Error('The worktree creation service is not ready.'))
   return worktreeService.createWorktreeTransaction(request)
+}
+
+/**
+ * Removes a child's worktree, and the branch its creation made (never one that
+ * was there before), through the worktree service. Null when the worktree is
+ * gone; else why it stays. For a child of a parent stub the removal is this
+ * machine's own (`asThisMachine`): the hub on the other machine started the
+ * child, and the creation is the one this machine made for this child row. A
+ * local child keeps the caller's scopes.
+ */
+export async function removeChildWorktree(child: HubChildRow): Promise<string | null> {
+  const service = worktreeService
+  if (!service) return 'the worktree service is not ready'
+  const worktree = getConversationById(child.childId)?.worktree_path
+  const key = { machineId: 'local', creationId: child.creationId ?? `${child.batchId}-${child.ordinal}` }
+  try {
+    // A chat may have opened the worktree since the plan read it.
+    if (worktree && otherWorktreeUsers(worktree, child.childId) > 0) return 'another chat or card works in it'
+    const ownedByChild = (snapshot: WorktreeCreationSnapshot) =>
+      snapshot.owner.kind === 'conversation' && snapshot.owner.conversationId === child.childId
+    if (!ownedByChild(await service.getWorktreeCreation(key))) return 'the worktree was not made for this child'
+    if (worktree) await removeDependencyLinks(worktree)
+    // Read again after the unlink: the removal acts on this revision, and its owner is checked on it.
+    const current = await service.getWorktreeCreation(key)
+    if (!ownedByChild(current)) return 'the worktree was not made for this child'
+    // Again: a chat may have opened it during those awaits, and the removal does not check.
+    if (worktree && otherWorktreeUsers(worktree, child.childId) > 0) return 'another chat or card works in it'
+    const remove = () => service.actOnWorktreeCreation({ ...key, expectedRevision: current.revision, action: 'remove' })
+    const done = await (getHubParent(child.parentId)?.remoteHub ? asThisMachine(remove) : remove())
+    if (done.cleanupDisposition === 'removed') return null
+    return done.error?.message ?? 'git refused to remove it'
+  } catch (err) {
+    log.warn(`could not remove the worktree of child ${child.childId}`, err)
+    return err instanceof Error ? err.message : String(err)
+  }
 }
 
 export interface HubStartHost {
@@ -354,20 +394,39 @@ export class HubStarter {
   /**
    * Children left in `starting` by a quit never got their first turn. They
    * are marked failed with a wake; the worktree creation service finishes or
-   * rolls back their worktrees on its own.
+   * rolls back their worktrees on its own. An open child of a parent stub
+   * (a hub on another machine) lost its session with this backend: its parent
+   * hears of it with a `restart` wake through the outbox, unless its newest
+   * wake is one and no message reached it since.
    */
   recoverInterrupted(): void {
     for (const child of listHubChildrenInPhase('starting')) {
       updateHubChild(child.childId, { phase: 'failed_start' })
       this.failedWake(child.parentId, child.childId, 'Start was cut off when Switchboard quit.')
       log.info('child start cut off by a quit', { childId: child.childId, parentId: child.parentId })
+      this.dropRemoteStartWorktree(child.parentId, child.childId)
     }
     for (const child of listHubChildrenInPhase('open')) {
       const state = parseChildDeps(child.depsJson)
       const conv = getConversationById(child.childId)
       if (linkedFolders(state).length > 0 && conv?.worktree_path)
         this.track(child.childId, child.parentId, conv.worktree_path, state)
+      if (getHubParent(child.parentId)?.remoteHub && !this.toldOfRestart(child.childId)) {
+        this.wake({
+          parentId: child.parentId,
+          childId: child.childId,
+          kind: 'restart',
+          summary: 'The backend on its machine restarted, so its session ended.',
+          pointer: null,
+        })
+        log.info('child session ended by a backend restart', { childId: child.childId, parentId: child.parentId })
+      }
     }
+  }
+
+  private toldOfRestart(childId: string): boolean {
+    const last = lastHubWakeOf(childId)
+    return last?.kind === 'restart' && (lastMessageAt(threadFamilyIds(childId)) ?? 0) < last.createdAt
   }
 
   /** The parent of an open child, or null. A failed read counts as no child: the database is down for every path then. */
@@ -739,6 +798,7 @@ export class HubStarter {
         perfSpan('hub.child-turn', {
           childId,
           parentId,
+          machineId: getHubChild(childId)?.machineId ?? 'local',
           usedTokens: turn.usedTokens,
           costUsd: turn.costUsd,
           turnMs: turn.durationMs,
@@ -1488,6 +1548,7 @@ export class HubStarter {
     } catch (writeErr) {
       log.error(`could not record the failed start of ${c.childId}`, writeErr)
     }
+    this.dropRemoteStartWorktree(parentId, c.childId)
     // A failed child frees its parent's slot (a remote one counts while starting): a waiter may go now.
     this.pump()
     this.host.changed?.(parentId)
@@ -1513,7 +1574,35 @@ export class HubStarter {
     } catch (err) {
       log.error(`could not record the stop of ${c.childId}`, err)
     }
+    this.dropRemoteStartWorktree(slot.parentId, c.childId)
     this.host.changed?.(slot.parentId)
+  }
+
+  /**
+   * On a child machine, a child of another machine's hub that failed to start
+   * keeps no worktree here: its session (if one started) is stopped, then the
+   * worktree and the branch its creation made are removed. A local child keeps
+   * its worktree for the user.
+   */
+  private dropRemoteStartWorktree(parentId: string, childId: string): void {
+    try {
+      if (!getHubParent(parentId)?.remoteHub || !getConversationById(childId)?.worktree_path) return
+    } catch (err) {
+      log.warn(`could not read child ${childId} after its failed start; its worktree stays`, err)
+      return
+    }
+    void this.host
+      .stopChild(childId)
+      .catch((err) => log.warn(`could not stop child ${childId}`, err))
+      .then(() => {
+        const row = getHubChild(childId)
+        return row ? removeChildWorktree(row) : 'its row is gone'
+      })
+      .then((problem) => {
+        if (problem) log.warn(`kept the worktree of child ${childId} that failed to start: ${problem}`)
+        else log.info('removed the worktree of a child that failed to start', { childId })
+      })
+      .catch((err) => log.warn(`could not remove the worktree of child ${childId}`, err))
   }
 
   private failedWake(parentId: string, childId: string, summary: string): void {

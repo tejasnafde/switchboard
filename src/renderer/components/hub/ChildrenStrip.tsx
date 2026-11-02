@@ -5,11 +5,19 @@
  * come from the backend's hub view, so every client shows the same states.
  */
 import { useState } from 'react'
-import { childStateLabel, parentStateLabel, type HubChatRef, type HubChildView, type ParentState } from '@shared/hub'
+import {
+  childStateLabel,
+  isOpenChildPhase,
+  parentStateLabel,
+  type HubChatRef,
+  type HubChildView,
+  type ParentState,
+} from '@shared/hub'
 import { agentLabel, type AgentType } from '@shared/types'
 import { createRendererLogger } from '../../logger'
-import { childDot } from './child-dot'
+import { hubChildDot } from './child-dot'
 import { nudgeChild, openHubChat } from './hub-actions'
+import { MachineBadge } from './MachineBadge'
 
 const log = createRendererLogger('hub:strip')
 
@@ -21,9 +29,14 @@ const textAction = 'cursor-pointer border-0 bg-transparent p-0 [font:inherit] ho
 const linkClass = `${textAction} text-[var(--accent)]`
 const stopClass = `${textAction} text-[var(--error)]`
 
-/** A child on another machine has no live id here: its machine stops it, or keeps the Stop until it connects. */
+/**
+ * A child on another machine has no live id here: its machine stops it, or keeps the Stop until it connects.
+ * Its state is unknown while that machine is not connected, so the Stop stays offered.
+ */
 const canStop = (c: HubChildView) =>
-  c.state === 'working' && (c.liveId !== null || (c.remote !== undefined && !c.remote.stopping))
+  c.remote
+    ? !c.remote.stopping && (c.state === 'working' || (!c.remote.connected && isOpenChildPhase(c.phase)))
+    : c.state === 'working' && c.liveId !== null
 
 function stopChild(parent: HubChatRef, child: HubChildView): void {
   const target = child.liveId ?? (child.remote ? child.chat.id : null)
@@ -45,14 +58,26 @@ const kTokens = (n: number) => `${Math.round(n / 1000)}k`
 function ChildRow({ parent, child }: { parent: HubChatRef; child: HubChildView }) {
   const tokens = child.lastTurn?.usedTokens
   const muted = [child.account, tokens != null ? kTokens(tokens) : null].filter(Boolean)
+  const title = (
+    <span title={child.chat.title} className="truncate text-[var(--text-primary)]">
+      {child.chat.title}
+    </span>
+  )
   return (
     <li
       data-hub-child={child.state}
       title={[agentLabel(child.chat.agentType as AgentType), child.branch].filter(Boolean).join(' · ')}
       className="grid grid-cols-[7px_minmax(120px,160px)_minmax(0,1fr)_auto] items-center gap-x-[10px] gap-y-[2px] border-t border-[var(--border)] px-3 py-[5px] @max-[420px]:grid-cols-[7px_minmax(0,1fr)]"
     >
-      <span className="sidebar-recent-dot" data-dot={childDot(child.state)} />
-      <span className="truncate text-[var(--text-primary)]">{child.chat.title}</span>
+      <span className="sidebar-recent-dot" data-dot={hubChildDot(child)} />
+      {child.remote ? (
+        <span className="flex min-w-0 items-center gap-[6px]">
+          {title}
+          <MachineBadge name={child.remote.machine} className="max-w-[50%]" />
+        </span>
+      ) : (
+        title
+      )}
       <span
         className={`truncate @max-[420px]:col-start-2 ${ATTENTION.has(child.state) ? 'font-[500] text-[var(--text-primary)]' : ''}`}
       >

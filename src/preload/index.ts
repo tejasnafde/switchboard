@@ -494,6 +494,7 @@ const api = {
     disconnect: (id: string): Promise<{ ok: true }> => transport.invoke(MachineChannels.DISCONNECT, id),
     getStatuses: (): Promise<Record<string, { status: string; url: string | null; idePort?: number | null }>> =>
       transport.invoke(MachineChannels.GET_STATUSES),
+    hubRemoteEnabled: (): Promise<boolean> => transport.invoke(MachineChannels.HUB_REMOTE_ENABLED),
     onStatus: (
       callback: (
         machineId: string,

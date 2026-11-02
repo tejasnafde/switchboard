@@ -194,6 +194,8 @@ export const MachineChannels = {
   STATUS: 'machines:status',
   /** Current status + tunnel URL for every machine, so a reloaded renderer can re-dial live connections. */
   GET_STATUSES: 'machines:get-statuses',
+  /** Whether `hub_remote_children` is on in the desktop: Settings shows the launch reconnect switch then. */
+  HUB_REMOTE_ENABLED: 'machines:hub-remote-enabled',
   /** Desktop-only (ipcMain, never a phone): the token a connected machine's
    *  backend wants in the auth frame. */
   BACKEND_TOKEN: 'machines:backend-token',

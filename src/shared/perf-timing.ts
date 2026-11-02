@@ -55,6 +55,10 @@ export const PERF_THRESHOLDS = {
   'hub.remote-pending': 0,
   // A parent's message to its child on another machine, after the charge here: delivery, outcome.
   'hub.remote-deliver': 200,
+  // A machine that was connected before came back: down ms, its open children, outbox items pulled.
+  'hub.remote-reconnect': 0,
+  // The connects at launch to machines with open children: machines tried, connected, ms.
+  'hub.remote-launch-reconnect': 0,
   ipc: 200,
 } as const
 

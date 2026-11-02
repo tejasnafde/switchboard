@@ -1,6 +1,7 @@
-import { CHILD_STATE_LABELS, type HubChildView } from '@shared/hub'
+import { childStateWord, type HubChildView } from '@shared/hub'
 import { useHubStore, useHubView } from '../../stores/hub-store'
-import { childDot } from './child-dot'
+import { hubChildDot } from './child-dot'
+import { MachineBadge } from './MachineBadge'
 
 /** Keeps an unfolded parent's hub view loaded for its child rows: one read per parent, not per child. */
 export function HubViewMount({ parentId }: { parentId: string }) {
@@ -15,10 +16,16 @@ function useHubChild(parentId: string, childId: string): HubChildView | undefine
 
 export function ChildStateDot({ parentId, childId }: { parentId: string; childId: string }) {
   const child = useHubChild(parentId, childId)
-  return child ? <span className="sidebar-recent-dot" data-dot={childDot(child.state)} /> : null
+  return child ? <span className="sidebar-recent-dot" data-dot={hubChildDot(child)} /> : null
 }
 
 export function ChildStateWord({ parentId, childId }: { parentId: string; childId: string }) {
   const child = useHubChild(parentId, childId)
-  return child ? <span className="sidebar-thread-time">{CHILD_STATE_LABELS[child.state]}</span> : null
+  if (!child) return null
+  return (
+    <>
+      {child.remote && <MachineBadge name={child.remote.machine} />}
+      <span className="sidebar-thread-time">{childStateWord(child)}</span>
+    </>
+  )
 }
