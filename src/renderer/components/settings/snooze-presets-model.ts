@@ -135,12 +135,17 @@ export function normalizeField(d: PresetDraft, field: DraftField): PresetDraft {
   return { ...d, amount: d.amount.trim() }
 }
 
-/** The list to store: each row's valid spec, else the one it last saved; a row never saved and not valid is left out. */
-export function listToSave(drafts: readonly PresetDraft[]): SnoozePresetSpec[] {
+/** Each row's valid spec, else the one it last saved; a row never saved and not valid is left out. */
+export function savedRows(drafts: readonly PresetDraft[]): Array<{ id: string; spec: SnoozePresetSpec }> {
   return drafts.flatMap((d) => {
     const spec = checkDraft(d).spec ?? d.saved
-    return spec ? [spec] : []
+    return spec ? [{ id: d.id, spec }] : []
   })
+}
+
+/** The list to store, in row order. */
+export function listToSave(drafts: readonly PresetDraft[]): SnoozePresetSpec[] {
+  return savedRows(drafts).map((r) => r.spec)
 }
 
 /** Every draft that is valid now takes its spec as saved. */
@@ -176,9 +181,7 @@ export function menuHint(at: Date, now: Date): string {
   return `${at.getDate()} ${MONTHS[at.getMonth()]}`
 }
 
-export type PresetStanding =
-  | { shown: true; at: Date; /** The clock time a DST change moved, as `HH:MM`, or null. */ moved: string | null }
-  | { shown: false; at: Date; why: string; sameAs?: string }
+export type PresetStanding = { shown: true; at: Date } | { shown: false; at: Date; why: string; sameAs?: string }
 
 /**
  * How each saved spec stands in the menu at `now`, in list order, by the
@@ -195,11 +198,11 @@ export function standings(specs: readonly SnoozePresetSpec[], now: Date): Preset
         at,
         why: `Hidden now: it would end at ${hhmm(at)}. A duration shorter than a day shows only while it ends today before 21:00.`,
       }
-    if (hidden === 'too_soon')
+    if (hidden === 'too_soon' && spec.kind === 'time')
       return {
         shown: false,
         at,
-        why: `Hidden now: today at ${formatClock(spec as { hour: number; minute: number })} is less than an hour away or has passed. It shows again tomorrow.`,
+        why: `Hidden now: today at ${formatClock(spec)} is less than an hour away or has passed. It shows again tomorrow.`,
       }
     const minute = Math.floor(at.getTime() / 60_000)
     const first = taken.get(minute)
@@ -211,11 +214,7 @@ export function standings(specs: readonly SnoozePresetSpec[], now: Date): Preset
         why: `Hidden now: it wakes in the same minute as "${first}", which is higher in the list. Move this one up to show it instead.`,
       }
     taken.set(minute, spec.label)
-    const moved =
-      spec.kind !== 'duration' && (at.getHours() !== spec.hour || at.getMinutes() !== spec.minute)
-        ? formatClock(spec)
-        : null
-    return { shown: true, at, moved }
+    return { shown: true, at }
   })
 }
 

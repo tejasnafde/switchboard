@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 import {
   DEFAULT_SNOOZE_PRESETS,
   MAX_SNOOZE_PRESETS,
+  formatClock,
   presetListRefusalText,
   presetTiming,
   type SnoozePresetSpec,
@@ -30,6 +31,7 @@ import {
   previewAtText,
   resetBody,
   rowNotice,
+  savedRows,
   shownErrors,
   standings,
   statusLine,
@@ -52,15 +54,7 @@ interface Committed {
   at: Date
 }
 
-function committedOf(drafts: readonly PresetDraft[], at: Date): Committed {
-  return {
-    rows: drafts.flatMap((d) => {
-      const spec = checkDraft(d).spec ?? d.saved
-      return spec ? [{ id: d.id, spec }] : []
-    }),
-    at,
-  }
-}
+const committedOf = (drafts: readonly PresetDraft[], at: Date): Committed => ({ rows: savedRows(drafts), at })
 
 /**
  * Settings > General > Snooze presets: the list every Snooze menu resolves,
@@ -141,6 +135,15 @@ export function SnoozePresetsPanel({ now = () => new Date() }: { now?: () => Dat
       },
     )
   }
+  const commitRef = useRef(commit)
+  commitRef.current = commit
+  // Settings can close (Escape) with a field still focused and no blur: its edit saves as one would.
+  useEffect(
+    () => () => {
+      if (draftsRef.current.some((d) => d.dirty)) commitRef.current(draftsRef.current)
+    },
+    [],
+  )
 
   const update = (id: string, patch: Partial<PresetDraft>) =>
     setDrafts((rows) => rows.map((d) => (d.id === id ? { ...d, ...patch, dirty: true } : d)))
@@ -547,8 +550,7 @@ function NextText({ spec, at }: { spec: SnoozePresetSpec; at: Date }) {
   return (
     <>
       Next: <b className="font-[500] text-[var(--text-primary)]">{whenText(timing.at, at)}</b>
-      {moved &&
-        ` (${String(spec.hour).padStart(2, '0')}:${String(spec.minute).padStart(2, '0')} does not exist that day)`}
+      {moved && ` (${formatClock(spec)} does not exist that day)`}
     </>
   )
 }

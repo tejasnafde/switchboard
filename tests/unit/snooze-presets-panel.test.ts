@@ -139,6 +139,15 @@ describe('the Snooze presets editor', () => {
     expect(useSnoozePresetsStore.getState().presets[1].label).toBe('Evening')
   })
 
+  it('saves an edit still in its field when Settings closes', () => {
+    render()
+    type(byLabel<HTMLInputElement>('Label of preset 2'), 'Evening')
+    act(() => root.unmount())
+    root = createRoot(container)
+    expect(setSnoozePresets).toHaveBeenCalledTimes(1)
+    expect(setSnoozePresets.mock.calls[0][0][1]).toMatchObject({ label: 'Evening' })
+  })
+
   it('shows a field error only after blur, and keeps the saved preset in the menu', () => {
     render()
     const time = byLabel<HTMLInputElement>('Time of Tonight')
