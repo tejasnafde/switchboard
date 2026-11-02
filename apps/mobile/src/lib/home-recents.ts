@@ -219,11 +219,16 @@ export function canSnooze(row: HomeRecentRow): boolean {
   return row.snoozable && row.status !== 'Approval' && row.status !== 'Input' && row.status !== 'Failed'
 }
 
-/** A machine's chat list after a snooze broadcast; the same list when it names none of them. */
+/**
+ * A machine's chat list after a snooze broadcast or answer; the same list when
+ * it names none of them or is older than what the list holds (a broadcast can
+ * land after a newer answer).
+ */
 export function withSnoozeEvent(sessions: RecentSession[], event: ConversationSnoozedEvent): RecentSession[] {
   const { conversationId, title: _title, prSummary, ...state } = event
-  if (!sessions.some((s) => s.id === conversationId)) return sessions
-  return sessions.map((s) => (s.id === conversationId ? { ...s, ...state, wokePrSummary: prSummary ?? null } : s))
+  const held = sessions.find((s) => s.id === conversationId)
+  if (!held || (held.snoozeRev ?? 0) > state.snoozeRev) return sessions
+  return sessions.map((s) => (s === held ? { ...s, ...state, wokePrSummary: prSummary ?? null } : s))
 }
 
 const WEEK_MS = 7 * 24 * 3_600_000

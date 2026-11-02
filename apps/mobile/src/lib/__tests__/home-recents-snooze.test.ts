@@ -102,18 +102,10 @@ describe('snoozed chats on Home > Recents', () => {
       ['woke', true],
       ['plain', false],
     ])
-    expect(
-      withSnoozeEvent(sessions, {
-        ...woken[0],
-        conversationId: 'elsewhere',
-        snoozeRev: 0,
-        wokeAt: null,
-        wokeReason: null,
-        snoozedAt: null,
-        snoozedUntil: null,
-        snoozePr: null,
-      }),
-    ).toBe(sessions)
+    const cleared = { snoozedUntil: null, snoozedAt: null, snoozePr: null, wokeAt: null, wokeReason: null }
+    expect(withSnoozeEvent(sessions, { ...cleared, conversationId: 'elsewhere', snoozeRev: 0 })).toBe(sessions)
+    // Rev 1 is held for 'tomorrow': a late broadcast of rev 0 does not undo it.
+    expect(withSnoozeEvent(sessions, { ...cleared, conversationId: 'tomorrow', snoozeRev: 0 })).toBe(sessions)
   })
 })
 
