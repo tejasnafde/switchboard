@@ -107,6 +107,24 @@ describe('snoozed chats on Home > Recents', () => {
     // Rev 1 is held for 'tomorrow': a late broadcast of rev 0 does not undo it.
     expect(withSnoozeEvent(sessions, { ...cleared, conversationId: 'tomorrow', snoozeRev: 0 })).toBe(sessions)
   })
+
+  it('brings back a settled chat that was snoozed and then woke', () => {
+    const settled = sessionsFromProjects([
+      { ...project, sessions: [{ ...base, id: 'done', title: 'Done', startedAt: 100, settledAt: 50 }] },
+    ])
+    const state = { snoozedUntil: null, snoozePr: null, wokeAt: null, wokeReason: null }
+    const snoozed = withSnoozeEvent(settled, { ...state, conversationId: 'done', snoozedAt: 60, snoozeRev: 1 })
+    const woken = withSnoozeEvent(snoozed, {
+      ...state,
+      conversationId: 'done',
+      snoozedAt: null,
+      snoozeRev: 2,
+      wokeAt: 70,
+      wokeReason: 'time',
+    })
+    expect(homeRecents([machine({ sessions: woken })], {}, 10).items.map((row) => row.id)).toEqual(['done'])
+    expect(homeRecents([machine({ sessions: settled })], {}, 10).items).toEqual([])
+  })
 })
 
 describe('the Snooze sheet', () => {

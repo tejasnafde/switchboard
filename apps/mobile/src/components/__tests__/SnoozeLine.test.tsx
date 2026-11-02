@@ -28,3 +28,23 @@ it('names the PR of a PR-only snooze, shows a refusal, and is absent when not sn
   const idle = renderComponent(<SnoozeLine session={{ snoozedAt: null }} onWake={jest.fn()} />)
   expect(idle.texts()).toEqual([])
 })
+
+it('drops a refusal once the chat leaves the snooze it answered', async () => {
+  let setSnoozedAt: (at: number | null) => void = () => {}
+  function Host() {
+    const [snoozedAt, set] = React.useState<number | null>(1)
+    setSnoozedAt = set
+    return (
+      <SnoozeLine
+        session={{ snoozedAt, snoozedUntil: null, snoozePr: 'github:acme/app#512' }}
+        onWake={() => Promise.resolve('This chat is no longer snoozed')}
+      />
+    )
+  }
+  const view = renderComponent(<Host />)
+  await act(async () => view.byLabel('Wake now').props.onPress())
+  expect(view.texts()).toContain('This chat is no longer snoozed')
+  act(() => setSnoozedAt(null))
+  act(() => setSnoozedAt(2))
+  expect(view.texts()).toEqual(['Snoozed until PR #512 changes', 'Wake now'])
+})

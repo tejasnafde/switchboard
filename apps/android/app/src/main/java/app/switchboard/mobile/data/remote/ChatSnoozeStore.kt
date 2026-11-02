@@ -23,20 +23,31 @@ class ChatSnoozeStore {
         held.update { all ->
             val mine = all[connectionId].orEmpty()
             val prior = mine[threadId]
-            if (prior != null && prior.snoozeRev > state.snoozeRev) all else all + (connectionId to (mine + (threadId to state)))
+            if (prior != null && prior.snoozeRev > state.snoozeRev) {
+                all
+            } else {
+                val next = state.copy(unsettled = state.unsettled || state.snoozed || prior?.unsettled == true)
+                all + (connectionId to (mine + (threadId to next)))
+            }
         }
     }
 
     fun applyEvent(connectionId: String, event: ChatSnooze.Event) = put(connectionId, event.conversationId, event.state)
 
-    /** Takes the project list's copy of every chat it is not older than. */
+    /**
+     * Takes the project list's copy of every chat it is not older than, except a
+     * same-revision copy with a Woke mark already cleared here (clearing it keeps the revision).
+     */
     fun seed(connectionId: String, sessions: List<SessionSummary>) {
         held.update { all ->
             val mine = all[connectionId].orEmpty()
             val next = mine.toMutableMap()
             sessions.forEach { session ->
                 val prior = mine[session.id]
-                if (prior == null || session.snooze.snoozeRev >= prior.snoozeRev) next[session.id] = session.snooze
+                val listed = session.snooze
+                val newer = prior == null || listed.snoozeRev > prior.snoozeRev ||
+                    (listed.snoozeRev == prior.snoozeRev && (prior.woke || !listed.woke))
+                if (newer) next[session.id] = listed
             }
             if (next == mine) all else all + (connectionId to next)
         }

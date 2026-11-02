@@ -222,13 +222,16 @@ export function canSnooze(row: HomeRecentRow): boolean {
 /**
  * A machine's chat list after a snooze broadcast or answer; the same list when
  * it names none of them or is older than what the list holds (a broadcast can
- * land after a newer answer).
+ * land after a newer answer). A snooze clears the settled mark on the backend,
+ * so it clears the held one too.
  */
 export function withSnoozeEvent(sessions: RecentSession[], event: ConversationSnoozedEvent): RecentSession[] {
   const { conversationId, title: _title, prSummary, ...state } = event
   const held = sessions.find((s) => s.id === conversationId)
   if (!held || (held.snoozeRev ?? 0) > state.snoozeRev) return sessions
-  return sessions.map((s) => (s === held ? { ...s, ...state, wokePrSummary: prSummary ?? null } : s))
+  const next = { ...held, ...state, wokePrSummary: prSummary ?? null }
+  if (state.snoozedAt !== null) next.settledAt = null
+  return sessions.map((s) => (s === held ? next : s))
 }
 
 const WEEK_MS = 7 * 24 * 3_600_000

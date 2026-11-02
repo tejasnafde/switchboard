@@ -150,20 +150,36 @@ export async function wakeChat(connectionId: string, id: string): Promise<string
   }
 }
 
-/** The Thread screen of a woken chat opened: drop its Woke marker everywhere. */
+/** Woke marks being cleared, by machine and chat: a second call while one runs does nothing. */
+const clearingWoke = new Set<string>()
+
+/**
+ * The Thread screen of a woken chat opened: drop its Woke marker everywhere.
+ * The phone keeps the mark until the backend clears it, so a failed request
+ * leaves it to retry on the next call.
+ */
 export function markWokeSeen(connectionId: string, id: string): void {
   const session = sessionOf(connectionId, id)
   if (!session || !isWoke({ snoozedAt: session.snoozedAt ?? null, wokeAt: session.wokeAt ?? null })) return
   const client = getClient(connectionId)
   if (client?.supportsCapability(CHAT_SNOOZE_CAPABILITY) !== true) return
-  useRecentsStore.getState().applySnooze(connectionId, {
-    conversationId: id,
-    snoozedUntil: null,
-    snoozedAt: null,
-    snoozePr: null,
-    snoozeRev: session.snoozeRev ?? 0,
-    wokeAt: null,
-    wokeReason: null,
-  })
-  client.markWokeSeen(id).catch((err: unknown) => log.warn(`could not clear the Woke mark of ${id}`, err))
+  const key = `${connectionId}:${id}`
+  if (clearingWoke.has(key)) return
+  clearingWoke.add(key)
+  client
+    .markWokeSeen(id)
+    .then(
+      () =>
+        useRecentsStore.getState().applySnooze(connectionId, {
+          conversationId: id,
+          snoozedUntil: null,
+          snoozedAt: null,
+          snoozePr: null,
+          snoozeRev: session.snoozeRev ?? 0,
+          wokeAt: null,
+          wokeReason: null,
+        }),
+      (err: unknown) => log.warn(`could not clear the Woke mark of ${id}`, err),
+    )
+    .finally(() => clearingWoke.delete(key))
 }

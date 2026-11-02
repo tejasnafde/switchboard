@@ -33,6 +33,8 @@ object ChatSnooze {
         val wokeReason: String? = null,
         /** The PR event that woke it, as a status line. */
         val wokePrSummary: String? = null,
+        /** Snoozed since the project list was read: a snooze clears the settled mark, so the list's `settledAt` is stale. */
+        val unsettled: Boolean = false,
     ) {
         val snoozed: Boolean get() = isSnoozed(snoozedAt)
         val woke: Boolean get() = isWoke(snoozedAt, wokeAt)

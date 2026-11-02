@@ -303,6 +303,29 @@ class HomePresentationTest {
     }
 
     @Test
+    fun `a settled chat snoozed and woken since the list was read shows in Recents`() {
+        val woke = ChatSnooze.State(snoozeRev = 3, wokeAt = 900, wokeReason = "time")
+        val page = HomePresenter.recents(
+            machines = listOf(
+                machine(
+                    projects = listOf(
+                        project(
+                            "/repo",
+                            summary("unsettled", startedAt = 100, settledAt = 50),
+                            summary("settled", startedAt = 200, settledAt = 50),
+                        ),
+                    ),
+                    snooze = true,
+                    snoozes = mapOf("unsettled" to woke.copy(unsettled = true), "settled" to woke),
+                ),
+            ),
+            limit = 10,
+        )
+
+        assertEquals(listOf("unsettled"), page.items.map(HomeRecentRow::threadId))
+    }
+
+    @Test
     fun `a woken chat sorts first in its status group and shows Woke`() {
         val woke = ChatSnooze.State(snoozeRev = 2, wokeAt = 900, wokeReason = "time")
         val page = HomePresenter.recents(
@@ -390,6 +413,7 @@ class HomePresentationTest {
                             "/repo",
                             summary("approval", startedAt = 500),
                             summary("input", startedAt = 400),
+                            summary("plan", startedAt = 350),
                             summary("failed", startedAt = 300),
                             summary("working", startedAt = 200),
                             summary("idle", startedAt = 100),
@@ -400,6 +424,7 @@ class HomePresentationTest {
                         "input" to ThreadState(status = "idle", feed = listOf(question(answers = null))),
                     ),
                     activity = mapOf(
+                        "plan" to BrowseThreadActivity(status = "idle", unread = 0, attention = BrowseThreadAttention.Plan),
                         "failed" to BrowseThreadActivity(status = "error", unread = 0),
                         "working" to BrowseThreadActivity(status = "running", unread = 0),
                     ),
@@ -410,7 +435,14 @@ class HomePresentationTest {
         )
 
         assertEquals(
-            mapOf("approval" to false, "input" to false, "working" to true, "failed" to false, "idle" to true),
+            mapOf(
+                "approval" to false,
+                "input" to false,
+                "plan" to false,
+                "working" to true,
+                "failed" to false,
+                "idle" to true,
+            ),
             page.items.associate { it.threadId to it.canSnooze },
         )
     }

@@ -221,10 +221,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
     recentSession !== undefined &&
     isWoke({ snoozedAt: recentSession.snoozedAt ?? null, wokeAt: recentSession.wokeAt ?? null })
   // Opening a woken chat, or a chat waking while it is open, clears its Woke mark.
+  // A new copy of the chat (the list read after the `ready` frame) retries a
+  // clear that ran before Snooze was readable or that failed.
   useFocusEffect(
     useCallback(() => {
       if (woke) markWokeSeen(connectionId, threadId)
-    }, [woke, connectionId, threadId]),
+    }, [woke, recentSession, connectionId, threadId]),
   )
 
   // useFocusEffect (not useEffect) so activeKey tracks push/pop: pushing

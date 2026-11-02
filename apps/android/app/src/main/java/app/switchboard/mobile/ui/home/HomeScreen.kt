@@ -134,6 +134,18 @@ fun HomeScreen(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 120.dp),
         ) {
             item { HomeSectionHeader("RECENTS") }
+            snoozeNotice?.let { notice ->
+                item {
+                    Text(
+                        text = notice,
+                        color = Amber,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .padding(vertical = 8.dp)
+                            .semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
+            }
             if (recents.items.isEmpty() && recents.snoozed.isEmpty()) {
                 item {
                     Text(
@@ -167,18 +179,6 @@ fun HomeScreen(
                         ) {
                             Text("Show more")
                         }
-                    }
-                }
-                snoozeNotice?.let { notice ->
-                    item {
-                        Text(
-                            text = notice,
-                            color = Amber,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier
-                                .padding(vertical = 8.dp)
-                                .semantics { liveRegion = LiveRegionMode.Polite },
-                        )
                     }
                 }
                 if (recents.snoozed.isNotEmpty()) {

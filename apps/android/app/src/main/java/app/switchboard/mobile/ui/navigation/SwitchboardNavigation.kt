@@ -817,17 +817,15 @@ private fun HomeRouteHost(
             snoozeNotice = null
         }
     }
-    fun sameRow(sheet: HomeSnoozeSheet?, row: HomeRecentRow) =
-        sheet != null && sheet.row.connectionId == row.connectionId && sheet.row.threadId == row.threadId
-
     fun openSnooze(row: HomeRecentRow) {
         val lease = runtime?.lease(row.connectionId) ?: return
-        snoozeSheet = HomeSnoozeSheet(row = row, shownAt = System.currentTimeMillis())
+        val opened = HomeSnoozeSheet(row = row, shownAt = System.currentTimeMillis())
+        snoozeSheet = opened
         lease.client.pullRequestLinks(row.threadId) { response ->
             when (val outcome = response.outcome) {
                 is RemoteOutcome.Failure -> SbLog.w("home:snooze", "could not read the PR links of ${row.threadId}: ${outcome.message}")
-                is RemoteOutcome.Success -> ChatSnooze.snoozePrOf(outcome.value)?.let { pr ->
-                    snoozeSheet?.takeIf { sameRow(it, row) }?.let { snoozeSheet = it.copy(pr = pr) }
+                is RemoteOutcome.Success -> snoozeSheet?.takeIf { it.isOpeningOf(opened) }?.let {
+                    snoozeSheet = it.copy(pr = ChatSnooze.snoozePrOf(outcome.value))
                 }
             }
         }
@@ -835,7 +833,11 @@ private fun HomeRouteHost(
 
     fun pickSnooze(item: HomeSnoozeItem) {
         val sheet = snoozeSheet ?: return
-        val lease = runtime?.lease(sheet.row.connectionId) ?: return
+        val lease = runtime?.lease(sheet.row.connectionId)
+        if (lease == null) {
+            snoozeSheet = sheet.copy(notice = SNOOZE_NOT_CONNECTED)
+            return
+        }
         val now = System.currentTimeMillis()
         val request = HomePresenter.snoozeRequest(item.choice, now)
         if (request == null) {
@@ -844,14 +846,21 @@ private fun HomeRouteHost(
         }
         snoozeSheet = sheet.copy(busy = true, notice = null)
         snoozeStore.snooze(lease.client, sheet.row.threadId, request.until, request.pr, request.preset, now) { refused ->
-            snoozeSheet?.takeIf { sameRow(it, sheet.row) }?.let {
-                snoozeSheet = if (refused == null) null else it.copy(busy = false, notice = refused)
+            val open = snoozeSheet?.takeIf { it.isOpeningOf(sheet) }
+            when {
+                open != null -> snoozeSheet = if (refused == null) null else open.copy(busy = false, notice = refused)
+                // The sheet closed while the request ran: the refusal shows on Home instead.
+                refused != null -> snoozeNotice = refused
             }
         }
     }
 
     fun wake(row: HomeRecentRow) {
-        val lease = runtime?.lease(row.connectionId) ?: return
+        val lease = runtime?.lease(row.connectionId)
+        if (lease == null) {
+            snoozeNotice = SNOOZE_NOT_CONNECTED
+            return
+        }
         snoozeStore.wake(lease.client, row.threadId) { refused -> if (refused != null) snoozeNotice = refused }
     }
     HomeScreen(
@@ -882,6 +891,11 @@ private fun HomeRouteHost(
 }
 
 private const val SNOOZE_NOTICE_MS = 5_000L
+private const val SNOOZE_NOT_CONNECTED = "The machine is not connected"
+
+/** The same opening of the sheet: a reply to an earlier opening of the same row does not apply. */
+private fun HomeSnoozeSheet.isOpeningOf(other: HomeSnoozeSheet) =
+    row.connectionId == other.row.connectionId && row.threadId == other.row.threadId && shownAt == other.shownAt
 
 private fun BrowseLoadState<BrowseProjectRecord>.homeProjects(): List<Project> = when (this) {
     is BrowseLoadState.Loading -> cached.map(BrowseProjectRecord::project)
@@ -1421,6 +1435,11 @@ private fun ConnectedThreadRoute(
         DisposableEffect(snoozeStore, lease.scope) {
             val subscription = lease.client.onConversationSnoozed { snoozeStore.applyEvent(route.connectionId, it) }
             onDispose(subscription::cancel)
+        }
+        // Only Home seeds the store, so a Thread that opens first (a restored process) reads the saved list.
+        LaunchedEffect(snoozeStore, route.connectionId) {
+            val saved = offlineSnapshot?.let(runtime::browseSnapshotStore)?.load(route.connectionId)?.projects
+            if (saved != null) snoozeStore.seed(route.connectionId, saved.flatMap(Project::sessions))
         }
     }
     // Opening a woken chat, or a chat waking while it is open, clears its Woke mark.

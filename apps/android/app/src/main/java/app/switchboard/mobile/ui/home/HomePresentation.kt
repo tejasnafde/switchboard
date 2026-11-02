@@ -52,7 +52,7 @@ data class HomeRecentRow(
     /** A chat that needs the user cannot be snoozed: the open card or the error would wake it at once. */
     val canSnooze: Boolean
         get() = snoozable && status != HomeRecentStatus.Approval && status != HomeRecentStatus.Input &&
-            status != HomeRecentStatus.Failed
+            status != HomeRecentStatus.Plan && status != HomeRecentStatus.Failed
 }
 
 data class HomeRecentsPage(
@@ -135,7 +135,7 @@ object HomePresenter {
                     }
                     // A settled chat leaves the desktop's "Done recently" only, so it still shows while it works or waits.
                     val idle = status == null || status == HomeRecentStatus.Done
-                    if (!snooze.snoozed && idle && session.settledAt != null) return@mapNotNull null
+                    if (!snooze.snoozed && !snooze.unsettled && idle && session.settledAt != null) return@mapNotNull null
                     HomeRecentRow(
                         connectionId = machine.connectionId,
                         connectionLabel = machine.connectionLabel,

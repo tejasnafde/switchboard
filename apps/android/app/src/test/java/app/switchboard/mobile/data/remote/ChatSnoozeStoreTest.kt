@@ -16,7 +16,34 @@ class ChatSnoozeStoreTest {
         assertEquals(1_000L, store.of("mac", "a")?.snoozedUntil)
 
         store.applyEvent("mac", ChatSnooze.Event("a", ChatSnooze.State(snoozeRev = 3)))
-        assertEquals(ChatSnooze.State(snoozeRev = 3), store.of("mac", "a"))
+        assertEquals(ChatSnooze.State(snoozeRev = 3, unsettled = true), store.of("mac", "a"))
+    }
+
+    @Test
+    fun `a snooze held here marks the list's settled time stale until the list catches up`() {
+        val store = ChatSnoozeStore()
+        store.seed("mac", listOf(session("a", ChatSnooze.State(snoozeRev = 1))))
+        assertEquals(false, store.of("mac", "a")?.unsettled)
+
+        store.applyEvent("mac", ChatSnooze.Event("a", state(rev = 2, until = 1_000)))
+        store.applyEvent("mac", ChatSnooze.Event("a", ChatSnooze.State(snoozeRev = 3, wokeAt = 1_000, wokeReason = "time")))
+        assertEquals(true, store.of("mac", "a")?.unsettled)
+
+        store.seed("mac", listOf(session("a", ChatSnooze.State(snoozeRev = 3, wokeAt = 1_000, wokeReason = "time"))))
+        assertEquals(false, store.of("mac", "a")?.unsettled)
+    }
+
+    @Test
+    fun `a saved list at the same revision does not bring back a Woke mark cleared here`() {
+        val store = ChatSnoozeStore()
+        val woke = ChatSnooze.State(snoozeRev = 4, wokeAt = 1_000, wokeReason = "time")
+        store.put("mac", "a", ChatSnooze.State(snoozeRev = 4))
+
+        store.seed("mac", listOf(session("a", woke)))
+        assertEquals(false, store.of("mac", "a")?.woke)
+
+        store.seed("mac", listOf(session("a", woke.copy(snoozeRev = 5))))
+        assertEquals(true, store.of("mac", "a")?.woke)
     }
 
     @Test

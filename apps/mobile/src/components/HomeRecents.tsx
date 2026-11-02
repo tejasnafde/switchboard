@@ -53,6 +53,8 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
   const [limit, setLimit] = useState(HOME_RECENT_PAGE_SIZE)
   const [sheet, setSheet] = useState<SnoozeSheetState | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // The open sheet's opening instant: a reply to an earlier opening of the same row does not apply.
+  const openedAt = useRef<Date | null>(null)
 
   const connected = configs
     .filter((c) => status[c.id] === 'connected')
@@ -100,14 +102,14 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
   }, [notice])
 
   const openSheet = (row: HomeRecentRow) => {
-    const opened: SnoozeSheetState = { row, now: new Date(), pr: null, notice: null, busy: false }
-    setSheet(opened)
+    const now = new Date()
+    openedAt.current = now
+    setSheet({ row, now, pr: null, notice: null, busy: false })
     getClient(row.connectionId)
       ?.pullRequestLinks(row.id)
       .then(
         (links) => {
-          const pr = snoozePrOf(links)
-          if (pr) setSheet((s) => (s?.row === row ? { ...s, pr } : s))
+          if (openedAt.current === now) setSheet((s) => s && { ...s, pr: snoozePrOf(links) })
         },
         (err: unknown) => log.warn(`could not read the PR links of ${row.id}`, err),
       )
@@ -118,7 +120,18 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
     const { row } = sheet
     setSheet({ ...sheet, busy: true, notice: null })
     const refused = await snoozeChat(row.connectionId, row.id, item.choice)
-    setSheet((s) => (s?.row !== row ? s : refused === null ? null : { ...s, busy: false, notice: refused }))
+    if (openedAt.current !== sheet.now) {
+      // The sheet closed while the request ran: the refusal shows above Recents instead.
+      if (refused !== null) setNotice(refused)
+      return
+    }
+    if (refused === null) closeSheet()
+    else setSheet((s) => s && { ...s, busy: false, notice: refused })
+  }
+
+  const closeSheet = () => {
+    openedAt.current = null
+    setSheet(null)
   }
 
   const wake = async (row: HomeRecentRow) => {
@@ -143,7 +156,7 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
           notice={sheet.notice}
           busy={sheet.busy}
           onPick={(item) => void pick(item)}
-          onClose={() => setSheet(null)}
+          onClose={closeSheet}
         />
       )}
     </>
