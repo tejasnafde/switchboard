@@ -65,6 +65,33 @@ it('shares a drawn chart as a PNG image', async () => {
   })
 })
 
+it('offers Share only after a remounted WebView draws, not from the cached height', async () => {
+  const source = '{"type":"bar","labels":["x"],"series":[{"name":"r","values":[3]}]}'
+  const drawn = { nativeEvent: { data: JSON.stringify({ type: 'drawn', height: 200, svg: '<svg/>' }) } }
+  const findWebview = (root: ReturnType<typeof renderComponent>) =>
+    root.root.find((n) => n.props.testID === 'webview' && typeof n.type === 'string')
+  const first = renderComponent(<ChatVisual kind="chart" source={source} />)
+  await flush()
+  act(() => findWebview(first).props.onMessage(drawn))
+  expect(first.allByLabel('Share image').length).toBeGreaterThan(0)
+
+  // The row scrolls back into view: the height comes from the cache, the new page has not drawn.
+  const again = renderComponent(<ChatVisual kind="chart" source={source} />)
+  await flush()
+  expect(findWebview(again).props.style.height).toBe(200)
+  expect(again.allByLabel('Share image')).toHaveLength(0)
+  act(() => findWebview(again).props.onMessage(drawn))
+  expect(again.allByLabel('Share image').length).toBeGreaterThan(0)
+
+  // Source and back mounts a new WebView, which must draw again.
+  act(() => again.byLabel('Show source').props.onPress())
+  act(() => again.byLabel('Show chart').props.onPress())
+  await flush()
+  expect(again.allByLabel('Share image')).toHaveLength(0)
+  act(() => findWebview(again).props.onMessage(drawn))
+  expect(again.allByLabel('Share image').length).toBeGreaterThan(0)
+})
+
 it('says so when the share fails', async () => {
   jest.mocked(captureRef).mockRejectedValueOnce(new Error('no view'))
   const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined)

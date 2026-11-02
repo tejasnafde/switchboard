@@ -26,6 +26,7 @@ import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.ui.theme.SwitchboardTheme
 import java.io.ByteArrayOutputStream
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -59,12 +60,14 @@ class ShareVisualUiTest {
     }
 
     @Test
-    fun aDrawnVisualShowsShare() {
+    fun aCachedHeightAloneDoesNotShowShareBeforeTheNewViewDraws() {
+        // A row scrolled back into view: the height is cached, the new WebView (which runs no script here) has not drawn.
         val source = "graph TD\n  share-test-a --> share-test-b"
         seedDrawnVisual(VisualKind.MERMAID, source, 120)
         compose.setContent { SwitchboardTheme { ChatVisualCard(VisualKind.MERMAID, source) } }
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Share")).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Share").assertIsDisplayed()
+        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Copy SVG")).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitForIdle()
+        assertTrue(compose.onAllNodes(hasText("Share")).fetchSemanticsNodes().isEmpty())
     }
 
     @Test
