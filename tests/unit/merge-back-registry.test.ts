@@ -3,6 +3,7 @@
  * its next user turn through the real acceptance store, never on a queued
  * message, and stays pending when the provider call fails.
  */
+import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import './helpers/registry-session-mocks'
@@ -184,7 +185,7 @@ async function setup() {
   const adapter = new RecordingAdapter()
   const registry = new ProviderRegistry(host, new Map([['claude', adapter]]))
   registry.registerIpcHandlers()
-  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
+  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: tmpdir() })
   const published: RuntimeEvent[] = []
   registry.bus.subscribe((e) => published.push(e))
   const submit = (origin: string, delivery?: TurnDelivery) =>

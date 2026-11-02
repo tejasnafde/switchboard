@@ -2,6 +2,7 @@
  * The registry shrinks every image to MAX_IMAGE_LONG_SIDE before the adapter
  * gets it, on the typed submit and on the legacy send, whatever the client.
  */
+import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 import { PNG } from 'pngjs'
@@ -117,7 +118,7 @@ async function setup() {
   const adapter = new ImageAdapter()
   const registry = new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, passThroughSubmission)
   registry.registerIpcHandlers()
-  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
+  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: tmpdir() })
   return { host, adapter }
 }
 

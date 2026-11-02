@@ -5,6 +5,7 @@
  * come (a cancel, or a promote into a turn it joins) must release it, and
  * nothing else may.
  */
+import { tmpdir } from 'node:os'
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
@@ -201,7 +202,7 @@ async function setup(provider: ProviderKind, rows = fakeRowStore()) {
     rows.store,
   )
   registry.registerIpcHandlers()
-  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider, cwd: '/tmp' })
+  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider, cwd: tmpdir() })
   const published: RuntimeEvent[] = []
   registry.bus.subscribe((e) => published.push(e))
   const submit = (origin: string, delivery?: TurnDelivery) =>
