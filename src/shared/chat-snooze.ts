@@ -8,10 +8,7 @@
  * client turns a preset into an epoch when the menu opens and sends the epoch.
  */
 
-/**
- * Flag `chat_snooze`: on for the desktop. The phones stay staged on
- * `chat_snooze_v1` until their own release.
- */
+/** Flag `chat_snooze`: on for the desktop and both phones; a phone shows Snooze only against a backend with `chat_snooze_v1`. */
 export const CHAT_SNOOZE_ENABLED = true
 
 export const CHAT_SNOOZE_CAPABILITY = 'chat_snooze_v1'
@@ -434,6 +431,21 @@ export function prWakeSummary(mark: PrMark, now: PrReading): string | null {
   return null
 }
 
+// ---------------------------------------------------------------- lists
+
+/** Snoozed rows: the soonest wake first, PR-only snoozes last. */
+export function compareSnoozeWake(a: Pick<SnoozeState, 'snoozedUntil'>, b: Pick<SnoozeState, 'snoozedUntil'>): number {
+  if (a.snoozedUntil == null || b.snoozedUntil == null)
+    return (a.snoozedUntil == null ? 1 : 0) - (b.snoozedUntil == null ? 1 : 0)
+  return a.snoozedUntil - b.snoozedUntil
+}
+
+/** The line above the composer of an open snoozed chat. */
+export function snoozeLineText(until: number | null, pr: string | null, now: Date): string {
+  if (until !== null) return `Snoozed until ${wakeLabel(until, null, now)}`
+  return pr ? `Snoozed until PR #${prNumberOf(pr)} changes` : 'Snoozed'
+}
+
 // ---------------------------------------------------------------- wire
 
 export interface SnoozeRequest {
@@ -458,6 +470,30 @@ export type SnoozeRefusal =
   | 'no_row'
   | 'stale'
   | 'empty'
+
+/** What every client says when the backend refuses a snooze or an Undo. */
+export function snoozeRefusalText(reason: SnoozeRefusal): string {
+  switch (reason) {
+    case 'needs_you':
+      return 'A chat that needs you cannot be snoozed'
+    case 'past':
+      return 'That time has passed. Pick another'
+    case 'too_far':
+      return 'Pick a time within a year'
+    case 'pr_closed':
+      return 'That pull request is closed'
+    case 'pr_unlinked':
+      return 'That pull request is not linked to this chat'
+    case 'pr_unreadable':
+      return 'The pull request could not be read'
+    case 'stale':
+      return 'The chat changed since. Nothing to undo'
+    case 'empty':
+      return 'Pick a time'
+    case 'no_row':
+      return 'This chat cannot be snoozed'
+  }
+}
 
 export type SnoozeResult =
   | { ok: true; until: number | null; pr: string | null; rev: number }

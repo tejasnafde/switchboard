@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import {
   NOT_SNOOZED,
   checkWakeTime,
+  compareSnoozeWake,
   isSnoozed,
   isWoke,
   parsePresetList,
@@ -17,11 +18,15 @@ import {
   pickPreset,
   resolvePresets,
   shouldWakeOn,
+  snoozeLineText,
+  snoozeRefusalText,
   validateCustomWake,
   wakeLabel,
   type InboxEvent,
   type SnoozePresetSpec,
+  type SnoozeRefusal,
 } from '../../src/shared/chat-snooze'
+import { snoozePrOf } from '../../src/shared/chat-snooze-pr'
 
 const cases = JSON.parse(readFileSync(join(__dirname, '../fixtures/chat-snooze-cases.json'), 'utf8'))
 
@@ -151,4 +156,46 @@ describe('prWakeSummary', () => {
       expect(prWakeSummary(c.mark as PrMark, c.reading as PrReading)).toBe(c.expect)
     })
   }
+})
+
+describe('shelf order', () => {
+  for (const c of cases.shelfOrder) {
+    it(c.name, () => {
+      const rows = (c.rows as Array<{ id: string; until: string | null }>).map((r) => ({
+        id: r.id,
+        snoozedUntil: r.until ? local(r.until).getTime() : null,
+      }))
+      expect(rows.sort(compareSnoozeWake).map((r) => r.id)).toEqual(c.expect)
+    })
+  }
+})
+
+describe('snoozeLineText', () => {
+  for (const c of cases.snoozeLine) {
+    it(c.expect, () => {
+      expect(snoozeLineText(c.until ? local(c.until).getTime() : null, c.pr, local(c.now))).toBe(c.expect)
+    })
+  }
+})
+
+describe('snoozePrOf', () => {
+  for (const c of cases.snoozePr) {
+    it(c.name, () => {
+      const links = (
+        c.links as Array<{ number: number; linkedAt: number; state: 'open' | 'merged' | 'closed' | null }>
+      ).map((l) => ({
+        ref: { host: 'github' as const, owner: 'acme', name: 'app', number: l.number },
+        linkedAt: l.linkedAt,
+        state: l.state,
+      }))
+      expect(snoozePrOf(links)).toEqual(c.expect)
+    })
+  }
+})
+
+describe('snoozeRefusalText', () => {
+  it('has one line per refusal', () => {
+    for (const [reason, text] of Object.entries(cases.refusal as Record<string, string>))
+      expect(snoozeRefusalText(reason as SnoozeRefusal)).toBe(text)
+  })
 })
