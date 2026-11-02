@@ -19,7 +19,9 @@ import { withCertPin } from '@shared/transport-security'
 import { TcpHost } from '../main/backend/tcp-host'
 import { MultiHost } from '../main/backend/multi-host'
 import { registerPushHandlers } from '../main/ipc/push'
-import { attachPushNotifier } from '../main/push/registry'
+import { attachPushNotifier, pushToThread } from '../main/push/registry'
+import { startChatSnoozer } from '../main/conversations/chat-snooze'
+import { wokePush } from '@shared/push-policy'
 import { registerAppHandlers } from '../main/ipc/app'
 import { pruneAttachments } from '../main/attachments'
 import { registerFilesHandlers } from '../main/ipc/files'
@@ -31,6 +33,8 @@ import { registerWorktreeManagerHandlers } from '../main/ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from '../main/ipc/provider-instances'
 import {
   attachPullRequestAutoLink,
+  settleChatOnMerge,
+  readPullRequestForSnooze,
   registerPullRequestHandlers,
   startPullRequestHistoryScan,
 } from '../main/ipc/pull-requests'
@@ -41,6 +45,9 @@ import { startBridgeHost } from '../main/ide/bridge-host'
 import { createMainLogger as createLogger } from '../main/logger'
 import { createDefaultWorktreeCreationRuntime } from '../main/worktree-creation/runtime'
 import { configureHubWorktrees } from '../main/hub/hub-start'
+import { setFlagCapabilities } from '../main/backend/flag-capabilities'
+import { hubFlagCapabilities } from '@shared/hub'
+import { getSetting } from '../main/db/database'
 import { createBindLifecycle } from './lifecycle'
 import { nodePidFileIo } from './pidfile'
 
@@ -182,6 +189,7 @@ registry.setMachineLabel(hostname())
 registry.setBackendVersion(__SERVER_VERSION__)
 const worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(host, () => registry)
 configureHubWorktrees(worktreeCreationRuntime)
+setFlagCapabilities(() => hubFlagCapabilities(process.env, getSetting))
 registerAppHandlers(host, { isTurnInFlight: (id) => registry.isTurnInFlight(id) })
 void pruneAttachments()
 registerKanbanHandlers(host, {
@@ -197,6 +205,13 @@ attachPullRequestAutoLink(registry.bus, host, {
   needsUser: (id) => registry.needsUser(id),
 })
 startPullRequestHistoryScan()
+startChatSnoozer({
+  emit: (channel, payload) => host.emit(channel, payload),
+  needsYou: (id) => registry.needsUser(id),
+  pushWoke: (id, title, line) => pushToThread(id, wokePush(id, title, line)),
+  readPr: readPullRequestForSnooze,
+  settleMerged: settleChatOnMerge,
+})
 registry.registerIpcHandlers()
 
 // The workbench bridge, when the ssh bootstrap minted a token for us (see

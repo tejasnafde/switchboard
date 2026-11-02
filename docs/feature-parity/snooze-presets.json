@@ -1,0 +1,97 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "snooze-presets",
+  "summary": "The Snooze presets are editable on the desktop and shared with the phones. The backend that owns the chats stores the list as settings row chats.snoozePresets, a JSON array of SnoozePresetSpec (time of day with dayOffset 0 or 1, weekday and time, or duration in minutes), from 1 to 8 in list order. A read goes through parsePresetList, so a missing row, a row that is not JSON or a list with nothing usable reads as the four defaults and an invalid entry is dropped. A write goes through checkPresetList and is refused whole with a reason (not_a_list, empty, too_many, invalid_preset with its index); the stored list is the parsed one, labels trimmed and other fields dropped, and a write that changed it is broadcast on app:snooze-presets-changed to every client. Channels app:get-snooze-presets and app:set-snooze-presets, open to a phone's chat scope like the other Snooze channels; capability chat_snooze_presets_v1. settings:set of the row takes the same check and broadcast (a refused write throws its reason), and settings:remove brings the defaults back with a broadcast. The resolution rules are unchanged (resolvePresets: soonest first, one item per minute, the higher preset in the list wins a tie); presetTiming exposes when a preset would wake and why the menu leaves it out, for the editor. Desktop: Settings > General > Snooze presets edits the list (label, a kind radio group, Today or Tomorrow, a Monday-first weekday group, a time field, an amount with Minutes, Hours or Days, Next with a DST note, Move up and down, Remove with an inline Undo, Add up to 8, Reset to defaults through confirm, save on blur or pick, errors after blur with aria-invalid and aria-describedby, a reason for a preset the menu leaves out now, a status line and a menu preview). The row menu, the narrow ... menu, the context submenu and the palette resolve this desktop's backend list when they open (also for a chat on a remote machine; every device resolves the times in its own zone). Phones: the Expo app and native Android read the list from a backend with chat_snooze_presets_v1, follow the broadcast, and resolve it in the Snooze sheet, frozen when the sheet opens; an older backend keeps the defaults. Phones cannot edit the list in this release. Desktop analytics are unchanged: the Worker has no snooze_presets_saved event, so none is sent; a snooze from a preset that is not a default already reports kind preset.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/settings/SnoozePresetsPanel.tsx",
+        "src/renderer/components/settings/snooze-presets-model.ts",
+        "src/renderer/components/settings/settings-rows.ts",
+        "src/renderer/components/SettingsPage.tsx",
+        "src/renderer/stores/snooze-presets-store.ts",
+        "src/renderer/App.tsx",
+        "src/renderer/components/sidebar/SnoozeMenu.tsx",
+        "src/renderer/components/sidebar/Sidebar.tsx",
+        "src/renderer/components/CommandPalette.tsx",
+        "src/preload/index.ts",
+        "tests/unit/snooze-presets-panel.test.ts",
+        "tests/unit/snooze-presets-contrast.test.ts",
+        "tests/unit/sidebar-snooze-rows.test.ts",
+        "tests/unit/command-palette-routing.test.ts",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/snapshots/settings-snooze-presets-dark-darwin.png",
+        "e2e/snapshots/settings-snooze-preview-dark-darwin.png"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/stores/recents.ts",
+        "apps/mobile/src/stores/connections.ts",
+        "apps/mobile/src/lib/snooze-sheet.ts",
+        "apps/mobile/src/components/HomeRecents.tsx",
+        "apps/mobile/src/components/SnoozeSheet.tsx",
+        "apps/mobile/src/stores/__tests__/recents-presets.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/ChatSnooze.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/ChatSnoozeStore.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/home/HomePresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/remote/ChatSnoozeFixturesTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/home/HomeSnoozePresetsTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/chat-snooze.ts",
+        "src/shared/ipc-channels.ts",
+        "src/shared/ws-protocol.ts",
+        "src/main/conversations/snooze-presets.ts",
+        "src/main/ipc/app.ts",
+        "tests/unit/snooze-presets-backend.test.ts",
+        "tests/unit/chat-snooze-rules.test.ts",
+        "tests/fixtures/chat-snooze-cases.json"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/conversations/snooze-presets.ts",
+        "src/main/db/settings.ts",
+        "tests/unit/snooze-presets-backend.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["CHANGELOG.md", "docs/features.md"]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/snooze-presets-backend.test.ts (real SQLite): a read with no row, a row that is not JSON or a list with nothing usable is the defaults, and an invalid entry is dropped; a write stores the checked list trimmed and without other fields and broadcasts it once; a write equal to the stored list does not broadcast; not a list, empty, 9 entries and an invalid entry are refused with their reason and keep the stored list; 40 characters, 5 minutes and 365 days are accepted and 41 characters, 4 minutes and 365 days plus a minute are not; app:get-snooze-presets and app:set-snooze-presets through registerAppHandlers; settings:set of the row refuses with the same reason and settings:remove brings the defaults back, each with a broadcast; BACKEND_CAPABILITIES lists chat_snooze_presets_v1.",
+      "tests/unit/chat-snooze-rules.test.ts with tests/fixtures/chat-snooze-cases.json: presetsDst runs resolvePresets in a child process with TZ America/New_York (a tomorrow 02:30 on 14 March 2027 moves to 03:30 EDT, a weekday 02:30 the same and the same-minute time below it is hidden, 01:30 on 1 November 2026 takes the first occurrence, a one-day duration is 24 hours and ends at 11:00 EST, and near midnight a today 23:45 shows, a today 23:30 exactly an hour away hides and a tomorrow 00:15 is tomorrow); presetList runs parsePresetList (drops invalid entries, trims, keeps 8, defaults for an empty list, nothing usable, not a list and a missing setting).",
+      "tests/unit/snooze-presets-panel.test.ts (jsdom): accessible names and the menu preview at a fixed clock; a label saves on blur only, with the not-saved line before blur, Saving until the backend answers and Saved after; a bad time shows no error before blur, then aria-invalid, aria-describedby to the message and the keep-the-saved line, and the list is not sent; label and duration limits; an edit still in its field saves when Settings closes; the kind, day and weekday radio groups with ArrowRight, ArrowLeft, Home and End keep focus on the option and save each pick; Remove focuses the next label and Undo puts the row back at its place and focuses its label; removing the last row focuses Add and the only row cannot be removed; Move keeps focus on its button; Add stops at 8 with aria-disabled and the reason, and a row with no label is not sent; Reset only after the confirm dialog's Reset presets; the hidden and same-minute lines; a list another client saved replaces the rows, and a refused save names the reason. The store test: a read, a broadcast that beats a read still out, an unusable broadcast reads as the defaults.",
+      "tests/unit/sidebar-snooze-rows.test.ts: the row menu resolves the stored presets when it opens and shows a changed list on the next open; tests/unit/command-palette-routing.test.ts: the palette lists the stored presets soonest first with their times. tests/unit/snooze-presets-contrast.test.ts: the row text, errors, warnings, chips, notice, status line and preview read at 4.5:1 or better in dark and light.",
+      "e2e/visual-regressions.e2e.mjs: settings-snooze-presets and settings-snooze-preview baselines in dark, light and translucent, and the settings baseline with the section under Sidebar; no other baseline changed.",
+      "apps/mobile jest: stores/__tests__/recents-presets.test.ts (a refresh reads the presets from a backend with the capability and not from one without, whose sheet keeps the defaults; a broadcast replaces the list, an unusable one reads as the defaults, unpairing forgets it; the sheet resolves the machine list soonest first with the PR item last); recents-woke.test.ts and tests/unit/mobile-recents-store.test.ts keep passing; tsc --noEmit clean.",
+      "apps/android gradle testDebugUnitTest: ChatSnoozeFixturesTest runs the presetsDst cases in America/New_York, the presetList and parsePreset cases and the broadcast payload; HomeSnoozePresetsTest checks the sheet with a machine list and the defaults for a machine never read."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Neither phone was run on a device or a simulator: reading the list behind chat_snooze_presets_v1, following the broadcast and the sheet with custom presets are covered by unit tests only.",
+      "The Settings editor was checked in jsdom and in the packaged screenshot run at its default state; a session on a real desktop that edits presets while a phone is connected was not run.",
+      "A desktop connected to a remote machine resolves its own backend's list for that machine's chats; the remote backend's own list is used only by phones paired with it. Not run against a real remote.",
+      "VoiceOver and other screen readers were not run on the editor; the names, roles and live announcements are checked in the DOM only."
+    ]
+  }
+}

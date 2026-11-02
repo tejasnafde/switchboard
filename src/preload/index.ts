@@ -5,6 +5,14 @@ import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import type { HistoryLoadOptions } from '@shared/phone-history-window'
 import type { ConversationSettledEvent } from '@shared/chat-settle'
+import type {
+  ConversationSnoozedEvent,
+  SnoozePresetSpec,
+  SnoozePresetsChangedEvent,
+  SnoozePresetsResult,
+  SnoozeRequest,
+  SnoozeResult,
+} from '@shared/chat-snooze'
 import { RoutingTable } from './routing-table'
 import {
   TerminalChannels,
@@ -358,6 +366,23 @@ const api = {
       router.onWithSource<[ConversationSettledEvent]>(AppChannels.CONVERSATION_SETTLED, (machineId, event) =>
         callback({ ...event, machineId }),
       ),
+    snoozeConversation: (id: string, request: SnoozeRequest): Promise<SnoozeResult> =>
+      transport.invoke(AppChannels.SNOOZE_CONVERSATION, id, request),
+    unsnoozeConversation: (id: string, expectRev?: number): Promise<{ ok: boolean; rev?: number }> =>
+      transport.invoke(AppChannels.UNSNOOZE_CONVERSATION, id, expectRev),
+    markWokeSeen: (id: string): Promise<{ ok: boolean }> => transport.invoke(AppChannels.MARK_WOKE_SEEN, id),
+    onConversationSnoozed: (callback: (event: ConversationSnoozedEvent & { machineId: string }) => void) =>
+      router.onWithSource<[ConversationSnoozedEvent]>(AppChannels.CONVERSATION_SNOOZED, (machineId, event) =>
+        callback({ ...event, machineId }),
+      ),
+    /** This desktop's backend's presets, read by every desktop menu (remote chats too). */
+    getSnoozePresets: (): Promise<SnoozePresetSpec[]> => router.invokeOn('local', AppChannels.GET_SNOOZE_PRESETS),
+    setSnoozePresets: (specs: SnoozePresetSpec[]): Promise<SnoozePresetsResult> =>
+      router.invokeOn('local', AppChannels.SET_SNOOZE_PRESETS, specs),
+    onSnoozePresetsChanged: (callback: (event: SnoozePresetsChangedEvent) => void) =>
+      router.onWithSource<[SnoozePresetsChangedEvent]>(AppChannels.SNOOZE_PRESETS_CHANGED, (machineId, event) => {
+        if (machineId === 'local') callback(event)
+      }),
     exportMarkdown: (params: { suggestedFilename: string; content: string }) =>
       transport.invoke(AppChannels.EXPORT_MARKDOWN, params),
     /** Save dialog, then writes a PNG data URL. A chat visual's Save image. */
@@ -683,8 +708,10 @@ const api = {
      * (`RENDERER_ANALYTICS_EVENTS`: tour_completed / tour_skipped) and
      * drops everything else; resolves false when it did.
      */
-    track: (event: 'tour_completed' | 'tour_skipped', properties: Record<string, string> = {}): Promise<boolean> =>
-      transport.invoke(AnalyticsChannels.TRACK, event, properties),
+    track: (
+      event: 'tour_completed' | 'tour_skipped' | 'snooze_undone',
+      properties: Record<string, string> = {},
+    ): Promise<boolean> => transport.invoke(AnalyticsChannels.TRACK, event, properties),
   },
 
   settings: {

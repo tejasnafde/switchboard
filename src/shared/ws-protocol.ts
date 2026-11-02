@@ -32,6 +32,10 @@ import { isDeviceScope, type DeviceScope } from './device-auth'
 export const NON_REPLAYABLE_EVENT_CHANNELS: ReadonlySet<string> = new Set(['terminal:output', 'terminal:exit'])
 
 export const BACKEND_CAPABILITIES = [
+  /** `app:snooze-conversation`, `app:unsnooze-conversation`, `app:mark-woke-seen` and `app:conversation-snoozed` (`shared/chat-snooze.ts`). */
+  'chat_snooze_v1',
+  /** `app:get-snooze-presets`, `app:set-snooze-presets` and `app:snooze-presets-changed` (`CHAT_SNOOZE_PRESETS_CAPABILITY`). */
+  'chat_snooze_presets_v1',
   'durable_turn_origin',
   'atomic_user_turn_v1',
   'worktree_creation_v1',
@@ -123,6 +127,11 @@ export const BACKEND_CAPABILITIES = [
    *  and `stop-all` act on a child here of that desktop's parent stub only;
    *  `hub-remote:children-changed` says which stubs changed. */
   'hub_remote_control_v1',
+  /** `git:diff-stat` answers a phone, so the phones' chat Details sheet
+   *  shows its button (`DETAILS_SHEET_CAPABILITY` in shared/chat-details). */
+  'details_sheet_v1',
+  /** The phones' Settle and its Undo (`CHAT_SETTLE_CAPABILITY` in shared/chat-settle). */
+  'chat_settle_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {

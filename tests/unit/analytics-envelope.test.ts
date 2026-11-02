@@ -153,8 +153,8 @@ describe('secret request events', () => {
 })
 
 describe('event name guards', () => {
-  it('only the tour outcomes may come from the renderer', () => {
-    expect([...RENDERER_ANALYTICS_EVENTS].sort()).toEqual(['tour_completed', 'tour_skipped'])
+  it('only the tour outcomes and a snooze undo may come from the renderer', () => {
+    expect([...RENDERER_ANALYTICS_EVENTS].sort()).toEqual(['snooze_undone', 'tour_completed', 'tour_skipped'])
   })
 
   it('isAnalyticsEventName rejects unknown names and prototype keys', () => {
@@ -172,5 +172,43 @@ describe('event name guards', () => {
 
   it('targets the tn07 collector', () => {
     expect(ANALYTICS_ENDPOINT).toBe('https://analytics.tn07.dev/v1/events')
+  })
+})
+
+describe('snooze events', () => {
+  it('keeps the preset and the surface as kind and target', () => {
+    expect(whitelistAnalyticsProperties('chat_snoozed', { kind: 'tomorrow_morning', target: 'row' })).toEqual({
+      kind: 'tomorrow_morning',
+      target: 'row',
+    })
+    expect(whitelistAnalyticsProperties('chat_snoozed', { kind: 'custom', target: 'phone' })).toEqual({
+      kind: 'custom',
+      target: 'phone',
+    })
+  })
+
+  it("takes each event's own kinds, never another event's", () => {
+    // A crash kind is not a snooze kind, and the reverse.
+    expect(whitelistAnalyticsProperties('chat_snoozed', { kind: 'uncaught', target: 'palette' })).toEqual({
+      target: 'palette',
+    })
+    expect(whitelistAnalyticsProperties('crash_reported', { kind: 'tonight' })).toEqual({})
+    expect(whitelistAnalyticsProperties('chat_woke', { kind: 'snooze' })).toEqual({})
+    expect(whitelistAnalyticsProperties('snooze_undone', { kind: 'wake_now' })).toEqual({})
+    expect(whitelistAnalyticsProperties('crash_reported', { kind: 'uncaught' })).toEqual({ kind: 'uncaught' })
+  })
+
+  it('counts the wakes a user sees and drops the silent ones', () => {
+    for (const kind of ['time', 'needs_you', 'error', 'message', 'pr', 'wake_now'])
+      expect(whitelistAnalyticsProperties('chat_woke', { kind })).toEqual({ kind })
+    for (const kind of ['undo', 'turn', 'settle', 'archive'])
+      expect(whitelistAnalyticsProperties('chat_woke', { kind })).toEqual({})
+  })
+
+  it('never sends a time or a title', () => {
+    expect(
+      whitelistAnalyticsProperties('chat_snoozed', { kind: 'pr', target: 'row', until: 1, title: 'Secret' }),
+    ).toEqual({ kind: 'pr', target: 'row' })
+    expect(whitelistAnalyticsProperties('snooze_undone', { kind: 'wake' })).toEqual({ kind: 'wake' })
   })
 })

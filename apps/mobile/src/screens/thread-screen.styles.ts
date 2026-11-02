@@ -6,6 +6,7 @@ import { chat, colors, radius, space, type } from '../theme'
 const mono = Platform.OS === 'ios' ? 'Menlo' : 'monospace'
 
 export const styles = StyleSheet.create({
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -34,6 +35,8 @@ export const styles = StyleSheet.create({
   compactAction: { color: colors.accent, fontSize: 11, lineHeight: 15 },
   limitResumeTitle: { color: colors.text, fontSize: 13, lineHeight: 18, fontWeight: '600' },
   limitResumeNote: { color: colors.red, fontSize: 11, lineHeight: 15, marginTop: 2 },
+  snoozeLineRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  snoozeLineText: { flex: 1 },
   // Inverted: paddingBottom sits under the header, paddingTop above the composer.
   feedContent: {
     paddingTop: space.sm,

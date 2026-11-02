@@ -1,5 +1,8 @@
 package app.switchboard.mobile.ui.navigation
 
+import app.switchboard.mobile.domain.thread.HubChatRef
+import app.switchboard.mobile.domain.reviews.PullRequestRefresh
+import app.switchboard.mobile.domain.thread.DETAILS_SHEET_CAPABILITY
 import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.platform.outbox.AndroidContentUriSource
 import app.switchboard.mobile.platform.outbox.RemoteComposerFileUploader
@@ -13,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalContext
+import app.switchboard.mobile.platform.log.SbLog
 import app.switchboard.mobile.platform.log.ShareLog
 import androidx.compose.ui.platform.LocalUriHandler
 import app.switchboard.mobile.BuildConfig
@@ -38,6 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.data.remote.BrowseCoordinator
+import app.switchboard.mobile.data.remote.ChatSettleStore
+import app.switchboard.mobile.data.remote.ChatSnoozeStore
 import app.switchboard.mobile.data.remote.HtmlLiveImages
 import app.switchboard.mobile.data.remote.NewSessionClock
 import app.switchboard.mobile.data.remote.NewSessionCoordinator
@@ -63,6 +69,8 @@ import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.OutboxUiAction
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.remote.ChatMessage
+import app.switchboard.mobile.domain.remote.ChatSettle
+import app.switchboard.mobile.domain.remote.ChatSnooze
 import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.ForkConversationOutcome
 import app.switchboard.mobile.domain.remote.ForkDirtySource
@@ -93,6 +101,9 @@ import app.switchboard.mobile.ui.home.HomeProjectRefreshCoordinator
 import app.switchboard.mobile.ui.home.HomePresenter
 import app.switchboard.mobile.ui.home.HomeRecentRow
 import app.switchboard.mobile.ui.home.HomeScreen
+import app.switchboard.mobile.ui.home.HomeSnoozeItem
+import app.switchboard.mobile.ui.home.HomeSnoozeSheet
+import app.switchboard.mobile.ui.thread.ThreadSnoozeLine
 import app.switchboard.mobile.ui.browse.BrowseCachedActivity
 import app.switchboard.mobile.ui.reviews.ConnectionTab
 import app.switchboard.mobile.data.remote.SwitchboardReviewsRemote
@@ -108,6 +119,7 @@ import app.switchboard.mobile.domain.iap.IapTargetSelection
 import app.switchboard.mobile.ui.search.MessageSearchRouteHost
 import app.switchboard.mobile.ui.search.MessageSearchScreen
 import app.switchboard.mobile.data.remote.MessageSearchState
+import app.switchboard.mobile.data.remote.ChatDetailsCoordinator
 import app.switchboard.mobile.data.remote.GitContextCoordinator
 import app.switchboard.mobile.data.remote.ConversationForkWire
 import app.switchboard.mobile.ui.thread.ThreadLoadState
@@ -115,10 +127,12 @@ import app.switchboard.mobile.ui.thread.LocalHtmlLive
 import app.switchboard.mobile.ui.thread.LocalPhoneLiveRun
 import app.switchboard.mobile.ui.thread.ThreadScreen
 import app.switchboard.mobile.ui.thread.ThreadComposerPresentation
+import app.switchboard.mobile.ui.thread.ThreadDetails
 import app.switchboard.mobile.ui.thread.ThreadSessionScreen
 import app.switchboard.mobile.ui.thread.GitContextPresenter
 import app.switchboard.mobile.ui.settings.SettingsPresenter
 import app.switchboard.mobile.ui.settings.SettingsScreen
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 
@@ -205,6 +219,8 @@ private fun SwitchboardNavigationHost(
 ) {
     var navigationState by rememberSaveable { mutableStateOf(NavigationState.root()) }
     val reviewsRegistry = remember { ReviewsCoordinatorRegistry() }
+    val snoozeStore = remember { ChatSnoozeStore() }
+    val settleStore = remember { ChatSettleStore() }
     val runtimeStatuses by (runtime?.statuses ?: EmptyRuntimeStatuses).collectAsState()
     val shareContext = LocalContext.current
     val visibleConnections = remember(connectionsState, runtimeStatuses) {
@@ -341,6 +357,8 @@ private fun SwitchboardNavigationHost(
         when (val route = navigationState.current) {
             AppRoute.Connections -> HomeRouteHost(
                 connectionsState = visibleConnections,
+                snoozeStore = snoozeStore,
+                settleStore = settleStore,
                 snapshot = offlineSnapshot ?: emptyOfflineSnapshot(),
                 runtime = runtime,
                 googleAccountPresentation = googleAccountPresentation,
@@ -654,8 +672,10 @@ private fun SwitchboardNavigationHost(
             is AppRoute.Thread -> ThreadRouteHost(
                 route = route,
                 runtime = runtime,
+                snoozeStore = snoozeStore,
                 status = runtimeStatuses[route.connectionId],
                 offlineSnapshot = offlineSnapshot,
+                reviewsRegistry = reviewsRegistry,
                 onBack = ::navigateBack,
                 onForked = { fork ->
                     navigationState = navigationState.push(
@@ -667,6 +687,19 @@ private fun SwitchboardNavigationHost(
                             worktreePath = fork.worktreePath,
                             title = fork.title,
                             provider = fork.agentType,
+                        ),
+                    )
+                },
+                onOpenHubChat = { chat ->
+                    navigationState = navigationState.push(
+                        AppRoute.Thread(
+                            connectionId = route.connectionId,
+                            connectionLabel = route.connectionLabel,
+                            threadId = chat.id,
+                            projectPath = chat.projectPath,
+                            worktreePath = chat.worktreePath,
+                            title = chat.title,
+                            provider = chat.agentType,
                         ),
                     )
                 },
@@ -698,6 +731,8 @@ private fun AppRoute.connectionIdOrNull(): String? = when (this) {
 @Composable
 private fun HomeRouteHost(
     connectionsState: ConnectionsLoadState,
+    snoozeStore: ChatSnoozeStore,
+    settleStore: ChatSettleStore,
     snapshot: OfflineSnapshot,
     runtime: RootNavigationRuntime?,
     googleAccountPresentation: GoogleAccountPresentation,
@@ -714,6 +749,15 @@ private fun HomeRouteHost(
     onRemoveMachine: (String) -> Unit,
 ) {
     var recentLimit by rememberSaveable { mutableStateOf(HOME_RECENT_PAGE_SIZE) }
+    val heldSnoozes by snoozeStore.state.collectAsState()
+    val heldSettles by settleStore.state.collectAsState()
+    var settleUndo by remember { mutableStateOf<ChatSettle.Undo?>(null) }
+    LaunchedEffect(settleUndo) {
+        if (settleUndo != null) {
+            delay(ChatSettle.UNDO_MS)
+            settleUndo = null
+        }
+    }
     val connectionItems = (connectionsState as? ConnectionsLoadState.Ready)
         ?.connections
         .orEmpty()
@@ -753,6 +797,7 @@ private fun HomeRouteHost(
                         remote = SwitchboardBrowseRemote(lease.client),
                         expectedGeneration = lease.scope.generation,
                         snapshotStore = snapshotStore,
+                        onConversationSettled = lease.client::onConversationSettled,
                     )
                 }
                 DisposableEffect(refreshCoordinator) {
@@ -765,6 +810,50 @@ private fun HomeRouteHost(
                 remember(snapshotStore, connection.id) {
                     snapshotStore?.load(connection.id)?.projects.orEmpty()
                 }
+            }
+            val settleCapable = lease != null && ChatSettle.CAPABILITY in lease.capabilities
+            if (lease != null) {
+                // Patch the row at once; a merged PR's settle offers Undo while Home is shown.
+                DisposableEffect(settleStore, lease.scope) {
+                    val subscription = lease.client.onConversationSettledEvent { event ->
+                        settleStore.applyEvent(connection.id, event)
+                        if (settleCapable) {
+                            ChatSettle.undoOf(connection.id, event, System.currentTimeMillis())?.let { settleUndo = it }
+                        }
+                    }
+                    onDispose(subscription::cancel)
+                }
+            }
+            val heldHere = heldSettles[connection.id].orEmpty()
+            LaunchedEffect(settleStore, projects, heldHere) {
+                val sessions = projects.flatMap(Project::sessions)
+                settleStore.reconcile(connection.id, sessions)
+                // An entry the list never agreed with yields to it once held longer than a read.
+                if (heldHere.isNotEmpty()) {
+                    delay(ChatSettleStore.HOLD_MS)
+                    settleStore.reconcile(connection.id, sessions)
+                }
+            }
+            val snoozeCapable = lease != null && ChatSnooze.CAPABILITY in lease.capabilities
+            if (lease != null && snoozeCapable) {
+                DisposableEffect(snoozeStore, lease.scope) {
+                    val subscription = lease.client.onConversationSnoozed { snoozeStore.applyEvent(connection.id, it) }
+                    onDispose(subscription::cancel)
+                }
+                LaunchedEffect(snoozeStore, projects) {
+                    snoozeStore.seed(connection.id, projects.flatMap(Project::sessions))
+                }
+                if (ChatSnooze.PRESETS_CAPABILITY in lease.capabilities) {
+                    DisposableEffect(snoozeStore, lease.scope) {
+                        val subscription = lease.client.onSnoozePresetsChanged { snoozeStore.putPresets(connection.id, it) }
+                        snoozeStore.loadPresets(lease.client)
+                        onDispose(subscription::cancel)
+                    }
+                }
+            }
+            val presetsCapable = lease != null && ChatSnooze.PRESETS_CAPABILITY in lease.capabilities
+            if (lease != null && !presetsCapable) {
+                LaunchedEffect(snoozeStore, lease.scope) { snoozeStore.forgetPresets(connection.id) }
             }
             val threadStates = projects
                 .asSequence()
@@ -779,11 +868,104 @@ private fun HomeRouteHost(
                 projects = projects,
                 threadStates = threadStates,
                 activity = cachedActivity + liveActivity,
+                snooze = snoozeCapable,
+                snoozes = if (snoozeCapable) heldSnoozes[connection.id].orEmpty() else emptyMap(),
+                settle = settleCapable,
+                settled = heldHere.mapValues { it.value.settledAt },
             )
         }
     }
     val recents = remember(machineSnapshots, recentLimit) {
         HomePresenter.recents(machineSnapshots, recentLimit)
+    }
+    var snoozeSheet by remember { mutableStateOf<HomeSnoozeSheet?>(null) }
+    var snoozeNotice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(snoozeNotice) {
+        if (snoozeNotice != null) {
+            delay(SNOOZE_NOTICE_MS)
+            snoozeNotice = null
+        }
+    }
+    fun openSnooze(row: HomeRecentRow) {
+        val lease = runtime?.lease(row.connectionId) ?: return
+        val opened = HomeSnoozeSheet(
+            row = row,
+            shownAt = System.currentTimeMillis(),
+            presets = snoozeStore.presetsOf(row.connectionId),
+        )
+        snoozeSheet = opened
+        if (!row.canSnooze) return
+        lease.client.pullRequestLinks(row.threadId) { response ->
+            when (val outcome = response.outcome) {
+                is RemoteOutcome.Failure -> SbLog.w("home:snooze", "could not read the PR links of ${row.threadId}: ${outcome.message}")
+                is RemoteOutcome.Success -> snoozeSheet?.takeIf { it.isOpeningOf(opened) }?.let {
+                    snoozeSheet = it.copy(pr = ChatSnooze.snoozePrOf(outcome.value))
+                }
+            }
+        }
+    }
+
+    fun pickSnooze(item: HomeSnoozeItem) {
+        val sheet = snoozeSheet ?: return
+        val lease = runtime?.lease(sheet.row.connectionId)
+        if (lease == null) {
+            snoozeSheet = sheet.copy(notice = SNOOZE_NOT_CONNECTED)
+            return
+        }
+        val now = System.currentTimeMillis()
+        val request = HomePresenter.snoozeRequest(item.choice, now)
+        if (request == null) {
+            snoozeSheet = sheet.copy(notice = ChatSnooze.snoozeRefusalText("past"))
+            return
+        }
+        snoozeSheet = sheet.copy(busy = true, notice = null)
+        snoozeStore.snooze(lease.client, sheet.row.threadId, request.until, request.pr, request.preset, now) { refused ->
+            val open = snoozeSheet?.takeIf { it.isOpeningOf(sheet) }
+            when {
+                open != null -> snoozeSheet = if (refused == null) null else open.copy(busy = false, notice = refused)
+                // The sheet closed while the request ran: the refusal shows on Home instead.
+                refused != null -> snoozeNotice = refused
+            }
+        }
+    }
+
+    fun settle(row: HomeRecentRow) {
+        snoozeSheet = null
+        val lease = runtime?.lease(row.connectionId)
+        if (lease == null) {
+            snoozeNotice = SNOOZE_NOT_CONNECTED
+            return
+        }
+        val offered = ChatSettle.Undo(row.connectionId, row.threadId, System.currentTimeMillis(), ChatSettle.noticeText(row.title))
+        settleUndo = offered
+        settleStore.settle(lease.client, row.threadId, offered.settledAt) { refused ->
+            if (refused != null) {
+                if (settleUndo === offered) settleUndo = null
+                snoozeNotice = refused
+            }
+        }
+    }
+
+    fun undoSettle() {
+        val undo = settleUndo ?: return
+        settleUndo = null
+        val lease = runtime?.lease(undo.connectionId)
+        if (lease == null) {
+            snoozeNotice = SNOOZE_NOT_CONNECTED
+            return
+        }
+        settleStore.undo(lease.client, undo, snoozeStore, System.currentTimeMillis()) { refused ->
+            if (refused != null) snoozeNotice = refused
+        }
+    }
+
+    fun wake(row: HomeRecentRow) {
+        val lease = runtime?.lease(row.connectionId)
+        if (lease == null) {
+            snoozeNotice = SNOOZE_NOT_CONNECTED
+            return
+        }
+        snoozeStore.wake(lease.client, row.threadId) { refused -> if (refused != null) snoozeNotice = refused }
     }
     HomeScreen(
         recents = recents,
@@ -803,8 +985,24 @@ private fun HomeRouteHost(
         onRescan = onRescan,
         onUseIap = onUseIap,
         onRemoveMachine = onRemoveMachine,
+        snoozeSheet = snoozeSheet,
+        onSnooze = if (machineSnapshots.any { it.snooze || it.settle }) ::openSnooze else null,
+        onPickSnooze = ::pickSnooze,
+        onCloseSnooze = { snoozeSheet = null },
+        onWake = ::wake,
+        snoozeNotice = snoozeNotice,
+        onSettle = ::settle,
+        settleNotice = settleUndo?.text,
+        onUndoSettle = ::undoSettle,
     )
 }
+
+private const val SNOOZE_NOTICE_MS = 5_000L
+private const val SNOOZE_NOT_CONNECTED = "The machine is not connected"
+
+/** The same opening of the sheet: a reply to an earlier opening of the same row does not apply. */
+private fun HomeSnoozeSheet.isOpeningOf(other: HomeSnoozeSheet) =
+    row.connectionId == other.row.connectionId && row.threadId == other.row.threadId && shownAt == other.shownAt
 
 private fun BrowseLoadState<BrowseProjectRecord>.homeProjects(): List<Project> = when (this) {
     is BrowseLoadState.Loading -> cached.map(BrowseProjectRecord::project)
@@ -1064,10 +1262,13 @@ private fun NewSessionRouteHost(
 private fun ThreadRouteHost(
     route: AppRoute.Thread,
     runtime: RootNavigationRuntime?,
+    snoozeStore: ChatSnoozeStore,
     status: ConnectionRuntimeState?,
     offlineSnapshot: OfflineSnapshot?,
+    reviewsRegistry: ReviewsCoordinatorRegistry,
     onBack: () -> Unit,
     onForked: (app.switchboard.mobile.domain.remote.ForkConversationState) -> Unit,
+    onOpenHubChat: (HubChatRef) -> Unit,
 ) {
     val composerKey = remember(route.connectionId, route.threadId) {
         ComposerDraftKey(route.connectionId, route.threadId)
@@ -1156,14 +1357,17 @@ private fun ThreadRouteHost(
     ConnectedThreadRoute(
         route = route,
         runtime = runtime,
+        snoozeStore = snoozeStore,
         lease = lease,
         offlineSnapshot = offlineSnapshot,
+        reviewsRegistry = reviewsRegistry,
         savedDraft = savedDraft,
         composerError = composerErrors[composerKey],
         uploading = uploading,
         queuedTurns = queuedTurns,
         onBack = onBack,
         onForked = onForked,
+        onOpenHubChat = onOpenHubChat,
     )
 }
 
@@ -1171,14 +1375,17 @@ private fun ThreadRouteHost(
 private fun ConnectedThreadRoute(
     route: AppRoute.Thread,
     runtime: RootNavigationRuntime,
+    snoozeStore: ChatSnoozeStore,
     lease: ReadyClientLease,
     offlineSnapshot: OfflineSnapshot?,
+    reviewsRegistry: ReviewsCoordinatorRegistry,
     savedDraft: ComposerDraft?,
     composerError: String?,
     uploading: Int,
     queuedTurns: List<QueuedTurn>,
     onBack: () -> Unit,
     onForked: (app.switchboard.mobile.domain.remote.ForkConversationState) -> Unit,
+    onOpenHubChat: (HubChatRef) -> Unit,
 ) {
     val composerKey = remember(route.connectionId, route.threadId) {
         ComposerDraftKey(route.connectionId, route.threadId)
@@ -1296,16 +1503,15 @@ private fun ConnectedThreadRoute(
     val viewingRenewalRegistration = remember(runtime) {
         { callback: () -> Unit -> runtime.registerViewingLeaseRenewal(callback) }
     }
-    val gitContextCoordinator = remember(
-        lease.scope,
-        route.projectPath,
-        route.worktreePath,
-        lease.client,
-    ) {
+    // The agent's folder: the loaded history's worktree, as the session reattaches, else the route's.
+    val workingFolder = coordinator.state.collectAsState().value.workingFolder
+        ?: route.worktreePath
+        ?: route.projectPath
+    val gitContextCoordinator = remember(lease.scope, workingFolder, lease.client) {
         GitContextCoordinator(
             connectionId = route.connectionId,
             expectedGeneration = lease.scope.generation,
-            cwd = route.worktreePath ?: route.projectPath,
+            cwd = workingFolder,
             branchHint = null,
             remote = lease.client,
         )
@@ -1323,6 +1529,44 @@ private fun ConnectedThreadRoute(
         )
     }
 
+    // The Details sheet (`details_sheet_v1`); an older backend gets no button.
+    val reviews = remember(reviewsRegistry, lease, runtime, offlineSnapshot) {
+        reviewsRegistry.get(route.connectionId, lease, runtime, offlineSnapshot ?: emptyOfflineSnapshot())
+    }
+    val detailsCoordinator = remember(lease.scope, lease.client, lease.capabilities, workingFolder, reviews) {
+        if (DETAILS_SHEET_CAPABILITY in lease.capabilities) {
+            ChatDetailsCoordinator(
+                expectedGeneration = lease.scope.generation,
+                cwd = workingFolder,
+                remote = lease.client,
+                log = { Log.w("ChatDetails", it) },
+                // Reads the Reviews list at most once a minute while the sheet shows, as the Reviews tab does on focus.
+                onShown = {
+                    reviews.setVisible(true)
+                    reviews.refresh(PullRequestRefresh.Reason.Focus)
+                },
+                onHidden = { reviews.setVisible(false) },
+            )
+        } else {
+            null
+        }
+    }
+    // Leaving the chat, or a new reader, with the sheet open hides it from Reviews too.
+    DisposableEffect(detailsCoordinator) {
+        onDispose { detailsCoordinator?.close() }
+    }
+    val details = detailsCoordinator?.let { reader ->
+        val detailsState by reader.state.collectAsState()
+        val reviewsState by reviews.state.collectAsState()
+        ThreadDetails(
+            reader = reader,
+            state = detailsState,
+            prList = reviewsState.data,
+            onOpen = reader::refresh,
+            onClose = reader::close,
+        )
+    }
+
     val htmlLive = remember(lease.capabilities, route.threadId, lease.client) {
         HtmlLiveImages(lease.capabilities, route.threadId, lease.client)
     }
@@ -1333,6 +1577,25 @@ private fun ConnectedThreadRoute(
         } else {
             null
         }
+    }
+    val snoozeCapable = ChatSnooze.CAPABILITY in lease.capabilities
+    val heldSnoozes by snoozeStore.state.collectAsState()
+    val snooze = heldSnoozes[route.connectionId]?.get(route.threadId)?.takeIf { snoozeCapable }
+    if (snoozeCapable) {
+        DisposableEffect(snoozeStore, lease.scope) {
+            val subscription = lease.client.onConversationSnoozed { snoozeStore.applyEvent(route.connectionId, it) }
+            onDispose(subscription::cancel)
+        }
+        // Only Home seeds the store, so a Thread that opens first (a restored process) reads the saved list.
+        LaunchedEffect(snoozeStore, route.connectionId) {
+            val saved = offlineSnapshot?.let(runtime::browseSnapshotStore)?.load(route.connectionId)?.projects
+            if (saved != null) snoozeStore.seed(route.connectionId, saved.flatMap(Project::sessions))
+        }
+    }
+    // Opening a woken chat, or a chat waking while it is open, clears its Woke mark.
+    val woke = snooze?.woke == true
+    LaunchedEffect(snoozeStore, lease.scope, route.threadId, woke) {
+        if (woke) snoozeStore.markWokeSeen(lease.client, route.threadId)
     }
     val phoneLiveRun by runtime.phoneLiveRun.collectAsState()
     CompositionLocalProvider(LocalHtmlLive provides htmlLive, LocalPhoneLiveRun provides phoneLiveRun) {
@@ -1354,8 +1617,15 @@ private fun ConnectedThreadRoute(
             composerError = composerError,
             gitContext = gitContext,
             onRefreshGitContext = gitContextCoordinator::refresh,
+            details = details,
             viewingLeaseLifecycle = viewingLeaseLifecycle,
             registerViewingLeaseRenewal = viewingRenewalRegistration,
+            onOpenHubChat = onOpenHubChat,
+            snoozeLine = {
+                snooze?.takeIf { it.snoozed }?.let { state ->
+                    ThreadSnoozeLine(state) { onDone -> snoozeStore.wake(lease.client, route.threadId, onDone) }
+                }
+            },
             onFork = { messageId, withWorktree ->
                 lease.client.loadSession(route.threadId) { loadedResponse ->
                     when (val loaded = loadedResponse.outcome) {

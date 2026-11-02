@@ -10,11 +10,26 @@
  * was closed cannot read Working. The cached feed names an open approval or
  * question only for a chat whose status is live this run; a plan is never
  * read from it.
+ *
+ * Snooze (`@shared/chat-snooze`, only from a backend with `chat_snooze_v1`): a
+ * snoozed chat leaves Recents for the Snoozed shelf whatever its live status,
+ * until it wakes; a woken chat sorts first in its status and shows Woke until
+ * its Thread screen opens.
+ *
+ * Settle (`@shared/chat-settle`, offered only by a backend with
+ * `chat_settle_v1`): a Done or idle row takes Settle from the same sheet.
  */
 import type { Project } from '@shared/types'
 import { formatRelativeTime } from '@shared/format'
 import { withoutDemo } from '@shared/phone-demo/phone-demo'
-import { isSettled } from '@shared/chat-settle'
+import { canSettleStatus, isSettled } from '@shared/chat-settle'
+import {
+  compareSnoozeWake,
+  isSnoozed,
+  isWoke,
+  type ConversationSnoozedEvent,
+  type WakeReason,
+} from '@shared/chat-snooze'
 import type { FeedItem, ThreadState } from '../stores/chat'
 
 export const HOME_RECENT_PAGE_SIZE = 5
@@ -32,6 +47,14 @@ export interface RecentSession {
   worktreeBranch?: string | null
   /** Settled on a desktop: Home leaves the chat out while it is Done or idle. */
   settledAt?: number | null
+  /** Snooze and the Woke marker; absent from an older backend. */
+  snoozedUntil?: number | null
+  snoozedAt?: number | null
+  snoozePr?: string | null
+  snoozeRev?: number
+  wokeAt?: number | null
+  wokeReason?: WakeReason | null
+  wokePrSummary?: string | null
 }
 
 /** A `provider:list-sessions` reply, with the `statusMark()` taken before asking. */
@@ -46,6 +69,10 @@ export interface HomeMachine {
   connected: boolean
   sessions: RecentSession[]
   live?: LiveStatuses
+  /** The backend has `chat_snooze_v1`; without it every snooze field is ignored. */
+  snooze?: boolean
+  /** The backend has `chat_settle_v1`. */
+  settle?: boolean
 }
 
 export interface HomeRecentRow extends RecentSession {
@@ -53,11 +80,19 @@ export interface HomeRecentRow extends RecentSession {
   connectionLabel: string
   status: HomeRecentStatus | null
   unread: number
+  /** Its machine can snooze it. */
+  snoozable: boolean
+  /** Its machine takes Settle. */
+  settleable?: boolean
+  /** Woke from a snooze and not opened since. */
+  woke: boolean
 }
 
 export interface HomeRecentsPage {
   items: HomeRecentRow[]
   total: number
+  /** The Snoozed shelf: the soonest wake first, PR-only last. */
+  snoozed: HomeRecentRow[]
 }
 
 type ThreadActivity = Pick<ThreadState, 'items' | 'status' | 'statusAt' | 'unread'>
@@ -79,10 +114,31 @@ export function sessionsFromProjects(projects: Project[]): RecentSession[] {
         worktreePath: session.worktreePath,
         worktreeBranch: session.worktreeBranch,
         settledAt: session.settledAt,
+        snoozedUntil: session.snoozedUntil,
+        snoozedAt: session.snoozedAt,
+        snoozePr: session.snoozePr,
+        snoozeRev: session.snoozeRev,
+        wokeAt: session.wokeAt,
+        wokeReason: session.wokeReason,
+        wokePrSummary: session.wokePrSummary,
       })
     }
   }
   return out
+}
+
+/**
+ * A settle or unsettle broadcast applied to one machine's chats, matched by
+ * id. Null when no chat has that id (the row is listed under a rotated id),
+ * so the caller reads the list again.
+ */
+export function withSettled(
+  sessions: RecentSession[],
+  conversationId: string,
+  settledAt: number | null,
+): RecentSession[] | null {
+  if (!sessions.some((session) => session.id === conversationId)) return null
+  return sessions.map((session) => (session.id === conversationId ? { ...session, settledAt } : session))
 }
 
 /** The `max` most recently started chats. */
@@ -141,26 +197,68 @@ export function homeRecents(
   threads: Record<string, ThreadActivity>,
   limit = HOME_RECENT_PAGE_SIZE,
 ): HomeRecentsPage {
-  const rows: HomeRecentRow[] = machines
-    .flatMap((machine) =>
-      machine.sessions.map((session) => {
-        const thread = threads[`${machine.connectionId}:${session.id}`]
-        return {
-          ...session,
-          title: session.title.trim() === '' ? 'Untitled chat' : session.title,
-          connectionId: machine.connectionId,
-          connectionLabel: machine.label,
-          status: recentStatus(session.id, thread, machine),
-          unread: thread?.unread ?? 0,
-        }
-      }),
+  const all: HomeRecentRow[] = machines.flatMap((machine) =>
+    machine.sessions.map((session) => {
+      const thread = threads[`${machine.connectionId}:${session.id}`]
+      const snoozable = machine.snooze === true
+      return {
+        ...session,
+        title: session.title.trim() === '' ? 'Untitled chat' : session.title,
+        connectionId: machine.connectionId,
+        connectionLabel: machine.label,
+        status: recentStatus(session.id, thread, machine),
+        unread: thread?.unread ?? 0,
+        snoozable,
+        settleable: machine.settle === true,
+        woke: snoozable && isWoke({ snoozedAt: session.snoozedAt ?? null, wokeAt: session.wokeAt ?? null }),
+      }
+    }),
+  )
+  const snoozed = all
+    .filter(isShelved)
+    .sort((a, b) =>
+      compareSnoozeWake({ snoozedUntil: a.snoozedUntil ?? null }, { snoozedUntil: b.snoozedUntil ?? null }),
     )
+  const rows = all
+    .filter((row) => !isShelved(row))
     // A settled chat leaves the desktop's "Done recently" only, so it still shows while it works or waits.
     .filter((row) => !((row.status === null || row.status === 'Done') && isSettled(row.settledAt)))
   rows.sort(
-    (a, b) => (b.status ? PRIORITY[b.status] : 0) - (a.status ? PRIORITY[a.status] : 0) || b.startedAt - a.startedAt,
+    (a, b) =>
+      (b.status ? PRIORITY[b.status] : 0) - (a.status ? PRIORITY[a.status] : 0) ||
+      Number(b.woke) - Number(a.woke) ||
+      b.startedAt - a.startedAt,
   )
-  return { items: rows.slice(0, Math.max(0, limit)), total: rows.length }
+  return { items: rows.slice(0, Math.max(0, limit)), total: rows.length, snoozed }
+}
+
+function isShelved(row: HomeRecentRow): boolean {
+  return row.snoozable && isSnoozed({ snoozedAt: row.snoozedAt ?? null })
+}
+
+/** A chat that needs the user cannot be snoozed: the open card or the error would wake it at once. */
+export function canSnooze(row: HomeRecentRow): boolean {
+  return row.snoozable && row.status !== 'Approval' && row.status !== 'Input' && row.status !== 'Failed'
+}
+
+/** A Done or idle chat can be settled, as the desktop's "Done recently" rows can. */
+export function canSettle(row: HomeRecentRow): boolean {
+  return row.settleable === true && canSettleStatus(row.status)
+}
+
+/**
+ * A machine's chat list after a snooze broadcast or answer; the same list when
+ * it names none of them or is older than what the list holds (a broadcast can
+ * land after a newer answer). A snooze clears the settled mark on the backend,
+ * so it clears the held one too.
+ */
+export function withSnoozeEvent(sessions: RecentSession[], event: ConversationSnoozedEvent): RecentSession[] {
+  const { conversationId, title: _title, prSummary, ...state } = event
+  const held = sessions.find((s) => s.id === conversationId)
+  if (!held || (held.snoozeRev ?? 0) > state.snoozeRev) return sessions
+  const next = { ...held, ...state, wokePrSummary: prSummary ?? null }
+  if (state.snoozedAt !== null) next.settledAt = null
+  return sessions.map((s) => (s === held ? next : s))
 }
 
 const WEEK_MS = 7 * 24 * 3_600_000

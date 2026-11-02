@@ -31,11 +31,17 @@ import { shouldLoadPhoneHistory } from '@shared/phone-history-window'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
 import { canSteer, type QueuedTurnSummary } from '@shared/turn-delivery'
 import { shortModelLabel } from '@shared/models'
-import { providerKindFor, type ProviderInstance, type ProviderSkill } from '@shared/types'
+import {
+  defaultInstanceId,
+  providerKindFor,
+  toAgentProvider,
+  type ProviderInstance,
+  type ProviderSkill,
+} from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type { ModelOption } from '@shared/models'
-import { formatTokens } from '@shared/format'
+import { contextPercent, formatTokens } from '@shared/format'
 import { echoMessageId, interruptFoundNoTurn, isRuntimeMode } from '@shared/provider-events'
 import { VIEWING_RENEW_MS } from '@shared/push-policy'
 import { generateTitle } from '@shared/auto-title'
@@ -79,10 +85,15 @@ import { mergeHistoryItems, historyToItems } from '../lib/thread-history'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ThreadHeaderTitle } from '../components/ThreadHeaderTitle'
 import { PrLinksChip, PrLinksSheet } from '../components/PrLinks'
+import { ChatDetailsButton, ChatDetailsSheet } from '../components/ChatDetailsSheet'
 import { QueueSegment } from '../components/QueueSegment'
 import { AgentSettingsSheet } from '../components/AgentSettingsSheet'
 import { settingsChipLabel, usageAccessibilityLabel, usageLine } from '../lib/thread-chrome'
 import { LimitResumeRow } from '../components/LimitResumeRow'
+import { HubChildrenRow } from '../components/HubChildrenRow'
+import { hubChatRoute } from '../lib/hub-children'
+import { SnoozeLine } from '../components/SnoozeLine'
+import { markWokeSeen, useRecentsStore, wakeChat } from '../stores/recents'
 import { ReviewPillChip } from '../components/ReviewPillChip'
 import { unlinkPrLink } from '../lib/pr-link-unlink'
 import type { PrLink } from '@shared/pull-request-links'
@@ -117,7 +128,10 @@ import {
 } from './ThreadFeedItems'
 import { MergeBackSheet, type MergeBackSheetApi, type MergeBackSheetMode } from '../components/MergeBackSheet'
 import { FORK_MERGE_BACK_CAPABILITY } from '@shared/merge-back'
+import { DETAILS_SHEET_CAPABILITY } from '@shared/chat-details'
 import { LIMIT_AUTO_RESUME_CAPABILITY } from '@shared/limit-resume'
+import { HUB_CHILDREN_CAPABILITY, HUB_REMOTE_CHILDREN_CAPABILITY, type HubChatRef } from '@shared/hub'
+import { CHAT_SNOOZE_CAPABILITY, isWoke } from '@shared/chat-snooze'
 import { styles } from './thread-screen.styles'
 import { blockedSendReason } from '../lib/composer'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
@@ -213,6 +227,19 @@ export default function ThreadScreen({ route, navigation }: Props) {
     [thread.historyMessages],
   )
 
+  const recentSession = useRecentsStore((s) => s.sessions[connectionId]?.find((x) => x.id === threadId))
+  const woke =
+    recentSession !== undefined &&
+    isWoke({ snoozedAt: recentSession.snoozedAt ?? null, wokeAt: recentSession.wokeAt ?? null })
+  // Opening a woken chat, or a chat waking while it is open, clears its Woke mark.
+  // A new copy of the chat (the list read after the `ready` frame) retries a
+  // clear that ran before Snooze was readable or that failed.
+  useFocusEffect(
+    useCallback(() => {
+      if (woke) markWokeSeen(connectionId, threadId)
+    }, [woke, recentSession, connectionId, threadId]),
+  )
+
   // useFocusEffect (not useEffect) so activeKey tracks push/pop: pushing
   // another screen on top blurs this one and re-focusing restores it.
   useFocusEffect(
@@ -292,6 +319,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
     Keyboard.dismiss()
     setPrSheetOpen(true)
   }, [])
+  // The Details sheet (`details_sheet_v1`): an older backend cannot read the diff stat, so it shows no button.
+  const canShowDetails = getClient(connectionId)?.supportsCapability(DETAILS_SHEET_CAPABILITY) === true
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const openDetails = useCallback(() => {
+    Keyboard.dismiss()
+    setDetailsOpen(true)
+  }, [])
+
   // Unlinking the last link closes the sheet, so a later link does not reopen it.
   useEffect(() => {
     if (prLinks.length === 0) setPrSheetOpen(false)
@@ -309,9 +344,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
           onPress={toggleUsage}
         />
       ),
-      headerRight: () => <PrLinksChip links={prLinks} onPress={openPrSheet} />,
+      headerRight: () => (
+        <View style={styles.headerActions}>
+          {canShowDetails && <ChatDetailsButton onPress={openDetails} />}
+          <PrLinksChip links={prLinks} onPress={openPrSheet} />
+        </View>
+      ),
     })
-  }, [navigation, key, provider, usageOpen, toggleUsage, prLinks, openPrSheet])
+  }, [navigation, key, provider, usageOpen, toggleUsage, prLinks, openPrSheet, canShowDetails, openDetails])
 
   const unlinkPr = useCallback(
     (link: PrLink) => {
@@ -1229,6 +1269,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // An older backend has no Limited row channels; it keeps the held message's Resume only.
   const currentClient = getClient(connectionId)
   const limitRowClient = currentClient?.supportsCapability(LIMIT_AUTO_RESUME_CAPABILITY) === true ? currentClient : null
+  // Child chats (`hub_children_v1`, advertised only while the flag is on).
+  const hubClient = currentClient?.supportsCapability(HUB_CHILDREN_CAPABILITY) === true ? currentClient : null
+  const hubRemoteOn = currentClient?.supportsCapability(HUB_REMOTE_CHILDREN_CAPABILITY) === true
+  const openHubChat = useCallback(
+    (chat: HubChatRef) => navigation.push('Thread', hubChatRoute(connectionId, chat)),
+    [connectionId, navigation],
+  )
+  const snoozeCapable = currentClient?.supportsCapability(CHAT_SNOOZE_CAPABILITY) === true
   const [mergeBackSheet, setMergeBackSheet] = useState<MergeBackSheetMode | null>(null)
   // The client is looked up per call: a reconnect replaces it while the sheet is open.
   const mergeBackApi = useMemo<MergeBackSheetApi>(() => {
@@ -1590,9 +1638,20 @@ export default function ThreadScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      {snoozeCapable && <SnoozeLine session={recentSession} onWake={() => wakeChat(connectionId, threadId)} />}
+
       {/* Keyed by the re-seed revision: after a resume gap the row reads its state again. */}
       {limitRowClient && (
         <LimitResumeRow key={`${threadId}:${staleGeneration}`} client={limitRowClient} threadId={threadId} />
+      )}
+      {hubClient && (
+        <HubChildrenRow
+          key={`hub:${threadId}:${staleGeneration}`}
+          client={hubClient}
+          threadId={threadId}
+          remoteOn={hubRemoteOn}
+          onOpenChat={openHubChat}
+        />
       )}
 
       {forkMetadata && (
@@ -1693,6 +1752,17 @@ export default function ThreadScreen({ route, navigation }: Props) {
       />
 
       <PrLinksSheet visible={prSheetOpen} links={prLinks} onUnlink={unlinkPr} onClose={() => setPrSheetOpen(false)} />
+
+      <ChatDetailsSheet
+        visible={detailsOpen}
+        onClose={() => setDetailsOpen(false)}
+        connectionId={connectionId}
+        machine={backendLabel}
+        cwd={thread.historyMeta?.worktreePath ?? worktreePath ?? thread.historyMeta?.projectPath ?? projectPath ?? null}
+        instanceId={effectiveInstanceId ?? defaultInstanceId(toAgentProvider(effectiveProvider))}
+        links={prLinks}
+        contextUsed={thread.usedTokens != null ? contextPercent(thread.usedTokens, thread.maxTokens) : null}
+      />
 
       <AgentSettingsSheet
         visible={settingsOpen}

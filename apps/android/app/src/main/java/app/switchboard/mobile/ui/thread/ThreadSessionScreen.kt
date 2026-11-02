@@ -18,6 +18,7 @@ import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.domain.composer.ComposerImageSource
 import app.switchboard.mobile.domain.composer.OutboxUiAction
 import app.switchboard.mobile.domain.outbox.QueuedTurn
+import app.switchboard.mobile.domain.thread.HubChatRef
 import app.switchboard.mobile.ui.navigation.ThreadViewingLeaseLifecycle
 import java.io.Closeable
 import kotlinx.coroutines.CoroutineScope
@@ -51,6 +52,9 @@ fun ThreadSessionScreen(
     viewingLeaseLifecycle: ThreadViewingLeaseLifecycle? = null,
     registerViewingLeaseRenewal: ((() -> Unit) -> Closeable)? = null,
     onFork: (messageId: String, withWorktree: Boolean) -> Unit = { _, _ -> },
+    onOpenHubChat: (HubChatRef) -> Unit = {},
+    snoozeLine: @Composable () -> Unit = {},
+    details: ThreadDetails? = null,
 ) {
     val session by coordinator.state.collectAsState()
     val router = remember(coordinator, commandDispatcher) {
@@ -136,6 +140,18 @@ fun ThreadSessionScreen(
         onCancelLimitResume = {
             (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.cancelLimitResume() }
         },
+        hub = session.hub,
+        onToggleHub = coordinator::toggleHubExpanded,
+        onRetryHub = coordinator::retryHub,
+        onStopHubChild = { childId ->
+            (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.stopHubChild(childId) }
+        },
+        onStopAllHubChildren = {
+            (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.stopAllHubChildren() }
+        },
+        onOpenHubChat = onOpenHubChat,
+        snoozeLine = snoozeLine,
+        details = details,
     )
 }
 

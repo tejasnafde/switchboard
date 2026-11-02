@@ -73,6 +73,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -138,11 +139,17 @@ import app.switchboard.mobile.domain.thread.SecretInstructionPart
 import app.switchboard.mobile.domain.thread.SecretRequestCard
 import app.switchboard.mobile.domain.thread.SecretRequestCards
 import app.switchboard.mobile.domain.thread.HostWritePreview
+import app.switchboard.mobile.domain.thread.HUB_REMOTE_CHILD_NO_REPORT
+import app.switchboard.mobile.domain.thread.HUB_REMOTE_CHILD_READ_NOTE
+import app.switchboard.mobile.domain.thread.HubChatRef
+import app.switchboard.mobile.domain.thread.HubChildView
+import app.switchboard.mobile.domain.thread.HubChildren
 import app.switchboard.mobile.domain.thread.LimitResume
 import app.switchboard.mobile.domain.thread.LimitState
 import app.switchboard.mobile.domain.thread.MergeBackRow
 import app.switchboard.mobile.domain.thread.PrLink
 import app.switchboard.mobile.domain.thread.PrLinkRef
+import app.switchboard.mobile.domain.thread.ChatDetails
 import app.switchboard.mobile.domain.thread.PrLinkRows
 import app.switchboard.mobile.domain.thread.QueueToggle
 import app.switchboard.mobile.domain.thread.SyntheticTone
@@ -154,6 +161,7 @@ import app.switchboard.mobile.domain.remote.ForkLineageMetadata
 import app.switchboard.mobile.data.thread.MergeBackSheet
 import app.switchboard.mobile.data.thread.MergeBackSheetMode
 import app.switchboard.mobile.data.thread.MergeBackSheetPhase
+import app.switchboard.mobile.data.thread.ThreadHubState
 import app.switchboard.mobile.data.thread.ThreadLimitResumeState
 import app.switchboard.mobile.data.thread.ThreadMergeBackState
 import app.switchboard.mobile.data.thread.ThreadPendingActions
@@ -253,6 +261,15 @@ fun ThreadScreen(
     limitResume: ThreadLimitResumeState = ThreadLimitResumeState(),
     onResumeLimitNow: () -> Unit = {},
     onCancelLimitResume: () -> Unit = {},
+    hub: ThreadHubState = ThreadHubState(),
+    onToggleHub: () -> Unit = {},
+    onRetryHub: () -> Unit = {},
+    onStopHubChild: (childId: String) -> Unit = {},
+    onStopAllHubChildren: () -> Unit = {},
+    onOpenHubChat: (HubChatRef) -> Unit = {},
+    /** The snoozed chat's line ([ThreadSnoozeLine]); empty when it is not snoozed. */
+    snoozeLine: @Composable () -> Unit = {},
+    details: ThreadDetails? = null,
 ) {
     BackHandler(onBack = onBack)
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
@@ -287,6 +304,12 @@ fun ThreadScreen(
     val usageLine = metadata?.let(ThreadChromePolicy::usageLine)
     var usageVisible by rememberSaveable(threadId) { mutableStateOf(false) }
     var prSheetOpen by rememberSaveable(threadId) { mutableStateOf(false) }
+    var detailsOpen by rememberSaveable(threadId) { mutableStateOf(false) }
+    val detailsAccount = profiles.selectedInstanceId ?: ChatDetails.defaultInstanceId(metadata?.provider)
+    // Keyed on the reader, so an open sheet reads again after a rotation or a reconnect.
+    LaunchedEffect(details?.reader, detailsOpen, detailsAccount) {
+        if (detailsOpen) details?.onOpen(detailsAccount)
+    }
     val rows = (presentation as? ThreadPresentation.Content)?.rows.orEmpty()
     val pendingApproval = ThreadChromePolicy.pendingApproval(rows)
     LaunchedEffect(prLinks.isEmpty()) {
@@ -357,6 +380,15 @@ fun ThreadScreen(
         },
         actions = {
             DemoBadge(Modifier.align(Alignment.CenterVertically).padding(end = 4.dp))
+            if (details != null) {
+                SwitchboardTopBarAction(
+                    contentDescription = "Chat details",
+                    onClick = { detailsOpen = true },
+                    modifier = Modifier.testTag(ThreadTestTags.DETAILS_ACTION),
+                ) {
+                    Icon(Icons.Outlined.Info, contentDescription = null)
+                }
+            }
             if (prLinks.isNotEmpty()) {
                 PrLinksChip(links = prLinks, onClick = { prSheetOpen = true })
             }
@@ -433,7 +465,16 @@ fun ThreadScreen(
                     onSendBack = onOpenMergeBackSend.takeIf { mergeBack.available },
                 )
             }
+            HubRow(
+                hub = hub,
+                onToggle = onToggleHub,
+                onRetry = onRetryHub,
+                onStop = onStopHubChild,
+                onStopAll = onStopAllHubChildren,
+                onOpen = onOpenHubChat,
+            )
             LimitResumeRow(limitResume, onResumeNow = onResumeLimitNow, onCancel = onCancelLimitResume)
+            snoozeLine()
             Box(modifier = Modifier.weight(1f)) {
             when (presentation) {
                 ThreadPresentation.Loading -> FullPageLoading()
@@ -490,6 +531,19 @@ fun ThreadScreen(
     }
     if (prSheetOpen && prLinks.isNotEmpty()) {
         PrLinksSheet(links = prLinks, onUnlink = onUnlinkPrLink, onDismiss = { prSheetOpen = false })
+    }
+    if (detailsOpen && details != null) {
+        ChatDetailsSheet(
+            machine = backendLabel,
+            state = details.state,
+            links = prLinks,
+            prList = details.prList,
+            contextUsed = metadata?.usedTokens?.let { metadata.contextFraction?.times(100.0) },
+            onDismiss = {
+                detailsOpen = false
+                details.onClose()
+            },
+        )
     }
     lightboxUrl?.let { url ->
         ThreadImageLightbox(url = url, onDismiss = { lightboxUrl = null })
@@ -647,6 +701,169 @@ private fun LimitResumeRow(row: ThreadLimitResumeState, onResumeNow: () -> Unit,
         }
     }
 }
+
+/**
+ * The Hub row (flag `hub_children`): "Hub · 3 children · Waiting for children",
+ * a tap opens the children list with Open and Stop on each and Stop all. A
+ * minimal version of the desktop children strip.
+ */
+@Composable
+internal fun HubRow(
+    hub: ThreadHubState,
+    onToggle: () -> Unit,
+    onStop: (String) -> Unit,
+    onStopAll: () -> Unit,
+    onOpen: (HubChatRef) -> Unit,
+    onRetry: () -> Unit = {},
+) {
+    if (!hub.available) return
+    val view = hub.view
+    if (view == null || view.children.isEmpty()) {
+        hub.readError?.let { HubReadError(it, onRetry) }
+        return
+    }
+    var remoteChild by remember(view.self?.id) { mutableStateOf<HubChildView?>(null) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Surface)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .testTag(ThreadTestTags.HUB_ROW),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = SwitchboardDimensions.minimumTouchTarget)
+                .clickable(onClick = onToggle)
+                .semantics { stateDescription = if (hub.expanded) "Expanded" else "Collapsed" }
+                .testTag(ThreadTestTags.HUB_CHIP),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = HubChildren.chipText(if (hub.remoteAvailable) view else view.withoutRemote()),
+                color = TextPrimary,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.weight(1f),
+            )
+            if (hub.expanded && view.children.any(HubChildren::canStop)) {
+                TextButton(
+                    onClick = onStopAll,
+                    enabled = !hub.stoppingAll,
+                    modifier = Modifier.testTag(ThreadTestTags.HUB_STOP_ALL),
+                ) { Text("Stop all") }
+            }
+        }
+        hub.note?.let {
+            Text(text = it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+        }
+        hub.readError?.let { HubReadError(it, onRetry) }
+        if (hub.expanded) {
+            // Bounded like the desktop strip, so many children never push the feed and composer off screen.
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 240.dp)
+                    .verticalScroll(rememberScrollState())
+                    .testTag(ThreadTestTags.HUB_LIST),
+            ) {
+                view.children.forEach { child ->
+                    HubChildRow(
+                        child = child,
+                        showMachine = hub.remoteAvailable,
+                        stopping = child.chat.id in hub.stopping,
+                        onOpen = { if (child.remote != null) remoteChild = child else onOpen(child.chat) },
+                        onStop = { onStop(child.chat.id) },
+                    )
+                }
+            }
+        }
+    }
+    remoteChild?.let { child ->
+        val remote = child.remote ?: return@let
+        AlertDialog(
+            onDismissRequest = { remoteChild = null },
+            title = { Text(child.chat.title) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (hub.remoteAvailable) {
+                        Text(remote.machine, fontFamily = GeistMono, color = TextDim, style = MaterialTheme.typography.labelSmall)
+                    }
+                    Text(HubChildren.childStateLabel(child.shown(hub.remoteAvailable)), style = MaterialTheme.typography.bodyMedium)
+                    Text(child.lastWake?.summary ?: HUB_REMOTE_CHILD_NO_REPORT, style = MaterialTheme.typography.bodyMedium)
+                    Text(HUB_REMOTE_CHILD_READ_NOTE, color = TextDim, style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { TextButton(onClick = { remoteChild = null }) { Text("Close") } },
+        )
+    }
+}
+
+/** A failed read of the children, with Retry. */
+@Composable
+private fun HubReadError(message: String, onRetry: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag(ThreadTestTags.HUB_READ_ERROR),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Could not read the child chats: $message",
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onRetry) { Text("Retry") }
+    }
+}
+
+@Composable
+private fun HubChildRow(child: HubChildView, showMachine: Boolean, stopping: Boolean, onOpen: () -> Unit, onStop: () -> Unit) {
+    val shown = child.shown(showMachine)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = SwitchboardDimensions.minimumTouchTarget)
+            .testTag(ThreadTestTags.hubChild(child.chat.id)),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f).semantics(mergeDescendants = true) {}) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = child.chat.title,
+                    color = TextPrimary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                shown.remote?.let {
+                    Text(
+                        text = it.machine,
+                        color = TextDim,
+                        fontFamily = GeistMono,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 120.dp),
+                    )
+                }
+            }
+            Text(
+                text = HubChildren.childStateLabel(shown) + child.lastWake?.let { ": ${it.summary}" }.orEmpty(),
+                color = TextDim,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        TextButton(onClick = onOpen) { Text("Open") }
+        if (HubChildren.canStop(child)) {
+            TextButton(onClick = onStop, enabled = !stopping) { Text("Stop") }
+        }
+    }
+}
+
+/** A child as its row shows it: without its machine while the backend does not advertise `hub_remote_children_v1`. */
+private fun HubChildView.shown(showMachine: Boolean) = if (showMachine || remote == null) this else copy(remote = null)
 
 /** The linked pull requests in the app bar: "#9 +1". A tap opens [PrLinksSheet]. */
 @Composable

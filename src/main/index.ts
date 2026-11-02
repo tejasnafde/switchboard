@@ -38,14 +38,16 @@ import { registerTerminalHandlers, shutdownTerminals, livePtyCount } from './ipc
 import { registerDiagnosticsHandlers } from './ipc/diagnostics'
 import { configureAnalytics, attachAnalyticsCrashHooks, trackAppLaunched, registerAnalyticsHandlers } from './analytics'
 import { registerPushHandlers } from './ipc/push'
-import { attachPushNotifier } from './push/registry'
+import { attachPushNotifier, pushToThread } from './push/registry'
+import { chatSnoozer, startChatSnoozer, type ChatSnoozeHost } from './conversations/chat-snooze'
+import { wokePush } from '@shared/push-policy'
 import { registerAppHandlers, type AppHandlerDependencies } from './ipc/app'
 import { isMenuCaptureActive, setMenuCapture, unlessCapturing } from './menu-capture'
 import { pruneAttachments } from './attachments'
 import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass } from './ipc/app-desktop'
 import { disposeSettingsFileSync, registerSettingsFileHandlers, settingsFileSync } from './ipc/settings-file'
 import { isSettingsFileKey } from '@shared/settings-file'
-import { HUB_REMOTE_CHILDREN_LABS_SETTING } from '@shared/hub'
+import { HUB_REMOTE_CHILDREN_LABS_SETTING, hubFlagCapabilities } from '@shared/hub'
 import {
   hubRemoteSettingChanged,
   reconnectHubMachinesOnLaunch,
@@ -77,6 +79,8 @@ import { registerWorktreeManagerHandlers } from './ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from './ipc/provider-instances'
 import {
   attachPullRequestAutoLink,
+  settleChatOnMerge,
+  readPullRequestForSnooze,
   registerPullRequestHandlers,
   startPullRequestHistoryScan,
 } from './ipc/pull-requests'
@@ -122,6 +126,7 @@ import { warmShellEnv } from './shell-env'
 import { attachRendererCrashRecovery, CRASH_RELOAD_URL, isCrashPage } from './renderer-crash-recovery'
 import { createDefaultWorktreeCreationRuntime, type WorktreeCreationRuntime } from './worktree-creation/runtime'
 import { configureHubWorktrees } from './hub/hub-start'
+import { setFlagCapabilities } from './backend/flag-capabilities'
 
 const log = createMainLogger('tour')
 import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
@@ -173,6 +178,8 @@ const quitCoordinator = new QuitCoordinator(
         {
           name: 'push',
           run: () => {
+            // First, so no snooze wakes after its push can no longer be sent.
+            chatSnoozer()?.dispose()
             detachPush?.()
             detachPush = null
             detachAutoLink?.()
@@ -1029,6 +1036,7 @@ app.whenReady().then(() => {
   void reconnectHubMachinesOnLaunch()
   worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(backendHost, () => providerRegistry)
   configureHubWorktrees(worktreeCreationRuntime)
+  setFlagCapabilities(() => hubFlagCapabilities(process.env, getSetting))
   detachPush = attachPushNotifier(providerRegistry.bus, {
     // OS-level idle, so it is true whatever window is in front. The headless
     // server passes nothing and therefore never suppresses.
@@ -1036,6 +1044,8 @@ app.whenReady().then(() => {
   })
   detachAutoLink = attachPullRequestAutoLink(providerRegistry.bus, backendHost, linkedChatActivity)
   startPullRequestHistoryScan()
+  startChatSnoozer(snoozeHost(backendHost))
+  powerMonitor.on('resume', () => chatSnoozer()?.resync())
   providerRegistry.registerIpcHandlers()
 
   // All handlers are recorded on the endpoint now; start listening if a token
@@ -1105,10 +1115,22 @@ app.whenReady().then(() => {
       })
       detachAutoLink?.()
       detachAutoLink = attachPullRequestAutoLink(providerRegistry.bus, reactivatedHost, linkedChatActivity)
+      startChatSnoozer(snoozeHost(reactivatedHost))
       providerRegistry.registerIpcHandlers()
     }
   })
 })
+
+/** What the snoozer needs from this backend: its clients, its open cards, the phones. */
+function snoozeHost(host: BackendHost): ChatSnoozeHost {
+  return {
+    emit: (channel, payload) => host.emit(channel, payload),
+    needsYou: (id) => providerRegistry?.needsUser(id) ?? false,
+    pushWoke: (id, title, line) => pushToThread(id, wokePush(id, title, line)),
+    readPr: readPullRequestForSnooze,
+    settleMerged: settleChatOnMerge,
+  }
+}
 
 // Electron already quits cleanly on these; handling them here only adds the name.
 for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {

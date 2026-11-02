@@ -398,6 +398,15 @@ export interface SessionSummary {
   statusLine?: string | null
   /** When the chat was settled out of Recents' "Done recently"; see `isSettled` in `shared/chat-settle.ts`. */
   settledAt?: number | null
+  /** Snooze and the Woke marker (`shared/chat-snooze.ts`). Absent from an older backend: not snoozed. */
+  snoozedUntil?: number | null
+  snoozedAt?: number | null
+  snoozePr?: string | null
+  snoozeRev?: number
+  wokeAt?: number | null
+  wokeReason?: import('./chat-snooze').WakeReason | null
+  /** The status line of a PR wake, from the broadcast only (a reload shows the generic line). */
+  wokePrSummary?: string | null
   /** Child chats (flag `hub_children` on): `{ parentId }` on an open child, `{ openChildren }` on its parent. */
   hub?: import('./hub').SessionHubField
 }
@@ -489,6 +498,8 @@ export interface ConversationRow {
   worktree_creation_id?: string | null
   /** See `SessionSummary.statusLine`. */
   status_line?: string | null
+  /** See `SessionSummary.hub`: an open child names its parent (flag `hub_children` on). */
+  hub?: import('./hub').SessionHubField
 }
 
 /** A chat visual's Save image: the chosen path, a cancelled dialog, or why the write failed. */

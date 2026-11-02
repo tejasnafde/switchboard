@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { resolve, dirname } from 'node:path'
 import {
+  canStopHubChild,
   childState,
   childStateLabel,
   childStateWord,
@@ -15,6 +16,9 @@ import {
   HUB_CHILDREN_LABS_SETTING,
   hubBriefTurn,
   hubChildrenEnabled,
+  hubChildStopTarget,
+  hubFlagCapabilities,
+  HUB_REMOTE_CHILDREN_LABS_SETTING,
   hubNeedsCard,
   hubUpdateTurn,
   parentState,
@@ -55,6 +59,27 @@ describe('hub rules (tests/fixtures/hub-cases.json)', () => {
       id ? { remote: { machineId: id, machine: id, connected: true, ageMs: 0, stopping: false } } : {},
     )
     expect(hubChildrenCount(children)).toBe(expected)
+  })
+  it.each(cases.childStop)('canStopHubChild and hubChildStopTarget: $name', ({ input, expected }) => {
+    const child = { ...input, chat: { id: input.chatId } }
+    expect({ canStop: canStopHubChild(child), target: hubChildStopTarget(child) }).toEqual(expected)
+  })
+})
+
+describe('hubFlagCapabilities', () => {
+  const settings = (on: string[]) => (k: string) => (on.includes(k) ? 'true' : null)
+  it('advertises nothing with the flags off', () => {
+    expect(hubFlagCapabilities({}, settings([]))).toEqual([])
+  })
+  it('advertises hub_children_v1 with hub_children on', () => {
+    expect(hubFlagCapabilities({}, settings([HUB_CHILDREN_LABS_SETTING]))).toEqual(['hub_children_v1'])
+  })
+  it('adds hub_remote_children_v1 only while both flags are on', () => {
+    expect(hubFlagCapabilities({}, settings([HUB_REMOTE_CHILDREN_LABS_SETTING]))).toEqual([])
+    expect(hubFlagCapabilities({ SB_HUB_CHILDREN: '1', SB_HUB_REMOTE_CHILDREN: '1' }, settings([]))).toEqual([
+      'hub_children_v1',
+      'hub_remote_children_v1',
+    ])
   })
 })
 

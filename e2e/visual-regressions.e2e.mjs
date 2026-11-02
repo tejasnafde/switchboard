@@ -621,6 +621,62 @@ async function captureFooterWidths(win, theme, composer) {
   await hideTurnTimes.evaluate((node) => node.remove())
 }
 
+/**
+ * Snooze: the Snoozed group (a time and a PR-only snooze), a woken Done row,
+ * a Done row's "..." menu (presets and Settle) and its custom date and time dialog. The states come as the backend's broadcast,
+ * sent from the main process with times on the renderer's frozen clock, so the
+ * wake labels never move; the database is untouched, so nothing wakes.
+ */
+async function captureSnoozeScreens(win, theme, sidebar) {
+  const broadcast = (events) =>
+    app.evaluate(({ BrowserWindow }, list) => {
+      for (const w of BrowserWindow.getAllWindows())
+        for (const event of list) w.webContents.send('app:conversation-snoozed', event)
+    }, events)
+  const none = { snoozedUntil: null, snoozedAt: null, snoozePr: null, snoozeRev: 1, wokeAt: null, wokeReason: null }
+  const ids = ['promo-release', 'promo-parallel', 'side-notes']
+  await broadcast([
+    {
+      ...none,
+      conversationId: 'promo-release',
+      snoozedAt: FROZEN_NOW,
+      snoozedUntil: Date.parse('2026-03-02T20:00:00Z'),
+    },
+    { ...none, conversationId: 'promo-parallel', snoozedAt: FROZEN_NOW, snoozePr: 'github:acme/console#498' },
+    {
+      ...none,
+      conversationId: 'side-notes',
+      wokeAt: FROZEN_NOW - 60_000,
+      wokeReason: 'pr',
+      prSummary: 'PR #498 merged',
+    },
+  ])
+  const toggle = sidebar.locator('.sidebar-recent-group-toggle')
+  await toggle.click()
+  await sidebar.locator('.sidebar-recent-group[data-group="snoozed"] .sidebar-recent-row').nth(1).waitFor()
+  await sidebar.locator('.sidebar-recent-row.woke').waitFor()
+  await snapScreen(win, 'sidebar-snoozed', theme, sidebar)
+
+  const row = sidebar.locator('.sidebar-recent-row').filter({ hasText: FINISHED_CHAT })
+  await row.hover()
+  // The default 220 px sidebar is narrow: the row's "..." holds the presets and Settle.
+  await row.getByRole('button', { name: `Actions for ${FINISHED_CHAT}`, exact: true }).click()
+  const menu = win.getByRole('menu', { name: 'Snooze until' })
+  await menu.getByRole('menuitem', { name: 'Until PR #612 changes' }).waitFor({ state: 'visible', timeout: 10_000 })
+  await snapAsIs('sidebar-snooze-menu', theme, menu)
+  // Custom date and time: tomorrow at 09:00 on the frozen clock, focus on the chosen day.
+  await menu.getByRole('menuitem', { name: 'Custom date and time...' }).click()
+  const custom = win.getByRole('dialog', { name: 'Snooze until' })
+  await custom.getByText('Wakes Tue 3 Mar at 09:00').waitFor({ state: 'visible' })
+  await snapScreen(win, 'snooze-custom-dialog', theme, custom)
+  await win.keyboard.press('Escape')
+  await custom.waitFor({ state: 'hidden' })
+
+  await toggle.click()
+  await broadcast(ids.map((conversationId) => ({ ...none, conversationId, snoozeRev: 2 })))
+  await sidebar.locator('.sidebar-recent-group[data-group="snoozed"]').waitFor({ state: 'detached' })
+}
+
 async function captureThemeScreens(win, theme) {
   await chooseTheme(win, theme)
   // Each turn's time is stamped by the main process when it is saved, and
@@ -688,6 +744,7 @@ async function captureThemeScreens(win, theme) {
   await win.keyboard.press('Escape')
   await linkedPrs.waitFor({ state: 'hidden' })
   await snapScreen(win, 'sidebar', theme, sidebar)
+  await captureSnoozeScreens(win, theme, sidebar)
   await captureFooterWidths(win, theme, win.locator('.chat-composer').first())
 
   await win.keyboard.press('ControlOrMeta+P')
@@ -750,6 +807,18 @@ async function captureThemeScreens(win, theme) {
   const settings = win.locator('.settings-page')
   await settings.waitFor({ state: 'visible' })
   await snapScreen(win, 'settings', theme, settings)
+  // General's Snooze presets editor and its menu preview, each scrolled into view, then back to the top.
+  for (const [screen, part] of [
+    ['settings-snooze-presets', 'snooze-presets-title'],
+    ['settings-snooze-preview', 'snooze-preview-title'],
+  ]) {
+    const section = settings.locator(`section[aria-labelledby="${part}"]`)
+    await section.scrollIntoViewIfNeeded()
+    await snapScreen(win, screen, theme, section)
+  }
+  await settings.locator('[data-setting-row="sidebar.snoozePresets"]').evaluate((el) => {
+    for (let p = el.parentElement; p; p = p.parentElement) if (p.scrollHeight > p.clientHeight) p.scrollTop = 0
+  })
   await settings.getByRole('button', { name: /^Accounts & models/ }).click()
   await settings.locator('[data-account]').nth(4).waitFor({ state: 'visible' })
   await win.waitForFunction(() => document.querySelectorAll('.settings-page [aria-busy="true"]').length === 0)

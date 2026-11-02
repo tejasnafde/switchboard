@@ -22,6 +22,7 @@ import { MobilePairingTab } from './settings/MobilePairingTab'
 import { LaunchConfigsPanel } from './settings/LaunchConfigsPanel'
 import { ArchiveDataPage } from './settings/ArchiveDataPage'
 import { WorktreeProtectionPanel } from './settings/WorktreeProtectionPanel'
+import { SnoozePresetsPanel } from './settings/SnoozePresetsPanel'
 import { useSettingValues, type SettingValues } from './settings/setting-values'
 import {
   ALL_PROJECTS_SCOPE,
@@ -506,6 +507,11 @@ function GeneralPage() {
           />
         </SettingRow>
       </Section>
+      <div className="mb-[18px]">
+        <SettingAnchor def={SETTING_ROW.snoozePresets}>
+          <SnoozePresetsPanel />
+        </SettingAnchor>
+      </div>
       <Section title="Embedded IDE" card>
         <SettingRow def={SETTING_ROW.ideIdleTtl}>
           <IdleMinutesControl />

@@ -19,7 +19,14 @@ function database(): Database.Database {
       title TEXT NOT NULL,
       pending_handoff_from TEXT,
       updated_at INTEGER NOT NULL,
-      settled_at INTEGER
+      settled_at INTEGER,
+      snoozed_until INTEGER,
+      snoozed_at INTEGER,
+      snooze_pr TEXT,
+      snooze_pr_mark TEXT,
+      snooze_rev INTEGER NOT NULL DEFAULT 0,
+      woke_at INTEGER,
+      woke_reason TEXT
     );
     CREATE TABLE messages (
       id TEXT PRIMARY KEY,
@@ -32,7 +39,7 @@ function database(): Database.Database {
       display_body TEXT,
       pills_meta TEXT
     );
-    INSERT INTO conversations VALUES ('thread-1', 'New conversation', NULL, 1, NULL);
+    INSERT INTO conversations VALUES ('thread-1', 'New conversation', NULL, 1, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL);
   `)
   ensureTurnAcceptanceSchema(db)
   return db

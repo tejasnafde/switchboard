@@ -5,6 +5,7 @@ import { cancelHeldSends, holdSend, sendMustWait, settleHeldSends, useHeldSends 
 import { queuedTurnComposerText } from '@shared/queued-turns'
 import { QueuedTurnBar } from './QueuedTurnBar'
 import { LimitResumeRow } from './LimitResumeRow'
+import { SnoozeComposerLine } from './SnoozeComposerLine'
 import { LoadingStatus } from '../ui/loading-status'
 import { ChatSkeleton } from '../ui/chat-skeleton'
 import { perfSpan } from '../../perf'
@@ -1681,6 +1682,13 @@ export function ChatPanel({
           )}
 
           {sessionId && <LimitResumeRow sessionId={sessionId} />}
+          {sessionId && chatSlot === 'primary' && (
+            <SnoozeComposerLine
+              sessionId={sessionId}
+              title={activeSession?.title ?? 'Untitled chat'}
+              machineId={activeSession?.machineId ?? 'local'}
+            />
+          )}
           {hub.self && (
             <ChildrenStrip
               parent={hub.self}

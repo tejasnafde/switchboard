@@ -8,6 +8,7 @@ import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.SessionSummary
 import app.switchboard.mobile.domain.remote.Workspace
+import app.switchboard.mobile.domain.thread.HubChildren
 import java.io.Serializable
 import java.util.Locale
 
@@ -129,6 +130,8 @@ data class BrowseConversationRow(
     val originSource: String? = null,
     val preview: String? = null,
     val attention: BrowseThreadAttention = BrowseThreadAttention.Unknown,
+    /** An open child whose parent is listed too: the desktop nests it, so the list leaves it out until a search. */
+    val underListedParent: Boolean = false,
 )
 
 sealed interface BrowseProjectsPresentation {
@@ -224,7 +227,9 @@ object BrowsePresenter {
                 is BrowseLoadState.Failed -> BrowseConversationsPresentation.Failure(state.message)
             }
         }
-        val sorted = BrowseDecisions.sortConversations(visible.map { it.conversation })
+        val all = visible.map { it.conversation }
+        val topLevelIds = HubChildren.topLevel(all, Conversation::id, Conversation::hubParentId).mapTo(mutableSetOf(), Conversation::id)
+        val sorted = BrowseDecisions.sortConversations(all)
         return BrowseConversationsPresentation.Content(
             rows = sorted.map { conversation ->
                 BrowseConversationRow(
@@ -240,6 +245,7 @@ object BrowsePresenter {
                     // Live turn text wins; the stored line covers a chat not seen live.
                     preview = activity[conversation.id]?.preview ?: conversation.statusLine,
                     attention = activity[conversation.id]?.attention ?: BrowseThreadAttention.Unknown,
+                    underListedParent = conversation.id !in topLevelIds,
                 )
             },
             status = status(state, "conversations", visible.size),

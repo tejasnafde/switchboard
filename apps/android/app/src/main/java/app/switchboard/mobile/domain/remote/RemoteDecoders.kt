@@ -1,6 +1,8 @@
 package app.switchboard.mobile.domain.remote
 
 import app.switchboard.mobile.domain.iap.IapDiscoveredTarget
+import app.switchboard.mobile.domain.thread.DiffStat
+import app.switchboard.mobile.domain.thread.UsageLimits
 import app.switchboard.mobile.domain.thread.decodeMessagePills
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonBoolean
@@ -115,6 +117,23 @@ object RemoteDecoders {
                 missing = raw.boolean("missing") ?: false,
             )
         }
+    }
+
+    /** `git:diff-stat`; null when the folder is not a repository or the read failed. */
+    fun diffStat(value: JsonValue?): DiffStat? {
+        val raw = value.obj()
+        if (!raw.booleanRequired("ok")) return null
+        return DiffStat(added = raw.longRequired("added"), removed = raw.longRequired("removed"))
+    }
+
+    /** `provider-instances:usage`: the weekly and 5-hour windows; null unless the status is `ok`. */
+    fun usageLimits(value: JsonValue?): UsageLimits? {
+        val raw = value.obj()
+        if (raw.string("status") != "ok") return null
+        val windows = raw.optionalArray("windows").map { it.obj() }
+        fun used(kind: String): Double? = windows.firstOrNull { it.string("kind") == kind }
+            ?.let { (it.values["usedPercent"] as? JsonNumber)?.source?.toDoubleOrNull() }
+        return UsageLimits(weeklyUsed = used("weekly"), sessionUsed = used("session"))
     }
 
     fun skills(value: JsonValue?): List<ProviderSkill>? {
@@ -298,6 +317,7 @@ object RemoteDecoders {
                 worktreePath = session.string("worktreePath"),
                 worktreeBranch = session.string("worktreeBranch"),
                 settledAt = session.long("settledAt"),
+                snooze = ChatSnooze.stateOf(session),
             )
         },
         workspaceId = raw.string("workspaceId"),
@@ -317,6 +337,7 @@ object RemoteDecoders {
         raw = raw,
         originSource = raw.string("origin_source"),
         statusLine = raw.string("status_line"),
+        hubParentId = (raw.values["hub"] as? JsonObject)?.string("parentId"),
     )
 
     private fun workspace(raw: JsonObject) = Workspace(

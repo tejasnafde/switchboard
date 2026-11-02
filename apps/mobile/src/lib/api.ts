@@ -3,10 +3,18 @@
  * window.api subset. One instance per paired backend. Channel names and event
  * types come from src/shared, so this stays in lockstep with the server.
  */
+import type {
+  ConversationSnoozedEvent,
+  SnoozePresetSpec,
+  SnoozePresetsChangedEvent,
+  SnoozeRequest,
+  SnoozeResult,
+} from '@shared/chat-snooze'
 import { WsTransport, type TransportSocket, type WsAuth } from '@shared/ws-transport'
 import type { Transport } from '@shared/transport'
 import {
   AppChannels,
+  GitChannels,
   HtmlLiveChannels,
   MachineChannels,
   ProviderChannels,
@@ -20,6 +28,7 @@ import {
 import type { HtmlLiveOpenRequest, HtmlLiveState } from '@shared/html-live'
 import { ATTACHMENT_UPLOAD_CAPABILITY } from '@shared/attachments'
 import type { LimitState } from '@shared/limit-resume'
+import type { HubChatView } from '@shared/hub'
 import type { SttTranscribeRequest, SttTranscribeResult } from '@shared/stt'
 import type {
   RuntimeEvent,
@@ -55,8 +64,11 @@ import type { HostWriteResponse } from '@shared/agent-host-writes'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { MergeBackActionResult, MergeBackPreview, MergeBackToken } from '@shared/merge-back'
 import type { PrLink, PrLinkChat, PrLinkResult } from '@shared/pull-request-links'
+import type { BranchRead, DiffRead } from '@shared/chat-details'
+import type { ProviderUsage } from '@shared/provider-usage'
 import type { PrConversation, PrDetail, PrListData, PrRef, PrResult, RepoRef } from '@shared/pull-requests'
 import type { PrWriteDone } from '@shared/pull-request-writes'
+import type { ConversationSettledEvent } from '@shared/chat-settle'
 import type { ForkConversationOutcome, ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type {
   GetWorktreeCreationRequest,
@@ -307,6 +319,44 @@ export class SwitchboardClient {
     return this.transport.invoke(AppChannels.MARK_READ, threadId)
   }
 
+  /** Gate: `CHAT_SNOOZE_CAPABILITY`. Out of Recents until a time or a PR event. */
+  snoozeConversation(conversationId: string, request: SnoozeRequest): Promise<SnoozeResult> {
+    return this.transport.invoke(AppChannels.SNOOZE_CONVERSATION, conversationId, request)
+  }
+
+  /** Gate: `CHAT_SNOOZE_CAPABILITY`. Wake: ends the snooze with no Woke marker. */
+  unsnoozeConversation(conversationId: string): Promise<{ ok: boolean; rev?: number }> {
+    return this.transport.invoke(AppChannels.UNSNOOZE_CONVERSATION, conversationId)
+  }
+
+  /** Gate: `CHAT_SNOOZE_CAPABILITY`. The user opened a woken chat. */
+  markWokeSeen(conversationId: string): Promise<{ ok: boolean }> {
+    return this.transport.invoke(AppChannels.MARK_WOKE_SEEN, conversationId)
+  }
+
+  onConversationSnoozed(handler: (event: ConversationSnoozedEvent) => void): () => void {
+    return this.transport.on(AppChannels.CONVERSATION_SNOOZED, handler as (...args: unknown[]) => void)
+  }
+
+  /** Gate: `CHAT_SNOOZE_PRESETS_CAPABILITY`. The presets the desktop edits; the phone only reads them. */
+  getSnoozePresets(): Promise<SnoozePresetSpec[]> {
+    return this.transport.invoke(AppChannels.GET_SNOOZE_PRESETS)
+  }
+
+  onSnoozePresetsChanged(handler: (event: SnoozePresetsChangedEvent) => void): () => void {
+    return this.transport.on(AppChannels.SNOOZE_PRESETS_CHANGED, handler as (...args: unknown[]) => void)
+  }
+
+  /** Gate: `CHAT_SETTLE_CAPABILITY`. Takes a finished chat out of Recents without archiving it. */
+  settleConversation(conversationId: string): Promise<{ ok: boolean; settledAt: number }> {
+    return this.transport.invoke(AppChannels.SETTLE_CONVERSATION, conversationId)
+  }
+
+  /** Gate: `CHAT_SETTLE_CAPABILITY`. The settle's Undo. */
+  unsettleConversation(conversationId: string): Promise<{ ok: boolean }> {
+    return this.transport.invoke(AppChannels.UNSETTLE_CONVERSATION, conversationId)
+  }
+
   serverVersion(): Promise<string> {
     return this.transport.invoke('server:version')
   }
@@ -448,6 +498,16 @@ export class SwitchboardClient {
     return this.transport.invoke(ProviderChannels.LIMIT_RESUME_NOW, threadId)
   }
 
+  /** A chat's hub view: its parent while it is an open child, else its children (needs `HUB_CHILDREN_CAPABILITY`). */
+  hubListChildren(threadId: string): Promise<HubChatView> {
+    return this.transport.invoke(ProviderChannels.HUB_LIST_CHILDREN, threadId)
+  }
+
+  /** Stop all of a parent's open children; the backend holds its updates until the next message. */
+  hubStopChildren(parentId: string): Promise<void> {
+    return this.transport.invoke(ProviderChannels.HUB_STOP_CHILDREN, parentId)
+  }
+
   /** A user send to another session; with `undeliveredId` it sends a kept Not delivered row. */
   deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string }> {
     return this.transport.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, input)
@@ -534,6 +594,11 @@ export class SwitchboardClient {
     return this.transport.on(PullRequestChannels.LINKS_CHANGED, () => handler())
   }
 
+  /** A chat was settled (or unsettled) on any client; `conversationId` is the root id. */
+  onConversationSettled(handler: (event: ConversationSettledEvent) => void): () => void {
+    return this.transport.on<[ConversationSettledEvent]>(AppChannels.CONVERSATION_SETTLED, (event) => handler(event))
+  }
+
   interrupt(threadId: string): Promise<InterruptResult | undefined> {
     return this.transport.invoke(ProviderChannels.INTERRUPT, threadId)
   }
@@ -610,6 +675,20 @@ export class SwitchboardClient {
    */
   listInstances(): Promise<ProviderInstance[]> {
     return this.transport.invoke(ProviderInstanceChannels.LIST)
+  }
+
+  /** The account's usage limits, read on the backend (cached there for 45 s). Never rejects on a failed read: see `status`. */
+  instanceUsage(instanceId: string): Promise<ProviderUsage> {
+    return this.transport.invoke(ProviderInstanceChannels.USAGE, instanceId)
+  }
+
+  // ── git (the Details sheet, `details_sheet_v1`) ──
+  currentBranch(cwd: string): Promise<BranchRead> {
+    return this.transport.invoke(GitChannels.CURRENT_BRANCH, cwd)
+  }
+
+  diffStat(cwd: string): Promise<DiffRead> {
+    return this.transport.invoke(GitChannels.DIFF_STAT, cwd)
   }
 
   /**

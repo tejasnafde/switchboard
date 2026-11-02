@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-release-0.5.25",
+  "summary": "Native Android release 0.5.25 (versionCode 27): the next Play build after 0.5.24. Adds what merged after 0.5.24: Settle on the phones (#523, #511), Snooze and shared presets (#518, #522), the Details sheet (#519), the WebView renderer recovery for chat visuals (#480), and, behind flags that stay off, hub children (#521, hub_children and hub_remote_children) and live pages (#491, phone_html_live_run).",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Android version bump only; the desktop parts of each shipped feature are covered by that feature's own manifest."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo client has its own OTA and build lanes; this bump touches only apps/android."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No API change; the backend contracts these Android features use are covered by their own manifests."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes in this bump."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        ".github/workflows/mobile-release.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "The mobile-release workflow runs the Android unit, lint and androidTest compile gate before it builds the AAB."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Install of the Play internal build on the OnePlus 11R (next step, by the user)."
+    ]
+  }
+}

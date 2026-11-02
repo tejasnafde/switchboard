@@ -37,6 +37,20 @@ export const AppChannels = {
   UNSETTLE_CONVERSATION: 'app:unsettle-conversation',
   /** backend → clients push: `ConversationSettledEvent` after a settle, an unsettle or a merged PR's settle. */
   CONVERSATION_SETTLED: 'app:conversation-settled',
+  /** (id, SnoozeRequest) → SnoozeResult: hide a chat from Recents until a time or a PR event (`shared/chat-snooze.ts`). */
+  SNOOZE_CONVERSATION: 'app:snooze-conversation',
+  /** (id, expectRev?) → { ok, rev? }: Wake and Undo. Ends the snooze with no Woke marker; `rev` is the revision after it. */
+  UNSNOOZE_CONVERSATION: 'app:unsnooze-conversation',
+  /** (id) → { ok }: the user opened a woken chat; drop its Woke marker. */
+  MARK_WOKE_SEEN: 'app:mark-woke-seen',
+  /** backend → clients push: `ConversationSnoozedEvent` after every snooze change, from any client or the timer. */
+  CONVERSATION_SNOOZED: 'app:conversation-snoozed',
+  /** () → SnoozePresetSpec[]: the Snooze menu presets (`chats.snoozePresets`), the defaults when unset or unusable. */
+  GET_SNOOZE_PRESETS: 'app:get-snooze-presets',
+  /** (specs) → SnoozePresetsResult: replace the list; refused unless every entry is a preset, 1 to 8. */
+  SET_SNOOZE_PRESETS: 'app:set-snooze-presets',
+  /** backend → clients push: `SnoozePresetsChangedEvent` after a write that changed the list. */
+  SNOOZE_PRESETS_CHANGED: 'app:snooze-presets-changed',
   EXPORT_MARKDOWN: 'app:export-markdown',
   SAVE_IMAGE: 'app:save-image',
   LOAD_SESSION_BY_ID: 'app:load-session-by-id',

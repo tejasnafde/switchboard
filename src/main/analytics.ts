@@ -141,8 +141,8 @@ export function attachAnalyticsCrashHooks(electronApp: App): void {
 }
 
 /**
- * Renderer-originated events. Only the tour outcomes are accepted; the
- * renderer cannot mint launch, session or crash counts.
+ * Renderer-originated events. Only the tour outcomes and a snooze undo are
+ * accepted; the renderer cannot mint launch, session, crash or wake counts.
  */
 export function registerAnalyticsHandlers(host: BackendHost): void {
   host.handle(AnalyticsChannels.TRACK, (event: unknown, properties?: unknown): boolean => {

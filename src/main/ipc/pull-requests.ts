@@ -58,8 +58,9 @@ import {
   unlinkConversationPullRequest,
 } from '../db/database'
 import type { RuntimeEventBus } from '../provider/event-bus'
-import { shouldAutoSettle } from '@shared/chat-settle'
+import type { PrReading } from '@shared/chat-snooze'
 import { storeConversationSettled } from '../conversations/chat-settle'
+import { createSettleOnMerge, type SettleOnMerge } from '../pull-requests/settle-on-merge'
 import { PullRequestAutoLinker } from '../pull-requests/auto-link'
 import { PullRequestLinkSync } from '../pull-requests/link-sync'
 import {
@@ -163,10 +164,12 @@ export interface LinkedChatActivity {
 }
 
 let settleOnMerge: (chatId: string, prNumber: number) => void = () => {}
+let settleOnMergeRetries: SettleOnMerge | null = null
 
 /**
  * Stores a PR's state on its links and returns the chats whose link changed.
- * A change to merged settles each such chat that is idle, once per change.
+ * A change to merged settles each such chat that is idle, once per change
+ * (a settle that throws is retried a few times, see `settle-on-merge.ts`).
  */
 function storeLinkState(ref: PrRef, state: PrState, observedAt = Date.now()): string[] {
   let changed: string[]
@@ -202,26 +205,18 @@ export function attachPullRequestAutoLink(
 ): () => void {
   notifyLinks = (conversationId, created) =>
     host.emit(PullRequestChannels.LINKS_CHANGED, { conversationId, ...(created ? { created: true } : {}) })
-  settleOnMerge = (chatId, prNumber) => {
-    const row = getConversationByThreadId(chatId)
-    if (
-      !row ||
-      !shouldAutoSettle({
-        state: 'merged',
-        busy: chats.busy(row.id),
-        needsUser: chats.needsUser(row.id),
-        settledAt: row.settled_at ?? null,
-      })
-    )
-      return
-    try {
-      if (storeConversationSettled(host, row.id, Date.now(), prNumber)) {
-        log.info('settled a chat whose linked pull request merged', { chatId: row.id, number: prNumber })
-      }
-    } catch (err) {
-      log.warn('settling a chat after its pull request merged failed', { chatId: row.id, err: String(err) })
-    }
-  }
+  settleOnMergeRetries?.cancel()
+  const settler = createSettleOnMerge({
+    readChat: (chatId) => {
+      const row = getConversationByThreadId(chatId)
+      return row ? { id: row.id, settledAt: row.settled_at ?? null } : null
+    },
+    busy: chats.busy,
+    needsUser: chats.needsUser,
+    store: (id, settledAt, prNumber) => storeConversationSettled(host, id, settledAt, prNumber),
+  })
+  settleOnMergeRetries = settler
+  settleOnMerge = settler.settle
   const linker = new PullRequestAutoLinker({
     conversationFor: (threadId) => {
       const row = getConversationByThreadId(threadId)
@@ -258,7 +253,42 @@ export function attachPullRequestAutoLink(
   return () => {
     stopLinker()
     stopSync()
+    settler.cancel()
+    if (settleOnMergeRetries === settler) {
+      settleOnMergeRetries = null
+      settleOnMerge = () => {}
+    }
   }
+}
+
+/** `github:owner/repo#512` (`prKey`) back to a ref, or null. */
+function refFromKey(key: string): PrRef | null {
+  const m = /^(github|bitbucket):([^/]+)\/(.+)#(\d+)$/.exec(key)
+  return m ? { host: m[1] as PrRef['host'], owner: m[2], name: m[3], number: Number(m[4]) } : null
+}
+
+/** A PR read for the snooze PR wake (`shared/chat-snooze.ts`), by `prKey`; null when it cannot be read. */
+export async function readPullRequestForSnooze(key: string): Promise<PrReading | null> {
+  const ref = refFromKey(key)
+  if (!ref) return null
+  const read = await getService().detail(ref)
+  if (!read.ok) return null
+  const changes = read.data.activity
+    .filter((a) => a.kind === 'reviewed' && a.summary === 'requested changes')
+    .map((a) => a.at)
+  return {
+    number: ref.number,
+    state: read.data.state,
+    updatedAt: read.data.updatedAt,
+    headSha: read.data.headSha,
+    checksFailed: read.data.checks.state === 'failure',
+    changesRequestedAt: changes.length > 0 ? Math.max(...changes) : null,
+  }
+}
+
+/** A snooze PR read found the PR merged: settle the chat by the same rule as a linked PR's merge. */
+export function settleChatOnMerge(chatId: string, prNumber: number): void {
+  settleOnMerge(chatId, prNumber)
 }
 
 function registerLinkHandlers(host: BackendHost): void {

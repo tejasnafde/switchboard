@@ -48,12 +48,13 @@ object BrowseParityDecisions {
             project.path.contains(needle, ignoreCase = true)
     }
 
-    fun showConversationSearch(conversationCount: Int, query: String): Boolean =
-        conversationCount > 8 || query.isNotBlank()
+    /** Also shown in a short list that leaves a child out: search is the way to it. */
+    fun showConversationSearch(rows: List<BrowseConversationRow>, query: String): Boolean =
+        rows.size > 8 || query.isNotBlank() || rows.any(BrowseConversationRow::underListedParent)
 
     /** A blank query keeps the list as it is; otherwise the Go to chat ranking (`ChatSearch`). */
     fun searchConversations(rows: List<BrowseConversationRow>, projectName: String, query: String): List<BrowseConversationRow> =
-        if (query.isBlank()) rows
+        if (query.isBlank()) rows.filterNot(BrowseConversationRow::underListedParent)
         else ChatSearch.rank(rows, query) { ChatSearch.Item(it.title, projectName, it.updatedAt) }
 
     fun sections(
