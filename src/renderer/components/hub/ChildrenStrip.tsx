@@ -58,7 +58,11 @@ const kTokens = (n: number) => `${Math.round(n / 1000)}k`
 function ChildRow({ parent, child }: { parent: HubChatRef; child: HubChildView }) {
   const tokens = child.lastTurn?.usedTokens
   const muted = [child.account, tokens != null ? kTokens(tokens) : null].filter(Boolean)
-  const title = <span className="truncate text-[var(--text-primary)]">{child.chat.title}</span>
+  const title = (
+    <span title={child.chat.title} className="truncate text-[var(--text-primary)]">
+      {child.chat.title}
+    </span>
+  )
   return (
     <li
       data-hub-child={child.state}
@@ -69,7 +73,7 @@ function ChildRow({ parent, child }: { parent: HubChatRef; child: HubChildView }
       {child.remote ? (
         <span className="flex min-w-0 items-center gap-[6px]">
           {title}
-          <MachineBadge name={child.remote.machine} />
+          <MachineBadge name={child.remote.machine} className="max-w-[50%]" />
         </span>
       ) : (
         title
