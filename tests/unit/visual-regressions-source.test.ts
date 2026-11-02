@@ -46,6 +46,8 @@ describe('visual regression harness safety', () => {
     expect(new Set(screens)).toEqual(
       new Set([
         'landing',
+        'sidebar-snoozed',
+        'sidebar-snooze-menu',
         'message-search',
         'chat',
         'linked-pr-picker',

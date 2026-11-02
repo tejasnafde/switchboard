@@ -56,7 +56,7 @@ import type { Machine } from '@shared/machines'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { RecentSessionsSection } from './RecentSessionsSection'
 import { deriveRecentSessions, recentLiveSignal, type RecentLiveSession } from './recent-sessions'
-import { countLabel, localMachineSummary } from './recent-groups'
+import { countLabel, localMachineSummary, recentGroupKey } from './recent-groups'
 import {
   DEFAULT_RECENT_SESSION_LIMIT,
   RECENT_SESSION_LIMIT_CHANGED,
@@ -802,11 +802,15 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
   ): ContextMenuItem[] => {
     if (!CHAT_SNOOZE_ENABLED || !machineSupportsSnooze(machineId, CHAT_SNOOZE_CAPABILITY)) return []
     const target = { id: session.id, title: session.title, machineId }
-    if (session.snoozedAt != null) return [{ label: 'Wake', onClick: () => (close(), void wakeChat(target)) }]
+    if (session.snoozedAt != null) {
+      const wake = () => {
+        close()
+        void wakeChat(target)
+      }
+      return [{ label: 'Wake', onClick: wake }]
+    }
     const item = recentSessions.find((r) => r.session.id === session.id && r.machineId === machineId)
-    const needsYou =
-      item?.status === 'approval' || item?.status === 'input' || item?.status === 'plan' || item?.status === 'failed'
-    if (needsYou) return []
+    if (recentGroupKey(item?.status) === 'needs-you') return []
     const snooze = (choice: SnoozeChoice) => {
       close()
       void snoozeChat(target, choice, 'context_menu')
