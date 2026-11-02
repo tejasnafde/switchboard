@@ -102,6 +102,7 @@ export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'er
 /** Runtime-only: clients live outside the store so persist never touches them. */
 const clients = new Map<string, SwitchboardClient>()
 const eventUnsubs = new Map<string, () => void>()
+const snoozeUnsubs = new Map<string, () => void>()
 const credentialWrites = new Map<string, Promise<void>>()
 
 // A native save already in flight must finish before unpair deletes its keys.
@@ -164,6 +165,10 @@ function attachClient(id: string, client: SwitchboardClient): void {
       useChatStore.getState().ingest(id, event)
       noticeTurnCompletion(id, event)
     }),
+  )
+  snoozeUnsubs.set(
+    id,
+    client.onConversationSnoozed((event) => useRecentsStore.getState().applySnooze(id, event)),
   )
 }
 
@@ -372,6 +377,8 @@ export const useConnectionsStore = create<ConnectionsState>()(
       disconnect: (id) => {
         eventUnsubs.get(id)?.()
         eventUnsubs.delete(id)
+        snoozeUnsubs.get(id)?.()
+        snoozeUnsubs.delete(id)
         const transport = clients.get(id)?.transport
         if (transport instanceof IapTransport) iapResume.set(id, transport.resumeState())
         clients.get(id)?.close()

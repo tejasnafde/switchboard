@@ -83,6 +83,8 @@ import { QueueSegment } from '../components/QueueSegment'
 import { AgentSettingsSheet } from '../components/AgentSettingsSheet'
 import { settingsChipLabel, usageAccessibilityLabel, usageLine } from '../lib/thread-chrome'
 import { LimitResumeRow } from '../components/LimitResumeRow'
+import { SnoozeLine } from '../components/SnoozeLine'
+import { markWokeSeen, useRecentsStore, wakeChat } from '../stores/recents'
 import { ReviewPillChip } from '../components/ReviewPillChip'
 import { unlinkPrLink } from '../lib/pr-link-unlink'
 import type { PrLink } from '@shared/pull-request-links'
@@ -118,6 +120,7 @@ import {
 import { MergeBackSheet, type MergeBackSheetApi, type MergeBackSheetMode } from '../components/MergeBackSheet'
 import { FORK_MERGE_BACK_CAPABILITY } from '@shared/merge-back'
 import { LIMIT_AUTO_RESUME_CAPABILITY } from '@shared/limit-resume'
+import { CHAT_SNOOZE_CAPABILITY, isWoke } from '@shared/chat-snooze'
 import { styles } from './thread-screen.styles'
 import { blockedSendReason } from '../lib/composer'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
@@ -211,6 +214,17 @@ export default function ThreadScreen({ route, navigation }: Props) {
         ),
       ),
     [thread.historyMessages],
+  )
+
+  const recentSession = useRecentsStore((s) => s.sessions[connectionId]?.find((x) => x.id === threadId))
+  const woke =
+    recentSession !== undefined &&
+    isWoke({ snoozedAt: recentSession.snoozedAt ?? null, wokeAt: recentSession.wokeAt ?? null })
+  // Opening a woken chat, or a chat waking while it is open, clears its Woke mark.
+  useFocusEffect(
+    useCallback(() => {
+      if (woke) markWokeSeen(connectionId, threadId)
+    }, [woke, connectionId, threadId]),
   )
 
   // useFocusEffect (not useEffect) so activeKey tracks push/pop: pushing
@@ -1229,6 +1243,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // An older backend has no Limited row channels; it keeps the held message's Resume only.
   const currentClient = getClient(connectionId)
   const limitRowClient = currentClient?.supportsCapability(LIMIT_AUTO_RESUME_CAPABILITY) === true ? currentClient : null
+  const snoozeCapable = currentClient?.supportsCapability(CHAT_SNOOZE_CAPABILITY) === true
   const [mergeBackSheet, setMergeBackSheet] = useState<MergeBackSheetMode | null>(null)
   // The client is looked up per call: a reconnect replaces it while the sheet is open.
   const mergeBackApi = useMemo<MergeBackSheetApi>(() => {
@@ -1589,6 +1604,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
           </Pressable>
         </View>
       )}
+
+      {snoozeCapable && <SnoozeLine session={recentSession} onWake={() => wakeChat(connectionId, threadId)} />}
 
       {/* Keyed by the re-seed revision: after a resume gap the row reads its state again. */}
       {limitRowClient && (

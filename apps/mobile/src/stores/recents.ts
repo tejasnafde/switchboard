@@ -7,7 +7,15 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { createLogger } from '@shared/logger'
-import { persistedRecents, sessionsFromProjects, type LiveStatuses, type RecentSession } from '../lib/home-recents'
+import { CHAT_SNOOZE_CAPABILITY, isWoke, snoozeRefusalText, type ConversationSnoozedEvent } from '@shared/chat-snooze'
+import {
+  persistedRecents,
+  sessionsFromProjects,
+  withSnoozeEvent,
+  type LiveStatuses,
+  type RecentSession,
+} from '../lib/home-recents'
+import { snoozedEvent, snoozeRequestFor, wokenEvent, type SnoozeChoice } from '../lib/snooze-sheet'
 import { statusMark } from './chat'
 import { getClient } from './connections'
 
@@ -15,6 +23,8 @@ const log = createLogger('store:recents')
 
 /** Per machine on disk: enough to fill Home a few pages deep while offline. */
 export const MAX_CACHED_RECENTS = 50
+
+const NOT_CONNECTED = 'The machine is not connected'
 
 interface RecentsState {
   sessions: Record<string, RecentSession[]>
@@ -25,6 +35,8 @@ interface RecentsState {
   dropLive: (connectionId: string) => void
   /** The machine was unpaired. */
   forget: (connectionId: string) => void
+  /** A snooze changed: a broadcast, or the answer to this phone's own request. */
+  applySnooze: (connectionId: string, event: ConversationSnoozedEvent) => void
 }
 
 /** The newest request per machine; an older reply that lands later is dropped. */
@@ -78,6 +90,14 @@ export const useRecentsStore = create<RecentsState>()(
         requests.delete(connectionId)
         set((s) => ({ sessions: without(s.sessions, connectionId), live: without(s.live, connectionId) }))
       },
+
+      applySnooze: (connectionId, event) => {
+        set((s) => {
+          const list = s.sessions[connectionId]
+          const next = list && withSnoozeEvent(list, event)
+          return next && next !== list ? { sessions: { ...s.sessions, [connectionId]: next } } : {}
+        })
+      },
     }),
     {
       name: 'switchboard-recents',
@@ -87,3 +107,63 @@ export const useRecentsStore = create<RecentsState>()(
     },
   ),
 )
+
+function sessionOf(connectionId: string, id: string): RecentSession | undefined {
+  return useRecentsStore.getState().sessions[connectionId]?.find((s) => s.id === id)
+}
+
+/** Snooze a chat from the sheet. Resolves to the line to show when it did not happen, or null. */
+export async function snoozeChat(connectionId: string, id: string, choice: SnoozeChoice): Promise<string | null> {
+  const client = getClient(connectionId)
+  if (!client) return NOT_CONNECTED
+  const now = Date.now()
+  const asked = snoozeRequestFor(choice, now)
+  if (!asked.ok) return snoozeRefusalText(asked.reason)
+  try {
+    const result = await client.snoozeConversation(id, asked.request)
+    if (!result.ok) {
+      log.info(`snooze refused for ${id}`, { reason: result.reason })
+      return snoozeRefusalText(result.reason)
+    }
+    useRecentsStore.getState().applySnooze(connectionId, snoozedEvent(id, result, now))
+    return null
+  } catch (err) {
+    log.warn(`could not snooze ${id}`, err)
+    return 'Could not snooze. Try again'
+  }
+}
+
+/** Wake now: end the snooze with no Woke marker. */
+export async function wakeChat(connectionId: string, id: string): Promise<string | null> {
+  const client = getClient(connectionId)
+  if (!client) return NOT_CONNECTED
+  try {
+    const result = await client.unsnoozeConversation(id)
+    if (!result.ok) return 'This chat is no longer snoozed'
+    useRecentsStore
+      .getState()
+      .applySnooze(connectionId, wokenEvent(id, result.rev, sessionOf(connectionId, id)?.snoozeRev ?? 0))
+    return null
+  } catch (err) {
+    log.warn(`could not wake ${id}`, err)
+    return 'Could not wake the chat. Try again'
+  }
+}
+
+/** The Thread screen of a woken chat opened: drop its Woke marker everywhere. */
+export function markWokeSeen(connectionId: string, id: string): void {
+  const session = sessionOf(connectionId, id)
+  if (!session || !isWoke({ snoozedAt: session.snoozedAt ?? null, wokeAt: session.wokeAt ?? null })) return
+  const client = getClient(connectionId)
+  if (client?.supportsCapability(CHAT_SNOOZE_CAPABILITY) !== true) return
+  useRecentsStore.getState().applySnooze(connectionId, {
+    conversationId: id,
+    snoozedUntil: null,
+    snoozedAt: null,
+    snoozePr: null,
+    snoozeRev: session.snoozeRev ?? 0,
+    wokeAt: null,
+    wokeReason: null,
+  })
+  client.markWokeSeen(id).catch((err: unknown) => log.warn(`could not clear the Woke mark of ${id}`, err))
+}
