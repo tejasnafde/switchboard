@@ -104,15 +104,14 @@
       "tests/unit/raised-surface-contrast.test.ts and light-theme-contrast.test.ts: muted text on the selected and hovered Recents row and the keycap, and the hovered Settle and Undo, at 4.5:1 or better in dark and light.",
       "apps/mobile/src/lib/__tests__/home-recents-settled.test.ts (jest): Home > Recents leaves out a settled chat, also after an edit moved its time, and keeps it while it works.",
       "tests/unit/settle-on-merge-retry.test.ts: a Reviews merge whose settle throws once settles on the retry 2 s later (fake timers), gives up after the last delay, does not retry once the chat starts a turn, never settles a chat busy at merge time, and drops pending retries on detach.",
-      "apps/mobile/src/stores/__tests__/recents-settled.test.ts (jest): a connected machine's app:conversation-settled broadcast patches the Home > Recents row, an unsettle restores it, an id no row has reads app:get-projects again, and disconnect stops listening."
+      "apps/mobile/src/stores/__tests__/recents-settled.test.ts (jest): a connected machine's app:conversation-settled broadcast patches the Home > Recents row, an unsettle restores it, an id no row has reads app:get-projects again, and disconnect stops listening.",
+      "apps/android testDebugUnitTest (gradle, 2026-11-03): HomePresentationTest (a settled chat leaves Recents) and HomeProjectRefreshCoordinatorTest (a settle broadcast re-reads the project list while Home is mounted, the new settledAt reaches the state, close cancels the subscription) pass."
     ],
     "hardware": [],
     "notExercised": [
-      "The Kotlin HomePresentationTest case was written but not run here (no gradle run in this change).",
       "Settle, the notice, Cmd+Z and the merged-PR settle were not driven in the running app or in a packaged build; no screenshots were refreshed.",
       "A remote machine's chat settled from the desktop was not run against an SSH machine.",
-      "The live settle on a phone was not driven against a running desktop on an iPhone or an Android device; the Android Home re-reads the whole project list on each broadcast instead of patching one row.",
-      "apps/android HomeProjectRefreshCoordinatorTest (a settle broadcast re-reads the project list while Home is mounted, the new settledAt reaches the state, close cancels the subscription) is written but its gradle run is pending."
+      "The live settle on a phone was not driven against a running desktop on an iPhone or an Android device; the Android Home re-reads the whole project list on each broadcast instead of patching one row."
     ]
   }
 }
