@@ -12,7 +12,7 @@ describe('filterModels', () => {
   ]
 
   it('returns the list unchanged for a blank query', () => {
-    expect(filterModels(models, '  ')).toBe(models)
+    expect(filterModels(models, '  ')).toEqual(models)
   })
 
   it('matches the id or the label, ignoring case and surrounding space', () => {

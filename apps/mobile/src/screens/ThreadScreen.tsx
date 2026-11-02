@@ -30,6 +30,7 @@ import type { ProviderKind, RuntimeMode } from '@shared/provider-events'
 import { shouldLoadPhoneHistory } from '@shared/phone-history-window'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
 import { canSteer, type QueuedTurnSummary } from '@shared/turn-delivery'
+import { shortModelLabel } from '@shared/models'
 import { providerKindFor, type ProviderInstance, type ProviderSkill } from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
@@ -800,7 +801,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
   }
 
   const modelLabel = models.find((m) => m.id === model)?.label ?? 'Default'
-  const settingsChip = settingsChipLabel(models.length > 0 ? modelLabel : null, thread.runtimeMode)
+  // The chip has little room: the short name ("Opus 5"); the sheet keeps the full label.
+  const chipModel = model ? shortModelLabel(model, models) : 'Default'
+  const settingsChip = settingsChipLabel(models.length > 0 ? chipModel : null, thread.runtimeMode)
 
   /**
    * Messages still waiting to reach the backend, for this thread.

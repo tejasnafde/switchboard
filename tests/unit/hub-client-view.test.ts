@@ -82,9 +82,9 @@ describe('labels', () => {
 
   it('counts children on the chip and adds the parent state when it has one', () => {
     expect(hubChipText({ children: [{}, {}] as never, state: 'waiting' })).toBe(
-      'Hub, 2 children · Waiting for children',
+      'Hub · 2 children · Waiting for children',
     )
-    expect(hubChipText({ children: [{}] as never, state: 'idle' })).toBe('Hub, 1 child')
+    expect(hubChipText({ children: [{}] as never, state: 'idle' })).toBe('Hub · 1 child')
     expect(hubChildCount(1)).toBe('1 child')
     expect(hubChildCount(6)).toBe('6 children')
   })

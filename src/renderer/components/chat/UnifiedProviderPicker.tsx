@@ -27,8 +27,18 @@ import { LoadingStatus } from '../ui/loading-status'
  * The instance rail collapses (single-column) when the active agent has
  * fewer than 2 enabled instances.
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
-import { modelsForAgent, type ModelOption } from '@shared/models'
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type RefObject,
+} from 'react'
+import { modelsForAgent, shortModelLabel, type ModelOption } from '@shared/models'
+import { initialsInk } from '@shared/initials-ink'
 import {
   AGENT_TYPES,
   agentLabel,
@@ -50,7 +60,7 @@ import { cn } from '../../lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { ChipCaret } from '../ui/chip'
 import { Spinner } from '../ui/spinner'
-import { filterModels, groupModelsByProvider } from './provider-picker-models'
+import { filterModels, groupModelsByProvider, pickerRows } from './provider-picker-models'
 
 interface UnifiedProviderPickerProps {
   wait?: ChatWait
@@ -146,7 +156,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
   const staticModels = modelsForAgent(agentType)
   const models = dynamicModels && dynamicModels.length > 0 ? dynamicModels : staticModels
 
-  const accent = effectiveInstance?.accentColor ?? 'var(--accent)'
+  const accent = effectiveInstance?.accentColor ?? DEFAULT_PICK_ACCENT
   const initials = effectiveInstance ? providerInstanceInitials(effectiveInstance.displayName) : '··'
   // Computed from the RAW requested instanceId (not `effectiveInstance.id`,
   // which is already post-fallback and so always a member of `instances`) -
@@ -155,16 +165,12 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
   const showRail = shouldShowInstanceRail(instances, instanceId)
   const showInstanceBadge = showRail
 
-  // Trigger label: "Claude · Sonnet 4.5". An unpinned session shows the model
-  // the backend resolved to, falling back to "Default" only before the first
-  // turn reports one - a bare "Default" hid the model that caused the
-  // 2026-07-31 spend rejection.
-  const modelLabel = useMemo(() => {
-    const effective = model || resolvedModel
-    if (!effective) return 'Default'
-    const found = models.find((m) => m.id === effective)
-    return found?.label ?? effective
-  }, [models, model, resolvedModel])
+  // Trigger label: "Claude · Sonnet 5", the short name; the title keeps the
+  // full id. An unpinned session shows the model the backend resolved to,
+  // falling back to "Default" only before the first turn reports one - a bare
+  // "Default" hid the model that caused the 2026-07-31 spend rejection.
+  const effectiveModel = model || resolvedModel
+  const modelLabel = effectiveModel ? shortModelLabel(effectiveModel, models) : 'Default'
 
   return (
     <Popover
@@ -177,9 +183,9 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
       <PopoverTrigger asChild>
         <button
           type="button"
-          title={`${agentShortLabel(agentType)}${effectiveInstance ? ' · ' + effectiveInstance.displayName : ''} · ${modelLabel}`}
+          title={`${agentShortLabel(agentType)}${effectiveInstance ? ' · ' + effectiveInstance.displayName : ''} · ${effectiveModel || 'Default'}`}
           style={accentVar(accent)}
-          className="inline-flex h-[24px] min-w-0 max-w-[280px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] pr-[8px] pl-[4px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] data-[state=open]:border-[var(--pick-accent)]"
+          className="inline-flex h-[24px] min-w-0 max-w-[280px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] pr-[8px] pl-[4px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] hover:border-[var(--border-strong)] focus-visible:border-[var(--pick-accent)] data-[state=open]:border-[var(--pick-accent)] motion-reduce:transition-none"
         >
           {wait?.pending ? (
             <>
@@ -193,7 +199,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
             <>
               <span
                 aria-hidden
-                className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--pick-accent)] text-[8px] font-[700] tracking-[0.02em] text-[#fff]"
+                className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--pick-accent)] text-[8px] font-[700] tracking-[0.02em] text-[var(--pick-ink)]"
               >
                 {showInstanceBadge ? initials : agentShortLabel(agentType).slice(0, 2).toUpperCase()}
               </span>
@@ -229,7 +235,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           setShowCustom(false)
           searchRef.current?.focus()
         }}
-        className="sb-provider-picker z-[1200] flex max-h-[360px] w-[480px] flex-col overflow-hidden rounded-[8px] border border-[var(--border)]"
+        className="sb-provider-picker z-[1200] flex w-[480px] flex-col overflow-hidden rounded-[8px] border border-[var(--border)]"
       >
         {wait?.error && <LoadingStatus label={wait.label} error />}
         <UnifiedPickerPopover
@@ -305,9 +311,12 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
   )
 }
 
-/** The per-instance accent colour, read by the arbitrary classes below. */
+// The primary fill, which white initials read on at 4.6:1; --accent is too light in dark.
+const DEFAULT_PICK_ACCENT = '#1f6feb'
+
+/** The per-instance accent colour and the initials ink on it, read by the arbitrary classes below. */
 function accentVar(accent: string): CSSProperties {
-  return { '--pick-accent': accent } as CSSProperties
+  return { '--pick-accent': accent, '--pick-ink': initialsInk(accent) } as CSSProperties
 }
 
 interface PopoverProps {
@@ -373,10 +382,41 @@ function UnifiedPickerPopover(props: PopoverProps) {
     setQuery('')
     setShowCustom(false)
     setCustomValue('')
+    setActiveIndex(0)
   }, [agentType, setShowCustom])
 
   const filtered = useMemo(() => filterModels(models, query), [models, query])
   const grouped = useMemo(() => groupModelsByProvider(filtered), [filtered])
+  const rows = useMemo(() => pickerRows(grouped), [grouped])
+  // The row Up, Down and Enter act on; the search field keeps focus and
+  // points at it through aria-activedescendant. It opens on the current model.
+  const [activeIndex, setActiveIndex] = useState(() =>
+    Math.max(
+      0,
+      rows.findIndex((r) => r.id === model),
+    ),
+  )
+  const listId = useId()
+  const optionId = (index: number) => `${listId}-option-${index}`
+  const indexOf = (id: string) => rows.findIndex((r) => r.id === id)
+
+  useEffect(() => {
+    document.getElementById(optionId(activeIndex))?.scrollIntoView({ block: 'nearest' })
+  }, [activeIndex])
+
+  const onSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    e.stopPropagation()
+    if (rows.length === 0) return
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const step = e.key === 'ArrowDown' ? 1 : -1
+      setActiveIndex((i) => (i + step + rows.length) % rows.length)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const row = rows[Math.min(activeIndex, rows.length - 1)]
+      if (row) onModelChange(row.id)
+    }
+  }
 
   return (
     <>
@@ -392,11 +432,12 @@ function UnifiedPickerPopover(props: PopoverProps) {
               disabled={locked}
               onClick={() => onAgentTypeChange(a.value)}
               className={cn(
-                'flex-1 rounded-[5px] border px-[8px] py-[5px] text-[11px] outline-none transition-[background,border-color] duration-[120ms] ease-[ease]',
+                'flex-1 whitespace-nowrap rounded-[5px] border px-[8px] py-[5px] text-[11px] outline-none transition-[background,border-color] duration-[120ms] ease-[ease] focus-visible:border-[var(--border-focus)] motion-reduce:transition-none',
                 active
                   ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_16%,var(--bg-secondary))] font-[600] text-[var(--text-primary)]'
                   : 'border-transparent bg-transparent font-[500] text-[var(--text-secondary)]',
                 locked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+                !active && !locked && 'hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
               )}
             >
               {a.label}
@@ -405,125 +446,148 @@ function UnifiedPickerPopover(props: PopoverProps) {
         })}
       </div>
 
-      {/* Terminal tab body */}
-      {agentType === 'terminal' && (
-        <TerminalTabBody
-          allInstances={allInstances}
-          termCommand={termCommand}
-          setTermCommand={setTermCommand}
-          termInstanceId={termInstanceId}
-          setTermInstanceId={setTermInstanceId}
-          termStarting={termStarting}
-          termError={termError}
-          onStart={onTermStart}
-        />
-      )}
-
-      {/* Body - split rail (when 2+ instances) + model list */}
-      <div className={cn('min-h-0 flex-1', agentType === 'terminal' ? 'hidden' : 'flex')}>
-        {showRail && (
-          <div
-            role="radiogroup"
-            aria-label="Provider instance"
-            className="flex w-[132px] flex-col gap-[3px] overflow-y-auto border-r border-[var(--border)] bg-[var(--bg-secondary)] p-[6px]"
-          >
-            {instances.map((inst) => (
-              <InstanceRailItem
-                key={inst.id}
-                instance={inst}
-                active={inst.id === effectiveInstanceId}
-                onSelect={() => onInstanceChange(inst.id)}
-              />
-            ))}
-          </div>
+      {/* One fixed height for every tab and query, so the popover never jumps. */}
+      <div className="flex h-[300px] min-h-0 flex-col">
+        {/* Terminal tab body */}
+        {agentType === 'terminal' && (
+          <TerminalTabBody
+            allInstances={allInstances}
+            termCommand={termCommand}
+            setTermCommand={setTermCommand}
+            termInstanceId={termInstanceId}
+            setTermInstanceId={setTermInstanceId}
+            termStarting={termStarting}
+            termError={termError}
+            onStart={onTermStart}
+          />
         )}
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          {/* Search */}
-          <div className="border-b border-[var(--border)] p-[6px]">
-            <input
-              ref={searchRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search models..."
-              onKeyDown={(e) => e.stopPropagation()}
-              className={cn(inputClass, 'w-full py-[4px]')}
-            />
-          </div>
+        {/* Body - split rail (when 2+ instances) + model list */}
+        <div className={cn('min-h-0 flex-1', agentType === 'terminal' ? 'hidden' : 'flex')}>
+          {showRail && (
+            <div
+              role="radiogroup"
+              aria-label="Provider instance"
+              className="flex w-[132px] flex-col gap-[3px] overflow-y-auto border-r border-[var(--border)] bg-[var(--bg-secondary)] p-[6px]"
+            >
+              {instances.map((inst) => (
+                <InstanceRailItem
+                  key={inst.id}
+                  instance={inst}
+                  active={inst.id === effectiveInstanceId}
+                  onSelect={() => onInstanceChange(inst.id)}
+                />
+              ))}
+            </div>
+          )}
 
-          {/* Model list */}
-          <div className="flex-1 overflow-y-auto py-[4px]">
-            {!showCustom && (
-              <>
-                <ModelRow label="Default" monoId="" active={!model} onSelect={() => onModelChange('')} />
-                {grouped.ungrouped.map((m) => (
-                  <ModelRow
-                    key={m.id}
-                    label={m.label}
-                    monoId={m.id}
-                    active={m.id === model}
-                    onSelect={() => onModelChange(m.id)}
-                  />
-                ))}
-                {grouped.groups.map((g) => (
-                  <div key={g.provider}>
-                    <div className="px-[12px] pt-[6px] pb-[2px] text-[11px] font-[500] text-[var(--text-muted)]">
-                      {g.provider}
-                    </div>
-                    {g.models.map((m) => (
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/* Search */}
+            <div className="border-b border-[var(--border)] p-[6px]">
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  setActiveIndex(0)
+                }}
+                placeholder="Search models..."
+                role="combobox"
+                aria-expanded
+                aria-controls={listId}
+                aria-activedescendant={!showCustom && rows.length > 0 ? optionId(activeIndex) : undefined}
+                onKeyDown={onSearchKeyDown}
+                className={cn(inputClass, 'w-full py-[4px] focus-visible:border-[var(--border-focus)]')}
+              />
+            </div>
+
+            {/* Model list */}
+            <div className="min-h-0 flex-1 overflow-y-auto py-[4px]">
+              {!showCustom && (
+                <>
+                  <div id={listId} role="listbox" aria-label="Models">
+                    <ModelRow
+                      id={optionId(0)}
+                      label="Default"
+                      monoId=""
+                      current={!model}
+                      highlighted={activeIndex === 0}
+                      onSelect={() => onModelChange('')}
+                    />
+                    {grouped.ungrouped.map((m) => (
                       <ModelRow
                         key={m.id}
+                        id={optionId(indexOf(m.id))}
                         label={m.label}
                         monoId={m.id}
-                        active={m.id === model}
+                        current={m.id === model}
+                        highlighted={activeIndex === indexOf(m.id)}
                         onSelect={() => onModelChange(m.id)}
                       />
                     ))}
+                    {grouped.groups.map((g) => (
+                      <div key={g.provider}>
+                        <div className="px-[12px] pt-[6px] pb-[2px] text-[11px] font-[500] text-[var(--text-muted)]">
+                          {g.provider}
+                        </div>
+                        {g.models.map((m) => (
+                          <ModelRow
+                            key={m.id}
+                            id={optionId(indexOf(m.id))}
+                            label={m.label}
+                            monoId={m.id}
+                            current={m.id === model}
+                            highlighted={activeIndex === indexOf(m.id)}
+                            onSelect={() => onModelChange(m.id)}
+                          />
+                        ))}
+                      </div>
+                    ))}
                   </div>
-                ))}
-                {filtered.length === 0 && (
-                  <div className="p-[12px] text-center text-[11px] text-[var(--text-muted)]">No matches.</div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCustom(true)
-                    setCustomValue(model)
-                  }}
-                  className="mt-[4px] block w-full cursor-pointer border-x-0 border-b-0 border-t border-[var(--border)] bg-transparent px-[12px] py-[6px] text-left text-[11px] text-[var(--accent)]"
-                >
-                  Custom model id…
-                </button>
-              </>
-            )}
-            {showCustom && (
-              <div className="flex flex-col gap-[6px] px-[10px] py-[8px]">
-                <input
-                  value={customValue}
-                  onChange={(e) => setCustomValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    e.stopPropagation()
-                    if (e.key === 'Enter') onModelChange(customValue.trim())
-                  }}
-                  placeholder="provider/model-id"
-                  autoFocus
-                  className={cn(inputClass, 'py-[5px] [font-family:var(--font-mono)]')}
-                />
-                <div className="flex justify-end gap-[6px]">
-                  <button type="button" onClick={() => setShowCustom(false)} className={pillButtonClass(false)}>
-                    Cancel
-                  </button>
+                  {filtered.length === 0 && (
+                    <div className="p-[12px] text-center text-[11px] text-[var(--text-muted)]">No matches.</div>
+                  )}
                   <button
                     type="button"
-                    onClick={() => onModelChange(customValue.trim())}
-                    disabled={!customValue.trim()}
-                    className={pillButtonClass(true)}
+                    onClick={() => {
+                      setShowCustom(true)
+                      setCustomValue(model)
+                    }}
+                    className="mt-[4px] block w-full cursor-pointer border-x-0 border-b-0 border-t border-[var(--border)] bg-transparent px-[12px] py-[6px] text-left text-[11px] text-[var(--accent)] outline-none hover:bg-[var(--bg-tertiary)] focus-visible:bg-[var(--bg-tertiary)]"
                   >
-                    Use
+                    Custom model id…
                   </button>
+                </>
+              )}
+              {showCustom && (
+                <div className="flex flex-col gap-[6px] px-[10px] py-[8px]">
+                  <input
+                    value={customValue}
+                    onChange={(e) => setCustomValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      e.stopPropagation()
+                      if (e.key === 'Enter') onModelChange(customValue.trim())
+                    }}
+                    placeholder="provider/model-id"
+                    autoFocus
+                    className={cn(inputClass, 'py-[5px] [font-family:var(--font-mono)]')}
+                  />
+                  <div className="flex justify-end gap-[6px]">
+                    <button type="button" onClick={() => setShowCustom(false)} className={pillButtonClass(false)}>
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onModelChange(customValue.trim())}
+                      disabled={!customValue.trim()}
+                      className={pillButtonClass(true)}
+                    >
+                      Use
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -687,7 +751,7 @@ function InstanceRailItem({
       aria-checked={active}
       title={instance.displayName}
       onClick={onSelect}
-      style={accentVar(instance.accentColor ?? 'var(--accent)')}
+      style={accentVar(instance.accentColor ?? DEFAULT_PICK_ACCENT)}
       className={cn(
         'flex cursor-pointer items-center gap-[6px] rounded-[5px] border px-[7px] py-[5px] text-left text-[11px] leading-[1.1] outline-none transition-[background,border-color] duration-[120ms] ease-[ease]',
         active
@@ -697,7 +761,7 @@ function InstanceRailItem({
     >
       <span
         aria-hidden
-        className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--pick-accent)] text-[8px] font-[700] text-[#fff]"
+        className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--pick-accent)] text-[8px] font-[700] text-[var(--pick-ink)]"
       >
         {providerInstanceInitials(instance.displayName)}
       </span>
@@ -706,31 +770,56 @@ function InstanceRailItem({
   )
 }
 
+/**
+ * A model option. `highlighted` is the row the arrow keys are on (the accent
+ * fill); `current` is the chat's model (bold). A pointer hover is a third,
+ * quieter state.
+ */
 function ModelRow({
+  id,
   label,
   monoId,
-  active,
+  current,
+  highlighted,
   onSelect,
 }: {
+  id: string
   label: string
   monoId: string
-  active: boolean
+  current: boolean
+  highlighted: boolean
   onSelect: () => void
 }) {
   return (
-    <button
-      type="button"
+    <div
+      id={id}
+      role="option"
+      tabIndex={-1}
+      aria-selected={highlighted}
+      aria-current={current || undefined}
       onClick={onSelect}
+      // Keep focus in the search field.
+      onMouseDown={(e) => e.preventDefault()}
       className={cn(
-        'flex w-full cursor-pointer items-baseline justify-between gap-[8px] border-0 px-[12px] py-[5px] text-left text-[11px] outline-none',
-        active
-          ? 'bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] font-[600] text-[var(--text-primary)]'
-          : 'bg-transparent font-[500] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]',
+        'flex w-full cursor-pointer items-baseline justify-between gap-[8px] px-[12px] py-[5px] text-left text-[11px] outline-none',
+        highlighted
+          ? 'bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-[var(--text-primary)]'
+          : 'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]',
+        current ? 'font-[600] text-[var(--text-primary)]' : 'font-[500]',
       )}
     >
       <span className="truncate">{label}</span>
-      {monoId && <span className="max-w-[50%] truncate text-[11px] text-[var(--text-muted)]">{monoId}</span>}
-    </button>
+      {monoId && (
+        <span
+          className={cn(
+            'max-w-[50%] truncate text-[11px]',
+            highlighted ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]',
+          )}
+        >
+          {monoId}
+        </span>
+      )}
+    </div>
   )
 }
 

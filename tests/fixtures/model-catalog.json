@@ -3,126 +3,150 @@
     {
       "id": "claude-fable-5",
       "label": "Claude Fable 5",
-      "tier": "max"
+      "tier": "max",
+      "short": "Fable 5"
     },
     {
       "id": "claude-opus-5",
       "label": "Claude Opus 5",
-      "tier": "max"
+      "tier": "max",
+      "short": "Opus 5"
     },
     {
       "id": "claude-opus-4-8",
       "label": "Claude Opus 4.8",
-      "tier": "max"
+      "tier": "max",
+      "short": "Opus 4.8"
     },
     {
       "id": "claude-opus-4-7",
       "label": "Claude Opus 4.7",
-      "tier": "max"
+      "tier": "max",
+      "short": "Opus 4.7"
     },
     {
       "id": "claude-sonnet-5",
       "label": "Claude Sonnet 5",
-      "tier": "balanced"
+      "tier": "balanced",
+      "short": "Sonnet 5"
     },
     {
       "id": "claude-sonnet-4-6",
       "label": "Claude Sonnet 4.6",
-      "tier": "balanced"
+      "tier": "balanced",
+      "short": "Sonnet 4.6"
     },
     {
       "id": "claude-haiku-4-5",
       "label": "Claude Haiku 4.5",
-      "tier": "fast"
+      "tier": "fast",
+      "short": "Haiku 4.5"
     }
   ],
   "codex": [
     {
       "id": "gpt-5.6-sol",
       "label": "GPT-5.6-Sol",
-      "tier": "max"
+      "tier": "max",
+      "short": "GPT-5.6-Sol"
     },
     {
       "id": "gpt-5.6-terra",
       "label": "GPT-5.6-Terra",
-      "tier": "balanced"
+      "tier": "balanced",
+      "short": "GPT-5.6-Terra"
     },
     {
       "id": "gpt-5.6-luna",
       "label": "GPT-5.6-Luna",
-      "tier": "fast"
+      "tier": "fast",
+      "short": "GPT-5.6-Luna"
     },
     {
       "id": "gpt-5.5",
       "label": "GPT-5.5",
-      "tier": "balanced"
+      "tier": "balanced",
+      "short": "GPT-5.5"
     },
     {
       "id": "gpt-5.4",
       "label": "GPT-5.4",
-      "tier": "balanced"
+      "tier": "balanced",
+      "short": "GPT-5.4"
     },
     {
       "id": "gpt-5.4-mini",
       "label": "GPT-5.4-Mini",
-      "tier": "fast"
+      "tier": "fast",
+      "short": "GPT-5.4-Mini"
     },
     {
       "id": "gpt-5.2",
       "label": "GPT-5.2",
-      "tier": "balanced"
+      "tier": "balanced",
+      "short": "GPT-5.2"
     }
   ],
   "opencode": [
     {
       "id": "nvidia-nim/z-ai/glm-5.1",
       "label": "GLM 5.1 (NVIDIA, free)",
-      "tier": "max"
+      "tier": "max",
+      "short": "GLM 5.1 (NVIDIA, free)"
     },
     {
       "id": "nvidia-nim/moonshotai/kimi-k2.5",
       "label": "Kimi K2.5 (NVIDIA, free)",
-      "tier": "max"
+      "tier": "max",
+      "short": "Kimi K2.5 (NVIDIA, free)"
     },
     {
       "id": "nvidia-nim/minimaxai/minimax-m2.7",
       "label": "MiniMax M2.7 (NVIDIA, free)",
-      "tier": "balanced"
+      "tier": "balanced",
+      "short": "MiniMax M2.7 (NVIDIA, free)"
     },
     {
       "id": "nvidia-nim/deepseek-ai/deepseek-v3_2",
       "label": "DeepSeek V3.2 (NVIDIA, free)",
-      "tier": "balanced"
+      "tier": "balanced",
+      "short": "DeepSeek V3.2 (NVIDIA, free)"
     },
     {
       "id": "google/gemini-2.5-pro",
       "label": "Gemini 2.5 Pro",
-      "tier": "max"
+      "tier": "max",
+      "short": "Gemini 2.5 Pro"
     },
     {
       "id": "google/gemini-2.5-flash",
       "label": "Gemini 2.5 Flash",
-      "tier": "balanced"
+      "tier": "balanced",
+      "short": "Gemini 2.5 Flash"
     },
     {
       "id": "google/gemini-2.0-flash-exp",
       "label": "Gemini 2.0 Flash (exp)",
-      "tier": "fast"
+      "tier": "fast",
+      "short": "Gemini 2.0 Flash (exp)"
     },
     {
       "id": "google/gemini-2.0-flash-thinking-exp",
       "label": "Gemini 2.0 Flash Thinking",
-      "tier": "balanced"
+      "tier": "balanced",
+      "short": "Gemini 2.0 Flash Thinking"
     },
     {
       "id": "google/gemini-1.5-pro",
       "label": "Gemini 1.5 Pro",
-      "tier": "balanced"
+      "tier": "balanced",
+      "short": "Gemini 1.5 Pro"
     },
     {
       "id": "google/gemini-1.5-flash",
       "label": "Gemini 1.5 Flash",
-      "tier": "fast"
+      "tier": "fast",
+      "short": "Gemini 1.5 Flash"
     }
   ]
 }
