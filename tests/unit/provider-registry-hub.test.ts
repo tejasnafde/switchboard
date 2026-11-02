@@ -34,7 +34,11 @@ vi.mock('../../src/main/db/database', () => ({
   recordConversationSegment: () => {},
   updateConversationSessionId: () => {},
   saveMessageIfAbsent: () => true,
-  getConversationById: (id: string) => ({ id, project_path: tmpdir() }),
+  getConversationById: (id: string) => ({
+    id,
+    project_path: tmpdir(),
+    worktree_path: id === 'child1' ? '/repo/.switchboard/worktrees/child1' : null,
+  }),
   getConversationTitle: () => null,
   resolveRootThreadId: (id: string) => id,
   getConversationRuntimeMode: () => null,
@@ -296,7 +300,7 @@ describe('the hub view', () => {
     expect(parent.parent).toBeNull()
     expect(parent.children).toHaveLength(1)
     expect(parent.children[0]).toMatchObject({
-      chat: { id: 'child1' },
+      chat: { id: 'child1', worktreePath: '/repo/.switchboard/worktrees/child1' },
       liveId: 'child1',
       state: 'paused',
       account: 'claude-work',

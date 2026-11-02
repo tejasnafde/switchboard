@@ -45,6 +45,9 @@ import { startBridgeHost } from '../main/ide/bridge-host'
 import { createMainLogger as createLogger } from '../main/logger'
 import { createDefaultWorktreeCreationRuntime } from '../main/worktree-creation/runtime'
 import { configureHubWorktrees } from '../main/hub/hub-start'
+import { setFlagCapabilities } from '../main/backend/flag-capabilities'
+import { hubFlagCapabilities } from '@shared/hub'
+import { getSetting } from '../main/db/database'
 import { createBindLifecycle } from './lifecycle'
 import { nodePidFileIo } from './pidfile'
 
@@ -186,6 +189,7 @@ registry.setMachineLabel(hostname())
 registry.setBackendVersion(__SERVER_VERSION__)
 const worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(host, () => registry)
 configureHubWorktrees(worktreeCreationRuntime)
+setFlagCapabilities(() => hubFlagCapabilities(process.env, getSetting))
 registerAppHandlers(host, { isTurnInFlight: (id) => registry.isTurnInFlight(id) })
 void pruneAttachments()
 registerKanbanHandlers(host, {

@@ -118,6 +118,11 @@ fun HomeScreen(
     onWake: (HomeRecentRow) -> Unit = {},
     /** A Wake that did not happen. */
     snoozeNotice: String? = null,
+    /** Settle from the row's sheet. */
+    onSettle: (HomeRecentRow) -> Unit = {},
+    /** "Settled <title>" while its Undo is offered. */
+    settleNotice: String? = null,
+    onUndoSettle: () -> Unit = {},
 ) {
     var certificateRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
     var removeRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
@@ -146,6 +151,11 @@ fun HomeScreen(
                     )
                 }
             }
+            settleNotice?.let { notice ->
+                item(key = "settle-notice") {
+                    SettleNotice(text = notice, onUndo = onUndoSettle)
+                }
+            }
             if (recents.items.isEmpty() && recents.snoozed.isEmpty()) {
                 item {
                     Text(
@@ -165,7 +175,7 @@ fun HomeScreen(
                     RecentRow(
                         row = row,
                         onClick = { onRecent(row) },
-                        onSnooze = onSnooze?.takeIf { row.canSnooze }?.let { open -> { open(row) } },
+                        onSnooze = onSnooze?.takeIf { row.canSnooze || row.canSettle }?.let { open -> { open(row) } },
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
                 }
@@ -286,7 +296,12 @@ fun HomeScreen(
     }
 
     snoozeSheet?.let { sheet ->
-        SnoozeSheet(sheet = sheet, onPick = onPickSnooze, onDismiss = onCloseSnooze)
+        SnoozeSheet(
+            sheet = sheet,
+            onPick = onPickSnooze,
+            onSettle = if (sheet.row.canSettle) ({ onSettle(sheet.row) }) else null,
+            onDismiss = onCloseSnooze,
+        )
     }
 
     removeRow?.let { row ->
@@ -410,7 +425,11 @@ private fun RecentRow(row: HomeRecentRow, onClick: () -> Unit, onSnooze: (() -> 
             )
             .combinedClickable(
                 role = Role.Button,
-                onLongClickLabel = "Snooze",
+                onLongClickLabel = when {
+                    row.canSnooze && row.canSettle -> "Snooze or settle"
+                    row.canSettle -> "Settle"
+                    else -> "Snooze"
+                },
                 onClick = onClick,
                 onLongClick = onSnooze,
             )
@@ -503,6 +522,30 @@ private fun HomeRecentTrailing(row: HomeRecentRow) {
     }
 }
 
+/** A settle's notice with Undo, above the Recents rows. */
+@Composable
+private fun SettleNotice(text: String, onUndo: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .semantics { liveRegion = LiveRegionMode.Polite },
+        )
+        TextButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("Undo")
+        }
+    }
+}
+
 @Composable
 private fun SnoozedShelf(count: Int, open: Boolean, onToggle: () -> Unit) {
     Row(
@@ -578,7 +621,12 @@ private fun SnoozedRow(row: HomeRecentRow, onClick: () -> Unit, onWake: () -> Un
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SnoozeSheet(sheet: HomeSnoozeSheet, onPick: (HomeSnoozeItem) -> Unit, onDismiss: () -> Unit) {
+private fun SnoozeSheet(
+    sheet: HomeSnoozeSheet,
+    onPick: (HomeSnoozeItem) -> Unit,
+    onSettle: (() -> Unit)?,
+    onDismiss: () -> Unit,
+) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Text(
             text = "Snooze",
@@ -612,6 +660,22 @@ private fun SnoozeSheet(sheet: HomeSnoozeSheet, onPick: (HomeSnoozeItem) -> Unit
                 if (item.detail.isNotEmpty()) {
                     Text(text = item.detail, color = TextDim, fontFamily = GeistMono, fontSize = 12.sp)
                 }
+            }
+        }
+        onSettle?.let { settle ->
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp)
+                    .clickable(enabled = !sheet.busy, role = Role.Button, onClick = settle)
+                    .padding(horizontal = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = "Settle", style = MaterialTheme.typography.bodyLarge)
             }
         }
         sheet.notice?.let { notice ->

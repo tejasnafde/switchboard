@@ -337,7 +337,7 @@ private fun ConversationsSurface(
                     contentPadding = PaddingValues(bottom = 24.dp),
                 ) {
                     item { BrowseStatusRow(presentation.status, onRetry) }
-                    if (BrowseParityDecisions.showConversationSearch(presentation.rows.size, query)) {
+                    if (BrowseParityDecisions.showConversationSearch(presentation.rows, query)) {
                         item {
                             BrowseSearchField(
                                 value = query,

@@ -1,19 +1,23 @@
 /**
  * Home > Recents above the machine list: the newest chats on every paired
  * machine, what each needs, and a tap straight into the chat. A long press or
- * a leftward swipe opens the Snooze sheet; snoozed chats wait in the Snoozed
- * shelf at the end. Rules in lib/home-recents.ts and lib/snooze-sheet.ts.
+ * a leftward swipe opens the Snooze sheet, with Settle for a Done or idle chat;
+ * snoozed chats wait in the Snoozed shelf at the end. A settle made here, or a
+ * merged PR's settle while Home is shown, offers Undo for 8 s. Rules in
+ * lib/home-recents.ts and lib/snooze-sheet.ts.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ActivityIndicator, Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useFocusEffect } from '@react-navigation/native'
+import { CHAT_SETTLE_CAPABILITY, SETTLE_UNDO_MS, settledNoticeText } from '@shared/chat-settle'
 import { CHAT_SNOOZE_CAPABILITY, DEFAULT_SNOOZE_PRESETS, wakeLabel, type SnoozePresetSpec } from '@shared/chat-snooze'
 import { snoozePrOf, type SnoozePrChoice } from '@shared/chat-snooze-pr'
 import { createLogger } from '@shared/logger'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import {
   HOME_RECENT_PAGE_SIZE,
+  canSettle,
   canSnooze,
   homeRecents,
   homeRelativeTime,
@@ -25,7 +29,15 @@ import { rowSwipeCommits, shouldClaimRowSwipe } from '../lib/gestures'
 import { snoozeSheetItems, type SnoozeSheetItem } from '../lib/snooze-sheet'
 import { useChatStore } from '../stores/chat'
 import { getClient, useConnectionsStore } from '../stores/connections'
-import { snoozeChat, useRecentsStore, wakeChat } from '../stores/recents'
+import {
+  onMergeSettled,
+  settleChat,
+  snoozeChat,
+  undoSettle,
+  useRecentsStore,
+  wakeChat,
+  type SettleUndo,
+} from '../stores/recents'
 import { SnoozeSheet } from './SnoozeSheet'
 
 const log = createLogger('home:snooze')
@@ -53,6 +65,7 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
   const [limit, setLimit] = useState(HOME_RECENT_PAGE_SIZE)
   const [sheet, setSheet] = useState<SnoozeSheetState | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [undo, setUndo] = useState<SettleUndo | null>(null)
   // The open sheet's opening instant: a reply to an earlier opening of the same row does not apply.
   const openedAt = useRef<Date | null>(null)
 
@@ -64,6 +77,7 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
   // live events miss a turn that ended while this app was disconnected or not
   // running.
   useFocusEffect(refreshConnected)
+  useFocusEffect(useCallback(() => onMergeSettled(setUndo), []))
   const refreshed = useRef(new Set(connected.split(',')))
   useEffect(() => {
     const ids = new Set(connected.split(','))
@@ -88,6 +102,7 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
           live: live[c.id],
           // The capability arrives with the `ready` frame, before the reply that fills `sessions`.
           snooze: getClient(c.id)?.supportsCapability(CHAT_SNOOZE_CAPABILITY) === true,
+          settle: getClient(c.id)?.supportsCapability(CHAT_SETTLE_CAPABILITY) === true,
         })),
         threads,
         limit,
@@ -101,11 +116,18 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
     return () => clearTimeout(timer)
   }, [notice])
 
+  useEffect(() => {
+    if (undo === null) return
+    const timer = setTimeout(() => setUndo((current) => (current === undo ? null : current)), SETTLE_UNDO_MS)
+    return () => clearTimeout(timer)
+  }, [undo])
+
   const openSheet = (row: HomeRecentRow) => {
     const now = new Date()
     openedAt.current = now
     const presets = useRecentsStore.getState().presets[row.connectionId] ?? DEFAULT_SNOOZE_PRESETS
     setSheet({ row, now, presets, pr: null, notice: null, busy: false })
+    if (!canSnooze(row)) return
     getClient(row.connectionId)
       ?.pullRequestLinks(row.id)
       .then(
@@ -135,6 +157,28 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
     setSheet(null)
   }
 
+  const settle = async (row: HomeRecentRow) => {
+    closeSheet()
+    const offered: SettleUndo = {
+      connectionId: row.connectionId,
+      id: row.id,
+      settledAt: Date.now(),
+      text: settledNoticeText(row.title),
+    }
+    setUndo(offered)
+    const refused = await settleChat(row.connectionId, row.id, offered.settledAt)
+    if (refused === null) return
+    setUndo((current) => (current === offered ? null : current))
+    setNotice(refused)
+  }
+
+  const undoNow = async () => {
+    if (!undo) return
+    setUndo(null)
+    const refused = await undoSettle(undo)
+    if (refused !== null) setNotice(refused)
+  }
+
   const wake = async (row: HomeRecentRow) => {
     const refused = await wakeChat(row.connectionId, row.id)
     if (refused !== null) setNotice(refused)
@@ -145,6 +189,8 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
       <RecentsList
         page={page}
         notice={notice}
+        undo={undo?.text ?? null}
+        onUndo={() => void undoNow()}
         onOpen={onOpen}
         onSnooze={openSheet}
         onWake={(row) => void wake(row)}
@@ -153,10 +199,11 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
       {sheet && (
         <SnoozeSheet
           title={sheet.row.title}
-          items={snoozeSheetItems(sheet.now, sheet.pr, sheet.presets)}
+          items={canSnooze(sheet.row) ? snoozeSheetItems(sheet.now, sheet.pr, sheet.presets) : []}
           notice={sheet.notice}
           busy={sheet.busy}
           onPick={(item) => void pick(item)}
+          onSettle={canSettle(sheet.row) ? () => void settle(sheet.row) : undefined}
           onClose={closeSheet}
         />
       )}
@@ -180,6 +227,8 @@ interface SnoozeSheetState {
 export function RecentsList({
   page,
   notice = null,
+  undo = null,
+  onUndo,
   onOpen,
   onShowMore,
   onSnooze,
@@ -187,8 +236,12 @@ export function RecentsList({
 }: {
   page: HomeRecentsPage
   notice?: string | null
+  /** A settle's notice, shown with Undo. */
+  undo?: string | null
+  onUndo?: () => void
   onOpen: (row: HomeRecentRow) => void
   onShowMore: () => void
+  /** Opens a row's sheet: Snooze, and Settle for a Done or idle chat. */
   onSnooze?: (row: HomeRecentRow) => void
   onWake?: (row: HomeRecentRow) => void
 }) {
@@ -202,6 +255,24 @@ export function RecentsList({
           {notice}
         </Text>
       )}
+      {undo !== null && (
+        <View style={styles.undoRow}>
+          <Text style={styles.undoText} numberOfLines={2} accessibilityLiveRegion="polite">
+            {undo}
+          </Text>
+          {onUndo && (
+            <Pressable
+              testID="settle-undo"
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={onUndo}
+              style={({ pressed }) => [styles.wake, pressed && styles.pressed]}
+            >
+              <Text style={styles.wakeText}>Undo</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
       {page.items.length === 0 && page.snoozed.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No recent chats yet</Text>
@@ -209,15 +280,19 @@ export function RecentsList({
         </View>
       ) : (
         page.items.map((row) => {
-          const snoozable = onSnooze !== undefined && canSnooze(row)
+          const hint = onSnooze === undefined ? undefined : sheetHint(canSnooze(row), canSettle(row))
           return (
-            <SwipeToSnooze key={`${row.connectionId}:${row.id}`} enabled={snoozable} onSwipe={() => onSnooze?.(row)}>
+            <SwipeToSnooze
+              key={`${row.connectionId}:${row.id}`}
+              enabled={hint !== undefined}
+              onSwipe={() => onSnooze?.(row)}
+            >
               <Pressable
                 testID={`recent-${row.connectionId}:${row.id}`}
                 accessibilityRole="button"
-                accessibilityHint={snoozable ? 'Long press to snooze' : undefined}
+                accessibilityHint={hint}
                 onPress={() => onOpen(row)}
-                onLongPress={snoozable ? () => onSnooze?.(row) : undefined}
+                onLongPress={hint !== undefined ? () => onSnooze?.(row) : undefined}
                 style={({ pressed }) => [styles.row, pressed && styles.pressed]}
               >
                 <View style={styles.body}>
@@ -290,6 +365,13 @@ export function RecentsList({
         ))}
     </View>
   )
+}
+
+function sheetHint(snooze: boolean, settle: boolean): string | undefined {
+  if (snooze && settle) return 'Long press to snooze or settle'
+  if (snooze) return 'Long press to snooze'
+  if (settle) return 'Long press to settle'
+  return undefined
 }
 
 /** A leftward swipe on a row opens its Snooze sheet; the row springs back. */
@@ -373,6 +455,8 @@ const styles = StyleSheet.create({
   titleWoke: { fontFamily: fonts.displayBold },
   woke: { color: colors.accent },
   notice: { ...type.bodySm, color: colors.amber, paddingBottom: space.xs, paddingHorizontal: 2 },
+  undoRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingBottom: space.xs, paddingHorizontal: 2 },
+  undoText: { ...type.bodySm, color: colors.text, flex: 1 },
   shelf: { minHeight: HIT, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 2 },
   shelfText: { ...type.bodySm, color: colors.textDim },
   wake: { paddingHorizontal: space.sm, paddingVertical: 4 },

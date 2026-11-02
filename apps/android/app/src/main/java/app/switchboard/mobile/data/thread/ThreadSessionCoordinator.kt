@@ -36,6 +36,11 @@ import app.switchboard.mobile.domain.thread.MessagePill
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWriteResponse
 import app.switchboard.mobile.domain.thread.FORK_MERGE_BACK_CAPABILITY
+import app.switchboard.mobile.domain.thread.HUB_CHILDREN_CAPABILITY
+import app.switchboard.mobile.domain.thread.HUB_CHILDREN_CHANGED
+import app.switchboard.mobile.domain.thread.HUB_REMOTE_CHILDREN_CAPABILITY
+import app.switchboard.mobile.domain.thread.HubChatView
+import app.switchboard.mobile.domain.thread.HubChildren
 import app.switchboard.mobile.domain.thread.LIMIT_AUTO_RESUME_CAPABILITY
 import app.switchboard.mobile.domain.thread.LimitResumeNowResult
 import app.switchboard.mobile.domain.thread.LimitState
@@ -115,8 +120,29 @@ data class ThreadSessionState(
     val prLinks: List<PrLink> = emptyList(),
     val mergeBack: ThreadMergeBackState = ThreadMergeBackState(),
     val limitResume: ThreadLimitResumeState = ThreadLimitResumeState(),
+    val hub: ThreadHubState = ThreadHubState(),
     /** The folder the agent works in, from the loaded history (as reattach uses it); null before it loads. */
     val workingFolder: String? = null,
+)
+
+/** The chat's Hub row: its children, read from the backend like the desktop strip. */
+data class ThreadHubState(
+    /** The backend advertises `hub_children_v1`. */
+    val available: Boolean = false,
+    /**
+     * The backend advertises `hub_remote_children_v1`. Without it a remote
+     * child keeps `remote` for Stop and Open, but shows no machine.
+     */
+    val remoteAvailable: Boolean = false,
+    val view: HubChatView? = null,
+    val expanded: Boolean = false,
+    /** Child ids whose Stop is in flight. */
+    val stopping: Set<String> = emptySet(),
+    val stoppingAll: Boolean = false,
+    /** Why a Stop or a Stop all did not go through. */
+    val note: String? = null,
+    /** Why the last read of the view failed; cleared by the next read that succeeds. */
+    val readError: String? = null,
 )
 
 /** The chat's Limited row, read from the backend like the desktop row. */
@@ -449,6 +475,14 @@ interface ThreadSessionRemote {
 
     fun limitResumeNow(threadId: String, callback: (RemoteResponse<LimitResumeNowResult>) -> Unit): Unit =
         throw UnsupportedOperationException("Auto-resume is not supported")
+
+    /** The chat's parent and children. Only called on `hub_children_v1`. */
+    fun hubListChildren(threadId: String, callback: (RemoteResponse<HubChatView>) -> Unit): Unit =
+        throw UnsupportedOperationException("Child chats are not supported")
+
+    /** Stop all on a parent. Only called on `hub_children_v1`. */
+    fun hubStopChildren(parentId: String, callback: (RemoteResponse<CommandBody>) -> Unit): Unit =
+        throw UnsupportedOperationException("Child chats are not supported")
 }
 
 class SwitchboardThreadSessionRemote(
@@ -638,6 +672,14 @@ class SwitchboardThreadSessionRemote(
     override fun limitResumeNow(threadId: String, callback: (RemoteResponse<LimitResumeNowResult>) -> Unit) {
         client.limitResumeNow(threadId, callback).let { Unit }
     }
+
+    override fun hubListChildren(threadId: String, callback: (RemoteResponse<HubChatView>) -> Unit) {
+        client.hubListChildren(threadId, callback).let { Unit }
+    }
+
+    override fun hubStopChildren(parentId: String, callback: (RemoteResponse<CommandBody>) -> Unit) {
+        client.hubStopChildren(parentId, callback).let { Unit }
+    }
 }
 
 object LoadedSessionSnapshotMapper {
@@ -802,6 +844,11 @@ class ThreadSessionCoordinator(
     private var mergeBackSheetRequest = 0L
     private var limitResume = ThreadLimitResumeState(available = LIMIT_AUTO_RESUME_CAPABILITY in capabilities)
     private var limitResumeRequest = 0L
+    private var hub = ThreadHubState(
+        available = HUB_CHILDREN_CAPABILITY in capabilities,
+        remoteAvailable = HUB_CHILDREN_CAPABILITY in capabilities && HUB_REMOTE_CHILDREN_CAPABILITY in capabilities,
+    )
+    private var hubRequest = 0L
     private val mutableState = MutableStateFlow(
         ThreadSessionState(load, composer, models = models, profiles = profiles),
     )
@@ -865,6 +912,7 @@ class ThreadSessionCoordinator(
         prLinksSubscription = remote.onPullRequestLinksChanged(::loadPrLinks)
         loadPrLinks()
         loadLimitResume()
+        loadHub()
         remote.markRead(threadId) { /* best effort; local viewing state already cleared unread */ }
     }
 
@@ -927,8 +975,9 @@ class ThreadSessionCoordinator(
         if (closed || eventScope != scope) return
         reduce(ThreadAction.ReplayGap(eventScope))
         refresh()
-        // The gap may have dropped a `limit-resume.changed`.
+        // The gap may have dropped a `limit-resume.changed` or a `hub.children-changed`.
         loadLimitResume()
+        loadHub()
     }
 
     @Synchronized
@@ -1488,6 +1537,7 @@ class ThreadSessionCoordinator(
         prLinksRequest += 1
         mergeBackSheetRequest += 1
         limitResumeRequest += 1
+        hubRequest += 1
         subscription?.cancel()
         gapSubscription?.cancel()
         prLinksSubscription?.cancel()
@@ -1763,6 +1813,7 @@ class ThreadSessionCoordinator(
                 limitResume = limitResume.copy(note = null)
                 loadLimitResume()
             }
+            if (payload.type == HUB_CHILDREN_CHANGED && namesHubChat(payload.threadId)) loadHub()
             if (payload.threadId != threadId) return
             val event = ThreadEventDecoder.decode(payload.raw)
             if (event.threadId != threadId) return
@@ -2101,6 +2152,7 @@ class ThreadSessionCoordinator(
             prLinks = prLinks,
             mergeBack = mergeBack,
             limitResume = limitResume,
+            hub = hub,
             workingFolder = currentThread()?.historyMeta?.let { it.worktreePath ?: worktreePath ?: it.projectPath },
         )
     }
@@ -2238,6 +2290,101 @@ class ThreadSessionCoordinator(
     private fun failLimitAction(error: RuntimeException) {
         limitResume = limitResume.copy(busy = false, note = error.message ?: "Request failed")
         publish()
+    }
+
+    /** The event names a parent's root id: this chat (any id of its thread) or, for an open child, its parent. */
+    private fun namesHubChat(id: String): Boolean {
+        val view = hub.view
+        val self = view?.self ?: return true
+        return id == threadId || id == self.id || id in self.familyIds || id == view.parent?.id
+    }
+
+    @Synchronized
+    private fun loadHub() {
+        if (closed || !hub.available || remote.scope != scope) return
+        val request = ++hubRequest
+        try {
+            remote.hubListChildren(threadId) { response ->
+                synchronized(this) {
+                    if (!accepts(response, request, hubRequest) || remote.scope != scope) return@synchronized
+                    when (val outcome = response.outcome) {
+                        is RemoteOutcome.Success -> {
+                            val view = outcome.value
+                            hub = hub.copy(view = view, expanded = hub.expanded && view.children.isNotEmpty(), readError = null)
+                        }
+                        is RemoteOutcome.Failure -> {
+                            SbLog.w(LOG_SCOPE, "$threadId hub children read failed: ${outcome.message}")
+                            hub = hub.copy(readError = outcome.message)
+                        }
+                    }
+                    publish()
+                }
+            }
+        } catch (error: RuntimeException) {
+            SbLog.w(LOG_SCOPE, "$threadId hub children read failed", error)
+            hub = hub.copy(readError = error.message ?: "Could not read the children")
+            publish()
+        }
+    }
+
+    /** The Hub row's Retry after a failed read. */
+    fun retryHub() = loadHub()
+
+    @Synchronized
+    fun toggleHubExpanded() {
+        if (closed || hub.view?.children.isNullOrEmpty()) return
+        hub = hub.copy(expanded = !hub.expanded)
+        publish()
+    }
+
+    /** Stop on one child row: `provider:interrupt` to its live session, or a remote child's own id. */
+    @Synchronized
+    fun stopHubChild(childId: String) {
+        if (closed || !hub.available || remote.scope != scope || childId in hub.stopping) return
+        val child = hub.view?.children?.firstOrNull { it.chat.id == childId } ?: return
+        if (!HubChildren.canStop(child)) return
+        val target = HubChildren.stopTarget(child) ?: return
+        hub = hub.copy(stopping = hub.stopping + childId, note = null)
+        publish()
+        try {
+            remote.interrupt(target) { response ->
+                synchronized(this) {
+                    hub = hub.copy(
+                        stopping = hub.stopping - childId,
+                        note = (response.outcome as? RemoteOutcome.Failure)?.message.takeIf { accepts(response) },
+                    )
+                    if (!closed) publish()
+                }
+            }
+        } catch (error: RuntimeException) {
+            SbLog.w(LOG_SCOPE, "$threadId stop child $childId failed", error)
+            hub = hub.copy(stopping = hub.stopping - childId, note = error.message ?: "Could not stop the child")
+            publish()
+        }
+    }
+
+    /** Stop all: stops every open child of this chat. */
+    @Synchronized
+    fun stopAllHubChildren() {
+        if (closed || !hub.available || hub.stoppingAll || remote.scope != scope) return
+        val parentId = hub.view?.self?.id ?: return
+        hub = hub.copy(stoppingAll = true, note = null)
+        publish()
+        try {
+            remote.hubStopChildren(parentId) { response ->
+                synchronized(this) {
+                    hub = hub.copy(
+                        stoppingAll = false,
+                        note = (response.outcome as? RemoteOutcome.Failure)?.message.takeIf { accepts(response) },
+                    )
+                    if (!closed) publish()
+                }
+            }
+        } catch (error: RuntimeException) {
+            SbLog.w(LOG_SCOPE, "$threadId stop all children failed", error)
+            hub = hub.copy(stoppingAll = false, note = error.message ?: "Could not stop the children")
+            publish()
+        }
     }
 
     /**

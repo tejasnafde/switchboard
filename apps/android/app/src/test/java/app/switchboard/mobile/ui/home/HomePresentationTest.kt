@@ -447,6 +447,78 @@ class HomePresentationTest {
         )
     }
 
+    @Test
+    fun `a settle made here leaves Recents at once and an Undo brings the row back before the list is read`() {
+        fun page(settled: Map<String, Long?>, woke: Map<String, ChatSnooze.State> = emptyMap()) = HomePresenter.recents(
+            machines = listOf(
+                machine(
+                    projects = listOf(
+                        project(
+                            "/repo",
+                            summary("mine", startedAt = 300),
+                            summary("undone", startedAt = 200, settledAt = 50),
+                            summary("woken", startedAt = 100),
+                        ),
+                    ),
+                    snooze = true,
+                    snoozes = woke,
+                    settle = true,
+                    settled = settled,
+                ),
+            ),
+            limit = 10,
+        ).items.map(HomeRecentRow::threadId)
+
+        assertEquals(listOf("woken"), page(mapOf("mine" to 400L)))
+        assertEquals(listOf("mine", "undone", "woken"), page(mapOf("undone" to null)))
+        // A chat snoozed and woken since the list was read reads unsettled, but a settle made after that wins.
+        val unsettled = ChatSnooze.State(snoozeRev = 3, wokeAt = 900, wokeReason = "time", unsettled = true)
+        assertEquals(listOf("mine"), page(mapOf("woken" to 950L), mapOf("woken" to unsettled)))
+    }
+
+    @Test
+    fun `only a Done or idle row of a backend with chat_settle_v1 can settle`() {
+        fun canSettle(settle: Boolean) = HomePresenter.recents(
+            machines = listOf(
+                machine(
+                    projects = listOf(
+                        project(
+                            "/repo",
+                            summary("approval", startedAt = 500),
+                            summary("plan", startedAt = 350),
+                            summary("failed", startedAt = 300),
+                            summary("working", startedAt = 200),
+                            summary("done", startedAt = 150),
+                            summary("idle", startedAt = 100),
+                        ),
+                    ),
+                    states = mapOf("approval" to ThreadState(status = "idle", feed = listOf(approval("pending")))),
+                    activity = mapOf(
+                        "plan" to BrowseThreadActivity(status = "idle", unread = 0, attention = BrowseThreadAttention.Plan),
+                        "failed" to BrowseThreadActivity(status = "error", unread = 0),
+                        "working" to BrowseThreadActivity(status = "running", unread = 0),
+                        "done" to BrowseThreadActivity(status = "idle", unread = 2),
+                    ),
+                    settle = settle,
+                ),
+            ),
+            limit = 10,
+        ).items.associate { it.threadId to it.canSettle }
+
+        assertEquals(
+            mapOf(
+                "approval" to false,
+                "plan" to false,
+                "working" to false,
+                "failed" to false,
+                "done" to true,
+                "idle" to true,
+            ),
+            canSettle(settle = true),
+        )
+        assertTrue(canSettle(settle = false).values.none { it })
+    }
+
     private fun snoozed(until: Long?, pr: String? = null, rev: Long = 1) =
         ChatSnooze.State(snoozedUntil = until, snoozedAt = 10, snoozePr = pr, snoozeRev = rev)
 
@@ -458,7 +530,9 @@ class HomePresentationTest {
         activity: Map<String, BrowseThreadActivity> = emptyMap(),
         snooze: Boolean = false,
         snoozes: Map<String, ChatSnooze.State> = emptyMap(),
-    ) = HomeMachineSnapshot(id, label, projects, states, activity, snooze, snoozes)
+        settle: Boolean = false,
+        settled: Map<String, Long?> = emptyMap(),
+    ) = HomeMachineSnapshot(id, label, projects, states, activity, snooze, snoozes, settle, settled)
 
     private fun project(path: String, vararg sessions: SessionSummary) = Project(
         path = path,
