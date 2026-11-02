@@ -19,6 +19,7 @@ import {
   prMarkOf,
   prWakeSummary,
   shouldWakeOn,
+  TRACKED_WAKE_REASONS,
   type PrReading,
   type ConversationSnoozedEvent,
   type InboxEvent,
@@ -42,6 +43,7 @@ import {
 } from '../db/database'
 import { onConversationArchived } from '../db/archive-events'
 import { createMainLogger } from '../logger'
+import { trackAnalyticsEvent } from '../analytics'
 
 const log = createMainLogger('conversations:snooze')
 
@@ -175,6 +177,7 @@ export class ChatSnoozer {
       const settled: ConversationSettledEvent = { conversationId: root, settledAt: null, ...(title ? { title } : {}) }
       this.host.emit(AppChannels.CONVERSATION_SETTLED, settled)
     }
+    if (request.preset) trackAnalyticsEvent('chat_snoozed', { kind: request.preset, target: request.surface })
     return { ok: true, until, pr: watch, rev }
   }
 
@@ -189,6 +192,8 @@ export class ChatSnoozer {
     if (MARKED_WAKE_REASONS.includes(reason)) this.woke.add(root)
     const title = this.broadcast(root, opts.prSummary)
     log.info('chat woke', { id: root, reason })
+    if ((TRACKED_WAKE_REASONS as readonly WakeReason[]).includes(reason))
+      trackAnalyticsEvent('chat_woke', { kind: reason })
     if (reason === 'time' || reason === 'pr')
       this.host.pushWoke?.(root, title ?? 'Switchboard', opts.prSummary ?? 'Snooze ended')
     return true

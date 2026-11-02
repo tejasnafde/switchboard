@@ -91,8 +91,8 @@ import { recoverPendingRequests } from './services/pending-request-recovery'
 import { ProviderChannels } from '@shared/ipc-channels'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import { isUndoKeydown, resolveGlobalKeydown } from './services/global-keybindings'
-import { undoLastSettle } from './services/chat-settle'
-import { focusRecentRow } from './components/sidebar/recent-row-focus'
+import { noteChatOpened, undoLastInbox } from './services/chat-inbox'
+import { focusUndoneRow } from './components/sidebar/recent-row-focus'
 import { toggleChatDetails } from './components/chat/ChatDetailsPopover'
 import { isSecretCardKeyTarget } from './components/chat/secret-request-card-model'
 import {
@@ -1147,6 +1147,7 @@ export function App() {
         const placeAndEvict = (sessionId: string) => {
           if (!isCurrentOpen()) return
           placeSession(sessionId)
+          noteChatOpened(session.id, effectiveMachineId)
           if (
             current &&
             shouldEvictMessages(current) &&
@@ -1548,10 +1549,11 @@ export function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Keys typed into an agent's secret request belong to that card only.
       if (isSecretCardKeyTarget(e.target)) return
-      if (useAgentStore.getState().lastUndo && isUndoKeydown(e, document.activeElement)) {
+      const lastUndo = useAgentStore.getState().lastUndo
+      if (lastUndo && isUndoKeydown(e, document.activeElement)) {
         e.preventDefault()
-        const restored = undoLastSettle()
-        if (restored) focusRecentRow(restored)
+        const restored = undoLastInbox()
+        if (restored) focusUndoneRow(restored, lastUndo.kind)
         return
       }
       const action = resolveGlobalKeydown(e)

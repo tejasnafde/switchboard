@@ -295,8 +295,10 @@ interface AgentStore {
    * the chat; the chat panel showing the session takes it and clears it.
    */
   pendingChatFind: { sessionId: string; query: string; messageId: string; stamp: number } | null
-  /** The one action Cmd+Z and the sidebar's Undo notice reverse; see `services/chat-settle.ts`. */
+  /** The one action Cmd+Z and the sidebar's Undo notice reverse; see `services/chat-inbox.ts`. */
   lastUndo: LastUndo | null
+  /** A short line in the sidebar footer when an inbox action was refused; see `services/chat-inbox.ts`. */
+  inboxNotice: string | null
 
   /** `runtimeMode` only when someone chose it; absent, the session is unresolved (`initialRuntimeMode`). */
   addSession: (
@@ -409,20 +411,33 @@ interface AgentStore {
   requestChatFind: (sessionId: string, query: string, messageId: string) => void
   clearChatFind: () => void
   setLastUndo: (undo: LastUndo | null) => void
+  setInboxNotice: (notice: string | null) => void
 }
 
-export interface LastUndo {
-  kind: 'settle'
+interface UndoTarget {
   id: string
   title: string
   machineId: string
-  /** The stamp to put back when the undo fails. */
-  settledAt: number
-  /** Set when a merged PR settled the chat, for the notice. */
-  prNumber?: number
-  /** The snooze the settle ended, which Undo restores. */
-  endedSnooze?: ConversationSettledEvent['endedSnooze']
 }
+
+export type LastUndo =
+  | (UndoTarget & {
+      kind: 'settle'
+      /** The stamp to put back when the undo fails. */
+      settledAt: number
+      /** Set when a merged PR settled the chat, for the notice. */
+      prNumber?: number
+      /** The snooze the settle ended, which Undo restores. */
+      endedSnooze?: ConversationSettledEvent['endedSnooze']
+    })
+  | (UndoTarget & {
+      /** `snooze` undoes a snooze; `wake` undoes a Wake by snoozing again to `until` or `pr`. */
+      kind: 'snooze' | 'wake'
+      until: number | null
+      pr: string | null
+      /** The chat's snooze revision after the action; unset until the backend answers. */
+      rev?: number
+    })
 
 /** `sessions` with session `id`'s unread count zeroed; the same array when it already is. */
 export function clearUnread(sessions: AgentSession[], id: string | null): AgentSession[] {
@@ -436,6 +451,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   pendingScrollToMessage: null,
   pendingChatFind: null,
   lastUndo: null,
+  inboxNotice: null,
 
   addSession: (session) =>
     set((state) => ({
@@ -890,4 +906,5 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   clearChatFind: () => set({ pendingChatFind: null }),
   setLastUndo: (lastUndo) => set({ lastUndo }),
+  setInboxNotice: (inboxNotice) => set({ inboxNotice }),
 }))

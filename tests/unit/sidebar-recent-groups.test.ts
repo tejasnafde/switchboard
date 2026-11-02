@@ -104,3 +104,71 @@ describe('count labels', () => {
     expect(localMachineSummary(0, 3)).toBe('3 projects')
   })
 })
+
+describe('the Snoozed group and woken rows', () => {
+  type Row = {
+    id: string
+    status?: RecentSessionStatus
+    session: {
+      snoozedAt?: number | null
+      snoozedUntil?: number | null
+      wokeAt?: number | null
+      settledAt?: number | null
+    }
+  }
+  const row = (id: string, status: RecentSessionStatus | undefined, session: Row['session'] = {}): Row => ({
+    id,
+    status,
+    session,
+  })
+  const keys = (result: ReturnType<typeof groupRecentSessions<Row>>) =>
+    result.groups.map((group) => [group.key, group.items.map((item) => item.id)])
+
+  it('holds a snoozed chat whatever its live status, soonest wake first and PR-only last', () => {
+    const result = groupRecentSessions(
+      [
+        row('pr', undefined, { snoozedAt: 1, snoozedUntil: null }),
+        row('working', 'working', { snoozedAt: 1, snoozedUntil: 300 }),
+        row('soon', 'done', { snoozedAt: 1, snoozedUntil: 100 }),
+        row('live', 'working'),
+      ],
+      4,
+      0,
+    )
+    expect(keys(result)).toEqual([
+      ['working', ['live']],
+      ['snoozed', ['soon', 'working', 'pr']],
+    ])
+  })
+
+  it('does not count snoozed rows toward the limit or hide them behind Show more', () => {
+    const snoozed = Array.from({ length: 6 }, (_, i) => row(`s${i}`, undefined, { snoozedAt: 1, snoozedUntil: i }))
+    const result = groupRecentSessions([...snoozed, row('d1', undefined), row('d2', undefined)], 2, 0)
+    expect(result.hiddenCount).toBe(0)
+    expect(keys(result)).toEqual([
+      ['done', ['d1', 'd2']],
+      ['snoozed', ['s0', 's1', 's2', 's3', 's4', 's5']],
+    ])
+  })
+
+  it('sorts a woken Done row first and never hides it behind Show more', () => {
+    const items = [row('a', undefined), row('b', undefined), row('c', undefined), row('woke', undefined, { wokeAt: 5 })]
+    const result = groupRecentSessions(items, 1, 0)
+    expect(keys(result)).toEqual([['done', ['woke']]])
+    expect(result.hiddenCount).toBe(3)
+    const two = groupRecentSessions([...items, row('woke2', undefined, { wokeAt: 6 })], 1, 0)
+    expect(keys(two)).toEqual([['done', ['woke', 'woke2']]])
+  })
+
+  it('keeps a woken Needs you or Working row in its own group and place', () => {
+    const result = groupRecentSessions(
+      [row('w1', 'working'), row('w2', 'working', { wokeAt: 5 }), row('n', 'approval', { wokeAt: 5 })],
+      4,
+      0,
+    )
+    expect(keys(result)).toEqual([
+      ['needs-you', ['n']],
+      ['working', ['w1', 'w2']],
+    ])
+  })
+})

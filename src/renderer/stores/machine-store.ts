@@ -11,6 +11,7 @@ import { toAgentProvider } from '@shared/types'
 import { create } from 'zustand'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type { Project, SessionSummary } from '@shared/types'
+import type { ChatSnoozeField } from './snooze-store'
 import { AppChannels } from '@shared/ipc-channels'
 import { projectOrganizationItems } from '@shared/workspace-organization'
 import type { MachineStatus } from '../components/sidebar/machine-list'
@@ -103,11 +104,8 @@ interface MachineStore {
   /** Patch a cached session's title in whichever snapshot holds it, so the
    *  sidebar row tracks renames (auto-title, manual) without a full re-sync. */
   renameSnapshotSession: (sessionId: string, title: string) => void
-  /** Patch a cached session's fields (title, settled time) in whichever snapshot and live tree hold it. */
-  patchSnapshotSession: (
-    sessionId: string,
-    patch: Partial<Pick<SessionSummary, 'title' | 'settledAt' | 'startedAt'>>,
-  ) => void
+  /** Patch a cached session's fields (title, settled time, snooze) in whichever snapshot and live tree hold it. */
+  patchSnapshotSession: (sessionId: string, patch: SessionPatch) => void
   /** Optimistically drop a session from a machine's snapshot (archive). */
   removeSnapshotSession: (machineId: string, sessionId: string) => void
   connect: (id: string) => Promise<void>
@@ -117,6 +115,8 @@ interface MachineStore {
   setActive: (id: string) => void
   toggleCollapsed: (id: string) => void
 }
+
+export type SessionPatch = Partial<Pick<SessionSummary, 'title' | 'settledAt' | 'startedAt' | ChatSnoozeField>>
 
 export const useMachineStore = create<MachineStore>((set, get) => ({
   remotes: [],

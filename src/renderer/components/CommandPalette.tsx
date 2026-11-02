@@ -11,6 +11,10 @@ import { createRendererLogger } from '../logger'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { shortcutLabel } from '@shared/shortcuts'
 import { useRenderCount } from '../services/render-counter'
+import { CHAT_SNOOZE_CAPABILITY, CHAT_SNOOZE_ENABLED, resolvePresets, wakeLabel } from '@shared/chat-snooze'
+import { machineSupportsSnooze, snoozeChat, wakeChat } from '../services/chat-inbox'
+import { useSnoozeStore } from '../stores/snooze-store'
+import { isDraftSessionId } from '@shared/new-chat-draft'
 
 const log = createRendererLogger('command-palette')
 
@@ -48,6 +52,45 @@ export function commandTargetSessionId(state: {
   return state.focusedChatSlot === 'secondary'
     ? (state.secondarySessionId ?? state.primarySessionId)
     : state.primarySessionId
+}
+
+/**
+ * "Snooze chat" for the chat in focus: one entry per preset, resolved when the
+ * palette opened (a clock-time entry sends the instant it showed), or "Wake
+ * chat" while it is snoozed. A chat that needs the user is refused with the
+ * sidebar notice, as the backend would refuse it.
+ */
+export function snoozeCommands(shownAt: Date, onClose: () => void): Cmd[] {
+  if (!CHAT_SNOOZE_ENABLED) return []
+  const sid = commandTargetSessionId(useLayoutStore.getState())
+  const session = sid ? useAgentStore.getState().sessions.find((s) => s.id === sid) : undefined
+  if (!sid || !session || isDraftSessionId(sid)) return []
+  const machineId = session.machineId ?? 'local'
+  if (!machineSupportsSnooze(machineId, CHAT_SNOOZE_CAPABILITY)) return []
+  const target = { id: sid, title: session.title ?? 'Untitled chat', machineId }
+  if (useSnoozeStore.getState().byId[sid]?.snoozedAt != null)
+    return [
+      {
+        id: 'chat.wake',
+        group: 'Chat',
+        label: 'Wake chat',
+        run: () => {
+          void wakeChat(target)
+          onClose()
+        },
+      },
+    ]
+  const needsYou = (session.pendingRequests?.length ?? 0) > 0 || session.status === 'error'
+  return resolvePresets(shownAt).map((option) => ({
+    id: `chat.snooze.${option.label}`,
+    group: 'Chat',
+    label: `Snooze chat: ${option.label}`,
+    shortcut: wakeLabel(option.at, null, shownAt),
+    run: () => {
+      void snoozeChat({ ...target, needsYou }, { option }, 'palette')
+      onClose()
+    },
+  }))
 }
 
 /**
@@ -345,7 +388,9 @@ export function CommandPalette({
     [onClose, onOpenSettings, onOpenSearch, onOpenSessionPicker, onOpenQuickPrompt, onContextBridge, onNewChat],
   )
 
-  const visibleCommands = commands.filter((c) => (c.available ? c.available() : true))
+  // Resolved each time the palette opens, so its times are the ones it shows.
+  const snoozeEntries = useMemo(() => (open ? snoozeCommands(new Date(), onClose) : []), [open, onClose])
+  const visibleCommands = [...commands, ...snoozeEntries].filter((c) => (c.available ? c.available() : true))
 
   // Group commands for display
   const groups: Record<string, Cmd[]> = {}

@@ -405,6 +405,8 @@ export interface SessionSummary {
   snoozeRev?: number
   wokeAt?: number | null
   wokeReason?: import('./chat-snooze').WakeReason | null
+  /** The status line of a PR wake, from the broadcast only (a reload shows the generic line). */
+  wokePrSummary?: string | null
   /** Child chats (flag `hub_children` on): `{ parentId }` on an open child, `{ openChildren }` on its parent. */
   hub?: import('./hub').SessionHubField
 }
