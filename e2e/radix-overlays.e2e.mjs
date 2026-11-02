@@ -101,8 +101,23 @@ async function providerPicker() {
   const pickerBox = await picker.boundingBox()
   const triggerBox = await trigger.boundingBox()
   check('provider picker: opens upward', !!pickerBox && !!triggerBox && pickerBox.y + pickerBox.height <= triggerBox.y)
+  const listbox = picker.getByRole('listbox', { name: 'Models' })
+  const selectedText = () => listbox.locator('[role="option"][aria-selected="true"]').innerText()
+  const firstSelected = await selectedText()
+  await win.keyboard.press('ArrowDown')
+  check('provider picker: ArrowDown moves the selection', (await selectedText()) !== firstSelected)
+  const search = picker.getByPlaceholder('Search models...')
+  check(
+    'provider picker: the search field points at the selected row',
+    (await search.getAttribute('aria-activedescendant')) ===
+      (await listbox.locator('[aria-selected="true"]').getAttribute('id')),
+  )
   await win.keyboard.type('no-such-model')
   check('provider picker: search filters', await picker.getByText('No matches.').isVisible())
+  check(
+    'provider picker: the height does not change when the list empties',
+    (await picker.boundingBox())?.height === pickerBox?.height,
+  )
   await win.keyboard.press('Escape')
   check('provider picker: Escape closes it', await hidden(picker))
   check('provider picker: focus returns to the trigger', await focusIsTrigger('Claude'))
@@ -130,11 +145,13 @@ async function providerPicker() {
     (await trigger.getAttribute('title'))?.includes('acme/model-x') ?? false,
   )
   await trigger.click()
-  await picker
-    .getByRole('button')
-    .filter({ hasText: /^Default/ })
-    .first()
-    .click()
+  await picker.waitFor({ state: 'visible' })
+  await win.keyboard.type('sonnet')
+  await win.keyboard.press('Enter')
+  check('provider picker: Enter picks the best match', await hidden(picker))
+  check('provider picker: the chip shows the short name', (await trigger.innerText()).includes('Sonnet'))
+  await trigger.click()
+  await picker.getByRole('option', { name: /^Default/ }).click()
   await hidden(picker)
 
   await trigger.click()

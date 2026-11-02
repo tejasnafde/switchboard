@@ -131,3 +131,20 @@ export function formatOpencodeModelLabel(id: string): string {
   const badge = isFree ? ' · free' : provider === 'nvidia-nim' ? ' · nvidia' : ` · ${provider}`
   return `${pretty}${badge}`
 }
+
+const VENDOR_WORD = /^(claude|openai|google|anthropic)\s+/i
+const ALL_CATALOG_MODELS: readonly ModelOption[] = [...CLAUDE_MODELS, ...CODEX_MODELS, ...OPENCODE_MODELS]
+
+/**
+ * The model's name for a tight chip: its catalog label without the vendor
+ * word ("Opus 5", "GPT-5.5"). An id no catalog lists shows as the id with
+ * any provider prefix before the last `/` removed.
+ */
+export function shortModelLabel(
+  id: string,
+  models: readonly Pick<ModelOption, 'id' | 'label'>[] = ALL_CATALOG_MODELS,
+): string {
+  const label = models.find((m) => m.id === id)?.label
+  if (label) return label.replace(VENDOR_WORD, '')
+  return id.slice(id.lastIndexOf('/') + 1)
+}

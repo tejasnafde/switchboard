@@ -11,7 +11,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { modelsForAgent } from '../../src/shared/models'
+import { modelsForAgent, shortModelLabel } from '../../src/shared/models'
 
 const FIXTURE = join(__dirname, '../fixtures/model-catalog.json')
 
@@ -20,7 +20,7 @@ describe('model catalog fixture', () => {
     const catalog = Object.fromEntries(
       (['claude-code', 'codex', 'opencode'] as const).map((agent) => [
         agent,
-        modelsForAgent(agent).map(({ id, label, tier }) => ({ id, label, tier })),
+        modelsForAgent(agent).map(({ id, label, tier }) => ({ id, label, tier, short: shortModelLabel(id) })),
       ]),
     )
     const expected = `${JSON.stringify(catalog, null, 2)}\n`

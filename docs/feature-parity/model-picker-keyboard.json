@@ -1,0 +1,62 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "model-picker-keyboard",
+  "summary": "Desktop model picker: the search field keeps focus while Up and Down move the highlighted row and Enter picks it (a listbox with aria-activedescendant); search ranks prefixes, then word starts, then substrings, then subsequences from 3 characters, by src/shared/model-search.ts; Default shows only with no query; the body below the tabs is a fixed 300 px for every tab and query. The composer chip shows the short model name (shortModelLabel in src/shared/models.ts, also written to tests/fixtures/model-catalog.json as `short`); its title keeps the full id. The Expo settings chip shows the same short name. Contrast: picker avatar initials take black or white by the accent, --text-muted is darker in light and lighter in dark so it reads at 4.5:1 on raised surfaces, and every picker control has a hover state. The Hub chip and hubChipText read 'Hub · n children'.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/UnifiedProviderPicker.tsx",
+        "src/renderer/components/chat/provider-picker-models.ts",
+        "src/renderer/components/hub/HubChip.tsx",
+        "src/renderer/styles/global.css",
+        "e2e/radix-overlays.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadScreen.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The Compose new-session sheet lists full model labels and has no model chip or search. Its catalog copy is checked against id, label and tier only; the new `short` field in the shared fixture does not change that check."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/model-search.ts",
+        "src/shared/models.ts",
+        "src/shared/initials-ink.ts",
+        "tests/unit/model-search.test.ts",
+        "tests/fixtures/model-catalog.json"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "An unconditional client UI change with no flag, package identity, signing, update-channel or rollout change. The Expo change ships on the normal OTA lane."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/model-search.test.ts tests/unit/provider-picker-models.test.ts tests/unit/model-catalog-fixture.test.ts tests/unit/raised-surface-contrast.test.ts tests/unit/toolbar.test.ts tests/unit/hub-client-view.test.ts",
+      "node e2e/radix-overlays.e2e.mjs (arrow keys, aria-activedescendant, fixed height, Enter picks the best match, short chip label)",
+      "SB_VISUAL_SCOPE=screens npm run test:e2e:visual (baselines refreshed for the muted colour, the picker and the Hub chip)",
+      "cd apps/mobile && npx jest",
+      "npm run typecheck",
+      "npm test"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The Expo model list has no search field, so the scored search is not used there yet; the rule is in src/shared for when it gets one.",
+      "The Expo chip was not looked at on a phone; jest covers the screen.",
+      "The translucent theme picker was compared in the screenshot run only."
+    ]
+  }
+}
