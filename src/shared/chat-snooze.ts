@@ -37,7 +37,7 @@ export interface SnoozeState {
   snoozedUntil: number | null
   /** Set while snoozed, null otherwise. The only test of "is snoozed". */
   snoozedAt: number | null
-  /** `owner/repo#512` when a PR event wakes it. */
+  /** The PR whose events wake it, as `prKey` (`github:owner/repo#512`). */
   snoozePr: string | null
   /** Bumped by every change to the fields above, so a stale timer or Undo can be refused. */
   snoozeRev: number
@@ -294,7 +294,7 @@ function hhmm(d: Date): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-/** `#512` from `owner/repo#512`. */
+/** `512` from `github:owner/repo#512`. */
 export function prNumberOf(pr: string): string {
   const i = pr.lastIndexOf('#')
   return i >= 0 ? pr.slice(i + 1) : pr
@@ -330,18 +330,76 @@ export function wokeLine(reason: WakeReason | null, prSummary?: string | null): 
   }
 }
 
+// ---------------------------------------------------------------- PR wakes
+
+/** What a PR read says, for the PR wake. Built from `PrDetail` by the backend. */
+export interface PrReading {
+  number: number
+  state: 'open' | 'merged' | 'closed'
+  headSha: string | null
+  checksFailed: boolean
+  /** The newest "requested changes" review, epoch ms, or null. */
+  changesRequestedAt: number | null
+}
+
+/** The PR as it was when the snooze started (`snooze_pr_mark`). */
+export interface PrMark {
+  state: PrReading['state']
+  headSha: string | null
+  checksFailed: boolean
+}
+
+export function prMarkOf(reading: PrReading): PrMark {
+  return { state: reading.state, headSha: reading.headSha, checksFailed: reading.checksFailed }
+}
+
+export function parsePrMark(raw: string | null): PrMark | null {
+  if (!raw) return null
+  try {
+    const m = JSON.parse(raw) as Partial<PrMark>
+    if (m.state !== 'open' && m.state !== 'merged' && m.state !== 'closed') return null
+    return { state: m.state, headSha: m.headSha ?? null, checksFailed: m.checksFailed === true }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The status line of a PR wake, or null when the PR gives no reason to wake.
+ * Only three events wake, each once and only forward from the mark: the PR
+ * merged; a review requested changes after the snooze started; the checks
+ * failed on a head that had not failed at the mark (a new push counts). A read
+ * that goes back (a stale cache, a re-run that is pending) wakes nothing.
+ */
+export function prWakeSummary(mark: PrMark, now: PrReading, snoozedAt: number): string | null {
+  if (now.state === 'merged' && mark.state !== 'merged') return `PR #${now.number} merged`
+  if (now.changesRequestedAt !== null && now.changesRequestedAt > snoozedAt)
+    return `PR #${now.number}: changes requested`
+  if (now.checksFailed && (!mark.checksFailed || now.headSha !== mark.headSha))
+    return `PR #${now.number}: checks failed`
+  return null
+}
+
 // ---------------------------------------------------------------- wire
 
 export interface SnoozeRequest {
   /** Epoch ms, or null for a PR-only snooze. */
   until: number | null
-  /** `owner/repo#512` to wake on that PR's next event. */
+  /** `prKey` of a linked PR, to wake on its next event. */
   pr?: string | null
   /** Undo of a wake: refused unless the chat is still at this revision. */
   expectRev?: number
 }
 
-export type SnoozeRefusal = 'needs_you' | 'past' | 'too_far' | 'pr_closed' | 'no_row' | 'stale' | 'empty'
+export type SnoozeRefusal =
+  | 'needs_you'
+  | 'past'
+  | 'too_far'
+  | 'pr_closed'
+  | 'pr_unreadable'
+  | 'no_row'
+  | 'stale'
+  | 'empty'
 
 export type SnoozeResult =
   | { ok: true; until: number | null; pr: string | null; rev: number }

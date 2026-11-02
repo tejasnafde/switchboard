@@ -33,6 +33,8 @@ import { registerWorktreeManagerHandlers } from '../main/ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from '../main/ipc/provider-instances'
 import {
   attachPullRequestAutoLink,
+  notePullRequestMerged,
+  readPullRequestForSnooze,
   registerPullRequestHandlers,
   startPullRequestHistoryScan,
 } from '../main/ipc/pull-requests'
@@ -203,6 +205,8 @@ startChatSnoozer({
   emit: (channel, payload) => host.emit(channel, payload),
   needsYou: (id) => registry.needsUser(id),
   pushWoke: (id, title, line) => pushToThread(id, wokePush(id, title, line)),
+  readPr: readPullRequestForSnooze,
+  noteMerged: notePullRequestMerged,
 })
 registry.registerIpcHandlers()
 

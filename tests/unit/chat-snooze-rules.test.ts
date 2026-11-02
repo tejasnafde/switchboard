@@ -11,6 +11,9 @@ import {
   isWoke,
   parsePresetList,
   parsePresetSpec,
+  prWakeSummary,
+  type PrMark,
+  type PrReading,
   pickPreset,
   resolvePresets,
   shouldWakeOn,
@@ -132,4 +135,12 @@ describe('state', () => {
     expect(checkWakeTime(now + 366 * 24 * 3600_000, now)).toBe('too_far')
     expect(checkWakeTime(Number.NaN, now)).toBe('past')
   })
+})
+
+describe('prWakeSummary', () => {
+  for (const c of cases.prWake) {
+    it(c.name, () => {
+      expect(prWakeSummary(c.mark as PrMark, c.reading as PrReading, c.snoozedAt)).toBe(c.expect)
+    })
+  }
 })

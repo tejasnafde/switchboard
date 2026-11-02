@@ -7,9 +7,17 @@ import {
   clearConversationInboxForTurn,
   getConversationSnooze,
   getDb,
+  setConversationSettled,
   setConversationSnooze,
 } from '../../src/main/db/database'
-import { ChatSnoozer, SNOOZE_RESYNC_MS, type ChatSnoozeHost } from '../../src/main/conversations/chat-snooze'
+import {
+  ChatSnoozer,
+  PR_WAKE_POLL_MS,
+  SNOOZE_RESYNC_MS,
+  type ChatSnoozeHost,
+} from '../../src/main/conversations/chat-snooze'
+import type { PrReading } from '../../src/shared/chat-snooze'
+import { storeConversationSettled } from '../../src/main/conversations/chat-settle'
 
 const T0 = new Date(2026, 10, 2, 9, 0).getTime()
 const HOUR = 3600_000
@@ -48,9 +56,9 @@ afterEach(() => {
 })
 
 describe('ChatSnoozer', () => {
-  it('snoozes, broadcasts, and wakes at the time with one push', () => {
+  it('snoozes, broadcasts, and wakes at the time with one push', async () => {
     const s = make()
-    expect(s.snooze('uuid-c', { until: T0 + HOUR })).toEqual({ ok: true, until: T0 + HOUR, pr: null, rev: 1 })
+    expect(await s.snooze('uuid-c', { until: T0 + HOUR })).toEqual({ ok: true, until: T0 + HOUR, pr: null, rev: 1 })
     expect(emitted()[0]).toMatchObject({ conversationId: 'c', snoozedUntil: T0 + HOUR, title: 'Chat' })
     vi.advanceTimersByTime(HOUR - 1)
     expect(getConversationSnooze('c')?.snoozedAt).not.toBeNull()
@@ -61,21 +69,21 @@ describe('ChatSnoozer', () => {
     expect(host.pushWoke).toHaveBeenCalledWith('c', 'Chat', 'Snooze ended')
   })
 
-  it('refuses a chat that needs the user, a time in the past or too far, and an empty request', () => {
+  it('refuses a chat that needs the user, a time in the past or too far, and an empty request', async () => {
     const s = make()
     cards.add('c')
-    expect(s.snooze('c', { until: T0 + HOUR })).toEqual({ ok: false, reason: 'needs_you' })
+    expect(await s.snooze('c', { until: T0 + HOUR })).toEqual({ ok: false, reason: 'needs_you' })
     cards.clear()
-    expect(s.snooze('c', { until: T0 - 2 * 60_000 })).toEqual({ ok: false, reason: 'past' })
-    expect(s.snooze('c', { until: T0 + 400 * 24 * HOUR })).toEqual({ ok: false, reason: 'too_far' })
-    expect(s.snooze('c', { until: null })).toEqual({ ok: false, reason: 'empty' })
-    expect(s.snooze('nope', { until: T0 + HOUR })).toEqual({ ok: false, reason: 'no_row' })
+    expect(await s.snooze('c', { until: T0 - 2 * 60_000 })).toEqual({ ok: false, reason: 'past' })
+    expect(await s.snooze('c', { until: T0 + 400 * 24 * HOUR })).toEqual({ ok: false, reason: 'too_far' })
+    expect(await s.snooze('c', { until: null })).toEqual({ ok: false, reason: 'empty' })
+    expect(await s.snooze('nope', { until: T0 + HOUR })).toEqual({ ok: false, reason: 'no_row' })
   })
 
-  it('a stale timer does nothing after a re-snooze to a later time', () => {
+  it('a stale timer does nothing after a re-snooze to a later time', async () => {
     const s = make()
-    s.snooze('c', { until: T0 + HOUR })
-    s.snooze('c', { until: T0 + 3 * HOUR })
+    await s.snooze('c', { until: T0 + HOUR })
+    await s.snooze('c', { until: T0 + 3 * HOUR })
     vi.advanceTimersByTime(2 * HOUR)
     expect(getConversationSnooze('c')?.snoozedAt).not.toBeNull()
     vi.advanceTimersByTime(HOUR)
@@ -83,7 +91,7 @@ describe('ChatSnoozer', () => {
     expect(host.pushWoke).toHaveBeenCalledTimes(1)
   })
 
-  it('rebuilds timers on a restart, and wakes at once a snooze that ended while closed', () => {
+  it('rebuilds timers on a restart, and wakes at once a snooze that ended while closed', async () => {
     setConversationSnooze('c', { until: T0 - 10 * 60_000, pr: null, prMark: null, at: T0 - HOUR })
     setConversationSnooze('d', { until: T0 + HOUR, pr: null, prMark: null, at: T0 - HOUR })
     make()
@@ -94,26 +102,26 @@ describe('ChatSnoozer', () => {
     expect(getConversationSnooze('d')?.wokeReason).toBe('time')
   })
 
-  it('caps a far timer at 2^31-1 ms and fires again until the time comes', () => {
+  it('caps a far timer at 2^31-1 ms and fires again until the time comes', async () => {
     const s = make()
     const far = T0 + 30 * 24 * HOUR
-    s.snooze('c', { until: far })
+    await s.snooze('c', { until: far })
     vi.advanceTimersByTime(2 ** 31 - 1)
     expect(getConversationSnooze('c')?.snoozedAt).not.toBeNull()
     vi.advanceTimersByTime(far - T0 - (2 ** 31 - 1))
     expect(getConversationSnooze('c')?.wokeReason).toBe('time')
   })
 
-  it('resync picks up a snooze another process wrote', () => {
+  it('resync picks up a snooze another process wrote', async () => {
     make()
     setConversationSnooze('c', { until: T0 + 60_000, pr: null, prMark: null, at: T0 })
     vi.advanceTimersByTime(SNOOZE_RESYNC_MS + 1)
     expect(getConversationSnooze('c')?.wokeReason).toBe('time')
   })
 
-  it('wakes early on a card and a failure, not on an agent message or a normal end', () => {
+  it('wakes early on a card and a failure, not on an agent message or a normal end', async () => {
     const s = make()
-    s.snooze('c', { until: T0 + HOUR })
+    await s.snooze('c', { until: T0 + HOUR })
     s.onEvent('uuid-c', { kind: 'message', from: 'agent' })
     s.onEvent('c', { kind: 'turn_completed' })
     expect(getConversationSnooze('c')?.snoozedAt).not.toBeNull()
@@ -122,7 +130,7 @@ describe('ChatSnoozer', () => {
     expect(host.pushWoke).not.toHaveBeenCalled()
 
     vi.advanceTimersByTime(1)
-    s.snooze('c', { until: T0 + HOUR })
+    await s.snooze('c', { until: T0 + HOUR })
     s.onEvent('c', { kind: 'error', at: T0 })
     expect(getConversationSnooze('c')?.snoozedAt).not.toBeNull()
     s.onEvent('c', { kind: 'error', at: Date.now() + 1 })
@@ -132,67 +140,166 @@ describe('ChatSnoozer', () => {
     expect(host.pushWoke).not.toHaveBeenCalled()
   })
 
-  it('Wake and Undo: no marker; Undo of a wake is refused once the chat moved on', () => {
+  it('Wake and Undo: no marker; Undo of a wake is refused once the chat moved on', async () => {
     const s = make()
-    const first = s.snooze('c', { until: T0 + HOUR })
+    const first = await s.snooze('c', { until: T0 + HOUR })
     expect(first.ok && s.wake('c', 'wake_now')).toBe(true)
     expect(getConversationSnooze('c')).toMatchObject({ snoozedAt: null, wokeAt: null })
     const rev = getConversationSnooze('c')!.snoozeRev
     // Another device snoozed it meanwhile: the Undo's revision is stale.
-    s.snooze('c', { until: T0 + 2 * HOUR })
-    expect(s.snooze('c', { until: T0 + HOUR, expectRev: rev })).toEqual({ ok: false, reason: 'stale' })
+    await s.snooze('c', { until: T0 + 2 * HOUR })
+    expect(await s.snooze('c', { until: T0 + HOUR, expectRev: rev })).toEqual({ ok: false, reason: 'stale' })
   })
 
-  it('Undo of a wake whose time has passed meanwhile is refused', () => {
+  it('Undo of a wake whose time has passed meanwhile is refused', async () => {
     const s = make()
-    s.snooze('c', { until: T0 + 60_000 })
+    await s.snooze('c', { until: T0 + 60_000 })
     s.wake('c', 'wake_now')
     const rev = getConversationSnooze('c')!.snoozeRev
     vi.advanceTimersByTime(5 * 60_000)
-    expect(s.snooze('c', { until: T0 + 60_000, expectRev: rev })).toEqual({ ok: false, reason: 'past' })
+    expect(await s.snooze('c', { until: T0 + 60_000, expectRev: rev })).toEqual({ ok: false, reason: 'past' })
   })
 
-  it('seen drops the marker; a user turn, a settle or an archive end the snooze for every client', () => {
+  it('seen drops the marker; a user turn, a settle or an archive end the snooze for every client', async () => {
     const s = make()
-    s.snooze('c', { until: T0 + HOUR })
+    await s.snooze('c', { until: T0 + HOUR })
     s.onEvent('c', { kind: 'needs_you' })
     expect(s.seen('uuid-c')).toBe(true)
     expect(emitted().at(-1)).toMatchObject({ wokeAt: null, snoozedAt: null })
 
-    s.snooze('c', { until: T0 + HOUR })
+    await s.snooze('c', { until: T0 + HOUR })
     archiveConversation('c')
     expect(getConversationSnooze('c')?.snoozedAt).toBeNull()
     vi.advanceTimersByTime(HOUR)
     expect(host.pushWoke).not.toHaveBeenCalled()
   })
 
-  it('Undo never restores a time that has passed, even inside the grace minute', () => {
+  it('Undo never restores a time that has passed, even inside the grace minute', async () => {
     const s = make()
-    s.snooze('c', { until: T0 + 60_000 })
+    await s.snooze('c', { until: T0 + 60_000 })
     vi.advanceTimersByTime(60_000)
     expect(host.pushWoke).toHaveBeenCalledTimes(1)
     s.wake('c', 'wake_now')
     const rev = getConversationSnooze('c')!.snoozeRev
     vi.advanceTimersByTime(10_000)
-    expect(s.snooze('c', { until: T0 + 60_000, expectRev: rev })).toEqual({ ok: false, reason: 'past' })
+    expect(await s.snooze('c', { until: T0 + 60_000, expectRev: rev })).toEqual({ ok: false, reason: 'past' })
     expect(host.pushWoke).toHaveBeenCalledTimes(1)
   })
 
-  it('refuses an archived chat, and an archive or a turn clears the Woke marker for every client', () => {
+  it('refuses an archived chat, and an archive or a turn clears the Woke marker for every client', async () => {
     const s = make()
-    s.snooze('c', { until: T0 + HOUR })
+    await s.snooze('c', { until: T0 + HOUR })
     s.onEvent('c', { kind: 'needs_you' })
     archiveConversation('c')
     expect(getConversationSnooze('c')?.wokeAt).toBeNull()
     expect(emitted().at(-1)).toMatchObject({ wokeAt: null })
-    expect(s.snooze('c', { until: T0 + HOUR })).toEqual({ ok: false, reason: 'no_row' })
+    expect(await s.snooze('c', { until: T0 + HOUR })).toEqual({ ok: false, reason: 'no_row' })
 
-    s.snooze('d', { until: T0 + HOUR })
+    await s.snooze('d', { until: T0 + HOUR })
     s.onEvent('d', { kind: 'needs_you' })
     const before = emitted().length
     clearConversationInboxForTurn(getDb(), 'd')
     s.onCleared('d')
     expect(emitted().length).toBe(before + 1)
     expect(emitted().at(-1)).toMatchObject({ conversationId: 'd', wokeAt: null })
+  })
+
+  describe('PR wakes', () => {
+    const PR = 'github:acme/app#512'
+    let reading: PrReading | null
+    const reads: string[] = []
+    const merged: string[] = []
+    const withPr = () => {
+      reads.length = 0
+      merged.length = 0
+      reading = { number: 512, state: 'open', headSha: 'a1', checksFailed: false, changesRequestedAt: null }
+      host.readPr = async (pr) => {
+        reads.push(pr)
+        return reading && { ...reading }
+      }
+      host.noteMerged = (pr) => void merged.push(pr)
+      return make()
+    }
+
+    it('stores the PR as it was, and refuses a closed or unreadable PR', async () => {
+      const s = withPr()
+      expect(await s.snooze('c', { until: null, pr: PR })).toMatchObject({ ok: true, pr: PR })
+      expect(getConversationSnooze('c')?.snoozePrMark).toBe(
+        JSON.stringify({ state: 'open', headSha: 'a1', checksFailed: false }),
+      )
+      reading = { ...reading!, state: 'merged' }
+      expect(await s.snooze('d', { until: null, pr: PR })).toEqual({ ok: false, reason: 'pr_closed' })
+      reading = null
+      expect(await s.snooze('d', { until: null, pr: PR })).toEqual({ ok: false, reason: 'pr_unreadable' })
+    })
+
+    it('reads every 5 minutes, wakes on a review that requests changes, pushes once and stops reading', async () => {
+      const s = withPr()
+      await s.snooze('c', { until: null, pr: PR })
+      reads.length = 0
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      expect(reads).toEqual([PR])
+      expect(getConversationSnooze('c')?.snoozedAt).not.toBeNull()
+      reading = { ...reading!, changesRequestedAt: Date.now() }
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      expect(getConversationSnooze('c')).toMatchObject({ snoozedAt: null, wokeReason: 'pr' })
+      expect(emitted().at(-1)).toMatchObject({ prSummary: 'PR #512: changes requested' })
+      expect(host.pushWoke).toHaveBeenCalledWith('c', 'Chat', 'PR #512: changes requested')
+      reads.length = 0
+      await vi.advanceTimersByTimeAsync(3 * PR_WAKE_POLL_MS)
+      expect(reads).toEqual([])
+      expect(host.pushWoke).toHaveBeenCalledTimes(1)
+    })
+
+    it('reads one PR once for two chats, and a failed read tries again at the next tick', async () => {
+      const s = withPr()
+      await s.snooze('c', { until: null, pr: PR })
+      await s.snooze('d', { until: T0 + 24 * HOUR, pr: PR })
+      reads.length = 0
+      reading = null
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      expect(reads).toEqual([PR])
+      reading = { number: 512, state: 'open', headSha: 'b2', checksFailed: true, changesRequestedAt: null }
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      expect(reads).toEqual([PR, PR])
+      expect(getConversationSnooze('c')?.wokeReason).toBe('pr')
+      expect(getConversationSnooze('d')?.wokeReason).toBe('pr')
+    })
+
+    it('a merge first stores the state on the links (which settles an idle chat), then wakes a busy one', async () => {
+      const s = withPr()
+      await s.snooze('c', { until: null, pr: PR })
+      reading = { ...reading!, state: 'merged' }
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      expect(merged).toEqual([PR])
+      expect(getConversationSnooze('c')).toMatchObject({ wokeReason: 'pr' })
+      expect(emitted().at(-1)).toMatchObject({ prSummary: 'PR #512 merged' })
+    })
+
+    it('a merge that settled the chat in between wakes nothing and sends no push', async () => {
+      const s = withPr()
+      await s.snooze('c', { until: null, pr: PR })
+      host.noteMerged = () => void setConversationSettled('c', Date.now())
+      reading = { ...reading!, state: 'merged' }
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      expect(getConversationSnooze('c')).toMatchObject({ snoozedAt: null, wokeAt: null })
+      expect(host.pushWoke).not.toHaveBeenCalled()
+    })
+
+    it('never reads when no chat waits on a PR', async () => {
+      const s = withPr()
+      await s.snooze('c', { until: T0 + HOUR })
+      await vi.advanceTimersByTimeAsync(3 * PR_WAKE_POLL_MS)
+      expect(reads).toEqual([])
+    })
+  })
+
+  it('a settle tells clients the snooze it ended, so its Undo can restore it', async () => {
+    const s = make()
+    await s.snooze('c', { until: T0 + HOUR })
+    expect(storeConversationSettled(host, 'uuid-c', T0, 512)).toBe(true)
+    const settled = host.emit.mock.calls.find(([c]) => c === AppChannels.CONVERSATION_SETTLED)?.[1]
+    expect(settled).toMatchObject({ conversationId: 'c', prNumber: 512, endedSnooze: { until: T0 + HOUR, pr: null } })
+    expect(getConversationSnooze('c')?.snoozedAt).toBeNull()
   })
 })

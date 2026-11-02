@@ -14,7 +14,11 @@ import { AppChannels } from '@shared/ipc-channels'
 import {
   checkWakeTime,
   MARKED_WAKE_REASONS,
+  parsePrMark,
+  prMarkOf,
+  prWakeSummary,
   shouldWakeOn,
+  type PrReading,
   type ConversationSnoozedEvent,
   type InboxEvent,
   type SnoozeRequest,
@@ -41,6 +45,8 @@ const log = createMainLogger('conversations:snooze')
 /** setTimeout's ceiling; a later wake fires early, finds it early and sets the next timer. */
 const MAX_TIMER_MS = 2 ** 31 - 1
 export const SNOOZE_RESYNC_MS = 5 * 60_000
+/** How often the PRs that snoozed chats wait on are read. */
+export const PR_WAKE_POLL_MS = 5 * 60_000
 
 export interface ChatSnoozeHost {
   emit(channel: string, payload: unknown): void
@@ -48,6 +54,10 @@ export interface ChatSnoozeHost {
   needsYou(conversationId: string): boolean
   /** One push for a wake the user asked for (time, PR); `line` says why. */
   pushWoke?(conversationId: string, title: string, line: string): void
+  /** Read a PR by its `prKey`; null when the read failed. */
+  readPr?(pr: string): Promise<PrReading | null>
+  /** A PR read found it merged: store that on its links, which settles an idle chat (and so ends its snooze). */
+  noteMerged?(pr: string): void
 }
 
 export class ChatSnoozer {
@@ -57,6 +67,8 @@ export class ChatSnoozer {
   /** Root ids that show the Woke marker, so a write that clears it is broadcast. */
   private readonly woke = new Set<string>()
   private resyncTimer: ReturnType<typeof setInterval> | null = null
+  private prTimer: ReturnType<typeof setInterval> | null = null
+  private polling = false
   private stopArchiveListener: (() => void) | null = null
 
   constructor(
@@ -92,6 +104,7 @@ export class ChatSnoozer {
         this.schedule(row.id, row.snoozedUntil, row.snoozeRev)
       if (row.snoozedUntil == null) this.clearTimer(row.id)
     }
+    this.watchPrs(rows.some((r) => r.snoozePr !== null))
   }
 
   dispose(): void {
@@ -99,11 +112,12 @@ export class ChatSnoozer {
     this.timers.clear()
     if (this.resyncTimer) clearInterval(this.resyncTimer)
     this.resyncTimer = null
+    this.watchPrs(false)
     this.stopArchiveListener?.()
     this.stopArchiveListener = null
   }
 
-  snooze(id: string, request: SnoozeRequest): SnoozeResult {
+  async snooze(id: string, request: SnoozeRequest): Promise<SnoozeResult> {
     const root = resolveRootThreadId(id)
     const now = this.now()
     const until = request.until ?? null
@@ -118,12 +132,21 @@ export class ChatSnoozer {
     if (isConversationArchived(root)) return { ok: false, reason: 'no_row' }
     // An open card would wake it at once.
     if (this.host.needsYou(root)) return { ok: false, reason: 'needs_you' }
-    const rev = setConversationSnooze(root, { until, pr, prMark: null, at: now, expectRev: request.expectRev })
+    let prMark: string | null = null
+    if (pr !== null) {
+      // The baseline is stored with the snooze, so a later read compares against what the PR was then.
+      const reading = this.host.readPr ? await this.host.readPr(pr) : null
+      if (!reading) return { ok: false, reason: 'pr_unreadable' }
+      if (reading.state !== 'open') return { ok: false, reason: 'pr_closed' }
+      prMark = JSON.stringify(prMarkOf(reading))
+    }
+    const rev = setConversationSnooze(root, { until, pr, prMark, at: this.now(), expectRev: request.expectRev })
     if (rev === null) return { ok: false, reason: getConversationSnooze(root) ? 'stale' : 'no_row' }
     this.clearTimer(root)
     this.snoozed.add(root)
     this.woke.delete(root)
     if (until !== null) this.schedule(root, until, rev)
+    if (pr !== null) this.watchPrs(true)
     this.broadcast(root)
     return { ok: true, until, pr, rev }
   }
@@ -205,6 +228,50 @@ export class ChatSnoozer {
       this.wake(id, 'time', { expectRev: rev })
     } catch (err) {
       log.warn(`snooze timer for ${id} failed`, err)
+    }
+  }
+
+  /** Read the watched PRs every 5 minutes while any snoozed chat waits on one; never otherwise. */
+  private watchPrs(on: boolean): void {
+    if (on && !this.prTimer && this.host.readPr) {
+      this.prTimer = setInterval(() => void this.pollPrs(), PR_WAKE_POLL_MS)
+      this.prTimer.unref?.()
+    }
+    if (!on && this.prTimer) {
+      clearInterval(this.prTimer)
+      this.prTimer = null
+    }
+  }
+
+  /** One read per watched PR, in series. A failed read is tried again at the next tick. */
+  async pollPrs(): Promise<void> {
+    if (this.polling || !this.host.readPr) return
+    this.polling = true
+    try {
+      const rows = listSnoozedConversations().filter((r) => r.snoozePr !== null)
+      if (rows.length === 0) return this.watchPrs(false)
+      const readings = new Map<string, PrReading | null>()
+      for (const row of rows) {
+        const pr = row.snoozePr as string
+        if (!readings.has(pr)) readings.set(pr, await this.host.readPr(pr))
+        const reading = readings.get(pr)
+        if (!reading) {
+          log.warn('could not read a pull request a snoozed chat waits on', { id: row.id })
+          continue
+        }
+        const state = getConversationSnooze(row.id)
+        const mark = parsePrMark(row.snoozePrMark)
+        if (!state || state.snoozeRev !== row.snoozeRev || state.snoozedAt === null || !mark) continue
+        const summary = prWakeSummary(mark, reading, state.snoozedAt)
+        if (!summary) continue
+        // A merge settles an idle chat first, which ends the snooze with the Settle notice instead.
+        if (reading.state === 'merged') this.host.noteMerged?.(pr)
+        this.wake(row.id, 'pr', { expectRev: row.snoozeRev, prSummary: summary })
+      }
+    } catch (err) {
+      log.warn('reading pull requests for snoozed chats failed', err)
+    } finally {
+      this.polling = false
     }
   }
 

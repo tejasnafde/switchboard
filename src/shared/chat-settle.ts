@@ -34,6 +34,8 @@ export interface ConversationSettledEvent {
   settledAt: number | null
   title?: string
   prNumber?: number
+  /** The snooze this settle ended, so its Undo can snooze the chat again. */
+  endedSnooze?: { until: number | null; pr: string | null }
 }
 
 export function settledNoticeText(title: string, prNumber?: number): string {
