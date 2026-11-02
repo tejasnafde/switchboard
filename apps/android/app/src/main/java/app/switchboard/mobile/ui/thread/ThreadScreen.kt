@@ -73,6 +73,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -143,6 +144,7 @@ import app.switchboard.mobile.domain.thread.LimitState
 import app.switchboard.mobile.domain.thread.MergeBackRow
 import app.switchboard.mobile.domain.thread.PrLink
 import app.switchboard.mobile.domain.thread.PrLinkRef
+import app.switchboard.mobile.domain.thread.ChatDetails
 import app.switchboard.mobile.domain.thread.PrLinkRows
 import app.switchboard.mobile.domain.thread.QueueToggle
 import app.switchboard.mobile.domain.thread.SyntheticTone
@@ -253,6 +255,7 @@ fun ThreadScreen(
     limitResume: ThreadLimitResumeState = ThreadLimitResumeState(),
     onResumeLimitNow: () -> Unit = {},
     onCancelLimitResume: () -> Unit = {},
+    details: ThreadDetails? = null,
 ) {
     BackHandler(onBack = onBack)
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
@@ -287,6 +290,12 @@ fun ThreadScreen(
     val usageLine = metadata?.let(ThreadChromePolicy::usageLine)
     var usageVisible by rememberSaveable(threadId) { mutableStateOf(false) }
     var prSheetOpen by rememberSaveable(threadId) { mutableStateOf(false) }
+    var detailsOpen by rememberSaveable(threadId) { mutableStateOf(false) }
+    val detailsAccount = profiles.selectedInstanceId ?: ChatDetails.defaultInstanceId(metadata?.provider)
+    // Keyed on the reader, so an open sheet reads again after a rotation or a reconnect.
+    LaunchedEffect(details?.reader, detailsOpen, detailsAccount) {
+        if (detailsOpen) details?.onOpen(detailsAccount)
+    }
     val rows = (presentation as? ThreadPresentation.Content)?.rows.orEmpty()
     val pendingApproval = ThreadChromePolicy.pendingApproval(rows)
     LaunchedEffect(prLinks.isEmpty()) {
@@ -357,6 +366,15 @@ fun ThreadScreen(
         },
         actions = {
             DemoBadge(Modifier.align(Alignment.CenterVertically).padding(end = 4.dp))
+            if (details != null) {
+                SwitchboardTopBarAction(
+                    contentDescription = "Chat details",
+                    onClick = { detailsOpen = true },
+                    modifier = Modifier.testTag(ThreadTestTags.DETAILS_ACTION),
+                ) {
+                    Icon(Icons.Outlined.Info, contentDescription = null)
+                }
+            }
             if (prLinks.isNotEmpty()) {
                 PrLinksChip(links = prLinks, onClick = { prSheetOpen = true })
             }
@@ -490,6 +508,19 @@ fun ThreadScreen(
     }
     if (prSheetOpen && prLinks.isNotEmpty()) {
         PrLinksSheet(links = prLinks, onUnlink = onUnlinkPrLink, onDismiss = { prSheetOpen = false })
+    }
+    if (detailsOpen && details != null) {
+        ChatDetailsSheet(
+            machine = backendLabel,
+            state = details.state,
+            links = prLinks,
+            prList = details.prList,
+            contextUsed = metadata?.usedTokens?.let { metadata.contextFraction?.times(100.0) },
+            onDismiss = {
+                detailsOpen = false
+                details.onClose()
+            },
+        )
     }
     lightboxUrl?.let { url ->
         ThreadImageLightbox(url = url, onDismiss = { lightboxUrl = null })

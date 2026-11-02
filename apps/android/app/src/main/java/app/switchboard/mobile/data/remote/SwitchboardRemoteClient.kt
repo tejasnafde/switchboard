@@ -34,6 +34,8 @@ import app.switchboard.mobile.domain.remote.WorktreeCreationRequest
 import app.switchboard.mobile.domain.remote.WorktreeCreationSnapshot
 import app.switchboard.mobile.domain.push.PushBackendResult
 import app.switchboard.mobile.domain.reviews.PrActionResult
+import app.switchboard.mobile.domain.thread.DiffStat
+import app.switchboard.mobile.domain.thread.UsageLimits
 import app.switchboard.mobile.domain.reviews.PrDetail
 import app.switchboard.mobile.domain.reviews.PrLinkChat
 import app.switchboard.mobile.domain.reviews.PrListData
@@ -82,6 +84,9 @@ object BackendChannels {
     const val GetSetting = "settings:get"
     const val SetSetting = "settings:set"
     const val CurrentBranch = "git:current-branch"
+    /** The chat Details sheet; gated behind `details_sheet_v1`. */
+    const val DiffStat = "git:diff-stat"
+    const val ProviderInstanceUsage = "provider-instances:usage"
     const val StartSession = "provider:start-session"
     const val SendTurn = "provider:send-turn"
     /** The atomic envelope (`atomic_user_turn_v1`); carries `delivery` on `turn_queue_v1`. */
@@ -159,7 +164,7 @@ data class UploadedAttachment(val path: String, val pages: Int?)
 class SwitchboardRemoteClient(
     val connectionId: String,
     private val rpc: RemoteRpc,
-) : MessageSearchRemote, GitContextRemote, HtmlLiveRemote {
+) : MessageSearchRemote, GitContextRemote, HtmlLiveRemote, ChatDetailsRemote {
     fun listIapTargets(callback: (RemoteResponse<List<IapDiscoveredTarget>>) -> Unit) =
         call(BackendChannels.ListIapTargets, decoder = RemoteDecoders::iapTargets, callback = callback)
 
@@ -362,6 +367,26 @@ class SwitchboardRemoteClient(
         BackendChannels.CurrentBranch,
         array(JsonString(cwd)),
         RemoteDecoders::currentBranch,
+        callback,
+    )
+
+    override fun diffStat(
+        cwd: String,
+        callback: (RemoteResponse<DiffStat?>) -> Unit,
+    ): RequestSubmission = call(
+        BackendChannels.DiffStat,
+        array(JsonString(cwd)),
+        RemoteDecoders::diffStat,
+        callback,
+    )
+
+    override fun instanceUsage(
+        instanceId: String,
+        callback: (RemoteResponse<UsageLimits?>) -> Unit,
+    ): RequestSubmission = call(
+        BackendChannels.ProviderInstanceUsage,
+        array(JsonString(instanceId)),
+        RemoteDecoders::usageLimits,
         callback,
     )
 

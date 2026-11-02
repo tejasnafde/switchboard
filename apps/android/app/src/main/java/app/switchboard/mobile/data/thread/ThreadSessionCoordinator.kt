@@ -115,6 +115,8 @@ data class ThreadSessionState(
     val prLinks: List<PrLink> = emptyList(),
     val mergeBack: ThreadMergeBackState = ThreadMergeBackState(),
     val limitResume: ThreadLimitResumeState = ThreadLimitResumeState(),
+    /** The folder the agent works in, from the loaded history (as reattach uses it); null before it loads. */
+    val workingFolder: String? = null,
 )
 
 /** The chat's Limited row, read from the backend like the desktop row. */
@@ -2099,6 +2101,7 @@ class ThreadSessionCoordinator(
             prLinks = prLinks,
             mergeBack = mergeBack,
             limitResume = limitResume,
+            workingFolder = currentThread()?.historyMeta?.let { it.worktreePath ?: worktreePath ?: it.projectPath },
         )
     }
 

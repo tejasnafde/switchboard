@@ -552,6 +552,21 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `the working folder is the loaded history's worktree, else the route's, as reattach uses`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, projectPath = "/repo", worktreePath = "/repo/.switchboard/route")
+        coordinator.start()
+        assertEquals(null, coordinator.state.value.workingFolder)
+
+        val loaded = loadedSession(message("u-1", "user", "hello", 10))
+        remote.completeLoad(
+            success("load", loaded.copy(meta = loaded.meta?.copy(worktreePath = "/repo/.switchboard/loaded"))),
+        )
+        assertEquals("/repo/.switchboard/loaded", coordinator.state.value.workingFolder)
+        assertEquals("/repo/.switchboard/loaded", remote.startedSessions.single().cwd)
+    }
+
+    @Test
     fun `cached provider reattaches even when history refresh fails`() {
         val remote = FakeThreadSessionRemote(scope)
         val coordinator = coordinator(
