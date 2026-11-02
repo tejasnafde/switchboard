@@ -8,6 +8,7 @@ import {
   getConversationSettled,
   getConversationSnooze,
   getDb,
+  linkConversationPullRequest,
   setConversationSettled,
   setConversationSnooze,
 } from '../../src/main/db/database'
@@ -246,6 +247,7 @@ describe('ChatSnoozer', () => {
 
   describe('PR wakes', () => {
     const PR = 'github:acme/app#512'
+    const PR_REF = { host: 'github', owner: 'acme', name: 'app', number: 512 } as const
     let reading: PrReading | null
     const reads: string[] = []
     const merged: string[] = []
@@ -265,7 +267,14 @@ describe('ChatSnoozer', () => {
         return reading && { ...reading }
       }
       host.settleMerged = (id) => void merged.push(id)
+      for (const id of ['c', 'd']) linkConversationPullRequest(id, PR_REF, 'manual')
       return make()
+    }
+    /** A PR read that answers only when the test says so. */
+    const slowRead = () => {
+      let answer!: () => void
+      host.readPr = () => new Promise((resolve) => (answer = () => resolve(reading && { ...reading })))
+      return () => answer()
     }
 
     it('stores the PR as it was, and refuses a closed or unreadable PR', async () => {
@@ -278,6 +287,38 @@ describe('ChatSnoozer', () => {
       expect(await s.snooze('d', { until: null, pr: PR })).toEqual({ ok: false, reason: 'pr_closed' })
       reading = null
       expect(await s.snooze('d', { until: null, pr: PR })).toEqual({ ok: false, reason: 'pr_unreadable' })
+    })
+
+    it('refuses a PR the chat does not link, without reading it', async () => {
+      const s = withPr()
+      expect(await s.snooze('c', { until: null, pr: 'github:acme/app#9' })).toEqual({
+        ok: false,
+        reason: 'pr_unlinked',
+      })
+      expect(reads).toEqual([])
+      expect(getConversationSnooze('c')?.snoozedAt).toBeNull()
+    })
+
+    it('a request that finishes its PR read after a newer snooze is stale', async () => {
+      const s = withPr()
+      const answer = slowRead()
+      const first = s.snooze('c', { until: T0 + HOUR, pr: PR })
+      expect(await s.snooze('c', { until: T0 + 5 * HOUR })).toMatchObject({ ok: true })
+      answer()
+      expect(await first).toEqual({ ok: false, reason: 'stale' })
+      expect(getConversationSnooze('c')).toMatchObject({ snoozedUntil: T0 + 5 * HOUR, snoozePr: null })
+    })
+
+    it('refuses an Undo whose time passes during the PR read', async () => {
+      const s = withPr()
+      const done = await s.snooze('c', { until: T0 + HOUR, pr: PR })
+      if (!done.ok) throw new Error('snooze refused')
+      const answer = slowRead()
+      const undo = s.snooze('c', { until: T0 + 60_000, pr: PR, expectRev: done.rev })
+      vi.setSystemTime(T0 + 60_000)
+      answer()
+      expect(await undo).toEqual({ ok: false, reason: 'past' })
+      expect(getConversationSnooze('c')).toMatchObject({ snoozedUntil: T0 + HOUR, snoozeRev: done.rev })
     })
 
     it('reads every 5 minutes, wakes on a review that requests changes, pushes once and stops reading', async () => {

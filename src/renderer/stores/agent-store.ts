@@ -6,6 +6,7 @@ import {
 } from '../services/chat-workspace-runtime'
 import type { AgentStatus, AgentType, ChatMessage } from '@shared/types'
 import type { ReasoningEffort } from '@shared/models'
+import type { ConversationSettledEvent } from '@shared/chat-settle'
 import { createRendererLogger } from '../logger'
 import { mergeLiveSessions, settleSessionsNotLive, toAgentStatus, toAgentType } from './live-session-merge'
 import type { LiveSessionSummary } from '@shared/live-sessions'
@@ -419,6 +420,8 @@ export interface LastUndo {
   settledAt: number
   /** Set when a merged PR settled the chat, for the notice. */
   prNumber?: number
+  /** The snooze the settle ended, which Undo restores. */
+  endedSnooze?: ConversationSettledEvent['endedSnooze']
 }
 
 /** `sessions` with session `id`'s unread count zeroed; the same array when it already is. */

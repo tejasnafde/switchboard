@@ -82,9 +82,28 @@ export function undoLastSettle(): string | null {
     log.warn(`unsettle failed for ${undo.id}; the chat stays settled`, err)
     emitSettled(undo.id, undo.settledAt)
   }
-  window.api.app.unsettleConversation(undo.id).then((result) => {
-    if (!result.ok) stillSettled()
-  }, stillSettled)
+  const unsettle = () =>
+    window.api.app.unsettleConversation(undo.id).then((result) => {
+      if (!result.ok) stillSettled()
+    }, stillSettled)
+  const ended = undo.endedSnooze
+  if (!ended) {
+    void unsettle()
+    return undo.id
+  }
+  // The snooze write also unsettles. A refused one (a PR-only snooze whose PR merged) still unsettles.
+  window.api.app.snoozeConversation(undo.id, { until: ended.until, pr: ended.pr, expectRev: ended.rev }).then(
+    (result) => {
+      if (!result.ok) {
+        log.info(`snooze not restored for ${undo.id}`, { reason: result.reason })
+        return unsettle()
+      }
+    },
+    (err) => {
+      log.warn(`snooze restore failed for ${undo.id}`, err)
+      return unsettle()
+    },
+  )
   return undo.id
 }
 
@@ -99,5 +118,6 @@ export function applySettledEvent(event: ConversationSettledEvent & { machineId?
     machineId: event.machineId ?? machineOf(event.conversationId),
     settledAt: event.settledAt,
     prNumber: event.prNumber,
+    endedSnooze: event.endedSnooze,
   })
 }

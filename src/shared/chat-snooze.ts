@@ -398,7 +398,7 @@ export function prWakeSummary(mark: PrMark, now: PrReading): string | null {
 export interface SnoozeRequest {
   /** Epoch ms, or null for a PR-only snooze. */
   until: number | null
-  /** `prKey` of a linked PR, to wake on its next event. */
+  /** `prKey` of a PR the chat links, to wake on its next event; any other is refused (`pr_unlinked`). */
   pr?: string | null
   /** Undo of a wake: refused unless the chat is still at this revision. */
   expectRev?: number
@@ -409,6 +409,7 @@ export type SnoozeRefusal =
   | 'past'
   | 'too_far'
   | 'pr_closed'
+  | 'pr_unlinked'
   | 'pr_unreadable'
   | 'no_row'
   | 'stale'

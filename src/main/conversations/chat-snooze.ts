@@ -26,11 +26,13 @@ import {
   type SnoozeResult,
   type WakeReason,
 } from '@shared/chat-snooze'
+import { prKey } from '@shared/pull-requests'
 import {
   clearConversationWoke,
   getConversationSnooze,
   getConversationTitle,
   isConversationArchived,
+  listConversationPullRequests,
   listSnoozedConversations,
   listWokeConversationIds,
   resolveRootThreadId,
@@ -136,7 +138,11 @@ export class ChatSnoozer {
     if (this.host.needsYou(root)) return { ok: false, reason: 'needs_you' }
     let watch = pr
     let prMark: string | null = null
+    // A request that lands during this one's PR read makes its write stale.
+    const expectRev = request.expectRev ?? getConversationSnooze(root)?.snoozeRev
     if (pr !== null) {
+      if (!listConversationPullRequests(root).some((link) => prKey(link.ref) === pr))
+        return { ok: false, reason: 'pr_unlinked' }
       // The baseline is stored with the snooze, so a later read compares against what the PR was then.
       const reading = await this.readPr(pr)
       if (!reading) return { ok: false, reason: 'pr_unreadable' }
@@ -147,13 +153,14 @@ export class ChatSnoozer {
       // The chat may have changed during the read; a replaced snoozer takes no new snooze.
       if (this.disposed || isConversationArchived(root)) return { ok: false, reason: 'no_row' }
       if (this.host.needsYou(root)) return { ok: false, reason: 'needs_you' }
+      if (request.expectRev !== undefined && until !== null && until <= this.now()) return { ok: false, reason: 'past' }
     }
     const written = setConversationSnooze(root, {
       until,
       pr: watch,
       prMark,
       at: this.now(),
-      expectRev: request.expectRev,
+      expectRev,
     })
     if (written === null) return { ok: false, reason: getConversationSnooze(root) ? 'stale' : 'no_row' }
     const { rev, unsettled } = written
