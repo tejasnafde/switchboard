@@ -39,8 +39,8 @@ android {
         applicationId = canonicalApplicationId
         minSdk = 24
         targetSdk = 36
-        versionCode = 26
-        versionName = "0.5.24"
+        versionCode = 27
+        versionName = "0.5.25"
         buildConfigField("String", "EXPO_PROJECT_ID", "\"$easProjectId\"")
         buildConfigField("String", "PUSH_APPLICATION_ID", "\"$canonicalApplicationId\"")
         // Settings > Labs "Run live pages" default (phone_html_live_run), off until a device probe passes.
