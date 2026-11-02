@@ -1,5 +1,13 @@
 {
   "undoMs": 8000,
+  "undoFresh": [
+    { "name": "just now", "age": 0, "expect": true },
+    { "name": "inside the window", "age": 7999, "expect": true },
+    { "name": "a backend clock 2 s behind", "age": 9999, "expect": true },
+    { "name": "past the window and the leeway", "age": 10000, "expect": false },
+    { "name": "replayed after a resume", "age": 600000, "expect": false },
+    { "name": "a backend clock ahead", "age": -5000, "expect": true }
+  ],
   "noticeText": [
     { "title": "Fix login", "expect": "Settled Fix login" },
     { "title": "Fix login", "prNumber": 452, "expect": "Settled Fix login: PR #452 merged" },

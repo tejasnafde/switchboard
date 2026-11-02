@@ -803,13 +803,22 @@ private fun HomeRouteHost(
                 DisposableEffect(settleStore, lease.scope) {
                     val subscription = lease.client.onConversationSettledEvent { event ->
                         settleStore.applyEvent(connection.id, event)
-                        if (settleCapable) ChatSettle.undoOf(connection.id, event)?.let { settleUndo = it }
+                        if (settleCapable) {
+                            ChatSettle.undoOf(connection.id, event, System.currentTimeMillis())?.let { settleUndo = it }
+                        }
                     }
                     onDispose(subscription::cancel)
                 }
             }
-            LaunchedEffect(settleStore, projects) {
-                settleStore.reconcile(connection.id, projects.flatMap(Project::sessions))
+            val heldHere = heldSettles[connection.id].orEmpty()
+            LaunchedEffect(settleStore, projects, heldHere) {
+                val sessions = projects.flatMap(Project::sessions)
+                settleStore.reconcile(connection.id, sessions)
+                // An entry the list never agreed with yields to it once held longer than a read.
+                if (heldHere.isNotEmpty()) {
+                    delay(ChatSettleStore.HOLD_MS)
+                    settleStore.reconcile(connection.id, sessions)
+                }
             }
             val snoozeCapable = lease != null && ChatSnooze.CAPABILITY in lease.capabilities
             if (lease != null && snoozeCapable) {
@@ -837,7 +846,7 @@ private fun HomeRouteHost(
                 snooze = snoozeCapable,
                 snoozes = if (snoozeCapable) heldSnoozes[connection.id].orEmpty() else emptyMap(),
                 settle = settleCapable,
-                settled = heldSettles[connection.id].orEmpty(),
+                settled = heldHere.mapValues { it.value.settledAt },
             )
         }
     }

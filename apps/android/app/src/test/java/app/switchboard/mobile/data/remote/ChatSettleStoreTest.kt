@@ -111,10 +111,51 @@ class ChatSettleStoreTest {
         store.applyEvent("mac", ChatSettle.Event("broadcast", 700))
 
         store.reconcile("mac", listOf(session("settled", null), session("unsettled", null), session("broadcast", 700)))
-        assertEquals(mapOf<String, Long?>("settled" to 500L), store.state.value["mac"])
+        assertEquals(mapOf<String, Long?>("settled" to 500L), store.state.value["mac"]?.mapValues { it.value.settledAt })
 
         store.reconcile("mac", listOf(session("settled", 501)))
-        assertEquals(emptyMap<String, Long?>(), store.state.value["mac"])
+        assertEquals(emptyMap<String, ChatSettleStore.Held>(), store.state.value["mac"])
+    }
+
+    @Test
+    fun `a failed Settle and a failed Undo that overlap leave the row as the backend has it`() {
+        val rpc = FakeRpc()
+        val store = ChatSettleStore()
+        val client = SwitchboardRemoteClient("mac", rpc)
+        store.settle(client, "a", 500) {}
+        store.undo(client, ChatSettle.Undo("mac", "a", 500, "Settled a"), ChatSnoozeStore(), 600) {}
+
+        rpc.answer(ok(false))
+        rpc.answer(ok(false))
+        assertFalse("a" in store.state.value["mac"].orEmpty())
+    }
+
+    @Test
+    fun `a Settle that lands while its Undo runs, then a failed Undo, leaves the chat settled`() {
+        val rpc = FakeRpc()
+        val store = ChatSettleStore()
+        val client = SwitchboardRemoteClient("mac", rpc)
+        store.settle(client, "a", 500) {}
+        store.undo(client, ChatSettle.Undo("mac", "a", 500, "Settled a"), ChatSnoozeStore(), 600) {}
+
+        rpc.answer(ok(true))
+        assertNull(store.of("mac", "a"))
+        rpc.fail()
+        assertEquals(500L, store.of("mac", "a"))
+    }
+
+    @Test
+    fun `an entry the list never agreed with yields to it once held longer than a read`() {
+        var now = 1_000L
+        val store = ChatSettleStore { now }
+        // An Undo under a rotated id, then the desktop settles: the broadcast names the root, not this row.
+        store.put("mac", "uuid", null)
+        store.reconcile("mac", listOf(session("uuid", 900)))
+        assertTrue("uuid" in store.state.value.getValue("mac"))
+
+        now += ChatSettleStore.HOLD_MS
+        store.reconcile("mac", listOf(session("uuid", 900)))
+        assertFalse("uuid" in store.state.value.getValue("mac"))
     }
 
     private fun ok(value: Boolean) = obj("ok" to JsonBoolean(value))

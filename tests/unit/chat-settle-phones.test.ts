@@ -10,6 +10,7 @@ import {
   CHAT_SETTLE_CAPABILITY,
   SETTLE_UNDO_MS,
   canSettleStatus,
+  isSettleUndoFresh,
   settleBroadcastNotice,
   settledNoticeText,
 } from '../../src/shared/chat-settle'
@@ -52,6 +53,10 @@ describe('shared settle fixture', () => {
     }[],
   )('broadcast notice: $name', (c) => {
     expect(settleBroadcastNotice(c.event)).toBe(c.expect)
+  })
+
+  it.each(cases.undoFresh as { name: string; age: number; expect: boolean }[])('undo fresh: $name', (c) => {
+    expect(isSettleUndoFresh(1_000_000, 1_000_000 + c.age)).toBe(c.expect)
   })
 
   it.each(cases.canSettle as { status: string | null; expect: boolean }[])('canSettle $status', (c) => {

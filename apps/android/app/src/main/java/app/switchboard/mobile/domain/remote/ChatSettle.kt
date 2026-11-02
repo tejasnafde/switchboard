@@ -19,6 +19,12 @@ object ChatSettle {
     /** How long Undo is offered, as on the desktop. */
     const val UNDO_MS = 8_000L
 
+    /** Leeway for a backend clock a little behind the phone's. */
+    const val CLOCK_SKEW_MS = 2_000L
+
+    /** A resume replays old broadcasts; one older than the Undo window offers none. */
+    fun isUndoFresh(settledAt: Long, now: Long): Boolean = now - settledAt < UNDO_MS + CLOCK_SKEW_MS
+
     /** The snooze a settle ended; its Undo snoozes again with these values and `expectRev`. */
     data class EndedSnooze(val until: Long?, val pr: String?, val rev: Long)
 
@@ -47,10 +53,12 @@ object ChatSettle {
     fun broadcastNotice(settledAt: Long?, title: String?, prNumber: Int?): String? =
         if (settledAt == null || prNumber == null) null else noticeText(title ?: "Untitled chat", prNumber)
 
-    /** The Undo a broadcast offers, or null. */
-    fun undoOf(connectionId: String, event: Event): Undo? {
+    /** The Undo a broadcast offers, or null (also for one replayed after its window). */
+    fun undoOf(connectionId: String, event: Event, now: Long): Undo? {
         val text = broadcastNotice(event.settledAt, event.title, event.prNumber) ?: return null
-        return Undo(connectionId, event.conversationId, event.settledAt ?: return null, text, event.endedSnooze)
+        val settledAt = event.settledAt ?: return null
+        if (!isUndoFresh(settledAt, now)) return null
+        return Undo(connectionId, event.conversationId, settledAt, text, event.endedSnooze)
     }
 
     /** A Recents row takes Settle when it is Done or idle (the status label, or null). */

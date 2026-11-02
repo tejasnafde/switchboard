@@ -25,6 +25,20 @@ class ChatSettleFixturesTest {
     }
 
     @Test
+    fun anOldBroadcastOffersNoUndo() {
+        val cases = section("undoFresh")
+        assertTrue(cases.isNotEmpty())
+        cases.forEach { case ->
+            val age = (case.values.getValue("age") as JsonNumber).source.toLong()
+            assertEquals(
+                case.str("name"),
+                (case.values.getValue("expect") as JsonBoolean).value,
+                ChatSettle.isUndoFresh(1_000_000, 1_000_000 + age),
+            )
+        }
+    }
+
+    @Test
     fun noticeTextNamesTheMergedPr() {
         val cases = section("noticeText")
         assertTrue(cases.isNotEmpty())
@@ -80,9 +94,11 @@ class ChatSettleFixturesTest {
         assertEquals(ChatSettle.Event("a", 700, "Fix", 7, ended), event)
         assertEquals(
             ChatSettle.Undo("mac", "a", 700, "Settled Fix: PR #7 merged", ended),
-            ChatSettle.undoOf("mac", event!!),
+            ChatSettle.undoOf("mac", event!!, now = 1_000),
         )
-        assertNull(ChatSettle.undoOf("mac", ChatSettle.Event("a", 700, "Fix")))
+        assertNull(ChatSettle.undoOf("mac", ChatSettle.Event("a", 700, "Fix"), now = 1_000))
+        // Replayed after a resume, long after its window.
+        assertNull(ChatSettle.undoOf("mac", event, now = 700 + 60_000))
         assertEquals(
             obj("until" to JsonNull, "pr" to JsonString("github:acme/app#7"), "expectRev" to JsonNumber("4")),
             ChatSettle.restoreRequest(ended),

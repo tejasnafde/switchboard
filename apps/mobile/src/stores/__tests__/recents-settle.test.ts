@@ -140,20 +140,21 @@ test('a merged PR settle broadcast offers Undo to Home; a settle by hand elsewhe
   const offered: SettleUndo[] = []
   const stop = onMergeSettled((undo) => offered.push(undo))
   const broadcast = transport.handlers.get('app:conversation-settled')!
-  broadcast({ conversationId: 'b', settledAt: 600, title: 'Deploy' })
-  broadcast({ conversationId: 'a', settledAt: 700, title: 'Fix', prNumber: 7, endedSnooze: merged.endedSnooze })
+  const now = Date.now()
+  broadcast({ conversationId: 'b', settledAt: now, title: 'Deploy' })
+  broadcast({ conversationId: 'a', settledAt: now, title: 'Fix', prNumber: 7, endedSnooze: merged.endedSnooze })
   stop()
-  broadcast({ conversationId: 'b', settledAt: 800, title: 'Deploy', prNumber: 8 })
+  broadcast({ conversationId: 'b', settledAt: now, title: 'Deploy', prNumber: 8 })
   expect(offered).toEqual([
     {
       connectionId: 'mac',
       id: 'a',
-      settledAt: 700,
+      settledAt: now,
       text: 'Settled Fix: PR #7 merged',
       endedSnooze: merged.endedSnooze,
     },
   ])
-  expect(settledAt('a')).toBe(700)
+  expect(settledAt('a')).toBe(now)
 })
 
 test('a backend without chat_settle_v1 offers no Undo, but the row still leaves', async () => {
@@ -162,11 +163,51 @@ test('a backend without chat_settle_v1 offers no Undo, but the row still leaves'
   const stop = onMergeSettled((undo) => offered.push(undo))
   transport.handlers.get('app:conversation-settled')!({
     conversationId: 'a',
-    settledAt: 700,
+    settledAt: Date.now(),
     title: 'Fix',
     prNumber: 7,
   })
   stop()
   expect(offered).toEqual([])
-  expect(settledAt('a')).toBe(700)
+  expect(settledAt('a')).not.toBeNull()
+})
+
+test('a failed Settle and a failed Undo that overlap leave the row shown, as the backend has it', async () => {
+  const replies: ((value: unknown) => void)[] = []
+  await connect(() => new Promise((resolve) => replies.push(resolve)))
+  const settled = settleChat('mac', 'a', 500)
+  const undone = undoSettle({ connectionId: 'mac', id: 'a', settledAt: 500, text: 'Settled a' })
+  replies[0]({ ok: false })
+  await expect(settled).resolves.toBe('Could not settle. Try again')
+  replies[1]({ ok: false })
+  await expect(undone).resolves.toBe('Could not undo the settle. Try again')
+  expect(settledAt('a')).toBeNull()
+})
+
+test('a Settle that lands while its Undo runs, then a failed Undo, leaves the chat settled', async () => {
+  const replies: ((value: unknown) => void)[] = []
+  await connect(() => new Promise((resolve) => replies.push(resolve)))
+  const settled = settleChat('mac', 'a', 500)
+  const undone = undoSettle({ connectionId: 'mac', id: 'a', settledAt: 500, text: 'Settled a' })
+  replies[0]({ ok: true, settledAt: 500 })
+  await settled
+  expect(settledAt('a')).toBeNull()
+  replies[1]({ ok: false })
+  await undone
+  expect(settledAt('a')).toBe(500)
+})
+
+test('a broadcast replayed after a resume offers no Undo', async () => {
+  const transport = await connect(() => ({ ok: true }))
+  const offered: SettleUndo[] = []
+  const stop = onMergeSettled((undo) => offered.push(undo))
+  transport.handlers.get('app:conversation-settled')!({
+    conversationId: 'a',
+    settledAt: Date.now() - 60_000,
+    title: 'Fix',
+    prNumber: 7,
+  })
+  stop()
+  expect(offered).toEqual([])
+  expect(settledAt('a')).not.toBeNull()
 })

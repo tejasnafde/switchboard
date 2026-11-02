@@ -15,6 +15,17 @@ export const CHAT_SETTLE_CAPABILITY = 'chat_settle_v1'
 /** How long a settle's Undo is offered, on the desktop and the phones. */
 export const SETTLE_UNDO_MS = 8000
 
+/** Leeway for a backend clock a little behind the phone's. */
+export const SETTLE_CLOCK_SKEW_MS = 2000
+
+/**
+ * Whether a settle broadcast still offers Undo: a resume replays old broadcasts,
+ * and one older than the Undo window must not offer it again.
+ */
+export function isSettleUndoFresh(settledAt: number, now: number): boolean {
+  return now - settledAt < SETTLE_UNDO_MS + SETTLE_CLOCK_SKEW_MS
+}
+
 /**
  * Whether a chat is settled. The backend clears the stamp when a new user turn
  * starts, so a rename or a model change (which move the activity time) does not.

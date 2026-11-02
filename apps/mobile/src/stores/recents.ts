@@ -7,7 +7,12 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { createLogger } from '@shared/logger'
-import { CHAT_SETTLE_CAPABILITY, settleBroadcastNotice, type ConversationSettledEvent } from '@shared/chat-settle'
+import {
+  CHAT_SETTLE_CAPABILITY,
+  isSettleUndoFresh,
+  settleBroadcastNotice,
+  type ConversationSettledEvent,
+} from '@shared/chat-settle'
 import { CHAT_SNOOZE_CAPABILITY, isWoke, snoozeRefusalText, type ConversationSnoozedEvent } from '@shared/chat-snooze'
 import {
   persistedRecents,
@@ -122,7 +127,8 @@ export const useRecentsStore = create<RecentsState>()(
       applySettled: (connectionId, event) => {
         const text = settleBroadcastNotice(event)
         const undoable = getClient(connectionId)?.supportsCapability(CHAT_SETTLE_CAPABILITY) === true
-        if (text !== null && event.settledAt !== null && undoable) {
+        // A resume replays old broadcasts: only a recent one offers Undo.
+        if (text !== null && event.settledAt !== null && undoable && isSettleUndoFresh(event.settledAt, Date.now())) {
           const undo: SettleUndo = {
             connectionId,
             id: event.conversationId,
@@ -193,21 +199,53 @@ export async function snoozeChat(connectionId: string, id: string, choice: Snooz
 }
 
 /**
+ * Settle and Undo requests in flight, per machine and chat: the newest one's
+ * token, and the settled time the backend holds as far as the answers so far say.
+ */
+const settleOps = new Map<string, { token: symbol; stored: number | null }>()
+
+function beginSettleOp(connectionId: string, id: string, stored: number | null): symbol {
+  const key = `${connectionId}:${id}`
+  const token = Symbol(key)
+  const held = settleOps.get(key)
+  settleOps.set(key, { token, stored: held ? held.stored : stored })
+  return token
+}
+
+/**
+ * One request answered: `stored` is what the backend holds after it, or
+ * undefined when it failed. Only the newest request puts the row back, and
+ * then to what the backend holds, so a failed Settle and a failed Undo that
+ * overlap leave the row as the backend has it.
+ */
+function endSettleOp(connectionId: string, id: string, token: symbol, stored: number | null | undefined): void {
+  const key = `${connectionId}:${id}`
+  const op = settleOps.get(key)
+  if (!op) return
+  if (stored !== undefined) op.stored = stored
+  if (op.token !== token) return
+  settleOps.delete(key)
+  if (stored === undefined)
+    useRecentsStore.getState().applySettled(connectionId, { conversationId: id, settledAt: op.stored })
+}
+
+/**
  * Settle a Done or idle chat: the row leaves Recents at once and comes back
  * when the backend refuses. Resolves to the line to show when it did not happen, or null.
  */
 export async function settleChat(connectionId: string, id: string, settledAt: number): Promise<string | null> {
   const client = getClient(connectionId)
   if (!client) return NOT_CONNECTED
-  const before = sessionOf(connectionId, id)?.settledAt ?? null
+  const token = beginSettleOp(connectionId, id, sessionOf(connectionId, id)?.settledAt ?? null)
   useRecentsStore.getState().applySettled(connectionId, { conversationId: id, settledAt })
   try {
     const result = await client.settleConversation(id)
     if (!result.ok) throw new Error('the chat has no stored row')
+    endSettleOp(connectionId, id, token, settledAt)
     return null
   } catch (err) {
     log.warn(`could not settle ${id}; the row comes back`, err)
-    useRecentsStore.getState().applySettled(connectionId, { conversationId: id, settledAt: before })
+    endSettleOp(connectionId, id, token, undefined)
     return 'Could not settle. Try again'
   }
 }
@@ -221,6 +259,7 @@ export async function undoSettle(undo: SettleUndo): Promise<string | null> {
   const { connectionId, id } = undo
   const client = getClient(connectionId)
   if (!client) return NOT_CONNECTED
+  const token = beginSettleOp(connectionId, id, undo.settledAt)
   useRecentsStore.getState().applySettled(connectionId, { conversationId: id, settledAt: null })
   const ended = undo.endedSnooze
   if (ended) {
@@ -229,6 +268,7 @@ export async function undoSettle(undo: SettleUndo): Promise<string | null> {
       const result = await client.snoozeConversation(id, { until: ended.until, pr: ended.pr, expectRev: ended.rev })
       if (result.ok) {
         useRecentsStore.getState().applySnooze(connectionId, snoozedEvent(id, result, now))
+        endSettleOp(connectionId, id, token, null)
         return null
       }
       log.info(`snooze not restored for ${id}`, { reason: result.reason })
@@ -239,10 +279,11 @@ export async function undoSettle(undo: SettleUndo): Promise<string | null> {
   try {
     const result = await client.unsettleConversation(id)
     if (!result.ok) throw new Error('the chat has no stored row')
+    endSettleOp(connectionId, id, token, null)
     return null
   } catch (err) {
-    log.warn(`unsettle failed for ${id}; the chat stays settled`, err)
-    useRecentsStore.getState().applySettled(connectionId, { conversationId: id, settledAt: undo.settledAt })
+    log.warn(`unsettle failed for ${id}; the row goes back to what the backend holds`, err)
+    endSettleOp(connectionId, id, token, undefined)
     return 'Could not undo the settle. Try again'
   }
 }
