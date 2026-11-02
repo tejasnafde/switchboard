@@ -59,7 +59,7 @@ export const SHORTCUTS: readonly ShortcutCommand[] = [
     label: 'Toggle sidebar',
     group: 'Panels',
     scope: 'global',
-    bindings: ['Mod+B', 'Mod+Shift+B'],
+    bindings: ['Mod+B'],
   },
   { id: 'app.toggle-terminal', label: 'Toggle terminal', group: 'Panels', scope: 'global', bindings: ['Mod+J'] },
   {
@@ -103,6 +103,7 @@ export const SHORTCUTS: readonly ShortcutCommand[] = [
   },
   { id: 'chat.context-bridge', label: 'Send selection to chat', group: 'Chat', scope: 'global', bindings: ['Mod+L'] },
   { id: 'chat.quick-prompt', label: 'Quick prompt', group: 'Chat', scope: 'global', bindings: ['Mod+K'] },
+  { id: 'chat.details', label: 'Chat details', group: 'Chat', scope: 'global', bindings: ['Mod+Shift+B'] },
   {
     id: 'terminal.new-window-right',
     label: 'New terminal window (right)',

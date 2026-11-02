@@ -30,6 +30,7 @@
 @source '../components/chat/ChatLanding.tsx';
 @source '../components/chat/ChatPanel.tsx';
 @source '../components/chat/BranchPicker.tsx';
+@source '../components/chat/ChatDetailsPopover.tsx';
 @source '../components/chat/HostWriteApprovalCard.tsx';
 @source '../components/chat/HostWriteReviewParts.tsx';
 @source '../components/chat/TableCopyMenu.tsx';

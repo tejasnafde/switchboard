@@ -110,7 +110,7 @@ describe('shortcut rows', () => {
     const rows = shortcutRows('mac')
     const row = (id: string) => rows.find((r) => r.command === id)!
     expect(row('chat.interrupt')).toMatchObject({ defaultValue: 'Mod+Backspace', defaultLabel: '⌘⌫' })
-    expect(row('app.toggle-sidebar').defaultValue).toBe('Mod+B Mod+Shift+B')
+    expect(row('app.toggle-sidebar').defaultValue).toBe('Mod+B')
     expect(row('composer.send').defaultValue).toBeUndefined()
     expect(isSettingChanged(row('chat.interrupt'), { 'keyboard.chat.interrupt': 'Mod+.' })).toBe(true)
     expect(isSettingChanged(row('chat.interrupt'), { 'keyboard.chat.interrupt': '' })).toBe(true)

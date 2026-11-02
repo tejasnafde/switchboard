@@ -52,6 +52,7 @@ import {
   prepareRuntimeEventLifecycle,
 } from '../../services/message-lifecycle'
 import { LinkedPrControl } from '../reviews/LinkedPrControl'
+import { ChatDetailsPopover } from './ChatDetailsPopover'
 import { expireIfRefused } from './expired-request'
 import {
   interruptFoundNoTurn,
@@ -305,6 +306,11 @@ export function ChatPanel({
   const resolvedModel = activeSession?.resolvedModel
   const reasoningEffort = activeSession?.reasoningEffort
   const instanceId = activeSession?.instanceId
+  // Hidden until the first context_window event: the char estimate read "0" for every fresh chat.
+  const contextUsage =
+    hasSession && activeSession?.tokenUsage
+      ? { usedTokens: activeSession.tokenUsage.usedTokens, maxTokens: activeSession.tokenUsage.maxTokens ?? 200000 }
+      : undefined
 
   const handleRuntimeModeChange = useCallback(
     (mode: RuntimeMode) => {
@@ -1391,15 +1397,7 @@ export function ChatPanel({
           onModelChange={handleModelChange}
           reasoningEffort={reasoningEffort}
           onReasoningEffortChange={handleReasoningEffortChange}
-          contextUsage={
-            hasSession && activeSession?.tokenUsage
-              ? {
-                  // Hidden until the first context_window event: the char estimate read "0" for every fresh chat.
-                  usedTokens: activeSession.tokenUsage.usedTokens,
-                  maxTokens: activeSession.tokenUsage.maxTokens ?? 200000,
-                }
-              : undefined
-          }
+          contextUsage={contextUsage}
           isRunning={status === 'running' || status === 'thinking'}
           onInterrupt={interruptTurn}
           onClearMessages={() => {
@@ -1532,7 +1530,19 @@ export function ChatPanel({
             <span className="flex-1" />
             {hasSession && <HubChip view={hub} />}
 
-            {activeSession && activeSession.type !== 'terminal' && <LinkedPrControl sessionId={activeSession.id} />}
+            {activeSession && activeSession.type !== 'terminal' && (
+              <>
+                <LinkedPrControl sessionId={activeSession.id} />
+                <ChatDetailsPopover
+                  sessionId={activeSession.id}
+                  machineId={activeSession.machineId}
+                  machineName={remoteMachineName}
+                  cwd={activeSession.worktreePath ?? projectPath ?? null}
+                  instanceId={instanceId ?? defaultInstanceId(activeSession.type)}
+                  contextUsage={contextUsage}
+                />
+              </>
+            )}
 
             {otherSessionId && (
               <button

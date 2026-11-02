@@ -470,6 +470,8 @@ const api = {
       transport.invoke(GitChannels.SWITCH_REF, cwd, refName),
     currentBranch: (cwd: string): Promise<{ ok: true; branch: string | null } | { ok: false; error: string }> =>
       transport.invoke(GitChannels.CURRENT_BRANCH, cwd),
+    diffStat: (cwd: string): Promise<{ ok: true; added: number; removed: number } | { ok: false; error: string }> =>
+      transport.invoke(GitChannels.DIFF_STAT, cwd),
     watchHead: (cwd: string): Promise<{ ok: boolean }> => transport.invoke(GitChannels.WATCH_HEAD, cwd),
     unwatchHead: (cwd: string): Promise<{ ok: boolean }> => transport.invoke(GitChannels.UNWATCH_HEAD, cwd),
     onHeadChanged: (callback: (cwd: string) => void) =>

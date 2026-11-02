@@ -22,6 +22,7 @@ export type GlobalKeyAction =
   | { type: 'interrupt' }
   | { type: 'context-bridge' }
   | { type: 'quick-prompt' }
+  | { type: 'toggle-chat-details' }
   | { type: 'new-terminal-tab' }
   | { type: 'cycle-tab'; direction: 'next' | 'prev' }
   | { type: 'focus-direction'; direction: 'left' | 'right' | 'up' | 'down' }
@@ -45,6 +46,7 @@ const ACTIONS: Record<string, GlobalKeyAction | ((index: number) => GlobalKeyAct
   'chat.interrupt': { type: 'interrupt' },
   'chat.context-bridge': { type: 'context-bridge' },
   'chat.quick-prompt': { type: 'quick-prompt' },
+  'chat.details': { type: 'toggle-chat-details' },
   'terminal.new-tab': { type: 'new-terminal-tab' },
   'terminal.next-tab': { type: 'cycle-tab', direction: 'next' },
   'terminal.prev-tab': { type: 'cycle-tab', direction: 'prev' },

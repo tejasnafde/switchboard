@@ -179,3 +179,26 @@ export async function getCurrentBranch(cwd: string, runner: GitRunner = defaultR
   if (!branch || branch === 'HEAD') return null
   return branch
 }
+
+export interface DiffStat {
+  added: number
+  removed: number
+}
+
+/** Totals of `git diff --numstat` output. A binary file prints `-` for both counts and adds nothing. */
+export function parseNumstat(stdout: string): DiffStat {
+  let added = 0
+  let removed = 0
+  for (const line of stdout.split('\n')) {
+    const [a, r] = line.split('\t')
+    added += Number(a) || 0
+    removed += Number(r) || 0
+  }
+  return { added, removed }
+}
+
+/** Lines added and removed in the working tree against HEAD (staged and unstaged, not untracked). */
+export async function getDiffStat(cwd: string, runner: GitRunner = defaultRunner): Promise<DiffStat> {
+  const { stdout } = await runner(['diff', '--numstat', 'HEAD'], cwd)
+  return parseNumstat(stdout)
+}

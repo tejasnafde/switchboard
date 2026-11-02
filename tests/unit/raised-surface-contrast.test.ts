@@ -45,6 +45,14 @@ describe.each(Object.keys(themes) as (keyof typeof themes)[])(
       },
     )
 
+    // The chat Details popover (sb-floating-surface paints --bg-elevated).
+    it.each(['--text-success', '--text-warning', '--text-error'])(
+      '%s reads at 4.5:1 or better on --bg-elevated',
+      (name) => {
+        expect(contrastRatio(get(name), get('--bg-elevated'))).toBeGreaterThanOrEqual(4.5)
+      },
+    )
+
     it('muted text reads at 4.5:1 or better on the model picker', () => {
       expect(contrastRatio(get('--text-muted'), pickerSurface[theme](get('--bg-primary')))).toBeGreaterThanOrEqual(4.5)
     })

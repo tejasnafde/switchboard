@@ -91,6 +91,7 @@ import { recoverPendingRequests } from './services/pending-request-recovery'
 import { ProviderChannels } from '@shared/ipc-channels'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import { resolveGlobalKeydown } from './services/global-keybindings'
+import { toggleChatDetails } from './components/chat/ChatDetailsPopover'
 import { isSecretCardKeyTarget } from './components/chat/secret-request-card-model'
 import {
   LANDING_COMPOSER_ID,
@@ -1653,6 +1654,14 @@ export function App() {
           const appended = captureSelection()
           if (!appended) {
             log.info('⌘L: no selection - select text in a terminal, file viewer, or chat message first')
+          }
+          break
+        }
+        case 'toggle-chat-details': {
+          const sid = useLayoutStore.getState().focusedChatSessionId()
+          if (sid) {
+            e.preventDefault()
+            toggleChatDetails(sid)
           }
           break
         }
