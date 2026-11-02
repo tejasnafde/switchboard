@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { overflowedItems, TOOLBAR_STEPS, toolbarTier } from '../../src/renderer/components/ui/toolbar-steps'
@@ -84,5 +84,18 @@ describe('toolbar container queries', () => {
     expect(toolbar).toContain("'@container/toolbar flex items-center'")
     expect(footer).toContain('flex-nowrap')
     expect(sources).not.toContain('flex-wrap ')
+  })
+})
+
+// A control that leaves the row must stay reachable: every file that hides a
+// ToolbarItem at a step lists an entry for that step in its "..." menu.
+describe('every hidden toolbar control', () => {
+  const files = readdirSync(componentsDir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.tsx'))
+
+  it.each(files.filter((f) => /<ToolbarItem hideBelow=/.test(read(f))))('%s lists it in the overflow menu', (file) => {
+    const source = read(file)
+    expect(source).toContain('<ToolbarOverflow')
+    for (const [, step] of source.matchAll(/<ToolbarItem hideBelow=\{(\d+)\}>/g))
+      expect(source).toMatch(new RegExp(`hideBelow: ${step}\\b|, ${step}\\)`))
   })
 })

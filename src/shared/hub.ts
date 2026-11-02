@@ -831,10 +831,10 @@ export function hubChildrenCount(children: ReadonlyArray<Pick<HubChildView, 'rem
   return `${hubChildCount(children.length)}${machines > 1 ? ` on ${machines} machines` : ''}`
 }
 
-/** The header chip as one line of text: "Hub, 3 children" and the parent state when it has one. */
+/** The header chip as one line of text: "Hub · 3 children" and the parent state when it has one. */
 export function hubChipText(view: Pick<HubChatView, 'children' | 'state'>): string {
   const label = parentStateLabel(view.state)
-  return `Hub, ${hubChildrenCount(view.children)}${label ? ` · ${label}` : ''}`
+  return `Hub · ${hubChildrenCount(view.children)}${label ? ` · ${label}` : ''}`
 }
 
 /** What a Nudge chip puts in the parent's message: who it is for and how to pass it on. */

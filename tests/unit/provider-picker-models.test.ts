@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelOption } from '@shared/models'
-import { filterModels, groupModelsByProvider } from '../../src/renderer/components/chat/provider-picker-models'
+import {
+  filterModels,
+  groupModelsByProvider,
+  pickerRows,
+} from '../../src/renderer/components/chat/provider-picker-models'
 
 const model = (id: string, label = id): ModelOption => ({ id, label, tier: 'balanced' })
 
@@ -12,7 +16,7 @@ describe('filterModels', () => {
   ]
 
   it('returns the list unchanged for a blank query', () => {
-    expect(filterModels(models, '  ')).toBe(models)
+    expect(filterModels(models, '  ')).toEqual(models)
   })
 
   it('matches the id or the label, ignoring case and surrounding space', () => {
@@ -40,5 +44,17 @@ describe('groupModelsByProvider', () => {
 
   it('groups on the first slash only', () => {
     expect(groupModelsByProvider([model('openrouter/meta/llama')]).groups[0].provider).toBe('openrouter')
+  })
+})
+
+describe('pickerRows', () => {
+  const grouped = groupModelsByProvider([model('claude-opus-5', 'Opus 5'), model('openai/gpt-5', 'GPT-5')])
+
+  it('lists Default first with no query', () => {
+    expect(pickerRows(grouped, '').map((r) => r.id)).toEqual(['', 'claude-opus-5', 'openai/gpt-5'])
+  })
+
+  it('drops Default while searching, so Enter picks the best match', () => {
+    expect(pickerRows(grouped, 'opus').map((r) => r.id)).toEqual(['claude-opus-5', 'openai/gpt-5'])
   })
 })

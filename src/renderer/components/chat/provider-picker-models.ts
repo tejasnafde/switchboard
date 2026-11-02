@@ -1,10 +1,9 @@
 import type { ModelOption } from '@shared/models'
+import { searchModels } from '@shared/model-search'
 
-/** Case-insensitive substring match on the model id or its label. */
+/** The models matching `query`, best first (`searchModels`); all of them when it is empty. */
 export function filterModels(models: ModelOption[], query: string): ModelOption[] {
-  const q = query.trim().toLowerCase()
-  if (!q) return models
-  return models.filter((m) => m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q))
+  return searchModels(models, query)
 }
 
 export interface GroupedModels {
@@ -31,4 +30,19 @@ export function groupModelsByProvider(models: ModelOption[]): GroupedModels {
     else groups.set(provider, [m])
   }
   return { ungrouped, groups: [...groups].map(([provider, list]) => ({ provider, models: list })) }
+}
+
+/** One row the picker's arrow keys move over; `id` '' is the agent's default. */
+export interface PickerRow {
+  id: string
+  label: string
+}
+
+/**
+ * The rows in the order the list shows them: Default (only with no query, so
+ * Enter after a search picks the best match), ungrouped, then each group.
+ */
+export function pickerRows(grouped: GroupedModels, query: string): PickerRow[] {
+  const defaultRow = query.trim() ? [] : [{ id: '', label: 'Default' }]
+  return [...defaultRow, ...grouped.ungrouped, ...grouped.groups.flatMap((g) => g.models)]
 }

@@ -3,7 +3,7 @@ import { cn } from '../../lib/utils'
 import { chipClass, chipValueClass } from '../ui/chip'
 
 /**
- * "Hub, 3 children" (or "Hub, 4 children on 3 machines") in the header of a
+ * "Hub · 3 children" (or "Hub · 4 children on 3 machines") in the header of a
  * parent, scrolling its strip into view; "Child" in an open child.
  */
 export function HubChip({ view }: { view: HubChatView }) {
@@ -21,7 +21,8 @@ export function HubChip({ view }: { view: HubChatView }) {
           ?.scrollIntoView({ block: 'nearest' })
       }
     >
-      Hub, <span className={chipValueClass}>{hubChildrenCount(view.children)}</span>
+      Hub <span className="text-[var(--text-muted)]">·</span>
+      <span className={chipValueClass}>{hubChildrenCount(view.children)}</span>
     </button>
   )
 }
