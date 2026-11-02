@@ -98,7 +98,8 @@
       "Android System WebView and WKWebView may differ from desktop Chromium; the instrumented device probe (plan PR 4) and an iPhone probe run are the proof for each phone.",
       "The WebRTC rest risk through an about:blank iframe is accepted, not tested.",
       "Nothing proves the WKWebView sandbox until the probe page runs on a real iPhone; the flag stays off in store builds until then.",
-      "The phones have no third-party notices screen. The Android APK carries licence files for chart.js, d3 and three (three's covers OrbitControls). The iOS bundle carries the vendored source headers where present: chart.js and three have licence headers, d3 has a copyright header, and OrbitControls has none. A notices screen is not built."
+      "The phones have no third-party notices screen. The Android APK carries licence files for chart.js, d3 and three (three's covers OrbitControls). The iOS bundle carries the vendored source headers where present: chart.js and three have licence headers, d3 has a copyright header, and OrbitControls has none. A notices screen is not built.",
+      "2026-11-03: LivePageProbeTest was not run on a real Android device: no phone was on adb (wireless adb listed none). The Android default stays off. docs/notes/android-live-page-probe.md has the exact manual steps (wireless adb, installDebug and installDebugAndroidTest, am instrument for LivePageProbeTest, dumpsys meminfo) and how to record the result here before PR 6 turns the default on."
     ]
   }
 }
