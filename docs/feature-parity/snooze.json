@@ -49,9 +49,7 @@
         "apps/mobile/src/lib/__tests__/home-recents-snooze.test.ts",
         "apps/mobile/src/components/__tests__/HomeRecents.test.tsx",
         "apps/mobile/src/components/__tests__/SnoozeSheet.test.tsx",
-        "apps/mobile/src/components/__tests__/SnoozeLine.test.tsx",
-        "src/shared/chat-snooze.ts",
-        "src/shared/chat-snooze-pr.ts"
+        "apps/mobile/src/components/__tests__/SnoozeLine.test.tsx"
       ]
     },
     "nativeAndroid": {
@@ -70,8 +68,7 @@
         "apps/android/app/src/test/java/app/switchboard/mobile/domain/remote/ChatSnoozeFixturesTest.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/domain/remote/RemoteSnoozeDecoderTest.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/ChatSnoozeStoreTest.kt",
-        "apps/android/app/src/test/java/app/switchboard/mobile/ui/home/HomePresentationTest.kt",
-        "tests/fixtures/chat-snooze-cases.json"
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/home/HomePresentationTest.kt"
       ]
     },
     "sharedBackendApi": {
@@ -98,7 +95,10 @@
         "src/shared/analytics-envelope.ts",
         "src/main/analytics.ts",
         "tests/unit/analytics-envelope.test.ts",
-        "tests/unit/chat-snooze-analytics.test.ts"
+        "tests/unit/chat-snooze-analytics.test.ts",
+        "src/shared/chat-snooze-pr.ts",
+        "tests/unit/chat-snooze-rules.test.ts",
+        "tests/fixtures/chat-snooze-cases.json"
       ]
     },
     "storageDataMigration": {

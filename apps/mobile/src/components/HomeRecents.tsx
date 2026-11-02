@@ -84,7 +84,7 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
           connected: status[c.id] === 'connected',
           sessions: sessions[c.id] ?? [],
           live: live[c.id],
-          // Read on every render: the capability arrives with the `ready` frame, after the first paint.
+          // The capability arrives with the `ready` frame, before the reply that fills `sessions`.
           snooze: getClient(c.id)?.supportsCapability(CHAT_SNOOZE_CAPABILITY) === true,
         })),
         threads,
