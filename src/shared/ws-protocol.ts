@@ -128,6 +128,8 @@ export const BACKEND_CAPABILITIES = [
   /** `git:diff-stat` answers a phone, so the phones' chat Details sheet
    *  shows its button (`DETAILS_SHEET_CAPABILITY` in shared/chat-details). */
   'details_sheet_v1',
+  /** The phones' Settle and its Undo (`CHAT_SETTLE_CAPABILITY` in shared/chat-settle). */
+  'chat_settle_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {

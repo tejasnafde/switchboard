@@ -10,7 +10,7 @@
  * (another device, a wake, a PR event). The undo sends that revision, and the
  * backend refuses it when the chat moved on.
  */
-import type { ConversationSettledEvent } from '@shared/chat-settle'
+import { SETTLE_UNDO_MS, type ConversationSettledEvent } from '@shared/chat-settle'
 import {
   isWoke,
   pickPreset,
@@ -58,7 +58,7 @@ const NOT_SNOOZED_FIELDS: ChatSnooze = { snoozedAt: null, snoozedUntil: null, sn
 const NO_MARKER: ChatSnooze = { wokeAt: null, wokeReason: null, wokePrSummary: null }
 
 /** How long Undo (the notice and Cmd+Z) is offered after an inbox action. */
-export const INBOX_UNDO_MS = 8000
+export const INBOX_UNDO_MS = SETTLE_UNDO_MS
 /** How long a refusal stays in the footer. */
 export const INBOX_NOTICE_MS = 5000
 

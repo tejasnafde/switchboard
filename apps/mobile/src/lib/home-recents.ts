@@ -15,11 +15,14 @@
  * snoozed chat leaves Recents for the Snoozed shelf whatever its live status,
  * until it wakes; a woken chat sorts first in its status and shows Woke until
  * its Thread screen opens.
+ *
+ * Settle (`@shared/chat-settle`, offered only by a backend with
+ * `chat_settle_v1`): a Done or idle row takes Settle from the same sheet.
  */
 import type { Project } from '@shared/types'
 import { formatRelativeTime } from '@shared/format'
 import { withoutDemo } from '@shared/phone-demo/phone-demo'
-import { isSettled } from '@shared/chat-settle'
+import { canSettleStatus, isSettled } from '@shared/chat-settle'
 import {
   compareSnoozeWake,
   isSnoozed,
@@ -68,6 +71,8 @@ export interface HomeMachine {
   live?: LiveStatuses
   /** The backend has `chat_snooze_v1`; without it every snooze field is ignored. */
   snooze?: boolean
+  /** The backend has `chat_settle_v1`. */
+  settle?: boolean
 }
 
 export interface HomeRecentRow extends RecentSession {
@@ -77,6 +82,8 @@ export interface HomeRecentRow extends RecentSession {
   unread: number
   /** Its machine can snooze it. */
   snoozable: boolean
+  /** Its machine takes Settle. */
+  settleable?: boolean
   /** Woke from a snooze and not opened since. */
   woke: boolean
 }
@@ -202,6 +209,7 @@ export function homeRecents(
         status: recentStatus(session.id, thread, machine),
         unread: thread?.unread ?? 0,
         snoozable,
+        settleable: machine.settle === true,
         woke: snoozable && isWoke({ snoozedAt: session.snoozedAt ?? null, wokeAt: session.wokeAt ?? null }),
       }
     }),
@@ -231,6 +239,11 @@ function isShelved(row: HomeRecentRow): boolean {
 /** A chat that needs the user cannot be snoozed: the open card or the error would wake it at once. */
 export function canSnooze(row: HomeRecentRow): boolean {
   return row.snoozable && row.status !== 'Approval' && row.status !== 'Input' && row.status !== 'Failed'
+}
+
+/** A Done or idle chat can be settled, as the desktop's "Done recently" rows can. */
+export function canSettle(row: HomeRecentRow): boolean {
+  return row.settleable === true && canSettleStatus(row.status)
 }
 
 /**

@@ -43,3 +43,35 @@ it('shows a refusal on its last line', () => {
   )
   expect(view.texts().at(-1)).toBe('A chat that needs you cannot be snoozed')
 })
+
+it('ends with Settle for a chat that can settle', () => {
+  const onSettle = jest.fn()
+  const view = renderComponent(
+    <SnoozeSheet
+      title="Fix the build"
+      items={snoozeSheetItems(monday, null)}
+      notice={null}
+      busy={false}
+      onPick={jest.fn()}
+      onSettle={onSettle}
+      onClose={jest.fn()}
+    />,
+  )
+  expect(view.texts().at(-1)).toBe('Settle')
+  act(() => view.root.findByProps({ testID: 'sheet-settle' }).props.onPress())
+  expect(onSettle).toHaveBeenCalled()
+})
+
+it('has no Settle without onSettle', () => {
+  const view = renderComponent(
+    <SnoozeSheet
+      title="Fix the build"
+      items={snoozeSheetItems(monday, null)}
+      notice={null}
+      busy={false}
+      onPick={jest.fn()}
+      onClose={jest.fn()}
+    />,
+  )
+  expect(view.texts()).not.toContain('Settle')
+})

@@ -1,7 +1,8 @@
 /**
  * The Snooze sheet of a Home > Recents row: the presets resolved when it
  * opened, each with its wake time, and "Until PR #n changes" once the chat's
- * links say it has an open PR. A refusal shows on the sheet's last line.
+ * links say it has an open PR. A Done or idle chat also gets Settle at the
+ * end, as the desktop's Snooze menu does. A refusal shows on the sheet's last line.
  */
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
 import { colors, radius, space, type, HIT } from '../theme'
@@ -13,6 +14,7 @@ export function SnoozeSheet({
   notice,
   busy,
   onPick,
+  onSettle,
   onClose,
 }: {
   title: string
@@ -20,6 +22,8 @@ export function SnoozeSheet({
   notice: string | null
   busy: boolean
   onPick: (item: SnoozeSheetItem) => void
+  /** Present when the chat can be settled. */
+  onSettle?: () => void
   onClose: () => void
 }) {
   return (
@@ -44,6 +48,17 @@ export function SnoozeSheet({
               {item.detail !== '' && <Text style={styles.detail}>{item.detail}</Text>}
             </Pressable>
           ))}
+          {onSettle && (
+            <Pressable
+              testID="sheet-settle"
+              accessibilityRole="button"
+              disabled={busy}
+              onPress={onSettle}
+              style={({ pressed }) => [styles.item, styles.settle, pressed && styles.pressed]}
+            >
+              <Text style={styles.label}>Settle</Text>
+            </Pressable>
+          )}
           {notice !== null && (
             <Text style={styles.notice} accessibilityLiveRegion="polite">
               {notice}
@@ -83,6 +98,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
+  settle: { marginTop: space.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   label: { ...type.body, color: colors.text },
   detail: { ...type.monoSm, color: colors.textDim },
   notice: { ...type.bodySm, color: colors.amber, paddingTop: space.sm },

@@ -1,6 +1,7 @@
 package app.switchboard.mobile.ui.home
 
 import app.switchboard.mobile.data.thread.ThreadState
+import app.switchboard.mobile.domain.remote.ChatSettle
 import app.switchboard.mobile.domain.remote.ChatSnooze
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.thread.FeedItem
@@ -26,6 +27,10 @@ data class HomeMachineSnapshot(
     val snooze: Boolean = false,
     /** Newer snooze states than the project list's, from broadcasts and this phone's answers. */
     val snoozes: Map<String, ChatSnooze.State> = emptyMap(),
+    /** The backend has `chat_settle_v1`. */
+    val settle: Boolean = false,
+    /** Newer settled times than the project list's ([app.switchboard.mobile.data.remote.ChatSettleStore]); null unsettled. */
+    val settled: Map<String, Long?> = emptyMap(),
 )
 
 data class HomeRecentRow(
@@ -44,6 +49,8 @@ data class HomeRecentRow(
     /** Its machine can snooze chats. */
     val snoozable: Boolean = false,
     val snooze: ChatSnooze.State = ChatSnooze.State.None,
+    /** Its machine takes Settle. */
+    val settleable: Boolean = false,
 ) {
     /** Woke from a snooze and not opened since. */
     val woke: Boolean
@@ -53,6 +60,10 @@ data class HomeRecentRow(
     val canSnooze: Boolean
         get() = snoozable && status != HomeRecentStatus.Approval && status != HomeRecentStatus.Input &&
             status != HomeRecentStatus.Plan && status != HomeRecentStatus.Failed
+
+    /** A Done or idle chat can be settled, as the desktop's "Done recently" rows can. */
+    val canSettle: Boolean
+        get() = settleable && ChatSettle.canSettleStatus(status?.label)
 }
 
 data class HomeRecentsPage(
@@ -68,7 +79,8 @@ data class HomeRecentsPage(
 /**
  * The Snooze sheet of a Recents row (long press or a leftward swipe): the
  * presets resolved when it opened, each with its wake time, and "Until PR #n
- * changes" once the chat's links name an open PR. A refusal shows as [notice].
+ * changes" once the chat's links name an open PR, then Settle for a Done or
+ * idle chat, as the desktop's Snooze menu ends. A refusal shows as [notice].
  */
 data class HomeSnoozeSheet(
     val row: HomeRecentRow,
@@ -78,7 +90,7 @@ data class HomeSnoozeSheet(
     val busy: Boolean = false,
 ) {
     val items: List<HomeSnoozeItem>
-        get() = HomePresenter.snoozeItems(shownAt, pr)
+        get() = if (row.canSnooze) HomePresenter.snoozeItems(shownAt, pr) else emptyList()
 }
 
 sealed interface HomeSnoozeChoice {
@@ -135,7 +147,12 @@ object HomePresenter {
                     }
                     // A settled chat leaves the desktop's "Done recently" only, so it still shows while it works or waits.
                     val idle = status == null || status == HomeRecentStatus.Done
-                    if (!snooze.snoozed && !snooze.unsettled && idle && session.settledAt != null) return@mapNotNull null
+                    val settledAt = if (session.id in machine.settled) {
+                        machine.settled[session.id]
+                    } else {
+                        session.settledAt.takeUnless { snooze.snoozed || snooze.unsettled }
+                    }
+                    if (idle && settledAt != null) return@mapNotNull null
                     HomeRecentRow(
                         connectionId = machine.connectionId,
                         connectionLabel = machine.connectionLabel,
@@ -152,6 +169,7 @@ object HomePresenter {
                         unread = unread,
                         snoozable = machine.snooze,
                         snooze = snooze,
+                        settleable = machine.settle,
                     )
                 }
             }

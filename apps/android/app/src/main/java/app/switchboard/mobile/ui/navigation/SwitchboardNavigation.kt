@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.data.remote.BrowseCoordinator
+import app.switchboard.mobile.data.remote.ChatSettleStore
 import app.switchboard.mobile.data.remote.ChatSnoozeStore
 import app.switchboard.mobile.data.remote.HtmlLiveImages
 import app.switchboard.mobile.data.remote.NewSessionClock
@@ -68,6 +69,7 @@ import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.OutboxUiAction
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.remote.ChatMessage
+import app.switchboard.mobile.domain.remote.ChatSettle
 import app.switchboard.mobile.domain.remote.ChatSnooze
 import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.ForkConversationOutcome
@@ -218,6 +220,7 @@ private fun SwitchboardNavigationHost(
     var navigationState by rememberSaveable { mutableStateOf(NavigationState.root()) }
     val reviewsRegistry = remember { ReviewsCoordinatorRegistry() }
     val snoozeStore = remember { ChatSnoozeStore() }
+    val settleStore = remember { ChatSettleStore() }
     val runtimeStatuses by (runtime?.statuses ?: EmptyRuntimeStatuses).collectAsState()
     val shareContext = LocalContext.current
     val visibleConnections = remember(connectionsState, runtimeStatuses) {
@@ -355,6 +358,7 @@ private fun SwitchboardNavigationHost(
             AppRoute.Connections -> HomeRouteHost(
                 connectionsState = visibleConnections,
                 snoozeStore = snoozeStore,
+                settleStore = settleStore,
                 snapshot = offlineSnapshot ?: emptyOfflineSnapshot(),
                 runtime = runtime,
                 googleAccountPresentation = googleAccountPresentation,
@@ -728,6 +732,7 @@ private fun AppRoute.connectionIdOrNull(): String? = when (this) {
 private fun HomeRouteHost(
     connectionsState: ConnectionsLoadState,
     snoozeStore: ChatSnoozeStore,
+    settleStore: ChatSettleStore,
     snapshot: OfflineSnapshot,
     runtime: RootNavigationRuntime?,
     googleAccountPresentation: GoogleAccountPresentation,
@@ -745,6 +750,14 @@ private fun HomeRouteHost(
 ) {
     var recentLimit by rememberSaveable { mutableStateOf(HOME_RECENT_PAGE_SIZE) }
     val heldSnoozes by snoozeStore.state.collectAsState()
+    val heldSettles by settleStore.state.collectAsState()
+    var settleUndo by remember { mutableStateOf<ChatSettle.Undo?>(null) }
+    LaunchedEffect(settleUndo) {
+        if (settleUndo != null) {
+            delay(ChatSettle.UNDO_MS)
+            settleUndo = null
+        }
+    }
     val connectionItems = (connectionsState as? ConnectionsLoadState.Ready)
         ?.connections
         .orEmpty()
@@ -798,6 +811,29 @@ private fun HomeRouteHost(
                     snapshotStore?.load(connection.id)?.projects.orEmpty()
                 }
             }
+            val settleCapable = lease != null && ChatSettle.CAPABILITY in lease.capabilities
+            if (lease != null) {
+                // Patch the row at once; a merged PR's settle offers Undo while Home is shown.
+                DisposableEffect(settleStore, lease.scope) {
+                    val subscription = lease.client.onConversationSettledEvent { event ->
+                        settleStore.applyEvent(connection.id, event)
+                        if (settleCapable) {
+                            ChatSettle.undoOf(connection.id, event, System.currentTimeMillis())?.let { settleUndo = it }
+                        }
+                    }
+                    onDispose(subscription::cancel)
+                }
+            }
+            val heldHere = heldSettles[connection.id].orEmpty()
+            LaunchedEffect(settleStore, projects, heldHere) {
+                val sessions = projects.flatMap(Project::sessions)
+                settleStore.reconcile(connection.id, sessions)
+                // An entry the list never agreed with yields to it once held longer than a read.
+                if (heldHere.isNotEmpty()) {
+                    delay(ChatSettleStore.HOLD_MS)
+                    settleStore.reconcile(connection.id, sessions)
+                }
+            }
             val snoozeCapable = lease != null && ChatSnooze.CAPABILITY in lease.capabilities
             if (lease != null && snoozeCapable) {
                 DisposableEffect(snoozeStore, lease.scope) {
@@ -823,6 +859,8 @@ private fun HomeRouteHost(
                 activity = cachedActivity + liveActivity,
                 snooze = snoozeCapable,
                 snoozes = if (snoozeCapable) heldSnoozes[connection.id].orEmpty() else emptyMap(),
+                settle = settleCapable,
+                settled = heldHere.mapValues { it.value.settledAt },
             )
         }
     }
@@ -841,6 +879,7 @@ private fun HomeRouteHost(
         val lease = runtime?.lease(row.connectionId) ?: return
         val opened = HomeSnoozeSheet(row = row, shownAt = System.currentTimeMillis())
         snoozeSheet = opened
+        if (!row.canSnooze) return
         lease.client.pullRequestLinks(row.threadId) { response ->
             when (val outcome = response.outcome) {
                 is RemoteOutcome.Failure -> SbLog.w("home:snooze", "could not read the PR links of ${row.threadId}: ${outcome.message}")
@@ -875,6 +914,36 @@ private fun HomeRouteHost(
         }
     }
 
+    fun settle(row: HomeRecentRow) {
+        snoozeSheet = null
+        val lease = runtime?.lease(row.connectionId)
+        if (lease == null) {
+            snoozeNotice = SNOOZE_NOT_CONNECTED
+            return
+        }
+        val offered = ChatSettle.Undo(row.connectionId, row.threadId, System.currentTimeMillis(), ChatSettle.noticeText(row.title))
+        settleUndo = offered
+        settleStore.settle(lease.client, row.threadId, offered.settledAt) { refused ->
+            if (refused != null) {
+                if (settleUndo === offered) settleUndo = null
+                snoozeNotice = refused
+            }
+        }
+    }
+
+    fun undoSettle() {
+        val undo = settleUndo ?: return
+        settleUndo = null
+        val lease = runtime?.lease(undo.connectionId)
+        if (lease == null) {
+            snoozeNotice = SNOOZE_NOT_CONNECTED
+            return
+        }
+        settleStore.undo(lease.client, undo, snoozeStore, System.currentTimeMillis()) { refused ->
+            if (refused != null) snoozeNotice = refused
+        }
+    }
+
     fun wake(row: HomeRecentRow) {
         val lease = runtime?.lease(row.connectionId)
         if (lease == null) {
@@ -902,11 +971,14 @@ private fun HomeRouteHost(
         onUseIap = onUseIap,
         onRemoveMachine = onRemoveMachine,
         snoozeSheet = snoozeSheet,
-        onSnooze = if (machineSnapshots.any(HomeMachineSnapshot::snooze)) ::openSnooze else null,
+        onSnooze = if (machineSnapshots.any { it.snooze || it.settle }) ::openSnooze else null,
         onPickSnooze = ::pickSnooze,
         onCloseSnooze = { snoozeSheet = null },
         onWake = ::wake,
         snoozeNotice = snoozeNotice,
+        onSettle = ::settle,
+        settleNotice = settleUndo?.text,
+        onUndoSettle = ::undoSettle,
     )
 }
 

@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "settle",
-  "summary": "Settle takes a finished chat out of the desktop sidebar's \"Done recently\" group without archiving it: the chat keeps its project, history and row in the workspace tree. A Done row shows a Settle button where its time sits (on row hover, on focus within the row, and always without hover); focus moves to the next row, or the previous one. The sidebar footer shows \"Settled <title>\" with Undo and a Cmd+Z keycap for 8 s, and a polite live region says \"Settled <title>. Press Cmd+Z to undo.\" Cmd+Z (Ctrl+Z off a Mac) undoes it while focus is not in a text field, the composer or a terminal. settled_at is a plain flag: the backend clears it when a new user turn starts (turn acceptance and a stored user message), and the sidebar clears it on the same activity bump, for a local or a remote chat. A rename or a model, mode or worktree change does not unsettle. When a linked pull request changes to merged and the chat is idle (no turn running, no card open, no error), the backend settles it once per change and the notice reads \"Settled <title>: PR #n merged\". A settle that throws after a merge is retried after 2 s, 10 s and 60 s, re-checking the rule each time. Phones hide a settled chat from Home > Recents while it is Done or idle, follow a settle or unsettle from any client while connected (app:conversation-settled), and offer no settle action in this release.",
+  "summary": "Settle takes a finished chat out of the desktop sidebar's \"Done recently\" group without archiving it: the chat keeps its project, history and row in the workspace tree. A Done row shows a Settle button where its time sits (on row hover, on focus within the row, and always without hover); focus moves to the next row, or the previous one. The sidebar footer shows \"Settled <title>\" with Undo and a Cmd+Z keycap for 8 s, and a polite live region says \"Settled <title>. Press Cmd+Z to undo.\" Cmd+Z (Ctrl+Z off a Mac) undoes it while focus is not in a text field, the composer or a terminal. settled_at is a plain flag: the backend clears it when a new user turn starts (turn acceptance and a stored user message), and the sidebar clears it on the same activity bump, for a local or a remote chat. A rename or a model, mode or worktree change does not unsettle. When a linked pull request changes to merged and the chat is idle (no turn running, no card open, no error), the backend settles it once per change and the notice reads \"Settled <title>: PR #n merged\". A settle that throws after a merge is retried after 2 s, 10 s and 60 s, re-checking the rule each time. Phones hide a settled chat from Home > Recents while it is Done or idle and follow a settle or unsettle from any client while connected (app:conversation-settled). Phones (feat/phone-settle-action) settle and undo too, only against a backend that advertises chat_settle_v1 (CHAT_SETTLE_CAPABILITY in src/shared/chat-settle.ts, in the ready frame), so an older desktop shows no Settle on a phone; the channels were already open to a phone's chat scope. The Recents row's long-press or left-swipe sheet ends with Settle for a Done or idle row (canSettleStatus), never a working or Needs you one. The row leaves Recents at once (Expo patches the recents store, Android holds the time in ChatSettleStore until a project list agrees), a refused or failed settle brings it back with a line, and a notice above Recents reads \"Settled <title>\" with Undo for 8 s (SETTLE_UNDO_MS). While Home is shown, a broadcast with a prNumber (a merged PR's settle) less than 8 s old, plus 2 s for clock skew (isSettleUndoFresh, so a broadcast replayed on resume offers none), shows \"Settled <title>: PR #n merged\" with Undo (settleBroadcastNotice); a settle another client made by hand shows no notice on the phone. Undo calls app:unsettle-conversation, or, when the broadcast carried endedSnooze, app:snooze-conversation with its until, pr and expectRev, which also unsettles; a refused snooze only unsettles, as on the desktop. A failed Settle or Undo puts the row back to what the backend holds as the answers so far say; only the newest request of a chat reverts, so a failed Settle and a failed Undo that overlap leave the row shown. Android's held entry yields to the project list once the list agrees or after 10 s (ChatSettleStore.HOLD_MS), so an entry under a rotated id is not kept against a later settle. The rules are shared with Kotlin through tests/fixtures/chat-settle-cases.json.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -37,7 +37,13 @@
         "apps/mobile/src/lib/api.ts",
         "apps/mobile/src/stores/connections.ts",
         "apps/mobile/src/stores/recents.ts",
-        "apps/mobile/src/stores/__tests__/recents-settled.test.ts"
+        "apps/mobile/src/stores/__tests__/recents-settled.test.ts",
+        "apps/mobile/src/components/HomeRecents.tsx",
+        "apps/mobile/src/components/SnoozeSheet.tsx",
+        "apps/mobile/src/lib/__tests__/home-recents-settle.test.ts",
+        "apps/mobile/src/stores/__tests__/recents-settle.test.ts",
+        "apps/mobile/src/components/__tests__/HomeRecents.test.tsx",
+        "apps/mobile/src/components/__tests__/SnoozeSheet.test.tsx"
       ]
     },
     "nativeAndroid": {
@@ -50,7 +56,12 @@
         "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/home/HomeProjectRefreshCoordinator.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
-        "apps/android/app/src/test/java/app/switchboard/mobile/ui/home/HomeProjectRefreshCoordinatorTest.kt"
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/home/HomeProjectRefreshCoordinatorTest.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/ChatSettle.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/ChatSettleStore.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/home/HomeScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/remote/ChatSettleFixturesTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/ChatSettleStoreTest.kt"
       ]
     },
     "sharedBackendApi": {
@@ -69,7 +80,10 @@
         "src/preload/index.ts",
         "tests/unit/chat-settle.test.ts",
         "src/main/pull-requests/settle-on-merge.ts",
-        "tests/unit/settle-on-merge-retry.test.ts"
+        "tests/unit/settle-on-merge-retry.test.ts",
+        "src/shared/ws-protocol.ts",
+        "tests/fixtures/chat-settle-cases.json",
+        "tests/unit/chat-settle-phones.test.ts"
       ]
     },
     "storageDataMigration": {
@@ -105,13 +119,20 @@
       "apps/mobile/src/lib/__tests__/home-recents-settled.test.ts (jest): Home > Recents leaves out a settled chat, also after an edit moved its time, and keeps it while it works.",
       "tests/unit/settle-on-merge-retry.test.ts: a Reviews merge whose settle throws once settles on the retry 2 s later (fake timers), retries when reading the chat throws, gives up after the last delay, does not retry once the chat starts a turn, never settles a chat busy at merge time, drops pending retries on detach, and settles nothing once detached.",
       "apps/mobile/src/stores/__tests__/recents-settled.test.ts (jest): a connected machine's app:conversation-settled broadcast patches the Home > Recents row, an unsettle restores it, an id no row has reads app:get-projects again, a project read that was out before the settle does not undo the patch, and disconnect stops listening.",
-      "apps/android testDebugUnitTest (gradle, 2026-11-03): HomePresentationTest (a settled chat leaves Recents) and HomeProjectRefreshCoordinatorTest (a settle broadcast re-reads the project list while Home is mounted, the new settledAt reaches the state, a settle while the first read is out supersedes that read, close cancels the subscription) pass."
+      "apps/android testDebugUnitTest (gradle, 2026-11-03): HomePresentationTest (a settled chat leaves Recents) and HomeProjectRefreshCoordinatorTest (a settle broadcast re-reads the project list while Home is mounted, the new settledAt reaches the state, a settle while the first read is out supersedes that read, close cancels the subscription) pass.",
+      "tests/unit/chat-settle-phones.test.ts: chat_settle_v1 is in BACKEND_CAPABILITIES, a phone's scopes reach app:settle-conversation, app:unsettle-conversation and app:snooze-conversation, and the shared fixture tests/fixtures/chat-settle-cases.json holds for the notice text, the broadcast notice (only a merged PR's settle), canSettleStatus and the 8 s Undo.",
+      "apps/mobile/src/lib/__tests__/home-recents-settle.test.ts (jest): the fixture's canSettle cases, and a backend without chat_settle_v1 offers no Settle.",
+      "apps/mobile/src/stores/__tests__/recents-settle.test.ts (jest): a settle patches the row before the answer and calls app:settle-conversation, a refused one brings the row back, Undo unsettles, a failed Undo leaves it settled, an Undo with endedSnooze snoozes again with expectRev and no unsettle, a refused restore still unsettles, a merged PR broadcast offers Undo to Home and a settle by hand does not, and a backend without the capability offers none.",
+      "apps/mobile/src/components/__tests__/HomeRecents.test.tsx and SnoozeSheet.test.tsx (jest): the long press opens the sheet on a Done or idle row of a backend with Settle and not on a working one, the hint names both actions, the notice shows with Undo above the rows, and the sheet ends with Settle only when the chat can settle.",
+      "apps/android testDebugUnitTest (gradle, 2026-11-03): ChatSettleFixturesTest runs the shared fixture and decodes a broadcast with endedSnooze and the Undo's snooze request; ChatSettleStoreTest covers the settle, its refusal, Undo, a failed Undo, the snooze restore with expectRev, a refused restore and dropping an entry once the project list agrees; HomePresentationTest covers a settle and an Undo made here before the list is read, and Settle only on a Done or idle row of a backend with chat_settle_v1.",
+      "Review fixes (2026-11-03): tests/unit/chat-settle-phones.test.ts runs the fixture's undoFresh cases; apps/mobile recents-settle.test.ts and Android ChatSettleStoreTest cover a failed Settle and a failed Undo that overlap (the row shows), a Settle that lands while its Undo runs then a failed Undo (stays settled), and a replayed old broadcast offering no Undo (Expo; Android in ChatSettleFixturesTest); ChatSettleStoreTest covers a held entry yielding to the list after HOLD_MS."
     ],
     "hardware": [],
     "notExercised": [
       "Settle, the notice, Cmd+Z and the merged-PR settle were not driven in the running app or in a packaged build; no screenshots were refreshed.",
       "A remote machine's chat settled from the desktop was not run against an SSH machine.",
-      "The live settle on a phone was not driven against a running desktop on an iPhone or an Android device; the Android Home re-reads the whole project list on each broadcast instead of patching one row."
+      "The live settle on a phone was not driven against a running desktop on an iPhone or an Android device; the Android Home re-reads the whole project list on each broadcast instead of patching one row.",
+      "The phones' Settle, its notice and Undo, and the merged-PR notice were not driven on an iPhone or an Android device, or against a running desktop."
     ]
   }
 }
