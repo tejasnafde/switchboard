@@ -391,6 +391,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
   useEffect(() => {
     return onSessionActivity((sid, ts) => {
       setProjects((prev) => bumpSessionActivity(prev, sid, ts))
+      useMachineStore.getState().patchSnapshotSession(sid, { startedAt: ts, settledAt: null })
     })
   }, [])
 

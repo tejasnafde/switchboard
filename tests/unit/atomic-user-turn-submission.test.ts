@@ -322,7 +322,8 @@ function fixture() {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       pending_handoff_from TEXT,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL,
+      settled_at INTEGER
     );
     CREATE TABLE messages (
       id TEXT PRIMARY KEY,
@@ -335,7 +336,7 @@ function fixture() {
       display_body TEXT,
       pills_meta TEXT
     );
-    INSERT INTO conversations VALUES ('thread-1', 'New conversation', 'codex', 1);
+    INSERT INTO conversations VALUES ('thread-1', 'New conversation', 'codex', 1, NULL);
   `)
   ensureTurnAcceptanceSchema(db)
   const store = new SqliteTurnAcceptanceStore(() => db)

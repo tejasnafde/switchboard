@@ -3,17 +3,15 @@ import { isSettled, settledNoticeText, shouldAutoSettle } from '../../src/shared
 import { neighbourAfterRemoval } from '../../src/renderer/components/sidebar/recent-row-focus'
 
 describe('isSettled', () => {
-  it('holds until the chat has newer activity', () => {
-    expect(isSettled(null, 100)).toBe(false)
-    expect(isSettled(undefined, 100)).toBe(false)
-    expect(isSettled(200, 100)).toBe(true)
-    expect(isSettled(200, 200)).toBe(true)
-    expect(isSettled(200, 201)).toBe(false)
+  it('is a flag the backend clears on a new turn, not a time compare', () => {
+    expect(isSettled(null)).toBe(false)
+    expect(isSettled(undefined)).toBe(false)
+    expect(isSettled(200)).toBe(true)
   })
 })
 
 describe('shouldAutoSettle', () => {
-  const idle = { state: 'merged' as const, busy: false, needsUser: false, settledAt: null, lastActivity: 100 }
+  const idle = { state: 'merged' as const, busy: false, needsUser: false, settledAt: null }
 
   it('settles an idle chat whose linked PR changed to merged', () => {
     expect(shouldAutoSettle(idle)).toBe(true)
@@ -29,9 +27,8 @@ describe('shouldAutoSettle', () => {
     expect(shouldAutoSettle({ ...idle, state: 'closed' })).toBe(false)
   })
 
-  it('does not settle a chat that is settled already, but does one with newer activity', () => {
+  it('does not settle a chat that is settled already', () => {
     expect(shouldAutoSettle({ ...idle, settledAt: 150 })).toBe(false)
-    expect(shouldAutoSettle({ ...idle, settledAt: 50 })).toBe(true)
   })
 })
 

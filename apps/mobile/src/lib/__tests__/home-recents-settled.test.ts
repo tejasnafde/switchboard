@@ -15,9 +15,9 @@ const project: Project = {
       filePath: '',
     },
     {
-      id: 'newer',
+      id: 'renamed',
       source: 'claude-code',
-      title: 'Newer',
+      title: 'Renamed',
       startedAt: 300,
       settledAt: 200,
       messageCount: 1,
@@ -38,10 +38,10 @@ function machine(statuses: Record<string, string> = {}): HomeMachine {
 }
 
 describe('settled chats on Home > Recents', () => {
-  it('leaves out a chat settled on the desktop until it has newer activity', () => {
+  it('leaves out a chat settled on the desktop, even after an edit moved its activity time', () => {
     const page = homeRecents([machine()], {}, 10)
-    expect(page.items.map((row) => row.id)).toEqual(['newer', 'plain'])
-    expect(page.total).toBe(2)
+    expect(page.items.map((row) => row.id)).toEqual(['plain'])
+    expect(page.total).toBe(1)
   })
 
   it('still lists a settled chat while it works', () => {

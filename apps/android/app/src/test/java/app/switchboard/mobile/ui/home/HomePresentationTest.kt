@@ -250,7 +250,7 @@ class HomePresentationTest {
     }
 
     @Test
-    fun `a chat settled on the desktop leaves Recents until it works or has newer activity`() {
+    fun `a chat settled on the desktop leaves Recents while idle, even after an edit moved its time`() {
         val page = HomePresenter.recents(
             machines = listOf(
                 machine(
@@ -258,7 +258,7 @@ class HomePresentationTest {
                         project(
                             "/repo",
                             summary("settled", startedAt = 100, settledAt = 200),
-                            summary("newer", startedAt = 300, settledAt = 200),
+                            summary("renamed", startedAt = 300, settledAt = 200),
                             summary("working", startedAt = 50, settledAt = 200),
                             summary("plain", startedAt = 40),
                         ),
@@ -269,8 +269,8 @@ class HomePresentationTest {
             limit = 10,
         )
 
-        assertEquals(listOf("working", "newer", "plain"), page.items.map(HomeRecentRow::threadId))
-        assertEquals(3, page.total)
+        assertEquals(listOf("working", "plain"), page.items.map(HomeRecentRow::threadId))
+        assertEquals(2, page.total)
     }
 
     private fun machine(

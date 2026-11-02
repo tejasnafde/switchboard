@@ -156,7 +156,7 @@ export function homeRecents(
       }),
     )
     // A settled chat leaves the desktop's "Done recently" only, so it still shows while it works or waits.
-    .filter((row) => !((row.status === null || row.status === 'Done') && isSettled(row.settledAt, row.startedAt)))
+    .filter((row) => !((row.status === null || row.status === 'Done') && isSettled(row.settledAt)))
   rows.sort(
     (a, b) => (b.status ? PRIORITY[b.status] : 0) - (a.status ? PRIORITY[a.status] : 0) || b.startedAt - a.startedAt,
   )

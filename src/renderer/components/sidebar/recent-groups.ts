@@ -58,7 +58,7 @@ export interface RecentGroup<T> {
  * out a settled chat (it stays in its workspace tree).
  */
 export function groupRecentSessions<
-  T extends { status?: RecentSessionStatus; session?: { settledAt?: number | null; startedAt: number } },
+  T extends { status?: RecentSessionStatus; session?: { settledAt?: number | null } },
 >(
   items: readonly T[],
   limit: number,
@@ -67,7 +67,7 @@ export function groupRecentSessions<
   const byKey: Record<RecentGroupKey, T[]> = { 'needs-you': [], working: [], done: [] }
   for (const item of items) {
     const key = recentGroupKey(item.status)
-    if (key === 'done' && item.session && isSettled(item.session.settledAt, item.session.startedAt)) continue
+    if (key === 'done' && item.session && isSettled(item.session.settledAt)) continue
     byKey[key].push(item)
   }
   const urgent = byKey['needs-you'].length + byKey.working.length

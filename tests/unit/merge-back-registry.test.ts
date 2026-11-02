@@ -10,12 +10,12 @@ import { stripSenderLine } from '../../src/shared/sender-line'
 
 const db = new Database(':memory:')
 db.exec(`
-  CREATE TABLE conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, pending_handoff_from TEXT, updated_at INTEGER NOT NULL);
+  CREATE TABLE conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, pending_handoff_from TEXT, updated_at INTEGER NOT NULL, settled_at INTEGER);
   CREATE TABLE messages (
     id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
     tool_calls TEXT, images TEXT, timestamp INTEGER NOT NULL, display_body TEXT, pills_meta TEXT
   );
-  INSERT INTO conversations VALUES ('t1', 'improvements', NULL, 1);
+  INSERT INTO conversations VALUES ('t1', 'improvements', NULL, 1, NULL);
 `)
 
 vi.mock('../../src/main/db/provider-instances', () => ({

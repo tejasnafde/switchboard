@@ -33,6 +33,12 @@ describe('bumpSessionActivity', () => {
     expect(out[0].sessions[0].startedAt).toBe(999)
   })
 
+  it('brings a settled chat back on a new turn', () => {
+    const input = projects()
+    input[0].sessions[2] = { ...input[0].sessions[2], settledAt: 150 }
+    expect(bumpSessionActivity(input, 'c', 999)[0].sessions[0].settledAt).toBeNull()
+  })
+
   it('leaves other projects untouched', () => {
     const out = bumpSessionActivity(projects(), 'c', 999)
     expect(out[1]).toEqual(projects()[1])

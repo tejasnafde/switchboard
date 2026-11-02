@@ -367,7 +367,11 @@ export class SqliteTurnAcceptanceStore implements TurnAcceptanceStore {
           .run(turn.autoTitle, key.threadId).changes
         if (changed === 1) conversationTitle = turn.autoTitle
       }
-      db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(turn.acceptedAt, key.threadId)
+      // key.threadId is already the root (the registry resolves it), and a new turn brings a settled chat back.
+      db.prepare('UPDATE conversations SET updated_at = ?, settled_at = NULL WHERE id = ?').run(
+        turn.acceptedAt,
+        key.threadId,
+      )
       turn.commitInTransaction?.(db, turn.acceptedAt)
       return { completed: true, ...(conversationTitle ? { conversationTitle } : {}) }
     })()

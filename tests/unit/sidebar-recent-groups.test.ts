@@ -70,9 +70,11 @@ describe('groupRecentSessions', () => {
     ])
   })
 
-  it('shows a settled chat in Done recently again once it has newer activity', () => {
-    const items = [{ id: 0, status: 'done' as const, session: { startedAt: 300, settledAt: 200 } }]
-    expect(groupRecentSessions(items, 6, 0).groups.map((g) => g.key)).toEqual(['done'])
+  it('keeps a settled chat out after an edit moves its activity time, and shows it once unsettled', () => {
+    const renamed = [{ id: 0, status: undefined, session: { startedAt: 300, settledAt: 200 } }]
+    expect(groupRecentSessions(renamed, 6, 0).groups).toEqual([])
+    const unsettled = [{ id: 0, status: 'done' as const, session: { startedAt: 300, settledAt: null } }]
+    expect(groupRecentSessions(unsettled, 6, 0).groups.map((g) => g.key)).toEqual(['done'])
   })
 
   it('does not count settled chats against the limit or Show more', () => {

@@ -4,7 +4,7 @@
  * the row moves before the round trip and every window agrees after it.
  */
 import type { ConversationSettledEvent } from '@shared/chat-settle'
-import { useAgentStore } from '../stores/agent-store'
+import { useAgentStore, type LastUndo } from '../stores/agent-store'
 import { useMachineStore } from '../stores/machine-store'
 import { createRendererLogger } from '../logger'
 
@@ -21,6 +21,20 @@ export function onSettledChange(cb: SettledListener): () => void {
 
 function emitSettled(id: string, settledAt: number | null): void {
   for (const listener of listeners) listener(id, settledAt)
+}
+
+/** How long Undo (the notice and Cmd+Z) is offered after a settle. */
+export const SETTLE_UNDO_MS = 8000
+
+let undoExpiry: ReturnType<typeof setTimeout> | undefined
+
+/** Offer one undo, withdrawn after `SETTLE_UNDO_MS` whether or not the notice is mounted. */
+function offerUndo(undo: LastUndo): void {
+  useAgentStore.getState().setLastUndo(undo)
+  clearTimeout(undoExpiry)
+  undoExpiry = setTimeout(() => {
+    if (useAgentStore.getState().lastUndo === undo) useAgentStore.getState().setLastUndo(null)
+  }, SETTLE_UNDO_MS)
 }
 
 export interface SettleTarget {
@@ -44,7 +58,7 @@ function machineOf(id: string): string {
 
 export async function settleChat(target: SettleTarget): Promise<void> {
   emitSettled(target.id, Date.now())
-  useAgentStore.getState().setLastUndo({ kind: 'settle', ...target })
+  offerUndo({ kind: 'settle', ...target })
   try {
     routeTo(target)
     const result = await window.api.app.settleConversation(target.id)
@@ -73,7 +87,7 @@ export function undoLastSettle(): string | null {
 export function applySettledEvent(event: ConversationSettledEvent): void {
   emitSettled(event.conversationId, event.settledAt)
   if (event.settledAt === null || event.prNumber === undefined) return
-  useAgentStore.getState().setLastUndo({
+  offerUndo({
     kind: 'settle',
     id: event.conversationId,
     title: event.title ?? 'Untitled chat',

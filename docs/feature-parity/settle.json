@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "settle",
-  "summary": "Settle takes a finished chat out of the desktop sidebar's \"Done recently\" group without archiving it: the chat keeps its project, history and row in the workspace tree. A Done row shows a Settle button where its time sits (on row hover, on focus within the row, and always without hover); focus moves to the next row, or the previous one. The sidebar footer shows \"Settled <title>\" with Undo and a Cmd+Z keycap for 8 s, and a polite live region says \"Settled <title>. Press Cmd+Z to undo.\" Cmd+Z (Ctrl+Z off a Mac) undoes it while focus is not in a text field, the composer or a terminal. A chat stays settled until it has newer activity (its list activity time passes settled_at), so a new turn brings it back with no extra write. When a linked pull request changes to merged and the chat is idle (no turn running, no card open, no error), the backend settles it once per change and the notice reads \"Settled <title>: PR #n merged\". Phones hide a settled chat from Home > Recents while it is Done or idle and offer no settle action in this release.",
+  "summary": "Settle takes a finished chat out of the desktop sidebar's \"Done recently\" group without archiving it: the chat keeps its project, history and row in the workspace tree. A Done row shows a Settle button where its time sits (on row hover, on focus within the row, and always without hover); focus moves to the next row, or the previous one. The sidebar footer shows \"Settled <title>\" with Undo and a Cmd+Z keycap for 8 s, and a polite live region says \"Settled <title>. Press Cmd+Z to undo.\" Cmd+Z (Ctrl+Z off a Mac) undoes it while focus is not in a text field, the composer or a terminal. settled_at is a plain flag: the backend clears it when a new user turn starts (turn acceptance and a stored user message), and the sidebar clears it on the same activity bump, for a local or a remote chat. A rename or a model, mode or worktree change does not unsettle. When a linked pull request changes to merged and the chat is idle (no turn running, no card open, no error), the backend settles it once per change and the notice reads \"Settled <title>: PR #n merged\". Phones hide a settled chat from Home > Recents while it is Done or idle and offer no settle action in this release.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -23,6 +23,8 @@
         "tests/unit/sidebar-recent-groups.test.ts",
         "tests/unit/global-keybindings.test.ts",
         "tests/unit/chat-settle.test.ts",
+        "tests/unit/chat-settle-undo.test.ts",
+        "tests/unit/session-activity.test.ts",
         "tests/unit/raised-surface-contrast.test.ts",
         "tests/unit/light-theme-contrast.test.ts"
       ]
@@ -62,6 +64,8 @@
       "evidence": [
         "src/main/db/database.ts",
         "src/main/db/conversations.ts",
+        "src/main/db/messages.ts",
+        "src/main/db/turn-acceptance.ts",
         "tests/unit/conversation-settled-db.test.ts",
         "tests/unit/conversation-rotation-fallback.test.ts"
       ]
@@ -75,11 +79,14 @@
     "automated": [
       "tests/unit/conversation-settled-db.test.ts: migration 2026-11-02 (ALTER TABLE conversations ADD COLUMN settled_at INTEGER) upgrades a database without the column, keeps its row and reads it unsettled, runs again with no change, and the settled time reaches the sidebar summary and the phone row without moving updated_at.",
       "tests/unit/conversation-rotation-fallback.test.ts: setConversationSettled and getConversationSettled write and read the root row through a rotated id.",
-      "tests/unit/sidebar-recent-groups.test.ts: a settled chat leaves Done recently only, comes back with newer activity, and does not count against the limit.",
+      "tests/unit/sidebar-recent-groups.test.ts: a settled chat leaves Done recently only, stays out after an edit moves its activity time, and does not count against the limit.",
+      "tests/unit/conversation-settled-db.test.ts: a rename, a model change and an assistant message keep a chat settled; a user message, or a turn accepted under a rotated id, clears it.",
+      "tests/unit/session-activity.test.ts: the sidebar's activity bump clears settledAt.",
+      "tests/unit/chat-settle-undo.test.ts: Undo is withdrawn after 8 s with no notice mounted (fake timers), and a second settle gets its own full time.",
       "tests/unit/chat-settle.test.ts: isSettled, the auto-settle rule on a merged PR (busy, waiting, open, closed, already settled), the notice text and the focus neighbour.",
       "tests/unit/global-keybindings.test.ts: Cmd+Z (Ctrl+Z off a Mac) undoes outside an input, a textarea (a terminal) and the contenteditable composer.",
       "tests/unit/raised-surface-contrast.test.ts and light-theme-contrast.test.ts: muted text on the selected and hovered Recents row and the keycap, and the hovered Settle and Undo, at 4.5:1 or better in dark and light.",
-      "apps/mobile/src/lib/__tests__/home-recents-settled.test.ts (jest): Home > Recents leaves out a settled chat until newer activity and keeps it while it works."
+      "apps/mobile/src/lib/__tests__/home-recents-settled.test.ts (jest): Home > Recents leaves out a settled chat, also after an edit moved its time, and keeps it while it works."
     ],
     "hardware": [],
     "notExercised": [

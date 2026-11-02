@@ -211,7 +211,6 @@ export function attachPullRequestAutoLink(
         busy: chats.busy(row.id),
         needsUser: chats.needsUser(row.id),
         settledAt: row.settled_at ?? null,
-        lastActivity: row.updated_at,
       })
     )
       return

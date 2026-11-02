@@ -6,12 +6,11 @@
 import type { PrState } from './pull-requests'
 
 /**
- * Whether a chat is settled. A chat with activity after it was settled (a new
- * turn moves `startedAt`, the list's last-activity time) shows again, so no
- * write path has to clear the stamp.
+ * Whether a chat is settled. The backend clears the stamp when a new user turn
+ * starts, so a rename or a model change (which move the activity time) does not.
  */
-export function isSettled(settledAt: number | null | undefined, lastActivity: number): boolean {
-  return settledAt != null && settledAt >= lastActivity
+export function isSettled(settledAt: number | null | undefined): boolean {
+  return settledAt != null
 }
 
 /**
@@ -25,9 +24,8 @@ export function shouldAutoSettle(input: {
   busy: boolean
   needsUser: boolean
   settledAt: number | null
-  lastActivity: number
 }): boolean {
-  return input.state === 'merged' && !input.busy && !input.needsUser && !isSettled(input.settledAt, input.lastActivity)
+  return input.state === 'merged' && !input.busy && !input.needsUser && !isSettled(input.settledAt)
 }
 
 /** Broadcast after a chat is settled or unsettled; `prNumber` when a merged PR settled it. */

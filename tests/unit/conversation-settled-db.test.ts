@@ -2,10 +2,14 @@
 import { createMigratedDb } from './helpers/test-db'
 import { describe, expect, it } from 'vitest'
 import {
+  clearConversationSettledForTurn,
   getConversationSettled,
   getManagedRootConversationsForProject,
   migrate,
+  saveMessage,
+  setConversationModel,
   setConversationSettled,
+  updateConversationTitle,
 } from '../../src/main/db/database'
 import { projectManagedRootSessions, sessionSummaryToConversationRow } from '../../src/main/ipc/terminal-sessions'
 
@@ -48,5 +52,40 @@ describe('settled time in the lists', () => {
     const [session] = projectManagedRootSessions(getManagedRootConversationsForProject('/r'))
     expect(session).toMatchObject({ id: 'c', startedAt: 100, settledAt: 500 })
     expect(sessionSummaryToConversationRow(session, '/r')).toMatchObject({ settled_at: 500, updated_at: 100 })
+  })
+})
+
+describe('what un-settles a chat', () => {
+  const seed = () => {
+    const db = createMigratedDb()
+    db.exec(
+      "INSERT INTO projects (path, name) VALUES ('/r', 'r'); INSERT INTO conversations (id, project_path, title, sidebar_role) VALUES ('c', '/r', 'Chat', 'managed')",
+    )
+    setConversationSettled('c', 500)
+  }
+
+  it('keeps a chat settled through a rename, a model change and an assistant message', () => {
+    seed()
+    updateConversationTitle('c', 'Renamed')
+    setConversationModel('c', 'opus')
+    saveMessage('m1', 'c', 'assistant', 'done')
+    expect(getConversationSettled('c')).toBe(500)
+  })
+
+  it('clears the stamp when a user message starts a new turn', () => {
+    seed()
+    saveMessage('m2', 'c', 'user', 'one more thing')
+    expect(getConversationSettled('c')).toBeNull()
+  })
+
+  it('clears the root row for a turn accepted under a rotated id', () => {
+    const db = createMigratedDb()
+    db.exec(
+      "INSERT INTO projects (path, name) VALUES ('/r', 'r'); INSERT INTO conversations (id, project_path, title, sidebar_role) VALUES ('c', '/r', 'Chat', 'managed')",
+    )
+    db.exec("INSERT INTO thread_sessions (claude_session_id, thread_id) VALUES ('uuid-c', 'c')")
+    setConversationSettled('c', 500)
+    clearConversationSettledForTurn(db, 'uuid-c')
+    expect(getConversationSettled('c')).toBeNull()
   })
 })

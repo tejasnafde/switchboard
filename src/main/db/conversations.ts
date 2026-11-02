@@ -1,3 +1,4 @@
+import type Database from 'better-sqlite3'
 import { createMainLogger as createLogger } from '../logger'
 import type { RuntimeMode } from '@shared/provider-events'
 import type { SessionSource } from '@shared/types'
@@ -411,8 +412,8 @@ export function recordThreadSession(claudeSessionId: string, threadId: string): 
  * parent chain until it hits a terminal (no row) - handles legacy rows
  * from before `recordThreadSession` flattened on insert.
  */
-export function resolveRootThreadId(claudeSessionId: string): string {
-  const stmt = getDb().prepare('SELECT thread_id FROM thread_sessions WHERE claude_session_id = ?')
+export function resolveRootThreadId(claudeSessionId: string, db: Database.Database = getDb()): string {
+  const stmt = db.prepare('SELECT thread_id FROM thread_sessions WHERE claude_session_id = ?')
   let cur = claudeSessionId
   const seen = new Set<string>()
   while (true) {
@@ -750,13 +751,20 @@ export function getConversationLastRead(id: string): number | null {
 
 /**
  * Settle (or, with null, unsettle) a chat: Recents hides it from "Done
- * recently" until it has newer activity. Leaves `updated_at` alone, since
- * the activity time is what a later turn is compared against.
+ * recently" until the user unsettles it or a new user turn starts
+ * (`clearConversationSettledForTurn`).
  */
 export function setConversationSettled(id: string, settledAt: number | null): boolean {
   return (
     getDb().prepare('UPDATE conversations SET settled_at = ? WHERE id = ?').run(settledAt, resolveRootThreadId(id))
       .changes > 0
+  )
+}
+
+/** A new user turn brings a settled chat back. Takes the caller's connection, for use inside its transaction. */
+export function clearConversationSettledForTurn(db: Database.Database, id: string): void {
+  db.prepare('UPDATE conversations SET settled_at = NULL WHERE id = ? AND settled_at IS NOT NULL').run(
+    resolveRootThreadId(id, db),
   )
 }
 

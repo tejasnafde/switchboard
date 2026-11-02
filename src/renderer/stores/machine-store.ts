@@ -104,7 +104,10 @@ interface MachineStore {
    *  sidebar row tracks renames (auto-title, manual) without a full re-sync. */
   renameSnapshotSession: (sessionId: string, title: string) => void
   /** Patch a cached session's fields (title, settled time) in whichever snapshot and live tree hold it. */
-  patchSnapshotSession: (sessionId: string, patch: Partial<Pick<SessionSummary, 'title' | 'settledAt'>>) => void
+  patchSnapshotSession: (
+    sessionId: string,
+    patch: Partial<Pick<SessionSummary, 'title' | 'settledAt' | 'startedAt'>>,
+  ) => void
   /** Optimistically drop a session from a machine's snapshot (archive). */
   removeSnapshotSession: (machineId: string, sessionId: string) => void
   connect: (id: string) => Promise<void>
