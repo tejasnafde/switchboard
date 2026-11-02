@@ -31,9 +31,10 @@ import {
   REMOTE_IDE_PORT,
 } from '../machines/connect-deps'
 import { makeProvision } from '../machines/provision-deps'
-import { getSetting, setSetting } from '../db/database'
+import { getSetting, listOpenRemoteHubChildren, setSetting } from '../db/database'
 import { RemoteHubClients } from '../hub/remote-hub-clients'
-import { hubRemoteChildrenEnabled } from '@shared/hub'
+import { reconnectOnLaunch } from '../hub/hub-launch-reconnect'
+import { HUB_RECONNECT_ON_LAUNCH_SETTING, hubRemoteChildrenEnabled } from '@shared/hub'
 import { createServer } from 'node:net'
 import { ipcMain } from 'electron'
 
@@ -170,6 +171,8 @@ export function registerMachineHandlers(host: BackendHost): RemoteHubClients {
 
   host.handle(MachineChannels.GET_STATUSES, () => mgr.statuses())
 
+  host.handle(MachineChannels.HUB_REMOTE_ENABLED, () => hubRemoteOn())
+
   // ipcMain, not host.handle: the host also serves paired phones, and this
   // token opens a full-scope session on the machine.
   ipcMain.removeAllListeners(MachineChannels.BACKEND_TOKEN)
@@ -214,6 +217,26 @@ export function registerMachineHandlers(host: BackendHost): RemoteHubClients {
   })
 
   return hub
+}
+
+/**
+ * Once per launch, after the registry took the hub client: connect the saved
+ * machines that hold open children of this desktop's hubs.
+ */
+export function reconnectHubMachinesOnLaunch(): Promise<void> {
+  const mgr = connections
+  if (!mgr) return Promise.resolve()
+  return reconnectOnLaunch({
+    flagOn: hubRemoteOn,
+    setting: () => getSetting(HUB_RECONNECT_ON_LAUNCH_SETTING),
+    openChildMachineIds: () => listOpenRemoteHubChildren().flatMap((c) => (c.machineId ? [c.machineId] : [])),
+    savedMachineIds: () => listMachines().map((m) => m.id),
+    statusOf: (id) => mgr.statusOf(id),
+    connect: async (id) => {
+      const saved = listMachines().find((m) => m.id === id)
+      if (saved) await mgr.connect(await enrichIapTransport(saved))
+    },
+  })
 }
 
 /** After a write of `labs.hub_remote_children`: off closes every hub client; on pulls and reconciles each connected machine. */

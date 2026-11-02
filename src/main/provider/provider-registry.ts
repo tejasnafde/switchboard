@@ -195,7 +195,12 @@ import { HubStarter, hubWorktreeCreator, isHubBatchPlan, type HubBatchPlan } fro
 import { HubRemoteOutbox, type HubRemoteOutboxHost } from '../hub/hub-remote-outbox'
 import { pruneAckedHubOutbox } from '../hub/hub-outbox'
 import { appMetrics, appVersion, secretsRootDir } from '../runtime'
-import { describeThisMachine, registerHubRemoteHandlers, type HubDescribeDeps } from '../hub/hub-remote-describe'
+import {
+  accountHasLogin,
+  describeThisMachine,
+  registerHubRemoteHandlers,
+  type HubDescribeDeps,
+} from '../hub/hub-remote-describe'
 import type { RemoteHubClients } from '../hub/remote-hub-clients'
 import { HubRemoteControl } from '../hub/hub-remote-control'
 import {
@@ -4583,6 +4588,7 @@ export class ProviderRegistry implements PeerToolHost {
         return (await this.getAdapter(provider)?.isAvailable()) === true
       },
       runningSlotKeys: () => this.hubStarter.runningSlotKeys(),
+      ...(process.env.SWITCHBOARD_REMOTE ? { hasLogin: accountHasLogin } : {}),
       startChild: (request) => this.hubStarter.startRemote(request),
     }
   }

@@ -38,21 +38,18 @@ import {
   type HubSettleView,
 } from '@shared/hub'
 import { HUB_REMOTE_SETTLE_LATER_TEXT } from '@shared/hub-remote'
-import { asThisMachine } from '../backend/request-context'
 import {
   archiveConversation,
   getConversationById,
-  getHubParent,
   getLimitResume,
   listHubChildren,
   otherWorktreeUsers,
   updateHubChild,
   type HubChildRow,
 } from '../db/database'
-import { removeDependencyLinks } from '../git/dependency-links'
 import { createMainLogger } from '../logger'
 import { perfSpan } from '../perf'
-import { hubWorktrees } from './hub-start'
+import { removeChildWorktree } from './hub-start'
 import { killLeft, treePids } from './hub-stop'
 
 const log = createMainLogger('hub:settle')
@@ -181,7 +178,7 @@ export class HubSettler {
       if (stopped.length > 0 || remoteRows.rows.length > 0) this.host.changed(parentId)
       for (const [i, row] of rows.entries()) {
         if (row.worktree !== 'remove') continue
-        const problem = await this.removeWorktree(stopped[i]!)
+        const problem = await removeChildWorktree(stopped[i]!)
         if (!problem) continue
         Object.assign(row, { worktree: 'keep', keepReason: problem })
         updateHubChild(stopped[i]!.childId, { settleJson: settleJson(row) })
@@ -306,39 +303,6 @@ export class HubSettler {
         clean,
         sharedWith: worktreePath ? otherWorktreeUsers(worktreePath, child.childId) : 0,
       }),
-    }
-  }
-
-  /**
-   * Null when the worktree is gone; else why it stays. For a child of a parent
-   * stub the removal is this machine's own (`asThisMachine`): the hub on the
-   * other machine asked for the settle, the creation is the one this machine's
-   * hub made for this child row, and the settle rules chose it. A local settle
-   * keeps the caller's scopes.
-   */
-  private async removeWorktree(child: HubChildRow): Promise<string | null> {
-    const service = hubWorktrees()
-    if (!service) return 'the worktree service is not ready'
-    const worktree = getConversationById(child.childId)?.worktree_path
-    const key = { machineId: 'local', creationId: child.creationId ?? `${child.batchId}-${child.ordinal}` }
-    try {
-      // A chat may have opened the worktree since the plan read it.
-      if (worktree && otherWorktreeUsers(worktree, child.childId) > 0) return 'another chat or card works in it'
-      const ownedByChild = (snapshot: Awaited<ReturnType<typeof service.getWorktreeCreation>>) =>
-        snapshot.owner.kind === 'conversation' && snapshot.owner.conversationId === child.childId
-      if (!ownedByChild(await service.getWorktreeCreation(key))) return 'the worktree was not made for this child'
-      if (worktree) await removeDependencyLinks(worktree)
-      // Read again after the unlink: the removal acts on this revision, and its owner is checked on it.
-      const current = await service.getWorktreeCreation(key)
-      if (!ownedByChild(current)) return 'the worktree was not made for this child'
-      const remove = () =>
-        service.actOnWorktreeCreation({ ...key, expectedRevision: current.revision, action: 'remove' })
-      const done = await (getHubParent(child.parentId)?.remoteHub ? asThisMachine(remove) : remove())
-      if (done.cleanupDisposition === 'removed') return null
-      return done.error?.message ?? 'git refused to remove it'
-    } catch (err) {
-      log.warn(`could not remove the worktree of settled child ${child.childId}`, err)
-      return err instanceof Error ? err.message : String(err)
     }
   }
 }

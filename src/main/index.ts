@@ -46,7 +46,12 @@ import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass 
 import { disposeSettingsFileSync, registerSettingsFileHandlers, settingsFileSync } from './ipc/settings-file'
 import { isSettingsFileKey } from '@shared/settings-file'
 import { HUB_REMOTE_CHILDREN_LABS_SETTING } from '@shared/hub'
-import { hubRemoteSettingChanged, registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
+import {
+  hubRemoteSettingChanged,
+  reconnectHubMachinesOnLaunch,
+  registerMachineHandlers,
+  stopAllMachineConnections,
+} from './ipc/machines'
 import { registerFilesHandlers } from './ipc/files'
 import { registerProjectCloneHandlers } from './ipc/project-clone'
 import { ElectronIpcHost, type BackendHost } from './backend/host'
@@ -1017,6 +1022,7 @@ app.whenReady().then(() => {
   // Provider registry - new agent bridge (SDK-based)
   providerRegistry = new ProviderRegistry(backendHost)
   providerRegistry.setRemoteHubClients(remoteHubClients)
+  void reconnectHubMachinesOnLaunch()
   worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(backendHost, () => providerRegistry)
   configureHubWorktrees(worktreeCreationRuntime)
   detachPush = attachPushNotifier(providerRegistry.bus, {

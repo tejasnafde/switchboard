@@ -437,14 +437,42 @@ export function SettingsPageBody({
       )}
       {page === 'keyboard' && <KeyboardPage />}
       {page === 'devices' && (
-        <Section title={SETTING_ROW.mobile.section}>
-          <SettingAnchor def={SETTING_ROW.mobile}>
-            <MobilePairingTab />
-          </SettingAnchor>
-        </Section>
+        <>
+          <Section title={SETTING_ROW.mobile.section}>
+            <SettingAnchor def={SETTING_ROW.mobile}>
+              <MobilePairingTab />
+            </SettingAnchor>
+          </Section>
+          <HubMachinesSection />
+        </>
       )}
       {page === 'about' && <AboutPage />}
     </>
+  )
+}
+
+/** Shown only while the staged flag hub_remote_children is on in this desktop. */
+function HubMachinesSection() {
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    let live = true
+    window.api.machines
+      .hubRemoteEnabled()
+      .then((on) => {
+        if (live) setShown(on)
+      })
+      .catch((err: unknown) => log.warn('reading the hub_remote_children flag failed', err))
+    return () => {
+      live = false
+    }
+  }, [])
+  if (!shown) return null
+  return (
+    <Section title={SETTING_ROW.hubReconnectOnLaunch.section} card>
+      <SettingRow def={SETTING_ROW.hubReconnectOnLaunch}>
+        <ToggleControl def={SETTING_ROW.hubReconnectOnLaunch} />
+      </SettingRow>
+    </Section>
   )
 }
 
