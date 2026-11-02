@@ -1,0 +1,52 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ui-motion",
+  "summary": "Desktop popovers, menus and dialogs (ui/popover, and through it ui/menu, ChipSelect and every picker; ui/dialog; ui/alert-dialog) fade and scale from 0.98 on open in 150 ms ease-out, from the trigger for a popover, and close in 100 ms; Radix keeps the content mounted until the close animation ends. Every loading spinner is the one ui/spinner part. Inline-style transitions in 13 renderer files move to sb-tr-* classes in global.css, so one prefers-reduced-motion rule turns off every transition and the popover motion.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/ui/popover.tsx",
+        "src/renderer/components/ui/dialog.tsx",
+        "src/renderer/components/ui/alert-dialog.tsx",
+        "src/renderer/components/ui/spinner.tsx",
+        "src/renderer/styles/global.css",
+        "tests/unit/motion-css-contract.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app uses React Native sheets and its own activity indicators; none of these renderer components or CSS rules run there."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The Compose app renders none of these desktop renderer components, and nothing it shows changes."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "A renderer styling change only; no IPC or wire message changes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data or setting changes. Reduced motion comes from the operating system preference only."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "An unconditional desktop renderer change with no flag, package identity, signing, update-channel or rollout change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/motion-css-contract.test.ts tests/unit/diagnostics-section-render.test.ts",
+      "SB_VISUAL_SCOPE=screens npm run test:e2e:visual (animations are pinned off in the screenshot run)",
+      "npm run typecheck",
+      "npm test"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The close animation was not filmed frame by frame; the screenshot run pins animations off.",
+      "The translucent theme with the motion was not looked at by eye."
+    ]
+  }
+}
