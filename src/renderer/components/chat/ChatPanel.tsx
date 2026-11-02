@@ -88,11 +88,12 @@ import {
 import { providerKindFor } from '@shared/types'
 import { speaksAcp } from '@shared/acp-agents'
 import { confirm } from '../ui/confirm'
-import { Toolbar } from '../ui/toolbar'
+import { Toolbar, ToolbarItem, ToolbarOverflow, useContainerTier } from '../ui/toolbar'
+import { overflowedItems, toolbarTier } from '../ui/toolbar-steps'
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 import { fileDiffNoRevertMessage } from '@shared/file-diff-revert'
 import { useHubView } from '../../stores/hub-store'
-import { HubChip } from '../hub/HubChip'
+import { HubChip, hubOverflowEntry } from '../hub/HubChip'
 import { ChildrenStrip } from '../hub/ChildrenStrip'
 import { ChildBanner } from '../hub/ChildBanner'
 import { showArchiveRefusal } from '../hub/hub-actions'
@@ -1290,6 +1291,11 @@ export function ChatPanel({
     handleChatSearchClose,
   } = useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot })
 
+  // A narrow header moves the Hub chip into its "..." menu (toolbar-steps.ts).
+  const [headerRef, headerTier] = useContainerTier(toolbarTier)
+  const hubEntry = hasSession ? hubOverflowEntry(hub, () => panelRef.current) : null
+  const headerOverflow = overflowedItems(hubEntry ? [{ ...hubEntry, hideBelow: 480 as const }] : [], headerTier)
+
   const interruptTurn = async () => {
     if (!sessionId) return
     // Stop takes back what is held for a switch or open, as Cancel does.
@@ -1466,6 +1472,7 @@ export function ChatPanel({
         <>
           {/* ── Top bar: folder / chat name ──────────────────────── */}
           <Toolbar
+            ref={headerRef}
             // The linked-PR control hides itself when the header is too narrow for it (container query).
             className="chat-panel-header min-h-[32px] shrink-0 gap-[6px] border-b border-[var(--border)] bg-[var(--bg-secondary)] px-[16px] py-[7px] text-[12px]"
           >
@@ -1531,7 +1538,11 @@ export function ChatPanel({
             )}
 
             <span className="flex-1" />
-            {hasSession && <HubChip view={hub} />}
+            {hasSession && (
+              <ToolbarItem hideBelow={480}>
+                <HubChip view={hub} />
+              </ToolbarItem>
+            )}
 
             {activeSession && activeSession.type !== 'terminal' && (
               <>
@@ -1547,6 +1558,7 @@ export function ChatPanel({
                 />
               </>
             )}
+            <ToolbarOverflow entries={headerOverflow} showBelow={480} side="bottom" align="end" />
 
             {otherSessionId && (
               <button

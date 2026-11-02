@@ -85,8 +85,7 @@ function horizontalPadding(element: HTMLElement): number {
   )
 }
 
-/** An item that left a `Toolbar` row for its "..." menu (see toolbar-steps.ts). */
-export interface ToolbarOverflowEntry {
+interface ToolbarOverflowRow {
   key: string
   icon: ReactNode
   /** The row's name: "Effort", "Checkout", "Mode". */
@@ -95,9 +94,22 @@ export interface ToolbarOverflowEntry {
   valueText: string
   /** A list that needs more room than the rows (the branch search). */
   wide?: boolean
-  /** The control's list, shown in place of the rows. Call `close` after a pick. */
-  body: (close: () => void) => ReactNode
 }
+
+/**
+ * An item that left a `Toolbar` row for its "..." menu (see toolbar-steps.ts).
+ * A control with a list gives `body`; a button gives `onSelect`, which the row
+ * runs after it closes the menu.
+ */
+export type ToolbarOverflowEntry = ToolbarOverflowRow &
+  (
+    | {
+        /** The control's list, shown in place of the rows. Call `close` after a pick. */
+        body: (close: () => void) => ReactNode
+        onSelect?: never
+      }
+    | { onSelect: () => void; body?: never }
+  )
 
 /**
  * The "..." chip at the end of a narrow toolbar. It lists the items the row
@@ -108,10 +120,21 @@ export interface ToolbarOverflowEntry {
  * item hides at), and the caller passes the entries `overflowedItems` names
  * for the tier `useContainerTier` read, so both agree on what moved.
  */
-export function ToolbarOverflow({ entries, showBelow }: { entries: ToolbarOverflowEntry[]; showBelow: ToolbarStep }) {
+export function ToolbarOverflow({
+  entries,
+  showBelow,
+  side = 'top',
+  align = 'start',
+}: {
+  entries: ToolbarOverflowEntry[]
+  showBelow: ToolbarStep
+  /** Where the menu opens: above a footer, below a header. */
+  side?: 'top' | 'bottom'
+  align?: 'start' | 'end'
+}) {
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<string | null>(null)
-  const active = entries.find((entry) => entry.key === view)
+  const active = entries.find((entry) => entry.key === view && entry.body)
 
   // The footer widened while the menu was open: close it, so it does not
   // pop open again the next time the footer narrows.
@@ -148,8 +171,8 @@ export function ToolbarOverflow({ entries, showBelow }: { entries: ToolbarOverfl
         </button>
       </PopoverTrigger>
       <PopoverContent
-        side="top"
-        align="start"
+        side={side}
+        align={align}
         aria-label="More options"
         onOpenAutoFocus={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => {
@@ -170,10 +193,17 @@ export function ToolbarOverflow({ entries, showBelow }: { entries: ToolbarOverfl
               <span aria-hidden>‹</span>
               {active.name}
             </button>
-            {active.body(close)}
+            {active.body?.(close)}
           </div>
         ) : (
-          <OverflowRows entries={entries} onOpenEntry={setView} />
+          <OverflowRows
+            entries={entries}
+            onOpenEntry={(entry) => {
+              if (!entry.onSelect) return setView(entry.key)
+              close()
+              entry.onSelect()
+            }}
+          />
         )}
       </PopoverContent>
     </Popover>
@@ -185,7 +215,7 @@ function OverflowRows({
   onOpenEntry,
 }: {
   entries: ToolbarOverflowEntry[]
-  onOpenEntry: (key: string) => void
+  onOpenEntry: (entry: ToolbarOverflowEntry) => void
 }) {
   const listRef = useRef<HTMLDivElement>(null)
   const rows = () => Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
@@ -212,15 +242,17 @@ function OverflowRows({
           type="button"
           role="menuitem"
           data-overflow-entry={entry.key}
-          onClick={() => onOpenEntry(entry.key)}
+          onClick={() => onOpenEntry(entry)}
           className="flex h-[28px] w-full cursor-pointer items-center gap-[8px] rounded-[5px] border-0 bg-transparent px-[8px] text-left text-[12px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] focus-visible:bg-[var(--bg-tertiary)] focus-visible:text-[var(--text-primary)]"
         >
           {entry.icon}
           <span className="shrink-0">{entry.name}</span>
           <span className="ml-auto min-w-0 truncate font-[500] text-[var(--text-primary)]">{entry.valueText}</span>
-          <span aria-hidden className="shrink-0 text-[11px] text-[var(--text-muted)]">
-            ›
-          </span>
+          {entry.body && (
+            <span aria-hidden className="shrink-0 text-[11px] text-[var(--text-muted)]">
+              ›
+            </span>
+          )}
         </button>
       ))}
     </div>

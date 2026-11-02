@@ -1,0 +1,49 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "chat-header-hub-overflow",
+  "summary": "Below 480 px the desktop chat header moves the Hub chip (a parent chat with child chats, behind hub_children) into a \"...\" More options menu, using the ui/toolbar ToolbarItem and ToolbarOverflow pair the composer footer uses. The menu's Hub row shows the child count and, like the chip, scrolls the children strip into view, then closes the menu. ToolbarOverflow gains action rows (onSelect, no list) and a side and align for a header. A child chat's Child chip leaves the header at the same width; its banner still names the parent.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/hub/HubChip.tsx",
+        "src/renderer/components/ui/toolbar.tsx",
+        "src/renderer/components/ui/toolbar-steps.ts",
+        "tests/unit/chat-header-hub-overflow.test.ts",
+        "tests/unit/toolbar.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app has no Hub chip and no desktop-style chat header toolbar: it ignores the session rows' hub field and lists children as top-level chats (see hub-children.json), so there is nothing to move into a menu."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android has no Hub chip in its chat header: it ignores the hub field and lists children as top-level chats until the phone hub PRs (see hub-children.json). Those PRs plan their own header for a phone width."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "A renderer layout change: the Hub row reads the same hub view the chip reads, and no channel, event or payload changes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored: the header measures its own width on each render."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["CHANGELOG.md"]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/chat-header-hub-overflow.test.ts: the Hub row's name and child count, no row for a child chat or a chat without children, a click on the More options button focuses the Hub row, the row has no submenu arrow, a click on the row scrolls the children strip into view and closes the menu, and ChatPanel hides the chip at 480 with a matching menu entry.",
+      "tests/unit/toolbar.test.ts: every file that hides a ToolbarItem at a step lists an overflow entry at that step (now includes ChatPanel.tsx)."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The narrow header was not opened in the running app by this change, and the macOS visual screens were not run locally: CI's macOS visual job checks the narrow chat and hub remote chip screens."
+    ]
+  }
+}
