@@ -1,14 +1,16 @@
 /**
  * The Snooze menu of a Recents row: the presets resolved when the menu opens,
  * each with its wake time on the right, and "Until PR #n changes" when the
- * chat links an open PR. The overflow form of a narrow row adds its other
- * actions (Settle) under a separator. `ui/menu` owns the keys: arrows, Home,
- * End, Enter, and Escape back to the button.
+ * chat links an open PR, then "Custom date and time..." (the dialog). The
+ * overflow form of a narrow row adds its other actions (Settle) under a
+ * separator. `ui/menu` owns the keys: arrows, Home, End, Enter, and Escape
+ * back to the button.
  */
 import { useRef, useState, type ReactNode } from 'react'
 import { resolvePresets, wakeLabel, type PresetOption } from '@shared/chat-snooze'
 import type { SnoozeChoice } from '../../services/chat-inbox'
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from '../ui/menu'
+import { openCustomSnooze } from './SnoozeCustomDialog'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('sidebar:snooze-menu')
@@ -32,6 +34,7 @@ export function SnoozeMenu({
   extras = [],
   onPick,
   onPicked,
+  onTriggerGone,
   now = () => new Date(),
 }: {
   /** The trigger's accessible name. */
@@ -43,6 +46,8 @@ export function SnoozeMenu({
   onPick: (choice: SnoozeChoice) => void
   /** After any item ran, in place of focus going back to the trigger. */
   onPicked?: () => void
+  /** Where Cancel in the custom dialog puts focus when the trigger is no longer shown. */
+  onTriggerGone?: () => void
   now?: () => Date
 }) {
   const [open, setOpen] = useState(false)
@@ -50,6 +55,7 @@ export function SnoozeMenu({
   const [options, setOptions] = useState<PresetOption[]>([])
   const [pr, setPr] = useState<SnoozePrChoice | null>(null)
   const picked = useRef(false)
+  const trigger = useRef<HTMLButtonElement>(null)
   /** Counts menu opens, so a PR read from an earlier open never replaces a later one. */
   const opens = useRef(0)
 
@@ -78,10 +84,22 @@ export function SnoozeMenu({
     action()
   }
 
+  const openCustom = () =>
+    openCustomSnooze({
+      onSnooze: (at) => onPick({ at }),
+      returnFocus: (outcome) => {
+        if (outcome !== 'cancelled') return
+        const button = trigger.current
+        if (button?.isConnected && getComputedStyle(button).display !== 'none') button.focus()
+        else onTriggerGone?.()
+      },
+    })
+
   return (
     <Menu open={open} onOpenChange={openChange}>
       <MenuTrigger asChild>
         <button
+          ref={trigger}
           type="button"
           className={className}
           aria-label={label}
@@ -115,12 +133,9 @@ export function SnoozeMenu({
             {option.label}
           </MenuItem>
         ))}
-        {pr && (
-          <>
-            <MenuSeparator />
-            <MenuItem onClick={() => run(() => onPick({ pr: pr.key }))}>Until PR #{pr.number} changes</MenuItem>
-          </>
-        )}
+        <MenuSeparator />
+        {pr && <MenuItem onClick={() => run(() => onPick({ pr: pr.key }))}>Until PR #{pr.number} changes</MenuItem>}
+        <MenuItem onClick={() => run(openCustom)}>Custom date and time...</MenuItem>
         {extras.length > 0 && <MenuSeparator />}
         {extras.map((extra) => (
           <MenuItem key={extra.label} onClick={() => run(extra.onSelect)}>

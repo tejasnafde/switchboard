@@ -74,6 +74,7 @@
 @source '../components/sidebar/OpenOnMachineDialog.tsx';
 @source '../components/chat/SnoozeComposerLine.tsx';
 @source '../components/sidebar/SnoozeMenu.tsx';
+@source '../components/sidebar/SnoozeCustomDialog.tsx';
 
 @theme inline {
   --spacing: 0.25rem;

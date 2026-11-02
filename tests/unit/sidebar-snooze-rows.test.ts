@@ -147,11 +147,11 @@ describe('the Snooze menu', () => {
     expect(document.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe('Snooze until')
     await vi.waitFor(() => expect(document.body.textContent).toContain('Until PR #512 changes'))
     const items = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
-    expect(items.map((b) => b.textContent)).toContain('Until PR #512 changes')
+    expect(items.slice(-2).map((b) => b.textContent)).toEqual(['Until PR #512 changes', 'Custom date and time...'])
     // Every time item carries its resolved time on the right.
-    for (const b of items.slice(0, -1))
+    for (const b of items.slice(0, -2))
       expect(b.querySelector('span:last-child')?.textContent).toMatch(/\d\d:\d\d|\d+ \w{3}/)
-    act(() => items.at(-1)!.click())
+    act(() => items.at(-2)!.click())
     expect(onSnooze).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ id: 'w' }) }), {
       pr: 'github:acme/app#512',
     })

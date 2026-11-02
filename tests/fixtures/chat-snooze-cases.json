@@ -124,22 +124,36 @@
     { "now": "2026-11-02T10:00", "date": [2026, 11, 2], "clock": "09:00", "expect": "past" },
     { "now": "2026-11-02T10:00", "date": [2026, 11, 2], "clock": "10:30", "expect": "ok", "at": "2026-11-02T10:30" },
     { "now": "2026-11-02T10:00", "date": [2026, 11, 3], "clock": "9:05", "expect": "ok", "at": "2026-11-03T09:05" },
-    { "now": "2026-11-02T10:00", "date": [2027, 2, 30], "clock": "09:00", "expect": "invalid" },
-    { "now": "2026-11-02T10:00", "date": [2027, 4, 31], "clock": "09:00", "expect": "invalid" },
-    { "now": "2026-11-02T10:00", "date": [2026, 11, 3], "clock": "25:00", "expect": "invalid" },
-    { "now": "2026-11-02T10:00", "date": [2026, 11, 3], "clock": "-1:00", "expect": "invalid" },
-    { "now": "2026-11-02T10:00", "date": [2026, 11, 3], "clock": "9:5", "expect": "invalid" },
+    { "now": "2026-11-02T10:00", "date": [2027, 2, 30], "clock": "09:00", "expect": "no_such_date" },
+    { "now": "2026-11-02T10:00", "date": [2027, 4, 31], "clock": "09:00", "expect": "no_such_date" },
+    { "now": "2026-11-02T10:00", "date": [2026, 11, 3], "clock": "25:00", "expect": "bad_clock" },
+    { "now": "2026-11-02T10:00", "date": [2026, 11, 3], "clock": "-1:00", "expect": "bad_clock" },
+    { "now": "2026-11-02T10:00", "date": [2026, 11, 3], "clock": "9:5", "expect": "bad_clock" },
     { "now": "2026-11-02T10:00", "date": [2027, 11, 3], "clock": "09:00", "expect": "too_far" }
   ],
-  "customWakeDst": {
-    "comment": "Run in America/New_York. 2027-03-14 02:30 does not exist; 2026-11-01 01:30 happens twice and takes the first (EDT).",
-    "zone": "America/New_York",
-    "cases": [
-      { "date": [2027, 3, 14], "clock": "02:30", "expect": "invalid" },
-      { "date": [2026, 11, 1], "clock": "01:30", "expect": "ok", "epochMs": 1793511000000 }
-    ],
-    "now": 1793491200000
-  },
+  "customWakeDst": [
+    {
+      "comment": "2027-03-14 02:30 does not exist; 2026-11-01 01:30 happens twice and takes the first (EDT).",
+      "zone": "America/New_York",
+      "now": 1793491200000,
+      "cases": [
+        { "date": [2027, 3, 14], "clock": "02:30", "expect": "no_such_time" },
+        { "date": [2027, 3, 14], "clock": "03:30", "expect": "ok", "epochMs": 1805009400000 },
+        { "date": [2026, 11, 1], "clock": "01:30", "expect": "ok", "epochMs": 1793511000000 },
+        { "date": [2027, 2, 29], "clock": "09:00", "expect": "no_such_date" }
+      ]
+    },
+    {
+      "comment": "2027-03-28 01:30 does not exist; 2026-10-25 01:30 happens twice and takes the first (BST).",
+      "zone": "Europe/London",
+      "now": 1792454400000,
+      "cases": [
+        { "date": [2027, 3, 28], "clock": "01:30", "expect": "no_such_time" },
+        { "date": [2027, 3, 28], "clock": "02:30", "expect": "ok", "epochMs": 1806197400000 },
+        { "date": [2026, 10, 25], "clock": "01:30", "expect": "ok", "epochMs": 1792888200000 }
+      ]
+    }
+  ],
   "shouldWakeOn": [
     { "name": "the time passed", "state": { "snoozedUntil": 1000, "snoozedAt": 500 }, "event": { "kind": "time", "now": 1000 }, "expect": "time" },
     { "name": "the time has not passed", "state": { "snoozedUntil": 1000, "snoozedAt": 500 }, "event": { "kind": "time", "now": 999 }, "expect": null },

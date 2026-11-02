@@ -1,11 +1,10 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
-import { pickPreset } from '@shared/chat-snooze'
 import type { RecentSessionItem } from './recent-sessions'
 import { RelativeTimeLabel, WakeTimeLabel } from './RelativeTimeLabel'
 import { DEFAULT_RECENT_SESSION_LIMIT, type RecentSessionLimit } from './recent-session-limit'
 import { RECENT_DOT_LABELS, groupRecentSessions, isWokeItem, recentDot, type RecentGroupKey } from './recent-groups'
 import { useRenderCount } from '../../services/render-counter'
-import type { SnoozeChoice } from '../../services/chat-inbox'
+import { choiceStands, type SnoozeChoice } from '../../services/chat-inbox'
 import { focusRecentRow, neighbourAfterRemoval } from './recent-row-focus'
 import { SnoozeMenu, type SnoozeMenuExtra, type SnoozePrChoice } from './SnoozeMenu'
 
@@ -105,7 +104,7 @@ export function RecentSessionsSection({
     }
     const pick = (choice: SnoozeChoice) => {
       if (!snooze) return
-      const leaves = !('option' in choice) || pickPreset(choice.option, Date.now()).ok
+      const leaves = choiceStands(choice, Date.now())
       if (!leaves) focusRecentRow(id)
       const done = snooze.onSnooze(item, choice)
       if (leaves) leaveUntil(id, done)
@@ -182,6 +181,7 @@ export function RecentSessionsSection({
                 className="sidebar-recent-action sidebar-recent-action-text"
                 loadPr={() => snooze.loadPr(item)}
                 onPick={pick}
+                onTriggerGone={() => focusRecentRow(id)}
               >
                 Snooze
               </SnoozeMenu>
@@ -204,6 +204,7 @@ export function RecentSessionsSection({
                 loadPr={() => snooze.loadPr(item)}
                 extras={menuExtras}
                 onPick={pick}
+                onTriggerGone={() => focusRecentRow(id)}
               >
                 ...
               </SnoozeMenu>
