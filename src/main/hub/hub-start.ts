@@ -266,6 +266,8 @@ export async function removeChildWorktree(child: HubChildRow): Promise<string | 
     // Read again after the unlink: the removal acts on this revision, and its owner is checked on it.
     const current = await service.getWorktreeCreation(key)
     if (!ownedByChild(current)) return 'the worktree was not made for this child'
+    // Again: a chat may have opened it during those awaits, and the removal does not check.
+    if (worktree && otherWorktreeUsers(worktree, child.childId) > 0) return 'another chat or card works in it'
     const remove = () => service.actOnWorktreeCreation({ ...key, expectedRevision: current.revision, action: 'remove' })
     const done = await (getHubParent(child.parentId)?.remoteHub ? asThisMachine(remove) : remove())
     if (done.cleanupDisposition === 'removed') return null
@@ -424,7 +426,7 @@ export class HubStarter {
 
   private toldOfRestart(childId: string): boolean {
     const last = lastHubWakeOf(childId)
-    return last?.kind === 'restart' && (lastMessageAt(threadFamilyIds(childId)) ?? 0) <= last.createdAt
+    return last?.kind === 'restart' && (lastMessageAt(threadFamilyIds(childId)) ?? 0) < last.createdAt
   }
 
   /** The parent of an open child, or null. A failed read counts as no child: the database is down for every path then. */

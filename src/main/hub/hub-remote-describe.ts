@@ -29,7 +29,7 @@ import { AGENT_PROVIDERS, type AgentProvider } from '@shared/types'
 import type { BackendHost } from '../backend/host'
 import { getProjects, getSetting, listOpenHubChildren } from '../db/database'
 import { listProviderInstances, type ProviderInstanceWire } from '../db/provider-instances'
-import { checkRemoteProviderAuth } from '../provider/remote-gate'
+import { checkRemoteProviderAuth, remoteProviderConfigDir } from '../provider/remote-gate'
 import { createMainLogger } from '../logger'
 import { perfSpan } from '../perf'
 
@@ -142,14 +142,20 @@ const LOGIN_ENV_KEYS: Record<'claude-code' | 'codex', readonly string[]> = {
 }
 
 /**
- * On a machine the desktop reaches over SSH: a Claude Code or Codex account
- * signs in when its env holds a key or its folder holds a login. Other agents,
- * and an account whose folder this layer cannot read, count as signed in.
+ * On a machine the desktop reaches over SSH, a Claude Code or Codex account
+ * counts as signed in only when a child on it would start. The start passes
+ * no config folder, so it first checks this process's env and the default
+ * folder, before the account's env applies; then the session runs with the
+ * account's key or folder. An account whose folder only its encrypted env
+ * names is not counted. Other agents count as signed in.
  */
 export async function accountHasLogin(i: ProviderInstanceWire): Promise<boolean> {
   if (i.agentType !== 'claude-code' && i.agentType !== 'codex') return true
+  const startGate = remoteProviderConfigDir(i.agentType, undefined)
+  if (!(await checkRemoteProviderAuth(i.agentType, startGate)).loggedIn) return false
+  if (!i.effectiveOauthDir) return false
   if (LOGIN_ENV_KEYS[i.agentType].some((k) => i.envKeys.includes(k))) return true
-  if (!i.effectiveOauthDir) return true
+  if (i.effectiveOauthDir === startGate) return true
   return (await checkRemoteProviderAuth(i.agentType, i.effectiveOauthDir)).loggedIn
 }
 

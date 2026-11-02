@@ -5,7 +5,7 @@
  * and the worktree a failed remote start leaves behind.
  */
 import { createMigratedDb } from './helpers/test-db'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,6 +13,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../../src/main/logger', () => ({
   createMainLogger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
 }))
+
+// The home the remote start checks for its default login folder.
+const home = vi.hoisted(() => ({ dir: '' }))
+vi.mock('node:os', async (importOriginal) => {
+  const os = await importOriginal<typeof import('node:os')>()
+  return { ...os, homedir: () => home.dir || os.homedir() }
+})
 
 vi.mock('../../src/main/db/provider-instances', () => ({
   resolveProviderInstance: (agentType: string, id?: string | null) => ({ id: id ?? `${agentType}-default`, agentType }),
@@ -27,6 +34,7 @@ import {
   getHubChild,
   insertHubChild,
   lastHubWakeOf,
+  lastMessageAt,
   listHubOutbox,
   listOpenRemoteHubChildren,
   listPendingHubWakes,
@@ -35,7 +43,7 @@ import {
   updateHubChild,
 } from '../../src/main/db/database'
 import { machinesToReconnect, reconnectOnLaunch } from '../../src/main/hub/hub-launch-reconnect'
-import { HubStarter, configureHubWorktrees, type HubStartHost } from '../../src/main/hub/hub-start'
+import { HubStarter, configureHubWorktrees, removeChildWorktree, type HubStartHost } from '../../src/main/hub/hub-start'
 import { accountHasLogin } from '../../src/main/hub/hub-remote-describe'
 import { buildHubMachineDescription, planRemoteTask, type HubRemoteStartRequest } from '../../src/shared/hub-remote'
 import type { ProviderInstanceWire } from '../../src/main/db/provider-instances'
@@ -185,12 +193,41 @@ describe('a child machine after its backend restarts', () => {
       vi.useRealTimers()
     }
   })
+
+  it('gives a second restart wake when a message has the same millisecond as the first', () => {
+    vi.useFakeTimers({ now: 1_000_000, toFake: ['Date'] })
+    try {
+      claimHubParentStub('agent_parent', DESK)
+      addProject('/repo', 'repo')
+      createConversation('agent_open', '/repo', 'claude-code', 'Child')
+      insertHubChild(childRow('agent_open', 'agent_parent'))
+      updateHubChild('agent_open', { phase: 'open' })
+      new HubStarter(host(), () => null).recoverInterrupted()
+      saveMessageIfAbsent('pm_1', 'agent_open', 'user', 'Go on')
+      vi.setSystemTime(1_010_000)
+      new HubStarter(host(), () => null).recoverInterrupted()
+      const kinds = listHubOutbox(DESK, { limit: 50 }).items.map((i) => (i.kind === 'wake' ? i.wake.kind : i.kind))
+      expect(kinds).toEqual(['restart', 'restart'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reads the newest message across more conversations than one statement can bind', () => {
+    addProject('/repo', 'repo')
+    createConversation('agent_last', '/repo', 'claude-code', 'Child')
+    saveMessageIfAbsent('pm_1', 'agent_last', 'user', 'Hi')
+    const ids = [...Array.from({ length: 40_000 }, (_, n) => `agent_${n}`), 'agent_last']
+    expect(lastMessageAt(ids)).toBe(lastMessageAt(['agent_last']))
+    expect(lastMessageAt(['agent_last'])).not.toBeNull()
+  })
 })
 
 describe('accounts hub-remote:describe lists on a machine reached over SSH', () => {
   const dirs: string[] = []
   afterEach(() => {
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
+    home.dir = ''
     vi.unstubAllEnvs()
   })
   const wire = (over: Partial<ProviderInstanceWire>): ProviderInstanceWire =>
@@ -210,15 +247,27 @@ describe('accounts hub-remote:describe lists on a machine reached over SSH', () 
       ...over,
     }) as ProviderInstanceWire
 
-  it('counts an account with a login file or a key, and not one with neither', async () => {
+  it('counts an account only when the start check and the account both have a login', async () => {
     vi.stubEnv('ANTHROPIC_API_KEY', '')
+    home.dir = mkdtempSync(join(tmpdir(), 'sb-hub-home-'))
     const signed = mkdtempSync(join(tmpdir(), 'sb-hub-login-'))
     const empty = mkdtempSync(join(tmpdir(), 'sb-hub-login-'))
-    dirs.push(signed, empty)
+    dirs.push(home.dir, signed, empty)
     writeFileSync(join(signed, '.credentials.json'), '{"x":1}')
+    const key = { envKeys: ['ANTHROPIC_API_KEY'] }
+    // The start checks the default folder first: with no login there, no account counts.
+    expect(await accountHasLogin(wire({ effectiveOauthDir: signed }))).toBe(false)
+    expect(await accountHasLogin(wire({ effectiveOauthDir: empty, ...key }))).toBe(false)
+    mkdirSync(join(home.dir, '.claude'))
+    writeFileSync(join(home.dir, '.claude', '.credentials.json'), '{"x":1}')
+    expect(await accountHasLogin(wire({ effectiveOauthDir: join(home.dir, '.claude') }))).toBe(true)
     expect(await accountHasLogin(wire({ effectiveOauthDir: signed }))).toBe(true)
     expect(await accountHasLogin(wire({ effectiveOauthDir: empty }))).toBe(false)
-    expect(await accountHasLogin(wire({ effectiveOauthDir: empty, envKeys: ['ANTHROPIC_API_KEY'] }))).toBe(true)
+    expect(await accountHasLogin(wire({ effectiveOauthDir: empty, ...key }))).toBe(true)
+    // A folder only the encrypted env names is unknown here, so the account is not offered.
+    expect(
+      await accountHasLogin(wire({ effectiveOauthDir: null, effectiveOauthDirSource: 'unresolved', ...key })),
+    ).toBe(false)
     expect(await accountHasLogin(wire({ agentType: 'opencode', effectiveOauthDir: empty }))).toBe(true)
   })
 
@@ -330,6 +379,30 @@ describe('a failed start of a child from another machine', () => {
     expect(getHubChild('agent_failed')!.phase).toBe('failed_start')
     await vi.waitFor(() => expect(actions).toEqual([{ creationId: 'remote-agent_failed-0', action: 'remove' }]))
     expect(h.stopped).toEqual(['agent_failed'])
+  })
+
+  it('keeps a worktree another chat opened while the removal awaited', async () => {
+    ensureHubParent('agent_parent')
+    insertHubChild(childRow('agent_child', 'agent_parent'))
+    createConversation('agent_child', '/repo', 'claude-code', 'Child')
+    setConversationWorktree('agent_child', '/wt/agent_child', 'hub/agent_child')
+    let reads = 0
+    configureHubWorktrees({
+      getWorktreeCreation: async () => {
+        // The second read follows the dependency unlink; a chat opens the worktree before it.
+        if (++reads === 2) {
+          createConversation('agent_other', '/repo', 'claude-code', 'Other')
+          setConversationWorktree('agent_other', '/wt/agent_child', 'hub/agent_child')
+        }
+        return { revision: 1, owner: { kind: 'conversation', conversationId: 'agent_child' } } as never
+      },
+      actOnWorktreeCreation: async (input: { creationId: string; action: string }) => {
+        actions.push({ creationId: input.creationId, action: input.action })
+        return { cleanupDisposition: 'removed' } as never
+      },
+    } as never)
+    expect(await removeChildWorktree(getHubChild('agent_child')!)).toBe('another chat or card works in it')
+    expect(actions).toEqual([])
   })
 
   it('keeps the worktree of a local child that failed to start', async () => {

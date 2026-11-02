@@ -15,6 +15,7 @@ import {
 } from '@shared/diagnostics-report'
 import type { DiagnosticsSnapshot } from '@shared/diagnostics-report'
 import { createRendererLogger } from '../logger'
+import { SETTINGS_CHANGED_ELSEWHERE } from '../services/settings-file-sync'
 import { useProviderInstanceStore } from '../stores/provider-instance-store'
 import { AccountsPanel } from './settings/AccountsPanel'
 import { MobilePairingTab } from './settings/MobilePairingTab'
@@ -452,18 +453,23 @@ export function SettingsPageBody({
 }
 
 /** Shown only while the staged flag hub_remote_children is on in this desktop. */
-function HubMachinesSection() {
+export function HubMachinesSection() {
   const [shown, setShown] = useState(false)
   useEffect(() => {
     let live = true
-    window.api.machines
-      .hubRemoteEnabled()
-      .then((on) => {
-        if (live) setShown(on)
-      })
-      .catch((err: unknown) => log.warn('reading the hub_remote_children flag failed', err))
+    const read = () =>
+      window.api.machines
+        .hubRemoteEnabled()
+        .then((on) => {
+          if (live) setShown(on)
+        })
+        .catch((err: unknown) => log.warn('reading the hub_remote_children flag failed', err))
+    void read()
+    // The labs setting can change in settings.json while this page is open.
+    window.addEventListener(SETTINGS_CHANGED_ELSEWHERE, read)
     return () => {
       live = false
+      window.removeEventListener(SETTINGS_CHANGED_ELSEWHERE, read)
     }
   }, [])
   if (!shown) return null
