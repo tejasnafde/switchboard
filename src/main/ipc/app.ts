@@ -912,7 +912,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     return { ok: storeConversationSettled(host, id, null) }
   })
 
-  host.handle(AppChannels.SNOOZE_CONVERSATION, (id: string, request: SnoozeRequest): SnoozeResult => {
+  host.handle(AppChannels.SNOOZE_CONVERSATION, async (id: string, request: SnoozeRequest): Promise<SnoozeResult> => {
     const snoozer = chatSnoozer()
     if (!snoozer) return { ok: false, reason: 'no_row' }
     return snoozer.snooze(id, request ?? { until: null })

@@ -59,6 +59,7 @@ import {
 } from '../db/database'
 import type { RuntimeEventBus } from '../provider/event-bus'
 import { shouldAutoSettle } from '@shared/chat-settle'
+import type { PrReading } from '@shared/chat-snooze'
 import { storeConversationSettled } from '../conversations/chat-settle'
 import { PullRequestAutoLinker } from '../pull-requests/auto-link'
 import { PullRequestLinkSync } from '../pull-requests/link-sync'
@@ -259,6 +260,36 @@ export function attachPullRequestAutoLink(
     stopLinker()
     stopSync()
   }
+}
+
+/** `github:owner/repo#512` (`prKey`) back to a ref, or null. */
+function refFromKey(key: string): PrRef | null {
+  const m = /^(github|bitbucket):([^/]+)\/(.+)#(\d+)$/.exec(key)
+  return m ? { host: m[1] as PrRef['host'], owner: m[2], name: m[3], number: Number(m[4]) } : null
+}
+
+/** A PR read for the snooze PR wake (`shared/chat-snooze.ts`), by `prKey`; null when it cannot be read. */
+export async function readPullRequestForSnooze(key: string): Promise<PrReading | null> {
+  const ref = refFromKey(key)
+  if (!ref) return null
+  const read = await getService().detail(ref)
+  if (!read.ok) return null
+  const changes = read.data.activity
+    .filter((a) => a.kind === 'reviewed' && a.summary === 'requested changes')
+    .map((a) => a.at)
+  return {
+    number: ref.number,
+    state: read.data.state,
+    updatedAt: read.data.updatedAt,
+    headSha: read.data.headSha,
+    checksFailed: read.data.checks.state === 'failure',
+    changesRequestedAt: changes.length > 0 ? Math.max(...changes) : null,
+  }
+}
+
+/** A snooze PR read found the PR merged: settle the chat by the same rule as a linked PR's merge. */
+export function settleChatOnMerge(chatId: string, prNumber: number): void {
+  settleOnMerge(chatId, prNumber)
 }
 
 function registerLinkHandlers(host: BackendHost): void {

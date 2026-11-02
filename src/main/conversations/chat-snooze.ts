@@ -15,18 +15,24 @@ import type { ConversationSettledEvent } from '@shared/chat-settle'
 import {
   checkWakeTime,
   MARKED_WAKE_REASONS,
+  parsePrMark,
+  prMarkOf,
+  prWakeSummary,
   shouldWakeOn,
+  type PrReading,
   type ConversationSnoozedEvent,
   type InboxEvent,
   type SnoozeRequest,
   type SnoozeResult,
   type WakeReason,
 } from '@shared/chat-snooze'
+import { prKey } from '@shared/pull-requests'
 import {
   clearConversationWoke,
   getConversationSnooze,
   getConversationTitle,
   isConversationArchived,
+  listConversationPullRequests,
   listSnoozedConversations,
   listWokeConversationIds,
   resolveRootThreadId,
@@ -42,6 +48,7 @@ const log = createMainLogger('conversations:snooze')
 /** setTimeout's ceiling; a later wake fires early, finds it early and sets the next timer. */
 const MAX_TIMER_MS = 2 ** 31 - 1
 export const SNOOZE_RESYNC_MS = 5 * 60_000
+export const PR_WAKE_POLL_MS = 5 * 60_000
 
 export interface ChatSnoozeHost {
   emit(channel: string, payload: unknown): void
@@ -49,6 +56,10 @@ export interface ChatSnoozeHost {
   needsYou(conversationId: string): boolean
   /** One push for a wake the user asked for (time, PR); `line` says why. */
   pushWoke?(conversationId: string, title: string, line: string): void
+  /** Read a PR by its `prKey`; null when the read failed. */
+  readPr?(pr: string): Promise<PrReading | null>
+  /** A PR read found it merged: settle the chat when it is idle (which ends its snooze, with the Settle notice). */
+  settleMerged?(conversationId: string, prNumber: number): void
 }
 
 export class ChatSnoozer {
@@ -58,6 +69,9 @@ export class ChatSnoozer {
   /** Root ids that show the Woke marker, so a write that clears it is broadcast. */
   private readonly woke = new Set<string>()
   private resyncTimer: ReturnType<typeof setInterval> | null = null
+  private prTimer: ReturnType<typeof setInterval> | null = null
+  private polling = false
+  private disposed = false
   private stopArchiveListener: (() => void) | null = null
 
   constructor(
@@ -93,18 +107,21 @@ export class ChatSnoozer {
         this.schedule(row.id, row.snoozedUntil, row.snoozeRev)
       if (row.snoozedUntil == null) this.clearTimer(row.id)
     }
+    this.watchPrs(rows.some((r) => r.snoozePr !== null))
   }
 
   dispose(): void {
+    this.disposed = true
     for (const { timer } of this.timers.values()) clearTimeout(timer)
     this.timers.clear()
     if (this.resyncTimer) clearInterval(this.resyncTimer)
     this.resyncTimer = null
+    this.watchPrs(false)
     this.stopArchiveListener?.()
     this.stopArchiveListener = null
   }
 
-  snooze(id: string, request: SnoozeRequest): SnoozeResult {
+  async snooze(id: string, request: SnoozeRequest): Promise<SnoozeResult> {
     const root = resolveRootThreadId(id)
     const now = this.now()
     const until = request.until ?? null
@@ -119,20 +136,46 @@ export class ChatSnoozer {
     if (isConversationArchived(root)) return { ok: false, reason: 'no_row' }
     // An open card would wake it at once.
     if (this.host.needsYou(root)) return { ok: false, reason: 'needs_you' }
-    const written = setConversationSnooze(root, { until, pr, prMark: null, at: now, expectRev: request.expectRev })
+    let watch = pr
+    let prMark: string | null = null
+    // A request that lands during this one's PR read makes its write stale.
+    const expectRev = request.expectRev ?? getConversationSnooze(root)?.snoozeRev
+    if (pr !== null) {
+      if (!listConversationPullRequests(root).some((link) => prKey(link.ref) === pr))
+        return { ok: false, reason: 'pr_unlinked' }
+      // The baseline is stored with the snooze, so a later read compares against what the PR was then.
+      const reading = await this.readPr(pr)
+      if (!reading) return { ok: false, reason: 'pr_unreadable' }
+      if (reading.state === 'open') prMark = JSON.stringify(prMarkOf(reading))
+      // An Undo (of a wake, or of the settle this PR's merge made) keeps only the time: no PR event is left.
+      else if (request.expectRev !== undefined && until !== null) watch = null
+      else return { ok: false, reason: 'pr_closed' }
+      // The chat may have changed during the read; a replaced snoozer takes no new snooze.
+      if (this.disposed || isConversationArchived(root)) return { ok: false, reason: 'no_row' }
+      if (this.host.needsYou(root)) return { ok: false, reason: 'needs_you' }
+      if (request.expectRev !== undefined && until !== null && until <= this.now()) return { ok: false, reason: 'past' }
+    }
+    const written = setConversationSnooze(root, {
+      until,
+      pr: watch,
+      prMark,
+      at: this.now(),
+      expectRev,
+    })
     if (written === null) return { ok: false, reason: getConversationSnooze(root) ? 'stale' : 'no_row' }
     const { rev, unsettled } = written
     this.clearTimer(root)
     this.snoozed.add(root)
     this.woke.delete(root)
     if (until !== null) this.schedule(root, until, rev)
+    if (watch !== null) this.watchPrs(true)
     const title = this.broadcast(root)
     // The write cleared the settle; clients drop it the way an unsettle does.
     if (unsettled) {
       const settled: ConversationSettledEvent = { conversationId: root, settledAt: null, ...(title ? { title } : {}) }
       this.host.emit(AppChannels.CONVERSATION_SETTLED, settled)
     }
-    return { ok: true, until, pr, rev }
+    return { ok: true, until, pr: watch, rev }
   }
 
   /**
@@ -204,6 +247,67 @@ export class ChatSnoozer {
       this.wake(id, 'time', { expectRev: rev })
     } catch (err) {
       log.warn(`snooze timer for ${id} failed`, err)
+    }
+  }
+
+  /** Read the watched PRs every 5 minutes while any snoozed chat waits on one; never otherwise. */
+  private watchPrs(on: boolean): void {
+    if (on && !this.prTimer && this.host.readPr) {
+      this.prTimer = setInterval(() => void this.pollPrs(), PR_WAKE_POLL_MS)
+      this.prTimer.unref?.()
+    }
+    if (!on && this.prTimer) {
+      clearInterval(this.prTimer)
+      this.prTimer = null
+    }
+  }
+
+  /** One read per watched PR, in series. A failed read is tried again at the next tick. */
+  private async pollPrs(): Promise<void> {
+    if (this.polling) return
+    this.polling = true
+    try {
+      const rows = listSnoozedConversations().filter(
+        (r): r is SnoozedConversationRow & { snoozePr: string } => r.snoozePr !== null,
+      )
+      if (rows.length === 0) return this.watchPrs(false)
+      const readings = new Map<string, PrReading | null>()
+      for (const row of rows) {
+        if (!readings.has(row.snoozePr)) readings.set(row.snoozePr, await this.readPr(row.snoozePr))
+        // A replaced snoozer wakes nothing: the new one reads again.
+        if (this.disposed) return
+        const reading = readings.get(row.snoozePr)
+        if (!reading) continue
+        // Re-snoozed or woken during the read: the next tick compares against the new baseline.
+        const state = getConversationSnooze(row.id)
+        if (!state || state.snoozeRev !== row.snoozeRev || state.snoozedAt === null) continue
+        const mark = parsePrMark(row.snoozePrMark)
+        if (!mark) {
+          log.warn('a snoozed chat has no readable PR baseline', { id: row.id })
+          continue
+        }
+        const summary = prWakeSummary(mark, reading)
+        if (!summary) continue
+        // A merge settles an idle chat first, which ends the snooze with the Settle notice instead.
+        if (reading.state === 'merged') this.host.settleMerged?.(row.id, reading.number)
+        this.wake(row.id, 'pr', { expectRev: row.snoozeRev, prSummary: summary })
+      }
+    } catch (err) {
+      log.warn('reading pull requests for snoozed chats failed', err)
+    } finally {
+      this.polling = false
+    }
+  }
+
+  /** The host's PR read; null (logged) when it fails or the host has none. */
+  private async readPr(pr: string): Promise<PrReading | null> {
+    try {
+      const reading = (await this.host.readPr?.(pr)) ?? null
+      if (!reading) log.warn('could not read a pull request a snoozed chat waits on', { pr })
+      return reading
+    } catch (err) {
+      log.warn('reading a pull request a snoozed chat waits on failed', { pr, err: String(err) })
+      return null
     }
   }
 

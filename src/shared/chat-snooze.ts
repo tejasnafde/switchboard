@@ -37,7 +37,7 @@ export interface SnoozeState {
   snoozedUntil: number | null
   /** Set while snoozed, null otherwise. The only test of "is snoozed". */
   snoozedAt: number | null
-  /** `owner/repo#512` when a PR event wakes it. */
+  /** The PR whose events wake it, as `prKey` (`github:owner/repo#512`). */
   snoozePr: string | null
   /** Bumped by every change to the fields above, so a stale timer or Undo can be refused. */
   snoozeRev: number
@@ -295,7 +295,7 @@ function hhmm(d: Date): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-/** `#512` from `owner/repo#512`. */
+/** `512` from `github:owner/repo#512`. */
 export function prNumberOf(pr: string): string {
   const i = pr.lastIndexOf('#')
   return i >= 0 ? pr.slice(i + 1) : pr
@@ -331,18 +331,89 @@ export function wokeLine(reason: WakeReason | null, prSummary?: string | null): 
   }
 }
 
+// ---------------------------------------------------------------- PR wakes
+
+/** What a PR read says, for the PR wake. Built from `PrDetail` by the backend. */
+export interface PrReading {
+  number: number
+  state: 'open' | 'merged' | 'closed'
+  /** The host's last update time, epoch ms: a read older than the mark is a stale cache. */
+  updatedAt: number | null
+  headSha: string | null
+  checksFailed: boolean
+  /** The newest "requested changes" review, epoch ms, or null. */
+  changesRequestedAt: number | null
+}
+
+/**
+ * The PR as it was when the snooze started (`snooze_pr_mark`). Its times are
+ * the host's, so a later read compares the host's clock with itself.
+ */
+export type PrMark = Omit<PrReading, 'number'>
+
+export function prMarkOf({ number: _number, ...mark }: PrReading): PrMark {
+  return mark
+}
+
+/** The stored mark, or null when it is missing or not a mark. */
+export function parsePrMark(raw: string | null): PrMark | null {
+  if (!raw) return null
+  let m: Partial<PrMark>
+  try {
+    m = JSON.parse(raw) as Partial<PrMark>
+  } catch {
+    return null
+  }
+  if (m.state !== 'open' && m.state !== 'merged' && m.state !== 'closed') return null
+  const time = (v: unknown) => (typeof v === 'number' ? v : null)
+  return {
+    state: m.state,
+    updatedAt: time(m.updatedAt),
+    headSha: m.headSha ?? null,
+    checksFailed: m.checksFailed === true,
+    changesRequestedAt: time(m.changesRequestedAt),
+  }
+}
+
+/**
+ * The status line of a PR wake, or null when the PR gives no reason to wake.
+ * Only three events wake, each only forward from the mark: the PR merged; a
+ * review requested changes after the newest one at the mark; the checks failed
+ * on a head that had not failed at the mark (a new push that fails counts).
+ * Comments, approvals and pushes alone do not wake. A read older than the mark
+ * (a stale cache) wakes nothing, so what the mark acknowledged never wakes.
+ */
+export function prWakeSummary(mark: PrMark, now: PrReading): string | null {
+  if (mark.updatedAt !== null && now.updatedAt !== null && now.updatedAt < mark.updatedAt) return null
+  if (now.state === 'merged' && mark.state !== 'merged') return `PR #${now.number} merged`
+  if (now.changesRequestedAt !== null && now.changesRequestedAt > (mark.changesRequestedAt ?? -Infinity))
+    return `PR #${now.number}: changes requested`
+  if (now.checksFailed && (!mark.checksFailed || now.headSha !== mark.headSha))
+    return `PR #${now.number}: checks failed`
+  return null
+}
+
 // ---------------------------------------------------------------- wire
 
 export interface SnoozeRequest {
   /** Epoch ms, or null for a PR-only snooze. */
   until: number | null
-  /** `owner/repo#512` to wake on that PR's next event. */
+  /** `prKey` of a PR the chat links, to wake on its next event; any other is refused (`pr_unlinked`). */
   pr?: string | null
   /** Undo of a wake: refused unless the chat is still at this revision. */
   expectRev?: number
 }
 
-export type SnoozeRefusal = 'needs_you' | 'past' | 'too_far' | 'pr_closed' | 'no_row' | 'stale' | 'empty'
+export type SnoozeRefusal =
+  | 'needs_you'
+  | 'past'
+  | 'too_far'
+  | 'pr_closed'
+  | 'pr_unlinked'
+  | 'pr_unreadable'
+  | 'no_row'
+  | 'stale'
+  | 'empty'
 
 export type SnoozeResult =
   | { ok: true; until: number | null; pr: string | null; rev: number }
