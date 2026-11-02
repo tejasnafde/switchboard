@@ -8,6 +8,7 @@
  * so a client that reconnected after a resume gap, or reloaded, can recover a
  * card that will never arrive again as a live event.
  */
+import { tmpdir } from 'node:os'
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
@@ -122,7 +123,7 @@ async function setup() {
   const adapter = new RecordingAdapter()
   const registry = new ProviderRegistry(host, new Map([['claude', adapter]]))
   registry.registerIpcHandlers()
-  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
+  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: tmpdir() })
   const getPending = (threadId: string) =>
     host.invoke<PendingBlockingEvent[]>(ProviderChannels.GET_PENDING_REQUESTS, threadId)
   return { host, adapter, getPending }
