@@ -68,7 +68,8 @@ export function isWoke(s: Pick<SnoozeState, 'snoozedAt' | 'wokeAt'>): boolean {
  * What happened to a chat, as the backend sees it.
  * - `message`: `from: 'person'` is a message a person sent into the chat from
  *   elsewhere (Send to). Messages from agents, sub-task results and notices
- *   are `agent` and never wake.
+ *   are `agent` and never wake. `at` is when the send started; one at or
+ *   before the snooze was sent before the user snoozed.
  * - `error`: `at` is when the failure happened; one at or before the snooze
  *   was already in view when the user snoozed.
  * - `turn_completed`: a normal end. It never wakes: the result waits under the snooze.
@@ -77,7 +78,7 @@ export type InboxEvent =
   | { kind: 'time'; now: number }
   | { kind: 'needs_you' }
   | { kind: 'error'; at: number }
-  | { kind: 'message'; from: 'person' | 'agent' }
+  | { kind: 'message'; from: 'person' | 'agent'; at: number }
   | { kind: 'pr'; pr: string }
   | { kind: 'turn_completed' }
 
@@ -91,7 +92,7 @@ export function shouldWakeOn(event: InboxEvent, s: SnoozeState): WakeReason | nu
     case 'error':
       return event.at > (s.snoozedAt ?? 0) ? 'error' : null
     case 'message':
-      return event.from === 'person' ? 'message' : null
+      return event.from === 'person' && event.at > (s.snoozedAt ?? 0) ? 'message' : null
     case 'pr':
       return s.snoozePr === event.pr ? 'pr' : null
     case 'turn_completed':

@@ -11,6 +11,7 @@
  * carries the row's revision; a fire whose revision moved does nothing.
  */
 import { AppChannels } from '@shared/ipc-channels'
+import type { ConversationSettledEvent } from '@shared/chat-settle'
 import {
   checkWakeTime,
   MARKED_WAKE_REASONS,
@@ -68,7 +69,7 @@ export class ChatSnoozer {
     this.resync()
     this.resyncTimer ??= setInterval(() => this.resync(), SNOOZE_RESYNC_MS)
     this.resyncTimer.unref?.()
-    this.stopArchiveListener ??= onConversationArchived((id) => this.onArchived(id))
+    this.stopArchiveListener ??= onConversationArchived((id) => this.onCleared(id))
   }
 
   /** Rebuild one timer per snoozed row with a time. A time already past fires now. */
@@ -118,13 +119,19 @@ export class ChatSnoozer {
     if (isConversationArchived(root)) return { ok: false, reason: 'no_row' }
     // An open card would wake it at once.
     if (this.host.needsYou(root)) return { ok: false, reason: 'needs_you' }
-    const rev = setConversationSnooze(root, { until, pr, prMark: null, at: now, expectRev: request.expectRev })
-    if (rev === null) return { ok: false, reason: getConversationSnooze(root) ? 'stale' : 'no_row' }
+    const written = setConversationSnooze(root, { until, pr, prMark: null, at: now, expectRev: request.expectRev })
+    if (written === null) return { ok: false, reason: getConversationSnooze(root) ? 'stale' : 'no_row' }
+    const { rev, unsettled } = written
     this.clearTimer(root)
     this.snoozed.add(root)
     this.woke.delete(root)
     if (until !== null) this.schedule(root, until, rev)
-    this.broadcast(root)
+    const title = this.broadcast(root)
+    // The write cleared the settle; clients drop it the way an unsettle does.
+    if (unsettled) {
+      const settled: ConversationSettledEvent = { conversationId: root, settledAt: null, ...(title ? { title } : {}) }
+      this.host.emit(AppChannels.CONVERSATION_SETTLED, settled)
+    }
     return { ok: true, until, pr, rev }
   }
 
@@ -166,22 +173,14 @@ export class ChatSnoozer {
   }
 
   /**
-   * A user turn or a settle already ended the snooze and the marker in its own
-   * write (`clearConversationInboxForTurn`, `setConversationSettled`); tell
-   * clients and drop the timer.
+   * A user turn, a settle or an archive already ended the snooze and the
+   * marker in its own write (`clearConversationInboxForTurn`,
+   * `setConversationSettled`, `archiveConversation`); tell clients and drop
+   * the timer.
    */
   onCleared(id: string): void {
     const root = resolveRootThreadId(id)
     if (!this.snoozed.has(root) && !this.woke.has(root)) return
-    this.forget(root)
-    this.woke.delete(root)
-    this.broadcast(root)
-  }
-
-  private onArchived(id: string): void {
-    const root = resolveRootThreadId(id)
-    const ended = wakeConversation(root, 'archive', this.now())
-    if (!clearConversationWoke(root) && !ended) return
     this.forget(root)
     this.woke.delete(root)
     this.broadcast(root)

@@ -808,27 +808,33 @@ export function getConversationSnooze(id: string): (SnoozeState & { snoozePrMark
 }
 
 /**
- * Snooze a chat (clears any Woke marker). With `expectRev`, only while the
- * chat is still at that revision. Returns the new revision, or null when the
- * row is missing or has moved on.
+ * Snooze a chat. It clears any Woke marker and the settle (a settle ends a
+ * snooze the same way). With `expectRev`, only while the chat is still at that
+ * revision. Returns the new revision and whether the chat was settled, or null
+ * when the row is missing or has moved on.
  */
 export function setConversationSnooze(
   id: string,
   snooze: { until: number | null; pr: string | null; prMark: string | null; at: number; expectRev?: number },
-): number | null {
+): { rev: number; unsettled: boolean } | null {
   const root = resolveRootThreadId(id)
   const db = getDb()
   return db.transaction(() => {
+    const before = db.prepare('SELECT settled_at FROM conversations WHERE id = ?').get(root) as
+      | { settled_at: number | null }
+      | undefined
+    if (!before) return null
     const changed = db
       .prepare(
         `UPDATE conversations SET snoozed_until = ?, snoozed_at = ?, snooze_pr = ?, snooze_pr_mark = ?,
-           woke_at = NULL, woke_reason = NULL, snooze_rev = snooze_rev + 1
+           woke_at = NULL, woke_reason = NULL, settled_at = NULL, snooze_rev = snooze_rev + 1
          WHERE id = ? AND (? IS NULL OR snooze_rev = ?)`,
       )
       .run(snooze.until, snooze.at, snooze.pr, snooze.prMark, root, snooze.expectRev ?? null, snooze.expectRev ?? null)
     if (changed.changes === 0) return null
-    return (db.prepare('SELECT snooze_rev FROM conversations WHERE id = ?').get(root) as { snooze_rev: number })
+    const rev = (db.prepare('SELECT snooze_rev FROM conversations WHERE id = ?').get(root) as { snooze_rev: number })
       .snooze_rev
+    return { rev, unsettled: before.settled_at != null }
   })()
 }
 
@@ -1149,9 +1155,15 @@ export function unarchiveConversation(id: string): void {
  * under its other id, which reads as "archive did nothing".
  */
 function setConversationArchived(id: string, archived: 0 | 1): void {
-  const stmt = getDb().prepare('UPDATE conversations SET archived = ?, updated_at = ? WHERE id = ?')
+  // An archive ends the snooze and the Woke marker in the same write, so an
+  // exit before the archive listeners run cannot leave a timer to rebuild.
+  const clear = archived === 1 ? `, ${CLEAR_SNOOZE_SQL}, woke_at = NULL, woke_reason = NULL` : ''
+  const db = getDb()
+  const stmt = db.prepare(`UPDATE conversations SET archived = ?, updated_at = ?${clear} WHERE id = ?`)
   const now = Date.now()
-  for (const memberId of threadFamilyIds(id)) stmt.run(archived, now, memberId)
+  db.transaction(() => {
+    for (const memberId of threadFamilyIds(id)) stmt.run(archived, now, memberId)
+  })()
 }
 
 export interface ArchivedConversationRow {
