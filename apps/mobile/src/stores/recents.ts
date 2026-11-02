@@ -7,7 +7,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { createLogger } from '@shared/logger'
-import type { ConversationSettledEvent } from '@shared/chat-settle'
+import { CHAT_SETTLE_CAPABILITY, settleBroadcastNotice, type ConversationSettledEvent } from '@shared/chat-settle'
 import { CHAT_SNOOZE_CAPABILITY, isWoke, snoozeRefusalText, type ConversationSnoozedEvent } from '@shared/chat-snooze'
 import {
   persistedRecents,
@@ -41,6 +41,26 @@ interface RecentsState {
   forget: (connectionId: string) => void
   /** A snooze changed: a broadcast, or the answer to this phone's own request. */
   applySnooze: (connectionId: string, event: ConversationSnoozedEvent) => void
+}
+
+/** A settle Home offers to undo: this phone's own, or a merged PR's from a broadcast. */
+export interface SettleUndo {
+  connectionId: string
+  id: string
+  settledAt: number
+  /** `settledNoticeText`: "Settled <title>", with ": PR #n merged" for a merged PR. */
+  text: string
+  endedSnooze?: ConversationSettledEvent['endedSnooze']
+}
+
+const settleNoticeListeners = new Set<(undo: SettleUndo) => void>()
+
+/** A merged PR settled a chat on a connected machine. Home listens while it is shown. */
+export function onMergeSettled(listener: (undo: SettleUndo) => void): () => void {
+  settleNoticeListeners.add(listener)
+  return () => {
+    settleNoticeListeners.delete(listener)
+  }
 }
 
 /** The newest request per machine; an older reply that lands later is dropped. */
@@ -100,6 +120,18 @@ export const useRecentsStore = create<RecentsState>()(
       },
 
       applySettled: (connectionId, event) => {
+        const text = settleBroadcastNotice(event)
+        const undoable = getClient(connectionId)?.supportsCapability(CHAT_SETTLE_CAPABILITY) === true
+        if (text !== null && event.settledAt !== null && undoable) {
+          const undo: SettleUndo = {
+            connectionId,
+            id: event.conversationId,
+            settledAt: event.settledAt,
+            text,
+            endedSnooze: event.endedSnooze,
+          }
+          for (const listener of settleNoticeListeners) listener(undo)
+        }
         const patched = withSettled(get().sessions[connectionId] ?? [], event.conversationId, event.settledAt)
         if (patched) set((s) => ({ sessions: { ...s.sessions, [connectionId]: patched } }))
         // No row matched, or a read that is still out would put the old settledAt back.
@@ -157,6 +189,61 @@ export async function snoozeChat(connectionId: string, id: string, choice: Snooz
   } catch (err) {
     log.warn(`could not snooze ${id}`, err)
     return 'Could not snooze. Try again'
+  }
+}
+
+/**
+ * Settle a Done or idle chat: the row leaves Recents at once and comes back
+ * when the backend refuses. Resolves to the line to show when it did not happen, or null.
+ */
+export async function settleChat(connectionId: string, id: string, settledAt: number): Promise<string | null> {
+  const client = getClient(connectionId)
+  if (!client) return NOT_CONNECTED
+  const before = sessionOf(connectionId, id)?.settledAt ?? null
+  useRecentsStore.getState().applySettled(connectionId, { conversationId: id, settledAt })
+  try {
+    const result = await client.settleConversation(id)
+    if (!result.ok) throw new Error('the chat has no stored row')
+    return null
+  } catch (err) {
+    log.warn(`could not settle ${id}; the row comes back`, err)
+    useRecentsStore.getState().applySettled(connectionId, { conversationId: id, settledAt: before })
+    return 'Could not settle. Try again'
+  }
+}
+
+/**
+ * Undo a settle, as the desktop does: a settle that ended a snooze snoozes
+ * again with its values and revision, a write that also unsettles; a refused
+ * one (a PR-only snooze whose PR merged) only unsettles.
+ */
+export async function undoSettle(undo: SettleUndo): Promise<string | null> {
+  const { connectionId, id } = undo
+  const client = getClient(connectionId)
+  if (!client) return NOT_CONNECTED
+  useRecentsStore.getState().applySettled(connectionId, { conversationId: id, settledAt: null })
+  const ended = undo.endedSnooze
+  if (ended) {
+    try {
+      const now = Date.now()
+      const result = await client.snoozeConversation(id, { until: ended.until, pr: ended.pr, expectRev: ended.rev })
+      if (result.ok) {
+        useRecentsStore.getState().applySnooze(connectionId, snoozedEvent(id, result, now))
+        return null
+      }
+      log.info(`snooze not restored for ${id}`, { reason: result.reason })
+    } catch (err) {
+      log.warn(`snooze restore failed for ${id}`, err)
+    }
+  }
+  try {
+    const result = await client.unsettleConversation(id)
+    if (!result.ok) throw new Error('the chat has no stored row')
+    return null
+  } catch (err) {
+    log.warn(`unsettle failed for ${id}; the chat stays settled`, err)
+    useRecentsStore.getState().applySettled(connectionId, { conversationId: id, settledAt: undo.settledAt })
+    return 'Could not undo the settle. Try again'
   }
 }
 

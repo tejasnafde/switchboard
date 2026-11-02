@@ -331,6 +331,16 @@ export class SwitchboardClient {
     return this.transport.on(AppChannels.CONVERSATION_SNOOZED, handler as (...args: unknown[]) => void)
   }
 
+  /** Gate: `CHAT_SETTLE_CAPABILITY`. Takes a finished chat out of Recents without archiving it. */
+  settleConversation(conversationId: string): Promise<{ ok: boolean; settledAt: number }> {
+    return this.transport.invoke(AppChannels.SETTLE_CONVERSATION, conversationId)
+  }
+
+  /** Gate: `CHAT_SETTLE_CAPABILITY`. The settle's Undo. */
+  unsettleConversation(conversationId: string): Promise<{ ok: boolean }> {
+    return this.transport.invoke(AppChannels.UNSETTLE_CONVERSATION, conversationId)
+  }
+
   serverVersion(): Promise<string> {
     return this.transport.invoke('server:version')
   }

@@ -160,3 +160,54 @@ describe('Snooze', () => {
     expect(view.texts().slice(0, 2)).toEqual(['Recents', 'This chat is no longer snoozed'])
   })
 })
+
+describe('Settle', () => {
+  it('opens the sheet on a Done or idle row of a backend with Settle, and not on a working one without Snooze', () => {
+    const idle = row({ settleable: true })
+    const done = row({ id: 'd', status: 'Done', settleable: true })
+    const onSnooze = jest.fn()
+    const view = renderComponent(
+      <RecentsList
+        page={{ items: [idle, done, row({ id: 'w', status: 'Working', settleable: true })], total: 3, snoozed: [] }}
+        onOpen={jest.fn()}
+        onShowMore={jest.fn()}
+        onSnooze={onSnooze}
+      />,
+    )
+    const pressable = (id: string) => view.root.findByProps({ testID: `recent-mac:${id}` })
+    expect(pressable('t1').props.accessibilityHint).toBe('Long press to settle')
+    act(() => pressable('d').props.onLongPress())
+    expect(onSnooze).toHaveBeenCalledWith(done)
+    expect(pressable('w').props.onLongPress).toBeUndefined()
+  })
+
+  it('says both actions on a row that can snooze and settle', () => {
+    const view = renderComponent(
+      <RecentsList
+        page={{ items: [row({ snoozable: true, settleable: true })], total: 1, snoozed: [] }}
+        onOpen={jest.fn()}
+        onShowMore={jest.fn()}
+        onSnooze={jest.fn()}
+      />,
+    )
+    expect(view.root.findByProps({ testID: 'recent-mac:t1' }).props.accessibilityHint).toBe(
+      'Long press to snooze or settle',
+    )
+  })
+
+  it('shows the settle notice with Undo above the rows', () => {
+    const onUndo = jest.fn()
+    const view = renderComponent(
+      <RecentsList
+        page={{ items: [row({})], total: 1, snoozed: [] }}
+        undo="Settled Fix login: PR #452 merged"
+        onUndo={onUndo}
+        onOpen={jest.fn()}
+        onShowMore={jest.fn()}
+      />,
+    )
+    expect(view.texts().slice(0, 4)).toEqual(['Recents', 'Settled Fix login: PR #452 merged', 'Undo', 'Fix the build'])
+    act(() => view.root.findByProps({ testID: 'settle-undo' }).props.onPress())
+    expect(onUndo).toHaveBeenCalled()
+  })
+})

@@ -3,6 +3,7 @@ package app.switchboard.mobile.data.remote
 import app.switchboard.mobile.domain.remote.AnswerQuestion
 import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.remote.ArchiveConversationResult
+import app.switchboard.mobile.domain.remote.ChatSettle
 import app.switchboard.mobile.domain.remote.ChatSnooze
 import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.Conversation
@@ -141,8 +142,11 @@ object BackendChannels {
     const val DeviceScopes = "device-session:scopes"
     /** Payload `{ conversationId, created? }`; re-read the open thread's links rather than matching ids. */
     const val PullRequestLinksChanged = "pull-requests:links-changed"
-    /** Payload `{ conversationId, settledAt, title?, prNumber? }` (`src/shared/chat-settle.ts`); a chat was settled or unsettled. */
+    /** Payload `{ conversationId, settledAt, title?, prNumber?, endedSnooze? }` (`src/shared/chat-settle.ts`); a chat was settled or unsettled. */
     const val ConversationSettled = "app:conversation-settled"
+    /** Settle and its Undo; gated behind `chat_settle_v1`. */
+    const val SettleConversation = "app:settle-conversation"
+    const val UnsettleConversation = "app:unsettle-conversation"
     /** Merge-back (src/shared/merge-back.ts); gated behind `fork_merge_back_v1`. */
     const val MergeBackPreview = "provider:merge-back-preview"
     const val MergeBackSend = "provider:merge-back-send"
@@ -823,6 +827,31 @@ class SwitchboardRemoteClient(
         rpc.onChannelEvent(BackendChannels.ConversationSettled) { scope, _ ->
             if (scope.connectionId == connectionId && rpc.scope == scope) listener()
         }
+
+    /** The same broadcast, decoded: Home patches the row at once and offers Undo for a merged PR's settle. */
+    fun onConversationSettledEvent(listener: (ChatSettle.Event) -> Unit): Cancelable =
+        rpc.onChannelEvent(BackendChannels.ConversationSettled) { scope, args ->
+            if (scope.connectionId == connectionId && rpc.scope == scope) ChatSettle.eventOf(args)?.let(listener)
+        }
+
+    /** Only call the settle channels when the backend advertises `chat_settle_v1`. Answers `ok`. */
+    fun settleConversation(threadId: String, callback: (RemoteResponse<Boolean>) -> Unit) =
+        call(BackendChannels.SettleConversation, array(JsonString(threadId)), ChatSettle::okAnswer, callback)
+
+    fun unsettleConversation(threadId: String, callback: (RemoteResponse<Boolean>) -> Unit) =
+        call(BackendChannels.UnsettleConversation, array(JsonString(threadId)), ChatSettle::okAnswer, callback)
+
+    /** A settle's Undo puts back the snooze it ended; refused once the chat moved past [ChatSettle.EndedSnooze.rev]. */
+    fun restoreSnooze(
+        threadId: String,
+        ended: ChatSettle.EndedSnooze,
+        callback: (RemoteResponse<ChatSnooze.SnoozeAnswer>) -> Unit,
+    ) = call(
+        BackendChannels.SnoozeConversation,
+        array(JsonString(threadId), ChatSettle.restoreRequest(ended)),
+        ChatSnooze::snoozeAnswer,
+        callback,
+    )
 
     /** What a fork would send back to its parent. */
     fun mergeBackPreview(

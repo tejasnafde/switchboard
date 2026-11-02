@@ -1,0 +1,39 @@
+{
+  "undoMs": 8000,
+  "noticeText": [
+    { "title": "Fix login", "expect": "Settled Fix login" },
+    { "title": "Fix login", "prNumber": 452, "expect": "Settled Fix login: PR #452 merged" },
+    { "title": "Untitled chat", "prNumber": 1, "expect": "Settled Untitled chat: PR #1 merged" }
+  ],
+  "broadcastNotice": [
+    {
+      "name": "a merged PR settled the chat",
+      "event": { "settledAt": 500, "title": "Fix login", "prNumber": 452 },
+      "expect": "Settled Fix login: PR #452 merged"
+    },
+    {
+      "name": "a merged PR settled a chat with no title",
+      "event": { "settledAt": 500, "prNumber": 7 },
+      "expect": "Settled Untitled chat: PR #7 merged"
+    },
+    {
+      "name": "another client settled by hand",
+      "event": { "settledAt": 500, "title": "Fix login" },
+      "expect": null
+    },
+    {
+      "name": "an unsettle",
+      "event": { "settledAt": null, "title": "Fix login", "prNumber": 452 },
+      "expect": null
+    }
+  ],
+  "canSettle": [
+    { "status": null, "expect": true },
+    { "status": "Done", "expect": true },
+    { "status": "Working", "expect": false },
+    { "status": "Approval", "expect": false },
+    { "status": "Input", "expect": false },
+    { "status": "Plan", "expect": false },
+    { "status": "Failed", "expect": false }
+  ]
+}
