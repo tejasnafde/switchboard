@@ -68,6 +68,19 @@ describe('isChannelAllowed with the hub scope', () => {
     }
   })
 
+  it('opens every hub-remote channel, the control ones included, to hub and admin only', () => {
+    const channels = Object.values(HubRemoteChannels)
+    for (const ch of ['hub-remote:view', 'hub-remote:read-child', 'hub-remote:deliver', 'hub-remote:interrupt'])
+      expect(channels).toContain(ch)
+    for (const ch of ['hub-remote:stop', 'hub-remote:move', 'hub-remote:stop-all']) expect(channels).toContain(ch)
+    for (const channel of channels) {
+      for (const scopes of [['hub'], FULL_SCOPES, ['admin']] as DeviceScope[][])
+        expect(isChannelAllowed(scopes, channel), `${scopes.join(',')} ${channel}`).toBe(true)
+      for (const scopes of [['chat'], ['chat', 'terminal'], ['chat', 'pr-write'], PHONE_SCOPES] as DeviceScope[][])
+        expect(isChannelAllowed(scopes, channel), `${scopes.join(',')} ${channel}`).toBe(false)
+    }
+  })
+
   it('refuses hub-remote to every phone scope set', () => {
     for (const scopes of [['chat'], ['chat', 'terminal'], ['chat', 'pr-write'], PHONE_SCOPES] as DeviceScope[][]) {
       expect(isChannelAllowed(scopes, HubRemoteChannels.DESCRIBE), scopes.join(',')).toBe(false)
@@ -120,10 +133,11 @@ describe('scope helpers', () => {
     expect(isHubAuthGrant(undefined)).toBe(false)
   })
 
-  it('advertises hub_remote_child_v1, hub_remote_start_v1 and hub_remote_outbox_v1', () => {
+  it('advertises hub_remote_child_v1, hub_remote_start_v1, hub_remote_outbox_v1 and hub_remote_control_v1', () => {
     expect(BACKEND_CAPABILITIES).toContain('hub_remote_child_v1')
     expect(BACKEND_CAPABILITIES).toContain('hub_remote_start_v1')
     expect(BACKEND_CAPABILITIES).toContain('hub_remote_outbox_v1')
+    expect(BACKEND_CAPABILITIES).toContain('hub_remote_control_v1')
   })
 })
 

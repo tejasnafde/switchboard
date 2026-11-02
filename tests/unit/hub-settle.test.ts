@@ -13,14 +13,18 @@ import { hubSettleDetail, hubSettleResult, settleBlockers, settleWorktree } from
 import {
   addProject,
   armLimitResume,
+  claimHubParentStub,
   createConversation,
   getHubChild,
   insertHubChild,
   isConversationArchived,
+  listHubChildren,
   setConversationWorktree,
   updateHubChild,
 } from '../../src/main/db/database'
-import { configureHubWorktrees, type HubWorktreeService } from '../../src/main/hub/hub-start'
+import { withBackendRequestContext } from '../../src/main/backend/request-context'
+import { configureHubWorktrees, hubWorktrees, type HubWorktreeService } from '../../src/main/hub/hub-start'
+import { authorizeWorktreeCreationAction } from '../../src/main/worktree-creation/authorization'
 import { childConflicts, HubSettler, type HubSettleHost } from '../../src/main/hub/hub-settle'
 
 const dirs: string[] = []
@@ -87,12 +91,22 @@ function fakeHost(facts: Record<string, { running: boolean; cards: number; queue
   return { host, stopped }
 }
 
-function fakeService() {
+/** The child a creation was made for, as the hub's start names it. */
+function ownerOf(creationId: string) {
+  const c = listHubChildren('parent', { includeSettled: true }).find(
+    (row) => (row.creationId ?? `${row.batchId}-${row.ordinal}`) === creationId,
+  )
+  return { kind: 'conversation', conversationId: c?.childId ?? 'someone-else' }
+}
+
+/** Removal checks the caller's scopes as the real service does. */
+function fakeService(owner: (creationId: string) => unknown = ownerOf) {
   const removed: string[] = []
   const service = {
     createWorktreeTransaction: vi.fn(),
-    getWorktreeCreation: vi.fn(async () => ({ revision: 3 })),
+    getWorktreeCreation: vi.fn(async (req: { creationId: string }) => ({ revision: 3, owner: owner(req.creationId) })),
     actOnWorktreeCreation: vi.fn(async (req: { creationId: string; expectedRevision: number }) => {
+      authorizeWorktreeCreationAction({ setup: { policy: 'skip' } } as never, 'remove')
       removed.push(`${req.creationId}@${req.expectedRevision}`)
       return { cleanupDisposition: 'removed' }
     }),
@@ -210,7 +224,7 @@ describe('HubSettler', () => {
     child('c1', 0, dir, worktree(dir, 'c1'))
     configureHubWorktrees({
       createWorktreeTransaction: vi.fn(),
-      getWorktreeCreation: vi.fn(async () => ({ revision: 1 })),
+      getWorktreeCreation: vi.fn(async () => ({ revision: 1, owner: ownerOf('b1-0') })),
       actOnWorktreeCreation: vi.fn(async () => ({
         cleanupDisposition: 'removal_refused',
         error: { message: 'dirty' },
@@ -218,6 +232,124 @@ describe('HubSettler', () => {
     } as unknown as HubWorktreeService)
     const result = await new HubSettler(fakeHost().host).run('parent', dir, 'auto')
     expect(result.ok && result.rows[0]).toMatchObject({ worktree: 'keep', keepReason: 'dirty' })
+    expect(JSON.parse(getHubChild('c1')!.settleJson!)).toEqual({ worktree: 'keep', keepReason: 'dirty' })
+  })
+})
+
+describe('HubSettler for a hub on another machine', () => {
+  const hubCaller = <T>(fn: () => T): T =>
+    withBackendRequestContext({ clientScope: 'hub-desktop', transport: 'remote', deviceScopes: ['hub'] }, fn)
+
+  /** A clean child worktree merged into the parent's HEAD, which the request carries. */
+  function mergedChild(dir: string): string {
+    const wt = worktree(dir, 'c1')
+    commit(wt, 'a.txt', 'child work\n')
+    git(dir, 'merge', '-q', '--no-ff', '-m', 'merge', 'hub/c1')
+    child('c1', 0, dir, wt)
+    return git(dir, 'rev-parse', 'HEAD').trim()
+  }
+
+  it("removes a clean merged child's worktree as this machine's own action", async () => {
+    const dir = repo()
+    const parentHead = mergedChild(dir)
+    claimHubParentStub('parent', 'hub-desktop')
+    const removed = fakeService()
+    const result = await hubCaller(() =>
+      new HubSettler(fakeHost().host).run('parent', '', 'auto', new Set(['c1']), { parentHead }),
+    )
+    expect(result.ok && result.rows[0]).toMatchObject({ merged: true, clean: true, worktree: 'remove' })
+    expect(removed).toEqual(['b1-0@3'])
+    expect(JSON.parse(getHubChild('c1')!.settleJson!)).toEqual({ worktree: 'remove', keepReason: null })
+  })
+
+  it("keeps the caller's scopes when the parent is on this machine", async () => {
+    const dir = repo()
+    const parentHead = mergedChild(dir)
+    const removed = fakeService()
+    const result = await hubCaller(() =>
+      new HubSettler(fakeHost().host).run('parent', '', 'auto', new Set(['c1']), { parentHead }),
+    )
+    expect(removed).toEqual([])
+    expect(result.ok && result.rows[0]).toMatchObject({
+      worktree: 'keep',
+      keepReason: 'Remote worktree removal requires the terminal device scope.',
+    })
+  })
+
+  it('still refuses a removal the hub asks for directly', async () => {
+    fakeService()
+    await expect(
+      hubCaller(() =>
+        hubWorktrees()!.actOnWorktreeCreation({
+          creationId: 'b1-0',
+          machineId: 'local',
+          expectedRevision: 3,
+          action: 'remove',
+        }),
+      ),
+    ).rejects.toThrow('Remote worktree removal requires the terminal device scope.')
+  })
+
+  it('keeps a worktree whose creation was made for another chat, and records why', async () => {
+    const dir = repo()
+    const parentHead = mergedChild(dir)
+    claimHubParentStub('parent', 'hub-desktop')
+    const removed = fakeService(() => ({ kind: 'conversation', conversationId: 'other-chat' }))
+    const result = await hubCaller(() =>
+      new HubSettler(fakeHost().host).run('parent', '', 'auto', new Set(['c1']), { parentHead }),
+    )
+    expect(removed).toEqual([])
+    const reason = 'the worktree was not made for this child'
+    expect(result.ok && result.rows[0]).toMatchObject({ worktree: 'keep', keepReason: reason })
+    expect(JSON.parse(getHubChild('c1')!.settleJson!)).toEqual({ worktree: 'keep', keepReason: reason })
+  })
+})
+
+describe('HubSettler reads the creation again after the dependency unlink', () => {
+  /** Each read is a newer revision; `owners` names the owner of each read in turn. */
+  function readsService(owners: string[]) {
+    const removed: string[] = []
+    let reads = 0
+    configureHubWorktrees({
+      createWorktreeTransaction: vi.fn(),
+      getWorktreeCreation: vi.fn(async () => {
+        const conversationId = owners[Math.min(reads, owners.length - 1)]!
+        reads++
+        return { revision: reads, owner: { kind: 'conversation', conversationId } }
+      }),
+      actOnWorktreeCreation: vi.fn(async (req: { creationId: string; expectedRevision: number }) => {
+        removed.push(`${req.creationId}@${req.expectedRevision}`)
+        return { cleanupDisposition: 'removed' }
+      }),
+    } as unknown as HubWorktreeService)
+    return removed
+  }
+
+  it('removes at the revision read after the unlink', async () => {
+    const dir = repo()
+    const wt = worktree(dir, 'c1')
+    commit(wt, 'a.txt', 'child work\n')
+    git(dir, 'merge', '-q', '--no-ff', '-m', 'merge', 'hub/c1')
+    child('c1', 0, dir, wt)
+    const removed = readsService(['c1', 'c1'])
+    const result = await new HubSettler(fakeHost().host).run('parent', dir, 'auto')
+    expect(result.ok && result.rows[0]).toMatchObject({ worktree: 'remove' })
+    expect(removed).toEqual(['b1-0@2'])
+  })
+
+  it('keeps the worktree when that read names another owner', async () => {
+    const dir = repo()
+    const wt = worktree(dir, 'c1')
+    commit(wt, 'a.txt', 'child work\n')
+    git(dir, 'merge', '-q', '--no-ff', '-m', 'merge', 'hub/c1')
+    child('c1', 0, dir, wt)
+    const removed = readsService(['c1', 'other-chat'])
+    const result = await new HubSettler(fakeHost().host).run('parent', dir, 'auto')
+    expect(removed).toEqual([])
+    expect(result.ok && result.rows[0]).toMatchObject({
+      worktree: 'keep',
+      keepReason: 'the worktree was not made for this child',
+    })
   })
 })
 

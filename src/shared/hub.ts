@@ -688,6 +688,27 @@ export interface HubChildView {
   lastWake: { kind: HubWakeKind; summary: string } | null
   /** Context tokens and known cost (USD, only where the provider reports it) of its last turn. */
   lastTurn: { usedTokens: number | null; costUsd: number | null } | null
+  /** A child on another machine: which one, whether it is connected, and how old its state is. */
+  remote?: HubRemoteChildNote
+}
+
+export interface HubRemoteChildNote {
+  machineId: string
+  machine: string
+  connected: boolean
+  /** Age of the state shown, or null before the machine answered a view. */
+  ageMs: number | null
+  /** A Stop, settle or stop-all waits to be sent or answered there. */
+  stopping: boolean
+}
+
+/** "40 s", "3 min", "2 h", "4 days". */
+export function formatHubAge(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  if (s < 60) return `${s} s`
+  if (s < 3600) return `${Math.round(s / 60)} min`
+  if (s < 48 * 3600) return `${Math.round(s / 3600)} h`
+  return `${Math.round(s / 86400)} days`
 }
 
 /** What a chat shows about the hub: its parent while it is an open child, its unsettled children while it has any. */
@@ -754,10 +775,16 @@ export const CHILD_STATE_LABELS: Record<ChildState, string> = {
   paused: 'Paused',
 }
 
-export function childStateLabel(c: Pick<HubChildView, 'state' | 'reported' | 'waitingForSlot'>): string {
-  if (c.reported) return 'Reported, subagents still running'
-  if (c.state === 'starting' && c.waitingForSlot) return 'Waiting for a slot'
-  return CHILD_STATE_LABELS[c.state]
+export function childStateLabel(c: Pick<HubChildView, 'state' | 'reported' | 'waitingForSlot' | 'remote'>): string {
+  if (c.remote?.stopping) return `Stopping on ${c.remote.machine}`
+  const label = c.reported
+    ? 'Reported, subagents still running'
+    : c.state === 'starting' && c.waitingForSlot
+      ? 'Waiting for a slot'
+      : CHILD_STATE_LABELS[c.state]
+  if (!c.remote || c.remote.connected) return label
+  const seen = c.remote.ageMs === null ? '' : `, last seen ${formatHubAge(c.remote.ageMs)} ago`
+  return `${label} (${c.remote.machine} not connected${seen})`
 }
 
 const PARENT_STATE_LABELS: Record<ParentState, string | null> = {

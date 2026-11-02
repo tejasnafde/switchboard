@@ -119,6 +119,10 @@ export const BACKEND_CAPABILITIES = [
    *  sends its parent on another machine waits in `hub_outbox` until that
    *  desktop pulls and acks it; `hub-remote:outbox` says something waits. */
   'hub_remote_outbox_v1',
+  /** `hub-remote:view`, `read-child`, `deliver`, `interrupt`, `stop`, `move`
+   *  and `stop-all` act on a child here of that desktop's parent stub only;
+   *  `hub-remote:children-changed` says which stubs changed. */
+  'hub_remote_control_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {
