@@ -72,6 +72,24 @@ class ChatDetailsCoordinatorTest {
     }
 
     @Test
+    fun `the sheet shows once per open and hides on close or when dropped while open`() {
+        val events = mutableListOf<String>()
+        val coordinator = ChatDetailsCoordinator(
+            expectedGeneration = 1,
+            cwd = "/repo",
+            remote = FakeDetailsRemote(),
+            onShown = { events += "shown" },
+            onHidden = { events += "hidden" },
+        )
+        coordinator.close()
+        coordinator.refresh("a")
+        coordinator.refresh("b")
+        coordinator.close()
+        coordinator.close()
+        assertEquals(listOf("shown", "hidden"), events)
+    }
+
+    @Test
     fun `a request the client never sent fails at once`() {
         val remote = FakeDetailsRemote(submission = RequestSubmission.Rejected(RpcFailure.NotReady))
         val coordinator = ChatDetailsCoordinator(expectedGeneration = 1, cwd = "/repo", remote = remote)

@@ -38,6 +38,7 @@
         "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ChatDetails.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/ChatDetailsCoordinator.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteDecoders.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ChatDetailsSheet.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
@@ -46,7 +47,8 @@
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/ChatDetailsTest.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/ChatDetailsCoordinatorTest.kt",
-        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ChatDetailsSheetUiTest.kt"
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ChatDetailsSheetUiTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinatorTest.kt"
       ]
     },
     "sharedBackendApi": {
@@ -89,8 +91,9 @@
       "tests/unit/mobile-chat-details.test.ts: the iOS rows (branch, detached HEAD, None, No changes, the first open PR with failing checks, the newest link without the Reviews list), the bars with tones at 10, 11, 20 and 21 percent left, Unavailable and reading, and text colours at 4.5:1 or better on the sheet surface.",
       "apps/mobile/src/screens/__tests__/chat-details.test.tsx: no Details button without details_sheet_v1; with it the button opens the sheet, which shows the branch, +14 -3 and the percent left of the weekly and 5-hour limits, and Context unavailable.",
       "ChatDetailsTest.kt (Android): UsageLeft rounding and the tone boundaries at 10, 11, 20 and 21, the branch, changes, PR and bar rows, the default account id, and text colours at 4.5:1 or better on SurfaceRaised.",
-      "ChatDetailsCoordinatorTest.kt (Android): the three reads, a stale open or another connection generation dropped, failed reads, a rejected submission, and the diff-stat and usage decoders.",
-      "ChatDetailsSheetUiTest.kt (Android, Robolectric): no Details button without the capability; with it a tap asks for the reads and shows the sheet's rows."
+      "ChatDetailsCoordinatorTest.kt (Android): the three reads, a stale read or another connection generation dropped, failed reads, a rejected submission, the Reviews list shown once per open and hidden on close or when the reader is dropped while open, and the diff-stat and usage decoders.",
+      "ChatDetailsSheetUiTest.kt (Android, Robolectric): no Details button without the capability; with it the sheet shows its rows, a new reader under an open sheet (a rotation or a reconnect) reads again, and an account change while open reads that account.",
+      "ThreadSessionCoordinatorTest.kt (Android): the working folder the Details sheet and the branch chip read is the loaded history's worktree, else the route's, as the session reattaches."
     ],
     "hardware": [],
     "notExercised": [

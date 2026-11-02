@@ -291,6 +291,11 @@ fun ThreadScreen(
     var usageVisible by rememberSaveable(threadId) { mutableStateOf(false) }
     var prSheetOpen by rememberSaveable(threadId) { mutableStateOf(false) }
     var detailsOpen by rememberSaveable(threadId) { mutableStateOf(false) }
+    val detailsAccount = profiles.selectedInstanceId ?: ChatDetails.defaultInstanceId(metadata?.provider)
+    // Keyed on the reader, so an open sheet reads again after a rotation or a reconnect.
+    LaunchedEffect(details?.reader, detailsOpen, detailsAccount) {
+        if (detailsOpen) details?.onOpen(detailsAccount)
+    }
     val rows = (presentation as? ThreadPresentation.Content)?.rows.orEmpty()
     val pendingApproval = ThreadChromePolicy.pendingApproval(rows)
     LaunchedEffect(prLinks.isEmpty()) {
@@ -364,10 +369,7 @@ fun ThreadScreen(
             if (details != null) {
                 SwitchboardTopBarAction(
                     contentDescription = "Chat details",
-                    onClick = {
-                        details.onOpen(profiles.selectedInstanceId ?: ChatDetails.defaultInstanceId(metadata?.provider))
-                        detailsOpen = true
-                    },
+                    onClick = { detailsOpen = true },
                     modifier = Modifier.testTag(ThreadTestTags.DETAILS_ACTION),
                 ) {
                     Icon(Icons.Outlined.Info, contentDescription = null)

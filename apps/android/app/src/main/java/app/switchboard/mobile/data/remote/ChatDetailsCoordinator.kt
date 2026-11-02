@@ -29,21 +29,30 @@ data class ChatDetailsState(
 
 /**
  * Reads the branch, the diff stat and the account's usage limits each time
- * the sheet opens. A response from an older open, or from another connection
- * generation, is dropped.
+ * the sheet opens or its account changes. A response from an older read, or
+ * from another connection generation, is dropped. [onShown] runs when the
+ * sheet opens and [onHidden] when it closes or the coordinator is dropped
+ * while open (the Reviews list reads while the sheet shows its checks).
  */
 class ChatDetailsCoordinator(
     private val expectedGeneration: Long,
     private val cwd: String,
     private val remote: ChatDetailsRemote,
     private val log: (String) -> Unit = {},
+    private val onShown: () -> Unit = {},
+    private val onHidden: () -> Unit = {},
 ) {
     private val mutableState = MutableStateFlow(ChatDetailsState())
     val state: StateFlow<ChatDetailsState> = mutableState.asStateFlow()
     private var request = 0L
+    private var open = false
 
     @Synchronized
     fun refresh(instanceId: String) {
+        if (!open) {
+            open = true
+            onShown()
+        }
         val token = ++request
         mutableState.value = ChatDetailsState(usageReading = true)
         submitted(token, remote.currentBranch(cwd) { response ->
@@ -84,6 +93,10 @@ class ChatDetailsCoordinator(
     @Synchronized
     fun close() {
         request += 1
+        if (open) {
+            open = false
+            onHidden()
+        }
     }
 
     private fun failed(what: String, message: String): DetailsRead<Nothing> {

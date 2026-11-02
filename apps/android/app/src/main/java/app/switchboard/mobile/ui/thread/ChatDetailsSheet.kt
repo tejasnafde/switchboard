@@ -46,9 +46,12 @@ import app.switchboard.mobile.ui.theme.TextPrimary
 
 /** The chat Details sheet's inputs; a thread gets none when the backend lacks `details_sheet_v1`. */
 class ThreadDetails(
+    /** Changes when the reads restart from nothing (a new connection or folder), so an open sheet reads again. */
+    val reader: Any,
     val state: ChatDetailsState,
     /** The Reviews list, for the linked PR's title and checks; null before it is read. */
     val prList: PrListData?,
+    /** Runs while the sheet shows: on open, on a new [reader] and when the chat's account changes. */
     val onOpen: (instanceId: String) -> Unit,
     val onClose: () -> Unit,
 )

@@ -1304,16 +1304,15 @@ private fun ConnectedThreadRoute(
     val viewingRenewalRegistration = remember(runtime) {
         { callback: () -> Unit -> runtime.registerViewingLeaseRenewal(callback) }
     }
-    val gitContextCoordinator = remember(
-        lease.scope,
-        route.projectPath,
-        route.worktreePath,
-        lease.client,
-    ) {
+    // The agent's folder: the loaded history's worktree, as the session reattaches, else the route's.
+    val workingFolder = coordinator.state.collectAsState().value.workingFolder
+        ?: route.worktreePath
+        ?: route.projectPath
+    val gitContextCoordinator = remember(lease.scope, workingFolder, lease.client) {
         GitContextCoordinator(
             connectionId = route.connectionId,
             expectedGeneration = lease.scope.generation,
-            cwd = route.worktreePath ?: route.projectPath,
+            cwd = workingFolder,
             branchHint = null,
             remote = lease.client,
         )
@@ -1332,40 +1331,40 @@ private fun ConnectedThreadRoute(
     }
 
     // The Details sheet (`details_sheet_v1`); an older backend gets no button.
-    val detailsCoordinator = remember(lease.scope, lease.client, lease.capabilities, route.projectPath, route.worktreePath) {
+    val reviews = remember(reviewsRegistry, lease, runtime, offlineSnapshot) {
+        reviewsRegistry.get(route.connectionId, lease, runtime, offlineSnapshot ?: emptyOfflineSnapshot())
+    }
+    val detailsCoordinator = remember(lease.scope, lease.client, lease.capabilities, workingFolder, reviews) {
         if (DETAILS_SHEET_CAPABILITY in lease.capabilities) {
             ChatDetailsCoordinator(
                 expectedGeneration = lease.scope.generation,
-                cwd = route.worktreePath ?: route.projectPath,
+                cwd = workingFolder,
                 remote = lease.client,
                 log = { Log.w("ChatDetails", it) },
+                // Reads the Reviews list at most once a minute while the sheet shows, as the Reviews tab does on focus.
+                onShown = {
+                    reviews.setVisible(true)
+                    reviews.refresh(PullRequestRefresh.Reason.Focus)
+                },
+                onHidden = { reviews.setVisible(false) },
             )
         } else {
             null
         }
     }
+    // Leaving the chat, or a new reader, with the sheet open hides it from Reviews too.
     DisposableEffect(detailsCoordinator) {
         onDispose { detailsCoordinator?.close() }
     }
-    val details = detailsCoordinator?.let { coordinator ->
-        val reviews = remember(reviewsRegistry, lease, runtime, offlineSnapshot) {
-            reviewsRegistry.get(route.connectionId, lease, runtime, offlineSnapshot ?: emptyOfflineSnapshot())
-        }
-        val detailsState by coordinator.state.collectAsState()
+    val details = detailsCoordinator?.let { reader ->
+        val detailsState by reader.state.collectAsState()
         val reviewsState by reviews.state.collectAsState()
         ThreadDetails(
+            reader = reader,
             state = detailsState,
             prList = reviewsState.data,
-            onOpen = { instanceId ->
-                coordinator.refresh(instanceId)
-                // Reads the Reviews list at most once a minute, as the Reviews tab does on focus.
-                reviews.setVisible(true)
-                reviews.refresh(PullRequestRefresh.Reason.Focus)
-            },
-            onClose = {
-                coordinator.close()
-                reviews.setVisible(false)
-            },
+            onOpen = reader::refresh,
+            onClose = reader::close,
         )
     }
 
