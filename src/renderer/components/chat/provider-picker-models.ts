@@ -38,7 +38,11 @@ export interface PickerRow {
   label: string
 }
 
-/** The rows in the order the list shows them: Default, ungrouped, then each group. */
-export function pickerRows(grouped: GroupedModels): PickerRow[] {
-  return [{ id: '', label: 'Default' }, ...grouped.ungrouped, ...grouped.groups.flatMap((g) => g.models)]
+/**
+ * The rows in the order the list shows them: Default (only with no query, so
+ * Enter after a search picks the best match), ungrouped, then each group.
+ */
+export function pickerRows(grouped: GroupedModels, query: string): PickerRow[] {
+  const defaultRow = query.trim() ? [] : [{ id: '', label: 'Default' }]
+  return [...defaultRow, ...grouped.ungrouped, ...grouped.groups.flatMap((g) => g.models)]
 }

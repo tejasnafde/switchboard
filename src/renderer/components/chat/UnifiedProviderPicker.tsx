@@ -387,7 +387,7 @@ function UnifiedPickerPopover(props: PopoverProps) {
 
   const filtered = useMemo(() => filterModels(models, query), [models, query])
   const grouped = useMemo(() => groupModelsByProvider(filtered), [filtered])
-  const rows = useMemo(() => pickerRows(grouped), [grouped])
+  const rows = useMemo(() => pickerRows(grouped, query), [grouped, query])
   // The row Up, Down and Enter act on; the search field keeps focus and
   // points at it through aria-activedescendant. It opens on the current model.
   const [activeIndex, setActiveIndex] = useState(() =>
@@ -506,14 +506,16 @@ function UnifiedPickerPopover(props: PopoverProps) {
               {!showCustom && (
                 <>
                   <div id={listId} role="listbox" aria-label="Models">
-                    <ModelRow
-                      id={optionId(0)}
-                      label="Default"
-                      monoId=""
-                      current={!model}
-                      highlighted={activeIndex === 0}
-                      onSelect={() => onModelChange('')}
-                    />
+                    {!query.trim() && (
+                      <ModelRow
+                        id={optionId(0)}
+                        label="Default"
+                        monoId=""
+                        current={!model}
+                        highlighted={activeIndex === 0}
+                        onSelect={() => onModelChange('')}
+                      />
+                    )}
                     {grouped.ungrouped.map((m) => (
                       <ModelRow
                         key={m.id}
