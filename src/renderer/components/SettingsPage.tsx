@@ -55,6 +55,7 @@ import {
 import { RECENT_SESSION_LIMITS } from './sidebar/recent-session-limit'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { Button } from './ui/button'
+import { Spinner } from './ui/spinner'
 import { Combobox } from './ui/combobox'
 import { Switch } from './ui/switch'
 import { onEscapeFirst } from './ui/escape-first'
@@ -1403,7 +1404,7 @@ export function DiagnosticsSection() {
         }}
       >
         <svg
-          className="sb-disclosure-chevron"
+          className="sb-disclosure-chevron sb-tr-turn"
           viewBox="0 0 12 12"
           width="12"
           height="12"
@@ -1413,7 +1414,6 @@ export function DiagnosticsSection() {
             flex: 'none',
             color: 'var(--text-muted)',
             transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
-            transition: 'transform 160ms cubic-bezier(0.2, 0.7, 0.3, 1)',
           }}
         >
           <path
@@ -1455,12 +1455,11 @@ export function DiagnosticsSection() {
       <div
         ref={bodyRef}
         id={bodyId}
-        className="sb-disclosure-reveal"
+        className="sb-disclosure-reveal sb-tr-reveal"
         inert={!expanded}
         style={{
           display: 'grid',
           gridTemplateRows: expanded ? '1fr' : '0fr',
-          transition: 'grid-template-rows 200ms cubic-bezier(0.2, 0.7, 0.3, 1)',
         }}
       >
         <div style={{ overflow: 'hidden' }}>
@@ -1689,19 +1688,7 @@ function UpdateCheckRow() {
               opacity: view.restartDisabled ? 0.7 : 1,
             }}
           >
-            {view.restartSpinning && (
-              <span
-                aria-hidden
-                style={{
-                  width: '11px',
-                  height: '11px',
-                  border: '2px solid currentColor',
-                  borderTopColor: 'transparent',
-                  borderRadius: '50%',
-                  animation: 'sb-spin 720ms linear infinite',
-                }}
-              />
-            )}
+            {view.restartSpinning && <Spinner size={11} />}
             {view.restartLabel}
           </button>
         )}

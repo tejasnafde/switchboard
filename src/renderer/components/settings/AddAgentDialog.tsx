@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dia
 import { Input } from '../ui/input'
 import { RadioGroup, RadioGroupCard } from '../ui/radio-group'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
+import { Spinner } from '../ui/spinner'
 import {
   ACCENT_PALETTE,
   ADD_AGENT_KINDS,
@@ -746,7 +747,7 @@ function TestRow({ test, onTest, label }: { test: TestState; onTest: () => void;
       <div aria-live="polite" className="mt-2 min-h-[18px]">
         {test.kind === 'testing' && (
           <span className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
-            <Spinner />
+            <Spinner className="border-[rgba(255,255,255,0.15)] border-t-primary" />
             Checking… {Math.max(0, Math.round((now - test.startedAt) / 1000))} s
           </span>
         )}
@@ -808,7 +809,7 @@ function RegistrySection({ onAdd, onUseLocal }: { onAdd: (entry: AcpRegistryEntr
             onChange={(e) => setQuery(e.target.value)}
             className="h-[34px] border-0 bg-transparent px-0 focus-visible:shadow-none"
           />
-          {result === null && <Spinner />}
+          {result === null && <Spinner className="border-[rgba(255,255,255,0.15)] border-t-primary" />}
           {result?.status === 'ok' && query.trim() && (
             <span className="shrink-0 text-[11.5px] text-[var(--text-muted)]">{result.entries.length} results</span>
           )}
@@ -975,15 +976,6 @@ function Note({ children, tone, className }: { children: ReactNode; tone?: 'warn
       <Glyph d="M8 4.8v4M8 11.2v.1" circle className={cn('mt-0.5', tone === 'warn' && 'text-[var(--warning)]')} />
       <span>{children}</span>
     </div>
-  )
-}
-
-function Spinner() {
-  return (
-    <span
-      aria-hidden
-      className="inline-block size-3 shrink-0 animate-spin rounded-full border-2 border-[rgba(255,255,255,0.15)] border-t-primary motion-reduce:animate-none"
-    />
   )
 }
 

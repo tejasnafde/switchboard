@@ -729,7 +729,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
         >
           <span
             {...dragHandleProps}
-            className="sidebar-drag-handle"
+            className="sidebar-drag-handle sb-tr-quick"
             style={{
               cursor: 'grab',
               display: 'flex',
@@ -737,7 +737,6 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
               padding: '0 2px',
               color: 'var(--text-muted)',
               opacity: 0,
-              transition: 'opacity 0.12s',
             }}
             title="Drag to reorder"
           >

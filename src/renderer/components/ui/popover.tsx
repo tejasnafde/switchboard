@@ -7,6 +7,7 @@ export const PopoverTrigger = PopoverPrimitive.Trigger
 export const PopoverAnchor = PopoverPrimitive.Anchor
 
 // Portalled to <body>, so the content escapes any overflow:hidden composer.
+// sb-pop is the open and close motion (global.css), scaled from the trigger.
 // No surface styling here: each popover brings its own (most use
 // sb-floating-surface for the per-theme opaque background).
 export const PopoverContent = forwardRef<
@@ -18,7 +19,7 @@ export const PopoverContent = forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       collisionPadding={collisionPadding}
-      className={cn('outline-none', className)}
+      className={cn('sb-pop sb-pop-anchored outline-none', className)}
       // Switching to another app moves focus onto one of the focus guards
       // Radix puts at the edges of <body>, which reads as focus outside and
       // closed the popover. Only focus on a real element may dismiss it.

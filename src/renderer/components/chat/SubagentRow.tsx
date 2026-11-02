@@ -16,6 +16,7 @@ import {
 } from '@shared/synthetic-message'
 import { cn } from '../../lib/utils'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger, useCollapsibleOpen } from '../ui/collapsible'
+import { Spinner } from '../ui/spinner'
 import { HistoryToolCall } from './HistoryToolCall'
 import { MessageMarkdown } from './visuals/MessageMarkdown'
 import { chatSubagentCompletions, chatSubagentSteps } from './subagent-messages'
@@ -78,10 +79,7 @@ function SubagentStatus({ view }: { view: SubagentView }) {
   const sep = <span className="text-[var(--text-secondary)]"> · </span>
   const icon =
     view.status === 'running' ? (
-      <span
-        aria-hidden
-        className="h-[10px] w-[10px] shrink-0 animate-spin rounded-full border-[1.5px] border-[var(--border)] border-t-[var(--accent)]"
-      />
+      <Spinner size={10} className="border-[1.5px] border-[var(--border)] border-t-[var(--accent)]" />
     ) : view.status === 'done' ? (
       <span className="text-[var(--success)]">
         <Glyph size={11}>

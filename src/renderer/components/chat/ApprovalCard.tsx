@@ -199,6 +199,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
                     setNote('')
                   }}
                   disabled={submitting !== null}
+                  className="sb-tr-quick"
                   style={withDisabled(btnStyles.ghost, submitting !== null)}
                 >
                   Cancel
@@ -206,6 +207,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
                 <button
                   onClick={() => commit(noteMode)}
                   disabled={submitting !== null}
+                  className="sb-tr-quick"
                   style={withDisabled(
                     noteMode === 'approve' ? btnStyles.primary : btnStyles.danger,
                     submitting !== null,
@@ -226,6 +228,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
               <button
                 onClick={() => commit('approve')}
                 disabled={submitting !== null}
+                className="sb-tr-quick"
                 style={withDisabled(btnStyles.primary, submitting !== null)}
               >
                 {submitting === 'approve' ? (
@@ -239,6 +242,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
               <button
                 onClick={() => setNoteMode('approve')}
                 disabled={submitting !== null}
+                className="sb-tr-quick"
                 style={withDisabled(btnStyles.secondary, submitting !== null)}
                 title="Approve and add extra instructions"
               >
@@ -248,6 +252,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
                 <button
                   onClick={() => commit('approve', true)}
                   disabled={submitting !== null}
+                  className="sb-tr-quick"
                   style={withDisabled(btnStyles.secondary, submitting !== null)}
                   title="Approve without sending the agent a message about it"
                 >
@@ -259,6 +264,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
                 <button
                   onClick={() => commit('deny', true)}
                   disabled={submitting !== null}
+                  className="sb-tr-quick"
                   style={withDisabled(btnStyles.ghost, submitting !== null)}
                   title="Close the card without sending anything or telling the agent"
                 >
@@ -268,6 +274,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
               <button
                 onClick={() => setNoteMode('deny')}
                 disabled={submitting !== null}
+                className="sb-tr-quick"
                 style={withDisabled(btnStyles.secondary, submitting !== null)}
                 title="Deny and tell agent what to do instead"
               >
@@ -276,6 +283,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
               <button
                 onClick={() => commit('deny')}
                 disabled={submitting !== null}
+                className="sb-tr-quick"
                 style={withDisabled(btnStyles.danger, submitting !== null)}
               >
                 {submitting === 'deny' ? (
@@ -366,7 +374,6 @@ const btnBase: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: '4px',
-  transition: 'filter 0.1s, background 0.1s',
 }
 
 const btnStyles: Record<string, React.CSSProperties> = {

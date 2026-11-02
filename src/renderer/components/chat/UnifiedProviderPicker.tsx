@@ -49,6 +49,7 @@ import { startTerminalSession } from '../../shared/terminal-login-start'
 import { cn } from '../../lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { ChipCaret } from '../ui/chip'
+import { Spinner } from '../ui/spinner'
 import { filterModels, groupModelsByProvider } from './provider-picker-models'
 
 interface UnifiedProviderPickerProps {
@@ -184,7 +185,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
             <>
               {/* The spinner takes the avatar's place, where the user just clicked. */}
               <span aria-hidden className="inline-flex size-[18px] shrink-0 items-center justify-center">
-                <span className="size-3 animate-spin rounded-full border-2 border-[var(--pick-accent)] border-r-transparent motion-reduce:animate-none" />
+                <Spinner className="border-[var(--pick-accent)] border-r-transparent" />
               </span>
               <span className="truncate font-[500] text-[var(--text-primary)]">{wait.label}</span>
             </>

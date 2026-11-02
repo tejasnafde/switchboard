@@ -19,7 +19,7 @@ export const AlertDialogContent = forwardRef<
       // sb-floating-surface gives it the opaque per-theme surface (and the
       // translucent theme's blurred one) that every other popover uses.
       className={cn(
-        'sb-floating-surface fixed left-1/2 top-1/2 z-[3001] w-[min(440px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius-lg)] border border-border p-5 text-foreground outline-none',
+        'sb-pop sb-floating-surface fixed left-1/2 top-1/2 z-[3001] w-[min(440px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius-lg)] border border-border p-5 text-foreground outline-none',
         className,
       )}
       {...props}

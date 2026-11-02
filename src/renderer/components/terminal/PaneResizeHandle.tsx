@@ -133,7 +133,6 @@ export function PaneResizeHandle({ direction = 'row', onResize, onResizeEnd }: P
         touchAction: 'none',
         position: 'relative',
         zIndex: 5,
-        transition: 'background 0.12s ease',
       }
     : {
         height: '1px',
@@ -143,7 +142,6 @@ export function PaneResizeHandle({ direction = 'row', onResize, onResizeEnd }: P
         touchAction: 'none',
         position: 'relative',
         zIndex: 5,
-        transition: 'background 0.12s ease',
       }
 
   const hitArea: React.CSSProperties = isColumn
@@ -151,7 +149,7 @@ export function PaneResizeHandle({ direction = 'row', onResize, onResizeEnd }: P
     : { position: 'absolute', left: 0, right: 0, top: '-4px', height: '9px' }
 
   return (
-    <div ref={handleRef} className="pane-resize-handle" data-direction={direction} style={style}>
+    <div ref={handleRef} className="pane-resize-handle sb-tr-quick" data-direction={direction} style={style}>
       <div style={hitArea} />
     </div>
   )
