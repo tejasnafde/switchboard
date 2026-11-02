@@ -8,6 +8,7 @@
  * footer: below 760 chip labels shorten (`ChipLabel`), below 680 the agent
  * chip shows the model only, below 600 the runtime mode moves into "...",
  * below 480 the checkout, below 400 the effort.
+ * In the chat header, below 480 the Hub chip moves into "...".
  *
  * CSS container queries (the `/toolbar` max-width variants) hide the items in
  * the row. The "..." menu is portalled out of the toolbar, so no container
