@@ -498,6 +498,8 @@ export interface ConversationRow {
   worktree_creation_id?: string | null
   /** See `SessionSummary.statusLine`. */
   status_line?: string | null
+  /** See `SessionSummary.hub`: an open child names its parent (flag `hub_children` on). */
+  hub?: import('./hub').SessionHubField
 }
 
 /** A chat visual's Save image: the chosen path, a cancelled dialog, or why the write failed. */

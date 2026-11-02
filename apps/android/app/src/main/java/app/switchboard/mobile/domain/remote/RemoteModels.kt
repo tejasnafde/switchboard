@@ -117,6 +117,8 @@ data class Conversation(
     val originSource: String? = null,
     /** Last finished turn's preview line, stored by the backend. */
     val statusLine: String? = null,
+    /** The hub parent of an open child chat (`hub.parentId`, flag `hub_children` only). */
+    val hubParentId: String? = null,
 )
 
 data class ChatMessage(

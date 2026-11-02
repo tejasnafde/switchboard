@@ -12,16 +12,11 @@
  *    FIN and both ends otherwise stay "connected" until a request times out.
  */
 import { timeBackendHandler } from './perf-handler'
+import { readyCapabilities } from './flag-capabilities'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { WebSocketServer, type ServerOptions, type WebSocket } from 'ws'
 import type { IncomingMessage } from 'node:http'
-import {
-  BACKEND_CAPABILITIES,
-  encodeFrame,
-  decodeFrame,
-  isReplayableEventChannel,
-  type WsFrame,
-} from '@shared/ws-protocol'
+import { encodeFrame, decodeFrame, isReplayableEventChannel, type WsFrame } from '@shared/ws-protocol'
 import {
   isChannelAllowed,
   narrowTokenScopes,
@@ -503,7 +498,7 @@ export class WsHost implements BackendHost {
       seq: this.seq,
       replayed: result.gap ? 0 : result.frames.length,
       gap: result.gap,
-      capabilities: [...BACKEND_CAPABILITIES],
+      capabilities: readyCapabilities(),
     })
     if (result.frames.length > 0 || result.gap) {
       log.info(

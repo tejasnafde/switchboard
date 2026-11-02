@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.navigation
 
+import app.switchboard.mobile.domain.thread.HubChatRef
 import app.switchboard.mobile.domain.reviews.PullRequestRefresh
 import app.switchboard.mobile.domain.thread.DETAILS_SHEET_CAPABILITY
 import app.switchboard.mobile.domain.composer.ComposerFiles
@@ -685,6 +686,19 @@ private fun SwitchboardNavigationHost(
                         ),
                     )
                 },
+                onOpenHubChat = { chat ->
+                    navigationState = navigationState.push(
+                        AppRoute.Thread(
+                            connectionId = route.connectionId,
+                            connectionLabel = route.connectionLabel,
+                            threadId = chat.id,
+                            projectPath = chat.projectPath,
+                            worktreePath = chat.worktreePath,
+                            title = chat.title,
+                            provider = chat.agentType,
+                        ),
+                    )
+                },
             )
         }
     }
@@ -1167,6 +1181,7 @@ private fun ThreadRouteHost(
     reviewsRegistry: ReviewsCoordinatorRegistry,
     onBack: () -> Unit,
     onForked: (app.switchboard.mobile.domain.remote.ForkConversationState) -> Unit,
+    onOpenHubChat: (HubChatRef) -> Unit,
 ) {
     val composerKey = remember(route.connectionId, route.threadId) {
         ComposerDraftKey(route.connectionId, route.threadId)
@@ -1265,6 +1280,7 @@ private fun ThreadRouteHost(
         queuedTurns = queuedTurns,
         onBack = onBack,
         onForked = onForked,
+        onOpenHubChat = onOpenHubChat,
     )
 }
 
@@ -1282,6 +1298,7 @@ private fun ConnectedThreadRoute(
     queuedTurns: List<QueuedTurn>,
     onBack: () -> Unit,
     onForked: (app.switchboard.mobile.domain.remote.ForkConversationState) -> Unit,
+    onOpenHubChat: (HubChatRef) -> Unit,
 ) {
     val composerKey = remember(route.connectionId, route.threadId) {
         ComposerDraftKey(route.connectionId, route.threadId)
@@ -1516,6 +1533,7 @@ private fun ConnectedThreadRoute(
             details = details,
             viewingLeaseLifecycle = viewingLeaseLifecycle,
             registerViewingLeaseRenewal = viewingRenewalRegistration,
+            onOpenHubChat = onOpenHubChat,
             snoozeLine = {
                 snooze?.takeIf { it.snoozed }?.let { state ->
                     ThreadSnoozeLine(state) { onDone -> snoozeStore.wake(lease.client, route.threadId, onDone) }

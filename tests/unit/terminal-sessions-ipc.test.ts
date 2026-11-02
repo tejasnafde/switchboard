@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest'
 import { projectManagedRootSessions, sessionSummaryToConversationRow } from '../../src/main/ipc/terminal-sessions'
 import type { ConversationRow } from '../../src/main/db/database'
 import type { SessionSummary } from '../../src/shared/types'
+import { withHubFields } from '../../src/shared/hub'
 
 // ─── ConversationRow fixture ──────────────────────────────────────────────────
 
@@ -43,6 +44,16 @@ describe('projectManagedRootSessions', () => {
     expect(sessions.map((s) => s.statusLine)).toEqual(['Tests pass, PR open', null])
     expect(sessionSummaryToConversationRow(sessions[0], '/projects/foo').status_line).toBe('Tests pass, PR open')
     expect(sessionSummaryToConversationRow(sessions[1], '/projects/foo').status_line).toBeNull()
+  })
+
+  it("carries a session's hub field onto the phone's conversation row, and none without it", () => {
+    const [child, parent, plain] = withHubFields(
+      projectManagedRootSessions([makeRow({ id: 'child' }), makeRow({ id: 'parent' }), makeRow({ id: 'plain' })]),
+      [{ childId: 'child', parentId: 'parent' }],
+    )
+    expect(sessionSummaryToConversationRow(child, '/projects/foo').hub).toEqual({ parentId: 'parent' })
+    expect(sessionSummaryToConversationRow(parent, '/projects/foo').hub).toEqual({ openChildren: 1 })
+    expect(sessionSummaryToConversationRow(plain, '/projects/foo')).not.toHaveProperty('hub')
   })
 
   it('excludes archived rows from the normal sidebar projection', () => {
