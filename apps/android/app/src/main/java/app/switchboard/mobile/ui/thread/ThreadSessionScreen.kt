@@ -53,6 +53,7 @@ fun ThreadSessionScreen(
     registerViewingLeaseRenewal: ((() -> Unit) -> Closeable)? = null,
     onFork: (messageId: String, withWorktree: Boolean) -> Unit = { _, _ -> },
     onOpenHubChat: (HubChatRef) -> Unit = {},
+    details: ThreadDetails? = null,
 ) {
     val session by coordinator.state.collectAsState()
     val router = remember(coordinator, commandDispatcher) {
@@ -147,6 +148,7 @@ fun ThreadSessionScreen(
             (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.stopAllHubChildren() }
         },
         onOpenHubChat = onOpenHubChat,
+        details = details,
     )
 }
 

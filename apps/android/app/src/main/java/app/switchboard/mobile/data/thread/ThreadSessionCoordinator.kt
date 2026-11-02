@@ -121,6 +121,8 @@ data class ThreadSessionState(
     val mergeBack: ThreadMergeBackState = ThreadMergeBackState(),
     val limitResume: ThreadLimitResumeState = ThreadLimitResumeState(),
     val hub: ThreadHubState = ThreadHubState(),
+    /** The folder the agent works in, from the loaded history (as reattach uses it); null before it loads. */
+    val workingFolder: String? = null,
 )
 
 /** The chat's Hub row: its children, read from the backend like the desktop strip. */
@@ -2149,6 +2151,7 @@ class ThreadSessionCoordinator(
             mergeBack = mergeBack,
             limitResume = limitResume,
             hub = hub,
+            workingFolder = currentThread()?.historyMeta?.let { it.worktreePath ?: worktreePath ?: it.projectPath },
         )
     }
 

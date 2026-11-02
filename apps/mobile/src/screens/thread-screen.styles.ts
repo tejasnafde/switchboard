@@ -6,6 +6,7 @@ import { chat, colors, radius, space, type } from '../theme'
 const mono = Platform.OS === 'ios' ? 'Menlo' : 'monospace'
 
 export const styles = StyleSheet.create({
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
