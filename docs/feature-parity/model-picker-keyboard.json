@@ -9,9 +9,6 @@
       "evidence": [
         "src/renderer/components/chat/UnifiedProviderPicker.tsx",
         "src/renderer/components/chat/provider-picker-models.ts",
-        "src/shared/model-search.ts",
-        "src/shared/models.ts",
-        "src/shared/initials-ink.ts",
         "src/renderer/components/hub/HubChip.tsx",
         "src/renderer/styles/global.css",
         "e2e/radix-overlays.e2e.mjs"
@@ -28,8 +25,14 @@
       "reason": "The Compose new-session sheet lists full model labels and has no model chip or search. Its catalog copy is checked against id, label and tier only; the new `short` field in the shared fixture does not change that check."
     },
     "sharedBackendApi": {
-      "status": "not_applicable",
-      "reason": "No wire message changes; the picker sends the same model id through the same call."
+      "status": "implemented",
+      "evidence": [
+        "src/shared/model-search.ts",
+        "src/shared/models.ts",
+        "src/shared/initials-ink.ts",
+        "tests/unit/model-search.test.ts",
+        "tests/fixtures/model-catalog.json"
+      ]
     },
     "storageDataMigration": {
       "status": "not_applicable",
