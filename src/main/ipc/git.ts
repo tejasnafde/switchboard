@@ -5,6 +5,7 @@
  *   - LIST_REFS    → Ref[] for the picker popover
  *   - SWITCH_REF   → checkout (validated ref name; no shell injection)
  *   - CURRENT_BRANCH → trigger-chip label
+ *   - DIFF_STAT    → added/removed line totals for the chat Details popover
  *
  * All handlers return a discriminated `{ ok: true, ... } | { ok: false, error }`
  * shape so the renderer never has to wrap calls in try/catch - same
@@ -15,7 +16,7 @@ import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { promisify } from 'node:util'
 import { GitChannels } from '@shared/ipc-channels'
-import { listRefs, switchRef, getCurrentBranch, type Ref } from '../git/refs'
+import { listRefs, switchRef, getCurrentBranch, getDiffStat, type DiffStat, type Ref } from '../git/refs'
 import { watchHead, unwatchHead } from '../git/head-watcher'
 import { createMainLogger } from '../logger'
 
@@ -78,6 +79,19 @@ export function registerGitHandlers(host: BackendHost): void {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         log.warn(`current-branch failed: ${msg}`)
+        return { ok: false, error: msg }
+      }
+    },
+  )
+
+  host.handle(
+    GitChannels.DIFF_STAT,
+    async (cwd: string): Promise<({ ok: true } & DiffStat) | { ok: false; error: string }> => {
+      try {
+        return { ok: true, ...(await getDiffStat(cwd)) }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        log.warn(`diff-stat failed: ${msg}`)
         return { ok: false, error: msg }
       }
     },

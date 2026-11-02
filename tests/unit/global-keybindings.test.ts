@@ -8,7 +8,7 @@ function key(k: string, mods: Partial<Omit<GlobalKeyInput, 'key'>> = {}): Global
 describe('resolveGlobalKeydown', () => {
   it.each([
     [key('b'), { type: 'toggle-sidebar' }],
-    [key('B', { shiftKey: true }), { type: 'toggle-sidebar' }],
+    [key('B', { shiftKey: true }), { type: 'toggle-chat-details' }],
     [key('J', { shiftKey: true }), { type: 'toggle-data-science' }],
     [key('j'), { type: 'toggle-terminal' }],
     [key('E', { shiftKey: true }), { type: 'toggle-right-pane' }],

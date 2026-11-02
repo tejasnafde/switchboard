@@ -21,6 +21,8 @@ import {
   listRefs,
   switchRef,
   getCurrentBranch,
+  getDiffStat,
+  parseNumstat,
   type GitRunner,
 } from '../../src/main/git/refs'
 
@@ -183,5 +185,25 @@ describe('getCurrentBranch (stubbed runner)', () => {
   it('returns null on detached HEAD (git outputs "HEAD")', async () => {
     const runner: GitRunner = async () => ({ stdout: 'HEAD\n', stderr: '' })
     expect(await getCurrentBranch('/repo', runner)).toBeNull()
+  })
+})
+
+describe('parseNumstat', () => {
+  it('sums added and removed lines and counts a binary file as nothing', () => {
+    expect(parseNumstat('3\t1\tsrc/a.ts\n10\t0\tsrc/b.ts\n-\t-\timg.png\n')).toEqual({ added: 13, removed: 1 })
+  })
+
+  it('reads empty output as no changes', () => {
+    expect(parseNumstat('')).toEqual({ added: 0, removed: 0 })
+  })
+})
+
+describe('getDiffStat (stubbed runner)', () => {
+  it('diffs the working tree against HEAD', async () => {
+    const runner: GitRunner = async (args) => {
+      expect(args).toEqual(['diff', '--numstat', 'HEAD'])
+      return { stdout: '2\t5\ta.ts\n', stderr: '' }
+    }
+    expect(await getDiffStat('/repo', runner)).toEqual({ added: 2, removed: 5 })
   })
 })

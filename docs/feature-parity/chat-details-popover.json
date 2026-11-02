@@ -1,0 +1,70 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "chat-details-popover",
+  "summary": "A Details button in the desktop chat header (and Cmd+Shift+B for the focused chat) opens a popover with the chat's machine (This Mac, or the host and SSH), branch (git:current-branch), the first open linked pull request (else the newest) with its checks, the working-tree lines added and removed against HEAD (new git:diff-stat channel, git diff --numstat HEAD), an Open in editor action that shows the embedded IDE pane, and three bars: the account's weekly and 5-hour limits (the provider usage store, read unforced on open, so main's 45 s cache applies as for Settings > Accounts) and the chat's context use (the composer's context ring value). Bars show the percent left and turn amber at 20 % left or less and red at 10 % or less; a limit that cannot be read shows Unavailable. Cmd+Shift+B moves from the sidebar toggle (Cmd+B stays) to this popover. New text tokens --text-success, --text-warning and --text-error keep coloured text at 4.5:1 on the popover surface in light and dark.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatDetailsPopover.tsx",
+        "src/renderer/components/chat/chat-details-model.ts",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/reviews/LinkedPrControl.tsx",
+        "src/renderer/services/global-keybindings.ts",
+        "src/renderer/App.tsx",
+        "src/renderer/styles/global.css",
+        "src/renderer/styles/tailwind.css",
+        "tests/unit/chat-details-model.test.ts",
+        "tests/unit/global-keybindings.test.ts",
+        "tests/unit/raised-surface-contrast.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "details_sheet_v1",
+      "followUpRelease": "mobile-v0.6.0: a Details sheet from the chat header with the same rows, reading git:current-branch, git:diff-stat, the chat's PR links and the usage read the phone already makes. Nothing changes on the phone in this release."
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "details_sheet_v1",
+      "followUpRelease": "Native Android 0.6.0: a Details sheet from the chat header with the same rows and the same reads as iOS. Nothing changes on the phone in this release."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/ipc-channels.ts",
+        "src/shared/usage-left.ts",
+        "src/shared/shortcuts.ts",
+        "src/main/ipc/git.ts",
+        "src/main/git/refs.ts",
+        "src/preload/index.ts",
+        "tests/unit/git-refs.test.ts",
+        "tests/unit/usage-left.test.ts",
+        "tests/unit/settings-rows.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "The popover reads live state (git, PR links, usage readings, the session's token usage) and stores nothing. A user's saved shortcut overrides keep working: an override of the sidebar toggle replaces its bindings as before."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["CHANGELOG.md"]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/chat-details-model.test.ts: Machine labels for a local and a remote chat, Open in editor on a host, branch and detached HEAD and None, the first open PR with failing checks marked bad and a merged PR, No changes at zero, usage bars with tones, Unavailable and pending bars, and the closed Details button markup.",
+      "tests/unit/usage-left.test.ts: percent left with clamping and rounding, tone boundaries at 10, 11, 20 and 21, and null.",
+      "tests/unit/git-refs.test.ts: numstat totals with a binary file, and the git diff --numstat HEAD call.",
+      "tests/unit/global-keybindings.test.ts: Cmd+Shift+B resolves to toggle-chat-details.",
+      "tests/unit/raised-surface-contrast.test.ts: --text-success, --text-warning and --text-error read at 4.5:1 or better on --bg-elevated in dark and light."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The popover was not opened in the running app by this change: its screenshots and e2e run are separate.",
+      "A remote chat's branch and diff-stat reads were not run against an SSH machine."
+    ]
+  }
+}

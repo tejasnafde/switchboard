@@ -31,7 +31,7 @@ import { Icon, ROW_ICON } from './review-ui'
 
 const log = createRendererLogger('reviews:chat-header')
 
-function useChatLinks(sessionId: string): PrLink[] {
+export function useChatLinks(sessionId: string): PrLink[] {
   const [links, setLinks] = useState<PrLink[]>([])
   useEffect(() => {
     let live = true

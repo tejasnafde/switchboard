@@ -52,6 +52,7 @@ import {
   prepareRuntimeEventLifecycle,
 } from '../../services/message-lifecycle'
 import { LinkedPrControl } from '../reviews/LinkedPrControl'
+import { ChatDetailsPopover } from './ChatDetailsPopover'
 import { expireIfRefused } from './expired-request'
 import {
   interruptFoundNoTurn,
@@ -278,9 +279,8 @@ export function ChatPanel({
     useLayoutStore.getState().selectChatSession(otherSessionId)
     setTimeout(() => focusComposer(otherSessionId), 0)
   }, [activeSession, chatSlot, chatTitle, otherSessionId, sessionId, sessionIdOverride])
-  const remoteMachineName = useMachineStore(
-    (state) => state.remotes.find((machine) => machine.id === activeSession?.machineId)?.name,
-  )
+  const remoteMachine = useMachineStore((state) => state.remotes.find((m) => m.id === activeSession?.machineId))
+  const remoteMachineName = remoteMachine?.name
   const identity = useMemo(
     () =>
       chatIdentity({
@@ -305,6 +305,11 @@ export function ChatPanel({
   const resolvedModel = activeSession?.resolvedModel
   const reasoningEffort = activeSession?.reasoningEffort
   const instanceId = activeSession?.instanceId
+  // Hidden until the first context_window event: the char estimate read "0" for every fresh chat.
+  const contextUsage =
+    hasSession && activeSession?.tokenUsage
+      ? { usedTokens: activeSession.tokenUsage.usedTokens, maxTokens: activeSession.tokenUsage.maxTokens ?? 200000 }
+      : undefined
 
   const handleRuntimeModeChange = useCallback(
     (mode: RuntimeMode) => {
@@ -1391,15 +1396,7 @@ export function ChatPanel({
           onModelChange={handleModelChange}
           reasoningEffort={reasoningEffort}
           onReasoningEffortChange={handleReasoningEffortChange}
-          contextUsage={
-            hasSession && activeSession?.tokenUsage
-              ? {
-                  // Hidden until the first context_window event: the char estimate read "0" for every fresh chat.
-                  usedTokens: activeSession.tokenUsage.usedTokens,
-                  maxTokens: activeSession.tokenUsage.maxTokens ?? 200000,
-                }
-              : undefined
-          }
+          contextUsage={contextUsage}
           isRunning={status === 'running' || status === 'thinking'}
           onInterrupt={interruptTurn}
           onClearMessages={() => {
@@ -1472,7 +1469,8 @@ export function ChatPanel({
             // The linked-PR control hides itself when the header is too narrow for it (container query).
             className="chat-panel-header min-h-[32px] shrink-0 gap-[6px] border-b border-[var(--border)] bg-[var(--bg-secondary)] px-[16px] py-[7px] text-[12px]"
           >
-            {/* Plain identity breadcrumb; only consequential state receives color. */}
+            {/* Plain identity breadcrumb; only consequential state receives color. The project crumb, then the
+                branch, leave a narrow header (both are text; the branch is also in Details). */}
             {hasSession ? (
               <div className="chat-identity" title={projectPath}>
                 {identity.breadcrumb.slice(0, -1).map((part, index) => (
@@ -1520,7 +1518,10 @@ export function ChatPanel({
                   </button>
                 )}
                 {identity.branch && (
-                  <span className="chat-identity-branch" title={activeSession?.worktreePath ?? identity.branch}>
+                  <span
+                    className="chat-identity-branch @max-[480px]/toolbar:hidden"
+                    title={activeSession?.worktreePath ?? identity.branch}
+                  >
                     {identity.branch}
                   </span>
                 )}
@@ -1532,7 +1533,20 @@ export function ChatPanel({
             <span className="flex-1" />
             {hasSession && <HubChip view={hub} />}
 
-            {activeSession && activeSession.type !== 'terminal' && <LinkedPrControl sessionId={activeSession.id} />}
+            {activeSession && activeSession.type !== 'terminal' && (
+              <>
+                <LinkedPrControl sessionId={activeSession.id} />
+                <ChatDetailsPopover
+                  sessionId={activeSession.id}
+                  machineId={activeSession.machineId}
+                  machineName={remoteMachineName}
+                  machineTransport={remoteMachine?.transportKind}
+                  cwd={activeSession.worktreePath ?? projectPath ?? null}
+                  instanceId={instanceId ?? defaultInstanceId(activeSession.type)}
+                  contextUsage={contextUsage}
+                />
+              </>
+            )}
 
             {otherSessionId && (
               <button

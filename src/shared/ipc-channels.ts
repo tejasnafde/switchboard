@@ -293,6 +293,8 @@ export const GitChannels = {
   LIST_REFS: 'git:list-refs',
   SWITCH_REF: 'git:switch-ref',
   CURRENT_BRANCH: 'git:current-branch',
+  /** Lines added and removed in the working tree against HEAD (the chat Details popover). */
+  DIFF_STAT: 'git:diff-stat',
   /**
    * Push-based branch-chip updates: WATCH_HEAD starts a refcounted
    * fs-watcher on the repo's git dir; HEAD_CHANGED is emitted with the
