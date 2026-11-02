@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HubChatRef, HubChatView, HubChildView } from '../../src/shared/hub'
 import { hubOverflowEntry } from '../../src/renderer/components/hub/HubChip'
 import { ToolbarOverflow } from '../../src/renderer/components/ui/toolbar'
+import { overflowedItems, toolbarTier } from '../../src/renderer/components/ui/toolbar-steps'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -89,6 +90,17 @@ describe('the Hub row in a narrow chat header', () => {
     act(() => row.click())
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
     expect(document.querySelector('[role="menu"]')).toBeNull()
+  })
+
+  it('lists the Hub row below 480 px and not above it', () => {
+    const entry = { ...hubOverflowEntry(parentView, () => null)!, hideBelow: 480 as const }
+    expect(overflowedItems([entry], toolbarTier(479)).map((e) => e.key)).toEqual(['hub'])
+    expect(overflowedItems([entry], toolbarTier(480))).toEqual([])
+  })
+
+  it('scrolls to the strip the children strip renders', () => {
+    const strip = readFileSync(resolve(__dirname, '../../src/renderer/components/hub/ChildrenStrip.tsx'), 'utf8')
+    expect(strip).toContain('data-testid="hub-children-strip"')
   })
 
   it('hides the chip at the step the header menu lists it at', () => {
