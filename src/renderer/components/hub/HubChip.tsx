@@ -1,8 +1,8 @@
-import { hubChildCount, type HubChatView } from '@shared/hub'
+import { hubChildrenCount, type HubChatView } from '@shared/hub'
 import { cn } from '../../lib/utils'
 import { chipClass, chipValueClass } from '../ui/chip'
 
-/** "Hub, 3 children" in the header of a parent, scrolling its strip into view; "Child" in an open child. */
+/** "Hub, 3 children" (or "Hub, 4 children on 3 machines") in the header of a parent, scrolling its strip into view; "Child" in an open child. */
 export function HubChip({ view }: { view: HubChatView }) {
   if (view.parent) return <span className={cn(chipClass, 'cursor-default')}>Child</span>
   if (view.children.length === 0) return null
@@ -18,7 +18,7 @@ export function HubChip({ view }: { view: HubChatView }) {
           ?.scrollIntoView({ block: 'nearest' })
       }
     >
-      Hub, <span className={chipValueClass}>{hubChildCount(view.children.length)}</span>
+      Hub, <span className={chipValueClass}>{hubChildrenCount(view.children)}</span>
     </button>
   )
 }

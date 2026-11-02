@@ -104,7 +104,10 @@ export class RemoteHubClients {
   private readonly listeners = new Map<HubRemoteEvent, Set<(machineId: string, ...args: unknown[]) => void>>()
   private readonly now: () => number
   private readonly callTimeoutMs: number
-  private machineListener: ((machineId: string, change: 'connected' | 'removed') => void) | null = null
+  private machineListener: ((machineId: string, change: 'connected' | 'removed', downMs?: number) => void) | null = null
+  /** Machines connected now, and when each machine that was connected went down. */
+  private readonly up = new Set<string>()
+  private readonly downSince = new Map<string, number>()
   private readonly resyncListeners = new Set<(machineId: string) => void>()
   /** Per machine, whether its last ready advertised `hub_remote_control_v1`. Kept after a close. */
   private readonly control = new Map<string, boolean>()
@@ -117,14 +120,23 @@ export class RemoteHubClients {
   /** From `ConnectionManager`'s status: a connect opens a client and reads the machine, anything else closes it. */
   statusChanged(machineId: string, status: ConnectionStatus): void {
     this.close(machineId)
+    let downMs: number | undefined
+    if (status === 'connected') {
+      const since = this.downSince.get(machineId)
+      if (since !== undefined) downMs = this.now() - since
+      this.downSince.delete(machineId)
+      this.up.add(machineId)
+    } else if (this.up.delete(machineId)) this.downSince.set(machineId, this.now())
     if (status !== 'connected' || !this.deps.enabled()) return
     void this.refresh(machineId, 0)
-    this.notifyMachine(machineId, 'connected')
+    this.notifyMachine(machineId, 'connected', downMs)
   }
 
   /** The machine was deleted: close its client and forget its description. */
   remove(machineId: string): void {
     this.close(machineId)
+    this.up.delete(machineId)
+    this.downSince.delete(machineId)
     this.snapshots.delete(machineId)
     this.control.delete(machineId)
     this.notifyMachine(machineId, 'removed')
@@ -135,7 +147,7 @@ export class RemoteHubClients {
    * registry: remote starts left `starting` are asked again or failed). A
    * new registry replaces the old one's.
    */
-  setMachineListener(fn: ((machineId: string, change: 'connected' | 'removed') => void) | null): void {
+  setMachineListener(fn: ((machineId: string, change: 'connected' | 'removed', downMs?: number) => void) | null): void {
     this.machineListener = fn
   }
 
@@ -143,6 +155,11 @@ export class RemoteHubClients {
   machineState(machineId: string): 'connected' | 'offline' | 'gone' {
     if (!this.deps.machines().some((m) => m.id === machineId)) return 'gone'
     return this.deps.statusOf(machineId) === 'connected' ? 'connected' : 'offline'
+  }
+
+  /** Not connected, and a connection to it is being made now. */
+  reconnecting(machineId: string): boolean {
+    return this.deps.statusOf(machineId) === 'connecting'
   }
 
   /** Saved machines that are connected now. */
@@ -230,9 +247,9 @@ export class RemoteHubClients {
     }
   }
 
-  private notifyMachine(machineId: string, change: 'connected' | 'removed'): void {
+  private notifyMachine(machineId: string, change: 'connected' | 'removed', downMs?: number): void {
     try {
-      this.machineListener?.(machineId, change)
+      this.machineListener?.(machineId, change, downMs)
     } catch (err) {
       log.warn(`the machine listener threw on ${change}`, err)
     }

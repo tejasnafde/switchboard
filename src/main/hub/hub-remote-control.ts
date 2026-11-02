@@ -68,6 +68,10 @@ export interface HubRemoteControlHost {
   installId(): string
   machineState(machineId: string): 'connected' | 'offline' | 'gone'
   machineName(machineId: string): string
+  /** Not connected, and a connection to it is being made now. */
+  reconnecting?(machineId: string): boolean
+  /** When the machine was last connected (its last synced tree), or null. */
+  lastSeenAt?(machineId: string): number | null
   /** What the machine's last ready said about `hub_remote_control_v1`. */
   control(machineId: string): HubControlSupport
   /** Opens the client when needed; false when not connected or without the capability. */
@@ -85,9 +89,10 @@ export interface HubRemoteChildFacts {
   machineId: string
   machine: string
   connected: boolean
+  reconnecting?: true
   /** The cached state, or null before the first view answer. */
   state: HubRemoteChildState | null
-  /** How old that state is, or null with none. */
+  /** How old that state is; with none, while not connected, how long ago the machine was last seen. */
   ageMs: number | null
   /** A Stop, settle or stop-all waits to be sent or answered. */
   stopping: boolean
@@ -141,12 +146,14 @@ export class HubRemoteControl {
     if (connected && (!view || this.now() - view.at >= HUB_REMOTE_VIEW_MAX_AGE_MS))
       void this.refresh(machineId, child.parentId, HUB_REMOTE_VIEW_MAX_AGE_MS, true)
     const state = view?.children.get(child.childId) ?? null
+    const seenAt = view && state ? view.at : connected ? null : (this.host.lastSeenAt?.(machineId) ?? null)
     return {
       machineId,
       machine: this.host.machineName(machineId),
       connected,
+      ...(!connected && this.host.reconnecting?.(machineId) ? { reconnecting: true as const } : {}),
       state,
-      ageMs: view && state ? this.now() - view.at : null,
+      ageMs: seenAt === null ? null : Math.max(0, this.now() - seenAt),
       stopping: this.isStopping(child),
     }
   }

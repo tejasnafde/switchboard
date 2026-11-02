@@ -20,6 +20,9 @@
  *   - text says "raise a pull request" -> a Switchboard MCP create card (a
  *                           Bitbucket pull request from feat/sync-jitter into
  *                           main); held until answered; nothing is ever opened
+ *   - text says "two machines" -> a start_children card with one child here
+ *                           and one on another machine (the hub screens);
+ *                           held until answered; nothing is ever started
  *   - text says "run"    -> asks approval for `npm test` and holds the turn
  *                           open until it is answered (ApprovalCard, and the
  *                           running composer for the visual regression suite)
@@ -55,6 +58,7 @@ import {
   type HostWriteDiffLine,
 } from '@shared/agent-host-writes'
 import { PR_DESCRIPTION_MAX_CHARS } from '@shared/agent-pr-create'
+import { hubBatchDetail, type HubBatchView } from '@shared/hub'
 import { agentLabel, toAgentProvider, type AgentProvider, type AgentType } from '@shared/types'
 import { CLAUDE_MODELS, type ModelOption, type ReasoningEffort } from '@shared/models'
 import { buildWindow, type ProviderUsage, type UsageWindow } from '@shared/provider-usage'
@@ -544,6 +548,58 @@ export class DemoAdapter implements ProviderAdapter {
         turn,
         'Plan mode blocks writes. Switch to Sandbox or Accept Edits and I will apply the change.',
       )
+    } else if (/two machines/i.test(message)) {
+      await this.say(threadId, turn, 'One child here and one on the build VM, which has the faster test runner.')
+      if (turn.cancelled) return
+      const remote = { id: 'demo-vm', name: 'build-vm', transport: 'gcloud-iap' as const }
+      const row = {
+        agent: 'claude-code' as const,
+        model: 'opus',
+        mode: 'sandbox' as const,
+        location: 'worktree' as const,
+      }
+      const view: HubBatchView = {
+        batchId: 'demo-batch',
+        rows: [
+          { ...row, title: 'Fix callback redirect', account: null, baseRef: 'main', deps: 'link', machine: null },
+          {
+            ...row,
+            title: 'Run the OAuth load test',
+            account: 'claude-vm',
+            baseRef: 'main',
+            deps: 'install',
+            machine: remote,
+            clone: true,
+            remoteProjectPath: '~/src/acme-console',
+          },
+        ],
+        needBytes: 1_200_000_000,
+        freeBytes: 120_000_000_000,
+        remoteDisk: [{ machineId: remote.id, name: remote.name, needBytes: 2_400_000_000, freeBytes: 48_000_000_000 }],
+        mainCheckout: false,
+      }
+      const requestId = `demo_req_${++this.seq}`
+      const decision = await new Promise<ApprovalDecision | 'cancelled'>((resolve) => {
+        session.approvals.set(requestId, resolve)
+        emit({
+          type: 'request.opened',
+          threadId,
+          requestId,
+          requestType: 'tool',
+          toolName: 'mcp__switchboard__start_children',
+          detail: hubBatchDetail(view),
+          hubBatch: view,
+        })
+      })
+      session.approvals.delete(requestId)
+      session.onEvent({
+        type: 'request.closed',
+        threadId,
+        requestId,
+        decision: decision === 'cancelled' ? 'deny' : decision,
+      })
+      if (decision === 'cancelled') return
+      await this.say(threadId, turn, decision === 'approve' ? 'Nothing was started: this is a demo.' : 'Not started.')
     } else if (/reply to the review/i.test(message)) {
       await this.say(threadId, turn, 'All three are fixed. I will reply on each conversation and resolve it.')
       if (turn.cancelled) return

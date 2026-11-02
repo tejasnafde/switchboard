@@ -287,3 +287,38 @@ export function openHubChild(dbPath) {
     `UPDATE hub_children SET phase = 'open' WHERE child_id = ${sql(HUB_WORKING_CHILD.id)};`,
   ])
 }
+
+/** The parent and children of the remote hub screens, and the second machine. */
+export const HUB_REMOTE_PARENT = { id: 'hub-remote-parent', title: 'Load test the login flow' }
+export const HUB_REMOTE_MACHINE = { id: 'demo-vm', name: 'build-vm' }
+
+/**
+ * A parent with one child here (Result ready) and one on a second machine
+ * (flag hub_remote_children). The machine is saved but never connected, and
+ * its tree was last synced `lastSeenAt` (main-process time), so the remote
+ * child shows "build-vm offline, last seen 3 h ago". The remote child has no
+ * conversation here, as on a real desktop.
+ */
+export function seedRemoteHubChildren(dbPath, projectPath, { now = Date.now(), lastSeenAt = Date.now() } = {}) {
+  const parent = HUB_REMOTE_PARENT
+  const m = HUB_REMOTE_MACHINE
+  const local = { id: 'hub-remote-local', title: 'Fix callback redirect' }
+  const remote = { id: 'hub-remote-vm', title: 'Run the OAuth load test' }
+  const conv = (c, ago) =>
+    `INSERT OR REPLACE INTO conversations (id, project_path, agent_type, title, created_at, updated_at, runtime_mode, sidebar_role) VALUES (${sql(c.id)}, ${sql(projectPath)}, 'claude-code', ${sql(c.title)}, ${now - ago - 60000}, ${now - ago}, 'sandbox', 'managed');`
+  const child = (c, i, machineId, account) =>
+    `INSERT OR REPLACE INTO hub_children (child_id, parent_id, batch_id, ordinal, title, brief, location, branch, provider_instance_id, granted_mode, deps_mode, phase, machine_id, created_at, updated_at) VALUES (${sql(c.id)}, ${sql(parent.id)}, 'hub-remote-batch', ${i}, ${sql(c.title)}, ${sql(`Brief for ${c.title}.`)}, 'worktree', ${sql(`hub/${c.id}`)}, ${sql(account)}, 'sandbox', 'link', 'open', ${machineId ? sql(machineId) : 'NULL'}, ${now - 600000 + i}, ${now - 100000});`
+  const statements = [
+    conv(parent, 10000),
+    `INSERT OR REPLACE INTO messages (id, conversation_id, role, content, timestamp) VALUES ('hub-remote-m1', ${sql(parent.id)}, 'user', 'Fix the callback redirect here and run the OAuth load test on the build VM.', ${now - 600000});`,
+    `INSERT OR REPLACE INTO messages (id, conversation_id, role, content, timestamp) VALUES ('hub-remote-m2', ${sql(parent.id)}, 'assistant', 'Started two child chats, one on each machine. I will collect their reports here.', ${now - 590000});`,
+    conv(local, 20000),
+    child(local, 0, null, 'claude-work'),
+    child(remote, 1, m.id, 'claude-vm'),
+    `INSERT OR REPLACE INTO hub_wakes (id, parent_id, child_id, kind, summary, created_at, delivered_revision) VALUES ('hub-remote-wake-0', ${sql(parent.id)}, ${sql(local.id)}, 'report', 'The callback now returns to the page that started the login. Branch pushed.', ${now - 100000}, 1);`,
+    `INSERT OR REPLACE INTO machines (id, name, ssh_alias, ssh_host, ssh_port, transport_kind, iap_instance, iap_project, iap_zone, sort_order, created_at, updated_at) VALUES (${sql(m.id)}, ${sql(m.name)}, NULL, 'build-vm.invalid', 22, 'gcloud-iap', 'build-vm', 'demo-project', 'demo-zone', 0, ${now}, ${now});`,
+    `INSERT OR REPLACE INTO machine_snapshots (machine_id, data, synced_at) VALUES (${sql(m.id)}, '[]', ${lastSeenAt});`,
+    `INSERT OR REPLACE INTO settings (key, value) VALUES ('sidebar.localTreeExpanded', 'true');`,
+  ]
+  execFileSync('sqlite3', [dbPath, statements.join('\n')])
+}

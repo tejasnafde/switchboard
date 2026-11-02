@@ -149,6 +149,14 @@ export function saveMachineSnapshot(machineId: string, snapshot: MachineSnapshot
     .run(machineId, JSON.stringify(snapshot.projects), snapshot.syncedAt)
 }
 
+/** When the machine's tree was last synced (on its last connect), or null. */
+export function getMachineSnapshotSyncedAt(machineId: string): number | null {
+  const row = getDb().prepare('SELECT synced_at FROM machine_snapshots WHERE machine_id = ?').get(machineId) as
+    | { synced_at: number }
+    | undefined
+  return row?.synced_at ?? null
+}
+
 export function getMachineSnapshots(): Record<string, MachineSnapshot> {
   const rows = getDb().prepare('SELECT machine_id, data, synced_at FROM machine_snapshots').all() as Array<{
     machine_id: string

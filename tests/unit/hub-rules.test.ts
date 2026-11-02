@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url'
 import { resolve, dirname } from 'node:path'
 import {
   childState,
+  childStateLabel,
+  childStateWord,
+  hubChildrenCount,
   formatHubUpdateMarker,
   parseHubUpdateMarker,
   reportWakeKind,
@@ -43,6 +46,15 @@ describe('hub rules (tests/fixtures/hub-cases.json)', () => {
   })
   it.each(cases.wakeBatch)('wakeBatchDecision: $name', ({ input, expected }) => {
     expect(wakeBatchDecision(input)).toEqual(expected)
+  })
+  it.each(cases.childStateText)('childStateLabel and childStateWord: $name', ({ input, expected }) => {
+    expect({ label: childStateLabel(input), word: childStateWord(input) }).toEqual(expected)
+  })
+  it.each(cases.childrenCount)('hubChildrenCount: $name', ({ input, expected }) => {
+    const children = (input as Array<string | null>).map((id) =>
+      id ? { remote: { machineId: id, machine: id, connected: true, ageMs: 0, stopping: false } } : {},
+    )
+    expect(hubChildrenCount(children)).toBe(expected)
   })
 })
 

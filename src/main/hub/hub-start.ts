@@ -36,7 +36,7 @@
  *
  * Measured: one `hub.batch` and one `hub.start-child` perf line per batch and
  * child (outcome and the time of each step), `hub.child-turn` per child turn
- * end (tokens, cost, duration), the worktree's disk use after start,
+ * end (machine id, tokens, cost, duration), the worktree's disk use after start,
  * `hub.deps-check` per child turn end of a child with links, and
  * `hub.own-deps` per `own_dependencies` call.
  */
@@ -739,6 +739,7 @@ export class HubStarter {
         perfSpan('hub.child-turn', {
           childId,
           parentId,
+          machineId: getHubChild(childId)?.machineId ?? 'local',
           usedTokens: turn.usedTokens,
           costUsd: turn.costUsd,
           turnMs: turn.durationMs,

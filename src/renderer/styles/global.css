@@ -877,6 +877,8 @@ html, body, #root {
 .sidebar-recent-dot[data-dot='working'] { background: var(--warning); }
 .sidebar-recent-dot[data-dot='finished'] { background: var(--success); }
 .sidebar-recent-dot[data-dot='limited'] { background: transparent; border: 1.5px solid var(--text-muted); }
+/* A child whose machine is not connected: its state is not known. */
+.sidebar-recent-dot[data-dot='unknown'] { background: transparent; border: 1.5px dashed var(--text-muted); }
 
 /* Translucent shows whatever sits behind the window, and a red or amber dot
    on a warm wallpaper disappears. A light ring keeps it readable on any

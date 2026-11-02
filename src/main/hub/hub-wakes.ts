@@ -15,7 +15,7 @@
  * for that hub (`insertHubWake`), never a turn here; the desktop imports it
  * as a wake of its own (`hub-remote-outbox.ts`).
  *
- * Measured: one `hub.wake` perf line per wake turn (wakes, children, bytes of
+ * Measured: one `hub.wake` perf line per wake turn (wakes, children, their machine ids, bytes of
  * the turn, attempt, outcome, ms to the first activity), threshold 0.
  */
 import { randomBytes } from 'node:crypto'
@@ -412,6 +412,7 @@ export class HubWakeScheduler {
         parentId,
         wakes: wakes.length,
         children,
+        machineId: [...new Set(wakes.map((w) => w.machineId ?? 'local'))].join(','),
         bytes: Buffer.byteLength(body),
         attempt,
       }),
