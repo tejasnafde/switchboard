@@ -29,6 +29,17 @@ export const HTML_LIVE_MAX_RUNNING = 2
 export const HTML_LIVE_QUIET_MS = 1000
 /** Largest still image a backend stores, as a data URL. */
 export const HTML_LIVE_MAX_IMAGE_CHARS = 4 * 1024 * 1024
+/**
+ * How the desktop draws a still image. Raise it when a change makes stored
+ * stills wrong (2: the translucent theme draws on solid colours); a backend
+ * then treats an older still as missing, so a desktop window captures it again.
+ */
+export const HTML_LIVE_STILL_VERSION = 2
+
+/** A stored still is shown only when it was drawn by the current rules (an old row has no version). */
+export function isCurrentHtmlLiveStill(version: number | null | undefined): boolean {
+  return typeof version === 'number' && version >= HTML_LIVE_STILL_VERSION
+}
 /** The size reporter logs this prefix and the page height. */
 export const HTML_LIVE_HEIGHT_MARKER = '__sb_live_height__:'
 /** Backend capability: `HtmlLiveChannels.LOAD` / `UPDATE` / `OPEN_ON_DESKTOP`. */
