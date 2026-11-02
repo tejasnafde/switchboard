@@ -76,25 +76,33 @@ describe('validateCustomWake', () => {
     })
   }
 
-  it('refuses a time a DST change skips and takes the first of a repeated one', () => {
-    // The zone is fixed per process, so this runs the rules file in a child with TZ set.
-    const dst = cases.customWakeDst
-    const script = `
-      import { validateCustomWake } from ${JSON.stringify(pathToFileURL(join(__dirname, '../../src/shared/chat-snooze.ts')).href)}
-      const cases = ${JSON.stringify(dst.cases)}
-      console.log(JSON.stringify(cases.map((c) => {
-        const [year, month, day] = c.date
-        return validateCustomWake({ year, month, day }, c.clock, ${dst.now})
-      })))`
-    const out = execFileSync(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e', script], {
-      env: { ...process.env, TZ: dst.zone, NODE_NO_WARNINGS: '1' },
-      encoding: 'utf8',
+  // The zone is fixed per process, so each zone runs the rules file in a child with TZ set.
+  for (const zone of cases.customWakeDst) {
+    it(`in ${zone.zone}: refuses a time a DST change skips and takes the first of a repeated one`, () => {
+      const script = `
+        import { validateCustomWake } from ${JSON.stringify(pathToFileURL(join(__dirname, '../../src/shared/chat-snooze.ts')).href)}
+        const cases = ${JSON.stringify(zone.cases)}
+        console.log(JSON.stringify(cases.map((c) => {
+          const [year, month, day] = c.date
+          return validateCustomWake({ year, month, day }, c.clock, ${zone.now})
+        })))`
+      const out = execFileSync(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e', script], {
+        env: { ...process.env, TZ: zone.zone, NODE_NO_WARNINGS: '1' },
+        encoding: 'utf8',
+      })
+      const results = JSON.parse(out) as Array<{ result: string; at: number | null }>
+      expect(results.map((r) => r.result)).toEqual(zone.cases.map((c: { expect: string }) => c.expect))
+      zone.cases.forEach((c: { epochMs?: number }, i: number) => {
+        if (c.epochMs) expect(results[i].at).toBe(c.epochMs)
+      })
     })
-    const results = JSON.parse(out) as Array<{ result: string; at: number | null }>
-    dst.cases.forEach((c: { expect: string; epochMs?: number }, i: number) => {
-      expect(results[i].result).toBe(c.expect)
-      if (c.epochMs) expect(results[i].at).toBe(c.epochMs)
-    })
+  }
+
+  it('takes the earlier instant of a repeated autumn time (first occurrence, summer offset)', () => {
+    const [ny] = cases.customWakeDst
+    const repeated = ny.cases.find((c: { clock: string; date: number[] }) => c.date[1] === 11)
+    // 01:30 EDT is 05:30 UTC; the second 01:30 (EST) would be an hour later.
+    expect(new Date(repeated.epochMs).toISOString()).toBe('2026-11-01T05:30:00.000Z')
   })
 })
 

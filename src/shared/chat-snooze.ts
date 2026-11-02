@@ -263,21 +263,30 @@ export const MAX_SNOOZE_MS = 365 * 24 * 60 * 60_000
 /** The backend accepts a wake this far in the past (clock skew, a slow click). */
 export const SNOOZE_PAST_GRACE_MS = 60_000
 
+/** Why a local date and clock time is not an instant. */
+export type WallTimeRefusal = 'no_such_date' | 'no_such_time'
+
 /**
- * A local date and clock time as an epoch, or null when that wall time does
- * not exist: a rolled-over date (31 April) or a time skipped by a DST change.
- * A time that occurs twice (the autumn change) takes its first occurrence.
- * `month` is 1 to 12.
+ * A local date and clock time as an epoch, refused when the fields do not
+ * come back unchanged: a rolled-over date (31 April) is `no_such_date`, a
+ * clock time a DST change skips (02:30 on a spring-forward day) is
+ * `no_such_time`. A time that occurs twice (the autumn change) takes its
+ * first occurrence, the earlier instant. `month` is 1 to 12.
  */
-export function localWallTime(year: number, month: number, day: number, hour: number, minute: number): number | null {
+export function localWallTime(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+): { ok: true; at: number } | { ok: false; reason: WallTimeRefusal } {
+  // Noon exists on every date a zone keeps, so a mismatch there is the date itself.
+  const noon = new Date(year, month - 1, day, 12, 0, 0, 0)
+  if (noon.getFullYear() !== year || noon.getMonth() !== month - 1 || noon.getDate() !== day)
+    return { ok: false, reason: 'no_such_date' }
   const d = new Date(year, month - 1, day, hour, minute, 0, 0)
-  const same =
-    d.getFullYear() === year &&
-    d.getMonth() === month - 1 &&
-    d.getDate() === day &&
-    d.getHours() === hour &&
-    d.getMinutes() === minute
-  return same ? d.getTime() : null
+  const same = d.getDate() === day && d.getHours() === hour && d.getMinutes() === minute
+  return same ? { ok: true, at: d.getTime() } : { ok: false, reason: 'no_such_time' }
 }
 
 /** `H:MM` or `HH:MM`, 00:00 to 23:59. */
@@ -289,21 +298,26 @@ export function parseClock(text: string): { hour: number; minute: number } | nul
   return hour <= 23 && minute <= 59 ? { hour, minute } : null
 }
 
-export type WakeCheck = 'ok' | 'past' | 'too_far' | 'invalid'
+/** `HH:MM`, as the time field shows a valid entry once it loses focus. */
+export function formatClock(clock: { hour: number; minute: number }): string {
+  return `${String(clock.hour).padStart(2, '0')}:${String(clock.minute).padStart(2, '0')}`
+}
 
-/** The client's check of a custom date and time. */
+export type WakeCheck = 'ok' | 'past' | 'too_far' | 'bad_clock' | WallTimeRefusal
+
+/** The client's check of a custom date and time; `at` is set whenever the wall time exists. */
 export function validateCustomWake(
   date: { year: number; month: number; day: number },
   clock: string,
   now: number,
 ): { result: WakeCheck; at: number | null } {
   const c = parseClock(clock)
-  if (!c) return { result: 'invalid', at: null }
-  const at = localWallTime(date.year, date.month, date.day, c.hour, c.minute)
-  if (at === null) return { result: 'invalid', at: null }
-  if (at <= now) return { result: 'past', at }
-  if (at - now > MAX_SNOOZE_MS) return { result: 'too_far', at }
-  return { result: 'ok', at }
+  if (!c) return { result: 'bad_clock', at: null }
+  const wall = localWallTime(date.year, date.month, date.day, c.hour, c.minute)
+  if (!wall.ok) return { result: wall.reason, at: null }
+  if (wall.at <= now) return { result: 'past', at: wall.at }
+  if (wall.at - now > MAX_SNOOZE_MS) return { result: 'too_far', at: wall.at }
+  return { result: 'ok', at: wall.at }
 }
 
 /** The backend's check of a wake time it is sent. */
