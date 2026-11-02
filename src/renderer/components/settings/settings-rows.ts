@@ -21,6 +21,7 @@ import { SETTING_SESSION_ENV_MODE, SETTING_SHOW_FILE_DIFFS, type ScopableSetting
 import { RUNTIME_MODE_OPTIONS } from '../chat/runtime-mode-options'
 import { formatPeerLinkDuration, parsePeerLinkDuration, PEER_LINK_DURATION_CHOICES } from '@shared/peer-links'
 import { AUTO_RESUME_AFTER_LIMIT_SETTING, LIMIT_AUTO_RESUME_ENABLED } from '@shared/limit-resume'
+import { HUB_RECONNECT_ON_LAUNCH_SETTING, HUB_REMOTE_CHILDREN_ENABLED } from '@shared/hub'
 
 export type SettingsPageId =
   | 'general'
@@ -287,6 +288,15 @@ const ROWS = {
     label: 'Mobile pairing',
     description: 'Pair a phone by QR code, revoke paired devices, and connect the Google account phones use for IAP.',
   },
+  hubReconnectOnLaunch: {
+    id: HUB_RECONNECT_ON_LAUNCH_SETTING,
+    page: 'devices',
+    section: 'Machines',
+    label: 'Reconnect machines with running children on launch',
+    description:
+      'At launch, connect each machine that runs child chats of your chats here, so their updates arrive. A machine that needs a sign-in stays offline.',
+    defaultValue: 'true',
+  },
   archived: {
     id: 'data.archived',
     page: 'data',
@@ -374,7 +384,11 @@ export function shortcutRows(platform: ShortcutPlatform = currentPlatform()): Se
 export function settingRows(): SettingRowDef[] {
   // Off the search and the changed counts until the staged flag ships on.
   const rows: SettingRowDef[] = [
-    ...Object.values(ROWS).filter((row) => LIMIT_AUTO_RESUME_ENABLED || row !== ROWS.autoResumeAfterLimit),
+    ...Object.values(ROWS).filter(
+      (row) =>
+        (LIMIT_AUTO_RESUME_ENABLED || row !== ROWS.autoResumeAfterLimit) &&
+        (HUB_REMOTE_CHILDREN_ENABLED || row !== ROWS.hubReconnectOnLaunch),
+    ),
     ...shortcutRows(),
   ]
   const order = SETTINGS_PAGES.map((p) => p.id)

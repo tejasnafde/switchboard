@@ -274,6 +274,21 @@ export function getMessageRevisions(conversationIds: readonly string[]): number[
   return conversationIds.map((id) => (read.get(id) as { revision: number } | undefined)?.revision ?? 0)
 }
 
+/** The newest message time across these conversations, or null when they have none. */
+export function lastMessageAt(conversationIds: readonly string[]): number | null {
+  // In chunks: one bound parameter per id, and SQLite caps how many a statement takes.
+  const chunkSize = 500
+  let newest: number | null = null
+  for (let offset = 0; offset < conversationIds.length; offset += chunkSize) {
+    const chunk = conversationIds.slice(offset, offset + chunkSize)
+    const row = getDb()
+      .prepare(`SELECT MAX(timestamp) AS at FROM messages WHERE conversation_id IN (${chunk.map(() => '?').join(',')})`)
+      .get(...chunk) as { at: number | null }
+    if (row.at !== null && (newest === null || row.at > newest)) newest = row.at
+  }
+  return newest
+}
+
 /** Text columns only, one row at a time, oldest first: for readers that may stop early. */
 export function iterateMessageTextForConversation(
   conversationId: string,

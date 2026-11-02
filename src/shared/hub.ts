@@ -43,6 +43,9 @@ export function hubRemoteChildrenEnabled(env: NodeJS.ProcessEnv, getSetting: Set
   )
 }
 
+/** Backend setting, default on: at launch the desktop connects the machines that hold open children of its hubs. */
+export const HUB_RECONNECT_ON_LAUNCH_SETTING = 'hub.reconnectOnLaunch'
+
 // ─── Stored shapes ──────────────────────────────────────────────
 
 export type HubChildPhase = 'starting' | 'open' | 'settled' | 'failed_start'

@@ -28,7 +28,8 @@ import { ackHubOutboxItems, pullHubOutbox } from './hub-outbox'
 import { AGENT_PROVIDERS, type AgentProvider } from '@shared/types'
 import type { BackendHost } from '../backend/host'
 import { getProjects, getSetting, listOpenHubChildren } from '../db/database'
-import { listProviderInstances } from '../db/provider-instances'
+import { listProviderInstances, type ProviderInstanceWire } from '../db/provider-instances'
+import { checkRemoteProviderAuth, remoteProviderConfigDir } from '../provider/remote-gate'
 import { createMainLogger } from '../logger'
 import { perfSpan } from '../perf'
 
@@ -44,6 +45,8 @@ export interface HubDescribeDeps {
   /** Whether the agent's program runs on this backend. */
   agentAvailable: (agent: AgentProvider) => Promise<boolean>
   runningSlotKeys: () => readonly string[]
+  /** Whether an account can sign in here. Absent: every enabled account counts (the desktop's own entry). */
+  hasLogin?: (instance: ProviderInstanceWire) => Promise<boolean>
   /** `hub-remote:start-child`: starts a child for a hub on another machine. */
   startChild: (request: unknown) => Promise<HubRemoteStartAnswer>
 }
@@ -65,10 +68,11 @@ export function registerHubRemoteHandlers(host: BackendHost, deps: HubDescribeDe
 
 export async function describeThisMachine(deps: HubDescribeDeps): Promise<HubMachineDescription> {
   const span = perfSpan('hub.remote-describe')
-  const [availableAgents, projects, freeDiskBytes] = await Promise.all([
+  const [availableAgents, projects, freeDiskBytes, instances] = await Promise.all([
     availableAgentList(deps),
     readProjects(),
     freeDisk(),
+    accountsWithLogin(deps),
   ])
   const settings = readHubSettings((key) => getSetting(key))
   const description = buildHubMachineDescription({
@@ -78,7 +82,7 @@ export async function describeThisMachine(deps: HubDescribeDeps): Promise<HubMac
     backendVersion: deps.backendVersion(),
     availableAgents,
     homeDir: homedir(),
-    instances: listProviderInstances(),
+    instances,
     projects,
     freeDiskBytes,
     openChildren: listOpenHubChildren().length,
@@ -111,6 +115,48 @@ async function availableAgentList(deps: HubDescribeDeps): Promise<AgentProvider[
     }),
   )
   return checks.filter((a): a is AgentProvider => a !== null)
+}
+
+/** The accounts, less those with no login here: an agent left with none is not listed, so a start on it is refused. */
+async function accountsWithLogin(deps: HubDescribeDeps): Promise<ProviderInstanceWire[]> {
+  const all = listProviderInstances()
+  const hasLogin = deps.hasLogin
+  if (!hasLogin) return all
+  const checks = await Promise.all(
+    all.map(async (i) => {
+      if (!i.enabled) return false
+      try {
+        return await hasLogin(i)
+      } catch (err) {
+        log.warn(`could not check the login of account ${i.id}; it is not listed`, err)
+        return false
+      }
+    }),
+  )
+  return all.filter((_, n) => checks[n])
+}
+
+const LOGIN_ENV_KEYS: Record<'claude-code' | 'codex', readonly string[]> = {
+  'claude-code': ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'],
+  codex: ['OPENAI_API_KEY'],
+}
+
+/**
+ * On a machine the desktop reaches over SSH, a Claude Code or Codex account
+ * counts as signed in only when a child on it would start. The start passes
+ * no config folder, so it first checks this process's env and the default
+ * folder, before the account's env applies; then the session runs with the
+ * account's key or folder. An account whose folder only its encrypted env
+ * names is not counted. Other agents count as signed in.
+ */
+export async function accountHasLogin(i: ProviderInstanceWire): Promise<boolean> {
+  if (i.agentType !== 'claude-code' && i.agentType !== 'codex') return true
+  const startGate = remoteProviderConfigDir(i.agentType, undefined)
+  if (!(await checkRemoteProviderAuth(i.agentType, startGate)).loggedIn) return false
+  if (!i.effectiveOauthDir) return false
+  if (LOGIN_ENV_KEYS[i.agentType].some((k) => i.envKeys.includes(k))) return true
+  if (i.effectiveOauthDir === startGate) return true
+  return (await checkRemoteProviderAuth(i.agentType, i.effectiveOauthDir)).loggedIn
 }
 
 async function readProjects(): Promise<HubMachineProject[]> {

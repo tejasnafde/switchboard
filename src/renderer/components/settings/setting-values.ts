@@ -9,6 +9,7 @@ import { parseFollowUpDefault } from '@shared/turn-delivery'
 import { PEER_LINK_DURATION_SETTING, peerLinkDurationChoice } from '@shared/peer-links'
 import { SETTING_DEFAULT_RUNTIME_MODE, isRuntimeMode } from '@shared/session-defaults'
 import { AUTO_RESUME_AFTER_LIMIT_SETTING } from '@shared/limit-resume'
+import { HUB_RECONNECT_ON_LAUNCH_SETTING } from '@shared/hub'
 import { useLayoutStore } from '../../stores/layout-store'
 import { getStoreDefaultRuntimeMode, setStoreDefaultRuntimeMode } from '../../stores/agent-store'
 import { useThemeStore, type ThemeName } from '../../stores/theme-store'
@@ -105,6 +106,10 @@ const BINDINGS: Record<string, Binding> = {
   [SETTING_ROW.autoResumeAfterLimit.id]: {
     read: async () => flag((await window.api.settings.get(AUTO_RESUME_AFTER_LIMIT_SETTING)) !== 'false'),
     write: (v) => window.api.settings.set(AUTO_RESUME_AFTER_LIMIT_SETTING, v),
+  },
+  [SETTING_ROW.hubReconnectOnLaunch.id]: {
+    read: async () => flag((await window.api.settings.get(HUB_RECONNECT_ON_LAUNCH_SETTING)) !== 'false'),
+    write: (v) => window.api.settings.set(HUB_RECONNECT_ON_LAUNCH_SETTING, v),
   },
   [SETTING_ROW.tourAutoplay.id]: {
     read: async () => flag((await window.api.settings.get('tour.autoplay')) !== 'false'),

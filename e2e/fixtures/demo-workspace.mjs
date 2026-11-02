@@ -319,6 +319,8 @@ export function seedRemoteHubChildren(dbPath, projectPath, { now = Date.now(), l
     `INSERT OR REPLACE INTO machines (id, name, ssh_alias, ssh_host, ssh_port, transport_kind, iap_instance, iap_project, iap_zone, sort_order, created_at, updated_at) VALUES (${sql(m.id)}, ${sql(m.name)}, NULL, 'build-vm.invalid', 22, 'gcloud-iap', 'build-vm', 'demo-project', 'demo-zone', 0, ${now}, ${now});`,
     `INSERT OR REPLACE INTO machine_snapshots (machine_id, data, synced_at) VALUES (${sql(m.id)}, '[]', ${lastSeenAt});`,
     `INSERT OR REPLACE INTO settings (key, value) VALUES ('sidebar.localTreeExpanded', 'true');`,
+    // The machine is fake: the launch must not try to connect it.
+    `INSERT OR REPLACE INTO settings (key, value) VALUES ('hub.reconnectOnLaunch', 'false');`,
   ]
   execFileSync('sqlite3', [dbPath, statements.join('\n')])
 }

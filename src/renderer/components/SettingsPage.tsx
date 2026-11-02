@@ -15,6 +15,7 @@ import {
 } from '@shared/diagnostics-report'
 import type { DiagnosticsSnapshot } from '@shared/diagnostics-report'
 import { createRendererLogger } from '../logger'
+import { SETTINGS_CHANGED_ELSEWHERE } from '../services/settings-file-sync'
 import { useProviderInstanceStore } from '../stores/provider-instance-store'
 import { AccountsPanel } from './settings/AccountsPanel'
 import { MobilePairingTab } from './settings/MobilePairingTab'
@@ -437,14 +438,47 @@ export function SettingsPageBody({
       )}
       {page === 'keyboard' && <KeyboardPage />}
       {page === 'devices' && (
-        <Section title={SETTING_ROW.mobile.section}>
-          <SettingAnchor def={SETTING_ROW.mobile}>
-            <MobilePairingTab />
-          </SettingAnchor>
-        </Section>
+        <>
+          <Section title={SETTING_ROW.mobile.section}>
+            <SettingAnchor def={SETTING_ROW.mobile}>
+              <MobilePairingTab />
+            </SettingAnchor>
+          </Section>
+          <HubMachinesSection />
+        </>
       )}
       {page === 'about' && <AboutPage />}
     </>
+  )
+}
+
+/** Shown only while the staged flag hub_remote_children is on in this desktop. */
+export function HubMachinesSection() {
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    let live = true
+    const read = () =>
+      window.api.machines
+        .hubRemoteEnabled()
+        .then((on) => {
+          if (live) setShown(on)
+        })
+        .catch((err: unknown) => log.warn('reading the hub_remote_children flag failed', err))
+    void read()
+    // The labs setting can change in settings.json while this page is open.
+    window.addEventListener(SETTINGS_CHANGED_ELSEWHERE, read)
+    return () => {
+      live = false
+      window.removeEventListener(SETTINGS_CHANGED_ELSEWHERE, read)
+    }
+  }, [])
+  if (!shown) return null
+  return (
+    <Section title={SETTING_ROW.hubReconnectOnLaunch.section} card>
+      <SettingRow def={SETTING_ROW.hubReconnectOnLaunch}>
+        <ToggleControl def={SETTING_ROW.hubReconnectOnLaunch} />
+      </SettingRow>
+    </Section>
   )
 }
 
