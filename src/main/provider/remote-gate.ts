@@ -10,7 +10,7 @@
 import { execFile } from 'node:child_process'
 import { readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { oauthInteractiveLoginCommand, shellQuoteDir } from '@shared/provider-auth-format'
 import { createMainLogger } from '../logger'
 import { managedPath } from './managed-bin'
@@ -67,15 +67,16 @@ function credentialsStamp(configDir: string): string | null {
 export function noteClaudeAuthFailure(configDir: string): void {
   const stamp = credentialsStamp(configDir)
   if (stamp === null) return
-  refusedClaudeLogins.set(configDir, stamp)
+  refusedClaudeLogins.set(resolve(configDir), stamp)
   log.warn(`Claude refused the login in ${configDir}; it counts as signed out until it changes`)
 }
 
 function claudeLoginRefused(configDir: string): boolean {
-  const refused = refusedClaudeLogins.get(configDir)
+  const key = resolve(configDir)
+  const refused = refusedClaudeLogins.get(key)
   if (refused === undefined) return false
   if (refused === credentialsStamp(configDir)) return true
-  refusedClaudeLogins.delete(configDir)
+  refusedClaudeLogins.delete(key)
   return false
 }
 
