@@ -30,6 +30,7 @@ import {
   listHubOutbox,
   listOpenRemoteHubChildren,
   listPendingHubWakes,
+  saveMessageIfAbsent,
   setConversationWorktree,
   updateHubChild,
 } from '../../src/main/db/database'
@@ -162,6 +163,27 @@ describe('a child machine after its backend restarts', () => {
     expect(getHubChild('agent_open')!.phase).toBe('open')
     expect(lastHubWakeOf('agent_local')).toBeNull()
     expect(listPendingHubWakes('agent_local_parent')).toEqual([])
+  })
+
+  it('gives a second restart wake when a message reached the child after the first', () => {
+    vi.useFakeTimers({ now: 1_000_000, toFake: ['Date'] })
+    try {
+      claimHubParentStub('agent_parent', DESK)
+      addProject('/repo', 'repo')
+      createConversation('agent_open', '/repo', 'claude-code', 'Child')
+      insertHubChild(childRow('agent_open', 'agent_parent'))
+      updateHubChild('agent_open', { phase: 'open' })
+      new HubStarter(host(), () => null).recoverInterrupted()
+      vi.setSystemTime(1_005_000)
+      saveMessageIfAbsent('pm_1', 'agent_open', 'user', 'Go on')
+      vi.setSystemTime(1_010_000)
+      new HubStarter(host(), () => null).recoverInterrupted()
+      new HubStarter(host(), () => null).recoverInterrupted()
+      const kinds = listHubOutbox(DESK, { limit: 50 }).items.map((i) => (i.kind === 'wake' ? i.wake.kind : i.kind))
+      expect(kinds).toEqual(['restart', 'restart'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

@@ -107,6 +107,7 @@ import {
   getHubParent,
   hubInstallId,
   lastHubWakeOf,
+  lastMessageAt,
   listOpenRemoteHubChildren,
   findProposedHubBatch,
   getHubBatch,
@@ -124,6 +125,7 @@ import {
   setConversationProviderInstanceId,
   setConversationRuntimeMode,
   setHubBatchStatus,
+  threadFamilyIds,
   updateHubChild,
   type HubChildRow,
 } from '../db/database'
@@ -392,20 +394,22 @@ export class HubStarter {
    * are marked failed with a wake; the worktree creation service finishes or
    * rolls back their worktrees on its own. An open child of a parent stub
    * (a hub on another machine) lost its session with this backend: its parent
-   * hears of it with one `restart` wake through the outbox.
+   * hears of it with a `restart` wake through the outbox, unless its newest
+   * wake is one and no message reached it since.
    */
   recoverInterrupted(): void {
     for (const child of listHubChildrenInPhase('starting')) {
       updateHubChild(child.childId, { phase: 'failed_start' })
       this.failedWake(child.parentId, child.childId, 'Start was cut off when Switchboard quit.')
       log.info('child start cut off by a quit', { childId: child.childId, parentId: child.parentId })
+      this.dropRemoteStartWorktree(child.parentId, child.childId)
     }
     for (const child of listHubChildrenInPhase('open')) {
       const state = parseChildDeps(child.depsJson)
       const conv = getConversationById(child.childId)
       if (linkedFolders(state).length > 0 && conv?.worktree_path)
         this.track(child.childId, child.parentId, conv.worktree_path, state)
-      if (getHubParent(child.parentId)?.remoteHub && lastHubWakeOf(child.childId)?.kind !== 'restart') {
+      if (getHubParent(child.parentId)?.remoteHub && !this.toldOfRestart(child.childId)) {
         this.wake({
           parentId: child.parentId,
           childId: child.childId,
@@ -416,6 +420,11 @@ export class HubStarter {
         log.info('child session ended by a backend restart', { childId: child.childId, parentId: child.parentId })
       }
     }
+  }
+
+  private toldOfRestart(childId: string): boolean {
+    const last = lastHubWakeOf(childId)
+    return last?.kind === 'restart' && (lastMessageAt(threadFamilyIds(childId)) ?? 0) <= last.createdAt
   }
 
   /** The parent of an open child, or null. A failed read counts as no child: the database is down for every path then. */

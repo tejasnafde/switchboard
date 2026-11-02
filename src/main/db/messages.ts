@@ -274,6 +274,17 @@ export function getMessageRevisions(conversationIds: readonly string[]): number[
   return conversationIds.map((id) => (read.get(id) as { revision: number } | undefined)?.revision ?? 0)
 }
 
+/** The newest message time across these conversations, or null when they have none. */
+export function lastMessageAt(conversationIds: readonly string[]): number | null {
+  if (conversationIds.length === 0) return null
+  const row = getDb()
+    .prepare(
+      `SELECT MAX(timestamp) AS at FROM messages WHERE conversation_id IN (${conversationIds.map(() => '?').join(',')})`,
+    )
+    .get(...conversationIds) as { at: number | null }
+  return row.at
+}
+
 /** Text columns only, one row at a time, oldest first: for readers that may stop early. */
 export function iterateMessageTextForConversation(
   conversationId: string,

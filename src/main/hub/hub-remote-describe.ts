@@ -136,7 +136,7 @@ async function accountsWithLogin(deps: HubDescribeDeps): Promise<ProviderInstanc
   return all.filter((_, n) => checks[n])
 }
 
-const LOGIN_ENV_KEYS: Partial<Record<string, readonly string[]>> = {
+const LOGIN_ENV_KEYS: Record<'claude-code' | 'codex', readonly string[]> = {
   'claude-code': ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'],
   codex: ['OPENAI_API_KEY'],
 }
@@ -148,7 +148,7 @@ const LOGIN_ENV_KEYS: Partial<Record<string, readonly string[]>> = {
  */
 export async function accountHasLogin(i: ProviderInstanceWire): Promise<boolean> {
   if (i.agentType !== 'claude-code' && i.agentType !== 'codex') return true
-  if (LOGIN_ENV_KEYS[i.agentType]!.some((k) => i.envKeys.includes(k))) return true
+  if (LOGIN_ENV_KEYS[i.agentType].some((k) => i.envKeys.includes(k))) return true
   if (!i.effectiveOauthDir) return true
   return (await checkRemoteProviderAuth(i.agentType, i.effectiveOauthDir)).loggedIn
 }
