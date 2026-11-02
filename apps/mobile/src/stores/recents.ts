@@ -38,6 +38,8 @@ interface RecentsState {
 
 /** The newest request per machine; an older reply that lands later is dropped. */
 const requests = new Map<string, number>()
+/** The request whose `getProjects` is still out, per machine. */
+const projectReads = new Map<string, number>()
 
 function without<T>(byId: Record<string, T>, id: string): Record<string, T> {
   const { [id]: _dropped, ...rest } = byId
@@ -57,14 +59,20 @@ export const useRecentsStore = create<RecentsState>()(
         const request = (requests.get(connectionId) ?? 0) + 1
         requests.set(connectionId, request)
         const current = () => requests.get(connectionId) === request
+        projectReads.set(connectionId, request)
         await Promise.all([
-          client.getProjects().then(
-            (projects) => {
-              if (current())
-                set((s) => ({ sessions: { ...s.sessions, [connectionId]: sessionsFromProjects(projects) } }))
-            },
-            (err: unknown) => log.warn('could not list chats for Home', err),
-          ),
+          client
+            .getProjects()
+            .finally(() => {
+              if (projectReads.get(connectionId) === request) projectReads.delete(connectionId)
+            })
+            .then(
+              (projects) => {
+                if (current())
+                  set((s) => ({ sessions: { ...s.sessions, [connectionId]: sessionsFromProjects(projects) } }))
+              },
+              (err: unknown) => log.warn('could not list chats for Home', err),
+            ),
           client.listLiveSessions().then(
             (live) => {
               if (!current()) return
@@ -81,7 +89,8 @@ export const useRecentsStore = create<RecentsState>()(
       applySettled: (connectionId, event) => {
         const patched = withSettled(get().sessions[connectionId] ?? [], event.conversationId, event.settledAt)
         if (patched) set((s) => ({ sessions: { ...s.sessions, [connectionId]: patched } }))
-        else void get().refresh(connectionId)
+        // No row matched, or a read that is still out would put the old settledAt back.
+        if (!patched || projectReads.get(connectionId) === requests.get(connectionId)) void get().refresh(connectionId)
       },
 
       dropLive: (connectionId) => {
@@ -91,6 +100,7 @@ export const useRecentsStore = create<RecentsState>()(
 
       forget: (connectionId) => {
         requests.delete(connectionId)
+        projectReads.delete(connectionId)
         set((s) => ({ sessions: without(s.sessions, connectionId), live: without(s.live, connectionId) }))
       },
     }),

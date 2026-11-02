@@ -34,27 +34,27 @@ export function createSettleOnMerge(deps: SettleOnMergeDeps): SettleOnMerge {
 
   const attempt = (chatId: string, prNumber: number, tryIndex: number): void => {
     pending.delete(chatId)
-    const row = deps.readChat(chatId)
-    if (
-      !row ||
-      !shouldAutoSettle({
-        state: 'merged',
-        busy: deps.busy(row.id),
-        needsUser: deps.needsUser(row.id),
-        settledAt: row.settledAt,
-      })
-    ) {
-      if (tryIndex > 0) log.info('a merged pull request no longer settles its chat', { chatId, number: prNumber })
-      return
-    }
     try {
+      const row = deps.readChat(chatId)
+      if (
+        !row ||
+        !shouldAutoSettle({
+          state: 'merged',
+          busy: deps.busy(row.id),
+          needsUser: deps.needsUser(row.id),
+          settledAt: row.settledAt,
+        })
+      ) {
+        if (tryIndex > 0) log.info('a merged pull request no longer settles its chat', { chatId, number: prNumber })
+        return
+      }
       if (deps.store(row.id, Date.now(), prNumber)) {
         log.info('settled a chat whose linked pull request merged', { chatId: row.id, number: prNumber, tryIndex })
       }
     } catch (err) {
       const delay = delays[tryIndex]
       log.warn('settling a chat after its pull request merged failed', {
-        chatId: row.id,
+        chatId,
         number: prNumber,
         tryIndex,
         retryInMs: delay ?? null,

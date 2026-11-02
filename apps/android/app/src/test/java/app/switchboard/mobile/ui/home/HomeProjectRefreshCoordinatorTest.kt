@@ -95,6 +95,25 @@ class HomeProjectRefreshCoordinatorTest {
         assertNull(listener)
     }
 
+    @Test
+    fun `a settle while the first read is out supersedes that read`() {
+        val remote = FakeHomeBrowseRemote()
+        val snapshots = FakeHomeSnapshotStore(listOf(project("cached")))
+        var listener: (() -> Unit)? = null
+        val coordinator = coordinator(remote, snapshots) { onSettled ->
+            listener = onSettled
+            Cancelable { listener = null }
+        }
+        remote.onFirstGetProjects = { listener?.invoke() }
+
+        coordinator.start()
+        assertEquals(2, remote.projects.size)
+        remote.projects.removeLast()(success(listOf(project("fresh", settledAt = 500))))
+        remote.projects.removeFirst()(success(listOf(project("fresh"))))
+
+        assertEquals(500L, coordinator.state.value.projects.items().single().project.sessions.single().settledAt)
+    }
+
     private fun coordinator(
         remote: FakeHomeBrowseRemote,
         snapshots: FakeHomeSnapshotStore,
@@ -143,8 +162,12 @@ private class FakeHomeBrowseRemote : BrowseRemote {
     val projects = ArrayDeque<(RemoteResponse<List<Project>>) -> Unit>()
     val workspaces = ArrayDeque<(RemoteResponse<List<Workspace>>) -> Unit>()
 
+    /** Runs once, after the first project request is sent. */
+    var onFirstGetProjects: (() -> Unit)? = null
+
     override fun getProjects(callback: (RemoteResponse<List<Project>>) -> Unit) {
         projects += callback
+        onFirstGetProjects?.also { onFirstGetProjects = null }?.invoke()
     }
 
     override fun getConversations(

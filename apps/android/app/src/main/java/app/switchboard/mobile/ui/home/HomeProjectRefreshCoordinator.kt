@@ -34,12 +34,13 @@ class HomeProjectRefreshCoordinator(
 
     fun start() {
         SbLog.i("home", "$connectionId gen=$expectedGeneration refresh projects")
-        browse.refreshProjectIndex()
+        // Listen first: a settle while the first read is out supersedes that read.
         settledSubscription?.cancel()
         settledSubscription = onConversationSettled {
             SbLog.i("home", "$connectionId gen=$expectedGeneration a chat settled, refresh projects")
             browse.refreshProjectIndex()
         }
+        browse.refreshProjectIndex()
     }
 
     override fun close() {

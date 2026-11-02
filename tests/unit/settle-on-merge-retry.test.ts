@@ -1,13 +1,14 @@
 /**
  * Settle on merge: a link change to merged is seen once, so a settle that
  * throws is retried after a delay, re-checking the rule at each try, and the
- * retries stop on detach.
+ * retries and later settles stop on detach.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const db = vi.hoisted(() => ({
   settledAt: null as number | null,
   failures: 0,
+  readFailures: 0,
   writes: 0,
 }))
 
@@ -19,8 +20,13 @@ vi.mock('../../src/main/db/database', () => ({
   getProjects: () => [],
   listHiddenPullRequestRepos: () => [],
   setPullRequestLinkState: () => ['chat-1'],
-  getConversationByThreadId: (id: string) =>
-    id === 'chat-1' ? { id, project_path: '/p', worktree_path: null, settled_at: db.settledAt } : null,
+  getConversationByThreadId: (id: string) => {
+    if (db.readFailures > 0) {
+      db.readFailures--
+      throw new Error('SQLITE_BUSY')
+    }
+    return id === 'chat-1' ? { id, project_path: '/p', worktree_path: null, settled_at: db.settledAt } : null
+  },
   setConversationSettled: (_id: string, at: number | null) => {
     db.writes++
     if (db.failures > 0) {
@@ -66,6 +72,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   db.settledAt = null
   db.failures = 0
+  db.readFailures = 0
   db.writes = 0
 })
 afterEach(() => vi.useRealTimers())
@@ -79,6 +86,16 @@ describe('settle on merge retry', () => {
     await vi.advanceTimersByTimeAsync(SETTLE_RETRY_DELAYS_MS[0])
     expect(settled()).toHaveLength(1)
     expect(settled()[0][1]).toMatchObject({ conversationId: 'chat-1', prNumber: 7 })
+    detach()
+  })
+
+  it('retries when reading the chat throws', async () => {
+    db.readFailures = 1
+    const { merge, settled, detach } = setup()
+    await merge()
+    expect(settled()).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(SETTLE_RETRY_DELAYS_MS[0])
+    expect(settled()).toHaveLength(1)
     detach()
   })
 
@@ -122,6 +139,14 @@ describe('settle on merge retry', () => {
     detach()
     await vi.advanceTimersByTimeAsync(600_000)
     expect(db.writes).toBe(1)
+    expect(settled()).toHaveLength(0)
+  })
+
+  it('does not settle once detached', async () => {
+    const { merge, settled, detach } = setup()
+    detach()
+    await merge()
+    expect(db.writes).toBe(0)
     expect(settled()).toHaveLength(0)
   })
 })

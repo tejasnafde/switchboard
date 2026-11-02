@@ -254,6 +254,10 @@ export function attachPullRequestAutoLink(
     stopLinker()
     stopSync()
     settler.cancel()
+    if (settleOnMergeRetries === settler) {
+      settleOnMergeRetries = null
+      settleOnMerge = () => {}
+    }
   }
 }
 

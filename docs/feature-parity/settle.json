@@ -103,9 +103,9 @@
       "tests/unit/global-keybindings.test.ts: Cmd+Z (Ctrl+Z off a Mac) undoes outside an input, a textarea (a terminal) and the contenteditable composer.",
       "tests/unit/raised-surface-contrast.test.ts and light-theme-contrast.test.ts: muted text on the selected and hovered Recents row and the keycap, and the hovered Settle and Undo, at 4.5:1 or better in dark and light.",
       "apps/mobile/src/lib/__tests__/home-recents-settled.test.ts (jest): Home > Recents leaves out a settled chat, also after an edit moved its time, and keeps it while it works.",
-      "tests/unit/settle-on-merge-retry.test.ts: a Reviews merge whose settle throws once settles on the retry 2 s later (fake timers), gives up after the last delay, does not retry once the chat starts a turn, never settles a chat busy at merge time, and drops pending retries on detach.",
-      "apps/mobile/src/stores/__tests__/recents-settled.test.ts (jest): a connected machine's app:conversation-settled broadcast patches the Home > Recents row, an unsettle restores it, an id no row has reads app:get-projects again, and disconnect stops listening.",
-      "apps/android testDebugUnitTest (gradle, 2026-11-03): HomePresentationTest (a settled chat leaves Recents) and HomeProjectRefreshCoordinatorTest (a settle broadcast re-reads the project list while Home is mounted, the new settledAt reaches the state, close cancels the subscription) pass."
+      "tests/unit/settle-on-merge-retry.test.ts: a Reviews merge whose settle throws once settles on the retry 2 s later (fake timers), retries when reading the chat throws, gives up after the last delay, does not retry once the chat starts a turn, never settles a chat busy at merge time, drops pending retries on detach, and settles nothing once detached.",
+      "apps/mobile/src/stores/__tests__/recents-settled.test.ts (jest): a connected machine's app:conversation-settled broadcast patches the Home > Recents row, an unsettle restores it, an id no row has reads app:get-projects again, a project read that was out before the settle does not undo the patch, and disconnect stops listening.",
+      "apps/android testDebugUnitTest (gradle, 2026-11-03): HomePresentationTest (a settled chat leaves Recents) and HomeProjectRefreshCoordinatorTest (a settle broadcast re-reads the project list while Home is mounted, the new settledAt reaches the state, a settle while the first read is out supersedes that read, close cancels the subscription) pass."
     ],
     "hardware": [],
     "notExercised": [

@@ -69,6 +69,25 @@ test('a broadcast for an id no row has reads the list again', async () => {
   expect(transport.invoke).toHaveBeenCalledWith('app:get-projects')
 })
 
+test('a project read that was out before a settle does not undo the patch', async () => {
+  const transport = fakeTransport()
+  await connect(transport)
+  const replies: ((projects: unknown) => void)[] = []
+  transport.invoke.mockImplementation((channel: string) =>
+    channel === 'app:get-projects' ? new Promise((resolve) => replies.push(resolve as never)) : Promise.resolve([]),
+  )
+  const project = (settledAt: number | null) => [
+    { path: '/p', name: 'p', sessions: [{ id: 'a', title: 'a', startedAt: 100, settledAt }] },
+  ]
+  const refreshed = useRecentsStore.getState().refresh('mac')
+  transport.handlers.get('app:conversation-settled')!({ conversationId: 'a', settledAt: 500 })
+  replies[0](project(null))
+  replies[1]?.(project(500))
+  await refreshed
+  await new Promise((r) => setTimeout(r, 0))
+  expect(useRecentsStore.getState().sessions.mac).toEqual([expect.objectContaining({ id: 'a', settledAt: 500 })])
+})
+
 test('disconnect stops listening', async () => {
   const transport = fakeTransport()
   await connect(transport)
