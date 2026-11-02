@@ -2927,6 +2927,8 @@ export class ProviderRegistry implements PeerToolHost {
         // tool the moment its turn starts, and the depth has to already be there.
         const previousDepth = this.turnDepth.get(targetThreadId)
         this.turnDepth.set(targetThreadId, nextHopDepth(senderDepth, initiator))
+        // Before the send: a snooze written while it is pending came after this message.
+        const sentAt = Date.now()
         try {
           if (delivery) await adapter.sendTurn(targetThreadId, body, undefined, undefined, delivery, queuedId)
           else await adapter.sendTurn(targetThreadId, body)
@@ -2944,7 +2946,11 @@ export class ProviderRegistry implements PeerToolHost {
         }
 
         // A message a person sent wakes a snoozed chat; one from an agent does not.
-        chatSnoozer()?.onEvent(targetRoot, { kind: 'message', from: initiator === 'user' ? 'person' : 'agent' })
+        chatSnoozer()?.onEvent(targetRoot, {
+          kind: 'message',
+          from: initiator === 'user' ? 'person' : 'agent',
+          at: sentAt,
+        })
         const at = Date.now()
         // The receiving turn is persisted under the message id so a redelivery
         // of the same id cannot double-post, and the sender keeps a marker so
@@ -3916,6 +3922,9 @@ export class ProviderRegistry implements PeerToolHost {
     )
   }
 
+  /** Threads whose last published event was a turn end (see the snooze wake in `publishEvent`). */
+  private readonly turnJustEnded = new Set<string>()
+
   private publishEvent(event: RuntimeEvent): void {
     if (event.type === 'turn.queued' || event.type === 'turn.dequeued' || event.type === 'turn.queue-held') {
       const observed = this.queuedTurns.observe(event, this.sessionAdapters.get(event.threadId)?.provider)
@@ -4057,7 +4066,12 @@ export class ProviderRegistry implements PeerToolHost {
     if (event.type === 'request.opened' || event.type === 'question.asked' || event.type === 'plan.proposed')
       chatSnoozer()?.onEvent(event.threadId, { kind: 'needs_you' })
     // Only a turn's failure: a session that fails to start is not news the user waited for.
-    if (event.type === 'error' && this.isTurnInFlight(event.threadId))
+    // Claude ends a failed query's turn first and reports the error next, so an
+    // error right after a turn end belongs to that turn too.
+    const followsTurnEnd = this.turnJustEnded.has(event.threadId)
+    if (event.type === 'turn.completed') this.turnJustEnded.add(event.threadId)
+    else this.turnJustEnded.delete(event.threadId)
+    if (event.type === 'error' && (followsTurnEnd || this.isTurnInFlight(event.threadId)))
       chatSnoozer()?.onEvent(event.threadId, { kind: 'error', at: Date.now() })
     // After the event itself, so clients see the turn end before its Limited row.
     if (event.type === 'error') this.limitResumer?.onError(event.threadId)

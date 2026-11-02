@@ -2,8 +2,10 @@
 import { createMigratedDb } from './helpers/test-db'
 import { describe, expect, it } from 'vitest'
 import {
+  archiveConversation,
   clearConversationInboxForTurn,
   clearConversationWoke,
+  getConversationSettled,
   getConversationSnooze,
   getManagedRootConversationsForProject,
   listSnoozedConversations,
@@ -11,6 +13,7 @@ import {
   saveMessage,
   setConversationSettled,
   setConversationSnooze,
+  unarchiveConversation,
   wakeConversation,
 } from '../../src/main/db/database'
 import { projectManagedRootSessions, sessionSummaryToConversationRow } from '../../src/main/ipc/terminal-sessions'
@@ -66,7 +69,7 @@ describe('snooze migration', () => {
 describe('snooze writes', () => {
   it('writes and reads the root row through a rotated id', () => {
     seed()
-    expect(snooze('uuid-c', 9000)).toBe(1)
+    expect(snooze('uuid-c', 9000)).toEqual({ rev: 1, unsettled: false })
     expect(getConversationSnooze('c')).toMatchObject({ snoozedUntil: 9000, snoozedAt: 50, snoozeRev: 1 })
     expect(getConversationSnooze('uuid-c')).toMatchObject({ snoozedUntil: 9000 })
     expect(listSnoozedConversations()).toEqual([
@@ -92,7 +95,7 @@ describe('snooze writes', () => {
     seed()
     snooze('c', 9000)
     expect(snooze('c', 9500, { expectRev: 0 })).toBeNull()
-    expect(snooze('c', 9500, { expectRev: 1 })).toBe(2)
+    expect(snooze('c', 9500, { expectRev: 1 })).toEqual({ rev: 2, unsettled: false })
   })
 
   it('a marked wake clears every snooze field together and keeps the marker apart', () => {
@@ -165,5 +168,28 @@ describe('what ends a snooze', () => {
     snooze('c', 9000)
     setConversationSettled('c', null)
     expect(getConversationSnooze('c')).toMatchObject({ snoozedAt: 50 })
+  })
+
+  it('an archive, in the archive write itself, with the marker', () => {
+    const db = seed()
+    snooze('c', 9000)
+    // A marker left from an earlier wake, beside the live snooze.
+    db.prepare("UPDATE conversations SET woke_at = 9002, woke_reason = 'error' WHERE id = 'c'").run()
+    archiveConversation('uuid-c')
+    expect(getConversationSnooze('c')).toMatchObject({ snoozedAt: null, snoozedUntil: null, wokeAt: null })
+    expect(listSnoozedConversations()).toEqual([])
+    // Unarchived, nothing comes back for a timer to rebuild.
+    unarchiveConversation('c')
+    expect(listSnoozedConversations()).toEqual([])
+  })
+})
+
+describe('what a snooze ends', () => {
+  it('the settle, and says so', () => {
+    seed()
+    setConversationSettled('uuid-c', 700)
+    expect(snooze('uuid-c', 9000)).toEqual({ rev: 1, unsettled: true })
+    expect(getConversationSettled('c')).toBeNull()
+    expect(snooze('c', 9500)).toEqual({ rev: 2, unsettled: false })
   })
 })

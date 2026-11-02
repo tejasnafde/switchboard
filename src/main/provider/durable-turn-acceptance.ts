@@ -353,8 +353,12 @@ export class AtomicUserTurnSubmission {
         reason: 'Provider accepted the turn but the durable transcript commit is unconfirmed',
       }
     }
-    // The commit ended any snooze; clients hear it here.
-    chatSnoozer()?.onCleared(key.threadId)
+    // The commit ended any snooze; clients hear it here. Best-effort, like `notifyCommit`.
+    try {
+      chatSnoozer()?.onCleared(key.threadId)
+    } catch (err) {
+      log.warn(`snooze cleanup after the commit of ${key.threadId} failed`, err)
+    }
     const canonicalRow = this.store.readCanonicalUserTurn(key)
     if (!canonicalRow) {
       notifyCommit(dispatched, true)

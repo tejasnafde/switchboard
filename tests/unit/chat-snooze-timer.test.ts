@@ -5,6 +5,7 @@ import { AppChannels } from '../../src/shared/ipc-channels'
 import {
   archiveConversation,
   clearConversationInboxForTurn,
+  getConversationSettled,
   getConversationSnooze,
   getDb,
   setConversationSettled,
@@ -14,6 +15,7 @@ import {
   ChatSnoozer,
   PR_WAKE_POLL_MS,
   SNOOZE_RESYNC_MS,
+  startChatSnoozer,
   type ChatSnoozeHost,
 } from '../../src/main/conversations/chat-snooze'
 import type { PrReading } from '../../src/shared/chat-snooze'
@@ -122,7 +124,7 @@ describe('ChatSnoozer', () => {
   it('wakes early on a card and a failure, not on an agent message or a normal end', async () => {
     const s = make()
     await s.snooze('c', { until: T0 + HOUR })
-    s.onEvent('uuid-c', { kind: 'message', from: 'agent' })
+    s.onEvent('uuid-c', { kind: 'message', from: 'agent', at: Date.now() + 1 })
     s.onEvent('c', { kind: 'turn_completed' })
     expect(getConversationSnooze('c')?.snoozedAt).not.toBeNull()
     s.onEvent('uuid-c', { kind: 'needs_you' })
@@ -138,6 +140,44 @@ describe('ChatSnoozer', () => {
     // The old timer is gone with the snooze.
     vi.advanceTimersByTime(HOUR)
     expect(host.pushWoke).not.toHaveBeenCalled()
+  })
+
+  it('a person message sent before the snooze, delivered after the write, does not wake it', async () => {
+    const s = make()
+    const sentAt = Date.now()
+    vi.advanceTimersByTime(10)
+    await s.snooze('c', { until: T0 + HOUR })
+    s.onEvent('c', { kind: 'message', from: 'person', at: sentAt })
+    expect(getConversationSnooze('c')?.snoozedAt).not.toBeNull()
+    s.onEvent('c', { kind: 'message', from: 'person', at: Date.now() + 1 })
+    expect(getConversationSnooze('c')?.wokeReason).toBe('message')
+  })
+
+  it('a settle stays stored and reported when the snooze cleanup throws', () => {
+    const active = startChatSnoozer(host)
+    vi.spyOn(active, 'onCleared').mockImplementation(() => {
+      throw new Error('snooze broadcast failed')
+    })
+    try {
+      expect(storeConversationSettled(host, 'uuid-c', 700)).toBe(true)
+      expect(getConversationSettled('c')).toBe(700)
+    } finally {
+      active.dispose()
+    }
+  })
+
+  it('snoozing a settled chat unsettles it for every client', async () => {
+    const s = make()
+    getDb().prepare("UPDATE conversations SET settled_at = 1 WHERE id = 'c'").run()
+    expect(await s.snooze('uuid-c', { until: T0 + HOUR })).toMatchObject({ ok: true })
+    expect(getConversationSettled('c')).toBeNull()
+    const settled = host.emit.mock.calls.filter(([c]) => c === AppChannels.CONVERSATION_SETTLED)
+    expect(settled).toEqual([
+      [AppChannels.CONVERSATION_SETTLED, { conversationId: 'c', settledAt: null, title: 'Chat' }],
+    ])
+    // A chat that was not settled sends no settle event.
+    await s.snooze('d', { until: T0 + HOUR })
+    expect(host.emit.mock.calls.filter(([c]) => c === AppChannels.CONVERSATION_SETTLED)).toHaveLength(1)
   })
 
   it('Wake and Undo: no marker; Undo of a wake is refused once the chat moved on', async () => {
