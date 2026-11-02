@@ -31,11 +31,17 @@ import { shouldLoadPhoneHistory } from '@shared/phone-history-window'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
 import { canSteer, type QueuedTurnSummary } from '@shared/turn-delivery'
 import { shortModelLabel } from '@shared/models'
-import { providerKindFor, type ProviderInstance, type ProviderSkill } from '@shared/types'
+import {
+  defaultInstanceId,
+  providerKindFor,
+  toAgentProvider,
+  type ProviderInstance,
+  type ProviderSkill,
+} from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type { ModelOption } from '@shared/models'
-import { formatTokens } from '@shared/format'
+import { contextPercent, formatTokens } from '@shared/format'
 import { echoMessageId, interruptFoundNoTurn, isRuntimeMode } from '@shared/provider-events'
 import { VIEWING_RENEW_MS } from '@shared/push-policy'
 import { generateTitle } from '@shared/auto-title'
@@ -79,6 +85,7 @@ import { mergeHistoryItems, historyToItems } from '../lib/thread-history'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ThreadHeaderTitle } from '../components/ThreadHeaderTitle'
 import { PrLinksChip, PrLinksSheet } from '../components/PrLinks'
+import { ChatDetailsButton, ChatDetailsSheet } from '../components/ChatDetailsSheet'
 import { QueueSegment } from '../components/QueueSegment'
 import { AgentSettingsSheet } from '../components/AgentSettingsSheet'
 import { settingsChipLabel, usageAccessibilityLabel, usageLine } from '../lib/thread-chrome'
@@ -119,6 +126,7 @@ import {
 } from './ThreadFeedItems'
 import { MergeBackSheet, type MergeBackSheetApi, type MergeBackSheetMode } from '../components/MergeBackSheet'
 import { FORK_MERGE_BACK_CAPABILITY } from '@shared/merge-back'
+import { DETAILS_SHEET_CAPABILITY } from '@shared/chat-details'
 import { LIMIT_AUTO_RESUME_CAPABILITY } from '@shared/limit-resume'
 import { CHAT_SNOOZE_CAPABILITY, isWoke } from '@shared/chat-snooze'
 import { styles } from './thread-screen.styles'
@@ -308,6 +316,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
     Keyboard.dismiss()
     setPrSheetOpen(true)
   }, [])
+  // The Details sheet (`details_sheet_v1`): an older backend cannot read the diff stat, so it shows no button.
+  const canShowDetails = getClient(connectionId)?.supportsCapability(DETAILS_SHEET_CAPABILITY) === true
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const openDetails = useCallback(() => {
+    Keyboard.dismiss()
+    setDetailsOpen(true)
+  }, [])
+
   // Unlinking the last link closes the sheet, so a later link does not reopen it.
   useEffect(() => {
     if (prLinks.length === 0) setPrSheetOpen(false)
@@ -325,9 +341,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
           onPress={toggleUsage}
         />
       ),
-      headerRight: () => <PrLinksChip links={prLinks} onPress={openPrSheet} />,
+      headerRight: () => (
+        <View style={styles.headerActions}>
+          {canShowDetails && <ChatDetailsButton onPress={openDetails} />}
+          <PrLinksChip links={prLinks} onPress={openPrSheet} />
+        </View>
+      ),
     })
-  }, [navigation, key, provider, usageOpen, toggleUsage, prLinks, openPrSheet])
+  }, [navigation, key, provider, usageOpen, toggleUsage, prLinks, openPrSheet, canShowDetails, openDetails])
 
   const unlinkPr = useCallback(
     (link: PrLink) => {
@@ -1712,6 +1733,17 @@ export default function ThreadScreen({ route, navigation }: Props) {
       />
 
       <PrLinksSheet visible={prSheetOpen} links={prLinks} onUnlink={unlinkPr} onClose={() => setPrSheetOpen(false)} />
+
+      <ChatDetailsSheet
+        visible={detailsOpen}
+        onClose={() => setDetailsOpen(false)}
+        connectionId={connectionId}
+        machine={backendLabel}
+        cwd={thread.historyMeta?.worktreePath ?? worktreePath ?? thread.historyMeta?.projectPath ?? projectPath ?? null}
+        instanceId={effectiveInstanceId ?? defaultInstanceId(toAgentProvider(effectiveProvider))}
+        links={prLinks}
+        contextUsed={thread.usedTokens != null ? contextPercent(thread.usedTokens, thread.maxTokens) : null}
+      />
 
       <AgentSettingsSheet
         visible={settingsOpen}

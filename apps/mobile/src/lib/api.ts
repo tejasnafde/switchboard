@@ -8,6 +8,7 @@ import { WsTransport, type TransportSocket, type WsAuth } from '@shared/ws-trans
 import type { Transport } from '@shared/transport'
 import {
   AppChannels,
+  GitChannels,
   HtmlLiveChannels,
   MachineChannels,
   ProviderChannels,
@@ -56,6 +57,8 @@ import type { HostWriteResponse } from '@shared/agent-host-writes'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { MergeBackActionResult, MergeBackPreview, MergeBackToken } from '@shared/merge-back'
 import type { PrLink, PrLinkChat, PrLinkResult } from '@shared/pull-request-links'
+import type { BranchRead, DiffRead } from '@shared/chat-details'
+import type { ProviderUsage } from '@shared/provider-usage'
 import type { PrConversation, PrDetail, PrListData, PrRef, PrResult, RepoRef } from '@shared/pull-requests'
 import type { PrWriteDone } from '@shared/pull-request-writes'
 import type { ConversationSettledEvent } from '@shared/chat-settle'
@@ -636,6 +639,20 @@ export class SwitchboardClient {
    */
   listInstances(): Promise<ProviderInstance[]> {
     return this.transport.invoke(ProviderInstanceChannels.LIST)
+  }
+
+  /** The account's usage limits, read on the backend (cached there for 45 s). Never rejects on a failed read: see `status`. */
+  instanceUsage(instanceId: string): Promise<ProviderUsage> {
+    return this.transport.invoke(ProviderInstanceChannels.USAGE, instanceId)
+  }
+
+  // ── git (the Details sheet, `details_sheet_v1`) ──
+  currentBranch(cwd: string): Promise<BranchRead> {
+    return this.transport.invoke(GitChannels.CURRENT_BRANCH, cwd)
+  }
+
+  diffStat(cwd: string): Promise<DiffRead> {
+    return this.transport.invoke(GitChannels.DIFF_STAT, cwd)
   }
 
   /**

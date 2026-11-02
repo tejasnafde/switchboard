@@ -52,6 +52,7 @@ fun ThreadSessionScreen(
     registerViewingLeaseRenewal: ((() -> Unit) -> Closeable)? = null,
     onFork: (messageId: String, withWorktree: Boolean) -> Unit = { _, _ -> },
     snoozeLine: @Composable () -> Unit = {},
+    details: ThreadDetails? = null,
 ) {
     val session by coordinator.state.collectAsState()
     val router = remember(coordinator, commandDispatcher) {
@@ -138,6 +139,7 @@ fun ThreadSessionScreen(
             (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.cancelLimitResume() }
         },
         snoozeLine = snoozeLine,
+        details = details,
     )
 }
 

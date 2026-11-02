@@ -125,6 +125,9 @@ export const BACKEND_CAPABILITIES = [
    *  and `stop-all` act on a child here of that desktop's parent stub only;
    *  `hub-remote:children-changed` says which stubs changed. */
   'hub_remote_control_v1',
+  /** `git:diff-stat` answers a phone, so the phones' chat Details sheet
+   *  shows its button (`DETAILS_SHEET_CAPABILITY` in shared/chat-details). */
+  'details_sheet_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {
