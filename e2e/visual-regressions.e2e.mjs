@@ -37,12 +37,15 @@ import { PNG } from 'pngjs'
 import { checkBaseline, flattenOverBackdrop } from './lib/visual-compare.mjs'
 import {
   HUB_PARENT,
+  HUB_REMOTE_MACHINE,
+  HUB_REMOTE_PARENT,
   HUB_WORKING_CHILD,
   makeDemoRepo,
   makeSideRepo,
   openHubChild,
   seedDatabase,
   seedHubChildren,
+  seedRemoteHubChildren,
 } from './fixtures/demo-workspace.mjs'
 
 const repoRoot = process.cwd()
@@ -1566,6 +1569,54 @@ async function captureHubScreens(fixture, theme) {
   await closeApp()
 }
 
+/**
+ * The hub screens for children on other machines (flags hub_children and
+ * hub_remote_children), on a launch of their own: a parent with one child here
+ * and one on a saved second machine that is not connected (strip, the remote
+ * row offline with its age, the Hub chip on 2 machines), then the demo's
+ * "two machines" start_children card with a remote row.
+ */
+async function captureRemoteHubScreens(fixture, theme) {
+  fixture.restore()
+  const dbPath = join(fixture.userData, 'data', 'switchboard.db')
+  // Main-process time, which is not pinned: "3 h" holds for half an hour either side.
+  seedRemoteHubChildren(dbPath, fixture.projectPath, { now: FROZEN_NOW, lastSeenAt: Date.now() - 3 * 3_600_000 })
+  const { instance, win } = await launchSwitchboard({
+    userData: fixture.userData,
+    demo: true,
+    env: { SB_HUB_CHILDREN: '1', SB_HUB_REMOTE_CHILDREN: '1' },
+  })
+  win.on('pageerror', (error) => console.error(`renderer error: ${error.message}`))
+  await instance.context().addInitScript(pinDate, FROZEN_NOW)
+  await win.reload()
+  await win.waitForFunction((now) => !!window.api?.settings && Date.now() === now, FROZEN_NOW, { timeout: 20_000 })
+  await win.addStyleTag({ content: FREEZE_CSS })
+  await chooseTheme(win, theme)
+  const turnTimes = win.locator('.turn-timestamp')
+
+  await openConversation(win, HUB_REMOTE_PARENT.title)
+  const strip = win.getByTestId('hub-children-strip')
+  const remoteRow = strip.locator('li').filter({ has: win.getByTestId('hub-machine-badge') })
+  await remoteRow.getByText(`${HUB_REMOTE_MACHINE.name} offline, last seen 3 h ago`).waitFor({ timeout: 20_000 })
+  await strip.locator('[data-hub-child="result_ready"]').waitFor({ state: 'visible' })
+  const chip = win.getByTestId('hub-chip')
+  await chip.getByText('2 children on 2 machines').waitFor({ state: 'visible' })
+  await snapScreen(win, 'hub-remote-strip', theme, strip)
+  await snapScreen(win, 'hub-remote-offline', theme, remoteRow)
+  await snapScreen(win, 'hub-remote-chip', theme, chip)
+
+  const editor = win.locator('.chat-composer [aria-label="Chat message"]').first()
+  await editor.click()
+  await win.keyboard.type('Start the children on two machines.')
+  await win.keyboard.press('Enter')
+  const card = win.getByTestId('approval-hub-batch')
+  await card.getByTestId('hub-machine-badge').waitFor({ state: 'visible', timeout: 20_000 })
+  await card.scrollIntoViewIfNeeded()
+  await settle(win)
+  await snapScreen(win, 'hub-remote-card', theme, card.locator('xpath=..'), [turnTimes])
+  await closeApp()
+}
+
 async function runThemeScreens() {
   const fixture = await prepareScreensFixture()
   for (const theme of THEMES) {
@@ -1586,6 +1637,7 @@ async function runThemeScreens() {
     await captureComposerChips(win, theme)
     await closeApp()
     await captureHubScreens(fixture, theme)
+    await captureRemoteHubScreens(fixture, theme)
   }
 }
 

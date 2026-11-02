@@ -72,6 +72,7 @@ import {
   getConversationTitle,
   listHubChildrenInPhase,
   listHubChildren,
+  listOpenRemoteHubChildren,
   listPendingHubWakes,
   lastHubWakes,
   lastHubWakeOf,
@@ -92,6 +93,7 @@ import {
   getConversationPendingHandoff,
   clearConversationPendingHandoff,
 } from '../db/database'
+import { getMachineSnapshotSyncedAt } from '../db/machines'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import {
   autoResumeAfterLimitOn,
@@ -3428,6 +3430,8 @@ export class ProviderRegistry implements PeerToolHost {
       installId: () => hubInstallId(),
       machineState: (machineId) => clients.machineState(machineId),
       machineName: (machineId) => clients.machineName(machineId),
+      reconnecting: (machineId) => clients.reconnecting(machineId),
+      lastSeenAt: (machineId) => getMachineSnapshotSyncedAt(machineId),
       control: (machineId) => clients.controlOf(machineId),
       supportsControl: (machineId) => clients.supportsControl(machineId),
       invoke: (machineId, channel, ...args) => clients.invoke(machineId, channel, ...args),
@@ -3441,17 +3445,27 @@ export class ProviderRegistry implements PeerToolHost {
     // A connect sends that machine's pending stops first; then remote starts left `starting`
     // (a quit, a timeout) are asked again, its outbox is pulled and its views are read.
     // A removal fails its starting rows.
-    const connected = async (machineId: string): Promise<void> => {
+    // A machine that was connected before in this run and came back: one `hub.remote-reconnect` line.
+    const connected = async (machineId: string, downMs?: number): Promise<void> => {
+      const span =
+        downMs === undefined
+          ? null
+          : perfSpan('hub.remote-reconnect', {
+              machineId,
+              downMs,
+              children: listOpenRemoteHubChildren().filter((c) => c.machineId === machineId).length,
+            })
       await control.flush(machineId)
       void this.hubStarter.reconcileRemote({ machineId })
-      void outbox.connected(machineId)
+      const pulled = outbox.connected(machineId)
       await control.connected(machineId)
+      span?.end({ outboxItems: await pulled })
     }
-    clients.setMachineListener((machineId, change) => {
+    clients.setMachineListener((machineId, change, downMs) => {
       if (change === 'removed') {
         this.hubStarter.remoteMachineRemoved(machineId)
         control.removed(machineId)
-      } else void connected(machineId)
+      } else void connected(machineId, downMs)
     })
     this.hubOutboxSubscriptions.push(
       clients.on(HubRemoteChannels.OUTBOX, (machineId) => void outbox.pull(machineId)),

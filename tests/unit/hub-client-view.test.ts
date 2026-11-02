@@ -10,7 +10,7 @@ import {
   withHubFields,
   type SessionHubField,
 } from '../../src/shared/hub'
-import { childDot } from '../../src/renderer/components/hub/child-dot'
+import { childDot, hubChildDot } from '../../src/renderer/components/hub/child-dot'
 import { deriveRecentSessions } from '../../src/renderer/components/sidebar/recent-sessions'
 import type { SessionSummary } from '../../src/shared/types'
 
@@ -85,6 +85,8 @@ describe('labels', () => {
       'Hub · 2 children · Waiting for children',
     )
     expect(hubChipText({ children: [{}] as never, state: 'idle' })).toBe('Hub · 1 child')
+    const remote = { machineId: 'vm-1', machine: 'build-vm', connected: true, ageMs: 0, stopping: false }
+    expect(hubChipText({ children: [{}, { remote }] as never, state: 'idle' })).toBe('Hub · 2 children on 2 machines')
     expect(hubChildCount(1)).toBe('1 child')
     expect(hubChildCount(6)).toBe('6 children')
   })
@@ -103,6 +105,14 @@ describe('labels', () => {
       failed: 'needs-you',
       paused: 'idle',
     })
+  })
+
+  it("shows the dot as Unknown while a remote child's machine is not connected, unless a Stop waits", () => {
+    const remote = { machineId: 'vm-1', machine: 'build-vm', connected: true, ageMs: 0, stopping: false }
+    expect(hubChildDot({ state: 'working' })).toBe('working')
+    expect(hubChildDot({ state: 'working', remote })).toBe('working')
+    expect(hubChildDot({ state: 'working', remote: { ...remote, connected: false } })).toBe('unknown')
+    expect(hubChildDot({ state: 'working', remote: { ...remote, connected: false, stopping: true } })).toBe('working')
   })
 
   it('names the child and the relay tool in a Nudge', () => {

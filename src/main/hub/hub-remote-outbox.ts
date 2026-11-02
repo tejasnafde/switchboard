@@ -92,7 +92,8 @@ export interface HubRemoteOutboxHost {
 type ImportResult = 'done' | 'retry'
 
 interface MachinePull {
-  running: Promise<void>
+  /** Resolves to the items its pulls read. */
+  running: Promise<number>
   again: boolean
 }
 
@@ -115,27 +116,29 @@ export class HubRemoteOutbox {
     this.retryMs = opts.retryMs ?? OUTBOX_RETRY_MS
   }
 
-  /** A machine connected: it is logged again if it is still too old. */
-  connected(machineId: string): Promise<void> {
+  /** A machine connected: it is logged again if it is still too old. Resolves to the items pulled. */
+  connected(machineId: string): Promise<number> {
     this.loggedOld.delete(machineId)
     return this.pull(machineId)
   }
 
   /** Pulls the machine's outbox, or runs one more pull after the one running now. */
-  pull(machineId: string): Promise<void> {
-    if (this.disposed) return Promise.resolve()
+  pull(machineId: string): Promise<number> {
+    if (this.disposed) return Promise.resolve(0)
     const current = this.pulls.get(machineId)
     if (current) {
       current.again = true
       return current.running
     }
-    const entry: MachinePull = { running: Promise.resolve(), again: false }
+    const entry: MachinePull = { running: Promise.resolve(0), again: false }
     entry.running = (async () => {
+      let items = 0
       try {
         do {
           entry.again = false
-          await this.pullOnce(machineId)
+          items += await this.pullOnce(machineId)
         } while (entry.again && !this.disposed)
+        return items
       } finally {
         this.pulls.delete(machineId)
       }
@@ -150,8 +153,9 @@ export class HubRemoteOutbox {
     this.retryTimers.clear()
   }
 
-  private async pullOnce(machineId: string): Promise<void> {
-    if (!this.host.enabled()) return
+  /** Resolves to the items read. */
+  private async pullOnce(machineId: string): Promise<number> {
+    if (!this.host.enabled()) return 0
     if (!(await this.host.supportsOutbox(machineId))) {
       if (!this.loggedOld.has(machineId)) {
         this.loggedOld.add(machineId)
@@ -159,7 +163,7 @@ export class HubRemoteOutbox {
           machineId,
         })
       }
-      return
+      return 0
     }
     const span = perfSpan('hub.outbox-pull', { machineId })
     const installId = this.host.installId()
@@ -193,7 +197,7 @@ export class HubRemoteOutbox {
           const result = await this.importItem(machineId, item)
           if (result === 'retry') retries++
           else acks.push(item.id)
-          if (this.disposed) return
+          if (this.disposed) return items
         }
         if (acks.length > 0)
           await this.host.invoke(machineId, HubRemoteChannels.OUTBOX_ACK, {
@@ -223,6 +227,7 @@ export class HubRemoteOutbox {
     if (failures > 0) this.failedPulls.set(machineId, failures)
     else this.failedPulls.delete(machineId)
     if (retries > 0 || (failed && failures <= PULL_FAILURE_RETRIES)) this.retryLater(machineId)
+    return items
   }
 
   /** An item that does not parse is recorded and acked when it has an id; otherwise it is only logged. */

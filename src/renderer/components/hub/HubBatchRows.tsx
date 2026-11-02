@@ -1,18 +1,18 @@
 import {
   formatGiB,
   HUB_MAIN_CHECKOUT_WARNING,
-  hubMachineLabel,
   hubRemoteDiskLine,
+  hubTransportTag,
   type HubBatchRowView,
   type HubBatchView,
 } from '@shared/hub'
 import { agentLabel } from '@shared/types'
+import { MachineBadge } from './MachineBadge'
 
-/** Agent, model, and for a child on another machine its account and machine. */
+/** Agent, model, and for a child on another machine its account; the machine follows as a badge. */
 function rowWho(r: HubBatchRowView): string {
   const agent = `${agentLabel(r.agent)}${r.model ? ` ${r.model}` : ''}`
-  if (!r.machine) return agent
-  return `${agent}${r.account ? ` · ${r.account}` : ''} on ${hubMachineLabel(r.machine)}`
+  return r.machine && r.account ? `${agent} · ${r.account}` : agent
 }
 
 function rowPlace(r: HubBatchRowView): string {
@@ -41,7 +41,14 @@ export function HubBatchRows({ view }: { view: HubBatchView }) {
           <li key={i} style={{ marginTop: '4px' }}>
             <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.title}</div>
             <div style={{ color: 'var(--text-muted)' }}>
-              {rowWho(r)} · {r.mode} · {rowPlace(r)}
+              {rowWho(r)}
+              {r.machine && (
+                <>
+                  {' on '}
+                  <MachineBadge name={r.machine.name} transport={hubTransportTag(r.machine)} />
+                </>
+              )}
+              {` · ${r.mode} · ${rowPlace(r)}`}
             </div>
             {r.machine && r.clone && r.remoteProjectPath && (
               <div style={{ color: 'var(--text-muted)' }}>

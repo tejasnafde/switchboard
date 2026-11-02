@@ -837,5 +837,193 @@
         "action": "send"
       }
     }
+  ],
+  "childStateText": [
+    {
+      "name": "local child: the state alone",
+      "input": {
+        "state": "needs_you",
+        "waitingForSlot": false
+      },
+      "expected": {
+        "label": "Needs you",
+        "word": "Needs you"
+      }
+    },
+    {
+      "name": "local child waiting for a slot",
+      "input": {
+        "state": "starting",
+        "waitingForSlot": true
+      },
+      "expected": {
+        "label": "Waiting for a slot",
+        "word": "Starting"
+      }
+    },
+    {
+      "name": "remote open, working: no machine in the text",
+      "input": {
+        "state": "working",
+        "waitingForSlot": false,
+        "remote": {
+          "machineId": "vm-1",
+          "machine": "build-vm",
+          "connected": true,
+          "ageMs": 0,
+          "stopping": false
+        }
+      },
+      "expected": {
+        "label": "Working",
+        "word": "Working"
+      }
+    },
+    {
+      "name": "remote open, waiting for a slot there",
+      "input": {
+        "state": "starting",
+        "waitingForSlot": true,
+        "remote": {
+          "machineId": "vm-1",
+          "machine": "build-vm",
+          "connected": true,
+          "ageMs": 0,
+          "stopping": false
+        }
+      },
+      "expected": {
+        "label": "Waiting for a slot on build-vm",
+        "word": "Starting"
+      }
+    },
+    {
+      "name": "remote open, an approval waits there",
+      "input": {
+        "state": "needs_you",
+        "waitingForSlot": false,
+        "remote": {
+          "machineId": "vm-1",
+          "machine": "build-vm",
+          "connected": true,
+          "ageMs": 0,
+          "stopping": false
+        }
+      },
+      "expected": {
+        "label": "Needs approval on build-vm",
+        "word": "Needs you"
+      }
+    },
+    {
+      "name": "remote offline with the age of its last view",
+      "input": {
+        "state": "working",
+        "waitingForSlot": false,
+        "remote": {
+          "machineId": "vm-1",
+          "machine": "build-vm",
+          "connected": false,
+          "ageMs": 180000,
+          "stopping": false
+        }
+      },
+      "expected": {
+        "label": "build-vm offline, last seen 3 min ago",
+        "word": "Offline"
+      }
+    },
+    {
+      "name": "remote offline, never seen",
+      "input": {
+        "state": "working",
+        "waitingForSlot": false,
+        "remote": {
+          "machineId": "vm-1",
+          "machine": "build-vm",
+          "connected": false,
+          "ageMs": null,
+          "stopping": false
+        }
+      },
+      "expected": {
+        "label": "build-vm offline",
+        "word": "Offline"
+      }
+    },
+    {
+      "name": "remote reconnecting",
+      "input": {
+        "state": "paused",
+        "waitingForSlot": false,
+        "remote": {
+          "machineId": "vm-1",
+          "machine": "build-vm",
+          "connected": false,
+          "ageMs": 40000,
+          "stopping": false,
+          "reconnecting": true
+        }
+      },
+      "expected": {
+        "label": "Reconnecting on build-vm",
+        "word": "Reconnecting"
+      }
+    },
+    {
+      "name": "remote stopping wins over offline",
+      "input": {
+        "state": "working",
+        "waitingForSlot": false,
+        "remote": {
+          "machineId": "vm-1",
+          "machine": "build-vm",
+          "connected": false,
+          "ageMs": 7200000,
+          "stopping": true
+        }
+      },
+      "expected": {
+        "label": "Stopping on build-vm",
+        "word": "Stopping"
+      }
+    }
+  ],
+  "childrenCount": [
+    {
+      "name": "local children only",
+      "input": [
+        null,
+        null,
+        null
+      ],
+      "expected": "3 children"
+    },
+    {
+      "name": "all on one other machine",
+      "input": [
+        "vm-1",
+        "vm-1"
+      ],
+      "expected": "2 children"
+    },
+    {
+      "name": "one local and one remote",
+      "input": [
+        null,
+        "vm-1"
+      ],
+      "expected": "2 children on 2 machines"
+    },
+    {
+      "name": "four children on three machines",
+      "input": [
+        null,
+        "vm-1",
+        "vm-2",
+        "vm-1"
+      ],
+      "expected": "4 children on 3 machines"
+    }
   ]
 }

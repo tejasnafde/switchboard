@@ -203,6 +203,7 @@ interface DesktopOpts {
   status?: ConnectionStatus
   callTimeoutMs?: number
   onChanged?: (parentId: string) => void
+  lastSeenAt?: (machineId: string) => number | null
 }
 
 /** The desktop: real hub client and control, its own rows for children on `vm1`. */
@@ -228,6 +229,8 @@ function desktop(machines: Record<string, { url: string }>, opts: DesktopOpts = 
       installId: () => db.hubInstallId(),
       machineState: (id) => clients.machineState(id),
       machineName: (id) => clients.machineName(id),
+      reconnecting: (id) => clients.reconnecting(id),
+      ...(opts.lastSeenAt ? { lastSeenAt: opts.lastSeenAt } : {}),
       control: (id) => clients.controlOf(id),
       supportsControl: (id) => clients.supportsControl(id),
       invoke: (id, channel, ...args) => {
@@ -259,7 +262,7 @@ function desktop(machines: Record<string, { url: string }>, opts: DesktopOpts = 
 }
 
 describe('view: the child machine answers its children, the desktop merges them', () => {
-  it('reads the view, keeps it per machine, and shows its age and "not connected" when the machine goes', async () => {
+  it('reads the view, keeps it per machine, and shows its age and "offline" when the machine goes', async () => {
     const vm = await bootVm()
     let now = 1_000_000
     const d = desktop({ vm1: { url: vm.url } }, { now: () => now })
@@ -281,7 +284,20 @@ describe('view: the child machine answers its children, the desktop merges them'
       waitingForSlot: false,
       remote: { machineId: 'vm1', machine: 'Machine vm1', connected: false, ageMs: 180_000, stopping: false },
     })
-    expect(label).toBe('Working (Machine vm1 not connected, last seen 3 min ago)')
+    expect(label).toBe('Machine vm1 offline, last seen 3 min ago')
+  })
+
+  it('with no view, ages an offline machine from when it was last seen, and marks a reconnect', () => {
+    const now = 10_000_000
+    const d = desktop(
+      { vm1: { url: 'ws://127.0.0.1:1' } },
+      { status: 'offline', now: () => now, lastSeenAt: () => now - 7_200_000 },
+    )
+    const row = d.own('agent_c1')
+    expect(d.control.factsOf(row)).toMatchObject({ connected: false, state: null, ageMs: 7_200_000 })
+    expect(d.control.factsOf(row)?.reconnecting).toBeUndefined()
+    d.setStatus('vm1', 'connecting')
+    expect(d.control.factsOf(row)).toMatchObject({ connected: false, reconnecting: true })
   })
 
   it('reads again on hub-remote:children-changed, and leaves out children it did not start there', async () => {

@@ -582,8 +582,11 @@ export interface HubBatchMachine {
   transport: 'ssh' | 'gcloud-iap'
 }
 
-export const hubMachineLabel = (m: HubBatchMachine): string =>
-  `${m.name} (${m.transport === 'gcloud-iap' ? 'IAP' : 'SSH'})`
+/** "IAP" or "SSH". */
+export const hubTransportTag = (m: Pick<HubBatchMachine, 'transport'>): string =>
+  m.transport === 'gcloud-iap' ? 'IAP' : 'SSH'
+
+export const hubMachineLabel = (m: HubBatchMachine): string => `${m.name} (${hubTransportTag(m)})`
 
 /** One row of the batch card. */
 export interface HubBatchRowView {
@@ -696,7 +699,12 @@ export interface HubRemoteChildNote {
   machineId: string
   machine: string
   connected: boolean
-  /** Age of the state shown, or null before the machine answered a view. */
+  /** Not connected, and its connection is being made again. */
+  reconnecting?: true
+  /**
+   * Age of the state shown; while the machine is not connected and no view was
+   * read, how long ago it was last connected. Null when neither is known.
+   */
   ageMs: number | null
   /** A Stop, settle or stop-all waits to be sent or answered there. */
   stopping: boolean
@@ -775,16 +783,31 @@ export const CHILD_STATE_LABELS: Record<ChildState, string> = {
   paused: 'Paused',
 }
 
+/**
+ * The state text of a child. A child on another machine names it while it
+ * waits for a slot or an approval there, while its machine reconnects, and
+ * while a Stop waits; a machine that is not connected replaces the state.
+ */
 export function childStateLabel(c: Pick<HubChildView, 'state' | 'reported' | 'waitingForSlot' | 'remote'>): string {
-  if (c.remote?.stopping) return `Stopping on ${c.remote.machine}`
-  const label = c.reported
-    ? 'Reported, subagents still running'
-    : c.state === 'starting' && c.waitingForSlot
-      ? 'Waiting for a slot'
-      : CHILD_STATE_LABELS[c.state]
-  if (!c.remote || c.remote.connected) return label
-  const seen = c.remote.ageMs === null ? '' : `, last seen ${formatHubAge(c.remote.ageMs)} ago`
-  return `${label} (${c.remote.machine} not connected${seen})`
+  const r = c.remote
+  if (r?.stopping) return `Stopping on ${r.machine}`
+  if (r && !r.connected) {
+    if (r.reconnecting) return `Reconnecting on ${r.machine}`
+    return `${r.machine} offline${r.ageMs === null ? '' : `, last seen ${formatHubAge(r.ageMs)} ago`}`
+  }
+  if (c.reported) return 'Reported, subagents still running'
+  const on = r ? ` on ${r.machine}` : ''
+  if (c.state === 'starting' && c.waitingForSlot) return `Waiting for a slot${on}`
+  if (c.state === 'needs_you' && r) return `Needs approval${on}`
+  return CHILD_STATE_LABELS[c.state]
+}
+
+/** The short state word of a narrow row (the sidebar); its machine badge names the machine. */
+export function childStateWord(c: Pick<HubChildView, 'state' | 'remote'>): string {
+  const r = c.remote
+  if (r?.stopping) return 'Stopping'
+  if (r && !r.connected) return r.reconnecting ? 'Reconnecting' : 'Offline'
+  return CHILD_STATE_LABELS[c.state]
 }
 
 const PARENT_STATE_LABELS: Record<ParentState, string | null> = {
@@ -802,10 +825,16 @@ export const parentStateLabel = (state: ParentState | null): string | null =>
 /** "1 child", "3 children". */
 export const hubChildCount = (n: number): string => `${n} ${n === 1 ? 'child' : 'children'}`
 
+/** "3 children", or "4 children on 3 machines" when they run on more than one machine (this one counts). */
+export function hubChildrenCount(children: ReadonlyArray<Pick<HubChildView, 'remote'>>): string {
+  const machines = new Set(children.map((c) => c.remote?.machineId ?? 'local')).size
+  return `${hubChildCount(children.length)}${machines > 1 ? ` on ${machines} machines` : ''}`
+}
+
 /** The header chip as one line of text: "Hub · 3 children" and the parent state when it has one. */
 export function hubChipText(view: Pick<HubChatView, 'children' | 'state'>): string {
   const label = parentStateLabel(view.state)
-  return `Hub · ${hubChildCount(view.children.length)}${label ? ` · ${label}` : ''}`
+  return `Hub · ${hubChildrenCount(view.children)}${label ? ` · ${label}` : ''}`
 }
 
 /** What a Nudge chip puts in the parent's message: who it is for and how to pass it on. */
