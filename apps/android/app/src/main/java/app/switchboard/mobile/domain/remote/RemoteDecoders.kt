@@ -297,6 +297,7 @@ object RemoteDecoders {
                 agentType = session.string("agentType"),
                 worktreePath = session.string("worktreePath"),
                 worktreeBranch = session.string("worktreeBranch"),
+                settledAt = session.long("settledAt"),
             )
         },
         workspaceId = raw.string("workspaceId"),

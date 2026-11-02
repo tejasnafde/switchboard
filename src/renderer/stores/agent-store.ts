@@ -294,6 +294,8 @@ interface AgentStore {
    * the chat; the chat panel showing the session takes it and clears it.
    */
   pendingChatFind: { sessionId: string; query: string; messageId: string; stamp: number } | null
+  /** The one action Cmd+Z and the sidebar's Undo notice reverse; see `services/chat-settle.ts`. */
+  lastUndo: LastUndo | null
 
   /** `runtimeMode` only when someone chose it; absent, the session is unresolved (`initialRuntimeMode`). */
   addSession: (
@@ -405,6 +407,18 @@ interface AgentStore {
   clearScrollToMessage: () => void
   requestChatFind: (sessionId: string, query: string, messageId: string) => void
   clearChatFind: () => void
+  setLastUndo: (undo: LastUndo | null) => void
+}
+
+export interface LastUndo {
+  kind: 'settle'
+  id: string
+  title: string
+  machineId: string
+  /** The stamp to put back when the undo fails. */
+  settledAt: number
+  /** Set when a merged PR settled the chat, for the notice. */
+  prNumber?: number
 }
 
 /** `sessions` with session `id`'s unread count zeroed; the same array when it already is. */
@@ -418,6 +432,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   activeSessionId: null,
   pendingScrollToMessage: null,
   pendingChatFind: null,
+  lastUndo: null,
 
   addSession: (session) =>
     set((state) => ({
@@ -871,4 +886,5 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     set({ pendingChatFind: { sessionId, query, messageId, stamp: Date.now() } }),
 
   clearChatFind: () => set({ pendingChatFind: null }),
+  setLastUndo: (lastUndo) => set({ lastUndo }),
 }))

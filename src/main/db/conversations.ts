@@ -1,3 +1,4 @@
+import type Database from 'better-sqlite3'
 import { createMainLogger as createLogger } from '../logger'
 import type { RuntimeMode } from '@shared/provider-events'
 import type { SessionSource } from '@shared/types'
@@ -342,6 +343,8 @@ export interface ConversationRow {
   fork_omitted_change_summary?: string | null
   /** Last finished turn's preview line - see `setConversationStatusLine`. */
   status_line?: string | null
+  /** When the chat was settled out of Recents' "Done recently"; null when not settled. */
+  settled_at?: number | null
 }
 
 /** Look up a single conversation by id. Used by search navigation to
@@ -409,8 +412,8 @@ export function recordThreadSession(claudeSessionId: string, threadId: string): 
  * parent chain until it hits a terminal (no row) - handles legacy rows
  * from before `recordThreadSession` flattened on insert.
  */
-export function resolveRootThreadId(claudeSessionId: string): string {
-  const stmt = getDb().prepare('SELECT thread_id FROM thread_sessions WHERE claude_session_id = ?')
+export function resolveRootThreadId(claudeSessionId: string, db: Database.Database = getDb()): string {
+  const stmt = db.prepare('SELECT thread_id FROM thread_sessions WHERE claude_session_id = ?')
   let cur = claudeSessionId
   const seen = new Set<string>()
   while (true) {
@@ -744,6 +747,32 @@ export function getConversationLastRead(id: string): number | null {
     | { last_read_at: number | null }
     | undefined
   return row?.last_read_at ?? null
+}
+
+/**
+ * Settle (or, with null, unsettle) a chat: Recents hides it from "Done
+ * recently" until the user unsettles it or a new user turn starts
+ * (`clearConversationSettledForTurn`).
+ */
+export function setConversationSettled(id: string, settledAt: number | null): boolean {
+  return (
+    getDb().prepare('UPDATE conversations SET settled_at = ? WHERE id = ?').run(settledAt, resolveRootThreadId(id))
+      .changes > 0
+  )
+}
+
+/** A new user turn brings a settled chat back. Takes the caller's connection, for use inside its transaction. */
+export function clearConversationSettledForTurn(db: Database.Database, id: string): void {
+  db.prepare('UPDATE conversations SET settled_at = NULL WHERE id = ? AND settled_at IS NOT NULL').run(
+    resolveRootThreadId(id, db),
+  )
+}
+
+export function getConversationSettled(id: string): number | null {
+  const row = getDb().prepare('SELECT settled_at FROM conversations WHERE id = ?').get(resolveRootThreadId(id)) as
+    | { settled_at: number | null }
+    | undefined
+  return row?.settled_at ?? null
 }
 
 /**

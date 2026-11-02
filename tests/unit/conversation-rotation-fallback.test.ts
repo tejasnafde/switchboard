@@ -33,6 +33,7 @@ const conversations = new Map<
     reasoning_effort?: string | null
     archived?: number
     last_read_at?: number | null
+    settled_at?: number | null
     pending_handoff_from?: string | null
     title?: string | null
     follow_suggestions?: string | null
@@ -85,6 +86,10 @@ vi.mock('better-sqlite3', () => {
           if (/SELECT archived FROM conversations WHERE id = \?/.test(sql)) {
             const row = conversations.get(args[0] as string)
             return row ? { archived: row.archived ?? 0 } : undefined
+          }
+          if (/SELECT settled_at FROM conversations WHERE id = \?/.test(sql)) {
+            const row = conversations.get(args[0] as string)
+            return row ? { settled_at: row.settled_at ?? null } : undefined
           }
           if (/SELECT last_read_at FROM conversations WHERE id = \?/.test(sql)) {
             const row = conversations.get(args[0] as string)
@@ -186,6 +191,13 @@ vi.mock('better-sqlite3', () => {
             const row = conversations.get(id)
             if (!row) return { changes: 0 }
             row.archived = archived
+            return { changes: 1 }
+          }
+          if (/UPDATE conversations SET settled_at = \? WHERE id = \?/.test(sql)) {
+            const [at, id] = args as [number | null, string]
+            const row = conversations.get(id)
+            if (!row) return { changes: 0 }
+            row.settled_at = at
             return { changes: 1 }
           }
           if (/UPDATE conversations SET last_read_at = \?/.test(sql)) {
@@ -295,6 +307,8 @@ const {
   unarchiveConversation,
   isConversationArchived,
   setConversationLastRead,
+  setConversationSettled,
+  getConversationSettled,
   getConversationLastRead,
   getConversationPendingHandoff,
   setConversationPendingHandoff,
@@ -585,6 +599,33 @@ describe('read state covers every id of a rotated thread', () => {
 
   it('reports no change when the thread has no row at all', () => {
     expect(setConversationLastRead('ghost', 5000)).toBe(false)
+  })
+})
+
+describe('settled time survives Claude session-id rotation', () => {
+  it('writes and reads through a rotated UUID on the synthetic parent row', () => {
+    conversations.set('agent_123', {})
+    threadSessions.set('uuid-abc', 'agent_123')
+
+    expect(setConversationSettled('uuid-abc', 7000)).toBe(true)
+
+    expect(conversations.get('agent_123')?.settled_at).toBe(7000)
+    expect(conversations.has('uuid-abc')).toBe(false)
+    expect(getConversationSettled('uuid-abc')).toBe(7000)
+  })
+
+  it('unsettles through a rotated UUID', () => {
+    conversations.set('agent_123', { settled_at: 7000 })
+    threadSessions.set('uuid-abc', 'agent_123')
+
+    expect(setConversationSettled('uuid-abc', null)).toBe(true)
+
+    expect(getConversationSettled('agent_123')).toBeNull()
+  })
+
+  it('reports no change for a chat with no row', () => {
+    expect(setConversationSettled('ghost', 7000)).toBe(false)
+    expect(getConversationSettled('ghost')).toBeNull()
   })
 })
 

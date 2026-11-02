@@ -14,6 +14,7 @@
 import type { Project } from '@shared/types'
 import { formatRelativeTime } from '@shared/format'
 import { withoutDemo } from '@shared/phone-demo/phone-demo'
+import { isSettled } from '@shared/chat-settle'
 import type { FeedItem, ThreadState } from '../stores/chat'
 
 export const HOME_RECENT_PAGE_SIZE = 5
@@ -29,6 +30,8 @@ export interface RecentSession {
   projectName: string
   worktreePath?: string | null
   worktreeBranch?: string | null
+  /** Settled on a desktop: Home leaves the chat out while it is Done or idle. */
+  settledAt?: number | null
 }
 
 /** A `provider:list-sessions` reply, with the `statusMark()` taken before asking. */
@@ -75,6 +78,7 @@ export function sessionsFromProjects(projects: Project[]): RecentSession[] {
         projectName: project.name,
         worktreePath: session.worktreePath,
         worktreeBranch: session.worktreeBranch,
+        settledAt: session.settledAt,
       })
     }
   }
@@ -137,19 +141,22 @@ export function homeRecents(
   threads: Record<string, ThreadActivity>,
   limit = HOME_RECENT_PAGE_SIZE,
 ): HomeRecentsPage {
-  const rows: HomeRecentRow[] = machines.flatMap((machine) =>
-    machine.sessions.map((session) => {
-      const thread = threads[`${machine.connectionId}:${session.id}`]
-      return {
-        ...session,
-        title: session.title.trim() === '' ? 'Untitled chat' : session.title,
-        connectionId: machine.connectionId,
-        connectionLabel: machine.label,
-        status: recentStatus(session.id, thread, machine),
-        unread: thread?.unread ?? 0,
-      }
-    }),
-  )
+  const rows: HomeRecentRow[] = machines
+    .flatMap((machine) =>
+      machine.sessions.map((session) => {
+        const thread = threads[`${machine.connectionId}:${session.id}`]
+        return {
+          ...session,
+          title: session.title.trim() === '' ? 'Untitled chat' : session.title,
+          connectionId: machine.connectionId,
+          connectionLabel: machine.label,
+          status: recentStatus(session.id, thread, machine),
+          unread: thread?.unread ?? 0,
+        }
+      }),
+    )
+    // A settled chat leaves the desktop's "Done recently" only, so it still shows while it works or waits.
+    .filter((row) => !((row.status === null || row.status === 'Done') && isSettled(row.settledAt)))
   rows.sort(
     (a, b) => (b.status ? PRIORITY[b.status] : 0) - (a.status ? PRIORITY[a.status] : 0) || b.startedAt - a.startedAt,
   )

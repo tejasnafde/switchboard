@@ -18,7 +18,8 @@ function database(): Database.Database {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       pending_handoff_from TEXT,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL,
+      settled_at INTEGER
     );
     CREATE TABLE messages (
       id TEXT PRIMARY KEY,
@@ -31,7 +32,7 @@ function database(): Database.Database {
       display_body TEXT,
       pills_meta TEXT
     );
-    INSERT INTO conversations VALUES ('thread-1', 'New conversation', NULL, 1);
+    INSERT INTO conversations VALUES ('thread-1', 'New conversation', NULL, 1, NULL);
   `)
   ensureTurnAcceptanceSchema(db)
   return db

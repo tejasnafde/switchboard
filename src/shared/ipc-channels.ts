@@ -32,6 +32,11 @@ export const AppChannels = {
   ARCHIVE_CONVERSATION: 'app:archive-conversation',
   UNARCHIVE_CONVERSATION: 'app:unarchive-conversation',
   GET_ARCHIVED_CONVERSATIONS: 'app:get-archived-conversations',
+  /** (id) → { ok, settledAt }: take a finished chat out of Recents' "Done recently". */
+  SETTLE_CONVERSATION: 'app:settle-conversation',
+  UNSETTLE_CONVERSATION: 'app:unsettle-conversation',
+  /** backend → clients push: `ConversationSettledEvent` after a settle, an unsettle or a merged PR's settle. */
+  CONVERSATION_SETTLED: 'app:conversation-settled',
   EXPORT_MARKDOWN: 'app:export-markdown',
   SAVE_IMAGE: 'app:save-image',
   LOAD_SESSION_BY_ID: 'app:load-session-by-id',

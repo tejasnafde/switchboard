@@ -396,6 +396,8 @@ export interface SessionSummary {
    * stored by the backend so a list can show it before messages load.
    */
   statusLine?: string | null
+  /** When the chat was settled out of Recents' "Done recently"; see `isSettled` in `shared/chat-settle.ts`. */
+  settledAt?: number | null
   /** Child chats (flag `hub_children` on): `{ parentId }` on an open child, `{ openChildren }` on its parent. */
   hub?: import('./hub').SessionHubField
 }

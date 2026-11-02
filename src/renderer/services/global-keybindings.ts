@@ -1,6 +1,8 @@
 import {
   activeShortcuts,
   currentPlatform,
+  formatBinding,
+  matchesBinding,
   matchShortcut,
   type ShortcutCommand,
   type ShortcutKeyInput,
@@ -73,4 +75,31 @@ export function resolveGlobalKeydown(
     if (index >= 0) return typeof action === 'function' ? action(index) : action
   }
   return null
+}
+
+export const UNDO_BINDING = 'Mod+Z'
+
+/** What a screen reader says for the undo keys: "Cmd+Z" on a Mac, "Ctrl+Z" elsewhere. */
+export function undoKeyName(platform: ShortcutPlatform = currentPlatform()): string {
+  return platform === 'mac' ? 'Cmd+Z' : formatBinding(UNDO_BINDING, platform)
+}
+
+/** Whether the element takes typing, so Cmd+Z belongs to its own text undo (a terminal's input is a textarea). */
+function isTextEntry(target: unknown): boolean {
+  const el = target as { tagName?: string; isContentEditable?: boolean } | null
+  if (!el) return false
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable === true
+}
+
+/**
+ * Whether a keydown undoes the last sidebar action: Cmd+Z (Ctrl+Z off a Mac)
+ * while focus is not in a text field, an editor or a terminal. The IDE's
+ * webview keeps its own keys, so they never reach this window.
+ */
+export function isUndoKeydown(
+  e: GlobalKeyInput,
+  activeElement: unknown,
+  platform: ShortcutPlatform = currentPlatform(),
+): boolean {
+  return matchesBinding(e, UNDO_BINDING, platform) && !isTextEntry(activeElement)
 }

@@ -122,6 +122,7 @@ import {
 import { projectOverrideKey } from '@shared/project-settings'
 import { hubChildrenEnabled, withHubFields } from '@shared/hub'
 import { uploadAttachment } from '../attachments'
+import { storeConversationSettled } from '../conversations/chat-settle'
 
 const log = createLogger('ipc:app')
 
@@ -898,6 +899,15 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   host.handle(AppChannels.UNARCHIVE_CONVERSATION, (id: string) => {
     unarchiveConversation(id)
     return { ok: true }
+  })
+
+  host.handle(AppChannels.SETTLE_CONVERSATION, (id: string) => {
+    const settledAt = Date.now()
+    return { ok: storeConversationSettled(host, id, settledAt), settledAt }
+  })
+
+  host.handle(AppChannels.UNSETTLE_CONVERSATION, (id: string) => {
+    return { ok: storeConversationSettled(host, id, null) }
   })
 
   host.handle(AppChannels.GET_ARCHIVED_CONVERSATIONS, () => {

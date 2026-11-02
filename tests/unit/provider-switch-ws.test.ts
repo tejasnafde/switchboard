@@ -532,7 +532,8 @@ async function setup(
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         pending_handoff_from TEXT,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        settled_at INTEGER
       );
       CREATE TABLE messages (
         id TEXT PRIMARY KEY,
@@ -545,7 +546,7 @@ async function setup(
         display_body TEXT,
         pills_meta TEXT
       );
-      INSERT INTO conversations VALUES ('t1', 'New conversation', NULL, 1);
+      INSERT INTO conversations VALUES ('t1', 'New conversation', NULL, 1, NULL);
     `)
     ensureTurnAcceptanceSchema(atomicDb)
     effectiveAtomicSubmission = new AtomicUserTurnSubmission({

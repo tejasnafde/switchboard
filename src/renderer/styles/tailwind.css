@@ -72,6 +72,7 @@
 @source '../components/settings';
 @source '../components/reviews';
 @source '../components/sidebar/OpenOnMachineDialog.tsx';
+@source '../components/sidebar/SettleNotice.tsx';
 
 @theme inline {
   --spacing: 0.25rem;

@@ -1337,7 +1337,7 @@ export class ProviderRegistry implements PeerToolHost {
       settingOn: () => autoResumeAfterLimitOn(getSetting),
       liveThread: (conversationId) => this.liveSessionId(conversationId),
       // Not hasOutstandingTurn: messages held behind the limited turn still count there.
-      busy: (threadId) => this.sessionStatus.get(threadId) === 'running' || this.preparingTurns.has(threadId),
+      busy: (threadId) => this.runningOrPreparing(threadId),
       needsYou: (threadId) => this.getPendingRequests(threadId).length > 0,
       instanceOf: (threadId) => this.sessionDescriptors.get(threadId)?.instanceId ?? null,
       archived: (conversationId) => isConversationArchived(conversationId),
@@ -2132,6 +2132,24 @@ export class ProviderRegistry implements PeerToolHost {
     const byKey = this.pendingRequests.get(root)
     // Masked again: a secret saved after a card opened was not live when the card was published.
     return maskStoredValue(root, [...(byKey ? byKey.values() : []), ...this.agentApprovals.pendingEvents(root)])
+  }
+
+  /** A turn is running on this session id, or one is being prepared (before it counts as outstanding). */
+  private runningOrPreparing(threadId: string): boolean {
+    return this.sessionStatus.get(threadId) === 'running' || this.preparingTurns.has(threadId)
+  }
+
+  /** Whether any id of the thread runs, prepares or still owes a turn: a merge must not settle it. */
+  isBusy(threadId: string): boolean {
+    return this.isTurnInFlight(threadId) || threadFamilyIds(threadId).some((id) => this.runningOrPreparing(id))
+  }
+
+  /** Whether the thread waits on the user: an open card, or a session that stopped with an error. */
+  needsUser(threadId: string): boolean {
+    return (
+      this.getPendingRequests(threadId).length > 0 ||
+      threadFamilyIds(threadId).some((id) => this.sessionStatus.get(id) === 'error')
+    )
   }
 
   /** Whether any id of the thread has an accepted turn that has not completed. */

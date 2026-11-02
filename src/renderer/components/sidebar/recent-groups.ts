@@ -5,6 +5,7 @@
  */
 import type { RecentSessionStatus } from './recent-sessions'
 import { RECENT_SESSION_PAGE_SIZE } from './recent-session-limit'
+import { isSettled } from '@shared/chat-settle'
 
 export type RecentDot = 'needs-you' | 'working' | 'finished' | 'idle'
 export type RecentGroupKey = 'needs-you' | 'working' | 'done'
@@ -53,15 +54,22 @@ export interface RecentGroup<T> {
  * Split an already sorted Recents list into its groups. "Needs you" and
  * "Working" always show in full, whatever the limit: a chat waiting on the
  * user must never sit behind "Show more". "Done recently" fills the rest of
- * the configured limit, plus whatever "Show more" has revealed.
+ * the configured limit, plus whatever "Show more" has revealed, and leaves
+ * out a settled chat (it stays in its workspace tree).
  */
-export function groupRecentSessions<T extends { status?: RecentSessionStatus }>(
+export function groupRecentSessions<
+  T extends { status?: RecentSessionStatus; session?: { settledAt?: number | null } },
+>(
   items: readonly T[],
   limit: number,
   revealedCount: number,
 ): { groups: RecentGroup<T>[]; hiddenCount: number; nextRevealCount: number } {
   const byKey: Record<RecentGroupKey, T[]> = { 'needs-you': [], working: [], done: [] }
-  for (const item of items) byKey[recentGroupKey(item.status)].push(item)
+  for (const item of items) {
+    const key = recentGroupKey(item.status)
+    if (key === 'done' && item.session && isSettled(item.session.settledAt)) continue
+    byKey[key].push(item)
+  }
   const urgent = byKey['needs-you'].length + byKey.working.length
   const doneShown = Math.min(byKey.done.length, Math.max(0, limit - urgent) + revealedCount)
   const hiddenCount = byKey.done.length - doneShown

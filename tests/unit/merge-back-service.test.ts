@@ -19,7 +19,8 @@ function testDb(): Database.Database {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       pending_handoff_from TEXT,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL,
+        settled_at INTEGER
     );
     CREATE TABLE messages (
       id TEXT PRIMARY KEY,
@@ -32,7 +33,7 @@ function testDb(): Database.Database {
       display_body TEXT,
       pills_meta TEXT
     );
-    INSERT INTO conversations VALUES ('parent', 'improvements', NULL, 1);
+    INSERT INTO conversations VALUES ('parent', 'improvements', NULL, 1, NULL);
   `)
   ensureTurnAcceptanceSchema(db)
   ensureMergeBackSchema(db)

@@ -103,6 +103,11 @@ interface MachineStore {
   /** Patch a cached session's title in whichever snapshot holds it, so the
    *  sidebar row tracks renames (auto-title, manual) without a full re-sync. */
   renameSnapshotSession: (sessionId: string, title: string) => void
+  /** Patch a cached session's fields (title, settled time) in whichever snapshot and live tree hold it. */
+  patchSnapshotSession: (
+    sessionId: string,
+    patch: Partial<Pick<SessionSummary, 'title' | 'settledAt' | 'startedAt'>>,
+  ) => void
   /** Optimistically drop a session from a machine's snapshot (archive). */
   removeSnapshotSession: (machineId: string, sessionId: string) => void
   connect: (id: string) => Promise<void>
@@ -313,32 +318,29 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       }
     }),
 
-  renameSnapshotSession: (sessionId, title) =>
+  renameSnapshotSession: (sessionId, title) => get().patchSnapshotSession(sessionId, { title }),
+
+  patchSnapshotSession: (sessionId, patch) =>
     set((s) => {
       let changed = false
+      const patchTree = <P extends { sessions: Array<{ id: string }> }>(tree: P[]): P[] =>
+        tree.map((p) =>
+          p.sessions.some((x) => x.id === sessionId)
+            ? { ...p, sessions: p.sessions.map((x) => (x.id === sessionId ? { ...x, ...patch } : x)) }
+            : p,
+        )
       const snapshots = { ...s.snapshots }
       for (const [machineId, snap] of Object.entries(s.snapshots)) {
         if (!snap.projects.some((p) => p.sessions.some((x) => x.id === sessionId))) continue
         changed = true
-        snapshots[machineId] = {
-          ...snap,
-          projects: snap.projects.map((p) =>
-            p.sessions.some((x) => x.id === sessionId)
-              ? { ...p, sessions: p.sessions.map((x) => (x.id === sessionId ? { ...x, title } : x)) }
-              : p,
-          ),
-        }
+        snapshots[machineId] = { ...snap, projects: patchTree(snap.projects) }
       }
       // Mirror onto whichever live tree holds the session (see addSnapshotSession).
       const projects = { ...s.projects }
       for (const [machineId, tree] of Object.entries(s.projects)) {
         if (!tree.some((p) => p.sessions.some((x) => x.id === sessionId))) continue
         changed = true
-        projects[machineId] = tree.map((p) =>
-          p.sessions.some((x) => x.id === sessionId)
-            ? { ...p, sessions: p.sessions.map((x) => (x.id === sessionId ? { ...x, title } : x)) }
-            : p,
-        )
+        projects[machineId] = patchTree(tree)
       }
       return changed ? { snapshots, projects } : {}
     }),

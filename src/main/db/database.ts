@@ -628,6 +628,12 @@ export function migrate(db: Database.Database): void {
     db.exec('ALTER TABLE conversations ADD COLUMN status_line TEXT')
   }
 
+  // Migration (2026-11-02): when the user settled the chat out of Recents'
+  // "Done recently" (see `setConversationSettled`). NULL = not settled.
+  if (!convCols.some((c) => c.name === 'settled_at')) {
+    db.exec('ALTER TABLE conversations ADD COLUMN settled_at INTEGER')
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS machines (
       id          TEXT PRIMARY KEY,

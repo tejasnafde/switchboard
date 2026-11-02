@@ -435,7 +435,7 @@ describe('SqliteTurnAcceptanceStore', () => {
   it('rolls back completion when a message id belongs to another thread', () => {
     const db = atomicTurnDb()
     db.exec(`
-      INSERT INTO conversations VALUES ('thread-b', 'Other', NULL, 1);
+      INSERT INTO conversations VALUES ('thread-b', 'Other', NULL, 1, NULL);
       INSERT INTO messages
         (id, conversation_id, role, content, timestamp)
       VALUES ('remote_origin-a', 'thread-b', 'user', 'other turn', 1);
@@ -472,7 +472,8 @@ describe('commitConversationProfileSwitch', () => {
         provider_instance_id TEXT,
         session_id TEXT,
         pending_handoff_from TEXT,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        settled_at INTEGER
       );
       CREATE TABLE conversation_segments (
         id TEXT PRIMARY KEY,
@@ -490,7 +491,7 @@ describe('commitConversationProfileSwitch', () => {
         thread_id TEXT NOT NULL,
         recorded_at INTEGER NOT NULL
       );
-      INSERT INTO conversations VALUES ('root', 'work', 'native-old', NULL, 1);
+      INSERT INTO conversations VALUES ('root', 'work', 'native-old', NULL, 1, NULL);
     `)
     return db
   }
@@ -597,7 +598,8 @@ function atomicTurnDb(): Database.Database {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       pending_handoff_from TEXT,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL,
+        settled_at INTEGER
     );
     CREATE TABLE messages (
       id TEXT PRIMARY KEY,
@@ -610,7 +612,7 @@ function atomicTurnDb(): Database.Database {
       display_body TEXT,
       pills_meta TEXT
     );
-    INSERT INTO conversations VALUES ('thread-a', 'New conversation', 'codex', 1);
+    INSERT INTO conversations VALUES ('thread-a', 'New conversation', 'codex', 1, NULL);
   `)
   ensureTurnAcceptanceSchema(db)
   return db
