@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { commandTargetSessionId, snoozeCommands } from '../../src/renderer/components/CommandPalette'
 import { useAgentStore } from '../../src/renderer/stores/agent-store'
 import { useLayoutStore } from '../../src/renderer/stores/layout-store'
+import { useSnoozePresetsStore } from '../../src/renderer/stores/snooze-presets-store'
+import { DEFAULT_SNOOZE_PRESETS } from '../../src/shared/chat-snooze'
 import { draftSessionId } from '../../src/shared/new-chat-draft'
 
 describe('command palette session routing', () => {
@@ -40,6 +42,24 @@ describe('palette Snooze entries', () => {
       id: 'chat.snooze.custom',
       label: 'Snooze chat: custom date and time',
     })
+  })
+
+  it('lists the stored presets, soonest first, as the backend last sent them', () => {
+    focus('c1')
+    useSnoozePresetsStore.getState().take([
+      { label: 'Friday wrap-up', kind: 'weekday', weekday: 5, hour: 16, minute: 0 },
+      { label: 'After lunch', kind: 'time', dayOffset: 0, hour: 14, minute: 0 },
+    ])
+    try {
+      const labels = snoozeCommands(new Date(2026, 10, 2, 10), () => {}).map((c) => [c.label, c.shortcut])
+      expect(labels).toEqual([
+        ['Snooze chat: After lunch', '14:00'],
+        ['Snooze chat: Friday wrap-up', 'Fri 16:00'],
+        ['Snooze chat: custom date and time', undefined],
+      ])
+    } finally {
+      useSnoozePresetsStore.setState({ presets: DEFAULT_SNOOZE_PRESETS, loaded: false })
+    }
   })
 
   it('offers none for the landing draft, which has no stored row', () => {

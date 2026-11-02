@@ -15,6 +15,8 @@ import {
 } from '../../src/renderer/components/sidebar/RecentSessionsSection'
 import type { RecentSessionItem } from '../../src/renderer/components/sidebar/recent-sessions'
 import { snoozePrOf } from '../../src/shared/chat-snooze-pr'
+import { DEFAULT_SNOOZE_PRESETS } from '../../src/shared/chat-snooze'
+import { useSnoozePresetsStore } from '../../src/renderer/stores/snooze-presets-store'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 globalThis.ResizeObserver ??= class {
@@ -155,6 +157,36 @@ describe('the Snooze menu', () => {
     expect(onSnooze).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ id: 'w' }) }), {
       pr: 'github:acme/app#512',
     })
+  })
+
+  it('resolves the stored presets when it opens, so a change shows on the next open', async () => {
+    const onSnooze = vi.fn(async () => true)
+    render([item('w', 'working')], snoozeProps({ onSnooze, loadPr: async () => null }))
+    const trigger = row('w')!.querySelector<HTMLButtonElement>('button[aria-label="Snooze Chat w"]')!
+    const labels = () =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].map((b) => b.firstChild?.textContent)
+    try {
+      act(() => useSnoozePresetsStore.getState().take([{ label: 'In a week', kind: 'duration', minutes: 7 * 1440 }]))
+      act(() => trigger.click())
+      expect(labels()).toEqual(['In a week', 'Custom date and time...'])
+      act(() => {
+        document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      })
+      act(() =>
+        useSnoozePresetsStore.getState().take([
+          { label: 'In a week', kind: 'duration', minutes: 7 * 1440 },
+          { label: 'Next year', kind: 'duration', minutes: 365 * 1440 },
+        ]),
+      )
+      act(() => trigger.click())
+      expect(labels()).toEqual(['In a week', 'Next year', 'Custom date and time...'])
+      act(() => document.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click())
+      expect(onSnooze).toHaveBeenCalledWith(expect.anything(), {
+        option: expect.objectContaining({ label: 'In a week' }),
+      })
+    } finally {
+      useSnoozePresetsStore.setState({ presets: DEFAULT_SNOOZE_PRESETS, loaded: false })
+    }
   })
 
   it('moves with Home and End, opens on ArrowDown, and Escape returns focus to the button', async () => {

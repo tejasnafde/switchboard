@@ -8,6 +8,7 @@ import { useAgentStore } from '../../stores/agent-store'
 import { holdsWholeHistory } from '../../services/history-window'
 import { useMachineStore } from '../../stores/machine-store'
 import { useBookmarkStore } from '../../stores/bookmark-store'
+import { snoozePresets } from '../../stores/snooze-presets-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useProjectSettingsStore } from '../../stores/project-settings-store'
 import { onSessionRename, emitSessionRename, onSessionCreated, onSessionActivity } from '../../services/session-events'
@@ -832,7 +833,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
         label: 'Snooze',
         onClick: () => {},
         submenu: [
-          ...resolvePresets(shownAt).map((option) => ({
+          ...resolvePresets(shownAt, snoozePresets()).map((option) => ({
             label: option.label,
             hint: wakeLabel(option.at, null, shownAt),
             onClick: () => snooze({ option }),

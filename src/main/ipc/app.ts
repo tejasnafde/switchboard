@@ -125,7 +125,13 @@ import { hubChildrenEnabled, withHubFields } from '@shared/hub'
 import { uploadAttachment } from '../attachments'
 import { storeConversationSettled } from '../conversations/chat-settle'
 import { chatSnoozer } from '../conversations/chat-snooze'
-import type { SnoozeRequest, SnoozeResult } from '@shared/chat-snooze'
+import { clearSnoozePresets, readSnoozePresets, writeSnoozePresets } from '../conversations/snooze-presets'
+import {
+  SNOOZE_PRESETS_SETTING,
+  presetListRefusalText,
+  type SnoozeRequest,
+  type SnoozeResult,
+} from '@shared/chat-snooze'
 
 const log = createLogger('ipc:app')
 
@@ -224,6 +230,7 @@ export interface AppHandlerDependencies {
 export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependencies = {}): void {
   registerHtmlLiveHandlers(host)
   setLaunchConfigEmitter((channel, ...args) => host.emit(channel, ...args))
+  const emitPresets = (channel: string, payload: unknown) => host.emit(channel, payload)
 
   host.handle(AppChannels.UPLOAD_ATTACHMENT, (input: { name: string; data: string }) => uploadAttachment(input))
 
@@ -351,13 +358,28 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   // Settings
   host.handle(AppChannels.SETTINGS_GET, (key: string, projectPath?: string) => getSettingForProject(key, projectPath))
   host.handle(AppChannels.SETTINGS_SET, (key: string, value: string) => {
-    setSetting(key, value)
+    if (key === SNOOZE_PRESETS_SETTING) {
+      // The same check and broadcast as app:set-snooze-presets, so this path cannot store a list the menus drop.
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(value)
+      } catch {
+        throw new Error(presetListRefusalText('not_a_list'))
+      }
+      const written = writeSnoozePresets(parsed, emitPresets)
+      if (!written.ok) throw new Error(presetListRefusalText(written.reason, written.index))
+    } else {
+      setSetting(key, value)
+    }
     deps.onSettingChanged?.(key)
   })
   host.handle('settings:remove', (key: string) => {
-    removeSetting(key)
+    if (key === SNOOZE_PRESETS_SETTING) clearSnoozePresets(emitPresets)
+    else removeSetting(key)
     deps.onSettingChanged?.(key)
   })
+  host.handle(AppChannels.GET_SNOOZE_PRESETS, () => readSnoozePresets())
+  host.handle(AppChannels.SET_SNOOZE_PRESETS, (specs: unknown) => writeSnoozePresets(specs, emitPresets))
   host.handle(AppChannels.SETTINGS_PROJECT_OVERRIDES, (projectPaths: unknown) =>
     listProjectOverrides(
       Array.isArray(projectPaths) ? projectPaths.filter((p): p is string => typeof p === 'string') : [],
