@@ -39,7 +39,11 @@ describe('recents store', () => {
     const first = deferred<Project[]>()
     const second = deferred<Project[]>()
     const calls = [first.promise, second.promise]
-    clients.set('mac', { getProjects: () => calls.shift(), listLiveSessions: async () => [] })
+    clients.set('mac', {
+      getProjects: () => calls.shift(),
+      listLiveSessions: async () => [],
+      supportsCapability: () => false,
+    })
     const a = useRecentsStore.getState().refresh('mac')
     const b = useRecentsStore.getState().refresh('mac')
     second.resolve(projects('new'))
@@ -53,6 +57,7 @@ describe('recents store', () => {
     clients.set('mac', {
       getProjects: async () => projects('t'),
       listLiveSessions: async () => [{ threadId: 't', status: 'running' }],
+      supportsCapability: () => false,
     })
     await useRecentsStore.getState().refresh('mac')
     expect(useRecentsStore.getState().live.mac?.statuses).toEqual({ t: 'running' })

@@ -38,7 +38,7 @@ export function SnoozeSheet({
           {items.map((item) => (
             <Pressable
               key={item.key}
-              testID={`snooze-${item.key}`}
+              testID={`snooze-${item.choice.kind === 'pr' ? 'pr' : item.label}`}
               accessibilityRole="button"
               disabled={busy}
               onPress={() => onPick(item)}

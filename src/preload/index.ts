@@ -5,7 +5,14 @@ import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import type { HistoryLoadOptions } from '@shared/phone-history-window'
 import type { ConversationSettledEvent } from '@shared/chat-settle'
-import type { ConversationSnoozedEvent, SnoozeRequest, SnoozeResult } from '@shared/chat-snooze'
+import type {
+  ConversationSnoozedEvent,
+  SnoozePresetSpec,
+  SnoozePresetsChangedEvent,
+  SnoozePresetsResult,
+  SnoozeRequest,
+  SnoozeResult,
+} from '@shared/chat-snooze'
 import { RoutingTable } from './routing-table'
 import {
   TerminalChannels,
@@ -368,6 +375,14 @@ const api = {
       router.onWithSource<[ConversationSnoozedEvent]>(AppChannels.CONVERSATION_SNOOZED, (machineId, event) =>
         callback({ ...event, machineId }),
       ),
+    /** This desktop's backend's presets, read by every desktop menu (remote chats too). */
+    getSnoozePresets: (): Promise<SnoozePresetSpec[]> => router.invokeOn('local', AppChannels.GET_SNOOZE_PRESETS),
+    setSnoozePresets: (specs: SnoozePresetSpec[]): Promise<SnoozePresetsResult> =>
+      router.invokeOn('local', AppChannels.SET_SNOOZE_PRESETS, specs),
+    onSnoozePresetsChanged: (callback: (event: SnoozePresetsChangedEvent) => void) =>
+      router.onWithSource<[SnoozePresetsChangedEvent]>(AppChannels.SNOOZE_PRESETS_CHANGED, (machineId, event) => {
+        if (machineId === 'local') callback(event)
+      }),
     exportMarkdown: (params: { suggestedFilename: string; content: string }) =>
       transport.invoke(AppChannels.EXPORT_MARKDOWN, params),
     /** Save dialog, then writes a PNG data URL. A chat visual's Save image. */

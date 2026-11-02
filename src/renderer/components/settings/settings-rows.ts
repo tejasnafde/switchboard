@@ -115,6 +115,13 @@ const ROWS = {
     defaultValue: String(DEFAULT_RECENT_SESSION_LIMIT),
     defaultLabel: `${DEFAULT_RECENT_SESSION_LIMIT} conversations`,
   },
+  snoozePresets: {
+    id: 'sidebar.snoozePresets',
+    page: 'general',
+    section: 'Snooze presets',
+    label: 'Snooze presets',
+    description: 'The times in the Snooze menu, from 1 to 8. Your phones use them too.',
+  },
   ideIdleTtl: {
     id: 'ide.idleTtl',
     page: 'general',

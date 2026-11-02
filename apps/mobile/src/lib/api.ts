@@ -3,7 +3,13 @@
  * window.api subset. One instance per paired backend. Channel names and event
  * types come from src/shared, so this stays in lockstep with the server.
  */
-import type { ConversationSnoozedEvent, SnoozeRequest, SnoozeResult } from '@shared/chat-snooze'
+import type {
+  ConversationSnoozedEvent,
+  SnoozePresetSpec,
+  SnoozePresetsChangedEvent,
+  SnoozeRequest,
+  SnoozeResult,
+} from '@shared/chat-snooze'
 import { WsTransport, type TransportSocket, type WsAuth } from '@shared/ws-transport'
 import type { Transport } from '@shared/transport'
 import {
@@ -330,6 +336,15 @@ export class SwitchboardClient {
 
   onConversationSnoozed(handler: (event: ConversationSnoozedEvent) => void): () => void {
     return this.transport.on(AppChannels.CONVERSATION_SNOOZED, handler as (...args: unknown[]) => void)
+  }
+
+  /** Gate: `CHAT_SNOOZE_PRESETS_CAPABILITY`. The presets the desktop edits; the phone only reads them. */
+  getSnoozePresets(): Promise<SnoozePresetSpec[]> {
+    return this.transport.invoke(AppChannels.GET_SNOOZE_PRESETS)
+  }
+
+  onSnoozePresetsChanged(handler: (event: SnoozePresetsChangedEvent) => void): () => void {
+    return this.transport.on(AppChannels.SNOOZE_PRESETS_CHANGED, handler as (...args: unknown[]) => void)
   }
 
   /** Gate: `CHAT_SETTLE_CAPABILITY`. Takes a finished chat out of Recents without archiving it. */

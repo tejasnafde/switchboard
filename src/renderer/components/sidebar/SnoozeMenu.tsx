@@ -14,6 +14,7 @@ export type { SnoozePrChoice }
 import type { SnoozeChoice } from '../../services/chat-inbox'
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from '../ui/menu'
 import { openCustomSnooze } from './SnoozeCustomDialog'
+import { snoozePresets } from '../../stores/snooze-presets-store'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('sidebar:snooze-menu')
@@ -61,7 +62,7 @@ export function SnoozeMenu({
       // The menu keeps these instants until it closes: a clock-time item sends what it showed.
       const at = now()
       setShownAt(at)
-      setOptions(resolvePresets(at))
+      setOptions(resolvePresets(at, snoozePresets()))
       setPr(null)
       picked.current = false
       const open = ++opens.current
@@ -123,7 +124,7 @@ export function SnoozeMenu({
         <MenuLabel>Snooze until</MenuLabel>
         {options.map((option) => (
           <MenuItem
-            key={option.label}
+            key={`${option.label}:${option.at}`}
             trailing={wakeLabel(option.at, null, shownAt)}
             onClick={() => run(() => onPick({ option }))}
           >

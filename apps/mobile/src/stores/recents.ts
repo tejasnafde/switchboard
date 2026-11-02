@@ -1,7 +1,7 @@
 /**
  * What Home > Recents reads per machine: its chats from `app:get-projects`,
  * kept on disk so an offline machine still lists them, and this run's
- * `provider:list-sessions` reply, which is never stored.
+ * `provider:list-sessions` reply and Snooze presets, which are never stored.
  */
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
@@ -13,7 +13,15 @@ import {
   settleBroadcastNotice,
   type ConversationSettledEvent,
 } from '@shared/chat-settle'
-import { CHAT_SNOOZE_CAPABILITY, isWoke, snoozeRefusalText, type ConversationSnoozedEvent } from '@shared/chat-snooze'
+import {
+  CHAT_SNOOZE_CAPABILITY,
+  CHAT_SNOOZE_PRESETS_CAPABILITY,
+  isWoke,
+  parsePresetList,
+  snoozeRefusalText,
+  type ConversationSnoozedEvent,
+  type SnoozePresetSpec,
+} from '@shared/chat-snooze'
 import {
   persistedRecents,
   sessionsFromProjects,
@@ -36,6 +44,10 @@ const NOT_CONNECTED = 'The machine is not connected'
 interface RecentsState {
   sessions: Record<string, RecentSession[]>
   live: Record<string, LiveStatuses>
+  /** Each machine's Snooze presets, from a backend with `chat_snooze_presets_v1`; this run only. */
+  presets: Record<string, SnoozePresetSpec[]>
+  /** The machine's presets were read or broadcast. */
+  setPresets: (connectionId: string, presets: unknown) => void
   /** Read one machine's chats and live statuses again. */
   refresh: (connectionId: string) => Promise<void>
   /** The machine settled or unsettled a chat: patch its row, or read the list again when none matches. */
@@ -89,6 +101,10 @@ export const useRecentsStore = create<RecentsState>()(
     (set, get) => ({
       sessions: {},
       live: {},
+      presets: {},
+
+      setPresets: (connectionId, presets) =>
+        set((s) => ({ presets: { ...s.presets, [connectionId]: parsePresetList(presets) } })),
 
       refresh: async (connectionId) => {
         const client = getClient(connectionId)
@@ -98,6 +114,10 @@ export const useRecentsStore = create<RecentsState>()(
         requests.set(connectionId, request)
         const current = () => requests.get(connectionId) === request
         projectReads.set(connectionId, request)
+        const presetsCapable = client.supportsCapability(CHAT_SNOOZE_PRESETS_CAPABILITY)
+        // The same machine can point at an older backend after an edit: its sheet goes back to the defaults.
+        if (!presetsCapable)
+          set((s) => (connectionId in s.presets ? { presets: without(s.presets, connectionId) } : {}))
         await Promise.all([
           client
             .getProjects()
@@ -121,6 +141,14 @@ export const useRecentsStore = create<RecentsState>()(
             },
             (err: unknown) => log.warn('could not list live sessions for Home', err),
           ),
+          presetsCapable
+            ? client.getSnoozePresets().then(
+                (presets) => {
+                  if (current()) get().setPresets(connectionId, presets)
+                },
+                (err: unknown) => log.warn('could not read the snooze presets', err),
+              )
+            : undefined,
         ])
       },
 
@@ -152,7 +180,11 @@ export const useRecentsStore = create<RecentsState>()(
       forget: (connectionId) => {
         requests.delete(connectionId)
         projectReads.delete(connectionId)
-        set((s) => ({ sessions: without(s.sessions, connectionId), live: without(s.live, connectionId) }))
+        set((s) => ({
+          sessions: without(s.sessions, connectionId),
+          live: without(s.live, connectionId),
+          presets: without(s.presets, connectionId),
+        }))
       },
 
       applySnooze: (connectionId, event) => {

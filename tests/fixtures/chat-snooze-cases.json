@@ -86,6 +86,62 @@
         ["Saturday noon", "2026-11-07T12:00"],
         ["In 2 days", "2026-11-08T21:00"]
       ]
+    },
+    {
+      "name": "a 365-day duration wakes at the year limit, not rounded up past it",
+      "now": "2026-07-15T10:07",
+      "specs": [{ "label": "In a year", "kind": "duration", "minutes": 525600 }],
+      "expect": [["In a year", "2027-07-15T10:07"]]
+    }
+  ],
+  "presetsDst": [
+    {
+      "comment": "Custom presets resolved in one zone; times are epoch ms. 2027-03-14 02:30 does not exist and moves forward to 03:30 EDT; 2026-11-01 01:30 happens twice and takes the first (EDT); a day in a duration is 24 hours, so it ends an hour earlier on the clock after the autumn change.",
+      "zone": "America/New_York",
+      "cases": [
+        {
+          "name": "spring gap: a tomorrow time moves forward by the gap",
+          "now": 1804957200000,
+          "specs": [
+            { "label": "Early", "kind": "time", "dayOffset": 1, "hour": 2, "minute": 30 }
+          ],
+          "expect": [["Early", 1805009400000]]
+        },
+        {
+          "name": "spring gap: a weekday time moves forward too, and the same-minute time below it is hidden",
+          "now": 1804957200000,
+          "specs": [
+            { "label": "Sunday early", "kind": "weekday", "weekday": 0, "hour": 2, "minute": 30 },
+            { "label": "Early", "kind": "time", "dayOffset": 1, "hour": 2, "minute": 30 }
+          ],
+          "expect": [["Sunday early", 1805009400000]]
+        },
+        {
+          "name": "autumn overlap: a repeated time takes the first, and a one-day duration is 24 hours",
+          "now": 1793462400000,
+          "specs": [
+            { "label": "Night owl", "kind": "time", "dayOffset": 1, "hour": 1, "minute": 30 },
+            { "label": "In a day", "kind": "duration", "minutes": 1440 }
+          ],
+          "expect": [
+            ["Night owl", 1793511000000],
+            ["In a day", 1793548800000]
+          ]
+        },
+        {
+          "name": "dayOffset 0 near midnight: 75 minutes away shows, exactly an hour away hides, tomorrow 00:15 is tomorrow",
+          "now": 1793676600000,
+          "specs": [
+            { "label": "Late", "kind": "time", "dayOffset": 0, "hour": 23, "minute": 45 },
+            { "label": "Too soon", "kind": "time", "dayOffset": 0, "hour": 23, "minute": 30 },
+            { "label": "Past midnight", "kind": "time", "dayOffset": 1, "hour": 0, "minute": 15 }
+          ],
+          "expect": [
+            ["Late", 1793681100000],
+            ["Past midnight", 1793682900000]
+          ]
+        }
+      ]
     }
   ],
   "pick": [
@@ -177,6 +233,96 @@
     { "raw": { "label": "Bad day", "kind": "weekday", "weekday": 7, "hour": 9, "minute": 0 }, "ok": false },
     { "raw": { "label": "Friday", "kind": "weekday", "weekday": 5, "hour": 17, "minute": 30 }, "ok": true },
     { "raw": { "label": "Odd", "kind": "month", "hour": 9, "minute": 0 }, "ok": false }
+  ],
+  "presetList": [
+    {
+      "name": "keeps the presets and drops the rest",
+      "raw": [
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Odd", "kind": "month", "hour": 9, "minute": 0 },
+        { "label": "Evening", "kind": "weekday", "weekday": 5, "hour": 18, "minute": 30 }
+      ],
+      "expect": [
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Evening", "kind": "weekday", "weekday": 5, "hour": 18, "minute": 30 }
+      ]
+    },
+    {
+      "name": "trims a label",
+      "raw": [
+        { "label": "  Soon  ", "kind": "duration", "minutes": 30 }
+      ],
+      "expect": [
+        { "label": "Soon", "kind": "duration", "minutes": 30 }
+      ]
+    },
+    {
+      "name": "keeps the first 8",
+      "raw": [
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 }
+      ],
+      "expect": [
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 },
+        { "label": "Lunch", "kind": "time", "dayOffset": 0, "hour": 13, "minute": 0 }
+      ]
+    },
+    {
+      "name": "an empty list is the defaults",
+      "raw": [],
+      "expect": [
+        { "label": "Later today", "kind": "duration", "minutes": 180 },
+        { "label": "Tonight", "kind": "time", "dayOffset": 0, "hour": 20, "minute": 0 },
+        { "label": "Tomorrow morning", "kind": "time", "dayOffset": 1, "hour": 9, "minute": 0 },
+        { "label": "Next week", "kind": "weekday", "weekday": 1, "hour": 9, "minute": 0 }
+      ]
+    },
+    {
+      "name": "a list with nothing usable is the defaults",
+      "raw": [
+        { "label": "" }
+      ],
+      "expect": [
+        { "label": "Later today", "kind": "duration", "minutes": 180 },
+        { "label": "Tonight", "kind": "time", "dayOffset": 0, "hour": 20, "minute": 0 },
+        { "label": "Tomorrow morning", "kind": "time", "dayOffset": 1, "hour": 9, "minute": 0 },
+        { "label": "Next week", "kind": "weekday", "weekday": 1, "hour": 9, "minute": 0 }
+      ]
+    },
+    {
+      "name": "not a list is the defaults",
+      "raw": "nonsense",
+      "expect": [
+        { "label": "Later today", "kind": "duration", "minutes": 180 },
+        { "label": "Tonight", "kind": "time", "dayOffset": 0, "hour": 20, "minute": 0 },
+        { "label": "Tomorrow morning", "kind": "time", "dayOffset": 1, "hour": 9, "minute": 0 },
+        { "label": "Next week", "kind": "weekday", "weekday": 1, "hour": 9, "minute": 0 }
+      ]
+    },
+    {
+      "name": "a missing setting is the defaults",
+      "raw": null,
+      "expect": [
+        { "label": "Later today", "kind": "duration", "minutes": 180 },
+        { "label": "Tonight", "kind": "time", "dayOffset": 0, "hour": 20, "minute": 0 },
+        { "label": "Tomorrow morning", "kind": "time", "dayOffset": 1, "hour": 9, "minute": 0 },
+        { "label": "Next week", "kind": "weekday", "weekday": 1, "hour": 9, "minute": 0 }
+      ]
+    }
   ],
   "prWake": [
     { "name": "nothing changed", "mark": { "state": "open", "updatedAt": 100, "headSha": "a1", "checksFailed": false, "changesRequestedAt": null }, "reading": { "number": 512, "state": "open", "updatedAt": 100, "headSha": "a1", "checksFailed": false, "changesRequestedAt": null }, "expect": null },

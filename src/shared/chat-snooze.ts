@@ -168,29 +168,41 @@ function durationEnd(now: Date, minutes: number): Date {
   const end = new Date(now.getTime() + minutes * 60_000)
   const unit = minutes >= 60 ? 30 : 1
   const rest = (end.getMinutes() % unit) * 60_000 + end.getSeconds() * 1000 + end.getMilliseconds()
-  return rest === 0 ? end : new Date(end.getTime() - rest + unit * 60_000)
+  const rounded = rest === 0 ? end.getTime() : end.getTime() - rest + unit * 60_000
+  // Rounding up a duration near a year would pass the wake limit the backend checks.
+  return new Date(Math.min(rounded, now.getTime() + MAX_SNOOZE_MS))
 }
 
-function presetTime(spec: SnoozePresetSpec, now: Date): Date | null {
+/**
+ * When a preset would wake from `now`, and whether the menu leaves it out:
+ * `ends_late` for a sub-day duration that ends tomorrow or at 21:00 or later,
+ * `too_soon` for a today time an hour or less away, or past.
+ */
+export function presetTiming(spec: SnoozePresetSpec, now: Date): { at: Date; hidden: 'ends_late' | 'too_soon' | null } {
   switch (spec.kind) {
     case 'duration': {
       const end = durationEnd(now, spec.minutes)
       if (spec.minutes < 24 * 60) {
         const sameDay = end.getDate() === now.getDate() && end.getMonth() === now.getMonth()
-        if (!sameDay || end.getHours() >= DURATION_LAST_HOUR) return null
+        if (!sameDay || end.getHours() >= DURATION_LAST_HOUR) return { at: end, hidden: 'ends_late' }
       }
-      return end
+      return { at: end, hidden: null }
     }
     case 'time': {
       const at = localDay(now, spec.dayOffset, spec.hour, spec.minute)
-      if (spec.dayOffset === 0 && at.getTime() - now.getTime() <= 60 * 60_000) return null
-      return at
+      const soon = spec.dayOffset === 0 && at.getTime() - now.getTime() <= 60 * 60_000
+      return { at, hidden: soon ? 'too_soon' : null }
     }
     case 'weekday': {
       const ahead = (spec.weekday - now.getDay() + 7) % 7 || 7
-      return localDay(now, ahead, spec.hour, spec.minute)
+      return { at: localDay(now, ahead, spec.hour, spec.minute), hidden: null }
     }
   }
+}
+
+function presetTime(spec: SnoozePresetSpec, now: Date): Date | null {
+  const timing = presetTiming(spec, now)
+  return timing.hidden ? null : timing.at
 }
 
 /** The menu: soonest first, one item per minute (the first spec wins a tie). */
@@ -252,6 +264,58 @@ export function parsePresetList(raw: unknown): SnoozePresetSpec[] {
   if (!Array.isArray(raw)) return [...DEFAULT_SNOOZE_PRESETS]
   const specs = raw.map(parsePresetSpec).filter((s): s is SnoozePresetSpec => s !== null)
   return specs.length > 0 ? specs.slice(0, MAX_SNOOZE_PRESETS) : [...DEFAULT_SNOOZE_PRESETS]
+}
+
+/**
+ * The presets a backend stores and serves: `app:get-snooze-presets`,
+ * `app:set-snooze-presets` and the `app:snooze-presets-changed` broadcast. A
+ * client asks only a backend with this; an older one means the defaults.
+ */
+export const CHAT_SNOOZE_PRESETS_CAPABILITY = 'chat_snooze_presets_v1'
+
+export const SNOOZE_PRESETS_SETTING = 'chats.snoozePresets'
+
+export type PresetListRefusal = 'not_a_list' | 'empty' | 'too_many' | 'invalid_preset'
+
+export type SnoozePresetsResult =
+  | { ok: true; presets: SnoozePresetSpec[] }
+  | { ok: false; reason: PresetListRefusal; /** The first entry that is not a preset, from 0. */ index?: number }
+
+/** Broadcast on `app:snooze-presets-changed` after a write that changed the list. */
+export interface SnoozePresetsChangedEvent {
+  presets: SnoozePresetSpec[]
+}
+
+/**
+ * A write of the list: the same rules as `parsePresetList`, but a list it
+ * would repair (drop an entry, cut to 8, fall back to the defaults) is
+ * refused. The presets it answers are the ones to store, labels trimmed and
+ * other fields dropped.
+ */
+export function checkPresetList(raw: unknown): SnoozePresetsResult {
+  if (!Array.isArray(raw)) return { ok: false, reason: 'not_a_list' }
+  if (raw.length === 0) return { ok: false, reason: 'empty' }
+  if (raw.length > MAX_SNOOZE_PRESETS) return { ok: false, reason: 'too_many' }
+  const presets: SnoozePresetSpec[] = []
+  for (const [index, entry] of raw.entries()) {
+    const spec = parsePresetSpec(entry)
+    if (!spec) return { ok: false, reason: 'invalid_preset', index }
+    presets.push(spec)
+  }
+  return { ok: true, presets }
+}
+
+export function presetListRefusalText(reason: PresetListRefusal, index?: number): string {
+  switch (reason) {
+    case 'not_a_list':
+      return 'The presets are not a list'
+    case 'empty':
+      return 'Keep at least one preset'
+    case 'too_many':
+      return `Keep ${MAX_SNOOZE_PRESETS} presets or fewer`
+    case 'invalid_preset':
+      return index === undefined ? 'A preset is not valid' : `Preset ${index + 1} is not valid`
+  }
 }
 
 // ---------------------------------------------------------------- custom time

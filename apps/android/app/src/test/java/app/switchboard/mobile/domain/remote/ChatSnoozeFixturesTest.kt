@@ -3,6 +3,7 @@ package app.switchboard.mobile.domain.remote
 import app.switchboard.mobile.domain.thread.PrLink
 import app.switchboard.mobile.domain.thread.PrLinkRef
 import app.switchboard.mobile.protocol.JsonArray
+import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonCodec
 import app.switchboard.mobile.protocol.JsonNull
 import app.switchboard.mobile.protocol.JsonNumber
@@ -14,6 +15,7 @@ import java.nio.file.Path
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.util.TimeZone
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -37,6 +39,53 @@ class ChatSnoozeFixturesTest {
             }
             assertEquals(case.str("name"), expected, options.map { listOf(it.label, wall(it.at)) })
         }
+    }
+
+    @Test
+    fun customPresetsResolveAcrossADstChangeAndNearMidnight() {
+        val zones = section("presetsDst")
+        assertTrue(zones.isNotEmpty())
+        zones.forEach { group ->
+            val zone = TimeZone.getTimeZone(group.str("zone"))
+            (group.values.getValue("cases") as JsonArray).values.map { it as JsonObject }.forEach { case ->
+                val specs = (case.values.getValue("specs") as JsonArray).values.map { spec(it as JsonObject) }
+                val options = ChatSnooze.resolvePresets(case.long("now"), specs, zone)
+                val expected = (case.values.getValue("expect") as JsonArray).values.map { pair ->
+                    val (label, at) = (pair as JsonArray).values
+                    (label as JsonString).value to (at as JsonNumber).source.toLong()
+                }
+                assertEquals(case.str("name"), expected, options.map { it.label to it.at })
+            }
+        }
+    }
+
+    @Test
+    fun theStoredListKeepsItsPresetsAndFallsBackToTheDefaults() {
+        val cases = section("presetList")
+        assertTrue(cases.isNotEmpty())
+        cases.forEach { case ->
+            val expected = (case.values.getValue("expect") as JsonArray).values.map { spec(it as JsonObject) }
+            assertEquals(case.str("name"), expected, ChatSnooze.parsePresetList(case.values["raw"]))
+        }
+    }
+
+    @Test
+    fun aStoredPresetFollowsTheSharedRules() {
+        section("parsePreset").forEach { case ->
+            val ok = (case.values.getValue("ok") as JsonBoolean).value
+            assertEquals(case.toString(), ok, ChatSnooze.parsePresetSpec(case.values["raw"]) != null)
+        }
+    }
+
+    @Test
+    fun aPresetsBroadcastCarriesTheList() {
+        val raw = JsonCodec.parse(
+            """[{"presets":[{"label":"Lunch","kind":"time","dayOffset":0,"hour":13,"minute":0}]}]""",
+        ) as JsonArray
+        assertEquals(
+            listOf(ChatSnooze.PresetSpec.Time("Lunch", dayOffset = 0, hour = 13, minute = 0)),
+            ChatSnooze.presetsEventOf(raw),
+        )
     }
 
     @Test

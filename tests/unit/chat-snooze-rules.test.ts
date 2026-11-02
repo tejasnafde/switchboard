@@ -53,6 +53,23 @@ describe('resolvePresets', () => {
   }
 })
 
+describe('resolvePresets across a DST change', () => {
+  // The zone is fixed per process, so each zone runs the resolver in a child with TZ set.
+  for (const zone of cases.presetsDst) {
+    it(`in ${zone.zone}: a skipped time moves forward, a repeated one takes the first, near midnight`, () => {
+      const script = `
+        import { resolvePresets } from ${JSON.stringify(pathToFileURL(join(__dirname, '../../src/shared/chat-snooze.ts')).href)}
+        const cases = ${JSON.stringify(zone.cases)}
+        console.log(JSON.stringify(cases.map((c) => resolvePresets(new Date(c.now), c.specs).map((o) => [o.label, o.at]))))`
+      const out = execFileSync(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e', script], {
+        env: { ...process.env, TZ: zone.zone, NODE_NO_WARNINGS: '1' },
+        encoding: 'utf8',
+      })
+      expect(JSON.parse(out)).toEqual(zone.cases.map((c: { expect: unknown }) => c.expect))
+    })
+  }
+})
+
 describe('pickPreset', () => {
   for (const c of cases.pick) {
     it(c.name, () => {
@@ -132,6 +149,14 @@ describe('parsePresetSpec', () => {
     expect(parsePresetList([{ label: '' }])[0].label).toBe('Later today')
     expect(parsePresetList('nonsense')).toHaveLength(4)
   })
+})
+
+describe('parsePresetList', () => {
+  for (const c of cases.presetList) {
+    it(c.name, () => {
+      expect(parsePresetList(c.raw ?? undefined)).toEqual(c.expect)
+    })
+  }
 })
 
 describe('state', () => {

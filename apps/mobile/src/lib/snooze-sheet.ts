@@ -1,10 +1,11 @@
 /**
  * The phone's Snooze sheet (long press or swipe on a Home > Recents row): the
- * presets resolved when the sheet opens, each with its wake time, and "Until
+ * machine's presets resolved when the sheet opens, each with its wake time, and "Until
  * PR #n changes" when the chat links an open PR. No custom time on the phone.
  * The same rules as native Android's `ChatSnooze.kt`.
  */
 import {
+  DEFAULT_SNOOZE_PRESETS,
   pickPreset,
   presetKindOf,
   resolvePresets,
@@ -13,6 +14,7 @@ import {
   type PresetOption,
   type SnoozeRefusal,
   type SnoozeRequest,
+  type SnoozePresetSpec,
   type SnoozeResult,
 } from '@shared/chat-snooze'
 import type { SnoozePrChoice } from '@shared/chat-snooze-pr'
@@ -27,9 +29,14 @@ export interface SnoozeSheetItem {
   choice: SnoozeChoice
 }
 
-export function snoozeSheetItems(now: Date, pr: SnoozePrChoice | null): SnoozeSheetItem[] {
-  const items: SnoozeSheetItem[] = resolvePresets(now).map((option) => ({
-    key: option.label,
+/** `presets` is the machine's list (`chats.snoozePresets`); the defaults for a backend without it. */
+export function snoozeSheetItems(
+  now: Date,
+  pr: SnoozePrChoice | null,
+  presets: readonly SnoozePresetSpec[] = DEFAULT_SNOOZE_PRESETS,
+): SnoozeSheetItem[] {
+  const items: SnoozeSheetItem[] = resolvePresets(now, presets).map((option) => ({
+    key: `${option.label}:${option.at}`,
     label: option.label,
     detail: wakeLabel(option.at, null, now),
     choice: { kind: 'preset', option },

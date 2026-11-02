@@ -15,6 +15,7 @@ import { CHAT_SNOOZE_CAPABILITY, CHAT_SNOOZE_ENABLED, resolvePresets, wakeLabel 
 import { machineSupportsSnooze, refusalText, showInboxNotice, snoozeChat, wakeChat } from '../services/chat-inbox'
 import { openCustomSnooze } from './sidebar/SnoozeCustomDialog'
 import { useSnoozeStore } from '../stores/snooze-store'
+import { snoozePresets } from '../stores/snooze-presets-store'
 import { isDraftSessionId } from '@shared/new-chat-draft'
 
 const log = createRendererLogger('command-palette')
@@ -83,8 +84,8 @@ export function snoozeCommands(shownAt: Date, onClose: () => void): Cmd[] {
       },
     ]
   const needsYou = (session.pendingRequests?.length ?? 0) > 0 || session.status === 'error'
-  const presets: Cmd[] = resolvePresets(shownAt).map((option) => ({
-    id: `chat.snooze.${option.label}`,
+  const presets: Cmd[] = resolvePresets(shownAt, snoozePresets()).map((option) => ({
+    id: `chat.snooze.${option.label}:${option.at}`,
     group: 'Chat',
     label: `Snooze chat: ${option.label}`,
     shortcut: wakeLabel(option.at, null, shownAt),

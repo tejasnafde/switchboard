@@ -41,6 +41,7 @@ import { UpdateToast } from './components/UpdateToast'
 import { AnalyticsNotice } from './components/AnalyticsNotice'
 import { VisualPreviewHost } from './components/chat/visuals/VisualPreviewHost'
 import { ConfirmHost, unlessConfirmOpen } from './components/ui/confirm'
+import { startSnoozePresetsSync } from './stores/snooze-presets-store'
 import { SnoozeCustomHost } from './components/sidebar/SnoozeCustomDialog'
 import { loadKeyboardOverrides, reloadKeyboardOverrides } from './services/keyboard-overrides'
 import { attachSettingsFileSync } from './services/settings-file-sync'
@@ -181,6 +182,7 @@ export function App() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+  useEffect(() => startSnoozePresetsSync(), [])
   const sidebarMax = paneMaxWidth(140, terminalVisible ? terminalWidth : 0, viewportW)
   const terminalMax = paneMaxWidth(200, sidebarVisible ? sidebarWidth : 0, viewportW)
 

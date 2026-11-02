@@ -11,7 +11,7 @@ import { ActivityIndicator, Animated, PanResponder, Pressable, StyleSheet, Text,
 import { Ionicons } from '@expo/vector-icons'
 import { useFocusEffect } from '@react-navigation/native'
 import { CHAT_SETTLE_CAPABILITY, SETTLE_UNDO_MS, settledNoticeText } from '@shared/chat-settle'
-import { CHAT_SNOOZE_CAPABILITY, wakeLabel } from '@shared/chat-snooze'
+import { CHAT_SNOOZE_CAPABILITY, DEFAULT_SNOOZE_PRESETS, wakeLabel, type SnoozePresetSpec } from '@shared/chat-snooze'
 import { snoozePrOf, type SnoozePrChoice } from '@shared/chat-snooze-pr'
 import { createLogger } from '@shared/logger'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
@@ -125,7 +125,8 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
   const openSheet = (row: HomeRecentRow) => {
     const now = new Date()
     openedAt.current = now
-    setSheet({ row, now, pr: null, notice: null, busy: false })
+    const presets = useRecentsStore.getState().presets[row.connectionId] ?? DEFAULT_SNOOZE_PRESETS
+    setSheet({ row, now, presets, pr: null, notice: null, busy: false })
     if (!canSnooze(row)) return
     getClient(row.connectionId)
       ?.pullRequestLinks(row.id)
@@ -198,7 +199,7 @@ export function HomeRecents({ onOpen }: { onOpen: (row: HomeRecentRow) => void }
       {sheet && (
         <SnoozeSheet
           title={sheet.row.title}
-          items={canSnooze(sheet.row) ? snoozeSheetItems(sheet.now, sheet.pr) : []}
+          items={canSnooze(sheet.row) ? snoozeSheetItems(sheet.now, sheet.pr, sheet.presets) : []}
           notice={sheet.notice}
           busy={sheet.busy}
           onPick={(item) => void pick(item)}
@@ -216,6 +217,8 @@ interface SnoozeSheetState {
   row: HomeRecentRow
   /** When the sheet opened: its clock-time presets keep this instant. */
   now: Date
+  /** The machine's presets when the sheet opened. */
+  presets: readonly SnoozePresetSpec[]
   pr: SnoozePrChoice | null
   notice: string | null
   busy: boolean

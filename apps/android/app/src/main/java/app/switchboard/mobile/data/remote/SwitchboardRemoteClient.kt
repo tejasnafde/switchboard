@@ -169,6 +169,9 @@ object BackendChannels {
     const val UnsnoozeConversation = "app:unsnooze-conversation"
     const val MarkWokeSeen = "app:mark-woke-seen"
     const val ConversationSnoozed = "app:conversation-snoozed"
+    /** Gated behind `chat_snooze_presets_v1`; the phone only reads them. */
+    const val GetSnoozePresets = "app:get-snooze-presets"
+    const val SnoozePresetsChanged = "app:snooze-presets-changed"
     /** Gated behind `attachment_upload_v1` (src/shared/attachments.ts). */
     const val UploadAttachment = "app:upload-attachment"
 }
@@ -825,6 +828,15 @@ class SwitchboardRemoteClient(
     fun onConversationSnoozed(listener: (ChatSnooze.Event) -> Unit): Cancelable =
         rpc.onChannelEvent(BackendChannels.ConversationSnoozed) { scope, args ->
             if (scope.connectionId == connectionId && rpc.scope == scope) ChatSnooze.eventOf(args)?.let(listener)
+        }
+
+    /** Only call when the backend advertises `chat_snooze_presets_v1`. */
+    fun getSnoozePresets(callback: (RemoteResponse<List<ChatSnooze.PresetSpec>>) -> Unit) =
+        call(BackendChannels.GetSnoozePresets, decoder = ChatSnooze::parsePresetList, callback = callback)
+
+    fun onSnoozePresetsChanged(listener: (List<ChatSnooze.PresetSpec>) -> Unit): Cancelable =
+        rpc.onChannelEvent(BackendChannels.SnoozePresetsChanged) { scope, args ->
+            if (scope.connectionId == connectionId && rpc.scope == scope) ChatSnooze.presetsEventOf(args)?.let(listener)
         }
 
     /** A chat was settled or unsettled on any client; the payload names the root chat, so re-read the list. */
