@@ -1,8 +1,9 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-const root = new URL('../../src/renderer/', import.meta.url).pathname
+const root = fileURLToPath(new URL('../../src/renderer/', import.meta.url))
 const css = readFileSync(join(root, 'styles/global.css'), 'utf8')
 const read = (file: string): string => readFileSync(join(root, file), 'utf8')
 
@@ -22,6 +23,8 @@ function reducedMotionBlocks(): string {
   return blocks.join('\n')
 }
 
+const rel = (file: string): string => relative(root, file).split(sep).join('/')
+
 function tsxFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name)
@@ -35,7 +38,9 @@ describe('popover, menu and dialog motion', () => {
     expect(css).toMatch(/@keyframes sb-pop-in \{\s*from \{ opacity: 0; transform: scale\(0\.98\); \}/)
     expect(css).toMatch(/@keyframes sb-pop-out \{\s*to \{ opacity: 0; transform: scale\(0\.98\); \}/)
     expect(css).toMatch(/\.sb-pop\[data-state='open'\] \{\s*animation: sb-pop-in 150ms ease-out;/)
-    expect(css).toMatch(/\.sb-pop\[data-state='closed'\] \{\s*animation: sb-pop-out 100ms ease-out forwards;\s*pointer-events: none;/)
+    expect(css).toMatch(
+      /\.sb-pop\[data-state='closed'\] \{\s*animation: sb-pop-out 100ms ease-out forwards;\s*pointer-events: none;/,
+    )
     expect(css).toMatch(/\.sb-pop-anchored \{\s*transform-origin: var\(--radix-popover-content-transform-origin\);/)
   })
 
@@ -53,13 +58,14 @@ describe('popover, menu and dialog motion', () => {
 
   it('keeps transitions out of inline styles, where the media query cannot reach them', () => {
     const offenders = tsxFiles(root).filter((file) => /\btransition:\s*['`]/.test(readFileSync(file, 'utf8')))
-    expect(offenders.map((file) => file.slice(root.length))).toEqual([])
+    expect(offenders.map(rel)).toEqual([])
   })
 
   it('has one spinner part', () => {
     const offenders = tsxFiles(root).filter(
-      (file) => !file.endsWith('ui/spinner.tsx') && /\banimate-spin\b|sb-spin/.test(readFileSync(file, 'utf8')),
+      (file) =>
+        rel(file) !== 'components/ui/spinner.tsx' && /\banimate-spin\b|sb-spin/.test(readFileSync(file, 'utf8')),
     )
-    expect(offenders.map((file) => file.slice(root.length))).toEqual([])
+    expect(offenders.map(rel)).toEqual([])
   })
 })
