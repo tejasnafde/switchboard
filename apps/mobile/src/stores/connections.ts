@@ -150,7 +150,7 @@ interface ConnectionsState {
   stopDemo: () => void
 }
 
-/** Feed a client's events to the chat store, and its settle broadcasts to Home > Recents. */
+/** Feed a client's events to the chat store, and its settle and snooze broadcasts to Home > Recents. */
 function attachClient(id: string, client: SwitchboardClient): void {
   clients.set(id, client)
   const stopEvents = client.onEvent((event) => {
@@ -163,9 +163,11 @@ function attachClient(id: string, client: SwitchboardClient): void {
     noticeTurnCompletion(id, event)
   })
   const stopSettled = client.onConversationSettled((event) => useRecentsStore.getState().applySettled(id, event))
+  const stopSnoozed = client.onConversationSnoozed((event) => useRecentsStore.getState().applySnooze(id, event))
   eventUnsubs.set(id, () => {
     stopEvents()
     stopSettled()
+    stopSnoozed()
   })
 }
 

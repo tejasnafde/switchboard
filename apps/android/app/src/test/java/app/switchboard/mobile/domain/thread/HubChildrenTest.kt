@@ -18,7 +18,7 @@ class HubChildrenTest {
               "state": "waiting",
               "heldUpdates": 2,
               "children": [
-                {"chat": {"id": "c1", "familyIds": ["c1"], "title": "Local", "agentType": "codex", "projectPath": "/repo/wt", "updatedAt": 6},
+                {"chat": {"id": "c1", "familyIds": ["c1"], "title": "Local", "agentType": "codex", "projectPath": "/repo", "worktreePath": "/repo/.switchboard/worktrees/c1", "updatedAt": 6},
                  "liveId": "c1-live", "phase": "open", "state": "working", "limit": "none", "waitingForSlot": false,
                  "account": null, "branch": "hub/c1", "lastWake": {"kind": "report", "summary": "Tests pass"}, "lastTurn": null},
                 {"chat": {"id": "c2", "familyIds": ["c2"], "title": "Remote", "agentType": "claude-code", "projectPath": "/srv/repo", "updatedAt": 7},
@@ -48,6 +48,8 @@ class HubChildrenTest {
 
         val local = view.children[0]
         assertEquals("c1-live", local.liveId)
+        assertEquals("/repo/.switchboard/worktrees/c1", local.chat.worktreePath)
+        assertNull(view.children[1].chat.worktreePath)
         assertEquals(ChildState.Working, local.state)
         assertEquals(HubWake("report", "Tests pass"), local.lastWake)
         assertNull(local.remote)

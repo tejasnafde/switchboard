@@ -85,6 +85,8 @@ data class HubChatRef(
     val agentType: String,
     val projectPath: String,
     val updatedAt: Long,
+    /** Its worktree: the session starts there before the chat's history is loaded. */
+    val worktreePath: String? = null,
 )
 
 data class HubWake(val kind: String, val summary: String)
@@ -211,6 +213,7 @@ object HubChildren {
             agentType = raw.stringOrNull("agentType").orEmpty(),
             projectPath = raw.stringOrNull("projectPath").orEmpty(),
             updatedAt = (raw.values["updatedAt"] as? JsonNumber)?.source?.toDoubleOrNull()?.toLong() ?: 0,
+            worktreePath = raw.stringOrNull("worktreePath"),
         )
     }
 

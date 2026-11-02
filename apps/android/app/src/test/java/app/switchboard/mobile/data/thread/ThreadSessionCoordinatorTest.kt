@@ -1901,6 +1901,22 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `a failed read shows its own error with Retry, and the next good read clears it`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(HUB_CHILDREN_CAPABILITY))
+        coordinator.start()
+        remote.hubListCallbacks.removeAt(0)(failure("hub", "backend busy"))
+        assertEquals("backend busy", coordinator.state.value.hub.readError)
+        assertNull(coordinator.state.value.hub.note)
+
+        coordinator.retryHub()
+        assertEquals(2, remote.hubLists.size)
+        remote.hubListCallbacks.removeAt(0)(success("hub", hubView(hubChild("c1"))))
+        assertNull(coordinator.state.value.hub.readError)
+        assertEquals(1, coordinator.state.value.hub.view?.children?.size)
+    }
+
+    @Test
     fun `an open child re-reads on a change naming its parent`() {
         val remote = FakeThreadSessionRemote(scope)
         val coordinator = coordinator(remote, capabilities = setOf(HUB_CHILDREN_CAPABILITY))

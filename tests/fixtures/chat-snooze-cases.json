@@ -193,5 +193,31 @@
     { "name": "a merge outranks the rest", "mark": { "state": "open", "updatedAt": 100, "headSha": "a1", "checksFailed": false, "changesRequestedAt": null }, "reading": { "number": 512, "state": "merged", "updatedAt": 2000, "headSha": "a1", "checksFailed": true, "changesRequestedAt": 2000 }, "expect": "PR #512 merged" },
     { "name": "a cached read older than the mark does not wake", "mark": { "state": "open", "updatedAt": 500, "headSha": "b2", "checksFailed": false, "changesRequestedAt": null }, "reading": { "number": 512, "state": "open", "updatedAt": 400, "headSha": "a1", "checksFailed": true, "changesRequestedAt": 400 }, "expect": null },
     { "name": "a read with no update time still compares forward", "mark": { "state": "open", "updatedAt": null, "headSha": "a1", "checksFailed": false, "changesRequestedAt": null }, "reading": { "number": 512, "state": "open", "updatedAt": null, "headSha": "a1", "checksFailed": true, "changesRequestedAt": null }, "expect": "PR #512: checks failed" }
-  ]
+  ],
+  "shelfOrder": [
+    { "name": "the soonest wake first", "rows": [{ "id": "b", "until": "2026-11-03T09:00" }, { "id": "a", "until": "2026-11-02T20:00" }], "expect": ["a", "b"] },
+    { "name": "PR-only snoozes last, in list order", "rows": [{ "id": "p1", "until": null }, { "id": "t", "until": "2026-11-09T09:00" }, { "id": "p2", "until": null }], "expect": ["t", "p1", "p2"] },
+    { "name": "the same wake keeps list order", "rows": [{ "id": "x", "until": "2026-11-02T20:00" }, { "id": "y", "until": "2026-11-02T20:00" }], "expect": ["x", "y"] }
+  ],
+  "snoozeLine": [
+    { "now": "2026-11-02T10:00", "until": "2026-11-02T20:00", "pr": null, "expect": "Snoozed until 20:00" },
+    { "now": "2026-11-02T10:00", "until": "2026-11-03T09:00", "pr": "github:acme/app#512", "expect": "Snoozed until Tue 09:00" },
+    { "now": "2026-11-02T10:00", "until": null, "pr": "github:acme/app#512", "expect": "Snoozed until PR #512 changes" },
+    { "now": "2026-11-02T10:00", "until": null, "pr": null, "expect": "Snoozed" }
+  ],
+  "snoozePr": [
+    { "name": "the newest link that is still open", "links": [{ "number": 1, "linkedAt": 1, "state": "open" }, { "number": 2, "linkedAt": 3, "state": "merged" }, { "number": 3, "linkedAt": 2, "state": null }], "expect": { "key": "github:acme/app#3", "number": 3 } },
+    { "name": "no open link", "links": [{ "number": 2, "linkedAt": 3, "state": "closed" }], "expect": null }
+  ],
+  "refusal": {
+    "needs_you": "A chat that needs you cannot be snoozed",
+    "past": "That time has passed. Pick another",
+    "too_far": "Pick a time within a year",
+    "pr_closed": "That pull request is closed",
+    "pr_unlinked": "That pull request is not linked to this chat",
+    "pr_unreadable": "The pull request could not be read",
+    "stale": "The chat changed since. Nothing to undo",
+    "empty": "Pick a time",
+    "no_row": "This chat cannot be snoozed"
+  }
 }

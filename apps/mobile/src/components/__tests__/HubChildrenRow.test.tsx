@@ -188,3 +188,27 @@ it("hides a remote child's machine while hub_remote_children is off, and never o
   expect(alert).toHaveBeenCalledWith('Child c1', 'Working\n\nNo report yet.\n\nRead on the desktop.')
   alert.mockRestore()
 })
+
+it('shows a failed read with Retry, and Retry reads again', async () => {
+  const fake = fakeClient(parentView([child('c1')]))
+  fake.client.hubListChildren.mockRejectedValueOnce(new Error('backend busy'))
+  const root = renderComponent(
+    <HubChildrenRow client={fake.asClient} threadId="p1" remoteOn={false} onOpenChat={jest.fn()} />,
+  )
+  await flush()
+  expect(root.texts().join('')).toContain('Could not read the child chats: backend busy')
+  await act(async () => root.byLabel('Retry').props.onPress())
+  await flush()
+  expect(fake.client.hubListChildren).toHaveBeenCalledTimes(2)
+  expect(root.texts()).toContain('Hub · 1 child')
+  expect(root.allByLabel('Retry')).toHaveLength(0)
+})
+
+it('keeps the expanded children in a bounded scroll area', async () => {
+  const { root } = await renderRow(parentView(Array.from({ length: 12 }, (_, i) => child(`c${i}`))))
+  await expand(root)
+  const list = root.root.findAll((n) => n.props.testID === 'hub-children-list' && typeof n.type === 'string')
+  expect(list).toHaveLength(1)
+  expect(list[0].findAll((n) => n.props.testID === 'hub-child-row' && typeof n.type === 'string')).toHaveLength(12)
+  expect(JSON.stringify(list[0].props.style)).toContain('"maxHeight":240')
+})

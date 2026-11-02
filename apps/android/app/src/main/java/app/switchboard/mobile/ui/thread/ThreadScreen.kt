@@ -263,9 +263,12 @@ fun ThreadScreen(
     onCancelLimitResume: () -> Unit = {},
     hub: ThreadHubState = ThreadHubState(),
     onToggleHub: () -> Unit = {},
+    onRetryHub: () -> Unit = {},
     onStopHubChild: (childId: String) -> Unit = {},
     onStopAllHubChildren: () -> Unit = {},
     onOpenHubChat: (HubChatRef) -> Unit = {},
+    /** The snoozed chat's line ([ThreadSnoozeLine]); empty when it is not snoozed. */
+    snoozeLine: @Composable () -> Unit = {},
     details: ThreadDetails? = null,
 ) {
     BackHandler(onBack = onBack)
@@ -465,11 +468,13 @@ fun ThreadScreen(
             HubRow(
                 hub = hub,
                 onToggle = onToggleHub,
+                onRetry = onRetryHub,
                 onStop = onStopHubChild,
                 onStopAll = onStopAllHubChildren,
                 onOpen = onOpenHubChat,
             )
             LimitResumeRow(limitResume, onResumeNow = onResumeLimitNow, onCancel = onCancelLimitResume)
+            snoozeLine()
             Box(modifier = Modifier.weight(1f)) {
             when (presentation) {
                 ThreadPresentation.Loading -> FullPageLoading()
@@ -709,9 +714,14 @@ internal fun HubRow(
     onStop: (String) -> Unit,
     onStopAll: () -> Unit,
     onOpen: (HubChatRef) -> Unit,
+    onRetry: () -> Unit = {},
 ) {
-    val view = hub.view ?: return
-    if (!hub.available || view.children.isEmpty()) return
+    if (!hub.available) return
+    val view = hub.view
+    if (view == null || view.children.isEmpty()) {
+        hub.readError?.let { HubReadError(it, onRetry) }
+        return
+    }
     var remoteChild by remember(view.self?.id) { mutableStateOf<HubChildView?>(null) }
     Column(
         modifier = Modifier
@@ -746,15 +756,24 @@ internal fun HubRow(
         hub.note?.let {
             Text(text = it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
         }
+        hub.readError?.let { HubReadError(it, onRetry) }
         if (hub.expanded) {
-            view.children.forEach { child ->
-                HubChildRow(
-                    child = child,
-                    showMachine = hub.remoteAvailable,
-                    stopping = child.chat.id in hub.stopping,
-                    onOpen = { if (child.remote != null) remoteChild = child else onOpen(child.chat) },
-                    onStop = { onStop(child.chat.id) },
-                )
+            // Bounded like the desktop strip, so many children never push the feed and composer off screen.
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 240.dp)
+                    .verticalScroll(rememberScrollState())
+                    .testTag(ThreadTestTags.HUB_LIST),
+            ) {
+                view.children.forEach { child ->
+                    HubChildRow(
+                        child = child,
+                        showMachine = hub.remoteAvailable,
+                        stopping = child.chat.id in hub.stopping,
+                        onOpen = { if (child.remote != null) remoteChild = child else onOpen(child.chat) },
+                        onStop = { onStop(child.chat.id) },
+                    )
+                }
             }
         }
     }
@@ -775,6 +794,23 @@ internal fun HubRow(
             },
             confirmButton = { TextButton(onClick = { remoteChild = null }) { Text("Close") } },
         )
+    }
+}
+
+/** A failed read of the children, with Retry. */
+@Composable
+private fun HubReadError(message: String, onRetry: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag(ThreadTestTags.HUB_READ_ERROR),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Could not read the child chats: $message",
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onRetry) { Text("Retry") }
     }
 }
 

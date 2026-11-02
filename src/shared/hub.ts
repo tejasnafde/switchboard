@@ -691,8 +691,12 @@ export function hubBatchDetail(view: HubBatchView): string {
 
 // ─── Views for clients ──────────────────────────────────────────
 
-/** A chat the hub UI can open the sidebar way: root id, every id of its thread, title, agent, project. */
-export type HubChatRef = Omit<PrLinkChat, 'linkSource'>
+/**
+ * A chat the hub UI can open the sidebar way: root id, every id of its thread,
+ * title, agent, project, and its worktree (a phone starts the session there
+ * before its history is loaded).
+ */
+export type HubChatRef = Omit<PrLinkChat, 'linkSource'> & { worktreePath?: string | null }
 
 /** One child as the strip and the sidebar show it. */
 export interface HubChildView {

@@ -8,18 +8,15 @@
  */
 import { useRef, useState, type ReactNode } from 'react'
 import { resolvePresets, wakeLabel, type PresetOption } from '@shared/chat-snooze'
+import type { SnoozePrChoice } from '@shared/chat-snooze-pr'
+
+export type { SnoozePrChoice }
 import type { SnoozeChoice } from '../../services/chat-inbox'
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from '../ui/menu'
 import { openCustomSnooze } from './SnoozeCustomDialog'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('sidebar:snooze-menu')
-
-/** A linked open PR the chat can wait on. */
-export interface SnoozePrChoice {
-  key: string
-  number: number
-}
 
 export interface SnoozeMenuExtra {
   label: string

@@ -2,7 +2,13 @@
  * Child chats on the phone (flag `hub_children`, rules in `@shared/hub`): the
  * view as this phone shows it and the chat list without listed children.
  */
-import { nestHubChildren, type HubChatView, type HubChildView, type SessionHubField } from '@shared/hub'
+import {
+  nestHubChildren,
+  type HubChatRef,
+  type HubChatView,
+  type HubChildView,
+  type SessionHubField,
+} from '@shared/hub'
 
 /**
  * A child as its row shows it: without `remote` while the backend does not
@@ -29,4 +35,15 @@ export function hubChangeConcerns(view: HubChatView | null, threadId: string, ch
 /** Chat list rows without the open children whose parent is in the list too, as the desktop sidebar nests them. */
 export function topLevelChatRows<T extends { id: string; hub?: SessionHubField }>(rows: readonly T[]): T[] {
   return nestHubChildren(rows).map((entry) => entry.session)
+}
+
+/** The Thread route of a child: its worktree too, since the session starts before the chat's history says where it runs. */
+export function hubChatRoute(connectionId: string, chat: HubChatRef) {
+  return {
+    connectionId,
+    threadId: chat.id,
+    title: chat.title,
+    projectPath: chat.projectPath,
+    worktreePath: chat.worktreePath ?? null,
+  }
 }

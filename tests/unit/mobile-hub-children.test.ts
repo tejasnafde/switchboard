@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { HubChatRef, HubChatView, HubChildView } from '../../src/shared/hub'
 import {
   hubChangeConcerns,
+  hubChatRoute,
   phoneHubView,
   shownHubChild,
   topLevelChatRows,
@@ -68,5 +69,18 @@ describe('topLevelChatRows', () => {
       { id: 'plain' },
     ]
     expect(topLevelChatRows(rows).map((r) => r.id)).toEqual(['parent', 'orphan', 'plain'])
+  })
+})
+
+describe('hubChatRoute', () => {
+  it('opens a child in its worktree, and a chat without one in its project', () => {
+    expect(hubChatRoute('conn', { ...ref('c1'), worktreePath: '/p/.switchboard/worktrees/c1' })).toEqual({
+      connectionId: 'conn',
+      threadId: 'c1',
+      title: 'c1',
+      projectPath: '/p',
+      worktreePath: '/p/.switchboard/worktrees/c1',
+    })
+    expect(hubChatRoute('conn', ref('c2')).worktreePath).toBeNull()
   })
 })

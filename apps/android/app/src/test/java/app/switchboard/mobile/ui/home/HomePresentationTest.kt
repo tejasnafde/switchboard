@@ -1,6 +1,7 @@
 package app.switchboard.mobile.ui.home
 
 import app.switchboard.mobile.data.thread.ThreadState
+import app.switchboard.mobile.domain.remote.ChatSnooze
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.SessionSummary
 import app.switchboard.mobile.domain.thread.FeedItem
@@ -273,13 +274,191 @@ class HomePresentationTest {
         assertEquals(2, page.total)
     }
 
+    @Test
+    fun `snoozed chats leave Recents for the shelf, soonest wake first and PR-only last`() {
+        val page = HomePresenter.recents(
+            machines = listOf(
+                machine(
+                    projects = listOf(
+                        project(
+                            "/repo",
+                            summary("plain", startedAt = 100),
+                            summary("pr-only", startedAt = 500, snooze = snoozed(until = null, pr = "github:acme/app#1")),
+                            summary("tomorrow", startedAt = 400, snooze = snoozed(until = 2_000)),
+                            summary("tonight", startedAt = 300, snooze = snoozed(until = 1_000)),
+                            summary("working", startedAt = 200, snooze = snoozed(until = 3_000), settledAt = 50),
+                        ),
+                    ),
+                    activity = mapOf("working" to BrowseThreadActivity(status = "running", unread = 0)),
+                    snooze = true,
+                ),
+            ),
+            limit = 10,
+        )
+
+        assertEquals(listOf("plain"), page.items.map(HomeRecentRow::threadId))
+        assertEquals(1, page.total)
+        assertEquals(listOf("tonight", "tomorrow", "working", "pr-only"), page.snoozed.map(HomeRecentRow::threadId))
+        assertEquals(HomeRecentStatus.Working, page.snoozed.single { it.threadId == "working" }.status)
+    }
+
+    @Test
+    fun `a settled chat snoozed and woken since the list was read shows in Recents`() {
+        val woke = ChatSnooze.State(snoozeRev = 3, wokeAt = 900, wokeReason = "time")
+        val page = HomePresenter.recents(
+            machines = listOf(
+                machine(
+                    projects = listOf(
+                        project(
+                            "/repo",
+                            summary("unsettled", startedAt = 100, settledAt = 50),
+                            summary("settled", startedAt = 200, settledAt = 50),
+                        ),
+                    ),
+                    snooze = true,
+                    snoozes = mapOf("unsettled" to woke.copy(unsettled = true), "settled" to woke),
+                ),
+            ),
+            limit = 10,
+        )
+
+        assertEquals(listOf("unsettled"), page.items.map(HomeRecentRow::threadId))
+    }
+
+    @Test
+    fun `a woken chat sorts first in its status group and shows Woke`() {
+        val woke = ChatSnooze.State(snoozeRev = 2, wokeAt = 900, wokeReason = "time")
+        val page = HomePresenter.recents(
+            machines = listOf(
+                machine(
+                    projects = listOf(
+                        project(
+                            "/repo",
+                            summary("newer", startedAt = 500),
+                            summary("woken", startedAt = 100, snooze = woke),
+                            summary("working", startedAt = 50),
+                            summary("woken-working", startedAt = 40, snooze = woke),
+                        ),
+                    ),
+                    activity = mapOf(
+                        "working" to BrowseThreadActivity(status = "running", unread = 0),
+                        "woken-working" to BrowseThreadActivity(status = "running", unread = 0),
+                    ),
+                    snooze = true,
+                ),
+            ),
+            limit = 10,
+        )
+
+        assertEquals(listOf("woken-working", "working", "woken", "newer"), page.items.map(HomeRecentRow::threadId))
+        assertEquals(listOf(true, false, true, false), page.items.map(HomeRecentRow::woke))
+    }
+
+    @Test
+    fun `a newer state from a broadcast or an answer wins over the project list`() {
+        val page = HomePresenter.recents(
+            machines = listOf(
+                machine(
+                    projects = listOf(
+                        project(
+                            "/repo",
+                            summary("snoozed-here", startedAt = 100),
+                            summary("changed-elsewhere", startedAt = 200, snooze = snoozed(until = 1_000, rev = 4)),
+                        ),
+                    ),
+                    snooze = true,
+                    snoozes = mapOf(
+                        "snoozed-here" to snoozed(until = 1_000, rev = 1),
+                        "changed-elsewhere" to snoozed(until = 5_000, rev = 3),
+                    ),
+                ),
+            ),
+            limit = 10,
+        )
+
+        assertEquals(listOf("snoozed-here", "changed-elsewhere"), page.snoozed.map(HomeRecentRow::threadId))
+        assertEquals(1_000L, page.snoozed.last().snooze.snoozedUntil)
+    }
+
+    @Test
+    fun `a machine without chat_snooze_v1 ignores every snooze field`() {
+        val page = HomePresenter.recents(
+            machines = listOf(
+                machine(
+                    projects = listOf(
+                        project(
+                            "/repo",
+                            summary("snoozed", startedAt = 200, snooze = snoozed(until = 1_000)),
+                            summary("woken", startedAt = 100, snooze = ChatSnooze.State(snoozeRev = 2, wokeAt = 900)),
+                        ),
+                    ),
+                    snoozes = mapOf("woken" to snoozed(until = 1_000, rev = 9)),
+                ),
+            ),
+            limit = 10,
+        )
+
+        assertEquals(listOf("snoozed", "woken"), page.items.map(HomeRecentRow::threadId))
+        assertTrue(page.snoozed.isEmpty())
+        assertTrue(page.items.none { it.woke || it.canSnooze })
+    }
+
+    @Test
+    fun `a chat that needs the user cannot be snoozed`() {
+        val page = HomePresenter.recents(
+            machines = listOf(
+                machine(
+                    projects = listOf(
+                        project(
+                            "/repo",
+                            summary("approval", startedAt = 500),
+                            summary("input", startedAt = 400),
+                            summary("plan", startedAt = 350),
+                            summary("failed", startedAt = 300),
+                            summary("working", startedAt = 200),
+                            summary("idle", startedAt = 100),
+                        ),
+                    ),
+                    states = mapOf(
+                        "approval" to ThreadState(status = "idle", feed = listOf(approval("pending"))),
+                        "input" to ThreadState(status = "idle", feed = listOf(question(answers = null))),
+                    ),
+                    activity = mapOf(
+                        "plan" to BrowseThreadActivity(status = "idle", unread = 0, attention = BrowseThreadAttention.Plan),
+                        "failed" to BrowseThreadActivity(status = "error", unread = 0),
+                        "working" to BrowseThreadActivity(status = "running", unread = 0),
+                    ),
+                    snooze = true,
+                ),
+            ),
+            limit = 10,
+        )
+
+        assertEquals(
+            mapOf(
+                "approval" to false,
+                "input" to false,
+                "plan" to false,
+                "working" to true,
+                "failed" to false,
+                "idle" to true,
+            ),
+            page.items.associate { it.threadId to it.canSnooze },
+        )
+    }
+
+    private fun snoozed(until: Long?, pr: String? = null, rev: Long = 1) =
+        ChatSnooze.State(snoozedUntil = until, snoozedAt = 10, snoozePr = pr, snoozeRev = rev)
+
     private fun machine(
         id: String = "mac",
         label: String = "Studio Mac",
         projects: List<Project>,
         states: Map<String, ThreadState> = emptyMap(),
         activity: Map<String, BrowseThreadActivity> = emptyMap(),
-    ) = HomeMachineSnapshot(id, label, projects, states, activity)
+        snooze: Boolean = false,
+        snoozes: Map<String, ChatSnooze.State> = emptyMap(),
+    ) = HomeMachineSnapshot(id, label, projects, states, activity, snooze, snoozes)
 
     private fun project(path: String, vararg sessions: SessionSummary) = Project(
         path = path,
@@ -295,6 +474,7 @@ class HomePresentationTest {
         agentType: String? = null,
         worktreePath: String? = null,
         settledAt: Long? = null,
+        snooze: ChatSnooze.State = ChatSnooze.State.None,
     ) = SessionSummary(
         id = id,
         source = "codex",
@@ -307,6 +487,7 @@ class HomePresentationTest {
         worktreePath = worktreePath,
         worktreeBranch = worktreePath?.let { "sb/review" },
         settledAt = settledAt,
+        snooze = snooze,
     )
 
     private fun approval(state: String) = FeedItem.Approval(

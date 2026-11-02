@@ -91,6 +91,9 @@ import { AgentSettingsSheet } from '../components/AgentSettingsSheet'
 import { settingsChipLabel, usageAccessibilityLabel, usageLine } from '../lib/thread-chrome'
 import { LimitResumeRow } from '../components/LimitResumeRow'
 import { HubChildrenRow } from '../components/HubChildrenRow'
+import { hubChatRoute } from '../lib/hub-children'
+import { SnoozeLine } from '../components/SnoozeLine'
+import { markWokeSeen, useRecentsStore, wakeChat } from '../stores/recents'
 import { ReviewPillChip } from '../components/ReviewPillChip'
 import { unlinkPrLink } from '../lib/pr-link-unlink'
 import type { PrLink } from '@shared/pull-request-links'
@@ -128,6 +131,7 @@ import { FORK_MERGE_BACK_CAPABILITY } from '@shared/merge-back'
 import { DETAILS_SHEET_CAPABILITY } from '@shared/chat-details'
 import { LIMIT_AUTO_RESUME_CAPABILITY } from '@shared/limit-resume'
 import { HUB_CHILDREN_CAPABILITY, HUB_REMOTE_CHILDREN_CAPABILITY, type HubChatRef } from '@shared/hub'
+import { CHAT_SNOOZE_CAPABILITY, isWoke } from '@shared/chat-snooze'
 import { styles } from './thread-screen.styles'
 import { blockedSendReason } from '../lib/composer'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
@@ -221,6 +225,19 @@ export default function ThreadScreen({ route, navigation }: Props) {
         ),
       ),
     [thread.historyMessages],
+  )
+
+  const recentSession = useRecentsStore((s) => s.sessions[connectionId]?.find((x) => x.id === threadId))
+  const woke =
+    recentSession !== undefined &&
+    isWoke({ snoozedAt: recentSession.snoozedAt ?? null, wokeAt: recentSession.wokeAt ?? null })
+  // Opening a woken chat, or a chat waking while it is open, clears its Woke mark.
+  // A new copy of the chat (the list read after the `ready` frame) retries a
+  // clear that ran before Snooze was readable or that failed.
+  useFocusEffect(
+    useCallback(() => {
+      if (woke) markWokeSeen(connectionId, threadId)
+    }, [woke, recentSession, connectionId, threadId]),
   )
 
   // useFocusEffect (not useEffect) so activeKey tracks push/pop: pushing
@@ -1256,10 +1273,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const hubClient = currentClient?.supportsCapability(HUB_CHILDREN_CAPABILITY) === true ? currentClient : null
   const hubRemoteOn = currentClient?.supportsCapability(HUB_REMOTE_CHILDREN_CAPABILITY) === true
   const openHubChat = useCallback(
-    (chat: HubChatRef) =>
-      navigation.push('Thread', { connectionId, threadId: chat.id, title: chat.title, projectPath: chat.projectPath }),
+    (chat: HubChatRef) => navigation.push('Thread', hubChatRoute(connectionId, chat)),
     [connectionId, navigation],
   )
+  const snoozeCapable = currentClient?.supportsCapability(CHAT_SNOOZE_CAPABILITY) === true
   const [mergeBackSheet, setMergeBackSheet] = useState<MergeBackSheetMode | null>(null)
   // The client is looked up per call: a reconnect replaces it while the sheet is open.
   const mergeBackApi = useMemo<MergeBackSheetApi>(() => {
@@ -1620,6 +1637,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
           </Pressable>
         </View>
       )}
+
+      {snoozeCapable && <SnoozeLine session={recentSession} onWake={() => wakeChat(connectionId, threadId)} />}
 
       {/* Keyed by the re-seed revision: after a resume gap the row reads its state again. */}
       {limitRowClient && (

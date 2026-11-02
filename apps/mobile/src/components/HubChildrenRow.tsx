@@ -7,7 +7,7 @@
  * the same states.
  */
 import React, { useEffect, useState } from 'react'
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import {
   canStopHubChild,
   childStateLabel,
@@ -100,13 +100,16 @@ export function HubChildrenRow({
 }: {
   client: SwitchboardClient
   threadId: string
-  /** The backend advertises `hub_remote_children_v1`: machine badges and the remote Open. */
+  /** The backend advertises `hub_remote_children_v1`: machine badges. */
   remoteOn: boolean
   onOpenChat: (chat: HubChatRef) => void
 }) {
   const [view, setView] = useState<HubChatView | null>(null)
   const [open, setOpen] = useState(false)
   const [note, setNote] = useState<string | null>(null)
+  /** Why the last read failed; Retry reads again. */
+  const [readError, setReadError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let live = true
@@ -118,8 +121,12 @@ export function HubChildrenRow({
           if (!live) return
           current = next
           setView(next)
+          setReadError(null)
         })
-        .catch((err: unknown) => log.warn('reading the hub view failed', err))
+        .catch((err: unknown) => {
+          log.warn('reading the hub view failed', err)
+          if (live) setReadError(err instanceof Error ? err.message : String(err))
+        })
     void read()
     const off = client.onEvent((event) => {
       if (event.type !== 'hub.children-changed' || !hubChangeConcerns(current, threadId, event.threadId)) return
@@ -129,9 +136,29 @@ export function HubChildrenRow({
       live = false
       off()
     }
-  }, [client, threadId, remoteOn])
+  }, [client, threadId, remoteOn, attempt])
 
-  if (!view?.self || view.children.length === 0) return null
+  const retry = (
+    <Pressable
+      onPress={() => setAttempt((n) => n + 1)}
+      accessibilityRole="button"
+      accessibilityLabel="Retry"
+      hitSlop={8}
+    >
+      <Text style={threadStyles.compactAction}>Retry</Text>
+    </Pressable>
+  )
+  if (!view?.self || view.children.length === 0) {
+    if (!readError) return null
+    return (
+      <View style={[threadStyles.forkBanner, threadStyles.compactBanner]} testID="hub-children-row">
+        <Text style={[threadStyles.limitResumeNote, threadStyles.compactBannerText]} accessibilityRole="alert">
+          Could not read the child chats: {readError}
+        </Text>
+        {retry}
+      </View>
+    )
+  }
   const parent = view.self
   const stoppable = view.children.filter(canStopHubChild)
   const chip = hubChipText(phoneHubView(view, remoteOn))
@@ -179,21 +206,34 @@ export function HubChildrenRow({
           {note}
         </Text>
       )}
-      {open &&
-        view.children.map((child) => (
-          <ChildRow
-            key={child.chat.id}
-            child={child}
-            showMachine={remoteOn}
-            onOpen={() => openChild(child)}
-            onStop={() => stopChild(child)}
-          />
-        ))}
+      {readError && (
+        <View style={threadStyles.compactBanner}>
+          <Text style={[threadStyles.limitResumeNote, threadStyles.compactBannerText]} accessibilityRole="alert">
+            Could not read the child chats: {readError}
+          </Text>
+          {retry}
+        </View>
+      )}
+      {open && (
+        // Bounded like the desktop strip, so many children never push the feed and composer off screen.
+        <ScrollView style={hubStyles.list} nestedScrollEnabled testID="hub-children-list">
+          {view.children.map((child) => (
+            <ChildRow
+              key={child.chat.id}
+              child={child}
+              showMachine={remoteOn}
+              onOpen={() => openChild(child)}
+              onStop={() => stopChild(child)}
+            />
+          ))}
+        </ScrollView>
+      )}
     </View>
   )
 }
 
 const hubStyles = StyleSheet.create({
+  list: { maxHeight: 240 },
   child: {
     paddingTop: 6,
     marginTop: 6,

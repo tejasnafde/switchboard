@@ -37,12 +37,15 @@ const mockRows = titles.map((title, i) => ({
 
 // With `hub_children_v1`, 'sync' (c6) is an open child of 'Fix sync jitter' (c0).
 let mockHubOn = false
+let mockRowCount = titles.length
 jest.mock('../../stores/connections', () => ({
   getClient: () => ({
-    getConversations: () =>
-      Promise.resolve(
-        mockHubOn ? mockRows.map((r) => (r.id === 'c6' ? { ...r, hub: { parentId: 'c0' } } : r)) : mockRows,
-      ),
+    getConversations: () => {
+      const rows = mockRows.slice(0, mockRowCount)
+      return Promise.resolve(
+        mockHubOn ? rows.map((r) => (r.id === 'c6' ? { ...r, hub: { parentId: 'c0' } } : r)) : rows,
+      )
+    },
     supportsCapability: (capability: string) => (mockHubOn && capability === 'hub_children_v1' ? true : undefined),
   }),
 }))
@@ -116,5 +119,16 @@ describe('ConversationsScreen with child chats', () => {
       view.root.findByType(TextInput).props.onChangeText('sync')
     })
     expect(shownTitles(view.texts())[0]).toBe('sync')
+  })
+
+  it('shows the search box in a short list that leaves a child out, and not without one', async () => {
+    mockRowCount = 7
+    try {
+      expect((await renderScreen()).root.findAllByType(TextInput)).toHaveLength(1)
+      mockHubOn = false
+      expect((await renderScreen()).root.findAllByType(TextInput)).toHaveLength(0)
+    } finally {
+      mockRowCount = titles.length
+    }
   })
 })

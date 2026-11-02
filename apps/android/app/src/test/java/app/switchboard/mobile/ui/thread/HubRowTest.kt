@@ -1,7 +1,11 @@
 package app.switchboard.mobile.ui.thread
 
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -121,6 +125,31 @@ class HubRowTest {
         assertEquals(emptyList<String>(), opened)
         compose.onNodeWithText("Read on the desktop.").assertExists()
         compose.onNodeWithText("build-vm").assertDoesNotExist()
+    }
+
+    @Test
+    fun aFailedFirstReadShowsTheErrorWithRetry() {
+        var retries = 0
+        compose.setContent {
+            SwitchboardTheme {
+                HubRow(ThreadHubState(available = true, readError = "backend busy"), {}, {}, {}, {}, onRetry = { retries++ })
+            }
+        }
+        compose.onNodeWithText("Could not read the child chats: backend busy").assertExists()
+        compose.onNodeWithText("Retry").performClick()
+        assertEquals(1, retries)
+    }
+
+    @Test
+    fun manyChildrenScrollInsideABoundedList() {
+        val many = (1..20).map { local.copy(chat = ref("k$it", "Child $it"), liveId = null, state = ChildState.Paused) }
+        compose.setContent {
+            SwitchboardTheme {
+                HubRow(ThreadHubState(available = true, view = view.copy(children = many), expanded = true), {}, {}, {}, {})
+            }
+        }
+        compose.onNodeWithTag(ThreadTestTags.HUB_LIST).assert(hasScrollAction())
+        compose.onNodeWithTag(ThreadTestTags.hubChild("k20")).performScrollTo().assertIsDisplayed()
     }
 
     private fun openOf(childId: String) =

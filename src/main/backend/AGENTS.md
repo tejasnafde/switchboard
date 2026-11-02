@@ -193,8 +193,10 @@ fixed `BACKEND_CAPABILITIES` plus what the reader set with
 `main/index.ts` and `server/index.ts` once the database is open). A phone
 learns a staged flag from it, and a flag change on its next connect. Phones
 show their hub UI only with `hub_children_v1` (the hub view, the rows' `hub`
-field, `hub.children-changed`) and a machine badge and the remote Open only
-with `hub_remote_children_v1`. A reader that throws advertises the fixed set.
+field, `hub.children-changed`), and a remote child's machine badge only with
+`hub_remote_children_v1`. Without it Open on a remote child still shows its
+newest report and "Read on the desktop." (never a local chat), and Stop still
+goes to its own id. A reader that throws advertises the fixed set.
 
 ## Hub client scope (`hub`, `hub_remote_child_v1`)
 

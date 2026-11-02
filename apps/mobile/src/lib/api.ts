@@ -3,6 +3,7 @@
  * window.api subset. One instance per paired backend. Channel names and event
  * types come from src/shared, so this stays in lockstep with the server.
  */
+import type { ConversationSnoozedEvent, SnoozeRequest, SnoozeResult } from '@shared/chat-snooze'
 import { WsTransport, type TransportSocket, type WsAuth } from '@shared/ws-transport'
 import type { Transport } from '@shared/transport'
 import {
@@ -310,6 +311,25 @@ export class SwitchboardClient {
   /** Persist the read point and broadcast it, so the Mac's badge clears too. */
   markRead(threadId: string): Promise<{ ok: boolean; at: number }> {
     return this.transport.invoke(AppChannels.MARK_READ, threadId)
+  }
+
+  /** Gate: `CHAT_SNOOZE_CAPABILITY`. Out of Recents until a time or a PR event. */
+  snoozeConversation(conversationId: string, request: SnoozeRequest): Promise<SnoozeResult> {
+    return this.transport.invoke(AppChannels.SNOOZE_CONVERSATION, conversationId, request)
+  }
+
+  /** Gate: `CHAT_SNOOZE_CAPABILITY`. Wake: ends the snooze with no Woke marker. */
+  unsnoozeConversation(conversationId: string): Promise<{ ok: boolean; rev?: number }> {
+    return this.transport.invoke(AppChannels.UNSNOOZE_CONVERSATION, conversationId)
+  }
+
+  /** Gate: `CHAT_SNOOZE_CAPABILITY`. The user opened a woken chat. */
+  markWokeSeen(conversationId: string): Promise<{ ok: boolean }> {
+    return this.transport.invoke(AppChannels.MARK_WOKE_SEEN, conversationId)
+  }
+
+  onConversationSnoozed(handler: (event: ConversationSnoozedEvent) => void): () => void {
+    return this.transport.on(AppChannels.CONVERSATION_SNOOZED, handler as (...args: unknown[]) => void)
   }
 
   serverVersion(): Promise<string> {

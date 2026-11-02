@@ -139,8 +139,10 @@ data class ThreadHubState(
     /** Child ids whose Stop is in flight. */
     val stopping: Set<String> = emptySet(),
     val stoppingAll: Boolean = false,
-    /** Why a Stop, a Stop all or the read did not go through. */
+    /** Why a Stop or a Stop all did not go through. */
     val note: String? = null,
+    /** Why the last read of the view failed; cleared by the next read that succeeds. */
+    val readError: String? = null,
 )
 
 /** The chat's Limited row, read from the backend like the desktop row. */
@@ -2308,11 +2310,11 @@ class ThreadSessionCoordinator(
                     when (val outcome = response.outcome) {
                         is RemoteOutcome.Success -> {
                             val view = outcome.value
-                            hub = hub.copy(view = view, expanded = hub.expanded && view.children.isNotEmpty())
+                            hub = hub.copy(view = view, expanded = hub.expanded && view.children.isNotEmpty(), readError = null)
                         }
                         is RemoteOutcome.Failure -> {
                             SbLog.w(LOG_SCOPE, "$threadId hub children read failed: ${outcome.message}")
-                            hub = hub.copy(note = outcome.message)
+                            hub = hub.copy(readError = outcome.message)
                         }
                     }
                     publish()
@@ -2320,10 +2322,13 @@ class ThreadSessionCoordinator(
             }
         } catch (error: RuntimeException) {
             SbLog.w(LOG_SCOPE, "$threadId hub children read failed", error)
-            hub = hub.copy(note = error.message ?: "Could not read the children")
+            hub = hub.copy(readError = error.message ?: "Could not read the children")
             publish()
         }
     }
+
+    /** The Hub row's Retry after a failed read. */
+    fun retryHub() = loadHub()
 
     @Synchronized
     fun toggleHubExpanded() {

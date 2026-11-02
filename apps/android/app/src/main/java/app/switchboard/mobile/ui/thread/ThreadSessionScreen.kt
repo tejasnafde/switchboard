@@ -53,6 +53,7 @@ fun ThreadSessionScreen(
     registerViewingLeaseRenewal: ((() -> Unit) -> Closeable)? = null,
     onFork: (messageId: String, withWorktree: Boolean) -> Unit = { _, _ -> },
     onOpenHubChat: (HubChatRef) -> Unit = {},
+    snoozeLine: @Composable () -> Unit = {},
     details: ThreadDetails? = null,
 ) {
     val session by coordinator.state.collectAsState()
@@ -141,6 +142,7 @@ fun ThreadSessionScreen(
         },
         hub = session.hub,
         onToggleHub = coordinator::toggleHubExpanded,
+        onRetryHub = coordinator::retryHub,
         onStopHubChild = { childId ->
             (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.stopHubChild(childId) }
         },
@@ -148,6 +150,7 @@ fun ThreadSessionScreen(
             (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.stopAllHubChildren() }
         },
         onOpenHubChat = onOpenHubChat,
+        snoozeLine = snoozeLine,
         details = details,
     )
 }
