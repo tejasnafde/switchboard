@@ -252,7 +252,14 @@ describe('ChatSnoozer', () => {
     const withPr = () => {
       reads.length = 0
       merged.length = 0
-      reading = { number: 512, state: 'open', headSha: 'a1', checksFailed: false, changesRequestedAt: null }
+      reading = {
+        number: 512,
+        state: 'open',
+        updatedAt: 100,
+        headSha: 'a1',
+        checksFailed: false,
+        changesRequestedAt: null,
+      }
       host.readPr = async (pr) => {
         reads.push(pr)
         return reading && { ...reading }
@@ -265,7 +272,7 @@ describe('ChatSnoozer', () => {
       const s = withPr()
       expect(await s.snooze('c', { until: null, pr: PR })).toMatchObject({ ok: true, pr: PR })
       expect(getConversationSnooze('c')?.snoozePrMark).toBe(
-        JSON.stringify({ state: 'open', headSha: 'a1', checksFailed: false, changesRequestedAt: null }),
+        JSON.stringify({ state: 'open', updatedAt: 100, headSha: 'a1', checksFailed: false, changesRequestedAt: null }),
       )
       reading = { ...reading!, state: 'merged' }
       expect(await s.snooze('d', { until: null, pr: PR })).toEqual({ ok: false, reason: 'pr_closed' })
@@ -280,7 +287,7 @@ describe('ChatSnoozer', () => {
       await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
       expect(reads).toEqual([PR])
       expect(getConversationSnooze('c')?.snoozedAt).not.toBeNull()
-      reading = { ...reading!, changesRequestedAt: Date.now() }
+      reading = { ...reading!, updatedAt: 200, changesRequestedAt: 200 }
       await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
       expect(getConversationSnooze('c')).toMatchObject({ snoozedAt: null, wokeReason: 'pr' })
       expect(emitted().at(-1)).toMatchObject({ prSummary: 'PR #512: changes requested' })
@@ -299,7 +306,14 @@ describe('ChatSnoozer', () => {
       reading = null
       await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
       expect(reads).toEqual([PR])
-      reading = { number: 512, state: 'open', headSha: 'b2', checksFailed: true, changesRequestedAt: null }
+      reading = {
+        number: 512,
+        state: 'open',
+        updatedAt: 200,
+        headSha: 'b2',
+        checksFailed: true,
+        changesRequestedAt: null,
+      }
       await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
       expect(reads).toEqual([PR, PR])
       expect(getConversationSnooze('c')?.wokeReason).toBe('pr')
@@ -309,7 +323,7 @@ describe('ChatSnoozer', () => {
     it('a merge first settles an idle chat by the merge rule, then wakes a busy one', async () => {
       const s = withPr()
       await s.snooze('c', { until: null, pr: PR })
-      reading = { ...reading!, state: 'merged' }
+      reading = { ...reading!, state: 'merged', updatedAt: 200 }
       await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
       expect(merged).toEqual(['c'])
       expect(getConversationSnooze('c')).toMatchObject({ wokeReason: 'pr' })
@@ -320,7 +334,7 @@ describe('ChatSnoozer', () => {
       const s = withPr()
       await s.snooze('c', { until: null, pr: PR })
       host.settleMerged = (id) => void setConversationSettled(id, Date.now())
-      reading = { ...reading!, state: 'merged' }
+      reading = { ...reading!, state: 'merged', updatedAt: 200 }
       await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
       expect(getConversationSnooze('c')).toMatchObject({ snoozedAt: null, wokeAt: null })
       expect(host.pushWoke).not.toHaveBeenCalled()
@@ -338,6 +352,97 @@ describe('ChatSnoozer', () => {
       expect(await s.snooze('c', { until: null, pr: PR })).toEqual({ ok: false, reason: 'no_row' })
     })
 
+    it('a PR already showing changes requested and failed checks at the snooze wakes only on a new event', async () => {
+      const s = withPr()
+      reading = { ...reading!, checksFailed: true, changesRequestedAt: 90 }
+      await s.snooze('c', { until: null, pr: PR })
+      reading = { ...reading!, updatedAt: 150 }
+      await vi.advanceTimersByTimeAsync(2 * PR_WAKE_POLL_MS)
+      expect(getConversationSnooze('c')?.snoozedAt).not.toBeNull()
+      reading = { ...reading!, updatedAt: 200, changesRequestedAt: 200 }
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      expect(getConversationSnooze('c')?.wokeReason).toBe('pr')
+      expect(host.pushWoke).toHaveBeenCalledTimes(1)
+    })
+
+    it('a cached read older than the baseline wakes nothing', async () => {
+      const s = withPr()
+      await s.snooze('c', { until: null, pr: PR })
+      reading = { ...reading!, updatedAt: 50, headSha: 'old', checksFailed: true, changesRequestedAt: 40 }
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      expect(getConversationSnooze('c')?.snoozedAt).not.toBeNull()
+      expect(host.pushWoke).not.toHaveBeenCalled()
+    })
+
+    it('a re-snooze during the read is not woken by it; the next read compares with the new baseline', async () => {
+      const s = withPr()
+      await s.snooze('c', { until: null, pr: PR })
+      let release: (r: PrReading) => void = () => {}
+      host.readPr = (pr) => {
+        reads.push(pr)
+        return new Promise((resolve) => (release = resolve))
+      }
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      const changed: PrReading = { ...reading!, updatedAt: 200, changesRequestedAt: 200 }
+      host.readPr = async () => changed
+      await s.snooze('c', { until: null, pr: PR })
+      release(changed)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(getConversationSnooze('c')?.snoozedAt).not.toBeNull()
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      expect(getConversationSnooze('c')?.snoozedAt).not.toBeNull()
+      expect(host.pushWoke).not.toHaveBeenCalled()
+    })
+
+    it('a failed read is logged and the next tick reads again', async () => {
+      const s = withPr()
+      await s.snooze('c', { until: null, pr: PR })
+      host.readPr = async () => {
+        throw new Error('network')
+      }
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      host.readPr = async () => ({ ...reading!, state: 'merged', updatedAt: 200 })
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      expect(getConversationSnooze('c')?.wokeReason).toBe('pr')
+    })
+
+    it('a merge settles an idle chat through the Settle path with no push, and Undo restores the time', async () => {
+      const s = withPr()
+      host.settleMerged = (id, n) => void storeConversationSettled(host, id, Date.now(), n)
+      await s.snooze('uuid-c', { until: T0 + 24 * HOUR, pr: PR })
+      await s.snooze('d', { until: null, pr: PR })
+      reading = { ...reading!, state: 'merged', updatedAt: 200 }
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      const settles = host.emit.mock.calls.filter(([c]) => c === AppChannels.CONVERSATION_SETTLED).map(([, e]) => e)
+      expect(settles).toEqual([
+        expect.objectContaining({ conversationId: 'd', prNumber: 512, endedSnooze: { until: null, pr: PR, rev: 2 } }),
+        expect.objectContaining({
+          conversationId: 'c',
+          prNumber: 512,
+          endedSnooze: { until: T0 + 24 * HOUR, pr: PR, rev: 2 },
+        }),
+      ])
+      expect(getConversationSnooze('c')).toMatchObject({ snoozedAt: null, wokeAt: null })
+      expect(getConversationSettled('c')).not.toBeNull()
+      expect(host.pushWoke).not.toHaveBeenCalled()
+      // Undo: the same snooze at the settle's revision; the merged PR has no event left, so only the time stays.
+      expect(await s.snooze('c', { until: T0 + 24 * HOUR, pr: PR, expectRev: 2 })).toMatchObject({ ok: true, pr: null })
+      expect(getConversationSettled('c')).toBeNull()
+      expect(getConversationSnooze('c')).toMatchObject({ snoozedUntil: T0 + 24 * HOUR, snoozePr: null })
+      expect(await s.snooze('d', { until: null, pr: PR, expectRev: 2 })).toEqual({ ok: false, reason: 'pr_closed' })
+    })
+
+    it('a merge racing the snooze time wakes a busy chat once, with one push', async () => {
+      const s = withPr()
+      await s.snooze('c', { until: T0 + PR_WAKE_POLL_MS, pr: PR })
+      reading = { ...reading!, state: 'merged', updatedAt: 200 }
+      await vi.advanceTimersByTimeAsync(PR_WAKE_POLL_MS)
+      expect(getConversationSnooze('c')?.snoozedAt).toBeNull()
+      expect(host.pushWoke).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(2 * PR_WAKE_POLL_MS)
+      expect(host.pushWoke).toHaveBeenCalledTimes(1)
+    })
+
     it('never reads when no chat waits on a PR', async () => {
       const s = withPr()
       await s.snooze('c', { until: T0 + HOUR })
@@ -351,7 +456,11 @@ describe('ChatSnoozer', () => {
     await s.snooze('c', { until: T0 + HOUR })
     expect(storeConversationSettled(host, 'uuid-c', T0, 512)).toBe(true)
     const settled = host.emit.mock.calls.find(([c]) => c === AppChannels.CONVERSATION_SETTLED)?.[1]
-    expect(settled).toMatchObject({ conversationId: 'c', prNumber: 512, endedSnooze: { until: T0 + HOUR, pr: null } })
+    expect(settled).toMatchObject({
+      conversationId: 'c',
+      prNumber: 512,
+      endedSnooze: { until: T0 + HOUR, pr: null, rev: 2 },
+    })
     expect(getConversationSnooze('c')?.snoozedAt).toBeNull()
   })
 })

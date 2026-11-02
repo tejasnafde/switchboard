@@ -337,54 +337,54 @@ export function wokeLine(reason: WakeReason | null, prSummary?: string | null): 
 export interface PrReading {
   number: number
   state: 'open' | 'merged' | 'closed'
+  /** The host's last update time, epoch ms: a read older than the mark is a stale cache. */
+  updatedAt: number | null
   headSha: string | null
   checksFailed: boolean
   /** The newest "requested changes" review, epoch ms, or null. */
   changesRequestedAt: number | null
 }
 
-/** The PR as it was when the snooze started (`snooze_pr_mark`). */
-export interface PrMark {
-  state: PrReading['state']
-  headSha: string | null
-  checksFailed: boolean
-  /** The host's own time of the newest changes request then, so the host's clock is compared with itself. */
-  changesRequestedAt: number | null
+/**
+ * The PR as it was when the snooze started (`snooze_pr_mark`). Its times are
+ * the host's, so a later read compares the host's clock with itself.
+ */
+export type PrMark = Omit<PrReading, 'number'>
+
+export function prMarkOf({ number: _number, ...mark }: PrReading): PrMark {
+  return mark
 }
 
-export function prMarkOf(reading: PrReading): PrMark {
-  return {
-    state: reading.state,
-    headSha: reading.headSha,
-    checksFailed: reading.checksFailed,
-    changesRequestedAt: reading.changesRequestedAt,
-  }
-}
-
+/** The stored mark, or null when it is missing or not a mark. */
 export function parsePrMark(raw: string | null): PrMark | null {
   if (!raw) return null
+  let m: Partial<PrMark>
   try {
-    const m = JSON.parse(raw) as Partial<PrMark>
-    if (m.state !== 'open' && m.state !== 'merged' && m.state !== 'closed') return null
-    return {
-      state: m.state,
-      headSha: m.headSha ?? null,
-      checksFailed: m.checksFailed === true,
-      changesRequestedAt: typeof m.changesRequestedAt === 'number' ? m.changesRequestedAt : null,
-    }
+    m = JSON.parse(raw) as Partial<PrMark>
   } catch {
     return null
+  }
+  if (m.state !== 'open' && m.state !== 'merged' && m.state !== 'closed') return null
+  const time = (v: unknown) => (typeof v === 'number' ? v : null)
+  return {
+    state: m.state,
+    updatedAt: time(m.updatedAt),
+    headSha: m.headSha ?? null,
+    checksFailed: m.checksFailed === true,
+    changesRequestedAt: time(m.changesRequestedAt),
   }
 }
 
 /**
  * The status line of a PR wake, or null when the PR gives no reason to wake.
- * Only three events wake, each once and only forward from the mark: the PR
- * merged; a review requested changes after the newest one at the mark; the checks
- * failed on a head that had not failed at the mark (a new push counts). A read
- * that goes back (a stale cache, a re-run that is pending) wakes nothing.
+ * Only three events wake, each only forward from the mark: the PR merged; a
+ * review requested changes after the newest one at the mark; the checks failed
+ * on a head that had not failed at the mark (a new push that fails counts).
+ * Comments, approvals and pushes alone do not wake. A read older than the mark
+ * (a stale cache) wakes nothing, so what the mark acknowledged never wakes.
  */
 export function prWakeSummary(mark: PrMark, now: PrReading): string | null {
+  if (mark.updatedAt !== null && now.updatedAt !== null && now.updatedAt < mark.updatedAt) return null
   if (now.state === 'merged' && mark.state !== 'merged') return `PR #${now.number} merged`
   if (now.changesRequestedAt !== null && now.changesRequestedAt > (mark.changesRequestedAt ?? -Infinity))
     return `PR #${now.number}: changes requested`

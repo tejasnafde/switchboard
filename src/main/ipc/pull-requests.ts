@@ -280,6 +280,7 @@ export async function readPullRequestForSnooze(key: string): Promise<PrReading |
   return {
     number: ref.number,
     state: read.data.state,
+    updatedAt: read.data.updatedAt,
     headSha: read.data.headSha,
     checksFailed: read.data.checks.state === 'failure',
     changesRequestedAt: changes.length > 0 ? Math.max(...changes) : null,

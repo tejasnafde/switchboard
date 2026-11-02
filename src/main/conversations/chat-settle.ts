@@ -25,12 +25,14 @@ export function storeConversationSettled(
 ): boolean {
   const snooze = settledAt === null ? null : getConversationSnooze(id)
   if (!setConversationSettled(id, settledAt)) return false
+  // The revision after this write, so the Undo's snooze is refused once the chat moved on.
+  const rev = snooze?.snoozedAt != null ? getConversationSnooze(id)?.snoozeRev : undefined
   const event: ConversationSettledEvent = {
     conversationId: resolveRootThreadId(id),
     settledAt,
     title: getConversationTitle(id) ?? undefined,
     ...(prNumber === undefined ? {} : { prNumber }),
-    ...(snooze?.snoozedAt != null ? { endedSnooze: { until: snooze.snoozedUntil, pr: snooze.snoozePr } } : {}),
+    ...(snooze && rev !== undefined ? { endedSnooze: { until: snooze.snoozedUntil, pr: snooze.snoozePr, rev } } : {}),
   }
   host.emit(AppChannels.CONVERSATION_SETTLED, event)
   // The settle is stored and sent; a failed snooze broadcast must not undo it on the caller.

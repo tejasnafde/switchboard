@@ -34,8 +34,11 @@ export interface ConversationSettledEvent {
   settledAt: number | null
   title?: string
   prNumber?: number
-  /** The snooze this settle ended, so its Undo can snooze the chat again. */
-  endedSnooze?: { until: number | null; pr: string | null }
+  /**
+   * The snooze this settle ended. Its Undo snoozes again with these values and
+   * `expectRev: rev`, a write that also unsettles; a PR that merged keeps only the time.
+   */
+  endedSnooze?: { until: number | null; pr: string | null; rev: number }
 }
 
 export function settledNoticeText(title: string, prNumber?: number): string {
