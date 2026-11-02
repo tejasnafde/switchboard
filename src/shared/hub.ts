@@ -43,6 +43,22 @@ export function hubRemoteChildrenEnabled(env: NodeJS.ProcessEnv, getSetting: Set
   )
 }
 
+/**
+ * Phones learn the flags from the `ready` frame: `hub_children_v1` while
+ * `hub_children` is on (the hub view, the rows' `hub` field and
+ * `hub.children-changed`), `hub_remote_children_v1` while `hub_remote_children`
+ * is on too (the view's `remote` field). Read again at every `ready`.
+ */
+export const HUB_CHILDREN_CAPABILITY = 'hub_children_v1'
+export const HUB_REMOTE_CHILDREN_CAPABILITY = 'hub_remote_children_v1'
+
+export function hubFlagCapabilities(env: NodeJS.ProcessEnv, getSetting: SettingReader): string[] {
+  if (!hubChildrenEnabled(env, getSetting)) return []
+  return hubRemoteChildrenEnabled(env, getSetting)
+    ? [HUB_CHILDREN_CAPABILITY, HUB_REMOTE_CHILDREN_CAPABILITY]
+    : [HUB_CHILDREN_CAPABILITY]
+}
+
 /** Backend setting, default on: at launch the desktop connects the machines that hold open children of its hubs. */
 export const HUB_RECONNECT_ON_LAUNCH_SETTING = 'hub.reconnectOnLaunch'
 
@@ -675,8 +691,12 @@ export function hubBatchDetail(view: HubBatchView): string {
 
 // ─── Views for clients ──────────────────────────────────────────
 
-/** A chat the hub UI can open the sidebar way: root id, every id of its thread, title, agent, project. */
-export type HubChatRef = Omit<PrLinkChat, 'linkSource'>
+/**
+ * A chat the hub UI can open the sidebar way: root id, every id of its thread,
+ * title, agent, project, and its worktree (a phone starts the session there
+ * before its history is loaded).
+ */
+export type HubChatRef = Omit<PrLinkChat, 'linkSource'> & { worktreePath?: string | null }
 
 /** One child as the strip and the sidebar show it. */
 export interface HubChildView {
@@ -786,6 +806,11 @@ export const CHILD_STATE_LABELS: Record<ChildState, string> = {
   paused: 'Paused',
 }
 
+/** A state a newer backend sends that this client does not know: the child is still listed and counted. */
+export const HUB_UNKNOWN_CHILD_STATE = 'Unknown state'
+
+const stateText = (state: ChildState): string => CHILD_STATE_LABELS[state] ?? HUB_UNKNOWN_CHILD_STATE
+
 /**
  * The state text of a child. A child on another machine names it while it
  * waits for a slot or an approval there, while its machine reconnects, and
@@ -802,7 +827,7 @@ export function childStateLabel(c: Pick<HubChildView, 'state' | 'reported' | 'wa
   const on = r ? ` on ${r.machine}` : ''
   if (c.state === 'starting' && c.waitingForSlot) return `Waiting for a slot${on}`
   if (c.state === 'needs_you' && r) return `Needs approval${on}`
-  return CHILD_STATE_LABELS[c.state]
+  return stateText(c.state)
 }
 
 /** The short state word of a narrow row (the sidebar); its machine badge names the machine. */
@@ -810,7 +835,7 @@ export function childStateWord(c: Pick<HubChildView, 'state' | 'remote'>): strin
   const r = c.remote
   if (r?.stopping) return 'Stopping'
   if (r && !r.connected) return r.reconnecting ? 'Reconnecting' : 'Offline'
-  return CHILD_STATE_LABELS[c.state]
+  return stateText(c.state)
 }
 
 const PARENT_STATE_LABELS: Record<ParentState, string | null> = {
@@ -839,6 +864,26 @@ export function hubChipText(view: Pick<HubChatView, 'children' | 'state'>): stri
   const label = parentStateLabel(view.state)
   return `Hub · ${hubChildrenCount(view.children)}${label ? ` · ${label}` : ''}`
 }
+
+/**
+ * Whether a child row offers Stop. A child on another machine has no live id
+ * here: its machine stops it, or the Stop waits until it connects, and its
+ * state is unknown while that machine is not connected, so the Stop stays offered.
+ */
+export function canStopHubChild(c: Pick<HubChildView, 'state' | 'phase' | 'liveId' | 'remote'>): boolean {
+  return c.remote
+    ? !c.remote.stopping && (c.state === 'working' || (!c.remote.connected && isOpenChildPhase(c.phase)))
+    : c.state === 'working' && c.liveId !== null
+}
+
+/** Where a child's Stop goes (`provider:interrupt`): its live session, or a remote child's own id, which the desktop forwards. */
+export function hubChildStopTarget(c: Pick<HubChildView, 'chat' | 'liveId' | 'remote'>): string | null {
+  return c.liveId ?? (c.remote ? c.chat.id : null)
+}
+
+/** A phone's Open on a child on another machine (no transcript here yet): its newest report, then this note. */
+export const HUB_REMOTE_CHILD_NO_REPORT = 'No report yet.'
+export const HUB_REMOTE_CHILD_READ_NOTE = 'Read on the desktop.'
 
 /** What a Nudge chip puts in the parent's message: who it is for and how to pass it on. */
 export function hubNudgeContent(child: HubChatRef): string {

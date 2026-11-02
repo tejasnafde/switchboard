@@ -394,6 +394,7 @@ function hubChatRef(id: string, fallbackTitle = 'Untitled'): HubChatRef {
     title: conv?.title ?? fallbackTitle,
     agentType: conv?.agent_type ?? 'claude-code',
     projectPath: conv?.project_path ?? '',
+    worktreePath: conv?.worktree_path ?? null,
     updatedAt: conv?.updated_at ?? 0,
   }
 }

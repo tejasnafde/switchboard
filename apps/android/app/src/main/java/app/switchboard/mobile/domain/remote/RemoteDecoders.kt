@@ -337,6 +337,7 @@ object RemoteDecoders {
         raw = raw,
         originSource = raw.string("origin_source"),
         statusLine = raw.string("status_line"),
+        hubParentId = (raw.values["hub"] as? JsonObject)?.string("parentId"),
     )
 
     private fun workspace(raw: JsonObject) = Workspace(

@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.browse
 
+import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.SessionSummary
 import app.switchboard.mobile.domain.remote.Workspace
@@ -21,9 +22,28 @@ class BrowseParityDecisionsTest {
     }
 
     @Test
-    fun `conversation search appears after eight`() {
-        assertFalse(BrowseParityDecisions.showConversationSearch(8, ""))
-        assertTrue(BrowseParityDecisions.showConversationSearch(9, ""))
+    fun `conversation search appears after eight, or when the list leaves a child out`() {
+        assertFalse(BrowseParityDecisions.showConversationSearch(rows(8), ""))
+        assertTrue(BrowseParityDecisions.showConversationSearch(rows(9), ""))
+        assertTrue(BrowseParityDecisions.showConversationSearch(rows(1), "x"))
+        val withHiddenChild = rows(3).mapIndexed { i, row -> row.copy(underListedParent = i == 2) }
+        assertTrue(BrowseParityDecisions.showConversationSearch(withHiddenChild, ""))
+    }
+
+    private fun rows(n: Int) = (1..n).map { i ->
+        val conversation = Conversation(
+            id = "c$i",
+            projectPath = "/p",
+            agentType = "claude",
+            sessionId = null,
+            title = "Chat $i",
+            createdAt = 0,
+            updatedAt = i.toLong(),
+            worktreePath = null,
+            worktreeBranch = null,
+            raw = JsonObject(linkedMapOf()),
+        )
+        BrowseConversationRow(conversation, conversation.id, conversation.title, "claude", i.toLong(), false, 0, null)
     }
 
     @Test

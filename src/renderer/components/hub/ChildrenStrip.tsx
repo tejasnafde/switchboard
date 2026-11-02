@@ -6,8 +6,9 @@
  */
 import { useState } from 'react'
 import {
+  canStopHubChild,
   childStateLabel,
-  isOpenChildPhase,
+  hubChildStopTarget,
   parentStateLabel,
   type HubChatRef,
   type HubChildView,
@@ -29,17 +30,8 @@ const textAction = 'cursor-pointer border-0 bg-transparent p-0 [font:inherit] ho
 const linkClass = `${textAction} text-[var(--accent)]`
 const stopClass = `${textAction} text-[var(--error)]`
 
-/**
- * A child on another machine has no live id here: its machine stops it, or keeps the Stop until it connects.
- * Its state is unknown while that machine is not connected, so the Stop stays offered.
- */
-const canStop = (c: HubChildView) =>
-  c.remote
-    ? !c.remote.stopping && (c.state === 'working' || (!c.remote.connected && isOpenChildPhase(c.phase)))
-    : c.state === 'working' && c.liveId !== null
-
 function stopChild(parent: HubChatRef, child: HubChildView): void {
-  const target = child.liveId ?? (child.remote ? child.chat.id : null)
+  const target = hubChildStopTarget(child)
   if (!target) return
   window.api.provider
     .interruptHubChild(parent.familyIds, target)
@@ -92,7 +84,7 @@ function ChildRow({ parent, child }: { parent: HubChatRef; child: HubChildView }
         <button type="button" className={linkClass} onClick={() => void nudgeChild(parent, child.chat)}>
           Nudge
         </button>
-        {canStop(child) && (
+        {canStopHubChild(child) && (
           <button type="button" className={stopClass} onClick={() => stopChild(parent, child)}>
             Stop
           </button>
@@ -123,7 +115,7 @@ export function ChildrenStrip({
   const [showAll, setShowAll] = useState(false)
   if (items.length === 0 && heldUpdates === 0) return null
   const running = items.filter((c) => c.state === 'working').length
-  const stoppable = items.filter(canStop)
+  const stoppable = items.filter(canStopHubChild)
   const tokens = items.reduce((sum, c) => sum + (c.lastTurn?.usedTokens ?? 0), 0)
   const stateLabel = parentStateLabel(state)
   const shown = showAll ? items : items.slice(0, FOLDED_ROWS)

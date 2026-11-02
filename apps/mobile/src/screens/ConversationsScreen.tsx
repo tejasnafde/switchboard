@@ -35,6 +35,8 @@ import { conversationSourceLabel } from '../lib/conversation-source'
 import { threadPreviewLine } from '../lib/thread-preview'
 import { chatGroupKey, groupChats, type ChatActivity } from '../lib/chat-activity'
 import { seedListPendingRequests } from '../stores/list-pending'
+import { HUB_CHILDREN_CAPABILITY } from '@shared/hub'
+import { topLevelChatRows } from '../lib/hub-children'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Conversations'>
 
@@ -186,13 +188,17 @@ export default function ConversationsScreen({ route, navigation }: Props) {
   }, [navigation, connectionId, projectPath, projectName])
 
   // The desktop's Go to chat rules: title tiers, then the project name, newest first.
+  // An open child shows under its parent's Hub row, so the list leaves it out; a search still finds it.
+  const hubOn = getClient(connectionId)?.supportsCapability(HUB_CHILDREN_CAPABILITY) === true
+  const topLevelRows = useMemo(() => (rows === null ? [] : hubOn ? topLevelChatRows(rows) : rows), [rows, hubOn])
   const visibleRows = useMemo(() => {
-    if (query.trim() === '' || rows === null) return rows ?? []
+    if (rows === null) return []
+    if (query.trim() === '') return topLevelRows
     return rankChats(
       rows.map((row) => ({ row, title: row.title, projectName, lastActivity: row.updated_at })),
       query,
     ).map((match) => match.row)
-  }, [rows, query, projectName])
+  }, [rows, topLevelRows, query, projectName])
 
   // One group key per row, compared shallowly: a status change re-renders the
   // list only when it moves a chat between groups.
@@ -253,8 +259,8 @@ export default function ConversationsScreen({ route, navigation }: Props) {
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           // Long-lived projects accumulate hundreds of threads; short ones do not
-          // need a search field taking up the first row.
-          rows.length > 8 || query !== '' ? (
+          // need a search field taking up the first row, unless it is the way to a hidden child.
+          rows.length > 8 || query !== '' || topLevelRows.length < rows.length ? (
             <View style={styles.searchWrap}>
               <TextInput
                 style={styles.searchInput}
