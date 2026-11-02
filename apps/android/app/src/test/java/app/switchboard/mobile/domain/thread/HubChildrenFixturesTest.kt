@@ -82,7 +82,7 @@ class HubChildrenFixturesTest {
         chat = HubChatRef(chatId, listOf(chatId), "Child", "claude-code", "/repo", 0),
         liveId = liveId,
         phase = requireNotNull(HubChildPhase.fromWire(phase)) { phase },
-        state = requireNotNull(ChildState.fromWire(state)) { state },
+        state = ChildState.fromWire(state) ?: ChildState.Unknown,
         waitingForSlot = waitingForSlot,
         remote = remote,
     )

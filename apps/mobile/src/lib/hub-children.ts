@@ -2,12 +2,22 @@
  * Child chats on the phone (flag `hub_children`, rules in `@shared/hub`): the
  * view as this phone shows it and the chat list without listed children.
  */
-import { nestHubChildren, type HubChatView, type SessionHubField } from '@shared/hub'
+import { nestHubChildren, type HubChatView, type HubChildView, type SessionHubField } from '@shared/hub'
 
-/** The view without `remote` while the backend does not advertise `hub_remote_children_v1`. */
+/**
+ * A child as its row shows it: without `remote` while the backend does not
+ * advertise `hub_remote_children_v1`. Stop and Open still read the child's own
+ * `remote`, so a remote child never opens as an empty local chat.
+ */
+export function shownHubChild<T extends Pick<HubChildView, 'remote'>>(child: T, remoteOn: boolean): T {
+  if (remoteOn || !child.remote) return child
+  const { remote: _remote, ...rest } = child
+  return rest as T
+}
+
+/** The view as its chip shows it: no machine count without `hub_remote_children_v1`. */
 export function phoneHubView(view: HubChatView, remoteOn: boolean): HubChatView {
-  if (remoteOn) return view
-  return { ...view, children: view.children.map(({ remote: _remote, ...child }) => child) }
+  return remoteOn ? view : { ...view, children: view.children.map((child) => shownHubChild(child, false)) }
 }
 
 /** Whether a `hub.children-changed` for the parent `changedId` concerns this chat; any does before its first view. */

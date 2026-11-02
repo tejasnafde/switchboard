@@ -99,6 +99,30 @@ class HubRowTest {
         compose.onNodeWithTag(ThreadTestTags.HUB_STOP_ALL).assertDoesNotExist()
     }
 
+    @Test
+    fun withoutTheRemoteCapabilityARemoteChildHidesItsMachineButNeverOpensAnEmptyChat() {
+        val opened = mutableListOf<String>()
+        val unknown = local.copy(chat = ref("c3", "Future"), state = ChildState.Unknown, lastWake = null)
+        compose.setContent {
+            SwitchboardTheme {
+                HubRow(
+                    ThreadHubState(available = true, view = view.copy(children = view.children + unknown), expanded = true),
+                    onToggle = {},
+                    onStop = {},
+                    onStopAll = {},
+                    onOpen = { opened += it.id },
+                )
+            }
+        }
+        compose.onNodeWithText("Hub · 3 children · Waiting for children").assertExists()
+        compose.onNodeWithText("Unknown state").assertExists()
+        compose.onNodeWithText("build-vm").assertDoesNotExist()
+        openOf("c2").performClick()
+        assertEquals(emptyList<String>(), opened)
+        compose.onNodeWithText("Read on the desktop.").assertExists()
+        compose.onNodeWithText("build-vm").assertDoesNotExist()
+    }
+
     private fun openOf(childId: String) =
         compose.onNode(hasText("Open") and hasAnyAncestor(hasTestTag(ThreadTestTags.hubChild(childId))))
 }

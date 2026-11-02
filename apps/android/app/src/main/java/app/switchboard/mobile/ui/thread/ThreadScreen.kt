@@ -699,7 +699,7 @@ internal fun HubRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = HubChildren.chipText(view),
+                text = HubChildren.chipText(if (hub.remoteAvailable) view else view.withoutRemote()),
                 color = TextPrimary,
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.weight(1f),
@@ -719,6 +719,7 @@ internal fun HubRow(
             view.children.forEach { child ->
                 HubChildRow(
                     child = child,
+                    showMachine = hub.remoteAvailable,
                     stopping = child.chat.id in hub.stopping,
                     onOpen = { if (child.remote != null) remoteChild = child else onOpen(child.chat) },
                     onStop = { onStop(child.chat.id) },
@@ -733,8 +734,10 @@ internal fun HubRow(
             title = { Text(child.chat.title) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(remote.machine, fontFamily = GeistMono, color = TextDim, style = MaterialTheme.typography.labelSmall)
-                    Text(HubChildren.childStateLabel(child), style = MaterialTheme.typography.bodyMedium)
+                    if (hub.remoteAvailable) {
+                        Text(remote.machine, fontFamily = GeistMono, color = TextDim, style = MaterialTheme.typography.labelSmall)
+                    }
+                    Text(HubChildren.childStateLabel(child.shown(hub.remoteAvailable)), style = MaterialTheme.typography.bodyMedium)
                     Text(child.lastWake?.summary ?: HUB_REMOTE_CHILD_NO_REPORT, style = MaterialTheme.typography.bodyMedium)
                     Text(HUB_REMOTE_CHILD_READ_NOTE, color = TextDim, style = MaterialTheme.typography.bodySmall)
                 }
@@ -745,7 +748,8 @@ internal fun HubRow(
 }
 
 @Composable
-private fun HubChildRow(child: HubChildView, stopping: Boolean, onOpen: () -> Unit, onStop: () -> Unit) {
+private fun HubChildRow(child: HubChildView, showMachine: Boolean, stopping: Boolean, onOpen: () -> Unit, onStop: () -> Unit) {
+    val shown = child.shown(showMachine)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -764,7 +768,7 @@ private fun HubChildRow(child: HubChildView, stopping: Boolean, onOpen: () -> Un
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                child.remote?.let {
+                shown.remote?.let {
                     Text(
                         text = it.machine,
                         color = TextDim,
@@ -777,7 +781,7 @@ private fun HubChildRow(child: HubChildView, stopping: Boolean, onOpen: () -> Un
                 }
             }
             Text(
-                text = HubChildren.childStateLabel(child) + child.lastWake?.let { ": ${it.summary}" }.orEmpty(),
+                text = HubChildren.childStateLabel(shown) + child.lastWake?.let { ": ${it.summary}" }.orEmpty(),
                 color = TextDim,
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 2,
@@ -790,6 +794,9 @@ private fun HubChildRow(child: HubChildView, stopping: Boolean, onOpen: () -> Un
         }
     }
 }
+
+/** A child as its row shows it: without its machine while the backend does not advertise `hub_remote_children_v1`. */
+private fun HubChildView.shown(showMachine: Boolean) = if (showMachine || remote == null) this else copy(remote = null)
 
 /** The linked pull requests in the app bar: "#9 +1". A tap opens [PrLinksSheet]. */
 @Composable

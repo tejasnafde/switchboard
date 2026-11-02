@@ -35,13 +35,16 @@ class HubChildrenTest {
     )
 
     @Test
-    fun decodesALocalAndARemoteChildAndLeavesOutAnUnknownState() {
+    fun decodesALocalAndARemoteChildAndKeepsAnUnknownStateAsUnknown() {
         assertEquals("p1", view.self?.id)
         assertEquals(listOf("p1", "p1-live"), view.self?.familyIds)
         assertNull(view.parent)
         assertEquals(ParentState.Waiting, view.state)
         assertEquals(2L, view.heldUpdates)
-        assertEquals(listOf("c1", "c2"), view.children.map { it.chat.id })
+        assertEquals(listOf("c1", "c2", "c3"), view.children.map { it.chat.id })
+        assertEquals(ChildState.Unknown, view.children[2].state)
+        assertEquals("Unknown state", HubChildren.childStateLabel(view.children[2]))
+        assertEquals("Unknown state", HubChildren.childStateWord(view.children[2]))
 
         val local = view.children[0]
         assertEquals("c1-live", local.liveId)
@@ -56,9 +59,9 @@ class HubChildrenTest {
 
     @Test
     fun theChipNamesTheMachinesOnlyWithTheRemoteFields() {
-        assertEquals("Hub · 2 children on 2 machines · Waiting for children", HubChildren.chipText(view))
+        assertEquals("Hub · 3 children on 2 machines · Waiting for children", HubChildren.chipText(view))
         val local = view.withoutRemote()
-        assertEquals("Hub · 2 children · Waiting for children", HubChildren.chipText(local))
+        assertEquals("Hub · 3 children · Waiting for children", HubChildren.chipText(local))
         assertEquals("Needs you", HubChildren.childStateLabel(local.children[1]))
         assertFalse(HubChildren.canStop(local.children[1]))
         assertNull(HubChildren.stopTarget(local.children[1]))

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { HubChatRef, HubChatView, HubChildView } from '../../src/shared/hub'
-import { hubChangeConcerns, phoneHubView, topLevelChatRows } from '../../apps/mobile/src/lib/hub-children'
+import {
+  hubChangeConcerns,
+  phoneHubView,
+  shownHubChild,
+  topLevelChatRows,
+} from '../../apps/mobile/src/lib/hub-children'
 
 const ref = (id: string, familyIds = [id]): HubChatRef => ({
   id,
@@ -28,6 +33,14 @@ describe('phoneHubView', () => {
     expect(shown.children[0]).not.toHaveProperty('remote')
     expect(shown.children[0].chat.id).toBe('c1')
     expect(shown.state).toBe('waiting')
+  })
+})
+
+describe('shownHubChild', () => {
+  it('hides the machine only for display, leaving the child the row routes by unchanged', () => {
+    expect(shownHubChild(remoteChild, true)).toBe(remoteChild)
+    expect(shownHubChild(remoteChild, false)).not.toHaveProperty('remote')
+    expect(remoteChild.remote?.machine).toBe('build-vm')
   })
 })
 

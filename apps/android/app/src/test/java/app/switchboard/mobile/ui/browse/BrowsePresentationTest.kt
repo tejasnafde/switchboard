@@ -113,7 +113,7 @@ class BrowsePresentationTest {
     }
 
     @Test
-    fun anOpenChildIsLeftOutUnderItsListedParentAndAnOrphanChildStays() {
+    fun anOpenChildIsLeftOutUnderItsListedParentUntilASearchAndAnOrphanChildStays() {
         val content = BrowsePresenter.conversations(
             BrowseLoadState.Ready(
                 listOf(
@@ -126,7 +126,8 @@ class BrowsePresentationTest {
             OfflineBrowseIndex.empty(),
         ) as BrowseConversationsPresentation.Content
 
-        assertEquals(listOf("orphan", "hub"), content.rows.map { it.id })
+        assertEquals(listOf("orphan", "hub"), BrowseParityDecisions.searchConversations(content.rows, "Proj", "").map { it.id })
+        assertEquals(listOf("child"), BrowseParityDecisions.searchConversations(content.rows, "Proj", "child").map { it.id })
     }
 
     @Test

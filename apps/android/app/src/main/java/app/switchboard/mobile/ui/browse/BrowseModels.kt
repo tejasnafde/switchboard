@@ -130,6 +130,8 @@ data class BrowseConversationRow(
     val originSource: String? = null,
     val preview: String? = null,
     val attention: BrowseThreadAttention = BrowseThreadAttention.Unknown,
+    /** An open child whose parent is listed too: the desktop nests it, so the list leaves it out until a search. */
+    val underListedParent: Boolean = false,
 )
 
 sealed interface BrowseProjectsPresentation {
@@ -225,9 +227,9 @@ object BrowsePresenter {
                 is BrowseLoadState.Failed -> BrowseConversationsPresentation.Failure(state.message)
             }
         }
-        // An open child sits under its parent on the desktop; here it is left out while its parent is listed.
-        val topLevel = HubChildren.topLevel(visible.map { it.conversation }, Conversation::id, Conversation::hubParentId)
-        val sorted = BrowseDecisions.sortConversations(topLevel)
+        val all = visible.map { it.conversation }
+        val topLevelIds = HubChildren.topLevel(all, Conversation::id, Conversation::hubParentId).mapTo(mutableSetOf(), Conversation::id)
+        val sorted = BrowseDecisions.sortConversations(all)
         return BrowseConversationsPresentation.Content(
             rows = sorted.map { conversation ->
                 BrowseConversationRow(
@@ -243,6 +245,7 @@ object BrowsePresenter {
                     // Live turn text wins; the stored line covers a chat not seen live.
                     preview = activity[conversation.id]?.preview ?: conversation.statusLine,
                     attention = activity[conversation.id]?.attention ?: BrowseThreadAttention.Unknown,
+                    underListedParent = conversation.id !in topLevelIds,
                 )
             },
             status = status(state, "conversations", visible.size),

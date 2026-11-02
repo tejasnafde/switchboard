@@ -24,6 +24,7 @@ const val HUB_CHILDREN_CHANGED = "hub.children-changed"
 
 const val HUB_REMOTE_CHILD_NO_REPORT = "No report yet."
 const val HUB_REMOTE_CHILD_READ_NOTE = "Read on the desktop."
+const val HUB_UNKNOWN_CHILD_STATE = "Unknown state"
 
 private const val LOG_SCOPE = "hub"
 
@@ -52,10 +53,13 @@ enum class ChildState(val wire: String, val label: String) {
     Blocked("blocked", "Blocked"),
     Failed("failed", "Failed"),
     Paused("paused", "Paused"),
+
+    /** A state a newer backend sends that this build does not know: still listed and counted. */
+    Unknown("", HUB_UNKNOWN_CHILD_STATE),
     ;
 
     companion object {
-        fun fromWire(wire: String?): ChildState? = entries.firstOrNull { it.wire == wire }
+        fun fromWire(wire: String?): ChildState? = entries.firstOrNull { it != Unknown && it.wire == wire }
     }
 }
 
@@ -130,8 +134,9 @@ data class HubChatView(
 
 object HubChildren {
     /**
-     * Decodes a `provider:hub-list-children` answer. A child with a malformed
-     * chat or a state or phase this build does not know is left out and logged.
+     * Decodes a `provider:hub-list-children` answer. A state this build does
+     * not know reads as [ChildState.Unknown]; a child with a malformed chat or
+     * an unknown phase is left out and logged.
      */
     fun decode(value: JsonValue?): HubChatView {
         val raw = value as? JsonObject ?: return HubChatView.EMPTY
@@ -155,10 +160,13 @@ object HubChildren {
             SbLog.w(LOG_SCOPE, "child without a chat left out")
             return null
         }
-        val state = ChildState.fromWire(raw.stringOrNull("state"))
+        val stateWire = raw.stringOrNull("state")
+        val state = ChildState.fromWire(stateWire) ?: ChildState.Unknown.also {
+            SbLog.w(LOG_SCOPE, "child ${chat.id} has unknown state $stateWire")
+        }
         val phase = HubChildPhase.fromWire(raw.stringOrNull("phase"))
-        if (state == null || phase == null) {
-            SbLog.w(LOG_SCOPE, "child ${chat.id} left out: state=${raw.stringOrNull("state")} phase=${raw.stringOrNull("phase")}")
+        if (phase == null) {
+            SbLog.w(LOG_SCOPE, "child ${chat.id} left out: unknown phase ${raw.stringOrNull("phase")}")
             return null
         }
         return HubChildView(

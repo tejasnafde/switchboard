@@ -1867,7 +1867,7 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
-    fun `a remote child keeps its machine only with the remote capability`() {
+    fun `a remote child keeps its remote note for Stop and Open with or without the remote capability`() {
         val withRemote = FakeThreadSessionRemote(scope)
         coordinator(withRemote, capabilities = setOf(HUB_CHILDREN_CAPABILITY, HUB_REMOTE_CHILDREN_CAPABILITY)).also {
             it.start()
@@ -1878,8 +1878,23 @@ class ThreadSessionCoordinatorTest {
         coordinator(localOnly, capabilities = setOf(HUB_CHILDREN_CAPABILITY)).also {
             it.start()
             localOnly.hubListCallbacks.removeAt(0)(success("hub", hubView(hubChild("c2", remote = true))))
-            assertNull(it.state.value.hub.view?.children?.single()?.remote)
+            assertEquals(false, it.state.value.hub.remoteAvailable)
+            assertEquals("build-vm", it.state.value.hub.view?.children?.single()?.remote?.machine)
+            it.stopHubChild("c2")
+            assertEquals(listOf("c2"), localOnly.interruptedThreadIds)
         }
+    }
+
+    @Test
+    fun `an open child re-reads on a change naming its parent`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(HUB_CHILDREN_CAPABILITY))
+        coordinator.start()
+        remote.hubListCallbacks.removeAt(0)(
+            success("hub", hubView().copy(parent = HubChatRef("hub-parent", listOf("hub-parent"), "Hub", "codex", "/repo", 1))),
+        )
+        remote.emit(scope, event("hub.children-changed", "hub-parent"))
+        assertEquals(2, remote.hubLists.size)
     }
 
     @Test

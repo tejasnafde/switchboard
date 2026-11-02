@@ -987,6 +987,17 @@
         "label": "Stopping on build-vm",
         "word": "Stopping"
       }
+    },
+    {
+      "name": "a state this build does not know",
+      "input": {
+        "state": "hibernating",
+        "waitingForSlot": false
+      },
+      "expected": {
+        "label": "Unknown state",
+        "word": "Unknown state"
+      }
     }
   ],
   "childrenCount": [

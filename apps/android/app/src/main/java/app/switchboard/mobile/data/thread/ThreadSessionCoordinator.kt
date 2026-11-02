@@ -127,7 +127,10 @@ data class ThreadSessionState(
 data class ThreadHubState(
     /** The backend advertises `hub_children_v1`. */
     val available: Boolean = false,
-    /** The backend advertises `hub_remote_children_v1`; without it no child has a `remote` field. */
+    /**
+     * The backend advertises `hub_remote_children_v1`. Without it a remote
+     * child keeps `remote` for Stop and Open, but shows no machine.
+     */
     val remoteAvailable: Boolean = false,
     val view: HubChatView? = null,
     val expanded: Boolean = false,
@@ -2284,10 +2287,11 @@ class ThreadSessionCoordinator(
         publish()
     }
 
-    /** The event names the parent's root id: this chat, or any id of its thread once the view is read. */
+    /** The event names a parent's root id: this chat (any id of its thread) or, for an open child, its parent. */
     private fun namesHubChat(id: String): Boolean {
-        val self = hub.view?.self ?: return true
-        return id == threadId || id == self.id || id in self.familyIds
+        val view = hub.view
+        val self = view?.self ?: return true
+        return id == threadId || id == self.id || id in self.familyIds || id == view.parent?.id
     }
 
     @Synchronized
@@ -2300,7 +2304,7 @@ class ThreadSessionCoordinator(
                     if (!accepts(response, request, hubRequest) || remote.scope != scope) return@synchronized
                     when (val outcome = response.outcome) {
                         is RemoteOutcome.Success -> {
-                            val view = if (hub.remoteAvailable) outcome.value else outcome.value.withoutRemote()
+                            val view = outcome.value
                             hub = hub.copy(view = view, expanded = hub.expanded && view.children.isNotEmpty())
                         }
                         is RemoteOutcome.Failure -> {

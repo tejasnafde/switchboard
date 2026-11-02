@@ -21,36 +21,47 @@ import {
 } from '@shared/hub'
 import { createLogger } from '@shared/logger'
 import type { SwitchboardClient } from '../lib/api'
-import { hubChangeConcerns, phoneHubView } from '../lib/hub-children'
+import { hubChangeConcerns, phoneHubView, shownHubChild } from '../lib/hub-children'
 import { colors, fonts } from '../theme'
 import { styles as threadStyles } from '../screens/thread-screen.styles'
 
 const log = createLogger('thread:hub')
 
 /** A child on another machine has no transcript here yet: its newest report and where to read the rest. */
-function showRemoteChild(child: HubChildView): void {
-  const machine = child.remote?.machine ?? ''
+function showRemoteChild(child: HubChildView, showMachine: boolean): void {
+  const label = childStateLabel(shownHubChild(child, showMachine))
   Alert.alert(
     child.chat.title,
     [
-      `${machine} · ${childStateLabel(child)}`,
+      showMachine && child.remote ? `${child.remote.machine} · ${label}` : label,
       child.lastWake?.summary ?? HUB_REMOTE_CHILD_NO_REPORT,
       HUB_REMOTE_CHILD_READ_NOTE,
     ].join('\n\n'),
   )
 }
 
-function ChildRow({ child, onOpen, onStop }: { child: HubChildView; onOpen: () => void; onStop: () => void }) {
-  const state = `${childStateLabel(child)}${child.lastWake ? `: ${child.lastWake.summary}` : ''}`
+function ChildRow({
+  child,
+  showMachine,
+  onOpen,
+  onStop,
+}: {
+  child: HubChildView
+  showMachine: boolean
+  onOpen: () => void
+  onStop: () => void
+}) {
+  const shown = shownHubChild(child, showMachine)
+  const state = `${childStateLabel(shown)}${child.lastWake ? `: ${child.lastWake.summary}` : ''}`
   return (
     <View style={hubStyles.child} testID="hub-child-row">
       <View style={hubStyles.childTitleLine}>
         <Text style={hubStyles.childTitle} numberOfLines={1}>
           {child.chat.title}
         </Text>
-        {child.remote && (
+        {shown.remote && (
           <Text style={hubStyles.machine} numberOfLines={1} testID="hub-machine-badge">
-            {child.remote.machine}
+            {shown.remote.machine}
           </Text>
         )}
       </View>
@@ -105,8 +116,8 @@ export function HubChildrenRow({
         .hubListChildren(threadId)
         .then((next) => {
           if (!live) return
-          current = phoneHubView(next, remoteOn)
-          setView(current)
+          current = next
+          setView(next)
         })
         .catch((err: unknown) => log.warn('reading the hub view failed', err))
     void read()
@@ -123,6 +134,7 @@ export function HubChildrenRow({
   if (!view?.self || view.children.length === 0) return null
   const parent = view.self
   const stoppable = view.children.filter(canStopHubChild)
+  const chip = hubChipText(phoneHubView(view, remoteOn))
 
   const act = (what: string, run: () => Promise<unknown>) => {
     setNote(null)
@@ -135,7 +147,7 @@ export function HubChildrenRow({
     const target = hubChildStopTarget(child)
     if (target) act('stopping a child', () => client.interrupt(target))
   }
-  const openChild = (child: HubChildView) => (child.remote ? showRemoteChild(child) : onOpenChat(child.chat))
+  const openChild = (child: HubChildView) => (child.remote ? showRemoteChild(child, remoteOn) : onOpenChat(child.chat))
 
   return (
     <View style={threadStyles.forkBanner} testID="hub-children-row">
@@ -144,11 +156,11 @@ export function HubChildrenRow({
           onPress={() => setOpen((v) => !v)}
           accessibilityRole="button"
           accessibilityState={{ expanded: open }}
-          accessibilityLabel={hubChipText(view)}
+          accessibilityLabel={chip}
           style={threadStyles.compactBannerText}
         >
           <Text style={threadStyles.limitResumeTitle} numberOfLines={1}>
-            {hubChipText(view)}
+            {chip}
           </Text>
         </Pressable>
         {open && stoppable.length > 0 && (
@@ -169,7 +181,13 @@ export function HubChildrenRow({
       )}
       {open &&
         view.children.map((child) => (
-          <ChildRow key={child.chat.id} child={child} onOpen={() => openChild(child)} onStop={() => stopChild(child)} />
+          <ChildRow
+            key={child.chat.id}
+            child={child}
+            showMachine={remoteOn}
+            onOpen={() => openChild(child)}
+            onStop={() => stopChild(child)}
+          />
         ))}
     </View>
   )

@@ -802,6 +802,11 @@ export const CHILD_STATE_LABELS: Record<ChildState, string> = {
   paused: 'Paused',
 }
 
+/** A state a newer backend sends that this client does not know: the child is still listed and counted. */
+export const HUB_UNKNOWN_CHILD_STATE = 'Unknown state'
+
+const stateText = (state: ChildState): string => CHILD_STATE_LABELS[state] ?? HUB_UNKNOWN_CHILD_STATE
+
 /**
  * The state text of a child. A child on another machine names it while it
  * waits for a slot or an approval there, while its machine reconnects, and
@@ -818,7 +823,7 @@ export function childStateLabel(c: Pick<HubChildView, 'state' | 'reported' | 'wa
   const on = r ? ` on ${r.machine}` : ''
   if (c.state === 'starting' && c.waitingForSlot) return `Waiting for a slot${on}`
   if (c.state === 'needs_you' && r) return `Needs approval${on}`
-  return CHILD_STATE_LABELS[c.state]
+  return stateText(c.state)
 }
 
 /** The short state word of a narrow row (the sidebar); its machine badge names the machine. */
@@ -826,7 +831,7 @@ export function childStateWord(c: Pick<HubChildView, 'state' | 'remote'>): strin
   const r = c.remote
   if (r?.stopping) return 'Stopping'
   if (r && !r.connected) return r.reconnecting ? 'Reconnecting' : 'Offline'
-  return CHILD_STATE_LABELS[c.state]
+  return stateText(c.state)
 }
 
 const PARENT_STATE_LABELS: Record<ParentState, string | null> = {

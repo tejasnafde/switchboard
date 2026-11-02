@@ -171,14 +171,20 @@ it("shows a remote child's machine, stops it by its own id, and opens its newest
   alert.mockRestore()
 })
 
-it('treats a remote child as local while hub_remote_children is off', async () => {
-  const { root, onOpenChat } = await renderRow(
-    parentView([child('c1', { state: 'needs_you', remote: remote('build-vm') })]),
+it("hides a remote child's machine while hub_remote_children is off, and never opens it as an empty chat", async () => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {})
+  const { root, client, onOpenChat } = await renderRow(
+    parentView([child('c1', { state: 'working', remote: remote('build-vm') }), child('c2')]),
     false,
   )
+  expect(root.texts()).toContain('Hub · 2 children')
   await expand(root)
   expect(root.texts()).not.toContain('build-vm')
-  expect(root.texts()).toContain('Needs you')
+  expect(root.texts()).toContain('Working')
+  await act(async () => root.byLabel('Stop Child c1').props.onPress())
+  expect(client.interrupt).toHaveBeenCalledWith('c1')
   await act(async () => root.byLabel('Open Child c1').props.onPress())
-  expect(onOpenChat).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1' }))
+  expect(onOpenChat).not.toHaveBeenCalled()
+  expect(alert).toHaveBeenCalledWith('Child c1', 'Working\n\nNo report yet.\n\nRead on the desktop.')
+  alert.mockRestore()
 })
