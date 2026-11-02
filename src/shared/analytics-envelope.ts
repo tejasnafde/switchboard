@@ -10,6 +10,7 @@
 
 import { GENERIC_ACP_AGENTS } from './acp-agents'
 import { SECRET_ANSWER_SECONDS_BUCKETS, SECRET_TTLS } from './agent-secret-request'
+import { SNOOZE_PRESET_KINDS, SNOOZE_SURFACES, TRACKED_WAKE_REASONS } from './chat-snooze'
 
 export type AnalyticsEventName =
   | 'app_launched'
@@ -23,11 +24,15 @@ export type AnalyticsEventName =
   | 'secret_request.closed'
   | 'secret_request.refused'
   | 'secret_request.masked'
+  | 'chat_snoozed'
+  | 'chat_woke'
+  | 'snooze_undone'
 
 /** Event names the renderer may report through `AnalyticsChannels.TRACK`. */
 export const RENDERER_ANALYTICS_EVENTS: ReadonlySet<string> = new Set<AnalyticsEventName>([
   'tour_completed',
   'tour_skipped',
+  'snooze_undone',
 ])
 
 export const ANALYTICS_ENDPOINT = 'https://analytics.tn07.dev/v1/events'
@@ -70,6 +75,10 @@ const EVENT_PROPERTIES: Record<AnalyticsEventName, Readonly<Record<string, Prope
   'secret_request.closed': { outcome: new Set(['expired', 'withdrawn', 'archived', 'deleted']) },
   'secret_request.refused': { reason: new Set(['plan', 'child', 'cap', 'invalid']) },
   'secret_request.masked': { where: new Set(['tool', 'text', 'diff']) },
+  // The Worker's blob cap names these two `kind` and `target`; each event keeps its own values.
+  chat_snoozed: { kind: new Set(SNOOZE_PRESET_KINDS), target: new Set(SNOOZE_SURFACES) },
+  chat_woke: { kind: new Set(TRACKED_WAKE_REASONS) },
+  snooze_undone: { kind: new Set(['snooze', 'wake']) },
 }
 
 export interface AnalyticsContext {

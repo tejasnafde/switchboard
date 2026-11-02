@@ -12,8 +12,23 @@ import { useLayoutStore } from '../../stores/layout-store'
 import { useProjectSettingsStore } from '../../stores/project-settings-store'
 import { onSessionRename, emitSessionRename, onSessionCreated, onSessionActivity } from '../../services/session-events'
 import { bumpSessionActivity, patchSession } from './session-activity'
-import { SettleNotice } from './SettleNotice'
-import { applySettledEvent, onSettledChange, settleChat } from '../../services/chat-settle'
+import { InboxNotice } from './InboxNotice'
+import {
+  applySettledEvent,
+  applySnoozedEvent,
+  machineSupportsSnooze,
+  onSettledChange,
+  onSnoozeChange,
+  settleChat,
+  snoozeChat,
+  wakeChat,
+  type SnoozeChoice,
+} from '../../services/chat-inbox'
+import { useSnoozeStore } from '../../stores/snooze-store'
+import { CHAT_SNOOZE_CAPABILITY, CHAT_SNOOZE_ENABLED, resolvePresets, wakeLabel } from '@shared/chat-snooze'
+import { linkedSnoozePr } from './snooze-pr'
+import type { SnoozePrChoice } from './SnoozeMenu'
+import type { RecentSessionItem } from './recent-sessions'
 import { serializeConversationToMarkdown, suggestedExportFilename } from '../../services/export-markdown'
 import { SidebarFilter } from './SidebarFilter'
 import { decideDragOutcome } from './drag-logic'
@@ -402,9 +417,16 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
       useMachineStore.getState().patchSnapshotSession(id, { settledAt })
     })
     const offBackend = window.api.app.onConversationSettled(applySettledEvent)
+    const offSnoozeLocal = onSnoozeChange((id, fields) => {
+      setProjects((prev) => patchSession(prev, id, fields))
+      useMachineStore.getState().patchSnapshotSession(id, fields)
+    })
+    const offSnoozeBackend = window.api.app.onConversationSnoozed(applySnoozedEvent)
     return () => {
       offLocal()
       offBackend()
+      offSnoozeLocal()
+      offSnoozeBackend()
     }
   }, [])
 
@@ -720,6 +742,90 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
       }),
     [projects, machineProjects, recentLiveSessions],
   )
+  // The composer line and the palette read each chat's snooze from this store.
+  useEffect(() => {
+    useSnoozeStore
+      .getState()
+      .seed([projects, ...Object.values(machineProjects)].flatMap((tree) => tree.flatMap((p) => p.sessions)))
+  }, [projects, machineProjects])
+  const snoozedCollapsed = useLayoutStore((s) => s.sidebarSnoozedCollapsed)
+  const setSnoozedCollapsed = useLayoutStore((s) => s.setSidebarSnoozedCollapsed)
+  const recentSnooze = useMemo(
+    () =>
+      CHAT_SNOOZE_ENABLED
+        ? {
+            available: (item: RecentSessionItem) => machineSupportsSnooze(item.machineId, CHAT_SNOOZE_CAPABILITY),
+            onSnooze: (item: RecentSessionItem, choice: SnoozeChoice) =>
+              void snoozeChat(
+                { id: item.session.id, title: item.session.title, machineId: item.machineId },
+                choice,
+                'row',
+              ),
+            onWake: (item: RecentSessionItem) =>
+              void wakeChat({ id: item.session.id, title: item.session.title, machineId: item.machineId }),
+            loadPr: (item: RecentSessionItem) => linkedSnoozePr(item.session.id, item.machineId),
+            collapsed: snoozedCollapsed,
+            onSetCollapsed: setSnoozedCollapsed,
+          }
+        : undefined,
+    [snoozedCollapsed, setSnoozedCollapsed],
+  )
+  // A context menu's Snooze items keep the instants of the moment it opened.
+  const menuShownAt = useMemo(() => new Date(), [contextMenu, remoteMenu])
+  const [menuPr, setMenuPr] = useState<SnoozePrChoice | null>(null)
+  useEffect(() => {
+    setMenuPr(null)
+    const target = contextMenu
+      ? { id: contextMenu.session.id, machineId: 'local' }
+      : remoteMenu
+        ? { id: remoteMenu.session.id, machineId: remoteMenu.machineId }
+        : null
+    if (!target || !CHAT_SNOOZE_ENABLED || !machineSupportsSnooze(target.machineId, CHAT_SNOOZE_CAPABILITY)) return
+    let live = true
+    linkedSnoozePr(target.id, target.machineId).then(
+      (pr) => {
+        if (live) setMenuPr(pr)
+      },
+      (err: unknown) => log.warn('reading the linked PRs for the context menu failed', err),
+    )
+    return () => {
+      live = false
+    }
+  }, [contextMenu, remoteMenu])
+  /** The Snooze submenu of a chat's context menu, or none for a chat that cannot be snoozed now. */
+  const snoozeMenuItem = (
+    machineId: string,
+    session: SessionSummary,
+    shownAt: Date,
+    pr: SnoozePrChoice | null,
+    close: () => void,
+  ): ContextMenuItem[] => {
+    if (!CHAT_SNOOZE_ENABLED || !machineSupportsSnooze(machineId, CHAT_SNOOZE_CAPABILITY)) return []
+    const target = { id: session.id, title: session.title, machineId }
+    if (session.snoozedAt != null) return [{ label: 'Wake', onClick: () => (close(), void wakeChat(target)) }]
+    const item = recentSessions.find((r) => r.session.id === session.id && r.machineId === machineId)
+    const needsYou =
+      item?.status === 'approval' || item?.status === 'input' || item?.status === 'plan' || item?.status === 'failed'
+    if (needsYou) return []
+    const snooze = (choice: SnoozeChoice) => {
+      close()
+      void snoozeChat(target, choice, 'context_menu')
+    }
+    return [
+      {
+        label: 'Snooze',
+        onClick: () => {},
+        submenu: [
+          ...resolvePresets(shownAt).map((option) => ({
+            label: option.label,
+            hint: wakeLabel(option.at, null, shownAt),
+            onClick: () => snooze({ option }),
+          })),
+          ...(pr ? [{ label: `Until PR #${pr.number} changes`, onClick: () => snooze({ pr: pr.key }) }] : []),
+        ],
+      },
+    ]
+  }
   const isFiltering = filterQuery.trim().length > 0
   const isProjectCollapsed = (path: string) => {
     if (isFiltering && filtered.expandProjects.has(path)) return false
@@ -1120,6 +1226,24 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
               onSettle={(item) =>
                 void settleChat({ id: item.session.id, title: item.session.title, machineId: item.machineId })
               }
+              snooze={recentSnooze}
+              onContextMenu={(item, e) =>
+                item.machineId === 'local'
+                  ? setContextMenu({
+                      x: e.clientX,
+                      y: e.clientY,
+                      sessionId: item.session.id,
+                      projectPath: item.projectPath,
+                      session: item.session,
+                    })
+                  : setRemoteMenu({
+                      x: e.clientX,
+                      y: e.clientY,
+                      machineId: item.machineId,
+                      projectPath: item.projectPath,
+                      session: item.session,
+                    })
+              }
             />
           )}
           <MachineLayer
@@ -1251,7 +1375,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
       {/* Footer */}
       {sidebarView === 'threads' && (
         <div className="sidebar-footer">
-          <SettleNotice />
+          <InboxNotice />
           <div className="sidebar-create-wrap">
             <button
               ref={createTriggerRef}
@@ -1450,6 +1574,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                 setContextMenu(null)
               },
             },
+            ...snoozeMenuItem('local', contextMenu.session, menuShownAt, menuPr, () => setContextMenu(null)),
             {
               label: 'Archive',
               danger: true,
@@ -1490,6 +1615,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                 setRemoteMenu(null)
               },
             },
+            ...snoozeMenuItem(remoteMenu.machineId, remoteMenu.session, menuShownAt, menuPr, () => setRemoteMenu(null)),
             {
               label: 'Archive',
               danger: true,
@@ -1869,6 +1995,40 @@ interface ContextMenuItem {
   label: string
   onClick: () => void
   danger?: boolean
+  /** Muted text on the right, such as a time. */
+  hint?: string
+  /** Items of a submenu, opened by hover, a click or ArrowRight. */
+  submenu?: ContextMenuItem[]
+}
+
+function ContextMenuButton({
+  item,
+  onEnter,
+  onKeyDown,
+}: {
+  item: ContextMenuItem
+  onEnter?: () => void
+  onKeyDown?: (e: React.KeyboardEvent<HTMLButtonElement>) => void
+}) {
+  return (
+    <button
+      type="button"
+      className="sidebar-context-item"
+      data-danger={item.danger ? 'true' : undefined}
+      aria-haspopup={item.submenu ? 'menu' : undefined}
+      onClick={item.onClick}
+      onMouseEnter={onEnter}
+      onKeyDown={onKeyDown}
+    >
+      <span>{item.label}</span>
+      {item.hint && <span className="sidebar-context-hint">{item.hint}</span>}
+      {item.submenu && (
+        <span className="sidebar-context-hint" aria-hidden="true">
+          ›
+        </span>
+      )}
+    </button>
+  )
 }
 
 /**
@@ -1887,6 +2047,7 @@ function SidebarContextMenu({
   onClose: () => void
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
+  const [openSub, setOpenSub] = useState<string | null>(null)
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) onClose()
@@ -1902,48 +2063,62 @@ function SidebarContextMenu({
     }
   }, [onClose])
 
+  const focusSub = () =>
+    requestAnimationFrame(() => rootRef.current?.querySelector<HTMLElement>('.sidebar-context-submenu button')?.focus())
+
   return (
     <div
       ref={rootRef}
-      className="sb-floating-surface"
-      style={{
-        position: 'fixed',
-        top: y,
-        left: x,
-        zIndex: 1200,
-        minWidth: '170px',
-        padding: '4px',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius)',
-        boxShadow: '0 6px 24px rgba(0, 0, 0, 0.35)',
-      }}
+      role="menu"
+      className="sb-floating-surface sidebar-context-menu"
+      style={{ position: 'fixed', top: y, left: x }}
     >
-      {items.map((item) => (
-        <button
-          key={item.label}
-          onClick={item.onClick}
-          style={{
-            display: 'block',
-            width: '100%',
-            padding: '6px 10px',
-            border: 'none',
-            background: 'transparent',
-            color: item.danger ? 'var(--error)' : 'var(--text-primary)',
-            cursor: 'pointer',
-            fontSize: '12px',
-            textAlign: 'left',
-            borderRadius: '3px',
-          }}
-          onMouseEnter={(e) => {
-            ;(e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'
-          }}
-          onMouseLeave={(e) => {
-            ;(e.currentTarget as HTMLElement).style.background = 'transparent'
-          }}
-        >
-          {item.label}
-        </button>
-      ))}
+      {items.map((item) =>
+        item.submenu ? (
+          <div key={item.label} className="sidebar-context-parent">
+            <ContextMenuButton
+              item={{
+                ...item,
+                onClick: () => {
+                  setOpenSub(openSub === item.label ? null : item.label)
+                  focusSub()
+                },
+              }}
+              onEnter={() => setOpenSub(item.label)}
+              onKeyDown={(e) => {
+                if (e.key !== 'ArrowRight') return
+                e.preventDefault()
+                setOpenSub(item.label)
+                focusSub()
+              }}
+            />
+            {openSub === item.label && (
+              <div
+                role="menu"
+                aria-label={item.label}
+                className="sb-floating-surface sidebar-context-menu sidebar-context-submenu"
+              >
+                {item.submenu.map((sub) => (
+                  <ContextMenuButton
+                    key={sub.label}
+                    item={sub}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'ArrowLeft') return
+                      e.preventDefault()
+                      setOpenSub(null)
+                      ;(
+                        e.currentTarget.closest('.sidebar-context-parent')?.firstElementChild as HTMLElement | null
+                      )?.focus()
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <ContextMenuButton key={item.label} item={item} onEnter={() => setOpenSub(null)} />
+        ),
+      )}
     </div>
   )
 }

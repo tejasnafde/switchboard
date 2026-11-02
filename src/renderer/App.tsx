@@ -91,7 +91,7 @@ import { recoverPendingRequests } from './services/pending-request-recovery'
 import { ProviderChannels } from '@shared/ipc-channels'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import { isUndoKeydown, resolveGlobalKeydown } from './services/global-keybindings'
-import { undoLastSettle } from './services/chat-settle'
+import { noteChatOpened, undoLastInbox } from './services/chat-inbox'
 import { focusRecentRow } from './components/sidebar/recent-row-focus'
 import { toggleChatDetails } from './components/chat/ChatDetailsPopover'
 import { isSecretCardKeyTarget } from './components/chat/secret-request-card-model'
@@ -1141,6 +1141,7 @@ export function App() {
         // startSession, sendTurn) to its machine before the first one fires.
         // Keyed by session.id, which is arg0 of all those calls.
         window.api.routing.bind(session.id, effectiveMachineId)
+        noteChatOpened(session.id, effectiveMachineId)
 
         const currentId = useLayoutStore.getState().focusedChatSessionId()
         const current = storeState.sessions.find((s) => s.id === currentId)
@@ -1550,7 +1551,7 @@ export function App() {
       if (isSecretCardKeyTarget(e.target)) return
       if (useAgentStore.getState().lastUndo && isUndoKeydown(e, document.activeElement)) {
         e.preventDefault()
-        const restored = undoLastSettle()
+        const restored = undoLastInbox()
         if (restored) focusRecentRow(restored)
         return
       }

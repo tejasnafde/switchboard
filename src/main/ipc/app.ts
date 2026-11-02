@@ -79,6 +79,7 @@ import {
   getDb,
   getSetting,
   listOpenHubChildren,
+  getConversationSnooze,
 } from '../db/database'
 import { claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
@@ -918,9 +919,11 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     return snoozer.snooze(id, request ?? { until: null })
   })
 
-  host.handle(AppChannels.UNSNOOZE_CONVERSATION, (id: string, expectRev?: number) => ({
-    ok: chatSnoozer()?.wake(id, expectRev === undefined ? 'wake_now' : 'undo', { expectRev }) ?? false,
-  }))
+  host.handle(AppChannels.UNSNOOZE_CONVERSATION, (id: string, expectRev?: number) => {
+    const ok = chatSnoozer()?.wake(id, expectRev === undefined ? 'wake_now' : 'undo', { expectRev }) ?? false
+    // The revision after the wake, which an Undo of a Wake passes back.
+    return ok ? { ok, rev: getConversationSnooze(id)?.snoozeRev } : { ok }
+  })
 
   host.handle(AppChannels.MARK_WOKE_SEEN, (id: string) => ({ ok: chatSnoozer()?.seen(id) ?? false }))
 

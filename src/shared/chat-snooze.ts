@@ -9,10 +9,10 @@
  */
 
 /**
- * Staged flag `chat_snooze`. The backend, its timer and channels run with it
- * off; no client offers Snooze until it is on.
+ * Flag `chat_snooze`: on for the desktop. The phones stay staged on
+ * `chat_snooze_v1` until their own release.
  */
-export const CHAT_SNOOZE_ENABLED = false
+export const CHAT_SNOOZE_ENABLED = true
 
 export const CHAT_SNOOZE_CAPABILITY = 'chat_snooze_v1'
 
@@ -28,6 +28,9 @@ export type WakeReason =
   | 'turn'
   | 'settle'
   | 'archive'
+
+/** The wakes counted in analytics (`chat_woke`). */
+export const TRACKED_WAKE_REASONS = ['time', 'needs_you', 'error', 'message', 'pr', 'wake_now'] as const
 
 /** The reasons that show `Woke` on the row until the chat is opened. */
 export const MARKED_WAKE_REASONS: readonly WakeReason[] = ['time', 'needs_you', 'error', 'message', 'pr']
@@ -124,6 +127,30 @@ export const DEFAULT_SNOOZE_PRESETS: readonly SnoozePresetSpec[] = [
   { label: 'Tomorrow morning', kind: 'time', dayOffset: 1, hour: 9, minute: 0 },
   { label: 'Next week', kind: 'weekday', weekday: 1, hour: 9, minute: 0 },
 ]
+
+/** What a snooze was picked from, for analytics: a default preset, the PR wake, the dialog, or a preset of the user's own. */
+export const SNOOZE_PRESET_KINDS = [
+  'later_today',
+  'tonight',
+  'tomorrow_morning',
+  'next_week',
+  'pr',
+  'custom',
+  'preset',
+] as const
+export type SnoozePresetKind = (typeof SNOOZE_PRESET_KINDS)[number]
+
+/** Where a snooze was asked for, for analytics. */
+export const SNOOZE_SURFACES = ['row', 'context_menu', 'palette', 'composer', 'phone'] as const
+export type SnoozeSurface = (typeof SNOOZE_SURFACES)[number]
+
+const DEFAULT_PRESET_KINDS: readonly SnoozePresetKind[] = ['later_today', 'tonight', 'tomorrow_morning', 'next_week']
+
+/** The analytics kind of a menu preset: a default one by name, any other `preset`. */
+export function presetKindOf(spec: SnoozePresetSpec): SnoozePresetKind {
+  const i = DEFAULT_SNOOZE_PRESETS.findIndex((d) => JSON.stringify(d) === JSON.stringify(spec))
+  return i >= 0 ? DEFAULT_PRESET_KINDS[i] : 'preset'
+}
 
 /** The cutoff of a sub-day duration: it must end before this hour, today. */
 const DURATION_LAST_HOUR = 21
@@ -402,6 +429,9 @@ export interface SnoozeRequest {
   pr?: string | null
   /** Undo of a wake: refused unless the chat is still at this revision. */
   expectRev?: number
+  /** For analytics only; an Undo sends neither. */
+  preset?: SnoozePresetKind
+  surface?: SnoozeSurface
 }
 
 export type SnoozeRefusal =

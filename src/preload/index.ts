@@ -361,7 +361,7 @@ const api = {
       ),
     snoozeConversation: (id: string, request: SnoozeRequest): Promise<SnoozeResult> =>
       transport.invoke(AppChannels.SNOOZE_CONVERSATION, id, request),
-    unsnoozeConversation: (id: string, expectRev?: number): Promise<{ ok: boolean }> =>
+    unsnoozeConversation: (id: string, expectRev?: number): Promise<{ ok: boolean; rev?: number }> =>
       transport.invoke(AppChannels.UNSNOOZE_CONVERSATION, id, expectRev),
     markWokeSeen: (id: string): Promise<{ ok: boolean }> => transport.invoke(AppChannels.MARK_WOKE_SEEN, id),
     onConversationSnoozed: (callback: (event: ConversationSnoozedEvent & { machineId: string }) => void) =>
@@ -693,8 +693,10 @@ const api = {
      * (`RENDERER_ANALYTICS_EVENTS`: tour_completed / tour_skipped) and
      * drops everything else; resolves false when it did.
      */
-    track: (event: 'tour_completed' | 'tour_skipped', properties: Record<string, string> = {}): Promise<boolean> =>
-      transport.invoke(AnalyticsChannels.TRACK, event, properties),
+    track: (
+      event: 'tour_completed' | 'tour_skipped' | 'snooze_undone',
+      properties: Record<string, string> = {},
+    ): Promise<boolean> => transport.invoke(AnalyticsChannels.TRACK, event, properties),
   },
 
   settings: {

@@ -210,6 +210,9 @@ interface LayoutStore {
    */
   sidebarLocalTreeExpanded: boolean
   toggleSidebarLocalTree: () => void
+  /** Recents' Snoozed group is shut; the default. */
+  sidebarSnoozedCollapsed: boolean
+  setSidebarSnoozedCollapsed: (collapsed: boolean) => void
   sidebarOfflineMachinesExpanded: boolean
   toggleSidebarOfflineMachines: () => void
 }
@@ -225,6 +228,7 @@ const KANBAN_WS_FILTER_KEY = 'layout.kanbanWorkspaceFilter'
 const KANBAN_PROJECT_FILTER_KEY = 'layout.kanbanProjectFilter'
 const SHOW_FILE_DIFF_CARDS_KEY = SETTING_SHOW_FILE_DIFFS
 const LOCAL_TREE_EXPANDED_KEY = 'sidebar.localTreeExpanded'
+const SNOOZED_COLLAPSED_KEY = 'sidebar.snoozedCollapsed'
 const OFFLINE_MACHINES_EXPANDED_KEY = 'sidebar.offlineMachinesExpanded'
 
 function currentChatWorkspace(): ChatWorkspaceState {
@@ -550,6 +554,11 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     persistSetting(LOCAL_TREE_EXPANDED_KEY, String(next))
     set({ sidebarLocalTreeExpanded: next })
   },
+  sidebarSnoozedCollapsed: true,
+  setSidebarSnoozedCollapsed: (collapsed) => {
+    persistSetting(SNOOZED_COLLAPSED_KEY, String(collapsed))
+    set({ sidebarSnoozedCollapsed: collapsed })
+  },
   sidebarOfflineMachinesExpanded: false,
   toggleSidebarOfflineMachines: () => {
     const next = !get().sidebarOfflineMachinesExpanded
@@ -582,6 +591,7 @@ export async function hydrateSidebarCollapse(): Promise<void> {
       localTreeStr,
       offlineMachinesStr,
       followUpStr,
+      snoozedCollapsedStr,
     ] = await Promise.all([
       window.api.settings.get(COLLAPSE_PROJECTS_KEY),
       window.api.settings.get(COLLAPSE_WORKSPACES_KEY),
@@ -594,6 +604,7 @@ export async function hydrateSidebarCollapse(): Promise<void> {
       window.api.settings.get(LOCAL_TREE_EXPANDED_KEY),
       window.api.settings.get(OFFLINE_MACHINES_EXPANDED_KEY),
       window.api.settings.get(FOLLOW_UP_DEFAULT_KEY),
+      window.api.settings.get(SNOOZED_COLLAPSED_KEY),
     ])
     const parse = (s: string | null): string[] => {
       if (!s) return []
@@ -619,6 +630,7 @@ export async function hydrateSidebarCollapse(): Promise<void> {
       dataScienceMode,
       showFileDiffCards: showFileDiffsStr === 'true',
       sidebarLocalTreeExpanded: localTreeStr === 'true',
+      sidebarSnoozedCollapsed: snoozedCollapsedStr !== 'false',
       sidebarOfflineMachinesExpanded: offlineMachinesStr === 'true',
       followUpDefault: parseFollowUpDefault(followUpStr),
     })

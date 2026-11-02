@@ -39,7 +39,7 @@ export const AppChannels = {
   CONVERSATION_SETTLED: 'app:conversation-settled',
   /** (id, SnoozeRequest) → SnoozeResult: hide a chat from Recents until a time or a PR event (`shared/chat-snooze.ts`). */
   SNOOZE_CONVERSATION: 'app:snooze-conversation',
-  /** (id, expectRev?) → { ok }: Wake and Undo. Ends the snooze with no Woke marker. */
+  /** (id, expectRev?) → { ok, rev? }: Wake and Undo. Ends the snooze with no Woke marker; `rev` is the revision after it. */
   UNSNOOZE_CONVERSATION: 'app:unsnooze-conversation',
   /** (id) → { ok }: the user opened a woken chat; drop its Woke marker. */
   MARK_WOKE_SEEN: 'app:mark-woke-seen',

@@ -1,6 +1,7 @@
 import type { AgentStatus, ChatMessage, Project, SessionSummary } from '@shared/types'
 import type { PendingBlockingEvent } from '@shared/pending-requests'
 import { sessionPreviewLine } from '@shared/turn-preview'
+import { isWoke, wokeLine } from '@shared/chat-snooze'
 
 export interface RecentLiveSession {
   id: string
@@ -69,6 +70,13 @@ function recentStatusLine(
     default:
       return previewLine ?? projectName
   }
+}
+
+/** Line 2 of a woken row: why it woke. A row that needs the user keeps its own line. */
+function wokeStatusLine(session: SessionSummary, status: RecentSessionStatus | undefined): string | null {
+  if (!isWoke({ snoozedAt: session.snoozedAt ?? null, wokeAt: session.wokeAt ?? null })) return null
+  if (status === 'approval' || status === 'input' || status === 'plan' || status === 'failed') return null
+  return wokeLine(session.wokeReason ?? null, session.wokePrSummary)
 }
 
 /**
@@ -148,7 +156,8 @@ export function deriveRecentSessions(_input: {
             machineId,
             status,
             previewLine,
-            statusLine: recentStatusLine(session, status, live, previewLine, project.name),
+            statusLine:
+              wokeStatusLine(session, status) ?? recentStatusLine(session, status, live, previewLine, project.name),
             priority: status ? STATUS_PRIORITY[status] : 0,
           }
         }),
