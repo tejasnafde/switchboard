@@ -41,6 +41,7 @@ import { UpdateToast } from './components/UpdateToast'
 import { AnalyticsNotice } from './components/AnalyticsNotice'
 import { VisualPreviewHost } from './components/chat/visuals/VisualPreviewHost'
 import { ConfirmHost, unlessConfirmOpen } from './components/ui/confirm'
+import { SnoozeCustomHost } from './components/sidebar/SnoozeCustomDialog'
 import { loadKeyboardOverrides, reloadKeyboardOverrides } from './services/keyboard-overrides'
 import { attachSettingsFileSync } from './services/settings-file-sync'
 import { isShortcutCaptureActive } from '@shared/shortcuts'
@@ -91,8 +92,8 @@ import { recoverPendingRequests } from './services/pending-request-recovery'
 import { ProviderChannels } from '@shared/ipc-channels'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import { isUndoKeydown, resolveGlobalKeydown } from './services/global-keybindings'
-import { undoLastSettle } from './services/chat-settle'
-import { focusRecentRow } from './components/sidebar/recent-row-focus'
+import { noteChatOpened, undoLastInbox } from './services/chat-inbox'
+import { focusUndoneRow } from './components/sidebar/recent-row-focus'
 import { toggleChatDetails } from './components/chat/ChatDetailsPopover'
 import { isSecretCardKeyTarget } from './components/chat/secret-request-card-model'
 import {
@@ -1147,6 +1148,7 @@ export function App() {
         const placeAndEvict = (sessionId: string) => {
           if (!isCurrentOpen()) return
           placeSession(sessionId)
+          noteChatOpened(session.id, effectiveMachineId)
           if (
             current &&
             shouldEvictMessages(current) &&
@@ -1548,10 +1550,11 @@ export function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Keys typed into an agent's secret request belong to that card only.
       if (isSecretCardKeyTarget(e.target)) return
-      if (useAgentStore.getState().lastUndo && isUndoKeydown(e, document.activeElement)) {
+      const lastUndo = useAgentStore.getState().lastUndo
+      if (lastUndo && isUndoKeydown(e, document.activeElement)) {
         e.preventDefault()
-        const restored = undoLastSettle()
-        if (restored) focusRecentRow(restored)
+        const restored = undoLastInbox()
+        if (restored) focusUndoneRow(restored, lastUndo.kind)
         return
       }
       const action = resolveGlobalKeydown(e)
@@ -2111,6 +2114,7 @@ export function App() {
       <UpdateToast />
       <AnalyticsNotice />
       <ConfirmHost />
+      <SnoozeCustomHost />
       <VisualPreviewHost />
     </div>
   )

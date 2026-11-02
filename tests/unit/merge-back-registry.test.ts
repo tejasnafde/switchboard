@@ -11,12 +11,13 @@ import { stripSenderLine } from '../../src/shared/sender-line'
 
 const db = new Database(':memory:')
 db.exec(`
-  CREATE TABLE conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, pending_handoff_from TEXT, updated_at INTEGER NOT NULL, settled_at INTEGER);
+  CREATE TABLE conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, pending_handoff_from TEXT, updated_at INTEGER NOT NULL, settled_at INTEGER,
+    snoozed_until INTEGER, snoozed_at INTEGER, snooze_pr TEXT, snooze_pr_mark TEXT, snooze_rev INTEGER NOT NULL DEFAULT 0, woke_at INTEGER, woke_reason TEXT);
   CREATE TABLE messages (
     id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
     tool_calls TEXT, images TEXT, timestamp INTEGER NOT NULL, display_body TEXT, pills_meta TEXT
   );
-  INSERT INTO conversations VALUES ('t1', 'improvements', NULL, 1, NULL);
+  INSERT INTO conversations VALUES ('t1', 'improvements', NULL, 1, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL);
 `)
 
 vi.mock('../../src/main/db/provider-instances', () => ({

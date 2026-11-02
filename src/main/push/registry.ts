@@ -11,6 +11,7 @@ import {
   pushForEvent,
   pushTargets,
   type PushKind,
+  type PushMessage,
   type ViewingLease,
 } from '@shared/push-policy'
 import type { RuntimeEvent } from '@shared/provider-events'
@@ -189,32 +190,37 @@ async function sweepReceipts(): Promise<void> {
  * Subscribe to the event bus and notify registered devices. Returns an
  * unsubscribe function.
  */
+/** The live notifier's send, for a push that is not a runtime event (a snooze wake). */
+let deliverToThread: ((threadId: string, message: PushMessage) => void) | null = null
+
+/** One push about a chat, under the same policy as event pushes. No-op before `attachPushNotifier`. */
+export function pushToThread(threadId: string, message: PushMessage): void {
+  deliverToThread?.(threadId, message)
+}
+
 export function attachPushNotifier(bus: RuntimeEventBus, presence: PresenceProbe | null = null): () => void {
-  const onEvent = (event: RuntimeEvent): void => {
-    if (!pushEnabled()) return
+  /** Devices to tell about this thread now, or none (push off, the user at the machine, the thread on screen). */
+  const targetsFor = (threadId: string): PushDevice[] => {
+    if (!pushEnabled()) return []
     // At the machine, so the phone in your pocket has nothing to tell you that
     // the screen in front of you is not already showing. Covers every thread,
     // not just the focused one, and does not care which window has focus.
-    if (!pushWhileActive() && isUserPresent(presence)) return
+    if (!pushWhileActive() && isUserPresent(presence)) return []
     const devices = listDevices()
-    if (devices.length === 0) return
-
+    if (devices.length === 0) return []
     const now = Date.now()
     pruneViewing(now)
-    const targets = pushTargets(devices, event.threadId, viewing, now)
-    if (targets.length === 0) return
-
-    // Decide FIRST: `conversationFor` is a synchronous SQLite read, and delta
-    // streaming made this run once per token on the main process.
-    if (!pushForEvent(event)) return
-    const { title, projectPath } = conversationFor(event.threadId)
-    const message = pushForEvent(event, { title })
-    if (!message) return
-
+    return pushTargets(devices, threadId, viewing, now)
+  }
+  const deliver = (
+    targets: PushDevice[],
+    message: PushMessage,
+    conversation: { title?: string; projectPath?: string },
+  ) => {
     for (const [clientRef, tokens] of groupByClientRef(targets)) {
       void sendPush(tokens, {
         ...message,
-        data: { ...message.data, projectPath, clientRef, title },
+        data: { ...message.data, projectPath: conversation.projectPath, clientRef, title: conversation.title },
       }).then(({ deadTokens, pendingReceipts }) => {
         dropDeadTokens(deadTokens)
         // The ticket only says Expo accepted the message. The delivery verdict
@@ -225,6 +231,20 @@ export function attachPushNotifier(bus: RuntimeEventBus, presence: PresenceProbe
       })
     }
   }
+  deliverToThread = (threadId, message) => {
+    const targets = targetsFor(threadId)
+    if (targets.length > 0) deliver(targets, message, conversationFor(threadId))
+  }
+  const onEvent = (event: RuntimeEvent): void => {
+    const targets = targetsFor(event.threadId)
+    if (targets.length === 0) return
+    // Decide FIRST: `conversationFor` is a synchronous SQLite read, and delta
+    // streaming made this run once per token on the main process.
+    if (!pushForEvent(event)) return
+    const conversation = conversationFor(event.threadId)
+    const message = pushForEvent(event, { title: conversation.title })
+    if (message) deliver(targets, message, conversation)
+  }
 
   const unsubscribe = bus.subscribe(onEvent)
   const sweep = setInterval(() => void sweepReceipts(), RECEIPT_SWEEP_MS)
@@ -232,6 +252,7 @@ export function attachPushNotifier(bus: RuntimeEventBus, presence: PresenceProbe
   return () => {
     clearInterval(sweep)
     unsubscribe()
+    deliverToThread = null
   }
 }
 

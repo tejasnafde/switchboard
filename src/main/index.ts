@@ -38,7 +38,9 @@ import { registerTerminalHandlers, shutdownTerminals, livePtyCount } from './ipc
 import { registerDiagnosticsHandlers } from './ipc/diagnostics'
 import { configureAnalytics, attachAnalyticsCrashHooks, trackAppLaunched, registerAnalyticsHandlers } from './analytics'
 import { registerPushHandlers } from './ipc/push'
-import { attachPushNotifier } from './push/registry'
+import { attachPushNotifier, pushToThread } from './push/registry'
+import { chatSnoozer, startChatSnoozer, type ChatSnoozeHost } from './conversations/chat-snooze'
+import { wokePush } from '@shared/push-policy'
 import { registerAppHandlers, type AppHandlerDependencies } from './ipc/app'
 import { isMenuCaptureActive, setMenuCapture, unlessCapturing } from './menu-capture'
 import { pruneAttachments } from './attachments'
@@ -77,6 +79,8 @@ import { registerWorktreeManagerHandlers } from './ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from './ipc/provider-instances'
 import {
   attachPullRequestAutoLink,
+  settleChatOnMerge,
+  readPullRequestForSnooze,
   registerPullRequestHandlers,
   startPullRequestHistoryScan,
 } from './ipc/pull-requests'
@@ -173,6 +177,8 @@ const quitCoordinator = new QuitCoordinator(
         {
           name: 'push',
           run: () => {
+            // First, so no snooze wakes after its push can no longer be sent.
+            chatSnoozer()?.dispose()
             detachPush?.()
             detachPush = null
             detachAutoLink?.()
@@ -1036,6 +1042,8 @@ app.whenReady().then(() => {
   })
   detachAutoLink = attachPullRequestAutoLink(providerRegistry.bus, backendHost, linkedChatActivity)
   startPullRequestHistoryScan()
+  startChatSnoozer(snoozeHost(backendHost))
+  powerMonitor.on('resume', () => chatSnoozer()?.resync())
   providerRegistry.registerIpcHandlers()
 
   // All handlers are recorded on the endpoint now; start listening if a token
@@ -1105,10 +1113,22 @@ app.whenReady().then(() => {
       })
       detachAutoLink?.()
       detachAutoLink = attachPullRequestAutoLink(providerRegistry.bus, reactivatedHost, linkedChatActivity)
+      startChatSnoozer(snoozeHost(reactivatedHost))
       providerRegistry.registerIpcHandlers()
     }
   })
 })
+
+/** What the snoozer needs from this backend: its clients, its open cards, the phones. */
+function snoozeHost(host: BackendHost): ChatSnoozeHost {
+  return {
+    emit: (channel, payload) => host.emit(channel, payload),
+    needsYou: (id) => providerRegistry?.needsUser(id) ?? false,
+    pushWoke: (id, title, line) => pushToThread(id, wokePush(id, title, line)),
+    readPr: readPullRequestForSnooze,
+    settleMerged: settleChatOnMerge,
+  }
+}
 
 // Electron already quits cleanly on these; handling them here only adds the name.
 for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {

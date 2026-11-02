@@ -2,7 +2,7 @@
 import { createMigratedDb } from './helpers/test-db'
 import { describe, expect, it } from 'vitest'
 import {
-  clearConversationSettledForTurn,
+  clearConversationInboxForTurn,
   getConversationSettled,
   getManagedRootConversationsForProject,
   migrate,
@@ -85,7 +85,7 @@ describe('what un-settles a chat', () => {
     )
     db.exec("INSERT INTO thread_sessions (claude_session_id, thread_id) VALUES ('uuid-c', 'c')")
     setConversationSettled('c', 500)
-    clearConversationSettledForTurn(db, 'uuid-c')
+    clearConversationInboxForTurn(db, 'uuid-c')
     expect(getConversationSettled('c')).toBeNull()
   })
 })

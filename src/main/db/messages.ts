@@ -3,7 +3,7 @@ import { parseErrorKind } from './parse-error'
 import Database from 'better-sqlite3'
 import type { ChatMessage, FileDiffAttachment, ToolCall } from '@shared/types'
 import { getDb, getReadDb } from './database'
-import { clearConversationSettledForTurn, threadFamilyIds } from './conversations'
+import { clearConversationInboxForTurn, threadFamilyIds } from './conversations'
 import { armedSecretScope, maskStoredText, maskStoredValue } from './secret-mask'
 import { secretRedactor } from '../secrets/secret-redactor'
 import { parsePersistedPillsMeta } from '../provider/pill-metadata'
@@ -82,7 +82,7 @@ function saveMessageStmts(db: Database.Database) {
     const write = db.transaction((a: SaveMessageArgs) => {
       run(insert, a)
       touch.run(a.now, a.conversationId)
-      if (a.role === 'user') clearConversationSettledForTurn(db, a.conversationId)
+      if (a.role === 'user') clearConversationInboxForTurn(db, a.conversationId)
     })
     const fill = db.transaction((a: SaveMessageArgs): boolean => {
       const changed = run(insertIfAbsent, a).changes > 0

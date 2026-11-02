@@ -634,6 +634,24 @@ export function migrate(db: Database.Database): void {
     db.exec('ALTER TABLE conversations ADD COLUMN settled_at INTEGER')
   }
 
+  // Migration (2026-11-02): Snooze (`shared/chat-snooze.ts`). `snoozed_at` set
+  // means snoozed; `snooze_rev` counts every change so a stale timer or Undo is
+  // refused; `woke_*` is the Woke marker, kept apart from the snooze itself.
+  for (const [name, type] of [
+    ['snoozed_until', 'INTEGER'],
+    ['snoozed_at', 'INTEGER'],
+    ['snooze_pr', 'TEXT'],
+    ['snooze_pr_mark', 'TEXT'],
+    ['snooze_rev', 'INTEGER NOT NULL DEFAULT 0'],
+    ['woke_at', 'INTEGER'],
+    ['woke_reason', 'TEXT'],
+  ]) {
+    if (!convCols.some((c) => c.name === name)) db.exec(`ALTER TABLE conversations ADD COLUMN ${name} ${type}`)
+  }
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_conversations_snoozed ON conversations(snoozed_until) WHERE snoozed_at IS NOT NULL',
+  )
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS machines (
       id          TEXT PRIMARY KEY,

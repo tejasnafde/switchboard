@@ -813,6 +813,7 @@ html, body, #root {
 }
 
 .sidebar-recents {
+  container: recents / inline-size;
   padding: 2px 8px 8px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 6px;
@@ -878,12 +879,28 @@ html, body, #root {
   outline-offset: -2px;
 }
 
-/* Settle sits where the time sits: shown on row hover or focus within the
-   row (always without hover), with the time fading out under it. */
-.sidebar-recent-settle {
+/* The row actions (Snooze, Settle, Wake) sit where the time sits: shown on
+   row hover, on focus within the row and while their menu is open (always
+   without hover). The time gives way to a hidden copy of their labels, so
+   line 1 keeps the width they take and the title shortens instead of sliding
+   under them. Nothing moves with a transition. */
+.sidebar-recent-actions {
   position: absolute;
   top: 5px;
   right: 5px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+}
+
+.sidebar-recent-row:hover .sidebar-recent-actions,
+.sidebar-recent-row:focus-within .sidebar-recent-actions,
+.sidebar-recent-row:has([data-state='open']) .sidebar-recent-actions {
+  opacity: 1;
+}
+
+.sidebar-recent-action {
   height: 18px;
   padding: 0 5px;
   border: 0;
@@ -894,46 +911,124 @@ html, body, #root {
   font-size: 11px;
   font-weight: 400;
   line-height: 18px;
+  white-space: nowrap;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s, background 0.12s, color 0.12s;
-}
-
-.sidebar-recent-row:hover .sidebar-recent-settle,
-.sidebar-recent-row:focus-within .sidebar-recent-settle {
-  opacity: 1;
 }
 
 /* --accent-hover, not --accent: light's accent is under 4.5:1 on a hovered row's hover fill. */
-.sidebar-recent-settle:hover {
+.sidebar-recent-action:hover,
+.sidebar-recent-action[data-state='open'] {
   background: var(--bg-hover);
   color: var(--accent-hover);
 }
 
-.sidebar-recent-settle:focus-visible {
+.sidebar-recent-action:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: -2px;
+}
+
+.sidebar-recent-actions-space {
+  display: none;
+  gap: 2px;
+  margin-right: -2px;
+  visibility: hidden;
+}
+
+.sidebar-recent-actions-space > span {
+  padding: 0 5px;
+  font-size: 11px;
+}
+
+.sidebar-recent-row.has-actions:hover .sidebar-recent-time,
+.sidebar-recent-row.has-actions:focus-within .sidebar-recent-time,
+.sidebar-recent-row.has-actions:has([data-state='open']) .sidebar-recent-time {
+  display: none;
+}
+
+.sidebar-recent-row.has-actions:hover .sidebar-recent-actions-space,
+.sidebar-recent-row.has-actions:focus-within .sidebar-recent-actions-space,
+.sidebar-recent-row.has-actions:has([data-state='open']) .sidebar-recent-actions-space {
+  display: inline-flex;
+}
+
+/* The compact "..." action: off until the sidebar is narrow. */
+.sidebar-recent-action-more {
+  display: none;
+  min-width: 22px;
+  text-align: center;
+}
+
+/* Below a 230 px sidebar a Working or Done row folds Snooze and Settle into
+   "...", whose menu holds the presets and Settle, so the title keeps its room. */
+@container recents (max-width: 213px) {
+  .sidebar-recent-row.snoozeable .sidebar-recent-action-text {
+    display: none;
+  }
+
+  .sidebar-recent-row.snoozeable .sidebar-recent-action-more {
+    display: inline-block;
+  }
 }
 
 .sidebar-recent-row.settleable .sidebar-recent-detail {
   min-width: 42px;
   text-align: right;
-  transition: opacity 0.12s;
-}
-
-.sidebar-recent-row.settleable:hover .sidebar-recent-detail,
-.sidebar-recent-row.settleable:focus-within .sidebar-recent-detail {
-  opacity: 0;
 }
 
 @media (hover: none) {
-  .sidebar-recent-settle {
+  .sidebar-recent-actions {
     opacity: 1;
   }
 
-  .sidebar-recent-row.settleable .sidebar-recent-detail {
-    opacity: 0;
+  .sidebar-recent-row.has-actions .sidebar-recent-time {
+    display: none;
   }
+
+  .sidebar-recent-row.has-actions .sidebar-recent-actions-space {
+    display: inline-flex;
+  }
+}
+
+/* A woken chat: the unread weight and "Woke" in the time cell, until it is opened. */
+.sidebar-recent-row.woke .sidebar-recent-title,
+.sidebar-recent-row.woke .sidebar-recent-time {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* The Snoozed group header toggles its rows (collapsed by default). */
+.sidebar-recent-group-toggle {
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-recent-group-toggle:hover {
+  color: var(--text-primary);
+}
+
+.sidebar-recent-group-toggle:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+.sidebar-recent-chevron {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  transform: rotate(-90deg);
+}
+
+.sidebar-recent-group-toggle[aria-expanded='true'] .sidebar-recent-chevron {
+  transform: none;
 }
 
 .sidebar-recent-line {
@@ -961,7 +1056,7 @@ html, body, #root {
 /* Translucent shows whatever sits behind the window, and a red or amber dot
    on a warm wallpaper disappears. A light ring keeps it readable on any
    backdrop. */
-.theme-translucent .sidebar-recent-dot:not([data-dot='idle']) {
+.theme-translucent .sidebar-recent-dot:not([data-dot='idle']):not([data-dot='snoozed']) {
   box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85);
 }
 
@@ -974,6 +1069,8 @@ html, body, #root {
 }
 
 .sidebar-recent-detail {
+  display: inline-flex;
+  justify-content: flex-end;
   flex: none;
   color: var(--text-muted);
   font-size: 10.5px;
@@ -2111,6 +2208,144 @@ html, body, #root {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+}
+
+/* The footer's Undo notice (Settle, Snooze, Wake) and a refused action's line. */
+.sidebar-inbox-notice {
+  container: inbox-notice / inline-size;
+  width: 100%;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.sidebar-inbox-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sidebar-inbox-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-inbox-title {
+  color: var(--text-primary);
+}
+
+/* A word's space after the title, not the whole gap. */
+.sidebar-inbox-tail {
+  flex: none;
+  margin-left: -3px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A narrow sidebar puts the tail on a second line with Undo and the key, so
+   neither the title nor the wake time is dropped. */
+@container inbox-notice (max-width: 204px) {
+  .sidebar-inbox-line:has(.sidebar-inbox-tail) {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+
+  .sidebar-inbox-line:has(.sidebar-inbox-tail) .sidebar-inbox-text {
+    flex-basis: 100%;
+  }
+
+  .sidebar-inbox-tail {
+    margin-left: 0;
+  }
+}
+
+.sidebar-inbox-undo {
+  flex: none;
+  margin-left: auto;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sidebar-inbox-undo:hover {
+  background: var(--bg-hover);
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.sidebar-inbox-undo:focus-visible {
+  outline: 2px solid var(--border-focus);
+}
+
+.sidebar-inbox-key {
+  flex: none;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.sidebar-context-menu {
+  z-index: 1200;
+  min-width: 170px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.sidebar-context-parent {
+  position: relative;
+}
+
+.sidebar-context-submenu {
+  position: absolute;
+  top: -5px;
+  left: calc(100% + 4px);
+  min-width: 200px;
+}
+
+.sidebar-context-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-context-item[data-danger='true'] {
+  color: var(--error);
+}
+
+.sidebar-context-item:hover,
+.sidebar-context-item:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.sidebar-context-hint {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .sidebar-create-wrap {

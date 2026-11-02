@@ -62,10 +62,12 @@ export function MenuSeparator() {
 interface MenuItemProps extends Omit<ComponentPropsWithoutRef<'button'>, 'type'> {
   checked?: boolean
   hint?: string
+  /** Muted, tabular text on the right edge, such as a time. */
+  trailing?: string
 }
 
 export const MenuItem = forwardRef<HTMLButtonElement, MenuItemProps>(
-  ({ className, checked, hint, children, ...props }, ref) => (
+  ({ className, checked, hint, trailing, children, ...props }, ref) => (
     <button
       ref={ref}
       type="button"
@@ -81,6 +83,11 @@ export const MenuItem = forwardRef<HTMLButtonElement, MenuItemProps>(
         {children}
         {hint && <span className="text-[11.5px] text-[var(--text-muted)]">{hint}</span>}
       </span>
+      {trailing && (
+        <span className="shrink-0 text-[11.5px] text-[var(--text-secondary)] [font-variant-numeric:tabular-nums]">
+          {trailing}
+        </span>
+      )}
       {checked && (
         <svg
           aria-hidden="true"

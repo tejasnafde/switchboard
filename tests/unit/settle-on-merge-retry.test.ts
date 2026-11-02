@@ -31,6 +31,7 @@ vi.mock('../../src/main/db/database', () => ({
     return true
   },
   getConversationTitle: () => 'Fix the thing',
+  getConversationSnooze: () => null,
   resolveRootThreadId: (id: string) => id,
 }))
 vi.mock('../../src/main/pull-requests/service', () => ({
