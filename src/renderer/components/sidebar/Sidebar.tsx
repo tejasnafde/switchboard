@@ -845,9 +845,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
               openCustomSnooze({
                 onSnooze: (at) => void snoozeChat(target, { at }, 'context_menu'),
                 // A chat in the workspace tree has no Recents row: the composer takes focus then.
-                returnFocus: (outcome) => {
-                  if (outcome === 'cancelled') focusRecentRow(session.id, COMPOSER_SELECTOR)
-                },
+                returnFocus: () => focusRecentRow(session.id, COMPOSER_SELECTOR),
               })
             },
           },

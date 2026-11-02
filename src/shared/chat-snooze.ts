@@ -352,7 +352,7 @@ export function wakeLabel(until: number | null, pr: string | null, now: Date): s
   return `${at.getDate()} ${MONTHS[at.getMonth()]}`
 }
 
-/** `Tue 4 Nov at 09:00`, for the custom dialog and the undo notice. */
+/** `Wed 4 Nov at 09:00`, for the custom dialog and the undo notice. */
 export function wakeSentence(until: number): string {
   const at = new Date(until)
   return `${WEEKDAYS[at.getDay()]} ${at.getDate()} ${MONTHS[at.getMonth()]} at ${hhmm(at)}`
