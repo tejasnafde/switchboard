@@ -2213,17 +2213,20 @@ html, body, #root {
 /* The footer's Undo notice (Settle, Snooze, Wake) and a refused action's line. */
 .sidebar-inbox-notice {
   container: inbox-notice / inline-size;
-  display: flex;
-  align-items: center;
-  gap: 6px;
   width: 100%;
   min-width: 0;
   color: var(--text-secondary);
   font-size: 11px;
 }
 
+.sidebar-inbox-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .sidebar-inbox-text {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2234,19 +2237,34 @@ html, body, #root {
   color: var(--text-primary);
 }
 
+/* A word's space after the title, not the whole gap. */
 .sidebar-inbox-tail {
+  flex: none;
+  margin-left: -3px;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-/* A narrow sidebar drops the tail, so the title never shrinks to nothing. */
+/* A narrow sidebar puts the tail on a second line with Undo and the key, so
+   neither the title nor the wake time is dropped. */
 @container inbox-notice (max-width: 204px) {
+  .sidebar-inbox-line:has(.sidebar-inbox-tail) {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+
+  .sidebar-inbox-line:has(.sidebar-inbox-tail) .sidebar-inbox-text {
+    flex-basis: 100%;
+  }
+
   .sidebar-inbox-tail {
-    display: none;
+    margin-left: 0;
   }
 }
 
 .sidebar-inbox-undo {
   flex: none;
+  margin-left: auto;
   padding: 0 3px;
   border: 0;
   border-radius: 3px;

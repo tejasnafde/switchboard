@@ -17,6 +17,7 @@ import {
   presetKindOf,
   type ConversationSnoozedEvent,
   type PresetOption,
+  type SnoozePresetKind,
   type SnoozeRefusal,
   type SnoozeSurface,
 } from '@shared/chat-snooze'
@@ -228,13 +229,21 @@ function undoSettle(undo: Extract<LastUndo, { kind: 'settle' }>): void {
 
 // ---------------------------------------------------------------- snooze and wake
 
-export type SnoozeChoice = { option: PresetOption } | { pr: string }
+/** A menu preset, the PR wake, or the instant the custom dialog built. */
+export type SnoozeChoice = { option: PresetOption } | { pr: string } | { at: number }
+
+/** Whether a snooze would go ahead now, so the row can hand focus on before the answer. */
+export function choiceStands(choice: SnoozeChoice, now: number): boolean {
+  if ('option' in choice) return pickPreset(choice.option, now).ok
+  if ('at' in choice) return choice.at > now
+  return true
+}
 
 /**
- * Snooze a chat from a menu item. A clock-time preset keeps the instant the
- * menu showed and is refused, with a notice, once that has passed; a
- * duration counts from the click. A chat that needs the user is refused here
- * as the backend would.
+ * Snooze a chat from a menu item or the custom dialog. A clock-time preset
+ * keeps the instant the menu showed and is refused, with a notice, once that
+ * has passed, as is a custom time; a duration counts from the click. A chat
+ * that needs the user is refused here as the backend would.
  */
 export async function snoozeChat(
   target: InboxTarget & { needsYou?: boolean },
@@ -248,6 +257,7 @@ export async function snoozeChat(
   }
   let until: number | null = null
   let pr: string | null = null
+  let preset: SnoozePresetKind
   if ('option' in choice) {
     const picked = pickPreset(choice.option, now)
     if (!picked.ok) {
@@ -255,8 +265,18 @@ export async function snoozeChat(
       return false
     }
     until = picked.at
-  } else pr = choice.pr
-  const preset = 'option' in choice ? presetKindOf(choice.option.spec) : 'pr'
+    preset = presetKindOf(choice.option.spec)
+  } else if ('at' in choice) {
+    if (choice.at <= now) {
+      showInboxNotice(refusalText('past'))
+      return false
+    }
+    until = choice.at
+    preset = 'custom'
+  } else {
+    pr = choice.pr
+    preset = 'pr'
+  }
   const before = storedSnooze(target.id)
   emitSnooze(target.id, { snoozedAt: now, snoozedUntil: until, snoozePr: pr, ...NO_MARKER })
   const undo: LastUndo = { kind: 'snooze', id: target.id, title: target.title, machineId: target.machineId, until, pr }

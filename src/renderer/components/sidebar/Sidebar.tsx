@@ -28,6 +28,9 @@ import { useSnoozeStore } from '../../stores/snooze-store'
 import { CHAT_SNOOZE_CAPABILITY, CHAT_SNOOZE_ENABLED, resolvePresets, wakeLabel } from '@shared/chat-snooze'
 import { linkedSnoozePr } from './snooze-pr'
 import type { SnoozePrChoice } from './SnoozeMenu'
+import { openCustomSnooze } from './SnoozeCustomDialog'
+import { focusRecentRow } from './recent-row-focus'
+import { COMPOSER_SELECTOR } from '../ui/focus-return'
 import type { RecentSessionItem } from './recent-sessions'
 import { serializeConversationToMarkdown, suggestedExportFilename } from '../../services/export-markdown'
 import { SidebarFilter } from './SidebarFilter'
@@ -835,6 +838,19 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
             onClick: () => snooze({ option }),
           })),
           ...(pr ? [{ label: `Until PR #${pr.number} changes`, onClick: () => snooze({ pr: pr.key }) }] : []),
+          {
+            label: 'Custom date and time...',
+            onClick: () => {
+              close()
+              openCustomSnooze({
+                onSnooze: (at) => void snoozeChat(target, { at }, 'context_menu'),
+                // A chat in the workspace tree has no Recents row: the composer takes focus then.
+                returnFocus: (outcome) => {
+                  if (outcome === 'cancelled') focusRecentRow(session.id, COMPOSER_SELECTOR)
+                },
+              })
+            },
+          },
         ],
       },
     ]

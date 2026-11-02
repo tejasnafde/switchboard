@@ -34,6 +34,14 @@ describe('palette Snooze entries', () => {
     expect(snoozeCommands(new Date(2026, 10, 2, 10), () => {}).length).toBeGreaterThan(0)
   })
 
+  it('ends with the custom date and time entry', () => {
+    focus('c1')
+    expect(snoozeCommands(new Date(2026, 10, 2, 10), () => {}).at(-1)).toMatchObject({
+      id: 'chat.snooze.custom',
+      label: 'Snooze chat: custom date and time',
+    })
+  })
+
   it('offers none for the landing draft, which has no stored row', () => {
     focus(draftSessionId('local', '/repo'))
     expect(snoozeCommands(new Date(2026, 10, 2, 10), () => {})).toEqual([])

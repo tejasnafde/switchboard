@@ -1,3 +1,5 @@
+export const COMPOSER_SELECTOR = '[data-chat-panel] [contenteditable="true"]'
+
 /**
  * Where focus goes when an overlay with no trigger closes: the element that
  * had focus when it opened, or the chat composer when that element is gone
@@ -6,5 +8,5 @@
  */
 export function focusReturnTarget(saved: Element | null): HTMLElement | null {
   if (saved instanceof HTMLElement && saved !== document.body && saved.isConnected) return saved
-  return document.querySelector<HTMLElement>('[data-chat-panel] [contenteditable="true"]')
+  return document.querySelector<HTMLElement>(COMPOSER_SELECTOR)
 }

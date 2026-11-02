@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { shortcutLabel } from '@shared/shortcuts'
 import { useRenderCount } from '../services/render-counter'
 import { CHAT_SNOOZE_CAPABILITY, CHAT_SNOOZE_ENABLED, resolvePresets, wakeLabel } from '@shared/chat-snooze'
-import { machineSupportsSnooze, snoozeChat, wakeChat } from '../services/chat-inbox'
+import { machineSupportsSnooze, refusalText, showInboxNotice, snoozeChat, wakeChat } from '../services/chat-inbox'
+import { openCustomSnooze } from './sidebar/SnoozeCustomDialog'
 import { useSnoozeStore } from '../stores/snooze-store'
 import { isDraftSessionId } from '@shared/new-chat-draft'
 
@@ -56,8 +57,9 @@ export function commandTargetSessionId(state: {
 
 /**
  * "Snooze chat" for the chat in focus: one entry per preset, resolved when the
- * palette opened (a clock-time entry sends the instant it showed), or "Wake
- * chat" while it is snoozed. A chat that needs the user is refused with the
+ * palette opened (a clock-time entry sends the instant it showed), and one
+ * that opens the custom date and time dialog, or "Wake chat" while it is
+ * snoozed. A chat that needs the user is refused with the
  * sidebar notice, as the backend would refuse it.
  */
 export function snoozeCommands(shownAt: Date, onClose: () => void): Cmd[] {
@@ -81,7 +83,7 @@ export function snoozeCommands(shownAt: Date, onClose: () => void): Cmd[] {
       },
     ]
   const needsYou = (session.pendingRequests?.length ?? 0) > 0 || session.status === 'error'
-  return resolvePresets(shownAt).map((option) => ({
+  const presets: Cmd[] = resolvePresets(shownAt).map((option) => ({
     id: `chat.snooze.${option.label}`,
     group: 'Chat',
     label: `Snooze chat: ${option.label}`,
@@ -91,6 +93,19 @@ export function snoozeCommands(shownAt: Date, onClose: () => void): Cmd[] {
       onClose()
     },
   }))
+  return [
+    ...presets,
+    {
+      id: 'chat.snooze.custom',
+      group: 'Chat',
+      label: 'Snooze chat: custom date and time',
+      run: () => {
+        onClose()
+        if (needsYou) showInboxNotice(refusalText('needs_you'))
+        else openCustomSnooze({ onSnooze: (at) => void snoozeChat(target, { at }, 'palette') })
+      },
+    },
+  ]
 }
 
 /**

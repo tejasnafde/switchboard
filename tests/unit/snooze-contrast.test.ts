@@ -2,7 +2,9 @@
  * Every text surface Snooze adds reads at 4.5:1 or better in dark and light:
  * the menu's times (resting and hovered item), the context submenu's times,
  * a woken row's title and "Woke", a snoozed row, the footer notice and
- * refusal line, the Snoozed header and the composer line.
+ * refusal line, the Snoozed header, the composer line, and the custom date
+ * and time dialog (its days, a disabled day too, weekday heads, chips and
+ * the wake line, resting and hovered).
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -69,11 +71,30 @@ describe.each(Object.keys(themes) as (keyof typeof themes)[])('%s theme Snooze t
       expect(contrastRatio(get(name), get('--bg-secondary'))).toBeGreaterThanOrEqual(4.5)
   })
 
+  it('the custom dialog: days, disabled days, weekday heads, chips and the wake line read on its surface', () => {
+    for (const under of [menu, hoveredOver(theme, menu)]) {
+      // An enabled day, and a disabled or other-month day (secondary text, struck through).
+      expect(contrastRatio(get('--text-primary'), under)).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(get('--text-secondary'), under)).toBeGreaterThanOrEqual(4.5)
+    }
+    expect(contrastRatio(get('--text-secondary'), get('--bg-tertiary'))).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio(get('--text-primary'), get('--bg-tertiary'))).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio(get('--error'), menu)).toBeGreaterThanOrEqual(4.5)
+  })
+
   it('the paint behind each new text is the one tested here', () => {
     const menuFile = readFileSync(resolve(__dirname, '../../src/renderer/components/ui/menu.tsx'), 'utf8')
     expect(menuFile).toContain('text-[var(--text-secondary)] [font-variant-numeric:tabular-nums]')
     expect(css).toMatch(/\.sidebar-context-hint \{\s*color: var\(--text-secondary\);/)
     expect(css).toMatch(/\.sidebar-inbox-notice \{[^}]*color: var\(--text-secondary\);/)
+    const dialog = readFileSync(
+      resolve(__dirname, '../../src/renderer/components/sidebar/SnoozeCustomDialog.tsx'),
+      'utf8',
+    )
+    expect(dialog).toContain('sb-floating-surface')
+    expect(dialog).toContain("off && 'cursor-default text-[var(--text-secondary)] line-through hover:bg-transparent'")
+    expect(dialog).toContain("outside && 'text-[var(--text-secondary)]'")
+    expect(dialog).not.toMatch(/text-\[var\(--text-muted\)\]|opacity-\d+ .*line-through/)
     expect(css).toMatch(
       /\.sidebar-recent-row\.woke \.sidebar-recent-title,\s*\.sidebar-recent-row\.woke \.sidebar-recent-time \{\s*color: var\(--text-primary\);/,
     )

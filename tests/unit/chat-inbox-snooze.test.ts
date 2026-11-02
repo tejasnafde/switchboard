@@ -93,6 +93,27 @@ describe('a menu left open', () => {
   })
 })
 
+describe('a custom date and time', () => {
+  it('sends the composed instant as preset custom, with Undo', async () => {
+    const at = local(13, 0, 4)
+    expect(await inbox.snoozeChat(target, { at }, 'context_menu', local(10))).toBe(true)
+    expect(snoozeConversation).toHaveBeenCalledWith('c1', {
+      until: at,
+      pr: null,
+      preset: 'custom',
+      surface: 'context_menu',
+    })
+    expect(useAgentStore.getState().lastUndo).toMatchObject({ kind: 'snooze', until: at })
+  })
+
+  it('refuses a time that passed while the dialog was open, with a notice', async () => {
+    expect(await inbox.snoozeChat(target, { at: local(10) }, 'row', local(10, 1))).toBe(false)
+    expect(snoozeConversation).not.toHaveBeenCalled()
+    expect(useAgentStore.getState().inboxNotice).toBe('That time has passed. Pick another')
+    expect(inbox.choiceStands({ at: local(10) }, local(10, 1))).toBe(false)
+  })
+})
+
 describe('snooze', () => {
   it('refuses a chat that needs the user, as the backend would', async () => {
     expect(await inbox.snoozeChat({ ...target, needsYou: true }, { pr: 'github:a/b#1' }, 'palette')).toBe(false)

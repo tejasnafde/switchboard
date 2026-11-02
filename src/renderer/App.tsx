@@ -41,6 +41,7 @@ import { UpdateToast } from './components/UpdateToast'
 import { AnalyticsNotice } from './components/AnalyticsNotice'
 import { VisualPreviewHost } from './components/chat/visuals/VisualPreviewHost'
 import { ConfirmHost, unlessConfirmOpen } from './components/ui/confirm'
+import { SnoozeCustomHost } from './components/sidebar/SnoozeCustomDialog'
 import { loadKeyboardOverrides, reloadKeyboardOverrides } from './services/keyboard-overrides'
 import { attachSettingsFileSync } from './services/settings-file-sync'
 import { isShortcutCaptureActive } from '@shared/shortcuts'
@@ -2113,6 +2114,7 @@ export function App() {
       <UpdateToast />
       <AnalyticsNotice />
       <ConfirmHost />
+      <SnoozeCustomHost />
       <VisualPreviewHost />
     </div>
   )
