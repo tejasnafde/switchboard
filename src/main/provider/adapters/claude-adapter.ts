@@ -244,6 +244,13 @@ function claudeCredsKnownPresent(env: Record<string, string>): boolean {
   }
 }
 
+/** Marks the session's config folder signed out, unless a key in the env did the signing in. */
+function noteRefusedLogin(active: ActiveSession): void {
+  const env = buildClaudeQueryEnv(buildClaudeCliEnv(), active.instanceEnv, active.instanceOauthDir)
+  if (env.ANTHROPIC_API_KEY || env.CLAUDE_CODE_OAUTH_TOKEN) return
+  noteClaudeAuthFailure(env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'))
+}
+
 const execFileAsync = promisify(execFile)
 
 /**
@@ -444,6 +451,7 @@ import { noteClaudeChildStarted } from '../claude-orphans'
 import { applyEnvOverlay } from '../env-overlay'
 import { applyClaudeHome, canonicalClaudeHome } from '../claude-home'
 import { createExecutableCache, executableIdentity, managedPath, preferManagedExecutable } from '../managed-bin'
+import { noteClaudeAuthFailure } from '../remote-gate'
 import { commitCatalog, shouldRefreshCatalog, type CatalogCache } from '../model-catalog'
 import { claudeRowCovers, reconcileSelectedModel } from '@shared/model-reconcile'
 import {
@@ -2198,6 +2206,9 @@ export class ClaudeAdapter implements ProviderAdapter {
         // Sidechain errors stay out: a subagent's transient 529 is not the
         // parent turn's failure, and the parent often recovers from it.
         if (errMsg.error || errMsg.message?.model === SYNTHETIC_MODEL) {
+          if (errMsg.error === 'authentication_failed' && !errMsg.parent_tool_use_id) {
+            noteRefusedLogin(active)
+          }
           if (errMsg.error && errMsg.error !== 'rate_limit' && !errMsg.parent_tool_use_id) {
             const text = (errMsg.message?.content ?? [])
               .filter((b) => b.type === 'text' && b.text)

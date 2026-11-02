@@ -47,6 +47,38 @@ function hasNonEmptyFile(path: string): boolean {
   }
 }
 
+/**
+ * Config folders whose Claude login the CLI refused (`authentication_failed`),
+ * each with the stat of its `.credentials.json` at that moment. The file stays
+ * on disk after a login expires, so its presence alone overstates the login;
+ * a new sign-in or a token refresh rewrites it and clears the mark.
+ */
+const refusedClaudeLogins = new Map<string, string>()
+
+function credentialsStamp(configDir: string): string | null {
+  try {
+    const st = statSync(join(configDir, '.credentials.json'))
+    return `${st.mtimeMs}:${st.size}`
+  } catch {
+    return null
+  }
+}
+
+export function noteClaudeAuthFailure(configDir: string): void {
+  const stamp = credentialsStamp(configDir)
+  if (stamp === null) return
+  refusedClaudeLogins.set(configDir, stamp)
+  log.warn(`Claude refused the login in ${configDir}; it counts as signed out until it changes`)
+}
+
+function claudeLoginRefused(configDir: string): boolean {
+  const refused = refusedClaudeLogins.get(configDir)
+  if (refused === undefined) return false
+  if (refused === credentialsStamp(configDir)) return true
+  refusedClaudeLogins.delete(configDir)
+  return false
+}
+
 type RemoteAuthAgent = Extract<AgentType, 'claude-code' | 'codex'>
 
 export interface RemoteProviderAuthCheck {
@@ -167,7 +199,8 @@ export async function checkRemoteProviderAuth(
     ? Boolean(process.env.OPENAI_API_KEY) ||
       hasNonEmptyFile(join(configDir, 'auth.json')) ||
       (await codexLoginStatusSaysLoggedIn(configDir))
-    : Boolean(process.env.ANTHROPIC_API_KEY) || hasNonEmptyFile(join(configDir, '.credentials.json'))
+    : Boolean(process.env.ANTHROPIC_API_KEY) ||
+      (hasNonEmptyFile(join(configDir, '.credentials.json')) && !claudeLoginRefused(configDir))
   // The dir reaches a shell the user pastes into, so it is quoted by the one
   // POSIX-safe quoter rather than a local regex that leaves `$` live.
   const loginCommand = codex
