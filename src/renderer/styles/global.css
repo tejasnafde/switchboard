@@ -1746,6 +1746,13 @@ html, body, #root {
   flex-shrink: 3;
 }
 
+/* The header is the `toolbar` container; this rule sets display, so a utility class cannot hide it. */
+@container toolbar (max-width: 600px) {
+  .chat-identity-parent {
+    display: none;
+  }
+}
+
 .chat-identity-separator {
   flex: none;
   color: var(--text-muted);

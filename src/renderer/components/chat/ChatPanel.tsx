@@ -1469,7 +1469,8 @@ export function ChatPanel({
             // The linked-PR control hides itself when the header is too narrow for it (container query).
             className="chat-panel-header min-h-[32px] shrink-0 gap-[6px] border-b border-[var(--border)] bg-[var(--bg-secondary)] px-[16px] py-[7px] text-[12px]"
           >
-            {/* Plain identity breadcrumb; only consequential state receives color. */}
+            {/* Plain identity breadcrumb; only consequential state receives color. The project crumb, then the
+                branch, leave a narrow header (both are text; the branch is also in Details). */}
             {hasSession ? (
               <div className="chat-identity" title={projectPath}>
                 {identity.breadcrumb.slice(0, -1).map((part, index) => (
@@ -1517,7 +1518,10 @@ export function ChatPanel({
                   </button>
                 )}
                 {identity.branch && (
-                  <span className="chat-identity-branch" title={activeSession?.worktreePath ?? identity.branch}>
+                  <span
+                    className="chat-identity-branch @max-[480px]/toolbar:hidden"
+                    title={activeSession?.worktreePath ?? identity.branch}
+                  >
                     {identity.branch}
                   </span>
                 )}

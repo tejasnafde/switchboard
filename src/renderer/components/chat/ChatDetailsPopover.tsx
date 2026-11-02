@@ -148,13 +148,18 @@ function DetailsBody({
   const pr = useMemo(() => prValue(links.map((link) => linkedPrRow(link, list))), [links, list])
   const { branch, diff } = useGitReads(cwd)
   const changes = changesValue(diff)
-  const usage = useProviderInstanceStore((s) => s.usages[instanceId])
-  const reading = useProviderInstanceStore((s) => Boolean(s.usageLoading[instanceId]))
+  // Usage is read on this Mac, so a remote chat's account limits are not known here.
+  const local = !machineId || machineId === 'local'
+  const stored = useProviderInstanceStore((s) => s.usages[instanceId])
+  const usage = local ? stored : undefined
+  const reading = useProviderInstanceStore((s) => local && Boolean(s.usageLoading[instanceId]))
 
-  // Unforced: main hands back its cached reading when it is fresh, as for Settings > Accounts.
+  // Only a first read: a Claude read can be a keychain prompt, so a reading the store holds is not refreshed here.
   useEffect(() => {
-    void useProviderInstanceStore.getState().loadUsage(instanceId)
-  }, [instanceId])
+    if (local && !useProviderInstanceStore.getState().usages[instanceId]) {
+      void useProviderInstanceStore.getState().loadUsage(instanceId)
+    }
+  }, [instanceId, local])
 
   const bars = usageBars(
     usage,
@@ -198,7 +203,10 @@ function DetailsBody({
         )}
       </Row>
       <MenuSeparator />
-      <MenuItem onClick={onOpenEditor}>{editorLabel(machineId, machineName)}</MenuItem>
+      {/* A popover, not a menu: the menu item look without the menuitem role. */}
+      <MenuItem role={undefined} onClick={onOpenEditor}>
+        {editorLabel(machineId, machineName)}
+      </MenuItem>
       <MenuSeparator />
       <div className="flex flex-col gap-[2px]">
         {bars.map((bar) => (
@@ -241,7 +249,8 @@ export function ChatDetailsPopover(props: ChatDetailsProps) {
         aria-label="Chat details"
         className="sb-floating-surface z-[1200] w-[300px] rounded-[8px] border border-[var(--border-strong)] p-[4px] text-[12px] shadow-[0_6px_24px_rgba(0,0,0,0.45)]"
       >
-        <DetailsBody {...props} onOpenEditor={openEditor} />
+        {/* Keyed by folder, so a chat switch with the popover open drops the old git reads. */}
+        <DetailsBody key={props.cwd ?? ''} {...props} onOpenEditor={openEditor} />
       </PopoverContent>
     </Popover>
   )
