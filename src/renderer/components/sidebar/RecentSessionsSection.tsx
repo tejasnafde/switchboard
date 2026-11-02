@@ -13,7 +13,8 @@ import { SnoozeMenu, type SnoozeMenuExtra, type SnoozePrChoice } from './SnoozeM
 export interface RecentSnoozeProps {
   /** Whether the chat's machine takes Snooze. */
   available: (item: RecentSessionItem) => boolean
-  onSnooze: (item: RecentSessionItem, choice: SnoozeChoice) => void
+  /** Resolves false when the snooze did not happen and the row came back. */
+  onSnooze: (item: RecentSessionItem, choice: SnoozeChoice) => Promise<boolean>
   onWake: (item: RecentSessionItem) => void
   loadPr: (item: RecentSessionItem) => Promise<SnoozePrChoice | null>
   /** The Snoozed group is shut (the default). */
@@ -38,8 +39,8 @@ export function RecentSessionsSection({
   activeSessionId: string | null
   displayedSessionIds?: readonly (string | null)[]
   onSelect: (item: RecentSessionItem) => void
-  /** Settle a "Done recently" row; without it the rows offer no Settle. */
-  onSettle?: (item: RecentSessionItem) => void
+  /** Settle a "Done recently" row (false when it came back); without it the rows offer no Settle. */
+  onSettle?: (item: RecentSessionItem) => Promise<boolean>
   snooze?: RecentSnoozeProps
   /** Right-click on a row: the chat's context menu. */
   onContextMenu?: (item: RecentSessionItem, event: MouseEvent) => void
@@ -71,6 +72,18 @@ export function RecentSessionsSection({
     const next = neighbourAfterRemoval(rowIds, id)
     focusedId.current = next
     if (next) focusRecentRow(next)
+    return next
+  }
+
+  /** A row that came back takes focus again, unless the user moved it since the handoff. */
+  const leaveUntil = (id: string, done: Promise<boolean>) => {
+    const handoff = leave(id)
+    void done.then((ok) => {
+      if (ok || focusedId.current !== handoff) return
+      if (handoff === null && document.activeElement && document.activeElement !== document.body) return
+      focusedId.current = id
+      focusRecentRow(id)
+    })
   }
 
   const renderRow = (item: RecentSessionItem, groupKey: RecentGroupKey) => {
@@ -82,20 +95,20 @@ export function RecentSessionsSection({
     const active = activeSessionId === id
     const canSnooze = !!snooze && (groupKey === 'working' || groupKey === 'done') && snooze.available(item)
     const canSettle = groupKey === 'done' && onSettle !== undefined
-    const canWake = !!snooze && snoozed
+    const canWake = !!snooze && snoozed && snooze.available(item)
     // A narrow sidebar folds Snooze and Settle into one "..." button (CSS), so the title keeps its room.
     const textActions = [canSnooze && 'Snooze', canSettle && 'Settle', canWake && 'Wake'].filter(
       (a): a is string => !!a,
     )
     const settle = () => {
-      leave(id)
-      onSettle?.(item)
+      if (onSettle) leaveUntil(id, onSettle(item))
     }
     const pick = (choice: SnoozeChoice) => {
+      if (!snooze) return
       const leaves = !('option' in choice) || pickPreset(choice.option, Date.now()).ok
-      if (leaves) leave(id)
-      else focusRecentRow(id)
-      snooze?.onSnooze(item, choice)
+      if (!leaves) focusRecentRow(id)
+      const done = snooze.onSnooze(item, choice)
+      if (leaves) leaveUntil(id, done)
     }
     const menuExtras: SnoozeMenuExtra[] = canSettle ? [{ label: 'Settle', onSelect: settle }] : []
     return (
@@ -268,8 +281,8 @@ export function RecentSessionsSection({
       )}
     </div>
   )
-  // "Show more" belongs to Done recently, above Snoozed.
-  const moreAfter = groups.some((group) => group.key === 'done') ? 'done' : groups[groups.length - 1]?.key
+  // "Show more" belongs to Done recently, above Snoozed, also while no Done row is shown.
+  const moreAfter = groups.filter((group) => group.key !== 'snoozed').at(-1)?.key ?? groups[0]?.key
 
   return (
     <section

@@ -55,7 +55,7 @@ const log = createRendererLogger('sidebar')
 import type { Machine } from '@shared/machines'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { RecentSessionsSection } from './RecentSessionsSection'
-import { deriveRecentSessions, recentLiveSignal, type RecentLiveSession } from './recent-sessions'
+import { deriveRecentSessions, recentLiveSignal, recentSessionStatus, type RecentLiveSession } from './recent-sessions'
 import { countLabel, localMachineSummary, recentGroupKey } from './recent-groups'
 import {
   DEFAULT_RECENT_SESSION_LIMIT,
@@ -229,6 +229,15 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     projectPath: string
     session: SessionSummary
   } | null>(null)
+  // One chat menu at a time: both read the same linked PR for Snooze.
+  const openLocalMenu = (menu: NonNullable<typeof contextMenu>) => {
+    setRemoteMenu(null)
+    setContextMenu(menu)
+  }
+  const openRemoteMenu = (menu: NonNullable<typeof remoteMenu>) => {
+    setContextMenu(null)
+    setRemoteMenu(menu)
+  }
   const [mergePickerFor, setMergePickerFor] = useState<{
     sessionId: string
     projectPath: string
@@ -756,11 +765,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
         ? {
             available: (item: RecentSessionItem) => machineSupportsSnooze(item.machineId, CHAT_SNOOZE_CAPABILITY),
             onSnooze: (item: RecentSessionItem, choice: SnoozeChoice) =>
-              void snoozeChat(
-                { id: item.session.id, title: item.session.title, machineId: item.machineId },
-                choice,
-                'row',
-              ),
+              snoozeChat({ id: item.session.id, title: item.session.title, machineId: item.machineId }, choice, 'row'),
             onWake: (item: RecentSessionItem) =>
               void wakeChat({ id: item.session.id, title: item.session.title, machineId: item.machineId }),
             loadPr: (item: RecentSessionItem) => linkedSnoozePr(item.session.id, item.machineId),
@@ -810,7 +815,11 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
       return [{ label: 'Wake', onClick: wake }]
     }
     const item = recentSessions.find((r) => r.session.id === session.id && r.machineId === machineId)
-    if (recentGroupKey(item?.status) === 'needs-you') return []
+    // Recents leaves out child chats; their live state decides for them.
+    const live = item
+      ? undefined
+      : recentLiveSessions.find((s) => s.id === session.id && (s.machineId ?? 'local') === machineId)
+    if (recentGroupKey(item ? item.status : recentSessionStatus(session, live)) === 'needs-you') return []
     const snooze = (choice: SnoozeChoice) => {
       close()
       void snoozeChat(target, choice, 'context_menu')
@@ -955,7 +964,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                       onContextMenu={(e) => {
                         e.preventDefault()
                         e.stopPropagation()
-                        setContextMenu({
+                        openLocalMenu({
                           x: e.clientX,
                           y: e.clientY,
                           sessionId: s.id,
@@ -1228,19 +1237,19 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                 )
               }
               onSettle={(item) =>
-                void settleChat({ id: item.session.id, title: item.session.title, machineId: item.machineId })
+                settleChat({ id: item.session.id, title: item.session.title, machineId: item.machineId })
               }
               snooze={recentSnooze}
               onContextMenu={(item, e) =>
                 item.machineId === 'local'
-                  ? setContextMenu({
+                  ? openLocalMenu({
                       x: e.clientX,
                       y: e.clientY,
                       sessionId: item.session.id,
                       projectPath: item.projectPath,
                       session: item.session,
                     })
-                  : setRemoteMenu({
+                  : openRemoteMenu({
                       x: e.clientX,
                       y: e.clientY,
                       machineId: item.machineId,
@@ -1259,7 +1268,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
             }
             onNewRemoteChat={(machineId, projectPath) => onNewChat?.(projectPath, machineId)}
             onSessionContextMenu={(e, machineId, projectPath, session) =>
-              setRemoteMenu({ x: e.clientX, y: e.clientY, machineId, projectPath, session })
+              openRemoteMenu({ x: e.clientX, y: e.clientY, machineId, projectPath, session })
             }
           >
             <DndContext sensors={sensors} modifiers={[restrictToVerticalAxis]} onDragEnd={handleDragEnd}>

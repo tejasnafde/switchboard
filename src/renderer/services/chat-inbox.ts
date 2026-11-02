@@ -48,6 +48,7 @@ function emitSettled(id: string, settledAt: number | null): void {
 }
 
 function emitSnooze(id: string, fields: ChatSnooze): void {
+  if ('wokeAt' in fields) markerClears.delete(id)
   useSnoozeStore.getState().patch(id, fields)
   for (const listener of snoozeListeners) listener(id, fields)
 }
@@ -67,6 +68,8 @@ let noticeExpiry: ReturnType<typeof setTimeout> | undefined
 const pendingRev = new WeakMap<LastUndo, Promise<number | undefined>>()
 /** The newest snooze revision a broadcast or an answer showed, per chat. */
 const knownRev = new Map<string, number>()
+/** A settle's own clear of a chat's Woke marker, while no later change touched the marker. */
+const markerClears = new Map<string, symbol>()
 
 /** Offer one undo, replacing any other, withdrawn after `INBOX_UNDO_MS` whether or not the notice is mounted. */
 function offerUndo(undo: LastUndo): void {
@@ -116,8 +119,9 @@ export interface InboxTarget {
   machineId: string
 }
 
+/** Bind every call, a local one too, so a remote binding left on the same id does not take it. */
 function routeTo(target: Pick<InboxTarget, 'id' | 'machineId'>): void {
-  if (target.machineId !== 'local') window.api.routing.bind(target.id, target.machineId)
+  window.api.routing.bind(target.id, target.machineId)
 }
 
 /** Whether a chat's backend takes Snooze: always here, on a remote only when it announced `chat_snooze_v1`. */
@@ -139,6 +143,12 @@ function storedSnooze(id: string): Required<ChatSnooze> {
   return snoozeOf(useSnoozeStore.getState().byId[id] ?? {})
 }
 
+/** Put back the state from before a request, unless a broadcast moved the chat to another revision meanwhile. */
+function restoreUnlessMoved(id: string, before: Required<ChatSnooze>): void {
+  if (storedSnooze(id).snoozeRev !== before.snoozeRev) return
+  emitSnooze(id, before)
+}
+
 /** Record the revision an action's answer carries; a newer one already seen means the undo is stale. */
 function answered(undo: LastUndo, id: string, rev: number | undefined): void {
   if (rev === undefined || undo.kind === 'settle') return
@@ -151,20 +161,37 @@ function answered(undo: LastUndo, id: string, rev: number | undefined): void {
 
 // ---------------------------------------------------------------- settle
 
-export async function settleChat(target: InboxTarget): Promise<void> {
+/** Settle a Done row. Resolves false when the settle failed and the row came back. */
+export async function settleChat(target: InboxTarget): Promise<boolean> {
   const settledAt = Date.now()
   emitSettled(target.id, settledAt)
-  if (isWoke(storedSnooze(target.id))) emitSnooze(target.id, NO_MARKER)
+  const before = storedSnooze(target.id)
+  let clear: symbol | undefined
+  if (isWoke(before)) {
+    emitSnooze(target.id, NO_MARKER)
+    clear = Symbol('settle')
+    markerClears.set(target.id, clear)
+  }
   const undo: LastUndo = { kind: 'settle', ...target, settledAt }
   offerUndo(undo)
   try {
     routeTo(target)
     const result = await window.api.app.settleConversation(target.id)
     if (!result.ok) throw new Error('the chat has no stored row')
+    return true
   } catch (err) {
     log.warn(`settle failed for ${target.id}; the row comes back`, err)
     emitSettled(target.id, null)
+    if (clear && markerClears.get(target.id) === clear)
+      emitSnooze(target.id, {
+        wokeAt: before.wokeAt,
+        wokeReason: before.wokeReason,
+        wokePrSummary: before.wokePrSummary,
+      })
     dropUndo(undo)
+    return false
+  } finally {
+    if (clear && markerClears.get(target.id) === clear) markerClears.delete(target.id)
   }
 }
 
@@ -239,17 +266,20 @@ export async function snoozeChat(
     const result = await window.api.app.snoozeConversation(target.id, { until, pr, preset, surface })
     if (!result.ok) {
       log.info(`snooze refused for ${target.id}`, { reason: result.reason })
-      emitSnooze(target.id, before)
+      restoreUnlessMoved(target.id, before)
       dropUndo(undo)
       showInboxNotice(refusalText(result.reason))
       return undefined
     }
-    emitSnooze(target.id, { snoozedUntil: result.until, snoozePr: result.pr, snoozeRev: result.rev })
+    // A broadcast at a newer revision already holds what the chat is now.
+    const seen = knownRev.get(target.id)
+    if (seen === undefined || seen <= result.rev)
+      emitSnooze(target.id, { snoozedUntil: result.until, snoozePr: result.pr, snoozeRev: result.rev })
     answered(undo, target.id, result.rev)
     return result.rev
   })().catch((err: unknown) => {
     log.warn(`snooze failed for ${target.id}; the row comes back`, err)
-    emitSnooze(target.id, before)
+    restoreUnlessMoved(target.id, before)
     dropUndo(undo)
     return undefined
   })
@@ -271,25 +301,30 @@ export async function wakeChat(target: InboxTarget, surface: 'row' | 'composer' 
     pr: before.snoozePr,
   }
   offerUndo(undo)
-  const answer = (async () => {
+  const answer: Promise<{ woke: boolean; rev?: number }> = (async () => {
     routeTo(target)
     const result = await window.api.app.unsnoozeConversation(target.id)
     if (!result.ok) {
       // It had already woken or changed; the broadcast carries what it is now.
       log.info(`wake found ${target.id} not snoozed`, { surface })
       dropUndo(undo)
-      return undefined
+      return { woke: false }
     }
-    answered(undo, target.id, result.rev)
-    return result.rev
+    // A backend that sends no revision woke the chat, but an Undo could not name the revision to restore.
+    if (result.rev === undefined) dropUndo(undo)
+    else answered(undo, target.id, result.rev)
+    return { woke: true, rev: result.rev }
   })().catch((err: unknown) => {
     log.warn(`wake failed for ${target.id}; the snooze stays`, err)
-    emitSnooze(target.id, before)
+    restoreUnlessMoved(target.id, before)
     dropUndo(undo)
-    return undefined
+    return { woke: false }
   })
-  pendingRev.set(undo, answer)
-  return (await answer) !== undefined
+  pendingRev.set(
+    undo,
+    answer.then((a) => a.rev),
+  )
+  return (await answer).woke
 }
 
 async function revOf(undo: LastUndo): Promise<number | undefined> {

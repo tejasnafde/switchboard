@@ -92,7 +92,7 @@ import { ProviderChannels } from '@shared/ipc-channels'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import { isUndoKeydown, resolveGlobalKeydown } from './services/global-keybindings'
 import { noteChatOpened, undoLastInbox } from './services/chat-inbox'
-import { focusRecentRow } from './components/sidebar/recent-row-focus'
+import { focusUndoneRow } from './components/sidebar/recent-row-focus'
 import { toggleChatDetails } from './components/chat/ChatDetailsPopover'
 import { isSecretCardKeyTarget } from './components/chat/secret-request-card-model'
 import {
@@ -1141,13 +1141,13 @@ export function App() {
         // startSession, sendTurn) to its machine before the first one fires.
         // Keyed by session.id, which is arg0 of all those calls.
         window.api.routing.bind(session.id, effectiveMachineId)
-        noteChatOpened(session.id, effectiveMachineId)
 
         const currentId = useLayoutStore.getState().focusedChatSessionId()
         const current = storeState.sessions.find((s) => s.id === currentId)
         const placeAndEvict = (sessionId: string) => {
           if (!isCurrentOpen()) return
           placeSession(sessionId)
+          noteChatOpened(session.id, effectiveMachineId)
           if (
             current &&
             shouldEvictMessages(current) &&
@@ -1549,10 +1549,11 @@ export function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Keys typed into an agent's secret request belong to that card only.
       if (isSecretCardKeyTarget(e.target)) return
-      if (useAgentStore.getState().lastUndo && isUndoKeydown(e, document.activeElement)) {
+      const lastUndo = useAgentStore.getState().lastUndo
+      if (lastUndo && isUndoKeydown(e, document.activeElement)) {
         e.preventDefault()
         const restored = undoLastInbox()
-        if (restored) focusRecentRow(restored)
+        if (restored) focusUndoneRow(restored, lastUndo.kind)
         return
       }
       const action = resolveGlobalKeydown(e)

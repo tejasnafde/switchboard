@@ -24,7 +24,7 @@ const STATUS_PRIORITY: Record<RecentSessionStatus, number> = {
   done: 1,
 }
 
-function recentSessionStatus(
+export function recentSessionStatus(
   session: SessionSummary,
   live: RecentLiveSession | undefined,
 ): RecentSessionStatus | undefined {

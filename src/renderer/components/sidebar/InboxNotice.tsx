@@ -3,7 +3,7 @@ import { undoLastInbox } from '../../services/chat-inbox'
 import { UNDO_BINDING, undoKeyName } from '../../services/global-keybindings'
 import { formatBinding } from '@shared/shortcuts'
 import { prNumberOf, wakeLabel } from '@shared/chat-snooze'
-import { focusRecentRow } from './recent-row-focus'
+import { focusUndoneRow } from './recent-row-focus'
 
 /** The notice's words: what was done, the chat, and a tail a narrow sidebar drops. */
 export function undoNoticeParts(undo: LastUndo, now: Date): { verb: string; title: string; tail: string } {
@@ -58,8 +58,9 @@ export function InboxNotice() {
             type="button"
             className="sidebar-inbox-undo"
             onClick={() => {
+              const kind = undo?.kind ?? 'settle'
               const restored = undoLastInbox()
-              if (restored) focusRecentRow(restored)
+              if (restored) focusUndoneRow(restored, kind)
             }}
           >
             Undo

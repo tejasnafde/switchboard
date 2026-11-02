@@ -50,6 +50,8 @@ export function SnoozeMenu({
   const [options, setOptions] = useState<PresetOption[]>([])
   const [pr, setPr] = useState<SnoozePrChoice | null>(null)
   const picked = useRef(false)
+  /** Counts menu opens, so a PR read from an earlier open never replaces a later one. */
+  const opens = useRef(0)
 
   const openChange = (next: boolean) => {
     if (next) {
@@ -59,7 +61,13 @@ export function SnoozeMenu({
       setOptions(resolvePresets(at))
       setPr(null)
       picked.current = false
-      loadPr?.().then(setPr, (err: unknown) => log.warn('reading the linked PRs failed', err))
+      const open = ++opens.current
+      loadPr?.().then(
+        (found) => {
+          if (open === opens.current) setPr(found)
+        },
+        (err: unknown) => log.warn('reading the linked PRs failed', err),
+      )
     }
     setOpen(next)
   }

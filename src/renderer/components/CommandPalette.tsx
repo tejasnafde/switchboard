@@ -14,6 +14,7 @@ import { useRenderCount } from '../services/render-counter'
 import { CHAT_SNOOZE_CAPABILITY, CHAT_SNOOZE_ENABLED, resolvePresets, wakeLabel } from '@shared/chat-snooze'
 import { machineSupportsSnooze, snoozeChat, wakeChat } from '../services/chat-inbox'
 import { useSnoozeStore } from '../stores/snooze-store'
+import { isDraftSessionId } from '@shared/new-chat-draft'
 
 const log = createRendererLogger('command-palette')
 
@@ -63,7 +64,7 @@ export function snoozeCommands(shownAt: Date, onClose: () => void): Cmd[] {
   if (!CHAT_SNOOZE_ENABLED) return []
   const sid = commandTargetSessionId(useLayoutStore.getState())
   const session = sid ? useAgentStore.getState().sessions.find((s) => s.id === sid) : undefined
-  if (!sid || !session) return []
+  if (!sid || !session || isDraftSessionId(sid)) return []
   const machineId = session.machineId ?? 'local'
   if (!machineSupportsSnooze(machineId, CHAT_SNOOZE_CAPABILITY)) return []
   const target = { id: sid, title: session.title ?? 'Untitled chat', machineId }

@@ -7,9 +7,19 @@ export function neighbourAfterRemoval(ids: readonly string[], id: string): strin
   return ids[index + 1] ?? ids[index - 1] ?? null
 }
 
-/** Focus a Recents row once the list has re-rendered. */
-export function focusRecentRow(id: string): void {
+/** The Snoozed group's header, which holds focus for a row the shut group does not show. */
+export const SNOOZED_GROUP_TOGGLE = '.sidebar-recent-group[data-group="snoozed"] .sidebar-recent-group-toggle'
+
+/** Focus a Recents row once the list has re-rendered, or `fallback` when the row is not shown. */
+export function focusRecentRow(id: string, fallback?: string): void {
   requestAnimationFrame(() => {
-    document.querySelector<HTMLElement>(`.sidebar-recent-row-button[data-recent-id="${CSS.escape(id)}"]`)?.focus()
+    const row = document.querySelector<HTMLElement>(`.sidebar-recent-row-button[data-recent-id="${CSS.escape(id)}"]`)
+    const target = row ?? (fallback ? document.querySelector<HTMLElement>(fallback) : null)
+    target?.focus()
   })
+}
+
+/** Focus the row an Undo restored; an Undo of a Wake puts the chat back in the Snoozed group, which can be shut. */
+export function focusUndoneRow(id: string, kind: 'settle' | 'snooze' | 'wake'): void {
+  focusRecentRow(id, kind === 'wake' ? SNOOZED_GROUP_TOGGLE : undefined)
 }

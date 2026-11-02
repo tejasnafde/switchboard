@@ -45,7 +45,7 @@ const item = (id: string, status: RecentSessionItem['status'], session: Partial<
 
 const snoozeProps = (over: Partial<RecentSnoozeProps> = {}): RecentSnoozeProps => ({
   available: () => true,
-  onSnooze: vi.fn(),
+  onSnooze: vi.fn(async () => true),
   onWake: vi.fn(),
   loadPr: async () => ({ key: 'github:acme/app#512', number: 512 }),
   collapsed: true,
@@ -72,11 +72,10 @@ const render = (
   items: RecentSessionItem[],
   snooze: RecentSnoozeProps | undefined = snoozeProps(),
   onSelect = vi.fn(),
+  onSettle: (item: RecentSessionItem) => Promise<boolean> = async () => true,
 ) =>
   act(() =>
-    root.render(
-      createElement(RecentSessionsSection, { items, activeSessionId: null, onSelect, onSettle: vi.fn(), snooze }),
-    ),
+    root.render(createElement(RecentSessionsSection, { items, activeSessionId: null, onSelect, onSettle, snooze })),
   )
 const row = (id: string) =>
   container.querySelector<HTMLElement>(`[data-recent-id="${id}"]`)?.closest<HTMLElement>('.sidebar-recent-row') ?? null
@@ -141,7 +140,7 @@ describe('the narrow sidebar', () => {
 
 describe('the Snooze menu', () => {
   it('lists the presets with their times, the linked PR, and runs the item picked', async () => {
-    const onSnooze = vi.fn()
+    const onSnooze = vi.fn(async () => true)
     render([item('w', 'working'), item('d', undefined)], snoozeProps({ onSnooze }))
     const trigger = row('w')!.querySelector<HTMLButtonElement>('button[aria-label="Snooze Chat w"]')!
     act(() => trigger.click())
@@ -238,6 +237,20 @@ describe('the Snoozed group', () => {
     act(() => row('s1')!.querySelector<HTMLButtonElement>('button[aria-label="Wake Chat s1"]')!.click())
     expect(onWake).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ id: 's1' }) }))
   })
+
+  it('offers no Wake for a machine whose backend cannot take it', () => {
+    render(snoozed, snoozeProps({ collapsed: false, available: () => false }))
+    expect(labels('s1')).toEqual([])
+  })
+
+  it('stays below Show more when Needs you and Working rows fill the limit', () => {
+    const urgent = ['a', 'b', 'c', 'e'].map((id) => item(id, 'working'))
+    render([...urgent, item('d', undefined), ...snoozed])
+    const order = [...container.querySelector('.sidebar-recents')!.children].map((el) =>
+      el.classList.contains('sidebar-recents-actions') ? 'more' : el.getAttribute('data-group'),
+    )
+    expect(order).toEqual(['working', 'more', 'snoozed'])
+  })
 })
 
 describe('keyboard focus', () => {
@@ -288,5 +301,31 @@ describe('keyboard focus', () => {
     )!
     act(() => next.click())
     await vi.waitFor(() => expect(document.activeElement?.getAttribute('data-recent-id')).toBe('c'))
+  })
+
+  it('comes back to a row whose snooze was refused, while the handoff still holds it', async () => {
+    let refuse: (ok: boolean) => void = () => {}
+    const onSnooze = vi.fn(() => new Promise<boolean>((done) => (refuse = done)))
+    render([item('a', undefined), item('b', undefined), item('c', undefined)], snoozeProps({ onSnooze }))
+    act(() => row('b')!.querySelector<HTMLButtonElement>('button[aria-label="Snooze Chat b"]')!.click())
+    const next = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) =>
+      b.textContent?.startsWith('Tomorrow morning'),
+    )!
+    act(() => next.click())
+    await vi.waitFor(() => expect(document.activeElement?.getAttribute('data-recent-id')).toBe('c'))
+    await act(async () => refuse(false))
+    await vi.waitFor(() => expect(document.activeElement?.getAttribute('data-recent-id')).toBe('b'))
+  })
+
+  it('leaves focus where the user moved it when a settle fails later', async () => {
+    let fail: (ok: boolean) => void = () => {}
+    const onSettle = vi.fn(() => new Promise<boolean>((done) => (fail = done)))
+    render([item('a', undefined), item('b', undefined), item('c', undefined)], snoozeProps(), vi.fn(), onSettle)
+    act(() => row('b')!.querySelector<HTMLButtonElement>('button[aria-label="Settle Chat b"]')!.click())
+    await vi.waitFor(() => expect(document.activeElement?.getAttribute('data-recent-id')).toBe('c'))
+    container.querySelector<HTMLButtonElement>('[data-recent-id="a"]')!.focus()
+    await act(async () => fail(false))
+    await new Promise((done) => requestAnimationFrame(done))
+    expect(document.activeElement?.getAttribute('data-recent-id')).toBe('a')
   })
 })

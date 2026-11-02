@@ -117,6 +117,27 @@ describe('snooze', () => {
     expect(useAgentStore.getState().lastUndo).toBeNull()
     expect(useAgentStore.getState().inboxNotice).toBe('A chat that needs you cannot be snoozed')
   })
+
+  it('keeps a newer broadcast when the backend refuses after it', async () => {
+    snoozeConversation.mockImplementationOnce(async () => {
+      inbox.applySnoozedEvent(event({ conversationId: 'r1', snoozedAt: 7, snoozePr: 'github:a/b#2', snoozeRev: 3 }))
+      return { ok: false, reason: 'stale' }
+    })
+    await inbox.snoozeChat({ ...target, id: 'r1' }, { pr: 'github:a/b#1' }, 'row')
+    expect(useSnoozeStore.getState().byId.r1).toMatchObject({ snoozedAt: 7, snoozePr: 'github:a/b#2', snoozeRev: 3 })
+    expect(useAgentStore.getState().lastUndo).toBeNull()
+    expect(useAgentStore.getState().inboxNotice).toBe('The chat changed since. Nothing to undo')
+  })
+})
+
+describe('wake', () => {
+  it('counts as done when the backend sends no revision, and offers no Undo it could not send', async () => {
+    useSnoozeStore.getState().patch('w1', { snoozedAt: 1, snoozedUntil: local(20), snoozeRev: 2 })
+    unsnoozeConversation.mockImplementationOnce(async () => ({ ok: true }))
+    expect(await inbox.wakeChat({ ...target, id: 'w1' })).toBe(true)
+    expect(useSnoozeStore.getState().byId.w1?.snoozedAt).toBeNull()
+    expect(useAgentStore.getState().lastUndo).toBeNull()
+  })
 })
 
 describe('the one Undo', () => {
@@ -151,6 +172,8 @@ describe('the one Undo', () => {
     })
     await inbox.snoozeChat({ ...target, id: 'c1' }, { option: option('Next week', local(10)) }, 'row', local(10))
     expect(useAgentStore.getState().lastUndo).toBeNull()
+    // The older answer does not replace what the broadcast showed.
+    expect(useSnoozeStore.getState().byId.c1).toMatchObject({ snoozeRev: 9, snoozedUntil: null })
   })
 
   it('of a snooze sends the revision, and says so when the backend finds it stale', async () => {
@@ -211,6 +234,25 @@ describe('the Woke marker', () => {
     useSnoozeStore.getState().patch('c1', { snoozedAt: null, wokeAt: 5, wokeReason: 'time' })
     await inbox.settleChat(target)
     expect(useSnoozeStore.getState().byId.c1?.wokeAt).toBeNull()
+  })
+
+  it('comes back when the settle fails', async () => {
+    useSnoozeStore.getState().patch('m1', { snoozedAt: null, wokeAt: 5, wokeReason: 'time' })
+    settleConversation.mockImplementationOnce(async () => {
+      throw new Error('offline')
+    })
+    expect(await inbox.settleChat({ ...target, id: 'm1' })).toBe(false)
+    expect(useSnoozeStore.getState().byId.m1).toMatchObject({ wokeAt: 5, wokeReason: 'time' })
+  })
+
+  it('stays as a broadcast left it when the settle fails after it', async () => {
+    useSnoozeStore.getState().patch('m2', { snoozedAt: null, wokeAt: 5, wokeReason: 'time' })
+    settleConversation.mockImplementationOnce(async () => {
+      inbox.applySnoozedEvent(event({ conversationId: 'm2', snoozedAt: 8, snoozedUntil: local(20), snoozeRev: 4 }))
+      throw new Error('offline')
+    })
+    expect(await inbox.settleChat({ ...target, id: 'm2' })).toBe(false)
+    expect(useSnoozeStore.getState().byId.m2).toMatchObject({ wokeAt: null, snoozedAt: 8 })
   })
 
   it('does nothing for a chat that is not woke', () => {
