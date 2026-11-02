@@ -178,7 +178,7 @@ export class HubSettler {
         this.host.forget(child.childId)
       }
       const remoteRows = await this.settleRemote(remoteChildren, parentCwd, failed)
-      if (stopped.length > 0 || remoteRows.settled > 0) this.host.changed(parentId)
+      if (stopped.length > 0 || remoteRows.rows.length > 0) this.host.changed(parentId)
       for (const [i, row] of rows.entries()) {
         if (row.worktree !== 'remove') continue
         const problem = await this.removeWorktree(stopped[i]!)
@@ -196,7 +196,7 @@ export class HubSettler {
         kept,
         stopFailed: failed.length,
         killed,
-        remotePending: remoteRows.pending,
+        remotePending: remoteRows.pending.length,
       })
       log.info('children settled', {
         parentId,
@@ -204,10 +204,14 @@ export class HubSettler {
         removed,
         kept,
         stopFailed: failed.length,
-        remotePending: remoteRows.pending,
+        remotePending: remoteRows.pending.length,
         how,
       })
-      const text = rows.length > 0 ? hubSettleResult(rows) : 'Nothing was settled.'
+      // A child whose machine is not connected is not settled yet: its own line, not in the count.
+      const waiting = remoteRows.pending.length
+        ? [`Not settled yet, each settles on its machine when that machine connects: ${remoteRows.pending.join(', ')}.`]
+        : []
+      const text = [rows.length > 0 ? hubSettleResult(rows) : 'Nothing was settled.', ...waiting].join('\n')
       if (failed.length === 0) return remote ? { ok: false, text: `${text}\n${remote}` } : { ok: true, text, rows }
       return {
         ok: false,
@@ -223,21 +227,21 @@ export class HubSettler {
 
   /**
    * Each child on another machine settles there; a machine that is not
-   * connected keeps it pending (the row stays open here). A refusal joins `failed`.
+   * connected keeps it pending (the row stays open here, named in `pending`).
+   * A refusal joins `failed`.
    */
   private async settleRemote(
     children: readonly HubChildRow[],
     parentCwd: string,
     failed: HubChildRow[],
-  ): Promise<{ rows: HubSettleRowView[]; settled: number; pending: number }> {
+  ): Promise<{ rows: HubSettleRowView[]; pending: string[] }> {
     const remote = this.host.remote
-    if (!remote || children.length === 0) return { rows: [], settled: 0, pending: 0 }
+    if (!remote || children.length === 0) return { rows: [], pending: [] }
     const head = await this.io.git(parentCwd, ['rev-parse', 'HEAD'])
     const parentHead = head.code === 0 && /^[0-9a-f]{40,64}$/.test(head.stdout.trim()) ? head.stdout.trim() : null
     const results = await Promise.allSettled(children.map((c) => remote.settle(c, parentHead)))
     const rows: HubSettleRowView[] = []
-    let settled = 0
-    let pending = 0
+    const pending: string[] = []
     for (const [i, r] of results.entries()) {
       const child = children[i]!
       if (r.status === 'rejected') {
@@ -246,18 +250,13 @@ export class HubSettler {
         continue
       }
       if (r.value.status === 'pending') {
-        pending++
-        rows.push({
-          ...this.remotePlanRow(child),
-          keepReason: `it settles on ${remote.machineName(child)} when that machine connects`,
-        })
+        pending.push(`${child.title} (${remote.machineName(child)})`)
         continue
       }
-      settled++
       this.host.forget(child.childId)
       rows.push(r.value.row)
     }
-    return { rows, settled, pending }
+    return { rows, pending }
   }
 
   /** The child's stop, then the rest of its agent's process tree. The processes killed. */
@@ -325,12 +324,15 @@ export class HubSettler {
     try {
       // A chat may have opened the worktree since the plan read it.
       if (worktree && otherWorktreeUsers(worktree, child.childId) > 0) return 'another chat or card works in it'
-      const snapshot = await service.getWorktreeCreation(key)
-      if (snapshot.owner.kind !== 'conversation' || snapshot.owner.conversationId !== child.childId)
-        return 'the worktree was not made for this child'
+      const ownedByChild = (snapshot: Awaited<ReturnType<typeof service.getWorktreeCreation>>) =>
+        snapshot.owner.kind === 'conversation' && snapshot.owner.conversationId === child.childId
+      if (!ownedByChild(await service.getWorktreeCreation(key))) return 'the worktree was not made for this child'
       if (worktree) await removeDependencyLinks(worktree)
+      // Read again after the unlink: the removal acts on this revision, and its owner is checked on it.
+      const current = await service.getWorktreeCreation(key)
+      if (!ownedByChild(current)) return 'the worktree was not made for this child'
       const remove = () =>
-        service.actOnWorktreeCreation({ ...key, expectedRevision: snapshot.revision, action: 'remove' })
+        service.actOnWorktreeCreation({ ...key, expectedRevision: current.revision, action: 'remove' })
       const done = await (getHubParent(child.parentId)?.remoteHub ? asThisMachine(remove) : remove())
       if (done.cleanupDisposition === 'removed') return null
       return done.error?.message ?? 'git refused to remove it'

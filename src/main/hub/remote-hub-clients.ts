@@ -166,7 +166,7 @@ export class RemoteHubClients {
       log.warn(`no outbox pull from machine ${machineId}: ${err instanceof Error ? err.message : String(err)}`)
       return false
     }
-    const problem = await client.ready
+    const problem = await this.readyWithin(client)
     return !problem && this.clients.get(machineId) === client && client.canOutbox
   }
 
@@ -183,8 +183,21 @@ export class RemoteHubClients {
       log.warn(`no control client for machine ${machineId}: ${err instanceof Error ? err.message : String(err)}`)
       return false
     }
-    const problem = await client.ready
+    const problem = await this.readyWithin(client)
     return !problem && this.clients.get(machineId) === client && this.control.get(machineId) === true
+  }
+
+  /** The client's `ready`, or a problem when it does not come within the call timeout. */
+  private async readyWithin(client: Client): Promise<string | null> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<string>((resolve) => {
+      timer = setTimeout(() => resolve('no ready in time'), this.callTimeoutMs)
+    })
+    try {
+      return await Promise.race([client.ready, late])
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   /** What the machine's last ready said about the control channels; `unknown` before its first this run. */
@@ -304,6 +317,11 @@ export class RemoteHubClients {
     const machines = this.deps.machines()
     await Promise.all(machines.map((m) => this.refresh(m.id, HUB_DESCRIBE_MAX_AGE_MS)))
     return machines.map((m) => this.entry(m))
+  }
+
+  /** Reads a connected machine's description now, whatever the age of the cached one. */
+  describeNow(machineId: string): Promise<void> {
+    return this.refresh(machineId, 0)
   }
 
   /** The cached description and its time, for tests and later callers. */

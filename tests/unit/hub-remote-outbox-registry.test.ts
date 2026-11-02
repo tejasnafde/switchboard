@@ -158,14 +158,17 @@ type Internals = {
     text: string,
     delivery: 'queue' | 'steer',
   ): Promise<{ ok: true } | { ok: false; reason: string }>
-  peerLinks: { checkSend(from: string, to: string, now: number): { linked: boolean; ok?: boolean } }
+  peerLinks: {
+    checkSend(from: string, to: string, now: number): { linked: boolean; ok?: boolean }
+    syncLineage(pairs: ReadonlyArray<readonly [string, string]>, now: number): string[]
+  }
   hubRemoteOutboxHost(clients: unknown): HubRemoteOutboxHost
   hubRemote: unknown
   settleChildren(parentId: string, archiveParent: boolean): Promise<{ status: string; text: string }>
 }
 
 /** The desktop's control, as a fake that records what would go to the child's machine. */
-function fakeControl(opts: { available?: boolean; refuse?: string } = {}) {
+function fakeControl(opts: { available?: boolean; refuse?: string; whileReady?: () => void } = {}) {
   const calls: Array<{ op: string; args: unknown[] }> = []
   return {
     calls,
@@ -175,7 +178,10 @@ function fakeControl(opts: { available?: boolean; refuse?: string } = {}) {
     isSettling: () => false,
     factsOf: () => null,
     deliver: async (...args: unknown[]) => {
-      calls.push({ op: 'deliver', args: [(args[0] as HubChildRow).childId, ...args.slice(1)] })
+      // The client is ready: the registry's check runs, then the request is written.
+      opts.whileReady?.()
+      ;(args[4] as (() => void) | undefined)?.()
+      calls.push({ op: 'deliver', args: [(args[0] as HubChildRow).childId, ...args.slice(1, 4)] })
       if (opts.refuse) throw new Error(opts.refuse)
     },
     stop: async (c: HubChildRow, by: string) => {
@@ -337,6 +343,28 @@ describe('a parent message to its child on another machine (flag hub_remote_chil
     ).rejects.toThrow()
   })
 
+  it('writes nothing there when the edge goes while the client gets ready, and gives both charges back', async () => {
+    const { registry, internals } = await setup()
+    state.remoteFlag = true
+    let removed = false
+    const control = fakeControl({
+      whileReady: () => {
+        if (removed) return
+        removed = true
+        internals.peerLinks.syncLineage([], Date.now())
+      },
+    })
+    internals.hubRemote = control
+    const send = () =>
+      registry.deliverPeerMessage({ fromThreadId: 'parent1', targetThreadId: 'rchild', text: 'x', initiator: 'agent' })
+    await expect(send()).rejects.toThrow('was removed while this message was being prepared')
+    expect(control.calls).toEqual([])
+    // With the edge back, the same text goes: the pair guard was given back.
+    internals.peerLinks.syncLineage([['parent1', 'rchild']], Date.now())
+    await send()
+    expect(control.calls).toHaveLength(1)
+  })
+
   it('keeps the old "not running" refusal with the flag off', async () => {
     const { registry, internals } = await setup()
     const control = fakeControl()
@@ -483,12 +511,15 @@ describe('archive of a parent with children on another machine', () => {
 })
 
 describe('pending stops and the hub client', () => {
-  it('are sent again when the socket of a connected machine reconnects', async () => {
+  it('are sent again, and the views read again, when the socket of a connected machine reconnects', async () => {
     const { registry } = await setup()
     const flushed: string[] = []
-    const flush = vi.spyOn(HubRemoteControl.prototype, 'flush').mockImplementation(async (machineId: string) => {
-      flushed.push(machineId)
-    })
+    // `connected` sends the pending stops first, then reads the views again.
+    const connected = vi
+      .spyOn(HubRemoteControl.prototype, 'connected')
+      .mockImplementation(async (machineId: string) => {
+        flushed.push(machineId)
+      })
     let resync: ((machineId: string) => void) | null = null
     const clients = {
       setMachineListener: () => {},
@@ -502,6 +533,6 @@ describe('pending stops and the hub client', () => {
     registry.setRemoteHubClients(clients)
     resync!('vm1')
     expect(flushed).toEqual(['vm1'])
-    flush.mockRestore()
+    connected.mockRestore()
   })
 })

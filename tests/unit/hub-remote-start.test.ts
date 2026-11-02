@@ -755,6 +755,44 @@ describe('list_children and read_child on a child on another machine', () => {
   })
 })
 
+describe('list_children of a child whose machine is ahead of the desktop row', () => {
+  it("shows the machine's failed or settled phase over an open desktop row", async () => {
+    const vm = await bootVm()
+    const d = desktop({ vm1: { name: 'Work VM', url: vm.url } })
+    const [child] = await runBatch(d, [task('Remote', { machine: 'vm1' })])
+    expect(db.getHubChild(child!.childId)!.phase).toBe('open')
+    const listed = async (phase: string) => {
+      const ctx = {
+        parent: () => parent(),
+        starter: d.starter,
+        resources: () => undefined,
+        publish() {},
+        subagents: () => ({ running: 0, done: 0, failed: 0 }),
+        gitStats: async () => null,
+        conflicts: async () => new Map(),
+        remote: {
+          refresh: async () => {},
+          factsOf: () => ({
+            machineId: 'vm1',
+            machine: 'Work VM',
+            connected: true,
+            state: { phase, state: phase === 'open' ? 'working' : 'failed', waitingForSlot: false },
+            ageMs: 0,
+            stopping: false,
+          }),
+        },
+      } as unknown as HubMcpToolContext
+      const r = await buildHubMcpTools(ctx)
+        .find((t) => t.name === 'list_children')!
+        .call({})
+      return JSON.parse((r.content[0] as { text: string }).text).children[0].phase
+    }
+    expect(await listed('failed_start')).toBe('failed_start')
+    expect(await listed('settled')).toBe('settled')
+    expect(await listed('open')).toBe('open')
+  })
+})
+
 describe('settle with children on other machines', () => {
   const settleHost = (): HubSettleHost => ({
     sessionFacts: () => ({ running: false, cards: 0, queued: 0 }),

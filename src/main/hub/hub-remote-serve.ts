@@ -21,10 +21,12 @@
 import { HubRemoteChannels } from '@shared/ipc-channels'
 import {
   HUB_REMOTE_CHANGED_COALESCE_MS,
+  HUB_REMOTE_CHANGED_MAX_IDS,
   HUB_REMOTE_NOT_OWN_TEXT,
   HUB_REMOTE_VIEW_MAX_CHILDREN,
   hubRemoteRefusal,
   parseHubRemoteChildRequest,
+  parseHubRemoteSettleRow,
   parseHubRemoteDeliverRequest,
   parseHubRemoteMoveRequest,
   parseHubRemoteReadRequest,
@@ -95,6 +97,38 @@ const toolAnswer = (r: McpToolResult): HubRemoteToolAnswer => ({
   isError: r.isError === true,
 })
 
+/** At most `HUB_REMOTE_VIEW_MAX_CHILDREN` rows: every open child, then the newest settled ones, in list order. */
+function viewRows(rows: HubChildRow[]): HubChildRow[] {
+  if (rows.length <= HUB_REMOTE_VIEW_MAX_CHILDREN) return rows
+  const keep = new Set(rows.filter((c) => isOpenChildPhase(c.phase)).slice(-HUB_REMOTE_VIEW_MAX_CHILDREN))
+  for (let i = rows.length - 1; i >= 0 && keep.size < HUB_REMOTE_VIEW_MAX_CHILDREN; i--) keep.add(rows[i]!)
+  return rows.filter((c) => keep.has(c))
+}
+
+/** The settle row of a child settled here, from what its settle stored; null when it stored none. */
+function storedSettleRow(child: HubChildRow): HubSettleRowView | null {
+  let stored: unknown
+  try {
+    stored = child.settleJson ? JSON.parse(child.settleJson) : null
+  } catch (err) {
+    log.warn(`child ${child.childId} has a settle record that is not JSON`, err)
+    return null
+  }
+  if (!stored || typeof stored !== 'object') return null
+  const { worktree, keepReason } = stored as Record<string, unknown>
+  return parseHubRemoteSettleRow(
+    {
+      merged: null,
+      clean: null,
+      branch: child.branch,
+      worktree,
+      ...(typeof keepReason === 'string' ? { keepReason } : {}),
+    },
+    child.childId,
+    child.title,
+  )
+}
+
 const failed = (err: unknown) => hubRemoteRefusal('failed', err instanceof Error ? err.message : String(err))
 
 export function registerHubRemoteControlHandlers(host: BackendHost, deps: HubRemoteServeDeps): void {
@@ -104,9 +138,7 @@ export function registerHubRemoteControlHandlers(host: BackendHost, deps: HubRem
     const { desktopInstallId, parentId } = parsed.request
     const refusal = stubRefusal(desktopInstallId, parentId)
     if (refusal) return refusal
-    const rows = getHubParent(parentId)
-      ? listHubChildren(parentId, { includeSettled: true }).slice(-HUB_REMOTE_VIEW_MAX_CHILDREN)
-      : []
+    const rows = getHubParent(parentId) ? viewRows(listHubChildren(parentId, { includeSettled: true })) : []
     return { v: 1, children: await Promise.all(rows.map((c) => deps.childState(c))) }
   })
 
@@ -163,8 +195,11 @@ export function registerHubRemoteControlHandlers(host: BackendHost, deps: HubRem
     const child = owned.child
     try {
       if (settle) {
-        // Settled already: the earlier answer was lost, so it is done.
-        if (child.phase === 'settled') return { v: 1, ok: true, ran: false }
+        // Settled already: the earlier answer was lost, so this one carries the row it stored.
+        if (child.phase === 'settled') {
+          const stored = storedSettleRow(child)
+          return { v: 1, ok: true, ran: false, ...(stored ? { settled: stored } : {}) }
+        }
         const r = await deps.settle(child.parentId, child.childId, settle.parentHead)
         if (!r.ok) return hubRemoteRefusal('failed', r.text)
         return { v: 1, ok: true, ran: false, ...(r.row ? { settled: r.row } : {}) }
@@ -246,6 +281,7 @@ export class HubRemoteChangeNotifier {
     this.timer = null
     const ids = [...this.pending]
     this.pending.clear()
-    if (ids.length > 0) this.emit(ids)
+    for (let i = 0; i < ids.length; i += HUB_REMOTE_CHANGED_MAX_IDS)
+      this.emit(ids.slice(i, i + HUB_REMOTE_CHANGED_MAX_IDS))
   }
 }

@@ -9,7 +9,13 @@
  */
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { HUB_MAX_TASKS_PER_BATCH, HUB_REPORT_STATUSES, parseHubTasks, type HubReportStatus } from '@shared/hub'
+import {
+  HUB_MAX_TASKS_PER_BATCH,
+  HUB_REPORT_STATUSES,
+  isOpenChildPhase,
+  parseHubTasks,
+  type HubReportStatus,
+} from '@shared/hub'
 import {
   formatHubMachineList,
   parseGitRemoteFetchUrls,
@@ -561,7 +567,12 @@ function remoteChildRow(
   return {
     childId: c.childId,
     title: c.title,
-    phase: s?.waitingForSlot ? `waiting for a run slot on ${there.machine}` : c.phase,
+    // A start that failed or a settle there shows before the desktop row learns of it.
+    phase: s?.waitingForSlot
+      ? `waiting for a run slot on ${there.machine}`
+      : s && isOpenChildPhase(c.phase) && !isOpenChildPhase(s.phase)
+        ? s.phase
+        : c.phase,
     ...(s ? { state: s.state } : {}),
     agent: plan?.agent ?? null,
     machine: there.machine,

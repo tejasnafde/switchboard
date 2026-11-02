@@ -28,8 +28,14 @@ const { toolText } = await import('../../src/main/mcp/mcp-session')
 const { HubRemoteChannels } = await import('../../src/shared/ipc-channels')
 const { childStateLabel } = await import('../../src/shared/hub')
 const { HUB_REMOTE_READ_LATER_TEXT, HUB_REMOTE_STOP_LATER_TEXT } = await import('../../src/shared/hub-remote')
-const { hubMoveTargetPlace, HUB_REMOTE_VIEW_MAX_AGE_MS, parseHubRemoteDeliverRequest, parseHubRemoteStopRequest } =
-  await import('../../src/shared/hub-remote-control')
+const {
+  hubMoveTargetPlace,
+  HUB_REMOTE_VIEW_MAX_AGE_MS,
+  HUB_REMOTE_VIEW_MAX_CHILDREN,
+  parseHubRemoteDeliverRequest,
+  parseHubRemoteSettleRow,
+  parseHubRemoteStopRequest,
+} = await import('../../src/shared/hub-remote-control')
 
 import type { ConnectionStatus } from '../../src/main/machines/connection-status'
 import type { HubChildRow } from '../../src/main/db/hubs'
@@ -147,7 +153,11 @@ async function bootVm() {
     },
     settle: async (stubId, childId, parentHead) => {
       calls.push({ op: 'settle', args: [stubId, childId, parentHead] })
-      vmDb.updateHubChild(childId, { phase: 'settled' })
+      // As `HubSettler.run` stores it.
+      vmDb.updateHubChild(childId, {
+        phase: 'settled',
+        settleJson: JSON.stringify({ worktree: 'remove', keepReason: null }),
+      })
       return {
         ok: true,
         row: {
@@ -183,7 +193,7 @@ async function bootVm() {
     vmDb.updateHubChild(childId, { phase: 'open' })
   }
   const ops = (op: string) => calls.filter((c) => c.op === op).map((c) => c.args)
-  return { host, url, dbm: vmDb, calls, ops, states, adopt, local, notifier }
+  return { host, url, dbm: vmDb, calls, ops, states, adopt, local, notifier, HubRemoteChangeNotifier }
 }
 
 interface DesktopOpts {
@@ -191,6 +201,8 @@ interface DesktopOpts {
   createSocket?: (url: string) => TransportSocket
   now?: () => number
   status?: ConnectionStatus
+  callTimeoutMs?: number
+  onChanged?: (parentId: string) => void
 }
 
 /** The desktop: real hub client and control, its own rows for children on `vm1`. */
@@ -204,6 +216,7 @@ function desktop(machines: Record<string, { url: string }>, opts: DesktopOpts = 
     urlOf: (id) => machines[id]?.url ?? null,
     tokenOf: () => TOKEN,
     ...(opts.createSocket ? { createSocket: opts.createSocket } : {}),
+    ...(opts.callTimeoutMs ? { callTimeoutMs: opts.callTimeoutMs } : {}),
   })
   cleanups.push(() => clients.closeAll())
   const changed: string[] = []
@@ -221,7 +234,10 @@ function desktop(machines: Record<string, { url: string }>, opts: DesktopOpts = 
         invoked.push(channel)
         return clients.invoke(id, channel, ...args)
       },
-      changed: (parentId) => changed.push(parentId),
+      changed: (parentId) => {
+        opts.onChanged?.(parentId)
+        changed.push(parentId)
+      },
       stoppedWhileStarting: (childId, there) => stoppedStarting.push([childId, there]),
       ...(opts.now ? { now: opts.now } : {}),
     })
@@ -282,6 +298,43 @@ describe('view: the child machine answers its children, the desktop merges them'
     expect(d.control.factsOf({ ...row, childId: 'agent_stranger' })?.state).toBeNull()
   })
 
+  it('keeps every open child under the 64-row cap, then the newest settled ones', async () => {
+    const vm = await bootVm()
+    const d = desktop({ vm1: { url: vm.url } })
+    vm.dbm.claimHubParentStub(PARENT, db.hubInstallId())
+    const ids = Array.from({ length: HUB_REMOTE_VIEW_MAX_CHILDREN + 6 }, (_, i) => `agent_v${i}`)
+    for (const [i, id] of ids.entries()) {
+      vm.dbm.insertHubChild(child(id, { ordinal: i }))
+      // The two oldest stay open; every newer one is settled.
+      vm.dbm.updateHubChild(id, { phase: i < 2 ? 'open' : 'settled' })
+    }
+    const answer = (await d.clients.invoke('vm1', HubRemoteChannels.VIEW, {
+      v: 1,
+      desktopInstallId: db.hubInstallId(),
+      parentId: PARENT,
+    })) as { children: HubRemoteChildState[] }
+    const got = answer.children.map((c) => c.childId)
+    expect(got).toHaveLength(HUB_REMOTE_VIEW_MAX_CHILDREN)
+    expect(got.slice(0, 2)).toEqual(['agent_v0', 'agent_v1'])
+    expect(got.at(-1)).toBe(ids.at(-1))
+    expect(got).not.toContain('agent_v2')
+  })
+
+  it('sends children-changed ids in events of at most 64', async () => {
+    const vm = await bootVm()
+    const events: string[][] = []
+    const notifier = new vm.HubRemoteChangeNotifier((ids) => events.push(ids), 1)
+    cleanups.push(() => notifier.dispose())
+    const parents = Array.from({ length: 130 }, (_, i) => `agent_p${i}`)
+    for (const p of parents) {
+      vm.dbm.claimHubParentStub(p, db.hubInstallId())
+      notifier.changed(p)
+    }
+    await until(() => events.length === 3)
+    expect(events.map((e) => e.length)).toEqual([64, 64, 2])
+    expect(events.flat()).toEqual(parents)
+  })
+
   it('reads a view at most every 15 s from a list call', async () => {
     const vm = await bootVm()
     let now = 5_000_000
@@ -326,6 +379,23 @@ describe('read, deliver, interrupt and move go to the child machine', () => {
       ['agent_c1', 'please rebase', 'queue', 'Parent chat'],
       ['agent_c1', 'stop that', 'steer', 'Parent chat'],
     ])
+  })
+
+  it('runs the check before the write once the client is ready, and writes nothing when it throws', async () => {
+    const vm = await bootVm()
+    const d = desktop({ vm1: { url: vm.url } })
+    const row = d.own('agent_c1')
+    vm.adopt('agent_c1', db.hubInstallId())
+    const seen: string[] = []
+    await expect(
+      d.control.deliver(row, 'please rebase', 'queue', 'Parent chat', () => {
+        seen.push(d.clients.controlOf('vm1'))
+        throw new Error('the edge is gone')
+      }),
+    ).rejects.toThrow('the edge is gone')
+    // `yes` is known only from the machine's ready.
+    expect(seen).toEqual(['yes'])
+    expect(vm.ops('deliver')).toEqual([])
   })
 
   it('interrupts there and reports whether a turn ran', async () => {
@@ -491,6 +561,7 @@ describe('a Stop of a child still starting here', () => {
 describe('a pending stop that gets no answer', () => {
   const host = (fail: () => Error) => {
     const changed: string[] = []
+    const stoppedStarting: Array<[string, boolean]> = []
     const control = new HubRemoteControl({
       enabled: () => true,
       installId: () => db.hubInstallId(),
@@ -502,9 +573,9 @@ describe('a pending stop that gets no answer', () => {
         throw fail()
       },
       changed: (parentId) => changed.push(parentId),
-      stoppedWhileStarting: () => {},
+      stoppedWhileStarting: (childId, there) => stoppedStarting.push([childId, there]),
     })
-    return { control, changed }
+    return { control, changed, stoppedStarting }
   }
 
   it('is kept on a dropped socket and a timeout, and dropped after the last try', async () => {
@@ -527,6 +598,86 @@ describe('a pending stop that gets no answer', () => {
     await slow.control.flush('vm1')
     expect(db.listHubRemotePending()).toEqual([])
     expect(slow.changed).toEqual([PARENT])
+  })
+
+  it('asks the start of a child still starting again when its Stop is dropped', async () => {
+    db.ensureHubParent(PARENT)
+    db.insertHubChild(child('agent_c1', { machineId: 'vm1' }))
+    db.updateHubChild('agent_c1', { phase: 'starting' })
+    const row = db.getHubChild('agent_c1')!
+    const slow = host(() => new HubRemoteCallError('timeout', 'Machine vm1 did not answer'))
+    await slow.control.stop(row, 'user')
+    for (let i = 1; i < HUB_REMOTE_PENDING_MAX_ATTEMPTS; i++) await slow.control.flush('vm1')
+    expect(db.listHubRemotePending()).toEqual([])
+    expect(slow.stoppedStarting).toEqual([['agent_c1', true]])
+  })
+})
+
+describe('a pending stop the machine answers', () => {
+  const host = (answer: (channel: string, call: number) => unknown, changed?: () => void) => {
+    const stoppedStarting: Array<[string, boolean]> = []
+    let calls = 0
+    const control = new HubRemoteControl({
+      enabled: () => true,
+      installId: () => db.hubInstallId(),
+      machineState: () => 'connected',
+      machineName: () => 'Machine vm1',
+      control: () => 'yes',
+      supportsControl: async () => true,
+      invoke: async (_machineId, channel) => answer(channel, ++calls),
+      changed: () => changed?.(),
+      stoppedWhileStarting: (childId, there) => stoppedStarting.push([childId, there]),
+    })
+    return { control, stoppedStarting, calls: () => calls }
+  }
+  const open = (childId: string, phase: 'open' | 'starting' = 'open') => {
+    db.ensureHubParent(PARENT)
+    db.insertHubChild(child(childId, { machineId: 'vm1' }))
+    db.updateHubChild(childId, { phase })
+    return db.getHubChild(childId)!
+  }
+  const pending = (targetId: string) =>
+    db.addHubRemotePending({ machineId: 'vm1', kind: 'stop', targetId, parentId: PARENT, payload: null })
+
+  it('sends a stop queued while a pass runs in the same flush', async () => {
+    open('agent_c1')
+    open('agent_c2')
+    pending('agent_c1')
+    const h = host((_ch, n) => {
+      if (n === 1) pending('agent_c2')
+      return { v: 1, ok: true, ran: true }
+    })
+    await h.control.flush('vm1')
+    expect(h.calls()).toBe(2)
+    expect(db.listHubRemotePending()).toEqual([])
+  })
+
+  it('keeps the row when the local write after the answer throws', async () => {
+    const row = open('agent_c1')
+    db.addHubRemotePending({
+      machineId: 'vm1',
+      kind: 'settle',
+      targetId: row.childId,
+      parentId: PARENT,
+      payload: { parentHead: HEAD },
+    })
+    const h = host(
+      () => ({ v: 1, ok: true, ran: false }),
+      () => {
+        throw new Error('disk full')
+      },
+    )
+    await h.control.flush('vm1')
+    expect(db.listHubRemotePending()).toMatchObject([{ kind: 'settle', targetId: 'agent_c1', attempts: 1 }])
+  })
+
+  it('asks the start of a child still starting again when the machine refuses its Stop', async () => {
+    open('agent_c1', 'starting')
+    pending('agent_c1')
+    const h = host(() => ({ v: 1, ok: false, code: 'failed', message: 'no' }))
+    await h.control.flush('vm1')
+    expect(db.listHubRemotePending()).toEqual([])
+    expect(h.stoppedStarting).toEqual([['agent_c1', true]])
   })
 })
 
@@ -568,13 +719,74 @@ describe('settle and archive', () => {
     d.own('agent_c1')
     vm.adopt('agent_c1', db.hubInstallId())
     const r = await settler(d).run(PARENT, '/parent', 'auto')
-    expect(r.ok).toBe(true)
-    expect(r.text).toContain('settles on Machine vm1 when that machine connects')
+    expect(r).toEqual({
+      ok: true,
+      rows: [],
+      text:
+        'Nothing was settled.\nNot settled yet, each settles on its machine when that machine connects: ' +
+        'Title agent_c1 (Machine vm1).',
+    })
     expect(db.getHubChild('agent_c1')!.phase).toBe('open')
     d.setStatus('vm1', 'connected')
     await d.control.connected('vm1')
     expect(vm.ops('settle')).toEqual([[PARENT, 'agent_c1', HEAD]])
     expect(db.getHubChild('agent_c1')!.phase).toBe('settled')
+  })
+
+  it('counts only the settled children in the "Settled" line', async () => {
+    const vm = await bootVm()
+    const d = desktop({ vm1: { url: vm.url }, vm2: { url: vm.url } })
+    d.own('agent_c1')
+    d.own('agent_c2', 'vm2')
+    vm.adopt('agent_c1', db.hubInstallId())
+    d.setStatus('vm2', 'offline')
+    const r = await settler(d).run(PARENT, '/parent', 'auto')
+    expect(r.ok && r.rows.map((x) => x.childId)).toEqual(['agent_c1'])
+    expect(r.text).toMatch(/^Settled 1 child\./)
+    expect(r.text).toContain('when that machine connects: Title agent_c2 (Machine vm2).')
+  })
+
+  it('answers a retried settle with the row it stored, after the first answer was lost', async () => {
+    const vm = await bootVm()
+    const d = desktop({ vm1: { url: vm.url } })
+    const row = d.own('agent_c1')
+    vm.adopt('agent_c1', db.hubInstallId())
+    // The first settle ran there, but its answer never came back.
+    await d.clients.invoke('vm1', HubRemoteChannels.STOP, {
+      v: 1,
+      desktopInstallId: db.hubInstallId(),
+      childId: 'agent_c1',
+      settle: { parentHead: HEAD },
+    })
+    const r = await d.control.settle(row, HEAD)
+    expect(r).toMatchObject({ status: 'settled', row: { worktree: 'remove' } })
+    expect(vm.ops('settle')).toHaveLength(1)
+    expect(JSON.parse(db.getHubChild('agent_c1')!.settleJson!)).toMatchObject({ worktree: 'remove' })
+  })
+
+  it('records no worktree when the answer has no settle row', async () => {
+    const vm = await bootVm()
+    const d = desktop({ vm1: { url: vm.url } })
+    const row = d.own('agent_c1')
+    vm.adopt('agent_c1', db.hubInstallId())
+    vm.dbm.updateHubChild('agent_c1', { phase: 'settled' })
+    const r = await d.control.settle(row, HEAD)
+    expect(r).toMatchObject({ status: 'settled', row: { worktree: 'none' } })
+    expect(JSON.parse(db.getHubChild('agent_c1')!.settleJson!)).toEqual({
+      worktree: null,
+      keepReason: null,
+      machineId: 'vm1',
+    })
+  })
+
+  it('keeps the blockers of a settle row, strings only', () => {
+    const row = parseHubRemoteSettleRow(
+      { merged: true, clean: true, worktree: 'keep', blockers: ['a turn ran', 7, 'x'.repeat(20_000)] },
+      'agent_c1',
+      'T',
+    )
+    expect(row?.blockers.map((b) => b.length)).toEqual([10, 16 * 1024])
+    expect(parseHubRemoteSettleRow({ merged: null, clean: null, worktree: 'none' }, 'a', 'T')?.blockers).toEqual([])
   })
 
   it('sends stop-all for an archive: the children there settle, the desktop rows settle', async () => {
@@ -613,6 +825,25 @@ describe('older backend and the flag', () => {
     expect(read).toEqual({ content: [{ type: 'text', text: HUB_REMOTE_READ_LATER_TEXT }], isError: true })
     expect(vm.calls).toEqual([])
     expect(db.listHubRemotePending()).toEqual([])
+  })
+
+  it('answers false when the machine never sends ready', async () => {
+    const vm = await bootVm()
+    const silent = (url: string): TransportSocket => {
+      const ws = new WebSocket(url)
+      const add = ws.addEventListener.bind(ws) as TransportSocket['addEventListener']
+      ws.addEventListener = ((type: string, listener: (e: unknown) => void) => {
+        if (type !== 'message') return add(type as never, listener as never)
+        add('message', (e: MessageEvent) => {
+          if ((JSON.parse(String(e.data)) as { k?: string }).k !== 'ready') listener(e)
+        })
+      }) as typeof ws.addEventListener
+      return ws as unknown as TransportSocket
+    }
+    const d = desktop({ vm1: { url: vm.url } }, { createSocket: silent, callTimeoutMs: 200 })
+    const started = Date.now()
+    expect(await d.clients.supportsControl('vm1')).toBe(false)
+    expect(Date.now() - started).toBeLessThan(2_000)
   })
 
   it('sends nothing with hub_remote_children off', async () => {

@@ -305,6 +305,54 @@ describe('HubSettler for a hub on another machine', () => {
   })
 })
 
+describe('HubSettler reads the creation again after the dependency unlink', () => {
+  /** Each read is a newer revision; `owners` names the owner of each read in turn. */
+  function readsService(owners: string[]) {
+    const removed: string[] = []
+    let reads = 0
+    configureHubWorktrees({
+      createWorktreeTransaction: vi.fn(),
+      getWorktreeCreation: vi.fn(async () => {
+        const conversationId = owners[Math.min(reads, owners.length - 1)]!
+        reads++
+        return { revision: reads, owner: { kind: 'conversation', conversationId } }
+      }),
+      actOnWorktreeCreation: vi.fn(async (req: { creationId: string; expectedRevision: number }) => {
+        removed.push(`${req.creationId}@${req.expectedRevision}`)
+        return { cleanupDisposition: 'removed' }
+      }),
+    } as unknown as HubWorktreeService)
+    return removed
+  }
+
+  it('removes at the revision read after the unlink', async () => {
+    const dir = repo()
+    const wt = worktree(dir, 'c1')
+    commit(wt, 'a.txt', 'child work\n')
+    git(dir, 'merge', '-q', '--no-ff', '-m', 'merge', 'hub/c1')
+    child('c1', 0, dir, wt)
+    const removed = readsService(['c1', 'c1'])
+    const result = await new HubSettler(fakeHost().host).run('parent', dir, 'auto')
+    expect(result.ok && result.rows[0]).toMatchObject({ worktree: 'remove' })
+    expect(removed).toEqual(['b1-0@2'])
+  })
+
+  it('keeps the worktree when that read names another owner', async () => {
+    const dir = repo()
+    const wt = worktree(dir, 'c1')
+    commit(wt, 'a.txt', 'child work\n')
+    git(dir, 'merge', '-q', '--no-ff', '-m', 'merge', 'hub/c1')
+    child('c1', 0, dir, wt)
+    const removed = readsService(['c1', 'other-chat'])
+    const result = await new HubSettler(fakeHost().host).run('parent', dir, 'auto')
+    expect(removed).toEqual([])
+    expect(result.ok && result.rows[0]).toMatchObject({
+      worktree: 'keep',
+      keepReason: 'the worktree was not made for this child',
+    })
+  })
+})
+
 describe('HubSettler stops', () => {
   it('leaves a child that did not stop open, and settles only the children the card showed', async () => {
     const dir = repo()

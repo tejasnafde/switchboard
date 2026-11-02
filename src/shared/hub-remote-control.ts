@@ -26,6 +26,10 @@ export const HUB_REMOTE_CHANGED_COALESCE_MS = 500
 export const HUB_REMOTE_READ_MAX = 1024 * 1024
 /** Children in one view answer. */
 export const HUB_REMOTE_VIEW_MAX_CHILDREN = 64
+/** Parent ids in one `hub-remote:children-changed` event. */
+export const HUB_REMOTE_CHANGED_MAX_IDS = 64
+/** Blockers kept from one settle row off the wire. */
+const BLOCKERS_MAX = 16
 const LABEL_MAX = 200
 const TEXT_MAX = 16 * 1024
 
@@ -266,7 +270,12 @@ export function parseHubRemoteSettleRow(value: unknown, childId: string, title: 
     branch: typeof r.branch === 'string' && r.branch.length <= LABEL_MAX ? r.branch : null,
     merged: r.merged as boolean | null,
     clean: r.clean as boolean | null,
-    blockers: [],
+    blockers: Array.isArray(r.blockers)
+      ? r.blockers
+          .filter((b): b is string => typeof b === 'string')
+          .slice(0, BLOCKERS_MAX)
+          .map((b) => b.slice(0, TEXT_MAX))
+      : [],
     worktree: r.worktree as HubSettleRowView['worktree'],
     ...(typeof r.keepReason === 'string' ? { keepReason: r.keepReason.slice(0, LABEL_MAX) } : {}),
   }

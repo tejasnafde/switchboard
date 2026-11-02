@@ -1558,21 +1558,29 @@ export class ProviderRegistry implements PeerToolHost {
         outcome: 'remote_unsupported',
         text: `Moving a child on ${this.hubRemote?.machineName(child) ?? 'another machine'} comes in a later version.`,
       }
-    let entries: HubMachineEntry[] = []
-    try {
-      entries = (await this.remoteHubClients?.entries()) ?? []
-    } catch (err) {
-      log.warn('could not read the machines for move_child', err)
+    const placeOf = async () => {
+      let entries: HubMachineEntry[] = []
+      try {
+        entries = (await this.remoteHubClients?.entries()) ?? []
+      } catch (err) {
+        log.warn('could not read the machines for move_child', err)
+      }
+      return hubMoveTargetPlace({
+        targetId,
+        machineId: child.machineId!,
+        accounts: entries.map((e) => ({
+          machineId: e.id,
+          instanceIds: (e.description?.agents ?? []).flatMap((a) => a.accounts.map((acc) => acc.instanceId)),
+        })),
+        localAccount: getProviderInstanceFull(targetId, { withEnv: false }) !== null,
+      })
     }
-    const place = hubMoveTargetPlace({
-      targetId,
-      machineId: child.machineId!,
-      accounts: entries.map((e) => ({
-        machineId: e.id,
-        instanceIds: (e.description?.agents ?? []).flatMap((a) => a.accounts.map((acc) => acc.instanceId)),
-      })),
-      localAccount: getProviderInstanceFull(targetId, { withEnv: false }) !== null,
-    })
+    let place = await placeOf()
+    // An account made on the child's machine after its last description is not listed yet.
+    if (place === 'elsewhere' && this.remoteHubClients) {
+      await this.remoteHubClients.describeNow(child.machineId!)
+      place = await placeOf()
+    }
     return place === 'elsewhere' ? { outcome: 'other_machine', text: HUB_REMOTE_MOVE_OTHER_MACHINE_TEXT } : null
   }
 
@@ -2237,7 +2245,9 @@ export class ProviderRegistry implements PeerToolHost {
    * A parent's message (its agent's send, a Nudge passed on) to its child on
    * another machine. The lineage edge is charged here first, and the per-pair
    * guard; a spent budget refuses before any call. Then `hub-remote:deliver`
-   * runs `peerDelivery` there; a failed call gives both charges back.
+   * runs `peerDelivery` there; a failed call gives both charges back. The edge
+   * is checked again once the client is ready, just before the write, as the
+   * local path does after its checkpoint.
    */
   private async deliverToRemoteChild(
     input: PeerMessageInput,
@@ -2266,7 +2276,12 @@ export class ProviderRegistry implements PeerToolHost {
     const delivery = input.delivery ?? 'queue'
     const span = perfSpan('hub.remote-deliver', { childId: child.childId, machineId: child.machineId, delivery })
     try {
-      await this.hubRemote!.deliver(child, input.text, delivery, fromLabel)
+      await this.hubRemote!.deliver(child, input.text, delivery, fromLabel, () => {
+        if (this.peerLinks.edgeId(fromRoot, child.childId) !== chargedEdge)
+          throw new Error(
+            `The lineage edge with "${child.title}" was removed while this message was being prepared. ${PEER_LINK_NOT_DELIVERED}`,
+          )
+      })
       span.end({ outcome: 'delivered' })
     } catch (err) {
       span.end({ outcome: 'refused' })
@@ -3441,9 +3456,10 @@ export class ProviderRegistry implements PeerToolHost {
     this.hubOutboxSubscriptions.push(
       clients.on(HubRemoteChannels.OUTBOX, (machineId) => void outbox.pull(machineId)),
       clients.on(HubRemoteChannels.CHILDREN_CHANGED, (machineId, ids) => control.childrenChanged(machineId, ids)),
-      // A socket that reconnected under a connected machine: a Stop kept on a lost answer goes now.
+      // A socket that reconnected under a connected machine: a Stop kept on a lost answer goes now,
+      // then the views are read again, since change events may have been missed.
       clients.onResync((machineId) => {
-        void control.flush(machineId)
+        void control.connected(machineId)
         void outbox.pull(machineId)
       }),
     )
