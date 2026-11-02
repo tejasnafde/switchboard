@@ -3,6 +3,7 @@
  * announced on `session.provider`, so the desktop's picker and every phone's
  * follow it. A turn that carries no mode leaves the chat's mode alone.
  */
+import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
@@ -177,7 +178,7 @@ async function setup(submission: Pick<AtomicUserTurnSubmission, 'submit'> = pass
   const adapter = new ModeAdapter()
   const registry = new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, submission)
   registry.registerIpcHandlers()
-  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
+  await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: tmpdir() })
   const published: RuntimeEvent[] = []
   registry.bus.subscribe((e) => published.push(e))
   const submit = (origin: string, runtimeMode?: RuntimeMode, delivery?: TurnDelivery) =>

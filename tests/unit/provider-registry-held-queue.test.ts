@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
@@ -109,7 +110,7 @@ describe('held queue in the registry', () => {
     const adapter = new Adapter()
     const registry = new ProviderRegistry(host, new Map([['claude', adapter]]))
     registry.registerIpcHandlers()
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: tmpdir() })
     adapter.onEvent({ type: 'turn.queued', threadId: 't1', messageId: 'remote_a', text: 'do it', queuedAt: 1 })
     adapter.onEvent({ type: 'turn.queued', threadId: 't1', messageId: 'remote_b', text: 'then this', queuedAt: 2 })
     adapter.onEvent({ type: 'turn.dequeued', threadId: 't1', messageId: 'remote_a', reason: 'started' })

@@ -5,6 +5,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Fixed
+- **list_machines no longer lists Claude on a machine whose login expired.** The credentials file stays on disk after a Claude login expires, so the machine still counted as signed in. Once Claude refuses the login in a session there, that folder counts as signed out until you sign in again.
 - **A live page reads in the translucent theme.** The page, its still image (what phones show), the pane and Save as file drew white text on the theme's near-clear background, which came out light with no vibrancy behind it. They now take the solid colours that theme uses in full screen, as the agent's visual preview already did. A still image stored before this fix is now treated as missing, so a desktop window takes it again and phones show the new one (until then they show No image yet).
 - **A Claude agent no longer keeps working after the backend that started it dies.** When the desktop app crashed or the headless server restarted, the Claude Code CLI finished its running turn on its own, so a resumed chat could put a second agent in the same checkout. Each backend now records the CLIs it runs, and on its next start it stops the CLIs, and the commands they started, that a dead backend left behind. It checks the start time and the command line of each process first, so a reused process id is never stopped, and a new session waits until the old CLIs have exited. A command that detached from its CLI is not stopped, and this recovery does not run on Windows.
 
