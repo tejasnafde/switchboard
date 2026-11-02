@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "chat-details-popover",
-  "summary": "A Details button in the desktop chat header (and Cmd+Shift+B for the focused chat) opens a popover with the chat's machine (This Mac, or the host and SSH), branch (git:current-branch), the first open linked pull request (else the newest) with its checks, the working-tree lines added and removed against HEAD (new git:diff-stat channel, git diff --numstat HEAD), an Open in editor action that shows the embedded IDE pane, and three bars: the account's weekly and 5-hour limits (the provider usage store, read unforced on open, so main's 45 s cache applies as for Settings > Accounts) and the chat's context use (the composer's context ring value). Bars show the percent left and turn amber at 20 % left or less and red at 10 % or less; a limit that cannot be read shows Unavailable. Cmd+Shift+B moves from the sidebar toggle (Cmd+B stays) to this popover. New text tokens --text-success, --text-warning and --text-error keep coloured text at 4.5:1 on the popover surface in light and dark.",
+  "summary": "A Details button in the desktop chat header (and Cmd+Shift+B for the focused chat) opens a popover with the chat's machine (This Mac, or the host and SSH), branch (git:current-branch), the first open linked pull request (else the newest) with its checks, the working-tree lines added and removed against HEAD (new git:diff-stat channel, git diff --numstat HEAD), an Open in editor action that shows the embedded IDE pane, and three bars: the account's weekly and 5-hour limits (the provider usage store, read unforced on open, so main's 45 s cache applies as for Settings > Accounts) and the chat's context use (the composer's context ring value). Bars show the percent left and turn amber at 20 % left or less and red at 10 % or less; a limit that cannot be read shows Unavailable. Cmd+Shift+B moves from the sidebar toggle (Cmd+B stays) to this popover. New text tokens --text-success, --text-warning and --text-error keep coloured text at 4.5:1 on the popover surface in light and dark. iOS and Android show the same rows, without Open in editor, in a Details sheet from the chat header, only when the backend advertises details_sheet_v1. The phones read git:current-branch, git:diff-stat and provider-instances:usage each time the sheet opens, the chat's PR links they already list, and the Reviews list at most once a minute for the PR's checks; the Machine row is the phone's connection name and Context is the context use the phone already shows on a title tap.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -21,14 +21,33 @@
       ]
     },
     "reactNativeIos": {
-      "status": "staged",
-      "flag": "details_sheet_v1",
-      "followUpRelease": "mobile-v0.6.0: a Details sheet from the chat header with the same rows, reading git:current-branch, git:diff-stat, the chat's PR links and the usage read the phone already makes. Nothing changes on the phone in this release."
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/components/ChatDetailsSheet.tsx",
+        "apps/mobile/src/lib/chat-details.ts",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/screens/thread-screen.styles.ts",
+        "apps/mobile/src/screens/__tests__/chat-details.test.tsx",
+        "tests/unit/mobile-chat-details.test.ts"
+      ]
     },
     "nativeAndroid": {
-      "status": "staged",
-      "flag": "details_sheet_v1",
-      "followUpRelease": "Native Android 0.6.0: a Details sheet from the chat header with the same rows and the same reads as iOS. Nothing changes on the phone in this release."
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ChatDetails.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/ChatDetailsCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteDecoders.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ChatDetailsSheet.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadSessionScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadTestTags.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/ChatDetailsTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/ChatDetailsCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ChatDetailsSheetUiTest.kt"
+      ]
     },
     "sharedBackendApi": {
       "status": "implemented",
@@ -41,7 +60,10 @@
         "src/preload/index.ts",
         "tests/unit/git-refs.test.ts",
         "tests/unit/usage-left.test.ts",
-        "tests/unit/settings-rows.test.ts"
+        "tests/unit/settings-rows.test.ts",
+        "src/shared/chat-details.ts",
+        "src/shared/ws-protocol.ts",
+        "tests/unit/details-sheet-capability.test.ts"
       ]
     },
     "storageDataMigration": {
@@ -50,7 +72,10 @@
     },
     "updateRelease": {
       "status": "implemented",
-      "evidence": ["CHANGELOG.md"]
+      "evidence": [
+        "CHANGELOG.md",
+        "docs/features.md"
+      ]
     }
   },
   "verification": {
@@ -59,12 +84,20 @@
       "tests/unit/usage-left.test.ts: percent left with clamping and rounding, tone boundaries at 10, 11, 20 and 21, and null.",
       "tests/unit/git-refs.test.ts: numstat totals with a binary file, and the git diff --numstat HEAD call.",
       "tests/unit/global-keybindings.test.ts: Cmd+Shift+B resolves to toggle-chat-details.",
-      "tests/unit/raised-surface-contrast.test.ts: --text-success, --text-warning and --text-error read at 4.5:1 or better on --bg-elevated in dark and light."
+      "tests/unit/raised-surface-contrast.test.ts: --text-success, --text-warning and --text-error read at 4.5:1 or better on --bg-elevated in dark and light.",
+      "tests/unit/details-sheet-capability.test.ts: the ready frame advertises details_sheet_v1, and a phone's scopes reach git:current-branch, git:diff-stat, pull-requests:links, pull-requests:list and provider-instances:usage.",
+      "tests/unit/mobile-chat-details.test.ts: the iOS rows (branch, detached HEAD, None, No changes, the first open PR with failing checks, the newest link without the Reviews list), the bars with tones at 10, 11, 20 and 21 percent left, Unavailable and reading, and text colours at 4.5:1 or better on the sheet surface.",
+      "apps/mobile/src/screens/__tests__/chat-details.test.tsx: no Details button without details_sheet_v1; with it the button opens the sheet, which shows the branch, +14 -3 and the percent left of the weekly and 5-hour limits, and Context unavailable.",
+      "ChatDetailsTest.kt (Android): UsageLeft rounding and the tone boundaries at 10, 11, 20 and 21, the branch, changes, PR and bar rows, the default account id, and text colours at 4.5:1 or better on SurfaceRaised.",
+      "ChatDetailsCoordinatorTest.kt (Android): the three reads, a stale open or another connection generation dropped, failed reads, a rejected submission, and the diff-stat and usage decoders.",
+      "ChatDetailsSheetUiTest.kt (Android, Robolectric): no Details button without the capability; with it a tap asks for the reads and shows the sheet's rows."
     ],
     "hardware": [],
     "notExercised": [
       "The popover was not opened in the running app by this change: its screenshots and e2e run are separate.",
-      "A remote chat's branch and diff-stat reads were not run against an SSH machine."
+      "A remote chat's branch and diff-stat reads were not run against an SSH machine.",
+      "The Details sheet was not opened on an iPhone or an Android device: the phone checks are unit, jest and Robolectric tests only.",
+      "The phones have one dark theme, so the sheet's contrast is checked on the dark surface only."
     ]
   }
 }

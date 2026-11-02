@@ -17,6 +17,8 @@ object ThreadTestTags {
     const val QUEUE_TOGGLE = "thread-queue-next-toggle"
     const val PR_CHIP = "thread-pr-links-chip"
     const val PR_SHEET = "thread-pr-links-sheet"
+    const val DETAILS_ACTION = "thread-details-action"
+    const val DETAILS_SHEET = "thread-details-sheet"
     const val USAGE_LINE = "thread-usage-line"
     const val STOP_BUTTON = "thread-stop-button"
     const val REVIEW_PILL = "thread-composer-review-pill"

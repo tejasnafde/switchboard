@@ -1,5 +1,7 @@
 package app.switchboard.mobile.ui.navigation
 
+import app.switchboard.mobile.domain.reviews.PullRequestRefresh
+import app.switchboard.mobile.domain.thread.DETAILS_SHEET_CAPABILITY
 import app.switchboard.mobile.domain.composer.ComposerFiles
 import app.switchboard.mobile.platform.outbox.AndroidContentUriSource
 import app.switchboard.mobile.platform.outbox.RemoteComposerFileUploader
@@ -108,6 +110,7 @@ import app.switchboard.mobile.domain.iap.IapTargetSelection
 import app.switchboard.mobile.ui.search.MessageSearchRouteHost
 import app.switchboard.mobile.ui.search.MessageSearchScreen
 import app.switchboard.mobile.data.remote.MessageSearchState
+import app.switchboard.mobile.data.remote.ChatDetailsCoordinator
 import app.switchboard.mobile.data.remote.GitContextCoordinator
 import app.switchboard.mobile.data.remote.ConversationForkWire
 import app.switchboard.mobile.ui.thread.ThreadLoadState
@@ -115,6 +118,7 @@ import app.switchboard.mobile.ui.thread.LocalHtmlLive
 import app.switchboard.mobile.ui.thread.LocalPhoneLiveRun
 import app.switchboard.mobile.ui.thread.ThreadScreen
 import app.switchboard.mobile.ui.thread.ThreadComposerPresentation
+import app.switchboard.mobile.ui.thread.ThreadDetails
 import app.switchboard.mobile.ui.thread.ThreadSessionScreen
 import app.switchboard.mobile.ui.thread.GitContextPresenter
 import app.switchboard.mobile.ui.settings.SettingsPresenter
@@ -656,6 +660,7 @@ private fun SwitchboardNavigationHost(
                 runtime = runtime,
                 status = runtimeStatuses[route.connectionId],
                 offlineSnapshot = offlineSnapshot,
+                reviewsRegistry = reviewsRegistry,
                 onBack = ::navigateBack,
                 onForked = { fork ->
                     navigationState = navigationState.push(
@@ -1066,6 +1071,7 @@ private fun ThreadRouteHost(
     runtime: RootNavigationRuntime?,
     status: ConnectionRuntimeState?,
     offlineSnapshot: OfflineSnapshot?,
+    reviewsRegistry: ReviewsCoordinatorRegistry,
     onBack: () -> Unit,
     onForked: (app.switchboard.mobile.domain.remote.ForkConversationState) -> Unit,
 ) {
@@ -1158,6 +1164,7 @@ private fun ThreadRouteHost(
         runtime = runtime,
         lease = lease,
         offlineSnapshot = offlineSnapshot,
+        reviewsRegistry = reviewsRegistry,
         savedDraft = savedDraft,
         composerError = composerErrors[composerKey],
         uploading = uploading,
@@ -1173,6 +1180,7 @@ private fun ConnectedThreadRoute(
     runtime: RootNavigationRuntime,
     lease: ReadyClientLease,
     offlineSnapshot: OfflineSnapshot?,
+    reviewsRegistry: ReviewsCoordinatorRegistry,
     savedDraft: ComposerDraft?,
     composerError: String?,
     uploading: Int,
@@ -1323,6 +1331,44 @@ private fun ConnectedThreadRoute(
         )
     }
 
+    // The Details sheet (`details_sheet_v1`); an older backend gets no button.
+    val detailsCoordinator = remember(lease.scope, lease.client, lease.capabilities, route.projectPath, route.worktreePath) {
+        if (DETAILS_SHEET_CAPABILITY in lease.capabilities) {
+            ChatDetailsCoordinator(
+                expectedGeneration = lease.scope.generation,
+                cwd = route.worktreePath ?: route.projectPath,
+                remote = lease.client,
+                log = { Log.w("ChatDetails", it) },
+            )
+        } else {
+            null
+        }
+    }
+    DisposableEffect(detailsCoordinator) {
+        onDispose { detailsCoordinator?.close() }
+    }
+    val details = detailsCoordinator?.let { coordinator ->
+        val reviews = remember(reviewsRegistry, lease, runtime, offlineSnapshot) {
+            reviewsRegistry.get(route.connectionId, lease, runtime, offlineSnapshot ?: emptyOfflineSnapshot())
+        }
+        val detailsState by coordinator.state.collectAsState()
+        val reviewsState by reviews.state.collectAsState()
+        ThreadDetails(
+            state = detailsState,
+            prList = reviewsState.data,
+            onOpen = { instanceId ->
+                coordinator.refresh(instanceId)
+                // Reads the Reviews list at most once a minute, as the Reviews tab does on focus.
+                reviews.setVisible(true)
+                reviews.refresh(PullRequestRefresh.Reason.Focus)
+            },
+            onClose = {
+                coordinator.close()
+                reviews.setVisible(false)
+            },
+        )
+    }
+
     val htmlLive = remember(lease.capabilities, route.threadId, lease.client) {
         HtmlLiveImages(lease.capabilities, route.threadId, lease.client)
     }
@@ -1354,6 +1400,7 @@ private fun ConnectedThreadRoute(
             composerError = composerError,
             gitContext = gitContext,
             onRefreshGitContext = gitContextCoordinator::refresh,
+            details = details,
             viewingLeaseLifecycle = viewingLeaseLifecycle,
             registerViewingLeaseRenewal = viewingRenewalRegistration,
             onFork = { messageId, withWorktree ->

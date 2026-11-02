@@ -2,6 +2,7 @@
  * The rows of the chat header's Details popover, as data. Pure, so the
  * labels, empty states and tones are tested without a DOM.
  */
+import type { BranchRead, DiffRead } from '@shared/chat-details'
 import type { ProviderUsage, UsageWindowKind } from '@shared/provider-usage'
 import { leftPercent, leftTone, type LeftTone } from '@shared/usage-left'
 import { rowTitle, sortLinkedPrRows, type LinkedPrRow, type RowPart } from '../reviews/linked-pr-picker'
@@ -10,6 +11,8 @@ export interface DetailsValue {
   text: string
   muted?: boolean
 }
+
+export type { BranchRead, DiffRead }
 
 const PENDING: DetailsValue = { text: '…', muted: true }
 const NONE: DetailsValue = { text: 'None', muted: true }
@@ -30,16 +33,12 @@ export function editorLabel(machineId: string | undefined, machineName: string |
   return isLocal(machineId) ? 'Open in editor' : `Open in editor on ${machineName ?? machineId}`
 }
 
-export type BranchRead = { ok: true; branch: string | null } | { ok: false; error: string }
-
 /** `undefined` while the read is in flight; a failed read (not a repository) is None. */
 export function branchValue(read: BranchRead | undefined): DetailsValue {
   if (!read) return PENDING
   if (!read.ok) return NONE
   return read.branch ? { text: read.branch } : { text: 'Detached HEAD' }
 }
-
-export type DiffRead = { ok: true; added: number; removed: number } | { ok: false; error: string }
 
 export type ChangesValue = DetailsValue | { added: number; removed: number }
 
