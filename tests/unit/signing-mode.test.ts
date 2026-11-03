@@ -1,6 +1,8 @@
+import childProcess from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { load } from 'js-yaml'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { classifySigningEnvironment } from '../../scripts/signing-mode.mjs'
 
 describe('release signing mode', () => {
@@ -107,18 +109,53 @@ describe('release signing mode', () => {
 
     expect(workflow).not.toContain('APPLE_ID')
     expect(workflow).not.toContain('APPLE_APP_SPECIFIC_PASSWORD')
+    expect(workflow).toContain('umask 077')
     expect(workflow).toContain('echo "APPLE_API_KEY=$key" >> "$GITHUB_ENV"')
     expect(build).toContain('APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}')
     expect(build).toContain('APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}')
     expect(build).not.toContain('APPLE_API_KEY_P8')
   })
 
-  it('verifies the signature, the Gatekeeper assessment, the ticket and the update requirement', () => {
-    const afterSign = readFileSync('build/afterSign.js', 'utf8')
+  describe('afterSign on a signed macOS build', () => {
+    const require = createRequire(import.meta.url)
 
-    expect(afterSign).toContain("'--verify', '--deep', '--strict'")
-    expect(afterSign).toContain('=identifier "${context.packager.appInfo.id}"')
-    expect(afterSign).toContain("'spctl', ['--assess', '--type', 'exec'")
-    expect(afterSign).toContain("'stapler', 'validate'")
+    afterEach(() => {
+      vi.restoreAllMocks()
+      vi.unstubAllEnvs()
+    })
+
+    it('checks the signature with the update requirement, Gatekeeper and the ticket', async () => {
+      const calls: string[][] = []
+      vi.spyOn(childProcess, 'execFileSync').mockImplementation(((file: string, args: string[]) => {
+        calls.push([file, ...args])
+        return Buffer.alloc(0)
+      }) as typeof childProcess.execFileSync)
+      vi.spyOn(console, 'log').mockImplementation(() => {})
+      vi.stubEnv('SB_SIGNING_MODE', 'signed')
+      const hookPath = require.resolve('../../build/afterSign.js')
+      delete require.cache[hookPath]
+      const { default: afterSign } = require(hookPath)
+
+      await afterSign({
+        electronPlatformName: 'darwin',
+        appOutDir: '/out',
+        packager: { appInfo: { productFilename: 'Switchboard', id: 'com.tejasnafde.switchboard' } },
+      })
+
+      const app = '/out/Switchboard.app'
+      expect(calls).toEqual([
+        [
+          'codesign',
+          '--verify',
+          '--deep',
+          '--strict',
+          '--verbose=2',
+          '-R=identifier "com.tejasnafde.switchboard"',
+          app,
+        ],
+        ['spctl', '--assess', '--type', 'exec', '-vv', app],
+        ['xcrun', 'stapler', 'validate', app],
+      ])
+    })
   })
 })
