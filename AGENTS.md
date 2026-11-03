@@ -7,8 +7,8 @@ Electron workspace that multiplexes terminals, agent chats (Claude Code + Codex 
 
 ## Stack
 
-- **Shell**: Electron 33 + React 19 + TypeScript 5.7
-- **Build**: electron-vite + Vite 6
+- **Shell**: Electron 43 + React 19 + TypeScript 5.7
+- **Build**: electron-vite 3 + Vite 6
 - **Terminal**: `@xterm/xterm` 6 + `node-pty` (native, rebuild after install)
 - **IDE**: embedded VS Code workbench via code-server (Coder, MIT) in a single reused `<webview>`; binary downloaded on demand to userData, never bundled
 - **UI primitives**: shadcn/ui (Radix) in `src/renderer/components/ui/` on Tailwind 4 utilities only (`styles/tailwind.css`: no preflight, no default theme, scanned from `components/ui` plus the files listed in `tailwind.css`, tokens mapped onto the theme variables). New menus, popovers and dialogs use `ui/popover` and `ui/dialog` (Radix) rather than hand-rolled outside-click, Escape and focus code (a few older ones, such as the sidebar context menu and the native session import modal, are still hand-rolled); `DialogContent` returns focus to whatever had it on open (or the composer), since these dialogs open from shortcuts with no `Dialog.Trigger`. Focus an input from `onOpenAutoFocus`, not `autoFocus`: autoFocus runs first, so Radix records the input itself as the element to return focus to. Never `window.confirm`: it is a native alert that blocks the renderer and Playwright cannot click it. Use `if (!(await confirm({ title, body, confirmLabel, destructive }))) return` from `components/ui/confirm` (`ConfirmHost` is mounted in `App`). A row of controls is a `ui/toolbar` `Toolbar` (one row, never wraps): wrap an item in `ToolbarItem hideBelow={step}` and list it in `ToolbarOverflow` with the same step, so below it the item moves into the "..." menu (steps and the rule in `ui/toolbar-steps.ts`, the menu reads the width through `useContainerTier`). Its controls are `ui/chip` chips (`ChipSelect`, `OptionList`). Never a native `<select>`: use `ChipSelect` in a toolbar or `Combobox` with `searchable={false}` in a form; ESLint and `tests/unit/no-native-select.test.ts` fail on one outside `components/ui`.
@@ -83,6 +83,12 @@ For each affected slice, carry the work through storage → API → state → UI
 
 Any pull request that changes behavior-bearing product paths must add or update `docs/feature-parity/<feature>.json`. The manifest must cover every impact area. Use `not_applicable` only with a concrete reason. Incomplete cross-surface work is allowed only as `staged`, with both a named feature flag and a named follow-up release; unflagged staged behavior must not merge. Run `npm run validate:feature-parity -- --base <base-ref>` locally. Two narrow exemptions need no manifest: an `npm version` bump, and a dependency-only bump (`package.json` dependency lines plus `package-lock.json`, root or `apps/mobile`), so dependabot pull requests pass. The schema and workflow are documented in `docs/plans/archive/2026-08-20-cross-surface-feature-policy-design.md`.
 
+## CI and feature rollout
+
+`ci.yml` tests on `ubuntu-latest`, `macos-15` and `windows-latest`; the visual job and macOS release build also use `macos-15`. PR scope comes from `scripts/ci-scope.mjs`: Markdown and docs changes can skip code and screenshot steps while required matrix checks still report. The shipping checklist above still requires local typecheck and tests for documentation batches.
+
+`chat_snooze` is on by default. `hub_children`, `hub_remote_children`, `agent_secret_request`, `agent_visual_preview`, `limit_auto_resume` and `opencode_v2_acp` remain off by default. Phone live-page execution (`phone_html_live_run`) is off by default on both phones. `details_sheet_v1` and `chat_settle_v1` are advertised capabilities, not disabled rollout switches. See `docs/features.md` and the area instructions for behavior and enablement.
+
 ## Build gate (2026-04-20)
 
 `npm run build` fails the entire build if typecheck or tests fail. The `prebuild` npm lifecycle hook chains `typecheck && test` before `electron-vite build`. This caught real regressions on the first run - see CHANGELOG.md.
@@ -98,7 +104,7 @@ Any pull request that changes behavior-bearing product paths must add or update 
 - Claude Code encodes project paths by replacing EVERY non-alphanumeric char (`/`, `_`, `.`, etc.) with `-` in `~/.claude/projects/` - so `/.claude/worktrees/x` becomes `--claude-worktrees-x` (double dash). `encodeClaudeProjectPath` must match this exactly; a stale `/[/_]/g` (missing `.`) mis-filed migrated transcripts under `-.claude-...` and broke resume across profile switches with "No conversation found with session ID"
 - Scanner uses **exact dir match** (not substring) - parent paths don't pick up child-project sessions (pre-2026-04-20 bug)
 - `canUseTool` overrides the SDK's `permissionMode: 'plan'` - we enforce plan mode explicitly via `decidePermission`
-- **Any new per-conversation setting must resolve through `resolveRootThreadId` before touching the `conversations` table.** Claude assigns a session UUID after the first turn; the sidebar then surfaces that UUID as `session.id` instead of the synthetic `agent_<ts>` id the setting was saved under, so a raw `WHERE id = ?` read/write silently misses the row and the setting appears to reset. `thread_sessions` (+ `resolveRootThreadId`) already maps rotated ids back to the original - hit twice so far (`getConversationRuntimeMode`/`setConversationRuntimeMode`, `getConversationProviderInstanceId`/`setConversationProviderInstanceId`, all in `src/main/db/database.ts`) because each was added without reusing that helper. This must be enforced by the shared code path (or a test, see `tests/unit/conversation-rotation-fallback.test.ts`), not by memory - check every future per-conversation getter/setter against this.
+- **Any new per-conversation setting must resolve through `resolveRootThreadId` before touching the `conversations` table.** Claude assigns a session UUID after the first turn; the sidebar then surfaces that UUID as `session.id` instead of the synthetic `agent_<ts>` id the setting was saved under, so a raw `WHERE id = ?` read/write silently misses the row and the setting appears to reset. `thread_sessions` (+ `resolveRootThreadId`) already maps rotated ids back to the original - hit twice so far (`getConversationRuntimeMode`/`setConversationRuntimeMode`, `getConversationProviderInstanceId`/`setConversationProviderInstanceId`, implemented in `src/main/db/conversations.ts` and re-exported by `database.ts`) because each was added without reusing that helper. This must be enforced by the shared code path (or a test, see `tests/unit/conversation-rotation-fallback.test.ts`), not by memory - check every future per-conversation getter/setter against this.
 - **macOS TCC for project paths under `~/Desktop`/`~/Documents`/`~/Downloads`**: PTYs and the embedded SDK inherit Switchboard.app's TCC grants. If the user toggles "Files and Folders" on after launching, the running process is still denied - every FS call returns `EPERM` until ⌘Q + relaunch. We mitigate two ways:
   1. `electron-builder.yml` declares `NSDesktopFolderUsageDescription` / `NSDocumentsFolderUsageDescription` / `NSDownloadsFolderUsageDescription` via `mac.extendInfo`, so first access triggers a proper consent dialog.
   2. `src/main/path-access.ts` (`assertCwdReadable`) runs as a pre-flight in `provider-registry`'s `START_SESSION` handler. If the cwd is TCC-protected and `fs.access(R_OK)` returns `EPERM`/`EACCES`, we throw `TccAccessError` with copy that names the cause and the fix. The error surfaces in chat as a system message instead of a deep-stack SDK failure, complete with an inline "Relaunch to Apply Permissions" button.
@@ -114,7 +120,7 @@ there**. Add new area detail to the nearest one, not to this file.
 | Area | Read before you touch |
 |---|---|
 | Transport seam (`ElectronIpcHost`/`WsHost`), wire protocol, resume, epoch, liveness, device auth, phone history windows, SSH machines | `src/main/backend/AGENTS.md` |
-| Provider adapters, runtime events, images, question/plan flow, cross-session messaging and links, provider instances and usage, skills, OpenCode 1.x/2.x | `src/main/provider/AGENTS.md` |
+| Provider adapters, runtime events, images, question/plan flow, cross-session messaging and links, provider instances and usage, skills, generic ACP agents, OpenCode 1.x/2.x | `src/main/provider/AGENTS.md` |
 | Switchboard MCP server, agent PR tools, approval cards, phone approvals | `src/main/mcp/AGENTS.md` |
 | Reviews, PR providers, chat-to-PR links, human writes | `src/main/pull-requests/AGENTS.md` |
 | Conversation forking and merge-back | `src/main/conversations/AGENTS.md` |
@@ -123,13 +129,13 @@ there**. Add new area detail to the nearest one, not to this file.
 | Screenshot regression tests and background windows | `e2e/AGENTS.md` |
 | What ships today, feature by feature | `docs/features.md` |
 
-### Window → Row → Window → Pane model (terminals)
+### Row → Window → Pane model (terminals)
 
 - `Row` = horizontal container (full-width stack of columns)
 - `Window` = column within a row; holds stacked panes as tabs
 - `Pane` = a single xterm instance (tab inside a window)
 - `⌘T` new window in row · `⌘⇧T` new window in new row · `⌘\` new tab in window · `⌘⇧]`/`⌘⇧[` cycle tabs · `⌘1-9` focus window · `⌘⌥+arrows` navigate
-- Panes default `cwd` to the active session's `projectPath` (fixed 2026-04-20)
+- Panes default `cwd` to the active session's execution root (`worktreePath` when set, else `projectPath`)
 - `terminal-registry.ts` - module-level `Map<id, TerminalInstance>` outside React; panes survive re-renders / panel toggles / StrictMode double-mount
 - `PaneResizeHandle.tsx` / `ResizeHandle.tsx` - pointer-capture + rAF drag handles, callbacks in refs to avoid tearing down mid-drag
 
@@ -144,20 +150,20 @@ there**. Add new area detail to the nearest one, not to this file.
 - `SlashCommandMenu` popover wired into `ChatInput` textarea
 - Trigger: `/` at start of line, matched by `^\/([^\s/]*)$` (mid-line slashes like paths don't fire)
 - Registry in `src/renderer/components/chat/slash-commands.ts`
-- v1 commands: `/plan`, `/sandbox`, `/edits`, `/full`, `/clear`, `/archive`, `/image`, `/stop`, `/help`; later `/send-to`, `/link`, `/unlink`, `/merge-back`
+- Built-ins: `/plan`, `/sandbox`, `/edits`, `/auto`, `/full`, `/send-to`, `/link`, `/unlink`, `/merge-back`, `/clear`, `/archive`, `/image`, `/stop`, `/help`
 - `/help` opens an overlay listing everything
 
 ### Theme system
 
 - CSS variables: `.theme-dark`, `.theme-light`, `.theme-translucent` in `global.css`
 - Translucent uses macOS vibrancy (`setVibrancy('sidebar')`) + transparent BG
-- Theme picker in Settings modal (`⌘,`)
+- Theme picker in Settings page (`⌘,`)
 - Filled buttons paint fixed fills, not theme colours: `--color-primary-fill` (default variant) and `--color-destructive-fill` in `tailwind.css`, one value for every theme, with white text at 4.5:1 or better (`primary-fill-contrast.test.ts`, `destructive-fill-contrast.test.ts`). Do not paint a white label on `--accent` or `--error`: in dark they are 2.5:1 and 3.4:1.
 - `--text-muted` must read at 4.5:1 or better on `--bg-primary` (dark and light) and on `--bg-secondary` (light): `theme-css-contract.test.ts` and `light-theme-contrast.test.ts` parse `global.css` and fail below it (maths in `tests/unit/helpers/contrast.ts`). A change to either value refreshes every screenshot that shows muted text.
 
 ### Git tooling + worktrees
 
-- `ipc/git.ts` (`GitChannels`): `list-refs` (locals + remotes, annotated with current/sha/worktreePath), `switch-ref` (validated, rejects `-`/`..`/control chars), `current-branch`, `file-diff` (parses `git diff HEAD` into add/del/mod gutter hunks - `git/diffHunks.ts`).
+- `ipc/git.ts` (`GitChannels`): `list-refs` (locals + remotes, annotated with current/sha/worktreePath), `switch-ref` (validated), `current-branch`, `diff-stat` (working-tree added/removed totals for Details), and `watch-head`/`unwatch-head` with `head-changed` events. Git primitives live in `git/refs.ts` and `git/head-watcher.ts`.
 - Worktree **creation** lives in one place, not in `worktree.ts`: `worktree-creation/git-adapter.ts` drives the transactional flow behind `KanbanChannels.CREATE_WORKTREE` (kanban card, `<repo>/.switchboard/worktrees/<slug>-<id>`, branch `kanban/<slug>-<id>`) and behind conversation forking (fork-to-worktree, `fork/<name>`). `worktree.ts` itself only lists, finds-stale, and removes worktrees now (`removeWorktree`, `listWorktrees`, `findStaleWorktrees`) - its own creation functions were dead code with no production caller and were deleted.
 - **Worktree manager** (Settings > Archive & data > Worktrees, `WorktreeManagerChannels`): rules in `shared/worktree-manager.ts` (`classifyWorktree`, `removalVerdict`), backend in `main/worktree-manager.ts` + `main/worktree-inspect.ts`. Every removal goes through `removeManagedWorktree`, which re-reads ownership, protection and git state and refuses when the losses exceed what the client acknowledged. Owned worktrees (chat, card, catalog, in-flight creation) are never removed there. Protection is the backend settings row `worktrees.protection` (`{ projects, worktrees }`), honoured by `findStaleWorktrees` too.
 - **Existing branch** (`checkout.existingBranch { name, fetch? }`, capability `worktree_existing_branch_v1`): `planMaterialization` refuses a branch any worktree has checked out (`BranchCheckedOutError`, message names the checkout), fetches `fetch.ref` from a CONFIGURED remote (named, or the first whose configured URL, before any `insteadOf`, is `fetch.repo`: clients cannot know the desktop's remote names) into `refs/switchboard/fetch/<suffix>` and deletes it after reading, then uses the local branch (moved forward by compare-and-swap only when it is an ancestor of the fetched head) or creates it at the fetched commit (upstream set only for a branch-name ref). The plan's `existingBranch.preexisting` means no rollback ever deletes that branch (a compensated one moves a fast-forwarded branch back by compare-and-swap), and `inspectMaterialization` reads such a branch with no worktree as `absent`. Never switch the main checkout for this.
@@ -166,7 +172,7 @@ there**. Add new area detail to the nearest one, not to this file.
 
 ### Kanban board (⌘⇧K top-level view)
 
-- Top-level view (not a right-pane mode) swapping the chat area for a workspace-scoped board; sidebar stays mounted. `layout-store.appView: 'chats' | 'kanban'`.
+- Top-level view (not a right-pane mode) swapping the chat area for a workspace-scoped board; sidebar stays mounted. `layout-store.appView: 'chats' | 'kanban' | 'reviews'`.
 - `kanban_cards` table: `(id, project_path, title, description, tags JSON, status, cost_cap_usd, cost_used_usd, runtime_mode, conversation_id, worktree_path, worktree_branch, created_at, updated_at, completed_at)`. Statuses: `backlog | in_progress | needs_input | done`.
 - IPC (`KanbanChannels`): `list / create / update / delete / create-worktree / remove-worktree / list-worktrees`. Moving a card to `done` auto-archives its linked conversation (`applyKanbanArchiveSideEffect`); moving back unarchives.
 - `card-launch.ts` `launchCardChat`: reuses the linked conversation if live, else spins up a new session rooted at `worktree_path ?? project_path`, links card→conversation, seeds + auto-sends the first turn (title + description). `WorktreeManagerModal` is the Settings worktree manager (`settings/WorktreesPanel.tsx`) scoped to the card's project - one list, one removal path.
@@ -188,7 +194,7 @@ there**. Add new area detail to the nearest one, not to this file.
 
 Screenshot tests and how to run e2e without stealing focus: `e2e/AGENTS.md`.
 
-Run the whole suite: `npm test`. Vitest runs test files in worker threads (`pool: 'threads'` in `vitest.config.ts`), not forked processes: the fork pool's ~630 processes per run pinned macOS `launchservicesd` at 100-190% CPU. A test must not call `process.chdir`; pass `cwd` to the code under test instead. Targeted runs: `npx vitest run tests/unit/<file>.test.ts`. Notable files:
+Run the whole suite: `npm test`. Vitest runs test files in worker threads (`pool: 'threads'` in `vitest.config.ts`), not forked processes: the fork pool's ~630 processes per run pinned macOS `launchservicesd` at 100-190% CPU. A test must not call `process.chdir`; pass `cwd` to the code under test instead. Limit local workers: `npx vitest run --maxWorkers=2`. Targeted runs: `npx vitest run tests/unit/<file>.test.ts --maxWorkers=2`. Notable files:
 
 - `message-list.test.ts` - `groupIntoTurns` keeper-list (regression for empty-content attachment drops)
 - `slash-commands.test.ts` - slash trigger + registry
@@ -202,6 +208,9 @@ Run the whole suite: `npm test`. Vitest runs test files in worker threads (`pool
 - `at-mention.test.ts` / `render-pill-body.test.ts` / `draft-pills.test.ts` - Lexical pills + @-mentions
 - `kanban-store.test.ts` / `card-launch.test.ts` / `kanban-archive-side-effect.test.ts` - kanban
 - `favicon-resolver.test.ts` / `favicon-html-scan.test.ts` / `favicon-protocol.test.ts` - favicons
+- `visual-image.test.ts` / `visual-preview-tool.test.ts` / `html-live.test.ts` - image actions, agent preview and live-page rules
+- `secret-store.test.ts` / `secret-redactor.test.ts` - secret lifetime and masking
+- `chat-settle-phones.test.ts` / `chat-snooze-rules.test.ts` / `snooze-presets-backend.test.ts` - inbox actions and shared presets
 
 The Play store screenshots in `docs/store/play/` come from the Robolectric `StoreScreenshotsTest` (Android demo mode, 1080x1920), skipped unless `SB_STORE_SHOTS_DIR` is set; rerun it after a change to a screen they show (command in `docs/store/play/listing.md`).
 
@@ -214,6 +223,7 @@ better-sqlite3 loads under vitest. For a test of the `db/*` modules, import `cre
 The e2e scripts (`e2e/ide.e2e.mjs`, `e2e/ide-workflow.e2e.mjs`, etc.) create ~600MB temp dirs per run via `mkdtempSync` (`sb-ide-e2e-*`, `sb-ide-wf-*`, `sb-ide-proj-*`, `sb-update*`, `sb-ide-probe*`) and do NOT clean up after themselves - this has filled the entire disk before (600+ leaked dirs, ~18GB). You are welcome to run e2e tests, but after every e2e run (pass, fail, or crash) you MUST delete the leftovers:
 
 ```sh
+setopt nullglob
 for p in sb-ide-e2e- sb-ide-wf- sb-ide-proj- sb-update sb-ide-probe; do rm -rf "$TMPDIR$p"* /tmp/"$p"*; done
 ```
 
@@ -229,23 +239,26 @@ src/
 ├── main/
 │   ├── index.ts                       # Electron main
 │   ├── backend/                       # host.ts (BackendHost: ElectronIpcHost | WsHost) · ws-host.ts
-│   ├── machines/                      # sshTunnel · connectionManager · provisioner · reconnectBackoff (remote-over-SSH)
+│   ├── machines/                      # ssh-tunnel · connection-manager · provisioner · remote-bootstrap (remote-over-SSH)
 │   ├── agent/
 │   │   ├── jsonl-parser.ts            # Source-aware (claude-code | codex) + image extraction
 │   │   └── jsonl-truncate.ts          # Pure fork truncation (assembleClaudeForkAtEvent)
-│   ├── conversations/fork.ts          # Fork-from-message orchestration (per-provider resume)
+│   ├── conversations/                 # conversation-fork-coordinator · conversation-fork-runtime · history · merge-back · chat-snooze
 │   ├── db/
 │   │   ├── database.ts                # getDb + migrate(); re-exports the domain modules below, so import from here
 │   │   ├── projects.ts · conversations.ts (+ thread ancestry, archive) · messages.ts · settings.ts (+ session layouts) · kanban.ts · bookmarks.ts
 │   │   └── provider-instances.ts       # provider_instances CRUD (safeStorage-encrypted env)
 │   ├── files/                         # listing (gitignore-annotated) · writing (atomic+conflict) · gitignore matcher
-│   ├── git/                           # diffHunks (gutter) · refs · worktreePaths · checkpoint (diff review)
+│   ├── git/                           # refs · head-watcher · worktree-paths · checkpoint (diff review)
 │   ├── ide/                           # code-server-manager · binary (download) · bridge-server (ws)
 │   ├── worktree-creation/             # git-adapter.ts - transactional kanban/fork worktree creation
 │   ├── worktree.ts                    # worktree list / find-stale / remove (creation lives elsewhere, see above)
-│   ├── mcp/                           # Switchboard MCP server: stdio bridge · loopback server · tokens · approval cards · PR + peer tools
+│   ├── hub/                           # child launch, remote clients, outbox, settle and restart recovery
+│   ├── secrets/                       # private files, redaction, retired matchers and expiry
+│   ├── preview/                       # HTML sandbox, inline capture and agent visual preview
+│   ├── mcp/                           # stdio bridge · loopback server · tokens · approval cards · PR + peer + secret tools
 │   ├── ipc/
-│   │   ├── terminal.ts · app.ts       # PTY · projects/sessions/archive/fork
+│   │   ├── terminal.ts · terminal-sessions.ts · app.ts # PTY · projects/sessions/archive/fork
 │   │   ├── files.ts · git.ts · ide.ts · kanban.ts # files + git + IDE + kanban IPC
 │   │   ├── provider-instances.ts       # instance LIST/UPSERT/DELETE/TEST/CREATE_OAUTH_DIR
 │   │   └── enrich-display-body.ts       # pill/display-body enrichment for stored messages
@@ -267,7 +280,8 @@ src/
 │   │   └── adapters/
 │   │       ├── claude-adapter.ts      # SDK integration, canUseTool, image blocks
 │   │       ├── codex-adapter.ts       # JSON-RPC over stdio (images + plan + AskUserQuestion done)
-│   │       ├── opencode-acp-adapter.ts # OpenCode (ACP / JSON-RPC over stdio) - only OpenCode adapter
+│   │       ├── opencode-acp-adapter.ts # OpenCode wrapper around the shared ACP adapter
+│   │       ├── acp/                    # shared adapter · launch configs · generic agents
 │   │       ├── opencode/env.ts        # Shared env-probe helper
 │   │       └── question-answers.ts    # Shape AskUserQuestion answers for SDK wire format
 │   ├── terminal/pty-manager.ts · path-access.ts · updater.ts · logger.ts
@@ -278,7 +292,7 @@ src/
 │   ├── services/global-keybindings.ts  # resolveGlobalKeydown: pure keydown → app shortcut action (App dispatches)
 │   ├── components/
 │   │   ├── CommandPalette.tsx (⌘⇧P) · QuickPromptModal.tsx (⌘K) · SearchModal.tsx (⌘⇧F) · GoToChatDialog.tsx (⌘P)
-│   │   ├── SettingsModal.tsx · settings/ProvidersTab.tsx · settings/ProviderUsagePanel.tsx · SessionPickerModal.tsx
+│   │   ├── SettingsPage.tsx · settings/AccountsPanel.tsx · settings/SnoozePresetsPanel.tsx · SessionPickerModal.tsx
 │   │   ├── chat/
 │   │   │   ├── ChatPanel.tsx · ChatInput.tsx · MessageList.tsx · MessageBubble.tsx
 │   │   │   ├── provider-event-reducer.ts # desktop provider event → agent-store reducer (ChatPanel's listener)
@@ -297,14 +311,15 @@ src/
 │   │   ├── onboarding/               # FeatureTourModal + featureRegistry
 │   │   └── terminal/                  # TerminalStrip · TerminalWindow · TerminalPane · TerminalHeader · TemplatePicker
 │   ├── hooks/                         # useTerminalLifecycle · useTerminal
-│   ├── services/                      # terminal-registry · session-events · contextBridge · fuzzyScore · notifications
+│   ├── services/                      # terminal-registry · session-events · contextBridge · fuzzy-score · notifications
 │   └── stores/                        # agent · terminal · layout · theme · draft · kanban · provider-instance · skill · bookmark
 ├── preload/                           # transport.ts (IpcTransport) · ws-transport (via shared) · hybrid-transport · transport-router · routing-table
-├── shared/
-│   ├── ipc-channels.ts · provider-events.ts · types.ts · auto-title.ts · models.ts · format.ts · file-path-ref.ts
-│   ├── provider-usage.ts · claude-usage-parse.ts · codex-usage-parse.ts   # normalised subscription usage limits
-│   ├── transport.ts · ws-protocol.ts · ws-transport.ts · machines.ts   # backend transport seam (local ↔ remote)
-└── tests/unit/                        # vitest suite (see Test suite)
+└── shared/
+    ├── ipc-channels.ts · provider-events.ts · types.ts · auto-title.ts · models.ts · format.ts · file-path-ref.ts
+    ├── provider-usage.ts · claude-usage-parse.ts · codex-usage-parse.ts   # normalised subscription usage limits
+    └── transport.ts · ws-protocol.ts · ws-transport.ts · machines.ts   # backend transport seam (local ↔ remote)
+
+# At repository root: tests/unit/ (vitest), e2e/, apps/mobile/ and apps/android/
 ```
 
 ## Logging conventions

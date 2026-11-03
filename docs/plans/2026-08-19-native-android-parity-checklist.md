@@ -1,6 +1,11 @@
 # Switchboard Native Android Behavioral Parity Checklist
 
-This is the release checklist for replacing the React Native Android APK. The
+This checklist records the original native replacement work and its remaining
+verification. The package changed to `app.tn07.switchboard`; an old-package
+install cannot be upgraded in place. The self-update section below is historical
+and retired. Current build/release procedure: `docs/releasing.md`.
+
+The
 React Native client is the behavioral oracle, but known correctness defects are
 fixed deliberately. A checked item needs linked automated evidence or a dated
 physical-device result; compilation alone does not satisfy a behavior.
@@ -15,10 +20,10 @@ Status marks:
 
 ## Release identity and replacement
 
-- [x] Release application ID remains `app.switchboard.mobile`; debug uses
-  `.native.dev`.
-- [x] Current native release is `0.5.4` / version code `6`, monotonically above
-  the installed `0.5.3` / version code `5` build.
+- [x] Release application ID is `app.tn07.switchboard`; debug uses
+  `app.tn07.switchboard.native.dev`. The earlier package is a separate app.
+- [x] Source build version is `0.5.25` / version code `27` as of 2026-11-03
+  (`apps/android/app/build.gradle.kts`). This does not establish store rollout.
 - [x] Both existing URI schemes, cleartext LAN policy, portrait mode, package
   label, notification channel ID, permissions, icon bitmaps and font files are
   preserved.
@@ -58,7 +63,10 @@ pending controls, checkpoints and quarantine, followed by foreign-key and
 SQLite integrity checks. That instrumentation fixture has not been executed on
 an emulator/device, and it is not a substitute for the production APK upgrade.
 
-## Self-update
+## Historical self-update (retired)
+
+The release app has no APK installer or in-app binary updater. These items
+record the retired lane, not requirements for current Play builds.
 
 - [x] Discover the newest non-draft, non-prerelease `mobile-v*` GitHub release
   and matching APK.

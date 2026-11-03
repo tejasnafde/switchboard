@@ -1,7 +1,11 @@
 # Execution-root relocation
 
-Status: in progress. Foundation landed; the backend transaction, drift
-revisioning, terminal reconciliation and the mobile clients are outstanding.
+Status: partially shipped. The backend transaction, revisioned desktop Follow
+and new-terminal defaults are implemented (`provider/execution-root-coordinator.ts`,
+`tests/unit/execution-root-coordinator.test.ts`). Existing-terminal reconciliation
+and phone Follow remain outstanding. The design below records the original
+implementation plan; it is not a current-code inventory. See
+`docs/feature-parity/worktree-follow-execution-root.json` for verification limits.
 
 Written 2026-09-17 against `v0.8.58`. Filed under the date the work was
 specified so it sits beside the sibling worktree designs.

@@ -3,13 +3,18 @@ out/
 dist/
 # Exception: tour MP4s rendered by HyperFrames live at videos/dist/ and
 # are bundled into the packaged app via electron-builder's extraResources.
-# CI doesn't render videos, so they have to live in git. ~700KB total.
+# CI doesn't render videos, so they have to live in git. bundled tour clips.
 !videos/dist/
 !videos/dist/*.mp4
 *.tsbuildinfo
 .DS_Store
+.AppleDouble
+._*
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 
-# Environment / secrets — NEVER commit. The dotenv-style files below
+# Environment / secrets - NEVER commit. The dotenv-style files below
 # are gitignored aggressively because past releases of this app accept
 # things like ANTHROPIC_API_KEY / NVIDIA_API_KEY through the user's
 # shell rc; we never want a stray copy ending up in the repo.
@@ -65,3 +70,42 @@ promo-mocks/
 
 # Visual regression output (actual + diff PNGs), rewritten on every run.
 e2e/artifacts/
+
+# Local logs and process dumps
+*.log
+logs/
+*.pid
+*.pid.lock
+*.dmp
+npm-debug.log*
+
+# Environment variants; templates contain placeholders only
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Packaged apps and mobile/native build output
+*.app/
+*.apk
+*.aab
+*.ipa
+*.jks
+apps/android/.gradle/
+apps/android/.kotlin/
+apps/android/local.properties
+apps/android/**/.cxx/
+apps/android/**/.externalNativeBuild/
+apps/android/**/build/
+apps/mobile/android/
+apps/mobile/ios/
+*.xcarchive/
+*.xcresult/
+DerivedData/
+
+# E2E scratch folders if a run places them in the checkout
+sb-ide-e2e-*/
+sb-ide-wf-*/
+sb-ide-proj-*/
+sb-update*/
+sb-ide-probe*/

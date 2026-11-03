@@ -12,13 +12,14 @@ Switchboard keeps coding agents, real terminals, files, git worktrees, and
 remote machines in one desktop workspace. Send terminal output, file ranges,
 and chat messages to an agent without leaving the project.
 
-Today, Switchboard supports **Claude Code**, **Codex**, and **OpenCode**.
-Cursor and additional providers are planned. The provider layer is designed to
-grow, and contributions are welcome.
+Switchboard runs **Claude Code**, **Codex**, and **OpenCode** chats. Local ACP
+agents and custom launch commands can be added through Settings > Accounts.
+Availability depends on the installed command; see [features](docs/features.md).
 
 > Status: pre-1.0. macOS Apple Silicon and Windows x64 builds are published
-> through GitHub Releases with auto-update. **Builds are unsigned. On macOS,
-> Gatekeeper blocks the first launch - run
+> through GitHub Releases with auto-update. Signing depends on the release
+> credentials. **For an unsigned macOS build,
+> Gatekeeper can block launch. Run
 > `xattr -d com.apple.quarantine /Applications/Switchboard.app` after install,
 > or right-click the app and choose Open.** See [Install](#install).
 
@@ -42,7 +43,7 @@ than scattered across applications.
 - Start two agent chats side by side to compare approaches or delegate parallel
   work. Use **Open beside** in a chat header or session menu (`Cmd+Shift+\\`),
   then **Copy prompt → other** to give both agents independently editable drafts.
-- Choose permission modes per chat: plan, sandbox, accept edits, or full
+- Choose permission modes per chat: plan, sandbox, accept edits, auto, or full
   access. Plan mode is enforced by Switchboard, not just requested from the
   provider.
 - Resume Claude Code sessions, and search Claude Code and Codex history from
@@ -55,24 +56,24 @@ than scattered across applications.
   chat with `Cmd+L`.
 - Paste or drop screenshots directly into a supported agent chat.
 - Use `Cmd+K` for a focused prompt without leaving the current workspace.
-- Open files referenced in a chat directly in the embedded VS Code workbench.
+- Open files referenced in a chat directly in the embedded workbench.
 
 ### Keep parallel work under control
 
-- Run real shells in a tmux-style tree of resizable terminal panes.
+- Run real shells in a tree of resizable terminal windows and tabs.
 - Create a kanban card that launches an agent in its own git worktree.
 - Fork a conversation from any message, optionally into an isolated worktree.
 - Review per-file and per-hunk diffs from a git checkpoint after each agent
   turn.
-- Save named terminal templates in `.switchboard/workspace.yaml` and apply
+- Save named terminal templates in `.switchboard/launch-config.yaml` and apply
   them to new chats.
 
 ### Work across machines
 
 - Connect to a Linux machine through your existing SSH configuration.
-- Run Claude Code, terminals, git, and file access on that machine while
-  keeping the Switchboard interface on your laptop. Remote Codex and OpenCode
-  support is not available yet.
+- Run Claude Code or Codex, terminals, git, and file access on that machine
+  while keeping the Switchboard interface on your laptop. ACP agents remain
+  local-only. The backend stays alive across tunnel drops.
 - Reconnect to remote chats and browse recent remote projects while offline.
 
 ## Providers
@@ -80,10 +81,9 @@ than scattered across applications.
 | Provider | Status | Notes |
 | --- | --- | --- |
 | Claude Code | Supported | Agent SDK integration, sessions, permissions, skills, images, and remote machines |
-| Codex | Supported | `codex app-server` integration, sessions, permissions, skills, and images |
+| Codex | Supported | `codex app-server` integration, sessions, permissions, skills, images, and remote machines |
 | OpenCode | Supported | Agent Client Protocol integration, dynamic models, skills, and images |
-| Cursor | Planned | Not implemented yet. No delivery date. |
-| Other agents | Planned | New adapters are welcome through the provider interface. |
+| Local ACP agents | Available when installed | Gemini CLI, Mistral Vibe, Cline, GitHub Copilot CLI, and custom commands; phone pickers remain staged. |
 
 Switchboard is not trying to replace the agents themselves. It is the place to
 run, compare, and supervise them alongside the terminals and project state
@@ -109,8 +109,8 @@ the approach you want.
 ### Continue work from another machine
 
 Connect to a Linux host over SSH and start a project there. Switchboard
-provisions its helper, tunnels the connection, and keeps the familiar Claude
-Code chat, terminal, file, and git surface on your laptop.
+provisions its helper, tunnels the connection, and keeps chat, terminal, file,
+and git controls on your laptop.
 
 ### Compare or delegate with two chats
 
@@ -122,22 +122,9 @@ attachments without linking the two composers. Each side is sent separately,
 so a provider failure never clears the other draft. Message file links, forks,
 and **Send to other panel** always use the message's own conversation.
 
-## How it compares
-
-Switchboard overlaps with several excellent tools. The difference is the
-combination of provider-neutral agent chats, live terminal context, git-aware
-review, and a project workspace that can run locally or over SSH.
-
-| If you need | Consider | Use Switchboard when |
-| --- | --- | --- |
-| A Codex-only multi-agent application | Codex app | You want to work with Claude Code, Codex, and OpenCode in the same workspace, with real terminal processes and remote machines. |
-| An AI-native terminal or saved terminal layouts | Warp | You want rendered provider chats, terminal-to-agent context, git worktree cards, and provider-independent history. |
-| A fast, native terminal for managing CLI agents | cmux | You want the agent conversation, diffs, files, terminals, and project history in one application. |
-| An IDE with built-in agent features | Cursor | You want a workspace centered on agents and live processes. Cursor support is planned, but not available yet. |
-
 ## See it in action
 
-**Open any file from the chat in a real VS Code workbench**
+**Open any file from the chat in a embedded workbench**
 
 https://github.com/user-attachments/assets/50fc2f7f-7913-4941-a4a5-2e9acf50639f
 
@@ -157,10 +144,10 @@ https://github.com/user-attachments/assets/69252158-50c2-41ff-be7c-377ac2b84ce0
 
 Download the latest build from the [Releases page](https://github.com/tejasnafde/switchboard/releases/latest).
 
-### macOS, Apple Silicon
+### macOS 12 or newer, Apple Silicon
 
-Download `Switchboard-X.Y.Z-arm64-mac.zip`. The app is unsigned, so Gatekeeper
-will refuse the first launch.
+Download `Switchboard-X.Y.Z-arm64-mac.zip`. If the release is unsigned and
+Gatekeeper blocks launch, remove its quarantine attribute after installing:
 
 ```bash
 # Unzip, drag Switchboard.app to /Applications, then:
@@ -175,16 +162,19 @@ Intel Macs are not currently built. Open an issue if you need x64 support.
 
 ### Windows, x64
 
-Download `Switchboard Setup X.Y.Z.exe`. SmartScreen may show "Windows protected
+Download `Switchboard-Setup-X.Y.Z.exe`. SmartScreen may show "Windows protected
 your PC" on first launch. Choose **More info**, then **Run anyway**. A portable
 `.zip` build is also available.
 
 ## Privacy
 
-Your chats, code and terminal output stay on your machines. The desktop app
-sends five anonymous counts (launch, session started, tour completed or
-skipped, crash) with the app version, OS, chip and a random install id, and
-nothing else. Turn them off in **Settings > General > Privacy**; development
+Chats travel between your own backends, paired devices and the agent providers
+you select. Push notifications pass through the notification services and can
+include an approval detail, question or error excerpt. The desktop app
+sends anonymous usage counts for launches, sessions, tours, crashes, Snooze
+and enabled secret requests. The closed property list contains categories and
+buckets, not chat text or secret values, plus a random install ID and platform;
+launch events include app version and architecture. Turn them off in **Settings > General > Privacy**; development
 builds never send. Full text at [tn07.dev/privacy](https://tn07.dev/privacy).
 
 ## Develop
@@ -193,6 +183,8 @@ builds never send. Full text at [tn07.dev/privacy](https://tn07.dev/privacy).
 git clone https://github.com/tejasnafde/switchboard.git
 cd switchboard
 npm install
+npm run rebuild
+npm ci --prefix apps/mobile
 npm run dev
 ```
 
@@ -213,20 +205,20 @@ process.
 
 ## Under the hood
 
-- **One provider interface, three protocols.** Claude Code uses the Agent SDK,
-  Codex uses JSON-RPC through `codex app-server`, and OpenCode uses the Agent
-  Client Protocol. They normalize into one event stream, so the renderer stays
-  provider-agnostic.
+- **One provider interface.** SDK streaming, app-server JSON-RPC and ACP
+  normalize into one event stream. The renderer consumes the same events
+  across providers.
 - **Permissions enforced by the app.** Plan mode uses a tested policy that
   denies non-read-only tools across providers.
 - **Git is the source of truth for edits.** Switchboard takes a checkpoint at
   the start of a turn and derives review cards from the resulting diff.
-- **Project context is local and durable.** Real PTYs, an embedded VS Code
+- **Project context is local and durable.** Real PTYs, an embedded
   workbench, SQLite with FTS5, encrypted provider credentials, project-scoped
-  history, and `.switchboard/workspace.yaml` terminal templates are all part of
+  history, and `.switchboard/launch-config.yaml` terminal templates are all part of
   the application.
-- **Built and tested.** The build is gated by typechecking and a suite of more
-  than 1,900 tests.
+- **Built and tested.** The local build gates on typechecking and root unit
+  tests. CI also checks mobile components, Android and theme screenshots. Coverage and device limits live in the
+  [parity manifests](docs/feature-parity/).
 
 For the technical details:
 
