@@ -321,13 +321,15 @@ The macOS lane enables hardened runtime and Developer ID signing. Then
 apart. electron-builder's own notarize step is off in the signed overlay
 because it staples once: on 2026-11-03 the ticket lookup at
 `api.apple-cloudkit.com` dropped the connection on the runner (stapler exit 68)
-twice in a row after Apple had accepted the submission. Then the hook checks:
+twice in a row after Apple had accepted the submission. `stapler staple`
+validates the ticket it attaches, so the hook runs no separate
+`xcrun stapler validate`: that second lookup failed the v0.9.128 release with
+the same lost connection after the staple had succeeded. Then the hook checks:
 
 - `codesign --verify --deep --strict` with the extra requirement
   `identifier "com.tejasnafde.switchboard"` (see "From ad-hoc to Developer ID"
   below),
-- `spctl --assess --type exec` (Gatekeeper accepts the app),
-- `xcrun stapler validate` (the notarization ticket is stapled).
+- `spctl --assess --type exec` (Gatekeeper accepts the app).
 
 The Windows lane enables Authenticode and validates the packed executable.
 

@@ -74,6 +74,10 @@ exports.default = async function afterSign(context) {
   if (context.electronPlatformName === 'darwin') {
     const appPath = path.join(context.appOutDir, `${product}.app`)
     notarize(appPath)
+    // `stapler staple` validates the ticket it attaches ("The staple and
+    // validate action worked!"), so no separate `stapler validate` runs: it
+    // fetched the same ticket again over the same flaky connection and failed
+    // a release on 2026-11-03 after the staple had succeeded.
     await stapleWithRetries(appPath)
     // Installed builds signed ad-hoc by afterPack.js carry the designated
     // requirement `identifier "<bundle id>"`, and ShipIt installs an update
@@ -86,8 +90,7 @@ exports.default = async function afterSign(context) {
       { stdio: 'inherit' },
     )
     execFileSync('spctl', ['--assess', '--type', 'exec', '-vv', appPath], { stdio: 'inherit' })
-    execFileSync('xcrun', ['stapler', 'validate', appPath], { stdio: 'inherit' })
-    console.log('[afterSign] verified Developer ID signature, Gatekeeper assessment and notarization ticket')
+    console.log('[afterSign] stapled and validated the notarization ticket, verified Developer ID signature and Gatekeeper assessment')
     return
   }
 
