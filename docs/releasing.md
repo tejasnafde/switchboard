@@ -267,21 +267,81 @@ runs; secret values are never printed.
 
 macOS signed releases require these repository secrets:
 
-- `MAC_CSC_LINK`
-- `MAC_CSC_KEY_PASSWORD`
-- `APPLE_ID`
-- `APPLE_APP_SPECIFIC_PASSWORD`
-- `APPLE_TEAM_ID`
+- `MAC_CSC_LINK`: base64 of the Developer ID Application `.p12`
+- `MAC_CSC_KEY_PASSWORD`: the `.p12` password
+- `APPLE_TEAM_ID`: the team that owns the certificate
+- `APPLE_API_KEY_P8`: the text of the App Store Connect API key (`.p8`)
+- `APPLE_API_KEY_ID`: that key's id
+- `APPLE_API_ISSUER`: the issuer id of the App Store Connect team
+
+Notarization uses the App Store Connect API key, not an Apple ID with an
+app-specific password. `release-build.yml` writes `APPLE_API_KEY_P8` to a
+mode-600 file under `$RUNNER_TEMP` and passes only its path to
+electron-builder as `APPLE_API_KEY`, then deletes the file when the job ends.
+The key needs the Developer role (or higher) in App Store Connect to submit to
+the notary service. Do not set `APPLE_ID` or `APPLE_APP_SPECIFIC_PASSWORD`:
+electron-builder prefers them over the API key when both are present.
 
 Windows signed releases require:
 
 - `WIN_CSC_LINK`
 - `WIN_CSC_KEY_PASSWORD`
 
-The macOS lane enables hardened runtime, Developer ID signing, notarization,
-and ticket validation. The Windows lane enables Authenticode and validates the
-packed executable. A manual workflow dispatch exercises the same selection and
-verification without publishing.
+The macOS lane enables hardened runtime and Developer ID signing. Then
+`build/afterSign.js` submits the app with `xcrun notarytool submit --wait`
+(it fails unless Apple returns Accepted) and staples the ticket with
+`xcrun stapler staple -v`, up to five attempts 30, 60, 90 and 120 seconds
+apart. electron-builder's own notarize step is off in the signed overlay
+because it staples once: on 2026-11-03 the ticket lookup at
+`api.apple-cloudkit.com` dropped the connection on the runner (stapler exit 68)
+twice in a row after Apple had accepted the submission. Then the hook checks:
+
+- `codesign --verify --deep --strict` with the extra requirement
+  `identifier "com.tejasnafde.switchboard"` (see "From ad-hoc to Developer ID"
+  below),
+- `spctl --assess --type exec` (Gatekeeper accepts the app),
+- `xcrun stapler validate` (the notarization ticket is stapled).
+
+The Windows lane enables Authenticode and validates the packed executable.
+
+A dry-run dispatch of `release.yml` (see "Desktop release" above) exercises
+the same selection, signing, notarization and verification on the main tree
+without publishing. It keeps the packages as the run artifact
+`desktop-dry-run-macos-15` (kept 7 days), so you can check the app locally:
+
+```bash
+gh run download <run-id> -R tejasnafde/switchboard -n desktop-dry-run-macos-15 -D /tmp/sb-devid
+ditto -x -k /tmp/sb-devid/Switchboard-*-mac.zip /tmp/sb-devid/app
+codesign -dv --verbose=4 /tmp/sb-devid/app/Switchboard.app
+spctl -a -vv /tmp/sb-devid/app/Switchboard.app
+```
+
+### From ad-hoc to Developer ID (checked 2026-11-03)
+
+Squirrel.Mac (ShipIt) installs an update only if the new bundle passes
+`SecStaticCodeCheckValidityWithErrors` (nested code, strict, all
+architectures) against the designated requirement of the app that is running
+(`SQRLCodeSignature -verifyBundleAtURL:`). Ad-hoc builds from
+`build/afterPack.js` carry the requirement `identifier "com.tejasnafde.switchboard"`
+and nothing else, and a Developer ID build keeps that identifier. So the first
+signed release installs over an ad-hoc install by auto-update, and
+`afterSign.js` checks that requirement on every signed build.
+
+An ad-hoc install older than the identifier-only requirement (it has a cdhash
+requirement, `codesign -d -r- /Applications/Switchboard.app` shows it) cannot
+auto-update. Download the zip from the release once and replace the app by
+hand. Today the only real install is the owner's, so a one-time manual install
+is acceptable if the auto-update fails for any reason.
+
+After the switch, macOS can ask once more for the keychain item
+"Switchboard Safe Storage" (choose Always Allow) and for folder access, because
+both are bound to the code signature.
+
+The Developer ID requirement includes the team (`certificate leaf[subject.OU] = "4GHRM59326"`).
+From then on, an unsigned or ad-hoc build can never auto-update a signed
+install. Keep the six macOS secrets set; removing them makes the next release
+unsigned and strands every signed install. A renewed certificate from the same
+team still satisfies the requirement.
 
 macOS ships as a `.zip` (not `.dmg`), as configured in `electron-builder.yml`.
 CI and the macOS release build run on `macos-15` (PR #492). The screenshot job
@@ -390,8 +450,9 @@ The auto-update flow itself works fine - the updater downloads the
 new version and replaces the app bundle. It's purely the post-replace
 launch that gets re-quarantined.
 
-Once the five macOS secrets above are configured, CI automatically switches to
-the signed overlay. Do not hard-code a certificate identity in the repository.
+Once the six macOS secrets above are configured, CI automatically switches to
+the signed overlay, and none of these prompts appear. Do not hard-code a
+certificate identity in the repository.
 
 ---
 

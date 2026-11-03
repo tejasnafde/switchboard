@@ -128,8 +128,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.ci_status.outputs.tag }}
           REPO: ${{ github.repository }}
+          MAC_SIGNED: ${{ secrets.MAC_CSC_LINK != '' }}
+          WIN_SIGNED: ${{ secrets.WIN_CSC_LINK != '' }}
         run: |
           set -euo pipefail
+          if [ "$MAC_SIGNED" = "true" ]; then
+            mac_note="macOS: signed with Developer ID and notarized."
+          else
+            mac_note="macOS: unsigned. After install, run \`xattr -d com.apple.quarantine /Applications/Switchboard.app\`, or right-click the app and choose Open."
+          fi
+          if [ "$WIN_SIGNED" = "true" ]; then
+            win_note="Windows: signed with Authenticode."
+          else
+            win_note="Windows: unsigned. If SmartScreen warns, choose More info, then Run anyway."
+          fi
           if draft=$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft); then
             if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_RUN_ATTEMPT" = 1 ]; then
               echo "::error::A draft already exists for this version; inspect and remove it before a new dispatch"
@@ -140,9 +152,8 @@ jobs:
           else
             gh release create "$TAG" --repo "$REPO" --draft --title "$TAG" --notes "Switchboard $TAG
 
-          **Builds are unsigned.**
-          macOS: after install, run \`xattr -d com.apple.quarantine /Applications/Switchboard.app\`, or right-click the app and choose Open.
-          Windows: if SmartScreen warns, choose More info, then Run anyway."
+          $mac_note
+          $win_note"
           fi
 
   build_mac:
