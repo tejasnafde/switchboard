@@ -4,7 +4,7 @@
 
 [Product site](https://switchboard.tn07.dev/) | [Latest release](https://github.com/tejasnafde/switchboard/releases/latest)
 
-![Switchboard: an agent chat with terminal and file pills beside two terminal panes](docs/images/hero.png)
+![Switchboard: a demo agent chat with an expanded diff beside a terminal showing passing tests](docs/images/hero.png)
 
 https://github.com/user-attachments/assets/75bc0e76-67ba-4d28-aceb-3c8e1db34b14
 
