@@ -468,7 +468,7 @@ export function createNewSessionCreationCoordinator(options: MobileNewSessionCre
         setup: { policy: intent.checkout.setupPolicy },
         launch: {
           initialAgent: {
-            provider: intent.conversation.agentType === 'terminal' ? 'claude-code' : intent.conversation.agentType,
+            provider: intent.conversation.agentType,
             ...(intent.provider.instanceId ? { instanceId: intent.provider.instanceId } : {}),
             ...(intent.provider.model ? { model: intent.provider.model } : {}),
             ...(intent.provider.runtimeMode ? { runtimeMode: intent.provider.runtimeMode } : {}),

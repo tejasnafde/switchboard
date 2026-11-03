@@ -15,7 +15,6 @@ describe('dual-chat component contract', () => {
   const main = read('../../src/main/index.ts')
   const preload = read('../../src/preload/index.ts')
   const terminalPane = read('../../src/renderer/components/terminal/TerminalPane.tsx')
-  const terminalSessionPane = read('../../src/renderer/components/terminal/TerminalSessionPane.tsx')
 
   it('uses unambiguous slot and session attributes on chat roots', () => {
     expect(panel).toContain('data-chat-slot={chatSlot}')
@@ -47,12 +46,6 @@ describe('dual-chat component contract', () => {
     expect(workspace).toContain('chatSlot="primary"')
     expect(workspace).toContain('chatSlot="secondary"')
     expect(workspace).toContain('data-chat-presentation={chatPresentation}')
-    expect(app).toContain("display: activeTerminalPaneId ? 'none' : 'flex'")
-    expect(app).not.toMatch(/activeTerminalPaneId\s*\?\s*\(\s*<TerminalSessionPane/)
-  })
-
-  it('does not place terminal summaries in the secondary chat slot', () => {
-    expect(app).toContain("placement === 'beside' && session.agentType !== 'terminal'")
   })
 
   it('surfaces a header open-beside action with explanatory copy', () => {
@@ -75,8 +68,5 @@ describe('dual-chat component contract', () => {
   it('marks every terminal surface with its authoritative owning session', () => {
     expect(terminalPane).toContain('data-context-source="terminal"')
     expect(terminalPane).toContain('data-session-id={props.sessionId}')
-    expect(terminalSessionPane).toContain('data-context-source="terminal"')
-    expect(terminalSessionPane).toContain('data-session-id={sessionId}')
-    expect(app).toContain('<TerminalSessionPane paneId={activeTerminalPaneId} sessionId={companionAgentSessionId!}')
   })
 })

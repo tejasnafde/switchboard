@@ -236,8 +236,6 @@ interface AgentSession {
    * `shared/effort.ts`.
    */
   reasoningEffort?: ReasoningEffort
-  /** PTY pane id in terminal-registry. Only set for type='terminal' sessions. */
-  terminalPaneId?: string
 
   /**
    * Cumulative session cost in USD reported by the agent. ACP-backed
@@ -526,12 +524,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   settleSessionsNotLive: (live, machineId) =>
     set((state) => ({
-      sessions: settleSessionsNotLive(
-        state.sessions,
-        live,
-        (s) =>
-          s.type !== 'terminal' &&
-          (machineId === null ? !s.machineId || s.machineId === 'local' : s.machineId === machineId),
+      sessions: settleSessionsNotLive(state.sessions, live, (s) =>
+        machineId === null ? !s.machineId || s.machineId === 'local' : s.machineId === machineId,
       ),
     })),
 

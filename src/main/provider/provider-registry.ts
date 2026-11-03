@@ -4169,11 +4169,7 @@ export class ProviderRegistry implements PeerToolHost {
     this.firstTurnSent.delete(threadId)
   }
 
-  private publishAdapterEvent(
-    event: RuntimeEvent,
-    agentType: Exclude<AgentType, 'terminal'>,
-    providerInstanceId: string | null,
-  ): void {
+  private publishAdapterEvent(event: RuntimeEvent, agentType: AgentType, providerInstanceId: string | null): void {
     if (event.type === 'content' || event.type === 'error' || event.type === 'turn.completed') {
       this.firstContentSpans.get(event.threadId)?.end({ outcome: event.type })
       this.firstContentSpans.delete(event.threadId)

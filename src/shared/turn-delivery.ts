@@ -17,7 +17,7 @@ export type TurnDelivery = 'steer' | 'queue'
 
 /** Accepts either spelling of Claude (`claude` / `claude-code`). */
 export function canSteer(provider: string | undefined | null): boolean {
-  return !speaksAcp(provider) && provider !== 'terminal'
+  return !speaksAcp(provider)
 }
 
 /** Should a message sent now wait for the running turn to end? */

@@ -18,7 +18,7 @@ import {
 import type { AgentType } from '../../src/shared/types'
 
 describe('AGENT_TYPES', () => {
-  it('contains every agent kind, the generic ACP agents before the terminal', () => {
+  it('contains every supported chat agent kind', () => {
     expect(AGENT_TYPES).toEqual([
       'claude-code',
       'codex',
@@ -28,7 +28,6 @@ describe('AGENT_TYPES', () => {
       'cline',
       'copilot',
       'acp-command',
-      'terminal',
     ])
   })
 })
@@ -41,6 +40,7 @@ describe('isAgentType', () => {
   })
 
   it('returns false for unknown strings', () => {
+    expect(isAgentType('terminal')).toBe(false)
     expect(isAgentType('goose')).toBe(false)
     expect(isAgentType('')).toBe(false)
     expect(isAgentType(null)).toBe(false)
@@ -54,7 +54,6 @@ describe('agentLabel', () => {
     expect(agentLabel('claude-code')).toBe('Claude Code')
     expect(agentLabel('codex')).toBe('Codex')
     expect(agentLabel('opencode')).toBe('OpenCode')
-    expect(agentLabel('terminal')).toBe('Terminal')
     expect(agentLabel('cursor')).toBe('Cursor')
     expect(agentLabel('gemini')).toBe('Gemini CLI')
     expect(agentLabel('vibe')).toBe('Mistral Vibe')
@@ -81,7 +80,6 @@ describe('agentShortLabel', () => {
     expect(agentShortLabel('claude-code')).toBe('Claude')
     expect(agentShortLabel('codex')).toBe('Codex')
     expect(agentShortLabel('opencode')).toBe('OpenCode')
-    expect(agentShortLabel('terminal')).toBe('Terminal')
     expect(agentShortLabel('gemini')).toBe('Gemini')
     expect(agentShortLabel('copilot')).toBe('Copilot')
   })
@@ -93,7 +91,7 @@ describe('agentShortLabel', () => {
 
 describe('defaultInstanceId', () => {
   it('returns <kind>-default for every known kind', () => {
-    const kinds: AgentType[] = ['claude-code', 'codex', 'opencode', 'terminal']
+    const kinds: AgentType[] = ['claude-code', 'codex', 'opencode']
     for (const k of kinds) {
       expect(defaultInstanceId(k)).toBe(`${k}-default`)
     }

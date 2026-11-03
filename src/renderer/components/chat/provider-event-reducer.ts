@@ -416,7 +416,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
           .catch((err: unknown) => log.warn('clear retired model failed', err))
       }
       // And the machine default, or every new chat would start on it again.
-      if (current && current.type !== 'terminal') {
+      if (current) {
         const key = defaultModelSettingKey(current.type)
         void window.api.settings
           ?.get?.(key)

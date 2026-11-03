@@ -39,6 +39,7 @@ import {
   bulkSaveMessages,
   archiveConversation,
   unarchiveConversation,
+  getConversationAgentType,
   getArchivedConversations,
   isConversationArchived,
   getConversationById,
@@ -922,6 +923,8 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   })
 
   host.handle(AppChannels.UNARCHIVE_CONVERSATION, (id: string) => {
+    // A thrown error makes an older client's Archive panel put the row back.
+    if (getConversationAgentType(id) === 'terminal') throw new Error('Terminal agent has been removed.')
     unarchiveConversation(id)
     return { ok: true }
   })

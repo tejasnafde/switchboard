@@ -7,6 +7,7 @@ import type {
   WorktreeCreationPhase,
   WorktreeCreationStatus,
 } from '../../shared/worktree-creation'
+import { toAgentProvider } from '../../shared/types'
 import { SqliteConversationForkStore, type CommitCompletedConversationForkInput } from './conversation-fork'
 
 export interface WorktreeCreationRecord {
@@ -463,11 +464,13 @@ function backfillLegacyWorktrees(db: Database.Database): void {
             : {
                 kind: 'conversation' as const,
                 conversationId: projection.owner_id,
-                agentType: ((
-                  db.prepare(`SELECT agent_type FROM conversations WHERE id = ?`).get(projection.owner_id) as
-                    | { agent_type?: string }
-                    | undefined
-                )?.agent_type ?? 'terminal') as 'terminal',
+                agentType: toAgentProvider(
+                  (
+                    db.prepare(`SELECT agent_type FROM conversations WHERE id = ?`).get(projection.owner_id) as
+                      | { agent_type?: string }
+                      | undefined
+                  )?.agent_type,
+                ),
               }
         const purpose = projection.owner_kind === 'kanban-card' ? ('kanban' as const) : ('new-chat' as const)
         const requestedAt = Math.max(1, catalog.created_at)
@@ -1017,6 +1020,8 @@ export class SqliteWorktreeCreationStore {
           input.now,
         )
 
+      // A creation stored before the upgrade can still name the retired agent.
+      if ((input.conversation.agentType as string) === 'terminal') throw new Error('Terminal agent has been removed.')
       this.db
         .prepare(`
         INSERT INTO conversations (
@@ -1116,6 +1121,7 @@ export class SqliteWorktreeCreationStore {
           | { title: string }
           | undefined
         if (!cardTitle) throw new Error('kanban card disappeared before conversation linkage')
+        if ((input.conversation.agentType as string) === 'terminal') throw new Error('Terminal agent has been removed.')
         this.db
           .prepare(`
           INSERT INTO conversations (

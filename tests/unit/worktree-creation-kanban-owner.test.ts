@@ -621,4 +621,42 @@ describe('WorktreeCreationService Kanban owner', () => {
       harness.close()
     }
   })
+
+  it('links the card without a chat when a stored creation still names the retired Terminal agent', async () => {
+    const harness = fixture({
+      startupLauncher: { launch: async () => ({ status: 'succeeded', terminalIds: [] }) },
+    })
+    try {
+      harness.git.materializeResults = [
+        { kind: 'conflict', worktreePath: WORKTREE_PATH, branch: WORKTREE_BRANCH, reason: 'branch_exists' },
+      ]
+      const failed = await harness.service.createWorktreeTransaction(
+        request({ launch: { initialAgent: { provider: 'claude-code', prompt: 'Implement the card.' } } }),
+      )
+      const stored = JSON.parse(
+        harness.store.get({ machineId: 'machine-local', creationId: request().creationId })?.requestJson ?? '{}',
+      ) as WorktreeCreationRequest
+      stored.launch!.initialAgent!.provider = 'terminal' as never
+      harness.db
+        .prepare(`UPDATE worktree_creations SET request_json = ? WHERE creation_id = ?`)
+        .run(JSON.stringify(stored), request().creationId)
+
+      const ready = await harness.service.actOnWorktreeCreation({
+        machineId: 'machine-local',
+        creationId: request().creationId,
+        expectedRevision: failed.revision,
+        action: 'retry',
+      })
+
+      expect(ready).toMatchObject({ phase: 'ready', status: 'ready' })
+      expect(card(harness.db)).toMatchObject({
+        conversation_id: null,
+        worktree_id: 'worktree-kanban-owner',
+        worktree_creation_id: request().creationId,
+      })
+      expect(count(harness.db, 'conversations')).toBe(0)
+    } finally {
+      harness.close()
+    }
+  })
 })

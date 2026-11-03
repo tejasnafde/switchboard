@@ -97,7 +97,7 @@ export interface WorktreeSetupIntent {
 }
 
 export interface WorktreeInitialAgentIntent {
-  provider: Exclude<AgentType, 'terminal'>
+  provider: AgentType
   instanceId?: string
   model?: string
   runtimeMode?: RuntimeMode
@@ -110,6 +110,12 @@ export interface WorkspaceLaunchIntent {
   initialAgent?: WorktreeInitialAgentIntent
   /** Backend-normalized authorization that survives retries and restart recovery. */
   terminalPolicy?: 'provision' | 'skip'
+}
+
+/** A creation stored before the Terminal agent was removed can still name it. That creation starts no agent. */
+export function liveInitialAgent(launch: WorkspaceLaunchIntent | undefined): WorktreeInitialAgentIntent | undefined {
+  const agent = launch?.initialAgent
+  return agent && (agent.provider as string) !== 'terminal' ? agent : undefined
 }
 
 export interface WorktreeLineage {

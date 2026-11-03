@@ -111,16 +111,12 @@ interface ComposerRecovery {
   dismissed?: boolean
 }
 
-export function shouldFetchProviderSkills(agentType: AgentType): boolean {
-  return agentType !== 'terminal'
-}
-
 export function shouldFetchLiveModels(
   agentType: AgentType,
   sessionId: string | null | undefined,
   sessionIsActive: boolean,
 ): boolean {
-  if (!sessionId || agentType === 'terminal') return false
+  if (!sessionId) return false
   // OpenCode's catalog belongs to the binary, so the backend can answer from
   // another open OpenCode session before this one has started.
   return sessionIsActive || agentType === 'opencode'
@@ -313,15 +309,13 @@ export function ChatInput({
     // model launched after this release shows up in a new chat. A running
     // session's own list, once it lands, stays authoritative.
     liveListRef.current = false
-    if (agentType !== 'terminal') {
-      window.api.provider
-        .listCatalog?.({ threadId: sessionId ?? undefined, agentType, instanceId })
-        .then((catalog) => {
-          if (cancelled || liveListRef.current || !catalog?.length) return
-          persistDynamicModels(catalog)
-        })
-        .catch((err: unknown) => log.warn('catalog probe failed, keeping cached list', err))
-    }
+    window.api.provider
+      .listCatalog?.({ threadId: sessionId ?? undefined, agentType, instanceId })
+      .then((catalog) => {
+        if (cancelled || liveListRef.current || !catalog?.length) return
+        persistDynamicModels(catalog)
+      })
+      .catch((err: unknown) => log.warn('catalog probe failed, keeping cached list', err))
 
     return () => {
       cancelled = true
@@ -517,10 +511,6 @@ export function ChatInput({
       setAgentSkills([])
       return
     }
-    if (!shouldFetchProviderSkills(agentType)) {
-      setAgentSkills([])
-      return
-    }
     const request = ++skillsRequestRef.current
     const requestScope = skillsScope
     setAgentSkills([])
@@ -539,10 +529,6 @@ export function ChatInput({
 
   useEffect(() => {
     if (!sessionId) {
-      setAgentSkills([])
-      return
-    }
-    if (!shouldFetchProviderSkills(agentType)) {
       setAgentSkills([])
       return
     }

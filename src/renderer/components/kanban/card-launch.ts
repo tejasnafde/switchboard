@@ -82,6 +82,8 @@ export interface LaunchOptions {
   openChat: boolean
 }
 
+const RETIRED_TERMINAL_MESSAGE = 'Terminal agent has been removed. Its history remains in Archive & data.'
+
 export interface LaunchResult {
   sessionId: string
   /** True when an existing linked conversation was reused; false when a
@@ -106,15 +108,21 @@ export async function launchCardChat(card: KanbanCard, opts: LaunchOptions): Pro
   //    cards have their conversation archived; unarchive first so it
   //    isn't filtered out of scans / sidebar after resume.
   if (card.conversationId) {
-    window.api.app
-      .unarchiveConversation(card.conversationId)
-      .catch((err: unknown) => log('unarchive failed', { err: String(err) }))
+    // The backend refuses to unarchive a retired Terminal chat, and lists no
+    // row for it, so this is the one place that can name why it will not open.
+    await window.api.app.unarchiveConversation(card.conversationId).catch((err: unknown) => {
+      if (String(err).includes('Terminal agent has been removed')) throw new Error(RETIRED_TERMINAL_MESSAGE)
+      log('unarchive failed', { err: String(err) })
+    })
     let existing = useAgentStore.getState().sessions.find((s) => s.id === card.conversationId)
     if (!existing) {
       const rows = (await window.api.app.getConversations(card.projectPath)) as ConversationRow[]
       const row = rows.find((candidate) => candidate.id === card.conversationId)
       if (!row) {
         throw new Error('The linked conversation is not available. Refresh the board to recover its creation state.')
+      }
+      if (row.agent_type === 'terminal') {
+        throw new Error(RETIRED_TERMINAL_MESSAGE)
       }
       const agentType: AgentType = toAgentProvider(row.agent_type)
       useAgentStore.getState().addSession({

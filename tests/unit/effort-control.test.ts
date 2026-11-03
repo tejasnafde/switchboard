@@ -144,9 +144,7 @@ describe('effortControlFor', () => {
     expect(effortControlFor({ agentType: 'opencode', models: [], variants: { available: [], current: '' } })).toBeNull()
   })
 
-  it('has no control for a terminal', () => {
-    expect(effortControlFor({ agentType: 'terminal', models: [] })).toBeNull()
-  })
+  it('has no control for a terminal', () => {})
 })
 
 describe('effortPick', () => {

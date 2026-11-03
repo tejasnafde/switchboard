@@ -54,7 +54,7 @@ object TurnDeliveryPolicy {
     /** turn.queued / turn.dequeued plus list, promote and cancel. */
     const val QUEUE_CONTROLS_CAPABILITY = "turn_queue_controls_v1"
 
-    fun canSteer(provider: String?): Boolean = !AcpAgents.speaksAcp(provider) && provider != "terminal"
+    fun canSteer(provider: String?): Boolean = !AcpAgents.speaksAcp(provider)
 
     /** Anything but an explicit `queue` means steer, which is what a send always did. */
     fun parseFollowUpDefault(value: String?): TurnDelivery =

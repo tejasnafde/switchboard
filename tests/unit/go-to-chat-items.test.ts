@@ -21,14 +21,10 @@ const project = (path: string, sessions: SessionSummary[]): Project => ({
 describe('goToChatItems', () => {
   it('lists local, remote and archived chats once each, with their agent', () => {
     const items = goToChatItems({
-      localProjects: [
-        project('/r/app', [
-          session('a', { agentType: 'codex' }),
-          session('t', { agentType: 'terminal', source: 'switchboard' }),
-        ]),
-      ],
-      remoteProjects: { vm: [project('/srv/api', [session('b')])] },
+      localProjects: [project('/r/app', [session('a', { agentType: 'codex' })])],
+      remoteProjects: { vm: [project('/srv/api', [session('b'), session('t', { agentType: 'terminal' })])] },
       archived: [
+        { id: 'retired', project_path: '/r/app', title: 'Legacy terminal', updated_at: 6, agent_type: 'terminal' },
         { id: 'z', project_path: '/r/app', title: 'Old', updated_at: 5, agent_type: 'opencode', origin_source: null },
         { id: 'y', project_path: '/gone/proj', title: 'Older', updated_at: 4 },
         { id: 'a', project_path: '/r/app', title: 'dup', updated_at: 3 },
@@ -36,7 +32,6 @@ describe('goToChatItems', () => {
     })
     expect(items.map((i) => [i.session.id, i.machineId, i.agent, i.projectName, !!i.archived])).toEqual([
       ['a', 'local', 'codex', 'app', false],
-      ['t', 'local', 'terminal', 'app', false],
       ['b', 'vm', 'claude-code', 'api', false],
       ['z', 'local', 'opencode', 'app', true],
       ['y', 'local', 'claude-code', 'proj', true],

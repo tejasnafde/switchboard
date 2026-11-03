@@ -167,22 +167,28 @@ export function ArchivedPanel() {
                       {c.project_path.split('/').slice(-2).join('/')}
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleUnarchive(c)}
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: '4px',
-                      border: '1px solid var(--accent)',
-                      background: 'var(--accent-subtle)',
-                      color: 'var(--accent)',
-                      cursor: 'pointer',
-                      fontSize: '11px',
-                      fontWeight: 500,
-                      flexShrink: 0,
-                    }}
-                  >
-                    Unarchive
-                  </button>
+                  {c.agent_type === 'terminal' ? (
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Terminal agent removed. History retained in archive.
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => handleUnarchive(c)}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        border: '1px solid var(--accent)',
+                        background: 'var(--accent-subtle)',
+                        color: 'var(--accent)',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        fontWeight: 500,
+                        flexShrink: 0,
+                      }}
+                    >
+                      Unarchive
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

@@ -356,7 +356,7 @@ export function ChatPanel({
    */
   const handleAgentTypeChange = useCallback(
     async (t: AgentType) => {
-      if (opening || t === 'terminal' || (sessionId && useChatWaitStore.getState().waits[sessionId]?.pending)) return
+      if (opening || (sessionId && useChatWaitStore.getState().waits[sessionId]?.pending)) return
       const prevType = agentType
       setAgentType(t)
       if (!sessionId) return
@@ -1545,7 +1545,7 @@ export function ChatPanel({
               </ToolbarItem>
             )}
 
-            {activeSession && activeSession.type !== 'terminal' && (
+            {activeSession && (
               <>
                 <LinkedPrControl sessionId={activeSession.id} />
                 <ChatDetailsPopover

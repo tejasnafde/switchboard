@@ -12,7 +12,7 @@ export interface ForkSourceExecution {
   sourceWorktreeBranch: string | null
   sourceWorktreeId: string | null
   machineId: string
-  agentType: Exclude<AgentType, 'terminal'>
+  agentType: AgentType
   providerSessionId: string | null
   providerInstanceId: string | null
   runtimeMode: RuntimeMode

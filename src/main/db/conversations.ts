@@ -30,6 +30,7 @@ export function createConversation(
   worktreePath?: string | null,
   worktreeBranch?: string | null,
 ): boolean {
+  if (agentType === 'terminal') throw new Error('Terminal agent has been removed.')
   const now = Date.now()
   const catalogued = worktreePath
     ? (getDb()
@@ -1008,6 +1009,9 @@ export function setConversationProviderSelection(
 ): { model: string | null; reasoningEffort: ReasoningEffort | null } {
   const db = getDb()
   const rootId = resolveRootThreadId(id)
+  if (agentType === 'terminal' || getConversationAgentType(rootId) === 'terminal') {
+    throw new Error('Terminal agent has been removed.')
+  }
   // ponytail: read then write with no transaction - better-sqlite3 is
   // synchronous on one connection, so nothing can run between the two.
   const row = db
@@ -1147,6 +1151,7 @@ export function archiveConversation(id: string): void {
 }
 
 export function unarchiveConversation(id: string): void {
+  if (getConversationAgentType(id) === 'terminal') return
   setConversationArchived(id, 0)
 }
 

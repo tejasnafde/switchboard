@@ -202,6 +202,7 @@ export function recentLandingChats(local: readonly Project[], remote: RemoteProj
   for (const { machineId, projects } of sets) {
     for (const project of projects) {
       for (const session of project.sessions ?? []) {
+        // An older remote backend still lists its retired Terminal chats.
         if (session.agentType === 'terminal') continue
         const key = `${machineId}\u0000${session.id}`
         if (seen.has(key)) continue

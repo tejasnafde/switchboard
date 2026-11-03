@@ -17,17 +17,6 @@ export interface TerminalCreateOptions {
   waitFor?: string
   /** Routes PTY creation to this machine's backend (default local). */
   machineId?: string
-  /**
-   * Identity for a login/account-scoped terminal (e.g. the "Start Terminal
-   * Session" login flow). The renderer sends only identity across the IPC
-   * boundary - main resolves the instance and merges its real env
-   * (CODEX_HOME / CLAUDE_CONFIG_DIR, etc.) before spawning, so the renderer
-   * never builds raw provider env or sees decrypted secrets.
-   */
-  loginInstance?: {
-    agentType: 'claude-code' | 'codex'
-    instanceId?: string
-  }
 }
 
 export interface TerminalResizePayload {
@@ -45,18 +34,12 @@ export type TerminalStatus = 'running' | 'exited' | 'error'
 
 // ─── Agent ───────────────────────────────────────────────────────────
 
-export type AgentType = 'claude-code' | 'codex' | 'opencode' | GenericAcpAgent | 'terminal'
+export type AgentType = 'claude-code' | 'codex' | 'opencode' | GenericAcpAgent
 
-export const AGENT_TYPES: readonly AgentType[] = [
-  'claude-code',
-  'codex',
-  'opencode',
-  ...GENERIC_ACP_AGENTS,
-  'terminal',
-] as const
+export const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'codex', 'opencode', ...GENERIC_ACP_AGENTS] as const
 
-/** An agent type that runs a provider, i.e. everything but a plain terminal. */
-export type AgentProvider = Exclude<AgentType, 'terminal'>
+/** A supported chat agent. */
+export type AgentProvider = AgentType
 
 export const AGENT_PROVIDERS: readonly AgentProvider[] = ['claude-code', 'codex', 'opencode', ...GENERIC_ACP_AGENTS]
 
@@ -94,7 +77,6 @@ export function agentLabel(type: AgentType | 'cursor' | undefined): string {
   if (type === 'codex') return 'Codex'
   if (type === 'opencode') return 'OpenCode'
   if (isGenericAcpAgent(type)) return GENERIC_ACP_AGENT_LABELS[type].label
-  if (type === 'terminal') return 'Terminal'
   if (type === 'cursor') return 'Cursor'
   return 'Claude Code'
 }
@@ -104,7 +86,6 @@ export function agentShortLabel(type: AgentType | undefined): string {
   if (type === 'codex') return 'Codex'
   if (type === 'opencode') return 'OpenCode'
   if (isGenericAcpAgent(type)) return GENERIC_ACP_AGENT_LABELS[type].short
-  if (type === 'terminal') return 'Terminal'
   return 'Claude'
 }
 
@@ -384,7 +365,7 @@ export interface SessionSummary {
     status: 'cleanup_required'
     cleanupDisposition: 'retained'
   }
-  /** Populated from DB - lets the renderer skip JSONL load for terminal sessions. */
+  /** Provider identity from the stored conversation. */
   agentType?: string | null
   /** Native discovery classification. Present only in Import/Recovery. */
   nativeRole?: 'foreground' | 'subagent' | 'utility' | 'unknown'

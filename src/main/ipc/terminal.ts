@@ -7,7 +7,6 @@ import { OutputCoalescer } from '../terminal/output-coalescer'
 import { FileManagedTerminalCommandLedger, ManagedTerminalRuntime } from '../terminal/managed-terminal-runtime'
 import { userDataDir } from '../runtime'
 import { join } from 'node:path'
-import { withResolvedLoginEnv } from './terminal-login-env'
 
 const log = createLogger('ipc:terminal')
 
@@ -71,11 +70,10 @@ export function registerTerminalHandlers(host: BackendHost): void {
     // live, so late writes/resizes below no-op rather than throw.
     try {
       if (!ptyManager) throw new Error('terminal backend is shutting down')
-      // Resolve login identity (if any) to a real env BEFORE spawning - a
-      // missing/invalid instance must reject the create rather than open
-      // an unscoped shell.
-      const resolvedOpts = withResolvedLoginEnv(opts)
-      await ptyManager.create(resolvedOpts)
+      // An older client can still ask for an account login shell. Refuse it
+      // rather than open a shell with the ambient credentials.
+      if ('loginInstance' in opts) throw new Error('Terminal agent has been removed.')
+      await ptyManager.create(opts)
       log.info('created', opts.id)
       return { id: opts.id }
     } catch (err) {

@@ -39,7 +39,7 @@ export function sessionPickerCandidates<T extends { id: string; type: string; dr
   sessions: readonly T[],
   excludeIds: readonly string[],
 ): T[] {
-  return sessions.filter((s) => s.type !== 'terminal' && !s.draft && !excludeIds.includes(s.id))
+  return sessions.filter((s) => !s.draft && !excludeIds.includes(s.id))
 }
 
 interface SessionPickerModalProps {
