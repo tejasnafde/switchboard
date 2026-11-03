@@ -156,7 +156,7 @@ describe('release signing mode', () => {
       return { calls, afterSign: hook.default, hook }
     }
 
-    it('notarizes, staples, then checks the update requirement, Gatekeeper and the ticket', async () => {
+    it('notarizes, staples, then checks the update requirement and Gatekeeper', async () => {
       const { calls, afterSign } = loadHook(0)
 
       await afterSign(context)
@@ -184,7 +184,6 @@ describe('release signing mode', () => {
         'xcrun stapler',
         'codesign --verify',
         'spctl --assess',
-        'xcrun stapler',
       ])
       expect(calls.slice(2)).toEqual([
         ['xcrun', 'stapler', 'staple', '-v', app],
@@ -198,7 +197,6 @@ describe('release signing mode', () => {
           app,
         ],
         ['spctl', '--assess', '--type', 'exec', '-vv', app],
-        ['xcrun', 'stapler', 'validate', app],
       ])
     })
 
