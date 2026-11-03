@@ -1,0 +1,72 @@
+name: iOS native fingerprint
+on:
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'patches/**'
+      - '.github/workflows/ios-fingerprint.yml'
+      - 'scripts/ios-fingerprint-report.mjs'
+      - 'tests/unit/ios-fingerprint-report.test.ts'
+permissions:
+  contents: read
+concurrency:
+  group: ios-fingerprint-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  report:
+    name: iOS compatibility (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - name: Checkout the PR merge result
+        uses: actions/checkout@v4
+        with:
+          path: head
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Pin its exact base
+        id: base
+        run: |
+          set -euo pipefail
+          SHA=$(git -C head rev-parse HEAD^1)
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+      - name: Checkout the base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.base.outputs.sha }}
+          path: base
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+      - name: Install each revision from its own lockfiles
+        run: |
+          npm ci --ignore-scripts --prefix base
+          npm ci --ignore-scripts --prefix base/apps/mobile
+          npm ci --ignore-scripts --prefix head
+          npm ci --ignore-scripts --prefix head/apps/mobile
+      - name: Compare iOS native fingerprints
+        id: compare
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: |
+          set -euo pipefail
+          echo "Compared merge $(git -C head rev-parse HEAD) with base $BASE_SHA." >> "$GITHUB_STEP_SUMMARY"
+          node head/scripts/ios-fingerprint-report.mjs create base/apps/mobile "$RUNNER_TEMP/base-fingerprint.json"
+          node head/scripts/ios-fingerprint-report.mjs create head/apps/mobile "$RUNNER_TEMP/head-fingerprint.json"
+          node head/scripts/ios-fingerprint-report.mjs compare head/apps/mobile "$RUNNER_TEMP/base-fingerprint.json" "$RUNNER_TEMP/head-fingerprint.json"
+      - name: Keep fingerprint input metadata
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-fingerprints
+          path: ${{ runner.temp }}/*-fingerprint.json
+          retention-days: 14
+      - name: Explain an unavailable report
+        if: failure() && steps.compare.outcome != 'success'
+        run: echo 'iOS fingerprint report unavailable. No compatibility conclusion can be drawn. This advisory check does not block merging.' >> "$GITHUB_STEP_SUMMARY"

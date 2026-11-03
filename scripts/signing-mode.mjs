@@ -2,7 +2,7 @@ import { appendFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
 const REQUIRED = {
-  mac: ['CSC_LINK', 'CSC_KEY_PASSWORD', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID'],
+  mac: ['CSC_LINK', 'CSC_KEY_PASSWORD', 'APPLE_TEAM_ID', 'APPLE_API_KEY_P8', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER'],
   windows: ['WIN_CSC_LINK', 'WIN_CSC_KEY_PASSWORD'],
 }
 

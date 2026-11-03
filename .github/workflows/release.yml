@@ -1,9 +1,9 @@
 # Release pipeline.
 #
-# Trigger: pushing a tag matching `v*` (e.g. `v0.1.1`). The matrix runs
+# Trigger: deliberate manual dispatch or a `v*` tag push. The matrix runs
 # in parallel on macOS arm64 + Windows x64. A single prepare job creates a
 # hidden draft first, both builders upload into it, and verification publishes
-# the release only after every installer and update manifest is present.
+# the macOS release after its assets pass verification; Windows follows.
 #
 # We do NOT run on every push - release-only avoids burning CI minutes
 # on every commit while still catching regressions when a tag goes out.
@@ -18,15 +18,27 @@ on:
   push:
     tags:
       - 'v*'
-  # Manual trigger to validate the packaged build (esp. the Windows native
-  # rebuild) on a branch without cutting a tag. Builds only, never publishes.
+  # A manual release keeps version choice with the operator. Dry runs package
+  # the CI-verified main tree without creating tags or publishing.
   workflow_dispatch:
+    inputs:
+      version:
+        description: Human-chosen desktop version (X.Y.Z, no v). Always releases immutable main.
+        type: string
+        required: true
+      expected_sha:
+        description: SHA from the reviewed dry run. Required for a real release; main must still match.
+        type: string
+        default: ''
+      dry_run:
+        description: Package both platforms without creating a tag or publishing anything.
+        type: boolean
+        default: true
 
-# Cancel an in-flight run for the same tag if a re-tag happens. Avoids
-# two parallel publishes racing to upload assets.
+# Serialize releases, including dry runs, without cancelling packaging midway.
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-desktop
+  cancel-in-progress: false
 
 # Default GITHUB_TOKEN ships with read-only contents on new repos; electron-
 # builder needs `contents: write` to create the Release and upload artifacts.
@@ -35,6 +47,7 @@ concurrency:
 # https://docs.github.com/actions/security-guides/automatic-token-authentication
 permissions:
   contents: write
+  actions: read
 
 jobs:
   # The gate that used to be a line in docs/releasing.md ("make sure main is
@@ -47,12 +60,29 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       green: ${{ steps.check.outputs.green }}
+      sha: ${{ steps.plan.outputs.sha || github.sha }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag || github.ref_name }}
+      publish: ${{ github.event_name == 'push' || !inputs.dry_run }}
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+      - name: Plan immutable main release
+        id: plan
+        if: github.event_name == 'workflow_dispatch'
+        run: node scripts/desktop-release.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          DRY_RUN: ${{ inputs.dry_run }}
       - id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          SHA: ${{ github.sha }}
+          SHA: ${{ steps.plan.outputs.sha || github.sha }}
         run: |
           set -euo pipefail
           n=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&status=success&per_page=1" --jq '.total_count')
@@ -77,40 +107,77 @@ jobs:
     if: always() && needs.ci_status.result == 'success' && (needs.gate.result == 'success' || needs.gate.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
-      - name: Create one hidden release target
-        if: github.event_name == 'push'
+      - name: Create the tag on the CI-verified SHA
+        if: github.event_name == 'workflow_dispatch' && !inputs.dry_run
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.ci_status.outputs.tag }}
+          SHA: ${{ needs.ci_status.outputs.sha }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; reusing it for this rerun."
+          # A failed-job rerun can reuse the tag on the same immutable SHA.
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$TAG" --jq ".[] | select(.ref == \"refs/tags/$TAG\") | .object.sha")
+          if [ -n "$existing" ]; then
+            [ "$existing" = "$SHA" ] || { echo '::error::Tag points at another SHA'; exit 1; }
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$SHA"
+          fi
+      - name: Create one hidden release target
+        if: needs.ci_status.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.ci_status.outputs.tag }}
+          REPO: ${{ github.repository }}
+          MAC_SIGNED: ${{ secrets.MAC_CSC_LINK != '' }}
+          WIN_SIGNED: ${{ secrets.WIN_CSC_LINK != '' }}
+        run: |
+          set -euo pipefail
+          if [ "$MAC_SIGNED" = "true" ]; then
+            mac_note="macOS: signed with Developer ID and notarized."
+          else
+            mac_note="macOS: unsigned. After install, run \`xattr -d com.apple.quarantine /Applications/Switchboard.app\`, or right-click the app and choose Open."
+          fi
+          if [ "$WIN_SIGNED" = "true" ]; then
+            win_note="Windows: signed with Authenticode."
+          else
+            win_note="Windows: unsigned. If SmartScreen warns, choose More info, then Run anyway."
+          fi
+          if draft=$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft); then
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_RUN_ATTEMPT" = 1 ]; then
+              echo "::error::A draft already exists for this version; inspect and remove it before a new dispatch"
+              exit 1
+            fi
+            [ "$draft" = true ] || { echo "::error::Release is already public; refusing to overwrite it"; exit 1; }
+            echo "Release $TAG already exists; reusing its draft for this rerun."
           else
             gh release create "$TAG" --repo "$REPO" --draft --title "$TAG" --notes "Switchboard $TAG
 
-          **Builds are unsigned.**
-          macOS: after install, run \`xattr -d com.apple.quarantine /Applications/Switchboard.app\`, or right-click the app and choose Open.
-          Windows: if SmartScreen warns, choose More info, then Run anyway."
+          $mac_note
+          $win_note"
           fi
 
   build_mac:
-    needs: prepare_release
+    needs: [ci_status, prepare_release]
     if: always() && needs.prepare_release.result == 'success'
     uses: ./.github/workflows/release-build.yml
     with:
       os: macos-15
+      ref: ${{ needs.ci_status.outputs.sha }}
+      version: ${{ needs.ci_status.outputs.version }}
+      publish: ${{ needs.ci_status.outputs.publish == 'true' }}
     secrets: inherit
 
   # windows-2022, not windows-latest: windows-2025 ships no VC++ build toolchain,
   # so node-gyp cannot rebuild node-pty there.
   build_win:
-    needs: prepare_release
+    needs: [ci_status, prepare_release]
     if: always() && needs.prepare_release.result == 'success'
     uses: ./.github/workflows/release-build.yml
     with:
       os: windows-2022
+      ref: ${{ needs.ci_status.outputs.sha }}
+      version: ${{ needs.ci_status.outputs.version }}
+      publish: ${{ needs.ci_status.outputs.publish == 'true' }}
     secrets: inherit
 
   # A partial Release is the worst outcome this pipeline can produce: the
@@ -126,33 +193,37 @@ jobs:
   # see no update yet.
   publish:
     name: Verify macOS assets and publish
-    needs: build_mac
-    # A manual dispatch builds without publishing, so there is nothing to check.
-    if: always() && github.event_name == 'push' && needs.build_mac.result == 'success'
+    needs: [ci_status, build_mac]
+    # Dry runs package without publishing, so there are no release assets to check.
+    if: always() && needs.ci_status.outputs.publish == 'true' && needs.build_mac.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.ci_status.outputs.sha }}
       - name: Assert the macOS assets and manifest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash scripts/verify-release-assets.sh "${{ github.ref_name }}" "${{ github.repository }}" mac
+        run: bash scripts/verify-release-assets.sh "${{ needs.ci_status.outputs.tag }}" "${{ github.repository }}" mac
       - name: Publish the verified release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ needs.ci_status.outputs.tag }}
           REPO: ${{ github.repository }}
         run: gh release edit "$TAG" --repo "$REPO" --draft=false --latest
 
   verify_windows:
     name: Verify Windows assets
-    needs: [build_win, publish]
-    if: always() && github.event_name == 'push' && needs.build_win.result == 'success' && needs.publish.result == 'success'
+    needs: [ci_status, build_win, publish]
+    if: always() && needs.ci_status.outputs.publish == 'true' && needs.build_win.result == 'success' && needs.publish.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.ci_status.outputs.sha }}
       - name: Assert the Windows assets and manifest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash scripts/verify-release-assets.sh "${{ github.ref_name }}" "${{ github.repository }}" win
+        run: bash scripts/verify-release-assets.sh "${{ needs.ci_status.outputs.tag }}" "${{ github.repository }}" win

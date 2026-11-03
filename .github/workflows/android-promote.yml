@@ -1,0 +1,37 @@
+name: Promote tested Android build
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: Already-tested versionCode currently completed on internal.
+        type: string
+        required: true
+      dry_run:
+        description: Read and report only; do not update or commit a Play track.
+        type: boolean
+        default: true
+      tested:
+        description: I have tested this exact internal versionCode and want a full production rollout.
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: mobile-release
+  cancel-in-progress: false
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+      - name: Promote the selected completed internal release
+        run: node scripts/play-release.mjs promote
+        env:
+          VERSION_CODE: ${{ inputs.version_code }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          TESTED: ${{ inputs.tested }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}

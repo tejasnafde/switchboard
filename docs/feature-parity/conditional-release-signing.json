@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "conditional-release-signing",
-  "summary": "Select signed release packaging only for complete platform credential sets, fail closed for partial secrets, and retain an explicit unsigned contributor path.",
+  "summary": "Select signed release packaging only for complete platform credential sets, notarize macOS with an App Store Connect API key, fail closed for partial secrets, and retain an explicit unsigned contributor path.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -26,27 +26,29 @@
     },
     "storageDataMigration": {
       "status": "not_applicable",
-      "reason": "Signing selection introduces no stored application data or migration."
+      "reason": "Signing adds no stored data or migration. The keychain item that safeStorage uses may ask once for access after an ad-hoc install updates to a Developer ID build; docs/releasing.md records it."
     },
     "updateRelease": {
       "status": "implemented",
       "evidence": [
         ".github/workflows/release.yml",
+        ".github/workflows/release-build.yml",
         "scripts/signing-mode.mjs",
         "electron-builder.signed.yml",
+        "build/afterSign.js",
         "docs/releasing.md"
       ]
     }
   },
   "verification": {
     "automated": [
-      "tests/unit/signing-mode.test.ts covers absent, complete and partial credentials, the production builder overlay, and the macOS Bash 3.2 unsigned packaging path",
-      "Release jobs run codesign/notarization-ticket or Authenticode verification when signed mode is selected"
+      "tests/unit/signing-mode.test.ts covers absent, complete and partial credentials (the old Apple ID set is now partial), the production builder overlay, the API key written to a file, the afterSign notarize, staple retry (including giving up after five attempts) and checks and the macOS Bash 3.2 unsigned packaging path",
+      "Signed release jobs run codesign --verify --deep --strict with the identifier-only update requirement, spctl --assess --type exec and a stapler staple that validates its ticket, or Authenticode verification"
     ],
     "hardware": [],
     "notExercised": [
-      "Production macOS signing/notarization was not exercised locally because no Developer ID credentials are installed.",
-      "Production Windows Authenticode was not exercised locally because no Windows certificate is installed and this host is macOS."
+      "An auto-update from the installed ad-hoc build to a Developer ID build is not exercised end to end, because that needs a published release. afterSign checks the requirement ShipIt uses on every signed build, and the dry-run artifact can be checked by hand with codesign.",
+      "Production Windows Authenticode was not exercised because no Windows certificate is configured."
     ]
   }
 }

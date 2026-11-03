@@ -132,7 +132,8 @@ describe('native Android publishing lane', () => {
     expect(steps[upload].uses).toMatch(/@[0-9a-f]{40}$/)
     expect(steps[upload].with.serviceAccountJsonPlainText).toBe('${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}')
     expect(steps[upload].with.packageName).toBe('app.tn07.switchboard')
-    expect(steps[upload].if).toBe('inputs.play')
+    expect(steps[upload].if).toBe('inputs.play && !inputs.dry_run')
+    expect(parsed.on.workflow_dispatch.inputs.dry_run.default).toBe(true)
     expect(parsed.on.workflow_dispatch.inputs.track.options).toEqual(['internal', 'alpha', 'beta'])
     expect(parsed.on.workflow_dispatch.inputs.play.default).toBe(true)
     expect(parsed.permissions).toEqual({ contents: 'read' })
@@ -192,7 +193,7 @@ describe('native Android publishing lane', () => {
 
     const publish = parsed.jobs['publish-apk']
     expect(publish.needs).toBe('release')
-    expect(publish.if).toBe('inputs.apk')
+    expect(publish.if).toBe('inputs.apk && !inputs.dry_run')
     expect(publish.permissions).toEqual({ contents: 'write' })
     expect(publish.defaults.run['working-directory']).toBe('.')
     expect(publish.steps[0].with.name).toBe('switchboard-${{ needs.release.outputs.version }}-apk')
