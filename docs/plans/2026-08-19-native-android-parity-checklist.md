@@ -5,8 +5,7 @@ verification. The package changed to `app.tn07.switchboard`; an old-package
 install cannot be upgraded in place. The self-update section below is historical
 and retired. Current build/release procedure: `docs/releasing.md`.
 
-The
-React Native client is the behavioral oracle, but known correctness defects are
+The React Native client is the behavioral oracle, but known correctness defects are
 fixed deliberately. A checked item needs linked automated evidence or a dated
 physical-device result; compilation alone does not satisfy a behavior.
 
@@ -16,7 +15,8 @@ Status marks:
 - `[~]` implemented in part or awaiting integration/hardware verification
 - `[ ]` not implemented
 - `[H]` must be exercised on physical hardware
-- `[U]` must be exercised by upgrading the production-signed v0.4.0 APK
+- `[U]` must be exercised by upgrading an earlier production-signed build of
+  the same application ID; it never means upgrading across package IDs
 
 ## Release identity and replacement
 
@@ -24,18 +24,26 @@ Status marks:
   `app.tn07.switchboard.native.dev`. The earlier package is a separate app.
 - [x] Source build version is `0.5.25` / version code `27` as of 2026-11-03
   (`apps/android/app/build.gradle.kts`). This does not establish store rollout.
-- [x] Both existing URI schemes, cleartext LAN policy, portrait mode, package
-  label, notification channel ID, permissions, icon bitmaps and font files are
-  preserved.
-- [~] Release assembly verifies the expected production signer fingerprint;
-  production keystore export remains a stop-ship prerequisite.
-- [U] Install over the untouched public v0.4.0 APK without uninstalling.
-- [U] Verify package ID, version name/code, signer, icon and APK SHA-256 after
-  installation.
-- [U] Verify the prior app's sandbox, databases and keystore aliases remain
-  available to the native process.
+- [x] Both existing URI schemes, portrait mode, package label, notification
+  channel ID, icon bitmaps and font files are preserved. Release cleartext is
+  loopback-only and the APK installer permission is removed; see `docs/releasing.md`.
+- [~] Release verification checks the upload signer and package identity
+  (`scripts/verify-android-apk.mjs`). Play re-signs store installs; the installed
+  signer and same-package upgrade still need device verification.
+- [H] Install `app.tn07.switchboard` as a separate app from the legacy
+  `app.switchboard.mobile` package and pair it again. Verify the legacy app
+  and its data stay separate; no automatic cross-package migration is promised.
+- [U] Upgrade an earlier production-signed `app.tn07.switchboard` build without
+  uninstalling. Verify package ID, version name/code, signer, icon and APK hash.
+- [U] Verify the same-package upgrade preserves its databases, connection
+  credentials and queued work.
 
-## Startup and migration
+## Legacy startup and migration (historical transition)
+
+These items record the original same-sandbox native replacement and its
+unexercised checks. They do not require, or establish, importing another
+application ID's private sandbox. A fresh canonical-package install starts
+with its own data; the current upgrade checks are above.
 
 - [x] Inventory both known AsyncStorage SQLite layouts read-only.
 - [x] Decode connections, preferences, chat cache and every `sb-outbox:*` row.
@@ -61,7 +69,8 @@ compiled Android `MigrationTestHelper` v1-to-v4 fixture covering connections,
 credential refs, preferences, cached chat/feed, outbox/attachments, replay,
 pending controls, checkpoints and quarantine, followed by foreign-key and
 SQLite integrity checks. That instrumentation fixture has not been executed on
-an emulator/device, and it is not a substitute for the production APK upgrade.
+an emulator/device. It does not establish a cross-package import or verify a
+current same-package production upgrade.
 
 ## Historical self-update (retired)
 
@@ -83,7 +92,9 @@ record the retired lane, not requirements for current Play builds.
   confirm replacement on next launch.
 - [H] Exercise discovery, progress, cancellation, retry, settings return and
   installer launch on a real device.
-- [H][U] Update over production-signed v0.4.0 and verify data after relaunch.
+- Historical upgrade probe, unexercised: update over the production-signed
+  v0.4.0 legacy-package APK and verify its data. This is not a canonical-package
+  upgrade check.
 
 ## Connections and pairing
 

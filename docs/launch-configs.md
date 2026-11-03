@@ -174,7 +174,14 @@ fingerprint. Command text and environment secrets are omitted.
 
 - omitted or `"."` → chat execution root (worktree if set, otherwise project)
 - relative (e.g. `services/api`) → `<execution-root>/services/api`
-- absolute (starts with `/`) → used as-is (avoid this; it breaks portability)
+- absolute (starts with `/`) → used as-is in ordinary desktop layouts (avoid
+  this; it breaks portability)
+
+Managed worktree startup validates every pane against the new worktree
+(`rootedCwd` in `src/main/worktree-creation/startup-launcher.ts`). An absolute
+path outside it, or a relative path that escapes it, fails provisioning for the
+whole config before any terminal opens. An absolute path inside that worktree
+is accepted, but a relative path stays portable.
 
 ### on_start
 

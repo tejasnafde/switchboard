@@ -171,11 +171,12 @@ your PC" on first launch. Choose **More info**, then **Run anyway**. A portable
 Chats travel between your own backends, paired devices and the agent providers
 you select. Push notifications pass through the notification services and can
 include an approval detail, question or error excerpt. The desktop app
-sends anonymous usage counts for launches, sessions, tours, crashes, Snooze
+sends usage counts for launches, sessions, tours, crashes, Snooze
 and enabled secret requests. The closed property list contains categories and
-buckets, not chat text or secret values, plus a random install ID and platform;
-launch events include app version and architecture. Turn them off in **Settings > General > Privacy**; development
-builds never send. Full text at [tn07.dev/privacy](https://tn07.dev/privacy).
+buckets, not chat text or secret values, plus platform and a stable random
+install ID. Events from one install can therefore be linked. Launch events
+include app version and architecture. Turn them off in
+**Settings > General > Privacy**; development builds never send. Full text at [tn07.dev/privacy](https://tn07.dev/privacy).
 
 ## Develop
 
