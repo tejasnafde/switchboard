@@ -14,11 +14,27 @@ describe('release signing mode', () => {
       classifySigningEnvironment('mac', {
         CSC_LINK: 'certificate',
         CSC_KEY_PASSWORD: 'password',
+        APPLE_TEAM_ID: 'TEAMID',
+        APPLE_API_KEY_P8: 'private-key',
+        APPLE_API_KEY_ID: 'KEYID',
+        APPLE_API_ISSUER: 'issuer-uuid',
+      }),
+    ).toEqual({ mode: 'signed', missing: [] })
+  })
+
+  it('no longer accepts the Apple ID and app-specific password set for macOS', () => {
+    expect(
+      classifySigningEnvironment('mac', {
+        CSC_LINK: 'certificate',
+        CSC_KEY_PASSWORD: 'password',
         APPLE_ID: 'developer@example.test',
         APPLE_APP_SPECIFIC_PASSWORD: 'app-password',
         APPLE_TEAM_ID: 'TEAMID',
       }),
-    ).toEqual({ mode: 'signed', missing: [] })
+    ).toEqual({
+      mode: 'invalid',
+      missing: ['APPLE_API_KEY_P8', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER'],
+    })
   })
 
   it('enables Windows Authenticode only for a complete set', () => {
@@ -34,11 +50,11 @@ describe('release signing mode', () => {
     expect(
       classifySigningEnvironment('mac', {
         CSC_LINK: 'do-not-print-this',
-        APPLE_ID: 'developer@example.test',
+        APPLE_API_KEY_ID: 'KEYID',
       }),
     ).toEqual({
       mode: 'invalid',
-      missing: ['CSC_KEY_PASSWORD', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID'],
+      missing: ['CSC_KEY_PASSWORD', 'APPLE_TEAM_ID', 'APPLE_API_KEY_P8', 'APPLE_API_ISSUER'],
     })
     expect(
       classifySigningEnvironment('windows', {
@@ -83,5 +99,26 @@ describe('release signing mode', () => {
     expect(workflow).not.toContain('${config[@]}')
     expect(workflow).toContain('npx electron-builder --config electron-builder.signed.yml --publish "$PUBLISH_MODE"')
     expect(workflow).toContain('npx electron-builder --publish "$PUBLISH_MODE"')
+  })
+
+  it('notarizes with the App Store Connect API key written to a file, never the raw key', () => {
+    const workflow = readFileSync('.github/workflows/release-build.yml', 'utf8')
+    const build = workflow.slice(workflow.indexOf('- name: Build & publish'))
+
+    expect(workflow).not.toContain('APPLE_ID')
+    expect(workflow).not.toContain('APPLE_APP_SPECIFIC_PASSWORD')
+    expect(workflow).toContain('echo "APPLE_API_KEY=$key" >> "$GITHUB_ENV"')
+    expect(build).toContain('APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}')
+    expect(build).toContain('APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}')
+    expect(build).not.toContain('APPLE_API_KEY_P8')
+  })
+
+  it('verifies the signature, the Gatekeeper assessment, the ticket and the update requirement', () => {
+    const afterSign = readFileSync('build/afterSign.js', 'utf8')
+
+    expect(afterSign).toContain("'--verify', '--deep', '--strict'")
+    expect(afterSign).toContain('=identifier "${context.packager.appInfo.id}"')
+    expect(afterSign).toContain("'spctl', ['--assess', '--type', 'exec'")
+    expect(afterSign).toContain("'stapler', 'validate'")
   })
 })
