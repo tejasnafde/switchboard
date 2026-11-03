@@ -80,7 +80,7 @@ describe('release signing mode', () => {
       mac: {
         identity: 'Developer ID Application',
         hardenedRuntime: true,
-        notarize: true,
+        notarize: false,
         entitlements: 'build/entitlements.mac.plist',
         entitlementsInherit: 'build/entitlements.mac.inherit.plist',
       },
@@ -125,26 +125,66 @@ describe('release signing mode', () => {
       vi.unstubAllEnvs()
     })
 
-    it('checks the signature with the update requirement, Gatekeeper and the ticket', async () => {
+    const context = {
+      electronPlatformName: 'darwin',
+      appOutDir: '/out',
+      packager: { appInfo: { productFilename: 'Switchboard', id: 'com.tejasnafde.switchboard' } },
+    }
+
+    function loadHook(stapleFailures: number) {
       const calls: string[][] = []
+      let failures = stapleFailures
       vi.spyOn(childProcess, 'execFileSync').mockImplementation(((file: string, args: string[]) => {
         calls.push([file, ...args])
+        if (args[0] === 'notarytool') return JSON.stringify({ id: 'sub-1', status: 'Accepted' })
+        if (args[0] === 'stapler' && args[1] === 'staple' && failures > 0) {
+          failures--
+          throw new Error('Failed to staple your application with code: 68')
+        }
         return Buffer.alloc(0)
       }) as typeof childProcess.execFileSync)
       vi.spyOn(console, 'log').mockImplementation(() => {})
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
       vi.stubEnv('SB_SIGNING_MODE', 'signed')
+      vi.stubEnv('APPLE_API_KEY', '/keys/AuthKey_KEYID.p8')
+      vi.stubEnv('APPLE_API_KEY_ID', 'KEYID')
+      vi.stubEnv('APPLE_API_ISSUER', 'issuer-uuid')
       const hookPath = require.resolve('../../build/afterSign.js')
       delete require.cache[hookPath]
-      const { default: afterSign } = require(hookPath)
+      const hook = require(hookPath)
+      hook.stapleRetryDelayMs = 0
+      return { calls, afterSign: hook.default }
+    }
 
-      await afterSign({
-        electronPlatformName: 'darwin',
-        appOutDir: '/out',
-        packager: { appInfo: { productFilename: 'Switchboard', id: 'com.tejasnafde.switchboard' } },
-      })
+    it('notarizes, staples, then checks the update requirement, Gatekeeper and the ticket', async () => {
+      const { calls, afterSign } = loadHook(0)
+
+      await afterSign(context)
 
       const app = path.join('/out', 'Switchboard.app')
-      expect(calls).toEqual([
+      const submit = calls.find((call) => call[1] === 'notarytool')
+      expect(submit).toEqual(
+        expect.arrayContaining([
+          'submit',
+          '--key',
+          '/keys/AuthKey_KEYID.p8',
+          '--key-id',
+          'KEYID',
+          '--issuer',
+          'issuer-uuid',
+          '--wait',
+        ]),
+      )
+      expect(calls.map((call) => call.slice(0, 2).join(' '))).toEqual([
+        'ditto -c',
+        'xcrun notarytool',
+        'xcrun stapler',
+        'codesign --verify',
+        'spctl --assess',
+        'xcrun stapler',
+      ])
+      expect(calls.slice(2)).toEqual([
+        ['xcrun', 'stapler', 'staple', '-v', app],
         [
           'codesign',
           '--verify',
@@ -157,6 +197,28 @@ describe('release signing mode', () => {
         ['spctl', '--assess', '--type', 'exec', '-vv', app],
         ['xcrun', 'stapler', 'validate', app],
       ])
+    })
+
+    it('retries a failed staple and gives up after five attempts', async () => {
+      const recovered = loadHook(2)
+      await recovered.afterSign(context)
+      expect(recovered.calls.filter((call) => call[2] === 'staple')).toHaveLength(3)
+
+      vi.restoreAllMocks()
+      const stuck = loadHook(5)
+      await expect(stuck.afterSign(context)).rejects.toThrow('code: 68')
+      expect(stuck.calls.filter((call) => call[2] === 'staple')).toHaveLength(5)
+      expect(stuck.calls.some((call) => call[0] === 'codesign')).toBe(false)
+    })
+
+    it('fails when Apple does not accept the submission', async () => {
+      const { afterSign } = loadHook(0)
+      vi.mocked(childProcess.execFileSync).mockImplementation(((_file: string, args: string[]) =>
+        args[0] === 'notarytool'
+          ? JSON.stringify({ id: 'sub-2', status: 'Invalid' })
+          : Buffer.alloc(0)) as typeof childProcess.execFileSync)
+
+      await expect(afterSign(context)).rejects.toThrow('sub-2 ended with status Invalid')
     })
   })
 })

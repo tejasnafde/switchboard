@@ -261,8 +261,14 @@ Windows signed releases require:
 - `WIN_CSC_LINK`
 - `WIN_CSC_KEY_PASSWORD`
 
-The macOS lane enables hardened runtime, Developer ID signing and
-notarization. `build/afterSign.js` then runs, after notarization and stapling:
+The macOS lane enables hardened runtime and Developer ID signing. Then
+`build/afterSign.js` submits the app with `xcrun notarytool submit --wait`
+(it fails unless Apple returns Accepted) and staples the ticket with
+`xcrun stapler staple -v`, up to five attempts 30, 60, 90 and 120 seconds
+apart. electron-builder's own notarize step is off in the signed overlay
+because it staples once: on 2026-11-03 the ticket lookup at
+`api.apple-cloudkit.com` dropped the connection on the runner (stapler exit 68)
+twice in a row after Apple had accepted the submission. Then the hook checks:
 
 - `codesign --verify --deep --strict` with the extra requirement
   `identifier "com.tejasnafde.switchboard"` (see "From ad-hoc to Developer ID"

@@ -10,7 +10,8 @@ mac:
   identity: Developer ID Application
   hardenedRuntime: true
   gatekeeperAssess: true
-  notarize: true
+  # build/afterSign.js notarizes and staples, with retries for the staple.
+  notarize: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
 
