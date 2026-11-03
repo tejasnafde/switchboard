@@ -42,15 +42,57 @@ with a Google-generated app signing key; the workflow's key is the upload
 key. Check the current track before dispatching; local source cannot establish
 which builds a store has accepted.
 
-To release:
+To release, run **Android release dispatch** (`android-release.yml`) on main,
+enter the human-chosen versionName and leave `dry_run=true` first. It pins main,
+reads all current bundles, APKs and tracks from Play, and chooses one above both
+Play's maximum and the repository's versionCode. The temporary inventory edit
+is deleted. Inventory reads, uploads and promotions share the `mobile-release`
+concurrency group while they own an edit; do not run a separate local or Console
+edit at the same time, because Play invalidates an existing edit for that user.
+Dry runs build and verify signed AAB and universal APK artifacts,
+without changing main, creating tags, uploading to Play or publishing a release.
 
-1. Increment `versionCode` and `versionName` in
-   `apps/android/app/build.gradle.kts` and merge to main.
-2. Dispatch `mobile-release.yml` by hand. Pick the track (`internal` by
-   default, or `alpha` or `beta`) and the release status, and leave `play` on. Pick `draft` while
-   the app is still unpublished in Play, which accepts only draft releases
-   then.
-3. Promote the release to production in the Play Console when it is ready.
+With `dry_run=false`, the workflow opens a version-only PR with the Gradle bump,
+CHANGELOG entry and feature-parity manifest, waits for CI and a current-head CodeRabbit review, refuses
+unresolved review threads or requested changes, merges it, and passes that merge SHA to the existing
+`mobile-release.yml`. That lane uploads to internal and publishes the verified
+sideload APK. The automation needs a **RELEASE_PR_TOKEN** repository secret with
+contents and pull-request write and Actions read permissions. This secret is
+not currently configured; the user must add it before an actual release. A bot
+PAT is needed because PRs and pushes made with the default GITHUB_TOKEN do not
+start CI. It needs access only to this repository. The workflow never bypasses
+branch protection. A failed bump is left for inspection, and no upload follows.
+
+Allocation does not reserve a code in Play. A separate upload during the bump
+PR can consume it; Play then rejects the collision. Inspect and close stale
+bump PRs before retrying with a fresh version. The workflow does not choose a
+different code automatically after an upload fails. A collided bump that already
+merged stays on main; recovery needs another bump above both inventories.
+
+GitHub keeps only one pending run per concurrency group, even with
+`cancel-in-progress: false`. A later manual dispatch can replace packaging
+that is waiting after its bump merged. Inspect Play and the GitHub APK release
+before recovery: if neither upload happened, dispatch `mobile-release.yml`
+on main with `ref` set to that exact merge commit, `dry_run=false`, `play=true`
+and `apk=true`, plus its expected `version_name` and `version_code`.
+Recovery accepts only an immutable SHA on main and verifies that version pair.
+If Play already accepted the AAB, use `play=false` for APK-only recovery.
+Never retry an upload whose outcome is unknown until Play's state is checked.
+
+After testing that exact versionCode on internal, dispatch
+**Promote tested Android build** (`android-promote.yml`). Its `dry_run` defaults
+to true: it reads internal and production, reports the selected build and
+reuses the internal notes, without a track update or edit commit. Production
+promotion requires main, `dry_run=false` and the explicit `tested` checkbox.
+It accepts only a completed internal build above production's versionCodes and
+performs a full rollout. Store review remains governed by Play.
+
+`mobile-release.yml` remains available for manual packaging. Its new
+`dry_run=true` default disables both Play and GitHub publishing; set it false
+deliberately for a real upload. A dry-run `version_name` allocates above Play
+inventory so the branch can exercise the complete signed build without a bump
+PR. New dispatch workflows can be validated on main after merge; they do not
+run on pull requests.
 
 The job runs the Android unit, lint and androidTest compile gate, builds a
 signed AAB (`bundleRelease`), and checks it with
