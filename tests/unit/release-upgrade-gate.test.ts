@@ -28,14 +28,14 @@ describe('Desktop release compatibility gate', () => {
     expect(prepareAt).toBeGreaterThan(-1)
     expect(prepareAt).toBeLessThan(buildAt)
     expect(workflow).toContain('gh release create "$TAG" --repo "$REPO" --draft')
-    expect(workflow).toContain('needs: prepare_release')
-    expect(publishJob).toContain('needs: build_mac')
+    expect(workflow).toContain('needs: [ci_status, prepare_release]')
+    expect(publishJob).toContain('needs: [ci_status, build_mac]')
     expect(publishJob.indexOf('verify-release-assets.sh')).toBeGreaterThan(-1)
     expect(publishJob.indexOf('gh release edit "$TAG" --repo "$REPO" --draft=false --latest')).toBeGreaterThan(
       publishJob.indexOf('verify-release-assets.sh'),
     )
     expect(workflow).toMatch(
-      /verify_windows:[\s\S]*needs: \[build_win, publish\][\s\S]*verify-release-assets\.sh[^\n]*win/,
+      /verify_windows:[\s\S]*needs: \[ci_status, build_win, publish\][\s\S]*verify-release-assets\.sh[^\n]*win/,
     )
   })
 
