@@ -180,7 +180,7 @@ another workflow. For a failure after tag creation, re-run only the failed jobs:
 still point at the validated SHA. A fresh dispatch refuses that tag.
 Direct tag pushes remain supported for recovery; cancel an accidental run
 before deleting its draft release, then deleting or replacing its tag. Never
-reuse a draft containing assets from another commit. They still
+reuse a draft containing assets from another commit. Direct tag pushes
 use the existing CI fallback gate; use the dispatch for normal releases.
 
 Secrets: only the automatic `GITHUB_TOKEN` is needed for unsigned desktop
