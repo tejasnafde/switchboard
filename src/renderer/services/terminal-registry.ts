@@ -271,10 +271,6 @@ export function updateAllTerminalThemes(): void {
   }
 }
 
-export function hasTerminal(id: string): boolean {
-  return registry.has(id)
-}
-
 /**
  * Write an inline notice into every terminal pane bound to `machineId`.
  * Used on connection-lost / reconnected transitions so a machine-bound pane
