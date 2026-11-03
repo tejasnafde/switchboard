@@ -50,7 +50,8 @@ function notarize(appPath) {
 async function stapleWithRetries(appPath) {
   for (let attempt = 1; ; attempt++) {
     try {
-      execFileSync('xcrun', ['stapler', 'staple', '-v', appPath], { stdio: 'inherit' })
+      // A stalled lookup must end the attempt, not the job.
+      execFileSync('xcrun', ['stapler', 'staple', '-v', appPath], { stdio: 'inherit', timeout: 300_000 })
       return
     } catch (err) {
       if (attempt >= STAPLE_ATTEMPTS) throw err
@@ -62,7 +63,12 @@ async function stapleWithRetries(appPath) {
 }
 
 exports.default = async function afterSign(context) {
-  if (process.env.SB_SIGNING_MODE !== 'signed') return
+  // Only electron-builder.signed.yml runs this hook, and it turns off
+  // electron-builder's notarize step, so skipping here would ship an app with
+  // no ticket and no checks.
+  if (process.env.SB_SIGNING_MODE !== 'signed') {
+    throw new Error('electron-builder.signed.yml needs SB_SIGNING_MODE=signed (scripts/signing-mode.mjs)')
+  }
 
   const product = context.packager.appInfo.productFilename
   if (context.electronPlatformName === 'darwin') {

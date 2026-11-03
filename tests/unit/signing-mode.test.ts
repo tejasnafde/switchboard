@@ -153,7 +153,7 @@ describe('release signing mode', () => {
       delete require.cache[hookPath]
       const hook = require(hookPath)
       hook.stapleRetryDelayMs = 0
-      return { calls, afterSign: hook.default }
+      return { calls, afterSign: hook.default, hook }
     }
 
     it('notarizes, staples, then checks the update requirement, Gatekeeper and the ticket', async () => {
@@ -162,7 +162,10 @@ describe('release signing mode', () => {
       await afterSign(context)
 
       const app = path.join('/out', 'Switchboard.app')
+      const zip = calls[0].at(-1)
+      expect(zip).toMatch(/Switchboard\.zip$/)
       const submit = calls.find((call) => call[1] === 'notarytool')
+      expect(submit?.slice(0, 4)).toEqual(['xcrun', 'notarytool', 'submit', zip])
       expect(submit).toEqual(
         expect.arrayContaining([
           'submit',
@@ -209,6 +212,28 @@ describe('release signing mode', () => {
       await expect(stuck.afterSign(context)).rejects.toThrow('code: 68')
       expect(stuck.calls.filter((call) => call[2] === 'staple')).toHaveLength(5)
       expect(stuck.calls.some((call) => call[0] === 'codesign')).toBe(false)
+    })
+
+    it('waits longer before each staple retry', async () => {
+      const { afterSign, hook } = loadHook(4)
+      hook.stapleRetryDelayMs = 30_000
+      const delays: number[] = []
+      const realSetTimeout = setTimeout
+      vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms: number) => {
+        delays.push(ms)
+        return realSetTimeout(fn, 0)
+      }) as typeof setTimeout)
+
+      await afterSign(context)
+
+      expect(delays).toEqual([30_000, 60_000, 90_000, 120_000])
+    })
+
+    it('refuses to run without signed mode', async () => {
+      const { afterSign } = loadHook(0)
+      vi.stubEnv('SB_SIGNING_MODE', '')
+
+      await expect(afterSign(context)).rejects.toThrow('needs SB_SIGNING_MODE=signed')
     })
 
     it('fails when Apple does not accept the submission', async () => {
