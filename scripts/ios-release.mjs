@@ -89,19 +89,20 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const easFile = resolve(cwd, 'eas.json')
     const original = readFileSync(easFile)
     const run = async (args) => {
-      if (args[0] === 'submit') writeFileSync(easFile, JSON.stringify(submitConfig, null, 2) + '\n')
+      const bindProfile = args[0] === 'submit' || args[0] === 'submit:status'
+      if (bindProfile) writeFileSync(easFile, JSON.stringify(submitConfig, null, 2) + '\n')
       try {
         return execFileSync('eas', args, {
           cwd,
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'inherit'],
           maxBuffer: 10 * 1024 * 1024,
-          timeout: 100 * 60_000,
+          timeout: (args[0] === 'build' ? 100 : args[0] === 'submit' ? 20 : 2) * 60_000,
         })
       } catch {
         throw new Error(`EAS ${args[0]} failed; inspect its dashboard before retrying`)
       } finally {
-        if (args[0] === 'submit') writeFileSync(easFile, original)
+        if (bindProfile) writeFileSync(easFile, original)
       }
     }
     const id = await buildAndSubmitIos(sha, run, dryRun)

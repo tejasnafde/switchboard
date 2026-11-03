@@ -157,14 +157,11 @@ anything in the native project (a module, a permission, an Info.plist key in
   (`cli.appVersionSource: remote`) and `autoIncrement` bumps one per build;
   the marketing version is still `expo.version` in `app.json`.
 - **Submit:** use the dispatch below. A local `eas submit -p ios --profile store`
-  needs those submit-profile placeholders bound to actual values first. The profile reads the App
-  Store Connect API key from three environment variables, so no key is in the
-  repo: `ASC_API_KEY_PATH` (path to the `.p8` file), `ASC_API_KEY_ID` and
-  `ASC_API_KEY_ISSUER_ID`. Their values come from the Secret Manager secret
-  `APPLE_ASC_API_KEY` in `teejayproject` (JSON `{key_id, issuer_id, team_id,
-  p8}`); in CI set them from repository secrets of the same names. EAS reads
-  them on the machine that runs `eas submit`, not from the build's EAS
-  environment.
+  needs the submit profile's `ascApiKeyPath`, `ascApiKeyId` and
+  `ascApiKeyIssuerId` bound to actual values first. Shell variables in `eas.json`
+  are not expanded. The local key comes from Secret Manager `APPLE_ASC_API_KEY`
+  in `teejayproject` (JSON `{key_id, issuer_id, team_id, p8}`); the workflow uses
+  the existing GitHub Apple API secrets listed below.
 - `ITSAppUsesNonExemptEncryption` is `false` (system TLS only), so no build
   asks the export compliance question. `supportsTablet` is `false`: iPads run
   the iPhone app in compatibility mode and need no iPad screenshots.
@@ -194,7 +191,8 @@ GitHub may replace a pending dispatch in the concurrency group.
 Secrets: existing `EXPO_TOKEN`, `APPLE_API_KEY_P8`, `APPLE_API_KEY_ID`,
 `APPLE_API_ISSUER` and `APPLE_TEAM_ID`. No new secret is required. The private
 `.p8` file lives outside the source archive and is deleted on exit. The script
-binds the submit profile's environment placeholders only around submission and
+binds the submit profile's environment placeholders only around the read-only
+status check and submission and
 restores the file afterwards, so build archives and fingerprints remain those
 of the chosen commit. EAS Submit does not expand shell variables in `eas.json`.
 The same binding is validated in a dry run, without invoking submit.
