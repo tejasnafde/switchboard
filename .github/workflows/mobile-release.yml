@@ -25,8 +25,42 @@
 name: Mobile Release (Native Android, Google Play)
 
 on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: ''
+      version_name:
+        type: string
+        default: ''
+      version_code:
+        type: string
+        default: ''
+      dry_run:
+        type: boolean
+        default: true
+      track:
+        type: string
+        default: internal
+      status:
+        type: string
+        default: completed
+      play:
+        type: boolean
+        default: true
+      apk:
+        type: boolean
+        default: true
   workflow_dispatch:
     inputs:
+      version_name:
+        description: Optional new versionName for a dry-run allocation and signed build.
+        type: string
+        default: ''
+      dry_run:
+        description: Build and verify only, without Play upload or GitHub release.
+        type: boolean
+        default: true
       track:
         description: Play test track. Promote to production in the Play Console.
         type: choice
@@ -69,6 +103,7 @@ env:
 jobs:
   release:
     name: Build, verify, and upload the native AAB
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
@@ -77,6 +112,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -112,6 +149,31 @@ jobs:
         with:
           node-version: '22.23.4'
 
+      - name: Allocate a validation dispatch above Play inventory
+        id: allocate
+        if: inputs.dry_run && inputs.version_name != '' && inputs.version_code == ''
+        working-directory: .
+        run: node scripts/play-release.mjs allocate
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+
+      - name: Apply allocated dry-run version
+        if: inputs.dry_run && inputs.version_name != ''
+        working-directory: .
+        run: node scripts/play-release.mjs set-version
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code || steps.allocate.outputs.versionCode }}
+
+      - name: Verify the merged allocated version
+        if: "!inputs.dry_run && inputs.version_name != ''"
+        working-directory: .
+        run: node scripts/play-release.mjs check-version
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+
       - name: Read canonical native version
         id: version
         run: |
@@ -125,7 +187,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Refuse an existing APK release
-        if: inputs.apk
+        if: inputs.apk && !inputs.dry_run
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -231,7 +293,7 @@ jobs:
       # Play refuses a versionCode it has already seen, so it enforces the
       # monotonic version itself.
       - name: Upload to Google Play
-        if: inputs.play
+        if: inputs.play && !inputs.dry_run
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
@@ -304,7 +366,7 @@ jobs:
   publish-apk:
     name: Publish the sideload APK
     needs: release
-    if: inputs.apk
+    if: inputs.apk && !inputs.dry_run
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -327,7 +389,7 @@ jobs:
           sha256sum --check "switchboard-$VERSION.apk.sha256"
           gh release create "mobile-v$VERSION" \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
+            --target "${{ inputs.ref || github.sha }}" \
             --title "Switchboard Android $VERSION (sideload APK)" \
             --notes "Sideload APK for app.tn07.switchboard $VERSION, signed with the upload key. It cannot upgrade a Google Play install: uninstall that first." \
             --latest=false \

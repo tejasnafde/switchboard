@@ -1,0 +1,156 @@
+name: Android release dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Human-chosen versionName (X.Y.Z).
+        type: string
+        required: true
+      dry_run:
+        description: Plan and build signed artifacts without a PR, merge, tag or upload.
+        type: boolean
+        default: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: android-release-orchestration
+  cancel-in-progress: false
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.main.outputs.sha }}
+      version: ${{ steps.allocate.outputs.versionName }}
+      code: ${{ steps.allocate.outputs.versionCode }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+      - name: Pin main and its native version
+        id: main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHA=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$DRY_RUN" != true ]; then
+            [ "$GITHUB_REF" = refs/heads/main ] && [ "$GITHUB_SHA" = "$SHA" ] || { echo '::error::Real releases must dispatch current main'; exit 1; }
+            [ -n "$PR_TOKEN" ] || { echo '::error::Add RELEASE_PR_TOKEN with repository contents and pull-request write plus Actions read access'; exit 1; }
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/contents/apps/android/app/build.gradle.kts?ref=$SHA" --jq .content | base64 --decode > apps/android/app/build.gradle.kts
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Pinned main: $SHA. Dry run: $DRY_RUN." >> "$GITHUB_STEP_SUMMARY"
+      - name: Allocate above Play inventory without committing an edit
+        id: allocate
+        run: node scripts/play-release.mjs allocate
+        env:
+          VERSION_NAME: ${{ inputs.version }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+  bump:
+    needs: plan
+    if: '!inputs.dry_run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+      - name: Install the locked formatter without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Write the version bump and its scope
+        env:
+          VERSION_NAME: ${{ needs.plan.outputs.version }}
+          VERSION_CODE: ${{ needs.plan.outputs.code }}
+        run: |
+          node scripts/play-release.mjs set-version
+          node --input-type=module <<'JS'
+          import { readFileSync, writeFileSync } from 'node:fs'
+          const name = process.env.VERSION_NAME
+          const code = process.env.VERSION_CODE
+          const manifest = JSON.parse(readFileSync('docs/feature-parity/android-release-0.5.25.json', 'utf8'))
+          manifest.feature = `android-release-${name}`
+          manifest.summary = `Native Android ${name} (versionCode ${code}), allocated above Play inventory. Feature behavior is covered by each merged feature's own manifest.`
+          manifest.verification = { automated: ['Version-bump PR CI; mobile-release.yml unit, lint, androidTest compile and signed AAB/APK verification.'], hardware: [], notExercised: ['Installation and internal-track testing remain required before promotion.'] }
+          writeFileSync(`docs/feature-parity/android-release-${name}.json`, JSON.stringify(manifest, null, 2) + '\n')
+          const changelog = readFileSync('CHANGELOG.md', 'utf8')
+          writeFileSync('CHANGELOG.md', changelog.replace('### Changed\n', `### Changed\n- **Native Android ${name} (versionCode ${code}).** Test on internal before production promotion.\n`))
+          JS
+      - name: Open and merge the version-bump PR after required CI
+        id: merge
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          CODE: ${{ needs.plan.outputs.code }}
+          BASE_SHA: ${{ needs.plan.outputs.sha }}
+        run: |
+          set -euo pipefail
+          BRANCH="release/android-$VERSION-$CODE-$GITHUB_RUN_ID"
+          git config user.name github-actions[bot]
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b "$BRANCH"
+          npm run format
+          npm run validate:feature-parity -- --base origin/main
+          git add apps/android/app/build.gradle.kts CHANGELOG.md "docs/feature-parity/android-release-$VERSION.json"
+          git -c core.hooksPath=/dev/null commit -m "Release native Android $VERSION (versionCode $CODE)" -m 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'
+          git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin "$BRANCH"
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          printf 'Native Android %s (versionCode %s), allocated above Play inventory at %s. Required CI gates this version-only bump. Signing and package identity are unchanged. Internal upload follows this merge; production promotion stays separate.\n\nFeature scope: docs/feature-parity/android-release-%s.json\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n' "$VERSION" "$CODE" "$BASE_SHA" "$VERSION" > "$RUNNER_TEMP/bump-pr.md"
+          PR=$(gh pr create --base main --head "$BRANCH" --title "Release native Android $VERSION (versionCode $CODE)" --body-file "$RUNNER_TEMP/bump-pr.md")
+          echo "Version PR: $PR" >> "$GITHUB_STEP_SUMMARY"
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"
+      - name: Wait for required checks to appear and pass
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          PR: ${{ steps.merge.outputs.pr }}
+        with:
+          timeout_minutes: 35
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: gh pr checks "$PR" --watch --interval 60
+      - name: Merge the verified bump
+        id: merged
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          PR: ${{ steps.merge.outputs.pr }}
+          EXPECTED_HEAD: ${{ steps.merge.outputs.head }}
+        run: |
+          set -euo pipefail
+          # Leave the bump open if any review still requires action.
+          OPEN=$(gh api graphql -f query='query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$n){reviewThreads(first:100){nodes{isResolved}}}}}' -f owner="${GITHUB_REPOSITORY%/*}" -f repo="${GITHUB_REPOSITORY#*/}" -F n="${PR##*/}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length')
+          [ "$OPEN" = 0 ] || { echo '::error::Review threads require attention; bump PR stays open and no upload runs'; exit 1; }
+          CHANGES=$(gh pr view "$PR" --json reviewDecision --jq .reviewDecision)
+          [ "$CHANGES" != CHANGES_REQUESTED ] || { echo '::error::Changes requested; no merge or upload'; exit 1; }
+          REVIEWS=$(gh api "repos/$GITHUB_REPOSITORY/pulls/${PR##*/}/reviews" --paginate --jq ".[] | select(.user.login | startswith(\"coderabbitai\")) | select(.commit_id == \"$EXPECTED_HEAD\") | .state")
+          [ -n "$REVIEWS" ] || { echo '::error::CodeRabbit has not reviewed this head; inspect the bump PR before resuming'; exit 1; }
+          gh pr merge "$PR" --merge --match-head-commit "$EXPECTED_HEAD"
+          SHA=$(gh pr view "$PR" --json mergeCommit --jq .mergeCommit.oid)
+          test -n "$SHA" && [ "$SHA" != null ]
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+    outputs:
+      sha: ${{ steps.merged.outputs.sha }}
+  package:
+    needs: [plan, bump]
+    if: always() && needs.plan.result == 'success' && (inputs.dry_run || needs.bump.result == 'success')
+    permissions:
+      contents: write
+    uses: ./.github/workflows/mobile-release.yml
+    with:
+      ref: ${{ inputs.dry_run && github.sha || needs.bump.outputs.sha }}
+      version_name: ${{ needs.plan.outputs.version }}
+      version_code: ${{ needs.plan.outputs.code }}
+      dry_run: ${{ inputs.dry_run }}
+      track: internal
+      status: completed
+      play: true
+      apk: true
+    secrets: inherit
