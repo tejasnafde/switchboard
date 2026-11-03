@@ -66,14 +66,16 @@ branch protection. A failed bump is left for inspection, and no upload follows.
 Allocation does not reserve a code in Play. A separate upload during the bump
 PR can consume it; Play then rejects the collision. Inspect and close stale
 bump PRs before retrying with a fresh version. The workflow does not choose a
-different code automatically after an upload fails.
+different code automatically after an upload fails. A collided bump that already
+merged stays on main; recovery needs another bump above both inventories.
 
 GitHub keeps only one pending run per concurrency group, even with
 `cancel-in-progress: false`. A later manual dispatch can replace packaging
 that is waiting after its bump merged. Inspect Play and the GitHub APK release
 before recovery: if neither upload happened, dispatch `mobile-release.yml`
 on main with `ref` set to that exact merge commit, `dry_run=false`, `play=true`
-and `apk=true`.
+and `apk=true`, plus its expected `version_name` and `version_code`.
+Recovery accepts only an immutable SHA on main and verifies that version pair.
 If Play already accepted the AAB, use `play=false` for APK-only recovery.
 Never retry an upload whose outcome is unknown until Play's state is checked.
 
