@@ -1,0 +1,49 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "docs-hygiene-2026-11",
+  "summary": "Refresh documentation against origin/main and merged PRs, archive the completed sender-line design, report historical parity drift and extend ignores for local artifacts. Generated mobile assets and the changelog remain committed without build changes.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Only instructions, feature inventory, install and shortcut documentation change; no main, preload or renderer behavior changes."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Only mobile maintainer documentation changes. Generated assets, native modules and the build process stay as they are."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Only the historical parity checklist and feature inventory change. No Kotlin, package identity, signing or APK behavior changes."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No channel, capability, schema or API behavior changes. The audit distinguishes capabilities from rollout flags."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored user data or migration changes. The sender-line manifest only updates a moved documentation evidence path."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "README.md",
+        "docs/features.md",
+        "docs/notes/docs-hygiene-2026-11.md",
+        "docs/releasing.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run validate:feature-parity -- --base origin/main",
+      "npm run format",
+      "npm run typecheck",
+      "npx vitest run --maxWorkers=2"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No app, phone hardware, packaged upgrade, store upload or release was exercised; this batch changes documentation and ignore rules only."
+    ]
+  }
+}

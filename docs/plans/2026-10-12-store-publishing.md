@@ -1,6 +1,10 @@
 # Store publishing and desktop signing plan
 
-Status: planned, not started. The orchestrator work goes first (user, 2026-10-12).
+Status: partially implemented. Native store lanes, demo mode and pinned
+transport are in the repository. Store approval, account-holder steps and
+desktop signing credentials are external state and are not established by a
+source audit (2026-11-03). This plan stays active; `docs/releasing.md` is the
+current operator procedure.
 Procedure reference: the `app-store-publish` skill in `tejas-skills`.
 
 ## Decisions (made by the user on 2026-10-12)
@@ -14,7 +18,7 @@ Procedure reference: the `app-store-publish` skill in `tejas-skills`.
 | Countries and price | All countries, free |
 | Audience | 18+, no ads, no advertising ID. Under-13 audiences bring the Families policy and COPPA; a coding-agent tool is for adults. |
 | Reviewer access | An in-app demo mode with sample chats. No public demo backend: it would run real agents. |
-| GitHub APK channel | Removed. Play is the only Android channel; nobody but the user sideloads today. |
+| APK channel | Play is primary; `mobile-release.yml` can publish an optional upload-key-signed sideload APK without an in-app updater. |
 | Play signing | Play-managed app signing key plus our upload key. The user uninstalls the sideloaded APK once and pairs again. |
 | Developer name | The stores and the signed desktop app show the team **JAYASHREE AYURCULTURE & CONSULTANCY** (team `4GHRM59326`). Accepted. |
 | Privacy policy | Edit the shared page `tejasnafde.github.io/public/privacy/index.html` (served at `tn07.dev/privacy`). |

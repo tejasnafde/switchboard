@@ -1,36 +1,26 @@
 # Keybindings
 
-Shortcuts are **scoped by focus** - the same chord does the right thing
-depending on which pane is active, mirroring how VS Code uses `when:` clauses.
-Four contexts:
+Shortcuts follow focus: the embedded workbench handles editor keys, terminal
+search targets the focused terminal, and chat actions target the focused chat.
+The default app bindings live in `src/shared/shortcuts.ts`. Settings > Keyboard
+shortcuts can rebind app commands; the workbench has its own keyboard settings.
 
-- **Editor** - bindings live in the CodeMirror keymap; only fire when the code
-  editor has focus.
-- **Terminal** - scoped to the focused terminal pane's subtree.
-- **Chat** - scoped to the focused primary or secondary chat. The focused chat
-  also binds the IDE, terminal strip, and quick prompt.
-- **Global** - app-level actions, handled regardless of focus.
+`⌘` means Cmd on macOS and Ctrl on Windows/Linux unless noted.
 
-`⌘` = Cmd on macOS / Ctrl on Windows·Linux unless noted.
+## Editor
 
-## Editor (when the code editor is focused)
+The embedded workbench supplies file editing, search, navigation and language
+features through its own commands and installed extensions. There is no
+separate built-in editor keymap or repository-search fallback.
+
+The Switchboard bridge adds these defaults (`resources/sb-bridge/package.json`):
 
 | Keys | Action |
 |---|---|
-| `⌘-click` / `F12` | Go to definition (LSP → `git grep` fallback) |
-| `⇧F12` | Go to references - inline peek (1 result auto-jumps; ↑↓·⏎·esc) |
-| `⌘`-hover | Underline the symbol under the cursor (clickable affordance) |
-| `⌘S` | Save (atomic; prompts on external-edit conflict) |
-| `⌘/` | Toggle line comment |
-| `⌥↑` / `⌥↓` | Move line up / down |
-| `⇧⌥↑` / `⇧⌥↓` | Copy line up / down |
-| `⌘D` | Select next occurrence (multi-cursor) |
-| `Ctrl+G` | Go to line |
-| `⌘F` | Find in file · `⌘G` / `⇧⌘G` find next / prev |
-| `⌘Z` / `⇧⌘Z` | Undo / redo (per-buffer history) |
-| `Ctrl+-` / `Ctrl+⇧-` (mac), `⌥←` / `⌥→` (win·linux) | Navigate back / forward |
-| `⌘W` | Close the active editor tab |
-| `Tab` / `⇧Tab` | Indent / outdent |
+| `⌘L` | Send editor selection to the chat draft |
+| `⌘K` | Quick edit with the editor selection |
+| `⌘J` / `Ctrl+backtick` / `⌘⇧E` | Open Switchboard's terminal pane |
+| `⌘⇧J` | Toggle data science layout |
 
 ## Terminal (when a terminal pane is focused)
 
@@ -47,12 +37,17 @@ Four contexts:
 
 | Keys | Action |
 |---|---|
-| `⌘P` | Quick Open (fuzzy file finder) |
+| `⌘P` | Go to chat (search titles and projects) |
 | `⌘⇧P` | Command palette |
 | `⌘K` | Quick prompt |
+| `⌘⇧O` | New chat |
+| `⌘⇧B` | Chat Details |
+| `⌘⌫` | Stop the running agent |
+| `⌘J` | Toggle terminal |
+| `⌘⇧J` | Toggle data science layout |
 | `⌘L` | Context bridge (selection → chat draft) |
 | `⌘B` | Toggle sidebar |
-| `⌘⇧E` | Toggle right pane (terminal ↔ files) |
+| `⌘⇧E` | Switch right pane (terminal ↔ IDE; preview returns to terminal) |
 | `⌘⇧K` | Toggle kanban board |
 | `⌘⇧\\` (`⌘\|`) | Open a chat beside the current one, or close the secondary chat |
 | `⌘⇧F` | Search across conversations |
@@ -60,13 +55,14 @@ Four contexts:
 
 ## Notes
 
-- `⌘W` is intercepted once in the main process and routed by focus: editor tab →
-  chat panel (dual mode) → terminal tab → app window. It will **not** close a
-  terminal (and its pty / SSH session) while you're in the editor.
-- Most editor bindings come from CodeMirror's bundled `defaultKeymap` /
-  `searchKeymap`; the app only adds the ones that touch app concepts
-  (`F12`, `⌘W`, navigation).
+- `⌘W` is intercepted in main and routed by focus. In the editor the host
+  leaves the tab lifecycle to the workbench; in dual-chat mode it closes the
+  focused chat panel; in a terminal it closes its active tab. Ambiguous focus
+  does nothing. A focused terminal with no active pane can close the app window.
 - In dual-chat mode, session-scoped shortcuts target the focused chat. Neutral
   focus falls back to the primary chat. Terminal selections target the
   terminal's owning session; IDE selections target the session to which the
   workbench was bound when the selection was captured.
+
+- `⌘Z` undoes the latest Settle, Snooze or Wake action for eight seconds when focus is outside a text field, terminal or editor.
+- `⌘⌥` plus an arrow moves focus between terminal windows; `⌘⇧W` closes the whole focused terminal window.

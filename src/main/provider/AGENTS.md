@@ -6,7 +6,7 @@ Detail for this part of the code. The root `AGENTS.md` holds the rules that appl
 
 - `types.ts` re-exports from `src/shared/provider-events.ts` so renderer can type the IPC boundary
 - `ProviderKind = 'claude' | 'codex' | 'opencode' | GenericAcpAgent` (`'gemini' | 'vibe' | 'cline' | 'copilot' | 'acp-command'`, `shared/acp-agents.ts`; the same string is the agent type on conversations and provider instances)
-- `ProviderAdapter` interface - required: `startSession(opts, onEvent)`, `sendTurn(threadId, message, runtimeMode?, images?)`, `interruptTurn`, `respondToRequest`, `stopSession`, `setRuntimeMode`, `isAvailable`. Optional: `setModel?`, `answerQuestion?`, `listSkills?`, `cancelQueuedTurn?`, `promoteQueuedTurn?`
+- `ProviderAdapter` interface - required: `startSession(opts, onEvent)`, `sendTurn(threadId, message, runtimeMode?, images?, delivery?, queuedId?)`, `interruptTurn`, `respondToRequest`, `stopSession`, `setRuntimeMode`, `isAvailable`. Optional: `setModel?`, `answerQuestion?`, `listSkills?`, `cancelQueuedTurn?`, `promoteQueuedTurn?`, `resumeQueuedTurns?`
 - **`policy.ts` is the shared policy module** (2026-04/05 - was previously inlined in claude-adapter). All three adapters import from it:
   - `decidePermission(mode, toolName) → 'allow' | 'deny' | 'prompt'` - pure, unit-tested
   - `denialMessage(mode, toolName)` - human-readable denial reason
@@ -71,7 +71,7 @@ A Claude subagent's work belongs to the Agent/Task call that started it. The ada
 3. `providerApi.sendTurn(..., messageImages)` passes through preload → `provider-registry` IPC → adapter. Both registry entry points (`SUBMIT_USER_TURN`, legacy `SEND_TURN`) pass the images through `fitImagesToProviderLimit` (`image-limits.ts`, pure JS `jpeg-js`/`pngjs`, so the headless server runs it) before the adapter: a PNG or JPEG over 2000 px is shrunk in its own format (a JPEG turned upright from its EXIF orientation first, because the new file has no EXIF), a larger GIF or WebP refuses the turn by name. This catches older phone builds and re-sends of stored images. The stored turn and its hash keep the images as sent
 4. Claude adapter strips the `data:image/png;base64,` prefix and builds `{type:'image', source:{type:'base64', media_type, data}}` content blocks alongside text
 5. Codex adapter encodes images into JSON-RPC content blocks (Phase B done - see `codex-adapter.ts` `sendTurn`)
-6. On JSONL reload, `JsonlParser.extractImages` reconstructs data URLs from image blocks - historical images survive restart
+6. On JSONL reload, the parser's `extractImages` helper reconstructs data URLs from image blocks - historical images survive restart
 
 ## Composer file attachments (2026-10-27)
 
@@ -88,7 +88,7 @@ Any other file is not sent as bytes. The composer copies it to `<userData>/attac
 
 ## Sender line (2026-10-21)
 
-`submitClientUserTurn` (SUBMIT_USER_TURN and the legacy SEND_TURN) puts one `<switchboard-sender>` line in front of the text the adapter gets: surface, device, the machine that runs the agent, whether its localhost reaches the user (`shared/sender-line.ts`, `sender-context.ts`, from the request context the host set, never from the turn), and up to three dev server addresses that terminals in the chat's folder printed (`terminal/dev-server-watch.ts`, fed by `PtyManager`, dropped when the PTY exits). A line the client sent is stripped first. The stored turn never holds it; the JSONL parser and the session scanner strip it on read, so no client sees it. No line for a slash command or for a turn the backend sends itself. A test fake that asserts exact provider text strips it with `stripSenderLine`. Plan: `docs/plans/2026-10-21-sender-line.md`.
+`submitClientUserTurn` (SUBMIT_USER_TURN and the legacy SEND_TURN) puts one `<switchboard-sender>` line in front of the text the adapter gets: surface, device, the machine that runs the agent, whether its localhost reaches the user (`shared/sender-line.ts`, `sender-context.ts`, from the request context the host set, never from the turn), and up to three dev server addresses that terminals in the chat's folder printed (`terminal/dev-server-watch.ts`, fed by `PtyManager`, dropped when the PTY exits). A line the client sent is stripped first. The stored turn never holds it; the JSONL parser and the session scanner strip it on read, so no client sees it. No line for a slash command or for a turn the backend sends itself. A test fake that asserts exact provider text strips it with `stripSenderLine`. Design: `docs/plans/archive/2026-10-21-sender-line.md`.
 
 ## Cross-session messaging (`/send-to` + agent-initiated sends)
 
@@ -146,7 +146,7 @@ Traps:
 - `auth_mode`: `'env'` (safeStorage-encrypted env vars in `env_encrypted`) or `'oauth_dir'` (per-instance config dir set as `CLAUDE_CONFIG_DIR` / `CODEX_HOME`).
 - IPC (`ProviderInstanceChannels`): `LIST` (secrets stripped), `UPSERT` (plaintext env in, encrypted at rest), `DELETE` (refuses last-of-kind), `TEST` (probes creds via `claude auth status` / `codex login status` / `opencode models`), `CREATE_OAUTH_DIR`.
 - Registry resolves the instance at `startSession` (`resolveProviderInstance(agentType, instanceId)`), falling back requested → default → any enabled; applies the env overlay + oauth_dir at spawn.
-- UI: `UnifiedProviderPicker` (drop-up: agent tabs → instance rail → model search) in the chat composer; `ProvidersTab` in Settings. Renderer cache in `provider-instance-store`.
+- UI: `UnifiedProviderPicker` (drop-up: agent tabs → instance rail → model search) in the chat composer; `settings/AccountsPanel.tsx` in Settings > Accounts. Renderer cache in `provider-instance-store`.
 - **Usage limits** (`ProviderInstanceChannels.USAGE` → `src/main/provider/usage/`): a per-row "Usage" button reads that instance's subscription quota. Claude via `GET /api/oauth/usage` with the instance's own keychain token; Codex via a short-lived `codex app-server` speaking `account/rateLimits/read`; OpenCode is not-applicable (own API keys). Normalised to `ProviderUsage` (`shared/provider-usage.ts`): `usedPercent` 0-100, `resetsAtMs` epoch ms. Traps:
   - Claude's per-model weekly limit is in `limits[]` as `kind: "weekly_scoped"`, **not** `seven_day_opus`/`seven_day_sonnet` (legacy, null). `is_active` marks which limit is *binding*, not whether it exists - never filter on it.
   - Codex's app-server wire is camelCase and `resetsAt` is unix **seconds**; the snake_case form belongs to `codex exec --json`. `account/read` needs an explicit `params`.
