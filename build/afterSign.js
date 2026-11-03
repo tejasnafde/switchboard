@@ -7,11 +7,19 @@ exports.default = async function afterSign(context) {
   const product = context.packager.appInfo.productFilename
   if (context.electronPlatformName === 'darwin') {
     const appPath = path.join(context.appOutDir, `${product}.app`)
-    execFileSync('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appPath], {
-      stdio: 'inherit',
-    })
+    // Installed builds signed ad-hoc by afterPack.js carry the designated
+    // requirement `identifier "<bundle id>"`, and ShipIt installs an update
+    // only if it satisfies the running app's requirement. Checking it here
+    // keeps the ad-hoc to Developer ID auto-update path open.
+    const updateRequirement = `=identifier "${context.packager.appInfo.id}"`
+    execFileSync(
+      'codesign',
+      ['--verify', '--deep', '--strict', '--verbose=2', `-R${updateRequirement}`, appPath],
+      { stdio: 'inherit' },
+    )
+    execFileSync('spctl', ['--assess', '--type', 'exec', '-vv', appPath], { stdio: 'inherit' })
     execFileSync('xcrun', ['stapler', 'validate', appPath], { stdio: 'inherit' })
-    console.log('[afterSign] verified Developer ID signature and notarization ticket')
+    console.log('[afterSign] verified Developer ID signature, Gatekeeper assessment and notarization ticket')
     return
   }
 
