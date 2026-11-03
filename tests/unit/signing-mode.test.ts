@@ -1,6 +1,7 @@
 import childProcess from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import path from 'node:path'
 import { load } from 'js-yaml'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { classifySigningEnvironment } from '../../scripts/signing-mode.mjs'
@@ -142,7 +143,7 @@ describe('release signing mode', () => {
         packager: { appInfo: { productFilename: 'Switchboard', id: 'com.tejasnafde.switchboard' } },
       })
 
-      const app = '/out/Switchboard.app'
+      const app = path.join('/out', 'Switchboard.app')
       expect(calls).toEqual([
         [
           'codesign',
