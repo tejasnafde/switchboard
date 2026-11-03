@@ -112,6 +112,12 @@ export interface WorkspaceLaunchIntent {
   terminalPolicy?: 'provision' | 'skip'
 }
 
+/** A creation stored before the Terminal agent was removed can still name it. That creation starts no agent. */
+export function liveInitialAgent(launch: WorkspaceLaunchIntent | undefined): WorktreeInitialAgentIntent | undefined {
+  const agent = launch?.initialAgent
+  return agent && (agent.provider as string) !== 'terminal' ? agent : undefined
+}
+
 export interface WorktreeLineage {
   parentWorktreeId?: string
   parentConversationId?: string

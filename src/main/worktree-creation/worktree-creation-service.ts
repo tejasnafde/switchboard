@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import {
   canonicalizeWorktreeCreationIdentity,
   canonicalizeWorktreeCreationRequest,
+  liveInitialAgent,
   parseWorktreeCreationRequest,
   type GetWorktreeCreationRequest,
   type WorktreeCreationActionRequest,
@@ -751,6 +752,7 @@ export class WorktreeCreationService {
     let linked: ReturnType<SqliteWorktreeCreationStore['commitConversationOwner']>
     let forkStage = preparedForkStage
     try {
+      const initialAgent = liveInitialAgent(request.launch)
       const worktree = {
         id: linking.record.worktreeId ?? this.createWorktreeId(),
         repositoryId: repository.repositoryId,
@@ -782,11 +784,11 @@ export class WorktreeCreationService {
                 expectedRevision: linking.record.revision,
                 worktree,
                 cardId: request.owner.cardId,
-                ...(request.launch?.initialAgent
+                ...(initialAgent
                   ? {
                       conversation: {
                         id: this.launchConversationId(request),
-                        agentType: request.launch.initialAgent.provider,
+                        agentType: initialAgent.provider,
                       },
                     }
                   : {}),

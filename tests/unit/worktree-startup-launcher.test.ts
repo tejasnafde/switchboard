@@ -112,6 +112,16 @@ describe('ProviderWorktreeStartupLauncher', () => {
     expect(registry.submitManagedUserTurn).toHaveBeenCalledOnce()
   })
 
+  it('starts no agent for a stored creation that still names the retired Terminal agent', async () => {
+    const registry = { startManagedSession: vi.fn(), submitManagedUserTurn: vi.fn() }
+    const launcher = new ProviderWorktreeStartupLauncher(() => registry)
+    const launchInput = input('Start once.')
+    launchInput.launch.initialAgent.provider = 'terminal' as never
+
+    await expect(launcher.launch(launchInput)).resolves.toMatchObject({ status: 'succeeded', terminalIds: [] })
+    expect(registry.startManagedSession).not.toHaveBeenCalled()
+  })
+
   it('keeps an ambiguous atomic prompt outcome ambiguous for same-origin reconciliation', async () => {
     const registry = {
       startManagedSession: vi.fn(async () => ({ threadId: 'conversation-startup-1' })),

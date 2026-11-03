@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { parseLaunchConfigFile, type LaunchConfig, type LaunchConfigTerminal } from '../../shared/launch-config'
 import type { UserTurnSubmissionResult, UserTurnSubmissionV1, ProviderKind } from '../../shared/provider-events'
-import type { WorkspaceLaunchIntent } from '../../shared/worktree-creation'
+import { liveInitialAgent, type WorkspaceLaunchIntent } from '../../shared/worktree-creation'
 import type { ProviderSession, SessionStartOpts } from '../provider/types'
 import type {
   ManagedTerminalProvisioningResult,
@@ -137,7 +137,7 @@ export class ProviderWorktreeStartupLauncher implements WorktreeStartupLauncherP
       }
     }
 
-    const initialAgent = input.launch.initialAgent
+    const initialAgent = liveInitialAgent(input.launch)
     if (!initialAgent) return { status: 'succeeded' as const, terminalIds }
     const registry = this.registry()
     if (!registry) return { status: 'failed' as const, terminalIds }
