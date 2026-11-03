@@ -289,6 +289,30 @@ describe('launchCardChat', () => {
     expect(api.kanban.update).not.toHaveBeenCalled()
   })
 
+  it('shows the retirement notice when the backend refuses to unarchive the linked chat', async () => {
+    const api = installApiMock()
+    api.app.unarchiveConversation.mockRejectedValue(new Error('Terminal agent has been removed.'))
+    useAgentStore.setState({
+      sessions: [
+        {
+          id: 'old-terminal',
+          type: 'claude-code',
+          status: 'idle',
+          projectPath: '/repo',
+          title: 't',
+          messages: [],
+          unreadCount: 0,
+          runtimeMode: 'sandbox',
+        },
+      ],
+      activeSessionId: null,
+    })
+    await expect(launchCardChat(card({ conversationId: 'old-terminal' }), { openChat: true })).rejects.toThrow(
+      'Its history remains in Archive & data',
+    )
+    expect(api.provider.startSession).not.toHaveBeenCalled()
+  })
+
   it('hydrates a durable linked conversation instead of creating a second one after renderer restart', async () => {
     const api = installApiMock()
     api.app.getConversations.mockResolvedValue([

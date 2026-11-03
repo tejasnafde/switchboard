@@ -1020,6 +1020,8 @@ export class SqliteWorktreeCreationStore {
           input.now,
         )
 
+      // A creation stored before the upgrade can still name the retired agent.
+      if ((input.conversation.agentType as string) === 'terminal') throw new Error('Terminal agent has been removed.')
       this.db
         .prepare(`
         INSERT INTO conversations (
@@ -1119,6 +1121,7 @@ export class SqliteWorktreeCreationStore {
           | { title: string }
           | undefined
         if (!cardTitle) throw new Error('kanban card disappeared before conversation linkage')
+        if ((input.conversation.agentType as string) === 'terminal') throw new Error('Terminal agent has been removed.')
         this.db
           .prepare(`
           INSERT INTO conversations (

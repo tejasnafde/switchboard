@@ -214,11 +214,11 @@ describe('recent chats on the landing screen', () => {
       ['/b-0', 'local', 'b'],
     ])
   })
-  it('lists a chat shown under two projects once', () => {
+  it('lists a chat shown under two projects once, and skips terminals', () => {
     const shared = project('/a', 30)
     const twin: Project = {
       ...project('/b'),
-      sessions: shared.sessions,
+      sessions: [...shared.sessions, { ...shared.sessions[0], id: 'term', agentType: 'terminal', startedAt: 99 }],
     }
     const chats = recentLandingChats([shared, twin], { remotes: [], connections: {}, projects: {} })
     expect(chats.map((c) => c.session.id)).toEqual(['/a-0'])
