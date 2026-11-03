@@ -29,7 +29,11 @@ jobs:
           persist-credentials: false
       - name: Pin its exact base
         id: base
-        run: echo "sha=$(git -C head rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          SHA=$(git -C head rev-parse HEAD^1)
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
       - name: Checkout the base
         uses: actions/checkout@v4
         with:
@@ -46,6 +50,7 @@ jobs:
           npm ci --ignore-scripts --prefix head
           npm ci --ignore-scripts --prefix head/apps/mobile
       - name: Compare iOS native fingerprints
+        id: compare
         env:
           BASE_SHA: ${{ steps.base.outputs.sha }}
         run: |
@@ -55,11 +60,13 @@ jobs:
           node head/scripts/ios-fingerprint-report.mjs create head/apps/mobile "$RUNNER_TEMP/head-fingerprint.json"
           node head/scripts/ios-fingerprint-report.mjs compare head/apps/mobile "$RUNNER_TEMP/base-fingerprint.json" "$RUNNER_TEMP/head-fingerprint.json"
       - name: Keep fingerprint input metadata
+        if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: ios-fingerprints
           path: ${{ runner.temp }}/*-fingerprint.json
           retention-days: 14
       - name: Explain an unavailable report
-        if: failure()
+        if: failure() && steps.compare.outcome != 'success'
         run: echo 'iOS fingerprint report unavailable. No compatibility conclusion can be drawn. This advisory check does not block merging.' >> "$GITHUB_STEP_SUMMARY"

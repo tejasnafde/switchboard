@@ -8,6 +8,7 @@ const escape = (value) =>
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
+    .replace(/[\\`*_\[\]()!|~]/g, (char) => `&#${char.charCodeAt(0)};`)
     .replace(/[\r\n]/g, ' ')
 
 export function fingerprintMetadata(fingerprint) {

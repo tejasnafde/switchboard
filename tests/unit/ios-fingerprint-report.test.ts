@@ -25,6 +25,13 @@ describe('iOS native compatibility report', () => {
       ]),
     ).toContain('&lt;img src=x&gt; # forged')
   })
+  it('renders markdown-shaped input names as literal text', () => {
+    const report = fingerprintSummary({ hash: 'a' }, { hash: 'b' }, [
+      { op: 'added', addedSource: { type: 'file', filePath: '[claim](https://example.test) `x` *bold*' } },
+    ])
+    expect(report).not.toContain('[claim]')
+    expect(report).toContain('&#91;claim&#93;&#40;https://example.test&#41; &#96;x&#96; &#42;bold&#42;')
+  })
   it('keeps only input identity, hash and reasons in artifacts', () => {
     expect(
       fingerprintMetadata({
