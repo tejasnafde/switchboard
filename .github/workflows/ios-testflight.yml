@@ -1,0 +1,99 @@
+name: iOS TestFlight dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full main commit SHA with successful main push CI.
+        type: string
+        required: true
+      dry_run:
+        description: Build a signed store IPA and check ASC access, without TestFlight submission. Consumes an EAS build number.
+        type: boolean
+        default: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+      - name: Verify the immutable main source and CI
+        id: plan
+        run: node scripts/ios-release.mjs plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.sha }}
+          DRY_RUN: ${{ inputs.dry_run }}
+  build:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout the workflow implementation
+        uses: actions/checkout@v4
+        with:
+          path: automation
+          persist-credentials: false
+      - name: Checkout the chosen main source
+        uses: actions/checkout@v4
+        with:
+          path: source
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+      - name: Install source dependencies
+        run: |
+          npm ci --prefix source
+          npm ci --prefix source/apps/mobile
+      - name: Typecheck the iOS source
+        working-directory: source/apps/mobile
+        run: npx tsc --noEmit
+      - name: Set up pinned EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: '27.3.0'
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Restore the existing ASC key outside the source archive
+        env:
+          ASC_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          ASC_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          ASC_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "$ASC_P8" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER" ] && [ -n "$ASC_TEAM" ] || { echo '::error::Existing Apple API key secret set is incomplete'; exit 1; }
+          umask 077
+          mkdir -p "$RUNNER_TEMP/sb-ios-asc"
+          printf '%s' "$ASC_P8" > "$RUNNER_TEMP/sb-ios-asc/key.p8"
+      - name: Build store IPA and optionally submit this exact build to TestFlight
+        run: node automation/scripts/ios-release.mjs build source/apps/mobile
+        env:
+          SOURCE_SHA: ${{ needs.plan.outputs.sha }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          ASC_API_KEY_PATH: ${{ runner.temp }}/sb-ios-asc/key.p8
+          ASC_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          ASC_API_KEY_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER }}
+          EXPO_ASC_API_KEY_PATH: ${{ runner.temp }}/sb-ios-asc/key.p8
+          EXPO_ASC_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          EXPO_ASC_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER }}
+          EXPO_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          EXPO_APPLE_TEAM_TYPE: COMPANY_OR_ORGANIZATION
+          EXPO_NO_CAPABILITY_SYNC: '1'
+      - name: Delete the temporary ASC key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/sb-ios-asc"

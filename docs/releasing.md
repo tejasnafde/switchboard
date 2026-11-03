@@ -156,7 +156,8 @@ anything in the native project (a module, a permission, an Info.plist key in
   channel `production`, so OTA updates reach it). Build numbers are remote
   (`cli.appVersionSource: remote`) and `autoIncrement` bumps one per build;
   the marketing version is still `expo.version` in `app.json`.
-- **Submit:** `eas submit -p ios --profile store`. The profile reads the App
+- **Submit:** use the dispatch below. A local `eas submit -p ios --profile store`
+  needs those submit-profile placeholders bound to actual values first. The profile reads the App
   Store Connect API key from three environment variables, so no key is in the
   repo: `ASC_API_KEY_PATH` (path to the `.p8` file), `ASC_API_KEY_ID` and
   `ASC_API_KEY_ISSUER_ID`. Their values come from the Secret Manager secret
@@ -167,6 +168,36 @@ anything in the native project (a module, a permission, an Info.plist key in
 - `ITSAppUsesNonExemptEncryption` is `false` (system TLS only), so no build
   asks the export compliance question. `supportsTablet` is `false`: iPads run
   the iPhone app in compatibility mode and need no iPad screenshots.
+
+### TestFlight dispatch
+
+Run **iOS TestFlight dispatch** (`ios-testflight.yml`) on main with a full main
+SHA whose main push CI passed. The workflow verifies ancestry and CI, checks
+App Store Connect access read-only, and builds with the existing EAS `store`
+profile and frozen credentials. No certificate or provisioning profile is
+created or rotated. EAS CLI is pinned. Main's native fingerprint report helps
+operators decide when this binary lane is needed.
+
+`dry_run=true` is the default: it builds a signed store IPA but never submits
+it. It consumes EAS build quota and a remote build number. Inspect the EAS build
+ID in the run summary. New workflow registration requires main, so the first
+validation dispatch can run after merge. A branch dry run identifies both the
+workflow revision and the selected main source; repeat on main before submission.
+
+With `dry_run=false`, the workflow must be dispatched on main. It submits only
+that successful build's ID to TestFlight after checking its commit, iOS/store
+profile, project and bundle identity. App Store review remains a separate
+manual action. Do not rerun a build or submission with an unknown outcome until
+its EAS dashboard state is checked; the workflow does not retry either command.
+GitHub may replace a pending dispatch in the concurrency group.
+
+Secrets: existing `EXPO_TOKEN`, `APPLE_API_KEY_P8`, `APPLE_API_KEY_ID`,
+`APPLE_API_ISSUER` and `APPLE_TEAM_ID`. No new secret is required. The private
+`.p8` file lives outside the source archive and is deleted on exit. The script
+binds the submit profile's environment placeholders only around submission and
+restores the file afterwards, so build archives and fingerprints remain those
+of the chosen commit. EAS Submit does not expand shell variables in `eas.json`.
+The same binding is validated in a dry run, without invoking submit.
 
 ### PR native compatibility report
 
