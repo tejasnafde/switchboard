@@ -153,22 +153,38 @@ A desktop release is a tag on `main`. There is no version-bump pull request:
 before it builds, so the artifacts, the update manifests and `app.getVersion()`
 all carry the tag's version while `main` keeps whatever it had.
 
-```bash
-set -euo pipefail                          # or the tag outlives a failed step
-git fetch origin
-sha=$(git rev-parse origin/main)
-ci=$(gh run list --branch main --workflow ci.yml --limit 10 --json headSha,conclusion \
-  --jq ".[] | select(.headSha==\"$sha\") | .conclusion" | head -1)
-[ "$ci" = success ] || { echo "main CI is not green on $sha ($ci)"; exit 1; }
-git tag "v<version>" "$sha" && git push origin "v<version>"
+Run **Release** in GitHub Actions (`release.yml`), choose the workflow ref
+`main`, enter the version as `X.Y.Z` without `v`, and leave `dry_run` enabled
+first. The dry run packages both platforms with that version, but creates no
+tag, draft release, assets or update feed.
+
+```sh
+gh workflow run release.yml --ref main -f version=0.9.128 -F dry_run=true
 ```
 
-Tag only a commit on `main`. `release.yml` fires on any `v*` tag and builds it,
-so a tag on a branch commit ships that branch. If it happens: cancel the run,
-then `git push origin :refs/tags/<tag>` before anything publishes.
+After reviewing that run, dispatch again on `main` with `dry_run=false` and
+`expected_sha` set to the SHA in its summary. A changed main requires a new dry run.
+The operator supplies the reviewed SHA; the workflow validates that it matches current main, but does not attest that a human reviewed a dry run.
+The workflow resolves main once to an immutable SHA, requires successful
+push CI on that SHA, and refuses an existing `v<version>` tag or a version no newer than the latest desktop release. If CI is still
+running it fails closed; retry after CI passes. It never follows a newer merge
+partway through a release. Tag creation is atomic, and all desktop release runs are
+serialized without cancelling an active release. GitHub can replace a pending run when another is queued; check the run conclusion. No version-bump PR is needed.
 
-`set -euo pipefail` is there because the block is meant to be pasted whole: a
-failed check must stop the `git tag` at the bottom.
+A branch dry run reports both the workflow revision and the packaged main SHA.
+Repeat it on main after merge before using that SHA for a real release.
+
+The default GitHub token creates the tag and the same run directly invokes
+the existing release jobs. It does not depend on a token-created tag triggering
+another workflow. For a failure after tag creation, re-run only the failed jobs: the tag must
+still point at the validated SHA. A fresh dispatch refuses that tag.
+Direct tag pushes remain supported for recovery; cancel an accidental run
+before deleting its draft release, then deleting or replacing its tag. Never
+reuse a draft containing assets from another commit. Direct tag pushes
+use the existing CI fallback gate; use the dispatch for normal releases.
+
+Secrets: only the automatic `GITHUB_TOKEN` is needed for unsigned desktop
+builds. The optional signing secrets listed below keep their existing behavior.
 
 Write the CHANGELOG entry on the FEATURE branch, with the change itself.
 
@@ -177,10 +193,10 @@ green run means it was checked:
 
 | Job | Enforces |
 |---|---|
-| `ci_status` | Looks up a successful `ci.yml` run on the tagged commit. |
+| `ci_status` | Resolves and pins main for dispatch, rejects an existing tag, and requires successful main push CI. Tag pushes look up CI on the tagged commit. |
 | `gate` | Calls `ci.yml` only when `ci_status` found none (a tag on a commit whose CI never ran or failed). Main CI already passed on a normal release commit, and running it again proves nothing. |
-| `prepare_release` | Creates one hidden draft for both builds to upload into. |
-| `build_mac`, `build_win` | `release-build.yml` once per OS, in parallel. Each sets the version from the tag, runs `build:ci` (build plus the packaged-app smoke test; typecheck and tests already passed on this commit) and publishes into the draft. |
+| `prepare_release` | A real dispatch creates the tag on the verified SHA, then creates one hidden draft for both builds to upload into. Dry runs create neither. |
+| `build_mac`, `build_win` | `release-build.yml` once per OS, in parallel. Each sets the chosen dispatch or tag version, runs `build:ci` (build plus the packaged-app smoke test; typecheck and tests already passed on this commit) and publishes into the draft only for a real release. Dry runs retain Actions artifacts. |
 | `publish` | As soon as the macOS build ends: asserts the macOS assets and `latest-mac.yml` (`scripts/verify-release-assets.sh mac`), then publishes the release. It does not wait for Windows. |
 | `verify_windows` | When the slower Windows build ends: asserts its assets and `latest.yml` on the already published release. Until `latest.yml` lands, Windows clients see no update yet. |
 
@@ -188,7 +204,7 @@ The only judgment left to a human is the version: **a patch bump for iterative
 work including feature batches**; reserve a minor bump for headline surface
 changes (0.7.0 = the embedded IDE replaced the editor).
 
-If `publish` or `verify_windows` fails, re-run the failed build job from the
+If `prepare_release`, `publish` or `verify_windows` fails, re-run the failed job from the
 Actions UI. It is safe: electron-builder dedups uploads by name.
 
 ### Pull request sizing
@@ -256,13 +272,13 @@ notarization. `build/afterSign.js` then runs, after notarization and stapling:
 
 The Windows lane enables Authenticode and validates the packed executable.
 
-A manual dispatch of `release.yml` (`gh workflow run release.yml --ref <branch>`)
-exercises the same selection, signing, notarization and verification without
-publishing. It uploads the macOS zip as the run artifact `switchboard-mac`
-(kept 7 days), so you can check it locally:
+A dry-run dispatch of `release.yml` (see "Desktop release" above) exercises
+the same selection, signing, notarization and verification on the main tree
+without publishing. It keeps the packages as the run artifact
+`desktop-dry-run-macos-15` (kept 7 days), so you can check the app locally:
 
 ```bash
-gh run download <run-id> -R tejasnafde/switchboard -n switchboard-mac -D /tmp/sb-devid
+gh run download <run-id> -R tejasnafde/switchboard -n desktop-dry-run-macos-15 -D /tmp/sb-devid
 ditto -x -k /tmp/sb-devid/Switchboard-*-mac.zip /tmp/sb-devid/app
 codesign -dv --verbose=4 /tmp/sb-devid/app/Switchboard.app
 spctl -a -vv /tmp/sb-devid/app/Switchboard.app
@@ -328,8 +344,8 @@ a real `.zip` / `.exe`.
 Each of these was once a bullet an operator was asked to remember. They are
 listed here as rationale, not as steps to perform.
 
-- **`--follow-tags`.** `release.yml` triggers only on a `v*` tag push. Pushing
-  the commit without the tag builds nothing, which reads as a hung release.
+- **Deliberate release.** `release.yml` accepts a manual dispatch with a human-chosen
+  version and also supports direct `v*` tag pushes for recovery.
 - **The version must match the tag** (sans `v`). `release-build.yml` sets it
   from the tag on the runner (`npm version <tag> --no-git-tag-version`), so the
   two cannot differ and `main` needs no bump commit.
