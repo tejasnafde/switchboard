@@ -1,12 +1,80 @@
 const { execFileSync } = require('child_process')
+const fs = require('fs')
+const os = require('os')
 const path = require('path')
 
+const STAPLE_ATTEMPTS = 5
+// Staple attempt n + 1 waits n times this. Read at call time so tests can set it to 0.
+exports.stapleRetryDelayMs = 30_000
+
+// electron-builder's notarize step staples once and fails the build on any
+// network error. On GitHub's macOS runners the ticket lookup at
+// api.apple-cloudkit.com drops the connection (stapler exit 68) after Apple has
+// already accepted the submission, so the signed overlay turns that step off
+// and this hook submits and staples, retrying the staple.
+function notarize(appPath) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-notarize-'))
+  try {
+    const zip = path.join(dir, `${path.basename(appPath, '.app')}.zip`)
+    execFileSync('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', appPath, zip], { stdio: 'inherit' })
+    const output = execFileSync(
+      'xcrun',
+      [
+        'notarytool',
+        'submit',
+        zip,
+        '--key',
+        process.env.APPLE_API_KEY,
+        '--key-id',
+        process.env.APPLE_API_KEY_ID,
+        '--issuer',
+        process.env.APPLE_API_ISSUER,
+        '--wait',
+        '--timeout',
+        '30m',
+        '--output-format',
+        'json',
+      ],
+      { encoding: 'utf8' },
+    )
+    const result = JSON.parse(output)
+    console.log(`[afterSign] notarization ${result.id}: ${result.status}`)
+    if (result.status !== 'Accepted') {
+      throw new Error(`Notarization ${result.id} ended with status ${result.status}; run xcrun notarytool log ${result.id}`)
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+async function stapleWithRetries(appPath) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      // A stalled lookup must end the attempt, not the job.
+      execFileSync('xcrun', ['stapler', 'staple', '-v', appPath], { stdio: 'inherit', timeout: 300_000 })
+      return
+    } catch (err) {
+      if (attempt >= STAPLE_ATTEMPTS) throw err
+      const delay = exports.stapleRetryDelayMs * attempt
+      console.warn(`[afterSign] staple attempt ${attempt} failed; retrying in ${delay / 1000}s`, err.message)
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
+}
+
 exports.default = async function afterSign(context) {
-  if (process.env.SB_SIGNING_MODE !== 'signed') return
+  // Only electron-builder.signed.yml runs this hook, and it turns off
+  // electron-builder's notarize step, so skipping here would ship an app with
+  // no ticket and no checks.
+  if (process.env.SB_SIGNING_MODE !== 'signed') {
+    throw new Error('electron-builder.signed.yml needs SB_SIGNING_MODE=signed (scripts/signing-mode.mjs)')
+  }
 
   const product = context.packager.appInfo.productFilename
   if (context.electronPlatformName === 'darwin') {
     const appPath = path.join(context.appOutDir, `${product}.app`)
+    notarize(appPath)
+    await stapleWithRetries(appPath)
     // Installed builds signed ad-hoc by afterPack.js carry the designated
     // requirement `identifier "<bundle id>"`, and ShipIt installs an update
     // only if it satisfies the running app's requirement. Checking it here

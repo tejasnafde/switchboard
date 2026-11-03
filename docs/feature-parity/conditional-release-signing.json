@@ -42,7 +42,7 @@
   },
   "verification": {
     "automated": [
-      "tests/unit/signing-mode.test.ts covers absent, complete and partial credentials (the old Apple ID set is now partial), the production builder overlay, the API key written to a file, the afterSign checks and the macOS Bash 3.2 unsigned packaging path",
+      "tests/unit/signing-mode.test.ts covers absent, complete and partial credentials (the old Apple ID set is now partial), the production builder overlay, the API key written to a file, the afterSign notarize, staple retry and checks and the macOS Bash 3.2 unsigned packaging path",
       "Signed release jobs run codesign --verify --deep --strict with the identifier-only update requirement, spctl --assess --type exec and stapler validate, or Authenticode verification"
     ],
     "hardware": [],
