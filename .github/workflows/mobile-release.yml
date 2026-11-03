@@ -384,12 +384,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.release.outputs.version }}
+          RELEASE_SHA: ${{ inputs.ref || github.sha }}
         run: |
           set -euo pipefail
           sha256sum --check "switchboard-$VERSION.apk.sha256"
           gh release create "mobile-v$VERSION" \
             --repo "$GITHUB_REPOSITORY" \
-            --target "${{ inputs.ref || github.sha }}" \
+            --target "$RELEASE_SHA" \
             --title "Switchboard Android $VERSION (sideload APK)" \
             --notes "Sideload APK for app.tn07.switchboard $VERSION, signed with the upload key. It cannot upgrade a Google Play install: uninstall that first." \
             --latest=false \

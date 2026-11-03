@@ -21,6 +21,7 @@ jobs:
     concurrency:
       group: mobile-release
       cancel-in-progress: false
+    timeout-minutes: 5
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.main.outputs.sha }}
@@ -87,7 +88,22 @@ jobs:
           const changelog = readFileSync('CHANGELOG.md', 'utf8')
           writeFileSync('CHANGELOG.md', changelog.replace('### Changed\n', `### Changed\n- **Native Android ${name} (versionCode ${code}).** Test on internal before production promotion.\n`))
           JS
-      - name: Open and merge the version-bump PR after required CI
+      - name: Format the version bump
+        run: npm run format
+      - name: Commit the version bump
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          CODE: ${{ needs.plan.outputs.code }}
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b "release/android-$VERSION-$CODE-$GITHUB_RUN_ID"
+          git add apps/android/app/build.gradle.kts CHANGELOG.md "docs/feature-parity/android-release-$VERSION.json"
+          git -c core.hooksPath=/dev/null commit -m "Release native Android $VERSION (versionCode $CODE)" -m 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'
+      - name: Validate the committed version bump
+        run: npm run validate:feature-parity -- --base origin/main
+      - name: Open the version-bump PR
         id: merge
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
@@ -96,14 +112,7 @@ jobs:
           BASE_SHA: ${{ needs.plan.outputs.sha }}
         run: |
           set -euo pipefail
-          BRANCH="release/android-$VERSION-$CODE-$GITHUB_RUN_ID"
-          git config user.name github-actions[bot]
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git checkout -b "$BRANCH"
-          npm run format
-          npm run validate:feature-parity -- --base origin/main
-          git add apps/android/app/build.gradle.kts CHANGELOG.md "docs/feature-parity/android-release-$VERSION.json"
-          git -c core.hooksPath=/dev/null commit -m "Release native Android $VERSION (versionCode $CODE)" -m 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'
+          BRANCH=$(git branch --show-current)
           git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin "$BRANCH"
           echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           printf 'Native Android %s (versionCode %s), allocated above Play inventory at %s. Required CI gates this version-only bump. Signing and package identity are unchanged. Internal upload follows this merge; production promotion stays separate.\n\nFeature scope: docs/feature-parity/android-release-%s.json\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n' "$VERSION" "$CODE" "$BASE_SHA" "$VERSION" > "$RUNNER_TEMP/bump-pr.md"
@@ -129,6 +138,7 @@ jobs:
         run: |
           set -euo pipefail
           # Leave the bump open if any review still requires action.
+          # shellcheck disable=SC2016
           OPEN=$(gh api graphql -f query='query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$n){reviewThreads(first:100){nodes{isResolved}}}}}' -f owner="${GITHUB_REPOSITORY%/*}" -f repo="${GITHUB_REPOSITORY#*/}" -F n="${PR##*/}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length')
           [ "$OPEN" = 0 ] || { echo '::error::Review threads require attention; bump PR stays open and no upload runs'; exit 1; }
           CHANGES=$(gh pr view "$PR" --json reviewDecision --jq .reviewDecision)

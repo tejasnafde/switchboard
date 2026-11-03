@@ -77,6 +77,14 @@ describe('Android release automation', () => {
     await expect(allocateAndroidRelease('0.5.26', gradle, p.api)).rejects.toThrow('API unavailable')
     expect(p.writes.at(-1)).toEqual(['DELETE', '/edit1', undefined])
   })
+  it('preserves an inventory error when edit cleanup also fails', async () => {
+    const p = play({ fail: '/bundles' })
+    const api = (method: string, path: string, body?: unknown) => {
+      if (method === 'DELETE') throw new Error('cleanup failed')
+      return p.api(method, path, body)
+    }
+    await expect(allocateAndroidRelease('0.5.26', gradle, api)).rejects.toThrow('API unavailable')
+  })
   it('fails closed on malformed Play version codes', async () => {
     await expect(allocateAndroidRelease('0.5.26', gradle, play({ internal: ['oops'] }).api)).rejects.toThrow(
       'versionCode',
@@ -103,6 +111,12 @@ describe('Android release automation', () => {
     })
     expect(p.writes.filter(([method, path]) => method === 'PUT' || path.endsWith(':commit'))).toEqual([])
     expect(p.writes.at(-1)).toEqual(['DELETE', '/edit1', undefined])
+  })
+  it('does not delete or retry an edit when commit has an unknown outcome', async () => {
+    const p = play({ fail: ':commit' })
+    await expect(promoteAndroidRelease('30', p.api, false)).rejects.toThrow('API unavailable')
+    expect(p.writes.at(-1)).toEqual(['POST', '/edit1:commit', {}])
+    expect(p.writes.filter(([method]) => method === 'DELETE')).toEqual([])
   })
   it('promotes just the selected completed internal build and retains its notes', async () => {
     const p = play({ internal: ['30', '31'] })

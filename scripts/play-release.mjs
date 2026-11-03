@@ -27,14 +27,25 @@ async function usingEdit(api, work) {
   const { id } = await api('POST', '', {})
   if (!id) throw new Error('Play returned no edit id')
   const path = `/${encodeURIComponent(id)}`
-  let committed = false
+  let commitAttempted = false
+  let workFailed = false
   try {
     return await work(path, async () => {
+      commitAttempted = true
       await api('POST', `${path}:commit`, {})
-      committed = true
     })
+  } catch (error) {
+    workFailed = true
+    throw error
   } finally {
-    if (!committed) await api('DELETE', path)
+    if (!commitAttempted) {
+      try {
+        await api('DELETE', path)
+      } catch (error) {
+        if (!workFailed) throw error
+        console.error('Could not discard the Play edit after the original failure')
+      }
+    }
   }
 }
 function trackCodes(track) {
@@ -105,6 +116,7 @@ async function playApi() {
     const assertion = `${data}.${createSign('RSA-SHA256').update(data).sign(key.private_key, 'base64url')}`
     const response = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
+      signal: AbortSignal.timeout(30_000),
       body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
     })
     if (!response.ok) throw new Error('OAuth failed')
@@ -118,6 +130,7 @@ async function playApi() {
       `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/app.tn07.switchboard/edits${path}`,
       {
         method,
+        signal: AbortSignal.timeout(30_000),
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       },
