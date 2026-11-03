@@ -168,6 +168,17 @@ anything in the native project (a module, a permission, an Info.plist key in
   asks the export compliance question. `supportsTablet` is `false`: iPads run
   the iPhone app in compatibility mode and need no iPad screenshots.
 
+### PR native compatibility report
+
+The **iOS native fingerprint** workflow compares a PR's merge result with its
+exact base using Expo's fingerprint tooling and each revision's own lockfile
+installation. Open the **iOS compatibility (advisory)** check summary for
+“OTA-compatible with this base” or “new iOS binary required” and the changed
+native input names. The check is informational and needs no secrets. A failed
+report draws no compatibility conclusion. A base comparison does not prove
+compatibility with a shipped binary; Expo's existing runtime matching remains
+the delivery gate. No last-shipped fingerprint is recorded yet.
+
 ### Store review notes (demo mode)
 
 Reviewers have no Switchboard backend, so both phones ship an offline demo:

@@ -32,6 +32,11 @@
     "vscode",
     "lint-staged"
   ],
+  "ignoreIssues": {
+    // Loads expo/fingerprint through the compared revision's apps/mobile
+    // package.json, where expo is declared, rather than the root package.
+    "scripts/ios-fingerprint-report.mjs": ["unlisted"]
+  },
   // External CLIs the scripts shell out to, and a shell builtin.
   "ignoreBinaries": [
     "swiftc",
