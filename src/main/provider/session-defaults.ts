@@ -50,6 +50,7 @@ function machineDefaults(agentType: AgentType, projectPath: string | null): Sess
  *  row. `instanceId` stays unscoped - `resolveProviderInstance` guards it. */
 function conversationDefaults(threadId: string, agentType: AgentType): SessionDefaults {
   const storedAgent = getConversationAgentType(threadId)
+  if (storedAgent === 'terminal') throw new Error('Terminal agent has been removed.')
   const sameAgent = storedAgent === null || storedAgent === agentType
   return {
     runtimeMode: getConversationRuntimeMode(threadId) ?? undefined,

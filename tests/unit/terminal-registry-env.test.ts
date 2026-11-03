@@ -2,7 +2,7 @@
  * Tests that `getOrCreateTerminal` forwards the optional `env` parameter
  * to `window.api.terminal.create`, which passes it to the PTY spawn call
  * in the main process (where CLAUDE_CONFIG_DIR is injected for account
- * switching in terminal sessions).
+ * switching for companion terminal panes).
  *
  * We can't instantiate a real xterm Terminal in Node, so we stub the
  * renderer-side API at `globalThis.window` and verify the PTY create call.

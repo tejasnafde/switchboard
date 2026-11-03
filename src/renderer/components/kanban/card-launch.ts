@@ -116,6 +116,9 @@ export async function launchCardChat(card: KanbanCard, opts: LaunchOptions): Pro
       if (!row) {
         throw new Error('The linked conversation is not available. Refresh the board to recover its creation state.')
       }
+      if (row.agent_type === 'terminal') {
+        throw new Error('Terminal agent has been removed. Its history remains in Archive & data.')
+      }
       const agentType: AgentType = toAgentProvider(row.agent_type)
       useAgentStore.getState().addSession({
         id: row.id,

@@ -97,7 +97,7 @@ export interface WorktreeSetupIntent {
 }
 
 export interface WorktreeInitialAgentIntent {
-  provider: Exclude<AgentType, 'terminal'>
+  provider: AgentType
   instanceId?: string
   model?: string
   runtimeMode?: RuntimeMode

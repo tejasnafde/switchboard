@@ -132,9 +132,9 @@ describe('sessionSummaryToConversationRow', () => {
     expect(row.agent_type).toBe('codex')
   })
 
-  it('maps a terminal session back to its agent_type', () => {
+  it('uses the default provider when an app-owned summary lacks its agent type', () => {
     const row = sessionSummaryToConversationRow(summary({ source: 'switchboard', agentType: undefined }), '/repo')
-    expect(row.agent_type).toBe('terminal')
+    expect(row.agent_type).toBe('claude-code')
   })
 
   it('stamps the project path it was listed under', () => {

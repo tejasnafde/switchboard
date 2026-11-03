@@ -42,11 +42,10 @@ describe('dual-chat session picker identity', () => {
 })
 
 describe('dual-chat session picker candidates', () => {
-  it('offers loaded chats only: no terminal, no unsent draft, nothing already shown', () => {
+  it('offers loaded chats only: no unsent draft, nothing already shown', () => {
     const sessions = [
       { id: 'draft', type: 'claude', draft: { projectPath: '/p' } },
       { id: 'shown', type: 'claude' },
-      { id: 'term', type: 'terminal' },
       { id: 'other', type: 'codex' },
     ]
     expect(sessionPickerCandidates(sessions, ['shown']).map((s) => s.id)).toEqual(['other'])

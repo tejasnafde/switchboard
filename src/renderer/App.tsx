@@ -17,7 +17,6 @@ import { ResizeHandle } from './components/layout/ResizeHandle'
 import { Sidebar } from './components/sidebar/Sidebar'
 import { ChatWorkspacePanels } from './components/chat/ChatWorkspacePanels'
 import { ViewToggle } from './components/layout/ViewToggle'
-import { TerminalSessionPane } from './components/terminal/TerminalSessionPane'
 import { TerminalStrip } from './components/terminal/TerminalStrip'
 import { IdePane } from './components/ide/IdePane'
 import { HtmlPreviewPane } from './components/preview/HtmlPreviewPane'
@@ -495,7 +494,6 @@ export function App() {
       // Every chat, not only the displayed ones: the sidebar's "Needs you"
       // reads them all. Cards are appended only where a chat is on screen.
       for (const session of useAgentStore.getState().sessions) {
-        if (session.type === 'terminal') continue
         if (machineId !== null && session.machineId !== machineId) continue
         void recoverPendingRequests(session.id, { cards: displayed.has(session.id) })
       }
@@ -515,7 +513,7 @@ export function App() {
           store.adoptLiveSessions(live, machineId ?? undefined)
           for (const id of displayed) {
             const session = useAgentStore.getState().sessions.find((s) => s.id === id)
-            if (!session || session.type === 'terminal') continue
+            if (!session) continue
             if (machineId !== null && session.machineId !== machineId) continue
             if (session.status === 'running' || session.status === 'thinking') continue
             const loaded = (await window.api.app.loadSessionById(id, NEWEST_HISTORY_WINDOW)) as {
@@ -824,7 +822,7 @@ export function App() {
       // the store default covers the rest.
       const focusedId = useLayoutStore.getState().focusedChatSessionId()
       const from = store.sessions.find((s) => s.id === focusedId)
-      const carry = from && !from.draft && from.type !== 'terminal' ? from : undefined
+      const carry = from && !from.draft ? from : undefined
       const { runtimeMode, envMode } = await newChatDefaultsFor(projectPath, carry?.runtimeMode)
       // A second open for the same project can land during the await.
       if (useAgentStore.getState().sessions.some((s) => s.id === id)) return id
@@ -910,7 +908,7 @@ export function App() {
         return { accepted: false, error: 'This chat is already being created.' }
       }
       const draft = useAgentStore.getState().sessions.find((s) => s.id === draftId)
-      if (!draft?.draft || !draft.projectPath || draft.type === 'terminal') {
+      if (!draft?.draft || !draft.projectPath) {
         return { accepted: false, error: 'This draft is no longer available.' }
       }
       const checkout = draft.draft.checkout
@@ -1107,11 +1105,7 @@ export function App() {
         else openTiming.cancel('no-session')
       }
       useLayoutStore.getState().setAppView('chats')
-      // Terminal summaries are companion surfaces, not chats. Treat an
-      // "open beside" request from a generic sidebar menu as an ordinary
-      // selection so a terminal can never occupy the secondary chat slot.
-      const placeSession =
-        placement === 'beside' && session.agentType !== 'terminal' ? openChatBeside : selectChatSession
+      const placeSession = placement === 'beside' ? openChatBeside : selectChatSession
 
       const recoveryKey = retainedWorktreeCreationKey(session, machineId)
       if (recoveryKey) {
@@ -1203,23 +1197,8 @@ export function App() {
           // Thread (re)open: recover any approval/question/plan card a resume
           // gap or a reload dropped. Cards are never persisted to history, so
           // this runs whether or not the reload above ran.
-          if (session.agentType !== 'terminal') void recoverPendingRequests(session.id)
+          void recoverPendingRequests(session.id)
           readyTiming(session.id, loadDiagnostics)
-          return
-        }
-
-        // Terminal sessions have no JSONL - PTY is gone after restart, just activate.
-        if (session.agentType === 'terminal') {
-          openTiming.cancel('terminal')
-          addSession({
-            id: session.id,
-            type: 'terminal',
-            status: 'idle',
-            projectPath,
-            title: session.title,
-            machineId: effectiveMachineId,
-          })
-          placeAndEvict(session.id)
           return
         }
 
@@ -1529,13 +1508,6 @@ export function App() {
 
   // The single companion terminal strip follows chat focus, not primary identity.
   const companionAgentSessionId = useLayoutStore(selectCompanionSessionId)
-  // Narrow to the one primitive we render below (terminal pane id). Selecting
-  // the whole session object returned a fresh reference every token and forced
-  // a per-token App re-render.
-  const activeTerminalPaneId = useAgentStore((s) => {
-    const a = s.sessions.find((x) => x.id === companionAgentSessionId)
-    return a?.type === 'terminal' ? (a.terminalPaneId ?? null) : null
-  })
   const termSetActiveSession = useTerminalStore((s) => s.setActiveSession)
 
   useEffect(() => {
@@ -1890,7 +1862,7 @@ export function App() {
               style={{
                 width: '100%',
                 height: '100%',
-                display: activeTerminalPaneId ? 'none' : 'flex',
+                display: 'flex',
                 minWidth: 0,
               }}
             >
@@ -1903,11 +1875,6 @@ export function App() {
                 }}
               />
             </div>
-            {activeTerminalPaneId && (
-              <div style={{ width: '100%', height: '100%', display: 'flex', minWidth: 0 }}>
-                <TerminalSessionPane paneId={activeTerminalPaneId} sessionId={companionAgentSessionId!} />
-              </div>
-            )}
           </div>
 
           {/* Terminal divider - `beforeRef` intentionally omitted; the chat

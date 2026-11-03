@@ -22,8 +22,7 @@ export interface ArchivedChatRow {
 // A machine snapshot row can lack a time; it sorts last and shows none.
 const timeOf = (ms: number | undefined) => (Number.isFinite(ms) ? (ms as number) : 0)
 
-const agentOf = (session: SessionSummary): AgentType =>
-  session.agentType === 'terminal' ? 'terminal' : toAgentProvider(session.agentType ?? session.source)
+const agentOf = (session: SessionSummary): AgentType => toAgentProvider(session.agentType ?? session.source)
 
 /**
  * Every chat the sidebar lists (local projects, then each remote machine's),
@@ -61,10 +60,10 @@ export function goToChatItems(input: {
   }
   const localNames = new Map(input.localProjects.map((p) => [p.path, p.name]))
   for (const row of input.archived) {
+    if (row.agent_type === 'terminal') continue
     const session: SessionSummary = {
       id: row.id,
-      source: (row.origin_source ??
-        (row.agent_type === 'terminal' ? 'switchboard' : toAgentProvider(row.agent_type))) as SessionSource,
+      source: (row.origin_source ?? toAgentProvider(row.agent_type)) as SessionSource,
       title: row.title,
       startedAt: row.updated_at,
       messageCount: 0,

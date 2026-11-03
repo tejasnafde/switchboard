@@ -61,7 +61,7 @@ export interface DesktopNewChatIntent {
   projectPath: string
   machineId: string
   checkout: 'project' | 'worktree'
-  agentType: Exclude<AgentType, 'terminal'>
+  agentType: AgentType
   /** Absent: nobody chose one and the project's overrides were unknown, so the backend picks it. */
   runtimeMode?: RuntimeMode
   /** Ref a new worktree branches from. Defaults to HEAD. */
@@ -77,7 +77,7 @@ export interface DesktopNewChatIntent {
 
 export interface AuthoritativeDesktopSession {
   id: string
-  type: Exclude<AgentType, 'terminal'>
+  type: AgentType
   status: 'idle'
   projectPath: string
   machineId: string
@@ -94,7 +94,7 @@ export interface ParentCheckoutCreationIntent {
   conversationId: string
   projectPath: string
   machineId: string
-  agentType: Exclude<AgentType, 'terminal'>
+  agentType: AgentType
   runtimeMode?: RuntimeMode
   title: string
   existingWorktree?: { path: string; branch: string }
@@ -206,7 +206,7 @@ export function createDesktopNewChatCoordinator(options: DesktopNewChatCoordinat
         admittedConversationId = owner.conversationId
         options.sessions.addAuthoritative({
           id: owner.conversationId,
-          type: owner.agentType as Exclude<AgentType, 'terminal'>,
+          type: owner.agentType as AgentType,
           status: 'idle',
           projectPath: snapshot.projectPath,
           machineId: snapshot.provenance.machineId,

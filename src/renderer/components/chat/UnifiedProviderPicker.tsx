@@ -49,13 +49,7 @@ import {
 } from '@shared/types'
 import { providerInstanceInitials } from '@shared/provider-instance-initials'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
-import { useAgentStore } from '../../stores/agent-store'
-import { createTerminalAsync } from '../../services/terminal-registry'
-import { emitSessionCreated } from '../../services/session-events'
-import { terminalLoginAgentType } from '../../shared/terminal-login'
 import { shouldShowInstanceRail } from '../../shared/instance-rail-visibility'
-import { resolveVisibleLoginInstanceId, nextTermInstanceId } from '../../shared/terminal-login-account'
-import { startTerminalSession } from '../../shared/terminal-login-start'
 import { cn } from '../../lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { ChipCaret } from '../ui/chip'
@@ -99,23 +93,6 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
   const searchRef = useRef<HTMLInputElement>(null)
   // Lifted so Escape can back out of the custom model field before it closes the picker.
   const [showCustom, setShowCustom] = useState(false)
-
-  // Terminal tab state
-  const [termCommand, setTermCommand] = useState('claude')
-  const [termInstanceId, setTermInstanceId] = useState<string | undefined>(undefined)
-  const [termStarting, setTermStarting] = useState(false)
-  const [termError, setTermError] = useState<string | null>(null)
-
-  // Key the picked account to the CLI binary's login kind - a Codex
-  // instance id must never survive a switch to Claude (or to a custom
-  // command), which would otherwise get sent as identity for the wrong
-  // kind (see terminal-login-env.ts's wrong-kind rejection).
-  const loginAgentType = terminalLoginAgentType(termCommand)
-  const prevLoginAgentTypeRef = useRef(loginAgentType)
-  useEffect(() => {
-    setTermInstanceId((current) => nextTermInstanceId(prevLoginAgentTypeRef.current, loginAgentType, current))
-    prevLoginAgentTypeRef.current = loginAgentType
-  }, [loginAgentType])
 
   // Generic ACP agents get a tab only when their CLI is installed.
   const installedAcpAgents = useInstalledAcpAgents(open)
@@ -220,8 +197,6 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
         side="top"
         align="start"
         aria-label="Provider, instance, and model picker"
-        // The model search takes focus, as the old autoFocus did; the terminal
-        // tab has no search, so focus stays on the trigger there.
         onOpenAutoFocus={(e) => {
           e.preventDefault()
           searchRef.current?.focus()
@@ -263,48 +238,6 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
             onModelChange(m)
             setOpen(false)
           }}
-          allInstances={allInstances}
-          termCommand={termCommand}
-          setTermCommand={setTermCommand}
-          termInstanceId={termInstanceId}
-          setTermInstanceId={setTermInstanceId}
-          termStarting={termStarting}
-          termError={termError}
-          onTermStart={() => {
-            const active = useAgentStore.getState().getActiveSession()
-            const projectPath = active?.projectPath ?? '.'
-            const machineId = active?.machineId
-            // Identity only - main resolves the instance's real env
-            // (CODEX_HOME / CLAUDE_CONFIG_DIR) across the IPC boundary.
-            // Building that env here directly missed Codex entirely and
-            // let a Codex login terminal silently fall back to whatever
-            // ambient/default CODEX_HOME happened to be set.
-            const loginInstance = loginAgentType ? { agentType: loginAgentType, instanceId: termInstanceId } : undefined
-            setTermError(null)
-            setTermStarting(true)
-            // Awaits terminal:create BEFORE creating any session/store/
-            // conversation artifact - a rejected create (missing/disabled/
-            // wrong-kind instance) must never leave a dead session with no
-            // working PTY behind it, and must never surface as an
-            // unhandled promise rejection.
-            startTerminalSession(
-              {
-                createTerminal: createTerminalAsync,
-                addSession: (session) => useAgentStore.getState().addSession(session),
-                setActiveSession: (id) => useAgentStore.getState().setActiveSession(id),
-                createConversation: (params) => window.api.app.createConversation(params),
-                emitSessionCreated,
-              },
-              { projectPath, machineId, command: termCommand, loginInstance, instanceId: termInstanceId },
-            ).then((result) => {
-              setTermStarting(false)
-              if (result.ok) {
-                setOpen(false)
-              } else {
-                setTermError(result.error ?? 'Failed to start terminal session.')
-              }
-            })
-          }}
         />
       </PopoverContent>
     </Popover>
@@ -334,20 +267,10 @@ interface PopoverProps {
   model: string
   models: ModelOption[]
   onModelChange: (m: string) => void
-  // Terminal tab props
-  allInstances: ProviderInstance[]
-  termCommand: string
-  setTermCommand: (c: string) => void
-  termInstanceId: string | undefined
-  setTermInstanceId: (id: string | undefined) => void
-  termStarting: boolean
-  termError: string | null
-  onTermStart: () => void
 }
 
 const inputClass =
   'rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] text-[11px] text-[var(--text-primary)] outline-none'
-const sectionLabelClass = 'mb-[6px] text-[11px] font-[500] text-[var(--text-muted)]'
 
 function UnifiedPickerPopover(props: PopoverProps) {
   const {
@@ -365,14 +288,6 @@ function UnifiedPickerPopover(props: PopoverProps) {
     model,
     models,
     onModelChange,
-    allInstances,
-    termCommand,
-    setTermCommand,
-    termInstanceId,
-    setTermInstanceId,
-    termStarting,
-    termError,
-    onTermStart,
   } = props
   const [query, setQuery] = useState('')
   const [customValue, setCustomValue] = useState('')
@@ -448,22 +363,8 @@ function UnifiedPickerPopover(props: PopoverProps) {
 
       {/* One fixed height for every tab and query, so the popover never jumps. */}
       <div className="flex h-[300px] min-h-0 flex-col">
-        {/* Terminal tab body */}
-        {agentType === 'terminal' && (
-          <TerminalTabBody
-            allInstances={allInstances}
-            termCommand={termCommand}
-            setTermCommand={setTermCommand}
-            termInstanceId={termInstanceId}
-            setTermInstanceId={setTermInstanceId}
-            termStarting={termStarting}
-            termError={termError}
-            onStart={onTermStart}
-          />
-        )}
-
         {/* Body - split rail (when 2+ instances) + model list */}
-        <div className={cn('min-h-0 flex-1', agentType === 'terminal' ? 'hidden' : 'flex')}>
+        <div className="flex min-h-0 flex-1">
           {showRail && (
             <div
               role="radiogroup"
@@ -594,146 +495,6 @@ function UnifiedPickerPopover(props: PopoverProps) {
         </div>
       </div>
     </>
-  )
-}
-
-function TerminalTabBody({
-  allInstances,
-  termCommand,
-  setTermCommand,
-  termInstanceId,
-  setTermInstanceId,
-  termStarting,
-  termError,
-  onStart,
-}: {
-  allInstances: ProviderInstance[]
-  termCommand: string
-  setTermCommand: (c: string) => void
-  termInstanceId: string | undefined
-  setTermInstanceId: (id: string | undefined) => void
-  termStarting: boolean
-  termError: string | null
-  onStart: () => void
-}) {
-  // Instances for whichever CLI binary is selected - main resolves the
-  // picked instance's oauthDir (CLAUDE_CONFIG_DIR / CODEX_HOME) at spawn.
-  const loginAgentType = terminalLoginAgentType(termCommand)
-  const loginInstances = loginAgentType ? allInstances.filter((i) => i.agentType === loginAgentType && i.enabled) : []
-  const isCustom = loginAgentType === null
-  // Mirrors main's resolveProviderInstance fallback order (canonical
-  // default, then oldest enabled) so the highlighted row is always the
-  // exact instance main will resolve when no explicit pick has been made -
-  // never a different account than the one whose credential home is
-  // actually in use.
-  const visibleInstanceId = loginAgentType
-    ? resolveVisibleLoginInstanceId(loginInstances, loginAgentType, termInstanceId)
-    : undefined
-
-  return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      {/* CLI selector */}
-      <div className="border-b border-[var(--border)] px-[8px] pt-[8px] pb-[6px]">
-        <div className={sectionLabelClass}>CLI binary</div>
-        <div className="flex items-center gap-[4px]">
-          {(['claude', 'codex'] as const).map((cmd) => (
-            <button
-              key={cmd}
-              type="button"
-              onClick={() => setTermCommand(cmd)}
-              className={cn(
-                'cursor-pointer rounded-[5px] border px-[12px] py-[4px] text-[11px] [font-family:var(--font-mono)] outline-none transition-[background,border-color] duration-[120ms]',
-                termCommand === cmd
-                  ? 'border-[var(--warning)] bg-[rgba(210,153,34,0.1)] text-[var(--warning)]'
-                  : 'border-[var(--border)] bg-[var(--bg-tertiary)] text-[var(--text-secondary)]',
-              )}
-            >
-              {cmd}
-            </button>
-          ))}
-          <input
-            value={isCustom ? termCommand : ''}
-            onChange={(e) => setTermCommand(e.target.value || 'claude')}
-            placeholder="custom path…"
-            onKeyDown={(e) => e.stopPropagation()}
-            className={cn(
-              'flex-1 rounded-[5px] border bg-[var(--bg-tertiary)] px-[8px] py-[4px] text-[11px] [font-family:var(--font-mono)] text-[var(--text-primary)] outline-none',
-              isCustom ? 'border-[var(--border-focus)]' : 'border-[var(--border)]',
-            )}
-          />
-        </div>
-      </div>
-
-      {/* Account - shown for claude/codex binaries, not a custom command */}
-      {loginAgentType && loginInstances.length > 0 && (
-        <div className="max-h-[140px] overflow-y-auto border-b border-[var(--border)] px-[8px] pt-[8px] pb-[6px]">
-          <div className={sectionLabelClass}>Account</div>
-          {loginInstances.map((inst) => {
-            const active = visibleInstanceId === inst.id
-            return (
-              <button
-                key={inst.id}
-                type="button"
-                onClick={() => setTermInstanceId(inst.id)}
-                className={cn(
-                  'flex w-full cursor-pointer items-center gap-[8px] rounded-[5px] border px-[8px] py-[6px] text-left text-[12px] outline-none transition-[background,border-color] duration-[120ms]',
-                  active
-                    ? 'border-[var(--border-focus)] bg-[var(--bg-active)] text-[var(--text-primary)]'
-                    : 'border-transparent bg-transparent text-[var(--text-secondary)]',
-                )}
-              >
-                <span
-                  className={cn(
-                    'size-[6px] shrink-0 rounded-full',
-                    active ? 'bg-[var(--accent)]' : 'bg-[var(--text-muted)]',
-                  )}
-                />
-                <span className="flex-1 truncate">{inst.displayName}</span>
-                {inst.id.endsWith('-default') && <span className="text-[11px] text-[var(--text-muted)]">default</span>}
-              </button>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Billing note */}
-      <div className="border-b border-[var(--border)] p-[8px]">
-        <div className="flex gap-[7px] rounded-[var(--radius)] border border-[rgba(63,185,80,0.15)] bg-[rgba(63,185,80,0.05)] px-[10px] py-[7px] text-[11px] leading-[1.5] text-[var(--text-secondary)]">
-          <span className="shrink-0 text-[var(--success)]">●</span>
-          Runs{' '}
-          <code className="rounded-[3px] bg-[rgba(63,185,80,0.1)] px-[4px] text-[10.5px] [font-family:var(--font-mono)] text-[var(--success)]">
-            {termCommand}
-          </code>{' '}
-          directly - billed from your subscription, not API credits.
-        </div>
-      </div>
-
-      {/* Start-failure error - the terminal:create IPC call rejected (e.g. a
-          missing/disabled/wrong-kind login instance) before any PTY spawned.
-          Surfaced here instead of silently dropping an unhandled rejection. */}
-      {termError && (
-        <div className="px-[8px] pb-[8px]">
-          <div className="rounded-[var(--radius)] border border-[rgba(248,81,73,0.25)] bg-[rgba(248,81,73,0.08)] px-[10px] py-[7px] text-[11px] leading-[1.5] text-[var(--danger,#f85149)]">
-            {termError}
-          </div>
-        </div>
-      )}
-
-      {/* Start button */}
-      <div className="flex justify-end p-[8px]">
-        <button
-          type="button"
-          onClick={onStart}
-          disabled={termStarting}
-          className={cn(
-            'rounded-[var(--radius)] border-0 bg-[var(--warning)] px-[14px] py-[6px] text-[12px] font-[600] text-[#000] transition-opacity duration-[120ms]',
-            termStarting ? 'cursor-default opacity-60' : 'cursor-pointer',
-          )}
-        >
-          {termStarting ? 'Starting…' : 'Start Terminal Session'}
-        </button>
-      </div>
-    </div>
   )
 }
 

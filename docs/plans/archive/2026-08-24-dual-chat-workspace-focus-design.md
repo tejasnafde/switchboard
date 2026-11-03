@@ -108,7 +108,7 @@ The threshold is based on the measured chat container, not only the browser view
 
 ### Performance and lifecycle
 
-Provider-event reduction moves out of `ChatPanel` into one always-mounted application subscriber. The shared coalescer keeps its flush-before-non-content-event ordering; panels become scoped store views and no longer race through a `WeakSet` claim. This keeps reduction exactly once even while chat presentation changes or a terminal session temporarily replaces the chat surface. One session's tokens do not rerender the other composer. Closing a visual slot does not stop its provider process. Search listeners, split-handle pointer capture, overlays, cursor state, and selection suppression all clean up on cancellation and unmount.
+Provider-event reduction moves out of `ChatPanel` into one always-mounted application subscriber. The shared coalescer keeps its flush-before-non-content-event ordering; panels become scoped store views and no longer race through a `WeakSet` claim. This keeps reduction exactly once even while chat presentation changes. One session's tokens do not rerender the other composer. Closing a visual slot does not stop its provider process. Search listeners, split-handle pointer capture, overlays, cursor state, and selection suppression all clean up on cancellation and unmount.
 
 ## Testing strategy
 

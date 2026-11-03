@@ -13,6 +13,7 @@ export interface ArchivedRow {
   project_path: string
   title: string
   updated_at: number
+  agent_type?: string
 }
 
 export const ARCHIVED_PAGE_SIZE = 10

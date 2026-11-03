@@ -64,6 +64,7 @@ export function searchMessagesInDatabase(
       LEFT JOIN conversations root ON root.id = ts.thread_id`
   const rowFilters = `
         AND COALESCE(root.sidebar_role, c.sidebar_role) = 'managed'
+        AND COALESCE(root.agent_type, c.agent_type) != 'terminal'
         ${archivedFilter}
         AND ${notStoredNotice}`
 

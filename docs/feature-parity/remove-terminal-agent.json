@@ -1,0 +1,75 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "remove-terminal-agent",
+  "summary": "Retire the unused Terminal agent. Remove its provider tab, session UI, login PTY flow and agent type. Archive existing terminal conversations on backend upgrade, preserving messages, layouts and worktree ownership; show a retirement notice in the desktop archive and keep them archived on unarchive requests, exclude them from message search, and refuse new creation or provider startup. Ordinary terminal panes, launch configs and Settings account login commands stay available. Shared terminal and conversation IPC/preload APIs stay because other features call them. Phones inherit backend archive filtering. Desktop/headless release includes migration; Expo cleanup is JS-only and may ship through its current OTA lane; Android cleanup ships in the next binary. Package identities, signing, update channels and stored formats do not change.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/UnifiedProviderPicker.tsx",
+        "src/renderer/App.tsx",
+        "src/renderer/components/settings/ArchivedPanel.tsx",
+        "src/main/ipc/terminal.ts",
+        "src/renderer/components/settings/add-agent-model.ts",
+        "src/renderer/components/GoToChatDialog.tsx",
+        "src/renderer/components/kanban/card-launch.ts",
+        "tests/unit/card-launch.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/new-session-creation.ts",
+        "src/main/ipc/terminal-sessions.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/TurnDelivery.kt",
+        "src/main/ipc/terminal-sessions.ts"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/types.ts",
+        "src/shared/turn-delivery.ts",
+        "src/shared/worktree-creation.ts",
+        "src/main/db/conversations.ts",
+        "src/preload/index.ts",
+        "src/main/provider/session-defaults.ts",
+        "src/main/db/message-search.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts",
+        "tests/unit/retired-terminal-agent.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "docs/features.md",
+        "tests/unit/retired-terminal-agent.test.ts",
+        "src/shared/types.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "Migration tests use createMigratedDb and the real ProviderRegistry: idempotent archive, preserved messages/layouts, rejected stale creation/conversion/start, movable Kanban cards, rotated-id unarchive and FTS/fallback search exclusion.",
+      "Card-launch regression keeps retired linked chats out of the renderer and shows the existing Kanban error notice.",
+      "Expo Jest: 64 suites and 386 tests passed. Targeted provider-picker screenshots refreshed and visually inspected in Dark, Light and Translucent.",
+      "Desktop and mobile typecheck, full Vitest, formatting, feature-parity and knip results are recorded in the PR."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Android Gradle gate pending: outside the permitted 01:00-08:00 IST window. PR must remain unmerged until the gate passes.",
+      "No desktop, iPhone or Android hardware session exercised; compilation and tests do not establish hardware parity."
+    ]
+  }
+}

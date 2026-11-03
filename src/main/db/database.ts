@@ -716,6 +716,9 @@ export function migrate(db: Database.Database): void {
       WHERE sidebar_role = 'managed' AND archived = 0;
   `)
 
+  // Retire terminal-backed agents without deleting their history or layouts.
+  db.exec("UPDATE conversations SET archived = 1, sidebar_role = 'managed' WHERE agent_type = 'terminal'")
+
   ensureTurnAcceptanceSchema(db)
   ensureConversationForkSchema(db)
   recoverUndispatchedTurns(db)

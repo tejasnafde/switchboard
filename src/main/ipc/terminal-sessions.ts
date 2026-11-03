@@ -21,11 +21,15 @@ export function projectManagedRootSessions(
   delegatedConversationIds: ReadonlySet<string> = new Set(),
 ): SessionSummary[] {
   return dbConversations
-    .filter((conversation) => conversation.archived === 0 && !delegatedConversationIds.has(conversation.id))
+    .filter(
+      (conversation) =>
+        conversation.archived === 0 &&
+        conversation.agent_type !== 'terminal' &&
+        !delegatedConversationIds.has(conversation.id),
+    )
     .map((conversation) => ({
       id: conversation.id,
-      source: (conversation.origin_source ??
-        (conversation.agent_type === 'terminal' ? 'switchboard' : conversation.agent_type)) as SessionSource,
+      source: (conversation.origin_source ?? conversation.agent_type) as SessionSource,
       title: conversation.title,
       startedAt: conversation.updated_at,
       messageCount: 0,
@@ -66,7 +70,7 @@ export function sessionSummaryToConversationRow(s: SessionSummary, projectPath: 
   return {
     id: s.id,
     project_path: projectPath,
-    agent_type: s.agentType ?? (s.source === 'switchboard' ? 'terminal' : s.source),
+    agent_type: s.agentType ?? (s.source === 'switchboard' ? 'claude-code' : s.source),
     session_id: null,
     title: s.title ?? 'Untitled',
     created_at: s.startedAt,

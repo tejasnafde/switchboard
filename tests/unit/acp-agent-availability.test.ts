@@ -10,14 +10,13 @@ beforeEach(() => _resetInstalledAcpAgentsForTests())
 
 describe('offeredAgentTypes', () => {
   it('offers built-in agents always and a generic ACP agent only when installed or kept', () => {
-    expect(offeredAgentTypes(AGENT_TYPES, new Set())).toEqual(['claude-code', 'codex', 'opencode', 'terminal'])
+    expect(offeredAgentTypes(AGENT_TYPES, new Set())).toEqual(['claude-code', 'codex', 'opencode'])
     expect(offeredAgentTypes(AGENT_TYPES, new Set(['vibe']), new Set(['copilot']))).toEqual([
       'claude-code',
       'codex',
       'opencode',
       'vibe',
       'copilot',
-      'terminal',
     ])
   })
 })

@@ -31,10 +31,7 @@ export function resolveSessionDisplayTitle(selectedTitle: string, loadedTitle?: 
   return selectedTitle.trim() || loadedTitle?.trim() || 'New conversation'
 }
 
-export function resolveSessionOpenAgentType(
-  scannedAgentType: Exclude<AgentType, 'terminal'>,
-  loadedAgentType?: string,
-): Exclude<AgentType, 'terminal'> {
+export function resolveSessionOpenAgentType(scannedAgentType: AgentType, loadedAgentType?: string): AgentType {
   return isAgentProvider(loadedAgentType) ? loadedAgentType : scannedAgentType
 }
 
