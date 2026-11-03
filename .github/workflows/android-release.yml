@@ -18,6 +18,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   plan:
+    concurrency:
+      group: mobile-release
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.main.outputs.sha }}

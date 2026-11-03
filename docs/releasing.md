@@ -46,12 +46,15 @@ To release, run **Android release dispatch** (`android-release.yml`) on main,
 enter the human-chosen versionName and leave `dry_run=true` first. It pins main,
 reads all current bundles, APKs and tracks from Play, and chooses one above both
 Play's maximum and the repository's versionCode. The temporary inventory edit
-is deleted. Dry runs build and verify signed AAB and universal APK artifacts,
+is deleted. Inventory reads, uploads and promotions share the `mobile-release`
+concurrency group while they own an edit; do not run a separate local or Console
+edit at the same time, because Play invalidates an existing edit for that user.
+Dry runs build and verify signed AAB and universal APK artifacts,
 without changing main, creating tags, uploading to Play or publishing a release.
 
 With `dry_run=false`, the workflow opens a version-only PR with the Gradle bump,
-CHANGELOG entry and feature-parity manifest, waits for required CI, refuses
-unresolved review threads, merges it, and passes that merge SHA to the existing
+CHANGELOG entry and feature-parity manifest, waits for CI and a current-head CodeRabbit review, refuses
+unresolved review threads or requested changes, merges it, and passes that merge SHA to the existing
 `mobile-release.yml`. That lane uploads to internal and publishes the verified
 sideload APK. The automation needs a **RELEASE_PR_TOKEN** repository secret with
 contents and pull-request write and Actions read permissions. This secret is
