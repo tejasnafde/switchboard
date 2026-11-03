@@ -37,7 +37,7 @@ on:
 
 # Serialize releases, including dry runs, without cancelling packaging midway.
 concurrency:
-  group: release-${{ github.event_name == 'push' && github.ref_name || format('v{0}', inputs.version) }}
+  group: release-desktop
   cancel-in-progress: false
 
 # Default GITHUB_TOKEN ships with read-only contents on new repos; electron-
@@ -115,8 +115,7 @@ jobs:
           SHA: ${{ needs.ci_status.outputs.sha }}
         run: |
           set -euo pipefail
-          # Only a failed-job rerun reaches this with an existing tag: a new
-          # dispatch's planner rejects it before this job starts.
+          # A failed-job rerun can reuse the tag on the same immutable SHA.
           existing=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$TAG" --jq ".[] | select(.ref == \"refs/tags/$TAG\") | .object.sha")
           if [ -n "$existing" ]; then
             [ "$existing" = "$SHA" ] || { echo '::error::Tag points at another SHA'; exit 1; }
@@ -131,8 +130,13 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; reusing it for this rerun."
+          if draft=$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft); then
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_RUN_ATTEMPT" = 1 ]; then
+              echo "::error::A draft already exists for this version; inspect and remove it before a new dispatch"
+              exit 1
+            fi
+            [ "$draft" = true ] || { echo "::error::Release is already public; refusing to overwrite it"; exit 1; }
+            echo "Release $TAG already exists; reusing its draft for this rerun."
           else
             gh release create "$TAG" --repo "$REPO" --draft --title "$TAG" --notes "Switchboard $TAG
 

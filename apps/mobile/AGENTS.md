@@ -95,9 +95,7 @@ jest - `lib/composer.ts` and `lib/gestures.ts` hold the rules, and the component
 test checks the glyph and label those rules produce. PanResponder derives
 gesture state from real touch history, so a drag cannot be faked by calling the
 handlers. Note that a plain `Pressable` tap is NOT a gesture and can be driven
-with `root.findByProps({...}).props.onPress()` inside `act`; no handler is
-currently exercised, so `onSend`, `onStopTurn` and tool-output expansion have no
-coverage.
+with `root.findByProps({...}).props.onPress()` inside `act`; check the component tests before assuming a handler has coverage.
 
 Three traps in that jest setup, all cost time:
 - `@testing-library/react-native` 14 returned an EMPTY render result under this
@@ -121,7 +119,7 @@ row: `user`, `approval`, `question`, `plan`, `fileEdit`, `denial`, `error` and
 `notice` are absent, and `approval`/`question` are the two most stateful.
 Adding them means lifting their handlers out of `ThreadScreen` first (the
 row components themselves live in `src/screens/ThreadFeedItems.tsx`, the
-screen's styles in `ThreadScreen.styles.ts`). Its
+screen's styles in `thread-screen.styles.ts`). Its
 loading and empty tiles are replicas against the gallery's own stylesheet, not
 the production path, so they would not have caught the upside-down loader
 (a `scaleY: -1` on `ThreadScreen`'s `emptyWrap` under the inverted `FlatList`).
@@ -148,3 +146,7 @@ expects, and expo-modules-core is reached through `expo`, never as a direct
 dependency. To check an IPA: `xcrun dyld_info -imports` on each framework under
 `Payload/Switchboard.app/Frameworks`, and confirm `nm -gU` on the named library
 exports every symbol.
+
+**Inbox actions:** `components/HomeRecents.tsx`, `components/SnoozeSheet.tsx` and `stores/recents.ts` implement Snooze, Woke, Wake now, Settle and eight-second Undo. `chat_snooze` is on by default; the backend capabilities `chat_snooze_v1`, `chat_snooze_presets_v1` and `chat_settle_v1` gate the corresponding controls. Phones read saved presets but edit them on the desktop.
+
+**Live pages:** `HtmlLiveCard`, `HtmlLiveFrame` and `lib/live-pages.ts` run at most one page under the shared `html-live-phone.ts` rules when the local `phone_html_live_run` preference is enabled. The default stays off pending device probes. Unknown RAM on iOS requires Run; backgrounding, scrolling or a lost renderer releases the running slot, and repeated crashes keep the still image. The iOS bundled libraries are copied by `scripts/build-visual-host.mjs`; Android loads `resources/sb-live` directly. Do not hand-edit the generated HTML or `.sblib` files.

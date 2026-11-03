@@ -2,12 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { planDesktopRelease } from '../../scripts/desktop-release.mjs'
 
 const sha = 'a'.repeat(40)
-function github({ tags = [], runs = [] }: { tags?: unknown[]; runs?: unknown[] } = {}) {
+function github({
+  tags = [],
+  runs = [],
+  latest = 'v0.9.127',
+}: { tags?: unknown[]; runs?: unknown[]; latest?: string } = {}) {
   const calls: string[] = []
   return {
     calls,
     api: async (path: string) => {
       calls.push(path)
+      if (path === 'releases/latest') return { tag_name: latest }
       if (path === 'commits/main') return { sha }
       if (path.startsWith('git/matching-refs/')) return tags
       if (path.startsWith('actions/workflows/')) return { workflow_runs: runs }
@@ -59,6 +64,9 @@ describe('desktop release dispatch', () => {
   })
   it('accepts the exact SHA from the reviewed dry run', async () => {
     expect((await planDesktopRelease('0.9.128', github({ runs: [success] }).api, sha)).sha).toBe(sha)
+  })
+  it.each(['v0.9.128', 'v0.10.0', 'v1.0.0'])('refuses a non-increasing version against %s', async (latest) => {
+    await expect(planDesktopRelease('0.9.128', github({ runs: [success], latest }).api)).rejects.toThrow('newer')
   })
   it('fails closed on API failure', async () => {
     await expect(

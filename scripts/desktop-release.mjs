@@ -6,6 +6,15 @@ export async function planDesktopRelease(version, api, expectedSha = '') {
   if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(version) || version.includes('\n')) {
     throw new Error('Choose a version in X.Y.Z form, without a v prefix')
   }
+  const { tag_name: latest } = await api('releases/latest')
+  const previous = /^v([0-9]+)\.([0-9]+)\.([0-9]+)$/.exec(latest)
+  if (!previous) throw new Error('Latest release does not have a desktop version')
+  const parts = version.split('.').map(BigInt)
+  const old = previous.slice(1).map(BigInt)
+  const difference = parts.findIndex((part, index) => part !== old[index])
+  if (difference === -1 || parts[difference] < old[difference]) {
+    throw new Error(`Choose a version newer than ${latest}`)
+  }
   const { sha } = await api('commits/main')
   if (expectedSha && expectedSha !== sha) throw new Error('Main changed since the reviewed dry run; run a new dry run')
   const tag = `v${version}`
@@ -52,6 +61,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   )
   appendFileSync(
     process.env.GITHUB_STEP_SUMMARY,
-    `Desktop release plan: **${plan.tag}** at \`${plan.sha}\`. Main push CI passed. Dry run: **${process.env.DRY_RUN}**.\n`,
+    `Desktop release plan: **${plan.tag}** at \`${plan.sha}\`. Main push CI passed. Workflow: ${process.env.GITHUB_REF} at ${process.env.GITHUB_SHA}. Branch dry runs validate proposed workflow code; repeat on main before a real release. Dry run: **${process.env.DRY_RUN}**.\n`,
   )
 }

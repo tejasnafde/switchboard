@@ -20,10 +20,14 @@ need to read Switchboard's source.
 ```
 
 - One file per repo. Create the `.switchboard/` directory if it doesn't exist.
-- Commit it (it's meant to sync across machines via git).
-- Switchboard hot-reloads the file: editing it re-spawns the active chat's
-  terminals, so you can iterate without restarting the app.
-- Paths inside the file are relative to the repo root (see cwd rules below), so
+- Commit it (it's meant to sync across machines via git). If the repo ignores
+  `.switchboard/`, allow the config explicitly while keeping worktrees ignored.
+- Switchboard watches an existing config file. An in-place change re-spawns
+  terminals for displayed chats in that project, preserving each chat's chosen
+  config name when it still exists. Creating a file after a missing read, or
+  replacing the watched file by rename, may need reopening the chat.
+- Relative terminal paths resolve against the chat execution root (its worktree
+  when set, otherwise the project; see cwd rules below), so
   the config stays portable across machines.
 
 > Legacy note: older repos may have `.switchboard/workspace.yaml`. That's the old
@@ -126,8 +130,8 @@ Each pane (whether under `terminals:` or a row's `panes:`) accepts:
 | Field      | Required | Meaning |
 |------------|----------|---------|
 | `label`    | no (recommended) | Tab title shown in the terminal strip. Defaults to `Terminal N`. Keep it short. |
-| `cwd`      | no       | Working directory. See resolution rules below. Defaults to the repo root. |
-| `on_start` | no       | A shell command run once, after the shell initializes. |
+| `cwd`      | no       | Working directory. See resolution rules below. Defaults to the chat execution root. |
+| `on_start` | no       | A shell command written once after an initialization delay or `wait_for` match. |
 | `wait_for` | no       | A substring to wait for in the terminal output before running `on_start`. |
 
 No other fields are read. Don't invent keys (e.g. `env`, `color`, `shell`) -
@@ -163,19 +167,27 @@ configs:
 An explicit `run` request with no configured command records a
 `not_configured` receipt; it does not guess. Once setup starts, Switchboard
 retains the worktree after failure because the command may have modified it.
-Receipts store the policy, outcome, timing, exit code, and a command
-fingerprint—not the command text or environment secrets.
+Receipts store the policy, outcome, timing, exit code and a command
+fingerprint. Command text and environment secrets are omitted.
 
 ### cwd resolution
 
-- omitted or `"."` → repo root
-- relative (e.g. `services/api`) → `<repo-root>/services/api`
-- absolute (starts with `/`) → used as-is (avoid this; it breaks portability)
+- omitted or `"."` → chat execution root (worktree if set, otherwise project)
+- relative (e.g. `services/api`) → `<execution-root>/services/api`
+- absolute (starts with `/`) → used as-is in ordinary desktop layouts (avoid
+  this; it breaks portability)
+
+Managed worktree startup validates every pane against the new worktree
+(`rootedCwd` in `src/main/worktree-creation/startup-launcher.ts`). An absolute
+path outside it, or a relative path that escapes it, fails provisioning for the
+whole config before any terminal opens. An absolute path inside that worktree
+is accepted, but a relative path stays portable.
 
 ### on_start
 
-Runs the command as if the user typed it and pressed enter, once, after the
-shell is ready. Use it for long-running processes (`npm run dev`) and watchers
+Writes the command and Enter once after a 500 ms initialization delay.
+Switchboard does not detect a ready shell prompt. Use it for long-running
+processes (`npm run dev`) and watchers
 (`npm test -- --watch`). Do not use it as the worktree setup hook; use
 `worktree.setup.command` so creation can order and recover setup correctly. It
 is not a script - it's a single command line. Chain with `&&` if you need
@@ -197,11 +209,18 @@ rows:
         on_start: "npm run worker"              # ...then starts
 ```
 
-`wait_for` watches that pane's own output. It fires once, then clears. If the
-substring never appears, `on_start` never runs, so choose a string you're
-confident will be printed.
+`wait_for` checks each output chunk from every PTY on the same backend,
+including terminals in other chats. It matches a literal substring within one
+chunk, not across chunks. A match clears the wait and writes the command after
+200 ms. Use a distinctive marker; a string split across chunks will not match.
+If no chunk matches, `on_start` never runs.
 
 ---
+
+`worktree.link` is also supported: a list of safe project-relative dependency
+folders (for example `vendor/bundle`) to link for child worktrees, in addition
+to discovered `node_modules` folders. Paths with traversal or absolute paths
+are refused by the parser. See `src/shared/launch-config.ts`.
 
 ## 5. Named configs (multiple layouts)
 
@@ -253,9 +272,10 @@ Rules:
 3. **Pick 2-4 panes** that a developer wants open immediately. Typical set: dev
    server, test watcher, and a free shell. Add a logs/db pane only if the repo
    clearly needs it.
-4. **Wire dependencies with `wait_for`** only if startup ordering actually
-   matters. Otherwise skip it.
-5. **Use repo-relative `cwd`.** Never hardcode absolute or machine-specific
+4. **Use `wait_for` sparingly.** It observes all terminals on the backend and
+   is not a per-config dependency graph. Use a distinctive readiness marker
+   only when that behavior is acceptable.
+5. **Use execution-root-relative `cwd`.** Never hardcode absolute or machine-specific
    paths.
 6. **Keep `on_start` to real commands** that exist in this repo. Don't guess a
    `npm run dev` if the script is actually `npm start` or `pnpm dev`.

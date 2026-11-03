@@ -39,7 +39,8 @@ included. No Console upload comes first, whatever older Play docs say: the
 old record was empty too when the first 0.5.18 bundle went to its internal
 track as a draft through the API on 2026-10-19. Play App Signing is then on
 with a Google-generated app signing key; the workflow's key is the upload
-key. No AAB is on the new record yet.
+key. Check the current track before dispatching; local source cannot establish
+which builds a store has accepted.
 
 To release:
 
@@ -145,7 +146,7 @@ The Play listing text, the policy form answers (Data safety, Content rating,
 App access) and the graphics are in `docs/store/play/` (`listing.md` says how
 to regenerate the images).
 
-## TL;DR
+## Desktop release
 
 A desktop release is a tag on `main`. There is no version-bump pull request:
 `release-build.yml` sets `package.json` to the tag's version on the runner
@@ -163,11 +164,15 @@ gh workflow run release.yml --ref main -f version=0.9.128 -F dry_run=true
 
 After reviewing that run, dispatch again on `main` with `dry_run=false` and
 `expected_sha` set to the SHA in its summary. A changed main requires a new dry run.
+The operator supplies the reviewed SHA; the workflow validates that it matches current main, but does not attest that a human reviewed a dry run.
 The workflow resolves main once to an immutable SHA, requires successful
-push CI on that SHA, and refuses an existing `v<version>` tag. If CI is still
+push CI on that SHA, and refuses an existing `v<version>` tag or a version no newer than the latest desktop release. If CI is still
 running it fails closed; retry after CI passes. It never follows a newer merge
-partway through a release. Tag creation is atomic, and runs for the same version are
-serialized without cancelling an active release. No version-bump PR is needed.
+partway through a release. Tag creation is atomic, and all desktop release runs are
+serialized without cancelling an active release. GitHub can replace a pending run when another is queued; check the run conclusion. No version-bump PR is needed.
+
+A branch dry run reports both the workflow revision and the packaged main SHA.
+Repeat it on main after merge before using that SHA for a real release.
 
 The default GitHub token creates the tag and the same run directly invokes
 the existing release jobs. It does not depend on a token-created tag triggering
@@ -220,7 +225,10 @@ or medium change merges once the local CodeRabbit review is clean (every finding
 fixed or declined in the PR body with a reason), the full gate passed and CI is
 green. The hosted review still runs afterwards; a real finding gets a follow-up
 pull request. A change that can lose data, changes the wire protocol, or changes
-stored data or a migration also waits for a clean hosted review.
+stored data or a migration also waits for a clean hosted review. An explicit
+task requirement to wait for hosted review also applies. Every batch, including
+docs, follows the root shipping checklist;
+high-risk changes also require the installed-build check and explicit approval.
 
 ### Signing modes
 
@@ -249,8 +257,9 @@ and ticket validation. The Windows lane enables Authenticode and validates the
 packed executable. A manual workflow dispatch exercises the same selection and
 verification without publishing.
 
-Note: macOS ships as a `.zip` (not `.dmg`) - `dmg-builder` crashes on the
-`macos-14` CI runner (`hdiutil: create failed - Device not configured`).
+macOS ships as a `.zip` (not `.dmg`), as configured in `electron-builder.yml`.
+CI and the macOS release build run on `macos-15` (PR #492). The screenshot job
+hides the Dock so the capture window fits; native glass checks still run locally.
 Users drag `Switchboard.app` from the zip to `/Applications` on first install.
 Auto-update uses the zip directly and works without the DMG.
 
@@ -259,7 +268,7 @@ Auto-update uses the zip directly and works without the DMG.
 ## How auto-update works
 
 Both platforms use [`electron-updater`](https://www.electron.build/auto-update).
-On launch (and on demand from **Settings → General → Check for updates**),
+On launch, hourly, on resume and on demand from **Settings → General → Check for updates**,
 the renderer talks to a small main-process module
 (`src/main/updater.ts`) that:
 
@@ -289,8 +298,8 @@ listed here as rationale, not as steps to perform.
 - **CI must pass the tagged tree.** `ci_status` finds a successful `ci.yml` run
   on the exact commit, or the `gate` job runs `ci.yml` itself. A tag pushed from
   a branch whose CI never ran cannot publish.
-- **No screen changed by accident.** `ci.yml`'s `visual` job compares eight
-  screens in all three themes with committed baselines, and the `gate` job
+- **No screen changed by accident.** `ci.yml`'s `visual` job compares the
+  screen fixtures across the supported themes with committed baselines, and the `gate` job
   runs `ci.yml` (or `ci_status` found it passed), so a release cannot ship a
   tree whose screens drifted. The
   native translucency check is not in it (it cannot run on the runner): run
@@ -313,7 +322,7 @@ Until 0.7.29 this doc claimed `Switchboard Setup X.Y.Z.exe`; the real name is
 
 Nothing in CI can prove the update actually installs, because that needs a
 packaged app replacing itself on a real machine. Install the previous version,
-relaunch, and confirm the prompt appears within ~30 seconds. If it does not:
+relaunch, and confirm the prompt appears after the initial update check. If it does not:
 
 - Open Settings → General → Check for updates and read the status line.
 - Tail the app log at `~/Library/Application Support/switchboard/logs/`
