@@ -128,7 +128,7 @@ jobs:
           timeout_minutes: 35
           max_attempts: 3
           retry_wait_seconds: 30
-          command: gh pr checks "$PR" --watch --interval 60
+          command: gh pr checks "$PR" --required --watch --interval 60
       - name: Merge the verified bump
         id: merged
         env:
@@ -145,6 +145,11 @@ jobs:
           [ "$CHANGES" != CHANGES_REQUESTED ] || { echo '::error::Changes requested; no merge or upload'; exit 1; }
           REVIEWS=$(gh api "repos/$GITHUB_REPOSITORY/pulls/${PR##*/}/reviews" --paginate --jq ".[] | select(.user.login | startswith(\"coderabbitai\")) | select(.commit_id == \"$EXPECTED_HEAD\") | .state")
           [ -n "$REVIEWS" ] || { echo '::error::CodeRabbit has not reviewed this head; inspect the bump PR before resuming'; exit 1; }
+          if grep -qx CHANGES_REQUESTED <<< "$REVIEWS"; then
+            echo '::error::CodeRabbit requested changes; no merge or upload'
+            exit 1
+          fi
+          gh pr checks "$PR" --required
           gh pr merge "$PR" --merge --match-head-commit "$EXPECTED_HEAD"
           SHA=$(gh pr view "$PR" --json mergeCommit --jq .mergeCommit.oid)
           test -n "$SHA" && [ "$SHA" != null ]

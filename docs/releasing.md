@@ -63,6 +63,20 @@ PAT is needed because PRs and pushes made with the default GITHUB_TOKEN do not
 start CI. It needs access only to this repository. The workflow never bypasses
 branch protection. A failed bump is left for inspection, and no upload follows.
 
+Allocation does not reserve a code in Play. A separate upload during the bump
+PR can consume it; Play then rejects the collision. Inspect and close stale
+bump PRs before retrying with a fresh version. The workflow does not choose a
+different code automatically after an upload fails.
+
+GitHub keeps only one pending run per concurrency group, even with
+`cancel-in-progress: false`. A later manual dispatch can replace packaging
+that is waiting after its bump merged. Inspect Play and the GitHub APK release
+before recovery: if neither upload happened, dispatch `mobile-release.yml`
+on main with `ref` set to that exact merge commit, `dry_run=false`, `play=true`
+and `apk=true`.
+If Play already accepted the AAB, use `play=false` for APK-only recovery.
+Never retry an upload whose outcome is unknown until Play's state is checked.
+
 After testing that exact versionCode on internal, dispatch
 **Promote tested Android build** (`android-promote.yml`). Its `dry_run` defaults
 to true: it reads internal and production, reports the selected build and

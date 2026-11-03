@@ -53,6 +53,10 @@ on:
         default: true
   workflow_dispatch:
     inputs:
+      ref:
+        description: Source commit for recovery packaging (defaults to dispatched revision).
+        type: string
+        default: ''
       version_name:
         description: Optional new versionName for a dry-run allocation and signed build.
         type: string
