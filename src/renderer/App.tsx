@@ -1242,6 +1242,11 @@ export function App() {
         let loadDiagnostics: ChatLoadDiagnostics | null = loaded
 
         if (!isCurrentOpen()) return
+        if (loaded?.meta?.agentType === 'terminal') {
+          openTiming.cancel('retired-terminal')
+          setAppToast('Terminal agent has been removed. Its history remains in Archive & data.')
+          return
+        }
         const targetId = resolveSessionSelectTarget(
           session.id,
           loaded?.meta?.rootThreadId,

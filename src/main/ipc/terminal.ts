@@ -70,6 +70,9 @@ export function registerTerminalHandlers(host: BackendHost): void {
     // live, so late writes/resizes below no-op rather than throw.
     try {
       if (!ptyManager) throw new Error('terminal backend is shutting down')
+      // An older client can still ask for an account login shell. Refuse it
+      // rather than open a shell with the ambient credentials.
+      if ('loginInstance' in opts) throw new Error('Terminal agent has been removed.')
       await ptyManager.create(opts)
       log.info('created', opts.id)
       return { id: opts.id }

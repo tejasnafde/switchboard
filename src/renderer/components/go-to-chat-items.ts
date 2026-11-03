@@ -46,6 +46,8 @@ export function goToChatItems(input: {
   for (const [machineId, projects] of sets) {
     for (const project of projects) {
       for (const session of project.sessions) {
+        // An older remote backend still lists its retired Terminal chats.
+        if (session.agentType === 'terminal') continue
         push({
           session,
           projectPath: project.path,

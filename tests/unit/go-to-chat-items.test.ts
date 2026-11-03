@@ -22,7 +22,7 @@ describe('goToChatItems', () => {
   it('lists local, remote and archived chats once each, with their agent', () => {
     const items = goToChatItems({
       localProjects: [project('/r/app', [session('a', { agentType: 'codex' })])],
-      remoteProjects: { vm: [project('/srv/api', [session('b')])] },
+      remoteProjects: { vm: [project('/srv/api', [session('b'), session('t', { agentType: 'terminal' })])] },
       archived: [
         { id: 'retired', project_path: '/r/app', title: 'Legacy terminal', updated_at: 6, agent_type: 'terminal' },
         { id: 'z', project_path: '/r/app', title: 'Old', updated_at: 5, agent_type: 'opencode', origin_source: null },

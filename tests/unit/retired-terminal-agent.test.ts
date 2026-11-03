@@ -15,6 +15,8 @@ import { ProviderChannels } from '../../src/shared/ipc-channels'
 import type { BackendHost } from '../../src/main/backend/host'
 import type { ProviderAdapter } from '../../src/main/provider/types'
 import { projectManagedRootSessions } from '../../src/main/ipc/terminal-sessions'
+import { registerTerminalHandlers } from '../../src/main/ipc/terminal'
+import { TerminalChannels } from '../../src/shared/ipc-channels'
 
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp/sb-retired-terminal-test' } }))
 
@@ -117,5 +119,19 @@ describe('retired Terminal agent upgrade', () => {
     )
     expect(() => unarchiveConversation('rotated-terminal')).not.toThrow()
     expect(db.prepare('SELECT archived FROM conversations WHERE id = ?').get('agent_terminal')).toEqual({ archived: 1 })
+  })
+
+  it('refuses an account login shell from an older client', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>()
+    registerTerminalHandlers({
+      handle: (channel, fn) => {
+        handlers.set(channel, fn as (...args: unknown[]) => unknown)
+      },
+      on: () => {},
+      emit: () => {},
+    } as BackendHost)
+    await expect(
+      handlers.get(TerminalChannels.CREATE)!({ id: 'login', cwd: '/repo', cols: 80, rows: 24, loginInstance: 'x' }),
+    ).rejects.toThrow('Terminal agent has been removed')
   })
 })
