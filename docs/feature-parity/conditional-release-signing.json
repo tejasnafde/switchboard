@@ -47,7 +47,7 @@
     ],
     "hardware": [],
     "notExercised": [
-      "An auto-update from the installed ad-hoc build to a Developer ID build is not exercised end to end, because that needs a published release; the requirement ShipIt checks is verified in afterSign and on the downloaded artifact.",
+      "An auto-update from the installed ad-hoc build to a Developer ID build is not exercised end to end, because that needs a published release. afterSign checks the requirement ShipIt uses on every signed build, and the dry-run artifact can be checked by hand with codesign.",
       "Production Windows Authenticode was not exercised because no Windows certificate is configured."
     ]
   }
