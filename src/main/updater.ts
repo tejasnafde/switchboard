@@ -51,8 +51,8 @@ let lastStatus: UpdateStatus = { kind: 'idle' }
 /** The last `downloaded` status: it stays installable until the restart. */
 let readyStatus: UpdateStatus | null = null
 const updaterWindows = new Set<BrowserWindow>()
-/** Guards the one-shot re-download after a purged staging file. */
-let staleDownloadRetried = false
+/** Guards the one-shot re-download after a failed download. */
+let downloadRetried = false
 /** True for the duration of any checkForUpdates() call - manual, initial, or scheduled. */
 let checkInFlight = false
 /**
@@ -255,29 +255,36 @@ export function registerAutoUpdater(window: BrowserWindow): void {
   )
   autoUpdater.on('download-progress', (p) => send({ kind: 'downloading', percent: Math.round(p.percent ?? 0) }))
   autoUpdater.on('update-downloaded', (info) => {
-    // A download that completes re-arms the stale-cache retry below, so a
+    // A download that completes re-arms the download retry below, so a
     // later update in the same session gets its own attempt.
-    staleDownloadRetried = false
+    downloadRetried = false
     readyStatus = { kind: 'downloaded', version: info?.version ?? 'unknown' }
     send(readyStatus)
   })
   autoUpdater.on('error', (err) => {
     const msg = err.message ?? String(err)
-    // checkWithRetry retries this one; report only the final failure.
-    if (checkInFlight && shouldRetryUpdateError(msg, checkAttempt)) return
-    // The staging file was purged mid-download (see isStaleDownloadError).
-    // electron-updater has already emptied the pending dir by the time it
-    // reports this, so a fresh check re-downloads cleanly. Retry once per
+    // checkWithRetry retries this one; report only the final failure. With a
+    // download running, the error may be the download's, so it is not held.
+    if (checkInFlight && downloadsInFlight === 0 && shouldRetryUpdateError(msg, checkAttempt)) return
+    // A download failed: the staging file was purged mid-download (see
+    // isStaleDownloadError; electron-updater has already emptied the pending
+    // dir), or the CDN failed transiently (a signed link can expire during a
+    // slow download). A fresh check re-downloads cleanly. Retry once per
     // successful download so a genuinely broken cache can't loop forever.
-    if (isStaleDownloadError(msg) && !staleDownloadRetried) {
-      staleDownloadRetried = true
-      log.warn('update staging file vanished mid-download - retrying once')
+    const transientDownload = !checkInFlight && shouldRetryUpdateError(msg, 1)
+    if ((isStaleDownloadError(msg) || transientDownload) && !downloadRetried) {
+      downloadRetried = true
+      log.warn(`update download failed, retrying once: ${redactUpdateLog(msg)}`)
       send({ kind: 'checking' })
-      checkForUpdatesTracked().catch((retryErr) => {
-        const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr)
-        log.error(`stale-download retry failed: ${redactUpdateLog(retryMsg)}`)
-        send({ kind: 'error', message: friendlyUpdateError(retryMsg) })
-      })
+      setTimeout(
+        () =>
+          checkForUpdatesTracked().catch((retryErr) => {
+            const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr)
+            log.error(`download retry failed: ${redactUpdateLog(retryMsg)}`)
+            send({ kind: 'error', message: friendlyUpdateError(retryMsg) })
+          }),
+        transientDownload ? UPDATE_RETRY_DELAY_MS : 0,
+      )
       return
     }
     send({ kind: 'error', message: friendlyUpdateError(msg) })

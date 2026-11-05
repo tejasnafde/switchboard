@@ -13,11 +13,11 @@ const OFFLINE_RE = /ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ENOTFOUND|EA
  * stalled connection.
  */
 const SERVER_RE =
-  /(?:^|HttpError: )(?:5\d\d|618)\b|\bstatus(?:Code)?:? (?:5\d\d|618)\b|jwt:expired|ETIMEDOUT|ECONNRESET|ECONNREFUSED|ERR_CONNECTION|ERR_NETWORK_CHANGED|ERR_TIMED_OUT|net::ERR/i
+  /(?:^|HttpError: )(?:5\d\d|618)\b|\bstatus(?:Code)?:? (?:5\d\d|618)\b|jwt:expired|ETIMEDOUT|ECONNRESET|ECONNREFUSED|ERR_CONNECTION|ERR_NETWORK_CHANGED|ERR_TIMED_OUT|net::ERR|Request timed out/i
 
 /** Retried once by the updater before the user sees anything. */
 const TRANSIENT_RE =
-  /(?:^|HttpError: )(?:5\d\d|618)\b|\bstatus(?:Code)?:? (?:5\d\d|618)\b|jwt:expired|ETIMEDOUT|ECONNRESET/i
+  /(?:^|HttpError: )(?:5\d\d|618)\b|\bstatus(?:Code)?:? (?:5\d\d|618)\b|jwt:expired|ETIMEDOUT|ECONNRESET|ERR_CONNECTION_RESET|ERR_CONNECTION_TIMED_OUT|ERR_TIMED_OUT|Request timed out/i
 
 const SERVER_ERROR_TEXT = "GitHub's download server had a problem. Try again in a minute."
 const OFFLINE_TEXT = 'No internet connection.'

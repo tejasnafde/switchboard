@@ -55,7 +55,7 @@ describe('updater window lifecycle', () => {
     vi.resetModules()
     mocks.handlers.clear()
     mocks.updater.removeAllListeners()
-    mocks.updater.checkForUpdates.mockClear()
+    mocks.updater.checkForUpdates.mockReset().mockImplementation(async () => ({}))
   })
 
   afterEach(() => {
@@ -180,5 +180,25 @@ describe('updater window lifecycle', () => {
       message: "GitHub's download server had a problem. Try again in a minute.",
     })
     expect(mocks.updater.checkForUpdates).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries a download that fails transiently once, after the delay', async () => {
+    const window = fakeWindow()
+    const { registerAutoUpdater } = await import('../../src/main/updater')
+    registerAutoUpdater(window as never)
+    await vi.advanceTimersByTimeAsync(3_000)
+    mocks.updater.checkForUpdates.mockClear()
+
+    mocks.updater.emit('error', new Error('HttpError: 618 jwt:expired'))
+    expect(mocks.updater.checkForUpdates).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(mocks.updater.checkForUpdates).toHaveBeenCalledTimes(1)
+
+    // The second failure is shown, as a short sentence.
+    mocks.updater.emit('error', new Error('HttpError: 618 jwt:expired'))
+    expect(window.webContents.send).toHaveBeenLastCalledWith('app:update-status', {
+      kind: 'error',
+      message: "GitHub's download server had a problem. Try again in a minute.",
+    })
   })
 })

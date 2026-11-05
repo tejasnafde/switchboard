@@ -101,6 +101,10 @@ describe('shouldRetryUpdateError', () => {
     expect(shouldRetryUpdateError('HttpError: 500 Internal Server Error', 1)).toBe(true)
     expect(shouldRetryUpdateError('read ECONNRESET', 1)).toBe(true)
     expect(shouldRetryUpdateError('connect ETIMEDOUT 1.2.3.4:443', 1)).toBe(true)
+    // electron-updater requests go through Electron's net module.
+    expect(shouldRetryUpdateError('net::ERR_CONNECTION_RESET', 1)).toBe(true)
+    expect(shouldRetryUpdateError('net::ERR_CONNECTION_TIMED_OUT', 1)).toBe(true)
+    expect(shouldRetryUpdateError('Request timed out', 1)).toBe(true)
     expect(shouldRetryUpdateError(JWT_EXPIRED, 2)).toBe(false)
   })
 
