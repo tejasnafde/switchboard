@@ -143,4 +143,42 @@ describe('updater window lifecycle', () => {
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
     expect(mocks.updater.checkForUpdates).toHaveBeenCalledTimes(2)
   })
+
+  it('retries a transient check failure once before it reports anything', async () => {
+    const expired = new Error('HttpError: 618 "method: GET url: https://x/latest-mac.yml?jwt=eyJa.eyJb.c"')
+    mocks.updater.checkForUpdates.mockImplementationOnce(async () => {
+      mocks.updater.emit('error', expired)
+      throw expired
+    })
+    const window = fakeWindow()
+    const { registerAutoUpdater } = await import('../../src/main/updater')
+    registerAutoUpdater(window as never)
+
+    const result = mocks.handlers.get('app:check-for-updates')?.()
+    await vi.advanceTimersByTimeAsync(5_000)
+    await result
+
+    expect(mocks.updater.checkForUpdates).toHaveBeenCalledTimes(2)
+    const kinds = window.webContents.send.mock.calls.map(([, status]) => (status as { kind: string }).kind)
+    expect(kinds).not.toContain('error')
+  })
+
+  it('reports the second transient failure as a short sentence', async () => {
+    const expired = new Error('HttpError: 618 jwt:expired')
+    mocks.updater.checkForUpdates.mockImplementation(async () => {
+      mocks.updater.emit('error', expired)
+      throw expired
+    })
+    const { registerAutoUpdater } = await import('../../src/main/updater')
+    registerAutoUpdater(fakeWindow() as never)
+
+    const result = mocks.handlers.get('app:check-for-updates')?.()
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(await result).toEqual({
+      kind: 'error',
+      message: "GitHub's download server had a problem. Try again in a minute.",
+    })
+    expect(mocks.updater.checkForUpdates).toHaveBeenCalledTimes(2)
+  })
 })

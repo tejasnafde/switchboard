@@ -74,6 +74,7 @@ export const AppChannels = {
   SET_CONVERSATION_PENDING_HANDOFF: 'app:set-conversation-pending-handoff',
   CHECK_FOR_UPDATES: 'app:check-for-updates',
   GET_UPDATE_STATUS: 'app:get-update-status',
+  IS_SIGNED_BUILD: 'app:is-signed-build',
   /** The new version once after an upgrade, else null. */
   TAKE_UPDATED_NOTICE: 'app:take-updated-notice',
   RELAUNCH: 'app:relaunch',

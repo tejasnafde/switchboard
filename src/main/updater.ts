@@ -14,21 +14,30 @@
  *   line ("idle", "checking", "available", "downloaded", "up-to-date",
  *   "error").
  *
- * Macos unsigned caveat: Gatekeeper re-quarantines each update. Users
- * will need to right-click → Open (or run `xattr -d
- * com.apple.quarantine /Applications/Switchboard.app`) on each new
- * version. We accept this until we have an Apple Developer cert.
+ * Release builds are Developer ID signed and notarized; the signed release
+ * overlay (electron-builder.signed.yml) marks them `switchboardSigned` in the
+ * packaged package.json, and Settings reads that through IS_SIGNED_BUILD.
+ * Local and unsigned builds still carry the Gatekeeper first-run caveat.
  *
  * The module is intentionally tiny - most logic lives inside
  * electron-updater itself. We just adapt the events to our IPC shape.
  */
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import { app, ipcMain, powerMonitor, type BrowserWindow } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { AppChannels } from '@shared/ipc-channels'
 import { statusWhileReady, type UpdateStatus } from '@shared/update-status'
 import { withTimeout } from '@shared/promise-timeout'
 import { createMainLogger } from './logger'
-import { friendlyUpdateError, isStaleDownloadError, isCheckTimeout } from './updater-error'
+import {
+  friendlyUpdateError,
+  isStaleDownloadError,
+  isCheckTimeout,
+  redactUpdateLog,
+  shouldRetryUpdateError,
+  UPDATE_RETRY_DELAY_MS,
+} from './updater-error'
 import { noteQuitSource } from './quit-source'
 import { startUpdateScheduler, type ScheduledCheckReason } from './updater-schedule'
 
@@ -56,6 +65,8 @@ let checkInFlight = false
  * timeout-wrapped view onto the same stuck request pointlessly.
  */
 let inFlightCheck: ReturnType<typeof autoUpdater.checkForUpdates> | null = null
+/** 1-based attempt of the running check; a transient first failure is retried once. */
+let checkAttempt = 0
 /** Downloads started by a check that have not settled yet (`result.downloadPromise`). */
 let downloadsInFlight = 0
 /** Clears the hourly/resume scheduler. Set once registered, null after `stopAutoUpdaterScheduler`. */
@@ -82,8 +93,7 @@ const CHECK_TIMEOUT_MS = 120_000
 function checkForUpdatesTracked(): ReturnType<typeof autoUpdater.checkForUpdates> {
   if (!inFlightCheck) {
     checkInFlight = true
-    inFlightCheck = autoUpdater
-      .checkForUpdates()
+    inFlightCheck = checkWithRetry()
       .then((result) => {
         trackDownload(result)
         return result
@@ -94,6 +104,34 @@ function checkForUpdatesTracked(): ReturnType<typeof autoUpdater.checkForUpdates
       })
   }
   return withTimeout(inFlightCheck, CHECK_TIMEOUT_MS, 'Update check')
+}
+
+async function checkWithRetry(): ReturnType<typeof autoUpdater.checkForUpdates> {
+  for (let attempt = 1; ; attempt++) {
+    checkAttempt = attempt
+    try {
+      return await autoUpdater.checkForUpdates()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (!shouldRetryUpdateError(message, attempt)) throw err
+      log.warn(`update check failed, retrying in ${UPDATE_RETRY_DELAY_MS}ms: ${redactUpdateLog(message)}`)
+      await new Promise((resolve) => setTimeout(resolve, UPDATE_RETRY_DELAY_MS))
+    }
+  }
+}
+
+/** Set by the signed release overlay through electron-builder `extraMetadata`. */
+function isSignedBuild(): boolean {
+  if (!app.isPackaged) return false
+  try {
+    const pkg = JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')) as {
+      switchboardSigned?: unknown
+    }
+    return pkg.switchboardSigned === true
+  } catch (err) {
+    log.warn('could not read the packaged package.json', err)
+    return false
+  }
 }
 
 /**
@@ -108,7 +146,7 @@ function trackDownload(result: Awaited<ReturnType<typeof autoUpdater.checkForUpd
   download
     .catch((err) => {
       const message = err instanceof Error ? err.message : String(err)
-      log.warn(`update download failed: ${message}`)
+      log.warn(`update download failed: ${redactUpdateLog(message)}`)
     })
     .finally(() => {
       downloadsInFlight -= 1
@@ -172,7 +210,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
       return lastStatus
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      log.error(`checkForUpdates failed: ${message}`)
+      log.error(`checkForUpdates failed: ${redactUpdateLog(message)}`)
       send({
         kind: isCheckTimeout(message) ? 'slow' : 'error',
         message: friendlyUpdateError(message),
@@ -182,6 +220,8 @@ export function registerAutoUpdater(window: BrowserWindow): void {
   })
   ipcMain.removeHandler(AppChannels.GET_UPDATE_STATUS)
   ipcMain.handle(AppChannels.GET_UPDATE_STATUS, () => lastStatus)
+  ipcMain.removeHandler(AppChannels.IS_SIGNED_BUILD)
+  ipcMain.handle(AppChannels.IS_SIGNED_BUILD, () => isSignedBuild())
 
   // Skip the actual updater in dev - autoUpdater throws or no-ops with
   // confusing messages when there's no `app-update.yml` next to the
@@ -202,10 +242,10 @@ export function registerAutoUpdater(window: BrowserWindow): void {
   // Pipe the library's logger through ours so failures show up in the
   // app's log file, not just stdout.
   autoUpdater.logger = {
-    info: (m: unknown) => log.info(`[updater] ${String(m)}`),
-    warn: (m: unknown) => log.warn(`[updater] ${String(m)}`),
-    error: (m: unknown) => log.error(`[updater] ${String(m)}`),
-    debug: (m: unknown) => log.info(`[updater:debug] ${String(m)}`),
+    info: (m: unknown) => log.info(`[updater] ${redactUpdateLog(String(m))}`),
+    warn: (m: unknown) => log.warn(`[updater] ${redactUpdateLog(String(m))}`),
+    error: (m: unknown) => log.error(`[updater] ${redactUpdateLog(String(m))}`),
+    debug: (m: unknown) => log.info(`[updater:debug] ${redactUpdateLog(String(m))}`),
   }
 
   autoUpdater.on('checking-for-update', () => send({ kind: 'checking' }))
@@ -223,6 +263,8 @@ export function registerAutoUpdater(window: BrowserWindow): void {
   })
   autoUpdater.on('error', (err) => {
     const msg = err.message ?? String(err)
+    // checkWithRetry retries this one; report only the final failure.
+    if (checkInFlight && shouldRetryUpdateError(msg, checkAttempt)) return
     // The staging file was purged mid-download (see isStaleDownloadError).
     // electron-updater has already emptied the pending dir by the time it
     // reports this, so a fresh check re-downloads cleanly. Retry once per
@@ -233,7 +275,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
       send({ kind: 'checking' })
       checkForUpdatesTracked().catch((retryErr) => {
         const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr)
-        log.error(`stale-download retry failed: ${retryMsg}`)
+        log.error(`stale-download retry failed: ${redactUpdateLog(retryMsg)}`)
         send({ kind: 'error', message: friendlyUpdateError(retryMsg) })
       })
       return
@@ -248,7 +290,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
   setTimeout(() => {
     checkForUpdatesTracked().catch((err) => {
       const message = err instanceof Error ? err.message : String(err)
-      log.warn(`initial checkForUpdates failed: ${message}`)
+      log.warn(`initial checkForUpdates failed: ${redactUpdateLog(message)}`)
       // Unstick the UI: without this, a hung launch-time check leaves the
       // Settings row on the "checking" status it broadcast at start.
       send({
@@ -279,7 +321,7 @@ function runScheduledCheck(reason: ScheduledCheckReason): void {
     })
     .catch((err) => {
       const message = err instanceof Error ? err.message : String(err)
-      log.warn(`${reason} update check failed: ${message}`)
+      log.warn(`${reason} update check failed: ${redactUpdateLog(message)}`)
       send({
         kind: isCheckTimeout(message) ? 'slow' : 'error',
         message: friendlyUpdateError(message),

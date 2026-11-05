@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { friendlyUpdateError, isMissingUpdateManifestError, isStaleDownloadError } from '../../src/main/updater-error'
+import {
+  friendlyUpdateError,
+  isMissingUpdateManifestError,
+  isStaleDownloadError,
+  redactUpdateLog,
+  shouldRetryUpdateError,
+} from '../../src/main/updater-error'
+
+/** Shape of the 2026-11-05 failure: GitHub's CDN served a stale signed link. */
+const JWT = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3MDAwMDAwMDB9.c2lnbmF0dXJl'
+const JWT_EXPIRED = `HttpError: 618 "method: GET url: https://release-assets.githubusercontent.com/github-production-release-asset/1/2?sp=r&sv=2018&sig=abc404def&jwt=${JWT}&response-content-disposition=latest-mac.yml\n\nPlease double check that your authentication token is correct. Due to security reasons, actual status maybe not reported, but 404.\n"\nHeaders: { "x-github-token": "ghs_secret123", "authorization": "Bearer ghp_abc" }\nData:\n <html><head><title>618 jwt:expired</title></head><body>Varnish cache server</body></html>`
 
 /** Verbatim from a real 0.7.27 failure - the staging file was purged mid-download. */
 const STALE_RENAME =
@@ -20,18 +30,26 @@ describe('isStaleDownloadError', () => {
 })
 
 describe('friendlyUpdateError', () => {
-  it('maps offline / network errors to a clean message', () => {
-    expect(friendlyUpdateError('net::ERR_INTERNET_DISCONNECTED')).toBe('No internet connection')
-    expect(friendlyUpdateError('getaddrinfo ENOTFOUND github.com')).toBe('No internet connection')
-    expect(friendlyUpdateError('request to https://… failed, reason: ETIMEDOUT')).toBe('No internet connection')
+  it('maps offline errors to a clean message', () => {
+    expect(friendlyUpdateError('net::ERR_INTERNET_DISCONNECTED')).toBe('No internet connection.')
+    expect(friendlyUpdateError('getaddrinfo ENOTFOUND github.com')).toBe('No internet connection.')
+  })
+
+  it('maps 618, 5xx and dropped connections to a server problem', () => {
+    const server = "GitHub's download server had a problem. Try again in a minute."
+    expect(friendlyUpdateError(JWT_EXPIRED)).toBe(server)
+    expect(friendlyUpdateError('HttpError: 503 Service Unavailable')).toBe(server)
+    expect(friendlyUpdateError('Cannot download "https://x/latest.yml", status 502: Bad Gateway')).toBe(server)
+    expect(friendlyUpdateError('request to https://x failed, reason: ETIMEDOUT')).toBe(server)
+    expect(friendlyUpdateError('read ECONNRESET')).toBe(server)
   })
 
   it('replaces the raw staging-file errno with something actionable', () => {
     expect(friendlyUpdateError(STALE_RENAME)).toBe('Update download was interrupted - try again')
   })
 
-  it('passes through non-network errors unchanged', () => {
-    expect(friendlyUpdateError('signature verification failed')).toBe('signature verification failed')
+  it('never shows an unknown raw error', () => {
+    expect(friendlyUpdateError('signature verification failed')).toBe("Couldn't check for updates. Try again later.")
   })
 
   it('reports a missing desktop update manifest as a broken release channel', () => {
@@ -55,5 +73,40 @@ describe('friendlyUpdateError', () => {
     expect(friendlyUpdateError('Update check timed out after 120000ms')).toBe(
       'Still checking. This network is slow to reach GitHub, so it will finish in the background.',
     )
+  })
+})
+
+describe('redactUpdateLog', () => {
+  it('removes the signed URL query, the jwt and header tokens', () => {
+    const out = redactUpdateLog(JWT_EXPIRED)
+    expect(out).toContain('https://release-assets.githubusercontent.com/github-production-release-asset/1/2?<redacted>')
+    expect(out).toContain('618 jwt:expired')
+    for (const secret of ['eyJ', 'sig=abc', 'ghs_secret123', 'ghp_abc', 'sv=2018']) {
+      expect(out).not.toContain(secret)
+    }
+  })
+
+  it('removes a bare jwt and token parameter outside a URL', () => {
+    expect(redactUpdateLog(`token=abc123 then ${JWT}`)).toBe('token=<redacted> then <jwt>')
+  })
+
+  it('leaves a plain line alone', () => {
+    expect(redactUpdateLog('Checking for update')).toBe('Checking for update')
+  })
+})
+
+describe('shouldRetryUpdateError', () => {
+  it('retries a transient first failure once', () => {
+    expect(shouldRetryUpdateError(JWT_EXPIRED, 1)).toBe(true)
+    expect(shouldRetryUpdateError('HttpError: 500 Internal Server Error', 1)).toBe(true)
+    expect(shouldRetryUpdateError('read ECONNRESET', 1)).toBe(true)
+    expect(shouldRetryUpdateError('connect ETIMEDOUT 1.2.3.4:443', 1)).toBe(true)
+    expect(shouldRetryUpdateError(JWT_EXPIRED, 2)).toBe(false)
+  })
+
+  it('does not retry offline, missing-manifest or unknown errors', () => {
+    expect(shouldRetryUpdateError('net::ERR_INTERNET_DISCONNECTED', 1)).toBe(false)
+    expect(shouldRetryUpdateError('HttpError: 404 Not Found for latest-mac.yml', 1)).toBe(false)
+    expect(shouldRetryUpdateError('signature verification failed', 1)).toBe(false)
   })
 })

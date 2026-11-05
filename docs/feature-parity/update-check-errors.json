@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "update-check-errors",
+  "summary": "The desktop Settings Updates row never shows a raw updater error. `friendlyUpdateError` maps every error to one short sentence: GitHub's download server had a problem (618 jwt:expired, 5xx, a dropped or stalled connection), no internet connection (offline, DNS), the existing missing-manifest and still-checking sentences, or a generic try-again line. The full error goes to the scoped log only, through `redactUpdateLog`, which removes the query string of every URL, any JWT, and token or authorization values, because a signed release asset URL is a credential while it lives. A transient check failure (618, 5xx, ECONNRESET, ETIMEDOUT) is retried once after 5 s before the user sees anything; the updater's error event is held back while that retry is pending. The footer no longer says every build is unsigned: the signed release overlay sets `switchboardSigned` in the packaged package.json (electron-builder extraMetadata), main answers `app:is-signed-build`, and a signed release shows only 'Updates are checked automatically at launch.' with no help icon. A local or unsigned build still says it is unsigned and keeps the Gatekeeper or SmartScreen help.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/updater.ts",
+        "src/main/updater-error.ts",
+        "src/renderer/components/SettingsPage.tsx",
+        "src/renderer/components/settings/update-footer-copy.ts",
+        "src/preload/index.ts",
+        "electron-builder.signed.yml",
+        "tests/unit/updater-error.test.ts",
+        "tests/unit/updater-window-lifecycle.test.ts",
+        "tests/unit/update-footer-copy.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Not affected. apps/mobile/src/lib/ota-update.ts never shows an expo-updates check or fetch error: a failed check is logged and the app stays on its bundle. The only shown error is a failed reload into a downloaded bundle, a local failure with no URL or token in it."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Not affected. Native Android updates through Google Play and has no in-app update check of its own, so it has no update error to show."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "The new `app:is-signed-build` channel is a local desktop IPC call (routed local in hybrid-transport), not part of the backend wire protocol. The headless server has no updater."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table, setting or migration. The signed flag is read from the packaged package.json at runtime; the retry state is in memory."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "electron-builder.signed.yml",
+        "src/main/updater.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/updater-error.test.ts: the 618 jwt:expired failure, 5xx and dropped connections map to the server sentence, offline maps to no internet connection, an unknown error never passes through; redactUpdateLog removes the signed URL query, the JWT and header tokens; shouldRetryUpdateError retries 618, 5xx, ECONNRESET and ETIMEDOUT once and never offline, 404 or unknown errors.",
+      "tests/unit/updater-window-lifecycle.test.ts: a 618 first failure is retried after 5 s with no error status sent; two failures report the short server sentence.",
+      "tests/unit/update-footer-copy.test.ts: a signed build shows no signing text and no help; an unsigned build keeps the platform help.",
+      "npm run typecheck and npx vitest run pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run against a real packaged signed release: the extraMetadata flag in the signed overlay is checked by reading electron-builder's config behaviour, not by a signed CI build. A real 618 from GitHub's CDN was not reproduced."
+    ]
+  }
+}
