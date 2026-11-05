@@ -1640,6 +1640,12 @@ function UpdateCheckRow() {
     return unsubscribe
   }, [])
 
+  // Unknown until main answers: claim nothing about signing meanwhile.
+  const [signed, setSigned] = useState<boolean | null>(null)
+  useEffect(() => {
+    void window.api.app.isSignedBuild().then(setSigned)
+  }, [])
+
   useEffect(() => {
     if (!helpOpen) return
     const closeOnPointerDown = (event: PointerEvent) => {
@@ -1674,6 +1680,7 @@ function UpdateCheckRow() {
   const view = updateRowView(status, { checking: busy, restarting })
   const footerCopy = updateFooterCopy(
     navigator.platform.startsWith('Mac') ? 'darwin' : navigator.platform.startsWith('Win') ? 'win32' : 'linux',
+    signed !== false,
   )
 
   const label = restarting ? updateStatusLabel({ kind: 'installing' }) : updateStatusLabel(status)

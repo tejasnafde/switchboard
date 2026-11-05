@@ -45,3 +45,10 @@ paths = [
   '''^apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/LiveWebViewTest\.kt$''',
 ]
 regexes = ['''0123456789abcdef0123456789abcdef''']
+
+[[allowlists]]
+description = "Updater redaction test: a fake JWT (header plus an exp claim, signature 'signature'), not a credential"
+targetRules = ["jwt"]
+condition = "AND"
+paths = ['''^tests/unit/updater-error\.test\.ts$''']
+regexes = ['''eyJleHAiOjE3MDAwMDAwMDB9''']

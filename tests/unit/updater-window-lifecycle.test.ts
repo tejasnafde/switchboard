@@ -55,7 +55,7 @@ describe('updater window lifecycle', () => {
     vi.resetModules()
     mocks.handlers.clear()
     mocks.updater.removeAllListeners()
-    mocks.updater.checkForUpdates.mockClear()
+    mocks.updater.checkForUpdates.mockReset().mockImplementation(async () => ({}))
   })
 
   afterEach(() => {
@@ -142,5 +142,80 @@ describe('updater window lifecycle', () => {
     finishDownload([])
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
     expect(mocks.updater.checkForUpdates).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries a transient check failure once before it reports anything', async () => {
+    const expired = new Error('HttpError: 618 "method: GET url: https://x/latest-mac.yml?jwt=eyJa.eyJb.c"')
+    mocks.updater.checkForUpdates.mockImplementationOnce(async () => {
+      mocks.updater.emit('error', expired)
+      throw expired
+    })
+    const window = fakeWindow()
+    const { registerAutoUpdater } = await import('../../src/main/updater')
+    registerAutoUpdater(window as never)
+
+    const result = mocks.handlers.get('app:check-for-updates')?.()
+    await vi.advanceTimersByTimeAsync(5_000)
+    await result
+
+    expect(mocks.updater.checkForUpdates).toHaveBeenCalledTimes(2)
+    const kinds = window.webContents.send.mock.calls.map(([, status]) => (status as { kind: string }).kind)
+    expect(kinds).not.toContain('error')
+  })
+
+  it('reports the second transient failure as a short sentence', async () => {
+    const expired = new Error('HttpError: 618 jwt:expired')
+    mocks.updater.checkForUpdates.mockImplementation(async () => {
+      mocks.updater.emit('error', expired)
+      throw expired
+    })
+    const { registerAutoUpdater } = await import('../../src/main/updater')
+    registerAutoUpdater(fakeWindow() as never)
+
+    const result = mocks.handlers.get('app:check-for-updates')?.()
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(await result).toEqual({
+      kind: 'error',
+      message: "GitHub's download server had a problem. Try again in a minute.",
+    })
+    expect(mocks.updater.checkForUpdates).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries a download that fails transiently once, after the delay', async () => {
+    const window = fakeWindow()
+    const { registerAutoUpdater } = await import('../../src/main/updater')
+    registerAutoUpdater(window as never)
+    await vi.advanceTimersByTimeAsync(3_000)
+    mocks.updater.checkForUpdates.mockClear()
+
+    mocks.updater.emit('error', new Error('HttpError: 618 jwt:expired'))
+    expect(mocks.updater.checkForUpdates).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(mocks.updater.checkForUpdates).toHaveBeenCalledTimes(1)
+
+    // The second failure is shown, as a short sentence.
+    mocks.updater.emit('error', new Error('HttpError: 618 jwt:expired'))
+    expect(window.webContents.send).toHaveBeenLastCalledWith('app:update-status', {
+      kind: 'error',
+      message: "GitHub's download server had a problem. Try again in a minute.",
+    })
+  })
+
+  it('retries a transient download failure that arrives during a manual check', async () => {
+    mocks.updater.checkForUpdates.mockImplementationOnce(async () => ({ downloadPromise: new Promise(() => {}) }))
+    const window = fakeWindow()
+    const { registerAutoUpdater } = await import('../../src/main/updater')
+    registerAutoUpdater(window as never)
+    await vi.advanceTimersByTimeAsync(3_000)
+    mocks.updater.checkForUpdates.mockImplementation(() => new Promise(() => {}))
+    void mocks.handlers.get('app:check-for-updates')?.()
+    mocks.updater.checkForUpdates.mockClear()
+
+    mocks.updater.emit('error', new Error('HttpError: 503 Service Unavailable'))
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    const kinds = window.webContents.send.mock.calls.map(([, status]) => (status as { kind: string }).kind)
+    expect(kinds).not.toContain('error')
   })
 })

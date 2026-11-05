@@ -402,6 +402,8 @@ const api = {
      */
     checkForUpdates: (): Promise<UpdateStatus> => transport.invoke(AppChannels.CHECK_FOR_UPDATES),
     getUpdateStatus: (): Promise<UpdateStatus> => transport.invoke(AppChannels.GET_UPDATE_STATUS),
+    /** True for a Developer ID signed and notarized release build. */
+    isSignedBuild: (): Promise<boolean> => transport.invoke(AppChannels.IS_SIGNED_BUILD),
     /** The version to announce as "Updated to" once after an upgrade, else null. */
     takeUpdatedNotice: (): Promise<string | null> => transport.invoke(AppChannels.TAKE_UPDATED_NOTICE),
     /** HEIC/HEIF bytes to JPEG bytes, on this Mac (never a remote machine). */

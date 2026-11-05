@@ -17,3 +17,8 @@ mac:
 
 win:
   signAndEditExecutable: true
+
+# Read by the app (src/main/updater.ts isSignedBuild) so Settings stops calling
+# a signed release unsigned.
+extraMetadata:
+  switchboardSigned: true
