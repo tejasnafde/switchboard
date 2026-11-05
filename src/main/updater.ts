@@ -271,7 +271,9 @@ export function registerAutoUpdater(window: BrowserWindow): void {
     // dir), or the CDN failed transiently (a signed link can expire during a
     // slow download). A fresh check re-downloads cleanly. Retry once per
     // successful download so a genuinely broken cache can't loop forever.
-    const transientDownload = !checkInFlight && shouldRetryUpdateError(msg, 1)
+    // A download can fail while a manual check runs; any second check this
+    // starts joins that check's request.
+    const transientDownload = (!checkInFlight || downloadsInFlight > 0) && shouldRetryUpdateError(msg, 1)
     if ((isStaleDownloadError(msg) || transientDownload) && !downloadRetried) {
       downloadRetried = true
       log.warn(`update download failed, retrying once: ${redactUpdateLog(msg)}`)

@@ -201,4 +201,21 @@ describe('updater window lifecycle', () => {
       message: "GitHub's download server had a problem. Try again in a minute.",
     })
   })
+
+  it('retries a transient download failure that arrives during a manual check', async () => {
+    mocks.updater.checkForUpdates.mockImplementationOnce(async () => ({ downloadPromise: new Promise(() => {}) }))
+    const window = fakeWindow()
+    const { registerAutoUpdater } = await import('../../src/main/updater')
+    registerAutoUpdater(window as never)
+    await vi.advanceTimersByTimeAsync(3_000)
+    mocks.updater.checkForUpdates.mockImplementation(() => new Promise(() => {}))
+    void mocks.handlers.get('app:check-for-updates')?.()
+    mocks.updater.checkForUpdates.mockClear()
+
+    mocks.updater.emit('error', new Error('HttpError: 503 Service Unavailable'))
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    const kinds = window.webContents.send.mock.calls.map(([, status]) => (status as { kind: string }).kind)
+    expect(kinds).not.toContain('error')
+  })
 })
