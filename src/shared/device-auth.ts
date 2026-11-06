@@ -82,7 +82,8 @@ const SCOPE_REQUIRED_PREFIXES: Record<DeviceScope, readonly string[]> = {
   // Source control accounts hold a host token. Status is gated too: it names
   // the account, and nothing on the phone configures one.
   // The secret answer carries the value; phones answer on the computer (design 7.3).
-  admin: ['mobile-pairing:', 'source-control:', 'agent-secret:'],
+  // The bridge allowlist decides which projects Instinct may open.
+  admin: ['mobile-pairing:', 'source-control:', 'agent-secret:', 'bridge:'],
   // `chat` is the baseline every session but a hub client has; `isChannelAllowed`
   // requires it for every channel outside `hub-remote:*`.
   chat: [],

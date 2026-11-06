@@ -137,6 +137,23 @@ export function bridgePolicyModesValid(policy: Pick<BridgeProjectPolicy, 'defaul
   return cap >= 0 && def >= 0 && def <= cap
 }
 
+/** One sidebar project on the desktop's setup list (`bridge:list-projects`). Desktop only: it holds the path. */
+export interface BridgeProjectSetupRow {
+  path: string
+  name: string
+  allowed: boolean
+  /** Null when the folder no longer resolves. */
+  projectId: string | null
+  /** An allowed policy no sidebar project resolves to; `path` is its stored root. */
+  orphan: boolean
+}
+
+export interface BridgeProjectSetup {
+  /** The flag is on; while it is off the list is empty and nothing can be switched. */
+  enabled: boolean
+  projects: BridgeProjectSetupRow[]
+}
+
 // ─── References and states ──────────────────────────────────────
 
 /** `chat_id` is the root conversation id, stable across provider session rotation. */
@@ -204,6 +221,7 @@ export const BRIDGE_ERROR_CODES = [
   'stop_unconfirmed',
   'cursor_expired',
   'policy_denied',
+  'internal_error',
 ] as const
 export type BridgeErrorCode = (typeof BRIDGE_ERROR_CODES)[number]
 
@@ -235,6 +253,7 @@ const DEFAULT_RETRY: Record<BridgeErrorCode, BridgeRetryAdvice> = {
   stop_unconfirmed: 'read_first',
   cursor_expired: 'read_first',
   policy_denied: 'ask_owner',
+  internal_error: 'none',
 }
 
 /** Sent as structured MCP output with `isError: true`. The message is safe to show the owner. */

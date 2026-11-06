@@ -14,6 +14,7 @@ import {
   type MessageSearchResult,
 } from '@shared/message-search'
 import { createMainLogger } from '../logger'
+import { maskStoredText } from './secret-mask'
 
 const log = createMainLogger('db:message-search')
 
@@ -31,16 +32,46 @@ const FALLBACK_CHUNK_SIZE = 200
 // scan forever looking for boundedLimit valid matches that may not exist.
 const FALLBACK_MAX_CHUNKS = 20
 
+export interface MessageSearchScope {
+  /**
+   * Only chats whose root project path is one of these, applied in SQL on
+   * both the FTS and the fallback path, so it counts before the limit. Empty
+   * finds nothing. Omitted searches every project (global search).
+   */
+  projectPaths?: readonly string[]
+  /**
+   * One hit per root chat, its best, before the limit, so one busy chat cannot
+   * fill the page. Reads up to PER_CHAT_CANDIDATES rows to find them.
+   */
+  onePerChat?: boolean
+}
+
+/** Rows read for a one-per-chat search; chats past them are not found. */
+const PER_CHAT_CANDIDATES = 1000
+
+/** `AND <column> IN (?, ...)` and its parameters, or nothing when no scope is set. */
+function projectScope(column: string, scope: MessageSearchScope): { sql: string; params: string[] } {
+  if (!scope.projectPaths) return { sql: '', params: [] }
+  return {
+    sql: `AND ${column} IN (${scope.projectPaths.map(() => '?').join(',')})`,
+    params: [...scope.projectPaths],
+  }
+}
+
 export function searchMessagesInDatabase(
   database: Database.Database,
   query: string,
   limit = MESSAGE_SEARCH_LIMIT,
+  scope: MessageSearchScope = {},
 ): SearchResult[] {
   const intent = parseArchiveIntent(query)
   const terms = messageSearchTerms(intent.query)
   const match = ftsMatchExpression(terms)
   if (!match) return []
+  if (scope.projectPaths?.length === 0) return []
+  const projects = projectScope('COALESCE(root.project_path, c.project_path)', scope)
   const boundedLimit = Math.max(1, Math.min(limit, MESSAGE_SEARCH_LIMIT))
+  const candidates = scope.onePerChat ? PER_CHAT_CANDIDATES : boundedLimit * CANDIDATE_FACTOR
   // A stored task notice is machine text, and a reload replaces it with the
   // transcript's copy when there is one, so a hit on it can name a row the
   // chat does not show.
@@ -66,6 +97,7 @@ export function searchMessagesInDatabase(
         AND COALESCE(root.sidebar_role, c.sidebar_role) = 'managed'
         AND COALESCE(root.agent_type, c.agent_type) != 'terminal'
         ${archivedFilter}
+        ${projects.sql}
         AND ${notStoredNotice}`
 
   type Row = Omit<SearchResult, 'archived' | 'phraseMatch'> & { archived: number | null }
@@ -86,7 +118,7 @@ export function searchMessagesInDatabase(
       ORDER BY rank
       LIMIT ?
     `)
-        .all(SNIPPET_MARK_OPEN, SNIPPET_MARK_CLOSE, expression, boundedLimit * CANDIDATE_FACTOR) as Row[]
+        .all(SNIPPET_MARK_OPEN, SNIPPET_MARK_CLOSE, expression, ...projects.params, candidates) as Row[]
     rows = ftsRows(match)
     // Words matched apart can fill the candidates before an adjacent match,
     // which ranks first, so phrase candidates are read on their own too.
@@ -125,12 +157,21 @@ export function searchMessagesInDatabase(
     // back; FALLBACK_MAX_CHUNKS stops the scan once a very long run of
     // interior-only matches has been read.
     rows = []
-    for (let chunk = 0; chunk < FALLBACK_MAX_CHUNKS && rows.length < boundedLimit; chunk++) {
-      const page = fallbackPage.all(terms[0], ...likeParams, FALLBACK_CHUNK_SIZE, chunk * FALLBACK_CHUNK_SIZE) as Row[]
+    const chats = new Set<string>()
+    const found = () => (scope.onePerChat ? chats.size : rows.length)
+    for (let chunk = 0; chunk < FALLBACK_MAX_CHUNKS && found() < boundedLimit; chunk++) {
+      const page = fallbackPage.all(
+        terms[0],
+        ...likeParams,
+        ...projects.params,
+        FALLBACK_CHUNK_SIZE,
+        chunk * FALLBACK_CHUNK_SIZE,
+      ) as Row[]
       for (const row of page) {
         if (isWordPrefixMatch(row.content, terms)) {
           rows.push(row)
-          if (rows.length >= boundedLimit) break
+          chats.add(row.conversationId)
+          if (found() >= boundedLimit) break
         }
       }
       if (page.length < FALLBACK_CHUNK_SIZE) break
@@ -142,5 +183,57 @@ export function searchMessagesInDatabase(
     archived: Boolean(row.archived),
     phraseMatch: isPhraseMatch(row.content, terms),
   }))
-  return orderMessageSearchResults(results).slice(0, boundedLimit)
+  const ordered = orderMessageSearchResults(results)
+  if (!scope.onePerChat) return ordered.slice(0, boundedLimit)
+  const seen = new Set<string>()
+  return ordered.filter((hit) => !seen.has(hit.conversationId) && seen.add(hit.conversationId)).slice(0, boundedLimit)
+}
+
+export interface ChatTitleHit {
+  conversationId: string
+  title: string
+  projectPath: string
+  archived: boolean
+}
+
+/** Root chats read per title search, newest first, before the word rule filters them. */
+const TITLE_CANDIDATES = 2000
+
+/**
+ * Root chats whose title holds every term as a word prefix, the rule the
+ * message index applies to message text. Managed, non-terminal roots only,
+ * under the same archive rule, inside `scope`. Newest first. The title is
+ * masked before it is matched, so a saved secret in it matches nothing.
+ */
+export function searchChatTitlesInDatabase(
+  database: Database.Database,
+  query: string,
+  scope: MessageSearchScope = {},
+): ChatTitleHit[] {
+  const intent = parseArchiveIntent(query)
+  const terms = messageSearchTerms(intent.query)
+  if (terms.length === 0 || scope.projectPaths?.length === 0) return []
+  const projects = projectScope('c.project_path', scope)
+  const rows = database
+    .prepare(
+      `SELECT c.id AS conversationId, c.title, c.project_path AS projectPath, c.archived
+         FROM conversations c
+        WHERE c.sidebar_role = 'managed' AND c.agent_type != 'terminal'
+          ${intent.includeArchived ? '' : 'AND c.archived = 0'}
+          ${projects.sql}
+          AND NOT EXISTS (
+            SELECT 1 FROM thread_sessions ts
+             WHERE ts.claude_session_id = c.id AND ts.thread_id != c.id
+          )
+        ORDER BY c.updated_at DESC
+        LIMIT ?`,
+    )
+    .all(...projects.params, TITLE_CANDIDATES) as Array<Omit<ChatTitleHit, 'archived'> & { archived: number }>
+  return rows
+    .map((row) => ({
+      ...row,
+      title: maskStoredText(row.conversationId, row.title ?? ''),
+      archived: row.archived === 1,
+    }))
+    .filter((row) => isWordPrefixMatch(row.title, terms))
 }

@@ -121,6 +121,11 @@ export function getBridgeProjectPolicy(projectId: string): StoredBridgeProjectPo
   return row ? toPolicy(row) : null
 }
 
+/** The owner took the project off the allowlist. True when a policy was there. */
+export function deleteBridgeProjectPolicy(projectId: string): boolean {
+  return getDb().prepare('DELETE FROM bridge_project_policies WHERE project_id = ?').run(projectId).changes > 0
+}
+
 export function listBridgeProjectPolicies(): StoredBridgeProjectPolicy[] {
   return (getDb().prepare('SELECT * FROM bridge_project_policies ORDER BY label').all() as PolicyRow[]).map(toPolicy)
 }

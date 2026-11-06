@@ -35,6 +35,7 @@ import {
   PullRequestWriteChannels,
   SourceControlChannels,
   AgentSecretChannels,
+  BridgeChannels,
 } from '@shared/ipc-channels'
 import type { AgentSecretAnswer, AgentSecretView } from '@shared/agent-secret-request'
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
@@ -1044,6 +1045,15 @@ const api = {
   // Routed by the chat's thread id, so an SSH chat's answer goes through the
   // tunnel to the backend that keeps the file. The answer holds the value:
   // nothing here logs or keeps it.
+  /** Settings > Labs, Instinct bridge projects. Desktop only: the channels are admin scoped. */
+  bridge: {
+    listProjects: (): Promise<import('@shared/bridge').BridgeProjectSetup> =>
+      transport.invoke(BridgeChannels.LIST_PROJECTS),
+    setProjectAllowed: (path: string, allowed: boolean): Promise<import('@shared/bridge').BridgeProjectSetup> =>
+      transport.invoke(BridgeChannels.SET_PROJECT_ALLOWED, { path, allowed }),
+    removeProject: (projectId: string): Promise<import('@shared/bridge').BridgeProjectSetup> =>
+      transport.invoke(BridgeChannels.REMOVE_PROJECT, projectId),
+  },
   agentSecret: {
     answer: (threadId: string, cardId: string, answer: AgentSecretAnswer): Promise<AgentSecretResult> =>
       transport.invoke(AgentSecretChannels.ANSWER, threadId, cardId, answer),

@@ -72,7 +72,7 @@ import type { BackendHost } from '../../src/main/backend/host'
 import type { SecretStore } from '../../src/main/secrets/secret-store'
 import type { McpTool } from '../../src/main/mcp/mcp-session'
 import type { SwitchboardMcpServer } from '../../src/main/mcp/switchboard-mcp-server'
-import { AgentSecretChannels, ProviderChannels } from '../../src/shared/ipc-channels'
+import { AgentSecretChannels, BridgeChannels, ProviderChannels } from '../../src/shared/ipc-channels'
 import {
   AGENT_CARD_MAX_AGE_MS,
   APPROVAL_RESULT_TAG,
@@ -80,7 +80,7 @@ import {
 } from '../../src/shared/agent-approval-cards'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
-import { PHONE_SCOPES, isChannelAllowed } from '../../src/shared/device-auth'
+import { FULL_SCOPES, PHONE_SCOPES, isChannelAllowed } from '../../src/shared/device-auth'
 
 const PROJECT_DIR = mkdtempSync(join(tmpdir(), 'sb-secret-registry-'))
 afterAll(() => rmSync(PROJECT_DIR, { recursive: true, force: true }))
@@ -436,6 +436,41 @@ describe('request_secret in the registry', () => {
     expect(names).toContain('withdraw_approval')
     expect(names).not.toContain('request_secret')
     expect(instructions ?? '').not.toContain('request_secret')
+  })
+})
+
+// The same registry harness: the Instinct bridge read tools follow their flag.
+describe('Instinct bridge read tools in the registry', () => {
+  const BRIDGE_TOOLS = ['list_projects', 'list_recent_chats', 'search_chats', 'read_chat']
+
+  it('lists none of them with instinct_bridge off', async () => {
+    const s = setup()
+    await s.start('chat')
+    for (const name of BRIDGE_TOOLS) expect(s.tool(name)).toBeUndefined()
+  })
+
+  it('lists all four with the flag on, and refuses a call once it is off again', async () => {
+    process.env.SB_INSTINCT_BRIDGE = '1'
+    try {
+      const s = setup()
+      await s.start('chat')
+      for (const name of BRIDGE_TOOLS) expect(s.tool(name)?.annotations.readOnlyHint).toBe(true)
+      const listProjects = s.tool('list_projects')!
+      delete process.env.SB_INSTINCT_BRIDGE
+      const result = await listProjects.call({}, { signal: new AbortController().signal })
+      expect(result.isError).toBe(true)
+      expect(JSON.parse(result.content[0].text as string)).toMatchObject({ code: 'bridge_disabled' })
+      expect(s.tool('list_projects')).toBeUndefined()
+    } finally {
+      delete process.env.SB_INSTINCT_BRIDGE
+    }
+  })
+
+  it('keeps the allowlist channels away from a phone credential', () => {
+    for (const channel of Object.values(BridgeChannels)) {
+      expect(isChannelAllowed(PHONE_SCOPES, channel)).toBe(false)
+      expect(isChannelAllowed(FULL_SCOPES, channel)).toBe(true)
+    }
   })
 })
 

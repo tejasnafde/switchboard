@@ -2,53 +2,74 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "instinct-bridge",
-  "summary": "Instinct bridge, PR 1 (contract and durable records), behind the staged flag instinct_bridge (INSTINCT_BRIDGE_ENABLED in src/shared/bridge.ts, false; SB_INSTINCT_BRIDGE=1 or the backend setting labs.instinct_bridge turns it on; no capability is advertised until the tools ship). src/shared/bridge.ts holds the wire version (1), the seven tool names (search_chats, list_projects, list_recent_chats, start_chat, send_to_chat, read_chat, stop_chat), the three mutating operations, the project policy {project_id, label, machine_id, canonical_local_root, allowed_agents, default_agent, default_model, default_mode, maximum_mode, actions} with defaults auto capped at auto, edit and checks on, commit, push, PR, merge and deploy off, the public project view without the local root, the opaque chat reference {machine_id, chat_id}, the call delivery, chat work, stop and evidence states, the 19 error codes with a structured error and retry advice, the mode check that refuses a mode above the cap instead of changing it, and a canonical input hash for idempotency. An additive migration adds bridge_project_policies (with a revision raised on each save), bridge_calls (unique on operation and idempotency key, with input hash, call id, machine, resolved target, policy revision, state, rejection detail and timestamps; after 90 days a tombstone keeps key, hash and call id, and its key answers request_retired), bridge_origins (one per root chat, resolved through resolveRootThreadId, stamped with the stop generation) and bridge_stop_generation (one monotonic row). src/main/db/bridge.ts reserves calls in an immediate transaction under the call id the relay reserved (or a new one for a local call), moves call states only forward, retires expired calls, recovers calls caught mid-flight at start (recorded becomes rejected with confirmed non-delivery, dispatching becomes delivery_unknown), records and reads origins and reads and advances the stop generation. Settings > Labs gains an Instinct bridge row with a warning that Instinct acts as the owner in allowed projects. Nothing calls these records yet: no relay, no tools and no executable bridge path ship in this part.",
+  "summary": "Instinct bridge, PR 1 (contract and durable records), behind the staged flag instinct_bridge (INSTINCT_BRIDGE_ENABLED in src/shared/bridge.ts, false; SB_INSTINCT_BRIDGE=1 or the backend setting labs.instinct_bridge turns it on; no capability is advertised until the tools ship). src/shared/bridge.ts holds the wire version (1), the seven tool names (search_chats, list_projects, list_recent_chats, start_chat, send_to_chat, read_chat, stop_chat), the three mutating operations, the project policy {project_id, label, machine_id, canonical_local_root, allowed_agents, default_agent, default_model, default_mode, maximum_mode, actions} with defaults auto capped at auto, edit and checks on, commit, push, PR, merge and deploy off, the public project view without the local root, the opaque chat reference {machine_id, chat_id}, the call delivery, chat work, stop and evidence states, the 19 error codes with a structured error and retry advice, the mode check that refuses a mode above the cap instead of changing it, and a canonical input hash for idempotency. An additive migration adds bridge_project_policies (with a revision raised on each save), bridge_calls (unique on operation and idempotency key, with input hash, call id, machine, resolved target, policy revision, state, rejection detail and timestamps; after 90 days a tombstone keeps key, hash and call id, and its key answers request_retired), bridge_origins (one per root chat, resolved through resolveRootThreadId, stamped with the stop generation) and bridge_stop_generation (one monotonic row). src/main/db/bridge.ts reserves calls in an immediate transaction under the call id the relay reserved (or a new one for a local call), moves call states only forward, retires expired calls, recovers calls caught mid-flight at start (recorded becomes rejected with confirmed non-delivery, dispatching becomes delivery_unknown), records and reads origins and reads and advances the stop generation. Settings > Labs gains an Instinct bridge row with a warning that Instinct acts as the owner in allowed projects. Nothing calls these records yet: no relay, no tools and no executable bridge path ship in this part. PR 2 (local read tools): with the flag on, Settings > Labs lists the sidebar projects with a checkbox each (none checked by default); a checked project is saved as a bridge policy under its realpath with the default policy, on this desktop's machine id (the existing hub.installId row), through the admin-scoped bridge:list-projects and bridge:set-project-allowed channels. The Switchboard MCP server gives every local agent list_projects, list_recent_chats, search_chats and read_chat (src/main/bridge/read-service.ts, src/main/mcp/bridge-tools.ts), listed only while the flag is on and refused with bridge_disabled once it is off. The allowlist is applied in SQL before ranking and limits on both the FTS and the fallback message-search path; title matches merge with message hits into one row per root chat (matched_on title, message or both) under the existing word-prefix and archive-word rules; snippets are plain text of at most 240 characters with saved secrets masked; read_chat returns measured status, the latest reply with a partial marker while a turn runs, pending questions and approvals, a bounded masked history window and an opaque since cursor bound to chat, machine and policy revision (unchanged: true or cursor_expired); labels resolve exact id, then exact normalized label, then bounded word-prefix fuzzy, and several plausible matches give ambiguous_target with choices. No answer carries a local path. Results are local only (partial false, no unavailable machines) and evidence is not_measured until the measured-check service. Global search is unchanged.",
   "surfaces": {
     "desktop": {
       "status": "staged",
       "flag": "instinct_bridge",
-      "followUpRelease": "bridge-v2.1: the release that ships the relay connection, the seven tools and the stop controls (bridge PRs 2 to 8) and keeps instinct_bridge off by default until the owner trial on both computers passes. This part adds only the Labs row and the records.",
+      "followUpRelease": "bridge-v2.1: the release that ships the relay connection, the seven tools and the stop controls (bridge PRs 2 to 8) and keeps instinct_bridge off by default until the owner trial on both computers passes. This part adds the allowlist setup in Settings > Labs and the four read tools for local agents.",
       "evidence": [
-        "src/renderer/components/settings/settings-rows.ts",
-        "src/main/db/bridge.ts",
+        "src/main/bridge/read-service.ts",
+        "src/main/bridge/allowlist.ts",
+        "src/main/mcp/bridge-tools.ts",
+        "src/renderer/components/settings/BridgeProjectsPanel.tsx",
+        "tests/unit/bridge-read-service.test.ts",
         "tests/unit/labs-page.test.ts",
-        "tests/unit/labs.test.ts"
+        "tests/unit/secret-request-registry.test.ts"
       ]
     },
     "reactNativeIos": {
       "status": "not_applicable",
-      "reason": "This part has no phone-visible behavior: it adds a desktop Labs row, a shared contract and desktop records that nothing reads yet. Later bridge PRs add bridge-origin, evidence and stop-pending presentation to the phone, with management staged behind instinct_bridge_phone_controls for bridge-v2.1."
+      "reason": "The read tools are desktop MCP tools for local agents and the allowlist setup is desktop only (admin-scoped bridge:* channels a phone credential cannot call). Normal chats, their lists and their messages on the phone are unchanged. Later bridge PRs add bridge-origin, evidence and stop-pending presentation to the phone, with management staged behind instinct_bridge_phone_controls for bridge-v2.1."
     },
     "nativeAndroid": {
       "status": "not_applicable",
-      "reason": "This part has no phone-visible behavior: it adds a desktop Labs row, a shared contract and desktop records that nothing reads yet. Later bridge PRs add bridge-origin, evidence and stop-pending presentation to the phone, with management staged behind instinct_bridge_phone_controls for bridge-v2.1."
+      "reason": "The read tools are desktop MCP tools for local agents and the allowlist setup is desktop only (admin-scoped bridge:* channels a phone credential cannot call). Normal chats, their lists and their messages on the phone are unchanged. Later bridge PRs add bridge-origin, evidence and stop-pending presentation to the phone, with management staged behind instinct_bridge_phone_controls for bridge-v2.1."
     },
     "sharedBackendApi": {
       "status": "implemented",
-      "evidence": ["src/shared/bridge.ts", "src/shared/labs.ts", "tests/unit/bridge-contract.test.ts"]
+      "evidence": [
+        "src/shared/bridge.ts",
+        "src/shared/ipc-channels.ts",
+        "src/shared/device-auth.ts",
+        "src/main/db/message-search.ts",
+        "tests/unit/bridge-contract.test.ts",
+        "tests/unit/bridge-read-service.test.ts",
+        "tests/unit/message-search-contract.test.ts"
+      ]
     },
     "storageDataMigration": {
       "status": "implemented",
-      "evidence": ["src/main/db/bridge.ts", "src/main/db/database.ts", "tests/unit/bridge-db.test.ts"]
+      "evidence": [
+        "src/main/db/bridge.ts",
+        "src/main/db/database.ts",
+        "tests/unit/bridge-db.test.ts",
+        "tests/unit/bridge-read-service.test.ts"
+      ]
     },
     "updateRelease": {
       "status": "staged",
       "flag": "instinct_bridge",
-      "followUpRelease": "bridge-v2.1. The migration is additive (four new tables, no change to existing ones), so an older build reads the database with the bridge tables ignored. The flag stays off by default and advertises no capability in this part.",
-      "evidence": ["CHANGELOG.md"]
+      "followUpRelease": "bridge-v2.1. PR 1's migration is additive (four new tables) and PR 2 adds no migration: policies go in the PR 1 table and the machine id reuses the existing hub.installId settings row. The flag stays off by default and advertises no capability.",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
     }
   },
   "verification": {
     "automated": [
-      "tests/unit/bridge-db.test.ts (createMigratedDb): same key and body returns the first record and target; a changed body is idempotency_conflict; keys of different operations are separate; the same key reserved twice inside an outer transaction gives one call; a key at 90 days answers request_retired before and after the tombstone, which keeps the hash and call id and drops the target; call states move only forward; a rejection records confirmed non-delivery; after a second migrate the records stay and recovery rejects recorded calls and marks dispatching ones delivery_unknown; an origin is stored under the root id and read from a rotated id, the first origin stays, and it carries the stop generation; the stop generation never goes down; a policy save raises the revision and a default above the cap is refused.",
-      "tests/unit/bridge-contract.test.ts: the flag is off by default and on by env or row; exactly seven tools; default policy auto capped at auto with publication off; the public view has no local root; a wider or unknown mode is refused; the error shape and retry advice; the canonical hash ignores key order, undefined and the idempotency key.",
-      "tests/unit/labs.test.ts and tests/unit/labs-page.test.ts: the new flag is in the list, off by default, its reader agrees with labsFlagOn, and the Labs page renders its switch.",
+      "tests/unit/bridge-read-service.test.ts (createMigratedDb): the allowlist starts empty, saves the default policy under the realpath and ignores another machine's policy; title-only, message-only and both hits give one row per root chat (a rotated session's hit joins its root); the allowlist applies before the limit on the FTS path and, with messages_fts dropped, on the fallback path; archived chats only with the archive word; an empty index answers empty lists; snippets are plain, at most 240 characters, and mask a saved secret; recent chats order by message time and live activity, not metadata; project and chat labels resolve exactly, fuzzily and as ambiguous_target with choices; a chat outside the allowlist or on another machine is refused; read_chat returns status, latest reply with partial, pending questions and not_measured evidence; the since cursor gives unchanged, then only new messages, and cursor_expired for another chat, a forged cursor and a policy change; no answer holds the project folder path.",
+      "tests/unit/secret-request-registry.test.ts (real registry): the four tools are not listed with instinct_bridge off, are listed read-only with it on, and a call after it turns off answers bridge_disabled; bridge:* channels are refused for PHONE_SCOPES and allowed for FULL_SCOPES.",
+      "tests/unit/labs-page.test.ts: the project list appears only after the Instinct bridge switch is on, and a checkbox calls setProjectAllowed and shows the saved state.",
+      "Existing message-search tests (message-search-contract, message-search-query) stay green: global search passes no project scope.",
+      "PR 1 tests (bridge-db, bridge-contract, labs) unchanged and green.",
       "npm run typecheck and npx vitest run --maxWorkers=2 pass."
     ],
     "hardware": [],
     "notExercised": [
-      "No packaged build was started on existing user data for this part; the migration is additive and was exercised only on in-memory databases.",
-      "The Settings > Labs screenshot baselines (settings-labs) were not refreshed for the new row."
+      "No packaged build was started on existing user data yet for this part; the orchestrator runs the high-risk packaged test (MCP tool exposure) before merge.",
+      "read_chat's history in the unit test reads stored rows through a mocked history window; the real loadConversationHistoryWindow (transcripts, masking) is covered by the history tests, not end to end here.",
+      "The Settings > Labs screenshot baselines are unchanged: the project list shows only with the flag on, and baselines are taken with it off."
     ]
   }
 }

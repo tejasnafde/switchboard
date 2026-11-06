@@ -4,11 +4,12 @@
  * while the flag it needs is off (disabled, the stored row kept), else the
  * stored `labs.<flag>` row it writes through `setting-values.ts`.
  */
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { labsFlag, type LabsFlagId, type LabsFlagState } from '@shared/labs'
 import { SETTING_ROW, labsWhen, type SettingRowDef } from './settings-rows'
 import { SETTINGS_CHANGED_ELSEWHERE } from '../../services/settings-file-sync'
 import { Switch } from '../ui/switch'
+import { BridgeProjectsPanel } from './BridgeProjectsPanel'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('settings:labs')
@@ -52,24 +53,29 @@ export function LabsPage({
   highlight: string | null
 }) {
   const forced = useForcedFlags()
+  const bridge = rowForFlag('instinct_bridge')
+  const bridgeOn = forced.has('instinct_bridge') || values[bridge.id] === 'true'
   return (
     <>
       {SECTIONS.map((section) => (
-        <section key={section} className="mb-[18px]">
-          <h3 className="mb-2 text-[11px] font-[500] leading-4 text-[var(--text-muted)]">{section}</h3>
-          <div className="overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)]">
-            {LABS_ROWS.filter((row) => row.section === section).map((row) => (
-              <LabsRow
-                key={row.id}
-                def={row}
-                values={values}
-                forced={forced}
-                set={set}
-                highlighted={highlight === row.id}
-              />
-            ))}
-          </div>
-        </section>
+        <Fragment key={section}>
+          <section className="mb-[18px]">
+            <h3 className="mb-2 text-[11px] font-[500] leading-4 text-[var(--text-muted)]">{section}</h3>
+            <div className="overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)]">
+              {LABS_ROWS.filter((row) => row.section === section).map((row) => (
+                <LabsRow
+                  key={row.id}
+                  def={row}
+                  values={values}
+                  forced={forced}
+                  set={set}
+                  highlighted={highlight === row.id}
+                />
+              ))}
+            </div>
+          </section>
+          {bridgeOn && section === bridge.section && <BridgeProjectsPanel />}
+        </Fragment>
       ))}
     </>
   )
