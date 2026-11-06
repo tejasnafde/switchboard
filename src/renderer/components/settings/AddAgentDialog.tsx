@@ -54,6 +54,7 @@ import {
   type AcpRegistryEntry,
   type AcpRegistryResult,
 } from './acp-registry-source'
+import { labsFlag } from '@shared/labs'
 
 const log = createRendererLogger('settings:add-agent')
 
@@ -104,6 +105,15 @@ export function AddAgentDialog({
   const [useForNewChats, setUseForNewChats] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [registrySearch, setRegistrySearch] = useState(ACP_REGISTRY_SEARCH_ENABLED)
+  // The dialog mounts on open, so the Labs switch applies the next time it opens.
+  useEffect(() => {
+    if (ACP_REGISTRY_SEARCH_ENABLED) return
+    window.api.settings
+      .get(labsFlag('acp_registry_search').setting)
+      .then((value: string | null) => setRegistrySearch(value === 'true'))
+      .catch((err: unknown) => log.warn('reading the acp_registry_search labs setting failed', err))
+  }, [])
 
   const agent: AgentProvider = localMode ? ACP_COMMAND_AGENT : kind
   const methods = signInMethods(agent)
@@ -330,9 +340,7 @@ export function AddAgentDialog({
                   <Hint>Install it in a terminal, then Recheck. Continue stays off until it is found.</Hint>
                 </div>
               )}
-              {ACP_REGISTRY_SEARCH_ENABLED && (
-                <RegistrySection onAdd={addFromRegistry} onUseLocal={() => setLocalMode(true)} />
-              )}
+              {registrySearch && <RegistrySection onAdd={addFromRegistry} onUseLocal={() => setLocalMode(true)} />}
             </>
           )}
 

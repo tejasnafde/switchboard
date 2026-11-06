@@ -69,10 +69,7 @@ export function SnoozePresetsPanel({ now = () => new Date() }: { now?: () => Dat
   if (!loaded)
     return (
       <section aria-labelledby="snooze-presets-title">
-        <h3
-          id="snooze-presets-title"
-          className="mb-1 text-[11px] font-[600] uppercase tracking-[0.07em] text-[var(--text-muted)]"
-        >
+        <h3 id="snooze-presets-title" className="mb-1 text-[11px] font-[500] leading-4 text-[var(--text-muted)]">
           Snooze presets
         </h3>
         <p role="status" className="m-0 text-[12px] text-[var(--text-secondary)]">
@@ -264,10 +261,7 @@ function PresetsEditor({ now }: { now: () => Date }) {
   return (
     <div className="flex flex-col gap-[18px]">
       <section aria-labelledby="snooze-presets-title">
-        <h3
-          id="snooze-presets-title"
-          className="mb-1 text-[11px] font-[600] uppercase tracking-[0.07em] text-[var(--text-muted)]"
-        >
+        <h3 id="snooze-presets-title" className="mb-1 text-[11px] font-[500] leading-4 text-[var(--text-muted)]">
           Snooze presets
         </h3>
         <p className="mb-1 text-[12px] text-[var(--text-secondary)]">
@@ -354,10 +348,7 @@ function PresetsEditor({ now }: { now: () => Date }) {
         </ul>
       </section>
       <section aria-labelledby="snooze-preview-title">
-        <h3
-          id="snooze-preview-title"
-          className="mb-1 text-[11px] font-[600] uppercase tracking-[0.07em] text-[var(--text-muted)]"
-        >
+        <h3 id="snooze-preview-title" className="mb-1 text-[11px] font-[500] leading-4 text-[var(--text-muted)]">
           Menu preview
         </h3>
         <p className="mb-1 text-[12px] text-[var(--text-secondary)]">{previewAtText(committed.at)}</p>

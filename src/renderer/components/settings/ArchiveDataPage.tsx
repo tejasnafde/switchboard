@@ -7,7 +7,7 @@ import { Button } from '../ui/button'
 
 type Anchor = ComponentType<{ def: SettingRowDef; children: ReactNode }>
 
-const sectionTitleClass = 'mb-2 text-[11px] font-[600] uppercase tracking-[0.07em] text-[var(--text-muted)]'
+const sectionTitleClass = 'mb-2 text-[11px] font-[500] leading-4 text-[var(--text-muted)]'
 
 /**
  * Settings > Archive & data. "Review" swaps the page for the worktree

@@ -1,6 +1,6 @@
 /**
  * The capabilities a `ready` frame carries: the fixed `BACKEND_CAPABILITIES`
- * plus those advertised only while a staged flag is on (`hubFlagCapabilities`).
+ * plus those advertised only while a Labs flag is on (`labsFlagCapabilities`).
  * The flag reader is set once the database is open, and read at each `ready`,
  * so a client learns a flag change on its next connect.
  */

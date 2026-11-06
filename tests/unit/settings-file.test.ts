@@ -42,7 +42,10 @@ const ROW_KEYS: Record<string, string> = {
 
 describe('settings.json allow-list', () => {
   it('holds exactly the value rows of the Settings page, with their defaults', () => {
-    const valueRows = SETTING_ROWS.filter((r) => r.defaultValue !== undefined && r.page !== 'keyboard')
+    // Labs rows stay out of the file: the page shows when an env var forces a flag, the file could not.
+    const valueRows = SETTING_ROWS.filter(
+      (r) => r.defaultValue !== undefined && r.page !== 'keyboard' && r.page !== 'labs',
+    )
     expect(valueRows.map((r) => r.id).sort()).toEqual(Object.keys(ROW_KEYS).sort())
     expect(FILE_SETTINGS.map((s) => s.key).sort()).toEqual(Object.values(ROW_KEYS).sort())
     for (const row of valueRows) expect(fileSetting(ROW_KEYS[row.id])!.defaultValue, row.id).toBe(row.defaultValue)

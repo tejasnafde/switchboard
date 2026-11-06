@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { readyCapabilities, setFlagCapabilities } from '../../src/main/backend/flag-capabilities'
 import { BACKEND_CAPABILITIES } from '../../src/shared/ws-protocol'
-import { hubFlagCapabilities } from '../../src/shared/hub'
+import { labsFlagCapabilities } from '../../src/shared/labs'
 
 describe('readyCapabilities', () => {
   afterEach(() => setFlagCapabilities(() => []))
@@ -12,10 +12,12 @@ describe('readyCapabilities', () => {
 
   it('adds what the flag reader answers at each call', () => {
     const env: NodeJS.ProcessEnv = {}
-    setFlagCapabilities(() => hubFlagCapabilities(env, () => null))
+    setFlagCapabilities(() => labsFlagCapabilities(env, () => null))
     expect(readyCapabilities()).not.toContain('hub_children_v1')
     env.SB_HUB_CHILDREN = '1'
     expect(readyCapabilities()).toEqual([...BACKEND_CAPABILITIES, 'hub_children_v1'])
+    env.SB_AGENT_SECRET_REQUEST = '1'
+    expect(readyCapabilities()).toEqual([...BACKEND_CAPABILITIES, 'agent_secret_request_v1', 'hub_children_v1'])
   })
 
   it('falls back to the fixed set when the reader throws', () => {

@@ -66,6 +66,8 @@ describe('visual regression harness safety', () => {
         'add-agent-config',
         'accounts-codex-reset',
         'accounts-codex-reset-confirm',
+        'settings-labs',
+        'settings-labs-children',
         'settings-devices',
         'settings-devices-details',
         'kanban',

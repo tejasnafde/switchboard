@@ -22,6 +22,7 @@ import { RUNTIME_MODE_OPTIONS } from '../chat/runtime-mode-options'
 import { formatPeerLinkDuration, parsePeerLinkDuration, PEER_LINK_DURATION_CHOICES } from '@shared/peer-links'
 import { AUTO_RESUME_AFTER_LIMIT_SETTING, LIMIT_AUTO_RESUME_ENABLED } from '@shared/limit-resume'
 import { HUB_RECONNECT_ON_LAUNCH_SETTING, HUB_REMOTE_CHILDREN_ENABLED } from '@shared/hub'
+import { labsFlag, type LabsFlagId } from '@shared/labs'
 
 export type SettingsPageId =
   | 'general'
@@ -32,6 +33,7 @@ export type SettingsPageId =
   | 'keyboard'
   | 'devices'
   | 'data'
+  | 'labs'
   | 'about'
 
 export interface SettingsPage {
@@ -54,6 +56,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   { id: 'keyboard', title: 'Keyboard', description: 'Every shortcut, with the keys for this computer.' },
   { id: 'devices', title: 'Devices & machines', description: 'Phones paired with this Mac.' },
   { id: 'data', title: 'Archive & data', description: 'Archived chats and worktrees.' },
+  {
+    id: 'labs',
+    title: 'Labs',
+    description:
+      'Unfinished features that can break, change or go away in an update. A switch here applies to this Mac and its paired phones, not to other machines.',
+  },
   {
     id: 'about',
     title: 'About',
@@ -79,6 +87,52 @@ export interface SettingRowDef {
   scopeKey?: ScopableSettingKey
   /** A select or segmented row's choices, shown in the control and in search results. */
   options?: ReadonlyArray<{ value: string; label: string }>
+  /** A Labs page row. */
+  labs?: LabsRowCopy
+}
+
+export interface LabsRowCopy {
+  /** The flag the switch sets; a row without one is read-only and shows `note` instead. */
+  flag?: LabsFlagId
+  note?: string
+  warning?: string
+  /** Where the feature runs, the first part of the meta line. */
+  where: string
+  /** The second part, for a row whose flag does not say when a change applies. */
+  when?: string
+  /** The paragraphs behind More. */
+  more: readonly string[]
+}
+
+const APPLIES_TEXT = {
+  new_chats: 'applies to new chats',
+  at_once: 'applies at once',
+  dialog_open: 'applies when the dialog opens',
+} as const
+
+/** The meta line's "when" part. */
+export function labsWhen(copy: LabsRowCopy): string {
+  return copy.flag ? APPLIES_TEXT[labsFlag(copy.flag).applies] : (copy.when ?? '')
+}
+
+/** A switch row: the flag's setting key, off by default like the flag. */
+function labsRow(
+  flag: LabsFlagId,
+  section: string,
+  label: string,
+  description: string,
+  copy: Omit<LabsRowCopy, 'flag'>,
+) {
+  const def = labsFlag(flag)
+  return {
+    id: def.setting,
+    page: 'labs',
+    section,
+    label,
+    description,
+    defaultValue: String(def.defaultOn),
+    labs: { flag, ...copy },
+  } satisfies SettingRowDef
 }
 
 export const PRIVACY_POLICY_URL = 'https://tn07.dev/privacy'
@@ -318,6 +372,138 @@ const ROWS = {
     label: 'Worktrees',
     description: 'Size, git state and linked chat of every worktree, with a cleanup that never loses work unasked.',
   },
+  labsSecretRequest: labsRow(
+    'agent_secret_request',
+    'Agents',
+    'Secret request card',
+    'The agent can ask for a secret with a card. Saving it makes a temporary private file, and the agent gets the file path, not the value.',
+    {
+      warning: 'The agent can read that file and may expose the value in commands or output.',
+      where: 'Desktop and phones',
+      more: [
+        'Save a secret only for a chat you trust. Each file expires after the lifetime the card asks for.',
+        "Phones can view and decline a card but not save. A chat on an SSH machine keeps the file in that machine's data folder.",
+        'Not in plan mode or in an open child chat. Up to 3 open requests and 5 requests per 10 minutes.',
+        'Delete saved secrets before you turn this off. Off blocks save, list, extend and delete, and does not remove existing files. Stop does not delete them.',
+        'A running chat keeps the request tool until it restarts. A restart inside a chat picks up the change.',
+      ],
+    },
+  ),
+  labsVisualPreview: labsRow(
+    'agent_visual_preview',
+    'Agents',
+    'Visual preview',
+    'The agent can draw a chart, a diagram or a live page in a hidden window and check the image before it posts it.',
+    {
+      warning: 'A page from the agent runs in the hidden window with the same limits as a posted page.',
+      where: 'Desktop only',
+      more: [
+        'Five renders per turn, 20 seconds each.',
+        'Not on other machines: they have no window to draw in.',
+        'A running chat keeps its tools until it restarts.',
+      ],
+    },
+  ),
+  labsLimitResume: labsRow(
+    'limit_auto_resume',
+    'Agents',
+    'Resume after a usage limit',
+    'A chat stopped by a Claude or Codex usage limit starts again by itself after the reset time, when auto-resume is also on in Accounts.',
+    {
+      where: 'Desktop and phones',
+      more: [
+        'Stop, Cancel or archive cancels the pending resume. A later limit can arm it again.',
+        'Waits at least one minute after the reset and gives up after three quick failures. A closed chat waits until it is opened again.',
+        'OpenCode and other agents are not recognized.',
+      ],
+    },
+  ),
+  labsOpencode2: labsRow(
+    'opencode_v2_acp',
+    'Agents',
+    'OpenCode 2',
+    'Lets OpenCode version 2 run in Switchboard instead of being refused at start.',
+    {
+      warning: 'OpenCode 2 upgrades its own data and sign-ins, and turning this off does not undo that.',
+      where: 'Desktop and phones',
+      more: [
+        'Going back to OpenCode 1.x may not work cleanly.',
+        'Not on other machines: they refuse OpenCode 2 whatever this switch says.',
+        'Question handling and signed-in approval flows are not fully verified.',
+      ],
+    },
+  ),
+  labsHubChildren: labsRow(
+    'hub_children',
+    'Child chats',
+    'Child chats',
+    'A chat can start child chats, usually in their own worktrees, and gets their updates in batches while it is idle.',
+    {
+      warning: "Children use your agent accounts and can run commands with the parent's permissions.",
+      where: 'Desktop and phones',
+      more: [
+        'Not in plan mode. An open child cannot start children of its own.',
+        'In auto-accept edits mode or above, a local child starts without a separate approval card. Check the child count and running limits before a batch.',
+        'Phones list, open and stop children. Settle children and deliver held updates on the desktop.',
+        "Stop or settle children before you turn this off. Off hides running children at once, and the parent's Stop no longer stops them.",
+      ],
+    },
+  ),
+  labsHubRemoteChildren: labsRow(
+    'hub_remote_children',
+    'Child chats',
+    'Children on other machines',
+    'After you approve the batch, a chat on this desktop can start a child on a saved machine. Needs Child chats, and this switch on at both ends.',
+    {
+      warning: "The child uses that machine's account and data, within that machine's permission limit.",
+      where: 'Desktop, phones and other machines',
+      more: [
+        'Off closes the connections at once.',
+        'Phones show status, the latest report and Stop. They keep no remote history and cannot approve a batch.',
+      ],
+    },
+  ),
+  labsRegistrySearch: labsRow(
+    'acp_registry_search',
+    'Agent catalog',
+    'Agent registry search',
+    'Shows a search box in the Add agent dialog. Its source is a placeholder that always reports unavailable.',
+    { where: 'Desktop only', more: [] },
+  ),
+  labsPhoneLivePages: {
+    id: 'labsInfo.phoneLivePages',
+    page: 'labs',
+    section: 'Phones',
+    label: 'Run live pages on a phone',
+    description:
+      "Runs supported pages on the phone, one at a time, when Run live pages is on in the phone's settings. Off by default while device testing is unfinished.",
+    labs: {
+      note: 'Set on each phone',
+      where: 'Phones only',
+      when: 'off by default',
+      more: [
+        'iOS: Settings > Chat. Android: Settings > Labs.',
+        'Some pages still show a still image. On iOS press Run to start a page; Android may also ask for Run.',
+      ],
+    },
+  },
+  labsSnooze: {
+    id: 'labsInfo.snooze',
+    page: 'labs',
+    section: 'Shipped',
+    label: 'Snooze',
+    description:
+      "Hides a chat from Recents until a chosen time or a linked pull request event. It returns earlier if it needs you, fails or gets a person's message.",
+    labs: {
+      note: 'Always on',
+      where: 'Desktop, phones and other machines',
+      when: 'shipped',
+      more: [
+        'The agent keeps running while the chat is hidden.',
+        'Snooze controls on a phone need a desktop version that has Snooze.',
+      ],
+    },
+  },
   about: {
     id: 'about.app',
     page: 'about',
@@ -411,14 +597,27 @@ export function pageTitle(id: SettingsPageId): string {
 
 /**
  * Rows matching every whitespace-separated term of `query`, case-insensitive,
- * across the label, description, section, page title and keys. Empty query,
+ * across the label, description, section, page title and keys, and a Labs
+ * row's warning, More text, setting key and env var. Empty query,
  * no results: the page shows its own content instead.
  */
 export function searchSettingRows(query: string, rows: readonly SettingRowDef[] = settingRows()): SettingRowDef[] {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
   if (terms.length === 0) return []
   return rows.filter((row) => {
-    const haystack = [row.label, row.description, row.section, pageTitle(row.page), row.keys]
+    const flag = row.labs?.flag && labsFlag(row.labs.flag)
+    const haystack = [
+      row.label,
+      row.description,
+      row.section,
+      pageTitle(row.page),
+      row.keys,
+      row.labs?.warning,
+      row.labs?.where,
+      ...(row.labs?.more ?? []),
+      flag && flag.setting,
+      flag && flag.envVar,
+    ]
       .filter(Boolean)
       .join(' ')
       .toLowerCase()

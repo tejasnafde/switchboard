@@ -24,6 +24,11 @@
   --accent-subtle: rgba(88, 166, 255, 0.12);
   --success: #3fb950;
   --warning: #d29922;
+  /* ui/switch: the Off track's line and thumb, and the focus ring, readable on --bg-surface. */
+  --switch-off: #2b3036;
+  --switch-off-line: #8b949e;
+  --switch-off-thumb: #c9d1d9;
+  --switch-focus: #58a6ff;
   --error: #f85149;
   /* Text on a surface; the bright tokens above stay for fills. */
   --text-success: #3fb950;
@@ -76,6 +81,10 @@
   --accent-subtle: rgba(37, 99, 235, 0.08);
   --success: #16a34a;
   --warning: #ca8a04;
+  --switch-off: #eceff2;
+  --switch-off-line: #6b7280;
+  --switch-off-thumb: #6b7280;
+  --switch-focus: #2563eb;
   --error: #dc2626;
   /* Text on a surface: the fills above read under 4.5:1 on white. */
   --text-success: #15803d;
@@ -124,6 +133,10 @@
   --accent-subtle: rgba(88, 166, 255, 0.10);
   --success: #3fb950;
   --warning: #d29922;
+  --switch-off: #2b3036;
+  --switch-off-line: #8b949e;
+  --switch-off-thumb: #c9d1d9;
+  --switch-focus: #58a6ff;
   --error: #f85149;
   /* Text on a surface; the bright tokens above stay for fills. */
   --text-success: #3fb950;

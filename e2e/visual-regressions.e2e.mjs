@@ -891,6 +891,22 @@ async function captureThemeScreens(win, theme) {
       .click()
     await settings.locator('[data-account]').filter({ hasText: name }).waitFor({ state: 'detached' })
   }
+  // Labs with every flag off, then Child chats on (the remote row enabled) and back off,
+  // so no later screen runs with a flag on.
+  await settings.getByRole('button', { name: /^Labs/ }).click()
+  const childSwitch = settings.getByRole('switch', { name: 'Child chats' })
+  await childSwitch.waitFor({ state: 'visible' })
+  await win.waitForFunction(
+    () => !document.querySelector('.settings-page [role="switch"][aria-labelledby="labs-hub_children-label"]:disabled'),
+  )
+  await snapScreen(win, 'settings-labs', theme, settings)
+  const childSection = settings.locator('section', { has: win.locator('h3', { hasText: /^Child chats$/ }) })
+  await childSwitch.click()
+  await settings.getByRole('switch', { name: 'Children on other machines' }).and(win.locator(':enabled')).waitFor()
+  await childSection.scrollIntoViewIfNeeded()
+  await snapScreen(win, 'settings-labs-children', theme, childSection)
+  await childSwitch.click()
+  await settings.getByRole('switch', { name: 'Children on other machines' }).and(win.locator(':disabled')).waitFor()
   // Light and dark only: the list is plain surfaces, nothing translucent-specific.
   if (theme !== 'Translucent') await captureDevicesScreens(win, theme, settings)
   await win.keyboard.press('Escape')

@@ -47,7 +47,8 @@ import { pruneAttachments } from './attachments'
 import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass } from './ipc/app-desktop'
 import { disposeSettingsFileSync, registerSettingsFileHandlers, settingsFileSync } from './ipc/settings-file'
 import { isSettingsFileKey } from '@shared/settings-file'
-import { HUB_REMOTE_CHILDREN_LABS_SETTING, hubFlagCapabilities } from '@shared/hub'
+import { HUB_CHILDREN_LABS_SETTING, HUB_REMOTE_CHILDREN_LABS_SETTING } from '@shared/hub'
+import { labsFlagCapabilities } from '@shared/labs'
 import {
   hubRemoteSettingChanged,
   reconnectHubMachinesOnLaunch,
@@ -353,7 +354,7 @@ function desktopAppHandlerDeps(): AppHandlerDependencies {
 function onSettingChanged(key: string): void {
   if (key === KEYBOARD_OVERRIDES_SETTING) applyKeyboardOverrides()
   if (isSettingsFileKey(key)) settingsFileSync()?.onDbChanged()
-  if (key === HUB_REMOTE_CHILDREN_LABS_SETTING) hubRemoteSettingChanged()
+  if (key === HUB_REMOTE_CHILDREN_LABS_SETTING || key === HUB_CHILDREN_LABS_SETTING) hubRemoteSettingChanged()
 }
 
 // Custom protocol for onboarding tour videos. Must be registered as
@@ -1036,7 +1037,7 @@ app.whenReady().then(() => {
   void reconnectHubMachinesOnLaunch()
   worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(backendHost, () => providerRegistry)
   configureHubWorktrees(worktreeCreationRuntime)
-  setFlagCapabilities(() => hubFlagCapabilities(process.env, getSetting))
+  setFlagCapabilities(() => labsFlagCapabilities(process.env, getSetting))
   detachPush = attachPushNotifier(providerRegistry.bus, {
     // OS-level idle, so it is true whatever window is in front. The headless
     // server passes nothing and therefore never suppresses.

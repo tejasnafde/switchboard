@@ -14,6 +14,9 @@ import { createHash } from 'node:crypto'
 import { existsSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, sep } from 'node:path'
 import { createMainLogger } from '../../../logger'
+import { getSetting } from '../../../db/database'
+import { labsFlagOn } from '@shared/labs'
+import type { SettingReader } from '@shared/limit-resume'
 
 const log = createMainLogger('provider:opencode:version')
 
@@ -24,12 +27,26 @@ export const OPENCODE_FIRST_UNSUPPORTED_MAJOR = 2
 /**
  * Staged flag `opencode_v2_acp`: OpenCode 2.x through the ACP adapter. Off
  * until the v2 path is verified with a signed-in provider. `SB_OPENCODE_V2_ACP=1`
- * in Switchboard's own env turns it on for testing.
+ * in Switchboard's own env, or the labs setting, turns it on for testing.
+ * Read at each spawn, so a change reaches the next session.
  */
 export const OPENCODE_V2_ACP_ENABLED = false
 
-export function opencodeV2AcpEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return OPENCODE_V2_ACP_ENABLED || env.SB_OPENCODE_V2_ACP === '1'
+/** A settings read that fails leaves the flag off rather than failing the spawn. */
+function storedSetting(key: string): string | null {
+  try {
+    return getSetting(key)
+  } catch (err) {
+    log.warn(`reading ${key} failed; treating it as off`, err)
+    return null
+  }
+}
+
+export function opencodeV2AcpEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+  readSetting: SettingReader = storedSetting,
+): boolean {
+  return OPENCODE_V2_ACP_ENABLED || labsFlagOn('opencode_v2_acp', env, readSetting)
 }
 
 /** Which OpenCode command line a binary speaks: 1.x, or 2.x behind the flag. */

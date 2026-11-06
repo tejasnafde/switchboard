@@ -10,6 +10,7 @@ import { PEER_LINK_DURATION_SETTING, peerLinkDurationChoice } from '@shared/peer
 import { SETTING_DEFAULT_RUNTIME_MODE, isRuntimeMode } from '@shared/session-defaults'
 import { AUTO_RESUME_AFTER_LIMIT_SETTING } from '@shared/limit-resume'
 import { HUB_RECONNECT_ON_LAUNCH_SETTING } from '@shared/hub'
+import { LABS_FLAGS } from '@shared/labs'
 import { useLayoutStore } from '../../stores/layout-store'
 import { getStoreDefaultRuntimeMode, setStoreDefaultRuntimeMode } from '../../stores/agent-store'
 import { useThemeStore, type ThemeName } from '../../stores/theme-store'
@@ -115,6 +116,16 @@ const BINDINGS: Record<string, Binding> = {
     read: async () => flag((await window.api.settings.get('tour.autoplay')) !== 'false'),
     write: (v) => window.api.settings.set('tour.autoplay', v),
   },
+  // The stored Labs rows; a missing row is off. The page shows env-forced flags from `settings.labsState()`.
+  ...Object.fromEntries(
+    LABS_FLAGS.map((f): [string, Binding] => [
+      f.setting,
+      {
+        read: async () => flag((await window.api.settings.get(f.setting)) === 'true'),
+        write: (v) => window.api.settings.set(f.setting, v),
+      },
+    ]),
+  ),
   // Same platform filter as the rows: the macOS-only terminal keys have no row elsewhere.
   ...Object.fromEntries(
     shortcutsFor(currentPlatform(), SHORTCUTS)

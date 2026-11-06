@@ -16,6 +16,7 @@ import {
   isSettingsFrameAllowed,
 } from '../../src/shared/device-auth'
 import { projectOverrideKey } from '../../src/shared/project-settings'
+import { LABS_SETTING_KEYS } from '../../src/shared/labs'
 
 const cleanups: Array<() => void> = []
 afterEach(() => {
@@ -110,6 +111,18 @@ describe('device-auth settings over WsHost', () => {
       expect((await desktop.call('settings:set', [key, '[]'])).ok).toBe(true)
       expect((await desktop.call('settings:get', [key])).ok).toBe(true)
     }
+  })
+
+  it('lets a phone read the Labs rows but only the desktop write them', async () => {
+    const phone = await connect(['chat'])
+    const desktop = await connect([...FULL_SCOPES])
+    for (const key of LABS_SETTING_KEYS) {
+      expect((await phone.call('settings:get', [key])).ok).toBe(true)
+      expect((await phone.call('settings:set', [key, 'true'])).ok).toBe(false)
+      expect((await phone.call('settings:remove', [key])).ok).toBe(false)
+      expect((await desktop.call('settings:set', [key, 'true'])).ok).toBe(true)
+    }
+    expect(phone.calls.filter((c) => !c.startsWith('settings:get'))).toEqual([])
   })
 
   it('leaves ordinary settings open to the phone', async () => {

@@ -1,0 +1,56 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "settings-labs",
+  "summary": "Settings > Labs on the desktop: one row per staged flag (Secret request card, Visual preview, Resume after a usage limit, OpenCode 2, Child chats, Children on other machines, Agent registry search) with a switch, a warning line where the flag carries one, a where and when line and a More disclosure, plus two read-only rows (Run live pages on a phone: set on each phone; Snooze: always on). shared/labs.ts lists the flags once (key labs.<flag>, env var, default, when a change applies, the flag it needs, the capability it advertises) and reads the effective state: env var 1 over the stored labs row over the compiled default, and off while the needed flag is off. Every default stays off. A flag forced by its env var shows Forced on with the switch disabled; Children on other machines is off and disabled while Child chats is off, and its stored row is kept. The switches write the existing settings rows through settings:set; the labs.* rows are now admin-only for writes (ADMIN_ONLY_SETTING_KEYS), so a phone can read them but not switch them. New rows: labs.opencode_v2_acp (read at each OpenCode spawn) and labs.acp_registry_search (read when the Add agent dialog opens). New read channel settings:labs-state answers each flag's forced and on state, never other env. Fix: agent_secret_request_v1 left the fixed BACKEND_CAPABILITIES list and is advertised in ready only while agent_secret_request is on (labsFlagCapabilities, with the two hub capabilities). The shared Switch gets an opaque focus ring with a surface gap and an Off track with a visible line and thumb, and Settings section headings are sentence case without tracking, on every page.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/settings/LabsPage.tsx",
+        "src/renderer/components/settings/settings-rows.ts",
+        "src/renderer/components/settings/setting-values.ts",
+        "src/renderer/components/settings/AddAgentDialog.tsx",
+        "src/renderer/components/ui/switch.tsx",
+        "src/preload/index.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The desktop flags are backend settings rows that only the desktop may write; the phone learns the ones it uses from ready capabilities, which it already reads. The phone's own live pages preference stays under Settings > Chat on iOS, so no phone Labs screen is added."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Same as iOS: the flags are desktop-written backend rows and the phone reads capabilities. Android keeps its own Settings > Labs with Run live pages."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/labs.ts",
+        "src/shared/device-auth.ts",
+        "src/shared/ws-protocol.ts",
+        "src/main/ipc/app.ts",
+        "src/main/provider/adapters/opencode/version.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema change. The labs.* rows are ordinary settings rows; a missing row reads as off, and rows set by hand before keep working."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships in the next desktop release with no new flag; every Labs flag keeps its off default."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/labs.test.ts tests/unit/labs-page.test.ts tests/unit/flag-capabilities.test.ts tests/unit/agent-secret-channels-private.test.ts tests/unit/settings-device-auth-gate.test.ts tests/unit/settings-rows.test.ts tests/unit/settings-page-render.test.ts tests/unit/opencode-version-gate.test.ts: the flag list and defaults, env over row over default, the dependency, each feature reader equal to labsFlagOn, capabilities only while on, phone read allowed and write refused over WsHost, save and reload, a failed write, env forced with the row off, parent off with the child row on, and search by key, env var and warning.",
+      "Screenshot baselines settings-labs in Dark, Light and Translucent (npm run test:e2e:visual)."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "A phone reconnecting after the secret request flag changes, on a real device.",
+      "A packaged build from existing user data."
+    ]
+  }
+}

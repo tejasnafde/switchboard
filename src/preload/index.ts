@@ -720,6 +720,7 @@ const api = {
     get: (key: string) => transport.invoke('settings:get', key),
     set: (key: string, value: string) => transport.invoke('settings:set', key, value),
     remove: (key: string) => transport.invoke('settings:remove', key),
+    labsState: (): Promise<import('@shared/labs').LabsFlagState[]> => transport.invoke(AppChannels.LABS_STATE),
     /** Each project's overrides, keyed by the path as given. */
     projectOverrides: (
       projectPaths: string[],

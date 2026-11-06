@@ -2,12 +2,12 @@
  * Search over an index of ACP agents, for the Add agent dialog.
  *
  * STAGED: no registry backend exists yet, so the dialog's registry section is
- * behind `ACP_REGISTRY_SEARCH_ENABLED` (off) and the only source is a stub
+ * behind `ACP_REGISTRY_SEARCH_ENABLED` (off, or the Labs row) and the only source is a stub
  * that always reports the registry as unreachable. A real source replaces
  * `STUB_ACP_REGISTRY_SOURCE`; nothing here names an index URL.
  */
 
-/** Feature flag `acp_registry_search`. Off until a registry backend exists. */
+/** Feature flag `acp_registry_search`. Off until a registry backend exists; the `labs.acp_registry_search` row turns it on. */
 export const ACP_REGISTRY_SEARCH_ENABLED = false
 
 export interface AcpRegistryEntry {

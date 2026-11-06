@@ -17,7 +17,6 @@ import {
   hubBriefTurn,
   hubChildrenEnabled,
   hubChildStopTarget,
-  hubFlagCapabilities,
   HUB_REMOTE_CHILDREN_LABS_SETTING,
   hubNeedsCard,
   hubUpdateTurn,
@@ -28,6 +27,7 @@ import {
   moveChildProblem,
   wakeBatchDecision,
 } from '../../src/shared/hub'
+import { labsFlagCapabilities } from '../../src/shared/labs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const cases = JSON.parse(readFileSync(resolve(here, '../fixtures/hub-cases.json'), 'utf8'))
@@ -66,17 +66,17 @@ describe('hub rules (tests/fixtures/hub-cases.json)', () => {
   })
 })
 
-describe('hubFlagCapabilities', () => {
+describe('labsFlagCapabilities for the hub flags', () => {
   const settings = (on: string[]) => (k: string) => (on.includes(k) ? 'true' : null)
   it('advertises nothing with the flags off', () => {
-    expect(hubFlagCapabilities({}, settings([]))).toEqual([])
+    expect(labsFlagCapabilities({}, settings([]))).toEqual([])
   })
   it('advertises hub_children_v1 with hub_children on', () => {
-    expect(hubFlagCapabilities({}, settings([HUB_CHILDREN_LABS_SETTING]))).toEqual(['hub_children_v1'])
+    expect(labsFlagCapabilities({}, settings([HUB_CHILDREN_LABS_SETTING]))).toEqual(['hub_children_v1'])
   })
   it('adds hub_remote_children_v1 only while both flags are on', () => {
-    expect(hubFlagCapabilities({}, settings([HUB_REMOTE_CHILDREN_LABS_SETTING]))).toEqual([])
-    expect(hubFlagCapabilities({ SB_HUB_CHILDREN: '1', SB_HUB_REMOTE_CHILDREN: '1' }, settings([]))).toEqual([
+    expect(labsFlagCapabilities({}, settings([HUB_REMOTE_CHILDREN_LABS_SETTING]))).toEqual([])
+    expect(labsFlagCapabilities({ SB_HUB_CHILDREN: '1', SB_HUB_REMOTE_CHILDREN: '1' }, settings([]))).toEqual([
       'hub_children_v1',
       'hub_remote_children_v1',
     ])
