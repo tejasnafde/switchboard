@@ -56,6 +56,7 @@ import {
   reserveBridgeCall,
   resolveRootThreadId,
   setConversationModel,
+  setConversationProviderInstanceId,
   setConversationRuntimeMode,
   updateBridgeCallState,
   type BridgeCallRecord,
@@ -82,7 +83,8 @@ export interface BridgeDeliveryHost {
   liveThread(chatId: string): string | null
   /** A session start for this thread is in flight. */
   starting(threadId: string): boolean
-  startSession(opts: SessionStartOpts): Promise<unknown>
+  /** Resolves to the started session; `instanceId` is the account it resolved to. */
+  startSession(opts: SessionStartOpts): Promise<{ instanceId?: string }>
   submitTurn(input: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult>
   /** The live session's provider. */
   provider(threadId: string): string | null
@@ -161,7 +163,7 @@ export interface BridgeSendReceipt extends ReceiptBase {
 }
 
 export interface BridgeStopReceipt extends ReceiptBase {
-  /** `stopping` until the interrupted turn reports its end. */
+  /** `stopped` only once the chat has no turn left; a stop that cannot confirm that is `stop_unconfirmed`. */
   status: 'stopping' | 'stopped' | null
 }
 
@@ -222,6 +224,7 @@ export class BridgeDeliveryService {
     private readonly host: BridgeDeliveryHost,
     private readonly reads: BridgeReadService,
     private readonly now: () => number = Date.now,
+    private readonly timing = { stopConfirmMs: 20_000, stopPollMs: 200 },
   ) {}
 
   // ─── start_chat ───────────────────────────────────────────────
@@ -316,13 +319,15 @@ export class BridgeDeliveryService {
       const fence = this.fence(chatId)
       const ref = { machine_id: machineId, chat_id: chatId }
       try {
-        await this.host.startSession({
+        const session = await this.host.startSession({
           threadId: chatId,
           provider: providerKindFor(agent),
           cwd: project.sidebarPath,
           runtimeMode: mode.mode,
           ...(model ? { model } : {}),
         })
+        // As a client does for a new chat: a resume after a restart keeps the account it started on.
+        if (session.instanceId) setConversationProviderInstanceId(chatId, session.instanceId)
       } catch (err) {
         log.warn('bridge start: the session did not start', { callId, chatId, err: String(err) })
         if (this.fenced(chatId, fence)) return this.reject(callId, stoppedBeforeSend(ref))
@@ -463,7 +468,7 @@ export class BridgeDeliveryService {
     this.active.add(callId)
     try {
       updateBridgeCallState(callId, 'dispatching')
-      let status: 'stopping' | 'stopped'
+      let status: 'stopped'
       try {
         status = await this.halt(chatId)
       } catch (err) {
@@ -740,9 +745,12 @@ export class BridgeDeliveryService {
   /**
    * The chat's own stop: its queued bridge messages are taken back (the
    * owner's own queued messages stay, held as after any Stop), then the
-   * running turn is interrupted and its automatic resume disarmed.
+   * user's Stop runs until the chat has no turn left. An adapter ignores a
+   * Stop that comes before its provider took the turn, so the Stop is sent
+   * again until the turn ends; a turn still running at the deadline throws,
+   * and the caller answers `stop_unconfirmed`.
    */
-  private async halt(chatId: string): Promise<'stopping' | 'stopped'> {
+  private async halt(chatId: string): Promise<'stopped'> {
     const live = this.host.liveThread(chatId)
     if (live) {
       for (const queued of this.host.queuedTurns(live)) {
@@ -751,8 +759,14 @@ export class BridgeDeliveryService {
         if (!cancelled.ok) log.warn('queued bridge message not cancelled', { chatId, reason: cancelled.reason })
       }
     }
-    if (live || this.host.starting(chatId)) await this.host.interrupt(live ?? chatId)
-    return this.host.busy(chatId) ? 'stopping' : 'stopped'
+    const deadline = this.now() + this.timing.stopConfirmMs
+    for (;;) {
+      const thread = this.host.liveThread(chatId)
+      if (thread || this.host.starting(chatId)) await this.host.interrupt(thread ?? chatId)
+      if (!this.host.busy(chatId) && !this.host.starting(chatId)) return 'stopped'
+      if (this.now() >= deadline) throw new Error('the turn was still running at the stop deadline')
+      await new Promise((resolve) => setTimeout(resolve, this.timing.stopPollMs))
+    }
   }
 
   /** A stop came while the turn was being accepted: the turn went in, so stop it again. */

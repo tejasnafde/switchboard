@@ -225,6 +225,17 @@ describe('ProviderRegistry queued messages', () => {
     deleted.length = 0
   })
 
+  it('blocks a bridge steer until the provider sent its first event and reply', async () => {
+    const t = await setup('claude')
+    const bridge = (Reflect.get(t.registry, 'bridgeDeliveryHost') as () => { steerBlocked(id: string): boolean }).call(
+      t.registry,
+    )
+    await t.submit('a')
+    expect(bridge.steerBlocked('t1')).toBe(true)
+    t.adapter.emit({ type: 'content', threadId: 't1', messageId: 'm1', streamKind: 'assistant', text: 'hi' })
+    expect(bridge.steerBlocked('t1')).toBe(false)
+  })
+
   it('lists a held message with its text, and announces it that way', async () => {
     const t = await setup('claude')
     await t.submit('a')

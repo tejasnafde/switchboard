@@ -34,6 +34,7 @@ import {
   getBridgeCall,
   getBridgeOrigin,
   getConversationById,
+  getConversationProviderInstanceId,
   getConversationRuntimeMode,
   getDb,
   getMessagesForConversation,
@@ -95,6 +96,9 @@ class FakeHost implements BridgeDeliveryHost {
   onStart: ((opts: SessionStartOpts) => Promise<void>) | null = null
   /** The provider takes the turn, then the process "dies" before the answer. */
   dieAfterDispatch = false
+  /** False while the provider has not taken the turn yet: a Stop then does nothing. */
+  interruptLands = true
+  instanceId = 'claude-code-work'
   private readonly atomic = new AtomicUserTurnSubmission({
     store: new SqliteTurnAcceptanceStore(() => getDb()),
     publish: () => {},
@@ -111,8 +115,9 @@ class FakeHost implements BridgeDeliveryHost {
   starting = (threadId: string) => this.startingThreads.has(threadId)
   startSession = async (opts: SessionStartOpts) => {
     this.starts.push(opts)
-    if (this.onStart) return this.onStart(opts)
-    this.live.set(opts.threadId, { provider: opts.provider, midTurn: false, steerBlocked: false })
+    if (this.onStart) await this.onStart(opts)
+    else this.live.set(opts.threadId, { provider: opts.provider, midTurn: false, steerBlocked: false })
+    return { instanceId: this.instanceId }
   }
   submitTurn = async (input: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> => {
     const result = await this.atomic.submit(input, {
@@ -135,6 +140,7 @@ class FakeHost implements BridgeDeliveryHost {
   agentAvailable = async (agent: AgentType) => agent !== 'gemini'
   interrupt = async (threadId: string) => {
     this.interrupts.push(threadId)
+    if (this.interruptLands) this.busyChats.delete(resolveRootThreadId(threadId))
   }
   queuedTurns = (threadId: string) => this.queued.get(threadId) ?? []
   cancelQueuedTurn = async (threadId: string, messageId: string) => {
@@ -184,7 +190,7 @@ beforeEach(() => {
     machineId: () => MACHINE,
     live: { status: () => null, busy: (id) => host.busy(id), pending: (id) => host.pending.get(id) ?? [] },
   })
-  delivery = new BridgeDeliveryService(host, reads)
+  delivery = new BridgeDeliveryService(host, reads, Date.now, { stopConfirmMs: 300, stopPollMs: 5 })
   addProject(ALLOWED, 'Raves site')
   addProject(OTHER, 'Other')
   setBridgeProjectAllowed(ALLOWED, true, MACHINE)
@@ -209,6 +215,8 @@ describe('start_chat', () => {
     expect(stored.map((m) => [m.id, m.role, m.content])).toEqual([[receipt.message_id, 'user', 'Fix the header']])
     expect(getConversationById(receipt.chat.chat_id)?.title).not.toBe('New conversation')
     expect(getBridgeOrigin(receipt.chat.chat_id)?.callId).toBe(receipt.call_id)
+    // A resume after a restart starts on the same account.
+    expect(getConversationProviderInstanceId(receipt.chat.chat_id)).toBe('claude-code-work')
   })
 
   it('replays the same key and body, refuses a changed body, and never sends twice', async () => {
@@ -290,13 +298,17 @@ describe('start_chat', () => {
         }
       })
     }
+    // As the registry does: a Stop during the start makes the start end with SESSION_START_STOPPED.
+    host.interrupt = async (threadId) => {
+      host.interrupts.push(threadId)
+      if (host.startingThreads.has(threadId)) release()
+    }
     const starting = start()
     await vi.waitFor(() => expect(host.starts).toHaveLength(1))
     const chatId = host.starts[0].threadId
     const stopped = ok(await delivery.stopChat(agent(), { chat: chatId, idempotency_key: key() }))
     expect(stopped).toMatchObject({ state: 'accepted', status: 'stopped' })
     expect(host.interrupts).toEqual([chatId])
-    release()
     const refused = err(await starting)
     expect(refused).toMatchObject({ code: 'policy_denied', non_delivery_confirmed: true })
     expect(host.dispatched).toHaveLength(0)
@@ -488,13 +500,35 @@ describe('stop_chat', () => {
       { threadId: 'c1', messageId: 'remote_owner-typed', text: 'mine', queuedAt: 2 },
     ])
     const receipt = ok(await delivery.stopChat(agent('plan'), { chat: 'c1', idempotency_key: 'stop' }))
-    expect(receipt).toMatchObject({ state: 'accepted', status: 'stopping' })
+    expect(receipt).toMatchObject({ state: 'accepted', status: 'stopped' })
     expect(host.cancelled).toEqual(['remote_bridge-bcall_x'])
     expect(host.interrupts).toEqual(['c1'])
-    host.busyChats.clear()
     const replay = ok(await delivery.stopChat(agent('plan'), { chat: 'c1', idempotency_key: 'stop' }))
     expect(replay).toMatchObject({ call_id: receipt.call_id, replayed: true, status: 'stopped' })
     expect(host.interrupts).toHaveLength(1)
+  })
+
+  it('a stop right after a start keeps stopping until the provider takes the turn, then answers stopped', async () => {
+    const started = ok(await start())
+    const chatId = started.chat.chat_id
+    // The turn counts as running, but the provider has not taken it: a Stop does nothing yet.
+    host.busyChats.add(chatId)
+    host.interruptLands = false
+    setTimeout(() => {
+      host.interruptLands = true
+    }, 40)
+    const stopped = ok(await delivery.stopChat(agent(), { chat: chatId, idempotency_key: key() }))
+    expect(stopped.status).toBe('stopped')
+    expect(host.interrupts.length).toBeGreaterThan(1)
+    expect(host.busy(chatId)).toBe(false)
+  })
+
+  it('a stop the provider never takes is stop_unconfirmed, not stopping', async () => {
+    idleChat('c1')
+    host.busyChats.add('c1')
+    host.interruptLands = false
+    const refused = err(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() }))
+    expect(refused.code).toBe('stop_unconfirmed')
   })
 
   it('a stop that throws is stop_unconfirmed, never stopped', async () => {

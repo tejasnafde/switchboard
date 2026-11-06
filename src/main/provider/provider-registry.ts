@@ -713,7 +713,10 @@ export class ProviderRegistry implements PeerToolHost {
       submitTurn: (input) => this.submitManagedUserTurn(input),
       provider: (threadId) => this.sessionAdapters.get(threadId)?.provider ?? null,
       midTurn: (threadId) => this.hasOutstandingTurn(threadId),
-      steerBlocked: (threadId) => this.steerBlocked.has(threadId),
+      // Also before the provider's first event or reply: an adapter whose provider has not
+      // taken the first turn yet runs a steer as a turn of its own.
+      steerBlocked: (threadId) =>
+        this.steerBlocked.has(threadId) || this.firstEventSpans.has(threadId) || this.firstContentSpans.has(threadId),
       busy: (chatId) => this.isBusy(chatId),
       chatMode: (chatId) => this.chatRuntimeMode(chatId),
       isOpenChild: (chatId) => this.hubStarter.isOpenChild(chatId),
@@ -4513,7 +4516,7 @@ export class ProviderRegistry implements PeerToolHost {
     }
     try {
       log.info(
-        `submitUserTurn ${threadId} chars=${input.providerText.length} mode=${input.runtimeMode ?? 'sandbox'} images=${input.images?.length ?? 0}`,
+        `submitUserTurn ${threadId} chars=${input.providerText.length} mode=${input.runtimeMode ?? `${this.chatRuntimeMode(threadId)} (kept)`} images=${input.images?.length ?? 0}`,
       )
       const clientScope =
         currentBackendRequestContext()?.clientScope ??

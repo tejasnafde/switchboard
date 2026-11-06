@@ -26,11 +26,20 @@ export function bridgeProjectId(machineId: string, root: string): string {
   return `bproj_${createHash('sha256').update(`${machineId}\0${root}`).digest('hex').slice(0, 20)}`
 }
 
-function realpathOrNull(path: string): string | null {
+/** Folders that did not resolve last time: each is logged once, again only after it resolved in between. */
+const unresolved = new Set<string>()
+
+/** A project folder's realpath, or null when it is gone. */
+export function bridgeRealpath(path: string): string | null {
   try {
-    return realpathSync.native(path)
+    const real = realpathSync.native(path)
+    unresolved.delete(path)
+    return real
   } catch (err) {
-    log.warn('project folder does not resolve', { code: (err as NodeJS.ErrnoException).code })
+    if (!unresolved.has(path)) {
+      unresolved.add(path)
+      log.info('project folder does not resolve', { code: (err as NodeJS.ErrnoException).code })
+    }
     return null
   }
 }
@@ -44,7 +53,7 @@ export function listBridgeProjectSetup(machineId = hubInstallId()): BridgeProjec
   const policies = listBridgeProjectPolicies().filter((p) => p.machine_id === machineId)
   const allowedIds = new Set(policies.map((p) => p.project_id))
   const rows: BridgeProjectSetupRow[] = getProjects().map((project) => {
-    const root = realpathOrNull(project.path)
+    const root = bridgeRealpath(project.path)
     const projectId = root === null ? null : bridgeProjectId(machineId, root)
     return {
       path: project.path,
@@ -77,7 +86,7 @@ export function removeBridgeProject(projectId: string): void {
 export function setBridgeProjectAllowed(path: string, allowed: boolean, machineId = hubInstallId()): void {
   const project = getProjects().find((p) => p.path === path)
   if (!project) throw new Error('That folder is not a Switchboard project.')
-  const root = realpathOrNull(project.path)
+  const root = bridgeRealpath(project.path)
   if (root === null) throw new Error('That project folder cannot be read.')
   const projectId = bridgeProjectId(machineId, root)
   if (!allowed) {

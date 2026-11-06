@@ -13,7 +13,6 @@
  * service exists.
  */
 import { createHash, randomUUID } from 'node:crypto'
-import { realpathSync } from 'node:fs'
 import {
   bridgeError,
   publicProjectView,
@@ -42,6 +41,7 @@ import { searchChatTitlesInDatabase, searchMessagesInDatabase, type SearchResult
 import { maskStoredText } from '../db/secret-mask'
 import { loadConversationHistoryWindow } from '../conversations/history'
 import { createMainLogger } from '../logger'
+import { bridgeRealpath } from './allowlist'
 import { resolveLabel } from './resolve-label'
 
 const log = createMainLogger('bridge:read')
@@ -182,15 +182,6 @@ interface CursorBody {
   l: string | null
 }
 
-function realpathOrNull(path: string): string | null {
-  try {
-    return realpathSync.native(path)
-  } catch (err) {
-    log.debug('project path does not resolve', { code: (err as NodeJS.ErrnoException).code })
-    return null
-  }
-}
-
 function cap(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 3)}...`
 }
@@ -309,7 +300,7 @@ export class BridgeReadService {
   allowed(machineId: string): AllowedProject[] {
     const policies = listBridgeProjectPolicies().filter((p) => p.machine_id === machineId)
     if (policies.length === 0) return []
-    const known = getProjects().map((p) => ({ path: p.path, real: realpathOrNull(p.path) }))
+    const known = getProjects().map((p) => ({ path: p.path, real: bridgeRealpath(p.path) }))
     return policies.flatMap((policy) => {
       const paths = known.filter((p) => p.real === policy.canonical_local_root).map((p) => p.path)
       return paths.length === 0
