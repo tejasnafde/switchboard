@@ -7,13 +7,19 @@ import {
   type BridgeCallState,
   type BridgeErrorCode,
   type BridgeOperation,
+  type BridgeOriginMarker,
+  type BridgeOriginStopState,
   type BridgeProjectActions,
   type BridgeProjectPolicy,
+  type BridgeStopResult,
 } from '@shared/bridge'
 import type { RuntimeMode } from '@shared/provider-events'
 import type { AgentType } from '@shared/types'
 import { getDb } from './database'
 import { resolveRootThreadId } from './conversations'
+import { createMainLogger } from '../logger'
+
+const log = createMainLogger('db:bridge')
 
 // ─── Instinct bridge: project policies, call ledger, origins, stop generation ──
 //
@@ -69,11 +75,26 @@ export function ensureBridgeSchema(db: Database.Database): void {
       updated_at  INTEGER NOT NULL
     );
   `)
-  const callColumns = new Set(
-    (db.prepare('PRAGMA table_info(bridge_calls)').all() as Array<{ name: string }>).map((c) => c.name),
-  )
+  const callColumns = columnsOf(db, 'bridge_calls')
   // What an accepted call did (the actual delivery, the stop status), for a replay.
   if (!callColumns.has('result')) db.exec('ALTER TABLE bridge_calls ADD COLUMN result TEXT')
+  const originColumns = columnsOf(db, 'bridge_origins')
+  // Who started the work: a local agent, or the owner through the relay (the control lease covers only that).
+  if (!originColumns.has('source'))
+    db.exec(`ALTER TABLE bridge_origins ADD COLUMN source TEXT NOT NULL DEFAULT 'local'`)
+  // The last stop's state on this chat; NULL again after the next bridge call.
+  if (!originColumns.has('stop_state')) db.exec('ALTER TABLE bridge_origins ADD COLUMN stop_state TEXT')
+  const stopColumns = columnsOf(db, 'bridge_stop_generation')
+  if (!stopColumns.has('killed'))
+    db.exec('ALTER TABLE bridge_stop_generation ADD COLUMN killed INTEGER NOT NULL DEFAULT 0')
+  // A Stop all made here that the relay has not confirmed yet: sent again on the next welcome.
+  if (!stopColumns.has('kill_pending'))
+    db.exec('ALTER TABLE bridge_stop_generation ADD COLUMN kill_pending INTEGER NOT NULL DEFAULT 0')
+  if (!stopColumns.has('last_result')) db.exec('ALTER TABLE bridge_stop_generation ADD COLUMN last_result TEXT')
+}
+
+function columnsOf(db: Database.Database, table: string): Set<string> {
+  return new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name))
 }
 
 // ─── Project policies ───────────────────────────────────────────
@@ -339,13 +360,19 @@ export function recoverBridgeCalls(): { rejected: number; unknown: number } {
 
 // ─── Origins ────────────────────────────────────────────────────
 
+/** `local`: a local agent's MCP call. `relay`: the owner through the relay, held by the control lease. */
+export type BridgeOriginSource = 'local' | 'relay'
+
 export interface BridgeOrigin {
   conversationId: string
   callId: string
   projectId: string
   machineId: string
   policyRevision: number
+  /** The stop generation of the latest bridge call into the chat. */
   stopGeneration: number
+  source: BridgeOriginSource
+  stopState: BridgeOriginStopState | null
   createdAt: number
 }
 
@@ -356,6 +383,8 @@ type OriginRow = {
   machine_id: string
   policy_revision: number
   stop_generation: number
+  source: BridgeOriginSource
+  stop_state: BridgeOriginStopState | null
   created_at: number
 }
 
@@ -366,12 +395,16 @@ const toOrigin = (r: OriginRow): BridgeOrigin => ({
   machineId: r.machine_id,
   policyRevision: r.policy_revision,
   stopGeneration: r.stop_generation,
+  source: r.source,
+  stopState: r.stop_state,
   createdAt: r.created_at,
 })
 
 /**
- * Marks a chat as bridge-started, under its root id. The first origin stays:
- * a later call into the same chat returns it unchanged.
+ * Marks a chat as bridge-started, under its root id. The first call, project
+ * and revision stay. A later call into the same chat stamps the current stop
+ * generation, clears the last stop state, and makes the source `relay` once
+ * any relay call reached it.
  */
 export function recordBridgeOrigin(o: {
   conversationId: string
@@ -379,14 +412,35 @@ export function recordBridgeOrigin(o: {
   projectId: string
   machineId: string
   policyRevision: number
+  source: BridgeOriginSource
 }): BridgeOrigin {
   const db = getDb()
   const root = resolveRootThreadId(o.conversationId, db)
   db.prepare(
-    `INSERT INTO bridge_origins (conversation_id, call_id, project_id, machine_id, policy_revision, stop_generation, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(conversation_id) DO NOTHING`,
-  ).run(root, o.callId, o.projectId, o.machineId, o.policyRevision, readBridgeStopGeneration(), Date.now())
+    `INSERT INTO bridge_origins (conversation_id, call_id, project_id, machine_id, policy_revision, stop_generation,
+       source, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(conversation_id) DO UPDATE SET
+       stop_generation = excluded.stop_generation, stop_state = NULL,
+       source = CASE WHEN excluded.source = 'relay' THEN 'relay' ELSE source END`,
+  ).run(root, o.callId, o.projectId, o.machineId, o.policyRevision, readBridgeStopGeneration(), o.source, Date.now())
   return getBridgeOrigin(root)!
+}
+
+/** Records a stop's state on these chats (root ids). */
+export function setBridgeOriginStopState(conversationIds: string[], state: BridgeOriginStopState): void {
+  const db = getDb()
+  const update = db.prepare('UPDATE bridge_origins SET stop_state = ? WHERE conversation_id = ?')
+  db.transaction(() => {
+    for (const id of conversationIds) update.run(state, id)
+  })()
+}
+
+/** Every chat with a bridge origin, as the chat lists mark it: root id to its marker. */
+export function bridgeOriginMarkers(): Map<string, BridgeOriginMarker> {
+  const rows = getDb().prepare('SELECT conversation_id, stop_state FROM bridge_origins').all() as Array<
+    Pick<OriginRow, 'conversation_id' | 'stop_state'>
+  >
+  return new Map(rows.map((r) => [r.conversation_id, { stop: r.stop_state }]))
 }
 
 /** The chats bridge work started or reached on one machine. */
@@ -414,21 +468,87 @@ export function readBridgeStopGeneration(): number {
   return row?.generation ?? 0
 }
 
+export interface BridgeStopRecord {
+  generation: number
+  killed: boolean
+  /** A kill made on this desktop that the relay has not confirmed yet. */
+  killPending: boolean
+  lastResult: BridgeStopResult | null
+}
+
+type StopRow = { generation: number; killed: number; kill_pending: number; last_result: string | null }
+
+export function readBridgeStopRecord(): BridgeStopRecord {
+  const row = getDb()
+    .prepare('SELECT generation, killed, kill_pending, last_result FROM bridge_stop_generation WHERE id = 1')
+    .get() as StopRow | undefined
+  if (!row) return { generation: 0, killed: false, killPending: false, lastResult: null }
+  let lastResult: BridgeStopResult | null = null
+  try {
+    lastResult = row.last_result ? (JSON.parse(row.last_result) as BridgeStopResult) : null
+  } catch (err) {
+    // A row this build cannot read counts as no result: the next stop writes a new one.
+    log.warn('the last bridge stop result is not valid JSON, starting over', err)
+  }
+  return { generation: row.generation, killed: row.killed === 1, killPending: row.kill_pending === 1, lastResult }
+}
+
 /**
- * Raises the stop generation and returns it: by one for a local stop, or to
- * `to` for a generation the relay recorded. It never goes down.
+ * Writes the stop state in one transaction. The generation never goes down;
+ * `killed` and `killPending` are written as given, and `lastResult` only when
+ * passed. Returns the stored record.
  */
-export function advanceBridgeStopGeneration(to?: number): number {
+export function writeBridgeStopRecord(next: {
+  generation: number
+  killed: boolean
+  killPending: boolean
+  lastResult?: BridgeStopResult
+}): BridgeStopRecord {
   const db = getDb()
   return db
-    .transaction((): number => {
-      const current = readBridgeStopGeneration()
-      const next = to === undefined ? current + 1 : Math.max(current, to)
+    .transaction((): BridgeStopRecord => {
+      const current = readBridgeStopRecord()
+      const result = next.lastResult ?? current.lastResult
       db.prepare(
-        `INSERT INTO bridge_stop_generation (id, generation, updated_at) VALUES (1, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET generation = excluded.generation, updated_at = excluded.updated_at`,
-      ).run(next, Date.now())
-      return next
+        `INSERT INTO bridge_stop_generation (id, generation, killed, kill_pending, last_result, updated_at)
+         VALUES (1, @generation, @killed, @killPending, @lastResult, @now)
+         ON CONFLICT(id) DO UPDATE SET generation = excluded.generation, killed = excluded.killed,
+           kill_pending = excluded.kill_pending, last_result = excluded.last_result, updated_at = excluded.updated_at`,
+      ).run({
+        generation: Math.max(current.generation, next.generation),
+        killed: next.killed ? 1 : 0,
+        killPending: next.killPending ? 1 : 0,
+        lastResult: result ? JSON.stringify(result) : null,
+        now: Date.now(),
+      })
+      return readBridgeStopRecord()
     })
     .immediate()
+}
+
+/** At start: a stop that was still pending when the app ended cannot be accounted for. Returns those chats. */
+export function markPendingBridgeStopsUnconfirmed(): string[] {
+  const db = getDb()
+  return db
+    .transaction((): string[] => {
+      const ids = (
+        db.prepare(`SELECT conversation_id FROM bridge_origins WHERE stop_state = 'pending'`).all() as Array<{
+          conversation_id: string
+        }>
+      ).map((r) => r.conversation_id)
+      db.prepare(`UPDATE bridge_origins SET stop_state = 'unconfirmed' WHERE stop_state = 'pending'`).run()
+      return ids
+    })
+    .immediate()
+}
+
+/**
+ * Automatic resumes (limit auto-resume) skip a bridge chat while bridge work
+ * is killed, or when a stop of all bridge work came after its last bridge call.
+ */
+export function bridgeAutoResumeBlocked(conversationId: string): boolean {
+  const origin = getBridgeOrigin(conversationId)
+  if (!origin) return false
+  const stop = readBridgeStopRecord()
+  return stop.killed || origin.stopGeneration < stop.generation
 }

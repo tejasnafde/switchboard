@@ -9,6 +9,7 @@ import {
   DEFAULT_BRIDGE_RELAY_ORIGIN,
   instinctBridgeEnabled,
   type BridgeCatalogProject,
+  type BridgeControl,
   type BridgeDeviceStatus,
 } from '@shared/bridge'
 import { appVersion } from '../runtime'
@@ -37,7 +38,22 @@ export interface DeviceLinkDeps {
   keys: DeviceKeyDeps
   catalog(machineId: string): BridgeCatalogProject[]
   userAgent: string
-  createClient(deps: RelayClientDeps): Pick<BridgeRelayClient, 'start' | 'stop' | 'sendCatalog' | 'status'>
+  createClient(
+    deps: RelayClientDeps,
+  ): Pick<BridgeRelayClient, 'start' | 'stop' | 'sendCatalog' | 'status' | 'lastContactAt' | 'sendStopAck' | 'sendKill'>
+}
+
+/** The stop service's side of the relay connection. */
+export interface BridgeRelayControlListener {
+  control(control: BridgeControl): void
+  /** The relay closed with `revoked`, or the owner removed this desktop's enrollment. */
+  authorityLost(reason: 'revoked' | 'unenrolled'): void
+}
+
+let controlListener: BridgeRelayControlListener | null = null
+
+export function onBridgeRelayControl(listener: BridgeRelayControlListener | null): void {
+  controlListener = listener
 }
 
 /** The allowed projects as the relay sees them: ids, labels, agents and the mode cap. */
@@ -78,6 +94,8 @@ export class BridgeDeviceLink {
   private client: ReturnType<DeviceLinkDeps['createClient']> | null = null
   private clientStatus: RelayClientStatus | null = null
   private keyError: string | null = null
+  /** The last relay contact of a client that is gone, so the lease outlives a reconnect. */
+  private lastContact: number | null = null
 
   constructor(private readonly deps: DeviceLinkDeps) {}
 
@@ -121,6 +139,8 @@ export class BridgeDeviceLink {
       onStatus: (status) => {
         this.clientStatus = status
       },
+      onControl: (control) => controlListener?.control(control),
+      onRevoked: () => controlListener?.authorityLost('revoked'),
     })
     log.info('bridge relay connection starting')
     this.client.start()
@@ -128,6 +148,7 @@ export class BridgeDeviceLink {
 
   private stopClient(): void {
     if (!this.client) return
+    this.lastContact = this.lastContactAt()
     this.client.stop()
     this.client = null
     this.clientStatus = null
@@ -140,6 +161,26 @@ export class BridgeDeviceLink {
 
   catalogChanged(): void {
     this.client?.sendCatalog()
+  }
+
+  /** The last frame from the relay in this run of the app, or null. */
+  lastContactAt(): number | null {
+    const live = this.client?.lastContactAt() ?? null
+    if (live === null) return this.lastContact
+    return this.lastContact === null ? live : Math.max(live, this.lastContact)
+  }
+
+  enrolled(): boolean {
+    return deviceKeyStored(this.deps.keys)
+  }
+
+  /** False when no authenticated connection could take it. */
+  sendStopAck(generation: number, state: 'confirmed' | 'unconfirmed'): boolean {
+    return this.client?.sendStopAck(generation, state) ?? false
+  }
+
+  sendKill(generation: number): boolean {
+    return this.client?.sendKill(generation) ?? false
   }
 
   enroll(label: string): BridgeDeviceStatus {
@@ -159,6 +200,7 @@ export class BridgeDeviceLink {
     this.stopClient()
     removeDeviceKey(this.deps.keys)
     this.keyError = null
+    controlListener?.authorityLost('unenrolled')
     return this.status()
   }
 

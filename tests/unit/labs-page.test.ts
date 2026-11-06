@@ -14,6 +14,7 @@ import type { LabsFlagState } from '../../src/shared/labs'
 import { LabsPage } from '../../src/renderer/components/settings/LabsPage'
 import { useSettingValues } from '../../src/renderer/components/settings/setting-values'
 import { searchSettingRows } from '../../src/renderer/components/settings/settings-rows'
+import { ConfirmHost } from '../../src/renderer/components/ui/confirm'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -26,6 +27,9 @@ const removeBridgeProject = vi.fn()
 const deviceStatus = vi.fn()
 const enrollDevice = vi.fn()
 const removeDevice = vi.fn()
+const stopStatus = vi.fn()
+const stopAll = vi.fn()
+const clearKill = vi.fn()
 const set = vi.fn(async (key: string, value: string) => {
   if (failWrites) throw new Error('refused')
   rows.set(key, value)
@@ -53,8 +57,21 @@ const DEVICE = {
   operator_command: null,
 }
 
+const STOP = {
+  killed: false,
+  stop_generation: 0,
+  kill_pending: false,
+  enrolled: true,
+  last_result: null,
+  active_chats: 0,
+  last_contact_at: null,
+  lease_expires_at: null,
+  clear_command: null,
+}
+
 beforeEach(() => {
   deviceStatus.mockResolvedValue({ ...DEVICE, enabled: false, state: 'off' })
+  stopStatus.mockResolvedValue(STOP)
   rows = new Map()
   forced = []
   failWrites = false
@@ -73,6 +90,9 @@ beforeEach(() => {
         enrollDevice,
         setDeviceLabel: vi.fn(),
         removeDevice,
+        stopStatus,
+        stopAll,
+        clearKill,
       },
     },
     { get: (target, prop) => (prop in target ? target[prop as 'settings'] : anything) },
@@ -91,7 +111,12 @@ afterEach(() => {
 
 function Harness() {
   const { values, set: setValue } = useSettingValues()
-  return createElement(LabsPage, { values, set: setValue, highlight: null })
+  return createElement(
+    'div',
+    null,
+    createElement(LabsPage, { values, set: setValue, highlight: null }),
+    createElement(ConfirmHost),
+  )
 }
 
 async function mount() {
@@ -178,6 +203,65 @@ describe('Labs page', () => {
       'Refused by the relay (not_enrolled). Trying again later.',
     )
     expect([...panel.querySelectorAll('button')].some((b) => b.textContent === 'Remove enrollment')).toBe(true)
+  })
+
+  it('stops all bridge work after the confirm and shows the kill with the operator command', async () => {
+    rows.set('labs.instinct_bridge', 'true')
+    bridgeProjects.mockResolvedValue({ enabled: true, projects: [] })
+    deviceStatus.mockResolvedValue(DEVICE)
+    stopAll.mockResolvedValue({
+      ...STOP,
+      killed: true,
+      stop_generation: 3,
+      kill_pending: true,
+      last_result: {
+        generation: 3,
+        state: 'unconfirmed',
+        unconfirmed: ['c1'],
+        unconfirmed_titles: ['Fix the header'],
+        stopped: 1,
+        at: 1,
+      },
+      clear_command: 'node scripts/bridge-operator.mjs clear-kill',
+    })
+    await mount()
+    const panel = container.querySelector('[data-testid="bridge-stop"]')!
+    expect(panel.textContent).toContain('also interrupts a turn you started when the bridge steered')
+    expect(panel.querySelector('[data-testid="bridge-stop-killed"]')!.textContent).toBe('Allowed')
+    const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === text)!
+    await act(async () => button('Stop all bridge work').click())
+    expect(document.querySelector('[role="alertdialog"]')!.textContent).toContain('Stop all bridge work?')
+    await act(async () => button('Cancel').click())
+    expect(stopAll).not.toHaveBeenCalled()
+    await act(async () => button('Stop all bridge work').click())
+    await act(async () => button('Stop all').click())
+    expect(stopAll).toHaveBeenCalledTimes(1)
+    expect(panel.querySelector('[data-testid="bridge-stop-killed"]')!.textContent).toBe(
+      'Stopped. New bridge work is refused.',
+    )
+    expect(panel.querySelector('[data-testid="bridge-stop-generation"]')!.textContent).toBe(
+      '3 (not sent to the relay yet)',
+    )
+    expect(panel.querySelector('[data-testid="bridge-stop-result"]')!.textContent).toBe(
+      'Not confirmed for: Fix the header',
+    )
+    expect(panel.querySelector('[data-testid="bridge-clear-command"]')!.textContent).toBe(
+      'node scripts/bridge-operator.mjs clear-kill',
+    )
+    expect(button('Allow bridge work again')).toBeUndefined()
+  })
+
+  it('clears a kill locally on a Mac that is not enrolled', async () => {
+    rows.set('labs.instinct_bridge', 'true')
+    bridgeProjects.mockResolvedValue({ enabled: true, projects: [] })
+    deviceStatus.mockResolvedValue(DEVICE)
+    stopStatus.mockResolvedValue({ ...STOP, killed: true, stop_generation: 1, enrolled: false })
+    clearKill.mockResolvedValue({ ...STOP, stop_generation: 1, enrolled: false })
+    await mount()
+    const allow = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Allow bridge work again')!
+    await act(async () => allow.click())
+    expect(clearKill).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('[data-testid="bridge-stop-killed"]')!.textContent).toBe('Allowed')
   })
 
   it('clears a failed status read at the next good poll', async () => {

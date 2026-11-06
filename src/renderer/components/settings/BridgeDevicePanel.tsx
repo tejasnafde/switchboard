@@ -207,7 +207,7 @@ export function BridgeDevicePanel() {
   )
 }
 
-function Row({ name, children }: { name: string; children: React.ReactNode }) {
+export function Row({ name, children }: { name: string; children: React.ReactNode }) {
   return (
     <div className="flex min-h-[40px] items-center justify-between gap-3 border-t border-[var(--border)] px-[14px] py-2 text-[12px]">
       <span className="text-[var(--text-secondary)]">{name}</span>
@@ -216,6 +216,6 @@ function Row({ name, children }: { name: string; children: React.ReactNode }) {
   )
 }
 
-function Code({ children }: { children: React.ReactNode }) {
+export function Code({ children }: { children: React.ReactNode }) {
   return <code className="[font-family:var(--font-mono)] text-[11px] text-[var(--text-primary)]">{children}</code>
 }

@@ -114,6 +114,8 @@ function harness(catalog: BridgeCatalogProject[] = []) {
   }> = []
   const timers = fakeTimers()
   const statuses: string[] = []
+  const controls: unknown[] = []
+  let revoked = 0
   const client = new BridgeRelayClient({
     origin: ORIGIN,
     machineId: MACHINE,
@@ -124,6 +126,8 @@ function harness(catalog: BridgeCatalogProject[] = []) {
     timers,
     random: () => 0.5,
     onStatus: (s) => statuses.push(`${s.state}:${s.code ?? ''}`),
+    onControl: (c) => void controls.push(c),
+    onRevoked: () => void (revoked += 1),
     connect: (url, headers, on) => {
       const socket = {
         url,
@@ -153,7 +157,20 @@ function harness(catalog: BridgeCatalogProject[] = []) {
     relay({ type: 'challenge', nonce, wire_version: 1 })
     relay({ type: 'welcome', machine_id: MACHINE, connection_generation: generation, wire_version: 1 })
   }
-  return { client, sockets, last, relay, sent, timers, statuses, publicKey, nonce, connect }
+  return {
+    client,
+    sockets,
+    last,
+    relay,
+    sent,
+    timers,
+    statuses,
+    publicKey,
+    nonce,
+    connect,
+    controls,
+    revoked: () => revoked,
+  }
 }
 
 const PROJECT: BridgeCatalogProject = {
@@ -345,11 +362,144 @@ function linkHarness(env: NodeJS.ProcessEnv = {}) {
         stop: () => void (record.stopped += 1),
         sendCatalog: () => void (record.catalogs += 1),
         status: () => ({ state: 'connecting' as const, code: null, connectionGeneration: null }),
+        lastContactAt: () => null,
+        sendStopAck: () => false,
+        sendKill: () => false,
       }
     },
   }
   return { link: new BridgeDeviceLink(deps), flag, keychain, clients }
 }
+
+describe('BridgeRelayClient stop controls', () => {
+  beforeEach(() => {
+    logged.length = 0
+  })
+  const dropped = () => logged.filter((l) => l[0] === 'relay frame dropped').map((l) => (l[1] as { code: string }).code)
+
+  it('passes the stop state of the welcome on; an older relay without it passes nothing', () => {
+    const h = harness()
+    h.client.start()
+    expect(h.client.lastContactAt()).toBeNull()
+    h.relay({ type: 'challenge', nonce: h.nonce, wire_version: 1 })
+    h.relay({
+      type: 'welcome',
+      machine_id: MACHINE,
+      connection_generation: 1,
+      wire_version: 1,
+      stop_generation: 4,
+      killed: true,
+    })
+    expect(h.controls).toEqual([{ stop_generation: 4, killed: true }])
+    expect(h.client.lastContactAt()).toBe(0)
+
+    const old = harness()
+    old.client.start()
+    old.connect()
+    expect(old.controls).toEqual([])
+  })
+
+  it('drops a welcome stop state of the wrong type but stays connected', () => {
+    const h = harness()
+    h.client.start()
+    h.relay({ type: 'challenge', nonce: h.nonce, wire_version: 1 })
+    h.relay({
+      type: 'welcome',
+      machine_id: MACHINE,
+      connection_generation: 1,
+      wire_version: 1,
+      stop_generation: '4',
+      killed: true,
+    })
+    expect(h.controls).toEqual([])
+    expect(h.client.status().state).toBe('connected')
+    expect(dropped()).toEqual(['invalid_control'])
+  })
+
+  it('takes a control for this machine and connection only, and drops invalid ones', () => {
+    const h = harness()
+    h.client.start()
+    h.connect(3)
+    const frame = { type: 'control', machine_id: MACHINE, connection_generation: 3 }
+    h.relay({ ...frame, stop_generation: 5, killed: false })
+    h.relay({ ...frame, machine_id: 'hub-other', stop_generation: 6, killed: true })
+    h.relay({ ...frame, connection_generation: 2, stop_generation: 6, killed: true })
+    h.relay({ type: 'control', machine_id: MACHINE, stop_generation: 6, killed: true })
+    h.relay({ ...frame, stop_generation: -1, killed: true })
+    h.relay({ ...frame, stop_generation: 1.5, killed: true })
+    h.relay({ ...frame, stop_generation: 6, killed: 'yes' })
+    expect(h.controls).toEqual([{ stop_generation: 5, killed: false }])
+    expect(dropped()).toEqual([
+      'foreign_machine',
+      'stale_generation',
+      'invalid_control',
+      'invalid_control',
+      'invalid_control',
+      'invalid_control',
+    ])
+  })
+
+  it('drops a control before the welcome', () => {
+    const h = harness()
+    h.client.start()
+    h.relay({ type: 'control', machine_id: MACHINE, connection_generation: 1, stop_generation: 1, killed: true })
+    expect(h.controls).toEqual([])
+    expect(dropped()).toEqual(['not_authenticated'])
+  })
+
+  it('sends stop_ack and kill only on an authenticated connection', () => {
+    const h = harness()
+    h.client.start()
+    expect(h.client.sendKill(1)).toBe(false)
+    h.connect()
+    h.timers.advance(5_000)
+    h.relay({ type: 'pong' })
+    expect(h.client.sendStopAck(2, 'unconfirmed')).toBe(true)
+    expect(h.client.sendKill(3)).toBe(true)
+    expect(h.client.sendKill(-1)).toBe(false)
+    expect(h.sent().slice(-2)).toEqual([
+      { type: 'stop_ack', stop_generation: 2, state: 'unconfirmed' },
+      { type: 'kill', stop_generation: 3 },
+    ])
+    h.relay({ type: 'catalog_accepted' })
+    h.relay({ type: 'control', machine_id: MACHINE, connection_generation: 1, stop_generation: 3, killed: true })
+    expect(h.client.lastContactAt()).toBe(5_000)
+  })
+
+  it('renews the control lease on any frame of this live connection, a pong included', () => {
+    const h = harness()
+    h.client.start()
+    h.connect()
+    expect(h.client.lastContactAt()).toBe(0)
+    // A healthy connection that only exchanges ping and pong is still contact.
+    h.timers.advance(40_000)
+    h.relay({ type: 'pong' })
+    expect(h.client.lastContactAt()).toBe(40_000)
+    h.timers.advance(10_000)
+    h.relay({ type: 'catalog_accepted' })
+    expect(h.client.lastContactAt()).toBe(50_000)
+    // A frame from another machine, or from an older connection, is not contact for this one.
+    h.timers.advance(10_000)
+    h.relay({ type: 'pong', machine_id: 'hub-other' })
+    h.relay({ type: 'control', machine_id: MACHINE, connection_generation: 2, stop_generation: 1, killed: false })
+    expect(h.client.lastContactAt()).toBe(50_000)
+    expect(dropped()).toEqual(['foreign_machine', 'stale_generation'])
+  })
+
+  it('reports a revoked close, and keeps command frames dropped', () => {
+    const h = harness()
+    h.client.start()
+    h.connect()
+    h.relay({ type: 'command', machine_id: MACHINE, connection_generation: 1, name: 'start_chat' })
+    expect(dropped()).toEqual(['commands_disabled'])
+    h.last().on.onClose(4003, 'replaced')
+    expect(h.revoked()).toBe(0)
+    h.timers.advance(400_000)
+    h.connect(2)
+    h.last().on.onClose(4003, 'revoked')
+    expect(h.revoked()).toBe(1)
+  })
+})
 
 describe('BridgeDeviceLink', () => {
   beforeEach(() => {

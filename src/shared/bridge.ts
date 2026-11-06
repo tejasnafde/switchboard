@@ -223,6 +223,53 @@ export interface BridgeDeviceStatus {
   operator_command: string | null
 }
 
+// ─── Stop controls ──────────────────────────────────────────────
+
+/** Bridge work the relay started stops when the relay has been silent this long. */
+export const BRIDGE_CONTROL_LEASE_MS = 120_000
+
+/** The relay's stop state, from its welcome and its `control` frames. */
+export interface BridgeControl {
+  stop_generation: number
+  killed: boolean
+}
+
+/** A valid control, or null: a generation is a safe integer >= 0 and killed a boolean. */
+export function parseBridgeControl(input: { stop_generation?: unknown; killed?: unknown }): BridgeControl | null {
+  const generation = input.stop_generation
+  if (typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation < 0) return null
+  if (typeof input.killed !== 'boolean') return null
+  return { stop_generation: generation, killed: input.killed }
+}
+
+/** The result of the last stop of all bridge work on this desktop. */
+export interface BridgeStopResult {
+  generation: number
+  state: 'confirmed' | 'unconfirmed'
+  /** Root ids of the chats whose stop could not be confirmed. */
+  unconfirmed: string[]
+  stopped: number
+  at: number
+}
+
+/** Settings > Labs, the stop controls (`bridge:stop-status`). Desktop only. */
+export interface BridgeStopStatus {
+  killed: boolean
+  stop_generation: number
+  /** This desktop's kill has not reached the relay yet. */
+  kill_pending: boolean
+  enrolled: boolean
+  last_result: (BridgeStopResult & { unconfirmed_titles: string[] }) | null
+  /** Chats with a bridge origin that run a turn, start or hold bridge-queued messages. */
+  active_chats: number
+  /** Last frame from the relay in this run of the app, epoch ms. */
+  last_contact_at: number | null
+  /** When bridge work the relay started stops if the relay stays silent. */
+  lease_expires_at: number | null
+  /** What clears the kill: the operator command when enrolled, else the local button. */
+  clear_command: string | null
+}
+
 // ─── References and states ──────────────────────────────────────
 
 /** `chat_id` is the root conversation id, stable across provider session rotation. */
@@ -265,6 +312,56 @@ export type BridgeChatWorkState = (typeof BRIDGE_CHAT_WORK_STATES)[number]
 export const BRIDGE_STOP_STATES = ['pending', 'confirmed', 'unconfirmed'] as const
 export type BridgeStopState = (typeof BRIDGE_STOP_STATES)[number]
 
+/**
+ * A stop's state on one chat with a bridge origin, for the chat lists:
+ * `pending` while its stop runs, `stopped` once it has no turn left,
+ * `unconfirmed` when that could not be shown. Null: no stop since its last
+ * bridge call.
+ */
+export const BRIDGE_ORIGIN_STOP_STATES = ['pending', 'stopped', 'unconfirmed'] as const
+export type BridgeOriginStopState = (typeof BRIDGE_ORIGIN_STOP_STATES)[number]
+
+/** On a chat list row (`SessionSummary.bridgeOrigin`): the chat was started or messaged through the bridge. */
+export interface BridgeOriginMarker {
+  stop: BridgeOriginStopState | null
+}
+
+const ORIGIN_STOP_STATES: ReadonlySet<unknown> = new Set(BRIDGE_ORIGIN_STOP_STATES)
+
+/** A chat row's `bridgeOrigin` as a phone reads it: a marker, or undefined for anything else (an older backend sends none). */
+export function parseBridgeOriginMarker(value: unknown): BridgeOriginMarker | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const stop = (value as { stop?: unknown }).stop
+  if (stop === null || stop === undefined) return { stop: null }
+  return ORIGIN_STOP_STATES.has(stop) ? { stop: stop as BridgeOriginStopState } : undefined
+}
+
+/** The short label a chat list shows on a bridge chat. */
+export function bridgeOriginLabel(marker: BridgeOriginMarker): string {
+  switch (marker.stop) {
+    case 'pending':
+      return 'Bridge stop pending'
+    case 'stopped':
+      return 'Bridge stopped'
+    case 'unconfirmed':
+      return 'Bridge stop not confirmed'
+    default:
+      return 'From the bridge'
+  }
+}
+
+/** Adds `bridgeOrigin` to the rows of chats with a bridge origin; other rows are returned as they are. */
+export function withBridgeOrigins<T extends { id: string; bridgeOrigin?: BridgeOriginMarker }>(
+  sessions: T[],
+  markers: ReadonlyMap<string, BridgeOriginMarker>,
+): T[] {
+  if (markers.size === 0) return sessions
+  return sessions.map((s) => {
+    const marker = markers.get(s.id)
+    return marker ? { ...s, bridgeOrigin: marker } : s
+  })
+}
+
 export const BRIDGE_EVIDENCE_STATUSES = ['measured', 'not_measured', 'unavailable', 'stale'] as const
 export type BridgeEvidenceStatus = (typeof BRIDGE_EVIDENCE_STATUSES)[number]
 
@@ -290,6 +387,7 @@ export const BRIDGE_ERROR_CODES = [
   'stop_unconfirmed',
   'cursor_expired',
   'policy_denied',
+  'killed',
   'internal_error',
 ] as const
 export type BridgeErrorCode = (typeof BRIDGE_ERROR_CODES)[number]
@@ -322,6 +420,7 @@ const DEFAULT_RETRY: Record<BridgeErrorCode, BridgeRetryAdvice> = {
   stop_unconfirmed: 'read_first',
   cursor_expired: 'read_first',
   policy_denied: 'ask_owner',
+  killed: 'ask_owner',
   internal_error: 'none',
 }
 

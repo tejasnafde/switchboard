@@ -17,8 +17,10 @@ import {
   canonicalBridgeInput,
   defaultBridgeProjectPolicy,
   instinctBridgeEnabled,
+  parseBridgeControl,
   publicProjectView,
   resolveBridgeMode,
+  withBridgeOrigins,
 } from '../../src/shared/bridge'
 import { labsFlag } from '../../src/shared/labs'
 
@@ -109,7 +111,8 @@ describe('call delivery states', () => {
 
 describe('bridgeError', () => {
   it('carries the code, a retry advice and nullable call and target', () => {
-    expect(BRIDGE_ERROR_CODES).toHaveLength(20)
+    expect(BRIDGE_ERROR_CODES).toHaveLength(21)
+    expect(bridgeError('killed', 'x').retry).toBe('ask_owner')
     expect(bridgeError('machine_offline', 'The work computer is asleep. Nothing started.')).toEqual({
       code: 'machine_offline',
       message: 'The work computer is asleep. Nothing started.',
@@ -141,5 +144,31 @@ describe('canonical input hash', () => {
   it('keeps an own __proto__ key in the canonical form', () => {
     const withProto = JSON.parse('{"chat":{"__proto__":{"x":1}}}') as Record<string, unknown>
     expect(canonicalBridgeInput('stop_chat', withProto)).not.toBe(canonicalBridgeInput('stop_chat', { chat: {} }))
+  })
+})
+
+describe('stop controls', () => {
+  it('reads a control only with a safe integer generation >= 0 and a boolean kill', () => {
+    expect(parseBridgeControl({ stop_generation: 0, killed: false })).toEqual({ stop_generation: 0, killed: false })
+    expect(parseBridgeControl({ stop_generation: 9, killed: true })).toEqual({ stop_generation: 9, killed: true })
+    for (const bad of [
+      { stop_generation: -1, killed: true },
+      { stop_generation: 1.5, killed: true },
+      { stop_generation: '2', killed: true },
+      { stop_generation: Number.MAX_SAFE_INTEGER + 1, killed: true },
+      { stop_generation: 2, killed: 1 },
+      { stop_generation: 2 },
+      {},
+    ])
+      expect(parseBridgeControl(bad)).toBeNull()
+  })
+
+  it('marks only the chat rows that have a bridge origin', () => {
+    const rows = [{ id: 'a' }, { id: 'b' }]
+    expect(withBridgeOrigins(rows, new Map())).toBe(rows)
+    expect(withBridgeOrigins(rows, new Map([['b', { stop: 'pending' as const }]]))).toEqual([
+      { id: 'a' },
+      { id: 'b', bridgeOrigin: { stop: 'pending' } },
+    ])
   })
 })

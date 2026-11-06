@@ -390,6 +390,8 @@ export interface SessionSummary {
   wokePrSummary?: string | null
   /** Child chats (flag `hub_children` on): `{ parentId }` on an open child, `{ openChildren }` on its parent. */
   hub?: import('./hub').SessionHubField
+  /** The chat was started or messaged through the Instinct bridge, with its last stop state. Absent otherwise. */
+  bridgeOrigin?: import('./bridge').BridgeOriginMarker
 }
 
 export interface Project {

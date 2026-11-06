@@ -92,6 +92,8 @@ import {
   getConversationModel,
   getConversationPendingHandoff,
   clearConversationPendingHandoff,
+  bridgeAutoResumeBlocked,
+  type BridgeOriginSource,
 } from '../db/database'
 import { getMachineSnapshotSyncedAt } from '../db/machines'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
@@ -740,6 +742,15 @@ export class ProviderRegistry implements PeerToolHost {
       queuedTurns: (threadId) => this.listQueuedTurns(threadId),
       cancelQueuedTurn: (threadId, messageId) => this.actOnQueuedTurn('cancel', threadId, messageId),
     }
+  }
+
+  /** Active bridge groups, for the stop service. Works with the flag off: stops cover existing origins. */
+  bridgeActiveGroups(sources?: readonly BridgeOriginSource[]): string[] {
+    return this.bridgeDelivery.activeGroups(sources)
+  }
+
+  bridgeStopGroups(sources?: readonly BridgeOriginSource[]): Promise<{ stopped: string[]; unconfirmed: string[] }> {
+    return this.bridgeDelivery.stopGroups(sources)
   }
 
   private instinctBridgeOn(): boolean {
@@ -1421,6 +1432,7 @@ export class ProviderRegistry implements PeerToolHost {
           this.childWake(parentId, conversationId, 'resumed', 'Usage limit reset. It goes on with its task.')
       },
       child: (conversationId) => this.childFireContext(conversationId),
+      bridgeStopped: (conversationId) => bridgeAutoResumeBlocked(conversationId),
       limited: (conversationId, state) => {
         const parentId = this.hubChildrenOn() ? this.hubStarter.parentOfOpenChild(conversationId) : null
         if (!parentId) return

@@ -72,6 +72,8 @@ export interface LimitResumeHost {
   child?(conversationId: string): FireChildContext | null
   /** A limited turn ended, or a re-arm gave up: what the chat's Limited row says now. */
   limited?(conversationId: string, state: LimitState): void
+  /** Bridge work is killed, or a stop of all bridge work came after this bridge chat's last bridge call. */
+  bridgeStopped?(conversationId: string): boolean
 }
 
 /** Whether a reading says the account can run a turn now. A reading we cannot use counts as open: the turn is the test. */
@@ -351,6 +353,11 @@ export class LimitResumer {
     if (!manual && !this.host.settingOn()) {
       this.disarm(id, 'cancel')
       return refuse('setting_off', 'Auto-resume is off.')
+    }
+    // A bridge stop is a Stop: the owner resumes by hand, never a timer.
+    if (!manual && this.host.bridgeStopped?.(id)) {
+      this.disarm(id, 'stop')
+      return refuse('bridge_stopped', 'Bridge work was stopped. Send a message to continue.')
     }
     const live = this.host.liveThread(id)
     // ponytail: a chat whose session is not running waits until it starts
