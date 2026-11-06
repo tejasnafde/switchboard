@@ -20,7 +20,8 @@ import {
   type HubChatView,
   type HubChildView,
 } from '@shared/hub'
-import { agentLabel, type AgentType } from '@shared/types'
+import { agentMarkLabel } from '@shared/agent-marks'
+import { AgentMark } from '../ui/agent-mark'
 import { createRendererLogger } from '../../logger'
 import { hubChildDot } from './child-dot'
 import { confirm } from '../ui/confirm'
@@ -86,14 +87,16 @@ export function hubTokenText(tokens: number | null | undefined): string | null {
 function ChildRow({ parent, child, onOpened }: { parent: HubChatRef; child: HubChildView; onOpened: () => void }) {
   const tokens = hubTokenText(child.lastTurn?.usedTokens)
   const muted = [child.account, tokens].filter(Boolean)
+  const agent = child.chat.agentType
   return (
     <li
       data-hub-child={child.state}
-      title={[agentLabel(child.chat.agentType as AgentType), child.branch].filter(Boolean).join(' · ')}
+      title={[agentMarkLabel(agent), child.branch].filter(Boolean).join(' · ')}
       className="border-t border-[var(--border)] px-3 py-[6px] first:border-t-0"
     >
       <div className="flex min-w-0 items-center gap-[8px]">
         <span className="sidebar-recent-dot" data-dot={hubChildDot(child)} />
+        <AgentMark agent={agent} label={agentMarkLabel(agent)} className="text-[var(--text-muted)]" />
         <span title={child.chat.title} className="min-w-0 truncate text-[var(--text-primary)]">
           {child.chat.title}
         </span>
