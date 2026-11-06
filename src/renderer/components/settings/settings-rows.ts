@@ -479,7 +479,8 @@ const ROWS = {
       warning: 'Instinct acts as you in the allowed projects. Its chats can edit files and run commands there.',
       where: 'Desktop only',
       more: [
-        'Choose the allowed projects in the list under this section. Local agents get read tools for their chats (list_projects, list_recent_chats, search_chats, read_chat). Nothing connects to Instinct yet.',
+        'Choose the allowed projects in the list under this section. Local agents get read tools for their chats (list_projects, list_recent_chats, search_chats, read_chat).',
+        'Enroll this Mac under the project list to connect it to the bridge relay. The relay then lists the allowed projects to Instinct, without their folders. Instinct cannot start or send work through the relay yet.',
         'No project is allowed until you choose it. Commit, push and pull requests stay off unless you turn them on for a project. Merge and deploy stay off.',
         'Off blocks new bridge work. Status and Stop still work for chats the bridge started.',
       ],

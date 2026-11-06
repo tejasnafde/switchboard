@@ -166,6 +166,7 @@ export const ADMIN_ONLY_SETTING_FAMILIES: readonly string[] = [
   'pushTokens', // push/registry.ts: every paired device's push token
   'opencode.env.', // opencode/env.ts: provider API keys injected into OpenCode
   'google.clientSecret',
+  'bridge.', // bridge/device-key.ts: the Instinct bridge device key (keychain encrypted)
 ]
 
 function inProtectedFamily(key: string): boolean {

@@ -10,6 +10,7 @@ import { SETTING_ROW, labsWhen, type SettingRowDef } from './settings-rows'
 import { SETTINGS_CHANGED_ELSEWHERE } from '../../services/settings-file-sync'
 import { Switch } from '../ui/switch'
 import { BridgeProjectsPanel } from './BridgeProjectsPanel'
+import { BridgeDevicePanel } from './BridgeDevicePanel'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('settings:labs')
@@ -74,7 +75,12 @@ export function LabsPage({
               ))}
             </div>
           </section>
-          {bridgeOn && section === bridge.section && <BridgeProjectsPanel />}
+          {bridgeOn && section === bridge.section && (
+            <>
+              <BridgeProjectsPanel />
+              <BridgeDevicePanel />
+            </>
+          )}
         </Fragment>
       ))}
     </>

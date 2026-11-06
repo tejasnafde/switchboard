@@ -23,6 +23,9 @@ let failWrites: boolean
 const bridgeProjects = vi.fn()
 const setProjectAllowed = vi.fn()
 const removeBridgeProject = vi.fn()
+const deviceStatus = vi.fn()
+const enrollDevice = vi.fn()
+const removeDevice = vi.fn()
 const set = vi.fn(async (key: string, value: string) => {
   if (failWrites) throw new Error('refused')
   rows.set(key, value)
@@ -36,7 +39,22 @@ const anything: unknown = new Proxy(() => Promise.resolve(null), {
 let root: Root
 let container: HTMLDivElement
 
+const DEVICE = {
+  enabled: true,
+  enrolled: false,
+  machine_id: 'hub-1',
+  label: null,
+  public_key: null,
+  key_fingerprint: null,
+  relay_origin: 'https://bridge.tn07.dev',
+  state: 'not_enrolled',
+  code: null,
+  connection_generation: null,
+  operator_command: null,
+}
+
 beforeEach(() => {
+  deviceStatus.mockResolvedValue({ ...DEVICE, enabled: false, state: 'off' })
   rows = new Map()
   forced = []
   failWrites = false
@@ -47,7 +65,15 @@ beforeEach(() => {
         set,
         labsState: async (): Promise<Partial<LabsFlagState>[]> => forced.map((id) => ({ id, forced: true, on: true })),
       },
-      bridge: { listProjects: bridgeProjects, setProjectAllowed, removeProject: removeBridgeProject },
+      bridge: {
+        listProjects: bridgeProjects,
+        setProjectAllowed,
+        removeProject: removeBridgeProject,
+        deviceStatus,
+        enrollDevice,
+        setDeviceLabel: vi.fn(),
+        removeDevice,
+      },
     },
     { get: (target, prop) => (prop in target ? target[prop as 'settings'] : anything) },
   )
@@ -117,6 +143,41 @@ describe('Labs page', () => {
     await act(async () => box.click())
     expect(removeBridgeProject).toHaveBeenCalledWith('bproj_2')
     expect(setProjectAllowed).not.toHaveBeenCalled()
+  })
+
+  it('enrolls this Mac and shows the machine id, the operator command and the status', async () => {
+    rows.set('labs.instinct_bridge', 'true')
+    bridgeProjects.mockResolvedValue({ enabled: true, projects: [] })
+    deviceStatus.mockResolvedValue(DEVICE)
+    const enrolled = {
+      ...DEVICE,
+      enrolled: true,
+      label: 'Work Mac',
+      public_key: 'AAAA',
+      key_fingerprint: '0123456789abcdef',
+      state: 'rejected',
+      code: 'not_enrolled',
+      operator_command: "echo 'AAAA' | node scripts/bridge-operator.mjs enroll 'hub-1' 'Work Mac' -",
+    }
+    enrollDevice.mockResolvedValue(enrolled)
+    await mount()
+    const panel = container.querySelector('[data-testid="bridge-device"]')!
+    expect(panel.textContent).toContain('hub-1')
+    expect(panel.querySelector('[data-testid="bridge-device-status"]')!.textContent).toBe('Not enrolled')
+    const input = panel.querySelector<HTMLInputElement>('input[aria-label="Device label"]')!
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+      setter.call(input, 'Work Mac')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const enroll = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Enroll this Mac')!
+    await act(async () => enroll.click())
+    expect(enrollDevice).toHaveBeenCalledWith('Work Mac')
+    expect(panel.querySelector('[data-testid="bridge-operator-command"]')!.textContent).toBe(enrolled.operator_command)
+    expect(panel.querySelector('[data-testid="bridge-device-status"]')!.textContent).toBe(
+      'Refused by the relay (not_enrolled). Trying again later.',
+    )
+    expect([...panel.querySelectorAll('button')].some((b) => b.textContent === 'Remove enrollment')).toBe(true)
   })
 
   it('renders every flag off by default, with a switch per flag and a note on the read-only rows', async () => {

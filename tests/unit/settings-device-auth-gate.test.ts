@@ -155,6 +155,7 @@ describe('protected settings families', () => {
         'pushTokens',
         'opencode.env.',
         'google.clientSecret',
+        'bridge.',
       ].sort(),
     )
   })
