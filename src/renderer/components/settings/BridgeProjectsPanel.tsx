@@ -6,7 +6,7 @@
  * checked until the owner chooses.
  */
 import { useEffect, useState } from 'react'
-import type { BridgeProjectSetup } from '@shared/bridge'
+import type { BridgeProjectSetup, BridgeProjectSetupRow } from '@shared/bridge'
 import { Checkbox } from '../ui/checkbox'
 import { createRendererLogger } from '../../logger'
 
@@ -15,7 +15,7 @@ const log = createRendererLogger('settings:bridge')
 export function BridgeProjectsPanel() {
   const [setup, setSetup] = useState<BridgeProjectSetup | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [busyPath, setBusyPath] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -33,16 +33,21 @@ export function BridgeProjectsPanel() {
     }
   }, [])
 
-  const toggle = async (path: string, allowed: boolean) => {
-    setBusyPath(path)
+  // Unticking goes by id, so a project whose folder is gone can still be taken off.
+  const toggle = async (project: BridgeProjectSetupRow, allowed: boolean) => {
+    setBusy(true)
     setError(null)
     try {
-      setSetup(await window.api.bridge.setProjectAllowed(path, allowed))
+      setSetup(
+        allowed
+          ? await window.api.bridge.setProjectAllowed(project.path, true)
+          : await window.api.bridge.removeProject(project.projectId!),
+      )
     } catch (err) {
       log.warn('saving a bridge project failed', err)
       setError(err instanceof Error ? err.message : 'Could not save the change.')
     } finally {
-      setBusyPath(null)
+      setBusy(false)
     }
   }
 
@@ -60,22 +65,27 @@ export function BridgeProjectsPanel() {
           <p className="m-0 px-[14px] py-3 text-[12px] text-[var(--text-muted)]">No projects yet.</p>
         )}
         {projects.map((project) => {
-          const id = `bridge-project-${project.path.replace(/\W/g, '-')}`
+          const key = project.orphan ? `orphan:${project.projectId}` : project.path
+          const id = `bridge-project-${key.replace(/\W/g, '-')}`
           return (
             <div
-              key={project.path}
+              key={key}
               className="flex items-center gap-3 border-t border-[var(--border)] px-[14px] py-2.5 first:border-t-0"
             >
               <Checkbox
                 id={id}
                 checked={project.allowed}
-                disabled={busyPath !== null || project.projectId === null}
-                onCheckedChange={(next) => void toggle(project.path, next === true)}
+                disabled={busy || project.projectId === null}
+                onCheckedChange={(next) => void toggle(project, next === true)}
               />
               <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer">
                 <div className="truncate text-[13px] font-[500] leading-[18px]">{project.name}</div>
                 <div className="truncate text-[11px] leading-4 text-[var(--text-muted)]">
-                  {project.projectId === null ? 'Folder not found' : project.path}
+                  {project.orphan
+                    ? 'Not in the sidebar or the folder moved. Untick to remove it.'
+                    : project.projectId === null
+                      ? 'Folder not found'
+                      : project.path}
                 </div>
               </label>
             </div>

@@ -109,7 +109,7 @@ describe('call delivery states', () => {
 
 describe('bridgeError', () => {
   it('carries the code, a retry advice and nullable call and target', () => {
-    expect(BRIDGE_ERROR_CODES).toHaveLength(19)
+    expect(BRIDGE_ERROR_CODES).toHaveLength(20)
     expect(bridgeError('machine_offline', 'The work computer is asleep. Nothing started.')).toEqual({
       code: 'machine_offline',
       message: 'The work computer is asleep. Nothing started.',

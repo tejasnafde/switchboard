@@ -624,6 +624,8 @@ export const BridgeChannels = {
   LIST_PROJECTS: 'bridge:list-projects',
   /** ({ path, allowed }) → the same as LIST_PROJECTS */
   SET_PROJECT_ALLOWED: 'bridge:set-project-allowed',
+  /** (projectId) → the same as LIST_PROJECTS; works when the folder is gone */
+  REMOVE_PROJECT: 'bridge:remove-project',
 } as const
 
 /**

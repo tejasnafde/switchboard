@@ -54,8 +54,11 @@ export function buildBridgeReadTools(deps: BridgeToolDeps): McpTool[] {
     try {
       return await body()
     } catch (err) {
+      // The detail stays in the log: an error message can name a local path.
       log.warn('bridge read failed', { tool: name, chat: deps.chatId(), err: String(err) })
-      return toolText(`${name} failed: ${err instanceof Error ? err.message : String(err)}`, true)
+      return errorResult(
+        bridgeError('internal_error', `${name} failed on this desktop. The cause is in its Switchboard log.`),
+      )
     }
   }
   const limitOf = (args: Record<string, unknown>): number => parseBridgeLimit(args.limit)!

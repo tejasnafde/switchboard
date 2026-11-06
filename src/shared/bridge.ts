@@ -144,6 +144,8 @@ export interface BridgeProjectSetupRow {
   allowed: boolean
   /** Null when the folder no longer resolves. */
   projectId: string | null
+  /** An allowed policy no sidebar project resolves to; `path` is its stored root. */
+  orphan: boolean
 }
 
 export interface BridgeProjectSetup {
@@ -219,6 +221,7 @@ export const BRIDGE_ERROR_CODES = [
   'stop_unconfirmed',
   'cursor_expired',
   'policy_denied',
+  'internal_error',
 ] as const
 export type BridgeErrorCode = (typeof BRIDGE_ERROR_CODES)[number]
 
@@ -250,6 +253,7 @@ const DEFAULT_RETRY: Record<BridgeErrorCode, BridgeRetryAdvice> = {
   stop_unconfirmed: 'read_first',
   cursor_expired: 'read_first',
   policy_denied: 'ask_owner',
+  internal_error: 'none',
 }
 
 /** Sent as structured MCP output with `isError: true`. The message is safe to show the owner. */

@@ -22,6 +22,7 @@ let forced: string[]
 let failWrites: boolean
 const bridgeProjects = vi.fn()
 const setProjectAllowed = vi.fn()
+const removeBridgeProject = vi.fn()
 const set = vi.fn(async (key: string, value: string) => {
   if (failWrites) throw new Error('refused')
   rows.set(key, value)
@@ -46,7 +47,7 @@ beforeEach(() => {
         set,
         labsState: async (): Promise<Partial<LabsFlagState>[]> => forced.map((id) => ({ id, forced: true, on: true })),
       },
-      bridge: { listProjects: bridgeProjects, setProjectAllowed },
+      bridge: { listProjects: bridgeProjects, setProjectAllowed, removeProject: removeBridgeProject },
     },
     { get: (target, prop) => (prop in target ? target[prop as 'settings'] : anything) },
   )
@@ -87,7 +88,7 @@ function toggle(id: string): HTMLButtonElement | null {
 
 describe('Labs page', () => {
   it('shows the Instinct bridge projects only while the flag is on, and saves a checkbox', async () => {
-    const project = { path: '/repo', name: 'repo', projectId: 'bproj_1' }
+    const project = { path: '/repo', name: 'repo', projectId: 'bproj_1', orphan: false }
     bridgeProjects.mockResolvedValue({ enabled: true, projects: [{ ...project, allowed: false }] })
     setProjectAllowed.mockResolvedValue({ enabled: true, projects: [{ ...project, allowed: true }] })
     await mount()
@@ -101,6 +102,21 @@ describe('Labs page', () => {
     await act(async () => box.click())
     expect(setProjectAllowed).toHaveBeenCalledWith('/repo', true)
     expect(box.getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('lists an orphaned bridge project as allowed and removes it by id', async () => {
+    const orphan = { path: '/gone', name: 'gone', projectId: 'bproj_2', allowed: true, orphan: true }
+    rows.set('labs.instinct_bridge', 'true')
+    bridgeProjects.mockResolvedValue({ enabled: true, projects: [orphan] })
+    removeBridgeProject.mockResolvedValue({ enabled: true, projects: [] })
+    await mount()
+    const panel = container.querySelector('[data-testid="bridge-projects"]')!
+    expect(panel.textContent).toContain('Untick to remove it')
+    const box = panel.querySelector<HTMLButtonElement>('[role="checkbox"]')!
+    expect(box.getAttribute('aria-checked')).toBe('true')
+    await act(async () => box.click())
+    expect(removeBridgeProject).toHaveBeenCalledWith('bproj_2')
+    expect(setProjectAllowed).not.toHaveBeenCalled()
   })
 
   it('renders every flag off by default, with a switch per flag and a note on the read-only rows', async () => {

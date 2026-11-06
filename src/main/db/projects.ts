@@ -1,8 +1,12 @@
+import { realpathSync } from 'node:fs'
 import Database from 'better-sqlite3'
 import type { ProjectOrganizationItem } from '@shared/types'
 import { getDb } from './database'
 import { markProjectSecretOwnersDeleted } from './agent-secrets'
 import { emitConversationArchived } from './archive-events'
+import { createMainLogger } from '../logger'
+
+const log = createMainLogger('db:projects')
 
 // ─── Project CRUD ────────────────────────────────────────────────
 
@@ -49,14 +53,29 @@ export function getProjects(): Array<{
  * Chats that held secrets are recorded first (the sweep retries their
  * cleanup), then run the archive listeners, which delete their cards and files.
  */
+/** The path and, while the folder exists, its realpath: the roots a bridge policy can be stored under. */
+function bridgeRootsOf(path: string): string[] {
+  try {
+    return [path, realpathSync.native(path)]
+  } catch (err) {
+    log.debug('removed project folder does not resolve', { code: (err as NodeJS.ErrnoException).code })
+    return [path]
+  }
+}
+
 export function removeProject(path: string): void {
   const db = getDb()
+  const roots = bridgeRootsOf(path)
   const secretChats = db.transaction(() => {
     const chats = markProjectSecretOwnersDeleted(db, path, Date.now())
     const row = db.prepare('SELECT workspace_id FROM projects WHERE path = ?').get(path) as
       | { workspace_id: string | null }
       | undefined
     db.prepare('DELETE FROM projects WHERE path = ?').run(path)
+    // An Instinct bridge policy stored under this path goes with the project, so
+    // adding the folder again does not quietly allow it again.
+    const dropPolicy = db.prepare('DELETE FROM bridge_project_policies WHERE canonical_local_root = ?')
+    for (const root of roots) dropPolicy.run(root)
     if (row) normalizeProjectGroup(db, row.workspace_id)
     return chats
   })()

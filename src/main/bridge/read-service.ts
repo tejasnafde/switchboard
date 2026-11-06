@@ -287,20 +287,19 @@ export class BridgeReadService {
     return { ...this.base(machineId), partial: false, unavailable_machines: [], catalog_age_ms: 0 }
   }
 
-  /** The owner's allowed projects on this desktop, each with the stored paths its chats use. */
+  /**
+   * The owner's allowed projects on this desktop, each with the stored paths
+   * its chats use. A policy counts only while a sidebar project still resolves
+   * to its root: one whose folder moved or that left the sidebar serves nothing.
+   */
   private allowed(machineId: string): AllowedProject[] {
     const policies = listBridgeProjectPolicies().filter((p) => p.machine_id === machineId)
     if (policies.length === 0) return []
     const known = getProjects().map((p) => ({ path: p.path, real: realpathOrNull(p.path) }))
-    return policies.map((policy) => ({
-      policy,
-      paths: [
-        ...new Set([
-          policy.canonical_local_root,
-          ...known.filter((p) => p.real === policy.canonical_local_root).map((p) => p.path),
-        ]),
-      ],
-    }))
+    return policies.flatMap((policy) => {
+      const paths = known.filter((p) => p.real === policy.canonical_local_root).map((p) => p.path)
+      return paths.length === 0 ? [] : [{ policy, paths: [...new Set([policy.canonical_local_root, ...paths])] }]
+    })
   }
 
   private projectOfPath(allowed: AllowedProject[], path: string): AllowedProject | undefined {
@@ -412,7 +411,10 @@ export class BridgeReadService {
     const scope = this.allowed(machineId)
     const paths = scope.flatMap((a) => a.paths)
     const db = getDb()
-    const messageHits = searchMessagesInDatabase(db, input.query, MESSAGE_SEARCH_LIMIT, { projectPaths: paths })
+    const messageHits = searchMessagesInDatabase(db, input.query, MESSAGE_SEARCH_LIMIT, {
+      projectPaths: paths,
+      onePerChat: true,
+    })
     const titleHits = searchChatTitlesInDatabase(db, input.query, { projectPaths: paths })
 
     interface Merged {
@@ -499,7 +501,8 @@ export class BridgeReadService {
     const candidates = [...getManagedRootConversationsForProjects(allowed.flatMap((a) => a.paths)).values()]
       .flat()
       .filter((row) => row.agent_type !== 'terminal')
-    const found = resolveLabel(candidates, (row) => row.title, text)
+    // Matched on the masked title, so a saved secret in a title is no prefix oracle.
+    const found = resolveLabel(candidates, (row) => maskStoredText(row.id, row.title), text)
     if (found.kind === 'one') {
       const project = this.projectOfPath(allowed, found.item.project_path)
       return project ? { ok: true, value: { row: found.item, project } } : { ok: false, error: notFound }
@@ -557,6 +560,8 @@ export class BridgeReadService {
     const pending = this.deps.live.pending(chatId).map(pendingItem)
     const reply = [...messages].reverse().find((m) => m.role === 'assistant') ?? null
     const newest = messages.at(-1)?.id ?? null
+    const title = maskStoredText(chatId, row.title)
+    // The reply's text, not its length: a rewrite of the same length is a change.
     const key = createHash('sha256')
       .update(
         JSON.stringify([
@@ -564,8 +569,10 @@ export class BridgeReadService {
           window.total,
           newest,
           reply?.id ?? null,
-          reply?.content.length ?? 0,
+          reply?.content ?? null,
           pending.map((p) => p.request_id),
+          row.archived === 1,
+          title,
         ]),
       )
       .digest('hex')
@@ -596,7 +603,7 @@ export class BridgeReadService {
       value: {
         ...base,
         chat: ref,
-        title: maskStoredText(chatId, row.title),
+        title,
         project: { project_id: project.policy.project_id, label: project.policy.label },
         archived: row.archived === 1,
         status,

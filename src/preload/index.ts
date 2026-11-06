@@ -1051,6 +1051,8 @@ const api = {
       transport.invoke(BridgeChannels.LIST_PROJECTS),
     setProjectAllowed: (path: string, allowed: boolean): Promise<import('@shared/bridge').BridgeProjectSetup> =>
       transport.invoke(BridgeChannels.SET_PROJECT_ALLOWED, { path, allowed }),
+    removeProject: (projectId: string): Promise<import('@shared/bridge').BridgeProjectSetup> =>
+      transport.invoke(BridgeChannels.REMOVE_PROJECT, projectId),
   },
   agentSecret: {
     answer: (threadId: string, cardId: string, answer: AgentSecretAnswer): Promise<AgentSecretResult> =>

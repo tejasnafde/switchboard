@@ -8,7 +8,11 @@ import { instinctBridgeEnabled, type BridgeProjectSetup } from '@shared/bridge'
 import { BridgeChannels } from '@shared/ipc-channels'
 import type { BackendHost } from '../backend/host'
 import { getSetting } from '../db/database'
-import { listBridgeProjectSetup, setBridgeProjectAllowed } from '../bridge/allowlist'
+import { listBridgeProjectSetup, removeBridgeProject, setBridgeProjectAllowed } from '../bridge/allowlist'
+
+function assertEnabled(): void {
+  if (!instinctBridgeEnabled(process.env, getSetting)) throw new Error('The Instinct bridge is off in Settings > Labs.')
+}
 
 function setup(): BridgeProjectSetup {
   const enabled = instinctBridgeEnabled(process.env, getSetting)
@@ -20,9 +24,14 @@ export function registerBridgeHandlers(host: BackendHost): void {
   host.handle(BridgeChannels.SET_PROJECT_ALLOWED, (input: unknown) => {
     const { path, allowed } = (input ?? {}) as { path?: unknown; allowed?: unknown }
     if (typeof path !== 'string' || typeof allowed !== 'boolean') throw new Error('Expected { path, allowed }.')
-    if (!instinctBridgeEnabled(process.env, getSetting))
-      throw new Error('The Instinct bridge is off in Settings > Labs.')
+    assertEnabled()
     setBridgeProjectAllowed(path, allowed)
+    return setup()
+  })
+  host.handle(BridgeChannels.REMOVE_PROJECT, (projectId: unknown) => {
+    if (typeof projectId !== 'string') throw new Error('Expected a project id.')
+    assertEnabled()
+    removeBridgeProject(projectId)
     return setup()
   })
 }

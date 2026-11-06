@@ -33,11 +33,20 @@ import {
   addProject,
   archiveConversation,
   createConversation,
+  listBridgeProjectPolicies,
+  removeProject,
   saveBridgeProjectPolicy,
+  updateConversationTitle,
 } from '../../src/main/db/database'
 import { secretRedactor } from '../../src/main/secrets/secret-redactor'
 import { BridgeReadService, plainSnippet, type BridgeLiveState } from '../../src/main/bridge/read-service'
-import { bridgeProjectId, listBridgeProjectSetup, setBridgeProjectAllowed } from '../../src/main/bridge/allowlist'
+import {
+  bridgeProjectId,
+  listBridgeProjectSetup,
+  removeBridgeProject,
+  setBridgeProjectAllowed,
+} from '../../src/main/bridge/allowlist'
+import { buildBridgeReadTools } from '../../src/main/mcp/bridge-tools'
 import { defaultBridgeProjectPolicy } from '../../src/shared/bridge'
 import { SNIPPET_MARK_CLOSE, SNIPPET_MARK_OPEN } from '../../src/shared/message-search'
 import type { PendingBlockingEvent } from '../../src/shared/pending-requests'
@@ -115,6 +124,29 @@ describe('the allowlist', () => {
     expect(() => setBridgeProjectAllowed(join(ROOT, 'nowhere'), true, MACHINE)).toThrow(/not a Switchboard project/)
   })
 
+  it('keeps an orphaned policy visible and removable, and serves nothing from it', () => {
+    const moved = join(ROOT, 'moved')
+    mkdirSync(moved, { recursive: true })
+    addProject(moved, 'Moved')
+    setBridgeProjectAllowed(moved, true, MACHINE)
+    chat('t-moved', moved, 'Moved chat')
+    expect(ok(service.listRecentChats({ limit: 20 })).chats.map((c) => c.chat.chat_id)).toEqual(['t-moved'])
+    const id = bridgeProjectId(MACHINE, realpathSync.native(moved))
+    rmSync(moved, { recursive: true })
+
+    expect(ok(service.listProjects()).projects.map((p) => p.label)).toEqual(['Raves site'])
+    expect(ok(service.listRecentChats({ limit: 20 })).chats).toEqual([])
+    const orphan = listBridgeProjectSetup(MACHINE).find((p) => p.orphan)
+    expect(orphan).toMatchObject({ projectId: id, allowed: true, name: 'Moved' })
+    removeBridgeProject(id)
+    expect(listBridgeProjectSetup(MACHINE).some((p) => p.orphan)).toBe(false)
+  })
+
+  it('drops the policy when the project leaves the sidebar', () => {
+    removeProject(ALLOWED)
+    expect(listBridgeProjectPolicies()).toEqual([])
+  })
+
   it("ignores another machine's policy", () => {
     saveBridgeProjectPolicy(
       defaultBridgeProjectPolicy({
@@ -177,6 +209,37 @@ describe('search_chats', () => {
     expect(ok(service.searchChats({ query: 'deploy notes', limit: 1 })).chats.map((c) => c.chat.chat_id)).toEqual([
       't-allowed',
     ])
+  })
+
+  it('returns one row per chat before the limit, so a busy chat hides no other', () => {
+    chat('t-busy', ALLOWED, 'Busy')
+    chat('t-quiet', ALLOWED, 'Quiet')
+    for (let i = 0; i < 80; i++) insert(`b${i}`, 't-busy', 'release checklist release checklist', 10_000 + i)
+    insert('q1', 't-quiet', 'release checklist', 5)
+    expect(
+      ok(service.searchChats({ query: 'release checklist', limit: 20 }))
+        .chats.map((c) => c.chat.chat_id)
+        .sort(),
+    ).toEqual(['t-busy', 't-quiet'])
+    db.exec('DROP TABLE messages_fts')
+    expect(
+      ok(service.searchChats({ query: 'release checklist', limit: 20 }))
+        .chats.map((c) => c.chat.chat_id)
+        .sort(),
+    ).toEqual(['t-busy', 't-quiet'])
+  })
+
+  it('matches titles after masking, so a saved secret in a title is not a prefix oracle', async () => {
+    const value = 'tskey-auth-abcdefgh12345678'
+    chat('t-key', ALLOWED, `key ${value}`)
+    secretRedactor.add('t-key', 'sec-1', 'TAILSCALE_AUTHKEY', Buffer.from(value))
+    try {
+      expect(ok(service.searchChats({ query: 'tskey', limit: 20 })).chats).toEqual([])
+      const r = await service.readChat({ chat: 'key tskey' })
+      expect(r.ok ? 'ok' : r.error.code).toBe('project_not_allowed')
+    } finally {
+      secretRedactor.clear()
+    }
   })
 
   it('leaves archived chats out unless the query says archive or archived', () => {
@@ -333,5 +396,36 @@ describe('read_chat', () => {
     saveBridgeProjectPolicy({ ...policy, canonical_local_root: realpathSync.native(ALLOWED) })
     const r = await service.readChat({ chat: 't1', since: next.cursor })
     expect(r.ok ? 'ok' : r.error.code).toBe('cursor_expired')
+  })
+
+  it('reports an archive, a rename and a same-length rewrite of the reply as changes', async () => {
+    const changes: Array<() => void> = [
+      () => archiveConversation('t1'),
+      () => updateConversationTitle('t1', 'Raves website, renamed'),
+      () => db.prepare('UPDATE messages SET content = ? WHERE id = ?').run('DONE WITH THE HEADER', 'r1'),
+    ]
+    for (const change of changes) {
+      const before = ok(await service.readChat({ chat: 't1' }))
+      change()
+      const after = ok(await service.readChat({ chat: 't1', since: before.cursor }))
+      expect(after.unchanged).toBe(false)
+    }
+  })
+})
+
+describe('the MCP tools', () => {
+  it('answer a thrown error with a generic internal_error and no message text', async () => {
+    const failing = {
+      listProjects: () => {
+        throw new Error(`ENOENT: no such file, open '${ROOT}/x.jsonl'`)
+      },
+    } as unknown as BridgeReadService
+    const tools = buildBridgeReadTools({ chatId: () => 'c1', service: failing, enabled: () => true })
+    const result = await tools.find((t) => t.name === 'list_projects')!.call({})
+    expect(result.isError).toBe(true)
+    const text = JSON.stringify(result.content)
+    expect(text).toContain('internal_error')
+    expect(text).not.toContain(ROOT)
+    expect(text).not.toContain('ENOENT')
   })
 })
