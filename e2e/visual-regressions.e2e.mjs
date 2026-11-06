@@ -1623,11 +1623,8 @@ async function captureHubScreens(fixture, theme) {
   await openConversation(win, HUB_PARENT.title)
   const chip = win.getByTestId('hub-chip')
   await chip.waitFor({ state: 'visible' })
-  await chip.click()
-  const children = win.getByTestId('hub-children-list')
-  await children.locator('[data-hub-child]').nth(3).waitFor({ state: 'visible', timeout: 20_000 })
-  const working = children.locator('[data-hub-child="working"]')
-  await working.getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
+  // The sidebar first: a click outside the popover closes it, so everything
+  // that clicks elsewhere happens before the list is open.
   // The three open children nest under the parent in its project; the failed one is not open.
   const projectToggle = win
     .locator('.sidebar-project-header')
@@ -1637,6 +1634,13 @@ async function captureHubScreens(fixture, theme) {
   if ((await projectToggle.getAttribute('aria-expanded')) !== 'true') await projectToggle.click()
   await win.locator('.sidebar-thread-child').nth(2).waitFor({ state: 'visible', timeout: 20_000 })
   await snapScreen(win, 'hub-parent', theme, win, [turnTimes])
+
+  await chip.click()
+  const children = win.getByTestId('hub-children-list')
+  await children.locator('[data-hub-child]').nth(3).waitFor({ state: 'visible', timeout: 20_000 })
+  const working = children.locator('[data-hub-child="working"]')
+  await working.getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
+  await settle(win)
   await snapScreen(win, 'hub-children', theme, children)
   const listOverflow = await children.evaluate((el) => el.scrollWidth - el.clientWidth)
   if (listOverflow > 0)
@@ -1683,6 +1687,7 @@ async function captureRemoteHubScreens(fixture, theme) {
   const remoteRow = children.locator('li').filter({ has: win.getByTestId('hub-machine-badge') })
   await remoteRow.getByText(`${HUB_REMOTE_MACHINE.name} offline, last seen 3 h ago`).waitFor({ timeout: 20_000 })
   await children.locator('[data-hub-child="result_ready"]').waitFor({ state: 'visible' })
+  await settle(win)
   await snapScreen(win, 'hub-remote-children', theme, children)
   await snapScreen(win, 'hub-remote-offline', theme, remoteRow)
   await win.keyboard.press('Escape')
