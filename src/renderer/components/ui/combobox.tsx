@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react'
-import { Command } from 'cmdk'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { Command, useCommandState } from 'cmdk'
 import { cn } from '../../lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from './popover'
 import { filterComboboxOptions, groupComboboxOptions, type ComboboxOption } from './combobox-options'
@@ -12,6 +12,8 @@ interface ComboboxProps {
   options: ComboboxOption[]
   /** Off for a short fixed list: no search box, arrows and Enter still work. */
   searchable?: boolean
+  /** For a search-first picker, open on the top result rather than the chosen value. */
+  highlightFirstOnOpen?: boolean
   /** Trigger text when `value` matches no option. */
   placeholder?: string
   searchPlaceholder?: string
@@ -32,17 +34,26 @@ interface ComboboxProps {
   onOpenChange?: (open: boolean) => void
 }
 
+function ScrollHighlightedOption({ rootRef, query }: { rootRef: RefObject<HTMLDivElement | null>; query: string }) {
+  const value = useCommandState((state) => state.value)
+  useLayoutEffect(() => {
+    rootRef.current?.querySelector('[cmdk-item][aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [rootRef, query, value])
+  return null
+}
+
 /**
  * A select-like trigger that opens a filterable list (cmdk inside a Radix
- * popover). Filtering is ours, not cmdk's, so the list keeps the order the
- * caller gave it. Escape or a pick closes it and Radix returns focus to the
- * trigger.
+ * popover). Search ranks names before paths and fuzzy matches; an empty
+ * query keeps the caller's groups. Escape or a pick closes it and Radix
+ * returns focus to the trigger.
  */
 export function Combobox({
   value,
   onValueChange,
   options,
   searchable = true,
+  highlightFirstOnOpen = false,
   placeholder = 'Select…',
   searchPlaceholder = 'Search…',
   emptyText = 'No matches.',
@@ -71,9 +82,16 @@ export function Combobox({
 
   const selected = options.find((option) => option.value === value)
   const groups = useMemo(
-    () => groupComboboxOptions(searchable ? filterComboboxOptions(options, query) : options),
+    () =>
+      searchable && query.trim()
+        ? [{ heading: undefined, options: filterComboboxOptions(options, query) }]
+        : groupComboboxOptions(options),
     [options, query, searchable],
   )
+
+  useEffect(() => {
+    if (!open) setQuery('')
+  }, [open])
 
   return (
     <Popover
@@ -135,7 +153,7 @@ export function Combobox({
           tabIndex={-1}
           shouldFilter={false}
           loop
-          defaultValue={value}
+          defaultValue={searchable && highlightFirstOnOpen ? groups[0]?.options[0]?.value : value}
           label={ariaLabel}
           className="outline-none"
         >
@@ -191,6 +209,7 @@ export function Combobox({
               </Command.Group>
             ))}
           </Command.List>
+          <ScrollHighlightedOption rootRef={rootRef} query={query} />
         </Command>
       </PopoverContent>
     </Popover>

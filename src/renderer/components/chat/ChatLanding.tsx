@@ -245,6 +245,7 @@ export function ChatLanding({
       ...targets.map((t) => ({
         value: optionValue(t),
         label: landingChipLabel(t, withMachine),
+        searchLabel: t.name,
         keywords: [t.projectPath],
       })),
       { value: ADD_PROJECT, label: 'Add a project…' },
@@ -294,6 +295,7 @@ export function ChatLanding({
       options={options}
       placeholder="Pick a project"
       searchPlaceholder="Find a project…"
+      highlightFirstOnOpen
       emptyText="No matching project."
       open={pickerOpen}
       onOpenChange={setPickerOpen}
