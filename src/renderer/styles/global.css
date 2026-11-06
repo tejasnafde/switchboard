@@ -1081,6 +1081,18 @@ html, body, #root {
   white-space: nowrap;
 }
 
+/* The agent's mark in a chat row (ui/agent-mark): muted until the row is the
+   chat on screen, which gives it the text colour. */
+.sidebar-row-mark {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.sidebar-thread-active .sidebar-row-mark,
+.sidebar-recent-row.active .sidebar-row-mark {
+  color: var(--text-primary);
+}
+
 .sidebar-recent-detail {
   display: inline-flex;
   justify-content: flex-end;

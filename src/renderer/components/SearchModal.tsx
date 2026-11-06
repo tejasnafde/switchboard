@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { AppChannels } from '@shared/ipc-channels'
-import { agentShortLabel, providerKindFor, toAgentProvider } from '@shared/types'
-import type { ProviderKind } from '@shared/provider-events'
+import { agentShortLabel, toAgentProvider } from '@shared/types'
 import { formatRelativeTime } from '@shared/format'
 import { parseArchiveIntent } from '@shared/archive-intent'
 import type { MessageSearchResult } from '@shared/message-search'
@@ -11,6 +10,7 @@ import { renderSearchResultSnippetHtml } from './search-snippet'
 import { searchMessagesOnMachines, type MachineSearchHit, type SearchTarget } from '../services/message-search'
 import { createRendererLogger } from '../logger'
 import { cn } from '../lib/utils'
+import { AgentMark } from './ui/agent-mark'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 
 const log = createRendererLogger('search-modal')
@@ -41,17 +41,6 @@ function searchTargets(): SearchTarget[] {
 
 function projectName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path
-}
-
-const AGENT_AVATAR: Record<ProviderKind, { initials: string; className: string }> = {
-  claude: { initials: 'CL', className: 'bg-[#6c5ce7]' },
-  codex: { initials: 'CX', className: 'bg-[#10a37f]' },
-  opencode: { initials: 'OC', className: 'bg-[#8a8a96]' },
-  gemini: { initials: 'GE', className: 'bg-[var(--text-muted)]' },
-  vibe: { initials: 'VB', className: 'bg-[var(--text-muted)]' },
-  cline: { initials: 'CN', className: 'bg-[var(--text-muted)]' },
-  copilot: { initials: 'CP', className: 'bg-[var(--text-muted)]' },
-  'acp-command': { initials: 'LC', className: 'bg-[var(--text-muted)]' },
 }
 
 function agentName(agentType: string): string {
@@ -202,7 +191,6 @@ export function SearchModal({ open, onClose, onOpenChat }: SearchModalProps) {
           )}
 
           {results.map((r, i) => {
-            const avatar = AGENT_AVATAR[providerKindFor(r.agentType)]
             const machine =
               r.machineId === 'local' ? null : (remotes.find((m) => m.id === r.machineId)?.name ?? r.machineId)
             const meta = [
@@ -228,15 +216,8 @@ export function SearchModal({ open, onClose, onOpenChat }: SearchModalProps) {
                 className="cmdk-item block w-full cursor-pointer rounded-[6px] border-0 bg-transparent px-[12px] py-[8px] text-left text-[13px] text-[var(--text-primary)]"
               >
                 <div className="flex min-w-0 items-center gap-[8px]">
-                  <span
-                    aria-hidden
-                    className={cn(
-                      'inline-flex size-[16px] shrink-0 items-center justify-center rounded-full text-[8px] text-white',
-                      avatar.className,
-                    )}
-                  >
-                    {avatar.initials}
-                  </span>
+                  {/* The hit names the agent in its meta line, so the mark is decoration. */}
+                  <AgentMark agent={r.agentType} size={14} className="text-[var(--text-muted)]" />
                   <span className="min-w-0 truncate font-[500]">{r.conversationTitle.trim() || 'Untitled chat'}</span>
                   {r.archived && (
                     <span className="shrink-0 rounded-[3px] bg-[var(--bg-tertiary)] px-[5px] text-[10px] text-[var(--text-muted)]">

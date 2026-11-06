@@ -51,6 +51,7 @@ import { providerInstanceInitials } from '@shared/provider-instance-initials'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { shouldShowInstanceRail } from '../../shared/instance-rail-visibility'
 import { cn } from '../../lib/utils'
+import { AgentMark } from '../ui/agent-mark'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { ChipCaret } from '../ui/chip'
 import { Spinner } from '../ui/spinner'
@@ -174,11 +175,18 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
             </>
           ) : (
             <>
-              <span
-                aria-hidden
-                className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--pick-accent)] text-[8px] font-[700] tracking-[0.02em] text-[var(--pick-ink)]"
-              >
-                {showInstanceBadge ? initials : agentShortLabel(agentType).slice(0, 2).toUpperCase()}
+              {/* The agent's own mark; the account initials ride its corner
+                  only when this agent has more than one account. */}
+              <span aria-hidden className="relative inline-flex size-[18px] shrink-0 items-center justify-center">
+                <AgentMark agent={agentType} size={14} className="text-[var(--text-primary)]" />
+                {showInstanceBadge && (
+                  <span
+                    className="absolute -right-[3px] -bottom-[3px] inline-flex h-[10px] min-w-[10px] items-center justify-center rounded-full px-[1px] text-[7px] font-[700] leading-none tracking-[0.02em]"
+                    style={{ background: 'var(--pick-accent)', color: 'var(--pick-ink)' }}
+                  >
+                    {initials}
+                  </span>
+                )}
               </span>
               {/* A narrow composer footer shows the model only (ui/toolbar-steps.ts). */}
               <span className="truncate font-[500] text-[var(--text-primary)] @max-[680px]/toolbar:hidden">
@@ -355,7 +363,10 @@ function UnifiedPickerPopover(props: PopoverProps) {
                 !active && !locked && 'hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
               )}
             >
-              {a.label}
+              <span className="inline-flex items-center justify-center gap-[5px]">
+                <AgentMark agent={a.value} size={16} />
+                {a.label}
+              </span>
             </button>
           )
         })}

@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
+import { agentLabel, toAgentProvider } from '@shared/types'
 import type { RecentSessionItem } from './recent-sessions'
+import { AgentMark } from '../ui/agent-mark'
 import { RelativeTimeLabel, WakeTimeLabel } from './RelativeTimeLabel'
 import { DEFAULT_RECENT_SESSION_LIMIT, type RecentSessionLimit } from './recent-session-limit'
 import { RECENT_DOT_LABELS, groupRecentSessions, isWokeItem, recentDot, type RecentGroupKey } from './recent-groups'
@@ -140,6 +142,11 @@ export function RecentSessionsSection({
               role="img"
               aria-label={RECENT_DOT_LABELS[dot]}
               title={RECENT_DOT_LABELS[dot]}
+            />
+            <AgentMark
+              agent={item.session.agentType ?? item.session.source}
+              label={agentLabel(toAgentProvider(item.session.agentType ?? item.session.source))}
+              className="sidebar-row-mark"
             />
             <span className="sidebar-recent-title" title={title}>
               {title}

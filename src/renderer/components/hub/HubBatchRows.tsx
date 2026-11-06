@@ -7,6 +7,7 @@ import {
   type HubBatchView,
 } from '@shared/hub'
 import { agentLabel } from '@shared/types'
+import { AgentMark } from '../ui/agent-mark'
 import { MachineBadge } from './MachineBadge'
 
 /** Agent, model, and for a child on another machine its account; the machine follows as a badge. */
@@ -39,7 +40,13 @@ export function HubBatchRows({ view }: { view: HubBatchView }) {
       <ol style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
         {view.rows.map((r, i) => (
           <li key={i} style={{ marginTop: '4px' }}>
-            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.title}</div>
+            <div
+              style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, color: 'var(--text-primary)' }}
+            >
+              {/* The line under it names the agent, so the mark is decoration. */}
+              <AgentMark agent={r.agent} />
+              {r.title}
+            </div>
             <div style={{ color: 'var(--text-muted)' }}>
               {rowWho(r)}
               {r.machine && (

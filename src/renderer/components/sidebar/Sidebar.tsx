@@ -70,6 +70,8 @@ import {
 } from './recent-session-limit'
 
 import type { Project, SessionSummary, Bookmark, ChatMessage } from '@shared/types'
+import { agentLabel, toAgentProvider } from '@shared/types'
+import { AgentMark } from '../ui/agent-mark'
 import { confirm } from '../ui/confirm'
 import { historyScanSummary, type PrHistoryScanResult } from '@shared/pull-request-links'
 import { useRenderCount } from '../../services/render-counter'
@@ -1039,6 +1041,11 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                             onClick={() => onSessionSelect?.(s, project.path)}
                           >
                             {isChild && <ChildStateDot parentId={hubRow.id} childId={s.id} />}
+                            <AgentMark
+                              agent={s.agentType ?? s.source}
+                              label={agentLabel(toAgentProvider(s.agentType ?? s.source))}
+                              className="sidebar-row-mark"
+                            />
                             <span className="sidebar-thread-title">{s.title}</span>
                             {s.worktreeRecovery?.cleanupDisposition === 'retained' && (
                               <span

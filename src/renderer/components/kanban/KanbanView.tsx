@@ -50,6 +50,8 @@ import { CardModal } from './CardModal'
 import { WorktreeManagerModal } from './WorktreeManagerModal'
 import { launchCardChat } from './card-launch'
 import { createRendererLogger } from '../../logger'
+import { agentLabel } from '@shared/types'
+import { AgentMark } from '../ui/agent-mark'
 import { Combobox } from '../ui/combobox'
 import { Spinner } from '../ui/spinner'
 import { Toolbar } from '../ui/toolbar'
@@ -547,6 +549,9 @@ function CardTilePresentation({
   const unread = useAgentStore((s) =>
     card.conversationId ? (s.sessions.find((x) => x.id === card.conversationId)?.unreadCount ?? 0) : 0,
   )
+  const linkedAgent = useAgentStore((s) =>
+    card.conversationId ? s.sessions.find((x) => x.id === card.conversationId)?.type : undefined,
+  )
   // Digest when the agent reported one, else a raw truncated fallback - same
   // rule as the sidebar Recents row: live from loaded messages, else the
   // line the backend stored when the last turn ended.
@@ -647,6 +652,7 @@ function CardTilePresentation({
         </div>
       )}
       <div style={tileMetaRowStyle}>
+        {linkedAgent && <AgentMark agent={linkedAgent} label={agentLabel(linkedAgent)} />}
         {hasSession && <SessionLiveness status={liveStatus} />}
         {hasSession && unread > 0 && (
           <span style={unreadBadgeStyle} title={`${unread} unread message${unread === 1 ? '' : 's'}`}>
