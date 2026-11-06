@@ -400,11 +400,14 @@ function startBridgeStopControls(): void {
  * Lets the relay run the seven tools on this desktop, through the registry's
  * own bridge services. Each frame re-reads the `instinct_bridge` flag, and
  * the services read the policy, the execution root and the kill again right
- * before each mutation.
+ * before each mutation. Once the app is quitting no command runs at all: the
+ * registry is being drained, so a session started then would miss its
+ * teardown.
  */
 function startBridgeCommandDispatch(registry: ProviderRegistry): void {
   const dispatcher = new BridgeCommandDispatcher({
     enabled: () => instinctBridgeEnabled(process.env, getSetting),
+    quitting: () => quitCoordinator.isQuitting,
     ...registry.bridgeServices(),
     stopGeneration: () => readBridgeStopRecord().generation,
     // A command frame carries no kill: the stop service reads the stored one inside its own queue.

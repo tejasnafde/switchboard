@@ -4,7 +4,9 @@
  * authority (the project policy alone, no calling chat and no plan-mode or
  * chat-scoped rule of a local agent), a denied project and a denied mode,
  * fuzzy ambiguity, a project the owner took off the allowlist, a moved
- * execution root, the kill, the flag, the stop generation, duplicate
+ * execution root, the kill, the flag, the stop generation (including a stop
+ * that is still running and one that lands while a call waits), a command
+ * that arrives while this app quits, duplicate
  * mutations across a relay retry and a restart of this desktop, and that a
  * chat the relay started is an ordinary chat in the sidebar with its
  * bridge-origin label.
@@ -67,7 +69,12 @@ let reads: BridgeReadService
 let delivery: BridgeDeliveryService
 let dispatcher: BridgeCommandDispatcher
 let flag: boolean
+let quitting: boolean
 let applied: number[]
+/** Every generation a command put on the stop queue, newer or not. */
+let queued: number[]
+/** Runs inside the stop queue, as a stop that was already running would. */
+let onStopQueue: (() => Promise<void>) | null
 
 function build(): void {
   reads = new BridgeReadService({
@@ -77,10 +84,16 @@ function build(): void {
   delivery = new BridgeDeliveryService(host, reads, Date.now, { stopConfirmMs: 300, stopPollMs: 5 })
   dispatcher = new BridgeCommandDispatcher({
     enabled: () => flag,
+    quitting: () => quitting,
     reads,
     delivery,
     stopGeneration: () => generation,
+    // As the stop service does: a generation that is not newer records and
+    // stops nothing, but the call still waits on its queue.
     advanceStopGeneration: async (next) => {
+      queued.push(next)
+      if (onStopQueue) await onStopQueue()
+      if (next <= generation) return
       applied.push(next)
       generation = next
     },
@@ -136,8 +149,11 @@ beforeEach(() => {
   createMigratedDb()
   host = new FakeHost(MACHINE)
   flag = true
+  quitting = false
   generation = 0
   applied = []
+  queued = []
+  onStopQueue = null
   callSeq = 0
   build()
   addProject(ALLOWED, 'Raves site')
@@ -174,6 +190,24 @@ describe('frame shape', () => {
       expect(await bad(f)).toMatchObject({ code: 'bridge_disabled', delivered: false, non_delivery_confirmed: true })
     expect(host.dispatched).toHaveLength(0)
     expect(host.interrupts).toHaveLength(0)
+  })
+
+  it('refuses every tool once this app is quitting, so no session starts after the teardown', async () => {
+    idleChat('c1')
+    quitting = true
+    for (const f of [
+      frame('read_chat', { chat: { machine_id: MACHINE, chat_id: 'c1' } }),
+      frame('start_chat', { project: 'Raves site', message: 'Go' }),
+      frame('send_to_chat', { chat: { machine_id: MACHINE, chat_id: 'c1' }, message: 'Go' }),
+      frame('stop_chat', { chat: { machine_id: MACHINE, chat_id: 'c1' } }),
+    ])
+      expect(await bad(f)).toMatchObject({
+        code: 'machine_offline',
+        retry: 'same_key',
+        non_delivery_confirmed: true,
+      })
+    expect(host.starts).toHaveLength(0)
+    expect(host.dispatched).toHaveLength(0)
   })
 })
 
@@ -338,6 +372,41 @@ describe('the kill and the stop generation', () => {
     expect(await ok(stale)).toMatchObject({ state: 'accepted', status: 'stopped' })
     expect(host.interrupts).toContain('c1')
     expect(applied).toEqual([])
+  })
+
+  it('waits for a stop already running before it adds work, and a stop_chat does not wait', async () => {
+    idleChat('c1')
+    generation = 2
+    await ok(frame('send_to_chat', { chat: { machine_id: MACHINE, chat_id: 'c1' }, message: 'Go' }))
+    // The same generation: nothing is recorded, but the call went on the stop queue.
+    expect(queued).toEqual([2])
+    expect(applied).toEqual([])
+    host.busyChats.add('c1')
+    expect((await run(frame('stop_chat', { chat: { machine_id: MACHINE, chat_id: 'c1' } }))).ok).toBe(true)
+    expect(queued).toEqual([2])
+    // A read never goes near the stop queue.
+    await ok(frame('list_projects'))
+    expect(queued).toEqual([2])
+  })
+
+  it('fences a mutation when a newer stop completes while it waits on the stop queue', async () => {
+    idleChat('c1')
+    generation = 2
+    // The relay's control frame for generation 3 is handled while this call waits.
+    onStopQueue = async () => {
+      generation = 3
+    }
+    for (const f of [
+      frame('start_chat', { project: 'Raves site', message: 'Go' }),
+      frame('send_to_chat', { chat: { machine_id: MACHINE, chat_id: 'c1' }, message: 'Go' }),
+    ])
+      expect(await bad(f)).toMatchObject({
+        code: 'policy_denied',
+        delivered: false,
+        non_delivery_confirmed: true,
+      })
+    expect(host.starts).toHaveLength(0)
+    expect(host.dispatched).toHaveLength(0)
   })
 
   it('applies a stop generation it has not seen before it starts new work, and on a stop too', async () => {

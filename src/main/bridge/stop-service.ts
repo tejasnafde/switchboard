@@ -150,6 +150,9 @@ export class BridgeStopService {
    * before the command does. A command frame says nothing about the kill, so
    * the stored one is read here, inside the queue, and left as it stands; a
    * kill queued behind this step is never overwritten by a stale snapshot.
+   * A generation that is not above ours records nothing and stops nothing,
+   * but a command that adds work calls this anyway, so it waits here for a
+   * stop already running before it dispatches.
    */
   advanceStopGeneration(generation: number): Promise<void> {
     return this.serial(async () => {

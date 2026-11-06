@@ -2,7 +2,8 @@
  * The bridge's owner delivery on a real migrated database and the real
  * durable atomic user-turn acceptance, with a fake registry host: start,
  * send and stop, idempotent replay and conflict, the mode cap, agent and
- * model choices, queue and steer fallback (compaction, an ACP agent),
+ * model choices, an agent the project stops allowing mid-call, queue and
+ * steer fallback (compaction, an ACP agent),
  * dormant and rotated chats, archived and child chats, the one active
  * bridge group, stop during a start, and a crash after the provider took the
  * turn (the retry finds the same message id and sends nothing).
@@ -196,6 +197,31 @@ describe('start_chat', () => {
       setBridgeProjectAllowed(ALLOWED, false, MACHINE)
     }
     expect(err(await start())).toMatchObject({ code: 'project_not_allowed', non_delivery_confirmed: true })
+    expect(host.dispatched).toHaveLength(0)
+  })
+
+  it('reads the allowed agents again after the availability probe and after the start', async () => {
+    const narrow = () => {
+      const [policy] = listBridgeProjectPolicies()
+      saveBridgeProjectPolicy({ ...policy, allowed_agents: ['codex'] })
+    }
+    // The owner unchecks claude-code while the availability probe is awaited.
+    host.agentAvailable = async (a) => {
+      narrow()
+      return a !== 'gemini'
+    }
+    expect(err(await start())).toMatchObject({ code: 'agent_unavailable', agent_choices: ['codex'] })
+    expect(host.starts).toHaveLength(0)
+
+    host.agentAvailable = async (a) => a !== 'gemini'
+    const [policy] = listBridgeProjectPolicies()
+    saveBridgeProjectPolicy({ ...policy, allowed_agents: ['claude-code', 'codex'] })
+    // And while the session starts, before the first turn goes in.
+    host.onStart = async (opts) => {
+      host.live.set(opts.threadId, { provider: opts.provider, midTurn: false, steerBlocked: false })
+      narrow()
+    }
+    expect(err(await start())).toMatchObject({ code: 'agent_unavailable', non_delivery_confirmed: true })
     expect(host.dispatched).toHaveLength(0)
   })
 
@@ -454,6 +480,35 @@ describe('send_to_chat', () => {
         await delivery.sendToChat({ ...agent(), chatId: 'own' }, { chat: 'own', message: 'x', idempotency_key: key() }),
       ).code,
     ).toBe('policy_denied')
+    expect(host.dispatched).toHaveLength(0)
+  })
+
+  it('refuses a chat whose agent the project does not allow, before the resume and after it', async () => {
+    const [policy] = listBridgeProjectPolicies()
+    saveBridgeProjectPolicy({ ...policy, allowed_agents: ['codex'] })
+    idleChat('c1')
+    expect(err(await delivery.sendToChat(agent(), { chat: 'c1', message: 'x', idempotency_key: key() }))).toMatchObject(
+      {
+        code: 'agent_unavailable',
+        agent_choices: ['codex'],
+      },
+    )
+    expect(host.starts).toHaveLength(0)
+
+    // Allowed when the resume starts, taken off the project while it runs.
+    saveBridgeProjectPolicy({ ...policy, allowed_agents: ['claude-code', 'codex'] })
+    createConversation('d1', ALLOWED, 'claude-code')
+    setConversationRuntimeMode('d1', 'auto')
+    host.onStart = async (opts) => {
+      host.live.set(opts.threadId, { provider: 'claude', midTurn: false, steerBlocked: false })
+      saveBridgeProjectPolicy({ ...policy, allowed_agents: ['codex'] })
+    }
+    expect(err(await delivery.sendToChat(agent(), { chat: 'd1', message: 'x', idempotency_key: key() }))).toMatchObject(
+      {
+        code: 'agent_unavailable',
+        non_delivery_confirmed: true,
+      },
+    )
     expect(host.dispatched).toHaveLength(0)
   })
 

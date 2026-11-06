@@ -10,7 +10,9 @@
  *
  * The caller is the OWNER, not an agent on this Mac: it has no calling chat,
  * so it never passes through the agent peer gate and takes none of a local
- * agent's chat-scoped privileges. What it may do is the project policy alone.
+ * agent's chat-scoped privileges. What it may do is the project policy alone:
+ * which chats it may open, in which mode, on which agents. That is not a
+ * sandbox, and the policy's action flags authorize no publication yet.
  * Its idempotency key is the relay's call id, so a frame that arrives twice,
  * before or after a restart of this desktop, answers from the stored record
  * and sends nothing again.
@@ -80,11 +82,17 @@ export type BridgeCommandParse =
 export interface BridgeCommandDeps {
   /** The `instinct_bridge` flag, read on every frame. */
   enabled(): boolean
+  /** True once this app has begun its teardown: nothing new runs after that. */
+  quitting(): boolean
   reads: BridgeReadService
   delivery: BridgeDeliveryService
   /** This desktop's durable stop generation, as `bridge/stop-service.ts` keeps it. */
   stopGeneration(): number
-  /** Records a generation this desktop has not seen and runs that stop; the kill is left as it stands. */
+  /**
+   * Records a generation this desktop has not seen and runs that stop; the
+   * kill is left as it stands. A generation that is not newer runs no stop,
+   * but the call still waits for a stop already running on that queue.
+   */
   advanceStopGeneration(generation: number): Promise<void>
 }
 
@@ -158,6 +166,13 @@ export class BridgeCommandDispatcher {
   }
 
   private async execute(command: BridgeCommand): Promise<Omit<BridgeCommandAnswer, 'callId'>> {
+    // Teardown drains the registry, so a session started now would miss it.
+    if (this.deps.quitting())
+      return this.deny(
+        bridgeError('machine_offline', 'This Mac is quitting. Nothing was run; send it again when it is back.', {
+          retry: 'same_key',
+        }),
+      )
     if (!this.deps.enabled())
       return this.deny(bridgeError('bridge_disabled', 'The Instinct bridge is off in Settings > Labs.'))
     const args = command.arguments
@@ -234,25 +249,29 @@ export class BridgeCommandDispatcher {
   }
 
   /**
-   * The relay's stop generation on a mutation. Below ours, the relay resolved
-   * the call before a stop this desktop has already applied, so a fenced call
-   * is refused and nothing is sent; `stop_chat` is not fenced, because a stop
-   * always works. Above ours, a `control` frame was missed: the stop service
-   * records the generation and runs that stop before any new work. A command
-   * frame carries no kill, so none is set or cleared here.
+   * The relay's stop generation on a mutation. Above ours, a `control` frame
+   * was missed: the stop service records the generation and runs that stop
+   * before any new work. A call that adds work also goes on that queue when
+   * the generation is not newer, so a stop already running finishes first and
+   * cannot look past the work this call would add. The generation is read
+   * again after the wait, because a newer stop can land meanwhile: below ours
+   * then, the relay resolved the call before a stop this desktop has applied,
+   * so the call is refused and nothing is sent. A `stop_chat` neither waits
+   * nor is fenced, because a stop always works. A command frame carries no
+   * kill, so none is set or cleared here.
    */
-  private async syncStopGeneration(generation: number, fence: boolean): Promise<BridgeError | null> {
+  private async syncStopGeneration(generation: number, addsWork: boolean): Promise<BridgeError | null> {
     const known = this.deps.stopGeneration()
-    if (generation < known)
-      return fence
-        ? bridgeError('policy_denied', 'A stop of bridge work came after this call was resolved. Nothing was sent.', {
-            non_delivery_confirmed: true,
-          })
-        : null
-    if (generation > known) {
-      log.info('a relay command named a newer stop generation', { generation, known })
-      await this.deps.advanceStopGeneration(generation)
-    }
+    if (generation > known) log.info('a relay command named a newer stop generation', { generation, known })
+    if (generation > known || addsWork) await this.deps.advanceStopGeneration(generation)
+    if (addsWork && generation < this.deps.stopGeneration())
+      return bridgeError(
+        'policy_denied',
+        'A stop of bridge work came after this call was resolved. Nothing was sent.',
+        {
+          non_delivery_confirmed: true,
+        },
+      )
     return null
   }
 
