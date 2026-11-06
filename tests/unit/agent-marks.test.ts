@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AGENT_MARKS, agentMark, agentMarkInitials } from '@shared/agent-marks'
+import { AGENT_MARKS, agentMark } from '@shared/agent-marks'
 import { ACP_COMMAND_AGENT } from '@shared/acp-agents'
 import { AGENT_PROVIDERS } from '@shared/types'
 
@@ -10,9 +10,15 @@ describe('agent marks', () => {
     expect(missing).toEqual([ACP_COMMAND_AGENT])
   })
 
-  it('draws only closed paths sized by their own viewBox', () => {
+  it('sizes every mark by the extent of its own artwork', () => {
     for (const [agent, mark] of Object.entries(AGENT_MARKS)) {
-      expect(mark.viewBox, agent).toMatch(/^0 0 \d+ \d+$/)
+      const [x, y, width, height] = mark.viewBox.split(' ').map(Number)
+      expect([x, y, width, height].every(Number.isFinite), agent).toBe(true)
+      expect(width, agent).toBeGreaterThan(0)
+      expect(height, agent).toBeGreaterThan(0)
+      // Side by side at one size, a mark drawn into a box far larger than
+      // itself looks like a different, smaller icon.
+      expect(Math.min(width, height) / Math.max(width, height), agent).toBeGreaterThan(0.6)
       expect(mark.paths.length, agent).toBeGreaterThan(0)
       for (const d of mark.paths) expect(d[0], agent).toMatch(/[Mm]/)
     }
@@ -23,10 +29,5 @@ describe('agent marks', () => {
     expect(agentMark('claude-code')).toBe(AGENT_MARKS['claude-code'])
     expect(agentMark('some-future-agent')).toBeUndefined()
     expect(agentMark(null)).toBeUndefined()
-  })
-
-  it('falls back to two letters of the agent name', () => {
-    expect(agentMarkInitials('Local')).toBe('LO')
-    expect(agentMarkInitials('  ')).toBe('··')
   })
 })

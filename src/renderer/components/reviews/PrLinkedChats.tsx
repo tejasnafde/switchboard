@@ -100,10 +100,7 @@ export function LinkedChatsCard({ pr }: { pr: PrSummary }) {
           >
             {chat.title}
           </button>
-          <span
-            className="ml-auto shrink-0 text-[var(--text-secondary)]"
-            title={`${chatAgent(chat)} · ${linkSourceLabel(chat.linkSource)}`}
-          >
+          <span className="ml-auto shrink-0 text-[var(--text-secondary)]" title={linkSourceLabel(chat.linkSource)}>
             <AgentMark agent={chat.agentType} label={chatAgent(chat)} />
           </span>
           <Button

@@ -28,7 +28,9 @@ export const AGENT_MARKS: Partial<Record<AgentProvider, AgentMarkData>> = {
     ],
   },
   opencode: {
-    viewBox: '0 0 512 512',
+    // The artwork sits in the middle of the vendor's 512 box; this is its own extent,
+    // so the mark draws the same height as every other one.
+    viewBox: '128 96 256 320',
     fillRule: 'evenodd',
     paths: ['M384 416H128V96H384V416ZM320 160H192V352H320V160Z'],
   },
@@ -68,9 +70,4 @@ export const AGENT_MARKS: Partial<Record<AgentProvider, AgentMarkData>> = {
 export function agentMark(agent: string | null | undefined): AgentMarkData | undefined {
   const key = agent === 'claude' ? 'claude-code' : agent
   return isAgentProvider(key) ? AGENT_MARKS[key] : undefined
-}
-
-/** The two letters drawn in the mark's box when the agent has none. */
-export function agentMarkInitials(label: string): string {
-  return label.trim().slice(0, 2).toUpperCase() || '··'
 }

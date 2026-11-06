@@ -1,4 +1,5 @@
-import { agentMark, agentMarkInitials } from '@shared/agent-marks'
+import { agentMark } from '@shared/agent-marks'
+import { providerInstanceInitials } from '@shared/provider-instance-initials'
 import { agentShortLabel, isAgentType } from '@shared/types'
 import { cn } from '../../lib/utils'
 
@@ -35,7 +36,7 @@ export function AgentMark({ agent, size = 12, label, className }: AgentMarkProps
           className,
         )}
       >
-        {agentMarkInitials(name)}
+        {providerInstanceInitials(name)}
       </span>
     )
   }

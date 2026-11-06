@@ -7,7 +7,6 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/shared/agent-marks.ts",
         "src/renderer/components/ui/agent-mark.tsx",
         "src/renderer/components/sidebar/Sidebar.tsx",
         "src/renderer/components/sidebar/RecentSessionsSection.tsx",
@@ -49,14 +48,15 @@
     "automated": [
       "npm run typecheck passed for both the main and renderer projects.",
       "npx vitest run --maxWorkers=2 passed on the whole suite, including the new tests/unit/agent-marks.test.ts.",
-      "tests/unit/agent-marks.test.ts pins that every agent except the local ACP command ships a mark, that each mark's paths are closed and sized by their own viewBox, that both spellings of Claude resolve to one mark, and that an agent this build does not know gets no mark instead of a guessed one.",
-      "npm run test:e2e:visual (screens phase) refreshed the baselines of the screens that changed, in Dark, Light and Translucent; every refreshed PNG was read before it was committed."
+      "tests/unit/agent-marks.test.ts pins that every agent except the local ACP command ships a mark, that each mark is sized by the extent of its own artwork so no mark draws smaller than its neighbours, that both spellings of Claude resolve to one mark, and that an agent this build does not know gets no mark instead of a guessed one.",
+      "An adversarial review of the branch diff was run. Its findings were fixed: the OpenCode mark drew at half size inside the vendor box, a sidebar row could take its mark from a session source that names no agent (a chat now carries its agent from the moment it is created), the Recents status line no longer lined up under the title, the agent tabs could overflow the fixed-width picker, a third initials helper disagreed with the new one (both now use providerInstanceInitials), and the reviews row announced the agent twice."
     ],
     "hardware": [],
     "notExercised": [
       "The marks have not been read on a high-DPI external display, only on the test window's pinned 1x scale.",
       "Mistral Vibe, Cline and GitHub Copilot have no account on this machine, so their marks were checked in the agent tabs and in unit data only, never on a real chat row.",
-      "The visual behaviour phase (native glass transmission) was not re-run: no translucency rule changed, only the content of rows that already existed."
+      "The visual behaviour phase (native glass transmission) was not re-run: no translucency rule changed, only the content of rows that already existed.",
+      "The screenshot baselines were not refreshed on this machine, which could not run a packaged build while this branch was written. The CI visual job reports every screen whose pixels changed, and its artifact carries the updated images."
     ]
   }
 }

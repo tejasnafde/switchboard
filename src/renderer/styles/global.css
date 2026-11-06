@@ -1103,9 +1103,9 @@ html, body, #root {
   font-variant-numeric: tabular-nums;
 }
 
-/* Line 2 lines up under the title, past the dot (7px) and its gap (7px). */
+/* Line 2 lines up under the title, past the dot (7px), the agent mark (12px) and the two 7px gaps. */
 .sidebar-recent-status {
-  padding-left: 14px;
+  padding-left: 33px;
   overflow: hidden;
   color: var(--text-muted);
   font-size: 11px;

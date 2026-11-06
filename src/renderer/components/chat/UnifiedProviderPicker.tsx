@@ -186,7 +186,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
                 )}
               </span>
               {/* A narrow composer footer shows the model only (ui/toolbar-steps.ts). */}
-              <span className="truncate font-[500] text-[var(--text-primary)] @max-[680px]/toolbar:hidden">
+              <span className="truncate font-[500] text-[var(--text-primary)] @max-[680px]/toolbar:sr-only">
                 {agentShortLabel(agentType)}
                 {showInstanceBadge && effectiveInstance ? ` · ${effectiveInstance.displayName}` : ''}
               </span>
@@ -352,7 +352,7 @@ function UnifiedPickerPopover(props: PopoverProps) {
               disabled={locked}
               onClick={() => onAgentTypeChange(a.value)}
               className={cn(
-                'flex-1 whitespace-nowrap rounded-[5px] border px-[8px] py-[5px] text-[11px] outline-none transition-[background,border-color] duration-[120ms] ease-[ease] focus-visible:border-[var(--border-focus)] motion-reduce:transition-none',
+                'min-w-0 flex-1 rounded-[5px] border px-[8px] py-[5px] text-[11px] outline-none transition-[background,border-color] duration-[120ms] ease-[ease] focus-visible:border-[var(--border-focus)] motion-reduce:transition-none',
                 active
                   ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_16%,var(--bg-secondary))] font-[600] text-[var(--text-primary)]'
                   : 'border-transparent bg-transparent font-[500] text-[var(--text-secondary)]',
@@ -360,9 +360,9 @@ function UnifiedPickerPopover(props: PopoverProps) {
                 !active && !locked && 'hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
               )}
             >
-              <span className="inline-flex items-center justify-center gap-[5px]">
+              <span className="flex min-w-0 items-center justify-center gap-[5px]">
                 <AgentMark agent={a.value} size={16} />
-                {a.label}
+                <span className="truncate">{a.label}</span>
               </span>
             </button>
           )
