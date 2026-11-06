@@ -20,6 +20,7 @@ import {
 } from './ipc-channels'
 import { PHONE_PR_WRITE_CHANNELS } from './pull-request-phone-writes'
 import { governedSettingKey } from './project-settings'
+import { LABS_SETTING_KEYS } from './labs'
 import { ACP_COMMAND_AGENT } from './acp-agents'
 import type { DeviceIdentity, DevicePlatform } from './device-identity'
 
@@ -139,11 +140,14 @@ const SCOPE_REQUIRED_CHANNELS: Partial<Record<DeviceScope, readonly string[]>> =
  * credential rows are in `ADMIN_ONLY_SETTING_FAMILIES`, gated for reads too.
  * The desktop's keyboard shortcuts are not a phone's to change either: the
  * phone has no Keyboard page, and a rebind moves keys under the user's hands.
+ * The Labs rows turn on agent tools such as `request_secret`; only the
+ * desktop's Labs page switches them.
  */
 const ADMIN_ONLY_SETTING_KEYS: readonly string[] = [
   'chat.defaultRuntimeMode',
   'google.clientId',
   KEYBOARD_OVERRIDES_SETTING,
+  ...LABS_SETTING_KEYS,
 ]
 
 /**

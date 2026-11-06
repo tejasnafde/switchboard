@@ -185,13 +185,16 @@ current scopes, so a phone learns a grant without reconnecting. The IAP TCP
 host runs with `PHONE_SCOPES` and never holds `pr-write`. What a write must
 carry is in `src/main/pull-requests/AGENTS.md` (Phone writes).
 
-## Flag capabilities (`hub_children_v1`, `hub_remote_children_v1`)
+## Flag capabilities (`hub_children_v1`, `hub_remote_children_v1`, `agent_secret_request_v1`)
 
 A `ready` frame carries `readyCapabilities()` (`flag-capabilities.ts`): the
 fixed `BACKEND_CAPABILITIES` plus what the reader set with
-`setFlagCapabilities` answers at that moment (`hubFlagCapabilities`, set in
-`main/index.ts` and `server/index.ts` once the database is open). A phone
-learns a staged flag from it, and a flag change on its next connect. Phones
+`setFlagCapabilities` answers at that moment (`labsFlagCapabilities` in
+`shared/labs.ts`, set in `main/index.ts` and `server/index.ts` once the
+database is open): each Labs flag that is on and names a capability. A phone
+learns a staged flag from it, and a flag change on its next connect.
+`agent_secret_request_v1` is one of them since 2026-11-06; before, the fixed
+list carried it with the flag off. Phones
 show their hub UI only with `hub_children_v1` (the hub view, the rows' `hub`
 field, `hub.children-changed`), and a remote child's machine badge only with
 `hub_remote_children_v1`. Without it Open on a remote child still shows its

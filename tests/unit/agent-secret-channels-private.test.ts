@@ -12,7 +12,11 @@ import { WsTransport } from '../../src/shared/ws-transport'
 import { AgentSecretChannels, carriesSecretArgs } from '../../src/shared/ipc-channels'
 import { FULL_SCOPES, PHONE_SCOPES, isChannelAllowed } from '../../src/shared/device-auth'
 import { BACKEND_CAPABILITIES } from '../../src/shared/ws-protocol'
-import { AGENT_SECRET_REQUEST_CAPABILITY } from '../../src/shared/agent-secret-request'
+import {
+  AGENT_SECRET_REQUEST_CAPABILITY,
+  AGENT_SECRET_REQUEST_LABS_SETTING,
+} from '../../src/shared/agent-secret-request'
+import { labsFlagCapabilities } from '../../src/shared/labs'
 
 const VALUE = 'sb-test-not-a-secret'
 const CHANNELS = Object.values(AgentSecretChannels)
@@ -61,7 +65,11 @@ describe('agent secret channels', () => {
     }
   })
 
-  it('are advertised by the backend capability', () => {
-    expect(BACKEND_CAPABILITIES).toContain(AGENT_SECRET_REQUEST_CAPABILITY)
+  it('are advertised only while the flag is on, not in the fixed list', () => {
+    expect(BACKEND_CAPABILITIES).not.toContain(AGENT_SECRET_REQUEST_CAPABILITY)
+    expect(labsFlagCapabilities({}, () => null)).not.toContain(AGENT_SECRET_REQUEST_CAPABILITY)
+    expect(labsFlagCapabilities({}, (k) => (k === AGENT_SECRET_REQUEST_LABS_SETTING ? 'true' : null))).toContain(
+      AGENT_SECRET_REQUEST_CAPABILITY,
+    )
   })
 })

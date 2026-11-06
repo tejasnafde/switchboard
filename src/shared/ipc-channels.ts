@@ -162,6 +162,8 @@ export const AppChannels = {
   SETTINGS_PROJECT_OVERRIDES: 'settings:project-overrides',
   SETTINGS_PROJECT_OVERRIDE_SET: 'settings:project-override-set',
   SETTINGS_PROJECT_OVERRIDE_REMOVE: 'settings:project-override-remove',
+  /** Each Labs flag's `LabsFlagState` (`shared/labs.ts`): which env var forces it, and whether it is on. */
+  LABS_STATE: 'settings:labs-state',
   /** External IPv4 addresses of this machine - mobile pairing QR host picker. */
   LAN_ADDRESSES: 'app:lan-addresses',
   /**

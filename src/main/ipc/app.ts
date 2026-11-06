@@ -125,6 +125,7 @@ import { projectOverrideKey } from '@shared/project-settings'
 import { hubChildrenEnabled, withHubFields } from '@shared/hub'
 import { uploadAttachment } from '../attachments'
 import { storeConversationSettled } from '../conversations/chat-settle'
+import { labsFlagStates } from '@shared/labs'
 import { chatSnoozer } from '../conversations/chat-snooze'
 import { clearSnoozePresets, readSnoozePresets, writeSnoozePresets } from '../conversations/snooze-presets'
 import {
@@ -374,6 +375,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     }
     deps.onSettingChanged?.(key)
   })
+  host.handle(AppChannels.LABS_STATE, () => labsFlagStates(process.env, getSetting))
   host.handle('settings:remove', (key: string) => {
     if (key === SNOOZE_PRESETS_SETTING) clearSnoozePresets(emitPresets)
     else removeSetting(key)

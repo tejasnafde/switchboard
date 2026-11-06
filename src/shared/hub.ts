@@ -44,20 +44,13 @@ export function hubRemoteChildrenEnabled(env: NodeJS.ProcessEnv, getSetting: Set
 }
 
 /**
- * Phones learn the flags from the `ready` frame: `hub_children_v1` while
- * `hub_children` is on (the hub view, the rows' `hub` field and
- * `hub.children-changed`), `hub_remote_children_v1` while `hub_remote_children`
- * is on too (the view's `remote` field). Read again at every `ready`.
+ * Phones learn the flags from the `ready` frame (`labsFlagCapabilities`):
+ * `hub_children_v1` while `hub_children` is on (the hub view, the rows' `hub`
+ * field and `hub.children-changed`), `hub_remote_children_v1` while
+ * `hub_remote_children` is on too (the view's `remote` field).
  */
 export const HUB_CHILDREN_CAPABILITY = 'hub_children_v1'
 export const HUB_REMOTE_CHILDREN_CAPABILITY = 'hub_remote_children_v1'
-
-export function hubFlagCapabilities(env: NodeJS.ProcessEnv, getSetting: SettingReader): string[] {
-  if (!hubChildrenEnabled(env, getSetting)) return []
-  return hubRemoteChildrenEnabled(env, getSetting)
-    ? [HUB_CHILDREN_CAPABILITY, HUB_REMOTE_CHILDREN_CAPABILITY]
-    : [HUB_CHILDREN_CAPABILITY]
-}
 
 /** Backend setting, default on: at launch the desktop connects the machines that hold open children of its hubs. */
 export const HUB_RECONNECT_ON_LAUNCH_SETTING = 'hub.reconnectOnLaunch'

@@ -18,7 +18,7 @@ describe('settings rows', () => {
     for (const row of SETTING_ROWS) expect(pages.has(row.page), row.id).toBe(true)
   })
 
-  it('has the nine pages in navigation order', () => {
+  it('has the ten pages in navigation order', () => {
     expect(SETTINGS_PAGES.map((page) => page.title)).toEqual([
       'General',
       'Appearance',
@@ -28,6 +28,7 @@ describe('settings rows', () => {
       'Keyboard',
       'Devices & machines',
       'Archive & data',
+      'Labs',
       'About',
     ])
   })
@@ -71,7 +72,7 @@ describe('changed settings', () => {
     expect(counts.chat).toBe(2)
     expect(counts.appearance).toBe(0)
     expect(counts.accounts).toBe(0)
-    expect(Object.keys(counts)).toHaveLength(9)
+    expect(Object.keys(counts)).toHaveLength(10)
   })
 
   it('does not mark a row whose value has not loaded', () => {

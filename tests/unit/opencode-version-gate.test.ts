@@ -317,9 +317,11 @@ describe('refusing OpenCode 2.x on every spawn path', () => {
 
 describe('the opencode_v2_acp flag', () => {
   it('is off unless SB_OPENCODE_V2_ACP=1', () => {
-    expect(opencodeV2AcpEnabled({})).toBe(false)
-    expect(opencodeV2AcpEnabled({ SB_OPENCODE_V2_ACP: '0' })).toBe(false)
-    expect(opencodeV2AcpEnabled({ SB_OPENCODE_V2_ACP: '1' })).toBe(true)
+    const none = () => null
+    expect(opencodeV2AcpEnabled({}, none)).toBe(false)
+    expect(opencodeV2AcpEnabled({ SB_OPENCODE_V2_ACP: '0' }, none)).toBe(false)
+    expect(opencodeV2AcpEnabled({ SB_OPENCODE_V2_ACP: '1' }, none)).toBe(true)
+    expect(opencodeV2AcpEnabled({}, (key) => (key === 'labs.opencode_v2_acp' ? 'true' : null))).toBe(true)
   })
 
   itWithPosixToolShims('lets 2.x through as generation 2, and still refuses 3.x', async () => {

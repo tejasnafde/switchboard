@@ -48,6 +48,7 @@ beforeEach(async () => {
   ;(window as unknown as { api: unknown }).api = {
     provider: { isAvailable: vi.fn(async () => true) },
     providerInstances: { testDraft: vi.fn(async () => ({ ok: true, message: 'ok' })) },
+    settings: { get: vi.fn(async () => null) },
   }
   useProviderInstanceStore.setState({ upsert } as never)
   upsert.mockClear()

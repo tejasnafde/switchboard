@@ -23,6 +23,7 @@ import { LaunchConfigsPanel } from './settings/LaunchConfigsPanel'
 import { ArchiveDataPage } from './settings/ArchiveDataPage'
 import { WorktreeProtectionPanel } from './settings/WorktreeProtectionPanel'
 import { SnoozePresetsPanel } from './settings/SnoozePresetsPanel'
+import { LabsPage } from './settings/LabsPage'
 import { useSettingValues, type SettingValues } from './settings/setting-values'
 import {
   ALL_PROJECTS_SCOPE,
@@ -448,9 +449,15 @@ export function SettingsPageBody({
           <HubMachinesSection />
         </>
       )}
+      {page === 'labs' && <LabsSettings />}
       {page === 'about' && <AboutPage />}
     </>
   )
+}
+
+function LabsSettings() {
+  const { values, set, highlight } = useContext(SettingsContext)
+  return <LabsPage values={values} set={set} highlight={highlight} />
 }
 
 /** Shown only while the staged flag hub_remote_children is on in this desktop. */
@@ -905,7 +912,7 @@ function SettingsFileBanner() {
 function Section({ title, card = false, children }: { title: string; card?: boolean; children: ReactNode }) {
   return (
     <section className="mb-[18px]">
-      <h3 className="mb-2 text-[11px] font-[600] uppercase tracking-[0.07em] text-[var(--text-muted)]">{title}</h3>
+      <h3 className="mb-2 text-[11px] font-[500] leading-4 text-[var(--text-muted)]">{title}</h3>
       {card ? <SettingsCard>{children}</SettingsCard> : children}
     </section>
   )
