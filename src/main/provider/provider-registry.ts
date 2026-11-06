@@ -702,6 +702,23 @@ export class ProviderRegistry implements PeerToolHost {
     }
   }
 
+  /**
+   * A bridge steer would be lost or land wrong: the turn is compacting or
+   * stopping, or the provider has not sent its first event or reply yet (an
+   * adapter whose provider has not taken the first turn runs a steer as a
+   * turn of its own).
+   */
+  private bridgeSteerBlocked(threadId: string): boolean {
+    return this.steerBlocked.has(threadId) || this.firstEventSpans.has(threadId) || this.firstContentSpans.has(threadId)
+  }
+
+  /** The agent's adapter is installed, and a remote backend does not refuse it. */
+  private async agentRunsHere(agent: AgentType): Promise<boolean> {
+    const provider = providerKindFor(agent)
+    if (process.env.SWITCHBOARD_REMOTE && remoteBlockedProviderLabel(provider)) return false
+    return (await this.getAdapter(provider)?.isAvailable()) === true
+  }
+
   /** Owner delivery through the registry's own start, atomic acceptance, queue and Stop paths. */
   private bridgeDeliveryHost(): BridgeDeliveryHost {
     return {
@@ -710,17 +727,15 @@ export class ProviderRegistry implements PeerToolHost {
       liveThread: (chatId) => this.liveSessionId(chatId),
       starting: (threadId) => this.startingSessions.has(threadId),
       startSession: (opts) => this.startManagedSession(opts),
-      submitTurn: (input) => this.submitManagedUserTurn(input),
+      submitTurn: (input) => this.submitManagedUserTurn(input, { steerFallback: true }),
       provider: (threadId) => this.sessionAdapters.get(threadId)?.provider ?? null,
       midTurn: (threadId) => this.hasOutstandingTurn(threadId),
-      // Also before the provider's first event or reply: an adapter whose provider has not
-      // taken the first turn yet runs a steer as a turn of its own.
-      steerBlocked: (threadId) =>
-        this.steerBlocked.has(threadId) || this.firstEventSpans.has(threadId) || this.firstContentSpans.has(threadId),
+      steerBlocked: (threadId) => this.bridgeSteerBlocked(threadId),
       busy: (chatId) => this.isBusy(chatId),
+      running: (chatId) => threadFamilyIds(chatId).some((id) => this.runningOrPreparing(id)),
       chatMode: (chatId) => this.chatRuntimeMode(chatId),
       isOpenChild: (chatId) => this.hubStarter.isOpenChild(chatId),
-      agentAvailable: async (agent) => (await this.getAdapter(providerKindFor(agent))?.isAvailable()) === true,
+      agentAvailable: (agent) => this.agentRunsHere(agent),
       interrupt: (threadId) => this.interruptChat(threadId),
       queuedTurns: (threadId) => this.listQueuedTurns(threadId),
       cancelQueuedTurn: (threadId, messageId) => this.actOnQueuedTurn('cancel', threadId, messageId),
@@ -2729,8 +2744,12 @@ export class ProviderRegistry implements PeerToolHost {
     return this.managedSessionStarter(opts)
   }
 
-  async submitManagedUserTurn(input: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> {
-    return this.submitAtomicUserTurn(input)
+  /** `steerFallback`: a steer that cannot land when it reaches the adapter queues instead. */
+  async submitManagedUserTurn(
+    input: UserTurnSubmissionV1,
+    opts: { steerFallback?: boolean } = {},
+  ): Promise<UserTurnSubmissionResult> {
+    return this.submitAtomicUserTurn(input, null, false, opts.steerFallback === true)
   }
 
   /**
@@ -4471,6 +4490,7 @@ export class ProviderRegistry implements PeerToolHost {
     input: UserTurnSubmissionV1,
     senderLine: string | null = null,
     declineApprovals = false,
+    steerFallback = false,
   ): Promise<UserTurnSubmissionResult> {
     const threadId = input.threadId
     if (this.switchingSessions.has(threadId)) {
@@ -4560,23 +4580,26 @@ export class ProviderRegistry implements PeerToolHost {
         },
         finalize: (turn) => this.withPendingHandoff(threadId, adapter, turn),
         dispatch: async (turn) => {
+          // Checked again here, at the adapter boundary: compaction or a stop may have begun since the caller chose.
+          const delivery =
+            input.delivery === 'steer' && steerFallback && this.bridgeSteerBlocked(threadId) ? 'queue' : input.delivery
           // Here, past every check that can still refuse the turn, so an agent
           // is never told of a message that then does not arrive. A message
           // queued on purpose where a steer was possible waits for the card.
-          if (declineApprovals && !(input.delivery === 'queue' && canSteer(adapter.provider)))
+          if (declineApprovals && !(delivery === 'queue' && canSteer(adapter.provider)))
             await this.declinePendingApprovals(adapter, threadId)
           // A queued message becomes a turn of its own once the running one
           // ends, so it counts; a Codex steer joins the running turn and does not.
           const startsNewProviderTurn = startsOwnProviderTurn(
             adapter.provider,
             this.hasOutstandingTurn(threadId),
-            input.delivery,
+            delivery,
           )
           if (startsNewProviderTurn) this.beginOutstandingTurn(threadId)
           releasePreparation()
           // The chat row id every client already has for this message, which
           // is what a held message is listed, promoted and cancelled by.
-          const queuedId = input.delivery === 'queue' ? echoMessageId(input.origin) : undefined
+          const queuedId = delivery === 'queue' ? echoMessageId(input.origin) : undefined
           if (queuedId) {
             this.queuedTurns.expect(
               queuedId,
@@ -4595,7 +4618,7 @@ export class ProviderRegistry implements PeerToolHost {
           const providerText = wakes ? wakes.apply(withMergeBack) : withMergeBack
           try {
             await this.dispatchToAdapter(adapter, threadId, providerText, senderLine, (text) =>
-              adapter.sendTurn(threadId, text, input.runtimeMode, providerImages, input.delivery, queuedId),
+              adapter.sendTurn(threadId, text, input.runtimeMode, providerImages, delivery, queuedId),
             )
           } catch (error) {
             mergeBack?.release()
@@ -4699,11 +4722,7 @@ export class ProviderRegistry implements PeerToolHost {
   private hubDescribeDeps(): HubDescribeDeps {
     return {
       backendVersion: () => this.backendVersion ?? appVersion(),
-      agentAvailable: async (agent) => {
-        const provider = providerKindFor(agent)
-        if (process.env.SWITCHBOARD_REMOTE && remoteBlockedProviderLabel(provider)) return false
-        return (await this.getAdapter(provider)?.isAvailable()) === true
-      },
+      agentAvailable: (agent) => this.agentRunsHere(agent),
       runningSlotKeys: () => this.hubStarter.runningSlotKeys(),
       ...(process.env.SWITCHBOARD_REMOTE ? { hasLogin: accountHasLogin } : {}),
       startChild: (request) => this.hubStarter.startRemote(request),

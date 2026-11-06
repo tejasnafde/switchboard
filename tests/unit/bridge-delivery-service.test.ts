@@ -84,6 +84,8 @@ class FakeHost implements BridgeDeliveryHost {
   flag = true
   live = new Map<string, LiveChat>()
   busyChats = new Set<string>()
+  /** Owes a turn only for messages held in its queue: busy, but not running. */
+  heldOnly = new Set<string>()
   startingThreads = new Set<string>()
   openChildren = new Set<string>()
   pending = new Map<string, PendingBlockingEvent[]>()
@@ -134,7 +136,9 @@ class FakeHost implements BridgeDeliveryHost {
   provider = (threadId: string) => this.live.get(threadId)?.provider ?? null
   midTurn = (threadId: string) => this.live.get(threadId)?.midTurn ?? false
   steerBlocked = (threadId: string) => this.live.get(threadId)?.steerBlocked ?? false
-  busy = (chatId: string) => this.busyChats.has(resolveRootThreadId(chatId))
+  busy = (chatId: string) =>
+    this.busyChats.has(resolveRootThreadId(chatId)) || this.heldOnly.has(resolveRootThreadId(chatId))
+  running = (chatId: string) => this.busyChats.has(resolveRootThreadId(chatId))
   chatMode = (chatId: string) => (getConversationRuntimeMode(resolveRootThreadId(chatId)) ?? 'sandbox') as RuntimeMode
   isOpenChild = (chatId: string) => this.openChildren.has(resolveRootThreadId(chatId))
   agentAvailable = async (agent: AgentType) => agent !== 'gemini'
@@ -146,6 +150,10 @@ class FakeHost implements BridgeDeliveryHost {
   cancelQueuedTurn = async (threadId: string, messageId: string) => {
     this.cancelled.push(messageId)
     const turn = this.queuedTurns(threadId).find((q) => q.messageId === messageId)!
+    this.queued.set(
+      threadId,
+      this.queuedTurns(threadId).filter((q) => q.messageId !== messageId),
+    )
     return { ok: true as const, turn }
   }
 }
@@ -248,9 +256,10 @@ describe('start_chat', () => {
   it('returns choices for an agent or model the project does not offer', async () => {
     const [policy] = listBridgeProjectPolicies()
     saveBridgeProjectPolicy({ ...policy, allowed_agents: ['claude-code', 'codex', 'gemini'] })
+    // gemini is allowed but cannot start here, so it is not offered.
     expect(err(await start({ agent: 'opencode' }))).toMatchObject({
       code: 'agent_unavailable',
-      agent_choices: ['claude-code', 'codex', 'gemini'],
+      agent_choices: ['claude-code', 'codex'],
     })
     expect(err(await start({ agent: 'gemini' }))).toMatchObject({ code: 'agent_unavailable' })
     const model = err(await start({ agent: 'codex', model: 'gpt-0' }))
@@ -258,6 +267,28 @@ describe('start_chat', () => {
     expect(model.model_choices).toContain('gpt-5.5')
     expect(host.starts).toHaveLength(0)
     expect(ok(await start({ agent: 'codex', model: 'gpt-5.5' }))).toMatchObject({ agent: 'codex', model: 'gpt-5.5' })
+  })
+
+  it('does not use a policy default model made for another agent', async () => {
+    const [policy] = listBridgeProjectPolicies()
+    saveBridgeProjectPolicy({ ...policy, default_model: 'gpt-5.5' })
+    expect(ok(await start()).model).toBeNull()
+    expect(ok(await start({ agent: 'codex' })).model).toBe('gpt-5.5')
+  })
+
+  it('checks the flag and the allowlist again after the start awaited', async () => {
+    host.onStart = async (opts) => {
+      host.live.set(opts.threadId, { provider: opts.provider, midTurn: false, steerBlocked: false })
+      host.flag = false
+    }
+    expect(err(await start())).toMatchObject({ code: 'bridge_disabled', non_delivery_confirmed: true })
+    host.flag = true
+    host.onStart = async (opts) => {
+      host.live.set(opts.threadId, { provider: opts.provider, midTurn: false, steerBlocked: false })
+      setBridgeProjectAllowed(ALLOWED, false, MACHINE)
+    }
+    expect(err(await start())).toMatchObject({ code: 'project_not_allowed', non_delivery_confirmed: true })
+    expect(host.dispatched).toHaveLength(0)
   })
 
   it('refuses a project off the allowlist and answers bridge_disabled with the flag off', async () => {
@@ -411,6 +442,61 @@ describe('send_to_chat', () => {
     expect(host.dispatched).toHaveLength(1)
   })
 
+  it('refuses a chat archived during its resume, and never starts a dormant chat outside the root', async () => {
+    createConversation('d1', ALLOWED, 'claude-code')
+    setConversationRuntimeMode('d1', 'auto')
+    host.onStart = async (opts) => {
+      host.live.set(opts.threadId, { provider: 'claude', midTurn: false, steerBlocked: false })
+      archiveConversation('d1')
+    }
+    expect(err(await delivery.sendToChat(agent(), { chat: 'd1', message: 'x', idempotency_key: key() })).code).toBe(
+      'chat_archived',
+    )
+    host.onStart = null
+    createConversation('d2', ALLOWED, 'claude-code')
+    setConversationRuntimeMode('d2', 'auto')
+    setConversationWorktree('d2', OTHER, 'b')
+    expect(err(await delivery.sendToChat(agent(), { chat: 'd2', message: 'x', idempotency_key: key() })).code).toBe(
+      'project_not_allowed',
+    )
+    expect(host.starts.map((o) => o.threadId)).toEqual(['d1'])
+    expect(host.dispatched).toHaveLength(0)
+  })
+
+  it('reports queue when the registry queued the message after all', async () => {
+    idleChat('c1')
+    const submit = host.submitTurn
+    host.submitTurn = async (input) => {
+      const result = await submit(input)
+      host.queued.set('c1', [{ threadId: 'c1', messageId: `remote_${input.origin}`, text: 'x', queuedAt: 1 }])
+      return result
+    }
+    const receipt = ok(await delivery.sendToChat(agent(), { chat: 'c1', message: 'x', idempotency_key: key() }))
+    expect(receipt.delivery).toEqual({ requested: 'queue', actual: 'queue' })
+  })
+
+  it('a send replayed after a crash keeps its delivery', async () => {
+    idleChat('c1')
+    host.dieAfterDispatch = true
+    const args = { chat: 'c1', message: 'x', idempotency_key: 'send-crash' }
+    expect(err(await delivery.sendToChat(agent(), args)).code).toBe('delivery_unknown')
+    const replay = ok(await new BridgeDeliveryService(host, reads).sendToChat(agent(), args))
+    expect(replay).toMatchObject({ state: 'accepted', delivery: { requested: 'queue', actual: 'turn' } })
+  })
+
+  it('a stop that races an unconfirmed send takes its queued message back', async () => {
+    idleChat('c1')
+    host.submitTurn = async (input) => {
+      // The stop arrives while the turn is being handed over; the message ends up queued, the answer lost.
+      void delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() })
+      host.queued.set('c1', [{ threadId: 'c1', messageId: `remote_${input.origin}`, text: 'x', queuedAt: 1 }])
+      throw new Error('backend died')
+    }
+    const lost = err(await delivery.sendToChat(agent(), { chat: 'c1', message: 'x', idempotency_key: key() }))
+    expect(lost.code).toBe('delivery_unknown')
+    expect(host.cancelled).toContain(`remote_bridge-${lost.call_id}`)
+  })
+
   it('reaches a rotated chat by any of its ids, under its root, on the id the session runs under', async () => {
     createConversation('root1', ALLOWED, 'claude-code')
     setConversationRuntimeMode('root1', 'auto')
@@ -529,6 +615,28 @@ describe('stop_chat', () => {
     host.interruptLands = false
     const refused = err(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() }))
     expect(refused.code).toBe('stop_unconfirmed')
+  })
+
+  it("is not held up by the owner's own messages held in the queue", async () => {
+    idleChat('c1')
+    host.heldOnly.add('c1')
+    expect(ok(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() })).status).toBe('stopped')
+  })
+
+  it('takes back a bridge message queued during the stop, and is unconfirmed when one cannot be taken back', async () => {
+    idleChat('c1')
+    host.busyChats.add('c1')
+    host.interruptLands = false
+    setTimeout(() => {
+      host.queued.set('c1', [{ threadId: 'c1', messageId: 'remote_bridge-late', text: 'x', queuedAt: 1 }])
+      host.interruptLands = true
+    }, 20)
+    expect(ok(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() })).status).toBe('stopped')
+    expect(host.cancelled).toContain('remote_bridge-late')
+
+    host.cancelQueuedTurn = async () => ({ ok: false as const, reason: 'unsupported' as const, message: 'no' })
+    host.queued.set('c1', [{ threadId: 'c1', messageId: 'remote_bridge-stuck', text: 'x', queuedAt: 1 }])
+    expect(err(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() })).code).toBe('stop_unconfirmed')
   })
 
   it('a stop that throws is stop_unconfirmed, never stopped', async () => {
