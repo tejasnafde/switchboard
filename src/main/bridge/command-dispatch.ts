@@ -84,8 +84,8 @@ export interface BridgeCommandDeps {
   delivery: BridgeDeliveryService
   /** This desktop's durable stop generation, as `bridge/stop-service.ts` keeps it. */
   stopGeneration(): number
-  /** The stop service's control path, for a generation this desktop has not seen; the kill is left as it stands. */
-  applyStopGeneration(generation: number): Promise<void>
+  /** Records a generation this desktop has not seen and runs that stop; the kill is left as it stands. */
+  advanceStopGeneration(generation: number): Promise<void>
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -162,7 +162,8 @@ export class BridgeCommandDispatcher {
       return this.deny(bridgeError('bridge_disabled', 'The Instinct bridge is off in Settings > Labs.'))
     const args = command.arguments
     if (MUTATIONS.has(command.tool)) {
-      const fenced = await this.syncStopGeneration(command.stop_generation)
+      // A stop always works, so it is told about a newer generation but never fenced by one.
+      const fenced = await this.syncStopGeneration(command.stop_generation, command.tool !== 'stop_chat')
       if (fenced) return this.deny(fenced)
     }
     const caller: BridgeCaller = { kind: 'owner', callId: command.call_id }
@@ -234,24 +235,23 @@ export class BridgeCommandDispatcher {
 
   /**
    * The relay's stop generation on a mutation. Below ours, the relay resolved
-   * the call before a stop this desktop has already applied, so the call is
-   * fenced and nothing is sent. Above ours, a `control` frame was missed: the
-   * stop service records the generation and runs that stop before any new
-   * work. A command frame carries no kill, so none is set or cleared here.
+   * the call before a stop this desktop has already applied, so a fenced call
+   * is refused and nothing is sent; `stop_chat` is not fenced, because a stop
+   * always works. Above ours, a `control` frame was missed: the stop service
+   * records the generation and runs that stop before any new work. A command
+   * frame carries no kill, so none is set or cleared here.
    */
-  private async syncStopGeneration(generation: number): Promise<BridgeError | null> {
+  private async syncStopGeneration(generation: number, fence: boolean): Promise<BridgeError | null> {
     const known = this.deps.stopGeneration()
     if (generation < known)
-      return bridgeError(
-        'policy_denied',
-        'A stop of bridge work came after this call was resolved. Nothing was sent.',
-        {
-          non_delivery_confirmed: true,
-        },
-      )
+      return fence
+        ? bridgeError('policy_denied', 'A stop of bridge work came after this call was resolved. Nothing was sent.', {
+            non_delivery_confirmed: true,
+          })
+        : null
     if (generation > known) {
       log.info('a relay command named a newer stop generation', { generation, known })
-      await this.deps.applyStopGeneration(generation)
+      await this.deps.advanceStopGeneration(generation)
     }
     return null
   }

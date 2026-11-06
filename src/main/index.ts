@@ -407,9 +407,9 @@ function startBridgeCommandDispatch(registry: ProviderRegistry): void {
     enabled: () => instinctBridgeEnabled(process.env, getSetting),
     ...registry.bridgeServices(),
     stopGeneration: () => readBridgeStopRecord().generation,
-    // A command frame carries no kill, so the stored one is passed back unchanged.
-    applyStopGeneration: async (generation) => {
-      await bridgeStopService()?.applyControl({ stop_generation: generation, killed: readBridgeStopRecord().killed })
+    // A command frame carries no kill: the stop service reads the stored one inside its own queue.
+    advanceStopGeneration: async (generation) => {
+      await bridgeStopService()?.advanceStopGeneration(generation)
     },
   })
   onBridgeRelayCommand((frame) => dispatcher.run(frame))

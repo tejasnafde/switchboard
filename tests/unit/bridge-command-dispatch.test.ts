@@ -80,7 +80,7 @@ function build(): void {
     reads,
     delivery,
     stopGeneration: () => generation,
-    applyStopGeneration: async (next) => {
+    advanceStopGeneration: async (next) => {
       applied.push(next)
       generation = next
     },
@@ -312,19 +312,42 @@ describe('the kill and the stop generation', () => {
   })
 
   it('fences a mutation the relay resolved before a stop this desktop applied', async () => {
+    idleChat('c1')
     generation = 3
-    const stale = { ...frame('start_chat', { project: 'Raves site', message: 'Go' }), stop_generation: 2 }
-    expect(await bad(stale)).toMatchObject({ code: 'policy_denied', non_delivery_confirmed: true })
+    for (const f of [
+      frame('start_chat', { project: 'Raves site', message: 'Go' }),
+      frame('send_to_chat', { chat: { machine_id: MACHINE, chat_id: 'c1' }, message: 'Go' }),
+    ])
+      expect(await bad({ ...f, stop_generation: 2 })).toMatchObject({
+        code: 'policy_denied',
+        delivered: false,
+        non_delivery_confirmed: true,
+      })
     expect(host.starts).toHaveLength(0)
+    expect(host.dispatched).toHaveLength(0)
     // A read is not fenced: it changes nothing.
     expect(await ok({ ...frame('list_projects'), stop_generation: 2 })).toMatchObject({ partial: false })
     expect(applied).toEqual([])
   })
 
-  it('applies a stop generation it has not seen before it starts new work', async () => {
+  it("never fences a stop_chat: the owner's stop still reaches a running chat", async () => {
+    idleChat('c1')
+    host.busyChats.add('c1')
+    generation = 3
+    const stale = { ...frame('stop_chat', { chat: { machine_id: MACHINE, chat_id: 'c1' } }), stop_generation: 2 }
+    expect(await ok(stale)).toMatchObject({ state: 'accepted', status: 'stopped' })
+    expect(host.interrupts).toContain('c1')
+    expect(applied).toEqual([])
+  })
+
+  it('applies a stop generation it has not seen before it starts new work, and on a stop too', async () => {
+    idleChat('c1')
     const ahead = { ...frame('start_chat', { project: 'Raves site', message: 'Go' }), stop_generation: 4 }
     expect((await run(ahead)).ok).toBe(true)
     expect(applied).toEqual([4])
+    const stop = { ...frame('stop_chat', { chat: { machine_id: MACHINE, chat_id: 'c1' } }), stop_generation: 6 }
+    expect((await run(stop)).ok).toBe(true)
+    expect(applied).toEqual([4, 6])
   })
 })
 

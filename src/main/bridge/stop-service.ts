@@ -144,6 +144,24 @@ export class BridgeStopService {
     })
   }
 
+  /**
+   * A generation a relay `command` frame named that is above ours: a
+   * `control` was missed, so the generation is recorded and that stop runs
+   * before the command does. A command frame says nothing about the kill, so
+   * the stored one is read here, inside the queue, and left as it stands; a
+   * kill queued behind this step is never overwritten by a stale snapshot.
+   */
+  advanceStopGeneration(generation: number): Promise<void> {
+    return this.serial(async () => {
+      const before = readBridgeStopRecord()
+      if (generation <= before.generation) return
+      const record = writeBridgeStopRecord({ generation, killed: before.killed, killPending: before.killPending })
+      const known = record.lastResult
+      const result = known && known.generation >= generation ? known : await this.runStop(record.generation)
+      this.host.relay.sendStopAck(generation, result.state)
+    })
+  }
+
   /** The owner's Stop all on this desktop: a new generation and a kill, sent to the relay when connected. */
   stopAll(): Promise<BridgeStopStatus> {
     return this.serial(async () => {
