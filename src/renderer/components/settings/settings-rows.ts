@@ -470,6 +470,21 @@ const ROWS = {
     'Shows a search box in the Add agent dialog. Its source is a placeholder that always reports unavailable.',
     { where: 'Desktop only', more: [] },
   ),
+  labsInstinctBridge: labsRow(
+    'instinct_bridge',
+    'Assistant',
+    'Instinct bridge',
+    'Lets your Instinct assistant find, start, message and stop chats in the projects you allow on this desktop.',
+    {
+      warning: 'Instinct acts as you in the allowed projects. Its chats can edit files and run commands there.',
+      where: 'Desktop only',
+      more: [
+        'This version only keeps the bridge records. Nothing connects to Instinct yet.',
+        'No project is allowed until you choose it. Commit, push and pull requests stay off unless you turn them on for a project. Merge and deploy stay off.',
+        'Off blocks new bridge work. Status and Stop still work for chats the bridge started.',
+      ],
+    },
+  ),
   labsPhoneLivePages: {
     id: 'labsInfo.phoneLivePages',
     page: 'labs',

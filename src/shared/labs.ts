@@ -21,6 +21,7 @@ export type LabsFlagId =
   | 'hub_children'
   | 'hub_remote_children'
   | 'acp_registry_search'
+  | 'instinct_bridge'
 
 /** When a change takes effect. None is read once at start. */
 export type LabsApplies = 'new_chats' | 'at_once' | 'dialog_open'
@@ -90,6 +91,13 @@ export const LABS_FLAGS: readonly LabsFlag[] = [
     setting: 'labs.acp_registry_search',
     defaultOn: false,
     applies: 'dialog_open',
+  },
+  {
+    id: 'instinct_bridge',
+    setting: 'labs.instinct_bridge',
+    envVar: 'SB_INSTINCT_BRIDGE',
+    defaultOn: false,
+    applies: 'at_once',
   },
 ]
 

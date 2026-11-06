@@ -23,6 +23,7 @@ import { ensureMergeBackSchema } from './merge-backs'
 import { ensureHtmlLivePagesSchema } from './html-live-pages'
 import { ensureHubSchema } from './hubs'
 import { ensureLimitResumesSchema } from './limit-resumes'
+import { ensureBridgeSchema } from './bridge'
 import { perfSpan } from '../perf'
 
 const log = createLogger('db')
@@ -39,6 +40,7 @@ export * from './pull-request-hidden'
 export * from './html-live-pages'
 export * from './hubs'
 export * from './limit-resumes'
+export * from './bridge'
 
 let db: Database.Database | null = null
 /** The read-only connection for history reads, opened by `getReadDb`. */
@@ -734,6 +736,7 @@ export function migrate(db: Database.Database): void {
   ensureHtmlLivePagesSchema(db)
   ensureHubSchema(db)
   ensureLimitResumesSchema(db)
+  ensureBridgeSchema(db)
   if (deferSlowMigrations) pendingSlowMigrations = true
   else runSlowMigrationsOn(db)
 

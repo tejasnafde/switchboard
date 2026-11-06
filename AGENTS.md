@@ -87,7 +87,7 @@ Any pull request that changes behavior-bearing product paths must add or update 
 
 `ci.yml` tests on `ubuntu-latest`, `macos-15` and `windows-latest`; the visual job and macOS release build also use `macos-15`. PR scope comes from `scripts/ci-scope.mjs`: Markdown and docs changes can skip code and screenshot steps while required matrix checks still report. The shipping checklist above still requires local typecheck and tests for documentation batches.
 
-`chat_snooze` is on by default. `hub_children`, `hub_remote_children`, `agent_secret_request`, `agent_visual_preview`, `limit_auto_resume` and `opencode_v2_acp` remain off by default. Phone live-page execution (`phone_html_live_run`) is off by default on both phones. `details_sheet_v1` and `chat_settle_v1` are advertised capabilities, not disabled rollout switches. See `docs/features.md` and the area instructions for behavior and enablement.
+`chat_snooze` is on by default. `hub_children`, `hub_remote_children`, `agent_secret_request`, `agent_visual_preview`, `limit_auto_resume`, `opencode_v2_acp` and `instinct_bridge` remain off by default. Phone live-page execution (`phone_html_live_run`) is off by default on both phones. `details_sheet_v1` and `chat_settle_v1` are advertised capabilities, not disabled rollout switches. See `docs/features.md` and the area instructions for behavior and enablement.
 
 ## Build gate (2026-04-20)
 
