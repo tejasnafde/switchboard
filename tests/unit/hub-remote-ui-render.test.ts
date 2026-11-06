@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { ChildrenStrip } from '../../src/renderer/components/hub/ChildrenStrip'
+import { HubChildrenList } from '../../src/renderer/components/hub/HubChildrenList'
 import { HubBatchRows } from '../../src/renderer/components/hub/HubBatchRows'
 import { HubChip } from '../../src/renderer/components/hub/HubChip'
 import type { HubBatchRowView, HubChatRef, HubChildView, HubRemoteChildNote } from '../../src/shared/hub'
@@ -38,7 +38,12 @@ const offline: HubRemoteChildNote = {
 }
 
 const strip = (items: HubChildView[]) =>
-  renderToStaticMarkup(createElement(ChildrenStrip, { parent: ref('p', 'Parent'), items, state: null, heldUpdates: 0 }))
+  renderToStaticMarkup(
+    createElement(HubChildrenList, {
+      view: { self: ref('p', 'Parent'), parent: null, children: items, state: null },
+      onDone: () => {},
+    }),
+  )
 
 const row = (extra: Partial<HubBatchRowView> = {}): HubBatchRowView => ({
   title: 'Fix it',

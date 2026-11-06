@@ -131,6 +131,8 @@ describe('hub tables', () => {
     expect(markHubChildWakesStale('agent_c1')).toBe(1)
     expect(markHubChildWakesStale('agent_c1')).toBe(0)
     expect(lastHubWakes('agent_parent').has('agent_c1')).toBe(false)
+    // The idle reaper asks what the child last told its parent at all.
+    expect(lastHubWakes('agent_parent', { includeStale: true }).get('agent_c1')).toMatchObject({ kind: 'failed' })
     // The parent still gets the update, and read_child still points at it.
     expect(listPendingHubWakes('agent_parent').map((w) => w.id)).toEqual(['w1'])
     expect(lastHubWakeOf('agent_c1')?.id).toBe('w1')

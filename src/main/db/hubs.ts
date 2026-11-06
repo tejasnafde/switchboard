@@ -645,11 +645,22 @@ export function markHubChildWakesStale(childId: string, at = Date.now()): number
     .run(at, resolveRootThreadId(childId)).changes
 }
 
-/** Each child's newest current wake, delivered or not, keyed by child id; a parent stub's are in the outbox. */
-export function lastHubWakes(parentId: string): Map<string, { kind: HubWakeKind; summary: string }> {
+/**
+ * Each child's newest current wake, delivered or not, keyed by child id; a
+ * parent stub's are in the outbox. `includeStale` also counts the wakes a
+ * later turn of the child made old news, for a reader that asks what the
+ * child last told its parent at all (the idle reaper).
+ */
+export function lastHubWakes(
+  parentId: string,
+  opts: { includeStale?: boolean } = {},
+): Map<string, { kind: HubWakeKind; summary: string }> {
   const root = resolveRootThreadId(parentId)
   const rows = getDb()
-    .prepare('SELECT * FROM hub_wakes WHERE parent_id = ? AND stale_at IS NULL ORDER BY created_at, id')
+    .prepare(
+      `SELECT * FROM hub_wakes WHERE parent_id = ? ${opts.includeStale ? '' : 'AND stale_at IS NULL'}
+       ORDER BY created_at, id`,
+    )
     .all(root) as WakeDbRow[]
   const all = [...rows.map(toWake), ...outboxWakes('parent_id', root)].sort(
     (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),

@@ -32,30 +32,34 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
   return { ...actual, remoteProviderLoginPrompt: () => null }
 })
 
-const usage = vi.hoisted(() => ({ closed: new Set<string>() }))
+const usage = vi.hoisted(() => ({ closed: new Set<string>(), duringFetch: null as null | (() => void) }))
 vi.mock('../../src/main/provider/usage', () => ({
-  fetchInstanceUsage: async (instanceId: string) => ({
-    instanceId,
-    agentType: 'claude-code',
-    status: 'ok',
-    plan: null,
-    account: null,
-    windows: usage.closed.has(instanceId)
-      ? [
-          {
-            id: 's',
-            label: '5-hour session',
-            kind: 'session',
-            usedPercent: 100,
-            resetsAtMs: Date.now() + 60 * 60_000,
-            windowMinutes: 300,
-            severity: 'critical',
-          },
-        ]
-      : [],
-    overage: [],
-    fetchedAtMs: Date.now(),
-  }),
+  fetchInstanceUsage: async (instanceId: string) => {
+    // A reading takes time: a test can start a turn while it is out.
+    usage.duringFetch?.()
+    return {
+      instanceId,
+      agentType: 'claude-code',
+      status: 'ok',
+      plan: null,
+      account: null,
+      windows: usage.closed.has(instanceId)
+        ? [
+            {
+              id: 's',
+              label: '5-hour session',
+              kind: 'session',
+              usedPercent: 100,
+              resetsAtMs: Date.now() + 60 * 60_000,
+              windowMinutes: 300,
+              severity: 'critical',
+            },
+          ]
+        : [],
+      overage: [],
+      fetchedAtMs: Date.now(),
+    }
+  },
 }))
 
 import {
@@ -71,6 +75,7 @@ import {
 } from '../../src/main/db/database'
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
 import { ProviderChannels } from '../../src/shared/ipc-channels'
+import { hubResumeTurn } from '../../src/shared/hub'
 import { limitResumeTurn } from '../../src/shared/limit-resume'
 import { stripSenderLine } from '../../src/shared/sender-line'
 import type { BackendHost } from '../../src/main/backend/host'
@@ -106,6 +111,8 @@ class Adapter implements ProviderAdapter {
   emit = new Map<string, (e: RuntimeEvent) => void>()
   starts: SessionStartOpts[] = []
   sent: Array<{ threadId: string; text: string }> = []
+  /** The threads whose held queue was released, in order. */
+  resumedQueues: string[] = []
   mode: RuntimeMode = 'full-access'
   async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
     this.starts.push(opts)
@@ -119,11 +126,23 @@ class Adapter implements ProviderAdapter {
       createdAt: 0,
     }
   }
-  async sendTurn(threadId: string, text: string): Promise<void> {
+  async sendTurn(
+    threadId: string,
+    text: string,
+    _mode?: RuntimeMode,
+    _images?: unknown,
+    delivery?: 'queue' | 'steer',
+    queuedId?: string,
+  ): Promise<void> {
     this.sent.push({ threadId, text: stripSenderLine(text) })
+    if (delivery === 'queue' && queuedId) {
+      this.emit.get(threadId)?.({ type: 'turn.queued', threadId, messageId: queuedId })
+      return
+    }
     this.emit.get(threadId)?.({ type: 'status', threadId, status: 'running' })
   }
-  async resumeQueuedTurns(): Promise<boolean> {
+  async resumeQueuedTurns(threadId: string): Promise<boolean> {
+    this.resumedQueues.push(threadId)
     return false
   }
   async respondToRequest(): Promise<void> {}
@@ -180,6 +199,7 @@ beforeEach(async () => {
     updateHubChild(id, { phase: 'open' })
   }
   usage.closed.clear()
+  usage.duringFetch = null
   host = new FakeHost()
   adapter = new Adapter()
   mcp = fakeMcp()
@@ -273,10 +293,56 @@ describe('a limited child', () => {
       limit: 'armed',
     })
   })
+
+  it('reports a crash that comes long after the limit', async () => {
+    task('child1')
+    event({ type: 'status', threadId: 'child1', status: 'running', newTurn: true })
+    event({
+      type: 'turn.completed',
+      threadId: 'child1',
+      limit: { limitClass: 'usage_limit', resetAt: Date.now() + 120 * MIN },
+    })
+    event({ type: 'status', threadId: 'child1', status: 'idle' })
+    await vi.waitFor(() => expect(wakes()).toHaveLength(1))
+    // Minutes later the agent dies while the child waits for the reset.
+    await vi.advanceTimersByTimeAsync(5 * MIN)
+    event({ type: 'status', threadId: 'child1', status: 'error' })
+    await vi.waitFor(() => expect(wakes().map((w) => w.kind)).toEqual(['limited', 'failed']))
+  })
+})
+
+describe('Resume on a child row', () => {
+  it("sends a stopped child Switchboard's own resume turn, not a user message", async () => {
+    task('child1')
+    expect(await host.invoke(ProviderChannels.HUB_RESUME_CHILD, 'parent1', 'child1')).toEqual({ ok: true })
+    expect(adapter.sent.filter((s) => s.text === hubResumeTurn()).map((s) => s.threadId)).toEqual(['child1'])
+    expect(registry.hubView('parent1').children.find((c) => c.chat.id === 'child1')).toMatchObject({
+      state: 'working',
+    })
+  })
+
+  it('takes the auto-resume path for a limited child, and refuses a chat that is not a child', async () => {
+    limit()
+    await vi.waitFor(() => expect(wakes()).toHaveLength(1))
+    expect(await host.invoke(ProviderChannels.HUB_RESUME_CHILD, 'parent1', 'child1')).toEqual({ ok: true })
+    expect(adapter.sent.filter((s) => s.text === limitResumeTurn()).map((s) => s.threadId)).toEqual(['child1'])
+    expect(adapter.sent.some((s) => s.text === hubResumeTurn())).toBe(false)
+    await expect(host.invoke(ProviderChannels.HUB_RESUME_CHILD, 'parent1', 'someone')).rejects.toThrow(
+      /not an open child/,
+    )
+  })
+
+  it('says a child that already works needs no resume', async () => {
+    event({ type: 'status', threadId: 'child1', status: 'running', newTurn: true })
+    expect(await host.invoke(ProviderChannels.HUB_RESUME_CHILD, 'parent1', 'child1')).toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/already working/),
+    })
+  })
 })
 
 describe('move_child', () => {
-  it('moves a limited child to another account of its agent, once per limit', async () => {
+  it('moves a limited child to another account of its agent, and clears its limit', async () => {
     limit()
     await vi.waitFor(() => expect(wakes()).toHaveLength(1))
     expect(registry.hubView('parent1').children.find((c) => c.chat.id === 'child1')).toMatchObject({
@@ -306,25 +372,97 @@ describe('move_child', () => {
     // The update itself is kept for the parent.
     expect(wakes().map((w) => w.kind)).toEqual(['limited'])
 
-    // The resumed turn hits the limit of Claude B: still the same move budget until a new limit.
+    // It is no longer limited, so it is free to move again at its next boundary.
+    event({ type: 'turn.completed', threadId: 'child1' })
     event({ type: 'status', threadId: 'child1', status: 'idle' })
-    expect(text(await move('child1', 'claude-a'))).toMatch(/not stopped by a usage limit/)
+    expect(getLimitResume('child1')?.state).toBe('disarmed')
+    expect(text(await move('child1', 'claude-a'))).toMatch(/^Moved Child 1 from Claude B to Claude A\./)
   })
 
-  it('refuses another agent, a limited target, a child that is not limited, and plan mode', async () => {
-    expect(text(await move('child1', 'claude-b'))).toMatch(/not stopped by a usage limit/)
+  it('refuses another agent, a limited target, an unknown child and plan mode', async () => {
     limit()
     expect(text(await move('child1', 'codex-a'))).toMatch(/interrupt_child, then start_children/)
     usage.closed.add('claude-b')
     expect(text(await move('child1', 'claude-b'))).toMatch(/Claude B is at its usage limit too/)
     usage.closed.clear()
     expect(text(await move('someone', 'claude-b'))).toMatch(/not an open child/)
-    event({ type: 'status', threadId: 'child1', status: 'running' })
-    expect(text(await move('child1', 'claude-b'))).toMatch(/runs a turn or holds queued messages/)
-    event({ type: 'status', threadId: 'child1', status: 'idle' })
     adapter.mode = 'plan'
     expect(text(await move('child1', 'claude-b'))).toMatch(/Plan mode/)
     expect(getLimitResume('child1')?.state).toBe('armed')
+  })
+
+  it('moves a child that no limit stopped, and resumes it without the limit text', async () => {
+    expect(text(await move('child1', 'claude-b'))).toMatch(/^Moved Child 1 from Claude A to Claude B\./)
+    expect(getConversationProviderInstanceId('child1')).toBe('claude-b')
+    expect(adapter.sent.filter((s) => s.text === hubResumeTurn()).map((s) => s.threadId)).toEqual(['child1'])
+    expect(adapter.sent.some((s) => s.text === limitResumeTurn())).toBe(false)
+    // No limit, so no move is spent: it can move again at its next boundary.
+    expect(getHubChild('child1')?.movedAfterLimitTurnId).toBeNull()
+    event({ type: 'turn.completed', threadId: 'child1' })
+    event({ type: 'status', threadId: 'child1', status: 'idle' })
+    expect(text(await move('child1', 'claude-a'))).toMatch(/^Moved Child 1 from Claude B to Claude A\./)
+  })
+
+  it('waits for the end of a running turn instead of interrupting it', async () => {
+    event({ type: 'status', threadId: 'child1', status: 'running', newTurn: true })
+    expect(text(await move('child1', 'claude-b'))).toMatch(/moves to Claude B when that turn ends/)
+    expect(getConversationProviderInstanceId('child1')).not.toBe('claude-b')
+
+    event({ type: 'turn.completed', threadId: 'child1' })
+    event({ type: 'status', threadId: 'child1', status: 'idle' })
+    await vi.waitFor(() => expect(getConversationProviderInstanceId('child1')).toBe('claude-b'))
+    expect(adapter.starts.at(-1)).toMatchObject({ threadId: 'child1', instanceId: 'claude-b' })
+    expect(adapter.sent.filter((s) => s.text === hubResumeTurn()).map((s) => s.threadId)).toEqual(['child1'])
+  })
+
+  it('waits for a turn that starts while the target account is being read', async () => {
+    usage.duringFetch = () => {
+      usage.duringFetch = null
+      event({ type: 'status', threadId: 'child1', status: 'running', newTurn: true })
+    }
+    expect(text(await move('child1', 'claude-b'))).toMatch(/moves to Claude B when that turn ends/)
+    expect(getConversationProviderInstanceId('child1')).not.toBe('claude-b')
+    event({ type: 'turn.completed', threadId: 'child1' })
+    event({ type: 'status', threadId: 'child1', status: 'idle' })
+    await vi.waitFor(() => expect(getConversationProviderInstanceId('child1')).toBe('claude-b'))
+  })
+
+  it('drops a queued move when the child stops before its turn ends', async () => {
+    event({ type: 'status', threadId: 'child1', status: 'running', newTurn: true })
+    expect(text(await move('child1', 'claude-b'))).toMatch(/moves to Claude B when that turn ends/)
+    await host.invoke(ProviderChannels.HUB_STOP_CHILDREN, 'parent1', 'child1')
+    event({ type: 'turn.completed', threadId: 'child1' })
+    event({ type: 'status', threadId: 'child1', status: 'idle' })
+    await vi.advanceTimersByTimeAsync(50)
+    expect(getConversationProviderInstanceId('child1')).not.toBe('claude-b')
+  })
+
+  it('moves a limited child that holds a message queued behind its stopped turn', async () => {
+    // The turn runs, the parent queues a message behind it, and the usage
+    // limit ends the turn. The queued message stays counted as an outstanding
+    // turn, and no turn runs any more: the move must happen now, not wait.
+    event({ type: 'status', threadId: 'child1', status: 'running', newTurn: true })
+    const sendToChild = mcp.opened.get('parent1')!.find((t) => t.name === 'send_agent_message')!
+    await sendToChild.call({ sessionId: 'child1', message: 'one more thing', delivery: 'queue' })
+    event({
+      type: 'turn.completed',
+      threadId: 'child1',
+      limit: { limitClass: 'usage_limit', resetAt: Date.now() + 2 * MIN },
+    })
+    event({ type: 'status', threadId: 'child1', status: 'idle' })
+    await vi.waitFor(() => expect(wakes()).toHaveLength(1))
+
+    const sentBefore = adapter.sent.length
+    const result = text(await move('child1', 'claude-b'))
+    expect(result).toMatch(/^Moved Child 1 from Claude A to Claude B\./)
+    expect(result).toMatch(/The 1 message it held came with it\./)
+    expect(getConversationProviderInstanceId('child1')).toBe('claude-b')
+    // The queued message comes with it: the resume turn goes out on the new
+    // account and the message the child never read follows it.
+    const after = adapter.sent.slice(sentBefore)
+    expect(after[0]).toMatchObject({ threadId: 'child1', text: limitResumeTurn() })
+    expect(after.at(-1)!.text).toContain('one more thing')
+    expect(adapter.resumedQueues).toContain('child1')
   })
 
   it('refuses a target with no free run slot', async () => {

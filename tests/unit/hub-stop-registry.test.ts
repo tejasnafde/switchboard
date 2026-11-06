@@ -172,37 +172,35 @@ async function setup(childCount = 2) {
 const settle = () => new Promise((r) => setTimeout(r, 0))
 
 describe('Stop on a parent', () => {
-  it('stops 6 running children in parallel, holds the parent and tells it each child stopped', async () => {
+  it('ends the parent turn only and leaves its children working', async () => {
+    const { host, adapter, busy, task } = await setup(6)
+    for (let i = 1; i <= 6; i++) {
+      task(`child${i}`)
+      busy(`child${i}`)
+    }
+    busy('parent1')
+    expect(await host.invoke(ProviderChannels.INTERRUPT, 'parent1')).toEqual({ live: true })
+    expect(adapter.interrupted).toEqual(['parent1'])
+    expect(db.held.size).toBe(0)
+    await settle()
+    expect(db.wakes).toEqual([])
+  })
+
+  it('stops all 6 children from the strip channel, in parallel, and tells the parent', async () => {
     const { host, adapter, busy } = await setup(6)
     adapter.interruptMs = 40
     for (let i = 1; i <= 6; i++) busy(`child${i}`)
     const started = Date.now()
-    await host.invoke(ProviderChannels.INTERRUPT, 'parent1')
+    await host.invoke(ProviderChannels.HUB_STOP_CHILDREN, 'parent1')
     // Serially this would take 240 ms.
     expect(Date.now() - started).toBeLessThan(200)
-    expect(adapter.interrupted.filter((id) => id !== 'parent1').sort()).toEqual([
-      'child1',
-      'child2',
-      'child3',
-      'child4',
-      'child5',
-      'child6',
-    ])
+    expect(adapter.interrupted.sort()).toEqual(['child1', 'child2', 'child3', 'child4', 'child5', 'child6'])
     expect(db.held.get('parent1')).toBe('stop')
     await vi.waitFor(() => expect(db.wakes).toHaveLength(6))
     expect(db.wakes.every((w) => w.kind === 'stopped' && w.summary === 'Stopped with this chat.')).toBe(true)
   })
 
-  it('holds the parent and stops nothing more when no child runs', async () => {
-    const { host, adapter } = await setup()
-    await host.invoke(ProviderChannels.INTERRUPT, 'parent1')
-    expect(adapter.interrupted).toEqual(['parent1'])
-    expect(db.held.get('parent1')).toBe('stop')
-    await settle()
-    expect(db.wakes).toEqual([])
-  })
-
-  it('stops all children from the strip channel, and refuses a child of another chat', async () => {
+  it('stops one child from the strip channel, and refuses a child of another chat', async () => {
     const { host, adapter, busy } = await setup()
     busy('child1')
     await host.invoke(ProviderChannels.HUB_STOP_CHILDREN, 'parent1')

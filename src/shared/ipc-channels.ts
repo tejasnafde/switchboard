@@ -533,6 +533,8 @@ export const ProviderChannels = {
   HUB_DELIVER_HELD_WAKES: 'provider:hub-deliver-held-wakes',
   /** Stop all of a parent's open children (holding its updates), or one child: `(parentId, childId?)`. */
   HUB_STOP_CHILDREN: 'provider:hub-stop-children',
+  /** Resume one stopped open child: Switchboard's own turn, since a child hears no user message. */
+  HUB_RESUME_CHILD: 'provider:hub-resume-child',
   LIST_SKILLS: 'provider:list-skills',
   ANSWER_QUESTION: 'provider:answer-question',
   /**

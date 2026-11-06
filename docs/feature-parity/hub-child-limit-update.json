@@ -2,12 +2,12 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "hub-child-limit-update",
-  "summary": "A child chat (flag hub_children) that stops on a usage limit tells its parent once. The agent exits after the limit, and that session end wrote a second, false update, \"failed: Failed: its agent process ended with an error.\", beside the \"limited\" one; with the auto-resume armed the registry now writes none for a session end, and the next end writes failed as before once the row disarms. The update a child sent also stayed on its row after it ran again, so a child moved to another account with move_child read \"Working: Failed: its agent process ended with an error.\" for an hour and list_children kept lastUpdate failed. A child's status: running now marks its stored updates stale (hub_wakes.stale_at), so the hub view's lastWake, the desktop Children strip and list_children show the state alone until its next update. The rows stay stored, are still delivered to the parent, and read_child still points at them.",
+  "summary": "A child chat (flag hub_children) that stops on a usage limit tells its parent once. The agent exits after the limit, and that session end wrote a second, false update, \"failed: Failed: its agent process ended with an error.\", beside the \"limited\" one; with the auto-resume armed the registry now writes none for a session end, and the next end writes failed as before once the row disarms. The update a child sent also stayed on its row after it ran again, so a child moved to another account with move_child read \"Working: Failed: its agent process ended with an error.\" for an hour and list_children kept lastUpdate failed. A child's status: running now marks its stored updates stale (hub_wakes.stale_at), so the hub view's lastWake, the desktop children list and list_children show the state alone until its next update. The rows stay stored, are still delivered to the parent, and read_child still points at them.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/renderer/components/hub/ChildrenStrip.tsx",
+        "src/renderer/components/hub/HubChildrenList.tsx",
         "tests/unit/hub-limits-registry.test.ts"
       ]
     },

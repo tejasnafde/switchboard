@@ -2,13 +2,13 @@
 /**
  * A narrow chat header moves the Hub chip into its "..." menu: the chip hides
  * at the 480 px step, the menu lists a Hub row at the same step, and the row
- * does what the chip does (scrolls the children strip into view), then closes.
+ * opens the same children list the chip's popover holds.
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { HubChatRef, HubChatView, HubChildView } from '../../src/shared/hub'
 import { hubOverflowEntry } from '../../src/renderer/components/hub/HubChip'
 import { ToolbarOverflow } from '../../src/renderer/components/ui/toolbar'
@@ -57,21 +57,19 @@ afterEach(() => {
 
 describe('the Hub row in a narrow chat header', () => {
   it('names the hub and its children, and has no row for a child chat or a chat without children', () => {
-    const entry = hubOverflowEntry(parentView, () => null)
+    const entry = hubOverflowEntry(parentView)
     expect(entry).toMatchObject({ key: 'hub', name: 'Hub', valueText: '2 children' })
-    expect(hubOverflowEntry({ ...parentView, children: [] }, () => null)).toBeNull()
-    expect(hubOverflowEntry({ self: ref('a'), parent: ref('p'), children: [], state: null }, () => null)).toBeNull()
+    expect(hubOverflowEntry({ ...parentView, children: [] })).toBeNull()
+    expect(hubOverflowEntry({ self: ref('a'), parent: ref('p'), children: [], state: null })).toBeNull()
   })
 
-  it('scrolls the children strip into view from the menu, as the chip does, and closes the menu', () => {
-    const panel = document.createElement('div')
-    const strip = document.createElement('div')
-    strip.dataset.testid = 'hub-children-strip'
-    const scrollIntoView = vi.fn()
-    strip.scrollIntoView = scrollIntoView
-    panel.append(strip)
+  it('counts the running children in the row, as the chip does', () => {
+    const view = { ...parentView, children: [{ ...child('a'), state: 'working' as const }, child('b')] }
+    expect(hubOverflowEntry(view)).toMatchObject({ valueText: '2 children · 1 running' })
+  })
 
-    const entry = hubOverflowEntry(parentView, () => panel)!
+  it('opens the children list in the menu', () => {
+    const entry = hubOverflowEntry(parentView)!
     act(() => root.render(createElement(ToolbarOverflow, { entries: [entry], showBelow: 480, side: 'bottom' })))
 
     const trigger = container.querySelector<HTMLButtonElement>('[data-toolbar-overflow]')!
@@ -84,29 +82,24 @@ describe('the Hub row in a narrow chat header', () => {
     expect(row.textContent).toContain('2 children')
     // The menu focuses its first row, so the keyboard reaches it with Enter.
     expect(document.activeElement).toBe(row)
-    // An action row has no "›": it opens nothing.
-    expect(row.textContent).not.toContain('›')
 
     act(() => row.click())
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
-    expect(document.querySelector('[role="menu"]')).toBeNull()
+    const list = document.querySelector('[data-testid="hub-children-list"]')!
+    expect(list).not.toBeNull()
+    expect(list.textContent).toContain('2 open · 0 running')
+    expect(list.textContent).toContain('Chat a')
   })
 
   it('lists the Hub row below 480 px and not above it', () => {
-    const entry = { ...hubOverflowEntry(parentView, () => null)!, hideBelow: 480 as const }
+    const entry = { ...hubOverflowEntry(parentView)!, hideBelow: 480 as const }
     expect(overflowedItems([entry], toolbarTier(479)).map((e) => e.key)).toEqual(['hub'])
     expect(overflowedItems([entry], toolbarTier(480))).toEqual([])
-  })
-
-  it('scrolls to the strip the children strip renders', () => {
-    const strip = readFileSync(resolve(__dirname, '../../src/renderer/components/hub/ChildrenStrip.tsx'), 'utf8')
-    expect(strip).toContain('data-testid="hub-children-strip"')
   })
 
   it('hides the chip at the step the header menu lists it at', () => {
     const panel = readFileSync(resolve(__dirname, '../../src/renderer/components/chat/ChatPanel.tsx'), 'utf8')
     expect(panel).toMatch(/<ToolbarItem hideBelow=\{480\}>\s*<HubChip view=\{hub\} \/>/)
-    expect(panel).toMatch(/hubOverflowEntry\(hub,[^\n]*\n[^\n]*hideBelow: 480 as const/)
+    expect(panel).toMatch(/hubOverflowEntry\(hub\)/)
     expect(panel).toMatch(/<Toolbar\s+ref=\{headerRef\}/)
     expect(panel).toContain('<ToolbarOverflow entries={headerOverflow} showBelow={480} side="bottom" align="end" />')
   })

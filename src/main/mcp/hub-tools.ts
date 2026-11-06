@@ -59,7 +59,8 @@ export const HUB_INSTRUCTIONS = [
   'a read_child line; call read_child only when you need the full report. You merge their branches yourself with git.',
   'When this chat works in the main checkout, ask the user before you merge into a branch checked out there.',
   'A child stopped by a usage limit resumes by itself at the reset; move_child can move it to another account of',
-  'its agent now. When you move one, tell the user what you moved and why in your next message.',
+  'its agent now, and it moves a working child to an account with more room at the end of its current turn.',
+  'When you move one, tell the user what you moved and why in your next message.',
   'Once their work is merged, settle_children ends the children and removes their clean, merged worktrees.',
 ].join(' ')
 
@@ -140,7 +141,7 @@ export interface HubMcpToolContext {
   read(args: Record<string, unknown>): Promise<McpToolResult>
   /** `interrupt_child`: stops one of the calling parent's open children. */
   interrupt(childId: string): Promise<McpToolResult>
-  /** `move_child`: one of the calling parent's limited children goes on under another account. */
+  /** `move_child`: one of the calling parent's children goes on under another account of its agent. */
   move(childId: string, providerInstanceId: string): Promise<McpToolResult>
   /** `settle_children`: ends the calling parent's children, through a card in ask mode. */
   settle(): Promise<McpToolResult>
@@ -262,8 +263,7 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         'diffstat, tokens and cost of the last turn, memory and CPU of its agent, disk use, its own subagents ' +
         '(running, done, failed), its last update, and conflicts: the files its branch conflicts on with this ' +
         "chat's HEAD and with each other child (null when git is older than 2.38). A child on another machine " +
-        'names its machine. While a child is limited, ' +
-        'accounts lists where move_child can move it.',
+        'names its machine. accounts lists the accounts move_child can move a child of this machine to.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { title: 'List child chats', readOnlyHint: true, openWorldHint: false },
       async call() {
@@ -330,13 +330,11 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
         const own = ctx.resources(parent.parentId)
         const total = rows.reduce((n, r) => n + (r.resources?.rssMb ?? 0), 0)
         // A child on another machine moves between accounts there only: this desktop's accounts are not for it.
-        const limitedAgents = new Set(
-          rows.filter((r) => r.limit !== null && r.agent && !('machine' in r)).map((r) => r.agent),
-        )
+        const localAgents = new Set(rows.filter((r) => r.agent && !('machine' in r)).map((r) => r.agent))
         const accounts =
-          limitedAgents.size > 0
+          localAgents.size > 0
             ? listProviderInstances()
-                .filter((i) => i.enabled && limitedAgents.has(i.agentType))
+                .filter((i) => i.enabled && localAgents.has(i.agentType))
                 .map((i) => ({ id: i.id, name: i.displayName, agent: i.agentType }))
             : []
         return toolText(
@@ -414,10 +412,13 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
     {
       name: MOVE_CHILD_TOOL,
       description: [
-        "Move one of this chat's child chats that a usage limit stopped to another account of the same agent, so it",
-        'goes on now instead of at the reset. The target must be signed in, have usage left and a free run slot. The',
-        'child keeps its mode, history and worktree. One move per limit. For another agent, interrupt the child and',
-        'start a new one with a brief that points to its transcript.',
+        "Move one of this chat's child chats to another account of the same agent, at any time: a child a usage limit",
+        'stopped goes on now instead of at the reset, and a working child moves to an account with more room. The',
+        'target must be signed in, have usage left and a free run slot. The child keeps its mode, history and',
+        'worktree. A child that runs a turn moves when that turn ends, so no work is lost, and the answer says so.',
+        'A child a limit stopped moves at once even when it holds messages it has not read: they come with it.',
+        'One move per limit while a child is limited. For another agent, interrupt the child and start a new one',
+        'with a brief that points to its transcript.',
       ].join(' '),
       inputSchema: {
         type: 'object',
