@@ -63,6 +63,11 @@ describe('the Hub row in a narrow chat header', () => {
     expect(hubOverflowEntry({ self: ref('a'), parent: ref('p'), children: [], state: null })).toBeNull()
   })
 
+  it('keeps the row for updates waiting after every child settled', () => {
+    const view = { ...parentView, children: [], heldUpdates: 2 }
+    expect(hubOverflowEntry(view)).toMatchObject({ valueText: '2 updates waiting' })
+  })
+
   it('counts the running children in the row, as the chip does', () => {
     const view = { ...parentView, children: [{ ...child('a'), state: 'working' as const }, child('b')] }
     expect(hubOverflowEntry(view)).toMatchObject({ valueText: '2 children · 1 running' })

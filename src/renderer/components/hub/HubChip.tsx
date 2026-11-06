@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { hubChildrenCount, type HubChatView } from '@shared/hub'
+import { hubChildrenCount, hubHeldUpdatesText, type HubChatView } from '@shared/hub'
 import { cn } from '../../lib/utils'
 import { chipClass, chipValueClass } from '../ui/chip'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
@@ -16,15 +16,19 @@ import { HubChildrenList } from './HubChildrenList'
 export function HubChip({ view }: { view: HubChatView }) {
   const [open, setOpen] = useState(false)
   if (view.parent) return <span className={cn(chipClass, 'cursor-default')}>Child</span>
-  if (view.children.length === 0) return null
+  // Held updates keep the chip: Show now lives in the list, and without it
+  // the user would have to send a message to release them.
+  if (view.children.length === 0 && (view.heldUpdates ?? 0) === 0) return null
   const running = view.children.filter((c) => c.state === 'working').length
+  // Every child settled and updates still waiting: the count is the news.
+  const count = view.children.length > 0 ? hubChildrenCount(view.children) : hubHeldUpdatesText(view.heldUpdates ?? 0)
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button type="button" data-testid="hub-chip" className={chipClass}>
           <span className="sidebar-recent-dot" data-dot={hubChipDot(view.children)} />
           Hub <span className="text-[var(--text-muted)]">·</span>
-          <span className={chipValueClass}>{hubChildrenCount(view.children)}</span>
+          <span className={chipValueClass}>{count}</span>
           {running > 0 && (
             <>
               <span className="text-[var(--text-muted)]">·</span>
@@ -49,9 +53,9 @@ export function HubChip({ view }: { view: HubChatView }) {
  * parent.
  */
 export function hubOverflowEntry(view: HubChatView): ToolbarOverflowEntry | null {
-  if (view.parent || view.children.length === 0) return null
+  if (view.parent || (view.children.length === 0 && (view.heldUpdates ?? 0) === 0)) return null
   const running = view.children.filter((c) => c.state === 'working').length
-  const count = hubChildrenCount(view.children)
+  const count = view.children.length > 0 ? hubChildrenCount(view.children) : hubHeldUpdatesText(view.heldUpdates ?? 0)
   return {
     key: 'hub',
     icon: <HubIcon />,

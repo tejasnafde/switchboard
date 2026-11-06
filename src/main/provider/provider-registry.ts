@@ -532,7 +532,7 @@ export class ProviderRegistry implements PeerToolHost {
    * Moves waiting for a child's running turn to end (`move_child` mid-turn,
    * and the auto-move), by child root id. Dropped when the child stops.
    */
-  private readonly pendingMoves = new Map<string, { parentId: string; parentMode: RuntimeMode; targetId: string }>()
+  private readonly pendingMoves = new Map<string, { parentId: string; targetId: string }>()
   /** When the auto-move last read a child's account, by child root id. */
   private readonly autoMoveChecks = new Map<string, number>()
   /** Children `move_child` is moving, with the slot they take on the target account. */
@@ -1250,12 +1250,12 @@ export class ProviderRegistry implements PeerToolHost {
    * exits on the limit ends its session too; with the auto-resume armed that
    * end is the limit again, not news of its own.
    */
-  private onChildEvent(event: RuntimeEvent): void {
+  private onChildEvent(event: RuntimeEvent, statusChanged = true): void {
     if (event.type === 'error') {
       this.turnErrors.set(event.threadId, event.message)
       return
     }
-    if (event.type === 'status' && event.status === 'running') {
+    if (event.type === 'status' && event.status === 'running' && (statusChanged || event.newTurn)) {
       this.clearChildUpdate(event.threadId)
       return
     }
@@ -1631,7 +1631,7 @@ export class ProviderRegistry implements PeerToolHost {
     // limit stopped mid-turn would otherwise wait for an end that never comes.
     const busy = () => this.runningOrPreparing(live) || this.switchingSessions.has(live)
     const queueForTurnEnd = () => {
-      this.pendingMoves.set(child.childId, { parentId, parentMode, targetId })
+      this.pendingMoves.set(child.childId, { parentId, targetId })
       span.end({ outcome: 'queued' })
       log.info('child move queued for the end of its turn', { childId: child.childId, parentId, targetId })
       this.publishHubChange(parentId)
@@ -1665,8 +1665,12 @@ export class ProviderRegistry implements PeerToolHost {
       return refuse('no_slot', `${toName} has no free slot: other children run on it or under this chat.`)
 
     // The usage reading and the slot check awaited: a message may have started
-    // a turn meanwhile, and the switch's stop would throw that turn away.
+    // a turn meanwhile, and the switch's stop would throw that turn away. A
+    // Stop all in that window takes the child out of the open set, and a
+    // stopped child is not moved and not started again.
     if (busy()) return queueForTurnEnd()
+    if (this.hubStarter.parentOfOpenChild(child.childId) !== parentId || !this.liveSessionId(child.childId))
+      return refuse('stopped', `${child.title} stopped while ${toName} was being read, so it did not move.`)
     // The switch stops the session, which drops the messages held behind the
     // turn the limit ended. They are sent again on the new account, behind
     // the resume turn, in the order the child would have read them.
@@ -1685,9 +1689,10 @@ export class ProviderRegistry implements PeerToolHost {
       )
       if (!switched.ok) {
         // The rollback started the old session again, so the messages the
-        // stop dropped go back on it rather than being lost with the move.
+        // stop dropped go back on it. A switch that refused before it stopped
+        // anything still holds them, and sending them again would double them.
         const back = this.liveSessionId(child.childId)
-        if (back) await this.resendHeldTurns(back, held)
+        if (back && this.queuedTurns.list(back).length === 0) await this.resendHeldTurns(back, held)
         return refuse(
           'switch_failed',
           `Could not move ${child.title}: ${switched.message ?? 'the switch failed'}. Its auto-resume is off now; ` +
@@ -1702,6 +1707,7 @@ export class ProviderRegistry implements PeerToolHost {
       const moved = this.liveSessionId(child.childId) ?? live
       const sent = await this.sendChildResume(moved, limitedTurnId !== null)
       const carried = await this.resendHeldTurns(moved, held)
+      const lost = held.length - carried
       const summary = `Moved from ${fromName} to ${toName}.`
       this.postSystemRow(
         parentId,
@@ -1715,6 +1721,9 @@ export class ProviderRegistry implements PeerToolHost {
         `Moved ${child.title} from ${fromName} to ${toName}.` +
           (sent ? ' It goes on with its task there.' : ' The resume turn did not go out: send it a message.') +
           (carried > 0 ? ` The ${carried} message${carried === 1 ? '' : 's'} it held came with it.` : '') +
+          (lost > 0
+            ? ` ${lost} message${lost === 1 ? '' : 's'} it held did not go out on the new account: send ${lost === 1 ? 'it' : 'them'} again.`
+            : '') +
           ' Tell the user what you moved and why.',
       )
     } finally {
@@ -1788,13 +1797,12 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   /** A queued `move_child`, run at the turn boundary it waited for. Its outcome reaches the parent's chat. */
-  private async runQueuedMove(
-    childId: string,
-    move: { parentId: string; parentMode: RuntimeMode; targetId: string },
-  ): Promise<void> {
+  private async runQueuedMove(childId: string, move: { parentId: string; targetId: string }): Promise<void> {
     const title = getHubChild(childId)?.title ?? 'A child chat'
     try {
-      const result = await this.moveHubChild(move.parentId, move.parentMode, childId, move.targetId)
+      // The parent's mode as it is now: a parent that went into plan mode
+      // while the turn ran moves nothing, as it would for a fresh call.
+      const result = await this.moveHubChild(move.parentId, this.chatRuntimeMode(move.parentId), childId, move.targetId)
       if (!result.isError) return
       const text = result.content.map((c) => ('text' in c ? c.text : '')).join(' ')
       log.warn(`the queued move of ${childId} was refused: ${text}`)
@@ -1827,6 +1835,9 @@ export class ProviderRegistry implements PeerToolHost {
     if (!live || !currentId || !child || child.machineId) return
     const agentType = getProviderInstanceFull(currentId, { withEnv: false })?.agentType
     if (!agentType) return
+    // A child that reported is waiting to be settled, not waiting for room:
+    // moving it would send it a resume turn and start work nobody asked for.
+    if (lastHubWakeOf(childId)?.kind === 'report') return
     const others = listProviderInstances().filter((i) => i.enabled && i.agentType === agentType && i.id !== currentId)
     if (others.length === 0) return
     this.autoMoveChecks.set(childId, Date.now())
@@ -1852,10 +1863,9 @@ export class ProviderRegistry implements PeerToolHost {
     if (!targetId) return
     log.info('auto-move', { childId, from: currentId, to: targetId, usedPercent: current.usedPercent, atPercent })
     // The parent's own mode decides, as it does for its move_child call: a
-    // parent in plan mode moves nothing.
-    const parentLive = this.liveSessionId(child.parentId)
-    const parentMode = parentLive ? this.chatRuntimeMode(parentLive) : child.grantedMode
-    const result = await this.moveHubChild(child.parentId, parentMode, childId, targetId)
+    // parent in plan mode moves nothing, whether or not it runs right now
+    // (`chatRuntimeMode` reads the stored mode of a chat with no session).
+    const result = await this.moveHubChild(child.parentId, this.chatRuntimeMode(child.parentId), childId, targetId)
     if (result.isError) log.warn(`the auto-move of ${childId} was refused`)
   }
 
@@ -3719,7 +3729,9 @@ export class ProviderRegistry implements PeerToolHost {
       return { live: await this.stopHubChild(threadId, 'user') }
     }
     // A parent's Stop ends its own turn only: its children keep the work they
-    // are doing. Stop all (`provider:hub-stop-children`) stops them.
+    // are doing, and their updates still reach it, since a hub runs on its
+    // own. Stop all (`provider:hub-stop-children`) stops them and holds the
+    // updates until the user's next message or Show now.
     return this.interruptOwnTurn(threadId)
   }
 
@@ -4469,9 +4481,16 @@ export class ProviderRegistry implements PeerToolHost {
     // A session that stops running may free a run slot a limited child waits for.
     if (event.type === 'status' && statusChanged && event.status !== 'running') this.limitResumer?.slotFreed()
     // A turn boundary of a child: a queued move runs, and the auto-move looks.
-    if (event.type === 'status' && statusChanged && event.status === 'idle') this.onChildTurnBoundary(event.threadId)
+    // `error` and `stopped` too: an agent that exits on a usage limit never
+    // reports idle, and a move queued behind that turn must not be stranded.
+    if (
+      event.type === 'status' &&
+      statusChanged &&
+      (event.status === 'idle' || event.status === 'error' || event.status === 'stopped')
+    )
+      this.onChildTurnBoundary(event.threadId)
     this.hubSubagents.observe(event)
-    this.onChildEvent(event)
+    this.onChildEvent(event, statusChanged)
     if (event.type === 'turn.completed') this.hubReaper.onTurnEnded(event.threadId)
     if (event.type === 'tool.started' && /report_to_hub$/.test(event.toolName))
       this.reportCalls.set(event.threadId, [...(this.reportCalls.get(event.threadId) ?? []), event.toolId])
@@ -5139,6 +5158,8 @@ export class ProviderRegistry implements PeerToolHost {
       const root = resolveRootThreadId(threadId)
       this.limitedChildEnds.delete(root)
       this.autoMoveChecks.delete(root)
+      // A move waits for a turn of the session that is going away, not of the one after it.
+      this.pendingMoves.delete(root)
       this.switchFirstEventSpans.get(threadId)?.span.end({ outcome: 'stopped-before-event' })
       this.switchFirstEventSpans.delete(threadId)
       this.firstEventSpans.get(threadId)?.end({ outcome: 'stopped-before-event' })

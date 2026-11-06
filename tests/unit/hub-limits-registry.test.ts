@@ -32,7 +32,12 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
   return { ...actual, remoteProviderLoginPrompt: () => null }
 })
 
-const usage = vi.hoisted(() => ({ closed: new Set<string>(), duringFetch: null as null | (() => void) }))
+const usage = vi.hoisted(() => ({
+  closed: new Set<string>(),
+  /** The session window each account reports, in percent, for the auto-move. */
+  percent: new Map<string, number>(),
+  duringFetch: null as null | (() => void),
+}))
 vi.mock('../../src/main/provider/usage', () => ({
   fetchInstanceUsage: async (instanceId: string) => {
     // A reading takes time: a test can start a turn while it is out.
@@ -43,19 +48,20 @@ vi.mock('../../src/main/provider/usage', () => ({
       status: 'ok',
       plan: null,
       account: null,
-      windows: usage.closed.has(instanceId)
-        ? [
-            {
-              id: 's',
-              label: '5-hour session',
-              kind: 'session',
-              usedPercent: 100,
-              resetsAtMs: Date.now() + 60 * 60_000,
-              windowMinutes: 300,
-              severity: 'critical',
-            },
-          ]
-        : [],
+      windows:
+        usage.closed.has(instanceId) || usage.percent.has(instanceId)
+          ? [
+              {
+                id: 's',
+                label: '5-hour session',
+                kind: 'session',
+                usedPercent: usage.closed.has(instanceId) ? 100 : usage.percent.get(instanceId),
+                resetsAtMs: Date.now() + 60 * 60_000,
+                windowMinutes: 300,
+                severity: 'critical',
+              },
+            ]
+          : [],
       overage: [],
       fetchedAtMs: Date.now(),
     }
@@ -199,6 +205,7 @@ beforeEach(async () => {
     updateHubChild(id, { phase: 'open' })
   }
   usage.closed.clear()
+  usage.percent.clear()
   usage.duringFetch = null
   host = new FakeHost()
   adapter = new Adapter()
@@ -469,6 +476,42 @@ describe('move_child', () => {
     expect(after[0]).toMatchObject({ threadId: 'child1', text: limitResumeTurn() })
     expect(after.at(-1)!.text).toContain('one more thing')
     expect(adapter.resumedQueues).toContain('child1')
+  })
+
+  it('moves a child off a nearly full account at its turn boundary, and leaves a child that reported', async () => {
+    setSetting('hub.autoMoveAtPercent', '80')
+    usage.percent.set('claude-a', 92)
+    usage.percent.set('claude-b', 20)
+    // A turn of its own ends: the account is over the percent, so the child moves.
+    event({ type: 'status', threadId: 'child1', status: 'running', newTurn: true })
+    event({ type: 'turn.completed', threadId: 'child1' })
+    event({ type: 'status', threadId: 'child1', status: 'idle' })
+    await vi.waitFor(() => expect(getConversationProviderInstanceId('child1')).toBe('claude-b'))
+
+    // child2 reports instead: it waits to be settled, so the auto-move leaves it.
+    usage.percent.set('claude-a', 95)
+    await mcp.opened
+      .get('child2')!
+      .find((t) => t.name === 'report_to_hub')!
+      .call({ status: 'done', summary: 'All of it is done.' })
+    event({ type: 'status', threadId: 'child2', status: 'running', newTurn: true })
+    event({ type: 'turn.completed', threadId: 'child2' })
+    event({ type: 'status', threadId: 'child2', status: 'idle' })
+    await vi.advanceTimersByTimeAsync(50)
+    expect(getConversationProviderInstanceId('child2')).not.toBe('claude-b')
+  })
+
+  it('runs a queued move when the agent exits on a usage limit instead of going idle', async () => {
+    event({ type: 'status', threadId: 'child1', status: 'running', newTurn: true })
+    expect(text(await move('child1', 'claude-b'))).toMatch(/moves to Claude B when that turn ends/)
+    // The turn ends on the limit and the agent leaves: no idle ever comes.
+    event({
+      type: 'turn.completed',
+      threadId: 'child1',
+      limit: { limitClass: 'usage_limit', resetAt: Date.now() + 120 * MIN },
+    })
+    event({ type: 'status', threadId: 'child1', status: 'error' })
+    await vi.waitFor(() => expect(getConversationProviderInstanceId('child1')).toBe('claude-b'))
   })
 
   it('refuses a target with no free run slot', async () => {
