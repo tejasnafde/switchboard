@@ -154,6 +154,75 @@ export interface BridgeProjectSetup {
   projects: BridgeProjectSetupRow[]
 }
 
+// ─── Device connection (desktop to relay) ───────────────────────
+
+/** The capability a desktop names in its hello. The relay refuses a hello without it. */
+export const BRIDGE_DEVICE_CAPABILITY = 'instinct_bridge_v1'
+export const DEFAULT_BRIDGE_RELAY_ORIGIN = 'https://bridge.tn07.dev'
+
+/**
+ * The bytes a desktop signs to answer the relay's challenge: the nonce, the
+ * machine id and the relay origin, so a signature for one relay or one
+ * socket is no use on another. The relay (tn07-site
+ * workers/bridge-relay/src/devices.js `helloPayload`) builds the same string.
+ */
+export function bridgeHelloPayload(input: {
+  origin: string
+  machineId: string
+  nonce: string
+  wireVersion?: number
+}): string {
+  return [
+    'switchboard-bridge-hello',
+    `v${input.wireVersion ?? BRIDGE_WIRE_VERSION}`,
+    input.origin,
+    input.machineId,
+    input.nonce,
+  ].join('\n')
+}
+
+/** One allowed project as the desktop publishes it to the relay. No path, ever. */
+export interface BridgeCatalogProject {
+  project_id: string
+  label: string
+  default_agent: AgentType | null
+  agents: AgentType[]
+  maximum_mode: RuntimeMode
+}
+
+/**
+ * `off`: the flag is off. `not_enrolled`: no device key on this installation.
+ * `rejected`: the relay closed the connection with `code`, retried later.
+ * `retrying`: the connection dropped (`code` says why), retried later.
+ * `key_unreadable`: the stored key cannot be decrypted here.
+ */
+export type BridgeLinkState =
+  | 'off'
+  | 'not_enrolled'
+  | 'connecting'
+  | 'connected'
+  | 'retrying'
+  | 'rejected'
+  | 'key_unreadable'
+
+/** Settings > Labs, this desktop's enrollment (`bridge:device-status`). Desktop only. */
+export interface BridgeDeviceStatus {
+  enabled: boolean
+  enrolled: boolean
+  machine_id: string
+  label: string | null
+  /** SPKI DER, base64. The public half only. */
+  public_key: string | null
+  /** The first 16 hex characters of the public key's SHA-256, as the relay lists it. */
+  key_fingerprint: string | null
+  relay_origin: string | null
+  state: BridgeLinkState
+  code: string | null
+  connection_generation: number | null
+  /** The command the operator runs to register this desktop, or null when not enrolled. */
+  operator_command: string | null
+}
+
 // ─── References and states ──────────────────────────────────────
 
 /** `chat_id` is the root conversation id, stable across provider session rotation. */

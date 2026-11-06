@@ -253,6 +253,23 @@ export function bridgeProjectAgents(policy: Pick<StoredBridgeProjectPolicy, 'all
     .filter(isAgentType)
 }
 
+/**
+ * The owner's allowed projects on this desktop, each with the stored paths
+ * its chats use. A policy counts only while a sidebar project still resolves
+ * to its root: one whose folder moved or that left the sidebar serves nothing.
+ */
+export function allowedBridgeProjects(machineId: string): AllowedProject[] {
+  const policies = listBridgeProjectPolicies().filter((p) => p.machine_id === machineId)
+  if (policies.length === 0) return []
+  const known = getProjects().map((p) => ({ path: p.path, real: bridgeRealpath(p.path) }))
+  return policies.flatMap((policy) => {
+    const paths = known.filter((p) => p.real === policy.canonical_local_root).map((p) => p.path)
+    return paths.length === 0
+      ? []
+      : [{ policy, paths: [...new Set([policy.canonical_local_root, ...paths])], sidebarPath: paths[0] }]
+  })
+}
+
 export class BridgeReadService {
   /** Thread id (as the event named it) to the time of its last runtime activity. */
   private readonly activity = new Map<string, number>()
@@ -292,21 +309,8 @@ export class BridgeReadService {
     return { ...this.base(machineId), partial: false, unavailable_machines: [], catalog_age_ms: 0 }
   }
 
-  /**
-   * The owner's allowed projects on this desktop, each with the stored paths
-   * its chats use. A policy counts only while a sidebar project still resolves
-   * to its root: one whose folder moved or that left the sidebar serves nothing.
-   */
   allowed(machineId: string): AllowedProject[] {
-    const policies = listBridgeProjectPolicies().filter((p) => p.machine_id === machineId)
-    if (policies.length === 0) return []
-    const known = getProjects().map((p) => ({ path: p.path, real: bridgeRealpath(p.path) }))
-    return policies.flatMap((policy) => {
-      const paths = known.filter((p) => p.real === policy.canonical_local_root).map((p) => p.path)
-      return paths.length === 0
-        ? []
-        : [{ policy, paths: [...new Set([policy.canonical_local_root, ...paths])], sidebarPath: paths[0] }]
-    })
+    return allowedBridgeProjects(machineId)
   }
 
   private projectOfPath(allowed: AllowedProject[], path: string): AllowedProject | undefined {

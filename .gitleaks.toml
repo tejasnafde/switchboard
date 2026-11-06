@@ -52,3 +52,10 @@ targetRules = ["jwt"]
 condition = "AND"
 paths = ['''^tests/unit/updater-error\.test\.ts$''']
 regexes = ['''eyJleHAiOjE3MDAwMDAwMDB9''']
+
+[[allowlists]]
+description = "Bridge device tests: a fixed hex key fingerprint, and a pinned stored-row fixture whose private_key is a throwaway test key wrapped by the fake keychain in that test (kept to catch a storage format change), not credentials"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^tests/unit/labs-page\.test\.ts$''', '''^tests/unit/bridge-device-key\.test\.ts$''']
+regexes = ['''0123456789abcdef''', '''AFNCRSk/OzY/PmAXEx0SGz0f''']

@@ -626,6 +626,14 @@ export const BridgeChannels = {
   SET_PROJECT_ALLOWED: 'bridge:set-project-allowed',
   /** (projectId) → the same as LIST_PROJECTS; works when the folder is gone */
   REMOVE_PROJECT: 'bridge:remove-project',
+  /** () → BridgeDeviceStatus: this desktop's enrollment and relay connection */
+  DEVICE_STATUS: 'bridge:device-status',
+  /** ({ label }) → BridgeDeviceStatus; makes the device key once, refused while the flag is off */
+  ENROLL_DEVICE: 'bridge:enroll-device',
+  /** ({ label }) → BridgeDeviceStatus */
+  SET_DEVICE_LABEL: 'bridge:set-device-label',
+  /** () → BridgeDeviceStatus; deletes the local device key */
+  REMOVE_DEVICE: 'bridge:remove-device',
 } as const
 
 /**

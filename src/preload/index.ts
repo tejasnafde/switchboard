@@ -1053,6 +1053,14 @@ const api = {
       transport.invoke(BridgeChannels.SET_PROJECT_ALLOWED, { path, allowed }),
     removeProject: (projectId: string): Promise<import('@shared/bridge').BridgeProjectSetup> =>
       transport.invoke(BridgeChannels.REMOVE_PROJECT, projectId),
+    deviceStatus: (): Promise<import('@shared/bridge').BridgeDeviceStatus> =>
+      transport.invoke(BridgeChannels.DEVICE_STATUS),
+    enrollDevice: (label: string): Promise<import('@shared/bridge').BridgeDeviceStatus> =>
+      transport.invoke(BridgeChannels.ENROLL_DEVICE, { label }),
+    setDeviceLabel: (label: string): Promise<import('@shared/bridge').BridgeDeviceStatus> =>
+      transport.invoke(BridgeChannels.SET_DEVICE_LABEL, { label }),
+    removeDevice: (): Promise<import('@shared/bridge').BridgeDeviceStatus> =>
+      transport.invoke(BridgeChannels.REMOVE_DEVICE),
   },
   agentSecret: {
     answer: (threadId: string, cardId: string, answer: AgentSecretAnswer): Promise<AgentSecretResult> =>

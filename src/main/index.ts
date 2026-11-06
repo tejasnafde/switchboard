@@ -48,6 +48,8 @@ import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass 
 import { disposeSettingsFileSync, registerSettingsFileHandlers, settingsFileSync } from './ipc/settings-file'
 import { isSettingsFileKey } from '@shared/settings-file'
 import { HUB_CHILDREN_LABS_SETTING, HUB_REMOTE_CHILDREN_LABS_SETTING } from '@shared/hub'
+import { INSTINCT_BRIDGE_LABS_SETTING } from '@shared/bridge'
+import { bridgeDeviceLink, stopBridgeDeviceLink } from './bridge/device-link'
 import { labsFlagCapabilities } from '@shared/labs'
 import {
   hubRemoteSettingChanged,
@@ -187,6 +189,7 @@ const quitCoordinator = new QuitCoordinator(
             detachAutoLink = null
           },
         },
+        { name: 'bridge-relay', run: stopBridgeDeviceLink },
         { name: 'switchboard-mcp', run: stopSwitchboardMcpServer },
         { name: 'ide', run: shutdownIde },
         { name: 'usage-probes', run: disposeUsageProbes },
@@ -355,6 +358,7 @@ function onSettingChanged(key: string): void {
   if (key === KEYBOARD_OVERRIDES_SETTING) applyKeyboardOverrides()
   if (isSettingsFileKey(key)) settingsFileSync()?.onDbChanged()
   if (key === HUB_REMOTE_CHILDREN_LABS_SETTING || key === HUB_CHILDREN_LABS_SETTING) hubRemoteSettingChanged()
+  if (key === INSTINCT_BRIDGE_LABS_SETTING) bridgeDeviceLink().reconcile()
 }
 
 // Custom protocol for onboarding tour videos. Must be registered as
@@ -1035,6 +1039,7 @@ app.whenReady().then(() => {
   providerRegistry = new ProviderRegistry(backendHost)
   providerRegistry.setRemoteHubClients(remoteHubClients)
   void reconnectHubMachinesOnLaunch()
+  bridgeDeviceLink().reconcile()
   worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(backendHost, () => providerRegistry)
   configureHubWorktrees(worktreeCreationRuntime)
   setFlagCapabilities(() => labsFlagCapabilities(process.env, getSetting))
