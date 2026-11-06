@@ -1,7 +1,11 @@
+import { scoreSearchWord } from '@shared/model-search'
+
 /** One row of a Combobox. `group` names the heading it sits under, in first-seen order. */
 export interface ComboboxOption {
   value: string
   label: string
+  /** Name to rank when the displayed label also includes context, such as a machine. */
+  searchLabel?: string
   /** Muted text on the right of the row. */
   hint?: string
   group?: string
@@ -14,26 +18,23 @@ export interface ComboboxGroup {
   options: ComboboxOption[]
 }
 
-/**
- * Case-insensitive substring match on the label, hint and keywords. Callers
- * order the list on purpose (recent first), so a fuzzy score would reshuffle
- * it on every keystroke. Only the label tier moves a row: an exact label, then
- * a label that starts with the query, then one that contains it, then rows
- * matched only by hint or keyword (a path). Each tier keeps the given order.
- * Without the tiers, a query that every path contains ("projects") would bury
- * the row whose name it is.
- */
+/** Name tiers win over paths and fuzzy matches; ties keep the caller's order. */
 export function filterComboboxOptions(options: ComboboxOption[], query: string): ComboboxOption[] {
   const needle = query.trim().toLowerCase()
   if (!needle) return options
-  const tiers: ComboboxOption[][] = [[], [], [], []]
+  const tiers: ComboboxOption[][] = [[], [], [], [], [], []]
   for (const option of options) {
-    const label = option.label.toLowerCase()
+    const label = (option.searchLabel ?? option.label).toLowerCase()
+    const nameScore = scoreSearchWord(needle, label)
+    const extraMatch = [option.label, option.hint, ...(option.keywords ?? [])].some((text) =>
+      text?.toLowerCase().includes(needle),
+    )
     if (label === needle) tiers[0].push(option)
-    else if (label.startsWith(needle)) tiers[1].push(option)
-    else if (label.includes(needle)) tiers[2].push(option)
-    else if ([option.hint, ...(option.keywords ?? [])].some((text) => text?.toLowerCase().includes(needle)))
-      tiers[3].push(option)
+    else if (nameScore === 3) tiers[1].push(option)
+    else if (nameScore === 2) tiers[2].push(option)
+    else if (nameScore === 1) tiers[3].push(option)
+    else if (extraMatch) tiers[4].push(option)
+    else if (nameScore > 0) tiers[5].push(option)
   }
   return tiers.flat()
 }

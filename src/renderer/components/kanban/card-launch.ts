@@ -221,6 +221,7 @@ export async function launchCardChat(card: KanbanCard, opts: LaunchOptions): Pro
     title,
     startedAt: Date.now(),
     source: 'switchboard',
+    agentType: 'claude-code',
   })
 
   await api.kanban.update(card.id, { conversationId: sessionId })

@@ -3,26 +3,14 @@ import { Command } from 'cmdk'
 import { chatSearchSections, titleMatchRange } from '@shared/chat-search'
 import { formatRelativeTime } from '@shared/format'
 import { formatBinding, matchesBinding } from '@shared/shortcuts'
-import { agentShortLabel, type AgentType, type Project } from '@shared/types'
+import { agentShortLabel, type Project } from '@shared/types'
 import { useMachineStore } from '../stores/machine-store'
 import { createRendererLogger } from '../logger'
-import { cn } from '../lib/utils'
+import { AgentMark } from './ui/agent-mark'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { goToChatItems, type ArchivedChatRow, type GoToChatItem } from './go-to-chat-items'
 
 const log = createRendererLogger('go-to-chat')
-
-const AVATARS: Record<AgentType, { initials: string; className: string }> = {
-  'claude-code': { initials: 'CL', className: 'bg-[#6c5ce7]' },
-  codex: { initials: 'CX', className: 'bg-[#10a37f]' },
-  opencode: { initials: 'OC', className: 'bg-[#e17055]' },
-  // ponytail: neutral until these agents get their own colours.
-  gemini: { initials: 'GE', className: 'bg-[var(--text-muted)]' },
-  vibe: { initials: 'VB', className: 'bg-[var(--text-muted)]' },
-  cline: { initials: 'CN', className: 'bg-[var(--text-muted)]' },
-  copilot: { initials: 'CP', className: 'bg-[var(--text-muted)]' },
-  'acp-command': { initials: 'LC', className: 'bg-[var(--text-muted)]' },
-}
 
 interface GoToChatDialogProps {
   open: boolean
@@ -179,7 +167,6 @@ function ChatRow({
   machine: string | null
   onSelect: () => void
 }) {
-  const avatar = AVATARS[item.agent]
   const range = titleMatchRange(item.title, query)
   const meta = [
     machine,
@@ -195,14 +182,7 @@ function ChatRow({
       onSelect={onSelect}
       className="cmdk-item flex cursor-pointer items-center gap-[10px] px-[12px] py-[6px] text-[13px] text-[var(--text-primary)]"
     >
-      <span
-        className={cn(
-          'inline-flex size-[16px] shrink-0 items-center justify-center rounded-full text-[8px] text-white',
-          avatar.className,
-        )}
-      >
-        {avatar.initials}
-      </span>
+      <AgentMark agent={item.agent} size={14} className="text-[var(--text-muted)]" />
       <span className="min-w-0 flex-1 truncate font-[500]">
         {range ? (
           <>

@@ -12,7 +12,8 @@ export interface SearchableModel {
 
 const WORD_START = /[\s/._-]/
 
-function wordScore(word: string, text: string): number {
+/** Scores a lowercased search word against lowercased text. */
+export function scoreSearchWord(word: string, text: string): number {
   if (text.startsWith(word)) return 3
   let at = text.indexOf(word)
   const substring = at >= 0
@@ -41,7 +42,7 @@ export function scoreModel(model: SearchableModel, query: string): number {
   const id = model.id.toLowerCase()
   let total = 0
   for (const word of words) {
-    const score = Math.max(wordScore(word, label), wordScore(word, id))
+    const score = Math.max(scoreSearchWord(word, label), scoreSearchWord(word, id))
     if (score === 0) return 0
     total += score
   }

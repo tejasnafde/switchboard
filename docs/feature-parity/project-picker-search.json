@@ -1,0 +1,50 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "project-picker-search",
+  "summary": "Desktop searchable comboboxes rank exact names, prefixes, word starts, name substrings, path matches, then fuzzy names. Search results stay in rank order across groups and scroll the highlighted result into view. The landing project picker opens on the top row; settings pickers retain their chosen value on open. Text matching reuses the model picker scorer. A machine suffix stays searchable without affecting exact project-name ranking.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/ui/combobox.tsx",
+        "src/renderer/components/ui/combobox-options.ts",
+        "tests/unit/combobox-selection.test.ts",
+        "tests/unit/combobox-options.test.ts",
+        "src/renderer/components/chat/ChatLanding.tsx"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Cmd+Shift+O and the cmdk Combobox are desktop controls. The Expo app does not use this component or the exported word scorer."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Compose pickers do not use the desktop shortcut, cmdk Combobox, or TypeScript scorer."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire or backend contract changes. The existing client model-search word scorer is exported for reuse without changing model search behavior."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Query and highlight are transient renderer state. No stored data or migration changes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships through the existing desktop release flow with no identity, signing, packaging, channel or rollout changes."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run --maxWorkers=2",
+      "npm run typecheck",
+      "npm run validate:feature-parity -- --base origin/main",
+      "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens npm run test:e2e:visual"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No manual hardware validation on iOS or Android; their pickers are unaffected."
+    ]
+  }
+}

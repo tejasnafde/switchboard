@@ -48,6 +48,58 @@ describe('filterComboboxOptions', () => {
     ])
   })
 
+  it('ranks exact names, prefixes, word starts, paths, then fuzzy matches', () => {
+    const projects: ComboboxOption[] = [
+      { value: 'fuzzy', label: 'proj-ect-sync' },
+      { value: 'buried', label: 'myprojects' },
+      { value: 'path', label: 'switchboard', keywords: ['/u/projects/switchboard'] },
+      { value: 'word', label: 'old-projects-archive' },
+      { value: 'prefix', label: 'projects-site' },
+      { value: 'exact', label: 'Projects' },
+    ]
+    expect(filterComboboxOptions(projects, ' projects ').map((o) => o.value)).toEqual([
+      'exact',
+      'prefix',
+      'word',
+      'buried',
+      'path',
+      'fuzzy',
+    ])
+  })
+
+  it('keeps a name substring above path-only matches, regardless of recency', () => {
+    expect(
+      filterComboboxOptions(
+        [
+          { value: 'path', label: 'switchboard', keywords: ['/users/tejas/desktop/projects/switchboard'] },
+          { value: 'name', label: 'myprojects' },
+        ],
+        'projects',
+      ).map((o) => o.value),
+    ).toEqual(['name', 'path'])
+  })
+
+  it('does not fuzzy-match a shared path prefix or descriptive hint', () => {
+    expect(
+      filterComboboxOptions(
+        [
+          { value: 'path', label: 'switchboard', keywords: ['/users/tejas/desktop/projects/switchboard'] },
+          { value: 'hint', label: 'scout', hint: 'users tejas desktop projects' },
+        ],
+        'uts',
+      ),
+    ).toEqual([])
+  })
+
+  it('ranks the project name independently of its displayed machine suffix', () => {
+    const projects: ComboboxOption[] = [
+      { value: 'prefix', label: 'projects-site · Mac', searchLabel: 'projects-site' },
+      { value: 'exact', label: 'projects · server', searchLabel: 'projects' },
+    ]
+    expect(filterComboboxOptions(projects, 'projects').map((o) => o.value)).toEqual(['exact', 'prefix'])
+    expect(filterComboboxOptions(projects, 'server').map((o) => o.value)).toEqual(['exact'])
+  })
+
   it('returns nothing when nothing matches', () => {
     expect(filterComboboxOptions(options, 'zzz')).toEqual([])
   })

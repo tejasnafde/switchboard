@@ -16,6 +16,7 @@ import { useLayoutStore } from '../../stores/layout-store'
 import { buildMachineList, type MachineNode } from './machine-list'
 import { syncedAgoLabel, cachedProjects } from './machine-snapshot'
 import { RelativeTimeLabel } from './RelativeTimeLabel'
+import { SessionAgentMark } from './SessionAgentMark'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { ProjectFavicon } from './ProjectFavicon'
 import { cloneKey, useProjectCloneStore } from '../../services/project-clone'
@@ -171,6 +172,7 @@ function RemoteProject({
                   aria-current={isActive ? 'page' : undefined}
                   onClick={() => onOpen?.(s)}
                 >
+                  <SessionAgentMark session={s} />
                   <span className="sidebar-thread-title">{s.title}</span>
                   <UnreadBadge sessionId={s.id} />
                   <RelativeTimeLabel className="sidebar-thread-time" timestamp={s.startedAt} />

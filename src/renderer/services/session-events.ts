@@ -81,6 +81,7 @@ export interface NewSession {
   title: string
   startedAt: number
   source: 'switchboard' | 'claude-code' | 'codex'
+  /** The agent the chat runs on. The source alone does not name it for a chat we just created. */
   agentType?: string
 }
 
