@@ -39,8 +39,8 @@ describe('instinct_bridge flag', () => {
     expect(labsFlag('instinct_bridge')).toMatchObject({
       envVar: 'SB_INSTINCT_BRIDGE',
       defaultOn: false,
-      capability: 'instinct_bridge_v1',
     })
+    expect(labsFlag('instinct_bridge')!.capability).toBeUndefined()
   })
 })
 

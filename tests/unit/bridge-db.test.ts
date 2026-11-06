@@ -46,6 +46,20 @@ beforeEach(() => {
 })
 
 describe('reserveBridgeCall', () => {
+  it('stores the call id the relay reserved and returns it on a replay', () => {
+    const input = {
+      callId: 'bcall_relay-1',
+      operation: 'start_chat' as const,
+      idempotencyKey: 'k1',
+      inputHash: hashOf({ m: 1 }),
+      machineId: 'mac-work',
+      target: { project_id: 'p1' },
+      policyRevision: 1,
+    }
+    expect(reserveBridgeCall(input)).toMatchObject({ kind: 'reserved', call: { callId: 'bcall_relay-1' } })
+    expect(reserveBridgeCall(input)).toMatchObject({ kind: 'existing', call: { callId: 'bcall_relay-1' } })
+  })
+
   it('returns the first record for the same key and body, with its first target', () => {
     const first = reserve('k1', { project: 'site', message: 'hi' })
     expect(first.kind).toBe('reserved')
@@ -147,6 +161,21 @@ describe('updateBridgeCallState', () => {
       state: 'rejected',
       errorCode: 'machine_offline',
       nonDeliveryConfirmed: true,
+    })
+  })
+
+  it('keeps the stored detail when a later move omits it', () => {
+    const recorded = reserve('k1', { m: 1 })
+    const dispatching = reserve('k2', { m: 2 })
+    if (recorded.kind !== 'reserved' || dispatching.kind !== 'reserved') throw new Error('not reserved')
+    updateBridgeCallState(dispatching.call.callId, 'dispatching')
+    recoverBridgeCalls()
+    expect(updateBridgeCallState(dispatching.call.callId, 'rejected')).toBe(true)
+    expect(getBridgeCall(recorded.call.callId)).toMatchObject({ state: 'rejected', nonDeliveryConfirmed: true })
+    expect(getBridgeCall(dispatching.call.callId)).toMatchObject({
+      state: 'rejected',
+      errorCode: 'delivery_unknown',
+      nonDeliveryConfirmed: null,
     })
   })
 })

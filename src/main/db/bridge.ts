@@ -185,9 +185,11 @@ export type BridgeReservation =
 /**
  * Reserves `(operation, idempotencyKey)` before any dispatch. The same key and
  * hash returns the existing record with its first target; another hash is a
- * conflict; a key past retention is retired, never new work.
+ * conflict; a key past retention is retired, never new work. `callId` is the
+ * id the relay reserved, stored as given; a local call omits it and gets one.
  */
 export function reserveBridgeCall(input: {
+  callId?: string
   operation: BridgeOperation
   idempotencyKey: string
   inputHash: string
@@ -212,7 +214,7 @@ export function reserveBridgeCall(input: {
         }
         return { kind: 'existing', call: toCall(row) }
       }
-      const callId = `bcall_${randomUUID()}`
+      const callId = input.callId ?? `bcall_${randomUUID()}`
       db.prepare(
         `INSERT INTO bridge_calls (call_id, operation, idempotency_key, input_hash, machine_id, target,
          policy_revision, state, created_at, updated_at)
@@ -241,7 +243,7 @@ export function getBridgeCall(callId: string): BridgeCallRecord | null {
 /**
  * Moves a call along its delivery states. False when the move is not allowed
  * from the stored state (an accepted or rejected call stays so) or the call is
- * a tombstone.
+ * a tombstone. An omitted detail keeps its stored value.
  */
 export function updateBridgeCallState(
   callId: string,
@@ -256,7 +258,8 @@ export function updateBridgeCallState(
         | undefined
       if (!row || row.retired_at !== null || !bridgeCallTransitionAllowed(row.state, to)) return false
       db.prepare(
-        'UPDATE bridge_calls SET state = ?, error_code = ?, non_delivery_confirmed = ?, updated_at = ? WHERE call_id = ?',
+        `UPDATE bridge_calls SET state = ?, error_code = COALESCE(?, error_code),
+         non_delivery_confirmed = COALESCE(?, non_delivery_confirmed), updated_at = ? WHERE call_id = ?`,
       ).run(
         to,
         detail.errorCode ?? null,

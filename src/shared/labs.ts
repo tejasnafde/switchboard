@@ -98,7 +98,6 @@ export const LABS_FLAGS: readonly LabsFlag[] = [
     envVar: 'SB_INSTINCT_BRIDGE',
     defaultOn: false,
     applies: 'at_once',
-    capability: 'instinct_bridge_v1',
   },
 ]
 

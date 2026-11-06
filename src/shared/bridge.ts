@@ -14,7 +14,6 @@ import type { AgentType } from './types'
 
 export const INSTINCT_BRIDGE_ENABLED = false
 export const INSTINCT_BRIDGE_LABS_SETTING = 'labs.instinct_bridge'
-export const INSTINCT_BRIDGE_CAPABILITY = 'instinct_bridge_v1'
 /** The relay and the desktop refuse a frame of another version with `unsupported_version`. */
 export const BRIDGE_WIRE_VERSION = 1
 
