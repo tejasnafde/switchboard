@@ -29,7 +29,12 @@ import {
   type RelaySocketHandlers,
   type Timers,
 } from '../../src/main/bridge/relay-client'
-import { BridgeDeviceLink, bridgeCatalog, operatorCommand, type DeviceLinkDeps } from '../../src/main/bridge/device-link'
+import {
+  BridgeDeviceLink,
+  bridgeCatalog,
+  operatorCommand,
+  type DeviceLinkDeps,
+} from '../../src/main/bridge/device-link'
 import { defaultDeviceKeyDeps, type DeviceKeyDeps } from '../../src/main/bridge/device-key'
 import { bridgeHelloPayload, type BridgeCatalogProject } from '../../src/shared/bridge'
 
@@ -112,14 +117,22 @@ function harness(catalog: BridgeCatalogProject[] = []) {
   const client = new BridgeRelayClient({
     origin: ORIGIN,
     machineId: MACHINE,
-    sign: (text) => sign('sha256', Buffer.from(text), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64'),
+    sign: (text) =>
+      sign('sha256', Buffer.from(text), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64'),
     catalog: () => catalog,
     userAgent: 'Switchboard/9.9.9',
     timers,
     random: () => 0.5,
     onStatus: (s) => statuses.push(`${s.state}:${s.code ?? ''}`),
     connect: (url, headers, on) => {
-      const socket = { url, headers, on, sent: [] as string[], closed: null as null | { code: number; reason: string }, terminated: false }
+      const socket = {
+        url,
+        headers,
+        on,
+        sent: [] as string[],
+        closed: null as null | { code: number; reason: string },
+        terminated: false,
+      }
       sockets.push(socket)
       return {
         send: (text) => void socket.sent.push(text),
@@ -174,7 +187,12 @@ describe('BridgeRelayClient', () => {
     expect(payload).toBe(`switchboard-bridge-hello\nv1\n${ORIGIN}\n${MACHINE}\n${h.nonce}`)
     const key = createPublicKey(h.publicKey.export({ format: 'pem', type: 'spki' }))
     expect(
-      verify('sha256', Buffer.from(payload), { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(String(hello.signature), 'base64')),
+      verify(
+        'sha256',
+        Buffer.from(payload),
+        { key, dsaEncoding: 'ieee-p1363' },
+        Buffer.from(String(hello.signature), 'base64'),
+      ),
     ).toBe(true)
   })
 
@@ -401,7 +419,9 @@ describe('BridgeDeviceLink', () => {
 
     expect(
       operatorCommand({ origin: 'http://127.0.0.1:8787', machineId: 'hub-1', label: "Tejas's Mac", publicKey: 'AAAA' }),
-    ).toBe(`echo 'AAAA' | BRIDGE_RELAY_ORIGIN='http://127.0.0.1:8787' node scripts/bridge-operator.mjs enroll 'hub-1' 'Tejas'\\''s Mac' -`)
+    ).toBe(
+      `echo 'AAAA' | BRIDGE_RELAY_ORIGIN='http://127.0.0.1:8787' node scripts/bridge-operator.mjs enroll 'hub-1' 'Tejas'\\''s Mac' -`,
+    )
   })
 })
 

@@ -63,7 +63,9 @@ function operatorKey() {
     return key
   } catch (err) {
     // stderr can name the account and project, never the key; the key is only on stdout.
-    fail(`Could not read the operator key from Secret Manager (${err.status ?? err.code ?? 'error'}). Set BRIDGE_OPERATOR_KEY or sign in to gcloud.`)
+    fail(
+      `Could not read the operator key from Secret Manager (${err.status ?? err.code ?? 'error'}). Set BRIDGE_OPERATOR_KEY or sign in to gcloud.`,
+    )
   }
 }
 

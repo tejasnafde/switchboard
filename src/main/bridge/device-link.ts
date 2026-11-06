@@ -67,7 +67,11 @@ export function operatorCommand(input: {
 }
 
 export function defaultDeviceLabel(): string {
-  return hostname().replace(/\.local$/i, '').slice(0, 100) || 'This Mac'
+  return (
+    hostname()
+      .replace(/\.local$/i, '')
+      .slice(0, 100) || 'This Mac'
+  )
 }
 
 export class BridgeDeviceLink {
@@ -176,7 +180,12 @@ export class BridgeDeviceLink {
       connection_generation: null,
       operator_command:
         key && relayOrigin
-          ? operatorCommand({ origin: relayOrigin, machineId: key.machineId, label: key.label, publicKey: key.publicKey })
+          ? operatorCommand({
+              origin: relayOrigin,
+              machineId: key.machineId,
+              label: key.label,
+              publicKey: key.publicKey,
+            })
           : null,
     }
     if (!enabled) return base

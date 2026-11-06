@@ -282,11 +282,7 @@ export class BridgeRelayClient {
 
     // A frame tagged for another machine or connection is not ours, whatever its type.
     if ('machine_id' in frame && frame.machine_id !== this.deps.machineId) return this.drop('foreign_machine', type)
-    if (
-      this.phase === 'live' &&
-      'connection_generation' in frame &&
-      frame.connection_generation !== this.generation
-    )
+    if (this.phase === 'live' && 'connection_generation' in frame && frame.connection_generation !== this.generation)
       return this.drop('stale_generation', type)
 
     if (type === 'challenge') return this.onChallenge(frame)

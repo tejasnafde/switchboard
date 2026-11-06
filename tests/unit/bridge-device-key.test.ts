@@ -111,11 +111,17 @@ describe('bridge device key', () => {
     expect(() => loadDeviceSigner(deps(fakeSafeStorage(false)))).toThrow(DeviceKeyError)
 
     const parsed = JSON.parse(row)
-    setSetting(BRIDGE_DEVICE_SETTING, JSON.stringify({ ...parsed, private_key: Buffer.from([0, 0x53, 0x42, 0x45, 1, 2, 3]).toString('base64') }))
+    setSetting(
+      BRIDGE_DEVICE_SETTING,
+      JSON.stringify({ ...parsed, private_key: Buffer.from([0, 0x53, 0x42, 0x45, 1, 2, 3]).toString('base64') }),
+    )
     expect(() => loadDeviceSigner(deps())).toThrowError(expect.objectContaining({ code: 'key_unreadable' }))
 
     // A plaintext key (no sentinel) is refused, not used.
-    setSetting(BRIDGE_DEVICE_SETTING, JSON.stringify({ ...parsed, private_key: Buffer.from('plain').toString('base64') }))
+    setSetting(
+      BRIDGE_DEVICE_SETTING,
+      JSON.stringify({ ...parsed, private_key: Buffer.from('plain').toString('base64') }),
+    )
     expect(() => loadDeviceSigner(deps())).toThrowError(expect.objectContaining({ code: 'key_unreadable' }))
 
     const text = JSON.stringify(logged)

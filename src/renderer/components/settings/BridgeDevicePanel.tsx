@@ -118,8 +118,7 @@ export function BridgeDevicePanel() {
       <div className="overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)]">
         <p className="m-0 px-[14px] pb-1 pt-3 text-[12px] leading-[1.45] text-[var(--text-secondary)]">
           Enroll this Mac so that Instinct can reach it through the bridge relay. Enroll makes a device key that stays
-          on this Mac, encrypted by the keychain. Then run the operator command to register its public key at the
-          relay.
+          on this Mac, encrypted by the keychain. Then run the operator command to register its public key at the relay.
         </p>
         <Row name="Status">
           <span data-testid="bridge-device-status">{status ? bridgeStatusText(status) : 'Reading'}</span>
