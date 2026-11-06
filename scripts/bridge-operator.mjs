@@ -9,13 +9,14 @@
 // `switchboard-bridge-operator-key` (project teejayproject, gcloud
 // configuration `personal`). It is sent only in the Authorization header and
 // never printed. BRIDGE_RELAY_ORIGIN picks another relay (default
-// https://bridge.tn07.dev); plain http is allowed only for 127.0.0.1 and
-// localhost.
+// https://bridge.tn07.dev); plain http is allowed only for 127.0.0.1,
+// localhost and [::1].
 //
 // The public key file holds what Settings > Labs shows: SPKI base64, a PEM
 // public key, or a public JWK. `-` reads it from stdin.
 
 import { execFileSync } from 'node:child_process'
+import { createPublicKey } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
@@ -36,9 +37,9 @@ function relayOrigin() {
   } catch {
     fail('BRIDGE_RELAY_ORIGIN is not a URL.')
   }
-  const loopback = url.hostname === '127.0.0.1' || url.hostname === 'localhost'
+  const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback))
-    fail('The relay origin must use https (http only for 127.0.0.1 or localhost).')
+    fail('The relay origin must use https (http only for 127.0.0.1, localhost or [::1]).')
   return url.origin
 }
 
@@ -81,6 +82,12 @@ export function parsePublicKey(text) {
   const pem = /-----BEGIN PUBLIC KEY-----([\s\S]+?)-----END PUBLIC KEY-----/.exec(trimmed)
   const base64 = (pem ? pem[1] : trimmed).replace(/\s+/g, '')
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) throw new Error('The public key is not base64, PEM or a JWK.')
+  try {
+    createPublicKey({ key: Buffer.from(base64, 'base64'), format: 'der', type: 'spki' })
+  } catch {
+    // A PKCS#8 private key in bare base64 lands here too: it is never sent.
+    throw new Error('The key is not an SPKI public key. Send only the public key Settings shows.')
+  }
   return base64
 }
 

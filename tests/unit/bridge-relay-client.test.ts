@@ -399,6 +399,16 @@ describe('BridgeDeviceLink', () => {
     expect(h.link.status().enrolled).toBe(false)
   })
 
+  it('refuses a label change while the flag is off, and keeps the stored label', () => {
+    const h = linkHarness()
+    h.link.enroll('Work Mac')
+    h.flag.on = false
+    expect(() => h.link.setLabel('Home Mac')).toThrow(/off/)
+    expect(h.link.status().label).toBe('Work Mac')
+    h.flag.on = true
+    expect(h.link.setLabel('Home Mac').label).toBe('Home Mac')
+  })
+
   it('reports an unreadable key and starts nothing', () => {
     const h = linkHarness()
     h.link.enroll('Work Mac')

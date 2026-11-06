@@ -39,6 +39,8 @@ export function BridgeDevicePanel() {
   const [status, setStatus] = useState<BridgeDeviceStatus | null>(null)
   const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // A failed status poll, kept apart from action errors so the next good poll clears only it.
+  const [readError, setReadError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   // The stored label last shown, so a poll refreshes the field only when the label changed elsewhere.
@@ -60,12 +62,14 @@ export function BridgeDevicePanel() {
         .deviceStatus()
         .then((next) => {
           failed = false
-          if (live) show(next)
+          if (!live) return
+          setReadError(null)
+          show(next)
         })
         .catch((err: unknown) => {
           if (!failed) log.warn('reading the bridge device status failed', err)
           failed = true
-          if (live) setError('Could not read the enrollment.')
+          if (live) setReadError('Could not read the enrollment.')
         })
     void read()
     const timer = setInterval(read, POLL_MS)
@@ -110,7 +114,8 @@ export function BridgeDevicePanel() {
     }
   }
 
-  if (!status?.enabled && !error) return null
+  const shownError = error ?? readError
+  if (!status?.enabled && !shownError) return null
   const enrolled = status?.enrolled === true
   return (
     <section className="mb-[18px]" data-testid="bridge-device">
@@ -189,12 +194,12 @@ export function BridgeDevicePanel() {
             </Button>
           )}
         </div>
-        {error && (
+        {shownError && (
           <p
             role="alert"
             className="m-0 border-t border-[var(--border)] px-[14px] py-2 text-[12px] text-[var(--error)]"
           >
-            {error}
+            {shownError}
           </p>
         )}
       </div>

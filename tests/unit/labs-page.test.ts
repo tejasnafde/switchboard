@@ -180,6 +180,22 @@ describe('Labs page', () => {
     expect([...panel.querySelectorAll('button')].some((b) => b.textContent === 'Remove enrollment')).toBe(true)
   })
 
+  it('clears a failed status read at the next good poll', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      rows.set('labs.instinct_bridge', 'true')
+      bridgeProjects.mockResolvedValue({ enabled: true, projects: [] })
+      deviceStatus.mockRejectedValueOnce(new Error('backend gone')).mockResolvedValue(DEVICE)
+      await mount()
+      const panel = () => container.querySelector('[data-testid="bridge-device"]')!
+      expect(panel().querySelector('[role="alert"]')!.textContent).toBe('Could not read the enrollment.')
+      await act(async () => vi.advanceTimersByTimeAsync(2_000))
+      expect(panel().querySelector('[role="alert"]')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('renders every flag off by default, with a switch per flag and a note on the read-only rows', async () => {
     await mount()
     expect(container.querySelectorAll('[role="switch"]')).toHaveLength(8)

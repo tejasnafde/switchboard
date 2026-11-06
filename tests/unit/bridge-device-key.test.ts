@@ -97,7 +97,8 @@ describe('bridge device key', () => {
   })
 
   it('refuses to make a key when the keychain cannot encrypt, and stores nothing', () => {
-    for (const storage of [fakeSafeStorage(false), null]) {
+    const basicText = { ...fakeSafeStorage(), getSelectedStorageBackend: () => 'basic_text' }
+    for (const storage of [fakeSafeStorage(false), null, basicText]) {
       expect(() => enrollDeviceKey('hub-1', 'Work Mac', deps(storage))).toThrowError(
         expect.objectContaining({ code: 'encryption_unavailable' }),
       )
@@ -147,7 +148,8 @@ describe('bridge device key', () => {
   })
 
   it('never overwrites a row it cannot read (another version), until it is removed', () => {
-    for (const row of ['{"v":2,"private_key":"x"}', 'not json']) {
+    // The empty row last: the removal below must take an empty value too.
+    for (const row of ['{"v":2,"private_key":"x"}', 'not json', '']) {
       setSetting(BRIDGE_DEVICE_SETTING, row)
       expect(readDeviceKey(deps())).toBeNull()
       expect(() => enrollDeviceKey('hub-1', 'Work Mac', deps())).toThrowError(

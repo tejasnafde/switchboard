@@ -48,6 +48,8 @@ export interface DeviceSigner {
 
 export interface SafeStorageLike {
   isEncryptionAvailable(): boolean
+  /** Linux only in Electron. `basic_text` encrypts with a hardcoded password, so it does not count as a keychain. */
+  getSelectedStorageBackend?(): string
   encryptString(text: string): Buffer
   decryptString(blob: Buffer): string
 }
@@ -151,7 +153,7 @@ export function enrollDeviceKey(
   if (deviceKeyStored(deps))
     throw new DeviceKeyError('key_unreadable', 'A device key this version cannot read is stored. Remove it first.')
   const safeStorage = deps.safeStorage()
-  if (!safeStorage?.isEncryptionAvailable())
+  if (!safeStorage?.isEncryptionAvailable() || safeStorage.getSelectedStorageBackend?.() === 'basic_text')
     throw new DeviceKeyError(
       'encryption_unavailable',
       'This computer cannot encrypt the device key (no keychain), so it was not made.',
@@ -182,7 +184,7 @@ export function setDeviceLabel(label: string, deps: DeviceKeyDeps = defaultDevic
 
 /** Deletes the local key. The relay still lists the device until the operator revokes it. */
 export function removeDeviceKey(deps: DeviceKeyDeps = defaultDeviceKeyDeps): void {
-  if (!deps.getSetting(BRIDGE_DEVICE_SETTING)) return
+  if (!deviceKeyStored(deps)) return
   deps.removeSetting(BRIDGE_DEVICE_SETTING)
   log.info('bridge device key removed')
 }

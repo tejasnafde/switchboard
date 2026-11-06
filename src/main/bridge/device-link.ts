@@ -150,6 +150,7 @@ export class BridgeDeviceLink {
   }
 
   setLabel(label: string): BridgeDeviceStatus {
+    if (!this.deps.flagOn()) throw new Error('The Instinct bridge is off in Settings > Labs.')
     setDeviceLabel(label, this.deps.keys)
     return this.status()
   }
@@ -199,6 +200,11 @@ export class BridgeDeviceLink {
 }
 
 let link: BridgeDeviceLink | null = null
+
+/** Resends the project catalog when the link exists; a removed sidebar project can drop an allowed one. */
+export function bridgeCatalogChanged(): void {
+  link?.catalogChanged()
+}
 
 export function bridgeDeviceLink(): BridgeDeviceLink {
   link ??= new BridgeDeviceLink({

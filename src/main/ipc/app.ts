@@ -12,6 +12,7 @@ import { rememberHistoryImage, rememberedHistoryImage } from '../conversations/h
 import { historyTail } from '@shared/turn-activity'
 import { parseFollowSuggestionMode } from '@shared/follow-suggestions'
 import { createMainLogger as createLogger } from '../logger'
+import { bridgeCatalogChanged } from '../bridge/device-link'
 import { scanAllSessions } from '../projects/session-scanner'
 import { projectManagedRootSessions, sessionSummaryToConversationRow } from './terminal-sessions'
 import { homedir, networkInterfaces } from 'os'
@@ -443,6 +444,11 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   host.handle(AppChannels.REMOVE_PROJECT, (projectPath: string) => {
     log.info(`remove-project: ${projectPath}`)
     removeProject(projectPath) // FK cascade drops conversations + kanban cards
+    try {
+      bridgeCatalogChanged()
+    } catch (err) {
+      log.warn('sending the bridge catalog after a project removal failed', err)
+    }
     return { ok: true }
   })
 
