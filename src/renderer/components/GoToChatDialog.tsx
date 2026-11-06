@@ -182,7 +182,6 @@ function ChatRow({
       onSelect={onSelect}
       className="cmdk-item flex cursor-pointer items-center gap-[10px] px-[12px] py-[6px] text-[13px] text-[var(--text-primary)]"
     >
-      {/* The row names the agent in its meta line, so the mark is decoration. */}
       <AgentMark agent={item.agent} size={14} className="text-[var(--text-muted)]" />
       <span className="min-w-0 flex-1 truncate font-[500]">
         {range ? (

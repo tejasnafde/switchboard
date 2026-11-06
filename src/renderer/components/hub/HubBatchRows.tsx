@@ -43,7 +43,6 @@ export function HubBatchRows({ view }: { view: HubBatchView }) {
             <div
               style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, color: 'var(--text-primary)' }}
             >
-              {/* The line under it names the agent, so the mark is decoration. */}
               <AgentMark agent={r.agent} />
               {r.title}
             </div>

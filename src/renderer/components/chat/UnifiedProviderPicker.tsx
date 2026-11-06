@@ -180,10 +180,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
               <span aria-hidden className="relative inline-flex size-[18px] shrink-0 items-center justify-center">
                 <AgentMark agent={agentType} size={14} className="text-[var(--text-primary)]" />
                 {showInstanceBadge && (
-                  <span
-                    className="absolute -right-[3px] -bottom-[3px] inline-flex h-[10px] min-w-[10px] items-center justify-center rounded-full px-[1px] text-[7px] font-[700] leading-none tracking-[0.02em]"
-                    style={{ background: 'var(--pick-accent)', color: 'var(--pick-ink)' }}
-                  >
+                  <span className="absolute -right-[3px] -bottom-[3px] inline-flex h-[10px] min-w-[10px] items-center justify-center rounded-full bg-[var(--pick-accent)] px-[1px] text-[7px] font-[700] leading-none tracking-[0.02em] text-[var(--pick-ink)]">
                     {initials}
                   </span>
                 )}

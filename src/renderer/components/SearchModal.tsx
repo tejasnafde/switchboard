@@ -216,7 +216,6 @@ export function SearchModal({ open, onClose, onOpenChat }: SearchModalProps) {
                 className="cmdk-item block w-full cursor-pointer rounded-[6px] border-0 bg-transparent px-[12px] py-[8px] text-left text-[13px] text-[var(--text-primary)]"
               >
                 <div className="flex min-w-0 items-center gap-[8px]">
-                  {/* The hit names the agent in its meta line, so the mark is decoration. */}
                   <AgentMark agent={r.agentType} size={14} className="text-[var(--text-muted)]" />
                   <span className="min-w-0 truncate font-[500]">{r.conversationTitle.trim() || 'Untitled chat'}</span>
                   {r.archived && (
