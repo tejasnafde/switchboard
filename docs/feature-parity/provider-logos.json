@@ -49,6 +49,8 @@
       "npm run typecheck passed for both the main and renderer projects.",
       "npx vitest run --maxWorkers=2 passed on the whole suite, including the new tests/unit/agent-marks.test.ts.",
       "tests/unit/agent-marks.test.ts pins that every agent except the local ACP command ships a mark, that each mark is sized by the extent of its own artwork so no mark draws smaller than its neighbours, that both spellings of Claude resolve to one mark, and that an agent this build does not know gets no mark instead of a guessed one.",
+      "The CI visual job (macos-15) captured all 78 screens whose pixels changed, in Dark, Light and Translucent; its images are the new baselines and each one was read first.",
+      "CodeRabbit reviewed the pull request. Its findings were fixed: an unknown agent id resolved to Claude in the sidebar, Recents and the hub children (every mark now keeps an unknown id and falls back to initials, agentMarkLabel), a kanban card lost its mark until its chat was opened (it reads the stored session too), and a doc comment claimed the phones already draw these marks.",
       "An adversarial review of the branch diff was run. Its findings were fixed: the OpenCode mark drew at half size inside the vendor box, a sidebar row could take its mark from a session source that names no agent (a chat now carries its agent from the moment it is created), the Recents status line no longer lined up under the title, the agent tabs could overflow the fixed-width picker, a third initials helper disagreed with the new one (both now use providerInstanceInitials), and the reviews row announced the agent twice."
     ],
     "hardware": [],
@@ -56,7 +58,7 @@
       "The marks have not been read on a high-DPI external display, only on the test window's pinned 1x scale.",
       "Mistral Vibe, Cline and GitHub Copilot have no account on this machine, so their marks were checked in the agent tabs and in unit data only, never on a real chat row.",
       "The visual behaviour phase (native glass transmission) was not re-run: no translucency rule changed, only the content of rows that already existed.",
-      "The screenshot baselines were not refreshed on this machine, which could not run a packaged build while this branch was written. The CI visual job reports every screen whose pixels changed, and its artifact carries the updated images."
+      "The screenshot baselines were refreshed from the CI visual job's own images, not from a local run: this machine could not run a packaged build while the branch was written. Every refreshed screen was read before it was committed."
     ]
   }
 }

@@ -45,7 +45,8 @@ import { useLayoutStore } from '../../stores/layout-store'
 import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
 import type { RuntimeMode } from '@shared/provider-events'
 import type { WorktreeCreationRecoveryAction } from '@shared/worktree-creation'
-import { agentLabel, type AgentStatus, type Project, type Workspace } from '@shared/types'
+import { agentMarkLabel } from '@shared/agent-marks'
+import type { AgentStatus, Project, Workspace } from '@shared/types'
 import { CardModal } from './CardModal'
 import { WorktreeManagerModal } from './WorktreeManagerModal'
 import { launchCardChat } from './card-launch'
@@ -367,6 +368,7 @@ export function KanbanView(): React.ReactElement {
                 projectByPath.get(draggingCard.projectPath)?.name ?? draggingCard.projectPath.split('/').pop() ?? ''
               }
               storedStatusLine={storedStatusLine(projectByPath, draggingCard)}
+              storedAgentType={storedAgentType(projectByPath, draggingCard)}
               showProjectChip={!projectFilter}
               isOverlay
             />
@@ -445,6 +447,7 @@ function Column({
             card={c}
             projectName={projectByPath.get(c.projectPath)?.name ?? c.projectPath.split('/').pop() ?? ''}
             storedStatusLine={storedStatusLine(projectByPath, c)}
+            storedAgentType={storedAgentType(projectByPath, c)}
             showProjectChip={showProjectChip}
             isDragging={draggingId === c.id}
             onOpen={() => onOpen(c.id)}
@@ -462,10 +465,18 @@ function Column({
 
 /** The backend's stored line for a card's chat, shown until its messages load. */
 export function storedStatusLine(projectByPath: Map<string, Project>, card: KanbanCard): string | undefined {
+  return storedSession(projectByPath, card)?.statusLine ?? undefined
+}
+
+/** The agent of a card's chat before that chat is open, so a board shows its marks on a cold start. */
+export function storedAgentType(projectByPath: Map<string, Project>, card: KanbanCard): string | undefined {
+  const session = storedSession(projectByPath, card)
+  return session ? (session.agentType ?? session.source) : undefined
+}
+
+function storedSession(projectByPath: Map<string, Project>, card: KanbanCard) {
   if (!card.conversationId) return undefined
-  return (
-    projectByPath.get(card.projectPath)?.sessions.find((s) => s.id === card.conversationId)?.statusLine ?? undefined
-  )
+  return projectByPath.get(card.projectPath)?.sessions.find((s) => s.id === card.conversationId)
 }
 
 /**
@@ -476,6 +487,7 @@ function DraggableCardTile({
   card,
   projectName,
   storedStatusLine,
+  storedAgentType,
   showProjectChip,
   isDragging,
   onOpen,
@@ -485,6 +497,7 @@ function DraggableCardTile({
   card: KanbanCard
   projectName: string
   storedStatusLine?: string
+  storedAgentType?: string
   showProjectChip: boolean
   isDragging: boolean
   onOpen: () => void
@@ -511,6 +524,7 @@ function DraggableCardTile({
         card={card}
         projectName={projectName}
         storedStatusLine={storedStatusLine}
+        storedAgentType={storedAgentType}
         showProjectChip={showProjectChip}
         isSource={isDragging}
         onStart={onStart}
@@ -524,6 +538,7 @@ function CardTilePresentation({
   card,
   projectName,
   storedStatusLine,
+  storedAgentType,
   showProjectChip,
   isSource,
   isOverlay,
@@ -533,6 +548,7 @@ function CardTilePresentation({
   card: KanbanCard
   projectName: string
   storedStatusLine?: string
+  storedAgentType?: string
   showProjectChip: boolean
   isSource?: boolean
   isOverlay?: boolean
@@ -548,9 +564,10 @@ function CardTilePresentation({
   const unread = useAgentStore((s) =>
     card.conversationId ? (s.sessions.find((x) => x.id === card.conversationId)?.unreadCount ?? 0) : 0,
   )
-  const linkedAgent = useAgentStore((s) =>
+  const liveAgent = useAgentStore((s) =>
     card.conversationId ? s.sessions.find((x) => x.id === card.conversationId)?.type : undefined,
   )
+  const linkedAgent = liveAgent ?? storedAgentType
   // Digest when the agent reported one, else a raw truncated fallback - same
   // rule as the sidebar Recents row: live from loaded messages, else the
   // line the backend stored when the last turn ended.
@@ -651,7 +668,7 @@ function CardTilePresentation({
         </div>
       )}
       <div style={tileMetaRowStyle}>
-        {linkedAgent && <AgentMark agent={linkedAgent} label={agentLabel(linkedAgent)} />}
+        {linkedAgent && <AgentMark agent={linkedAgent} label={agentMarkLabel(linkedAgent)} />}
         {hasSession && <SessionLiveness status={liveStatus} />}
         {hasSession && unread > 0 && (
           <span style={unreadBadgeStyle} title={`${unread} unread message${unread === 1 ? '' : 's'}`}>

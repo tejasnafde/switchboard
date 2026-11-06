@@ -1,4 +1,5 @@
-import { agentLabel, toAgentProvider, type SessionSummary } from '@shared/types'
+import { agentMarkLabel } from '@shared/agent-marks'
+import type { SessionSummary } from '@shared/types'
 import { AgentMark } from '../ui/agent-mark'
 
 /**
@@ -8,6 +9,6 @@ import { AgentMark } from '../ui/agent-mark'
  * writes its own transcript.
  */
 export function SessionAgentMark({ session }: { session: Pick<SessionSummary, 'agentType' | 'source'> }) {
-  const agent = toAgentProvider(session.agentType ?? session.source)
-  return <AgentMark agent={agent} label={agentLabel(agent)} className="sidebar-row-mark" />
+  const agent = session.agentType ?? session.source
+  return <AgentMark agent={agent} label={agentMarkLabel(agent)} className="sidebar-row-mark" />
 }

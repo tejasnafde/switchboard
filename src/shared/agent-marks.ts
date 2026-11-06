@@ -1,8 +1,9 @@
-import { isAgentProvider, type AgentProvider } from './types'
+import { agentLabel, isAgentProvider, type AgentProvider } from './types'
 
 /**
- * One monochrome mark per agent, drawn by the desktop's `ui/agent-mark` and,
- * from the same path data, by the phones. Every path is the vendor's own
+ * One monochrome mark per agent, drawn by the desktop's `ui/agent-mark`. The
+ * phones draw their agent as text today and are meant to read this same path
+ * data (`phone_agent_marks`). Every path is the vendor's own
  * mark, flattened to one colour; `THIRD_PARTY_NOTICES.md` names the source
  * and the date of each. An agent with no mark here (a local ACP command, or
  * an agent a newer backend knows about) falls back to its initials.
@@ -67,7 +68,21 @@ export const AGENT_MARKS: Partial<Record<AgentProvider, AgentMarkData>> = {
  * the provider wire's `claude`). An agent this build does not know keeps its
  * initials: never guess a brand mark for it.
  */
-export function agentMark(agent: string | null | undefined): AgentMarkData | undefined {
+export function knownAgent(agent: string | null | undefined): AgentProvider | undefined {
   const key = agent === 'claude' ? 'claude-code' : agent
-  return isAgentProvider(key) ? AGENT_MARKS[key] : undefined
+  return isAgentProvider(key) ? key : undefined
+}
+
+export function agentMark(agent: string | null | undefined): AgentMarkData | undefined {
+  const known = knownAgent(agent)
+  return known && AGENT_MARKS[known]
+}
+
+/**
+ * What a mark says it is. An agent this build does not know keeps its own id,
+ * so a row never announces the wrong product.
+ */
+export function agentMarkLabel(agent: string | null | undefined): string {
+  const known = knownAgent(agent)
+  return known ? agentLabel(known) : (agent ?? '')
 }

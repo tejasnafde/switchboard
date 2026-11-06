@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AGENT_MARKS, agentMark } from '@shared/agent-marks'
+import { AGENT_MARKS, agentMark, agentMarkLabel } from '@shared/agent-marks'
 import { ACP_COMMAND_AGENT } from '@shared/acp-agents'
 import { AGENT_PROVIDERS } from '@shared/types'
 
@@ -29,5 +29,11 @@ describe('agent marks', () => {
     expect(agentMark('claude-code')).toBe(AGENT_MARKS['claude-code'])
     expect(agentMark('some-future-agent')).toBeUndefined()
     expect(agentMark(null)).toBeUndefined()
+  })
+
+  it('names an unknown agent by its own id, never by another product', () => {
+    expect(agentMarkLabel('claude')).toBe('Claude Code')
+    expect(agentMarkLabel('some-future-agent')).toBe('some-future-agent')
+    expect(agentMarkLabel(null)).toBe('')
   })
 })
