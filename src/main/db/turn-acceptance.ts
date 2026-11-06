@@ -140,6 +140,18 @@ export function recoverUndispatchedTurns(db: Database.Database): void {
   db.prepare("DELETE FROM mobile_turn_acceptances WHERE state = 'reserved'").run()
 }
 
+/** A turn's acceptance state by its conversation and origin, whatever client sent it; null when none is stored. */
+export function turnAcceptanceStateByOrigin(
+  db: Database.Database,
+  threadId: string,
+  origin: string,
+): TurnAcceptanceState | null {
+  const row = db
+    .prepare('SELECT state FROM mobile_turn_acceptances WHERE thread_id = ? AND origin = ? LIMIT 1')
+    .get(threadId, origin) as { state: TurnAcceptanceState } | undefined
+  return row?.state ?? null
+}
+
 export class SqliteTurnAcceptanceStore implements TurnAcceptanceStore {
   constructor(private readonly database: () => Database.Database) {}
 

@@ -265,6 +265,9 @@ export interface BridgeError {
   target: BridgeChatRef | { project_id: string } | null
   /** Set on `ambiguous_target`. */
   choices?: BridgeProjectView[] | BridgeChatRef[]
+  /** Set on `agent_unavailable`: what the project allows instead. */
+  agent_choices?: AgentType[]
+  model_choices?: string[]
   /** Set on a rejected call: true when the action never reached the machine. */
   non_delivery_confirmed?: boolean
 }

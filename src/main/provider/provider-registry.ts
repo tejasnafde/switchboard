@@ -221,8 +221,9 @@ import { secretRedactor } from '../secrets/secret-redactor'
 import { maskStoredText, maskStoredValue, secretScope } from '../db/secret-mask'
 import { RuntimeEventRedaction, type RedactedEvents } from '../secrets/runtime-event-redaction'
 import { SecretRequestLimiter, SECRET_INSTRUCTIONS, buildSecretMcpTools } from '../mcp/secret-tools'
-import { buildBridgeReadTools } from '../mcp/bridge-tools'
+import { buildBridgeTools } from '../mcp/bridge-tools'
 import { BridgeReadService } from '../bridge/read-service'
+import { BridgeDeliveryService, type BridgeDeliveryHost } from '../bridge/delivery-service'
 import { instinctBridgeEnabled } from '@shared/bridge'
 import {
   trackSecretAnswered,
@@ -624,6 +625,7 @@ export class ProviderRegistry implements PeerToolHost {
       },
     })
     this.bus.subscribe((event) => this.bridgeReads.noteEvent(event))
+    this.bridgeDelivery = new BridgeDeliveryService(this.bridgeDeliveryHost(), this.bridgeReads)
     // Invalid mirror edits are fs-watch findings with no tool result to ride
     // on - surface them in chat as error events through this registry's bus.
     notebookManager.setPublisher((event) => this.publish(event))
@@ -697,6 +699,46 @@ export class ProviderRegistry implements PeerToolHost {
     } catch (err) {
       log.warn('could not read the agent_visual_preview flag; it counts as off', err)
       return null
+    }
+  }
+
+  /**
+   * A bridge steer would be lost or land wrong: the turn is compacting or
+   * stopping, or the provider has not sent its first event or reply yet (an
+   * adapter whose provider has not taken the first turn runs a steer as a
+   * turn of its own).
+   */
+  private bridgeSteerBlocked(threadId: string): boolean {
+    return this.steerBlocked.has(threadId) || this.firstEventSpans.has(threadId) || this.firstContentSpans.has(threadId)
+  }
+
+  /** The agent's adapter is installed, and a remote backend does not refuse it. */
+  private async agentRunsHere(agent: AgentType): Promise<boolean> {
+    const provider = providerKindFor(agent)
+    if (process.env.SWITCHBOARD_REMOTE && remoteBlockedProviderLabel(provider)) return false
+    return (await this.getAdapter(provider)?.isAvailable()) === true
+  }
+
+  /** Owner delivery through the registry's own start, atomic acceptance, queue and Stop paths. */
+  private bridgeDeliveryHost(): BridgeDeliveryHost {
+    return {
+      enabled: () => this.instinctBridgeOn(),
+      machineId: () => hubInstallId(),
+      liveThread: (chatId) => this.liveSessionId(chatId),
+      starting: (threadId) => this.startingSessions.has(threadId),
+      startSession: (opts) => this.startManagedSession(opts),
+      submitTurn: (input) => this.submitManagedUserTurn(input, { steerFallback: true }),
+      provider: (threadId) => this.sessionAdapters.get(threadId)?.provider ?? null,
+      midTurn: (threadId) => this.hasOutstandingTurn(threadId),
+      steerBlocked: (threadId) => this.bridgeSteerBlocked(threadId),
+      busy: (chatId) => this.isBusy(chatId),
+      running: (chatId) => threadFamilyIds(chatId).some((id) => this.runningOrPreparing(id)),
+      chatMode: (chatId) => this.chatRuntimeMode(chatId),
+      isOpenChild: (chatId) => this.hubStarter.isOpenChild(chatId),
+      agentAvailable: (agent) => this.agentRunsHere(agent),
+      interrupt: (threadId) => this.interruptChat(threadId),
+      queuedTurns: (threadId) => this.listQueuedTurns(threadId),
+      cancelQueuedTurn: (threadId, messageId) => this.actOnQueuedTurn('cancel', threadId, messageId),
     }
   }
 
@@ -1720,6 +1762,7 @@ export class ProviderRegistry implements PeerToolHost {
   private readonly visualPreviews = new VisualPreviewTurnCounter()
   /** The Instinct bridge's read tools (flag `instinct_bridge`); it records live activity from the bus. */
   private readonly bridgeReads: BridgeReadService
+  private readonly bridgeDelivery: BridgeDeliveryService
   /** Whether each child told its parent something since its last task (`hub/hub-stop.ts`). */
   private readonly hubNotes = new ChildTaskNotes()
   /** Stops reported children left idle (`hub.idleReapMinutes`). */
@@ -2701,8 +2744,12 @@ export class ProviderRegistry implements PeerToolHost {
     return this.managedSessionStarter(opts)
   }
 
-  async submitManagedUserTurn(input: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> {
-    return this.submitAtomicUserTurn(input)
+  /** `steerFallback`: a steer that cannot land when it reaches the adapter queues instead. */
+  async submitManagedUserTurn(
+    input: UserTurnSubmissionV1,
+    opts: { steerFallback?: boolean } = {},
+  ): Promise<UserTurnSubmissionResult> {
+    return this.submitAtomicUserTurn(input, null, false, opts.steerFallback === true)
   }
 
   /**
@@ -3378,6 +3425,19 @@ export class ProviderRegistry implements PeerToolHost {
     )
   }
 
+  /** The user's Stop on a chat: its turn, and with hub children on, its children too. */
+  private async interruptChat(threadId: string): Promise<{ live: boolean }> {
+    if (!this.hubChildrenOn()) return this.interruptOwnTurn(threadId)
+    if (this.hubStarter.isOpenChild(threadId)) {
+      if (this.startingSessions.has(threadId) && !this.sessionAdapters.has(threadId))
+        return this.interruptOwnTurn(threadId)
+      return { live: await this.stopHubChild(threadId, 'user') }
+    }
+    // Stop on a parent stops its children too, whether or not its own turn runs.
+    const [, own] = await Promise.all([this.stopHubChildren(threadId), this.interruptOwnTurn(threadId)])
+    return own
+  }
+
   private async interruptOwnTurn(threadId: string): Promise<{ live: boolean }> {
     const adapter = this.sessionAdapters.get(threadId)
     if (!adapter) {
@@ -3818,7 +3878,13 @@ export class ProviderRegistry implements PeerToolHost {
             ? [buildVisualPreviewTool({ threadId, chatId, render: previewRender, counter: this.visualPreviews })]
             : []),
           ...(this.instinctBridgeOn()
-            ? buildBridgeReadTools({ chatId, service: this.bridgeReads, enabled: () => this.instinctBridgeOn() })
+            ? buildBridgeTools({
+                chatId,
+                runtimeMode,
+                service: this.bridgeReads,
+                delivery: this.bridgeDelivery,
+                enabled: () => this.instinctBridgeOn(),
+              })
             : []),
         ],
         instructions || undefined,
@@ -4424,6 +4490,7 @@ export class ProviderRegistry implements PeerToolHost {
     input: UserTurnSubmissionV1,
     senderLine: string | null = null,
     declineApprovals = false,
+    steerFallback = false,
   ): Promise<UserTurnSubmissionResult> {
     const threadId = input.threadId
     if (this.switchingSessions.has(threadId)) {
@@ -4469,7 +4536,7 @@ export class ProviderRegistry implements PeerToolHost {
     }
     try {
       log.info(
-        `submitUserTurn ${threadId} chars=${input.providerText.length} mode=${input.runtimeMode ?? 'sandbox'} images=${input.images?.length ?? 0}`,
+        `submitUserTurn ${threadId} chars=${input.providerText.length} mode=${input.runtimeMode ?? `${this.chatRuntimeMode(threadId)} (kept)`} images=${input.images?.length ?? 0}`,
       )
       const clientScope =
         currentBackendRequestContext()?.clientScope ??
@@ -4513,23 +4580,26 @@ export class ProviderRegistry implements PeerToolHost {
         },
         finalize: (turn) => this.withPendingHandoff(threadId, adapter, turn),
         dispatch: async (turn) => {
+          // Checked again here, at the adapter boundary: compaction or a stop may have begun since the caller chose.
+          const delivery =
+            input.delivery === 'steer' && steerFallback && this.bridgeSteerBlocked(threadId) ? 'queue' : input.delivery
           // Here, past every check that can still refuse the turn, so an agent
           // is never told of a message that then does not arrive. A message
           // queued on purpose where a steer was possible waits for the card.
-          if (declineApprovals && !(input.delivery === 'queue' && canSteer(adapter.provider)))
+          if (declineApprovals && !(delivery === 'queue' && canSteer(adapter.provider)))
             await this.declinePendingApprovals(adapter, threadId)
           // A queued message becomes a turn of its own once the running one
           // ends, so it counts; a Codex steer joins the running turn and does not.
           const startsNewProviderTurn = startsOwnProviderTurn(
             adapter.provider,
             this.hasOutstandingTurn(threadId),
-            input.delivery,
+            delivery,
           )
           if (startsNewProviderTurn) this.beginOutstandingTurn(threadId)
           releasePreparation()
           // The chat row id every client already has for this message, which
           // is what a held message is listed, promoted and cancelled by.
-          const queuedId = input.delivery === 'queue' ? echoMessageId(input.origin) : undefined
+          const queuedId = delivery === 'queue' ? echoMessageId(input.origin) : undefined
           if (queuedId) {
             this.queuedTurns.expect(
               queuedId,
@@ -4548,7 +4618,7 @@ export class ProviderRegistry implements PeerToolHost {
           const providerText = wakes ? wakes.apply(withMergeBack) : withMergeBack
           try {
             await this.dispatchToAdapter(adapter, threadId, providerText, senderLine, (text) =>
-              adapter.sendTurn(threadId, text, input.runtimeMode, providerImages, input.delivery, queuedId),
+              adapter.sendTurn(threadId, text, input.runtimeMode, providerImages, delivery, queuedId),
             )
           } catch (error) {
             mergeBack?.release()
@@ -4652,11 +4722,7 @@ export class ProviderRegistry implements PeerToolHost {
   private hubDescribeDeps(): HubDescribeDeps {
     return {
       backendVersion: () => this.backendVersion ?? appVersion(),
-      agentAvailable: async (agent) => {
-        const provider = providerKindFor(agent)
-        if (process.env.SWITCHBOARD_REMOTE && remoteBlockedProviderLabel(provider)) return false
-        return (await this.getAdapter(provider)?.isAvailable()) === true
-      },
+      agentAvailable: (agent) => this.agentRunsHere(agent),
       runningSlotKeys: () => this.hubStarter.runningSlotKeys(),
       ...(process.env.SWITCHBOARD_REMOTE ? { hasLogin: accountHasLogin } : {}),
       startChild: (request) => this.hubStarter.startRemote(request),
@@ -5683,17 +5749,7 @@ export class ProviderRegistry implements PeerToolHost {
     // `live` says whether this backend had a turn to stop. A client whose
     // status says running after a resume gap clears it on `live: false`,
     // since no closing event will ever come for a turn that is not there.
-    this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string): Promise<{ live: boolean }> => {
-      if (!this.hubChildrenOn()) return this.interruptOwnTurn(threadId)
-      if (this.hubStarter.isOpenChild(threadId)) {
-        if (this.startingSessions.has(threadId) && !this.sessionAdapters.has(threadId))
-          return this.interruptOwnTurn(threadId)
-        return { live: await this.stopHubChild(threadId, 'user') }
-      }
-      // Stop on a parent stops its children too, whether or not its own turn runs.
-      const [, own] = await Promise.all([this.stopHubChildren(threadId), this.interruptOwnTurn(threadId)])
-      return own
-    })
+    this.host.handle(ProviderChannels.INTERRUPT, (threadId: string) => this.interruptChat(threadId))
 
     this.host.handle(ProviderChannels.SET_RUNTIME_MODE, async (threadId: string, mode: RuntimeMode) => {
       if (!isRuntimeMode(mode)) throw new Error(`Unknown runtime mode: ${String(mode)}`)

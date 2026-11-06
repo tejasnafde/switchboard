@@ -46,7 +46,8 @@ import {
   removeBridgeProject,
   setBridgeProjectAllowed,
 } from '../../src/main/bridge/allowlist'
-import { buildBridgeReadTools } from '../../src/main/mcp/bridge-tools'
+import { buildBridgeTools } from '../../src/main/mcp/bridge-tools'
+import type { BridgeDeliveryService } from '../../src/main/bridge/delivery-service'
 import { defaultBridgeProjectPolicy } from '../../src/shared/bridge'
 import { SNIPPET_MARK_CLOSE, SNIPPET_MARK_OPEN } from '../../src/shared/message-search'
 import type { PendingBlockingEvent } from '../../src/shared/pending-requests'
@@ -420,7 +421,13 @@ describe('the MCP tools', () => {
         throw new Error(`ENOENT: no such file, open '${ROOT}/x.jsonl'`)
       },
     } as unknown as BridgeReadService
-    const tools = buildBridgeReadTools({ chatId: () => 'c1', service: failing, enabled: () => true })
+    const tools = buildBridgeTools({
+      chatId: () => 'c1',
+      runtimeMode: () => 'auto',
+      service: failing,
+      delivery: {} as BridgeDeliveryService,
+      enabled: () => true,
+    })
     const result = await tools.find((t) => t.name === 'list_projects')!.call({})
     expect(result.isError).toBe(true)
     const text = JSON.stringify(result.content)

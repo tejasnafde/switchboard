@@ -225,6 +225,48 @@ describe('ProviderRegistry queued messages', () => {
     deleted.length = 0
   })
 
+  it('blocks a bridge steer until the provider sent its first event and reply', async () => {
+    const t = await setup('claude')
+    const bridge = (Reflect.get(t.registry, 'bridgeDeliveryHost') as () => { steerBlocked(id: string): boolean }).call(
+      t.registry,
+    )
+    await t.submit('a')
+    expect(bridge.steerBlocked('t1')).toBe(true)
+    t.adapter.emit({ type: 'content', threadId: 't1', messageId: 'm1', streamKind: 'assistant', text: 'hi' })
+    expect(bridge.steerBlocked('t1')).toBe(false)
+  })
+
+  it('queues a bridge steer that can no longer land when it reaches the adapter', async () => {
+    const t = await setup('claude')
+    await t.submit('a')
+    // The provider has not sent its first event: a bridge steer queues, a client steer does not change.
+    await t.registry.submitManagedUserTurn(
+      { version: 1, threadId: 't1', origin: 'b', providerText: 'b', delivery: 'steer' },
+      { steerFallback: true },
+    )
+    expect(t.adapter.held).toEqual(['remote_b'])
+    await t.registry.submitManagedUserTurn({
+      version: 1,
+      threadId: 't1',
+      origin: 'c',
+      providerText: 'c',
+      delivery: 'steer',
+    })
+    expect(t.adapter.held).toEqual(['remote_b'])
+  })
+
+  it('does not offer an ACP agent to the bridge on a remote backend', async () => {
+    const t = await setup('claude')
+    const runsHere = (Reflect.get(t.registry, 'agentRunsHere') as (a: string) => Promise<boolean>).bind(t.registry)
+    vi.stubEnv('SWITCHBOARD_REMOTE', '1')
+    try {
+      expect(await runsHere('opencode')).toBe(false)
+      expect(await runsHere('claude-code')).toBe(true)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('lists a held message with its text, and announces it that way', async () => {
     const t = await setup('claude')
     await t.submit('a')

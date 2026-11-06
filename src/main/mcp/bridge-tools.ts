@@ -1,14 +1,20 @@
 /**
- * The Instinct bridge read tools on the Switchboard MCP server (flag
- * `instinct_bridge`): list_projects, list_recent_chats, search_chats and
- * read_chat, for local agents. The registry lists them only while the flag is
- * on, and each call checks it again, so turning it off refuses at once.
+ * The Instinct bridge tools on the Switchboard MCP server (flag
+ * `instinct_bridge`), for local agents: the reads list_projects,
+ * list_recent_chats, search_chats and read_chat, and the mutations
+ * start_chat, send_to_chat and stop_chat. The registry lists them only while
+ * the flag is on, and each call checks it again, so turning it off refuses at
+ * once.
  *
- * The calling chat comes from the MCP token, never from an argument. These
- * are reads with no card in any mode; the service limits every answer to the
- * projects the owner allowed in Settings > Labs.
+ * The calling chat and its mode come from the MCP token, never from an
+ * argument. No tool shows a card; the services limit everything to the
+ * projects the owner allowed in Settings > Labs. A mutation needs a caller
+ * outside plan mode and starts or drives no chat in a mode wider than the
+ * caller's own; the chat it reaches keeps its own approvals.
  */
 import { bridgeError, type BridgeError } from '@shared/bridge'
+import type { RuntimeMode } from '@shared/provider-events'
+import { BRIDGE_MESSAGE_MAX_CHARS, type BridgeCaller, type BridgeDeliveryService } from '../bridge/delivery-service'
 import { createMainLogger } from '../logger'
 import {
   BRIDGE_LIST_MAX_LIMIT,
@@ -21,9 +27,12 @@ import { toolText, type McpTool, type McpToolResult } from './mcp-session'
 const log = createMainLogger('mcp:bridge')
 
 export interface BridgeToolDeps {
-  /** The calling chat's root id, for the log line. */
+  /** The calling chat's root id. */
   chatId: () => string
+  /** The calling chat's current mode, read on every call. */
+  runtimeMode: () => RuntimeMode
   service: BridgeReadService
+  delivery: BridgeDeliveryService
   /** Read on every call. */
   enabled: () => boolean
 }
@@ -41,7 +50,40 @@ const limitSchema = {
   description: `How many rows, 1 to ${BRIDGE_LIST_MAX_LIMIT}. Default 20.`,
 }
 
-export function buildBridgeReadTools(deps: BridgeToolDeps): McpTool[] {
+const chatSchema = {
+  description: 'A {machine_id, chat_id} reference, a chat id or a title.',
+  anyOf: [
+    { type: 'string' },
+    {
+      type: 'object',
+      properties: { machine_id: { type: 'string' }, chat_id: { type: 'string' } },
+      required: ['chat_id'],
+    },
+  ],
+}
+
+const keySchema = {
+  type: 'string',
+  description:
+    'A new unique key per request, kept for its retries. A retry with the same key and arguments returns the first ' +
+    'answer and never sends twice.',
+}
+
+function optionalString(args: Record<string, unknown>, name: string): string | null {
+  return args[name] === undefined || typeof args[name] === 'string' ? null : `${name} must be a string.`
+}
+
+/** The shape checks every mutation shares: an idempotency key and, where it takes one, a message. */
+function mutationShapeError(args: Record<string, unknown>, withMessage: boolean): string | null {
+  if (typeof args.idempotency_key !== 'string' || !args.idempotency_key.trim()) return 'idempotency_key is required.'
+  if (!withMessage) return null
+  if (typeof args.message !== 'string' || !args.message.trim()) return 'message is required.'
+  if (args.message.length > BRIDGE_MESSAGE_MAX_CHARS)
+    return `message is longer than ${BRIDGE_MESSAGE_MAX_CHARS} characters.`
+  return null
+}
+
+export function buildBridgeTools(deps: BridgeToolDeps): McpTool[] {
   const run = async (
     name: string,
     args: Record<string, unknown>,
@@ -55,7 +97,7 @@ export function buildBridgeReadTools(deps: BridgeToolDeps): McpTool[] {
       return await body()
     } catch (err) {
       // The detail stays in the log: an error message can name a local path.
-      log.warn('bridge read failed', { tool: name, chat: deps.chatId(), err: String(err) })
+      log.warn('bridge tool failed', { tool: name, chat: deps.chatId(), err: String(err) })
       return errorResult(
         bridgeError('internal_error', `${name} failed on this desktop. The cause is in its Switchboard log.`),
       )
@@ -63,6 +105,14 @@ export function buildBridgeReadTools(deps: BridgeToolDeps): McpTool[] {
   }
   const limitOf = (args: Record<string, unknown>): number => parseBridgeLimit(args.limit)!
   const annotations = (title: string) => ({ title, readOnlyHint: true, openWorldHint: false })
+  const writeAnnotations = (title: string, destructiveHint: boolean) => ({
+    title,
+    readOnlyHint: false,
+    destructiveHint,
+    idempotentHint: true,
+    openWorldHint: false,
+  })
+  const caller = (): BridgeCaller => ({ kind: 'local-agent', chatId: deps.chatId(), mode: deps.runtimeMode() })
 
   return [
     {
@@ -119,17 +169,7 @@ export function buildBridgeReadTools(deps: BridgeToolDeps): McpTool[] {
       inputSchema: {
         type: 'object',
         properties: {
-          chat: {
-            description: 'A {machine_id, chat_id} reference, a chat id or a title.',
-            anyOf: [
-              { type: 'string' },
-              {
-                type: 'object',
-                properties: { machine_id: { type: 'string' }, chat_id: { type: 'string' } },
-                required: ['chat_id'],
-              },
-            ],
-          },
+          chat: chatSchema,
           since: { type: 'string', description: 'The cursor from an earlier read_chat.' },
         },
         required: ['chat'],
@@ -138,6 +178,109 @@ export function buildBridgeReadTools(deps: BridgeToolDeps): McpTool[] {
       annotations: annotations('Read a bridge chat'),
       call: (args) =>
         run('read_chat', args, async () => answer(await deps.service.readChat({ chat: args.chat, since: args.since }))),
+    },
+    {
+      name: 'start_chat',
+      description:
+        'Start a new chat in an allowed project and send it the first message as the owner. project is a project id ' +
+        'or label from list_projects. agent, model and mode are optional: the project defaults apply, and a mode ' +
+        'wider than the project allows is refused. Accepted means the message went in, not that the work is done; ' +
+        'follow it with read_chat.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          project: { type: 'string' },
+          message: { type: 'string' },
+          agent: { type: 'string' },
+          model: { type: 'string' },
+          mode: { type: 'string' },
+          idempotency_key: keySchema,
+        },
+        required: ['project', 'message', 'idempotency_key'],
+        additionalProperties: false,
+      },
+      annotations: writeAnnotations('Start a bridge chat', false),
+      call: (args) =>
+        run('start_chat', args, async () => {
+          const shape =
+            mutationShapeError(args, true) ??
+            (typeof args.project !== 'string' || !args.project.trim() ? 'project is required.' : null) ??
+            optionalString(args, 'agent') ??
+            optionalString(args, 'model') ??
+            optionalString(args, 'mode')
+          if (shape) return toolText(shape, true)
+          return answer(
+            await deps.delivery.startChat(caller(), {
+              project: args.project as string,
+              message: args.message as string,
+              agent: args.agent as string | undefined,
+              model: args.model as string | undefined,
+              mode: args.mode as string | undefined,
+              idempotency_key: args.idempotency_key as string,
+            }),
+          )
+        }),
+    },
+    {
+      name: 'send_to_chat',
+      description:
+        'Send a message to a chat in an allowed project as the owner. A dormant chat is resumed first. delivery ' +
+        'queue (the default) waits for a running turn to end; steer joins the running turn where the agent can, ' +
+        'else it queues. The answer names the requested and the actual delivery. It cannot answer an approval or ' +
+        'a question.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat: chatSchema,
+          message: { type: 'string' },
+          delivery: { type: 'string', enum: ['queue', 'steer'] },
+          idempotency_key: keySchema,
+        },
+        required: ['chat', 'message', 'idempotency_key'],
+        additionalProperties: false,
+      },
+      annotations: writeAnnotations('Send to a bridge chat', false),
+      call: (args) =>
+        run('send_to_chat', args, async () => {
+          const shape =
+            mutationShapeError(args, true) ??
+            (args.delivery === undefined || args.delivery === 'queue' || args.delivery === 'steer'
+              ? null
+              : 'delivery must be queue or steer.')
+          if (shape) return toolText(shape, true)
+          return answer(
+            await deps.delivery.sendToChat(caller(), {
+              chat: args.chat,
+              message: args.message as string,
+              delivery: args.delivery as 'queue' | 'steer' | undefined,
+              idempotency_key: args.idempotency_key as string,
+            }),
+          )
+        }),
+    },
+    {
+      name: 'stop_chat',
+      description:
+        "Stop a chat's running turn, as the Stop button does, and take back the messages the bridge queued there. " +
+        'It does not archive, reset or undo anything.',
+      inputSchema: {
+        type: 'object',
+        properties: { chat: chatSchema, idempotency_key: keySchema },
+        required: ['chat', 'idempotency_key'],
+        additionalProperties: false,
+      },
+      annotations: writeAnnotations('Stop a bridge chat', true),
+      call: (args) =>
+        run('stop_chat', args, async () => {
+          const shape = mutationShapeError(args, false)
+          if (shape) return toolText(shape, true)
+          return answer(
+            await deps.delivery.stopChat(caller(), {
+              chat: args.chat,
+              idempotency_key: args.idempotency_key as string,
+            }),
+          )
+        }),
     },
   ]
 }
