@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { Command, useCommandState } from 'cmdk'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { Command } from 'cmdk'
 import { cn } from '../../lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from './popover'
 import { filterComboboxOptions, groupComboboxOptions, type ComboboxOption } from './combobox-options'
@@ -35,10 +35,18 @@ interface ComboboxProps {
 }
 
 function ScrollHighlightedOption({ rootRef, query }: { rootRef: RefObject<HTMLDivElement | null>; query: string }) {
-  const value = useCommandState((state) => state.value)
-  useLayoutEffect(() => {
-    rootRef.current?.querySelector('[cmdk-item][aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
-  }, [rootRef, query, value])
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    const scrollSelected = () => {
+      root.querySelector('[cmdk-item][aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+    }
+    // Switching between grouped and ranked results can remount the same selection.
+    const observer = new MutationObserver(scrollSelected)
+    observer.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-selected'] })
+    scrollSelected()
+    return () => observer.disconnect()
+  }, [rootRef, query])
   return null
 }
 

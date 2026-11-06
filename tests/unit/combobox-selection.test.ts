@@ -121,6 +121,21 @@ describe('Combobox search selection', () => {
     expect(rows()).toEqual([])
   })
 
+  it('scrolls a remounted selected row when the selected value stays the same', async () => {
+    await render()
+    const previous = highlighted()
+    scrolled.length = 0
+    await type('switchboard')
+    expect(highlighted()).not.toBe(previous)
+    expectTop('first')
+    scrolled.length = 0
+    await type('SWITCHBOARD')
+    expectTop('first')
+    scrolled.length = 0
+    await type('')
+    expectTop('first')
+  })
+
   it('scrolls the highlighted search result even when animation frames have not run', async () => {
     await render()
     scrolled.length = 0
