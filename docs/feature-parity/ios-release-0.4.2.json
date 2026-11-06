@@ -1,0 +1,47 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ios-release-0.4.2",
+  "summary": "iOS release 0.4.2 (Expo app, TestFlight): a new binary that carries the phone work merged since 0.4.1 build 6, including the expo-document-picker native module for file attachments. Settle, Snooze, the Details sheet, file attachments, approval reasons and the Share fix ship on; Hub children, phone live pages and the secret request card stay behind their flags.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "iOS version bump only; each feature's desktop part has its own manifest."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/app.json"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android ships on its own lane; this bump touches only apps/mobile."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No API or wire change: the features in this binary already negotiate their backend capabilities."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/app.json",
+        ".github/workflows/ios-testflight.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "Expo jest and tsc pass; ios-testflight.yml verifies main CI and the source commit, builds the store IPA with the EAS store profile and remote build numbers, and submits that build to TestFlight."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Installing the TestFlight build on a physical iPhone.",
+      "App Store review; 0.4.1 (build 6) is still in review and this release does not submit 0.4.2."
+    ]
+  }
+}
