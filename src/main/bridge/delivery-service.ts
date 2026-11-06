@@ -48,6 +48,7 @@ import {
   createConversation,
   findBridgeCall,
   getBridgeCall,
+  getConversationById,
   getConversationExecutionRoot,
   getConversationForkMetadata,
   getDb,
@@ -94,6 +95,8 @@ export interface BridgeDeliveryHost {
   steerBlocked(threadId: string): boolean
   /** Any id of the chat runs, prepares or still owes a turn. */
   busy(chatId: string): boolean
+  /** Any id of the chat runs or prepares a turn; held queued messages do not count. */
+  running(chatId: string): boolean
   /** The chat's current runtime mode: the live session's, else the saved one. */
   chatMode(chatId: string): RuntimeMode
   isOpenChild(chatId: string): boolean
@@ -247,10 +250,13 @@ export class BridgeDeliveryService {
         bridgeError('mode_not_allowed', `This project allows modes up to ${cap} for this caller.`, { target }),
       )
 
-    const choices = bridgeProjectAgents(policy)
+    // Only agents that can start here are offered, so a choice from the list never fails the same way.
+    const choices = (
+      await Promise.all(bridgeProjectAgents(policy).map(async (a) => ((await this.host.agentAvailable(a)) ? a : null)))
+    ).filter((a): a is AgentType => a !== null)
     const agent =
       input.agent ?? policy.default_agent ?? (choices.includes('claude-code') ? 'claude-code' : (choices[0] ?? null))
-    if (!agent || !isAgentType(agent) || !choices.includes(agent) || !(await this.host.agentAvailable(agent)))
+    if (!agent || !isAgentType(agent) || !choices.includes(agent))
       return fail(
         bridgeError('agent_unavailable', 'That agent is not available for this project.', {
           target,
@@ -262,7 +268,9 @@ export class BridgeDeliveryService {
       return fail(
         bridgeError('agent_unavailable', `That model is not one ${agent} offers.`, { target, model_choices: models }),
       )
-    const model = input.model ?? policy.default_model ?? null
+    // A policy default made for another agent is not used; the agent's own saved default applies.
+    const fallback = policy.default_model
+    const model = input.model ?? (fallback && (models.length === 0 || models.includes(fallback)) ? fallback : null)
     if (!insideRoot(project.sidebarPath, policy.canonical_local_root))
       return fail(bridgeError('project_not_allowed', 'The project folder moved or no longer resolves.', { target }))
 
@@ -339,7 +347,7 @@ export class BridgeDeliveryService {
           }),
         )
       }
-      const refused = this.beforeSubmit(chatId, fence, project, ref)
+      const refused = this.beforeSubmit(chatId, fence, project, caller, ref)
       if (refused) return this.reject(callId, refused)
       const delivered = await this.deliver(callId, {
         version: 1,
@@ -349,7 +357,11 @@ export class BridgeDeliveryService {
         runtimeMode: mode.mode,
         autoTitleText: input.message,
       })
-      if (!delivered.ok) return delivered
+      if (!delivered.ok) {
+        // The provider may have the message: a stop that came meanwhile covers it too.
+        if (delivered.error.code === 'delivery_unknown') await this.haltIfStopped(chatId, fence)
+        return delivered
+      }
       await this.haltIfStopped(chatId, fence)
       log.info('bridge chat started', { callId, chatId, projectId: policy.project_id, agent, mode: mode.mode })
       return this.answer(getBridgeCall(callId)!, false) as BridgeResult<BridgeStartReceipt>
@@ -373,8 +385,6 @@ export class BridgeDeliveryService {
     const ref = { machine_id: machineId, chat_id: chatId }
     if (chatId === resolveRootThreadId(caller.chatId))
       return fail(bridgeError('policy_denied', 'That is the calling chat. Pick another chat.', { target: ref }))
-    if (row.archived === 1)
-      return fail(bridgeError('chat_archived', 'That chat is archived. The owner must unarchive it.', { target: ref }))
     const refused = this.chatRefusal(chatId, caller, project, ref)
     if (refused) return fail(refused)
 
@@ -402,11 +412,12 @@ export class BridgeDeliveryService {
     try {
       const fence = this.fence(chatId)
       if (!this.host.liveThread(chatId)) {
-        const resumed = await this.resume(chatId, row.agent_type, ref)
+        const resumed = await this.resume(chatId, row.agent_type, project, ref)
         if (resumed) return this.reject(callId, this.fenced(chatId, fence) ? stoppedBeforeSend(ref) : resumed)
       }
       // The resume awaited: the chat may have changed meanwhile.
-      const changed = this.beforeSubmit(chatId, fence, project, ref) ?? this.chatRefusal(chatId, caller, project, ref)
+      const changed =
+        this.beforeSubmit(chatId, fence, project, caller, ref) ?? this.chatRefusal(chatId, caller, project, ref)
       if (changed) return this.reject(callId, changed)
       recordBridgeOrigin({
         conversationId: chatId,
@@ -431,9 +442,13 @@ export class BridgeDeliveryService {
         },
         { actual },
       )
-      if (!delivered.ok) return delivered
+      if (!delivered.ok) {
+        // The provider may have the message: a stop that came meanwhile covers it too.
+        if (delivered.error.code === 'delivery_unknown') await this.haltIfStopped(chatId, fence)
+        return delivered
+      }
       await this.haltIfStopped(chatId, fence)
-      log.info('bridge message sent', { callId, chatId, requested, actual })
+      log.info('bridge message sent', { callId, chatId, requested, result: getBridgeCall(callId)?.result })
       return this.answer(getBridgeCall(callId)!, false) as BridgeResult<BridgeSendReceipt>
     } finally {
       this.active.delete(callId)
@@ -656,6 +671,8 @@ export class BridgeDeliveryService {
     project: AllowedProject,
     ref: BridgeChatRef,
   ): BridgeError | null {
+    if (getConversationById(chatId)?.archived === 1)
+      return bridgeError('chat_archived', 'That chat is archived. The owner must unarchive it.', { target: ref })
     if (this.host.isOpenChild(chatId))
       return bridgeError('child_read_only', 'That chat belongs to a hub. Message its hub chat.', { target: ref })
     const cap = narrower(project.policy.maximum_mode, caller.mode)
@@ -668,11 +685,33 @@ export class BridgeDeliveryService {
     return null
   }
 
-  /** Right before a turn goes in: no stop came meanwhile and the chat still runs inside the allowed root. */
-  private beforeSubmit(chatId: string, fence: number, project: AllowedProject, ref: BridgeChatRef): BridgeError | null {
+  /**
+   * Right before a turn goes in, after the start or resume awaited: no stop
+   * came meanwhile, the bridge is still on, the project is still allowed
+   * under the same root and cap, and the chat still runs inside that root.
+   */
+  private beforeSubmit(
+    chatId: string,
+    fence: number,
+    project: AllowedProject,
+    caller: BridgeCaller,
+    ref: BridgeChatRef,
+  ): BridgeError | null {
     if (this.fenced(chatId, fence)) return stoppedBeforeSend(ref)
+    if (!this.host.enabled())
+      return bridgeError('bridge_disabled', 'The Instinct bridge was turned off. Nothing was sent.', { target: ref })
+    const current = this.reads
+      .allowed(this.host.machineId())
+      .find((a) => a.policy.project_id === project.policy.project_id)
+    if (!current || current.policy.canonical_local_root !== project.policy.canonical_local_root)
+      return bridgeError('project_not_allowed', 'That project is no longer allowed. Nothing was sent.', { target: ref })
+    const cap = narrower(current.policy.maximum_mode, caller.mode)
+    if (wider(this.host.chatMode(chatId), cap))
+      return bridgeError('mode_not_allowed', `This project now allows modes up to ${cap}. Nothing was sent.`, {
+        target: ref,
+      })
     const root = getConversationExecutionRoot(chatId)
-    if (!insideRoot(root?.worktreePath ?? root?.projectPath, project.policy.canonical_local_root))
+    if (!insideRoot(root?.worktreePath ?? root?.projectPath, current.policy.canonical_local_root))
       return bridgeError('project_not_allowed', 'The chat no longer runs inside the allowed project folder.', {
         target: ref,
       })
@@ -680,7 +719,12 @@ export class BridgeDeliveryService {
   }
 
   /** The normal resume path for a chat with no live session; an error when it cannot resume. */
-  private async resume(chatId: string, agentType: string, ref: BridgeChatRef): Promise<BridgeError | null> {
+  private async resume(
+    chatId: string,
+    agentType: string,
+    project: AllowedProject,
+    ref: BridgeChatRef,
+  ): Promise<BridgeError | null> {
     const notResumable = bridgeError('chat_not_resumable', 'That chat cannot be resumed on this machine.', {
       target: ref,
     })
@@ -688,6 +732,11 @@ export class BridgeDeliveryService {
     const root = getConversationExecutionRoot(chatId)
     const cwd = root?.worktreePath ?? root?.projectPath
     if (!cwd) return notResumable
+    // Before the provider starts there, not only before the turn.
+    if (!insideRoot(cwd, project.policy.canonical_local_root))
+      return bridgeError('project_not_allowed', 'The chat no longer runs inside the allowed project folder.', {
+        target: ref,
+      })
     const handoff = getConversationForkMetadata(chatId)?.resumeMode === 'transcript-handoff'
     try {
       await this.host.startSession({
@@ -709,7 +758,8 @@ export class BridgeDeliveryService {
     result: CallResult = {},
   ): Promise<{ ok: true } | { ok: false; error: BridgeError }> {
     const ref = { machine_id: this.host.machineId(), chat_id: resolveRootThreadId(turn.threadId) }
-    updateBridgeCallState(callId, 'dispatching')
+    // The planned delivery is stored first, so a replay after a crash still reports it.
+    updateBridgeCallState(callId, 'dispatching', { result })
     let outcome: UserTurnSubmissionResult
     try {
       outcome = await this.host.submitTurn(turn)
@@ -718,7 +768,11 @@ export class BridgeDeliveryService {
       outcome = { status: 'ambiguous', accepted: false, duplicate: false, state: 'ambiguous', reason: String(err) }
     }
     if (outcome.status === 'accepted') {
-      updateBridgeCallState(callId, 'accepted', { result })
+      // The registry can still queue it (a turn began meanwhile, or a steer could not land): report that.
+      const queued =
+        result.actual !== undefined &&
+        this.host.queuedTurns(turn.threadId).some((q) => q.messageId === echoMessageId(turn.origin))
+      updateBridgeCallState(callId, 'accepted', { result: queued ? { ...result, actual: 'queue' } : result })
       return { ok: true }
     }
     if (outcome.status === 'pending' || outcome.status === 'ambiguous') {
@@ -751,21 +805,32 @@ export class BridgeDeliveryService {
    * and the caller answers `stop_unconfirmed`.
    */
   private async halt(chatId: string): Promise<'stopped'> {
-    const live = this.host.liveThread(chatId)
-    if (live) {
-      for (const queued of this.host.queuedTurns(live)) {
-        if (!queued.messageId.startsWith(QUEUED_BRIDGE_PREFIX)) continue
-        const cancelled = await this.host.cancelQueuedTurn(live, queued.messageId)
-        if (!cancelled.ok) log.warn('queued bridge message not cancelled', { chatId, reason: cancelled.reason })
-      }
-    }
     const deadline = this.now() + this.timing.stopConfirmMs
     for (;;) {
+      // Every round: a bridge message can be queued while the stop runs.
+      await this.cancelBridgeQueued(chatId)
       const thread = this.host.liveThread(chatId)
       if (thread || this.host.starting(chatId)) await this.host.interrupt(thread ?? chatId)
-      if (!this.host.busy(chatId) && !this.host.starting(chatId)) return 'stopped'
+      if (!this.host.running(chatId) && !this.host.starting(chatId)) {
+        await this.cancelBridgeQueued(chatId)
+        if (this.bridgeQueued(chatId).length > 0) throw new Error('a queued bridge message could not be taken back')
+        return 'stopped'
+      }
       if (this.now() >= deadline) throw new Error('the turn was still running at the stop deadline')
       await new Promise((resolve) => setTimeout(resolve, this.timing.stopPollMs))
+    }
+  }
+
+  private bridgeQueued(chatId: string): QueuedTurnSummary[] {
+    const live = this.host.liveThread(chatId)
+    return live ? this.host.queuedTurns(live).filter((q) => q.messageId.startsWith(QUEUED_BRIDGE_PREFIX)) : []
+  }
+
+  private async cancelBridgeQueued(chatId: string): Promise<void> {
+    const live = this.host.liveThread(chatId)
+    for (const queued of this.bridgeQueued(chatId)) {
+      const cancelled = await this.host.cancelQueuedTurn(live!, queued.messageId)
+      if (!cancelled.ok) log.warn('queued bridge message not cancelled', { chatId, reason: cancelled.reason })
     }
   }
 
