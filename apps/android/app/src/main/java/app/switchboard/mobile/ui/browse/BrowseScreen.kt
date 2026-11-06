@@ -456,20 +456,18 @@ private fun ConversationRow(
 ) {
     ListItem(
         headlineContent = { Text(row.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        supportingContent = {
-            Text(
-                BrowseRowPolicy.conversationSupportingLabel(row),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
+        // A chat with no activity cue and an agent its mark already names has
+        // nothing to say on a second line, so it gets none.
+        supportingContent = BrowseRowPolicy.conversationSupportingLabel(row)
+            .takeIf(String::isNotBlank)
+            ?.let { label -> { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
         leadingContent = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 ActivityDot(BrowseVisualPolicy.activityTone(row.status, row.unread, row.attention))
-                AgentMark(row.agentType, tint = TextDim)
+                AgentMark(BrowseRowPolicy.conversationMarkAgent(row), tint = TextDim)
             }
         },
         trailingContent = {

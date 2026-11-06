@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.components
 
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
@@ -32,16 +33,23 @@ object AgentMarks {
 }
 
 /**
- * The agent's mark, in one colour. It draws nothing for an agent with no mark.
- * The row around it names the agent, so the mark itself carries no description.
+ * The agent's mark, in one colour. An agent with no mark keeps the empty box,
+ * so the titles of a mixed list stay in one column. The row around it names
+ * the agent, so the mark itself carries no description.
  */
 @Composable
 fun AgentMark(agentType: String?, tint: Color, modifier: Modifier = Modifier) {
-    val drawable = AgentMarks.drawableFor(agentType) ?: return
+    val drawable = AgentMarks.drawableFor(agentType)
+    if (drawable == null) {
+        Spacer(modifier.size(MARK_SIZE))
+        return
+    }
     Icon(
         painter = painterResource(drawable),
         contentDescription = null,
         tint = tint,
-        modifier = modifier.size(14.dp),
+        modifier = modifier.size(MARK_SIZE),
     )
 }
+
+private val MARK_SIZE = 14.dp

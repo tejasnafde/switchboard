@@ -4,6 +4,7 @@ import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.protocol.JsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class BrowseRowPolicyTest {
@@ -61,6 +62,19 @@ class BrowseRowPolicyTest {
     }
 
     @Test
+    fun aCursorImportKeepsItsNameAndDrawsNoMark() {
+        // A Cursor import is stored as claude-code: its mark would name the wrong product.
+        val cursor = conversation(originSource = "cursor")
+        assertNull(BrowseRowPolicy.conversationMarkAgent(cursor))
+        assertEquals("claude", BrowseRowPolicy.conversationMarkAgent(conversation()))
+    }
+
+    @Test
+    fun conversationSupportingLabelIsEmptyWhenTheMarkSaysItAll() {
+        assertEquals("", BrowseRowPolicy.conversationSupportingLabel(conversation(availableOffline = false)))
+    }
+
+    @Test
     fun conversationSupportingLabelShowsTheTurnPreviewAfterAFailure() {
         assertEquals(
             "Reading files",
@@ -97,6 +111,7 @@ class BrowseRowPolicyTest {
         unread: Int = 0,
         status: String? = null,
         preview: String? = null,
+        availableOffline: Boolean = true,
     ) = BrowseConversationRow(
         conversation = Conversation(
             id = "thread-1",
@@ -116,7 +131,7 @@ class BrowseRowPolicyTest {
         agentType = agentType,
         originSource = originSource,
         updatedAt = 0,
-        availableOffline = true,
+        availableOffline = availableOffline,
         unread = unread,
         status = status,
         preview = preview,
