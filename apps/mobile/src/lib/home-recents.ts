@@ -30,6 +30,7 @@ import {
   type ConversationSnoozedEvent,
   type WakeReason,
 } from '@shared/chat-snooze'
+import { parseBridgeOriginMarker, type BridgeOriginMarker } from '@shared/bridge'
 import type { FeedItem, ThreadState } from '../stores/chat'
 
 export const HOME_RECENT_PAGE_SIZE = 5
@@ -55,6 +56,8 @@ export interface RecentSession {
   wokeAt?: number | null
   wokeReason?: WakeReason | null
   wokePrSummary?: string | null
+  /** Started or messaged through the Instinct bridge; absent on other chats and from an older backend. */
+  bridgeOrigin?: BridgeOriginMarker
 }
 
 /** A `provider:list-sessions` reply, with the `statusMark()` taken before asking. */
@@ -121,6 +124,7 @@ export function sessionsFromProjects(projects: Project[]): RecentSession[] {
         wokeAt: session.wokeAt,
         wokeReason: session.wokeReason,
         wokePrSummary: session.wokePrSummary,
+        bridgeOrigin: parseBridgeOriginMarker(session.bridgeOrigin),
       })
     }
   }

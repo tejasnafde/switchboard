@@ -49,7 +49,8 @@ import { disposeSettingsFileSync, registerSettingsFileHandlers, settingsFileSync
 import { isSettingsFileKey } from '@shared/settings-file'
 import { HUB_CHILDREN_LABS_SETTING, HUB_REMOTE_CHILDREN_LABS_SETTING } from '@shared/hub'
 import { INSTINCT_BRIDGE_LABS_SETTING } from '@shared/bridge'
-import { bridgeDeviceLink, stopBridgeDeviceLink } from './bridge/device-link'
+import { bridgeDeviceLink, onBridgeRelayControl, stopBridgeDeviceLink } from './bridge/device-link'
+import { BridgeStopService, bridgeStopService, setBridgeStopService } from './bridge/stop-service'
 import { labsFlagCapabilities } from '@shared/labs'
 import {
   hubRemoteSettingChanged,
@@ -115,6 +116,7 @@ import {
   reopenDbAfterAbortedQuit,
   deferSlowMigrationsUntilWindow,
   runSlowMigrations,
+  getConversationTitle,
 } from './db/database'
 import { registerFaviconProtocol } from './protocol/sb-favicon'
 import {
@@ -164,6 +166,7 @@ let mobileEndpoint: MobileEndpoint | null = null
 // shutdownTerminals for why the old synchronous kill still crashed on quit.
 // Every writer stops before the database closes, and the file watchers close
 // here rather than being left for process exit to tear down.
+const bridgeStopLog = createMainLogger('bridge:stop')
 const shutdownLog = createMainLogger('app:shutdown')
 const quitCoordinator = new QuitCoordinator(
   async () => {
@@ -189,7 +192,13 @@ const quitCoordinator = new QuitCoordinator(
             detachAutoLink = null
           },
         },
-        { name: 'bridge-relay', run: stopBridgeDeviceLink },
+        {
+          name: 'bridge-relay',
+          run: () => {
+            bridgeStopService()?.dispose()
+            stopBridgeDeviceLink()
+          },
+        },
         { name: 'switchboard-mcp', run: stopSwitchboardMcpServer },
         { name: 'ide', run: shutdownIde },
         { name: 'usage-probes', run: disposeUsageProbes },
@@ -351,6 +360,38 @@ function desktopAppHandlerDeps(): AppHandlerDependencies {
     isTurnInFlight: (id) => providerRegistry?.isTurnInFlight(id) ?? false,
     onSettingChanged,
   }
+}
+
+/**
+ * The Instinct bridge stop controls. Not behind the flag: a saved kill, the
+ * stop generation and stop recovery hold for existing bridge origins.
+ */
+function startBridgeStopControls(): void {
+  const link = bridgeDeviceLink()
+  const service = new BridgeStopService({
+    activeGroups: (sources) => providerRegistry?.bridgeActiveGroups(sources) ?? [],
+    stopGroups: async (sources) =>
+      (await providerRegistry?.bridgeStopGroups(sources)) ?? { stopped: [], unconfirmed: [] },
+    relay: link,
+    chatTitle: (chatId) => getConversationTitle(chatId),
+    now: Date.now,
+  })
+  try {
+    service.enforceAtStart()
+  } catch (err) {
+    bridgeStopLog.error('bridge stop state could not be enforced at start', err)
+  }
+  setBridgeStopService(service)
+  onBridgeRelayControl({
+    control: (control) => void service.applyControl(control).catch(failedStop('control')),
+    authorityLost: (reason) => void service.authorityLost(reason).catch(failedStop('authority lost')),
+  })
+  service.start()
+}
+
+/** A stop runs on its own queue, so a step that throws is reported here, never unhandled. */
+function failedStop(step: string): (err: unknown) => void {
+  return (err) => bridgeStopLog.warn('bridge stop controls failed', { step, err: String(err) })
 }
 
 /** After any settings write, from the UI, a phone, or a settings.json save. */
@@ -1035,6 +1076,8 @@ app.whenReady().then(() => {
   // version to compare against. See `src/main/updater.ts`.
   registerAutoUpdater(mainWindow)
 
+  // Before the registry: a saved bridge kill and stop generation hold before any queued turn or auto-resume.
+  startBridgeStopControls()
   // Provider registry - new agent bridge (SDK-based)
   providerRegistry = new ProviderRegistry(backendHost)
   providerRegistry.setRemoteHubClients(remoteHubClients)
@@ -1051,7 +1094,10 @@ app.whenReady().then(() => {
   detachAutoLink = attachPullRequestAutoLink(providerRegistry.bus, backendHost, linkedChatActivity)
   startPullRequestHistoryScan()
   startChatSnoozer(snoozeHost(backendHost))
-  powerMonitor.on('resume', () => chatSnoozer()?.resync())
+  powerMonitor.on('resume', () => {
+    chatSnoozer()?.resync()
+    void bridgeStopService()?.onWake().catch(failedStop('wake'))
+  })
   providerRegistry.registerIpcHandlers()
 
   // All handlers are recorded on the endpoint now; start listening if a token

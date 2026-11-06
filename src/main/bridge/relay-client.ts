@@ -3,8 +3,10 @@
  * (`wss://<relay>/connect`). It answers the relay's challenge with the device
  * key, publishes the allowed project catalog (no paths) and reconnects with
  * backoff. It records the relay's connection generation and drops every frame
- * that names another machine or an older generation. This PR runs no command:
- * a command frame is logged with a code and dropped.
+ * that names another machine or an older generation. It runs no command: a
+ * command frame is logged with a code and dropped. It passes the relay's stop
+ * state (welcome and `control` frames) to `onControl`, and sends `stop_ack`
+ * and `kill`.
  *
  * Only `https:` relay origins, with TLS validated by default. Plain
  * `http://127.0.0.1` or `localhost` is accepted only from the
@@ -16,7 +18,9 @@ import {
   BRIDGE_WIRE_VERSION,
   DEFAULT_BRIDGE_RELAY_ORIGIN,
   bridgeHelloPayload,
+  parseBridgeControl,
   type BridgeCatalogProject,
+  type BridgeControl,
   type BridgeLinkState,
 } from '@shared/bridge'
 import { createMainLogger } from '../logger'
@@ -131,6 +135,10 @@ export interface RelayClientDeps {
   timers?: Timers
   random?: () => number
   onStatus?(status: RelayClientStatus): void
+  /** The relay's stop generation and kill, from the welcome and each valid `control` frame. */
+  onControl?(control: BridgeControl): void
+  /** The relay closed the connection with `revoked`. */
+  onRevoked?(): void
 }
 
 type Phase = 'await_challenge' | 'await_welcome' | 'live'
@@ -166,6 +174,8 @@ export class BridgeRelayClient {
   private highestGeneration = 0
   private lastError: string | null = null
   private lastSeen = 0
+  /** The last frame of an authenticated connection, for the control lease. */
+  private lastContact: number | null = null
   private retryTimer: unknown = null
   private authTimer: unknown = null
   private pingTimer: unknown = null
@@ -203,6 +213,27 @@ export class BridgeRelayClient {
         log.warn('closing the relay socket failed', err instanceof Error ? err.name : 'unknown')
       }
     }
+  }
+
+  /** When the relay last spoke on an authenticated connection, or null. */
+  lastContactAt(): number | null {
+    return this.lastContact
+  }
+
+  /** False when there is no authenticated connection to send on. */
+  sendStopAck(generation: number, state: 'confirmed' | 'unconfirmed'): boolean {
+    return this.sendLive({ type: 'stop_ack', stop_generation: generation, state })
+  }
+
+  sendKill(generation: number): boolean {
+    return this.sendLive({ type: 'kill', stop_generation: generation })
+  }
+
+  private sendLive(frame: { type: string; stop_generation: number; state?: string }): boolean {
+    if (this.phase !== 'live' || !this.socket) return false
+    if (!Number.isSafeInteger(frame.stop_generation) || frame.stop_generation < 0) return false
+    this.socket.send(JSON.stringify(frame))
+    return true
   }
 
   /** Re-sends the catalog after the allowlist changed. */
@@ -278,13 +309,16 @@ export class BridgeRelayClient {
       return this.drop('invalid_frame', 'json')
     }
     const type = typeof frame.type === 'string' ? frame.type : ''
-    if (type === 'pong') return
 
     // A frame tagged for another machine or connection is not ours, whatever its type.
     if ('machine_id' in frame && frame.machine_id !== this.deps.machineId) return this.drop('foreign_machine', type)
     if (this.phase === 'live' && 'connection_generation' in frame && frame.connection_generation !== this.generation)
       return this.drop('stale_generation', type)
+    // Anything the relay says on this authenticated connection renews the
+    // control lease, a pong included: a quiet connection is still a live one.
+    if (this.phase === 'live') this.lastContact = this.timers.now()
 
+    if (type === 'pong') return
     if (type === 'challenge') return this.onChallenge(frame)
     if (type === 'welcome') return this.onWelcome(frame)
     if (type === 'error') {
@@ -294,7 +328,17 @@ export class BridgeRelayClient {
     }
     if (type === 'catalog_accepted') return
     if (this.phase !== 'live') return this.drop('not_authenticated', type)
+    if (type === 'control') return this.onControlFrame(frame)
     this.drop(type === 'command' ? 'commands_disabled' : 'unknown_frame', type)
+  }
+
+  /** A control must name this machine and this connection; the checks above dropped any other. */
+  private onControlFrame(frame: Record<string, unknown>): void {
+    if (frame.machine_id !== this.deps.machineId || frame.connection_generation !== this.generation)
+      return this.drop('invalid_control', 'control')
+    const control = parseBridgeControl(frame)
+    if (!control) return this.drop('invalid_control', 'control')
+    this.deps.onControl?.(control)
   }
 
   private onChallenge(frame: Record<string, unknown>): void {
@@ -332,10 +376,17 @@ export class BridgeRelayClient {
     this.attempt = 0
     if (this.authTimer !== null) this.timers.clearTimeout(this.authTimer)
     this.authTimer = null
+    this.lastContact = this.timers.now()
     log.info('connected to the bridge relay', { connectionGeneration: generation })
     this.setStatus('connected', null)
     this.sendCatalog()
     this.schedulePing()
+    // An older relay sends no stop state; a malformed one is dropped, never guessed.
+    if ('stop_generation' in frame || 'killed' in frame) {
+      const control = parseBridgeControl(frame)
+      if (control) this.deps.onControl?.(control)
+      else this.drop('invalid_control', 'welcome')
+    }
   }
 
   private schedulePing(): void {
@@ -360,6 +411,7 @@ export class BridgeRelayClient {
     this.generation = null
     if (!this.running) return
     const refusal = REJECTION_CODES.has(reason) ? reason : null
+    if (reason === 'revoked') this.deps.onRevoked?.()
     const why = refusal ?? this.lastError ?? `closed_${code}`
     const rejected = refusal !== null || (this.lastError !== null && REJECTION_CODES.has(this.lastError))
     const delay = backoffMs(this.attempt, rejected, this.random)

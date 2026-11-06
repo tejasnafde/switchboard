@@ -53,14 +53,17 @@ import {
   getConversationForkMetadata,
   getDb,
   listBridgeOrigins,
+  readBridgeStopRecord,
   recordBridgeOrigin,
   reserveBridgeCall,
   resolveRootThreadId,
   setConversationModel,
   setConversationProviderInstanceId,
+  setBridgeOriginStopState,
   setConversationRuntimeMode,
   updateBridgeCallState,
   type BridgeCallRecord,
+  type BridgeOriginSource,
 } from '../db/database'
 import { turnAcceptanceStateByOrigin } from '../db/turn-acceptance'
 import { createMainLogger } from '../logger'
@@ -110,11 +113,14 @@ export interface BridgeDeliveryHost {
 /**
  * Who asks. A local agent is identified by its MCP token: it cannot act from
  * plan mode and cannot start or drive work in a mode wider than its own.
+ * `source` is stamped on every chat the call reaches, and decides what the
+ * control lease and a revoked device may stop.
  */
 export interface BridgeCaller {
   kind: 'local-agent'
   chatId: string
   mode: RuntimeMode
+  source: BridgeOriginSource
 }
 
 export interface StartChatInput {
@@ -222,6 +228,8 @@ export class BridgeDeliveryService {
   private readonly startsInFlight = new Map<string, string>()
   /** Per root chat, how many stops it has had: a start or send that saw another count was stopped meanwhile. */
   private readonly stops = new Map<string, number>()
+  /** How many stops of all bridge work this process ran: they fence every call in flight. */
+  private stopAllCount = 0
 
   constructor(
     private readonly host: BridgeDeliveryHost,
@@ -274,6 +282,8 @@ export class BridgeDeliveryService {
     if (!insideRoot(project.sidebarPath, policy.canonical_local_root))
       return fail(bridgeError('project_not_allowed', 'The project folder moved or no longer resolves.', { target }))
 
+    // The agent check awaited: a Stop all may have come meanwhile.
+    if (readBridgeStopRecord().killed) return fail(killedError(target))
     // Checked and claimed with no await between, so two starts cannot both pass.
     const running = this.activeBridgeChat(machineId)
     if (running)
@@ -322,6 +332,7 @@ export class BridgeDeliveryService {
           projectId: policy.project_id,
           machineId,
           policyRevision: policy.revision,
+          source: caller.source,
         })
       })()
       const fence = this.fence(chatId)
@@ -425,6 +436,7 @@ export class BridgeDeliveryService {
         projectId: project.policy.project_id,
         machineId,
         policyRevision: project.policy.revision,
+        source: caller.source,
       })
       const live = this.host.liveThread(chatId) ?? chatId
       const actual: BridgeActualDelivery =
@@ -488,6 +500,7 @@ export class BridgeDeliveryService {
         status = await this.halt(chatId)
       } catch (err) {
         log.warn('bridge stop failed', { callId, chatId, err: String(err) })
+        setBridgeOriginStopState([chatId], 'unconfirmed')
         updateBridgeCallState(callId, 'delivery_unknown', { errorCode: 'stop_unconfirmed' })
         return fail(
           bridgeError('stop_unconfirmed', 'The stop could not be confirmed. Read the chat for its status.', {
@@ -496,6 +509,7 @@ export class BridgeDeliveryService {
           }),
         )
       }
+      setBridgeOriginStopState([chatId], 'stopped')
       updateBridgeCallState(callId, 'accepted', { result: { status } satisfies CallResult })
       log.info('bridge chat stopped', { callId, chatId, status })
       return this.answer(getBridgeCall(callId)!, false) as BridgeResult<BridgeStopReceipt>
@@ -535,6 +549,9 @@ export class BridgeDeliveryService {
     const key = `local:${resolveRootThreadId(caller.chatId)}:${raw}`
     const hash = bridgeInputHash(operation, input as Record<string, unknown>, sha256)
     const prior = findBridgeCall(operation, key)
+    // Reads and stops go on while bridge work is killed; an earlier call still answers from its record.
+    if (!prior && operation !== 'stop_chat' && readBridgeStopRecord().killed)
+      return { kind: 'answer', answer: fail(killedError(null)) }
     if (!prior) return { kind: 'new', key, hash }
     if (bridgeCallRetired(prior, this.now()))
       return {
@@ -698,6 +715,7 @@ export class BridgeDeliveryService {
     ref: BridgeChatRef,
   ): BridgeError | null {
     if (this.fenced(chatId, fence)) return stoppedBeforeSend(ref)
+    if (readBridgeStopRecord().killed) return killedError(ref)
     if (!this.host.enabled())
       return bridgeError('bridge_disabled', 'The Instinct bridge was turned off. Nothing was sent.', { target: ref })
     const current = this.reads
@@ -844,12 +862,67 @@ export class BridgeDeliveryService {
     }
   }
 
+  /** Both counts only rise, so their sum changes whenever either does. */
   private fence(chatId: string): number {
-    return this.stops.get(chatId) ?? 0
+    return (this.stops.get(chatId) ?? 0) + this.stopAllCount
   }
 
   private fenced(chatId: string, fence: number): boolean {
     return this.fence(chatId) !== fence
+  }
+
+  // ─── stops of all bridge work ─────────────────────────────────
+
+  /**
+   * Root ids of the chats with a bridge origin that have work: a start in
+   * flight, a running or preparing turn (one the owner started counts too,
+   * when the bridge steered into it), or bridge-queued messages. `sources`
+   * keeps only origins of those kinds.
+   */
+  activeGroups(sources?: readonly BridgeOriginSource[]): string[] {
+    const origins = listBridgeOrigins(this.host.machineId())
+    const starting = new Set(this.startsInFlight.values())
+    return origins
+      .filter((o) => !sources || sources.includes(o.source))
+      .filter(
+        (o) =>
+          starting.has(o.conversationId) ||
+          this.host.busy(o.conversationId) ||
+          this.host.starting(o.conversationId) ||
+          this.bridgeQueued(o.conversationId).length > 0,
+      )
+      .map((o) => o.conversationId)
+  }
+
+  /**
+   * Stops every active bridge group (or those of `sources`) the way stop_chat
+   * does: its bridge-queued messages are taken back and the user's Stop runs
+   * until no turn is left. Every start or send in flight is fenced first, so
+   * none sends after this. Never touches a chat without a bridge origin.
+   */
+  async stopGroups(sources?: readonly BridgeOriginSource[]): Promise<{ stopped: string[]; unconfirmed: string[] }> {
+    const chats = this.activeGroups(sources)
+    if (!sources) this.stopAllCount += 1
+    for (const id of chats) this.stops.set(id, (this.stops.get(id) ?? 0) + 1)
+    setBridgeOriginStopState(chats, 'pending')
+    const outcomes = await Promise.all(
+      chats.map(async (id) => {
+        try {
+          await this.halt(id)
+          return { id, ok: true }
+        } catch (err) {
+          log.warn('bridge group stop unconfirmed', { chatId: id, err: String(err) })
+          return { id, ok: false }
+        }
+      }),
+    )
+    const stopped = outcomes.filter((o) => o.ok).map((o) => o.id)
+    const unconfirmed = outcomes.filter((o) => !o.ok).map((o) => o.id)
+    setBridgeOriginStopState(stopped, 'stopped')
+    setBridgeOriginStopState(unconfirmed, 'unconfirmed')
+    if (chats.length > 0)
+      log.info('bridge groups stopped', { stopped: stopped.length, unconfirmed: unconfirmed.length })
+    return { stopped, unconfirmed }
   }
 
   /** The first trial runs one bridge origin group per machine: a start in flight or a busy bridge chat. */
@@ -865,6 +938,14 @@ export class BridgeDeliveryService {
 
 function planDenied(): BridgeError {
   return bridgeError('policy_denied', 'This chat is in plan mode, so it cannot start or message chats.')
+}
+
+function killedError(target: BridgeChatRef | { project_id: string } | null): BridgeError {
+  return bridgeError(
+    'killed',
+    'All bridge work is stopped on this machine. Nothing was sent. The owner must allow bridge work again.',
+    { target, non_delivery_confirmed: true },
+  )
 }
 
 function stoppedBeforeSend(ref: BridgeChatRef): BridgeError {

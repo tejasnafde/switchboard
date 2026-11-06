@@ -46,6 +46,7 @@ class Host implements LimitResumeHost {
   changes: Array<{ id: string; state: LimitState; resumed: boolean; gaveUp?: boolean }> = []
   child?: LimitResumeHost['child']
   limited?: LimitResumeHost['limited']
+  bridgeStopped?: LimitResumeHost['bridgeStopped']
   enabled = () => this.flag
   settingOn = () => this.setting
   liveThread: (id: string) => string | null = () => this.live
@@ -93,6 +94,14 @@ describe('LimitResumer', () => {
     expect(host.sent).toEqual(['c1'])
     expect(getLimitResume('c1')?.state).toBe('fired')
     expect(host.changes.at(-1)).toEqual({ id: 'c1', state: { kind: 'none' }, resumed: true })
+  })
+
+  it('does not resume a bridge chat after a stop of all bridge work, and disarms it as a Stop', async () => {
+    resumer.onTurnEnded('c1', limited(), 'turn1')
+    host.bridgeStopped = (id) => id === 'c1'
+    await vi.advanceTimersByTimeAsync(3 * MIN)
+    expect(host.sent).toEqual([])
+    expect(getLimitResume('c1')?.state).toBe('disarmed')
   })
 
   it('does not resume after Stop, also after a restart', async () => {

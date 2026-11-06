@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.switchboard.mobile.domain.remote.BridgeOrigin
 import app.switchboard.mobile.domain.remote.ChatSnooze
 import app.switchboard.mobile.platform.google.GoogleAccountPresentation
 import app.switchboard.mobile.ui.components.InlineStatus
@@ -453,7 +454,8 @@ private fun RecentRow(row: HomeRecentRow, onClick: () -> Unit, onSnooze: (() -> 
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${row.projectName} · ${row.connectionLabel}",
+                text = "${row.projectName} · ${row.connectionLabel}" +
+                    (row.bridgeOrigin?.let { " · ${BridgeOrigin.label(it)}" } ?: ""),
                 color = TextDim,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,

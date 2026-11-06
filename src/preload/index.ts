@@ -1061,6 +1061,9 @@ const api = {
       transport.invoke(BridgeChannels.SET_DEVICE_LABEL, { label }),
     removeDevice: (): Promise<import('@shared/bridge').BridgeDeviceStatus> =>
       transport.invoke(BridgeChannels.REMOVE_DEVICE),
+    stopStatus: (): Promise<import('@shared/bridge').BridgeStopStatus> => transport.invoke(BridgeChannels.STOP_STATUS),
+    stopAll: (): Promise<import('@shared/bridge').BridgeStopStatus> => transport.invoke(BridgeChannels.STOP_ALL),
+    clearKill: (): Promise<import('@shared/bridge').BridgeStopStatus> => transport.invoke(BridgeChannels.CLEAR_KILL),
   },
   agentSecret: {
     answer: (threadId: string, cardId: string, answer: AgentSecretAnswer): Promise<AgentSecretResult> =>

@@ -33,6 +33,9 @@ import {
   createConversation,
   getBridgeCall,
   getBridgeOrigin,
+  readBridgeStopRecord,
+  recordBridgeOrigin,
+  writeBridgeStopRecord,
   getConversationById,
   getConversationProviderInstanceId,
   getConversationRuntimeMode,
@@ -161,7 +164,12 @@ class FakeHost implements BridgeDeliveryHost {
 let host: FakeHost
 let reads: BridgeReadService
 let delivery: BridgeDeliveryService
-const agent = (mode: RuntimeMode = 'full-access'): BridgeCaller => ({ kind: 'local-agent', chatId: 'caller', mode })
+const agent = (mode: RuntimeMode = 'full-access'): BridgeCaller => ({
+  kind: 'local-agent',
+  chatId: 'caller',
+  mode,
+  source: 'local',
+})
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string } & Record<string, unknown> }
 const ok = <T>(r: Result<T>): T => {
@@ -400,6 +408,15 @@ describe('send_to_chat', () => {
     expect(host.dispatched[0]).toMatchObject({ threadId: 'c1', delivery: 'queue', providerText: 'Next' })
     expect(host.dispatched[0].runtimeMode).toBeUndefined()
     expect(getBridgeOrigin('c1')?.callId).toBe(receipt.call_id)
+  })
+
+  it('stamps each origin with the source of its caller, which is what the control lease stops', async () => {
+    idleChat('c1')
+    ok(await delivery.sendToChat(agent(), { chat: 'c1', message: 'Next', idempotency_key: key() }))
+    expect(getBridgeOrigin('c1')?.source).toBe('local')
+    const owner: BridgeCaller = { ...agent(), source: 'relay' }
+    const started = ok(await start({}, owner))
+    expect(getBridgeOrigin(started.chat.chat_id)?.source).toBe('relay')
   })
 
   it('steers only when asked, supported and not compacting; otherwise queues', async () => {
@@ -682,5 +699,93 @@ describe('the MCP tools', () => {
       .find((t) => t.name === 'send_to_chat')!
       .call({ chat: 'c', message: 'x', delivery: 'now', idempotency_key: 'k' })
     expect(badDelivery.isError).toBe(true)
+  })
+})
+
+describe('stops of all bridge work', () => {
+  const kill = () =>
+    writeBridgeStopRecord({ generation: readBridgeStopRecord().generation + 1, killed: true, killPending: false })
+
+  function bridgeChat(id: string, source: 'local' | 'relay' = 'local') {
+    idleChat(id)
+    recordBridgeOrigin({
+      conversationId: id,
+      callId: `bcall_${id}`,
+      projectId: 'p',
+      machineId: MACHINE,
+      policyRevision: 1,
+      source,
+    })
+  }
+
+  it('while killed refuses start_chat and send_to_chat with confirmed non-delivery, but reads and stop_chat work', async () => {
+    bridgeChat('c1')
+    kill()
+    const refused = err(await start())
+    expect(refused).toMatchObject({ code: 'killed', non_delivery_confirmed: true, retry: 'ask_owner' })
+    expect(err(await delivery.sendToChat(agent(), { chat: 'c1', message: 'x', idempotency_key: key() }))).toMatchObject(
+      {
+        code: 'killed',
+        non_delivery_confirmed: true,
+      },
+    )
+    expect(host.starts).toEqual([])
+    expect(host.dispatched).toEqual([])
+    expect(ok(reads.listProjects()).projects).toHaveLength(1)
+    expect((await reads.readChat({ chat: 'c1' })).ok).toBe(true)
+    host.busyChats.add('c1')
+    expect(ok(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() })).status).toBe('stopped')
+  })
+
+  it('a kill during a start fences it: the turn is never sent and the call is rejected as killed', async () => {
+    host.onStart = async (opts) => {
+      kill()
+      host.live.set(opts.threadId, { provider: opts.provider, midTurn: false, steerBlocked: false })
+    }
+    const refused = err(await start())
+    expect(refused).toMatchObject({ code: 'killed', non_delivery_confirmed: true })
+    expect(host.dispatched).toEqual([])
+    expect(getBridgeCall(String(refused.call_id))?.state).toBe('rejected')
+  })
+
+  it('stops every active bridge chat, and only those: an unrelated busy chat is untouched', async () => {
+    bridgeChat('b1')
+    bridgeChat('b2')
+    bridgeChat('idle')
+    idleChat('mine')
+    host.busyChats.add('b1')
+    host.busyChats.add('mine')
+    host.queued.set('b2', [{ threadId: 'b2', messageId: 'remote_bridge-bcall_q', text: 'x', queuedAt: 1 }])
+    expect(delivery.activeGroups().sort()).toEqual(['b1', 'b2'])
+    const result = await delivery.stopGroups()
+    expect(result).toEqual({ stopped: ['b1', 'b2'], unconfirmed: [] })
+    expect(host.interrupts.sort()).toEqual(['b1', 'b2'])
+    expect(host.cancelled).toEqual(['remote_bridge-bcall_q'])
+    expect(host.busy('mine')).toBe(true)
+    expect(getBridgeOrigin('b1')?.stopState).toBe('stopped')
+    expect(getBridgeOrigin('idle')?.stopState).toBeNull()
+  })
+
+  it('stops a turn the owner started when the bridge steered into it, and reports one it cannot stop as unconfirmed', async () => {
+    // The owner's turn runs in a chat the bridge sent into: the chat counts as busy.
+    bridgeChat('steered')
+    host.busyChats.add('steered')
+    expect((await delivery.stopGroups()).stopped).toEqual(['steered'])
+    expect(host.busy('steered')).toBe(false)
+
+    host.busyChats.add('steered')
+    host.interruptLands = false
+    expect(await delivery.stopGroups()).toEqual({ stopped: [], unconfirmed: ['steered'] })
+    expect(getBridgeOrigin('steered')?.stopState).toBe('unconfirmed')
+  })
+
+  it('stops only relay-started work when asked for that source', async () => {
+    bridgeChat('local')
+    bridgeChat('relay', 'relay')
+    host.busyChats.add('local')
+    host.busyChats.add('relay')
+    expect(delivery.activeGroups(['relay'])).toEqual(['relay'])
+    expect((await delivery.stopGroups(['relay'])).stopped).toEqual(['relay'])
+    expect(host.busy('local')).toBe(true)
   })
 })

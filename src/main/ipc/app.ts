@@ -13,6 +13,7 @@ import { historyTail } from '@shared/turn-activity'
 import { parseFollowSuggestionMode } from '@shared/follow-suggestions'
 import { createMainLogger as createLogger } from '../logger'
 import { bridgeCatalogChanged } from '../bridge/device-link'
+import { withBridgeOrigins } from '@shared/bridge'
 import { scanAllSessions } from '../projects/session-scanner'
 import { projectManagedRootSessions, sessionSummaryToConversationRow } from './terminal-sessions'
 import { homedir, networkInterfaces } from 'os'
@@ -83,6 +84,7 @@ import {
   getSetting,
   listOpenHubChildren,
   getConversationSnooze,
+  bridgeOriginMarkers,
 } from '../db/database'
 import { claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
@@ -405,10 +407,14 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     const rows = getProjects()
     const convsByProject = getManagedRootConversationsForProjects(rows.map((row) => row.path))
     const openChildren = openHubChildren()
+    const bridgeMarkers = bridgeOriginMarkers()
     const projects: Project[] = rows.map((row) => ({
       path: row.path,
       name: row.name,
-      sessions: withHubFields(projectManagedRootSessions(convsByProject.get(row.path) ?? []), openChildren),
+      sessions: withBridgeOrigins(
+        withHubFields(projectManagedRootSessions(convsByProject.get(row.path) ?? []), openChildren),
+        bridgeMarkers,
+      ),
       workspaceId: row.workspace_id ?? null,
     }))
     return projects

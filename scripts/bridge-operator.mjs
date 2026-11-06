@@ -1,9 +1,13 @@
 #!/usr/bin/env node
-// Operator commands for the Instinct bridge relay's device list.
+// Operator commands for the Instinct bridge relay's device list and stop controls.
 //
 //   node scripts/bridge-operator.mjs enroll <machine_id> <label> <public_key_file|->
 //   node scripts/bridge-operator.mjs revoke <machine_id>
 //   node scripts/bridge-operator.mjs list
+//   node scripts/bridge-operator.mjs stop-status            stop generation, kill and each machine's stop state
+//   node scripts/bridge-operator.mjs kill                   stop bridge work on every machine and refuse new work
+//   node scripts/bridge-operator.mjs clear-kill             allow new bridge work again (the generation stays)
+//   node scripts/bridge-operator.mjs revoke-assistant-key   disable the assistant key and stop bridge work
 //
 // The operator key comes from BRIDGE_OPERATOR_KEY, else Secret Manager
 // `switchboard-bridge-operator-key` (project teejayproject, gcloud
@@ -113,6 +117,14 @@ async function request(method, path, body) {
   return parsed
 }
 
+/** The stop commands take no arguments: the relay keeps one stop state for all machines. */
+const STOP_COMMANDS = {
+  'stop-status': ['GET', '/operator/stop'],
+  kill: ['POST', '/operator/stop'],
+  'clear-kill': ['DELETE', '/operator/stop'],
+  'revoke-assistant-key': ['POST', '/operator/assistant-key/revoke'],
+}
+
 async function main() {
   const [command, ...args] = process.argv.slice(2)
   if (command === 'enroll') {
@@ -133,8 +145,13 @@ async function main() {
     console.log(JSON.stringify(result, null, 2))
   } else if (command === 'list') {
     console.log(JSON.stringify(await request('GET', '/operator/devices'), null, 2))
+  } else if (Object.hasOwn(STOP_COMMANDS, command ?? '')) {
+    const [method, path] = STOP_COMMANDS[command]
+    console.log(JSON.stringify(await request(method, path), null, 2))
   } else {
-    fail('usage: enroll <machine_id> <label> <public_key_file|-> | revoke <machine_id> | list')
+    fail(
+      'usage: enroll <machine_id> <label> <public_key_file|-> | revoke <machine_id> | list | stop-status | kill | clear-kill | revoke-assistant-key',
+    )
   }
 }
 

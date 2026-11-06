@@ -7,7 +7,6 @@ import { createHash } from 'crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMigratedDb } from './helpers/test-db'
 import {
-  advanceBridgeStopGeneration,
   getBridgeCall,
   getBridgeOrigin,
   getBridgeProjectPolicy,
@@ -21,6 +20,7 @@ import {
   retireExpiredBridgeCalls,
   saveBridgeProjectPolicy,
   updateBridgeCallState,
+  writeBridgeStopRecord,
 } from '../../src/main/db/database'
 import { BRIDGE_CALL_RETENTION_MS, bridgeInputHash, defaultBridgeProjectPolicy } from '../../src/shared/bridge'
 
@@ -192,7 +192,7 @@ describe('recovery after a restart', () => {
     updateBridgeCallState(dispatching.call.callId, 'dispatching')
     updateBridgeCallState(accepted.call.callId, 'dispatching')
     updateBridgeCallState(accepted.call.callId, 'accepted')
-    advanceBridgeStopGeneration()
+    writeBridgeStopRecord({ generation: 1, killed: false, killPending: false })
 
     migrate(db)
     expect(recoverBridgeCalls()).toEqual({ rejected: 1, unknown: 1 })
@@ -216,6 +216,7 @@ describe('bridge origins', () => {
       projectId: 'p1',
       machineId: 'mac-work',
       policyRevision: 2,
+      source: 'local',
     })
     expect(origin.conversationId).toBe('agent_1')
     recordThreadSession('claude-uuid-2', 'claude-uuid-1')
@@ -231,6 +232,7 @@ describe('bridge origins', () => {
       projectId: 'p1',
       machineId: 'mac-work',
       policyRevision: 1,
+      source: 'local',
     })
     const second = recordBridgeOrigin({
       conversationId: 'agent_1',
@@ -238,30 +240,30 @@ describe('bridge origins', () => {
       projectId: 'p1',
       machineId: 'mac-work',
       policyRevision: 3,
+      source: 'local',
     })
     expect(second).toEqual(first)
   })
 
   it('stamps the stop generation current at the start', () => {
-    advanceBridgeStopGeneration()
-    advanceBridgeStopGeneration()
+    writeBridgeStopRecord({ generation: 2, killed: false, killPending: false })
     const origin = recordBridgeOrigin({
       conversationId: 'agent_1',
       callId: 'bcall_a',
       projectId: 'p1',
       machineId: 'mac-work',
       policyRevision: 1,
+      source: 'local',
     })
     expect(origin.stopGeneration).toBe(2)
   })
 })
 
 describe('stop generation', () => {
-  it('starts at 0, rises by one or to a relay value, and never goes down', () => {
+  it('starts at 0 and never goes down', () => {
     expect(readBridgeStopGeneration()).toBe(0)
-    expect(advanceBridgeStopGeneration()).toBe(1)
-    expect(advanceBridgeStopGeneration(5)).toBe(5)
-    expect(advanceBridgeStopGeneration(3)).toBe(5)
+    expect(writeBridgeStopRecord({ generation: 5, killed: false, killPending: false }).generation).toBe(5)
+    expect(writeBridgeStopRecord({ generation: 3, killed: false, killPending: false }).generation).toBe(5)
     expect(readBridgeStopGeneration()).toBe(5)
   })
 })
