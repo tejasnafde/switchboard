@@ -1,0 +1,64 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "provider-logos",
+  "summary": "Draw each agent's own mark, in one colour, wherever the desktop lists or picks a chat: sidebar chat rows and Recents, the composer chip and the agent tabs, Cmd+P, Cmd+Shift+F, hub child and batch rows, kanban cards and the reviews linked-chat card. One shared component (ui/agent-mark) and one data file (shared/agent-marks) replace the two hand-copied two-letter avatar maps that had drifted apart on the OpenCode colour.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/ui/agent-mark.tsx",
+        "src/renderer/components/sidebar/Sidebar.tsx",
+        "src/renderer/components/sidebar/RecentSessionsSection.tsx",
+        "src/renderer/components/chat/UnifiedProviderPicker.tsx",
+        "src/renderer/components/GoToChatDialog.tsx",
+        "src/renderer/components/SearchModal.tsx",
+        "src/renderer/components/hub/ChildrenStrip.tsx",
+        "src/renderer/components/hub/HubBatchRows.tsx",
+        "src/renderer/components/kanban/KanbanView.tsx",
+        "src/renderer/components/reviews/PrLinkedChats.tsx",
+        "src/renderer/styles/global.css",
+        "tests/unit/agent-marks.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "phone_agent_marks",
+      "followUpRelease": "The follow-up pull request that draws the same path data in Expo through react-native-svg, in place of the text agent chip on the conversation rows and on the new-session agent cards. Nothing on the phone changes in this release: it keeps the text chip it has today, and no phone code or wire field is touched here. The marks are already in src/shared/agent-marks.ts, so that work is a renderer of the same table, not a second copy of it."
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "phone_agent_marks",
+      "followUpRelease": "The same follow-up pull request, as vector drawables generated from the same path data and tinted with the content colour, on the browse rows and the new-session screen. Nothing on Android changes in this release: the browse rows keep the screen-reader label they have today and show no mark."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No contract change. src/shared/agent-marks.ts is a static table of drawing data read by the client that renders it; it adds no IPC channel, no wire field, no capability and no backend read. Every agent id it keys on (AGENT_PROVIDERS) already crosses the wire, and an id this build has no mark for falls back to initials, so an older or newer backend needs nothing."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Presentation only. No table, column, settings key or stored format is added or read differently. The mark of a chat is derived at render time from the agentType the conversation already stores."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, update channel, deep link or rollout switch changes. The marks are compiled into the renderer bundle as path strings; nothing is downloaded at runtime and no asset is added to the package."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck passed for both the main and renderer projects.",
+      "npx vitest run --maxWorkers=2 passed on the whole suite, including the new tests/unit/agent-marks.test.ts.",
+      "tests/unit/agent-marks.test.ts pins that every agent except the local ACP command ships a mark, that each mark is sized by the extent of its own artwork so no mark draws smaller than its neighbours, that both spellings of Claude resolve to one mark, and that an agent this build does not know gets no mark instead of a guessed one.",
+      "The CI visual job (macos-15) captured all 78 screens whose pixels changed, in Dark, Light and Translucent; its images are the new baselines and each one was read first.",
+      "CodeRabbit reviewed the pull request. Its findings were fixed: an unknown agent id resolved to Claude in the sidebar, Recents and the hub children (every mark now keeps an unknown id and falls back to initials, agentMarkLabel), a kanban card lost its mark until its chat was opened (it reads the stored session too), and a doc comment claimed the phones already draw these marks.",
+      "An adversarial review of the branch diff was run. Its findings were fixed: the OpenCode mark drew at half size inside the vendor box, a sidebar row could take its mark from a session source that names no agent (a chat now carries its agent from the moment it is created), the Recents status line no longer lined up under the title, the agent tabs could overflow the fixed-width picker, a third initials helper disagreed with the new one (both now use providerInstanceInitials), and the reviews row announced the agent twice."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The marks have not been read on a high-DPI external display, only on the test window's pinned 1x scale.",
+      "Mistral Vibe, Cline and GitHub Copilot have no account on this machine, so their marks were checked in the agent tabs and in unit data only, never on a real chat row.",
+      "The visual behaviour phase (native glass transmission) was not re-run: no translucency rule changed, only the content of rows that already existed.",
+      "The screenshot baselines were refreshed from the CI visual job's own images, not from a local run: this machine could not run a packaged build while the branch was written. Every refreshed screen was read before it was committed."
+    ]
+  }
+}

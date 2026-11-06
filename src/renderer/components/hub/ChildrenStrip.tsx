@@ -15,7 +15,9 @@ import {
   type ParentState,
 } from '@shared/hub'
 import { agentLabel, type AgentType } from '@shared/types'
+import { agentMarkLabel } from '@shared/agent-marks'
 import { createRendererLogger } from '../../logger'
+import { AgentMark } from '../ui/agent-mark'
 import { hubChildDot } from './child-dot'
 import { nudgeChild, openHubChat } from './hub-actions'
 import { MachineBadge } from './MachineBadge'
@@ -50,15 +52,19 @@ const kTokens = (n: number) => `${Math.round(n / 1000)}k`
 function ChildRow({ parent, child }: { parent: HubChatRef; child: HubChildView }) {
   const tokens = child.lastTurn?.usedTokens
   const muted = [child.account, tokens != null ? kTokens(tokens) : null].filter(Boolean)
+  const agent = child.chat.agentType
   const title = (
-    <span title={child.chat.title} className="truncate text-[var(--text-primary)]">
-      {child.chat.title}
+    <span className="flex min-w-0 items-center gap-[6px]">
+      <AgentMark agent={agent} label={agentMarkLabel(agent)} className="text-[var(--text-muted)]" />
+      <span title={child.chat.title} className="truncate text-[var(--text-primary)]">
+        {child.chat.title}
+      </span>
     </span>
   )
   return (
     <li
       data-hub-child={child.state}
-      title={[agentLabel(child.chat.agentType as AgentType), child.branch].filter(Boolean).join(' · ')}
+      title={[agentMarkLabel(agent), child.branch].filter(Boolean).join(' · ')}
       className="grid grid-cols-[7px_minmax(120px,160px)_minmax(0,1fr)_auto] items-center gap-x-[10px] gap-y-[2px] border-t border-[var(--border)] px-3 py-[5px] @max-[420px]:grid-cols-[7px_minmax(0,1fr)]"
     >
       <span className="sidebar-recent-dot" data-dot={hubChildDot(child)} />
