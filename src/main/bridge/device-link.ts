@@ -27,7 +27,13 @@ import {
   setDeviceLabel,
   type DeviceKeyDeps,
 } from './device-key'
-import { BridgeRelayClient, resolveRelayOrigin, type RelayClientDeps, type RelayClientStatus } from './relay-client'
+import {
+  BridgeRelayClient,
+  resolveRelayOrigin,
+  type RelayClientDeps,
+  type RelayClientStatus,
+  type RelayCommandRunner,
+} from './relay-client'
 
 const log = createMainLogger('bridge:device-link')
 
@@ -51,9 +57,15 @@ export interface BridgeRelayControlListener {
 }
 
 let controlListener: BridgeRelayControlListener | null = null
+let commandRunner: RelayCommandRunner | null = null
 
 export function onBridgeRelayControl(listener: BridgeRelayControlListener | null): void {
   controlListener = listener
+}
+
+/** Runs the relay's `command` frames. Until it is set, a command frame is dropped. */
+export function onBridgeRelayCommand(runner: RelayCommandRunner | null): void {
+  commandRunner = runner
 }
 
 /** The allowed projects as the relay sees them: ids, labels, agents and the mode cap. */
@@ -141,6 +153,7 @@ export class BridgeDeviceLink {
       },
       onControl: (control) => controlListener?.control(control),
       onRevoked: () => controlListener?.authorityLost('revoked'),
+      onCommand: (frame) => (commandRunner ? commandRunner(frame) : Promise.resolve(null)),
     })
     log.info('bridge relay connection starting')
     this.client.start()

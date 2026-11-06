@@ -3,10 +3,16 @@
  * (`wss://<relay>/connect`). It answers the relay's challenge with the device
  * key, publishes the allowed project catalog (no paths) and reconnects with
  * backoff. It records the relay's connection generation and drops every frame
- * that names another machine or an older generation. It runs no command: a
- * command frame is logged with a code and dropped. It passes the relay's stop
- * state (welcome and `control` frames) to `onControl`, and sends `stop_ack`
- * and `kill`.
+ * that names another machine or an older generation. It passes the relay's
+ * stop state (welcome and `control` frames) to `onControl`, and sends
+ * `stop_ack` and `kill`.
+ *
+ * A `command` frame goes to `onCommand`, which runs the named tool and gives
+ * back the body of one `result` frame. The frame is sent on the connection
+ * the command arrived on; after a reconnect it is dropped, because the relay
+ * drops a result of another generation. The work is run once and never again:
+ * a `result_ack` the relay never sends changes nothing here, and the relay
+ * accepts a late result instead.
  *
  * Only `https:` relay origins, with TLS validated by default. Plain
  * `http://127.0.0.1` or `localhost` is accepted only from the
@@ -24,6 +30,7 @@ import {
   type BridgeLinkState,
 } from '@shared/bridge'
 import { createMainLogger } from '../logger'
+import type { BridgeCommandAnswer } from './command-dispatch'
 
 const log = createMainLogger('bridge:relay')
 
@@ -84,6 +91,9 @@ export interface RelaySocket {
 
 export type RelaySocketFactory = (url: string, headers: Record<string, string>, on: RelaySocketHandlers) => RelaySocket
 
+/** Runs one validated `command` frame. Null: there is nothing to answer, so the relay hears nothing. */
+export type RelayCommandRunner = (frame: Record<string, unknown>) => Promise<BridgeCommandAnswer | null>
+
 /** Default `ws` options: no redirects, a payload cap, and TLS checked as Node does by default. */
 export const RELAY_SOCKET_OPTIONS = {
   maxPayload: MAX_RELAY_FRAME_BYTES,
@@ -139,6 +149,8 @@ export interface RelayClientDeps {
   onControl?(control: BridgeControl): void
   /** The relay closed the connection with `revoked`. */
   onRevoked?(): void
+  /** Runs a `command` frame for this machine. Without it a command is dropped. */
+  onCommand?: RelayCommandRunner
 }
 
 type Phase = 'await_challenge' | 'await_welcome' | 'live'
@@ -176,6 +188,8 @@ export class BridgeRelayClient {
   private lastSeen = 0
   /** The last frame of an authenticated connection, for the control lease. */
   private lastContact: number | null = null
+  /** Call ids running now: a second frame for one of them is a duplicate, never a second run. */
+  private readonly inFlight = new Set<string>()
   private retryTimer: unknown = null
   private authTimer: unknown = null
   private pingTimer: unknown = null
@@ -329,7 +343,72 @@ export class BridgeRelayClient {
     if (type === 'catalog_accepted') return
     if (this.phase !== 'live') return this.drop('not_authenticated', type)
     if (type === 'control') return this.onControlFrame(frame)
-    this.drop(type === 'command' ? 'commands_disabled' : 'unknown_frame', type)
+    if (type === 'command') return this.onCommandFrame(frame)
+    if (type === 'result_ack') return this.onResultAck(frame)
+    this.drop('unknown_frame', type)
+  }
+
+  /**
+   * One run per call id. The generation is captured now, so an answer that
+   * comes back on another connection is dropped rather than sent where the
+   * relay would refuse it.
+   */
+  private onCommandFrame(frame: Record<string, unknown>): void {
+    const generation = this.generation
+    if (frame.machine_id !== this.deps.machineId || generation === null || frame.connection_generation !== generation)
+      return this.drop('invalid_command', 'command')
+    const run = this.deps.onCommand
+    if (!run) return this.drop('commands_disabled', 'command')
+    const callId = typeof frame.call_id === 'string' && frame.call_id.length > 0 ? frame.call_id : null
+    if (callId === null) return this.drop('invalid_frame', 'command')
+    if (this.inFlight.has(callId)) return this.drop('duplicate_call', 'command')
+    this.inFlight.add(callId)
+    void run(frame)
+      .then((answer) => {
+        if (answer) this.sendResult(answer, generation)
+      })
+      .catch((err: unknown) => log.warn('running a relay command failed', { err: String(err) }))
+      .finally(() => this.inFlight.delete(callId))
+  }
+
+  private sendResult(answer: BridgeCommandAnswer, generation: number): void {
+    if (this.phase !== 'live' || !this.socket || this.generation !== generation)
+      return this.drop('stale_connection', 'result')
+    const frame = {
+      type: 'result',
+      machine_id: this.deps.machineId,
+      connection_generation: generation,
+      call_id: answer.callId,
+      ok: answer.ok,
+      ...(answer.ok ? { result: answer.result } : { error: answer.error }),
+    }
+    let text = JSON.stringify(frame)
+    if (Buffer.byteLength(text) > MAX_RELAY_FRAME_BYTES) {
+      log.warn('a relay result was too large to send', { callId: answer.callId })
+      text = JSON.stringify({
+        ...frame,
+        ok: false,
+        result: undefined,
+        error: {
+          code: 'internal_error',
+          message: 'The answer was too large for one relay frame. Read the chat on this machine.',
+          call_id: answer.callId,
+          retry: 'none',
+          target: null,
+          delivered: false,
+          non_delivery_confirmed: false,
+        },
+      })
+    }
+    this.socket.send(text)
+  }
+
+  /** The relay stored the answer, or says why it did not. Either way the work is never run again. */
+  private onResultAck(frame: Record<string, unknown>): void {
+    if (frame.stored === true) return
+    log.info('the relay did not store a result', {
+      reason: typeof frame.reason === 'string' ? frame.reason.slice(0, 40) : 'unknown',
+    })
   }
 
   /** A control must name this machine and this connection; the checks above dropped any other. */
@@ -406,6 +485,8 @@ export class BridgeRelayClient {
 
   private onClose(code: number, reason: string): void {
     this.clearTimers()
+    // A command still running answers into a connection that is gone; its answer is dropped there.
+    this.inFlight.clear()
     this.socket = null
     this.phase = 'await_challenge'
     this.generation = null

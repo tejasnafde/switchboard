@@ -744,6 +744,11 @@ export class ProviderRegistry implements PeerToolHost {
     }
   }
 
+  /** The bridge's typed services, for the relay's command dispatcher (the same ones the local tools call). */
+  bridgeServices(): { reads: BridgeReadService; delivery: BridgeDeliveryService } {
+    return { reads: this.bridgeReads, delivery: this.bridgeDelivery }
+  }
+
   /** Active bridge groups, for the stop service. Works with the flag off: stops cover existing origins. */
   bridgeActiveGroups(sources?: readonly BridgeOriginSource[]): string[] {
     return this.bridgeDelivery.activeGroups(sources)

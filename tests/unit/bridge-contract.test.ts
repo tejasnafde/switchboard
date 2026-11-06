@@ -7,6 +7,7 @@
 import { createHash } from 'crypto'
 import { describe, expect, it } from 'vitest'
 import {
+  BRIDGE_DEVICE_CAPABILITY,
   BRIDGE_ERROR_CODES,
   BRIDGE_TOOL_NAMES,
   DEFAULT_BRIDGE_ACTIONS,
@@ -42,7 +43,8 @@ describe('instinct_bridge flag', () => {
       envVar: 'SB_INSTINCT_BRIDGE',
       defaultOn: false,
     })
-    expect(labsFlag('instinct_bridge')!.capability).toBeUndefined()
+    // Advertised now that the seven tools really run (PR 7).
+    expect(labsFlag('instinct_bridge')!.capability).toBe(BRIDGE_DEVICE_CAPABILITY)
   })
 })
 
@@ -111,7 +113,7 @@ describe('call delivery states', () => {
 
 describe('bridgeError', () => {
   it('carries the code, a retry advice and nullable call and target', () => {
-    expect(BRIDGE_ERROR_CODES).toHaveLength(21)
+    expect(BRIDGE_ERROR_CODES).toHaveLength(22)
     expect(bridgeError('killed', 'x').retry).toBe('ask_owner')
     expect(bridgeError('machine_offline', 'The work computer is asleep. Nothing started.')).toEqual({
       code: 'machine_offline',

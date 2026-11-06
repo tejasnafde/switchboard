@@ -3,10 +3,11 @@
  * read_chat over the chats of the projects the owner allowed on this desktop.
  *
  * One typed service. The local MCP wrapper (`mcp/bridge-tools.ts`) calls it
- * for an agent thread; the relay endpoint will call the same methods for the
- * owner. Every read is scoped to the allowlist before any ranking or limit,
- * reads chats under their root id (`resolveRootThreadId`), masks text through
- * the stored-secret paths and never returns a local path.
+ * for an agent thread, and the relay's dispatcher (`bridge/command-dispatch.ts`)
+ * calls the same methods for the owner. Every read is scoped to the allowlist
+ * before any ranking or limit, reads chats under their root id
+ * (`resolveRootThreadId`), masks text through the stored-secret paths and
+ * never returns a local path.
  *
  * Only this desktop answers for now, so lists are never partial and name no
  * unavailable machine. Evidence is `not_measured` until the measured-check

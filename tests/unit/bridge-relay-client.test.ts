@@ -1,8 +1,9 @@
 /**
  * The desktop side of the bridge relay connection: the origin rules, the
- * challenge answer, the catalog (no paths), generation fencing, dropped
- * command frames, backoff, and the link that runs the client only while the
- * flag is on and this installation is enrolled.
+ * challenge answer, the catalog (no paths), generation fencing, running a
+ * command frame and answering it with one result frame, backoff, and the
+ * link that runs the client only while the flag is on and this installation
+ * is enrolled.
  */
 import { createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
@@ -26,6 +27,7 @@ import {
   RELAY_SOCKET_OPTIONS,
   backoffMs,
   resolveRelayOrigin,
+  type RelayCommandRunner,
   type RelaySocketHandlers,
   type Timers,
 } from '../../src/main/bridge/relay-client'
@@ -102,7 +104,7 @@ function fakeTimers() {
   return timers
 }
 
-function harness(catalog: BridgeCatalogProject[] = []) {
+function harness(catalog: BridgeCatalogProject[] = [], onCommand?: RelayCommandRunner) {
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
   const sockets: Array<{
     url: string
@@ -128,6 +130,7 @@ function harness(catalog: BridgeCatalogProject[] = []) {
     onStatus: (s) => statuses.push(`${s.state}:${s.code ?? ''}`),
     onControl: (c) => void controls.push(c),
     onRevoked: () => void (revoked += 1),
+    onCommand,
     connect: (url, headers, on) => {
       const socket = {
         url,
@@ -232,7 +235,7 @@ describe('BridgeRelayClient', () => {
     expect(h.last().closed).toEqual({ code: 4000, reason: 'unsupported_version' })
   })
 
-  it('drops frames for another machine or an older generation, and every command frame', () => {
+  it('drops frames for another machine or an older generation, and a command with no runner', () => {
     const h = harness([PROJECT])
     h.client.start()
     h.connect(3)
@@ -325,6 +328,153 @@ describe('BridgeRelayClient', () => {
     const r = () => 0.5
     expect([0, 1, 2, 6, 7, 20].map((n) => backoffMs(n, false, r))).toEqual([1000, 2000, 4000, 60000, 60000, 60000])
     expect([0, 1, 3, 4].map((n) => backoffMs(n, true, r))).toEqual([30000, 60000, 240000, 300000])
+  })
+})
+
+// ─── Command frames ─────────────────────────────────────────────
+
+describe('BridgeRelayClient command frames', () => {
+  const dropped = () => logged.filter((l) => l[0] === 'relay frame dropped').map((l) => (l[1] as { code: string }).code)
+  /** Lets the client's then/catch/finally chain run. */
+  const flush = () => new Promise((resolve) => setImmediate(resolve))
+
+  function command(extra: Record<string, unknown> = {}) {
+    return {
+      type: 'command',
+      wire_version: 1,
+      machine_id: MACHINE,
+      connection_generation: 1,
+      call_id: 'relay_call_1',
+      tool: 'read_chat',
+      arguments: {},
+      stop_generation: 0,
+      ...extra,
+    }
+  }
+
+  beforeEach(() => {
+    logged.length = 0
+  })
+
+  it('runs a command once and answers with one result frame on the same connection', async () => {
+    const seen: string[] = []
+    const h = harness([], async (frame) => {
+      seen.push(String(frame.call_id))
+      return { callId: String(frame.call_id), ok: true, result: { status: 'idle' } }
+    })
+    h.client.start()
+    h.connect()
+    const before = h.sent().length
+    h.relay(command())
+    await flush()
+    expect(seen).toEqual(['relay_call_1'])
+    expect(h.sent().slice(before)).toEqual([
+      {
+        type: 'result',
+        machine_id: MACHINE,
+        connection_generation: 1,
+        call_id: 'relay_call_1',
+        ok: true,
+        result: { status: 'idle' },
+      },
+    ])
+  })
+
+  it('sends a refusal as a result frame with the error', async () => {
+    const h = harness([], async (frame) => ({
+      callId: String(frame.call_id),
+      ok: false,
+      error: {
+        code: 'killed',
+        message: 'All bridge work is stopped on this machine.',
+        call_id: String(frame.call_id),
+        retry: 'ask_owner',
+        target: null,
+        delivered: false,
+        non_delivery_confirmed: true,
+      },
+    }))
+    h.client.start()
+    h.connect()
+    h.relay(command())
+    await flush()
+    expect(h.sent().at(-1)).toMatchObject({
+      type: 'result',
+      ok: false,
+      error: { code: 'killed', delivered: false, non_delivery_confirmed: true },
+    })
+  })
+
+  it('never runs a command for another machine, an older generation or a second time while it is running', async () => {
+    let runs = 0
+    let release = () => {}
+    const h = harness([], async (frame) => {
+      runs += 1
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return { callId: String(frame.call_id), ok: true, result: {} }
+    })
+    h.client.start()
+    h.connect(3)
+    h.relay(command({ machine_id: 'hub-other', connection_generation: 3 }))
+    h.relay(command({ connection_generation: 2 }))
+    h.relay(command({ connection_generation: 3 }))
+    h.relay(command({ connection_generation: 3 }))
+    await flush()
+    expect(runs).toBe(1)
+    expect(dropped()).toEqual(['foreign_machine', 'stale_generation', 'duplicate_call'])
+    release()
+    await flush()
+    expect(h.sent().at(-1)).toMatchObject({ call_id: 'relay_call_1', connection_generation: 3 })
+  })
+
+  it('drops an answer that arrives after a reconnect instead of sending it on the new connection', async () => {
+    let release: (() => void) | null = null
+    const h = harness([], async (frame) => {
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return { callId: String(frame.call_id), ok: true, result: {} }
+    })
+    h.client.start()
+    h.connect()
+    h.relay(command())
+    await flush()
+    h.last().on.onClose(1006, 'dropped')
+    h.timers.advance(5_000)
+    h.connect(2)
+    const before = h.sent().length
+    release!()
+    await flush()
+    expect(h.sent()).toHaveLength(before)
+    expect(dropped()).toContain('stale_connection')
+  })
+
+  it('does nothing when the relay never acks a result, and notes an ack that stored nothing', async () => {
+    let runs = 0
+    const h = harness([], async (frame) => {
+      runs += 1
+      return { callId: String(frame.call_id), ok: true, result: {} }
+    })
+    h.client.start()
+    h.connect()
+    h.relay(command())
+    await flush()
+    // No ack comes. Nothing is resent and the work is not run again; only pings follow.
+    h.timers.advance(200_000)
+    expect(h.sent().filter((f) => f.type === 'result')).toHaveLength(1)
+    expect(runs).toBe(1)
+
+    h.relay({
+      type: 'result_ack',
+      machine_id: MACHINE,
+      connection_generation: 1,
+      call_id: 'relay_call_1',
+      stored: false,
+      reason: 'unknown_call',
+    })
+    expect(logged.some((l) => l[0] === 'the relay did not store a result')).toBe(true)
   })
 })
 

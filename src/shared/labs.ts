@@ -98,6 +98,8 @@ export const LABS_FLAGS: readonly LabsFlag[] = [
     envVar: 'SB_INSTINCT_BRIDGE',
     defaultOn: false,
     applies: 'at_once',
+    // BRIDGE_DEVICE_CAPABILITY in shared/bridge: the seven tools really run now.
+    capability: 'instinct_bridge_v1',
   },
 ]
 
