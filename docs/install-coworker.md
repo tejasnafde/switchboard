@@ -1,8 +1,7 @@
 # Switchboard - install & first-run (coworker)
 
-> Release signing depends on configured credentials. Unsigned macOS builds may
-> need the quarantine step after installation or an update. Switchboard downloads
-> available updates and asks you to restart to install them.
+> macOS releases from v0.9.128 are signed and notarized, so they open normally.
+> Switchboard downloads available updates and asks you to restart to install them.
 
 ## Prerequisites
 
@@ -25,17 +24,15 @@
 2. Unzip it (double-click in Finder or `unzip Switchboard-*.zip`).
 3. Drag **Switchboard.app** into **Applications**.
 
-## First launch - strip quarantine
+## First launch
 
-For an unsigned build blocked by Gatekeeper, remove the quarantine attribute before launching:
+Launch Switchboard from Applications, Spotlight or the Dock. Releases from v0.9.128 are signed and notarized, so macOS opens them without a warning.
+
+Only a build you make yourself, or a release older than v0.9.128, is unsigned. If Gatekeeper blocks one of those, run this once:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Switchboard.app
 ```
-
-Then launch normally from Applications / Spotlight / Dock. One-time; subsequent launches just work.
-
-> **After each auto-update** macOS re-quarantines the replaced bundle. Run the same `xattr` command again (or right-click → Open → Open) after an update prompt installs.
 
 ## What works out of the box
 
@@ -74,8 +71,7 @@ Then launch normally from Applications / Spotlight / Dock. One-time; subsequent 
 
 | Symptom | Fix |
 |---|---|
-| "Switchboard is damaged and can't be opened" | You skipped the `xattr` step - run `xattr -dr com.apple.quarantine /Applications/Switchboard.app` and retry |
-| "Switchboard can't be opened because the developer cannot be verified" | Right-click the app in Finder → Open → Open (one-time) |
+| "Switchboard is damaged and can't be opened" or "the developer cannot be verified" | You have an unsigned build (made yourself, or older than v0.9.128). Install the latest release, or run `xattr -dr com.apple.quarantine /Applications/Switchboard.app` once |
 | Terminal opens but typing does nothing | Quit + relaunch. If it persists, paste the latest log from `~/Library/Application Support/switchboard/logs/` to Tejas |
 | Provider shows as unavailable | Run `which claude` (or `which codex`) in a Switchboard terminal. If blank, your shell PATH isn't loading - see Known rough edges above |
 | Claude says "I'm not authenticated" | Quit Switchboard, run `claude auth login` in Terminal.app, relaunch Switchboard |

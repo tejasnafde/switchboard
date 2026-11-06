@@ -17,11 +17,9 @@ agents and custom launch commands can be added through Settings > Accounts.
 Availability depends on the installed command; see [features](docs/features.md).
 
 > Status: pre-1.0. macOS Apple Silicon and Windows x64 builds are published
-> through GitHub Releases with auto-update. Signing depends on the release
-> credentials. **For an unsigned macOS build,
-> Gatekeeper can block launch. Run
-> `xattr -d com.apple.quarantine /Applications/Switchboard.app` after install,
-> or right-click the app and choose Open.** See [Install](#install).
+> through GitHub Releases with auto-update. macOS releases from v0.9.128 are
+> signed and notarized, so they open normally. Windows builds are not signed
+> yet. See [Install](#install).
 
 ## Why Switchboard?
 
@@ -146,17 +144,16 @@ Download the latest build from the [Releases page](https://github.com/tejasnafde
 
 ### macOS 12 or newer, Apple Silicon
 
-Download `Switchboard-X.Y.Z-arm64-mac.zip`. If the release is unsigned and
-Gatekeeper blocks launch, remove its quarantine attribute after installing:
+Download `Switchboard-X.Y.Z-arm64-mac.zip`, unzip it and drag Switchboard.app
+to /Applications. Releases from v0.9.128 are signed and notarized, so macOS
+opens them normally.
+
+A build you make yourself, or a release older than v0.9.128, is not signed.
+If Gatekeeper blocks one of those, run this once:
 
 ```bash
-# Unzip, drag Switchboard.app to /Applications, then:
-xattr -d com.apple.quarantine /Applications/Switchboard.app
+xattr -dr com.apple.quarantine /Applications/Switchboard.app
 ```
-
-You can also right-click the app, choose **Open**, then choose **Open** again.
-macOS may quarantine a replacement after an auto-update, so repeat the command
-or the right-click flow after an update if needed.
 
 Intel Macs are not currently built. Open an issue if you need x64 support.
 
