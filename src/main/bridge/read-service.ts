@@ -46,9 +46,9 @@ import { resolveLabel } from './resolve-label'
 
 const log = createMainLogger('bridge:read')
 
-export const BRIDGE_LIST_DEFAULT_LIMIT = 20
+const BRIDGE_LIST_DEFAULT_LIMIT = 20
 export const BRIDGE_LIST_MAX_LIMIT = 50
-export const BRIDGE_SNIPPET_MAX_CHARS = 240
+const BRIDGE_SNIPPET_MAX_CHARS = 240
 /** Messages a read_chat returns, newest last, and the cap on each one's text. */
 const READ_HISTORY_MESSAGES = 20
 const READ_MESSAGE_MAX_CHARS = 1000

@@ -20,8 +20,6 @@ import { toolText, type McpTool, type McpToolResult } from './mcp-session'
 
 const log = createMainLogger('mcp:bridge')
 
-export const BRIDGE_READ_TOOL_NAMES = ['list_projects', 'list_recent_chats', 'search_chats', 'read_chat'] as const
-
 export interface BridgeToolDeps {
   /** The calling chat's root id, for the log line. */
   chatId: () => string
@@ -135,7 +133,8 @@ export function buildBridgeReadTools(deps: BridgeToolDeps): McpTool[] {
         additionalProperties: false,
       },
       annotations: annotations('Read a bridge chat'),
-      call: (args) => run('read_chat', args, async () => answer(await deps.service.readChat(args as never))),
+      call: (args) =>
+        run('read_chat', args, async () => answer(await deps.service.readChat({ chat: args.chat, since: args.since }))),
     },
   ]
 }

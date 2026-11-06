@@ -5,9 +5,9 @@
 import { foldForSearch, isWordPrefixMatch, messageSearchTerms } from '@shared/message-search'
 
 /** At most this many choices go back with `ambiguous_target`. */
-export const LABEL_CHOICE_LIMIT = 5
+const LABEL_CHOICE_LIMIT = 5
 
-export function normalizeLabel(text: string): string {
+function normalizeLabel(text: string): string {
   return foldForSearch(text)
     .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean)
