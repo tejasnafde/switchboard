@@ -1,0 +1,54 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "instinct-bridge",
+  "summary": "Instinct bridge, PR 1 (contract and durable records), behind the staged flag instinct_bridge (INSTINCT_BRIDGE_ENABLED in src/shared/bridge.ts, false; SB_INSTINCT_BRIDGE=1 or the backend setting labs.instinct_bridge turns it on, capability instinct_bridge_v1 advertised only while on). src/shared/bridge.ts holds the wire version (1), the seven tool names (search_chats, list_projects, list_recent_chats, start_chat, send_to_chat, read_chat, stop_chat), the three mutating operations, the project policy {project_id, label, machine_id, canonical_local_root, allowed_agents, default_agent, default_model, default_mode, maximum_mode, actions} with defaults auto capped at auto, edit and checks on, commit, push, PR, merge and deploy off, the public project view without the local root, the opaque chat reference {machine_id, chat_id}, the call delivery, chat work, stop and evidence states, the 19 error codes with a structured error and retry advice, the mode check that refuses a mode above the cap instead of changing it, and a canonical input hash for idempotency. An additive migration adds bridge_project_policies (with a revision raised on each save), bridge_calls (unique on operation and idempotency key, with input hash, call id, machine, resolved target, policy revision, state, rejection detail and timestamps; after 90 days a tombstone keeps key, hash and call id, and its key answers request_retired), bridge_origins (one per root chat, resolved through resolveRootThreadId, stamped with the stop generation) and bridge_stop_generation (one monotonic row). src/main/db/bridge.ts reserves calls in an immediate transaction, moves call states only forward, retires expired calls, recovers calls caught mid-flight at start (recorded becomes rejected with confirmed non-delivery, dispatching becomes delivery_unknown), records and reads origins and reads and advances the stop generation. Settings > Labs gains an Instinct bridge row with a warning that Instinct acts as the owner in allowed projects. Nothing calls these records yet: no relay, no tools and no executable bridge path ship in this part.",
+  "surfaces": {
+    "desktop": {
+      "status": "staged",
+      "flag": "instinct_bridge",
+      "followUpRelease": "bridge-v2.1: the release that ships the relay connection, the seven tools and the stop controls (bridge PRs 2 to 8) and keeps instinct_bridge off by default until the owner trial on both computers passes. This part adds only the Labs row and the records.",
+      "evidence": [
+        "src/renderer/components/settings/settings-rows.ts",
+        "src/main/db/bridge.ts",
+        "tests/unit/labs-page.test.ts",
+        "tests/unit/labs.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "This part has no phone-visible behavior: it adds a desktop Labs row, a shared contract and desktop records that nothing reads yet. Later bridge PRs add bridge-origin, evidence and stop-pending presentation to the phone, with management staged behind instinct_bridge_phone_controls for bridge-v2.1."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "This part has no phone-visible behavior: it adds a desktop Labs row, a shared contract and desktop records that nothing reads yet. Later bridge PRs add bridge-origin, evidence and stop-pending presentation to the phone, with management staged behind instinct_bridge_phone_controls for bridge-v2.1."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": ["src/shared/bridge.ts", "src/shared/labs.ts", "tests/unit/bridge-contract.test.ts"]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": ["src/main/db/bridge.ts", "src/main/db/database.ts", "tests/unit/bridge-db.test.ts"]
+    },
+    "updateRelease": {
+      "status": "staged",
+      "flag": "instinct_bridge",
+      "followUpRelease": "bridge-v2.1. The migration is additive (four new tables, no change to existing ones), so an older build reads the database with the bridge tables ignored. The flag stays off by default and the capability is advertised only while it is on.",
+      "evidence": ["CHANGELOG.md"]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/bridge-db.test.ts (createMigratedDb): same key and body returns the first record and target; a changed body is idempotency_conflict; keys of different operations are separate; the same key reserved twice inside an outer transaction gives one call; a key at 90 days answers request_retired before and after the tombstone, which keeps the hash and call id and drops the target; call states move only forward; a rejection records confirmed non-delivery; after a second migrate the records stay and recovery rejects recorded calls and marks dispatching ones delivery_unknown; an origin is stored under the root id and read from a rotated id, the first origin stays, and it carries the stop generation; the stop generation never goes down; a policy save raises the revision and a default above the cap is refused.",
+      "tests/unit/bridge-contract.test.ts: the flag is off by default and on by env or row; exactly seven tools; default policy auto capped at auto with publication off; the public view has no local root; a wider or unknown mode is refused; the error shape and retry advice; the canonical hash ignores key order, undefined and the idempotency key.",
+      "tests/unit/labs.test.ts and tests/unit/labs-page.test.ts: the new flag is in the list, off by default, its reader agrees with labsFlagOn, and the Labs page renders its switch.",
+      "npm run typecheck and npx vitest run --maxWorkers=2 pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No packaged build was started on existing user data for this part; the migration is additive and was exercised only on in-memory databases.",
+      "The Settings > Labs screenshot baselines (settings-labs) were not refreshed for the new row."
+    ]
+  }
+}

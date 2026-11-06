@@ -27,6 +27,7 @@ import {
   hubChildrenEnabled,
   hubRemoteChildrenEnabled,
 } from '../../src/shared/hub'
+import { INSTINCT_BRIDGE_ENABLED, instinctBridgeEnabled } from '../../src/shared/bridge'
 import { ACP_REGISTRY_SEARCH_ENABLED } from '../../src/renderer/components/settings/acp-registry-source'
 import { isSettingReadAllowed, isSettingWriteAllowed, PHONE_SCOPES, FULL_SCOPES } from '../../src/shared/device-auth'
 
@@ -49,6 +50,7 @@ describe('LABS_FLAGS', () => {
       'hub_children',
       'hub_remote_children',
       'acp_registry_search',
+      'instinct_bridge',
     ])
     for (const f of LABS_FLAGS) {
       expect(f.setting).toBe(`labs.${f.id}`)
@@ -65,6 +67,7 @@ describe('LABS_FLAGS', () => {
       HUB_CHILDREN_ENABLED,
       HUB_REMOTE_CHILDREN_ENABLED,
       ACP_REGISTRY_SEARCH_ENABLED,
+      INSTINCT_BRIDGE_ENABLED,
     ]).toEqual(LABS_FLAGS.map((f) => f.defaultOn))
   })
 
@@ -77,6 +80,7 @@ describe('LABS_FLAGS', () => {
       hub_children: 'new_chats',
       hub_remote_children: 'new_chats',
       acp_registry_search: 'dialog_open',
+      instinct_bridge: 'at_once',
     })
   })
 })
@@ -118,6 +122,7 @@ describe('labsFlagOn', () => {
       opencode_v2_acp: opencodeV2AcpEnabled,
       hub_children: hubChildrenEnabled,
       hub_remote_children: hubRemoteChildrenEnabled,
+      instinct_bridge: instinctBridgeEnabled,
     }
     for (let mask = 0; mask < 1 << 4; mask++) {
       // Each flag's env var and row, with the hub parent on or off.

@@ -85,12 +85,12 @@ function toggle(id: string): HTMLButtonElement | null {
 describe('Labs page', () => {
   it('renders every flag off by default, with a switch per flag and a note on the read-only rows', async () => {
     await mount()
-    expect(container.querySelectorAll('[role="switch"]')).toHaveLength(7)
+    expect(container.querySelectorAll('[role="switch"]')).toHaveLength(8)
     expect(toggle('labs.agent_secret_request')!.getAttribute('aria-checked')).toBe('false')
     expect(toggle('labsInfo.phoneLivePages')).toBeNull()
     expect(row('labsInfo.phoneLivePages').textContent).toContain('Set on each phone')
     expect(row('labsInfo.snooze').textContent).toContain('Always on')
-    expect(container.querySelectorAll('details')).toHaveLength(9)
+    expect(container.querySelectorAll('details')).toHaveLength(10)
   })
 
   it('saves a switch to its labs row and shows it after a reload', async () => {
