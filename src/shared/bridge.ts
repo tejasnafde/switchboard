@@ -42,10 +42,6 @@ export type BridgeToolName = (typeof BRIDGE_TOOL_NAMES)[number]
 export const BRIDGE_OPERATIONS = ['start_chat', 'send_to_chat', 'stop_chat'] as const
 export type BridgeOperation = (typeof BRIDGE_OPERATIONS)[number]
 
-export function isBridgeOperation(value: unknown): value is BridgeOperation {
-  return (BRIDGE_OPERATIONS as readonly unknown[]).includes(value)
-}
-
 /** Days a call record keeps its target. After that it is a tombstone and its key answers `request_retired`. */
 export const BRIDGE_CALL_RETENTION_DAYS = 90
 export const BRIDGE_CALL_RETENTION_MS = BRIDGE_CALL_RETENTION_DAYS * 24 * 60 * 60 * 1000
