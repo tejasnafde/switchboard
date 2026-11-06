@@ -66,6 +66,7 @@ import androidx.compose.material.icons.filled.Search
 import app.switchboard.mobile.domain.remote.AcpAgents
 import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.Project
+import app.switchboard.mobile.ui.components.AgentMark
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.Amber
 import app.switchboard.mobile.ui.theme.Green
@@ -462,7 +463,15 @@ private fun ConversationRow(
                 overflow = TextOverflow.Ellipsis,
             )
         },
-        leadingContent = { ActivityDot(BrowseVisualPolicy.activityTone(row.status, row.unread, row.attention)) },
+        leadingContent = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ActivityDot(BrowseVisualPolicy.activityTone(row.status, row.unread, row.attention))
+                AgentMark(row.agentType, tint = TextDim)
+            }
+        },
         trailingContent = {
             Column(horizontalAlignment = Alignment.End) {
                 Text(

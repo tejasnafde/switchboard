@@ -9,6 +9,7 @@ import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.SessionSummary
 import app.switchboard.mobile.domain.remote.Workspace
 import app.switchboard.mobile.domain.thread.HubChildren
+import app.switchboard.mobile.ui.components.AgentMarks
 import java.io.Serializable
 import java.util.Locale
 
@@ -312,7 +313,12 @@ object BrowseRowPolicy {
     }
 
     fun conversationSupportingLabel(row: BrowseConversationRow): String = listOfNotNull(
-        if (row.originSource == "cursor") "Cursor" else agentLabel(row.agentType),
+        // The row draws the agent's mark, so only an agent without one is named here.
+        when {
+            row.originSource == "cursor" -> "Cursor"
+            AgentMarks.has(row.agentType) -> null
+            else -> agentLabel(row.agentType)
+        },
         when {
             row.status.isFailureStatus() -> row.status
             row.attention == BrowseThreadAttention.Approval -> "Waiting on your approval"

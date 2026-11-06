@@ -32,6 +32,8 @@ import { useChatStore, threadKey, threadActivity } from '../stores/chat'
 import { UnreadPill } from '../components/UnreadPill'
 import { MessageSearchButton } from '../components/MessageSearchButton'
 import { conversationSourceLabel } from '../lib/conversation-source'
+import { agentMark } from '@shared/agent-marks'
+import { AgentMark } from '../components/AgentMark'
 import { threadPreviewLine } from '../lib/thread-preview'
 import { chatGroupKey, groupChats, type ChatActivity } from '../lib/chat-activity'
 import { seedListPendingRequests } from '../stores/list-pending'
@@ -314,9 +316,7 @@ export default function ConversationsScreen({ route, navigation }: Props) {
                   statusLine={item.status_line}
                 />
                 <View style={styles.metaLine}>
-                  <View style={styles.agentChip}>
-                    <Text style={styles.agentChipText}>{conversationSourceLabel(item)}</Text>
-                  </View>
+                  <AgentChip row={item} />
                   <Text style={styles.time}>{formatRelativeTime(item.updated_at)}</Text>
                 </View>
               </View>
@@ -325,6 +325,21 @@ export default function ConversationsScreen({ route, navigation }: Props) {
         }}
       />
     </>
+  )
+}
+
+/**
+ * The agent a chat runs on: its own mark where there is one, and the short
+ * name otherwise, so a Cursor chat or an agent this build does not know still
+ * says what it is.
+ */
+function AgentChip({ row }: { row: ConversationRow }) {
+  const agent = row.origin_source === 'cursor' ? row.origin_source : row.agent_type
+  if (agentMark(agent)) return <AgentMark agent={agent} />
+  return (
+    <View style={styles.agentChip}>
+      <Text style={styles.agentChipText}>{conversationSourceLabel(row)}</Text>
+    </View>
   )
 }
 

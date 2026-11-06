@@ -34,31 +34,40 @@ class BrowseRowPolicyTest {
     }
 
     @Test
-    fun conversationSupportingLabelUsesReadableAgentAndOnlyOneActivityCue() {
+    fun conversationSupportingLabelLeavesTheAgentToItsMarkAndShowsOneActivityCue() {
+        assertEquals("failed", BrowseRowPolicy.conversationSupportingLabel(conversation(unread = 2, status = "failed")))
+        assertEquals("2 unread", BrowseRowPolicy.conversationSupportingLabel(conversation(unread = 2)))
         assertEquals(
-            "Claude · failed",
-            BrowseRowPolicy.conversationSupportingLabel(conversation(unread = 2, status = "failed")),
-        )
-        assertEquals("Claude · 2 unread", BrowseRowPolicy.conversationSupportingLabel(conversation(unread = 2)))
-        assertEquals(
-            "OpenCode · running",
+            "running",
             BrowseRowPolicy.conversationSupportingLabel(conversation(agentType = "opencode", status = "running")),
         )
-        assertEquals("Codex · saved", BrowseRowPolicy.conversationSupportingLabel(conversation(agentType = "codex")))
+        assertEquals("saved", BrowseRowPolicy.conversationSupportingLabel(conversation(agentType = "codex")))
+    }
+
+    @Test
+    fun conversationSupportingLabelNamesAnAgentThatHasNoMark() {
         assertEquals(
             "Cursor · saved",
             BrowseRowPolicy.conversationSupportingLabel(conversation(originSource = "cursor")),
+        )
+        assertEquals(
+            "Local · saved",
+            BrowseRowPolicy.conversationSupportingLabel(conversation(agentType = "acp-command")),
+        )
+        assertEquals(
+            "some-future-agent · saved",
+            BrowseRowPolicy.conversationSupportingLabel(conversation(agentType = "some-future-agent")),
         )
     }
 
     @Test
     fun conversationSupportingLabelShowsTheTurnPreviewAfterAFailure() {
         assertEquals(
-            "Claude · Reading files",
+            "Reading files",
             BrowseRowPolicy.conversationSupportingLabel(conversation(unread = 2, status = "running", preview = "Reading files")),
         )
         assertEquals(
-            "Claude · failed",
+            "failed",
             BrowseRowPolicy.conversationSupportingLabel(conversation(status = "failed", preview = "Reading files")),
         )
     }
