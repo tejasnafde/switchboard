@@ -10,6 +10,7 @@ import { reviewContextLabel } from '@shared/review-context'
 import { agentLabel, isAgentType } from '@shared/types'
 import { createRendererLogger } from '../../logger'
 import { useReviewStore } from '../../stores/review-store'
+import { AgentMark } from '../ui/agent-mark'
 import { Combobox, type ComboboxOption } from '../ui/combobox'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
 import { Button } from '../ui/button'
@@ -99,11 +100,8 @@ export function LinkedChatsCard({ pr }: { pr: PrSummary }) {
           >
             {chat.title}
           </button>
-          <span
-            className="ml-auto shrink-0 text-[12px] text-[var(--text-secondary)]"
-            title={linkSourceLabel(chat.linkSource)}
-          >
-            {chatAgent(chat)}
+          <span className="ml-auto shrink-0 text-[var(--text-secondary)]" title={linkSourceLabel(chat.linkSource)}>
+            <AgentMark agent={chat.agentType} label={chatAgent(chat)} />
           </span>
           <Button
             variant="ghost"

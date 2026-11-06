@@ -739,6 +739,7 @@ export function App() {
           title: session.title,
           startedAt: Date.now(),
           source: 'switchboard',
+          agentType: session.type,
         })
       } else {
         useMachineStore.getState().addSnapshotSession(session.machineId, session.projectPath, {

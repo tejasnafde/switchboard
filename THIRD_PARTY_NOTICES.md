@@ -39,3 +39,29 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Agent marks
+
+`src/shared/agent-marks.ts` holds one path per agent, flattened to a single
+colour. Each path was taken on 2026-11-07 from the source named below and is
+drawn only to name the agent a chat runs on. The marks are the trademarks of
+their owners, not ours: we do not change their shape, combine them with the
+Switchboard logo, or use them as our app icon or in store artwork. A code
+licence grants no trademark right. Tell us and we remove a mark.
+
+| Agent | Mark | Taken from | Path licence |
+|---|---|---|---|
+| Claude Code | Claude | Simple Icons `icons/claude.svg`, which cites https://claude.ai | CC0-1.0 |
+| Codex | OpenAI | Simple Icons `icons/openai.svg`, which cites https://openai.com/brand | CC0-1.0 |
+| Gemini CLI | Google Gemini | Simple Icons `icons/googlegemini.svg`, which cites https://gemini.google.com | CC0-1.0 |
+| Mistral Vibe | Mistral AI | Simple Icons `icons/mistralai.svg`, which cites https://chat.mistral.ai | CC0-1.0 |
+| GitHub Copilot | GitHub Copilot | Simple Icons `icons/githubcopilot.svg`, which cites https://primer.style/foundations/icons/copilot-24 | CC0-1.0 |
+| OpenCode | OpenCode | `packages/identity/mark.svg` in https://github.com/anomalyco/opencode (the ink path only) | MIT |
+| Cline | Cline | `assets/branding/logos/cline-icon-dark.svg` in https://github.com/cline/cline | Apache-2.0 |
+
+A local ACP command has no published mark, so it draws its initials instead.
+
+- Simple Icons: https://github.com/simple-icons/simple-icons, version 15.22.0,
+  icon paths released under CC0-1.0. Its brand-use notes still apply.
+- OpenCode: MIT, Copyright (c) 2025 opencode.
+- Cline: Apache License 2.0.
