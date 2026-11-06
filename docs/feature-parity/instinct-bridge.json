@@ -70,7 +70,6 @@
         "tests/unit/settings-device-auth-gate.test.ts",
         "src/main/ipc/app.ts",
         "src/main/bridge/relay-client.ts",
-        "scripts/bridge-operator.mjs",
         "tests/unit/bridge-relay-client.test.ts",
         "tests/unit/bridge-contract.test.ts"
       ]
@@ -93,7 +92,8 @@
       "flag": "instinct_bridge",
       "followUpRelease": "bridge-v2.1. PR 1's migration is additive (four new tables) and PR 2 adds no migration and PR 3 adds one nullable column (bridge_calls.result, added only when missing): policies go in the PR 1 table and the machine id reuses the existing hub.installId settings row. The flag stays off by default and advertises no capability. PR 5 adds no migration: the device key is one backend settings row (bridge.device, versioned v1, safeStorage encrypted) and an older build ignores it. The relay deploy needs the BRIDGE_OPERATOR_VERIFIER secret and the BRIDGE_RELAY_ORIGIN var; the Worker entry moved to src/entry.js because workerd refuses an entry module that exports plain values. PR 6 adds only nullable or defaulted columns (bridge_stop_generation.killed, kill_pending, last_result; bridge_origins.source, stop_state), each added only when missing; an older build ignores them. Deferred: the stop supervisor runs inside the app process (a 10 s timer and powerMonitor resume), not as a separate OS process, so after a hard crash the next start reports the stop as unconfirmed instead of watching the process group meanwhile. Relay-source origins are modelled now; PR 7 records them when it wires relay dispatch.",
       "evidence": [
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "scripts/bridge-operator.mjs"
       ]
     }
   },

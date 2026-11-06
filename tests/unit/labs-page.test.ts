@@ -251,6 +251,33 @@ describe('Labs page', () => {
     expect(button('Allow bridge work again')).toBeUndefined()
   })
 
+  it('keeps the stop panel with the flag off while a kill is still in force', async () => {
+    stopStatus.mockResolvedValue({ ...STOP, killed: true, stop_generation: 2, enrolled: false })
+    clearKill.mockResolvedValue({ ...STOP, stop_generation: 2, enrolled: false })
+    await mount()
+    expect(rows.get('labs.instinct_bridge')).toBeUndefined()
+    // The flag refuses new bridge work; it must not hide the only control that clears the kill.
+    expect(container.querySelector('[data-testid="bridge-device"]')).toBeNull()
+    expect(container.querySelector('[data-testid="bridge-stop-killed"]')!.textContent).toBe(
+      'Stopped. New bridge work is refused.',
+    )
+    const allow = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Allow bridge work again')!
+    await act(async () => allow.click())
+    expect(clearKill).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides the stop panel with the flag off on a Mac that never ran bridge work', async () => {
+    stopStatus.mockResolvedValue({ ...STOP, enrolled: false })
+    await mount()
+    expect(container.querySelector('[data-testid="bridge-stop"]')).toBeNull()
+  })
+
+  it('keeps the stop panel with the flag off while a bridge chat is still active', async () => {
+    stopStatus.mockResolvedValue({ ...STOP, enrolled: false, active_chats: 1 })
+    await mount()
+    expect(container.querySelector('[data-testid="bridge-stop"]')).not.toBeNull()
+  })
+
   it('clears a kill locally on a Mac that is not enrolled', async () => {
     rows.set('labs.instinct_bridge', 'true')
     bridgeProjects.mockResolvedValue({ enabled: true, projects: [] })

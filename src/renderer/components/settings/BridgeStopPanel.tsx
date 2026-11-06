@@ -1,9 +1,13 @@
 /**
- * Settings > Labs, shown while the Instinct bridge flag is on: stop all
- * bridge work on this Mac and see the stop state. The status is read again
- * every 2 s while the page is open. On an enrolled Mac the kill follows the
- * relay, so the page shows the operator command that clears it; on a Mac
- * that is not enrolled a local button clears it.
+ * Settings > Labs: stop all bridge work on this Mac and see the stop state.
+ * The status is read again every 2 s while the page is open. On an enrolled
+ * Mac the kill follows the relay, so the page shows the operator command that
+ * clears it; on a Mac that is not enrolled a local button clears it.
+ *
+ * The panel is shown while the Instinct bridge flag is on, and also while the
+ * flag is off if a stop is still in force or a bridge chat is still active.
+ * Turning the flag off refuses new bridge work; it must never hide the only
+ * control that clears a kill, or the state of work that is still running.
  */
 import { useEffect, useState } from 'react'
 import type { BridgeStopStatus } from '@shared/bridge'
@@ -28,7 +32,20 @@ export function lastStopText(status: BridgeStopStatus): string {
   return `Not confirmed for: ${result.unconfirmed_titles.join(', ')}`
 }
 
-export function BridgeStopPanel() {
+/** Nothing to show for a Mac that never ran bridge work and has no stop in force. */
+export function stopPanelIsIdle(status: BridgeStopStatus | null): boolean {
+  return (
+    status !== null &&
+    !status.killed &&
+    !status.kill_pending &&
+    status.stop_generation === 0 &&
+    status.active_chats === 0 &&
+    status.last_result === null &&
+    !status.enrolled
+  )
+}
+
+export function BridgeStopPanel({ flagOn }: { flagOn: boolean }) {
   const [status, setStatus] = useState<BridgeStopStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [readError, setReadError] = useState<string | null>(null)
@@ -96,6 +113,7 @@ export function BridgeStopPanel() {
 
   const shownError = error ?? readError
   const clearCommand = status?.clear_command ?? null
+  if (!flagOn && stopPanelIsIdle(status)) return null
   return (
     <section className="mb-[18px]" data-testid="bridge-stop">
       <h3 className="mb-2 text-[11px] font-[500] leading-4 text-[var(--text-muted)]">Instinct bridge stop</h3>

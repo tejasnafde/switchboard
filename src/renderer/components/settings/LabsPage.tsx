@@ -76,11 +76,15 @@ export function LabsPage({
               ))}
             </div>
           </section>
-          {bridgeOn && section === bridge.section && (
+          {section === bridge.section && (
             <>
-              <BridgeProjectsPanel />
-              <BridgeDevicePanel />
-              <BridgeStopPanel />
+              {bridgeOn && (
+                <>
+                  <BridgeProjectsPanel />
+                  <BridgeDevicePanel />
+                </>
+              )}
+              <BridgeStopPanel flagOn={bridgeOn} />
             </>
           )}
         </Fragment>
