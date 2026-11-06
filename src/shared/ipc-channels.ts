@@ -615,6 +615,18 @@ export const AgentSecretChannels = {
 } as const
 
 /**
+ * The owner's Instinct bridge setup on the desktop (Settings > Labs, flag
+ * `instinct_bridge`). `admin` scope in device-auth: a phone can neither read
+ * the local paths nor change which projects the bridge may open.
+ */
+export const BridgeChannels = {
+  /** () → { enabled, projects: BridgeProjectSetupRow[] } */
+  LIST_PROJECTS: 'bridge:list-projects',
+  /** ({ path, allowed }) → the same as LIST_PROJECTS */
+  SET_PROJECT_ALLOWED: 'bridge:set-project-allowed',
+} as const
+
+/**
  * Whether a channel's arguments may hold a secret value. Nothing logs, times,
  * traces or queues such a call's arguments (`perf-handler`, `ws-transport`).
  */

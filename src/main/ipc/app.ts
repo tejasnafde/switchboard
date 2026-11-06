@@ -1,5 +1,6 @@
 import { perfSpan } from '../perf'
 import { registerHtmlLiveHandlers } from './html-live'
+import { registerBridgeHandlers } from './bridge'
 import type { BackendHost } from '../backend/host'
 import { stat } from 'fs/promises'
 import { notifyWorktreeSwap, publishRuntimeEvent, settleBeforeArchive } from '../provider/provider-registry'
@@ -231,6 +232,7 @@ export interface AppHandlerDependencies {
 
 export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependencies = {}): void {
   registerHtmlLiveHandlers(host)
+  registerBridgeHandlers(host)
   setLaunchConfigEmitter((channel, ...args) => host.emit(channel, ...args))
   const emitPresets = (channel: string, payload: unknown) => host.emit(channel, payload)
 

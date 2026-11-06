@@ -221,6 +221,9 @@ import { secretRedactor } from '../secrets/secret-redactor'
 import { maskStoredText, maskStoredValue, secretScope } from '../db/secret-mask'
 import { RuntimeEventRedaction, type RedactedEvents } from '../secrets/runtime-event-redaction'
 import { SecretRequestLimiter, SECRET_INSTRUCTIONS, buildSecretMcpTools } from '../mcp/secret-tools'
+import { buildBridgeReadTools } from '../mcp/bridge-tools'
+import { BridgeReadService } from '../bridge/read-service'
+import { instinctBridgeEnabled } from '@shared/bridge'
 import {
   trackSecretAnswered,
   trackSecretClosed,
@@ -612,6 +615,15 @@ export class ProviderRegistry implements PeerToolHost {
       })
     this.bus = new RuntimeEventBus()
     this.rendererUnsub = this.bus.subscribe((event) => this.forwardToRenderer(event))
+    this.bridgeReads = new BridgeReadService({
+      machineId: () => hubInstallId(),
+      live: {
+        status: (chatId) => this.liveChatStatus(chatId),
+        busy: (chatId) => this.isBusy(chatId),
+        pending: (chatId) => this.getPendingRequests(chatId),
+      },
+    })
+    this.bus.subscribe((event) => this.bridgeReads.noteEvent(event))
     // Invalid mirror edits are fs-watch findings with no tool result to ride
     // on - surface them in chat as error events through this registry's bus.
     notebookManager.setPublisher((event) => this.publish(event))
@@ -686,6 +698,21 @@ export class ProviderRegistry implements PeerToolHost {
       log.warn('could not read the agent_visual_preview flag; it counts as off', err)
       return null
     }
+  }
+
+  private instinctBridgeOn(): boolean {
+    try {
+      return instinctBridgeEnabled(process.env, getSetting)
+    } catch (err) {
+      log.warn('could not read the instinct_bridge flag; it counts as off', err)
+      return false
+    }
+  }
+
+  /** The live session's current status for any id of the chat, or null when none runs. */
+  private liveChatStatus(threadId: string): ProviderSession['status'] | null {
+    const id = this.liveSessionId(threadId)
+    return id === null ? null : (this.sessionStatus.get(id) ?? this.sessionDescriptors.get(id)?.status ?? null)
   }
 
   private hubChildrenOn(): boolean {
@@ -1691,6 +1718,8 @@ export class ProviderRegistry implements PeerToolHost {
   /** Running Agent/Task calls per thread: a child with one is Working and is never reaped. */
   readonly hubSubagents = new NativeSubagents()
   private readonly visualPreviews = new VisualPreviewTurnCounter()
+  /** The Instinct bridge's read tools (flag `instinct_bridge`); it records live activity from the bus. */
+  private readonly bridgeReads: BridgeReadService
   /** Whether each child told its parent something since its last task (`hub/hub-stop.ts`). */
   private readonly hubNotes = new ChildTaskNotes()
   /** Stops reported children left idle (`hub.idleReapMinutes`). */
@@ -3787,6 +3816,9 @@ export class ProviderRegistry implements PeerToolHost {
             : []),
           ...(previewRender
             ? [buildVisualPreviewTool({ threadId, chatId, render: previewRender, counter: this.visualPreviews })]
+            : []),
+          ...(this.instinctBridgeOn()
+            ? buildBridgeReadTools({ chatId, service: this.bridgeReads, enabled: () => this.instinctBridgeOn() })
             : []),
         ],
         instructions || undefined,

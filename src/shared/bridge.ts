@@ -137,6 +137,21 @@ export function bridgePolicyModesValid(policy: Pick<BridgeProjectPolicy, 'defaul
   return cap >= 0 && def >= 0 && def <= cap
 }
 
+/** One sidebar project on the desktop's setup list (`bridge:list-projects`). Desktop only: it holds the path. */
+export interface BridgeProjectSetupRow {
+  path: string
+  name: string
+  allowed: boolean
+  /** Null when the folder no longer resolves. */
+  projectId: string | null
+}
+
+export interface BridgeProjectSetup {
+  /** The flag is on; while it is off the list is empty and nothing can be switched. */
+  enabled: boolean
+  projects: BridgeProjectSetupRow[]
+}
+
 // ─── References and states ──────────────────────────────────────
 
 /** `chat_id` is the root conversation id, stable across provider session rotation. */

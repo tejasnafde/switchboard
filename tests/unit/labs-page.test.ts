@@ -20,6 +20,8 @@ import { searchSettingRows } from '../../src/renderer/components/settings/settin
 let rows: Map<string, string>
 let forced: string[]
 let failWrites: boolean
+const bridgeProjects = vi.fn()
+const setProjectAllowed = vi.fn()
 const set = vi.fn(async (key: string, value: string) => {
   if (failWrites) throw new Error('refused')
   rows.set(key, value)
@@ -44,6 +46,7 @@ beforeEach(() => {
         set,
         labsState: async (): Promise<Partial<LabsFlagState>[]> => forced.map((id) => ({ id, forced: true, on: true })),
       },
+      bridge: { listProjects: bridgeProjects, setProjectAllowed },
     },
     { get: (target, prop) => (prop in target ? target[prop as 'settings'] : anything) },
   )
@@ -83,6 +86,23 @@ function toggle(id: string): HTMLButtonElement | null {
 }
 
 describe('Labs page', () => {
+  it('shows the Instinct bridge projects only while the flag is on, and saves a checkbox', async () => {
+    const project = { path: '/repo', name: 'repo', projectId: 'bproj_1' }
+    bridgeProjects.mockResolvedValue({ enabled: true, projects: [{ ...project, allowed: false }] })
+    setProjectAllowed.mockResolvedValue({ enabled: true, projects: [{ ...project, allowed: true }] })
+    await mount()
+    expect(container.querySelector('[data-testid="bridge-projects"]')).toBeNull()
+    expect(bridgeProjects).not.toHaveBeenCalled()
+
+    await act(async () => toggle('labs.instinct_bridge')!.click())
+    await act(async () => {})
+    const box = container.querySelector<HTMLButtonElement>('[data-testid="bridge-projects"] [role="checkbox"]')!
+    expect(box.getAttribute('aria-checked')).toBe('false')
+    await act(async () => box.click())
+    expect(setProjectAllowed).toHaveBeenCalledWith('/repo', true)
+    expect(box.getAttribute('aria-checked')).toBe('true')
+  })
+
   it('renders every flag off by default, with a switch per flag and a note on the read-only rows', async () => {
     await mount()
     expect(container.querySelectorAll('[role="switch"]')).toHaveLength(8)
