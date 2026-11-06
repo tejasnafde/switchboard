@@ -266,11 +266,13 @@ function stableValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stableValue)
   if (value === null || typeof value !== 'object') return value
   const object = value as Record<string, unknown>
-  const output: Record<string, unknown> = {}
-  for (const key of Object.keys(object).sort()) {
-    if (object[key] !== undefined) output[key] = stableValue(object[key])
-  }
-  return output
+  // Entries, not assignment: an own `__proto__` key stays a key.
+  return Object.fromEntries(
+    Object.keys(object)
+      .sort()
+      .filter((key) => object[key] !== undefined)
+      .map((key) => [key, stableValue(object[key])]),
+  )
 }
 
 /**

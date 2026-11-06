@@ -137,4 +137,9 @@ describe('canonical input hash', () => {
     )
     expect(() => bridgeInputHash('stop_chat', {}, () => 'nope')).toThrow(/SHA-256/)
   })
+
+  it('keeps an own __proto__ key in the canonical form', () => {
+    const withProto = JSON.parse('{"chat":{"__proto__":{"x":1}}}') as Record<string, unknown>
+    expect(canonicalBridgeInput('stop_chat', withProto)).not.toBe(canonicalBridgeInput('stop_chat', { chat: {} }))
+  })
 })
