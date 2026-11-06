@@ -43,7 +43,7 @@ describe('instinct_bridge flag', () => {
       envVar: 'SB_INSTINCT_BRIDGE',
       defaultOn: false,
     })
-    // Advertised now that the seven tools really run (PR 7).
+    // Advertised now that the relay can run the tools.
     expect(labsFlag('instinct_bridge')!.capability).toBe(BRIDGE_DEVICE_CAPABILITY)
   })
 })

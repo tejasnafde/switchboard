@@ -82,9 +82,9 @@ export interface BridgeCommandDeps {
   enabled(): boolean
   reads: BridgeReadService
   delivery: BridgeDeliveryService
-  /** This desktop's durable stop generation (PR 6). */
+  /** This desktop's durable stop generation, as `bridge/stop-service.ts` keeps it. */
   stopGeneration(): number
-  /** PR 6's control path for a generation this desktop has not seen; the kill is left as it stands. */
+  /** The stop service's control path, for a generation this desktop has not seen; the kill is left as it stands. */
   applyStopGeneration(generation: number): Promise<void>
 }
 
@@ -235,8 +235,8 @@ export class BridgeCommandDispatcher {
   /**
    * The relay's stop generation on a mutation. Below ours, the relay resolved
    * the call before a stop this desktop has already applied, so the call is
-   * fenced and nothing is sent. Above ours, a `control` frame was missed: PR
-   * 6's control path records the generation and runs that stop before any new
+   * fenced and nothing is sent. Above ours, a `control` frame was missed: the
+   * stop service records the generation and runs that stop before any new
    * work. A command frame carries no kill, so none is set or cleared here.
    */
   private async syncStopGeneration(generation: number): Promise<BridgeError | null> {

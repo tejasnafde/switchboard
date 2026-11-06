@@ -23,6 +23,7 @@ import {
   BRIDGE_DEVICE_CAPABILITY,
   BRIDGE_WIRE_VERSION,
   DEFAULT_BRIDGE_RELAY_ORIGIN,
+  bridgeError,
   bridgeHelloPayload,
   parseBridgeControl,
   type BridgeCatalogProject,
@@ -30,7 +31,7 @@ import {
   type BridgeLinkState,
 } from '@shared/bridge'
 import { createMainLogger } from '../logger'
-import type { BridgeCommandAnswer } from './command-dispatch'
+import type { BridgeCommandAnswer, BridgeWireError } from './command-dispatch'
 
 const log = createMainLogger('bridge:relay')
 
@@ -390,14 +391,14 @@ export class BridgeRelayClient {
         ok: false,
         result: undefined,
         error: {
-          code: 'internal_error',
-          message: 'The answer was too large for one relay frame. Read the chat on this machine.',
-          call_id: answer.callId,
-          retry: 'none',
-          target: null,
+          ...bridgeError(
+            'internal_error',
+            'The answer was too large for one relay frame. Read the chat on this machine.',
+            { call_id: answer.callId },
+          ),
           delivered: false,
           non_delivery_confirmed: false,
-        },
+        } satisfies BridgeWireError,
       })
     }
     this.socket.send(text)
