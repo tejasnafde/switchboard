@@ -75,6 +75,7 @@ import {
   listOpenRemoteHubChildren,
   listPendingHubWakes,
   lastHubWakes,
+  markHubChildWakesStale,
   lastHubWakeOf,
   getHubParent,
   countUnackedHubOutboxMessages,
@@ -1215,11 +1216,17 @@ export class ProviderRegistry implements PeerToolHost {
    * or session ends: an error on that turn is `failed`, a full context window
    * `blocked`, and an end with no report and no subagent running `stopped`.
    * A usage limit gives none here. Adapters send the `error` before the end
-   * that carries the limit, so an error only marks the turn.
+   * that carries the limit, so an error only marks the turn. An agent that
+   * exits on the limit ends its session too; with the auto-resume armed that
+   * end is the limit again, not news of its own.
    */
   private onChildEvent(event: RuntimeEvent): void {
     if (event.type === 'error') {
       this.turnErrors.set(event.threadId, event.message)
+      return
+    }
+    if (event.type === 'status' && event.status === 'running') {
+      this.clearChildUpdate(event.threadId)
       return
     }
     const sessionEnded = event.type === 'status' && (event.status === 'stopped' || event.status === 'error')
@@ -1246,7 +1253,29 @@ export class ProviderRegistry implements PeerToolHost {
           : { kind: 'stopped', summary: 'Its session ended without a report.' }
     else if (!this.hasOutstandingTurn(event.threadId) && this.hubSubagents.runningOf(event.threadId) === 0)
       wake = { kind: 'stopped', summary: 'Ended its turn without a report.' }
+    // The agent exits on a usage limit: the `limited` wake told the parent
+    // already, and the child goes on at the reset. Before the claim, so the
+    // child's next real failure still gets one.
+    if (sessionEnded && this.limitResumer?.view(childId).kind === 'armed') wake = null
     if (wake && this.hubNotes.claim(childId)) this.childWake(parentId, childId, wake.kind, wake.summary)
+  }
+
+  /**
+   * A child started a turn (its brief, a message from its parent, a move to
+   * another account, the resume at a reset): what it said before is old news,
+   * so the parent's strip and `list_children` show its state alone until its
+   * next update. The updates themselves stay stored and are still delivered.
+   */
+  private clearChildUpdate(threadId: string): void {
+    if (!this.hubChildrenOn()) return
+    const childId = resolveRootThreadId(threadId)
+    const parentId = this.hubStarter.parentOfOpenChild(childId)
+    if (!parentId) return
+    try {
+      if (markHubChildWakesStale(childId) > 0) this.publishHubChange(parentId)
+    } catch (err) {
+      log.warn(`could not clear the last update of child ${childId}`, err)
+    }
   }
 
   /** `report_to_hub`: the child's summary and a pointer to the call in its transcript become a wake for its parent. */

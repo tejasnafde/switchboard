@@ -211,6 +211,8 @@ afterEach(async () => {
 })
 
 const event = (e: RuntimeEvent) => adapter.emit.get(e.threadId)!(e)
+/** The child got its brief, or a message from its parent: Switchboard may write one wake of its own. */
+const task = (childId: string) => registry['hubNotes'].task(childId)
 /** The child's turn runs, then ends on a usage limit that resets in 2 minutes. */
 function limit(childId = 'child1') {
   event({ type: 'status', threadId: childId, status: 'running', newTurn: true })
@@ -257,11 +259,30 @@ describe('a limited child', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(adapter.sent.filter((s) => s.text === limitResumeTurn()).map((s) => s.threadId)).toEqual(['child1'])
   })
+
+  it('sends no failure update when its agent exits on the limit', async () => {
+    task('child1')
+    limit()
+    await vi.waitFor(() => expect(wakes()).toHaveLength(1))
+    // The CLI exits after the limit: the session ends with an error of its own.
+    event({ type: 'status', threadId: 'child1', status: 'error' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(wakes().map((w) => w.kind)).toEqual(['limited'])
+    expect(registry.hubView('parent1').children.find((c) => c.chat.id === 'child1')).toMatchObject({
+      state: 'limited',
+      limit: 'armed',
+    })
+  })
 })
 
 describe('move_child', () => {
   it('moves a limited child to another account of its agent, once per limit', async () => {
     limit()
+    await vi.waitFor(() => expect(wakes()).toHaveLength(1))
+    expect(registry.hubView('parent1').children.find((c) => c.chat.id === 'child1')).toMatchObject({
+      state: 'limited',
+      lastWake: { kind: 'limited' },
+    })
     const result = await move('child1', 'claude-b')
     expect(text(result)).toMatch(/^Moved Child 1 from Claude A to Claude B\./)
     expect(result.isError).toBeFalsy()
@@ -276,6 +297,14 @@ describe('move_child', () => {
         expect.stringMatching(/^\[\[sb:hub-update\]\] .*Moved from Claude A to Claude B\./),
       ]),
     )
+
+    // The limit is old news once the child runs again: its row reads Working alone.
+    expect(registry.hubView('parent1').children.find((c) => c.chat.id === 'child1')).toMatchObject({
+      state: 'working',
+      lastWake: null,
+    })
+    // The update itself is kept for the parent.
+    expect(wakes().map((w) => w.kind)).toEqual(['limited'])
 
     // The resumed turn hits the limit of Claude B: still the same move budget until a new limit.
     event({ type: 'status', threadId: 'child1', status: 'idle' })

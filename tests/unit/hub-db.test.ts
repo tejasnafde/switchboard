@@ -12,9 +12,12 @@ import {
   getLimitResume,
   insertHubChild,
   insertHubWake,
+  lastHubWakeOf,
+  lastHubWakes,
   listArmedLimitResumes,
   listHubChildren,
   listPendingHubWakes,
+  markHubChildWakesStale,
   markHubWakesDelivered,
   markLimitResumeFired,
   openChildParentId,
@@ -112,6 +115,34 @@ describe('hub tables', () => {
     expect(markHubWakesDelivered(['w1'], 7)).toBe(1)
     expect(markHubWakesDelivered(['w1', 'w2'], 8)).toBe(1)
     expect(listPendingHubWakes('agent_parent')).toEqual([])
+  })
+
+  it('stops showing a wake once the child ran again, and still delivers it', () => {
+    insertHubChild(child('agent_c1', 0))
+    insertHubWake({
+      id: 'w1',
+      parentId: 'agent_parent',
+      childId: 'agent_c1',
+      kind: 'failed',
+      summary: 'Failed',
+      pointer: null,
+    })
+    expect(lastHubWakes('agent_parent').get('agent_c1')).toMatchObject({ kind: 'failed' })
+    expect(markHubChildWakesStale('agent_c1')).toBe(1)
+    expect(markHubChildWakesStale('agent_c1')).toBe(0)
+    expect(lastHubWakes('agent_parent').has('agent_c1')).toBe(false)
+    // The parent still gets the update, and read_child still points at it.
+    expect(listPendingHubWakes('agent_parent').map((w) => w.id)).toEqual(['w1'])
+    expect(lastHubWakeOf('agent_c1')?.id).toBe('w1')
+    insertHubWake({
+      id: 'w2',
+      parentId: 'agent_parent',
+      childId: 'agent_c1',
+      kind: 'report',
+      summary: 'Done',
+      pointer: null,
+    })
+    expect(lastHubWakes('agent_parent').get('agent_c1')).toMatchObject({ kind: 'report' })
   })
 
   it('resolves a rotated Claude id to the root conversation', () => {
