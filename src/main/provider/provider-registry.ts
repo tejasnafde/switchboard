@@ -221,8 +221,9 @@ import { secretRedactor } from '../secrets/secret-redactor'
 import { maskStoredText, maskStoredValue, secretScope } from '../db/secret-mask'
 import { RuntimeEventRedaction, type RedactedEvents } from '../secrets/runtime-event-redaction'
 import { SecretRequestLimiter, SECRET_INSTRUCTIONS, buildSecretMcpTools } from '../mcp/secret-tools'
-import { buildBridgeReadTools } from '../mcp/bridge-tools'
+import { buildBridgeTools } from '../mcp/bridge-tools'
 import { BridgeReadService } from '../bridge/read-service'
+import { BridgeDeliveryService, type BridgeDeliveryHost } from '../bridge/delivery-service'
 import { instinctBridgeEnabled } from '@shared/bridge'
 import {
   trackSecretAnswered,
@@ -624,6 +625,7 @@ export class ProviderRegistry implements PeerToolHost {
       },
     })
     this.bus.subscribe((event) => this.bridgeReads.noteEvent(event))
+    this.bridgeDelivery = new BridgeDeliveryService(this.bridgeDeliveryHost(), this.bridgeReads)
     // Invalid mirror edits are fs-watch findings with no tool result to ride
     // on - surface them in chat as error events through this registry's bus.
     notebookManager.setPublisher((event) => this.publish(event))
@@ -697,6 +699,28 @@ export class ProviderRegistry implements PeerToolHost {
     } catch (err) {
       log.warn('could not read the agent_visual_preview flag; it counts as off', err)
       return null
+    }
+  }
+
+  /** Owner delivery through the registry's own start, atomic acceptance, queue and Stop paths. */
+  private bridgeDeliveryHost(): BridgeDeliveryHost {
+    return {
+      enabled: () => this.instinctBridgeOn(),
+      machineId: () => hubInstallId(),
+      liveThread: (chatId) => this.liveSessionId(chatId),
+      starting: (threadId) => this.startingSessions.has(threadId),
+      startSession: (opts) => this.startManagedSession(opts),
+      submitTurn: (input) => this.submitManagedUserTurn(input),
+      provider: (threadId) => this.sessionAdapters.get(threadId)?.provider ?? null,
+      midTurn: (threadId) => this.hasOutstandingTurn(threadId),
+      steerBlocked: (threadId) => this.steerBlocked.has(threadId),
+      busy: (chatId) => this.isBusy(chatId),
+      chatMode: (chatId) => this.chatRuntimeMode(chatId),
+      isOpenChild: (chatId) => this.hubStarter.isOpenChild(chatId),
+      agentAvailable: async (agent) => (await this.getAdapter(providerKindFor(agent))?.isAvailable()) === true,
+      interrupt: (threadId) => this.interruptChat(threadId),
+      queuedTurns: (threadId) => this.listQueuedTurns(threadId),
+      cancelQueuedTurn: (threadId, messageId) => this.actOnQueuedTurn('cancel', threadId, messageId),
     }
   }
 
@@ -1720,6 +1744,7 @@ export class ProviderRegistry implements PeerToolHost {
   private readonly visualPreviews = new VisualPreviewTurnCounter()
   /** The Instinct bridge's read tools (flag `instinct_bridge`); it records live activity from the bus. */
   private readonly bridgeReads: BridgeReadService
+  private readonly bridgeDelivery: BridgeDeliveryService
   /** Whether each child told its parent something since its last task (`hub/hub-stop.ts`). */
   private readonly hubNotes = new ChildTaskNotes()
   /** Stops reported children left idle (`hub.idleReapMinutes`). */
@@ -3378,6 +3403,19 @@ export class ProviderRegistry implements PeerToolHost {
     )
   }
 
+  /** The user's Stop on a chat: its turn, and with hub children on, its children too. */
+  private async interruptChat(threadId: string): Promise<{ live: boolean }> {
+    if (!this.hubChildrenOn()) return this.interruptOwnTurn(threadId)
+    if (this.hubStarter.isOpenChild(threadId)) {
+      if (this.startingSessions.has(threadId) && !this.sessionAdapters.has(threadId))
+        return this.interruptOwnTurn(threadId)
+      return { live: await this.stopHubChild(threadId, 'user') }
+    }
+    // Stop on a parent stops its children too, whether or not its own turn runs.
+    const [, own] = await Promise.all([this.stopHubChildren(threadId), this.interruptOwnTurn(threadId)])
+    return own
+  }
+
   private async interruptOwnTurn(threadId: string): Promise<{ live: boolean }> {
     const adapter = this.sessionAdapters.get(threadId)
     if (!adapter) {
@@ -3818,7 +3856,13 @@ export class ProviderRegistry implements PeerToolHost {
             ? [buildVisualPreviewTool({ threadId, chatId, render: previewRender, counter: this.visualPreviews })]
             : []),
           ...(this.instinctBridgeOn()
-            ? buildBridgeReadTools({ chatId, service: this.bridgeReads, enabled: () => this.instinctBridgeOn() })
+            ? buildBridgeTools({
+                chatId,
+                runtimeMode,
+                service: this.bridgeReads,
+                delivery: this.bridgeDelivery,
+                enabled: () => this.instinctBridgeOn(),
+              })
             : []),
         ],
         instructions || undefined,
@@ -5683,17 +5727,7 @@ export class ProviderRegistry implements PeerToolHost {
     // `live` says whether this backend had a turn to stop. A client whose
     // status says running after a resume gap clears it on `live: false`,
     // since no closing event will ever come for a turn that is not there.
-    this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string): Promise<{ live: boolean }> => {
-      if (!this.hubChildrenOn()) return this.interruptOwnTurn(threadId)
-      if (this.hubStarter.isOpenChild(threadId)) {
-        if (this.startingSessions.has(threadId) && !this.sessionAdapters.has(threadId))
-          return this.interruptOwnTurn(threadId)
-        return { live: await this.stopHubChild(threadId, 'user') }
-      }
-      // Stop on a parent stops its children too, whether or not its own turn runs.
-      const [, own] = await Promise.all([this.stopHubChildren(threadId), this.interruptOwnTurn(threadId)])
-      return own
-    })
+    this.host.handle(ProviderChannels.INTERRUPT, (threadId: string) => this.interruptChat(threadId))
 
     this.host.handle(ProviderChannels.SET_RUNTIME_MODE, async (threadId: string, mode: RuntimeMode) => {
       if (!isRuntimeMode(mode)) throw new Error(`Unknown runtime mode: ${String(mode)}`)

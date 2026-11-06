@@ -25,7 +25,7 @@ import {
 import { MESSAGE_SEARCH_LIMIT, SNIPPET_MARK_CLOSE, SNIPPET_MARK_OPEN } from '@shared/message-search'
 import type { PendingBlockingEvent } from '@shared/pending-requests'
 import type { ProviderSessionStatus, RuntimeEvent } from '@shared/provider-events'
-import type { ChatMessage } from '@shared/types'
+import { isAgentType, type AgentType, type ChatMessage } from '@shared/types'
 import {
   getConversationById,
   getDb,
@@ -160,10 +160,12 @@ export interface BridgeUnchanged extends ResultBase {
 
 export type BridgeResult<T> = { ok: true; value: T } | { ok: false; error: BridgeError }
 
-interface AllowedProject {
+export interface AllowedProject {
   policy: StoredBridgeProjectPolicy
   /** The project paths chats are stored under: the realpath and every known path that resolves to it. */
   paths: string[]
+  /** The sidebar project's own path, under which a new chat is stored. */
+  sidebarPath: string
 }
 
 interface CursorBody {
@@ -248,6 +250,18 @@ function pendingItem(event: PendingBlockingEvent): BridgePendingItem {
   }
 }
 
+/** The agents a bridge call may pick in a project: the policy's list, else every agent with an enabled account. */
+export function bridgeProjectAgents(policy: Pick<StoredBridgeProjectPolicy, 'allowed_agents'>): AgentType[] {
+  if (policy.allowed_agents.length > 0) return [...policy.allowed_agents]
+  return (
+    getDb()
+      .prepare('SELECT DISTINCT agent_type FROM provider_instances WHERE enabled = 1 ORDER BY agent_type')
+      .all() as Array<{ agent_type: string }>
+  )
+    .map((r) => r.agent_type)
+    .filter(isAgentType)
+}
+
 export class BridgeReadService {
   /** Thread id (as the event named it) to the time of its last runtime activity. */
   private readonly activity = new Map<string, number>()
@@ -292,13 +306,15 @@ export class BridgeReadService {
    * its chats use. A policy counts only while a sidebar project still resolves
    * to its root: one whose folder moved or that left the sidebar serves nothing.
    */
-  private allowed(machineId: string): AllowedProject[] {
+  allowed(machineId: string): AllowedProject[] {
     const policies = listBridgeProjectPolicies().filter((p) => p.machine_id === machineId)
     if (policies.length === 0) return []
     const known = getProjects().map((p) => ({ path: p.path, real: realpathOrNull(p.path) }))
     return policies.flatMap((policy) => {
       const paths = known.filter((p) => p.real === policy.canonical_local_root).map((p) => p.path)
-      return paths.length === 0 ? [] : [{ policy, paths: [...new Set([policy.canonical_local_root, ...paths])] }]
+      return paths.length === 0
+        ? []
+        : [{ policy, paths: [...new Set([policy.canonical_local_root, ...paths])], sidebarPath: paths[0] }]
     })
   }
 
@@ -341,23 +357,18 @@ export class BridgeReadService {
   listProjects(): BridgeResult<ListBase & { projects: BridgeProjectRow[] }> {
     const machineId = this.deps.machineId()
     const base = this.listBase(machineId)
-    const savedAgents = (
-      getDb()
-        .prepare('SELECT DISTINCT agent_type FROM provider_instances WHERE enabled = 1 ORDER BY agent_type')
-        .all() as Array<{ agent_type: string }>
-    ).map((r) => r.agent_type)
     const projects = this.allowed(machineId).map(({ policy }) => ({
       ...publicProjectView(policy),
       online: true,
       stale: false,
       last_contact_at: base.observed_at,
-      agents: policy.allowed_agents.length > 0 ? [...policy.allowed_agents] : savedAgents,
+      agents: bridgeProjectAgents(policy),
     }))
     return { ok: true, value: { ...base, projects } }
   }
 
   /** An exact project id, else its label (exact, then fuzzy). */
-  private resolveProject(allowed: AllowedProject[], ref: string): BridgeResult<AllowedProject> {
+  resolveProject(allowed: AllowedProject[], ref: string): BridgeResult<AllowedProject> {
     const byId = allowed.find((a) => a.policy.project_id === ref)
     if (byId) return { ok: true, value: byId }
     const found = resolveLabel(allowed, (a) => a.policy.label, ref)
@@ -471,7 +482,7 @@ export class BridgeReadService {
    * (any rotated id of the chat), else a title (exact, then fuzzy). A chat
    * outside the allowlist answers like an unknown one.
    */
-  private resolveChat(
+  resolveChat(
     allowed: AllowedProject[],
     machineId: string,
     ref: unknown,

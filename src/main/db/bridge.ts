@@ -69,6 +69,11 @@ export function ensureBridgeSchema(db: Database.Database): void {
       updated_at  INTEGER NOT NULL
     );
   `)
+  const callColumns = new Set(
+    (db.prepare('PRAGMA table_info(bridge_calls)').all() as Array<{ name: string }>).map((c) => c.name),
+  )
+  // What an accepted call did (the actual delivery, the stop status), for a replay.
+  if (!callColumns.has('result')) db.exec('ALTER TABLE bridge_calls ADD COLUMN result TEXT')
 }
 
 // ─── Project policies ───────────────────────────────────────────
@@ -140,6 +145,8 @@ export interface BridgeCallRecord {
   machineId: string | null
   /** The resolved target as JSON, fixed at first resolution. Null on a tombstone. */
   target: string | null
+  /** What the accepted action did, as JSON. Null until then and on a tombstone. */
+  result: string | null
   policyRevision: number | null
   state: BridgeCallState
   errorCode: BridgeErrorCode | null
@@ -156,6 +163,7 @@ type CallRow = {
   input_hash: string
   machine_id: string | null
   target: string | null
+  result: string | null
   policy_revision: number | null
   state: BridgeCallState
   error_code: BridgeErrorCode | null
@@ -172,6 +180,7 @@ const toCall = (r: CallRow): BridgeCallRecord => ({
   inputHash: r.input_hash,
   machineId: r.machine_id,
   target: r.target,
+  result: r.result,
   policyRevision: r.policy_revision,
   state: r.state,
   errorCode: r.error_code,
@@ -211,7 +220,7 @@ export function reserveBridgeCall(input: {
         .prepare('SELECT * FROM bridge_calls WHERE operation = ? AND idempotency_key = ?')
         .get(input.operation, input.idempotencyKey) as CallRow | undefined
       if (row) {
-        if (row.retired_at !== null || now - row.created_at >= BRIDGE_CALL_RETENTION_MS) {
+        if (bridgeCallRetired(toCall(row), now)) {
           return { kind: 'retired', code: 'request_retired', callId: row.call_id }
         }
         if (row.input_hash !== input.inputHash) {
@@ -245,6 +254,18 @@ export function getBridgeCall(callId: string): BridgeCallRecord | null {
   return row ? toCall(row) : null
 }
 
+/** The call an earlier attempt reserved under this key, tombstone included. */
+export function findBridgeCall(operation: BridgeOperation, idempotencyKey: string): BridgeCallRecord | null {
+  const row = getDb()
+    .prepare('SELECT * FROM bridge_calls WHERE operation = ? AND idempotency_key = ?')
+    .get(operation, idempotencyKey) as CallRow | undefined
+  return row ? toCall(row) : null
+}
+
+export function bridgeCallRetired(call: Pick<BridgeCallRecord, 'retiredAt' | 'createdAt'>, now = Date.now()): boolean {
+  return call.retiredAt !== null || now - call.createdAt >= BRIDGE_CALL_RETENTION_MS
+}
+
 /**
  * Moves a call along its delivery states. False when the move is not allowed
  * from the stored state (an accepted or rejected call stays so) or the call is
@@ -253,7 +274,7 @@ export function getBridgeCall(callId: string): BridgeCallRecord | null {
 export function updateBridgeCallState(
   callId: string,
   to: BridgeCallState,
-  detail: { errorCode?: BridgeErrorCode; nonDeliveryConfirmed?: boolean } = {},
+  detail: { errorCode?: BridgeErrorCode; nonDeliveryConfirmed?: boolean; result?: unknown } = {},
 ): boolean {
   const db = getDb()
   return db
@@ -264,11 +285,13 @@ export function updateBridgeCallState(
       if (!row || row.retired_at !== null || !bridgeCallTransitionAllowed(row.state, to)) return false
       db.prepare(
         `UPDATE bridge_calls SET state = ?, error_code = COALESCE(?, error_code),
-         non_delivery_confirmed = COALESCE(?, non_delivery_confirmed), updated_at = ? WHERE call_id = ?`,
+         non_delivery_confirmed = COALESCE(?, non_delivery_confirmed), result = COALESCE(?, result),
+         updated_at = ? WHERE call_id = ?`,
       ).run(
         to,
         detail.errorCode ?? null,
         detail.nonDeliveryConfirmed === undefined ? null : detail.nonDeliveryConfirmed ? 1 : 0,
+        detail.result === undefined ? null : JSON.stringify(detail.result),
         Date.now(),
         callId,
       )
@@ -281,8 +304,8 @@ export function updateBridgeCallState(
 export function retireExpiredBridgeCalls(now = Date.now()): number {
   return getDb()
     .prepare(
-      `UPDATE bridge_calls SET retired_at = ?, target = NULL, machine_id = NULL, policy_revision = NULL
-       WHERE retired_at IS NULL AND created_at <= ?`,
+      `UPDATE bridge_calls SET retired_at = ?, target = NULL, result = NULL, machine_id = NULL,
+         policy_revision = NULL WHERE retired_at IS NULL AND created_at <= ?`,
     )
     .run(now, now - BRIDGE_CALL_RETENTION_MS).changes
 }
@@ -364,6 +387,13 @@ export function recordBridgeOrigin(o: {
      VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(conversation_id) DO NOTHING`,
   ).run(root, o.callId, o.projectId, o.machineId, o.policyRevision, readBridgeStopGeneration(), Date.now())
   return getBridgeOrigin(root)!
+}
+
+/** The chats bridge work started or reached on one machine. */
+export function listBridgeOrigins(machineId: string): BridgeOrigin[] {
+  return (getDb().prepare('SELECT * FROM bridge_origins WHERE machine_id = ?').all(machineId) as OriginRow[]).map(
+    toOrigin,
+  )
 }
 
 /** Any id of the chat, rotated or root. */
