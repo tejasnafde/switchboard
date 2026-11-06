@@ -239,7 +239,7 @@ export function reconnectHubMachinesOnLaunch(): Promise<void> {
   })
 }
 
-/** After a write of `labs.hub_remote_children`: off closes every hub client; on pulls and reconciles each connected machine. */
+/** After a write of `labs.hub_remote_children` or `labs.hub_children`: off closes every hub client; on pulls and reconciles each connected machine. */
 export function hubRemoteSettingChanged(): void {
   hubClients?.enabledChanged()
 }

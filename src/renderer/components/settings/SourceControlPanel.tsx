@@ -41,9 +41,7 @@ export function SourceControlPanel() {
 
   return (
     <section className="mb-[18px]" aria-busy={status === null}>
-      <h3 className="mb-2 text-[11px] font-[600] uppercase tracking-[0.07em] text-[var(--text-muted)]">
-        Source control
-      </h3>
+      <h3 className="mb-2 text-[11px] font-[500] leading-4 text-[var(--text-muted)]">Source control</h3>
       <BitbucketCard status={status} onChanged={reload} />
       <GithubCard status={status} />
     </section>

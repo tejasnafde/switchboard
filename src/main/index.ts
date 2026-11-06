@@ -47,7 +47,7 @@ import { pruneAttachments } from './attachments'
 import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass } from './ipc/app-desktop'
 import { disposeSettingsFileSync, registerSettingsFileHandlers, settingsFileSync } from './ipc/settings-file'
 import { isSettingsFileKey } from '@shared/settings-file'
-import { HUB_REMOTE_CHILDREN_LABS_SETTING } from '@shared/hub'
+import { HUB_CHILDREN_LABS_SETTING, HUB_REMOTE_CHILDREN_LABS_SETTING } from '@shared/hub'
 import { labsFlagCapabilities } from '@shared/labs'
 import {
   hubRemoteSettingChanged,
@@ -354,7 +354,7 @@ function desktopAppHandlerDeps(): AppHandlerDependencies {
 function onSettingChanged(key: string): void {
   if (key === KEYBOARD_OVERRIDES_SETTING) applyKeyboardOverrides()
   if (isSettingsFileKey(key)) settingsFileSync()?.onDbChanged()
-  if (key === HUB_REMOTE_CHILDREN_LABS_SETTING) hubRemoteSettingChanged()
+  if (key === HUB_REMOTE_CHILDREN_LABS_SETTING || key === HUB_CHILDREN_LABS_SETTING) hubRemoteSettingChanged()
 }
 
 // Custom protocol for onboarding tour videos. Must be registered as

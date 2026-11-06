@@ -140,6 +140,18 @@ describe('Labs page', () => {
   })
 })
 
+describe('Labs page, dependency over env', () => {
+  it('shows a forced child flag off while its parent is off, as the backend reads it', async () => {
+    forced = ['hub_remote_children']
+    await mount()
+    const remote = toggle('labs.hub_remote_children')!
+    expect(remote.getAttribute('aria-checked')).toBe('false')
+    expect(remote.disabled).toBe(true)
+    expect(row('labs.hub_remote_children').textContent).toContain('needs Child chats on')
+    expect(row('labs.hub_remote_children').textContent).not.toContain('Forced on ')
+  })
+})
+
 describe('Labs search', () => {
   it('finds a row by its setting key, env var and warning text', () => {
     expect(searchSettingRows('labs.opencode_v2_acp').map((r) => r.id)).toEqual(['labs.opencode_v2_acp'])

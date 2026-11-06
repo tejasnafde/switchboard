@@ -94,7 +94,7 @@ function LabsRow({
   const parent = flag?.needs ? labsFlag(flag.needs) : undefined
   const parentOff = parent !== undefined && !forced.has(parent.id) && values[parent.setting] !== 'true'
   const stored = values[def.id]
-  const on = isForced || (!parentOff && stored === 'true')
+  const on = !parentOff && (isForced || stored === 'true')
 
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -109,7 +109,7 @@ function LabsRow({
     .filter(Boolean)
     .join(' ')
   const meta = [copy.where, labsWhen(copy)]
-  if (parent && parentOff && !isForced) meta.push(`needs ${rowForFlag(parent.id).label} on`)
+  if (parent && parentOff) meta.push(`needs ${rowForFlag(parent.id).label} on`)
 
   return (
     <div
@@ -147,7 +147,7 @@ function LabsRow({
             aria-hidden="true"
             className="min-w-14 text-right text-[11px] leading-[18px] text-[var(--text-muted)] max-[520px]:min-w-0"
           >
-            {isForced ? 'Forced on' : on ? 'On' : 'Off'}
+            {on ? (isForced ? 'Forced on' : 'On') : 'Off'}
           </span>
           <Switch
             checked={on}

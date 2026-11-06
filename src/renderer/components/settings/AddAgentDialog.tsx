@@ -54,7 +54,6 @@ import {
   type AcpRegistryEntry,
   type AcpRegistryResult,
 } from './acp-registry-source'
-
 import { labsFlag } from '@shared/labs'
 
 const log = createRendererLogger('settings:add-agent')

@@ -201,9 +201,7 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
           const model = stored[modelKey] ?? defaultModelFor(kind)
           return (
             <section key={kind} className="mb-[18px]">
-              <h3 className="mb-2 text-[11px] font-[600] uppercase tracking-[0.07em] text-[var(--text-muted)]">
-                {agentLabel(kind)}
-              </h3>
+              <h3 className="mb-2 text-[11px] font-[500] leading-4 text-[var(--text-muted)]">{agentLabel(kind)}</h3>
               {group.map((inst) => (
                 <AccountCard
                   key={inst.id}
@@ -241,9 +239,7 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
 
       {autoResumeShown && (
         <section className="mt-[22px]">
-          <h3 className="mb-2 text-[11px] font-[600] uppercase tracking-[0.07em] text-[var(--text-muted)]">
-            Usage limits
-          </h3>
+          <h3 className="mb-2 text-[11px] font-[500] leading-4 text-[var(--text-muted)]">Usage limits</h3>
           <SettingsCard>
             <SettingRow def={SETTING_ROW.autoResumeAfterLimit}>
               <ToggleControl def={SETTING_ROW.autoResumeAfterLimit} />
